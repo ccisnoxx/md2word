@@ -1,0 +1,85 @@
+doc_type: api-manifest
+status: current
+project: md2word_file
+entry_type: endpoint
+source_root: app/api/v1/routers
+last_scanned: 2026-05-18
+
+entries:
+  - entry: health
+    category: endpoint
+    source_files:
+      - app/api/v1/router.py
+      - app/api/v1/routers/health.py
+      - app/services/health_service.py
+      - app/schemas/api_v1.py
+    doc_path: docs/api/health.md
+    status: current
+    note: "服务健康检查入口。"
+  - entry: jobs
+    category: endpoint
+    source_files:
+      - app/api/v1/router.py
+      - app/api/v1/routers/jobs.py
+      - app/api/dependencies.py
+      - app/services/jobs/command.py
+      - app/services/jobs/lifecycle.py
+      - app/services/jobs/query.py
+      - app/services/jobs/stage.py
+      - app/services/jobs/artifacts.py
+      - app/repositories/file_job_repository.py
+      - app/schemas/api_v1.py
+    doc_path: docs/api/jobs.md
+    status: current
+    note: "Jobs endpoint family，包括上传 MinerU zip、查询、下载和本地运维动作。"
+  - entry: mineru-callbacks
+    category: endpoint
+    source_files:
+      - app/api/v1/router.py
+      - app/api/v1/routers/mineru_callbacks.py
+      - app/api/dependencies.py
+      - app/services/jobs/command.py
+      - app/services/jobs/stage.py
+      - app/core/mineru_callback.py
+      - app/core/config.py
+      - app/schemas/api_v1.py
+    doc_path: docs/api/mineru-callbacks.md
+    status: current
+    note: "MinerU callback ingress、鉴权、payload 归一化和结果地址安全校验。"
+  - entry: templates
+    category: endpoint
+    source_files:
+      - app/api/v1/router.py
+      - app/api/v1/routers/templates.py
+      - app/services/templates/read_service.py
+      - app/schemas/api_v1.py
+    doc_path: docs/api/templates.md
+    status: current
+    note: "默认模板和绑定 YAML 配置的只读接口。"
+
+guides:
+  - slug: backend-dev-docs-index
+    category: dev-guide
+    doc_path: docs/dev/backend-dev-docs-index.md
+    status: current
+    note: "后端开发文档索引页。"
+  - slug: backend-local-setup-and-architecture
+    category: dev-guide
+    doc_path: docs/dev/backend-local-setup-and-architecture.md
+    status: current
+    note: "后端最小架构和本地启动说明。"
+  - slug: backend-local-minimal-env-and-commands
+    category: dev-guide
+    doc_path: docs/dev/backend-local-minimal-env-and-commands.md
+    status: current
+    note: "本地最小 .env 和启动命令速查版。"
+  - slug: runtime-observability-and-health
+    category: dev-guide
+    doc_path: docs/dev/runtime-observability-and-health.md
+    status: current
+    note: "日志分层和 health readiness 说明。"
+  - slug: runbook
+    category: dev-guide
+    doc_path: docs/runbook.md
+    status: current
+    note: "本地运维与联调 runbook。"

@@ -1,0 +1,220 @@
+# ============================================================
+# 电子术语下标转换词典 (v1.1)
+# ============================================================
+
+#  添加分类优先级配置
+categories:
+  voltage_terms:
+    priority: 10      # 电压术语优先级最高
+  current_terms:
+    priority: 20      # 电流术语次之
+  power_terms:
+    priority: 30
+  impedance_terms:
+    priority: 40
+  timing_terms:
+    priority: 50
+  frequency_terms:
+    priority: 60
+  gain_terms:
+    priority: 70
+  temperature_terms:
+    priority: 80
+  thermal_terms:
+    priority: 90
+  threshold_terms:
+    priority: 15
+  passive_terms:
+    priority: 35
+  switching_terms:
+    priority: 45
+  noise_terms:
+    priority: 65
+  additional_thermal_terms:
+    priority: 95
+
+# 全局配置
+case_sensitive: true    # 区分大小写
+
+# 电压相关术语
+subscript_rules:
+  voltage_terms:
+    VCM: V<sub>CM</sub>          # 共模电压
+    VS: V<sub>S</sub>            # 电源电压
+    VDD: V<sub>DD</sub>          # 正电源
+    VCC: V<sub>CC</sub>          # 正电源（模拟）
+    VSS: V<sub>SS</sub>          # 负电源
+    VEE: V<sub>EE</sub>          # 负电源（模拟）
+    VIN: V<sub>IN</sub>          # 输入电压
+    VOUT: V<sub>OUT</sub>        # 输出电压
+    VREF: V<sub>REF</sub>        # 参考电压
+    VOS: V<sub>OS</sub>          # 失调电压
+    VGS: V<sub>GS</sub>          # 栅源电压
+    VDS: V<sub>DS</sub>          # 漏源电压
+    VBE: V<sub>BE</sub>          # 基极-发射极电压
+    VCE: V<sub>CE</sub>          # 集电极-发射极电压
+    IVIN: I<sub>VIN</sub>
+    ISHDN: I<sub>SHDN</sub>
+    IBIAS: I<sub>BIAS</sub>
+    VUVLO1(IN): V<sub>UVLO1(IN)</sub>
+    VHYS1(IN): V<sub>HYS1(IN)</sub>
+    VUVLO2(IN): V<sub>UVLO2(IN)</sub>
+    VHYS2(IN): V<sub>HYS2(IN)</sub>
+    VUVLO(BIAS): V<sub>UVLO(BIAS)</sub>
+    VHYS(BIAS): V<sub>HYS(BIAS)</sub>
+    ΔVOUT(ΔVIN): ΔV<sub>OUT(ΔVIN)</sub>
+    ΔVOUT(ΔIOUT): ΔV<sub>OUT(ΔIOUT)</sub>
+    V(DO): V<sub>(DO)</sub>
+    ICL: I<sub>CL</sub>
+    I(EN): I<sub>(EN)</sub>
+    EN: E<sub>N</sub>
+    VEN(hys): V<sub>EN(hys)</sub>
+    VIT: V<sub>IT</sub>
+    VHYS: V<sub>HYS</sub>
+    VPG(low): V<sub>PG(low)</sub>
+    IPG(lkg): I<sub>PG(lkg)</sub>
+    ISS: I<sub>SS</sub>
+    IFB: I<sub>FB</sub>
+    PSRR: P<sub>SRR</sub>
+    VN: V<sub>N</sub>
+    VFB: V<sub>FB</sub>
+    CSS: C<sub>SS</sub>
+    TSD: T<sub>SD</sub>
+    VRIPPLE: V<sub>RIPPLE</sub>
+    fRIPPLE: f<sub>RIPPLE</sub>
+    IOUT: I<sub>OUT</sub>
+    CFF: C<sub>FF</sub>
+    VPG: V<sub>PG</sub>
+    VBIAS: V<sub>BIAS</sub>
+
+  threshold_terms:
+    VIL: V<sub>IL</sub>
+    VIH: V<sub>IH</sub>
+    VOL: V<sub>OL</sub>
+    VOH: V<sub>OH</sub>
+    VTH: V<sub>TH</sub>
+    VTH+: V<sub>TH+</sub>
+    VTH-: V<sub>TH-</sub>
+    ITH: I<sub>TH</sub>
+
+  switching_terms:
+    FSW: f<sub>SW</sub>
+    fSW: f<sub>SW</sub>
+    TON: t<sub>ON</sub>
+    TOFF: t<sub>OFF</sub>
+    TON(MIN): t<sub>ON(MIN)</sub>
+    TOFF(MIN): t<sub>OFF(MIN)</sub>
+    TSS: t<sub>SS</sub>
+    TSTARTUP: t<sub>STARTUP</sub>
+    TDEAD: t<sub>DEAD</sub>
+    DMAX: D<sub>MAX</sub>
+    DMIN: D<sub>MIN</sub>
+
+  passive_terms:
+    IIN: I<sub>IN</sub>
+    ILIM: I<sub>LIM</sub>
+    IRMS: I<sub>RMS</sub>
+    IPEAK: I<sub>PEAK</sub>
+    IPK: I<sub>PK</sub>
+    IAVG: I<sub>AVG</sub>
+    CIN: C<sub>IN</sub>
+    COUT: C<sub>OUT</sub>
+    CBYP: C<sub>BYP</sub>
+    CCOMP: C<sub>COMP</sub>
+    RSENSE: R<sub>SENSE</sub>
+    RLOAD: R<sub>LOAD</sub>
+    RFB: R<sub>FB</sub>
+    RCOMP: R<sub>COMP</sub>
+    LOUT: L<sub>OUT</sub>
+
+  # 电流相关术语
+  current_terms:
+    ICC: I<sub>CC</sub>          # 正电源电流
+    IDD: I<sub>DD</sub>          # 数字电源电流
+    ISS: I<sub>SS</sub>          # 负电源电流
+    IO: I<sub>O</sub>            # 输出电流
+    IQ: I<sub>Q</sub>            # 静态电流
+    IB: I<sub>B</sub>            # 偏置电流
+    IOS: I<sub>OS</sub>          # 失调电流
+    IS: I<sub>S</sub>            # 短路电流
+
+  # 功耗相关
+  power_terms:
+    PD: P<sub>D</sub>            # 功耗
+    PTOT: P<sub>TOT</sub>        # 总功耗
+    PMAX: P<sub>MAX</sub>        # 最大功耗
+
+  # 阻抗相关
+  impedance_terms:
+    ZIN: Z<sub>IN</sub>          # 输入阻抗
+    ZOUT: Z<sub>OUT</sub>        # 输出阻抗
+    RIN: R<sub>IN</sub>          # 输入电阻
+    ROUT: R<sub>OUT</sub>        # 输出电阻
+    RDS: R<sub>DS</sub>          # 漏源电阻
+    RL: R<sub>L</sub>            # 负载电阻
+
+  # 时序相关
+  timing_terms:
+    TW: t<sub>W</sub>            # 脉冲宽度
+    TH: t<sub>H</sub>            # 保持时间
+    TSU: t<sub>SU</sub>          # 建立时间
+    THD: t<sub>HD</sub>          # 保持时间
+    TR: t<sub>R</sub>            # 上升时间
+    TF: t<sub>F</sub>            # 下降时间
+    TPD: t<sub>PD</sub>          # 传播延迟
+    TPLH: t<sub>PLH</sub>        # 低到高传播延迟
+    TPHL: t<sub>PHL</sub>        # 高到低传播延迟
+
+  # 频率相关
+  frequency_terms:
+    FCLK: f<sub>CLK</sub>        # 时钟频率
+    FMAX: f<sub>MAX</sub>        # 最大频率
+    FT: f<sub>T</sub>            # 转换频率
+    GBW: GBW             # 增益带宽积（特殊处理）
+
+  # 增益相关
+  gain_terms:
+    AV: A<sub>V</sub>            # 电压增益
+    AI: A<sub>I</sub>            # 电流增益
+    AOL: A<sub>OL</sub>          # 开环增益
+    ACL: A<sub>CL</sub>          # 闭环增益
+
+  # 温度相关
+  temperature_terms:
+    TA: T<sub>A</sub>            # 环境温度
+    TJ: T<sub>J</sub>            # 结温
+    TMAX: T<sub>MAX</sub>        # 最大温度
+    TMIN: T<sub>MIN</sub>        # 最小温度
+
+  # 热阻相关
+  thermal_terms:
+    θJA: θ<sub>JA</sub>     # 结到环境热阻
+    θJC: θ<sub>JC</sub>     # 结到外壳热阻
+
+  #  特殊符号相关
+  special_symbols:
+    ρ: ρ                         # 电阻率（保持原样）
+    μ: μ                         # 微（保持原样）
+
+  noise_terms:
+    eN: e<sub>N</sub>
+    iN: i<sub>N</sub>
+    VRMS: V<sub>RMS</sub>
+    VPEAK: V<sub>PEAK</sub>
+    IPP: I<sub>PP</sub>
+    VPP: V<sub>PP</sub>
+
+  additional_thermal_terms:
+    θJB: θ<sub>JB</sub>
+    θJT: θ<sub>JT</sub>
+    ΨJB: Ψ<sub>JB</sub>
+    ΨJT: Ψ<sub>JT</sub>
+  #  复合术语
+  compound_terms:
+    VDDA: V<sub>DDA</sub>        # 模拟电源
+    VDDD: V<sub>DDD</sub>        # 数字电源
+    VSENSE: V<sub>SENSE</sub>    # 感测电压
+    ILOAD: I<sub>LOAD</sub>      # 负载电流
+    PSRR: PSRR                   # 电源抑制比（保持原样）
+    CMRR: CMRR                   # 共模抑制比（保持原样）
+

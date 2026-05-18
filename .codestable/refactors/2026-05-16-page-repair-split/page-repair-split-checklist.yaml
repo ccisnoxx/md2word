@@ -1,0 +1,24 @@
+refactor: 2026-05-16-page-repair-split
+steps:
+  - id: step-1
+    title: 抽出页面修补运行时模块
+    status: done
+  - id: step-2
+    title: 更新主模块与输入适配模块的兼容导出
+    status: done
+  - id: step-3
+    title: 共享测试 helper 同步清理 page-repair 子模块
+    status: done
+  - id: step-4
+    title: 跑全量 characterization tests
+    status: done
+checks:
+  - id: api-surface
+    title: 主模块与输入适配模块页面修补导出保持稳定
+    status: passed
+  - id: patch-compat
+    title: page-repair 链的 monkeypatch 与重载入口保持有效
+    status: passed
+  - id: full-suite
+    title: 全量 characterization tests 通过
+    status: passed

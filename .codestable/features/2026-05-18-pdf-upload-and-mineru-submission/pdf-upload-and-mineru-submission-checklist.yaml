@@ -1,0 +1,52 @@
+feature: 2026-05-18-pdf-upload-and-mineru-submission
+created: 2026-05-18
+
+steps:
+  - action: "扩展任务合同：给 JobRecord / JobFile / JobStageMessage 增加 source_pdf、source_kind、mineru_* 字段和 submitting/parsing 状态"
+    exit_signal: "模型与 file repository 读写兼容，现有 jobs 测试继续通过"
+    status: done
+
+  - action: "搭建 MinerU 提交骨架：新增客户端和 submit_to_mineru 调度入口，在 fake client 下返回稳定的 batch_id/data_id"
+    exit_signal: "后台 stage 能调用 submit_to_mineru，并把任务推进到 parsing"
+    status: done
+
+  - action: "新增 PDF 上传入口：实现 POST /api/v1/jobs/pdf、PDF 校验、token 预检、source_pdf 落盘和 stage 入队"
+    exit_signal: "API 返回 201，任务详情里可见 source_pdf 和 uploaded -> submitting/parsing 状态推进"
+    status: done
+
+  - action: "接通错误语义：MinerU 提交失败时写 job_failed 事件并固化 mineru_submit_failed 错误码"
+    exit_signal: "失败路径有明确 error_code 和事件证据，且不影响现有 zip 上传入口"
+    status: done
+
+  - action: "补齐测试与文档：覆盖合法 PDF、token 缺失、非法 PDF、提交失败和 zip 入口回归"
+    exit_signal: "对象级测试通过，docs/frontmatter/YAML 校验通过"
+    status: done
+
+checks:
+  - item: "新增 source_pdf/source_kind/mineru_* 字段后，任务合同仍然和现有 jobs 读模型兼容"
+    source: 名词契约
+    status: passed
+
+  - item: "submit_to_mineru 只承担 PDF 提交与状态推进，不承担 callback 或 DOCX 后处理"
+    source: 编排骨架
+    status: passed
+
+  - item: "缺 MINERU_API_TOKEN 时，POST /api/v1/jobs/pdf 直接拒绝，不产生不可解释的 uploaded 停滞任务"
+    source: 流程级约束
+    status: passed
+
+  - item: "source_pdf、submit_to_mineru 和 parsing 这些新挂载点都已在代码中有唯一落点"
+    source: 挂载点
+    status: passed
+
+  - item: "不改动现有 POST /api/v1/jobs 的 MinerU zip 上传语义"
+    source: 范围守护
+    status: passed
+
+  - item: "上传合法 PDF 后能看到 job_id、source_pdf artifact 和 parsing 状态"
+    source: 验收场景
+    status: passed
+
+  - item: "MinerU 提交失败时任务进入 failed 且 error_code=mineru_submit_failed"
+    source: 验收场景
+    status: passed

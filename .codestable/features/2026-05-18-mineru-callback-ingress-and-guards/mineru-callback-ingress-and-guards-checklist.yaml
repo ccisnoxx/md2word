@@ -1,0 +1,52 @@
+feature: 2026-05-18-mineru-callback-ingress-and-guards
+created: 2026-05-18
+
+steps:
+  - action: "扩展 callback 合同：给 JobRecord / JobStageMessage 增加 parsed、process_callback、mineru_result_zip_url 等字段"
+    exit_signal: "模型与 file repository 兼容，现有 jobs 测试继续通过"
+    status: done
+
+  - action: "落地 callback guard：实现 internal/public 模式、token/query 鉴权、checksum 校验和 payload 归一化"
+    exit_signal: "对象级测试能覆盖 internal/public 两种模式"
+    status: done
+
+  - action: "新增 callback router 与 stage 入队：实现 POST /api/v1/mineru-callbacks/result 并成功生成 process_callback stage"
+    exit_signal: "接口返回 200 accepted，任务能被正确匹配"
+    status: done
+
+  - action: "接通 process_callback 状态推进：done+full_zip_url -> parsed，failed -> failed"
+    exit_signal: "对象级测试能看到 parsed/failed 和 mineru_result_zip_url 的持久化"
+    status: done
+
+  - action: "补齐测试与文档：覆盖 guards、状态推进、错误路径和现有入口回归"
+    exit_signal: "全量测试通过，API/health/runbook/frontmatter 校验通过"
+    status: done
+
+checks:
+  - item: "parsed/process_callback/mineru_result_zip_url 扩展后，任务合同仍和现有 jobs 读模型兼容"
+    source: 名词契约
+    status: pending
+
+  - item: "router 只负责鉴权、归一化和入队，不直接承担后处理"
+    source: 编排骨架
+    status: pending
+
+  - item: "single_tenant_public 模式下 callback token/uid/checksum/allowlist 规则已在服务端生效"
+    source: 流程级约束
+    status: pending
+
+  - item: "mineru-callbacks/result、process_callback、parsed 和 mineru_result_zip_url 都有唯一落点"
+    source: 挂载点
+    status: pending
+
+  - item: "不改动现有 /api/v1/jobs 和 /api/v1/jobs/pdf 的入口语义"
+    source: 范围守护
+    status: pending
+
+  - item: "callback 命中 done+full_zip_url 时任务进入 parsed"
+    source: 验收场景
+    status: pending
+
+  - item: "callback 命中 failed 时任务进入 failed 且 error_code=mineru_failed"
+    source: 验收场景
+    status: pending

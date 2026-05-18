@@ -1,0 +1,24 @@
+refactor: 2026-05-16-pagination-flow-relax
+steps:
+  - id: step-1
+    title: 抽出 section 创建决策函数
+    status: done
+  - id: step-2
+    title: 把页面编排改成条件分页
+    status: done
+  - id: step-3
+    title: 回归目录页、长表页和真实样例空白页
+    status: done
+checks:
+  - id: flow-pages
+    title: 40/41/42 页页底大空白明显收敛
+    status: passed
+  - id: landscape-sections
+    title: 横竖版切换页面仍正确
+    status: passed
+  - id: long-table-pages
+    title: 长表续页仍正常
+    status: passed
+  - id: full-suite
+    title: 全量 characterization tests 通过
+    status: passed
