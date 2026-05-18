@@ -632,6 +632,68 @@ class FastAPIJobsBackendTests(TestCase):
                 self.assertEqual(updated["status"], "failed")
                 self.assertEqual(updated["error_code"], "mineru_failed")
 
+    def test_callback_matches_data_id_before_batch_id(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir), mineru_api_token="token-123")
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                first_response = client.post(
+                    "/api/v1/jobs/pdf",
+                    files={"pdf": ("first.pdf", b"%PDF-1.4\nbody", "application/pdf")},
+                )
+                second_response = client.post(
+                    "/api/v1/jobs/pdf",
+                    files={"pdf": ("second.pdf", b"%PDF-1.4\nbody", "application/pdf")},
+                )
+                first_job_id = first_response.json()["job_id"]
+                second_job_id = second_response.json()["job_id"]
+
+                first_detail = client.get(f"/api/v1/jobs/{first_job_id}").json()
+                second_detail = client.get(f"/api/v1/jobs/{second_job_id}").json()
+                runtime.repository.update_job(second_job_id, mineru_batch_id=first_detail["mineru_batch_id"])
+
+                payload, _content = build_callback_payload(
+                    batch_id=first_detail["mineru_batch_id"],
+                    data_id=second_detail["mineru_data_id"],
+                    state="done",
+                    full_zip_url="https://mineru.net/result.zip",
+                )
+                response = client.post("/api/v1/mineru-callbacks/result", json=payload)
+
+                self.assertEqual(response.status_code, 200)
+                first_updated = client.get(f"/api/v1/jobs/{first_job_id}").json()
+                second_updated = client.get(f"/api/v1/jobs/{second_job_id}").json()
+                self.assertEqual(first_updated["status"], "parsing")
+                self.assertEqual(second_updated["status"], "parsed")
+
+    def test_callback_rejects_non_parsing_job_status(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir))
+            app = create_app(runtime)
+            job = JobRecord(
+                id="job_completed_callback",
+                source_filename="done.zip",
+                status="completed",
+                progress=100,
+                result_ready=True,
+                mineru_batch_id="batch_completed",
+                mineru_data_id="job_completed_callback",
+                completed_at=utc_now(),
+            )
+            runtime.repository.create_job(job)
+            with TestClient(app) as client:
+                payload, _content = build_callback_payload(
+                    batch_id="batch_completed",
+                    data_id="job_completed_callback",
+                    state="done",
+                    full_zip_url="https://mineru.net/result.zip",
+                )
+                response = client.post("/api/v1/mineru-callbacks/result", json=payload)
+
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("不允许处理 MinerU callback", response.json()["detail"])
+            self.assertEqual(runtime.repository.list_pending_stage_messages(), [])
+
     def test_upload_pdf_submits_to_mineru_and_enters_parsing(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(Path(temp_dir), mineru_api_token="token-123")

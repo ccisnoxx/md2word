@@ -41,6 +41,10 @@ MinerU 结构化结果 -> 页面修补 -> 可选英文转中文翻译 -> 模板/
   - 翻译链路里的最小文本单元和分批请求单元。
 - **Job / JobFile / JobEvent**
   - FastAPI 后端的任务主记录、产物记录和事件记录；`JobFile.path` 只表示 job 内逻辑路径，不对外暴露本地绝对路径。
+- **parsed**
+  - FastAPI 任务状态中的“已拿到 MinerU 终态结果 zip 地址，但尚未进入 DOCX 后处理”的中间态。
+- **process_callback**
+  - FastAPI 后台 stage，负责处理 MinerU callback、校验结果地址并更新在线解析任务状态。
 
 ## 3. 外部表面
 
@@ -60,10 +64,12 @@ MinerU 结构化结果 -> 页面修补 -> 可选英文转中文翻译 -> 模板/
 - 路由：
   - `/api/v1/health`
   - `/api/v1/jobs`
+  - `/api/v1/mineru-callbacks`
   - `/api/v1/templates`
 - 当前支持：
   - 上传 MinerU 输出 zip
   - 上传原始 PDF 并把任务送进 MinerU 进入 `parsing`
+  - 接收 MinerU callback，并把任务推进到 `parsed` / `failed`
   - 查询任务状态、事件、产物
   - 下载 DOCX
   - `direct` / `en2zh` 两条后处理路径
@@ -160,13 +166,19 @@ flowchart TD
   - `source_pdf`
   - `translation_request`
   - `result_docx`
+- 在线解析任务当前额外持久化：
+  - `mineru_batch_id`
+  - `mineru_data_id`
+  - `mineru_callback_seed`
+  - `mineru_status`
+  - `mineru_result_zip_url`
 - 对外只暴露逻辑路径和下载入口，不暴露本地绝对路径。
 
 ## 8. 已知边界
 
 - 当前转换核心仍通过 `bind_runtime()` 反查主模块对象，属于已拆物理文件但尚未完全解耦的状态。
 - `prompt/translation_en2zh.md` 是运行时资源，不应迁进 `.codestable/`。
-- 当前 FastAPI 后端已支持“上传原始 PDF -> 成功提交 MinerU -> 进入 parsing”，但还不支持 callback 回流和结果恢复。
+- 当前 FastAPI 后端已支持“上传原始 PDF -> 成功提交 MinerU -> 接收 callback -> 进入 parsed/failed”，但还不支持下载结果 zip、callback 丢失后的主动恢复和 DOCX 后处理回流。
 - 当前 FastAPI 后端只支持 file backend。
 - 模板接口当前只读，不支持多模板写操作。
 - `translation_request_output` 在底层 CLI 文案和实际行为之间仍有差异：文案说只导出请求并退出，但实际仍会继续调用 LLM。
@@ -184,3 +196,4 @@ flowchart TD
 
 - 2026-05-18：重新分析当前源码，更新为“主入口 + runtime 模块”的现状架构，补充翻译链路、模块结构和 onboard 扫描结论。
 - 2026-05-18：补入 FastAPI 后端表面和相关文档出口，当前仓库已从单一 CLI 工具演进为“CLI 转换核心 + FastAPI 后端壳层”的双表面结构。
+- 2026-05-18：补入 MinerU callback ingress、`parsed/process_callback` 状态语义和在线解析安全边界，明确当前只完成 callback 收口，尚未回流 DOCX 后处理。

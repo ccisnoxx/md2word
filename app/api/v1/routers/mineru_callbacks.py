@@ -2,15 +2,18 @@ from __future__ import annotations
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 
-from app.api.v1.routers.jobs import _detail_response_from_record
 from app.api.dependencies import (
     get_runtime,
     get_trace_id,
+)
+from app.api.mineru_callback_guards import (
     verify_mineru_callback_checksum_for_job,
     verify_mineru_callback_identity,
+    verify_mineru_callback_job_state,
     verify_mineru_callback_request,
     verify_mineru_callback_result_url,
 )
+from app.api.v1.routers.jobs_presenters import build_job_detail_response
 from app.core.runtime import AppRuntime
 from app.schemas.api_v1 import JobDetailResponse
 
@@ -31,6 +34,7 @@ async def receive_mineru_callback(
         normalized_payload = verify_mineru_callback_request(payload)
         verify_mineru_callback_result_url(normalized_payload, runtime)
         job = runtime.command_service.find_job_for_callback(normalized_payload)
+        verify_mineru_callback_job_state(job)
         verify_mineru_callback_checksum_for_job(normalized_payload, job, runtime)
         job, stage_message = runtime.command_service.enqueue_callback(normalized_payload, trace_id, job=job)
     except HTTPException:
@@ -43,4 +47,4 @@ async def receive_mineru_callback(
     background_tasks.add_task(runtime.stage_service.dispatch_message, stage_message.id)
     files = runtime.artifact_service.sort_files(runtime.query_service.list_files(job.id))
     events = runtime.query_service.list_events(job.id)
-    return _detail_response_from_record(runtime, request, job, files, events)
+    return build_job_detail_response(runtime, request, job, files, events)

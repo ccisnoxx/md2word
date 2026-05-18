@@ -260,9 +260,9 @@ class JobFile(BaseModel):
 2. **mineru-callback-ingress-and-guards** — 新增 callback router、payload 归一化、internal/public 两种部署模式、token/query 鉴权、checksum 校验和结果 URL allowlist。
    - 所属模块：callback ingress 模块 / 运行护栏模块
    - 依赖：pdf-upload-and-mineru-submission
-   - 状态：planned
-   - 对应 feature：未启动
-   - 备注：这是整个在线解析链路里风险最高的一条，必须独立实现和验证
+   - 状态：done
+   - 对应 feature：`2026-05-18-mineru-callback-ingress-and-guards`
+   - 备注：已完成；当前 callback 可按 `data_id -> batch_id` 匹配任务，执行 internal/public 鉴权、checksum 与 allowlist 校验，并把 `done/failed` 收口到 `parsed/failed`
 
 3. **mineru-callback-postprocess** — callback 命中 `done + full_zip_url` 后复用当前后处理主链，下载 zip、提取 markdown 和生成 DOCX。
    - 所属模块：callback ingress 模块 / Conversion Library

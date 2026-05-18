@@ -31,6 +31,8 @@ implements: [fastapi-backend-productization]
   - `health/live` 与 `health/ready`。
 - `app/api/v1/routers/jobs.py`
   - MinerU zip 上传、原始 PDF 上传、查询、事件、结果下载、retry、cancel、cleanup-local-files。
+- `app/api/v1/routers/mineru_callbacks.py`
+  - MinerU callback ingress、payload 归一化、internal/public 鉴权和后台 stage 入队。
 - `app/api/v1/routers/templates.py`
   - 默认模板和绑定 YAML 配置的只读接口。
 - `app/services/jobs/`
@@ -75,6 +77,20 @@ flowchart TD
     G --> H["job.status = parsing"]
 ```
 
+### callback ingress
+
+```mermaid
+flowchart TD
+    A["POST /api/v1/mineru-callbacks/result"] --> B["verify identity / normalize payload / checksum / result_url"]
+    B --> C["find job by data_id, then batch_id"]
+    C --> D["enqueue process_callback"]
+    D --> E["BackgroundTasks.dispatch process_callback"]
+    E --> F{"state"}
+    F -->|done + full_zip_url| G["job.status = parsed"]
+    F -->|failed| H["job.status = failed"]
+    F -->|other| I["keep parsing and update mineru_status"]
+```
+
 ## 4. API 合同
 
 ### 4.1 jobs
@@ -96,7 +112,12 @@ flowchart TD
 - `POST /api/v1/jobs/{job_id}/cleanup-local-files`
   - 清理未登记运行态目录，保留本地唯一副本。
 
-### 4.2 templates
+### 4.2 mineru-callbacks
+
+- `POST /api/v1/mineru-callbacks/result`
+  - 接收 MinerU callback；只负责鉴权、归一化、任务匹配和入队 `process_callback`，不直接在 router 中改 job 状态。
+
+### 4.3 templates
 
 - `GET /api/v1/templates`
   - 列出默认模板及绑定配置元数据。
@@ -105,7 +126,7 @@ flowchart TD
 - `GET /api/v1/templates/{template_id}/download`
   - 下载默认模板文件。
 
-### 4.3 health
+### 4.4 health
 
 - `GET /api/v1/health/live`
   - 只确认进程可响应。
@@ -120,6 +141,12 @@ flowchart TD
 - `source_pdf`
 - `translation_request`
 - `result_docx`
+- callback 终态附加字段：
+  - `mineru_batch_id`
+  - `mineru_data_id`
+  - `mineru_callback_seed`
+  - `mineru_status`
+  - `mineru_result_zip_url`
 
 关键约束：
 
@@ -145,6 +172,10 @@ flowchart TD
   - `access`
   - `business`
   - `system`
+- callback 事件：
+  - `mineru_callback_received`
+  - `mineru_callback_processed`
+  - `mineru_callback_failed`
 - `health/ready` 关键字段：
   - `mineru_api_token_configured`
   - `jobs_dir_writable`
@@ -154,10 +185,15 @@ flowchart TD
   - `subscript_config_exists`
   - `translation_prompt_exists`
   - `translation_available`
+- callback 安全边界：
+  - `PUBLIC_DEPLOYMENT_MODE=internal` 时不要求 callback token
+  - `PUBLIC_DEPLOYMENT_MODE=single_tenant_public` 时要求 `X-MinerU-Callback-Token` 或 query token
+  - payload 带 `checksum` 时，按 `uid + mineru_callback_seed + content` 校验
+  - `full_zip_url` 必须满足 `https + MINERU_RESULT_HOST_ALLOWLIST`
 
 ## 8. 已知边界
 
-- 当前后端已经支持“上传原始 PDF -> 成功提交 MinerU -> 任务进入 parsing”，但还不接 MinerU callback。
+- 当前后端已经支持“上传原始 PDF -> 成功提交 MinerU -> 接收 callback -> 任务进入 parsed/failed”，但还不支持下载结果 zip、结果恢复和 callback 成功后的 DOCX 后处理回流。
 - 当前后端只支持 file backend。
 - `retry/cancel/cleanup-local-files` 当前按普通 jobs 访问口径开放，不要求 `X-Admin-Token`。
 - 模板接口当前只读，不支持多模板写操作。

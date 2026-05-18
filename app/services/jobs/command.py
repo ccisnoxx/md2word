@@ -149,8 +149,9 @@ class JobCommandService:
             if job is not None:
                 return job
         for job in self.repository.list_jobs():
-            if batch_id and job.mineru_batch_id == batch_id:
-                return job
             if data_id and job.mineru_data_id == data_id:
+                return job
+        for job in self.repository.list_jobs():
+            if batch_id and job.mineru_batch_id == batch_id:
                 return job
         raise FileNotFoundError("未找到与回调匹配的任务")

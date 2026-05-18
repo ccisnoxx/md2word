@@ -33,56 +33,22 @@ class JobStageService:
         self.logger = logging.getLogger("business")
 
     def enqueue_conversion(self, job: JobRecord, options: ConversionOptions, trace_id: str) -> JobStageMessage:
-        message = JobStageMessage(
-            id=f"msg_{uuid4().hex[:12]}",
-            job_id=job.id,
+        return self._enqueue_stage(
+            job=job,
             stage="convert_package",
             trace_id=trace_id,
+            event_message="转换任务已进入后台队列。",
+            event_details=options.model_dump(mode="json"),
         )
-        self.repository.put_stage_message(message)
-        self.repository.update_job(
-            job.id,
-            status="queued",
-            progress=10,
-            updated_at=utc_now(),
-        )
-        self.repository.append_event(
-            job.id,
-            JobEvent(
-                stage="stage_enqueued",
-                message="转换任务已进入后台队列。",
-                status="accepted",
-                details=options.model_dump(mode="json"),
-                trace_id=trace_id,
-            ),
-        )
-        return message
 
     def enqueue_mineru_submission(self, job: JobRecord, options: ConversionOptions, trace_id: str) -> JobStageMessage:
-        message = JobStageMessage(
-            id=f"msg_{uuid4().hex[:12]}",
-            job_id=job.id,
+        return self._enqueue_stage(
+            job=job,
             stage="submit_to_mineru",
             trace_id=trace_id,
+            event_message="PDF 任务已进入 MinerU 提交队列。",
+            event_details={**options.model_dump(mode="json"), "source_kind": "source_pdf"},
         )
-        self.repository.put_stage_message(message)
-        self.repository.update_job(
-            job.id,
-            status="queued",
-            progress=10,
-            updated_at=utc_now(),
-        )
-        self.repository.append_event(
-            job.id,
-            JobEvent(
-                stage="stage_enqueued",
-                message="PDF 任务已进入 MinerU 提交队列。",
-                status="accepted",
-                details={**options.model_dump(mode="json"), "source_kind": "source_pdf"},
-                trace_id=trace_id,
-            ),
-        )
-        return message
 
     def enqueue_process_callback(self, job: JobRecord, payload: dict, trace_id: str) -> JobStageMessage:
         message = JobStageMessage(
@@ -111,18 +77,119 @@ class JobStageService:
         if message.stage == "process_callback":
             self._dispatch_process_callback(job, message)
             return
-        if message.stage != "convert_package":
-            self.repository.delete_stage_message(message_id)
+        if message.stage == "convert_package":
+            self._dispatch_convert_package(job, message)
             return
 
+        self.repository.delete_stage_message(message_id)
+
+    def replay_pending(self) -> None:
+        for message in self.repository.list_pending_stage_messages():
+            self.dispatch_message(message.id)
+
+    def _enqueue_stage(
+        self,
+        *,
+        job: JobRecord,
+        stage: str,
+        trace_id: str,
+        event_message: str,
+        event_details: dict,
+    ) -> JobStageMessage:
+        message = JobStageMessage(
+            id=f"msg_{uuid4().hex[:12]}",
+            job_id=job.id,
+            stage=stage,
+            trace_id=trace_id,
+        )
+        self.repository.put_stage_message(message)
+        self.repository.update_job(
+            job.id,
+            status="queued",
+            progress=10,
+            updated_at=utc_now(),
+        )
+        self._append_event(
+            job.id,
+            stage="stage_enqueued",
+            message=event_message,
+            status="accepted",
+            details=event_details,
+            trace_id=trace_id,
+        )
+        return message
+
+    def _append_event(
+        self,
+        job_id: str,
+        *,
+        stage: str,
+        message: str,
+        status: str,
+        trace_id: str,
+        error_code: str | None = None,
+        details: dict | None = None,
+    ) -> None:
+        self.repository.append_event(
+            job_id,
+            JobEvent(
+                stage=stage,
+                message=message,
+                status=status,
+                error_code=error_code,
+                details=details or {},
+                trace_id=trace_id,
+            ),
+        )
+
+    def _mark_stage_running(self, message: JobStageMessage) -> None:
         self.repository.update_stage_message(
-            message_id,
+            message.id,
             status="running",
             attempts=message.attempts + 1,
             updated_at=utc_now(),
             error_code=None,
             error_message=None,
         )
+
+    def _mark_stage_failed(self, message: JobStageMessage, *, error_code: str, error_message: str) -> None:
+        self.repository.update_stage_message(
+            message.id,
+            status="failed",
+            updated_at=utc_now(),
+            error_code=error_code,
+            error_message=error_message,
+        )
+
+    def _mark_job_failed(
+        self,
+        job: JobRecord,
+        *,
+        error_code: str,
+        error_message: str,
+        **extra_updates,
+    ) -> None:
+        self.repository.update_job(
+            job.id,
+            status="failed",
+            progress=100,
+            updated_at=utc_now(),
+            error_code=error_code,
+            error_message=error_message,
+            **extra_updates,
+        )
+
+    def _log_stage_failure(self, message: JobStageMessage, job_id: str, error_message: str) -> None:
+        self.logger.exception(
+            "[trace_id=%s job_id=%s stage=%s status=failed] %s",
+            message.trace_id,
+            job_id,
+            message.stage,
+            error_message,
+        )
+
+    def _dispatch_convert_package(self, job: JobRecord, message: JobStageMessage) -> None:
+        self._mark_stage_running(message)
         self.repository.update_job(
             job.id,
             status="converting",
@@ -132,14 +199,12 @@ class JobStageService:
             error_code=None,
             error_message=None,
         )
-        self.repository.append_event(
+        self._append_event(
             job.id,
-            JobEvent(
-                stage="conversion_started",
-                message="开始执行 MinerU 包转换。",
-                status="running",
-                trace_id=message.trace_id,
-            ),
+            stage="conversion_started",
+            message="开始执行 MinerU 包转换。",
+            status="running",
+            trace_id=message.trace_id,
         )
 
         job_paths = build_job_paths(self.settings.data_path, job.id)
@@ -149,15 +214,13 @@ class JobStageService:
             settings=self.settings,
         )
         if job.translation_mode == "en2zh":
-            self.repository.append_event(
+            self._append_event(
                 job.id,
-                JobEvent(
-                    stage="translation_started",
-                    message="开始执行英文转中文翻译。",
-                    status="running",
-                    details={"translation_model": request.translation_model},
-                    trace_id=message.trace_id,
-                ),
+                stage="translation_started",
+                message="开始执行英文转中文翻译。",
+                status="running",
+                details={"translation_model": request.translation_model},
+                trace_id=message.trace_id,
             )
 
         try:
@@ -165,60 +228,31 @@ class JobStageService:
         except ConversionFailure as exc:
             error_code = exc.code
             error_message = exc.message
-            self.repository.update_job(
-                job.id,
-                status="failed",
-                progress=100,
-                updated_at=utc_now(),
-                error_code=error_code,
-                error_message=error_message,
-            )
-            self.repository.update_stage_message(
-                message_id,
-                status="failed",
-                updated_at=utc_now(),
-                error_code=error_code,
-                error_message=error_message,
-            )
+            self._mark_job_failed(job, error_code=error_code, error_message=error_message)
+            self._mark_stage_failed(message, error_code=error_code, error_message=error_message)
             if job.translation_mode == "en2zh" and error_code.startswith("translation_"):
-                self.repository.append_event(
+                self._append_event(
                     job.id,
-                    JobEvent(
-                        stage="translation_failed",
-                        message="翻译阶段失败。",
-                        status="failed",
-                        error_code=error_code,
-                        details={"error_message": error_message},
-                        trace_id=message.trace_id,
-                    ),
-                )
-            self.repository.append_event(
-                job.id,
-                JobEvent(
-                    stage="job_failed",
-                    message="后台转换失败。",
+                    stage="translation_failed",
+                    message="翻译阶段失败。",
                     status="failed",
                     error_code=error_code,
                     details={"error_message": error_message},
                     trace_id=message.trace_id,
-                ),
-            )
-            self.logger.exception(
-                "[trace_id=%s job_id=%s stage=%s status=failed] %s",
-                message.trace_id,
+                )
+            self._append_event(
                 job.id,
-                message.stage,
-                error_message,
+                stage="job_failed",
+                message="后台转换失败。",
+                status="failed",
+                error_code=error_code,
+                details={"error_message": error_message},
+                trace_id=message.trace_id,
             )
+            self._log_stage_failure(message, job.id, error_message)
             return
         except Exception as exc:  # pragma: no cover - final guard
-            self.logger.exception(
-                "[trace_id=%s job_id=%s stage=%s status=failed] %s",
-                message.trace_id,
-                job.id,
-                message.stage,
-                exc,
-            )
+            self._log_stage_failure(message, job.id, str(exc))
             raise
 
         self.repository.upsert_file(job.id, self.artifact_service.build_registered_file("result_docx", job_paths))
@@ -228,18 +262,16 @@ class JobStageService:
                 self.artifact_service.build_registered_file("translation_request", job_paths),
             )
         if job.translation_mode == "en2zh":
-            self.repository.append_event(
+            self._append_event(
                 job.id,
-                JobEvent(
-                    stage="translation_completed",
-                    message="翻译完成，已进入 DOCX 渲染。",
-                    status="succeeded",
-                    details={
-                        "translation_request_recorded": bool(request.translation_request_output and request.translation_request_output.exists()),
-                        "translation_model": request.translation_model,
-                    },
-                    trace_id=message.trace_id,
-                ),
+                stage="translation_completed",
+                message="翻译完成，已进入 DOCX 渲染。",
+                status="succeeded",
+                details={
+                    "translation_request_recorded": bool(request.translation_request_output and request.translation_request_output.exists()),
+                    "translation_model": request.translation_model,
+                },
+                trace_id=message.trace_id,
             )
 
         self.repository.update_job(
@@ -251,20 +283,18 @@ class JobStageService:
             updated_at=utc_now(),
             completed_at=utc_now(),
         )
-        self.repository.append_event(
+        self._append_event(
             job.id,
-            JobEvent(
-                stage="job_completed",
-                message="DOCX 已生成，可供下载。",
-                status="succeeded",
-                details={
-                    "pages": result.pages,
-                    "document_language": result.document_language,
-                },
-                trace_id=message.trace_id,
-            ),
+            stage="job_completed",
+            message="DOCX 已生成，可供下载。",
+            status="succeeded",
+            details={
+                "pages": result.pages,
+                "document_language": result.document_language,
+            },
+            trace_id=message.trace_id,
         )
-        self.repository.delete_stage_message(message_id)
+        self.repository.delete_stage_message(message.id)
         self.logger.info(
             "[trace_id=%s job_id=%s stage=%s status=completed] result=%s",
             message.trace_id,
@@ -273,19 +303,8 @@ class JobStageService:
             job_paths.result_docx,
         )
 
-    def replay_pending(self) -> None:
-        for message in self.repository.list_pending_stage_messages():
-            self.dispatch_message(message.id)
-
     def _dispatch_submit_to_mineru(self, job: JobRecord, message: JobStageMessage) -> None:
-        self.repository.update_stage_message(
-            message.id,
-            status="running",
-            attempts=message.attempts + 1,
-            updated_at=utc_now(),
-            error_code=None,
-            error_message=None,
-        )
+        self._mark_stage_running(message)
         self.repository.update_job(
             job.id,
             status="submitting",
@@ -295,14 +314,12 @@ class JobStageService:
             error_code=None,
             error_message=None,
         )
-        self.repository.append_event(
+        self._append_event(
             job.id,
-            JobEvent(
-                stage="mineru_submit_started",
-                message="开始提交 MinerU。",
-                status="running",
-                trace_id=message.trace_id,
-            ),
+            stage="mineru_submit_started",
+            message="开始提交 MinerU。",
+            status="running",
+            trace_id=message.trace_id,
         )
 
         job_paths = build_job_paths(self.settings.data_path, job.id)
@@ -321,50 +338,35 @@ class JobStageService:
             )
         except Exception as exc:
             error_message = str(exc)
-            self.repository.update_job(
-                job.id,
-                status="failed",
-                progress=100,
-                updated_at=utc_now(),
+            self._mark_job_failed(
+                job,
                 error_code="mineru_submit_failed",
                 error_message=error_message,
             )
-            self.repository.update_stage_message(
-                message.id,
-                status="failed",
-                updated_at=utc_now(),
+            self._mark_stage_failed(
+                message,
                 error_code="mineru_submit_failed",
                 error_message=error_message,
             )
-            self.repository.append_event(
+            self._append_event(
                 job.id,
-                JobEvent(
-                    stage="mineru_submit_failed",
-                    message="MinerU 提交失败。",
-                    status="failed",
-                    error_code="mineru_submit_failed",
-                    details={"error_message": error_message},
-                    trace_id=message.trace_id,
-                ),
+                stage="mineru_submit_failed",
+                message="MinerU 提交失败。",
+                status="failed",
+                error_code="mineru_submit_failed",
+                details={"error_message": error_message},
+                trace_id=message.trace_id,
             )
-            self.repository.append_event(
+            self._append_event(
                 job.id,
-                JobEvent(
-                    stage="job_failed",
-                    message="后台转换失败。",
-                    status="failed",
-                    error_code="mineru_submit_failed",
-                    details={"error_message": error_message},
-                    trace_id=message.trace_id,
-                ),
+                stage="job_failed",
+                message="后台转换失败。",
+                status="failed",
+                error_code="mineru_submit_failed",
+                details={"error_message": error_message},
+                trace_id=message.trace_id,
             )
-            self.logger.exception(
-                "[trace_id=%s job_id=%s stage=%s status=failed] %s",
-                message.trace_id,
-                job.id,
-                message.stage,
-                error_message,
-            )
+            self._log_stage_failure(message, job.id, error_message)
             return
 
         self.repository.update_job(
@@ -377,15 +379,13 @@ class JobStageService:
             mineru_callback_seed=callback_seed,
             mineru_status="submitted",
         )
-        self.repository.append_event(
+        self._append_event(
             job.id,
-            JobEvent(
-                stage="mineru_submit_succeeded",
-                message="MinerU 提交成功，等待外部回调。",
-                status="succeeded",
-                details={"batch_id": batch_id, "data_id": job.id},
-                trace_id=message.trace_id,
-            ),
+            stage="mineru_submit_succeeded",
+            message="MinerU 提交成功，等待外部回调。",
+            status="succeeded",
+            details={"batch_id": batch_id, "data_id": job.id},
+            trace_id=message.trace_id,
         )
         self.repository.delete_stage_message(message.id)
         self.logger.info(
@@ -398,19 +398,23 @@ class JobStageService:
         )
 
     def _dispatch_process_callback(self, job: JobRecord, message: JobStageMessage) -> None:
-        self.repository.update_stage_message(
-            message.id,
-            status="running",
-            attempts=message.attempts + 1,
-            updated_at=utc_now(),
-            error_code=None,
-            error_message=None,
-        )
+        self._mark_stage_running(message)
         payload = dict(message.payload)
         state = str(payload.get("state") or "")
         full_zip_url = payload.get("full_zip_url")
         batch_id = payload.get("batch_id")
         data_id = payload.get("data_id")
+
+        if job.status not in {"parsing", "parsed", "failed"}:
+            self.repository.delete_stage_message(message.id)
+            self.logger.warning(
+                "[trace_id=%s job_id=%s stage=%s status=skipped] unsupported job status for callback: %s",
+                message.trace_id,
+                job.id,
+                message.stage,
+                job.status,
+            )
+            return
 
         if full_zip_url:
             self._validate_mineru_result_url(str(full_zip_url))
@@ -444,21 +448,19 @@ class JobStageService:
             event_status = "failed"
 
         self.repository.update_job(job.id, **updates)
-        self.repository.append_event(
+        self._append_event(
             job.id,
-            JobEvent(
-                stage=event_stage,
-                message=event_message,
-                status=event_status,
-                error_code="mineru_failed" if state == "failed" else None,
-                details={
-                    "batch_id": batch_id,
-                    "data_id": data_id,
-                    "state": state,
-                    "full_zip_url": full_zip_url,
-                },
-                trace_id=message.trace_id,
-            ),
+            stage=event_stage,
+            message=event_message,
+            status=event_status,
+            error_code="mineru_failed" if state == "failed" else None,
+            details={
+                "batch_id": batch_id,
+                "data_id": data_id,
+                "state": state,
+                "full_zip_url": full_zip_url,
+            },
+            trace_id=message.trace_id,
         )
         self.repository.delete_stage_message(message.id)
         self.logger.info(
