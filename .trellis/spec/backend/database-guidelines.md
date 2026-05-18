@@ -18,6 +18,10 @@ Current storage layout:
 - `data/jobs/<job_id>/files.json` for registered artifacts
 - `data/jobs/<job_id>/events.jsonl` for append-only events
 - `data/stage_messages/<message_id>.json` for background stage spool messages
+- `data/config/term_rules_store.json` for live runtime term-rule truth
+- `data/config/runtime_subscripts_dictionary.yaml` for generated conversion
+  compatibility YAML
+- `data/config/template_state.json` for runtime default-template state
 
 ---
 
@@ -25,6 +29,9 @@ Current storage layout:
 
 - Repository methods return typed Pydantic models, not raw dictionaries.
   Examples: `JobRecord.model_validate(...)`, `JobEvent.model_validate_json(...)`.
+- When one domain needs both a versioned seed and a runtime mutable store, treat
+  the runtime store as the live API truth and the versioned file as bootstrap /
+  sync material, not as something routers write directly.
 - Reads are intentionally simple and in-memory:
   - `FileJobRepository.list_jobs()` scans `jobs/*/job.json`
   - `JobQueryService.list_jobs()` applies filtering, sorting, and pagination in
@@ -62,6 +69,11 @@ behavior that is not already expressed in `JobRepositoryProtocol` /
   this repo.
 - Schema evolution currently happens by updating Pydantic models and the file
   repository together.
+- Some backend domains may use a three-layer file boundary instead of a single
+  JSON record:
+  - versioned seed file
+  - live runtime JSON store
+  - generated compatibility/runtime export file
 - When storage shape changes, update all of these in the same change:
   - `app/core/job_models.py`
   - `app/repositories/file_job_repository.py`

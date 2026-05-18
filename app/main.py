@@ -15,12 +15,17 @@ from app.core.config import Settings
 from app.core.logging import configure_logging
 from app.core.runtime import AppRuntime
 from app.repositories.file_job_repository import FileJobRepository
+from app.repositories.file_term_rule_repository import FileTermRuleRepository
 from app.services.health_service import HealthService
 from app.services.jobs.artifacts import JobArtifactService
 from app.services.jobs.command import JobCommandService
 from app.services.jobs.lifecycle import JobLifecycleService
 from app.services.jobs.query import JobQueryService
 from app.services.jobs.stage import JobStageService
+from app.services.term_rules.bootstrap import TermRuleBootstrapService
+from app.services.term_rules.import_validation import TermRuleImportValidationService
+from app.services.term_rules.service import TermRuleService
+from app.services.term_rules.sync_files import TermRuleFileSyncService
 from app.services.templates.read_service import TemplateReadService
 
 
@@ -30,9 +35,36 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
     repository = FileJobRepository(resolved_settings.data_path)
     health_service = HealthService(resolved_settings)
     template_read_service = TemplateReadService(resolved_settings)
+    term_rule_repository = FileTermRuleRepository(resolved_settings.term_rules_store_file)
+    term_rule_service = TermRuleService(
+        term_rule_repository,
+        resolved_settings.term_rules_runtime_yaml_file,
+        resolved_settings.term_rules_seed_file,
+    )
+    term_rule_import_validation_service = TermRuleImportValidationService()
+    term_rule_file_sync_service = TermRuleFileSyncService(
+        term_rule_repository,
+        resolved_settings.term_rules_runtime_yaml_file,
+        resolved_settings.term_rules_seed_file,
+        repository_backend="file",
+    )
+    TermRuleBootstrapService(
+        term_rule_repository,
+        resolved_settings.term_rules_runtime_yaml_file,
+        resolved_settings.term_rules_seed_file,
+        repository_backend="file",
+    ).bootstrap()
+    template_read_service.get_default_template_id()
     artifact_service = JobArtifactService()
     conversion_entrypoint = create_conversion_entrypoint()
-    stage_service = JobStageService(resolved_settings, repository, conversion_entrypoint, artifact_service)
+    stage_service = JobStageService(
+        resolved_settings,
+        repository,
+        conversion_entrypoint,
+        artifact_service,
+        resolve_template_path=template_read_service.resolve_job_template_path,
+        resolve_subscript_config_path=lambda: resolved_settings.subscript_config_path,
+    )
     command_service = JobCommandService(resolved_settings, repository, stage_service, artifact_service)
     lifecycle_service = JobLifecycleService(
         repository=repository,
@@ -46,6 +78,9 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         repository=repository,
         health_service=health_service,
         template_read_service=template_read_service,
+        term_rule_service=term_rule_service,
+        term_rule_import_validation_service=term_rule_import_validation_service,
+        term_rule_file_sync_service=term_rule_file_sync_service,
         artifact_service=artifact_service,
         command_service=command_service,
         lifecycle_service=lifecycle_service,

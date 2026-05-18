@@ -7,6 +7,8 @@ import zipfile
 from pathlib import Path
 from unittest import TestCase
 
+import yaml
+
 VENDOR_DIR = Path(__file__).resolve().parents[1] / ".python_packages"
 if VENDOR_DIR.exists():
     vendor_path = str(VENDOR_DIR)
@@ -22,12 +24,17 @@ from app.core.job_paths import build_job_paths, ensure_job_dirs
 from app.core.runtime import AppRuntime
 from app.main import create_app
 from app.repositories.file_job_repository import FileJobRepository
+from app.repositories.file_term_rule_repository import FileTermRuleRepository
 from app.services.health_service import HealthService
 from app.services.jobs.artifacts import JobArtifactService
 from app.services.jobs.command import JobCommandService
 from app.services.jobs.lifecycle import JobLifecycleService
 from app.services.jobs.query import JobQueryService
 from app.services.jobs.stage import JobStageService
+from app.services.term_rules.bootstrap import TermRuleBootstrapService
+from app.services.term_rules.import_validation import TermRuleImportValidationService
+from app.services.term_rules.service import TermRuleService
+from app.services.term_rules.sync_files import TermRuleFileSyncService
 from app.services.templates.read_service import TemplateReadService
 
 
@@ -106,6 +113,9 @@ def build_test_runtime(
     mineru_callback_url: str = "",
     mineru_uid: str = "",
     mineru_result_host_allowlist: str = "mineru.net,cdn-mineru.openxlab.org.cn",
+    admin_token: str = "",
+    templates_manifest_path: str | None = None,
+    term_rules_seed_path: str | None = None,
 ) -> AppRuntime:
     settings = Settings(
         _env_file=None,
@@ -120,10 +130,33 @@ def build_test_runtime(
         mineru_callback_url=mineru_callback_url,
         mineru_uid=mineru_uid,
         mineru_result_host_allowlist=mineru_result_host_allowlist,
+        admin_token=admin_token,
+        **({"templates_manifest_path": templates_manifest_path} if templates_manifest_path else {}),
+        **({"term_rules_seed_path": term_rules_seed_path} if term_rules_seed_path else {}),
     )
     repository = FileJobRepository(settings.data_path)
     health_service = HealthService(settings)
     template_read_service = TemplateReadService(settings)
+    term_rule_repository = FileTermRuleRepository(settings.term_rules_store_file)
+    term_rule_service = TermRuleService(
+        term_rule_repository,
+        settings.term_rules_runtime_yaml_file,
+        settings.term_rules_seed_file,
+    )
+    term_rule_import_validation_service = TermRuleImportValidationService()
+    term_rule_file_sync_service = TermRuleFileSyncService(
+        term_rule_repository,
+        settings.term_rules_runtime_yaml_file,
+        settings.term_rules_seed_file,
+        repository_backend="file",
+    )
+    TermRuleBootstrapService(
+        term_rule_repository,
+        settings.term_rules_runtime_yaml_file,
+        settings.term_rules_seed_file,
+        repository_backend="file",
+    ).bootstrap()
+    template_read_service.get_default_template_id()
     conversion_service = FakeConversionService()
     artifact_service = JobArtifactService()
     fake_mineru_client = FakeMinerUClient()
@@ -133,6 +166,8 @@ def build_test_runtime(
         conversion_service,
         artifact_service,
         mineru_client_factory=lambda: fake_mineru_client,
+        resolve_template_path=template_read_service.resolve_job_template_path,
+        resolve_subscript_config_path=lambda: settings.subscript_config_path,
     )
     stage_service.fake_mineru_client = fake_mineru_client
     command_service = JobCommandService(settings, repository, stage_service, artifact_service)
@@ -148,6 +183,9 @@ def build_test_runtime(
         repository=repository,
         health_service=health_service,
         template_read_service=template_read_service,
+        term_rule_service=term_rule_service,
+        term_rule_import_validation_service=term_rule_import_validation_service,
+        term_rule_file_sync_service=term_rule_file_sync_service,
         artifact_service=artifact_service,
         command_service=command_service,
         lifecycle_service=lifecycle_service,
@@ -179,6 +217,11 @@ def build_callback_payload(*, batch_id: str, data_id: str, state: str, full_zip_
     if uid is not None:
         payload["uid"] = uid
     return payload, content
+
+
+def write_templates_manifest(path: Path, entries: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump({"templates": entries}, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
 
 class FastAPIJobsBackendTests(TestCase):
@@ -223,7 +266,7 @@ class FastAPIJobsBackendTests(TestCase):
                 self.assertEqual(detail["template"]["file_name"], "datasheet_template.docx")
                 self.assertIsNotNone(detail["template"]["sha256"])
                 self.assertEqual(detail["layout_config"]["file_name"], "datasheet_template.yaml")
-                self.assertEqual(detail["subscript_config"]["file_name"], "subscripts_dictionary.yaml")
+                self.assertEqual(detail["subscript_config"]["file_name"], "runtime_subscripts_dictionary.yaml")
 
     def test_template_download_returns_docx(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -237,6 +280,205 @@ class FastAPIJobsBackendTests(TestCase):
             response.headers["content-type"],
         )
         self.assertGreater(len(response.content), 0)
+
+    def test_templates_manifest_supports_multiple_visible_templates_and_admin_default_switch(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            alt_template_path = temp_root / "alt_template.docx"
+            alt_template_path.write_bytes(b"alt-docx")
+            manifest_path = temp_root / "templates_manifest.yaml"
+            repo_root = Path(__file__).resolve().parents[1]
+            write_templates_manifest(
+                manifest_path,
+                [
+                    {
+                        "id": "default",
+                        "name": "Default Template",
+                        "description": "default",
+                        "enabled": True,
+                        "is_default_seed": True,
+                        "template_path": str((repo_root / "template" / "datasheet_template.docx").resolve()),
+                        "layout_config_path": str((repo_root / "template_configs" / "datasheet_template.yaml").resolve()),
+                    },
+                    {
+                        "id": "alt",
+                        "name": "Alt Template",
+                        "description": "alt",
+                        "enabled": True,
+                        "is_default_seed": False,
+                        "template_path": str(alt_template_path.resolve()),
+                        "layout_config_path": str((repo_root / "template_configs" / "datasheet_template.yaml").resolve()),
+                    },
+                ],
+            )
+
+            runtime = build_test_runtime(
+                temp_root,
+                admin_token="secret-admin",
+                templates_manifest_path=str(manifest_path),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                list_response = client.get("/api/v1/templates")
+                self.assertEqual(list_response.status_code, 200)
+                items = list_response.json()["items"]
+                self.assertEqual([item["id"] for item in items], ["default", "alt"])
+                self.assertTrue(items[0]["is_default"])
+                self.assertFalse(items[1]["is_default"])
+
+                denied = client.patch("/api/v1/templates/alt/default")
+                self.assertEqual(denied.status_code, 403)
+
+                switch_response = client.patch(
+                    "/api/v1/templates/alt/default",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(switch_response.status_code, 200)
+                self.assertEqual(switch_response.json()["id"], "alt")
+                self.assertTrue(switch_response.json()["is_default"])
+
+                refreshed = client.get("/api/v1/templates").json()["items"]
+                self.assertFalse(refreshed[0]["is_default"])
+                self.assertTrue(refreshed[1]["is_default"])
+
+    def test_term_rule_categories_export_and_simulate_are_available(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = create_app(build_test_runtime(Path(temp_dir)))
+            with TestClient(app) as client:
+                categories_response = client.get("/api/v1/term-rule-categories")
+                self.assertEqual(categories_response.status_code, 200)
+                self.assertGreater(len(categories_response.json()["items"]), 0)
+
+                export_response = client.get("/api/v1/term-rules/export")
+                self.assertEqual(export_response.status_code, 200)
+                self.assertIn("schema_version: 2", export_response.json()["yaml_text"])
+
+                simulate_response = client.post(
+                    "/api/v1/term-rules/simulate",
+                    json={"text": "VIN VOUT"},
+                )
+                self.assertEqual(simulate_response.status_code, 200)
+                self.assertIn("V<sub>IN</sub>", simulate_response.json()["html_preview"])
+
+    def test_term_rule_import_and_sync_files_use_admin_boundary_and_replace_live_store(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir), admin_token="secret-admin")
+            app = create_app(runtime)
+            payload = {
+                "yaml_text": (
+                    "schema_version: 2\n"
+                    "categories:\n"
+                    "  voltage_terms:\n"
+                    "    name: 电压相关\n"
+                    "    priority: 10\n"
+                    "    enabled: true\n"
+                    "    description: ''\n"
+                    "rules:\n"
+                    "  - source_term: VIN\n"
+                    "    category: voltage_terms\n"
+                    "    segments:\n"
+                    "      - segment_text: V\n"
+                    "        render_type: plain\n"
+                    "      - segment_text: IN\n"
+                    "        render_type: subscript\n"
+                    "    apply_scope: both\n"
+                    "    case_sensitive: true\n"
+                    "    enabled: true\n"
+                    "    priority: 10\n"
+                    "    notes: ''\n"
+                )
+            }
+            with TestClient(app) as client:
+                validate_response = client.post("/api/v1/term-rules/import/validate", json=payload)
+                self.assertEqual(validate_response.status_code, 200)
+                self.assertTrue(validate_response.json()["valid"])
+
+                denied_import = client.post("/api/v1/term-rules/import", json=payload)
+                self.assertEqual(denied_import.status_code, 403)
+
+                import_response = client.post(
+                    "/api/v1/term-rules/import",
+                    json=payload,
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(import_response.status_code, 200)
+                self.assertEqual(import_response.json()["total"], 1)
+
+                export_response = client.get("/api/v1/term-rules/export")
+                self.assertIn("source_term: VIN", export_response.json()["yaml_text"])
+
+                sync_response = client.post(
+                    "/api/v1/term-rules/sync-files",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(sync_response.status_code, 200)
+                runtime_yaml_path = Path(sync_response.json()["runtime_yaml_path"])
+                self.assertTrue(runtime_yaml_path.exists())
+                self.assertIn("subscript_rules", runtime_yaml_path.read_text(encoding="utf-8"))
+
+    def test_jobs_accept_visible_template_id_and_fallback_to_runtime_default(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            alt_template_path = temp_root / "alt_template.docx"
+            alt_template_path.write_bytes(b"alt-docx")
+            manifest_path = temp_root / "templates_manifest.yaml"
+            repo_root = Path(__file__).resolve().parents[1]
+            write_templates_manifest(
+                manifest_path,
+                [
+                    {
+                        "id": "default",
+                        "name": "Default Template",
+                        "description": "default",
+                        "enabled": True,
+                        "is_default_seed": True,
+                        "template_path": str((repo_root / "template" / "datasheet_template.docx").resolve()),
+                        "layout_config_path": str((repo_root / "template_configs" / "datasheet_template.yaml").resolve()),
+                    },
+                    {
+                        "id": "alt",
+                        "name": "Alt Template",
+                        "description": "alt",
+                        "enabled": True,
+                        "is_default_seed": False,
+                        "template_path": str(alt_template_path.resolve()),
+                        "layout_config_path": str((repo_root / "template_configs" / "datasheet_template.yaml").resolve()),
+                    },
+                ],
+            )
+
+            runtime = build_test_runtime(
+                temp_root,
+                admin_token="secret-admin",
+                templates_manifest_path=str(manifest_path),
+            )
+            runtime.template_read_service.set_default_template("alt")
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                explicit_response = client.post(
+                    "/api/v1/jobs",
+                    files={"package": ("mineru-output.zip", make_zip_bytes(), "application/zip")},
+                    data={"translation_mode": "direct", "template_id": "alt"},
+                )
+                self.assertEqual(explicit_response.status_code, 201)
+                explicit_job_id = explicit_response.json()["job_id"]
+                explicit_detail = client.get(f"/api/v1/jobs/{explicit_job_id}").json()
+                self.assertEqual(explicit_detail["template_id"], "alt")
+
+                default_response = client.post(
+                    "/api/v1/jobs",
+                    files={"package": ("mineru-output.zip", make_zip_bytes(), "application/zip")},
+                    data={"translation_mode": "direct"},
+                )
+                self.assertEqual(default_response.status_code, 201)
+                default_job_id = default_response.json()["job_id"]
+                default_detail = client.get(f"/api/v1/jobs/{default_job_id}").json()
+                self.assertEqual(default_detail["template_id"], "alt")
+
+            fake_service = runtime.stage_service.conversion_entrypoint
+            self.assertEqual(len(fake_service.requests), 2)
+            self.assertEqual(fake_service.requests[0].template_path, alt_template_path.resolve())
+            self.assertEqual(fake_service.requests[1].template_path, alt_template_path.resolve())
 
     def test_upload_zip_runs_background_conversion_and_downloads_docx(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -12,13 +12,15 @@ def build_job_conversion_request(
     job: JobRecord,
     job_paths: JobPaths,
     settings: Settings,
+    template_path: Path | None = None,
+    subscript_config_path: Path | None = None,
 ) -> ConversionRequest:
     return ConversionRequest(
         job_id=job.id,
         package_path=job_paths.source_package,
         output_path=job_paths.result_docx,
-        template_path=settings.default_template_path,
-        subscript_config_path=settings.subscript_config_path,
+        template_path=template_path if template_path is not None else settings.default_template_path,
+        subscript_config_path=subscript_config_path if subscript_config_path is not None else settings.subscript_config_path,
         translation_mode=job.translation_mode,
         document_language=job.document_language,
         use_mineru_header_footer=job.use_mineru_header_footer,

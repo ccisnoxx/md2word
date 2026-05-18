@@ -63,7 +63,7 @@ MinerU callback 不在这组路由下，单独见 [mineru-callbacks.md](/Users/s
 | 参数 | 必填 | 说明 |
 |---|---|---|
 | `package` | 是 | MinerU 输出 zip |
-| `template_id` | 否 | 当前仅支持默认模板，留空即可 |
+| `template_id` | 否 | 任意可见且启用的模板 ID；留空时回退到当前运行态默认模板 |
 | `translation_mode` | 否 | `direct` / `en2zh` |
 | `document_language` | 否 | `auto` / `zh` / `en` |
 | `use_mineru_header_footer` | 否 | 是否覆盖模板页眉页脚 |
@@ -94,7 +94,7 @@ MinerU callback 不在这组路由下，单独见 [mineru-callbacks.md](/Users/s
 | 参数 | 必填 | 说明 |
 |---|---|---|
 | `pdf` | 是 | 原始 PDF 文件 |
-| `template_id` | 否 | 当前仅支持默认模板，留空即可 |
+| `template_id` | 否 | 任意可见且启用的模板 ID；留空时回退到当前运行态默认模板 |
 | `translation_mode` | 否 | `direct` / `en2zh` |
 | `document_language` | 否 | `auto` / `zh` / `en` |
 | `use_mineru_header_footer` | 否 | 是否覆盖模板页眉页脚 |

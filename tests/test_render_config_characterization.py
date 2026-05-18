@@ -167,6 +167,31 @@ class RenderConfigCharacterizationTests(unittest.TestCase):
         self.assertEqual([rule.source for rule in replacer.rules], ["VIN", "V"])
         self.assertEqual(replacer.replace_text("VIN V"), "PIN VOLT")
 
+    def test_terminology_replacer_respects_rules_meta_apply_scope_and_case_sensitivity(self):
+        config_path = Path(__file__)
+        raw_config = {
+            "case_sensitive": True,
+            "categories": {
+                "mixed": {"priority": 10},
+            },
+            "subscript_rules": {
+                "mixed": {
+                    "VIN": "V<sub>IN</sub>",
+                    "vout": "V<sub>OUT</sub>",
+                }
+            },
+            "rules_meta": {
+                "VIN": {"apply_scope": "table", "case_sensitive": True, "enabled": True, "priority": 10},
+                "vout": {"apply_scope": "markdown", "case_sensitive": False, "enabled": True, "priority": 20},
+            },
+        }
+
+        with mock.patch.object(self.module.yaml, "safe_load", return_value=raw_config):
+            replacer = self.module.TerminologyReplacer(config_path)
+
+        self.assertEqual(replacer.replace_text("VIN vout"), "VIN V<sub>OUT</sub>")
+        self.assertEqual(replacer._replace_text_for_output_mode("VIN vOut", "table"), "V<sub>IN</sub> vOut")
+
     def test_resolve_document_language_detects_english_from_page_content(self):
         pages = [
             self.module.PageData(

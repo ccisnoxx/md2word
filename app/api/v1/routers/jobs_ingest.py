@@ -31,7 +31,13 @@ def _build_conversion_options(
 ) -> ConversionOptions:
     normalized_translation_mode = (_normalize_optional_text(translation_mode) or runtime.settings.default_translation_mode).lower()
     normalized_document_language = (_normalize_optional_text(document_language) or "auto").lower()
-    normalized_template_id = _normalize_optional_text(template_id)
+    try:
+        normalized_template_id = runtime.template_read_service.resolve_selected_template_id(_normalize_optional_text(template_id))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
 
     if normalized_translation_mode not in {"direct", "en2zh"}:
         raise HTTPException(
@@ -42,11 +48,6 @@ def _build_conversion_options(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="document_language 仅支持 auto、zh、en。",
-        )
-    if normalized_template_id not in {None, runtime.settings.default_template_id}:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"当前只支持默认模板 `{runtime.settings.default_template_id}`。",
         )
 
     return ConversionOptions(

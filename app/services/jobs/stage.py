@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+from pathlib import Path
 from typing import Callable
 from uuid import uuid4
 
@@ -24,12 +25,16 @@ class JobStageService:
         conversion_entrypoint: ConversionEntrypoint,
         artifact_service: JobArtifactService,
         mineru_client_factory: Callable[[], MinerUClient] | None = None,
+        resolve_template_path: Callable[[str | None], Path | None] | None = None,
+        resolve_subscript_config_path: Callable[[], Path | None] | None = None,
     ) -> None:
         self.settings = settings
         self.repository = repository
         self.conversion_entrypoint = conversion_entrypoint
         self.artifact_service = artifact_service
         self.mineru_client_factory = mineru_client_factory or self._build_mineru_client
+        self.resolve_template_path = resolve_template_path or (lambda _template_id: self.settings.default_template_path)
+        self.resolve_subscript_config_path = resolve_subscript_config_path or (lambda: self.settings.subscript_config_path)
         self.logger = logging.getLogger("business")
 
     def enqueue_conversion(self, job: JobRecord, options: ConversionOptions, trace_id: str) -> JobStageMessage:
@@ -212,6 +217,8 @@ class JobStageService:
             job=job,
             job_paths=job_paths,
             settings=self.settings,
+            template_path=self.resolve_template_path(job.template_id),
+            subscript_config_path=self.resolve_subscript_config_path(),
         )
         if job.translation_mode == "en2zh":
             self._append_event(

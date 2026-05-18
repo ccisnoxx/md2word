@@ -29,6 +29,8 @@ class ReplacementRule:
     pattern: str
     replacement: str
     priority: int = 100
+    apply_scope: str = "both"
+    enabled: bool = True
     regex: re.Pattern[str] | None = field(default=None, repr=False, compare=False)
 
 
@@ -43,11 +45,7 @@ class TerminologyReplacer:
         if not text or not self.rules:
             return text
 
-        replaced = text
-        for rule in self.rules:
-            assert rule.regex is not None
-            replaced = rule.regex.sub(rule.replacement, replaced)
-        return replaced
+        return self._replace_text_for_output_mode(text, "markdown")
 
     def replace_html(self, html: str | None) -> str | None:
         if not html or not self.rules:
@@ -61,7 +59,7 @@ class TerminologyReplacer:
                 continue
 
             original_text = str(text_node)
-            replaced_text = self.replace_text(original_text)
+            replaced_text = self._replace_text_for_output_mode(original_text, "table")
             if replaced_text == original_text:
                 continue
 
@@ -80,8 +78,8 @@ class TerminologyReplacer:
             return
 
         case_sensitive = bool(config.get("case_sensitive", True))
-        regex_flags = 0 if case_sensitive else re.IGNORECASE
         category_meta = config.get("categories", {})
+        rules_meta = config.get("rules_meta", {})
         pattern_builder = _runtime_value("build_replacement_pattern", build_replacement_pattern)
 
         for category, items in rules_data.items():
@@ -98,7 +96,12 @@ class TerminologyReplacer:
                 if not source_text or not replacement_text:
                     continue
 
+                meta = rules_meta.get(source_text, {}) if isinstance(rules_meta, dict) else {}
+                enabled = bool(meta.get("enabled", True))
+                if not enabled:
+                    continue
                 pattern = pattern_builder(source_text)
+                regex_flags = 0 if bool(meta.get("case_sensitive", case_sensitive)) else re.IGNORECASE
                 try:
                     compiled = re.compile(pattern, regex_flags)
                 except re.error:
@@ -109,7 +112,9 @@ class TerminologyReplacer:
                         source=source_text,
                         pattern=pattern,
                         replacement=replacement_text,
-                        priority=priority,
+                        priority=int(meta.get("priority", priority)),
+                        apply_scope=str(meta.get("apply_scope", "both") or "both").lower(),
+                        enabled=enabled,
                         regex=compiled,
                     )
                 )
@@ -137,6 +142,23 @@ class TerminologyReplacer:
         for node in reversed(contents):
             anchor.insert_after(node)
         anchor.extract()
+
+    def _replace_text_for_output_mode(self, text: str, output_mode: str) -> str:
+        replaced = text
+        for rule in self.rules:
+            assert rule.regex is not None
+            if not rule.enabled or not self._rule_applies_to_output_mode(rule, output_mode):
+                continue
+            replaced = rule.regex.sub(rule.replacement, replaced)
+        return replaced
+
+    @staticmethod
+    def _rule_applies_to_output_mode(rule: ReplacementRule, output_mode: str) -> bool:
+        if rule.apply_scope == "both":
+            return True
+        if output_mode == "markdown":
+            return rule.apply_scope == "markdown"
+        return rule.apply_scope == "table"
 
 
 def find_subscript_config_path(default_candidates: tuple[Path, ...]) -> Path | None:

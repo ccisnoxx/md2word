@@ -146,3 +146,95 @@ class TemplateDetailResponse(TemplateListItemResponse):
 
 class TemplateListResponse(BaseModel):
     items: list[TemplateListItemResponse]
+
+
+class TermRuleCategoryListItemResponse(BaseModel):
+    id: str
+    code: str
+    name: str
+    priority: int
+    enabled: bool
+    description: str
+    rule_count: int
+    enabled_rule_count: int
+
+
+class TermRuleCategoryListResponse(BaseModel):
+    items: list[TermRuleCategoryListItemResponse]
+
+
+class TermRuleSegmentResponse(BaseModel):
+    seq: int
+    segment_text: str
+    render_type: str
+
+
+class TermRuleResponse(BaseModel):
+    id: str
+    category_id: str
+    category_code: str
+    category_name: str
+    source_term: str
+    rule_mode: str
+    apply_scope: str
+    case_sensitive: bool
+    enabled: bool
+    priority: int
+    segments: list[TermRuleSegmentResponse]
+    custom_html: str | None = None
+    custom_markdown: str | None = None
+    notes: str
+
+
+class TermRuleListResponse(BaseModel):
+    items: list[TermRuleResponse]
+    page: int
+    page_size: int
+    total: int
+
+
+class RuleExportResponse(BaseModel):
+    yaml_text: str
+
+
+class RuleImportRequest(BaseModel):
+    yaml_text: str
+
+
+class RuleSimulationRequest(BaseModel):
+    text: str
+
+
+class RuleSimulationResponse(BaseModel):
+    original: str
+    markdown_preview: str
+    html_preview: str
+
+
+class TermRuleImportValidationFindingResponse(BaseModel):
+    code: str
+    message: str
+    path: str | None = None
+
+
+class TermRuleImportValidationSummaryResponse(BaseModel):
+    category_count: int
+    rule_count: int
+    error_count: int
+    warning_count: int
+
+
+class TermRuleImportValidationReportResponse(BaseModel):
+    valid: bool
+    summary: TermRuleImportValidationSummaryResponse
+    errors: list[TermRuleImportValidationFindingResponse]
+    warnings: list[TermRuleImportValidationFindingResponse]
+
+
+class TermRuleFileSyncResponse(BaseModel):
+    repository_backend: str
+    category_count: int
+    rule_count: int
+    bootstrap_seed_path: str
+    runtime_yaml_path: str
+    warnings: list[str]
