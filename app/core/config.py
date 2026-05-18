@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     translation_max_pages: int = 20
     translation_max_chars: int = 60_000
     default_template_id: str = "default"
+    templates_manifest_path: str = "template_configs/templates_manifest.yaml"
+    template_state_path: str = "data/config/template_state.json"
+    term_rules_seed_path: str = "template_configs/term_rules.v2.yaml"
+    term_rules_store_path: str = "data/config/term_rules_store.json"
+    term_rules_runtime_yaml_path: str = "data/config/runtime_subscripts_dictionary.yaml"
 
     @property
     def root_dir(self) -> Path:
@@ -62,6 +67,22 @@ class Settings(BaseSettings):
     @property
     def tmp_dir(self) -> Path:
         return self.data_path / "tmp"
+
+    def _resolve_config_path(self, raw_path: str) -> Path:
+        candidate = Path(raw_path)
+        if candidate.is_absolute():
+            return candidate
+        return (self.root_dir / candidate).resolve()
+
+    def _resolve_runtime_data_path(self, raw_path: str, fallback_relative_to_data: str) -> Path:
+        candidate = Path(raw_path)
+        if candidate.is_absolute():
+            return candidate
+        raw_text = raw_path.strip()
+        if raw_text.startswith("data/"):
+            suffix = raw_text[len("data/"):]
+            return (self.data_path / suffix).resolve()
+        return (self.data_path / fallback_relative_to_data).resolve()
 
     @property
     def cors_origins(self) -> list[str]:
@@ -84,8 +105,29 @@ class Settings(BaseSettings):
     @property
     def subscript_config_candidates(self) -> tuple[Path, ...]:
         return (
+            self.term_rules_runtime_yaml_file,
             self.root_dir / "template_configs" / "subscripts_dictionary.yaml",
         )
+
+    @property
+    def templates_manifest_file(self) -> Path:
+        return self._resolve_config_path(self.templates_manifest_path)
+
+    @property
+    def template_state_file(self) -> Path:
+        return self._resolve_runtime_data_path(self.template_state_path, "config/template_state.json")
+
+    @property
+    def term_rules_seed_file(self) -> Path:
+        return self._resolve_config_path(self.term_rules_seed_path)
+
+    @property
+    def term_rules_store_file(self) -> Path:
+        return self._resolve_runtime_data_path(self.term_rules_store_path, "config/term_rules_store.json")
+
+    @property
+    def term_rules_runtime_yaml_file(self) -> Path:
+        return self._resolve_runtime_data_path(self.term_rules_runtime_yaml_path, "config/runtime_subscripts_dictionary.yaml")
 
     @property
     def default_template_path(self) -> Path | None:

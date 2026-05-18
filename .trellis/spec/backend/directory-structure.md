@@ -48,7 +48,8 @@ tests/
   - Shared runtime-level primitives: settings, logging, domain records,
     filesystem path helpers, and pure validation helpers.
   - Examples: `app/core/config.py`, `app/core/job_models.py`,
-    `app/core/job_paths.py`, `app/core/mineru_callback.py`.
+    `app/core/job_paths.py`, `app/core/mineru_callback.py`,
+    `app/core/rule_models.py`.
 - `app/api/`
   - FastAPI-only wiring: dependencies, auth guards, request extraction, and
     router registration.
@@ -68,6 +69,9 @@ tests/
     `command.py` (create/enqueue), `query.py` (read/list),
     `lifecycle.py` (retry/cancel/cleanup), `stage.py` (background execution),
     `artifacts.py` (artifact metadata).
+  - For resource domains with seed/runtime/export layering, keep the business
+    logic inside a dedicated package such as `app/services/term_rules/` instead
+    of scattering codec/bootstrap/sync logic across routers.
 - `app/repositories/`
   - Persistence adapters and repository protocols.
   - Current backend is file-based: `file_job_repository.py`.
@@ -105,6 +109,11 @@ tests/
 - New shared path or filesystem rule:
   - prefer `app/core/job_paths.py` or the relevant artifact helper instead of
     recomputing paths inside services and routers
+- New versioned-seed + runtime-store domain:
+  - keep versioned authoring seed under repository assets such as
+    `template_configs/`
+  - keep mutable runtime truth under `data/config/`
+  - keep generated compatibility files clearly separate from both
 
 Current edge cases to be aware of:
 
@@ -145,7 +154,9 @@ Current edge cases to be aware of:
 - Shared dependency/auth helpers example: `app/api/dependencies.py`
 - Callback-specific API guard example: `app/api/mineru_callback_guards.py`
 - Filesystem-backed repository example: `app/repositories/file_job_repository.py`
+- Runtime store repository example: `app/repositories/file_term_rule_repository.py`
 - Feature-oriented service split example: `app/services/jobs/`
+- Seed/runtime/export domain example: `app/services/term_rules/`
 
 Avoid these mismatches:
 

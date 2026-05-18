@@ -1,0 +1,20 @@
+schema_version: 2
+categories:
+  voltage_terms:
+    name: 电压相关
+    priority: 10
+    enabled: true
+    description: ''
+rules:
+- source_term: VIN
+  category: voltage_terms
+  segments:
+  - segment_text: V
+    render_type: plain
+  - segment_text: IN
+    render_type: subscript
+  apply_scope: both
+  case_sensitive: true
+  enabled: true
+  priority: 10
+  notes: ''

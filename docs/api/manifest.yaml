@@ -55,7 +55,32 @@ entries:
       - app/schemas/api_v1.py
     doc_path: docs/api/templates.md
     status: current
-    note: "默认模板和绑定 YAML 配置的只读接口。"
+    note: "多模板清单、模板下载和运行态默认模板切换。"
+  - entry: term-rule-categories
+    category: endpoint
+    source_files:
+      - app/api/v1/router.py
+      - app/api/v1/routers/term_rule_categories.py
+      - app/services/term_rules/service.py
+      - app/repositories/file_term_rule_repository.py
+      - app/schemas/api_v1.py
+    doc_path: docs/api/term-rule-categories.md
+    status: current
+    note: "术语分类只读列表。"
+  - entry: term-rules
+    category: endpoint
+    source_files:
+      - app/api/v1/router.py
+      - app/api/v1/routers/term_rules.py
+      - app/services/term_rules/service.py
+      - app/services/term_rules/import_validation.py
+      - app/services/term_rules/sync_files.py
+      - app/services/term_rules/yaml_codec.py
+      - app/repositories/file_term_rule_repository.py
+      - app/schemas/api_v1.py
+    doc_path: docs/api/term-rules.md
+    status: current
+    note: "term-rules 的 live runtime truth、导入校验、导入、导出、模拟和 sync-files 接口。"
 
 guides:
   - slug: backend-dev-docs-index

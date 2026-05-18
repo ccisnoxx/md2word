@@ -41,7 +41,11 @@ last_reviewed: 2026-05-18
 - `routers/mineru_callbacks.py`
   - MinerU callback ingress、payload 归一化、鉴权和 stage 入队
 - `routers/templates.py`
-  - 默认模板和绑定 YAML 配置的只读接口
+  - 模板列表、详情、下载和默认模板切换
+- `routers/term_rule_categories.py`
+  - 术语分类只读列表
+- `routers/term_rules.py`
+  - 术语规则列表、详情、导入校验、导入、导出、模拟和 sync-files
 
 ### `app/services/jobs/`
 
@@ -59,7 +63,20 @@ last_reviewed: 2026-05-18
 ### `app/services/templates/`
 
 - `read_service.py`
-  - 默认模板、layout YAML、subscript YAML 的只读元数据与下载入口
+  - 模板 manifest、运行态默认模板状态、模板元数据与下载入口
+
+### `app/services/term_rules/`
+
+- `service.py`
+  - live runtime store 查询、导入应用、导出和模拟
+- `import_validation.py`
+  - term-rules import 前校验
+- `sync_files.py`
+  - 把当前 live truth 回写到 seed 与 runtime YAML
+- `bootstrap.py`
+  - 空 runtime store 时从版本化 v2 seed 初始化
+- `yaml_codec.py`
+  - v2 manifest 校验与 legacy runtime YAML 导出
 
 ### `app/conversion/`
 
@@ -87,6 +104,10 @@ last_reviewed: 2026-05-18
 
 ```text
 data/
+  config/
+    term_rules_store.json
+    runtime_subscripts_dictionary.yaml
+    template_state.json
   jobs/{job_id}/
     job.json
     files.json
@@ -132,5 +153,12 @@ data/
 
 - 支持“上传原始 PDF -> 成功提交 MinerU -> 接收 callback -> 任务进入 parsed/failed”，但还不支持下载结果 zip、恢复结果和 DOCX 后处理回流。
 - 只支持 file backend，还没有 SQLite/MySQL。
-- 当前没有模板 CRUD 和术语规则 CRUD；模板和 YAML 文件仍是版本化资产。
+- 当前没有模板 CRUD、term-rule rule CRUD 和 category CRUD。
+- term-rules 采用三层结构：
+  - `template_configs/term_rules.v2.yaml` 作为版本化 seed
+  - `data/config/term_rules_store.json` 作为 live runtime truth
+  - `data/config/runtime_subscripts_dictionary.yaml` 作为 conversion 消费的兼容 YAML
+- templates 采用两层结构：
+  - `template_configs/templates_manifest.yaml` 作为版本化模板清单
+  - `data/config/template_state.json` 作为运行态默认模板状态
 - `retry/cancel/cleanup-local-files` 已实现，但按普通 jobs 访问口径开放，不要求 `X-Admin-Token`。

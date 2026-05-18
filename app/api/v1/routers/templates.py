@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
 
-from app.api.dependencies import get_runtime
+from app.api.dependencies import get_runtime, require_admin_access
 from app.core.runtime import AppRuntime
 from app.schemas.api_v1 import TemplateDetailResponse, TemplateListResponse
 
@@ -53,3 +53,22 @@ def download_template(
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename=path.name,
     )
+
+
+@router.patch("/{template_id}/default", response_model=TemplateDetailResponse, dependencies=[Depends(require_admin_access)])
+def set_default_template(
+    template_id: str,
+    request: Request,
+    runtime: AppRuntime = Depends(get_runtime),
+) -> TemplateDetailResponse:
+    try:
+        runtime.template_read_service.set_default_template(template_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+    detail = runtime.template_read_service.get_template_detail(template_id, url_for=request.url_for)
+    assert detail is not None
+    return detail
