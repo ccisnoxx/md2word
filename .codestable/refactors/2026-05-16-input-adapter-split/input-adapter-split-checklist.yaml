@@ -1,0 +1,24 @@
+refactor: 2026-05-16-input-adapter-split
+steps:
+  - id: step-1
+    title: 抽出输入适配运行时模块
+    status: done
+  - id: step-2
+    title: 主文件保留兼容导出与运行时绑定
+    status: done
+  - id: step-3
+    title: 共享测试 helper 同步清理输入适配子模块
+    status: done
+  - id: step-4
+    title: 跑全量 characterization tests
+    status: done
+checks:
+  - id: api-surface
+    title: 主模块输入链导出与签名保持不变
+    status: passed
+  - id: patch-compat
+    title: 现有 monkeypatch 与共享 helper 重载逻辑仍然有效
+    status: passed
+  - id: full-suite
+    title: 全量 characterization tests 通过
+    status: passed

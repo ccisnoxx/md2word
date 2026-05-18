@@ -1,0 +1,327 @@
+# File: md2word_tool/template_configs/subscripts_dictionary.yaml
+
+# ============================================================
+# 电子术语上下标转换词典（增强版 v2.0）
+# 设计原则：
+# 1. 优先收录“高命中、低误伤”的结构化术语
+# 2. 保留 case_sensitive: true，避免误替换普通文本
+# 3. 对 PSRR / CMRR / GBW / ESR / DCR / UVLO 等常见固定缩写默认保持原样
+# 4. 不默认全局启用高歧义短词：EN / PG / SS / SW / FB / COMP / RT
+# ============================================================
+
+categories:
+  voltage_terms:
+    priority: 10
+  threshold_terms:
+    priority: 15
+  current_terms:
+    priority: 20
+  power_terms:
+    priority: 30
+  passive_terms:
+    priority: 35
+  impedance_terms:
+    priority: 40
+  switching_terms:
+    priority: 45
+  timing_terms:
+    priority: 50
+  frequency_terms:
+    priority: 60
+  gain_terms:
+    priority: 70
+  noise_terms:
+    priority: 75
+  temperature_terms:
+    priority: 80
+  thermal_terms:
+    priority: 90
+  compound_terms:
+    priority: 100
+  safe_raw_terms:
+    priority: 110
+
+case_sensitive: true
+
+subscript_rules:
+  # ==========================================================
+  # 电压相关
+  # ==========================================================
+  voltage_terms:
+    VCM: V<sub>CM</sub>
+    VS: V<sub>S</sub>
+    VDD: V<sub>DD</sub>
+    VCC: V<sub>CC</sub>
+    VSS: V<sub>SS</sub>
+    VEE: V<sub>EE</sub>
+    VIN: V<sub>IN</sub>
+    VOUT: V<sub>OUT</sub>
+    VREF: V<sub>REF</sub>
+    VOS: V<sub>OS</sub>
+    VGS: V<sub>GS</sub>
+    VDS: V<sub>DS</sub>
+    VBE: V<sub>BE</sub>
+    VCE: V<sub>CE</sub>
+    VFB: V<sub>FB</sub>
+    VBIAS: V<sub>BIAS</sub>
+    VBAT: V<sub>BAT</sub>
+    VCORE: V<sub>CORE</sub>
+    VLOGIC: V<sub>LOGIC</sub>
+    VRIPPLE: V<sub>RIPPLE</sub>
+    VRMS: V<sub>RMS</sub>
+    VPEAK: V<sub>PEAK</sub>
+    VPP: V<sub>PP</sub>
+    VAVG: V<sub>AVG</sub>
+    VDROP: V<sub>DROP</sub>
+    VDDA: V<sub>DDA</sub>
+    VDDD: V<sub>DDD</sub>
+    VSENSE: V<sub>SENSE</sub>
+    VANA: V<sub>ANA</sub>
+    VDIG: V<sub>DIG</sub>
+    VCOMP: V<sub>COMP</sub>
+
+  # ==========================================================
+  # 阈值 / 逻辑电平相关
+  # ==========================================================
+  threshold_terms:
+    VIL: V<sub>IL</sub>
+    VIH: V<sub>IH</sub>
+    VOL: V<sub>OL</sub>
+    VOH: V<sub>OH</sub>
+    VTH: V<sub>TH</sub>
+    "VTH+": V<sub>TH+</sub>
+    "VTH-": V<sub>TH-</sub>
+    VIT: V<sub>IT</sub>
+    VHYS: V<sub>HYS</sub>
+    VUVLO: V<sub>UVLO</sub>
+    ITH: I<sub>TH</sub>
+    "VEN(hys)": V<sub>EN(hys)</sub>
+    "VPG(low)": V<sub>PG(low)</sub>
+
+  # ==========================================================
+  # 电流相关
+  # ==========================================================
+  current_terms:
+    ICC: I<sub>CC</sub>
+    IDD: I<sub>DD</sub>
+    ISS: I<sub>SS</sub>
+    IO: I<sub>O</sub>
+    IQ: I<sub>Q</sub>
+    IB: I<sub>B</sub>
+    IOS: I<sub>OS</sub>
+    IS: I<sub>S</sub>
+    IIN: I<sub>IN</sub>
+    IOUT: I<sub>OUT</sub>
+    IFB: I<sub>FB</sub>
+    ICL: I<sub>CL</sub>
+    IBIAS: I<sub>BIAS</sub>
+    ISHDN: I<sub>SHDN</sub>
+    ILOAD: I<sub>LOAD</sub>
+    ILIM: I<sub>LIM</sub>
+    IRMS: I<sub>RMS</sub>
+    IPEAK: I<sub>PEAK</sub>
+    IPK: I<sub>PK</sub>
+    IAVG: I<sub>AVG</sub>
+    IIH: I<sub>IH</sub>
+    IIL: I<sub>IL</sub>
+    IOH: I<sub>OH</sub>
+    IOL: I<sub>OL</sub>
+    IPP: I<sub>PP</sub>
+    IVIN: I<sub>VIN</sub>
+    "IPG(lkg)": I<sub>PG(lkg)</sub>
+
+  # ==========================================================
+  # 功耗 / 功率相关
+  # ==========================================================
+  power_terms:
+    PD: P<sub>D</sub>
+    PTOT: P<sub>TOT</sub>
+    PMAX: P<sub>MAX</sub>
+    POUT: P<sub>OUT</sub>
+    PLOSS: P<sub>LOSS</sub>
+    PDIS: P<sub>DIS</sub>
+
+  # ==========================================================
+  # 无源器件相关（电容/电感）
+  # ==========================================================
+  passive_terms:
+    CIN: C<sub>IN</sub>
+    COUT: C<sub>OUT</sub>
+    CBYP: C<sub>BYP</sub>
+    CCOMP: C<sub>COMP</sub>
+    CFF: C<sub>FF</sub>
+    CSS: C<sub>SS</sub>
+    CLOAD: C<sub>LOAD</sub>
+    CBOOT: C<sub>BOOT</sub>
+    CT: C<sub>T</sub>
+    LOUT: L<sub>OUT</sub>
+    LSW: L<sub>SW</sub>
+
+  # ==========================================================
+  # 阻抗 / 电阻 / 导通电阻相关
+  # ==========================================================
+  impedance_terms:
+    ZIN: Z<sub>IN</sub>
+    ZOUT: Z<sub>OUT</sub>
+    RIN: R<sub>IN</sub>
+    ROUT: R<sub>OUT</sub>
+    RDS: R<sub>DS</sub>
+    RL: R<sub>L</sub>
+    RLOAD: R<sub>LOAD</sub>
+    RSENSE: R<sub>SENSE</sub>
+    RFB: R<sub>FB</sub>
+    RCOMP: R<sub>COMP</sub>
+    RON: R<sub>ON</sub>
+    ROFF: R<sub>OFF</sub>
+    "RDS(ON)": R<sub>DS(ON)</sub>
+
+  # ==========================================================
+  # 开关 / 占空比 / 工作模式相关
+  # ==========================================================
+  switching_terms:
+    DMAX: D<sub>MAX</sub>
+    DMIN: D<sub>MIN</sub>
+    DCM: D<sub>CM</sub>
+    CCM: C<sub>CM</sub>
+    BCM: B<sub>CM</sub>
+    VSW: V<sub>SW</sub>
+    ISW: I<sub>SW</sub>
+
+  # ==========================================================
+  # 时序相关
+  # ==========================================================
+  timing_terms:
+    TW: t<sub>W</sub>
+    tW: t<sub>W</sub>
+    TH: t<sub>H</sub>
+    tH: t<sub>H</sub>
+    TSU: t<sub>SU</sub>
+    tSU: t<sub>SU</sub>
+    THD: t<sub>HD</sub>
+    tHD: t<sub>HD</sub>
+    TR: t<sub>R</sub>
+    tR: t<sub>R</sub>
+    TF: t<sub>F</sub>
+    tF: t<sub>F</sub>
+    TPD: t<sub>PD</sub>
+    tPD: t<sub>PD</sub>
+    TPLH: t<sub>PLH</sub>
+    tPLH: t<sub>PLH</sub>
+    TPHL: t<sub>PHL</sub>
+    tPHL: t<sub>PHL</sub>
+    TON: t<sub>ON</sub>
+    tON: t<sub>ON</sub>
+    TOFF: t<sub>OFF</sub>
+    tOFF: t<sub>OFF</sub>
+    "TON(MIN)": t<sub>ON(MIN)</sub>
+    "tON(MIN)": t<sub>ON(MIN)</sub>
+    "TOFF(MIN)": t<sub>OFF(MIN)</sub>
+    "tOFF(MIN)": t<sub>OFF(MIN)</sub>
+    TSS: t<sub>SS</sub>
+    tSS: t<sub>SS</sub>
+    TSTARTUP: t<sub>STARTUP</sub>
+    tSTARTUP: t<sub>STARTUP</sub>
+    TDEAD: t<sub>DEAD</sub>
+    tDEAD: t<sub>DEAD</sub>
+    TREC: t<sub>REC</sub>
+    tREC: t<sub>REC</sub>
+    TDIS: t<sub>DIS</sub>
+    tDIS: t<sub>DIS</sub>
+    TRISE: t<sub>RISE</sub>
+    tRISE: t<sub>RISE</sub>
+    TFALL: t<sub>FALL</sub>
+    tFALL: t<sub>FALL</sub>
+    tPDmax: t<sub>PD</sub><sup>max</sup>
+    tPLHmax: t<sub>PLH</sub><sup>max</sup>
+    tPHLmax: t<sub>PHL</sub><sup>max</sup>
+
+  # ==========================================================
+  # 频率相关
+  # ==========================================================
+  frequency_terms:
+    FCLK: f<sub>CLK</sub>
+    fCLK: f<sub>CLK</sub>
+    FMAX: f<sub>MAX</sub>
+    fMAX: f<sub>MAX</sub>
+    FT: f<sub>T</sub>
+    fT: f<sub>T</sub>
+    FSW: f<sub>SW</sub>
+    fSW: f<sub>SW</sub>
+    FRIPPLE: f<sub>RIPPLE</sub>
+    fRIPPLE: f<sub>RIPPLE</sub>
+
+  # ==========================================================
+  # 增益相关
+  # ==========================================================
+  gain_terms:
+    AV: A<sub>V</sub>
+    AI: A<sub>I</sub>
+    AOL: A<sub>OL</sub>
+    ACL: A<sub>CL</sub>
+    AVD: A<sub>VD</sub>
+    ACM: A<sub>CM</sub>
+
+  # ==========================================================
+  # 噪声相关
+  # ==========================================================
+  noise_terms:
+    VN: V<sub>N</sub>
+    eN: e<sub>N</sub>
+    iN: i<sub>N</sub>
+
+  # ==========================================================
+  # 温度相关
+  # ==========================================================
+  temperature_terms:
+    TA: T<sub>A</sub>
+    TJ: T<sub>J</sub>
+    TC: T<sub>C</sub>
+    TAMB: T<sub>AMB</sub>
+    TCASE: T<sub>CASE</sub>
+    TSTG: T<sub>STG</sub>
+    TMAX: T<sub>MAX</sub>
+    TMIN: T<sub>MIN</sub>
+    TJMAX: T<sub>J</sub><sup>MAX</sup>
+
+  # ==========================================================
+  # 热学 / 封装热阻相关
+  # ==========================================================
+  thermal_terms:
+    θJA: θ<sub>JA</sub>
+    θJC: θ<sub>JC</sub>
+    θJB: θ<sub>JB</sub>
+    θJT: θ<sub>JT</sub>
+    ΨJB: Ψ<sub>JB</sub>
+    ΨJT: Ψ<sub>JT</sub>
+
+  # ==========================================================
+  # 复合术语 / 复杂参数名
+  # ==========================================================
+  compound_terms:
+    "VUVLO1(IN)": V<sub>UVLO1(IN)</sub>
+    "VHYS1(IN)": V<sub>HYS1(IN)</sub>
+    "VUVLO2(IN)": V<sub>UVLO2(IN)</sub>
+    "VHYS2(IN)": V<sub>HYS2(IN)</sub>
+    "VUVLO(BIAS)": V<sub>UVLO(BIAS)</sub>
+    "VHYS(BIAS)": V<sub>HYS(BIAS)</sub>
+    "ΔVOUT(ΔVIN)": ΔV<sub>OUT(ΔVIN)</sub>
+    "ΔVOUT(ΔIOUT)": ΔV<sub>OUT(ΔIOUT)</sub>
+    "I(EN)": I<sub>(EN)</sub>
+    "VPG(low)": V<sub>PG(low)</sub>
+    "IPG(lkg)": I<sub>PG(lkg)</sub>
+    "TON(MIN)": t<sub>ON(MIN)</sub>
+    "TOFF(MIN)": t<sub>OFF(MIN)</sub>
+    "RDS(ON)": R<sub>DS(ON)</sub>
+
+  # ==========================================================
+  # 明确保留原样的固定缩写
+  # ==========================================================
+  safe_raw_terms:
+    PSRR: PSRR
+    CMRR: CMRR
+    GBW: GBW
+    ESR: ESR
+    DCR: DCR
+    UVLO: UVLO
+    "ρ": ρ
+    "μ": μ
