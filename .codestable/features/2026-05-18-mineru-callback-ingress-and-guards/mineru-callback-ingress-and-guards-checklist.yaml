@@ -25,28 +25,28 @@ steps:
 checks:
   - item: "parsed/process_callback/mineru_result_zip_url 扩展后，任务合同仍和现有 jobs 读模型兼容"
     source: 名词契约
-    status: pending
+    status: passed
 
   - item: "router 只负责鉴权、归一化和入队，不直接承担后处理"
     source: 编排骨架
-    status: pending
+    status: passed
 
   - item: "single_tenant_public 模式下 callback token/uid/checksum/allowlist 规则已在服务端生效"
     source: 流程级约束
-    status: pending
+    status: passed
 
   - item: "mineru-callbacks/result、process_callback、parsed 和 mineru_result_zip_url 都有唯一落点"
     source: 挂载点
-    status: pending
+    status: passed
 
   - item: "不改动现有 /api/v1/jobs 和 /api/v1/jobs/pdf 的入口语义"
     source: 范围守护
-    status: pending
+    status: passed
 
   - item: "callback 命中 done+full_zip_url 时任务进入 parsed"
     source: 验收场景
-    status: pending
+    status: passed
 
   - item: "callback 命中 failed 时任务进入 failed 且 error_code=mineru_failed"
     source: 验收场景
-    status: pending
+    status: passed

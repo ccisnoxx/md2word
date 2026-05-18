@@ -27,7 +27,8 @@ tags: [backend, fastapi, jobs, docx]
 提供一个以 `FastAPI + BackgroundTasks + file repository + conversion library` 为核心的后端表面：
 
 - `POST /api/v1/jobs` 接收 MinerU 输出 zip
-- `POST /api/v1/jobs/pdf` 接收原始 PDF，并把任务送进 MinerU 进入 `parsing`
+- `POST /api/v1/jobs/pdf` 接收原始 PDF，并把任务送进 MinerU；callback 成功后可进入 `parsed/failed`
+- `POST /api/v1/mineru-callbacks/result` 承载 callback ingress、安全校验和结果收口
 - `GET /api/v1/jobs/*` 提供状态、事件、产物和下载入口
 - `translation_mode=en2zh` 在同一条任务主链里接入翻译
 - `GET /api/v1/templates*` 提供默认模板和绑定配置的只读元数据
@@ -37,8 +38,12 @@ tags: [backend, fastapi, jobs, docx]
 
 - 当前支持两条入口：
   - 上传 MinerU 输出 zip -> 后处理 -> 生成 DOCX
-  - 上传原始 PDF -> 成功提交 MinerU -> 进入 `parsing`
-- 当前仍不包含 “PDF -> 在线 MinerU callback 回流 -> 自动生成 DOCX”。
+  - 上传原始 PDF -> 成功提交 MinerU -> 接收 callback -> 进入 `parsed/failed`
+- 当前仍不包含 “PDF callback 成功后自动下载结果 zip 并继续生成 DOCX”。
 - 当前只支持 file backend，不包含 MySQL / SQLite / OSS 持久化。
 - 当前模板接口只读，不支持模板 CRUD。
 - 当前术语和版式配置仍以仓库内版本化文件为真源，不提供后台编辑入口。
+
+## 变更日志
+
+- 2026-05-18：能力边界从“PDF 在线提交前半程”升级到“已接 callback ingress 与安全收口”，当前可稳定收口到 `parsed/failed`，但尚未回流 DOCX 后处理。

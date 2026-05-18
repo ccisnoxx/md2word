@@ -13,10 +13,10 @@ items:
   - slug: mineru-callback-ingress-and-guards
     description: 新增 callback router、payload 归一化、internal/public 两种部署模式、token/query 鉴权、checksum 校验和结果 URL allowlist
     depends_on: [pdf-upload-and-mineru-submission]
-    status: in-progress
+    status: done
     feature: 2026-05-18-mineru-callback-ingress-and-guards
     minimal_loop: false
-    notes: 风险最高的一条，必须独立实现和验证
+    notes: 2026-05-18 已完成；当前支持 callback ingress、安全校验和 done/failed -> parsed/failed 的状态收口
 
   - slug: mineru-callback-postprocess
     description: callback 命中 done+full_zip_url 后复用当前后处理主链，下载 zip、提取 markdown 和生成 DOCX
