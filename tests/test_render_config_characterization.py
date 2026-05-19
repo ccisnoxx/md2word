@@ -4,15 +4,15 @@ from types import SimpleNamespace
 from unittest import mock
 
 try:
-    from .test_render_table_from_html_characterization import _load_module
+    from .runtime_direct_loaders import load_render_config_module
 except ImportError:  # pragma: no cover - compatibility for direct execution
-    from test_render_table_from_html_characterization import _load_module
+    from runtime_direct_loaders import load_render_config_module
 
 
 class RenderConfigCharacterizationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.module = _load_module()
+        cls.module = load_render_config_module()
 
     def test_load_section_layout_uses_template_base_and_yaml_overrides_selected_fields(self):
         config_path = Path(__file__)

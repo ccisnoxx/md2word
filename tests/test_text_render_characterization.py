@@ -3,9 +3,9 @@ from types import SimpleNamespace
 from unittest import mock
 
 try:
-    from .test_render_table_from_html_characterization import _load_module
+    from .runtime_direct_loaders import load_text_render_module
 except ImportError:  # pragma: no cover - compatibility for direct execution
-    from test_render_table_from_html_characterization import _load_module
+    from runtime_direct_loaders import load_text_render_module
 
 
 class FakeRFonts:
@@ -60,7 +60,7 @@ class FakeParagraph:
 class TextRenderCharacterizationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.module = _load_module()
+        cls.module = load_text_render_module()
 
     def make_render_config(self, paragraph_styles=None, terminology=None):
         return self.module.RenderConfig(

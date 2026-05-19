@@ -5,15 +5,15 @@ from pathlib import Path
 from unittest import mock
 
 try:
-    from .test_render_table_from_html_characterization import _load_module
+    from .runtime_direct_loaders import load_input_adapter_module
 except ImportError:  # pragma: no cover - compatibility for direct execution
-    from test_render_table_from_html_characterization import _load_module
+    from runtime_direct_loaders import load_input_adapter_module
 
 
 class InputAdapterCharacterizationTests(__import__("unittest").TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.module = _load_module()
+        cls.module = load_input_adapter_module()
 
     def test_materialize_input_yields_directory_as_is(self):
         with tempfile.TemporaryDirectory() as temp_dir:

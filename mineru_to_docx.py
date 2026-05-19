@@ -26,6 +26,7 @@ import render_config_runtime
 import text_rendering
 import translation_runtime
 import llm_client
+from app.conversion import runtime_helpers, runtime_models, runtime_rendering_api, runtime_runner
 from config import APP_CONFIG
 from table_html_parser import HtmlCell, HtmlTable, parse_html_table
 from table_long_renderer import is_long_simple_table, render_long_simple_table
@@ -176,17 +177,12 @@ PAGE_MARGIN = Mm(15)
 HEADER_FOOTER_FONT = Pt(8.5)
 CAPTION_FONT = Pt(9)
 FOOTNOTE_FONT = Pt(8)
-MIN_VISUAL_WIDTH = Mm(45)
+MIN_VISUAL_WIDTH = runtime_rendering_api.MIN_VISUAL_WIDTH
 VISUAL_TYPES = {"image", "table", "chart", "equation_interline", "seal"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif", ".svg"}
-MAX_COMPLEX_TABLE_ROWS = 400
-MAX_COMPLEX_TABLE_HTML_LEN = 30000
-DEFAULT_TEMPLATE_CANDIDATES = (
-    Path("template/datasheet_template.docx"),
-    Path("templates/datasheet_template.docx"),
-    Path(__file__).parent / "template/datasheet_template.docx",
-    Path(__file__).parent / "templates/datasheet_template.docx",
-)
+MAX_COMPLEX_TABLE_ROWS = runtime_rendering_api.MAX_COMPLEX_TABLE_ROWS
+MAX_COMPLEX_TABLE_HTML_LEN = runtime_rendering_api.MAX_COMPLEX_TABLE_HTML_LEN
+DEFAULT_TEMPLATE_CANDIDATES = runtime_runner.DEFAULT_TEMPLATE_CANDIDATES
 DEFAULT_SUBSCRIPT_CONFIG_CANDIDATES = (
     Path("template_configs/subscripts_dictionary.yaml"),
     Path("subscripts_dictionary.yaml"),
@@ -232,10 +228,10 @@ ENGLISH_STYLE_NAMES = {
     "TableContent",
 }
 DEFAULT_CJK_FIRST_LINE_INDENT_PT = 21.0
-TABLE_BORDER_COLOR = "C7CDD4"
-TABLE_HEADER_FILL = "EEF3F8"
-TABLE_OUTER_BORDER_SZ = "8"
-TABLE_INNER_BORDER_SZ = "4"
+TABLE_BORDER_COLOR = runtime_rendering_api.TABLE_BORDER_COLOR
+TABLE_HEADER_FILL = runtime_rendering_api.TABLE_HEADER_FILL
+TABLE_OUTER_BORDER_SZ = runtime_rendering_api.TABLE_OUTER_BORDER_SZ
+TABLE_INNER_BORDER_SZ = runtime_rendering_api.TABLE_INNER_BORDER_SZ
 
 
 # =========================
@@ -281,107 +277,13 @@ PYCHARM_RUN_CONFIG = {
 }
 
 
-@dataclass(slots=True)
-class Block:
-    type: str
-    bbox: tuple[float, float, float, float]
-    text: str = ""
-    items: list[str] = field(default_factory=list)
-    level: int = 1
-    image_path: Path | None = None
-    captions: list[str] = field(default_factory=list)
-    footnotes: list[str] = field(default_factory=list)
-    html: str | None = None
-    page_idx: int | None = None
-    block_idx: int | None = None
-    continuation_heights: list[float] = field(default_factory=list)
-
-    @property
-    def x1(self) -> float:
-        return self.bbox[0]
-
-    @property
-    def y1(self) -> float:
-        return self.bbox[1]
-
-    @property
-    def x2(self) -> float:
-        return self.bbox[2]
-
-    @property
-    def y2(self) -> float:
-        return self.bbox[3]
-
-    @property
-    def width(self) -> float:
-        return self.x2 - self.x1
-
-    @property
-    def height(self) -> float:
-        return self.y2 - self.y1
-
-    @property
-    def mid_y(self) -> float:
-        return (self.y1 + self.y2) / 2
-
-    @property
-    def center_x(self) -> float:
-        return (self.x1 + self.x2) / 2
-
-
-@dataclass(slots=True)
-class Region:
-    kind: str
-    blocks: list[Block]
-
-
-@dataclass(slots=True)
-class PageData:
-    page_idx: int
-    blocks: list[Block]
-    page_size: tuple[float, float] | None = None
-
-
-@dataclass(slots=True)
-class MiddlePage:
-    page_idx: int
-    page_size: tuple[float, float] | None = None
-    discarded_blocks: list[Block] = field(default_factory=list)
-    visual_blocks: list[Block] = field(default_factory=list)
-
-
-@dataclass(slots=True)
-class SectionLayout:
-    top_margin: Any
-    bottom_margin: Any
-    left_margin: Any
-    right_margin: Any
-    header_distance: Any
-    footer_distance: Any
-
-
-@dataclass(slots=True)
-class RenderConfig:
-    section_layout: SectionLayout
-    use_mineru_header_footer: bool
-    terminology: "TerminologyReplacer | None" = None
-    paragraph_styles: dict[str, "ParagraphStyleConfig"] = field(default_factory=dict)
-
-
-@dataclass(slots=True)
-class ParagraphStyleConfig:
-    font_name: str | None = None
-    font_size: float | None = None
-    bold: bool | None = None
-    italic: bool | None = None
-    color: str | None = None
-    alignment: str | None = None
-    line_spacing: float | None = None
-    space_before: float | None = None
-    space_after: float | None = None
-    first_line_indent_pt: float | None = None
-    left_indent_pt: float | None = None
-    right_indent_pt: float | None = None
+Block = runtime_models.Block
+Region = runtime_models.Region
+PageData = runtime_models.PageData
+MiddlePage = runtime_models.MiddlePage
+SectionLayout = runtime_models.SectionLayout
+RenderConfig = runtime_models.RenderConfig
+ParagraphStyleConfig = runtime_models.ParagraphStyleConfig
 
 
 def parse_args() -> argparse.Namespace:
@@ -629,117 +531,25 @@ def run_conversion(
     translation_max_chars: int = APP_CONFIG.translation_max_chars,
 ) -> None:
     """
-    统一的转换入口。
-
-    命令行模式和 PyCharm 代码内配置模式都走这里，避免两套逻辑后续再分叉。
+    兼容入口：CLI 仍从 root script 进入，真实实现已迁到 shared runner。
     """
-    original_input = Path(input_path).expanduser().resolve()
-    resolved_output_path = resolve_output_path(original_input, output_path)
-    resolved_template_path = None if no_template else resolve_template_path(template_path)
-    resolved_subscript_config = Path(subscript_config).expanduser().resolve() if subscript_config else None
-    resolved_translation_request_output = (
-        Path(translation_request_output).expanduser().resolve() if translation_request_output else None
+    runtime_runner.run_conversion(
+        input_path=input_path,
+        output_path=output_path,
+        template_path=template_path,
+        subscript_config=subscript_config,
+        no_template=no_template,
+        use_mineru_header_footer=use_mineru_header_footer,
+        document_language=document_language,
+        translation_mode=normalize_translation_mode(translation_mode),
+        translation_request_output=translation_request_output,
+        translation_response=translation_response,
+        translation_model=translation_model,
+        translation_api_key=translation_api_key,
+        translation_base_url=translation_base_url,
+        translation_max_pages=translation_max_pages,
+        translation_max_chars=translation_max_chars,
     )
-    resolved_translation_response = Path(translation_response).expanduser().resolve() if translation_response else None
-
-    logger.info("start conversion input={} output={}", original_input, resolved_output_path)
-    translation_mode = normalize_translation_mode(translation_mode)
-    logger.debug(
-        "conversion options template={} subscript_config={} no_template={} use_mineru_header_footer={} document_language={} translation_mode={} translation_request_output={} translation_response={} translation_model={} translation_api_key_present={} translation_base_url={}",
-        resolved_template_path,
-        resolved_subscript_config,
-        no_template,
-        use_mineru_header_footer,
-        document_language,
-        translation_mode,
-        resolved_translation_request_output,
-        resolved_translation_response,
-        translation_model,
-        bool(translation_api_key),
-        translation_base_url,
-    )
-
-    template_document = Document(str(resolved_template_path)) if resolved_template_path else None
-    with materialize_input(original_input) as package_root:
-        pages, source_path = load_pages(package_root)
-        translation_config = build_translation_config(
-            max_pages=translation_max_pages,
-            max_chars=translation_max_chars,
-        )
-        if translation_mode == "en2zh":
-            if resolved_translation_request_output:
-                payload = write_translation_request_file(pages, resolved_translation_request_output, translation_config)
-                logger.info(
-                    "translation request output={} batches={}",
-                    resolved_translation_request_output,
-                    len(payload.get("batches", [])),
-                )
-            if resolved_translation_response:
-                translations = load_translation_response_file(resolved_translation_response)
-                apply_translation_responses(pages, translations)
-                logger.info("translation response applied items={}", len(translations))
-            else:
-                payload = translation_runtime.build_translation_request_payload(pages, translation_config)
-                llm_response = llm_client.translate_payload(
-                    payload,
-                    llm_client.LLMClientConfig(
-                        model=translation_model,
-                        api_key=translation_api_key,
-                        base_url=translation_base_url,
-                    ),
-                )
-                translations = load_translations_from_payload(llm_response)
-                apply_translation_responses(pages, translations)
-                logger.info(
-                    "llm translation applied batches={} items={}",
-                    len(llm_response.get("batches", [])),
-                    len(translations),
-                )
-        elif resolved_translation_request_output or resolved_translation_response:
-            logger.warning("translation_mode=direct 时忽略 translation_request_output / translation_response")
-
-        preferred_document_language = document_language
-        if translation_mode == "en2zh" and document_language == "auto":
-            preferred_document_language = "zh"
-
-        resolved_document_language = resolve_document_language(pages, preferred=preferred_document_language)
-        render_config = apply_document_language_overrides(
-            load_render_config(
-                template_document=template_document,
-                subscript_config=resolved_subscript_config,
-                use_mineru_header_footer=use_mineru_header_footer,
-            ),
-            resolved_document_language,
-        )
-        logger.info("document_language={}", resolved_document_language)
-        document = build_document(pages, render_config, template_document)
-        document.core_properties.title = source_path.stem
-        document.save(resolved_output_path)
-
-    logger.info("source={}", source_path)
-    logger.info("output={}", resolved_output_path)
-    logger.info("pages={}", len(pages))
-    logger.info("template={}", resolved_template_path if resolved_template_path else "none")
-
-
-def build_translation_config(*, max_pages: int, max_chars: int) -> TranslationConfig:
-    return TranslationConfig(
-        target_language=translation_runtime.DEFAULT_TARGET_LANGUAGE,
-        domain=translation_runtime.DEFAULT_TRANSLATION_DOMAIN,
-        max_pages_per_batch=max(int(max_pages), 1),
-        max_chars_per_batch=max(int(max_chars), 1),
-    )
-
-
-def load_translations_from_payload(payload: dict[str, Any]) -> dict[str, str]:
-    translations: dict[str, str] = {}
-    for batch in payload.get("batches", []):
-        for item in batch.get("items", []):
-            item_id = str(item.get("id", "")).strip()
-            if not item_id:
-                continue
-            translations[item_id] = str(item.get("text", ""))
-    return translations
 
 
 def configure_logging(level_name: str) -> None:
@@ -754,25 +564,20 @@ def configure_logging(level_name: str) -> None:
     )
 
 
-def resolve_output_path(input_path: Path, output_arg: str | None) -> Path:
-    if output_arg:
-        return Path(output_arg).resolve()
-    if input_path.is_file() and input_path.suffix.lower() == ".zip":
-        return input_path.with_suffix(".docx")
-    return input_path / "mineru_output.docx"
+# Shared helper aliases stay on the root module for CLI/runtime compatibility.
+build_translation_config = runtime_helpers.build_translation_config
+load_translations_from_payload = runtime_helpers.load_translations_from_payload
+resolve_output_path = runtime_helpers.resolve_output_path
+resolve_document_language = runtime_helpers.resolve_document_language
+detect_document_language = runtime_helpers.detect_document_language
+apply_document_language_overrides = runtime_helpers.apply_document_language_overrides
+load_section_layout = runtime_helpers.load_section_layout
+load_paragraph_styles = runtime_helpers.load_paragraph_styles
+build_replacement_pattern = render_config_runtime.build_replacement_pattern
+
 
 def resolve_template_path(template_arg: str | None) -> Path | None:
-    if template_arg:
-        candidate = Path(template_arg).expanduser().resolve()
-        if not candidate.exists():
-            raise FileNotFoundError(f"模板文件不存在: {candidate}")
-        return candidate
-
-    for candidate in DEFAULT_TEMPLATE_CANDIDATES:
-        resolved = candidate if candidate.is_absolute() else candidate.resolve()
-        if resolved.exists():
-            return resolved
-    return None
+    return runtime_helpers.resolve_template_path(template_arg, DEFAULT_TEMPLATE_CANDIDATES)
 
 
 def find_subscript_config_path() -> Path | None:
@@ -788,363 +593,27 @@ def load_render_config(
     subscript_config: Path | None,
     use_mineru_header_footer: bool,
 ) -> RenderConfig:
-    return render_config_runtime.load_render_config(
+    return runtime_helpers.load_render_config(
         template_document,
         subscript_config,
         use_mineru_header_footer,
-        find_layout_config_path_fn=find_layout_config_path,
-        load_section_layout_fn=load_section_layout,
-        terminology_factory=TerminologyReplacer,
-        load_paragraph_styles_fn=load_paragraph_styles,
-        render_config_cls=RenderConfig,
+        default_layout_candidates=DEFAULT_LAYOUT_CONFIG_CANDIDATES,
     )
 
 
-def resolve_document_language(pages: list[PageData], *, preferred: str = "auto") -> str:
-    normalized = str(preferred or "auto").strip().lower()
-    if normalized in {"zh", "en"}:
-        return normalized
-    return detect_document_language(pages)
-
-
-def detect_document_language(pages: list[PageData]) -> str:
-    sample_fragments: list[str] = []
-    for page in pages[: min(len(pages), 12)]:
-        for block in get_page_body_blocks(page):
-            if block.text:
-                sample_fragments.append(block.text)
-            if block.items:
-                sample_fragments.extend(block.items[:3])
-            if block.captions:
-                sample_fragments.extend(block.captions[:1])
-            if block.footnotes:
-                sample_fragments.extend(block.footnotes[:1])
-            if sum(len(fragment) for fragment in sample_fragments) >= 4000:
-                break
-        if sum(len(fragment) for fragment in sample_fragments) >= 4000:
-            break
-
-    sample_text = " ".join(sample_fragments)
-    latin_letters = len(LATIN_LETTER_RE.findall(sample_text))
-    cjk_chars = len(CJK_CHAR_RE.findall(sample_text))
-    if latin_letters >= 40 and (cjk_chars == 0 or latin_letters >= cjk_chars * 3):
-        return "en"
-    return "zh"
-
-
-def apply_document_language_overrides(render_config: RenderConfig, document_language: str) -> RenderConfig:
-    if document_language != "en":
-        return render_config
-
-    paragraph_styles: dict[str, ParagraphStyleConfig] = {}
-    for style_name, style_config in render_config.paragraph_styles.items():
-        overrides: dict[str, Any] = {}
-        if style_name in ENGLISH_STYLE_NAMES and (
-            style_config.font_name is None or style_config.font_name in CJK_STYLE_FONT_NAMES
-        ):
-            overrides["font_name"] = ENGLISH_STYLE_FONT
-        if style_name == "Normal" and (
-            style_config.first_line_indent_pt is None
-            or abs(style_config.first_line_indent_pt - DEFAULT_CJK_FIRST_LINE_INDENT_PT) < 0.01
-        ):
-            overrides["first_line_indent_pt"] = 0.0
-        paragraph_styles[style_name] = replace(style_config, **overrides) if overrides else style_config
-
-    return replace(render_config, paragraph_styles=paragraph_styles)
-
-
-def load_section_layout(template_document: Any | None, config_path: Path | None) -> SectionLayout:
-    return render_config_runtime.load_section_layout(
-        template_document,
-        config_path,
-        page_margin=PAGE_MARGIN,
-        mm_fn=Mm,
-        section_layout_cls=SectionLayout,
-    )
-
-
-def load_paragraph_styles(config_path: Path | None) -> dict[str, ParagraphStyleConfig]:
-    return render_config_runtime.load_paragraph_styles(
-        config_path,
-        paragraph_style_config_cls=ParagraphStyleConfig,
-    )
-
-
-def build_replacement_pattern(source: str) -> str:
-    return render_config_runtime.build_replacement_pattern(source)
-
-
-def create_document(template_document: Any | None) -> Document:
-    return template_document if template_document is not None else Document()
-
-
-def clear_document_body(document: Document) -> None:
-    body = document._body._element
-    sect_pr = body.sectPr
-    for child in list(body):
-        if child is sect_pr:
-            continue
-        body.remove(child)
-
-
-def clone_first_section_layout(document: Document) -> None:
-    if len(document.sections) <= 1:
-        return
-
-    base_section = document.sections[0]
-    for section in document.sections[1:]:
-        section.page_width = base_section.page_width
-        section.page_height = base_section.page_height
-        section.orientation = base_section.orientation
-        section.left_margin = base_section.left_margin
-        section.right_margin = base_section.right_margin
-        section.top_margin = base_section.top_margin
-        section.bottom_margin = base_section.bottom_margin
-        section.header_distance = base_section.header_distance
-        section.footer_distance = base_section.footer_distance
-        section.header.is_linked_to_previous = True
-        section.footer.is_linked_to_previous = True
-
-
-def render_block_annotations(container: Any, block: Block, render_config: RenderConfig) -> None:
-    render_block_annotations_impl(
-        container,
-        block,
-        render_config,
-        apply_named_style_config_fn=apply_named_style_config,
-        fill_rich_text_fn=fill_rich_text,
-        prepare_text_fn=prepare_text,
-    )
-
-
-def render_table_from_html(
-    container: Any,
-    block: Block,
-    usable_width: int,
-    render_config: RenderConfig,
-) -> bool:
-    logger.debug(
-        "render html table page={} block={} bbox={} caption={} raw_html_len={}",
-        block.page_idx,
-        block.block_idx,
-        block.bbox,
-        block.captions[0] if block.captions else "N/A",
-        len(block.html or ""),
-    )
-    prepared_table = prepare_html_table_model(block, render_config)
-    if prepared_table is None:
-        return False
-
-    html, table_model, max_cols = prepared_table
-
-    logger.debug(
-        "parsed html table page={} block={} rows={} max_cols={}",
-        block.page_idx,
-        block.block_idx,
-        len(table_model.rows),
-        max_cols,
-    )
-
-    if render_large_table_if_needed(container, block, table_model, max_cols, len(html or ""), render_config, usable_width):
-        return True
-
-    merge_failures = render_standard_html_table(container, table_model, max_cols, usable_width, render_config)
-
-    render_block_annotations(container, block, render_config)
-
-    if merge_failures > 0:
-        logger.warning(
-            "table merge fallback page={} block={} bbox={} count={} caption={}",
-            block.page_idx,
-            block.block_idx,
-            block.bbox,
-            merge_failures,
-            block.captions[0] if block.captions else "N/A",
-        )
-
-    logger.debug(
-        "rendered html table page={} block={} rows={} max_cols={} merge_failures={}",
-        block.page_idx,
-        block.block_idx,
-        len(table_model.rows),
-        max_cols,
-        merge_failures,
-    )
-
-    return True
-
-
-def prepare_html_table_model(
-    block: Block,
-    render_config: RenderConfig,
-) -> tuple[str | None, "HtmlTable", int] | None:
-    html = block.html
-    if render_config.terminology:
-        html = render_config.terminology.replace_html(html)
-
-    table_model = parse_html_table(html)
-    if not table_model or not table_model.rows:
-        logger.warning(
-            "skip html table page={} block={} because parsed rows are empty caption={}",
-            block.page_idx,
-            block.block_idx,
-            block.captions[0] if block.captions else "N/A",
-        )
-        return None
-
-    max_cols = table_model.max_columns
-    if max_cols <= 0:
-        logger.warning(
-            "skip html table page={} block={} because max_cols<=0 caption={}",
-            block.page_idx,
-            block.block_idx,
-            block.captions[0] if block.captions else "N/A",
-        )
-        return None
-
-    return html, table_model, max_cols
-
-
-def render_large_table_if_needed(
-    container: Any,
-    block: Block,
-    table_model: "HtmlTable",
-    max_cols: int,
-    html_len: int,
-    render_config: RenderConfig,
-    usable_width: int,
-) -> bool:
-    def render_long_simple_table_adapter(
-        target_container: Any,
-        target_block: Block,
-        target_table_model: HtmlTable,
-        target_render_config: RenderConfig,
-        target_usable_width: int,
-    ) -> None:
-        render_long_simple_table(
-            target_container,
-            target_block,
-            target_table_model,
-            target_render_config,
-            target_usable_width,
-            apply_named_style_config_fn=apply_named_style_config,
-            fill_rich_text_fn=fill_rich_text,
-            prepare_text_fn=prepare_text,
-            fill_table_cell_fn=fill_table_cell,
-            remove_table_borders_fn=remove_table_borders,
-            get_style_config_fn=get_style_config,
-        )
-
-    return render_large_table_if_needed_impl(
-        container,
-        block,
-        table_model,
-        max_cols,
-        html_len,
-        render_config,
-        usable_width,
-        max_complex_rows=MAX_COMPLEX_TABLE_ROWS,
-        max_complex_html_len=MAX_COMPLEX_TABLE_HTML_LEN,
-        is_long_simple_table_fn=is_long_simple_table,
-        render_long_simple_table_fn=render_long_simple_table_adapter,
-        render_large_table_fallback_fn=render_large_table_fallback,
-        logger=logger,
-    )
-
-
-def render_standard_html_table(
-    container: Any,
-    table_model: "HtmlTable",
-    max_cols: int,
-    usable_width: int,
-    render_config: RenderConfig,
-) -> int:
-    return render_standard_html_table_impl(
-        container,
-        table_model,
-        max_cols,
-        usable_width,
-        render_config,
-        remove_table_borders_fn=remove_table_borders,
-        fill_table_cell_fn=fill_table_cell,
-    )
-
-
-def render_large_table_fallback(
-    container: Any,
-    block: Block,
-    table_model: "HtmlTable",
-    render_config: RenderConfig,
-    usable_width: int,
-) -> None:
-    render_large_table_fallback_impl(
-        container,
-        block,
-        table_model,
-        render_config,
-        usable_width,
-        compute_visual_width_fn=compute_visual_width,
-        remove_table_borders_fn=remove_table_borders,
-        fill_table_cell_fn=fill_table_cell,
-        render_block_annotations_fn=render_block_annotations,
-        html_cell_cls=HtmlCell,
-    )
-
-
-def fill_table_cell(cell: Any, cell_model: "HtmlCell", is_header: bool, render_config: RenderConfig) -> None:
-    fill_table_cell_impl(
-        cell,
-        cell_model,
-        is_header,
-        render_config,
-        apply_named_style_config_fn=apply_named_style_config,
-        render_inline_html_into_paragraph_fn=render_inline_html_into_paragraph,
-        prepare_text_fn=prepare_text,
-    )
-    if is_header:
-        apply_table_header_cell_style(cell)
-
-
-def compute_visual_width(block: Block, page_width: float, usable_width: int) -> int:
-    ratio = min(max(block.width / max(page_width, 1.0), 0.45), 1.0)
-    width_by_ratio = int(usable_width * ratio)
-    min_width = int(Emu(MIN_VISUAL_WIDTH))
-    return min(max(width_by_ratio, min_width), int(usable_width))
-
-def remove_table_borders(table: Any) -> None:
-    table_element = table._tbl
-    table_properties = table_element.tblPr
-    borders = table_properties.find(qn("w:tblBorders"))
-    if borders is not None:
-        table_properties.remove(borders)
-
-    borders = OxmlElement("w:tblBorders")
-    for edge in ("top", "left", "bottom", "right"):
-        element = OxmlElement(f"w:{edge}")
-        element.set(qn("w:val"), "single")
-        element.set(qn("w:sz"), TABLE_OUTER_BORDER_SZ)
-        element.set(qn("w:space"), "0")
-        element.set(qn("w:color"), TABLE_BORDER_COLOR)
-        borders.append(element)
-    for edge in ("insideH", "insideV"):
-        element = OxmlElement(f"w:{edge}")
-        element.set(qn("w:val"), "single")
-        element.set(qn("w:sz"), TABLE_INNER_BORDER_SZ)
-        element.set(qn("w:space"), "0")
-        element.set(qn("w:color"), TABLE_BORDER_COLOR)
-        borders.append(element)
-    table_properties.append(borders)
-
-
-def apply_table_header_cell_style(cell: Any) -> None:
-    cell_properties = cell._tc.get_or_add_tcPr()
-    shading = cell_properties.find(qn("w:shd"))
-    if shading is None:
-        shading = OxmlElement("w:shd")
-        cell_properties.append(shading)
-    shading.set(qn("w:val"), "clear")
-    shading.set(qn("w:color"), "auto")
-    shading.set(qn("w:fill"), TABLE_HEADER_FILL)
+create_document = runtime_rendering_api.create_document
+clear_document_body = runtime_rendering_api.clear_document_body
+clone_first_section_layout = runtime_rendering_api.clone_first_section_layout
+render_block_annotations = runtime_rendering_api.render_block_annotations
+render_table_from_html = runtime_rendering_api.render_table_from_html
+prepare_html_table_model = runtime_rendering_api.prepare_html_table_model
+render_large_table_if_needed = runtime_rendering_api.render_large_table_if_needed
+render_standard_html_table = runtime_rendering_api.render_standard_html_table
+render_large_table_fallback = runtime_rendering_api.render_large_table_fallback
+fill_table_cell = runtime_rendering_api.fill_table_cell
+compute_visual_width = runtime_rendering_api.compute_visual_width
+remove_table_borders = runtime_rendering_api.remove_table_borders
+apply_table_header_cell_style = runtime_rendering_api.apply_table_header_cell_style
 
 
 if __name__ == "__main__":

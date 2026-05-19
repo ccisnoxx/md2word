@@ -2,9 +2,9 @@ from types import SimpleNamespace
 from unittest import mock
 
 try:
-    from .test_render_table_from_html_characterization import _load_module
+    from .runtime_direct_loaders import load_page_layout_module
 except ImportError:  # pragma: no cover - compatibility for direct execution
-    from test_render_table_from_html_characterization import _load_module
+    from runtime_direct_loaders import load_page_layout_module
 
 
 class FakeHeaderFooter:
@@ -43,7 +43,7 @@ class FakeDocument:
 class PageLayoutCharacterizationTests(__import__("unittest").TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.module = _load_module()
+        cls.module = load_page_layout_module()
 
     def make_block(self, block_type, bbox, **kwargs):
         return self.module.Block(type=block_type, bbox=bbox, **kwargs)
