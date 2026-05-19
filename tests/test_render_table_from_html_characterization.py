@@ -6,6 +6,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+try:
+    from .runtime_direct_loaders import load_render_table_module
+except ImportError:  # pragma: no cover - compatibility for direct execution
+    from runtime_direct_loaders import load_render_table_module
+
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = ROOT / "mineru_to_docx.py"
@@ -274,7 +279,7 @@ class FakeContainer:
 class RenderTableFromHtmlCharacterizationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.module = _load_module()
+        cls.module = load_render_table_module()
 
     def make_block(self, html="<table></table>", captions=None, footnotes=None):
         return self.module.Block(

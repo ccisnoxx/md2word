@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from input_adapter_runtime import load_pages, materialize_input
-from mineru_to_docx import run_conversion, resolve_document_language
-
 from app.conversion.contracts import (
     ArtifactDescriptor,
     ConversionFailure,
     ConversionRequest,
     ConversionResult,
 )
+from app.conversion.runtime_facade import load_pages, materialize_input, resolve_document_language, run_conversion
 
 
 class ConversionService:
