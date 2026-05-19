@@ -5,12 +5,12 @@ component: backend-setup
 status: current
 summary: 说明如何启动当前 FastAPI 后端，以及如何理解项目结构和主链路。
 tags: [backend, setup, architecture, onboarding]
-last_reviewed: 2026-05-18
+last_reviewed: 2026-05-19
 ---
 
 ## 概述
 
-当前 `md2word_file` 已经不是单纯的 CLI 仓库了。它现在有一条可运行的后端主链路：
+当前 `md2word` 已经不是单纯的 CLI 仓库了。它现在有一条可运行的后端主链路：
 
 ```text
 上传 MinerU 输出 zip -> BackgroundTasks 推进 convert_package -> 生成 result.docx -> 下载
@@ -24,9 +24,9 @@ last_reviewed: 2026-05-18
 
 一句话理解：
 
-- `mineru_to_docx.py` 仍然是转换核心入口
+- `mineru_to_docx.py` 现在主要是 CLI / PyCharm 入口和兼容 façade
 - `app/` 是 FastAPI 后端壳层
-- `app/conversion/` 把现有转换能力包成服务内 conversion library
+- `app/conversion/` 是共享 conversion library，真正的 `run_conversion()` 总调度已经在这里
 - `app/services/jobs/` 承担任务编排、产物合同和本地运维动作
 - `data/` 是运行态目录，不是版本化资产
 
@@ -37,7 +37,7 @@ last_reviewed: 2026-05-18
 - `routers/health.py`
   - `health/live` 和 `health/ready`
 - `routers/jobs.py`
-  - MinerU zip 上传、原始 PDF 上传、列表、详情、事件、结果下载、retry、cancel、cleanup-local-files
+  - jobs 聚合入口，内部组合 `jobs_ingest.py`、`jobs_query.py`、`jobs_ops.py`
 - `routers/mineru_callbacks.py`
   - MinerU callback ingress、payload 归一化、鉴权和 stage 入队
 - `routers/templates.py`
@@ -85,7 +85,17 @@ last_reviewed: 2026-05-18
 - `entrypoint.py`
   - job -> conversion request 的组装入口
 - `service.py`
-  - 真正调用 `run_conversion()` 的服务层入口
+  - FastAPI conversion 服务层，调用 `runtime_facade.py`
+- `runtime_facade.py`
+  - FastAPI 侧稳定导入面，避免后端直接 import root script
+- `runtime_runner.py`
+  - 共享转换总调度
+- `runtime_helpers.py`
+  - 路径解析、语言判定、render config 组装
+- `runtime_rendering_api.py`
+  - shared Document / HTML table wrapper
+- `runtime_models.py`
+  - shared dataclass
 
 ### `app/core/`
 
@@ -127,7 +137,7 @@ data/
 3. `JobStageService.enqueue_conversion()` 写入 stage spool
 4. FastAPI `BackgroundTasks` 调用 `dispatch_message()`
 5. `ConversionEntrypoint` 组装 `ConversionRequest`
-6. `ConversionService` 调现有 `run_conversion()`
+6. `ConversionService` 调 `runtime_facade.run_conversion()`，再进入 `runtime_runner.run_conversion()`
 7. `JobArtifactService` 登记 `result_docx` 和可选 `translation_request`
 8. `GET /api/v1/jobs/{job_id}/result` / `download/result` 提供下载
 
@@ -161,4 +171,5 @@ data/
 - templates 采用两层结构：
   - `template_configs/templates_manifest.yaml` 作为版本化模板清单
   - `data/config/template_state.json` 作为运行态默认模板状态
+- jobs 现在允许显式 `template_id` 选择可见模板；未传时回退到当前运行态默认模板。
 - `retry/cancel/cleanup-local-files` 已实现，但按普通 jobs 访问口径开放，不要求 `X-Admin-Token`。

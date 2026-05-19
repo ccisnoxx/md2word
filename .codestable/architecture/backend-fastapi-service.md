@@ -1,11 +1,11 @@
 ---
 doc_type: architecture
 slug: backend-fastapi-service
-scope: 当前仓库的 FastAPI 后端表面，覆盖 jobs、templates、health、后台 stage、artifact 合同和本地运维动作
-summary: 当前仓库已经形成“CLI 转换核心 + FastAPI 后端壳层”的双表面结构；后端通过 BackgroundTasks、file repository 和 conversion entrypoint 承载 MinerU zip 后处理、翻译、模板只读和本地运维能力
+scope: 当前仓库的 FastAPI 后端表面，覆盖 jobs、templates、term-rules、health、后台 stage、artifact 合同和本地运维动作
+summary: 当前仓库已经形成“CLI / PyCharm 入口 + shared conversion library + FastAPI 后端壳层”的双表面结构；后端通过 BackgroundTasks、file repository 和 conversion entrypoint 承载 MinerU zip 后处理、翻译、模板目录 / 默认态和 term-rule runtime 管理能力
 status: current
-last_reviewed: 2026-05-18
-tags: [architecture, backend, fastapi, jobs, templates]
+last_reviewed: 2026-05-19
+tags: [architecture, backend, fastapi, jobs, templates, term-rules]
 depends_on: [architecture-index, conversion-flow]
 implements: [fastapi-backend-productization]
 ---
@@ -14,14 +14,15 @@ implements: [fastapi-backend-productization]
 
 ## 1. 定位
 
-当前仓库除了原有 CLI / PyCharm 转换入口外，还新增了一条可部署的 FastAPI 后端表面。它不是第二套转换算法，而是对现有 `run_conversion()` 和 runtime 模块的服务化封装，负责：
+当前仓库除了原有 CLI / PyCharm 转换入口外，还新增了一条可部署的 FastAPI 后端表面。它不是第二套转换算法，而是对 shared conversion library 的服务化封装，负责：
 
 - 接收 MinerU 输出 zip
 - 接收原始 PDF 并提交 MinerU
 - 通过后台 stage 推进转换
 - 暴露任务状态、事件和产物下载
 - 提供 `direct` / `en2zh` 两条后处理路径
-- 暴露默认模板和绑定 YAML 配置的只读元数据
+- 暴露 templates 目录、默认模板切换和模板下载
+- 暴露 term-rules 分类、live runtime rules 查询、导入、导出、模拟和 sync-files
 
 ## 2. 物理结构
 
@@ -30,23 +31,30 @@ implements: [fastapi-backend-productization]
 - `app/api/v1/routers/health.py`
   - `health/live` 与 `health/ready`。
 - `app/api/v1/routers/jobs.py`
-  - MinerU zip 上传、原始 PDF 上传、查询、事件、结果下载、retry、cancel、cleanup-local-files。
+  - jobs 聚合入口，按 ingest / query / ops 三类子 router 组合。
 - `app/api/v1/routers/mineru_callbacks.py`
   - MinerU callback ingress、payload 归一化、internal/public 鉴权和后台 stage 入队。
 - `app/api/v1/routers/templates.py`
-  - 默认模板和绑定 YAML 配置的只读接口。
+  - templates 目录、详情、下载和默认模板切换。
+- `app/api/v1/routers/term_rule_categories.py`
+  - term-rule 分类只读接口。
+- `app/api/v1/routers/term_rules.py`
+  - term-rules 查询、导入校验、导入、导出、模拟和 sync-files。
 - `app/services/jobs/`
   - `command.py`、`query.py`、`stage.py`、`lifecycle.py`、`artifacts.py`。
 - `app/clients/mineru_client.py`
   - 原始 PDF 在线提交到 MinerU 的客户端。
 - `app/conversion/`
   - `contracts.py`、`entrypoint.py`、`service.py` 组成后端 conversion library 边界。
+  - `runtime_facade.py` 是 FastAPI 侧稳定导入面，实际委托给 `runtime_runner.py`、`runtime_helpers.py` 和 runtime modules。
 - `app/services/templates/read_service.py`
-  - 模板和配置元数据读取。
+  - 模板 manifest、默认模板状态和下载元数据读取。
+- `app/services/term_rules/`
+  - `service.py`、`yaml_codec.py`、`import_validation.py`、`sync_files.py`、`bootstrap.py`。
 - `app/services/health_service.py`
   - readiness 依赖探针。
 - `data/`
-  - 运行态 jobs、stage spool 和临时目录。
+  - 运行态 jobs、stage spool、term-rule store、template state 和临时目录。
 
 ## 3. 主流程
 
@@ -59,9 +67,10 @@ flowchart TD
     D --> F["BackgroundTasks.dispatch_message()"]
     F --> G["build_job_conversion_request()"]
     G --> H["ConversionService.convert()"]
-    H --> I["run_conversion()"]
-    I --> J["JobArtifactService.register result_docx / translation_request"]
-    J --> K["GET /jobs/{job_id} /files /result /download/result"]
+    H --> I["runtime_facade.run_conversion()"]
+    I --> J["runtime_runner.run_conversion()"]
+    J --> K["JobArtifactService.register result_docx / translation_request"]
+    K --> L["GET /jobs/{job_id} /files /result /download/result"]
 ```
 
 ### PDF 在线提交前半程
@@ -120,13 +129,34 @@ flowchart TD
 ### 4.3 templates
 
 - `GET /api/v1/templates`
-  - 列出默认模板及绑定配置元数据。
+  - 列出 manifest 中可见模板及默认模板状态。
 - `GET /api/v1/templates/{template_id}`
-  - 查看默认模板详情。
+  - 查看模板详情和绑定配置元数据。
 - `GET /api/v1/templates/{template_id}/download`
-  - 下载默认模板文件。
+  - 下载模板文件。
+- `PATCH /api/v1/templates/{template_id}/default`
+  - admin-only，切换运行态默认模板。
 
-### 4.4 health
+### 4.4 term-rules
+
+- `GET /api/v1/term-rule-categories`
+  - 返回只读分类列表。
+- `GET /api/v1/term-rules`
+  - 分页查询当前 live runtime rules。
+- `GET /api/v1/term-rules/{rule_id}`
+  - 查看单条规则详情。
+- `GET /api/v1/term-rules/export`
+  - 导出当前 live truth 的 v2 manifest 视图。
+- `POST /api/v1/term-rules/simulate`
+  - 对输入文本做规则替换模拟。
+- `POST /api/v1/term-rules/import/validate`
+  - 仅校验导入内容，不改 live truth。
+- `POST /api/v1/term-rules/import`
+  - admin-only，整库替换 live runtime store。
+- `POST /api/v1/term-rules/sync-files`
+  - admin-only，把当前 live truth 回写到 seed 与 runtime YAML。
+
+### 4.5 health
 
 - `GET /api/v1/health/live`
   - 只确认进程可响应。
@@ -196,10 +226,11 @@ flowchart TD
 - 当前后端已经支持“上传原始 PDF -> 成功提交 MinerU -> 接收 callback -> 任务进入 parsed/failed”，但还不支持下载结果 zip、结果恢复和 callback 成功后的 DOCX 后处理回流。
 - 当前后端只支持 file backend。
 - `retry/cancel/cleanup-local-files` 当前按普通 jobs 访问口径开放，不要求 `X-Admin-Token`。
-- 模板接口当前只读，不支持多模板写操作。
+- templates 当前支持默认模板切换，但还不支持模板文件 CRUD / replace / version 管理。
+- term-rules 当前支持整库替换导入，但还不支持 rule 级 CRUD 或 category 写接口。
 
 ## 9. 相关文档
 
-- [ARCHITECTURE.md](/Users/sc/MinerU/md2word_file/.codestable/architecture/ARCHITECTURE.md)
-- [conversion-flow.md](/Users/sc/MinerU/md2word_file/.codestable/architecture/conversion-flow.md)
-- [fastapi-backend-roadmap.md](/Users/sc/MinerU/md2word_file/.codestable/roadmap/fastapi-backend/fastapi-backend-roadmap.md)
+- [ARCHITECTURE.md](/Users/sc/PycharmProjects/md2word/.codestable/architecture/ARCHITECTURE.md)
+- [conversion-flow.md](/Users/sc/PycharmProjects/md2word/.codestable/architecture/conversion-flow.md)
+- [fastapi-backend-roadmap.md](/Users/sc/PycharmProjects/md2word/.codestable/roadmap/fastapi-backend/fastapi-backend-roadmap.md)
