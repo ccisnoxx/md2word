@@ -1,10 +1,10 @@
 ---
 doc_type: architecture
 slug: conversion-flow
-scope: MinerU 输入到 DOCX 输出的端到端运行流程，包括 direct 和 en2zh 两种模式
-summary: 转换流程由 run_conversion 统一调度，先把 MinerU 包规整成页面块模型，再做页面修补和可选翻译，最后按模板/YAML 配置生成 Word 文档
+scope: MinerU 输入到 DOCX 输出的端到端运行流程，包括 CLI 入口、shared runtime runner，以及 direct 和 en2zh 两种模式
+summary: 当前转换流程由 `app/conversion/runtime_runner.py` 统一调度；CLI 入口和 FastAPI 都只是在外层组装参数，再把 MinerU 包规整成页面块模型，做页面修补和可选翻译，最后按模板/YAML 配置生成 Word 文档
 status: current
-last_reviewed: 2026-05-18
+last_reviewed: 2026-05-19
 tags: [architecture, flow, mineru, docx, translation]
 depends_on: [architecture-index, module-mineru-to-docx-internal]
 implements: []
@@ -20,13 +20,15 @@ flowchart TD
     C["ENABLE_PYCHARM_RUN_CONFIG=True"] --> D["run_with_pycharm_config()"]
     B --> E["parse_args()"]
     E --> F["resolve_cli_run_options()"]
-    F --> G["run_conversion()"]
+    F --> G["mineru_to_docx.run_conversion()"]
     D --> G
+    G --> H["runtime_runner.run_conversion()"]
 ```
 
-- CLI 是默认路径，`ENABLE_PYCHARM_RUN_CONFIG=False`。锚点：`mineru_to_docx.py:255`
-- PyCharm 路径只在显式打开开关时使用，参数来自 `PYCHARM_RUN_CONFIG`。锚点：`mineru_to_docx.py:486`
-- CLI 不传 `input_path` 且当前目录看起来是脚本工程目录时，会尝试回退到 `PYCHARM_RUN_CONFIG["input_path"]`。锚点：`mineru_to_docx.py:514`、`mineru_to_docx.py:592`
+- CLI 是默认路径，`ENABLE_PYCHARM_RUN_CONFIG=False`。锚点：`mineru_to_docx.py:245`
+- PyCharm 路径只在显式打开开关时使用，参数来自 `PYCHARM_RUN_CONFIG`。锚点：`mineru_to_docx.py:388`
+- CLI 不传 `input_path` 且当前目录看起来是脚本工程目录时，会尝试回退到 `PYCHARM_RUN_CONFIG["input_path"]`。锚点：`mineru_to_docx.py:416`、`mineru_to_docx.py:494`
+- 根脚本里的 `run_conversion()` 已经只是兼容 façade，真实共享总调度在 `app/conversion/runtime_runner.py`。锚点：`mineru_to_docx.py:515`、`app/conversion/runtime_runner.py:33`
 
 ## 2. 输入加载流程
 
@@ -99,10 +101,10 @@ flowchart TD
     F --> G["apply_document_language_overrides()"]
 ```
 
-- 模板路径默认从 `template/datasheet_template.docx` 等候选位置查找。锚点：`mineru_to_docx.py:764`
-- 样式 YAML 默认从 `template_configs/datasheet_template.yaml` 查找。锚点：`mineru_to_docx.py:782`
-- 上下标词典默认从 `template_configs/subscripts_dictionary.yaml` 查找。锚点：`mineru_to_docx.py:778`
-- 语言判定会抽取前若干页正文片段，按拉丁字母和 CJK 字符比例判断 `en` / `zh`。锚点：`mineru_to_docx.py:810`
+- 模板路径默认候选由 `runtime_runner.DEFAULT_TEMPLATE_CANDIDATES` 提供；CLI façade 只是复用该常量。锚点：`app/conversion/runtime_runner.py:25`、`mineru_to_docx.py:185`
+- 样式 YAML 默认从 `template_configs/datasheet_template.yaml` 查找，并由 `runtime_helpers.load_render_config()` 继续委托给 `render_config_runtime`。锚点：`app/conversion/runtime_helpers.py:48`、`app/conversion/runtime_helpers.py:118`
+- 上下标词典默认从 `template_configs/subscripts_dictionary.yaml` 查找。锚点：`mineru_to_docx.py:186`、`mineru_to_docx.py:583`
+- 语言判定会抽取前若干页正文片段，按拉丁字母和 CJK 字符比例判断 `en` / `zh`。锚点：`app/conversion/runtime_helpers.py:144`
 
 ## 6. 文档构建流程
 
@@ -151,12 +153,16 @@ flowchart TD
 
 ## 8. 输出流程
 
-- `build_document()` 返回 `Document` 实例后，`run_conversion()` 设置 `document.core_properties.title = source_path.stem`。锚点：`mineru_to_docx.py:704`
-- 输出路径显式提供时使用该路径；zip 输入默认写同名 `.docx`；目录输入默认写到目录内 `mineru_output.docx`。锚点：`mineru_to_docx.py:757`
-- 最终通过 `document.save(resolved_output_path)` 一次性写盘。锚点：`mineru_to_docx.py:705`
+- `build_document()` 返回 `Document` 实例后，`runtime_runner.run_conversion()` 会设置 `document.core_properties.title = source_path.stem`。锚点：`app/conversion/runtime_runner.py:132`
+- 输出路径显式提供时使用该路径；zip 输入默认写同名 `.docx`；目录输入默认写到目录内 `mineru_output.docx`。锚点：`app/conversion/runtime_helpers.py:75`
+- 最终通过 `document.save(resolved_output_path)` 一次性写盘。锚点：`app/conversion/runtime_runner.py:134`
 
 ## 9. 当前行为注意点
 
 - `translation_request_output` 的实际行为和帮助文案不完全一致：当前代码会写请求文件，但没有在缺少 `translation_response` 时退出，而是继续调用 LLM。
 - `full.md` 不参与转换流程，仓库名里的 `md2word` 容易造成误解。
 - 测试覆盖以函数级 characterization 为主，不能证明真实 Word 视觉版式完全符合预期。
+
+## 10. 变更日志
+
+- 2026-05-19：同步 root façade -> shared runtime runner 的现状，回写 config / output 流程的真实实现位置。

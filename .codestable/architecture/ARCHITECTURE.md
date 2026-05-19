@@ -1,10 +1,10 @@
 ---
 doc_type: architecture
 slug: architecture-index
-scope: 当前仓库的整体实现地图，覆盖 CLI 转换核心、FastAPI 后端表面，以及 MinerU 结构化结果到 DOCX 的本地转换链路与可选英文转中文翻译链路
-summary: 当前系统已演进为“CLI 转换核心 + FastAPI 后端壳层”的双表面结构；`mineru_to_docx.py` 仍负责核心转换总调度，而 `app/` 负责 jobs、templates、health、运维动作和对外 HTTP 合同
+scope: 当前仓库的整体实现地图，覆盖 CLI / PyCharm 入口、shared conversion library、FastAPI 后端表面，以及 MinerU 结构化结果到 DOCX 的本地转换链路与可选英文转中文翻译链路
+summary: 当前系统已演进为“CLI / PyCharm 入口 + shared conversion library + FastAPI 后端壳层”的双表面结构；`mineru_to_docx.py` 主要承担入口、兼容 façade 和 runtime 绑定，真正的共享转换编排已落到 `app/conversion/`
 status: current
-last_reviewed: 2026-05-18
+last_reviewed: 2026-05-19
 tags: [architecture, mineru, docx, backend, fastapi]
 depends_on: []
 implements: [fastapi-backend-productization]
@@ -18,10 +18,10 @@ implements: [fastapi-backend-productization]
 
 - **CLI / PyCharm 转换核心**
   - 面向本地开发、调试和直跑转换
-  - 主入口仍是 `mineru_to_docx.py`
+  - 用户入口仍是 `mineru_to_docx.py`，但真实共享转换实现已经拆到 `app/conversion/`
 - **FastAPI 后端壳层**
   - 面向前端、脚本调用方和本地服务化联调
-  - 当前提供 `jobs`、`templates`、`health` 三组 HTTP 接口
+  - 当前提供 `jobs`、`mineru-callbacks`、`templates`、`term-rules`、`term-rule-categories`、`health` 六组 HTTP 接口
 
 系统的业务核心仍然是：
 
@@ -66,6 +66,8 @@ MinerU 结构化结果 -> 页面修补 -> 可选英文转中文翻译 -> 模板/
   - `/api/v1/jobs`
   - `/api/v1/mineru-callbacks`
   - `/api/v1/templates`
+  - `/api/v1/term-rule-categories`
+  - `/api/v1/term-rules`
 - 当前支持：
   - 上传 MinerU 输出 zip
   - 上传原始 PDF 并把任务送进 MinerU 进入 `parsing`
@@ -73,13 +75,14 @@ MinerU 结构化结果 -> 页面修补 -> 可选英文转中文翻译 -> 模板/
   - 查询任务状态、事件、产物
   - 下载 DOCX
   - `direct` / `en2zh` 两条后处理路径
-  - 默认模板和绑定 YAML 的只读元数据
+  - 多模板目录、模板详情、模板下载、默认模板切换
+  - term-rules 分类只读、规则查询、导入校验、导入、导出、模拟和 sync-files
   - 本地运维动作：`retry`、`cancel`、`cleanup-local-files`
 
 ## 4. 物理结构
 
 - `mineru_to_docx.py`
-  - CLI / PyCharm 入口、共享 dataclass、总转换控制器。
+  - CLI / PyCharm 入口、共享常量 / dataclass、runtime 绑定容器和兼容 façade。
 - `input_adapter_runtime.py`
   - MinerU 输入适配。
 - `page_repair_runtime.py`
@@ -94,10 +97,19 @@ MinerU 结构化结果 -> 页面修补 -> 可选英文转中文翻译 -> 模板/
   - 文本与公式规范化。
 - `translation_runtime.py`、`llm_client.py`、`config.py`
   - 翻译请求构造、响应回填、OpenAI 兼容调用。
+- `app/conversion/`
+  - shared conversion library。
+  - `runtime_facade.py`：FastAPI 侧稳定导入面。
+  - `runtime_runner.py`：共享转换总调度。
+  - `runtime_helpers.py`：路径解析、语言判定、render config 组装等共享 helper。
+  - `runtime_rendering_api.py`：Document / HTML table 渲染 wrapper。
+  - `runtime_models.py`：共享 dataclass。
 - `app/`
-  - FastAPI 后端表面，详见 [backend-fastapi-service.md](/Users/sc/MinerU/md2word_file/.codestable/architecture/backend-fastapi-service.md)。
+  - FastAPI 后端表面，详见 [backend-fastapi-service.md](/Users/sc/PycharmProjects/md2word/.codestable/architecture/backend-fastapi-service.md)。
 - `template/`、`template_configs/`
-  - 默认模板、页面布局 YAML、术语上下标 YAML。
+  - 默认模板、页面布局 YAML、术语上下标 YAML、模板 manifest 和 term-rule v2 seed。
+- `data/config/`
+  - runtime term-rule store、兼容 runtime YAML、默认模板状态。
 - `docs/`
   - 后端 API 与运行文档出口。
 - `tests/`
@@ -122,8 +134,8 @@ flowchart TD
 
 这一层详细过程见：
 
-- [conversion-flow.md](/Users/sc/MinerU/md2word_file/.codestable/architecture/conversion-flow.md)
-- [module-mineru-to-docx-internal.md](/Users/sc/MinerU/md2word_file/.codestable/architecture/module-mineru-to-docx-internal.md)
+- [conversion-flow.md](/Users/sc/PycharmProjects/md2word/.codestable/architecture/conversion-flow.md)
+- [module-mineru-to-docx-internal.md](/Users/sc/PycharmProjects/md2word/.codestable/architecture/module-mineru-to-docx-internal.md)
 
 ## 6. FastAPI 后端流程
 
@@ -136,14 +148,15 @@ flowchart TD
     D --> F["BackgroundTasks.dispatch_message()"]
     F --> G["build_job_conversion_request()"]
     G --> H["ConversionService.convert()"]
-    H --> I["run_conversion()"]
-    I --> J["JobArtifactService.register result_docx / translation_request"]
-    J --> K["GET /jobs/{job_id} /files /result /download/result"]
+    H --> I["runtime_facade.run_conversion()"]
+    I --> J["runtime_runner.run_conversion()"]
+    J --> K["JobArtifactService.register result_docx / translation_request"]
+    K --> L["GET /jobs/{job_id} /files /result /download/result"]
 ```
 
 这一层详细过程见：
 
-- [backend-fastapi-service.md](/Users/sc/MinerU/md2word_file/.codestable/architecture/backend-fastapi-service.md)
+- [backend-fastapi-service.md](/Users/sc/PycharmProjects/md2word/.codestable/architecture/backend-fastapi-service.md)
 
 ## 7. 数据与状态
 
@@ -157,10 +170,15 @@ flowchart TD
 ### 7.2 FastAPI 后端
 
 - 运行态目录在 `data/`：
+  - `config/`
   - `jobs/{job_id}/`
   - `stage_messages/`
   - `tmp/`
 - 当前只有 file backend。
+- 配置级运行态文件当前包括：
+  - `config/term_rules_store.json`
+  - `config/runtime_subscripts_dictionary.yaml`
+  - `config/template_state.json`
 - 已登记产物当前包括：
   - `source_package`
   - `source_pdf`
@@ -180,20 +198,23 @@ flowchart TD
 - `prompt/translation_en2zh.md` 是运行时资源，不应迁进 `.codestable/`。
 - 当前 FastAPI 后端已支持“上传原始 PDF -> 成功提交 MinerU -> 接收 callback -> 进入 parsed/failed”，但还不支持下载结果 zip、callback 丢失后的主动恢复和 DOCX 后处理回流。
 - 当前 FastAPI 后端只支持 file backend。
-- 模板接口当前只读，不支持多模板写操作。
+- templates 当前支持目录可见、详情、下载和默认模板切换，但还不支持模板文件 CRUD / replace / version 管理。
+- term-rules 当前支持整库导入、导出、模拟和 sync-files，但还不支持 rule 级 CRUD 或 category 写接口。
+- characterization suites 现在大多通过 `tests/runtime_direct_loaders.py` 直接加载 runtime 模块，不再把 `mineru_to_docx.py` 当成唯一 patch seam；但 root façade 仍保留给 CLI 和 `bind_runtime()` 使用。
 - `translation_request_output` 在底层 CLI 文案和实际行为之间仍有差异：文案说只导出请求并退出，但实际仍会继续调用 LLM。
 - 测试覆盖虽然已包含对象级后端测试和真实链路验证，但仍不能代替完整的长期视觉版式验收。
 
 ## 9. 相关文档
 
-- [backend-fastapi-service.md](/Users/sc/MinerU/md2word_file/.codestable/architecture/backend-fastapi-service.md)
-- [conversion-flow.md](/Users/sc/MinerU/md2word_file/.codestable/architecture/conversion-flow.md)
-- [module-mineru-to-docx-internal.md](/Users/sc/MinerU/md2word_file/.codestable/architecture/module-mineru-to-docx-internal.md)
-- [fastapi-backend-roadmap.md](/Users/sc/MinerU/md2word_file/.codestable/roadmap/fastapi-backend/fastapi-backend-roadmap.md)
-- [fastapi-backend-acceptance.md](/Users/sc/MinerU/md2word_file/.codestable/roadmap/fastapi-backend/fastapi-backend-acceptance.md)
+- [backend-fastapi-service.md](/Users/sc/PycharmProjects/md2word/.codestable/architecture/backend-fastapi-service.md)
+- [conversion-flow.md](/Users/sc/PycharmProjects/md2word/.codestable/architecture/conversion-flow.md)
+- [module-mineru-to-docx-internal.md](/Users/sc/PycharmProjects/md2word/.codestable/architecture/module-mineru-to-docx-internal.md)
+- [fastapi-backend-roadmap.md](/Users/sc/PycharmProjects/md2word/.codestable/roadmap/fastapi-backend/fastapi-backend-roadmap.md)
+- [fastapi-backend-acceptance.md](/Users/sc/PycharmProjects/md2word/.codestable/roadmap/fastapi-backend/fastapi-backend-acceptance.md)
 
 ## 10. 变更日志
 
+- 2026-05-19：补入 shared conversion library 现状，明确 `mineru_to_docx.py` 已收口为入口 / 兼容 façade，并同步 templates / term-rules 新边界。
 - 2026-05-18：重新分析当前源码，更新为“主入口 + runtime 模块”的现状架构，补充翻译链路、模块结构和 onboard 扫描结论。
 - 2026-05-18：补入 FastAPI 后端表面和相关文档出口，当前仓库已从单一 CLI 工具演进为“CLI 转换核心 + FastAPI 后端壳层”的双表面结构。
 - 2026-05-18：补入 MinerU callback ingress、`parsed/process_callback` 状态语义和在线解析安全边界，明确当前只完成 callback 收口，尚未回流 DOCX 后处理。

@@ -1,10 +1,10 @@
 ---
 doc_type: architecture
 slug: module-mineru-to-docx-internal
-scope: 当前转换工具的运行时模块边界，覆盖主入口、输入适配、页面修补、配置解析、页面编排、表格渲染、文本规范化、翻译和 LLM 客户端
-summary: "`mineru_to_docx.py` 已不再承载全部实现，而是作为入口、共享类型和适配层调度多个 runtime 模块；模块之间仍通过 bind_runtime 共享主模块对象，属于已拆物理文件但尚未完全解耦的状态"
+scope: 当前转换工具的运行时模块边界，覆盖根入口 façade、shared conversion library、输入适配、页面修补、配置解析、页面编排、表格渲染、文本规范化、翻译和 LLM 客户端
+summary: "`mineru_to_docx.py` 现在主要承担 CLI / PyCharm 入口、兼容 façade 和 runtime 绑定；共享转换编排、helper 和 table/document wrapper 已迁到 `app/conversion/`，但 runtime 模块仍通过 bind_runtime 共享主模块对象"
 status: current
-last_reviewed: 2026-05-18
+last_reviewed: 2026-05-19
 tags: [architecture, module-boundary, mineru, docx, translation]
 depends_on: [architecture-index]
 implements: []
@@ -14,11 +14,15 @@ implements: []
 
 ## 1. 总体边界
 
-当前代码已经从早期单文件实现拆成多个物理模块，但仍保留一个重要兼容机制：各 runtime 模块通过 `bind_runtime()` 持有 `mineru_to_docx.py` 主模块引用，并用 `_runtime_value()` 读取 dataclass、常量、logger 和可替换函数。这个设计让 characterization tests 可以替换依赖，也让拆分过程保持行为稳定，但它不是完全解耦的包结构。
+当前代码已经从早期单文件实现拆成多个物理模块，并新增了一层 shared conversion library；但仍保留一个重要兼容机制：各 runtime 模块通过 `bind_runtime()` 持有 `mineru_to_docx.py` 主模块引用，并用 `_runtime_value()` 读取 dataclass、常量、logger 和可替换函数。这个设计让 CLI 兼容层和 characterization seam 继续稳定，但它不是完全解耦的包结构。
 
 ```mermaid
 flowchart TD
-    A["mineru_to_docx.py\n入口 / dataclass / 常量 / wrapper"] --> B["input_adapter_runtime.py\n输入适配"]
+    A["mineru_to_docx.py\nCLI / façade / bind_runtime 容器"] --> L["app/conversion/runtime_runner.py\n共享转换总调度"]
+    A --> M["app/conversion/runtime_helpers.py\n共享 helper"]
+    A --> N["app/conversion/runtime_rendering_api.py\nDocument / Table wrapper"]
+    A --> O["app/conversion/runtime_models.py\n共享 dataclass"]
+    A --> B["input_adapter_runtime.py\n输入适配"]
     A --> C["page_repair_runtime.py\n页面修补"]
     A --> D["render_config_runtime.py\n配置解析"]
     A --> E["page_layout_runtime.py\n页面编排"]
@@ -35,18 +39,31 @@ flowchart TD
     E --> G
 ```
 
-## 2. A. 主入口与共享类型
+## 2. A. 根入口与兼容 façade
 
 - 文件：`mineru_to_docx.py`
-- 职责：CLI / PyCharm 入口、路径和模式解析、共享 dataclass、常量、runtime 绑定、总转换流程、少量 Word API 包装函数。
+- 职责：CLI / PyCharm 入口、路径和模式解析、共享 dataclass / 常量、runtime 绑定，以及对 shared modules 的兼容导出。
 - 关键入口：
-  - `parse_args()` / `resolve_cli_run_options()`：命令行参数和 PyCharm fallback。锚点：`mineru_to_docx.py:387`、`mineru_to_docx.py:514`
-  - `main()` / `run_with_pycharm_config()`：两种启动路径。锚点：`mineru_to_docx.py:476`、`mineru_to_docx.py:486`
-  - `run_conversion()`：唯一转换总控制器。锚点：`mineru_to_docx.py:613`
-  - `Block` / `PageData` / `MiddlePage` / `RenderConfig`：跨模块共享模型。锚点：`mineru_to_docx.py:285`
-- 边界说明：主入口不再直接实现大部分解析和排版细节，但仍作为 runtime 模块的依赖注入容器。
+  - `parse_args()` / `resolve_cli_run_options()`：命令行参数和 PyCharm fallback。锚点：`mineru_to_docx.py:289`、`mineru_to_docx.py:416`
+  - `main()` / `run_with_pycharm_config()`：两种启动路径。锚点：`mineru_to_docx.py:378`、`mineru_to_docx.py:388`
+  - `run_conversion()`：兼容入口，内部直接委托 `runtime_runner.run_conversion()`。锚点：`mineru_to_docx.py:515`
+  - `Block` / `PageData` / `MiddlePage` / `RenderConfig`：跨模块共享模型别名。锚点：`mineru_to_docx.py:280`
+  - `build_translation_config`、`resolve_document_language`、`render_table_from_html` 等兼容别名。锚点：`mineru_to_docx.py:567`、`mineru_to_docx.py:604`
+- 边界说明：根入口已经不再直接持有转换编排或表格渲染实现，但仍作为 runtime 模块的依赖注入容器和 CLI 对外表面。
 
-## 3. B. 输入适配
+## 3. A2. Shared conversion library
+
+- 文件：`app/conversion/runtime_facade.py`、`runtime_runner.py`、`runtime_helpers.py`、`runtime_rendering_api.py`、`runtime_models.py`
+- 职责：把 FastAPI 和 CLI 共用的转换核心收拢到 `app/conversion/`，减少根脚本的实现负担。
+- 关键入口：
+  - `runtime_facade.run_conversion()`：FastAPI 侧稳定导入面。锚点：`app/conversion/runtime_facade.py:3`
+  - `runtime_runner.run_conversion()`：共享转换总调度。锚点：`app/conversion/runtime_runner.py:33`
+  - `runtime_helpers.load_render_config()` / `resolve_document_language()`：共享 config 组装和语言判定。锚点：`app/conversion/runtime_helpers.py:118`、`app/conversion/runtime_helpers.py:137`
+  - `runtime_rendering_api.render_table_from_html()`：共享 HTML 表格主入口。锚点：`app/conversion/runtime_rendering_api.py:84`
+  - `runtime_models.Block` / `RenderConfig`：共享 dataclass 真正定义位置。锚点：`app/conversion/runtime_models.py`
+- 边界说明：这一层是“真正的共享实现”，但暂时仍允许根脚本保留同名 façade，避免直接打断 CLI 和 runtime bind seam。
+
+## 4. B. 输入适配
 
 - 文件：`input_adapter_runtime.py`
 - 职责：把 MinerU 输出目录或 zip 解析为统一 `PageData` / `Block` 列表。
@@ -57,7 +74,7 @@ flowchart TD
   - `parse_v2_block()` / `parse_legacy_block()` / `parse_visual_block()`：块映射。锚点：`input_adapter_runtime.py:213`、`input_adapter_runtime.py:318`、`input_adapter_runtime.py:379`
 - 数据所有权：这一层拥有“原始 MinerU JSON 如何映射为内部块模型”的解释权，不负责 Word 版式。
 
-## 4. C. 页面修补
+## 5. C. 页面修补
 
 - 文件：`page_repair_runtime.py`
 - 职责：在输入适配之后、页面编排之前修补页面数据。
@@ -67,7 +84,7 @@ flowchart TD
   - `attach_table_continuations()`：把只含表格占位符的后续页高度挂到前一张真实长表。锚点：`page_repair_runtime.py:49`
 - 边界说明：这层只修改内存模型，不写文件，也不直接调用 Word API。
 
-## 5. D. 配置解析
+## 6. D. 配置解析
 
 - 文件：`render_config_runtime.py`
 - 职责：把模板、YAML、术语上下标规则装配成 `RenderConfig`。
@@ -78,7 +95,7 @@ flowchart TD
   - `TerminologyReplacer`：文本和 HTML 上下标替换。锚点：`render_config_runtime.py:35`
 - 边界说明：配置层不主动驱动渲染，只向页面编排、表格渲染和文本规范化提供配置对象。
 
-## 6. E. 页面编排
+## 7. E. 页面编排
 
 - 文件：`page_layout_runtime.py`
 - 职责：把 `pages` 排进 Word 文档，决定 section、目录页、单双栏区域、块级分发。
@@ -90,19 +107,19 @@ flowchart TD
   - `render_block_into_container()` / `render_visual_block()`：块级渲染分发。锚点：`page_layout_runtime.py:709`、`page_layout_runtime.py:744`
 - 边界说明：页面编排是渲染总调度者，但具体表格、文本细节仍委托给下游模块。
 
-## 7. F. 表格渲染
+## 8. F. 表格渲染
 
-- 文件：`table_html_parser.py`、`table_render_runtime.py`、`table_long_renderer.py`，以及 `mineru_to_docx.py` 中的薄 wrapper。
+- 文件：`table_html_parser.py`、`table_render_runtime.py`、`table_long_renderer.py`，以及 `app/conversion/runtime_rendering_api.py` 中的 thin wrapper。
 - 职责：把 HTML 表格或表格图片渲染为 Word 表格、续表、图片或降级表格。
 - 关键入口：
   - `parse_html_table()`：HTML 到 `HtmlTable`。锚点：`table_html_parser.py:74`
-  - `render_table_from_html()`：主入口 wrapper。锚点：`mineru_to_docx.py:920`
+  - `render_table_from_html()`：shared 主入口 wrapper。锚点：`app/conversion/runtime_rendering_api.py:84`
   - `render_large_table_if_needed_impl()`：大表路径分流。锚点：`table_render_runtime.py:40`
   - `render_standard_html_table_impl()`：标准 Word 表格生成。锚点：`table_render_runtime.py:84`
   - `render_long_simple_table()`：长规则表渲染。锚点：`table_long_renderer.py:28`
 - 边界说明：表格渲染会调用文本规范化能力填充单元格，但文本规范化不反向依赖表格。
 
-## 8. G. 文本规范化
+## 9. G. 文本规范化
 
 - 文件：`text_rendering.py`
 - 职责：规范化 TeX / 公式 / HTML inline markup，应用段落和 run 样式，输出标题、正文、列表和目录文本。
@@ -113,7 +130,7 @@ flowchart TD
   - `fill_title_paragraph()` / `fill_body_paragraph()` / `fill_list_paragraph()`：段落落盘出口。锚点：`text_rendering.py:641`、`text_rendering.py:691`、`text_rendering.py:705`
 - 边界说明：这层是页面编排和表格渲染共同依赖的低层文本能力。
 
-## 9. H. 翻译与 LLM 客户端
+## 10. H. 翻译与 LLM 客户端
 
 - 文件：`translation_runtime.py`、`llm_client.py`、`config.py`、`prompt/translation_en2zh.md`
 - 职责：抽取可翻译文本、构造最小 JSON payload、校验并回填译文、调用 OpenAI 兼容接口。
@@ -125,13 +142,13 @@ flowchart TD
   - `load_app_config()`：从 `.env` / 环境变量读取模型、base URL、API key 和分批配置。锚点：`config.py:48`
 - 边界说明：翻译链路修改渲染前的内存页面模型，之后仍回到同一套 DOCX 渲染链。
 
-## 10. 测试边界
+## 11. 测试边界
 
-- `tests/test_*_characterization.py` 通过 `_load_module()` 安装依赖 stub 后加载 `mineru_to_docx.py`，再访问 runtime 模块行为。
-- 测试设计和 `bind_runtime()` 强相关：它允许测试替换 `docx`、`bs4`、`yaml`、`loguru` 等外部依赖，覆盖局部逻辑而不用真实生成 DOCX。
+- `tests/runtime_direct_loaders.py` 现在为 `render_config`、`text_render`、`page_layout`、`page_repair`、`render_table`、`input_adapter` 提供直接加载 seam；对应 characterization suites 不再统一依赖 root file loader。
+- `bind_runtime()` 仍然重要：direct loader 和 root façade 都会为 runtime 模块注入 `docx`、`bs4`、`yaml`、`loguru` stub 所需的同名符号。
 - 当前测试更偏“行为刻画”，不是端到端视觉验收；真实 DOCX 版式仍需样例转换人工或渲染验证。
 
-## 11. 后续维护原则
+## 12. 后续维护原则
 
 - 若继续拆模块，优先移除 runtime 反查耦合，而不是新增更深的 wrapper。
 - 不要把 `prompt/translation_en2zh.md` 迁进 `.codestable/`；它是运行时资源。
@@ -140,4 +157,5 @@ flowchart TD
 
 ## 变更日志
 
+- 2026-05-19：补入 `app/conversion/` shared modules、root façade 收口和 characterization direct loaders 现状。
 - 2026-05-18：基于当前多文件源码重写模块边界，替换早期“单文件内部模块”描述。
