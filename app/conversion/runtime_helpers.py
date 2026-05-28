@@ -5,11 +5,9 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-import page_repair_runtime
-import render_config_runtime
-import translation_runtime
+from app.conversion.runtime import page_repair_runtime, render_config_runtime, translation_runtime
 from docx.shared import Mm
-from render_config_runtime import TerminologyReplacer
+from app.conversion.runtime.render_config_runtime import TerminologyReplacer
 
 from app.conversion.runtime_models import PageData, ParagraphStyleConfig, RenderConfig, SectionLayout
 

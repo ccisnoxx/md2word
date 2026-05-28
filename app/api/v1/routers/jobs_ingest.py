@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# app/api/v1/routers/jobs_ingest.py: 接收 job 创建请求并提交后台 stage 调度。
+
 import zipfile
 from pathlib import Path
 from uuid import uuid4
@@ -184,7 +186,7 @@ async def create_job(
         temp_upload_path.unlink(missing_ok=True)
         raise
 
-    background_tasks.add_task(runtime.stage_service.dispatch_message, stage_message.id)
+    background_tasks.add_task(runtime.stage_dispatcher.dispatch, stage_message.id)
     return JobAcceptedResponse(
         job_id=job.id,
         trace_id=trace_id,
@@ -230,7 +232,7 @@ async def create_pdf_job(
         temp_upload_path.unlink(missing_ok=True)
         raise
 
-    background_tasks.add_task(runtime.stage_service.dispatch_message, stage_message.id)
+    background_tasks.add_task(runtime.stage_dispatcher.dispatch, stage_message.id)
     return JobAcceptedResponse(
         job_id=job.id,
         trace_id=trace_id,

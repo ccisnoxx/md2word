@@ -93,6 +93,16 @@ guides:
     doc_path: docs/dev/backend-local-setup-and-architecture.md
     status: current
     note: "后端最小架构和本地启动说明。"
+  - slug: backend-architecture-baseline-and-issues
+    category: dev-guide
+    doc_path: docs/dev/backend-architecture-baseline-and-issues.md
+    status: draft
+    note: "后端现状架构基线、job 生命周期视图和优先级问题清单。"
+  - slug: backend-pdf-online-completion-change-summary
+    category: dev-guide
+    doc_path: docs/dev/backend-pdf-online-completion-change-summary.md
+    status: current
+    note: "PDF 在线链路从 callback 停在 parsed 演进到自动 completed 的对外变更摘要与已拍板 API 选择。"
   - slug: backend-local-minimal-env-and-commands
     category: dev-guide
     doc_path: docs/dev/backend-local-minimal-env-and-commands.md

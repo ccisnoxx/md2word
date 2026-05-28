@@ -7,6 +7,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+RUNTIME_PKG = "app.conversion.runtime"
 
 
 def _install_dependency_stubs() -> None:
@@ -129,16 +130,16 @@ def _reset_modules(*module_names: str) -> None:
 def load_render_config_module():
     _install_dependency_stubs()
     _reset_modules(
-        "render_config_runtime",
+        f"{RUNTIME_PKG}.render_config_runtime",
         "app.conversion.runtime_models",
         "app.conversion.runtime_helpers",
-        "page_repair_runtime",
-        "text_rendering",
-        "translation_runtime",
+        f"{RUNTIME_PKG}.page_repair_runtime",
+        f"{RUNTIME_PKG}.text_rendering",
+        f"{RUNTIME_PKG}.translation_runtime",
     )
     runtime_models = importlib.import_module("app.conversion.runtime_models")
     runtime_helpers = importlib.import_module("app.conversion.runtime_helpers")
-    module = importlib.import_module("render_config_runtime")
+    module = importlib.import_module(f"{RUNTIME_PKG}.render_config_runtime")
     original_load_render_config = module.load_render_config
     original_load_section_layout = module.load_section_layout
     original_load_paragraph_styles = module.load_paragraph_styles
@@ -188,11 +189,11 @@ def load_render_config_module():
 def load_text_render_module():
     _install_dependency_stubs()
     _reset_modules(
-        "text_rendering",
+        f"{RUNTIME_PKG}.text_rendering",
         "app.conversion.runtime_models",
     )
     runtime_models = importlib.import_module("app.conversion.runtime_models")
-    module = importlib.import_module("text_rendering")
+    module = importlib.import_module(f"{RUNTIME_PKG}.text_rendering")
     module.Block = runtime_models.Block
     module.SectionLayout = runtime_models.SectionLayout
     module.RenderConfig = runtime_models.RenderConfig
@@ -204,19 +205,19 @@ def load_text_render_module():
 def load_page_repair_module():
     _install_dependency_stubs()
     _reset_modules(
-        "page_repair_runtime",
-        "input_adapter_runtime",
+        f"{RUNTIME_PKG}.page_repair_runtime",
+        f"{RUNTIME_PKG}.input_adapter_runtime",
         "app.conversion.runtime_models",
-        "text_rendering",
+        f"{RUNTIME_PKG}.text_rendering",
     )
     runtime_models = importlib.import_module("app.conversion.runtime_models")
-    text_module = importlib.import_module("text_rendering")
+    text_module = importlib.import_module(f"{RUNTIME_PKG}.text_rendering")
     text_module.Block = runtime_models.Block
     text_module.SectionLayout = runtime_models.SectionLayout
     text_module.RenderConfig = runtime_models.RenderConfig
     text_module.ParagraphStyleConfig = runtime_models.ParagraphStyleConfig
     text_module.bind_runtime(text_module)
-    input_module = importlib.import_module("input_adapter_runtime")
+    input_module = importlib.import_module(f"{RUNTIME_PKG}.input_adapter_runtime")
     input_module.Block = runtime_models.Block
     input_module.PageData = runtime_models.PageData
     input_module.MiddlePage = runtime_models.MiddlePage
@@ -224,7 +225,7 @@ def load_page_repair_module():
     input_module.IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif", ".svg"}
     input_module.normalize_formula_text = text_module.normalize_formula_text
     input_module.bind_runtime(input_module)
-    module = importlib.import_module("page_repair_runtime")
+    module = importlib.import_module(f"{RUNTIME_PKG}.page_repair_runtime")
     module.Block = runtime_models.Block
     module.PageData = runtime_models.PageData
     module.MiddlePage = runtime_models.MiddlePage
@@ -247,18 +248,18 @@ def load_page_repair_module():
 def load_page_layout_module():
     _install_dependency_stubs()
     _reset_modules(
-        "page_layout_runtime",
-        "text_rendering",
+        f"{RUNTIME_PKG}.page_layout_runtime",
+        f"{RUNTIME_PKG}.text_rendering",
         "app.conversion.runtime_models",
     )
     runtime_models = importlib.import_module("app.conversion.runtime_models")
-    text_module = importlib.import_module("text_rendering")
+    text_module = importlib.import_module(f"{RUNTIME_PKG}.text_rendering")
     text_module.Block = runtime_models.Block
     text_module.SectionLayout = runtime_models.SectionLayout
     text_module.RenderConfig = runtime_models.RenderConfig
     text_module.ParagraphStyleConfig = runtime_models.ParagraphStyleConfig
     text_module.bind_runtime(text_module)
-    module = importlib.import_module("page_layout_runtime")
+    module = importlib.import_module(f"{RUNTIME_PKG}.page_layout_runtime")
     module.Block = runtime_models.Block
     module.PageData = runtime_models.PageData
     module.Region = runtime_models.Region
@@ -299,22 +300,22 @@ def load_page_layout_module():
 def load_render_table_module():
     _install_dependency_stubs()
     _reset_modules(
-        "text_rendering",
-        "table_html_parser",
-        "table_long_renderer",
-        "table_render_runtime",
+        f"{RUNTIME_PKG}.text_rendering",
+        f"{RUNTIME_PKG}.table_html_parser",
+        f"{RUNTIME_PKG}.table_long_renderer",
+        f"{RUNTIME_PKG}.table_render_runtime",
         "app.conversion.runtime_models",
     )
     runtime_models = importlib.import_module("app.conversion.runtime_models")
-    text_module = importlib.import_module("text_rendering")
+    text_module = importlib.import_module(f"{RUNTIME_PKG}.text_rendering")
     text_module.Block = runtime_models.Block
     text_module.SectionLayout = runtime_models.SectionLayout
     text_module.RenderConfig = runtime_models.RenderConfig
     text_module.ParagraphStyleConfig = runtime_models.ParagraphStyleConfig
     text_module.bind_runtime(text_module)
-    table_parser = importlib.import_module("table_html_parser")
-    long_table = importlib.import_module("table_long_renderer")
-    table_runtime = importlib.import_module("table_render_runtime")
+    table_parser = importlib.import_module(f"{RUNTIME_PKG}.table_html_parser")
+    long_table = importlib.import_module(f"{RUNTIME_PKG}.table_long_renderer")
+    table_runtime = importlib.import_module(f"{RUNTIME_PKG}.table_render_runtime")
 
     module = types.ModuleType("render_table_runtime_seam")
     module.Block = runtime_models.Block
@@ -324,6 +325,7 @@ def load_render_table_module():
     module.HtmlCell = table_parser.HtmlCell
     module.HtmlTable = table_parser.HtmlTable
     module.parse_html_table = table_parser.parse_html_table
+    module.table_long_renderer = long_table
     module.is_long_simple_table = long_table.is_long_simple_table
     module.render_long_simple_table = long_table.render_long_simple_table
     module.render_normalized_text_fragment = text_module.render_normalized_text_fragment
@@ -568,27 +570,27 @@ def load_render_table_module():
 def load_input_adapter_module():
     _install_dependency_stubs()
     _reset_modules(
-        "input_adapter_runtime",
-        "text_rendering",
-        "page_repair_runtime",
-        "translation_runtime",
+        f"{RUNTIME_PKG}.input_adapter_runtime",
+        f"{RUNTIME_PKG}.text_rendering",
+        f"{RUNTIME_PKG}.page_repair_runtime",
+        f"{RUNTIME_PKG}.translation_runtime",
         "app.conversion.runtime_models",
     )
     runtime_models = importlib.import_module("app.conversion.runtime_models")
-    text_module = importlib.import_module("text_rendering")
+    text_module = importlib.import_module(f"{RUNTIME_PKG}.text_rendering")
     text_module.Block = runtime_models.Block
     text_module.SectionLayout = runtime_models.SectionLayout
     text_module.RenderConfig = runtime_models.RenderConfig
     text_module.ParagraphStyleConfig = runtime_models.ParagraphStyleConfig
     text_module.bind_runtime(text_module)
-    page_repair_module = importlib.import_module("page_repair_runtime")
+    page_repair_module = importlib.import_module(f"{RUNTIME_PKG}.page_repair_runtime")
     page_repair_module.Block = runtime_models.Block
     page_repair_module.PageData = runtime_models.PageData
     page_repair_module.MiddlePage = runtime_models.MiddlePage
     page_repair_module.VISUAL_TYPES = {"image", "table", "chart", "equation_interline", "seal"}
     page_repair_module.bind_runtime(page_repair_module)
-    translation_module = importlib.import_module("translation_runtime")
-    module = importlib.import_module("input_adapter_runtime")
+    translation_module = importlib.import_module(f"{RUNTIME_PKG}.translation_runtime")
+    module = importlib.import_module(f"{RUNTIME_PKG}.input_adapter_runtime")
     module.Block = runtime_models.Block
     module.PageData = runtime_models.PageData
     module.MiddlePage = runtime_models.MiddlePage

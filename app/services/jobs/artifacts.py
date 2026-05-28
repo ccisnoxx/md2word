@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# app/services/jobs/artifacts.py: 定义 jobs artifact 合同、alias 和本地逻辑路径映射。
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Literal
@@ -8,8 +10,8 @@ from app.core.job_models import JobFile, JobRecord
 from app.core.job_paths import JobPaths, resolve_artifact_path
 
 
-ArtifactAlias = Literal["source-package", "source-pdf", "translation-request", "result"]
-ArtifactFileType = Literal["source_package", "source_pdf", "translation_request", "result_docx"]
+ArtifactAlias = Literal["source-package", "source-pdf", "parsed-result-package", "translation-request", "result"]
+ArtifactFileType = Literal["source_package", "source_pdf", "parsed_result_package", "translation_request", "result_docx"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +34,12 @@ ARTIFACT_SPECS: tuple[ArtifactSpec, ...] = (
         alias="source-pdf",
         path_attr="source_pdf",
         media_type="application/pdf",
+    ),
+    ArtifactSpec(
+        file_type="parsed_result_package",
+        alias="parsed-result-package",
+        path_attr="parsed_result_package",
+        media_type="application/zip",
     ),
     ArtifactSpec(
         file_type="translation_request",
@@ -104,6 +112,8 @@ class JobArtifactService:
             return job.source_filename
         if file.file_type == "source_pdf":
             return job.source_filename
+        if file.file_type == "parsed_result_package":
+            return f"{job.id}-parsed-result.zip"
         if file.file_type == "translation_request":
             return f"{job.id}-translation-request.json"
         if file.file_type == "result_docx":

@@ -66,6 +66,11 @@ class JobListResponse(BaseModel):
 
 
 class JobDetailResponse(BaseModel):
+    """当前 jobs 详情响应。
+
+    `mineru_*` 字段对外仍保留，但它们在内部已被视为 source_pdf_context 的兼容投影。
+    """
+
     id: str
     source_filename: str
     status: str
@@ -75,11 +80,11 @@ class JobDetailResponse(BaseModel):
     document_language: str
     resolved_document_language: str | None = None
     template_id: str | None = None
-    mineru_batch_id: str | None = None
-    mineru_data_id: str | None = None
-    mineru_callback_seed: str | None = None
-    mineru_status: str | None = None
-    mineru_result_zip_url: str | None = None
+    mineru_batch_id: str | None = Field(default=None, description="兼容投影字段，内部优先来自 source_pdf_context.batch_id")
+    mineru_data_id: str | None = Field(default=None, description="兼容投影字段，内部优先来自 source_pdf_context.data_id")
+    mineru_callback_seed: str | None = Field(default=None, description="兼容投影字段，内部优先来自 source_pdf_context.callback_seed")
+    mineru_status: str | None = Field(default=None, description="兼容投影字段，内部优先来自 source_pdf_context.upstream_status")
+    mineru_result_zip_url: str | None = Field(default=None, description="兼容投影字段，内部优先来自 source_pdf_context.result_zip_url")
     error_code: str | None = None
     error_message: str | None = None
     result_ready: bool

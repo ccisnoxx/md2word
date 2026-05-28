@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from app.conversion.contracts import ConversionEntrypoint, ConversionRequest
 from app.conversion.service import ConversionService
 from app.core.config import Settings
@@ -12,12 +14,13 @@ def build_job_conversion_request(
     job: JobRecord,
     job_paths: JobPaths,
     settings: Settings,
+    package_path: Path | None = None,
     template_path: Path | None = None,
     subscript_config_path: Path | None = None,
 ) -> ConversionRequest:
     return ConversionRequest(
         job_id=job.id,
-        package_path=job_paths.source_package,
+        package_path=package_path if package_path is not None else job_paths.source_package,
         output_path=job_paths.result_docx,
         template_path=template_path if template_path is not None else settings.default_template_path,
         subscript_config_path=subscript_config_path if subscript_config_path is not None else settings.subscript_config_path,

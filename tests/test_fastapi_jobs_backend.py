@@ -1,3 +1,5 @@
+# tests/test_fastapi_jobs_backend.py: 覆盖 FastAPI jobs API、workflow 和 artifact 合同。
+
 import io
 import json
 import hashlib
@@ -19,7 +21,7 @@ from fastapi.testclient import TestClient
 
 from app.conversion.contracts import ArtifactDescriptor, ConversionFailure, ConversionResult
 from app.core.config import Settings
-from app.core.job_models import JobFile, JobRecord, utc_now
+from app.core.job_models import JobFile, JobRecord, JobStageMessage, SourcePdfJobContext, build_source_pdf_context_patch, utc_now
 from app.core.job_paths import build_job_paths, ensure_job_dirs
 from app.core.runtime import AppRuntime
 from app.main import create_app
@@ -28,6 +30,7 @@ from app.repositories.file_term_rule_repository import FileTermRuleRepository
 from app.services.health_service import HealthService
 from app.services.jobs.artifacts import JobArtifactService
 from app.services.jobs.command import JobCommandService
+from app.services.jobs.dispatch import InProcessStageDispatcher
 from app.services.jobs.lifecycle import JobLifecycleService
 from app.services.jobs.query import JobQueryService
 from app.services.jobs.stage import JobStageService
@@ -42,6 +45,8 @@ class FakeMinerUClient:
     def __init__(self) -> None:
         self.calls = []
         self.raise_error = False
+        self.download_calls = []
+        self.raise_download_error = False
 
     def upload_files_batch(
         self,
@@ -68,6 +73,14 @@ class FakeMinerUClient:
             }
         )
         return "batch_test_001", ["https://example.com/upload"]
+
+    def download_result_zip(self, result_url, output_path):
+        if self.raise_download_error:
+            raise RuntimeError("mineru download boom")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"fake-parsed-result-zip")
+        self.download_calls.append({"result_url": result_url, "output_path": str(output_path)})
+        return output_path
 
 
 class FakeConversionService:
@@ -170,6 +183,7 @@ def build_test_runtime(
         resolve_subscript_config_path=lambda: settings.subscript_config_path,
     )
     stage_service.fake_mineru_client = fake_mineru_client
+    stage_dispatcher = InProcessStageDispatcher(stage_service)
     command_service = JobCommandService(settings, repository, stage_service, artifact_service)
     lifecycle_service = JobLifecycleService(
         repository=repository,
@@ -191,6 +205,7 @@ def build_test_runtime(
         lifecycle_service=lifecycle_service,
         query_service=query_service,
         stage_service=stage_service,
+        stage_dispatcher=stage_dispatcher,
     )
 
 
@@ -514,6 +529,36 @@ class FastAPIJobsBackendTests(TestCase):
                 self.assertIn("job_created", event_stages)
                 self.assertIn("job_completed", event_stages)
 
+    def test_upload_zip_dispatches_stage_through_runtime_dispatcher(self):
+        class RecordingDispatcher:
+            def __init__(self) -> None:
+                self.message_ids: list[str] = []
+                self.replay_called = False
+
+            def dispatch(self, message_id: str) -> None:
+                self.message_ids.append(message_id)
+
+            def replay_pending(self) -> None:
+                self.replay_called = True
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir))
+            dispatcher = RecordingDispatcher()
+            runtime.stage_dispatcher = dispatcher
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                create_response = client.post(
+                    "/api/v1/jobs",
+                    files={"package": ("mineru-output.zip", make_zip_bytes(), "application/zip")},
+                    data={"translation_mode": "direct"},
+                )
+                self.assertEqual(create_response.status_code, 201)
+
+            pending_messages = runtime.repository.list_pending_stage_messages()
+            self.assertTrue(dispatcher.replay_called)
+            self.assertEqual(dispatcher.message_ids, [pending_messages[0].id])
+            self.assertEqual(pending_messages[0].stage, "convert_package")
+
     def test_upload_en2zh_preserves_conversion_request_options_and_translation_artifact(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(Path(temp_dir), openai_api_key="fake-key")
@@ -593,6 +638,14 @@ class FastAPIJobsBackendTests(TestCase):
                 self.assertEqual(detail["mineru_batch_id"], "batch_test_001")
                 self.assertEqual(detail["mineru_data_id"], job_id)
                 self.assertEqual(detail["mineru_status"], "submitted")
+                self.assertEqual(detail["mineru_result_zip_url"], None)
+                persisted_job = runtime.repository.get_job(job_id)
+                self.assertIsNotNone(persisted_job)
+                self.assertIsNotNone(persisted_job.source_pdf_context)
+                self.assertEqual(persisted_job.source_pdf_context.batch_id, "batch_test_001")
+                self.assertEqual(persisted_job.source_pdf_context.data_id, job_id)
+                self.assertEqual(persisted_job.source_pdf_context.upstream_status, "submitted")
+                self.assertIsNone(persisted_job.source_pdf_context.result_zip_url)
 
                 files = client.get(f"/api/v1/jobs/{job_id}/files").json()["files"]
                 self.assertEqual(files[0]["file_type"], "source_pdf")
@@ -672,7 +725,7 @@ class FastAPIJobsBackendTests(TestCase):
                 self.assertEqual(reparsed_detail["status"], "parsing")
                 self.assertEqual(reparsed_detail["mineru_batch_id"], "batch_test_001")
 
-    def test_callback_internal_mode_accepts_and_marks_job_parsed(self):
+    def test_callback_internal_mode_accepts_and_auto_completes_job(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(Path(temp_dir), mineru_api_token="token-123")
             app = create_app(runtime)
@@ -693,8 +746,15 @@ class FastAPIJobsBackendTests(TestCase):
                 self.assertEqual(callback_response.status_code, 200)
 
                 updated = client.get(f"/api/v1/jobs/{job_id}").json()
-                self.assertEqual(updated["status"], "parsed")
+                self.assertEqual(updated["status"], "completed")
                 self.assertEqual(updated["mineru_result_zip_url"], "https://mineru.net/result.zip")
+                self.assertTrue(updated["result_ready"])
+                persisted_job = runtime.repository.get_job(job_id)
+                self.assertIsNotNone(persisted_job)
+                self.assertIsNotNone(persisted_job.source_pdf_context)
+                self.assertEqual(persisted_job.source_pdf_context.result_zip_url, "https://mineru.net/result.zip")
+                files = runtime.repository.list_files(job_id)
+                self.assertEqual([item.file_type for item in files], ["source_pdf", "parsed_result_package", "result_docx"])
 
     def test_callback_public_mode_requires_token(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -743,7 +803,7 @@ class FastAPIJobsBackendTests(TestCase):
                 )
                 self.assertEqual(response.status_code, 200)
                 updated = client.get(f"/api/v1/jobs/{job_id}").json()
-                self.assertEqual(updated["status"], "parsed")
+                self.assertEqual(updated["status"], "completed")
 
     def test_callback_public_mode_missing_token_config_returns_503(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -793,7 +853,7 @@ class FastAPIJobsBackendTests(TestCase):
                 response = client.post("/api/v1/mineru-callbacks/result", json=payload)
                 self.assertEqual(response.status_code, 200)
                 updated = client.get(f"/api/v1/jobs/{job_id}").json()
-                self.assertEqual(updated["status"], "parsed")
+                self.assertEqual(updated["status"], "completed")
 
     def test_callback_rejects_invalid_checksum_without_leaving_stage_message(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -892,7 +952,12 @@ class FastAPIJobsBackendTests(TestCase):
 
                 first_detail = client.get(f"/api/v1/jobs/{first_job_id}").json()
                 second_detail = client.get(f"/api/v1/jobs/{second_job_id}").json()
-                runtime.repository.update_job(second_job_id, mineru_batch_id=first_detail["mineru_batch_id"])
+                second_job = runtime.repository.get_job(second_job_id)
+                self.assertIsNotNone(second_job)
+                runtime.repository.update_job(
+                    second_job_id,
+                    **build_source_pdf_context_patch(second_job, batch_id=first_detail["mineru_batch_id"]),
+                )
 
                 payload, _content = build_callback_payload(
                     batch_id=first_detail["mineru_batch_id"],
@@ -906,7 +971,7 @@ class FastAPIJobsBackendTests(TestCase):
                 first_updated = client.get(f"/api/v1/jobs/{first_job_id}").json()
                 second_updated = client.get(f"/api/v1/jobs/{second_job_id}").json()
                 self.assertEqual(first_updated["status"], "parsing")
-                self.assertEqual(second_updated["status"], "parsed")
+                self.assertEqual(second_updated["status"], "completed")
 
     def test_callback_rejects_non_parsing_job_status(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -918,8 +983,11 @@ class FastAPIJobsBackendTests(TestCase):
                 status="completed",
                 progress=100,
                 result_ready=True,
-                mineru_batch_id="batch_completed",
-                mineru_data_id="job_completed_callback",
+                source_kind="source_pdf",
+                source_pdf_context=SourcePdfJobContext(
+                    batch_id="batch_completed",
+                    data_id="job_completed_callback",
+                ),
                 completed_at=utc_now(),
             )
             runtime.repository.create_job(job)
@@ -935,6 +1003,158 @@ class FastAPIJobsBackendTests(TestCase):
             self.assertEqual(response.status_code, 400)
             self.assertIn("不允许处理 MinerU callback", response.json()["detail"])
             self.assertEqual(runtime.repository.list_pending_stage_messages(), [])
+
+    def test_find_job_for_callback_reads_nested_source_pdf_context(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir))
+            job = JobRecord(
+                id="job_nested_callback",
+                source_filename="source.pdf",
+                status="parsing",
+                progress=25,
+                source_kind="source_pdf",
+                lifecycle_status="uploaded",
+                execution_status="parsing",
+                source_pdf_context=SourcePdfJobContext(
+                    batch_id="batch_nested",
+                    data_id="job_nested_callback",
+                    callback_seed="seed_nested",
+                    upstream_status="submitted",
+                ),
+            )
+            runtime.repository.create_job(job)
+
+            by_data_id = runtime.command_service.find_job_for_callback({"data_id": "job_nested_callback"})
+            by_batch_id = runtime.command_service.find_job_for_callback({"batch_id": "batch_nested"})
+
+            self.assertEqual(by_data_id.id, "job_nested_callback")
+            self.assertEqual(by_batch_id.id, "job_nested_callback")
+
+    def test_replay_pending_replays_pending_and_running_stage_messages_only(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir))
+            job = JobRecord(
+                id="job_replay",
+                source_filename="source.pdf",
+                status="queued",
+                progress=10,
+                source_kind="source_pdf",
+                lifecycle_status="uploaded",
+                execution_status="queued",
+                source_pdf_context=SourcePdfJobContext(),
+            )
+            runtime.repository.create_job(job)
+            pending = JobStageMessage(
+                id="msg_pending",
+                job_id=job.id,
+                stage="submit_to_mineru",
+                trace_id="trace_pending",
+                status="pending",
+            )
+            running = JobStageMessage(
+                id="msg_running",
+                job_id=job.id,
+                stage="process_callback",
+                trace_id="trace_running",
+                status="running",
+            )
+            failed = JobStageMessage(
+                id="msg_failed",
+                job_id=job.id,
+                stage="convert_package",
+                trace_id="trace_failed",
+                status="failed",
+            )
+            runtime.repository.put_stage_message(pending)
+            runtime.repository.put_stage_message(running)
+            runtime.repository.put_stage_message(failed)
+
+            dispatched: list[str] = []
+            runtime.stage_service.dispatch_message = lambda message_id: dispatched.append(message_id)
+
+            runtime.stage_service.replay_pending()
+
+            self.assertEqual(dispatched, ["msg_pending", "msg_running"])
+
+    def test_enqueue_parsed_result_conversion_downloads_zip_and_completes_docx(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir))
+            job = JobRecord(
+                id="job_parsed_conversion",
+                source_filename="source.pdf",
+                status="parsed",
+                progress=60,
+                source_kind="source_pdf",
+                lifecycle_status="parsed",
+                execution_status="idle",
+                source_pdf_context=SourcePdfJobContext(
+                    batch_id="batch_parsed",
+                    data_id="job_parsed_conversion",
+                    upstream_status="done",
+                    result_zip_url="https://mineru.net/result.zip",
+                ),
+            )
+            runtime.repository.create_job(job)
+
+            message = runtime.stage_service.enqueue_parsed_result_conversion(job, trace_id="trace_parsed")
+            queued_job = runtime.repository.get_job(job.id)
+            self.assertIsNotNone(queued_job)
+            self.assertEqual(queued_job.status, "queued")
+            self.assertEqual(queued_job.progress, 65)
+            self.assertEqual(message.stage, "convert_parsed_result")
+
+            runtime.stage_service.dispatch_message(message.id)
+
+            updated_job = runtime.repository.get_job(job.id)
+            self.assertIsNotNone(updated_job)
+            self.assertEqual(updated_job.status, "completed")
+            self.assertEqual(updated_job.resolved_execution_status(), "idle")
+            self.assertIsNone(runtime.repository.get_stage_message(message.id))
+            files = runtime.repository.list_files(job.id)
+            self.assertEqual([item.file_type for item in files], ["parsed_result_package", "result_docx"])
+            job_paths = build_job_paths(runtime.settings.data_path, job.id)
+            self.assertTrue(job_paths.parsed_result_package.exists())
+            self.assertEqual(job_paths.parsed_result_package.read_bytes(), b"fake-parsed-result-zip")
+            self.assertEqual(runtime.stage_service.fake_mineru_client.download_calls[0]["result_url"], "https://mineru.net/result.zip")
+            fake_conversion = runtime.stage_service.conversion_entrypoint
+            self.assertEqual(fake_conversion.requests[0].package_path, job_paths.parsed_result_package)
+            self.assertEqual(job_paths.result_docx.read_bytes(), b"fake-docx")
+
+            event_stages = [item.stage for item in runtime.repository.list_events(job.id)]
+            self.assertIn("parsed_result_conversion_started", event_stages)
+            self.assertIn("parsed_result_package_recovered", event_stages)
+            self.assertIn("job_completed", event_stages)
+
+    def test_convert_parsed_result_fails_when_result_zip_download_fails(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir))
+            runtime.stage_service.fake_mineru_client.raise_download_error = True
+            job = JobRecord(
+                id="job_parsed_download_fail",
+                source_filename="source.pdf",
+                status="parsed",
+                progress=60,
+                source_kind="source_pdf",
+                lifecycle_status="parsed",
+                execution_status="idle",
+                source_pdf_context=SourcePdfJobContext(
+                    batch_id="batch_parsed",
+                    data_id="job_parsed_download_fail",
+                    upstream_status="done",
+                    result_zip_url="https://mineru.net/result.zip",
+                ),
+            )
+            runtime.repository.create_job(job)
+
+            message = runtime.stage_service.enqueue_parsed_result_conversion(job, trace_id="trace_parsed_fail")
+            runtime.stage_service.dispatch_message(message.id)
+
+            updated_job = runtime.repository.get_job(job.id)
+            self.assertIsNotNone(updated_job)
+            self.assertEqual(updated_job.status, "failed")
+            self.assertEqual(updated_job.error_code, "parsed_result_download_failed")
+            event_stages = [item.stage for item in runtime.repository.list_events(job.id)]
+            self.assertIn("job_failed", event_stages)
 
     def test_upload_pdf_submits_to_mineru_and_enters_parsing(self):
         with tempfile.TemporaryDirectory() as temp_dir:

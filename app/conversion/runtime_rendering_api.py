@@ -9,18 +9,18 @@ from docx.oxml.ns import qn
 from docx.shared import Emu, Mm
 
 from app.conversion.runtime_models import Block, RenderConfig
-from page_layout_runtime import render_visual_block
-from render_config_runtime import TerminologyReplacer
-from table_html_parser import HtmlCell, HtmlTable, parse_html_table
-from table_long_renderer import is_long_simple_table, render_long_simple_table
-from table_render_runtime import (
+from app.conversion.runtime.page_layout_runtime import render_visual_block
+from app.conversion.runtime.render_config_runtime import TerminologyReplacer
+from app.conversion.runtime.table_html_parser import HtmlCell, HtmlTable, parse_html_table
+from app.conversion.runtime.table_long_renderer import is_long_simple_table, render_long_simple_table
+from app.conversion.runtime.table_render_runtime import (
     fill_table_cell_impl,
     render_block_annotations_impl,
     render_large_table_fallback_impl,
     render_large_table_if_needed_impl,
     render_standard_html_table_impl,
 )
-from text_rendering import (
+from app.conversion.runtime.text_rendering import (
     apply_named_style_config,
     fill_rich_text,
     get_style_config,

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# app/clients/mineru_client.py: 封装 MinerU 外部集成协议，包括上传和结果 zip 下载。
+
 import logging
 from pathlib import Path
 from typing import Any
@@ -95,6 +97,23 @@ class MinerUClient:
 
         self.logger.info("MinerU upload_files_batch submitted batch_id=%s files=%s", batch_id, len(file_urls))
         return str(batch_id), [str(url) for url in file_urls]
+
+    def download_result_zip(self, result_url: str, output_path: Path) -> Path:
+        """下载 MinerU 结果 zip 到本地路径。
+
+        这里把远端 HTTP 获取职责放在 provider 层；stage 只负责决定何时下载、下载到哪里以及何时登记 artifact。
+        """
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        response = requests.get(result_url, stream=True, timeout=300)
+        if response.status_code != 200:
+            raise MinerUError(f"下载结果 zip 失败: HTTP {response.status_code}, url={result_url}")
+        with output_path.open("wb") as handle:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    handle.write(chunk)
+        self.logger.info("MinerU result zip downloaded url=%s path=%s", result_url, output_path)
+        return output_path
 
     def _url(self, path: str) -> str:
         return f"{self.API_BASE}{path}"

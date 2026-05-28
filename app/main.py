@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# app/main.py: 组装 FastAPI 应用和当前单进程运行时依赖。
+
 import asyncio
 import logging
 import time
@@ -19,6 +21,7 @@ from app.repositories.file_term_rule_repository import FileTermRuleRepository
 from app.services.health_service import HealthService
 from app.services.jobs.artifacts import JobArtifactService
 from app.services.jobs.command import JobCommandService
+from app.services.jobs.dispatch import InProcessStageDispatcher
 from app.services.jobs.lifecycle import JobLifecycleService
 from app.services.jobs.query import JobQueryService
 from app.services.jobs.stage import JobStageService
@@ -65,6 +68,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         resolve_template_path=template_read_service.resolve_job_template_path,
         resolve_subscript_config_path=lambda: resolved_settings.subscript_config_path,
     )
+    stage_dispatcher = InProcessStageDispatcher(stage_service)
     command_service = JobCommandService(resolved_settings, repository, stage_service, artifact_service)
     lifecycle_service = JobLifecycleService(
         repository=repository,
@@ -86,6 +90,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         lifecycle_service=lifecycle_service,
         query_service=query_service,
         stage_service=stage_service,
+        stage_dispatcher=stage_dispatcher,
     )
 
 
@@ -94,7 +99,7 @@ def create_app(runtime: AppRuntime | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        replay_task = asyncio.create_task(asyncio.to_thread(app.state.runtime.stage_service.replay_pending))
+        replay_task = asyncio.create_task(asyncio.to_thread(app.state.runtime.stage_dispatcher.replay_pending))
         try:
             yield
         finally:

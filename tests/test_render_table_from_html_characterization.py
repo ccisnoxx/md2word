@@ -17,6 +17,7 @@ MODULE_PATH = ROOT / "mineru_to_docx.py"
 TEST_TMPDIR = ROOT / "tests" / ".tmp"
 TEST_TMPDIR.mkdir(parents=True, exist_ok=True)
 tempfile.tempdir = str(TEST_TMPDIR)
+RUNTIME_PKG = "app.conversion.runtime"
 
 
 def _install_dependency_stubs() -> None:
@@ -134,16 +135,16 @@ def _load_module():
     _install_dependency_stubs()
     for module_name in (
         "mineru_to_docx",
-        "text_rendering",
-        "render_config_runtime",
-        "input_adapter_runtime",
-        "page_repair_runtime",
-        "page_layout_runtime",
-        "translation_runtime",
-        "llm_client",
-        "table_html_parser",
-        "table_long_renderer",
-        "table_render_runtime",
+        f"{RUNTIME_PKG}.text_rendering",
+        f"{RUNTIME_PKG}.render_config_runtime",
+        f"{RUNTIME_PKG}.input_adapter_runtime",
+        f"{RUNTIME_PKG}.page_repair_runtime",
+        f"{RUNTIME_PKG}.page_layout_runtime",
+        f"{RUNTIME_PKG}.translation_runtime",
+        f"{RUNTIME_PKG}.llm_client",
+        f"{RUNTIME_PKG}.table_html_parser",
+        f"{RUNTIME_PKG}.table_long_renderer",
+        f"{RUNTIME_PKG}.table_render_runtime",
         "config",
     ):
         sys.modules.pop(module_name, None)
@@ -337,7 +338,7 @@ class RenderTableFromHtmlCharacterizationTests(unittest.TestCase):
         render_large_table_fallback.assert_not_called()
 
     def test_split_long_simple_table_rows_uses_word_capacity_without_source_page_scaling(self):
-        table_long_renderer = sys.modules["table_long_renderer"]
+        table_long_renderer = self.module.table_long_renderer
         render_config = self.make_render_config()
         header_row = [self.module.HtmlCell("H1"), self.module.HtmlCell("H2"), self.module.HtmlCell("H3")]
         body_rows = [
@@ -421,7 +422,7 @@ class RenderTableFromHtmlCharacterizationTests(unittest.TestCase):
         self.assertEqual(shading.attrs["w:fill"], self.module.TABLE_HEADER_FILL)
 
     def test_split_long_simple_table_rows_without_source_pages_keeps_default_packing(self):
-        table_long_renderer = sys.modules["table_long_renderer"]
+        table_long_renderer = self.module.table_long_renderer
         render_config = self.make_render_config()
         header_row = [self.module.HtmlCell("H1"), self.module.HtmlCell("H2"), self.module.HtmlCell("H3")]
         body_rows = [
@@ -447,7 +448,7 @@ class RenderTableFromHtmlCharacterizationTests(unittest.TestCase):
         self.assertEqual([len(chunk) for chunk in chunks], [4, 2])
 
     def test_estimate_long_table_page_capacity_subtracts_caption_height(self):
-        table_long_renderer = sys.modules["table_long_renderer"]
+        table_long_renderer = self.module.table_long_renderer
         render_config = self.make_render_config()
         header_row = [self.module.HtmlCell("H1"), self.module.HtmlCell("H2"), self.module.HtmlCell("H3")]
 

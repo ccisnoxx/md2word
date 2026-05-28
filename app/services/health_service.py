@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import llm_client
+from app.conversion.runtime import llm_client
 from app.core.config import Settings
 from app.schemas.api_v1 import HealthReadyResponse
 

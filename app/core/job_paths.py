@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# app/core/job_paths.py: 定义单个 job 的本地目录布局和 artifact 逻辑路径解析。
+
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,6 +15,7 @@ class JobPaths:
     translation_dir: Path
     source_package: Path
     source_pdf: Path
+    parsed_result_package: Path
     result_docx: Path
     translation_request: Path
     job_json: Path
@@ -34,6 +37,7 @@ def build_job_paths(data_dir: Path, job_id: str) -> JobPaths:
         translation_dir=translation_dir,
         source_package=input_dir / "source.zip",
         source_pdf=input_dir / "source.pdf",
+        parsed_result_package=input_dir / "parsed-result.zip",
         result_docx=output_dir / "result.docx",
         translation_request=translation_dir / "request.json",
         job_json=job_root / "job.json",

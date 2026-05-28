@@ -5,10 +5,9 @@ from pathlib import Path
 from docx import Document
 from loguru import logger
 
-import llm_client
-import translation_runtime
-from input_adapter_runtime import load_pages, materialize_input
-from page_layout_runtime import build_document
+from app.conversion.runtime import llm_client, translation_runtime
+from app.conversion.runtime.input_adapter_runtime import load_pages, materialize_input
+from app.conversion.runtime.page_layout_runtime import build_document
 
 from app.conversion.runtime_helpers import (
     apply_document_language_overrides,

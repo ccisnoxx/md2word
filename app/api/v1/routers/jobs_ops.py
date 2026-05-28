@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# app/api/v1/routers/jobs_ops.py: 暴露 job 操作接口并通过运行时端口触发后续调度。
+
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request
 
 from app.api.dependencies import get_runtime, get_trace_id, require_job_ops_access
@@ -31,7 +33,7 @@ def retry_job(
         if message.job_id == job_id
     ]
     for message in pending_messages:
-        background_tasks.add_task(runtime.stage_service.dispatch_message, message.id)
+        background_tasks.add_task(runtime.stage_dispatcher.dispatch, message.id)
     return JobOperationAcceptedResponse(
         job_id=result.job_id,
         operation=result.operation,

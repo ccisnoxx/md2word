@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# app/api/v1/routers/jobs_presenters.py: 将 JobRecord/JobFile/JobEvent 映射为对外 API 响应模型。
+
 from fastapi import Request
 
 from app.core.job_models import JobEvent, JobFile, JobRecord
@@ -71,6 +73,7 @@ def build_job_detail_response(
     events: list[JobEvent],
 ) -> JobDetailResponse:
     files = runtime.artifact_service.sort_files(files)
+    # 这些 mineru_* 仍作为 API 兼容投影返回，内部来源优先是 nested source_pdf_context。
     return JobDetailResponse(
         id=job.id,
         source_filename=job.source_filename,
@@ -81,11 +84,11 @@ def build_job_detail_response(
         document_language=job.document_language,
         resolved_document_language=job.resolved_document_language,
         template_id=job.template_id,
-        mineru_batch_id=job.mineru_batch_id,
-        mineru_data_id=job.mineru_data_id,
-        mineru_callback_seed=job.mineru_callback_seed,
-        mineru_status=job.mineru_status,
-        mineru_result_zip_url=job.mineru_result_zip_url,
+        mineru_batch_id=job.read_mineru_batch_id(),
+        mineru_data_id=job.read_mineru_data_id(),
+        mineru_callback_seed=job.read_mineru_callback_seed(),
+        mineru_status=job.read_mineru_status(),
+        mineru_result_zip_url=job.read_mineru_result_zip_url(),
         error_code=job.error_code,
         error_message=job.error_message,
         result_ready=job.result_ready,

@@ -1,15 +1,24 @@
 from __future__ import annotations
 
+# app/services/jobs/lifecycle.py: 处理 jobs 的 retry/cancel/cleanup 运维动作，并调用集中 workflow 规则。
+
 import shutil
 from dataclasses import dataclass
 
 from fastapi import HTTPException, status
 
-from app.core.job_models import ConversionOptions, JobEvent, utc_now
+from app.core.job_workflow import (
+    JobWorkflowViolation,
+    build_cancel_transition,
+    build_cleanup_local_files_transition,
+    build_retry_transition,
+)
+from app.core.job_models import ConversionOptions, utc_now
 from app.core.job_paths import build_job_paths
 from app.repositories.protocols import JobRepositoryProtocol, StageMessageRepositoryProtocol
 from app.services.jobs.artifacts import JobArtifactService
 from app.services.jobs.stage import JobStageService
+from app.services.jobs.workflow_events import build_job_event_from_intent
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,29 +53,44 @@ class JobLifecycleService:
         self.stage_service = stage_service
         self.artifact_service = artifact_service
 
+    def _append_intent_event(
+        self,
+        job_id: str,
+        *,
+        intent,
+        trace_id: str,
+        message: str | None = None,
+        status: str | None = None,
+        error_code: str | None = None,
+        details: dict | None = None,
+    ) -> None:
+        """把 lifecycle 领域事件意图映射为当前持久化 JobEvent。"""
+
+        self.repository.append_event(
+            job_id,
+            build_job_event_from_intent(
+                intent,
+                trace_id=trace_id,
+                message=message,
+                status=status,
+                error_code=error_code,
+                details=details,
+            ),
+        )
+
     def retry_job(self, job_id: str, *, reason: str, trace_id: str) -> JobOperationAccepted:
         job = self._get_job_or_404(job_id)
-        if job.status not in {"failed", "canceled"}:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"当前状态 `{job.status}` 不允许 retry。",
-            )
+        # retry 的合法性和 reset patch 统一由 workflow 规则层给出。
+        try:
+            transition = build_retry_transition(job)
+        except JobWorkflowViolation as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
 
         self._delete_pending_stage_messages(job.id)
         updated_job = self.repository.update_job(
             job.id,
-            status="uploaded",
-            progress=0,
-            error_code=None,
-            error_message=None,
-            result_ready=False,
-            started_at=None,
-            completed_at=None,
             updated_at=utc_now(),
-            mineru_batch_id=None if job.source_kind == "source_pdf" else job.mineru_batch_id,
-            mineru_data_id=None if job.source_kind == "source_pdf" else job.mineru_data_id,
-            mineru_callback_seed=None if job.source_kind == "source_pdf" else job.mineru_callback_seed,
-            mineru_status=None if job.source_kind == "source_pdf" else job.mineru_status,
+            **transition.as_job_update_patch(job),
         )
         options = ConversionOptions(
             template_id=job.template_id,
@@ -78,15 +102,11 @@ class JobLifecycleService:
             stage_message = self.stage_service.enqueue_mineru_submission(updated_job, options, trace_id)
         else:
             stage_message = self.stage_service.enqueue_conversion(updated_job, options, trace_id)
-        self.repository.append_event(
+        self._append_intent_event(
             job.id,
-            JobEvent(
-                stage="job_retry_requested",
-                message="任务已重新加入后台执行队列。",
-                status="accepted",
-                details={"reason": reason, "stage_message_id": stage_message.id},
-                trace_id=trace_id,
-            ),
+            intent=transition.event_intents[0],
+            trace_id=trace_id,
+            details={"reason": reason, "stage_message_id": stage_message.id},
         )
         return JobOperationAccepted(
             job_id=job.id,
@@ -98,47 +118,34 @@ class JobLifecycleService:
 
     def cancel_job(self, job_id: str, *, reason: str, trace_id: str):
         job = self._get_job_or_404(job_id)
-        if job.status in {"completed", "failed", "canceled"}:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"当前状态 `{job.status}` 不允许 cancel。",
-            )
-        if job.status == "converting":
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="当前任务正在执行中，暂不支持中断式取消。",
-            )
+        # cancel 是否允许由集中 policy 判定，避免状态约束散落在 service 内。
+        try:
+            transition = build_cancel_transition(job)
+        except JobWorkflowViolation as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
 
         self._delete_pending_stage_messages(job.id)
         updated = self.repository.update_job(
             job.id,
-            status="canceled",
-            progress=100,
-            error_code=None,
-            error_message=None,
-            result_ready=False,
             completed_at=utc_now(),
             updated_at=utc_now(),
+            **transition.as_job_update_patch(job),
         )
-        self.repository.append_event(
+        self._append_intent_event(
             job.id,
-            JobEvent(
-                stage="job_canceled",
-                message="任务已取消。",
-                status="succeeded",
-                details={"reason": reason},
-                trace_id=trace_id,
-            ),
+            intent=transition.event_intents[0],
+            trace_id=trace_id,
+            details={"reason": reason},
         )
         return updated
 
     def cleanup_local_files(self, job_id: str, *, reason: str, trace_id: str) -> CleanupLocalFilesResult:
         job = self._get_job_or_404(job_id)
-        if job.status != "completed":
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"当前状态 `{job.status}` 不允许 cleanup-local-files。",
-            )
+        # cleanup 仍是运维动作，但状态前置条件统一走 workflow 规则层。
+        try:
+            transition = build_cleanup_local_files_transition(job)
+        except JobWorkflowViolation as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
 
         job_paths = build_job_paths(self.stage_service.settings.data_path, job.id)
         deleted_paths: list[str] = []
@@ -158,19 +165,15 @@ class JobLifecycleService:
             shutil.rmtree(job_paths.work_dir)
             deleted_paths.append(str(job_paths.work_dir))
 
-        self.repository.append_event(
+        self._append_intent_event(
             job.id,
-            JobEvent(
-                stage="cleanup_local_files",
-                message="本地运行态文件清理完成。",
-                status="succeeded",
-                details={
-                    "reason": reason,
-                    "deleted_paths": deleted_paths,
-                    "skipped_paths": skipped_paths,
-                },
-                trace_id=trace_id,
-            ),
+            intent=transition.event_intents[0],
+            trace_id=trace_id,
+            details={
+                "reason": reason,
+                "deleted_paths": deleted_paths,
+                "skipped_paths": skipped_paths,
+            },
         )
 
         return CleanupLocalFilesResult(
