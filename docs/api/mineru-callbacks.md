@@ -14,7 +14,7 @@ source_files:
   - app/schemas/api_v1.py
 summary: MinerU callback API 提供 callback ingress、payload 归一化、鉴权和结果 URL 安全校验。
 tags: [mineru, callback, api, guards]
-last_reviewed: 2026-05-18
+last_reviewed: 2026-05-28
 ---
 
 ## 概述
@@ -29,11 +29,13 @@ MinerU callback 当前单独挂在 `/api/v1/mineru-callbacks` 下，不和 jobs 
 - 校验 checksum 和 `full_zip_url`
 - 匹配 job 并入队 `process_callback`
 
-当前明确不做：
+callback ingress 本身不做：
 
 - 不下载结果 zip
 - 不生成 DOCX
 - 不替代 `/api/v1/jobs/pdf`
+
+但 `process_callback` 成功处理 `done + full_zip_url` 后，后台 workflow 会自动继续恢复 `parsed_result_package` 并推进后处理 conversion。
 
 ## 部署模式
 
@@ -46,7 +48,7 @@ query token 键名由 `MINERU_CALLBACK_TOKEN_QUERY_NAME` 控制，默认是 `cal
 
 ## `POST /api/v1/mineru-callbacks/result`
 
-- 用途：接收 MinerU callback，并把结果推进到 `parsed` / `failed` / 保持 `parsing`。
+- 用途：接收 MinerU callback，并把结果推进到 `failed`，或在 `done + full_zip_url` 时自动继续在线后处理链，最终到 `completed`。
 - 请求体：`application/json`
 
 ### 原始 payload 形态
@@ -119,18 +121,22 @@ query token 键名由 `MINERU_CALLBACK_TOKEN_QUERY_NAME` 控制，默认是 `cal
 注意：
 
 - 这份响应主要表示 callback 已被接受并入队
-- 真正的 `parsed` / `failed` 结果应以随后查询 `GET /api/v1/jobs/{job_id}` 为准
+- 真正的最终结果应以随后查询 `GET /api/v1/jobs/{job_id}` 为准
+- 正常自动链路下，job 可能短暂经过 `parsed`，但最终通常会继续到 `completed`
 
 ## 状态推进
 
 ### `done + full_zip_url`
 
 - 持久化 `mineru_result_zip_url`
-- `status -> parsed`
+- `status` 通常会继续推进到 `completed`
 - `mineru_status -> done`
+- `parsed_result_package` 会作为受支持的中间 artifact 登记，可通过 jobs 下载接口按 `parsed-result-package` alias 下载
 - 追加事件：
   - `mineru_callback_received`
   - `mineru_callback_processed`
+  - `parsed_result_package_recovered`
+  - `job_completed`
 
 ### `failed`
 

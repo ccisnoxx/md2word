@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+# app/conversion/runtime/input_adapter_runtime.py
+# MinerU 输入适配与块级文本规整。
+
 import json
+import re
 import shutil
 import tempfile
 import zipfile
@@ -8,7 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-from page_repair_runtime import (
+from app.conversion.runtime.page_repair_runtime import (
     attach_table_continuations,
     backfill_middle_visual_metadata,
     bbox_distance,
@@ -22,6 +26,7 @@ from page_repair_runtime import (
 
 
 _RUNTIME_MODULE: Any | None = None
+DETAILS_BLOCK_RE = re.compile(r"<details\b[^>]*>.*?</details>", re.IGNORECASE | re.DOTALL)
 
 
 def bind_runtime(module: Any) -> None:
@@ -774,8 +779,9 @@ def looks_like_html(text: str) -> bool:
 
 def extract_first_html(node: Any) -> str | None:
     looks_like_html_fn = _runtime_value("looks_like_html", looks_like_html)
+    clean_markdown_document_fn = _runtime_value("clean_markdown_document", clean_markdown_document)
     if isinstance(node, str):
-        stripped = node.strip()
+        stripped = clean_markdown_document_fn(node).strip()
         return stripped if looks_like_html_fn(stripped) else None
 
     if isinstance(node, list):
@@ -787,8 +793,10 @@ def extract_first_html(node: Any) -> str | None:
 
     if isinstance(node, dict):
         direct = node.get("html")
-        if isinstance(direct, str) and looks_like_html_fn(direct):
-            return direct.strip()
+        if isinstance(direct, str):
+            cleaned_direct = clean_markdown_document_fn(direct).strip()
+            if looks_like_html_fn(cleaned_direct):
+                return cleaned_direct
         for value in node.values():
             html = extract_first_html(value)
             if html:
@@ -825,8 +833,17 @@ def extract_middle_block_text(node: dict[str, Any]) -> str:
     return " ".join(fragments).strip()
 
 
+def clean_markdown_document(text: str) -> str:
+    """删除不应进入正文的 details 块，同时尽量保留 Markdown 结构。"""
+    normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    cleaned = DETAILS_BLOCK_RE.sub("", normalized)
+    return re.sub(r"\n{3,}", "\n\n", cleaned)
+
+
 def clean_text(text: str) -> str:
-    return " ".join(text.replace("\n", " ").split())
+    """删除 details 整块后再压缩空白，供结构化文本片段复用。"""
+    without_details = clean_markdown_document(text)
+    return " ".join(without_details.replace("\n", " ").split())
 
 
 def find_first_file(package_root: Path, exact_names: tuple[str, ...], suffixes: tuple[str, ...]) -> Path | None:

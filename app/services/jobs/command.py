@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+# app/services/jobs/command.py: 负责 jobs 的创建、上传落盘和 callback 入队入口。
+
 import shutil
 from uuid import uuid4
 
 from app.core.config import Settings
-from app.core.job_models import ConversionOptions, JobEvent, JobFile, JobRecord
+from app.core.job_models import ConversionOptions, JobFile, JobRecord, SourcePdfJobContext
+from app.core.job_workflow import build_job_created_intent, build_mineru_callback_received_intent
 from app.core.job_paths import build_job_paths, ensure_job_dirs
 from app.repositories.protocols import JobRepositoryProtocol
 from app.services.jobs.artifacts import JobArtifactService
 from app.services.jobs.stage import JobStageService
+from app.services.jobs.workflow_events import build_job_event_from_intent
 
 
 class JobCommandService:
@@ -43,6 +47,8 @@ class JobCommandService:
             status="uploaded",
             progress=0,
             source_kind="mineru_package",
+            lifecycle_status="uploaded",
+            execution_status="idle",
             translation_mode=options.translation_mode,
             document_language=options.document_language,
             use_mineru_header_footer=options.use_mineru_header_footer,
@@ -55,16 +61,14 @@ class JobCommandService:
         )
         self.repository.append_event(
             job_id,
-            JobEvent(
-                stage="job_created",
-                message="任务已创建，等待后台转换。",
-                status="accepted",
-                details={
-                    "source_filename": source_filename,
-                    "translation_mode": options.translation_mode,
-                    "document_language": options.document_language,
-                },
+            build_job_event_from_intent(
+                build_job_created_intent(
+                    source_kind="mineru_package",
+                    source_filename=source_filename,
+                    options=options,
+                ),
                 trace_id=trace_id,
+                message="任务已创建，等待后台转换。",
             ),
         )
         stage_message = self.stage_service.enqueue_conversion(job, options, trace_id)
@@ -89,6 +93,9 @@ class JobCommandService:
             status="uploaded",
             progress=0,
             source_kind="source_pdf",
+            lifecycle_status="uploaded",
+            execution_status="idle",
+            source_pdf_context=SourcePdfJobContext(),
             translation_mode=options.translation_mode,
             document_language=options.document_language,
             use_mineru_header_footer=options.use_mineru_header_footer,
@@ -101,17 +108,14 @@ class JobCommandService:
         )
         self.repository.append_event(
             job_id,
-            JobEvent(
-                stage="job_created",
-                message="PDF 任务已创建，等待提交 MinerU。",
-                status="accepted",
-                details={
-                    "source_filename": source_filename,
-                    "source_kind": "source_pdf",
-                    "translation_mode": options.translation_mode,
-                    "document_language": options.document_language,
-                },
+            build_job_event_from_intent(
+                build_job_created_intent(
+                    source_kind="source_pdf",
+                    source_filename=source_filename,
+                    options=options,
+                ),
                 trace_id=trace_id,
+                message="PDF 任务已创建，等待提交 MinerU。",
             ),
         )
         stage_message = self.stage_service.enqueue_mineru_submission(job, options, trace_id)
@@ -127,15 +131,8 @@ class JobCommandService:
         stage_message = self.stage_service.enqueue_process_callback(resolved_job, normalized_payload, trace_id)
         self.repository.append_event(
             resolved_job.id,
-            JobEvent(
-                stage="mineru_callback_received",
-                message="收到 MinerU callback，等待后台处理。",
-                status="accepted",
-                details={
-                    "batch_id": normalized_payload.get("batch_id"),
-                    "data_id": normalized_payload.get("data_id"),
-                    "state": normalized_payload.get("state"),
-                },
+            build_job_event_from_intent(
+                build_mineru_callback_received_intent(normalized_payload),
                 trace_id=trace_id,
             ),
         )
@@ -149,9 +146,9 @@ class JobCommandService:
             if job is not None:
                 return job
         for job in self.repository.list_jobs():
-            if data_id and job.mineru_data_id == data_id:
+            if data_id and job.read_mineru_data_id() == data_id:
                 return job
         for job in self.repository.list_jobs():
-            if batch_id and job.mineru_batch_id == batch_id:
+            if batch_id and job.read_mineru_batch_id() == batch_id:
                 return job
         raise FileNotFoundError("未找到与回调匹配的任务")

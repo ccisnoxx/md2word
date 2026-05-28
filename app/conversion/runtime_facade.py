@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from input_adapter_runtime import load_pages, materialize_input
+from app.conversion.runtime.input_adapter_runtime import load_pages, materialize_input
 from app.conversion.runtime_runner import run_conversion
 
 from app.conversion.runtime_helpers import resolve_document_language

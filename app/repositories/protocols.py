@@ -25,6 +25,12 @@ class StageMessageRepositoryProtocol(Protocol):
     def delete_stage_message(self, message_id: str) -> None: ...
 
 
+class JobStageWorkflowRepositoryProtocol(JobRepositoryProtocol, StageMessageRepositoryProtocol, Protocol):
+    """JobStageService 需要的最小 repository 能力组合。"""
+
+    pass
+
+
 class TermRuleRepositoryProtocol(Protocol):
     def load(self) -> TermRulesStore: ...
     def save(self, store: TermRulesStore) -> TermRulesStore: ...

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+# app/repositories/file_job_repository.py: 文件后端 repository，并在持久化边界同步兼容投影字段。
+
 import json
 from pathlib import Path
 from typing import Any
 
-from app.core.job_models import JobEvent, JobFile, JobRecord, JobStageMessage
+from app.core.job_models import JobEvent, JobFile, JobRecord, JobStageMessage, sync_source_pdf_compatibility_fields
 from app.core.job_paths import build_job_paths, ensure_job_dirs
 
 
@@ -34,7 +36,9 @@ class FileJobRepository:
     def create_job(self, job: JobRecord) -> None:
         paths = build_job_paths(self.data_dir, job.id)
         ensure_job_dirs(paths)
-        self._write_json(paths.job_json, job.model_dump(mode="json"))
+        # source_pdf_context -> mineru_* 兼容投影的同步责任明确留在持久化边界。
+        storage_job = sync_source_pdf_compatibility_fields(job)
+        self._write_json(paths.job_json, storage_job.model_dump(mode="json"))
 
     def get_job(self, job_id: str) -> JobRecord | None:
         path = build_job_paths(self.data_dir, job_id).job_json
@@ -54,7 +58,8 @@ class FileJobRepository:
         existing = self.get_job(job_id)
         if existing is None:
             raise FileNotFoundError(f"任务不存在: {job_id}")
-        updated = existing.model_copy(update=patch)
+        # 所有 nested-first 的 source_pdf 写法都在这里统一同步回兼容平铺字段。
+        updated = sync_source_pdf_compatibility_fields(existing.model_copy(update=patch))
         self._write_json(
             build_job_paths(self.data_dir, job_id).job_json,
             updated.model_dump(mode="json"),

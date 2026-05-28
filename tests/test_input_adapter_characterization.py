@@ -1,3 +1,6 @@
+# tests/test_input_adapter_characterization.py
+# input_adapter_runtime 的行为特征测试。
+
 import json
 import tempfile
 import zipfile
@@ -14,6 +17,46 @@ class InputAdapterCharacterizationTests(__import__("unittest").TestCase):
     @classmethod
     def setUpClass(cls):
         cls.module = load_input_adapter_module()
+
+    def test_clean_markdown_document_removes_details_blocks(self):
+        raw = "# Title\n\nkeep\n<details>\n<summary>flowchart</summary>\nhidden\n</details>\n\n## Next\n"
+        cleaned = self.module.clean_markdown_document(raw)
+
+        self.assertEqual(cleaned, "# Title\n\nkeep\n\n## Next\n")
+
+    def test_clean_text_removes_details_blocks_but_keeps_inline_markup(self):
+        cleaned = self.module.clean_text("before <details><summary>x</summary>hidden</details> R<sub>L</sub> after")
+        self.assertEqual(cleaned, "before R<sub>L</sub> after")
+
+    def test_parse_v2_block_removes_details_from_content_list_paragraph_text(self):
+        paragraph_block = self.module.parse_v2_block(
+            {
+                "type": "paragraph",
+                "bbox": [0, 10, 20, 20],
+                "content": {
+                    "paragraph_content": [
+                        {"type": "text", "content": "before "},
+                        {"type": "text", "content": "<details><summary>flowchart</summary>hidden</details>"},
+                        {"type": "text", "content": " after"},
+                    ]
+                },
+            },
+            Path("."),
+            page_idx=0,
+            block_idx=1,
+        )
+
+        self.assertEqual(paragraph_block.type, "paragraph")
+        self.assertEqual(paragraph_block.text, "before after")
+
+    def test_extract_first_html_ignores_details_wrapped_html_from_content_list(self):
+        html = self.module.extract_first_html(
+            {
+                "html": "<details><summary>text_image</summary><table><tr><td>A</td></tr></table></details>"
+            }
+        )
+
+        self.assertIsNone(html)
 
     def test_materialize_input_yields_directory_as_is(self):
         with tempfile.TemporaryDirectory() as temp_dir:

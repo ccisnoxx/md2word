@@ -19,25 +19,24 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Emu, Mm, Pt, RGBColor
 from loguru import logger
-import input_adapter_runtime
-import page_layout_runtime
-import page_repair_runtime
-import render_config_runtime
-import text_rendering
-import translation_runtime
-import llm_client
+import app.conversion.runtime.input_adapter_runtime as input_adapter_runtime
+import app.conversion.runtime.llm_client as llm_client
+import app.conversion.runtime.page_layout_runtime as page_layout_runtime
+import app.conversion.runtime.page_repair_runtime as page_repair_runtime
+import app.conversion.runtime.render_config_runtime as render_config_runtime
+import app.conversion.runtime.text_rendering as text_rendering
+import app.conversion.runtime.translation_runtime as translation_runtime
 from app.conversion import runtime_helpers, runtime_models, runtime_rendering_api, runtime_runner
-from config import APP_CONFIG
-from table_html_parser import HtmlCell, HtmlTable, parse_html_table
-from table_long_renderer import is_long_simple_table, render_long_simple_table
-from table_render_runtime import (
+from app.conversion.runtime.table_html_parser import HtmlCell, HtmlTable, parse_html_table
+from app.conversion.runtime.table_long_renderer import is_long_simple_table, render_long_simple_table
+from app.conversion.runtime.table_render_runtime import (
     fill_table_cell_impl,
     render_block_annotations_impl,
     render_large_table_fallback_impl,
     render_large_table_if_needed_impl,
     render_standard_html_table_impl,
 )
-from input_adapter_runtime import (
+from app.conversion.runtime.input_adapter_runtime import (
     build_legacy_pages,
     build_missing_content_list_message,
     build_v2_pages,
@@ -74,7 +73,7 @@ from input_adapter_runtime import (
     parse_visual_block,
     resolve_asset_path,
 )
-from page_repair_runtime import (
+from app.conversion.runtime.page_repair_runtime import (
     attach_table_continuations,
     backfill_middle_visual_metadata,
     bbox_distance,
@@ -85,7 +84,7 @@ from page_repair_runtime import (
     merge_page_with_middle,
     repair_and_sort_pages,
 )
-from page_layout_runtime import (
+from app.conversion.runtime.page_layout_runtime import (
     build_document,
     build_regions,
     classify_body_block,
@@ -119,8 +118,8 @@ from page_layout_runtime import (
     split_page_blocks,
     split_row_text,
 )
-from render_config_runtime import TerminologyReplacer, build_replacement_pattern
-from text_rendering import (
+from app.conversion.runtime.render_config_runtime import TerminologyReplacer, build_replacement_pattern
+from app.conversion.runtime.text_rendering import (
     BODY_FONT,
     SECTION_TITLE_FONT,
     TOP_TITLE_FONT,
@@ -157,12 +156,13 @@ from text_rendering import (
     render_normalized_text_fragment,
     replace_control_word,
 )
-from translation_runtime import (
+from app.conversion.runtime.translation_runtime import (
     TranslationConfig,
     apply_translation_responses,
     load_translation_response_file,
     write_translation_request_file,
 )
+from config import APP_CONFIG
 
 input_adapter_runtime.bind_runtime(sys.modules[__name__])
 page_layout_runtime.bind_runtime(sys.modules[__name__])

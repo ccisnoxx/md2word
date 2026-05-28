@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# app/services/jobs/stage.py: 驱动后台 stage 执行，并通过集中 workflow 规则推进 job 状态。
+
 import logging
 import secrets
 from pathlib import Path
@@ -10,18 +12,35 @@ from app.clients.mineru_client import MinerUClient
 from app.conversion.contracts import ConversionEntrypoint, ConversionFailure
 from app.conversion.entrypoint import build_job_conversion_request
 from app.core.config import Settings
-from app.core.job_models import ConversionOptions, JobEvent, JobRecord, JobStageMessage, utc_now
+from app.core.job_workflow import (
+    JobWorkflowViolation,
+    build_conversion_completed_transition,
+    build_conversion_failed_transition,
+    build_conversion_started_transition,
+    build_mineru_callback_transition,
+    build_parsed_result_conversion_failed_transition,
+    build_parsed_result_package_recovered_intent,
+    build_parsed_result_conversion_started_transition,
+    build_mineru_submission_failed_transition,
+    build_mineru_submission_started_transition,
+    build_mineru_submission_succeeded_transition,
+    build_stage_enqueue_transition,
+    build_translation_completed_intent,
+    build_translation_started_intent,
+)
+from app.core.job_models import ConversionOptions, JobRecord, JobStageMessage, utc_now
 from app.core.job_paths import build_job_paths
 from app.core.mineru_callback import validate_mineru_result_url
-from app.repositories.file_job_repository import FileJobRepository
+from app.repositories.protocols import JobStageWorkflowRepositoryProtocol
 from app.services.jobs.artifacts import JobArtifactService
+from app.services.jobs.workflow_events import build_job_event_from_intent
 
 
 class JobStageService:
     def __init__(
         self,
         settings: Settings,
-        repository: FileJobRepository,
+        repository: JobStageWorkflowRepositoryProtocol,
         conversion_entrypoint: ConversionEntrypoint,
         artifact_service: JobArtifactService,
         mineru_client_factory: Callable[[], MinerUClient] | None = None,
@@ -66,6 +85,15 @@ class JobStageService:
         self.repository.put_stage_message(message)
         return message
 
+    def enqueue_parsed_result_conversion(self, job: JobRecord, trace_id: str) -> JobStageMessage:
+        return self._enqueue_stage(
+            job=job,
+            stage="convert_parsed_result",
+            trace_id=trace_id,
+            event_message="parsed 结果已进入在线后处理队列。",
+            event_details={"source_kind": "source_pdf", "from_lifecycle_status": job.resolved_lifecycle_status()},
+        )
+
     def dispatch_message(self, message_id: str) -> None:
         message = self.repository.get_stage_message(message_id)
         if message is None:
@@ -84,6 +112,9 @@ class JobStageService:
             return
         if message.stage == "convert_package":
             self._dispatch_convert_package(job, message)
+            return
+        if message.stage == "convert_parsed_result":
+            self._dispatch_convert_parsed_result(job, message)
             return
 
         self.repository.delete_stage_message(message_id)
@@ -108,44 +139,84 @@ class JobStageService:
             trace_id=trace_id,
         )
         self.repository.put_stage_message(message)
-        self.repository.update_job(
-            job.id,
-            status="queued",
-            progress=10,
-            updated_at=utc_now(),
+        transition = build_stage_enqueue_transition(job, stage=stage)
+        updated_job = self._apply_transition(
+            job,
+            transition,
+            extra_updates={"updated_at": utc_now()},
         )
-        self._append_event(
+        self._append_intent_events(
             job.id,
-            stage="stage_enqueued",
-            message=event_message,
-            status="accepted",
-            details=event_details,
+            transition.event_intents,
             trace_id=trace_id,
+            overrides_by_kind={
+                "stage_enqueued": {
+                    "message": event_message,
+                    "details": event_details,
+                }
+            },
         )
         return message
 
-    def _append_event(
+    def _append_intent_events(
         self,
         job_id: str,
+        intents: tuple,
         *,
-        stage: str,
-        message: str,
-        status: str,
         trace_id: str,
-        error_code: str | None = None,
-        details: dict | None = None,
+        overrides_by_kind: dict[str, dict] | None = None,
     ) -> None:
-        self.repository.append_event(
-            job_id,
-            JobEvent(
-                stage=stage,
-                message=message,
-                status=status,
-                error_code=error_code,
-                details=details or {},
+        """把领域事件意图统一映射为持久化 JobEvent。"""
+
+        overrides = overrides_by_kind or {}
+        for intent in intents:
+            event = build_job_event_from_intent(
+                intent,
                 trace_id=trace_id,
-            ),
+                **overrides.get(intent.kind, {}),
+            )
+            self.repository.append_event(job_id, event)
+
+    def _apply_transition(
+        self,
+        job: JobRecord,
+        transition,
+        *,
+        extra_updates: dict | None = None,
+    ) -> JobRecord:
+        """统一写入 job transition，避免每个 stage 手工拼 patch。"""
+
+        return self.repository.update_job(
+            job.id,
+            **(extra_updates or {}),
+            **transition.as_job_update_patch(job),
         )
+
+    def _handle_stage_failure(
+        self,
+        *,
+        job: JobRecord,
+        message: JobStageMessage,
+        transition,
+        error_code: str,
+        error_message: str,
+        event_overrides: dict[str, dict],
+    ) -> None:
+        """统一处理失败场景的 job patch、stage failure、事件落盘和日志。"""
+
+        updated_job = self._apply_transition(
+            job,
+            transition,
+            extra_updates={"updated_at": utc_now()},
+        )
+        self._mark_stage_failed(message, error_code=error_code, error_message=error_message)
+        self._append_intent_events(
+            job.id,
+            transition.event_intents,
+            trace_id=message.trace_id,
+            overrides_by_kind=event_overrides,
+        )
+        self._log_stage_failure(message, job.id, error_message)
 
     def _mark_stage_running(self, message: JobStageMessage) -> None:
         self.repository.update_stage_message(
@@ -166,24 +237,6 @@ class JobStageService:
             error_message=error_message,
         )
 
-    def _mark_job_failed(
-        self,
-        job: JobRecord,
-        *,
-        error_code: str,
-        error_message: str,
-        **extra_updates,
-    ) -> None:
-        self.repository.update_job(
-            job.id,
-            status="failed",
-            progress=100,
-            updated_at=utc_now(),
-            error_code=error_code,
-            error_message=error_message,
-            **extra_updates,
-        )
-
     def _log_stage_failure(self, message: JobStageMessage, job_id: str, error_message: str) -> None:
         self.logger.exception(
             "[trace_id=%s job_id=%s stage=%s status=failed] %s",
@@ -195,38 +248,49 @@ class JobStageService:
 
     def _dispatch_convert_package(self, job: JobRecord, message: JobStageMessage) -> None:
         self._mark_stage_running(message)
-        self.repository.update_job(
-            job.id,
-            status="converting",
-            progress=50,
-            started_at=job.started_at or utc_now(),
-            updated_at=utc_now(),
-            error_code=None,
-            error_message=None,
+        transition = build_conversion_started_transition(job)
+        self._apply_transition(
+            job,
+            transition,
+            extra_updates={
+                "started_at": job.started_at or utc_now(),
+                "updated_at": utc_now(),
+            },
         )
-        self._append_event(
+        self._append_intent_events(
             job.id,
-            stage="conversion_started",
-            message="开始执行 MinerU 包转换。",
-            status="running",
+            transition.event_intents,
             trace_id=message.trace_id,
         )
+
+        self._run_conversion_pipeline(
+            job,
+            message,
+            package_path=build_job_paths(self.settings.data_path, job.id).source_package,
+        )
+
+    def _run_conversion_pipeline(
+        self,
+        job: JobRecord,
+        message: JobStageMessage,
+        *,
+        package_path: Path,
+    ) -> None:
+        """执行共享 conversion pipeline，供 convert_package 与 convert_parsed_result 复用。"""
 
         job_paths = build_job_paths(self.settings.data_path, job.id)
         request = build_job_conversion_request(
             job=job,
             job_paths=job_paths,
             settings=self.settings,
+            package_path=package_path,
             template_path=self.resolve_template_path(job.template_id),
             subscript_config_path=self.resolve_subscript_config_path(),
         )
         if job.translation_mode == "en2zh":
-            self._append_event(
+            self._append_intent_events(
                 job.id,
-                stage="translation_started",
-                message="开始执行英文转中文翻译。",
-                status="running",
-                details={"translation_model": request.translation_model},
+                (build_translation_started_intent(translation_model=request.translation_model),),
                 trace_id=message.trace_id,
             )
 
@@ -235,28 +299,28 @@ class JobStageService:
         except ConversionFailure as exc:
             error_code = exc.code
             error_message = exc.message
-            self._mark_job_failed(job, error_code=error_code, error_message=error_message)
-            self._mark_stage_failed(message, error_code=error_code, error_message=error_message)
-            if job.translation_mode == "en2zh" and error_code.startswith("translation_"):
-                self._append_event(
-                    job.id,
-                    stage="translation_failed",
-                    message="翻译阶段失败。",
-                    status="failed",
-                    error_code=error_code,
-                    details={"error_message": error_message},
-                    trace_id=message.trace_id,
-                )
-            self._append_event(
-                job.id,
-                stage="job_failed",
-                message="后台转换失败。",
-                status="failed",
+            failure_transition = build_conversion_failed_transition(
+                job,
                 error_code=error_code,
-                details={"error_message": error_message},
-                trace_id=message.trace_id,
+                error_message=error_message,
             )
-            self._log_stage_failure(message, job.id, error_message)
+            self._handle_stage_failure(
+                job=job,
+                message=message,
+                transition=failure_transition,
+                error_code=error_code,
+                error_message=error_message,
+                event_overrides={
+                    "translation_failed": {
+                        "error_code": error_code,
+                        "details": {"error_message": error_message},
+                    },
+                    "job_failed": {
+                        "error_code": error_code,
+                        "details": {"error_message": error_message},
+                    },
+                },
+            )
             return
         except Exception as exc:  # pragma: no cover - final guard
             self._log_stage_failure(message, job.id, str(exc))
@@ -269,37 +333,43 @@ class JobStageService:
                 self.artifact_service.build_registered_file("translation_request", job_paths),
             )
         if job.translation_mode == "en2zh":
-            self._append_event(
+            self._append_intent_events(
                 job.id,
-                stage="translation_completed",
-                message="翻译完成，已进入 DOCX 渲染。",
-                status="succeeded",
-                details={
-                    "translation_request_recorded": bool(request.translation_request_output and request.translation_request_output.exists()),
-                    "translation_model": request.translation_model,
-                },
+                (
+                    build_translation_completed_intent(
+                        translation_model=request.translation_model,
+                        translation_request_recorded=bool(
+                            request.translation_request_output and request.translation_request_output.exists()
+                        ),
+                    ),
+                ),
                 trace_id=message.trace_id,
             )
 
-        self.repository.update_job(
-            job.id,
-            status="completed",
-            progress=100,
-            result_ready=True,
-            resolved_document_language=result.document_language,
-            updated_at=utc_now(),
-            completed_at=utc_now(),
+        completion_transition = build_conversion_completed_transition(
+            job,
+            document_language=result.document_language,
         )
-        self._append_event(
-            job.id,
-            stage="job_completed",
-            message="DOCX 已生成，可供下载。",
-            status="succeeded",
-            details={
-                "pages": result.pages,
-                "document_language": result.document_language,
+        self._apply_transition(
+            job,
+            completion_transition,
+            extra_updates={
+                "updated_at": utc_now(),
+                "completed_at": utc_now(),
             },
+        )
+        self._append_intent_events(
+            job.id,
+            completion_transition.event_intents,
             trace_id=message.trace_id,
+            overrides_by_kind={
+                "job_completed": {
+                    "details": {
+                        "pages": result.pages,
+                        "document_language": result.document_language,
+                    }
+                }
+            },
         )
         self.repository.delete_stage_message(message.id)
         self.logger.info(
@@ -310,22 +380,98 @@ class JobStageService:
             job_paths.result_docx,
         )
 
+    def _dispatch_convert_parsed_result(self, job: JobRecord, message: JobStageMessage) -> None:
+        self._mark_stage_running(message)
+        transition = build_parsed_result_conversion_started_transition(job)
+        updated_job = self._apply_transition(
+            job,
+            transition,
+            extra_updates={"updated_at": utc_now()},
+        )
+        self._append_intent_events(
+            job.id,
+            transition.event_intents,
+            trace_id=message.trace_id,
+        )
+
+        job_paths = build_job_paths(self.settings.data_path, job.id)
+        result_zip_url = job.read_mineru_result_zip_url()
+        if not result_zip_url:
+            failure_transition = build_parsed_result_conversion_failed_transition(
+                job,
+                error_code="parsed_result_zip_missing",
+                error_message="当前任务缺少 mineru_result_zip_url，无法恢复 parsed 结果包",
+            )
+            self._handle_stage_failure(
+                job=job,
+                message=message,
+                transition=failure_transition,
+                error_code="parsed_result_zip_missing",
+                error_message="当前任务缺少 mineru_result_zip_url，无法恢复 parsed 结果包",
+                event_overrides={
+                    "job_failed": {
+                        "error_code": "parsed_result_zip_missing",
+                        "details": {"error_message": "当前任务缺少 mineru_result_zip_url，无法恢复 parsed 结果包"},
+                    }
+                },
+            )
+            return
+
+        try:
+            client = self.mineru_client_factory()
+            client.download_result_zip(result_zip_url, job_paths.parsed_result_package)
+        except Exception as exc:
+            error_message = str(exc)
+            failure_transition = build_parsed_result_conversion_failed_transition(
+                job,
+                error_code="parsed_result_download_failed",
+                error_message=error_message,
+            )
+            self._handle_stage_failure(
+                job=job,
+                message=message,
+                transition=failure_transition,
+                error_code="parsed_result_download_failed",
+                error_message=error_message,
+                event_overrides={
+                    "job_failed": {
+                        "error_code": "parsed_result_download_failed",
+                        "details": {"error_message": error_message},
+                    }
+                },
+            )
+            return
+
+        self.repository.upsert_file(
+            job.id,
+            self.artifact_service.build_registered_file("parsed_result_package", job_paths),
+        )
+        self._append_intent_events(
+            job.id,
+            (build_parsed_result_package_recovered_intent(source_url=result_zip_url),),
+            trace_id=message.trace_id,
+        )
+
+        self._run_conversion_pipeline(
+            job,
+            message,
+            package_path=job_paths.parsed_result_package,
+        )
+
     def _dispatch_submit_to_mineru(self, job: JobRecord, message: JobStageMessage) -> None:
         self._mark_stage_running(message)
-        self.repository.update_job(
-            job.id,
-            status="submitting",
-            progress=15,
-            started_at=job.started_at or utc_now(),
-            updated_at=utc_now(),
-            error_code=None,
-            error_message=None,
+        transition = build_mineru_submission_started_transition(job)
+        self._apply_transition(
+            job,
+            transition,
+            extra_updates={
+                "started_at": job.started_at or utc_now(),
+                "updated_at": utc_now(),
+            },
         )
-        self._append_event(
+        self._append_intent_events(
             job.id,
-            stage="mineru_submit_started",
-            message="开始提交 MinerU。",
-            status="running",
+            transition.event_intents,
             trace_id=message.trace_id,
         )
 
@@ -345,53 +491,43 @@ class JobStageService:
             )
         except Exception as exc:
             error_message = str(exc)
-            self._mark_job_failed(
+            failure_transition = build_mineru_submission_failed_transition(
                 job,
-                error_code="mineru_submit_failed",
                 error_message=error_message,
             )
-            self._mark_stage_failed(
-                message,
+            self._handle_stage_failure(
+                job=job,
+                message=message,
+                transition=failure_transition,
                 error_code="mineru_submit_failed",
                 error_message=error_message,
+                event_overrides={
+                    "mineru_submit_failed": {
+                        "error_code": "mineru_submit_failed",
+                        "details": {"error_message": error_message},
+                    },
+                    "job_failed": {
+                        "error_code": "mineru_submit_failed",
+                        "details": {"error_message": error_message},
+                    },
+                },
             )
-            self._append_event(
-                job.id,
-                stage="mineru_submit_failed",
-                message="MinerU 提交失败。",
-                status="failed",
-                error_code="mineru_submit_failed",
-                details={"error_message": error_message},
-                trace_id=message.trace_id,
-            )
-            self._append_event(
-                job.id,
-                stage="job_failed",
-                message="后台转换失败。",
-                status="failed",
-                error_code="mineru_submit_failed",
-                details={"error_message": error_message},
-                trace_id=message.trace_id,
-            )
-            self._log_stage_failure(message, job.id, error_message)
             return
 
-        self.repository.update_job(
-            job.id,
-            status="parsing",
-            progress=25,
-            updated_at=utc_now(),
-            mineru_batch_id=batch_id,
-            mineru_data_id=job.id,
-            mineru_callback_seed=callback_seed,
-            mineru_status="submitted",
+        success_transition = build_mineru_submission_succeeded_transition(
+            job,
+            batch_id=str(batch_id),
+            data_id=job.id,
+            callback_seed=callback_seed,
         )
-        self._append_event(
+        self._apply_transition(
+            job,
+            success_transition,
+            extra_updates={"updated_at": utc_now()},
+        )
+        self._append_intent_events(
             job.id,
-            stage="mineru_submit_succeeded",
-            message="MinerU 提交成功，等待外部回调。",
-            status="succeeded",
-            details={"batch_id": batch_id, "data_id": job.id},
+            success_transition.event_intents,
             trace_id=message.trace_id,
         )
         self.repository.delete_stage_message(message.id)
@@ -412,70 +548,78 @@ class JobStageService:
         batch_id = payload.get("batch_id")
         data_id = payload.get("data_id")
 
-        if job.status not in {"parsing", "parsed", "failed"}:
-            self.repository.delete_stage_message(message.id)
-            self.logger.warning(
-                "[trace_id=%s job_id=%s stage=%s status=skipped] unsupported job status for callback: %s",
-                message.trace_id,
-                job.id,
-                message.stage,
-                job.status,
-            )
-            return
-
         if full_zip_url:
             self._validate_mineru_result_url(str(full_zip_url))
 
-        updates = {
-            "updated_at": utc_now(),
-            "mineru_status": state or job.mineru_status,
+        # replay 或并发情况下，stage 层也必须复用同一套状态规则。
+        try:
+            transition = build_mineru_callback_transition(
+                job,
+                callback_state=state,
+                batch_id=str(batch_id) if batch_id is not None else None,
+                data_id=str(data_id) if data_id is not None else None,
+                full_zip_url=str(full_zip_url) if full_zip_url is not None else None,
+            )
+        except JobWorkflowViolation as exc:
+            self.repository.delete_stage_message(message.id)
+            self.logger.warning(
+                "[trace_id=%s job_id=%s stage=%s status=skipped] %s",
+                message.trace_id,
+                job.id,
+                message.stage,
+                exc.message,
+            )
+            return
+
+        event_intent = transition.event_intents[0]
+        overrides: dict[str, dict] = {
+            event_intent.kind: {
+                "details": {
+                    "batch_id": batch_id,
+                    "data_id": data_id,
+                    "state": state,
+                    "full_zip_url": full_zip_url,
+                }
+            }
         }
-        if data_id:
-            updates["mineru_data_id"] = str(data_id)
-        if batch_id:
-            updates["mineru_batch_id"] = str(batch_id)
-        if full_zip_url:
-            updates["mineru_result_zip_url"] = str(full_zip_url)
 
-        event_message = "MinerU callback 已记录。"
-        event_status = "succeeded"
-        event_stage = "mineru_callback_processed"
-
-        if state == "done" and full_zip_url:
-            updates["status"] = "parsed"
-            updates["progress"] = 60
-            event_message = "MinerU callback 命中终态结果，任务进入 parsed。"
+        if transition.resolved_status(job) == "parsed":
+            overrides[event_intent.kind]["message"] = "MinerU callback 命中终态结果，任务进入 parsed。"
+        elif event_intent.kind == "mineru_callback_failed":
+            overrides[event_intent.kind]["error_code"] = "mineru_failed"
         elif state == "failed":
-            updates["status"] = "failed"
-            updates["progress"] = 100
-            updates["error_code"] = "mineru_failed"
-            updates["error_message"] = "MinerU 返回 failed"
-            event_message = "MinerU callback 报告失败。"
-            event_stage = "mineru_callback_failed"
-            event_status = "failed"
+            overrides[event_intent.kind]["error_code"] = "mineru_failed"
 
-        self.repository.update_job(job.id, **updates)
-        self._append_event(
+        updated_job = self._apply_transition(
+            job,
+            transition,
+            extra_updates={"updated_at": utc_now()},
+        )
+        self._append_intent_events(
             job.id,
-            stage=event_stage,
-            message=event_message,
-            status=event_status,
-            error_code="mineru_failed" if state == "failed" else None,
-            details={
-                "batch_id": batch_id,
-                "data_id": data_id,
-                "state": state,
-                "full_zip_url": full_zip_url,
-            },
+            transition.event_intents,
             trace_id=message.trace_id,
+            overrides_by_kind=overrides,
         )
         self.repository.delete_stage_message(message.id)
+        if transition.resolved_status(job) == "parsed":
+            next_message = self.enqueue_parsed_result_conversion(updated_job, message.trace_id)
+            self.logger.info(
+                "[trace_id=%s job_id=%s stage=%s status=%s] auto_enqueue=%s",
+                message.trace_id,
+                job.id,
+                message.stage,
+                transition.resolved_status(job),
+                next_message.stage,
+            )
+            self.dispatch_message(next_message.id)
+            return
         self.logger.info(
             "[trace_id=%s job_id=%s stage=%s status=%s] batch_id=%s state=%s",
             message.trace_id,
             job.id,
             message.stage,
-            updates.get("status", job.status),
+            transition.resolved_status(job),
             batch_id,
             state,
         )

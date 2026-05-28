@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# app/api/mineru_callback_guards.py: 负责 MinerU callback 的边界安全校验与 payload 归一化。
+
 import hashlib
 import json
 import secrets
@@ -96,13 +98,8 @@ def verify_mineru_callback_checksum_for_job(payload: dict, job, runtime: AppRunt
         uid = payload["data"].get("uid")
     if uid is None:
         uid = runtime.settings.mineru_uid
-    _verify_mineru_callback_checksum(checksum, str(uid or ""), content, getattr(job, "mineru_callback_seed", None))
-
-
-def verify_mineru_callback_job_state(job) -> None:
-    allowed_statuses = {"parsing", "parsed", "failed"}
-    if getattr(job, "status", None) not in allowed_statuses:
-        raise HTTPException(status_code=400, detail=f"当前任务状态 {job.status} 不允许处理 MinerU callback")
+    seed = job.read_mineru_callback_seed() if hasattr(job, "read_mineru_callback_seed") else getattr(job, "mineru_callback_seed", None)
+    _verify_mineru_callback_checksum(checksum, str(uid or ""), content, seed)
 
 
 def _verify_mineru_callback_checksum(checksum: str, uid: str, content: str, seed: str | None) -> None:

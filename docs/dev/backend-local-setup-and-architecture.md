@@ -19,7 +19,7 @@ last_reviewed: 2026-05-19
 并且已经有一条在线解析前半程：
 
 ```text
-上传原始 PDF -> BackgroundTasks 推进 submit_to_mineru -> 等待 callback -> 任务进入 parsed/failed
+上传原始 PDF -> BackgroundTasks 推进 submit_to_mineru -> 等待 callback -> 自动恢复结果 zip -> 后处理 conversion -> completed/failed
 ```
 
 一句话理解：
@@ -156,12 +156,12 @@ data/
 2. `api/dependencies.py` 负责 internal/public 模式鉴权、payload 归一化、checksum 和 `full_zip_url` 校验
 3. `JobCommandService.enqueue_callback()` 匹配任务并写入 `process_callback`
 4. FastAPI `BackgroundTasks` 调用 `process_callback`
-5. `done + full_zip_url` 时任务进入 `parsed`
+5. `done + full_zip_url` 时任务先命中 `parsed` 里程碑，再自动恢复结果 zip 并继续后处理 conversion
 6. `failed` 时任务进入 `failed`
 
 ## 当前边界
 
-- 支持“上传原始 PDF -> 成功提交 MinerU -> 接收 callback -> 任务进入 parsed/failed”，但还不支持下载结果 zip、恢复结果和 DOCX 后处理回流。
+- 支持“上传原始 PDF -> 成功提交 MinerU -> 接收 callback -> 恢复结果 zip -> 后处理 conversion -> completed/failed”。
 - 只支持 file backend，还没有 SQLite/MySQL。
 - 当前没有模板 CRUD、term-rule rule CRUD 和 category CRUD。
 - term-rules 采用三层结构：

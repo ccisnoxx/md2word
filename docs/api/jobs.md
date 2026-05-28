@@ -16,7 +16,7 @@ source_files:
   - app/schemas/api_v1.py
 summary: Jobs API 提供 MinerU zip 后处理、原始 PDF 在线提交、任务查询、产物下载和本地运维动作。
 tags: [jobs, api, delivery]
-last_reviewed: 2026-05-18
+last_reviewed: 2026-05-28
 ---
 
 ## 概述
@@ -52,6 +52,13 @@ MinerU callback 不在这组路由下，单独见 [mineru-callbacks.md](/Users/s
 ### `status`
 
 可用值：`uploaded`、`queued`、`submitting`、`parsing`、`parsed`、`converting`、`completed`、`failed`、`canceled`。
+
+说明：
+
+- `parsed` 仍保留，但在 PDF 在线链路里它现在更像内部里程碑
+- 当 callback 命中 `done + full_zip_url` 时，job 通常会继续自动推进到 `completed`
+- 因此外部调用方不应再假设“callback 成功后一定稳定停在 `parsed`”
+- `parsed` 作为对外 status 枚举短期保留，但它是瞬时可观察状态，不是等待人工处理的稳定状态
 
 ## API 参考
 
@@ -106,7 +113,11 @@ MinerU callback 不在这组路由下，单独见 [mineru-callbacks.md](/Users/s
   - 文件头必须是 `%PDF-`
   - 必须预先配置 `MINERU_API_TOKEN`
   - 响应返回后会通过 `BackgroundTasks` 推进 `submit_to_mineru`
-  - 当前 feature 只做到“成功提交 MinerU 并进入 `parsing`”，不会在这条链路里直接生成 DOCX
+  - `submit_to_mineru` 成功后任务先进入 `parsing`
+  - 当随后 callback 命中 `done + full_zip_url` 时，服务会自动：
+    - 恢复远端结果 zip 到本地 `parsed_result_package`
+    - 继续走后处理 conversion
+    - 最终把任务推进到 `completed` 或 `failed`
 
 ### `GET /api/v1/jobs`
 
@@ -133,6 +144,7 @@ MinerU callback 不在这组路由下，单独见 [mineru-callbacks.md](/Users/s
     - `mineru_callback_seed`
     - `mineru_status`
     - `mineru_result_zip_url`
+  - 这些 `mineru_*` 字段当前仍对外返回，但内部已经被视为 `source_pdf_context` 的兼容投影
 
 ### `GET /api/v1/jobs/{job_id}/files`
 
@@ -140,8 +152,10 @@ MinerU callback 不在这组路由下，单独见 [mineru-callbacks.md](/Users/s
 - 当前内建产物类型：
   - `source_package`
   - `source_pdf`
+  - `parsed_result_package`
   - `translation_request`
   - `result_docx`
+- `parsed_result_package` 是受支持的中间产物，表示 MinerU 远端结果 zip 的本地恢复副本；它可用于排障、复现和回溯，但默认交付物仍是 `result_docx`
 
 ### `GET /api/v1/jobs/{job_id}/events`
 
@@ -150,6 +164,8 @@ MinerU callback 不在这组路由下，单独见 [mineru-callbacks.md](/Users/s
   - `job_created`
   - `stage_enqueued`
   - `conversion_started`
+  - `parsed_result_conversion_started`
+  - `parsed_result_package_recovered`
   - `mineru_submit_started`
   - `mineru_submit_succeeded`
   - `mineru_submit_failed`
@@ -181,6 +197,7 @@ MinerU callback 不在这组路由下，单独见 [mineru-callbacks.md](/Users/s
 |---|---|
 | `source-package` | `source_package` |
 | `source-pdf` | `source_pdf` |
+| `parsed-result-package` | `parsed_result_package` |
 | `translation-request` | `translation_request` |
 | `result` | `result_docx` |
 
@@ -188,6 +205,7 @@ MinerU callback 不在这组路由下，单独见 [mineru-callbacks.md](/Users/s
   - `path` 是 job 内逻辑路径，不是本地绝对路径
   - 真正可消费的入口是 `download_url`
   - 本地绝对路径只在服务端内部推导，不对外承诺
+  - `parsed-result-package` 是正式支持的中间 artifact 下载入口，但调用方不应把它当作最终 Word 交付物
 
 ### `POST /api/v1/jobs/{job_id}/retry`
 

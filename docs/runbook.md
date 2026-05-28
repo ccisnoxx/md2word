@@ -69,7 +69,11 @@ curl -X POST "http://127.0.0.1:8000/api/v1/jobs/pdf" \
 - 后台提交 MinerU
 - 任务进入 `parsing`
 
-接下来需要 callback 把任务推进到 `parsed/failed`。当前还不会在这条链路上直接拿到 DOCX，后续要靠结果恢复和后处理 feature 接回来。
+接下来 callback 命中 `done + full_zip_url` 后，会自动继续：
+
+- 恢复远端结果 zip 到本地 `parsed_result_package`
+- 继续走后处理 conversion
+- 最终把任务推进到 `completed` 或 `failed`
 
 ## 3.2 本地回放 MinerU callback
 
@@ -89,11 +93,14 @@ curl -X POST "http://127.0.0.1:8000/api/v1/mineru-callbacks/result" \
 
 预期：
 
-- `GET /api/v1/jobs/{job_id}` 里的 `status=parsed`
+- `GET /api/v1/jobs/{job_id}` 通常会继续推进到 `completed`
 - `mineru_result_zip_url` 已持久化
+- `files` 里会新增 `parsed_result_package`
 - `events` 里出现：
   - `mineru_callback_received`
   - `mineru_callback_processed`
+  - `parsed_result_package_recovered`
+  - `job_completed`
 
 如果要模拟失败回调，把 `state` 改成 `failed`。预期是：
 
@@ -176,5 +183,5 @@ curl -X POST "http://127.0.0.1:8000/api/v1/jobs/{job_id}/cleanup-local-files" \
 - 合法 PDF 可进入 `parsing`
 - 缺 `MINERU_API_TOKEN` 时 `POST /api/v1/jobs/pdf` 返回 `503`
 - MinerU 提交失败时任务进入 `failed` 且 `error_code=mineru_submit_failed`
-- 合法 callback 可把任务推进到 `parsed`
+- 合法 callback 可自动继续推进到 `completed`
 - 非法 `full_zip_url` 会被 callback ingress 直接以 `400` 拒绝
