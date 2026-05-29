@@ -49,10 +49,24 @@ class Settings(BaseSettings):
     jobs_worker_id: str = "md2word-worker"
     stage_message_lease_seconds: int = 900
     jobs_upload_max_bytes: int = 52_428_800
+    oss_upload_presign_expires_seconds: int = 600
+    oss_download_presign_expires_seconds: int = 600
+    oss_file_retention_days: int = 90
+    pdf_upload_max_pages: int = 200
+    p0_document_job_timeout_seconds: int = 1200
+    p0_document_job_max_retries: int = 2
+    document_jobs_worker_backend: Literal["disabled", "celery", "eager"] = "disabled"
+    document_jobs_celery_broker_url: str = "redis://127.0.0.1:6379/0"
+    document_jobs_celery_result_backend: str = ""
+    document_jobs_celery_queue: str = "document-jobs"
     jobs_access_mode: Literal["open", "token", "admin"] = "open"
     jobs_access_token: str = ""
     jobs_ops_access_mode: Literal["jobs", "admin"] = "admin"
     admin_token: str = ""
+    auth_jwt_secret_key: str = ""
+    auth_jwt_algorithm: Literal["HS256"] = "HS256"
+    auth_access_token_expire_minutes: int = 120
+    auth_internal_users_json: str = ""
     default_translation_mode: Literal["direct", "en2zh"] = "direct"
     mineru_api_token: str = ""
     mineru_model_version: str = "vlm"
@@ -68,8 +82,13 @@ class Settings(BaseSettings):
     openai_base_url: str = ""
     openai_api_key: str = ""
     openai_model: str = "deepseek-v4-flash"
+    translation_provider_backend: Literal["disabled", "openai_compatible"] = "disabled"
+    translation_provider_timeout_seconds: float = 120.0
+    translation_provider_max_output_tokens: int = 12000
     translation_max_pages: int = 20
     translation_max_chars: int = 60_000
+    translation_terms_path: str = "template_configs/translation_terms.csv"
+    default_translation_term_version_id: str = "en2zh@v1"
     default_template_id: str = "default"
     templates_manifest_path: str = "template_configs/templates_manifest.yaml"
     templates_storage_path: str = "data/config/templates"
@@ -170,6 +189,10 @@ class Settings(BaseSettings):
     @property
     def term_rules_runtime_yaml_file(self) -> Path:
         return self._resolve_runtime_data_path(self.term_rules_runtime_yaml_path, "config/runtime_subscripts_dictionary.yaml")
+
+    @property
+    def translation_terms_file(self) -> Path:
+        return self._resolve_config_path(self.translation_terms_path)
 
     @property
     def default_template_path(self) -> Path | None:

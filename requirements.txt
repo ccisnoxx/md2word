@@ -1,5 +1,6 @@
 beautifulsoup4>=4.12
 boto3>=1.34,<2
+celery[redis]>=5.4,<6
 fastapi>=0.136,<0.137
 loguru>=0.7
 openai>=1.0

@@ -10,7 +10,9 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
+from app.core.document_job_models import DocumentJobEventRecord, DocumentJobRecord
 from app.core.job_models import (
     JobEvent,
     JobFile,
@@ -22,6 +24,7 @@ from app.core.job_models import (
 )
 from app.core.audit_models import AuditEvent
 from app.core.config import Settings
+from app.core.file_models import DocumentFileRecord
 from app.main import build_runtime, create_app
 from app.repositories.database_job_repository import DatabaseJobRepository
 from app.repositories.file_job_repository import FileJobRepository
@@ -50,6 +53,8 @@ class _FakeMysqlDatabase:
         self.jobs: dict[str, dict[str, Any]] = {}
         self.job_events: list[dict[str, Any]] = []
         self.audit_events: list[dict[str, Any]] = []
+        self.document_files: dict[str, dict[str, Any]] = {}
+        self.document_jobs: dict[str, dict[str, Any]] = {}
         self.job_files: dict[tuple[str, str], dict[str, Any]] = {}
         self.stage_messages: dict[str, dict[str, Any]] = {}
         self.resource_versions: dict[tuple[str, str, str], dict[str, Any]] = {}
@@ -100,6 +105,8 @@ class _FakeMysqlCursor:
                 "resource_versions",
                 "resource_default_versions",
                 "audit_events",
+                "document_files",
+                "document_jobs",
             ):
                 if f" {table} " in normalized:
                     self.database.created_tables.add(table)
@@ -159,6 +166,52 @@ class _FakeMysqlCursor:
             self._rows = [
                 {"payload": row["payload"]}
                 for row in sorted(self.database.audit_events, key=lambda item: (item["created_at"], item["id"]))
+            ]
+            return
+        if normalized.startswith("insert into document_files"):
+            file_id, payload, created_at, updated_at = params
+            self.database.document_files[file_id] = {
+                "file_id": file_id,
+                "payload": payload,
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+            self._rows = []
+            return
+        if normalized.startswith("select payload from document_files where file_id"):
+            row = self.database.document_files.get(params[0])
+            self._rows = [{"payload": row["payload"]}] if row is not None else []
+            return
+        if normalized.startswith("select payload from document_files order by"):
+            self._rows = [
+                {"payload": row["payload"]}
+                for row in sorted(
+                    self.database.document_files.values(),
+                    key=lambda item: (item["created_at"], item["file_id"]),
+                )
+            ]
+            return
+        if normalized.startswith("insert into document_jobs"):
+            job_id, payload, created_at, updated_at = params
+            self.database.document_jobs[job_id] = {
+                "job_id": job_id,
+                "payload": payload,
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+            self._rows = []
+            return
+        if normalized.startswith("select payload from document_jobs where job_id"):
+            row = self.database.document_jobs.get(params[0])
+            self._rows = [{"payload": row["payload"]}] if row is not None else []
+            return
+        if normalized.startswith("select payload from document_jobs order by"):
+            self._rows = [
+                {"payload": row["payload"]}
+                for row in sorted(
+                    self.database.document_jobs.values(),
+                    key=lambda item: (item["created_at"], item["job_id"]),
+                )
             ]
             return
         if normalized.startswith("insert into job_files"):
@@ -317,8 +370,23 @@ class DatabaseJobRepositoryTests(TestCase):
                 "resource_versions",
                 "resource_default_versions",
                 "audit_events",
+                "document_files",
+                "document_jobs",
             },
         )
+
+    def test_document_job_status_machine_rejects_invalid_stage(self):
+        with self.assertRaises(ValidationError):
+            DocumentJobRecord(
+                id="docjob_invalid",
+                tenant_id="tenant_default",
+                company_id="company_default",
+                created_by="operator",
+                source_file_id="file_invalid",
+                template_version_id="default",
+                status="succeeded",
+                stage="uploaded",
+            )
 
     def test_database_repository_persists_records_across_instances(self):
         with TemporaryDirectory() as temp_dir:
@@ -640,6 +708,80 @@ class DatabaseJobRepositoryTests(TestCase):
         audit_events = repository.list_audit_events()
         self.assertEqual([event.action for event in audit_events], ["job.retry"])
         self.assertEqual(audit_events[0].reason, "contract")
+
+        document_file = DocumentFileRecord(
+            id="file_contract",
+            tenant_id="tenant_default",
+            company_id="company_default",
+            job_id=job.id,
+            file_type="source_pdf",
+            storage_provider="local_object",
+            bucket="local-object",
+            object_key="document-files/tenant_default/file_contract/source.pdf",
+            original_filename="source.pdf",
+            mime_type="application/pdf",
+            size_bytes=123,
+            checksum_sha256="sha256:contract",
+            expires_at=utc_now() + timedelta(days=90),
+            created_by="operator",
+        )
+        repository.create_document_file(document_file)
+        self.assertEqual(repository.get_document_file("file_contract").object_key, document_file.object_key)
+        updated_document_file = repository.update_document_file(
+            "file_contract",
+            status="uploaded",
+            etag="etag_contract",
+        )
+        self.assertEqual(updated_document_file.status, "uploaded")
+        self.assertEqual(updated_document_file.etag, "etag_contract")
+        self.assertEqual(
+            [record.id for record in repository.list_document_files()],
+            ["file_contract"],
+        )
+
+        document_job = DocumentJobRecord(
+            id="docjob_contract",
+            tenant_id="tenant_default",
+            company_id="company_default",
+            created_by="operator",
+            source_file_id=document_file.id,
+            mode="direct_pdf_to_word",
+            document_language="auto",
+            status="pending",
+            stage="uploaded",
+            progress=0,
+            template_version_id="default",
+            timeout_at=utc_now() + timedelta(seconds=1200),
+        )
+        repository.create_document_job(document_job)
+        self.assertEqual(repository.get_document_job(document_job.id).source_file_id, document_file.id)
+        updated_document_job = repository.update_document_job(
+            document_job.id,
+            status="queued",
+            stage="uploaded",
+            progress=0,
+        )
+        self.assertEqual(updated_document_job.status, "queued")
+        with self.assertRaises(ValidationError):
+            repository.update_document_job(document_job.id, status="succeeded", stage="uploaded")
+        self.assertEqual([record.id for record in repository.list_document_jobs()], [document_job.id])
+        repository.append_document_job_event(
+            document_job.id,
+            DocumentJobEventRecord(
+                id="event_docjob_contract",
+                tenant_id="tenant_default",
+                company_id="company_default",
+                job_id=document_job.id,
+                created_by="operator",
+                stage="uploaded",
+                event_type="job_created",
+                message="created",
+                trace_id="trace_docjob",
+            ),
+        )
+        document_job_events = repository.list_document_job_events(document_job.id)
+        self.assertEqual([event.event_type for event in document_job_events], ["job_created"])
+        self.assertEqual(document_job_events[0].trace_id, "trace_docjob")
 
         pending = JobStageMessage(
             id="msg_pending",

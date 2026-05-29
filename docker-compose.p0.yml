@@ -1,0 +1,143 @@
+# docker-compose.p0.yml: P0 单机部署编排，API 与 Worker 使用同一镜像。
+name: md2word-p0
+
+x-md2word-env: &md2word-env
+  APP_NAME: ${APP_NAME:-md2word_file}
+  APP_ENV: ${APP_ENV:-prod}
+  LOG_FORMAT: ${LOG_FORMAT:-json}
+  APP_CORS_ORIGINS: ${APP_CORS_ORIGINS:-http://127.0.0.1:3000,http://localhost:3000}
+  DATA_DIR: /app/data
+  JOBS_REPOSITORY_BACKEND: mysql
+  JOBS_MYSQL_HOST: mysql
+  JOBS_MYSQL_PORT: "3306"
+  JOBS_MYSQL_USER: ${JOBS_MYSQL_USER:-md2word}
+  JOBS_MYSQL_PASSWORD: ${JOBS_MYSQL_PASSWORD:-change-me}
+  JOBS_MYSQL_DATABASE: ${JOBS_MYSQL_DATABASE:-md2word}
+  JOBS_MYSQL_CHARSET: utf8mb4
+  JOBS_MYSQL_CONNECT_TIMEOUT_SECONDS: "10"
+  JOBS_ARTIFACT_STORAGE_BACKEND: local_object
+  JOBS_ARTIFACT_OBJECT_STORE_PATH: /app/data/object_artifacts
+  JOBS_WORKER_MODE: external
+  JOBS_WORKER_ID: ${JOBS_WORKER_ID:-md2word-stage-worker-1}
+  DOCUMENT_JOBS_WORKER_BACKEND: celery
+  DOCUMENT_JOBS_CELERY_BROKER_URL: redis://redis:6379/0
+  DOCUMENT_JOBS_CELERY_RESULT_BACKEND: redis://redis:6379/1
+  DOCUMENT_JOBS_CELERY_QUEUE: ${DOCUMENT_JOBS_CELERY_QUEUE:-document-jobs}
+  JOBS_ACCESS_MODE: ${JOBS_ACCESS_MODE:-token}
+  JOBS_ACCESS_TOKEN: ${JOBS_ACCESS_TOKEN:-change-me-jobs-token}
+  JOBS_OPS_ACCESS_MODE: ${JOBS_OPS_ACCESS_MODE:-admin}
+  ADMIN_TOKEN: ${ADMIN_TOKEN:-change-me-admin-token}
+  AUTH_JWT_SECRET_KEY: ${AUTH_JWT_SECRET_KEY:-change-me-jwt-secret}
+  AUTH_JWT_ALGORITHM: HS256
+  AUTH_ACCESS_TOKEN_EXPIRE_MINUTES: ${AUTH_ACCESS_TOKEN_EXPIRE_MINUTES:-120}
+  AUTH_INTERNAL_USERS_JSON: ${AUTH_INTERNAL_USERS_JSON:-}
+  JOBS_UPLOAD_MAX_BYTES: ${JOBS_UPLOAD_MAX_BYTES:-52428800}
+  OSS_UPLOAD_PRESIGN_EXPIRES_SECONDS: ${OSS_UPLOAD_PRESIGN_EXPIRES_SECONDS:-600}
+  OSS_DOWNLOAD_PRESIGN_EXPIRES_SECONDS: ${OSS_DOWNLOAD_PRESIGN_EXPIRES_SECONDS:-600}
+  OSS_FILE_RETENTION_DAYS: ${OSS_FILE_RETENTION_DAYS:-90}
+  PDF_UPLOAD_MAX_PAGES: ${PDF_UPLOAD_MAX_PAGES:-200}
+  P0_DOCUMENT_JOB_TIMEOUT_SECONDS: ${P0_DOCUMENT_JOB_TIMEOUT_SECONDS:-1200}
+  P0_DOCUMENT_JOB_MAX_RETRIES: ${P0_DOCUMENT_JOB_MAX_RETRIES:-2}
+  DEFAULT_TRANSLATION_MODE: direct
+  DEFAULT_TEMPLATE_ID: ${DEFAULT_TEMPLATE_ID:-default}
+  TEMPLATES_MANIFEST_PATH: template_configs/templates_manifest.yaml
+  TEMPLATES_STORAGE_PATH: /app/data/config/templates
+  TEMPLATE_STATE_PATH: /app/data/config/template_state.json
+  TERM_RULES_SEED_PATH: template_configs/term_rules.v2.yaml
+  TERM_RULES_STORE_PATH: /app/data/config/term_rules_store.json
+  TERM_RULES_RUNTIME_YAML_PATH: /app/data/config/runtime_subscripts_dictionary.yaml
+  MINERU_API_TOKEN: ${MINERU_API_TOKEN:-}
+  MINERU_MODEL_VERSION: ${MINERU_MODEL_VERSION:-vlm}
+  MINERU_LANGUAGE: ${MINERU_LANGUAGE:-zh}
+  MINERU_ENABLE_FORMULA: ${MINERU_ENABLE_FORMULA:-true}
+  MINERU_ENABLE_TABLE: ${MINERU_ENABLE_TABLE:-true}
+  MINERU_CALLBACK_URL: ${MINERU_CALLBACK_URL:-}
+  MINERU_UID: ${MINERU_UID:-}
+  MINERU_CALLBACK_TOKEN: ${MINERU_CALLBACK_TOKEN:-}
+  MINERU_CALLBACK_TOKEN_QUERY_NAME: ${MINERU_CALLBACK_TOKEN_QUERY_NAME:-callback_token}
+  MINERU_RESULT_HOST_ALLOWLIST: ${MINERU_RESULT_HOST_ALLOWLIST:-mineru.net,cdn-mineru.openxlab.org.cn}
+  PUBLIC_DEPLOYMENT_MODE: ${PUBLIC_DEPLOYMENT_MODE:-internal}
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: md2word-p0:latest
+    command: ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      <<: *md2word-env
+    ports:
+      - "${MD2WORD_API_PORT:-8000}:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - md2word-data:/app/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/live', timeout=3).read()",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  worker:
+    image: md2word-p0:latest
+    command: ["python", "run_document_worker.py"]
+    environment:
+      <<: *md2word-env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    volumes:
+      - md2word-data:/app/data
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - md2word-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me-root}
+      MYSQL_DATABASE: ${JOBS_MYSQL_DATABASE:-md2word}
+      MYSQL_USER: ${JOBS_MYSQL_USER:-md2word}
+      MYSQL_PASSWORD: ${JOBS_MYSQL_PASSWORD:-change-me}
+    command:
+      [
+        "mysqld",
+        "--character-set-server=utf8mb4",
+        "--collation-server=utf8mb4_unicode_ci",
+      ]
+    volumes:
+      - md2word-mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+volumes:
+  md2word-data:
+  md2word-redis:
+  md2word-mysql:

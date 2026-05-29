@@ -1,0 +1,6 @@
+language_pair,source_term,target_term,version
+en2zh,input offset voltage,输入失调电压,v1
+en2zh,slew rate,压摆率,v1
+en2zh,power supply rejection ratio,电源抑制比,v1
+en2zh,common-mode rejection ratio,共模抑制比,v1
+en2zh,quiescent current,静态电流,v1

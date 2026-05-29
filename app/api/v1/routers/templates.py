@@ -9,7 +9,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse
 
-from app.api.dependencies import get_runtime, get_trace_id, require_admin_access, require_admin_actor
+from app.api.dependencies import get_runtime, get_trace_id, require_admin_actor
 from app.api.errors import bad_request_http_exception, not_found_http_exception
 from app.core.audit_models import ActorContext
 from app.core.runtime import AppRuntime
@@ -88,7 +88,7 @@ def list_templates(
     return TemplateListResponse(items=items)
 
 
-@router.post("", response_model=TemplateDetailResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin_access)])
+@router.post("", response_model=TemplateDetailResponse, status_code=status.HTTP_201_CREATED)
 async def create_template(
     request: Request,
     template_id: str = Form(...),
@@ -98,7 +98,9 @@ async def create_template(
     layout_config_path: str | None = Form(default=None),
     render_policy_json: str = Form(default="{}"),
     template: UploadFile = File(...),
+    actor: ActorContext = Depends(require_admin_actor),
     runtime: AppRuntime = Depends(get_runtime),
+    trace_id: str = Depends(get_trace_id),
 ) -> TemplateDetailResponse:
     temp_path = await _save_template_upload_to_temp(template, runtime)
     render_policy = _parse_render_policy(render_policy_json)
@@ -122,27 +124,44 @@ async def create_template(
 
     detail = runtime.template_read_service.get_template_detail(template_id, url_for=request.url_for)
     assert detail is not None
+    runtime.audit_service.record(
+        actor=actor,
+        action="template.create",
+        target_type="template",
+        target_id=detail.id,
+        trace_id=trace_id,
+    )
     return detail
 
 
-@router.post("/{template_id}/versions", response_model=TemplateVersionResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin_access)])
+@router.post("/{template_id}/versions", response_model=TemplateVersionResponse, status_code=status.HTTP_201_CREATED)
 async def create_template_version(
     template_id: str,
     layout_config_path: str | None = Form(default=None),
     render_policy_json: str = Form(default="{}"),
     template: UploadFile = File(...),
+    actor: ActorContext = Depends(require_admin_actor),
     runtime: AppRuntime = Depends(get_runtime),
+    trace_id: str = Depends(get_trace_id),
 ) -> TemplateVersionResponse:
     temp_path = await _save_template_upload_to_temp(template, runtime)
     render_policy = _parse_render_policy(render_policy_json)
     try:
-        return runtime.template_read_service.create_template_version(
+        version = runtime.template_read_service.create_template_version(
             template_id,
             source_path=temp_path,
             source_filename=template.filename or f"{template_id}.docx",
             layout_config_path=layout_config_path,
             render_policy=render_policy,
         )
+        runtime.audit_service.record(
+            actor=actor,
+            action="template.version_create",
+            target_type="template",
+            target_id=f"{template_id}@{version.version}",
+            trace_id=trace_id,
+        )
+        return version
     except RuntimeError as exc:
         temp_path.unlink(missing_ok=True)
         raise _template_versioning_unavailable_http_exception(exc) from exc
@@ -276,12 +295,14 @@ def download_template(
     )
 
 
-@router.patch("/{template_id}", response_model=TemplateDetailResponse, dependencies=[Depends(require_admin_access)])
+@router.patch("/{template_id}", response_model=TemplateDetailResponse)
 def update_template(
     template_id: str,
     payload: TemplateUpdateRequest,
     request: Request,
+    actor: ActorContext = Depends(require_admin_actor),
     runtime: AppRuntime = Depends(get_runtime),
+    trace_id: str = Depends(get_trace_id),
 ) -> TemplateDetailResponse:
     try:
         runtime.template_read_service.update_template_metadata(
@@ -303,15 +324,24 @@ def update_template(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"模板不存在: {template_id}",
         )
+    runtime.audit_service.record(
+        actor=actor,
+        action="template.update",
+        target_type="template",
+        target_id=template_id,
+        trace_id=trace_id,
+    )
     return detail
 
 
-@router.put("/{template_id}/file", response_model=TemplateDetailResponse, dependencies=[Depends(require_admin_access)])
+@router.put("/{template_id}/file", response_model=TemplateDetailResponse)
 async def replace_template_file(
     template_id: str,
     request: Request,
     template: UploadFile = File(...),
+    actor: ActorContext = Depends(require_admin_actor),
     runtime: AppRuntime = Depends(get_runtime),
+    trace_id: str = Depends(get_trace_id),
 ) -> TemplateDetailResponse:
     temp_path = await _save_template_upload_to_temp(template, runtime)
     try:
@@ -329,14 +359,23 @@ async def replace_template_file(
 
     detail = runtime.template_read_service.get_template_detail(template_id, url_for=request.url_for)
     assert detail is not None
+    runtime.audit_service.record(
+        actor=actor,
+        action="template.replace_file",
+        target_type="template",
+        target_id=template_id,
+        trace_id=trace_id,
+    )
     return detail
 
 
-@router.patch("/{template_id}/default", response_model=TemplateDetailResponse, dependencies=[Depends(require_admin_access)])
+@router.patch("/{template_id}/default", response_model=TemplateDetailResponse)
 def set_default_template(
     template_id: str,
     request: Request,
+    actor: ActorContext = Depends(require_admin_actor),
     runtime: AppRuntime = Depends(get_runtime),
+    trace_id: str = Depends(get_trace_id),
 ) -> TemplateDetailResponse:
     try:
         runtime.template_read_service.set_default_template(template_id)
@@ -345,13 +384,22 @@ def set_default_template(
 
     detail = runtime.template_read_service.get_template_detail(template_id, url_for=request.url_for)
     assert detail is not None
+    runtime.audit_service.record(
+        actor=actor,
+        action="template.set_default_legacy",
+        target_type="template",
+        target_id=template_id,
+        trace_id=trace_id,
+    )
     return detail
 
 
-@router.delete("/{template_id}", response_model=TemplateDeleteResponse, dependencies=[Depends(require_admin_access)])
+@router.delete("/{template_id}", response_model=TemplateDeleteResponse)
 def delete_template(
     template_id: str,
+    actor: ActorContext = Depends(require_admin_actor),
     runtime: AppRuntime = Depends(get_runtime),
+    trace_id: str = Depends(get_trace_id),
 ) -> TemplateDeleteResponse:
     try:
         runtime.template_read_service.delete_template(template_id)
@@ -359,4 +407,11 @@ def delete_template(
         raise not_found_http_exception(exc) from exc
     except ValueError as exc:
         raise bad_request_http_exception(exc) from exc
+    runtime.audit_service.record(
+        actor=actor,
+        action="template.delete",
+        target_type="template",
+        target_id=template_id,
+        trace_id=trace_id,
+    )
     return TemplateDeleteResponse(id=template_id, deleted=True)

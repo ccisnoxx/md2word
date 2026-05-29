@@ -1,0 +1,17 @@
+# .dockerignore: 控制 P0 Docker 镜像构建上下文，排除运行态和本地缓存。
+.git
+.gitignore
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.venv
+.idea
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.env
+.python_packages
+data
+tests/golden_samples/pdfs
+tests/golden_samples/runs

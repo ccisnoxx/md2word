@@ -3,6 +3,24 @@ from __future__ import annotations
 # app/schemas/api_v1.py: 兼容旧导入路径，按资源重新导出 API v1 模型。
 
 from app.schemas.health import HealthLiveResponse, HealthMetricsResponse, HealthReadyResponse
+from app.schemas.auth import AuthLoginRequest, AuthTokenResponse, CurrentUserResponse
+from app.schemas.files import (
+    DocumentFileResponse,
+    FileUploadResponse,
+    FileUploadUrlRequest,
+    FileUploadUrlResponse,
+)
+from app.schemas.document_jobs import (
+    DocumentJobCreateRequest,
+    DocumentJobCreateResponse,
+    DocumentJobDownloadUrlResponse,
+    DocumentJobEventListResponse,
+    DocumentJobEventResponse,
+    DocumentJobListResponse,
+    DocumentJobResponse,
+    DocumentJobRetryRequest,
+    DocumentJobRetryResponse,
+)
 from app.schemas.jobs import (
     JobAcceptedResponse,
     JobCleanupLocalFilesResponse,
@@ -75,6 +93,22 @@ __all__ = [
     "HealthLiveResponse",
     "HealthMetricsResponse",
     "HealthReadyResponse",
+    "AuthLoginRequest",
+    "AuthTokenResponse",
+    "CurrentUserResponse",
+    "DocumentFileResponse",
+    "DocumentJobCreateRequest",
+    "DocumentJobCreateResponse",
+    "DocumentJobDownloadUrlResponse",
+    "DocumentJobEventListResponse",
+    "DocumentJobEventResponse",
+    "DocumentJobListResponse",
+    "DocumentJobResponse",
+    "DocumentJobRetryRequest",
+    "DocumentJobRetryResponse",
+    "FileUploadResponse",
+    "FileUploadUrlRequest",
+    "FileUploadUrlResponse",
     "JobAcceptedResponse",
     "JobCleanupLocalFilesResponse",
     "JobDetailResponse",

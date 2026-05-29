@@ -32,6 +32,10 @@ from app.repositories.database_job_repository import DatabaseJobRepository
 from app.repositories.file_job_repository import FileJobRepository
 from app.repositories.file_term_rule_repository import FileTermRuleRepository
 from app.services.audit import AuditService
+from app.services.auth import AuthService, hash_password
+from app.services.document_jobs import DocumentJobExecutionService, DocumentJobService, EagerDocumentJobTaskQueue
+from app.services.document_ir import MinerUToDocumentIRService
+from app.services.files import FileUploadService
 from app.services.health_service import HealthService
 from app.services.jobs.artifact_integrity import ArtifactFingerprintMismatch
 from app.services.jobs.artifact_storage import DownloadArtifact, LocalArtifactStorageAdapter
@@ -43,6 +47,7 @@ from app.services.jobs.object_artifact_storage import ObjectArtifactStorageAdapt
 from app.services.jobs.resource_snapshots import JobResourceSnapshotService
 from app.services.jobs.query import JobQueryService
 from app.services.jobs.stage import JobStageService
+from app.services.renderer import DocumentIRWordRenderer
 from app.services.resource_versions import ResourceVersionService
 from app.services.term_rules.bootstrap import TermRuleBootstrapService
 from app.services.term_rules.import_validation import TermRuleImportValidationService
@@ -51,8 +56,18 @@ from app.services.term_rules.sync_files import TermRuleFileSyncService
 from app.services.term_rules.versioning_service import DEFAULT_TERM_RULE_SET_ID, TermRuleSetVersionService
 from app.services.term_rules.yaml_codec import CURRENT_SCHEMA_VERSION, TermRuleYamlCodec
 from app.services.templates.read_service import TemplateReadService
+from app.services.terms import TermVersionService
+from app.services.translation import DocumentIRTranslationService, build_translation_provider
 from app.services.translation_profiles import DEFAULT_TRANSLATION_PROFILE_ID, TranslationProfileVersionService
 from app.workers.stage_worker import StageWorker
+
+
+MINIMAL_PNG_BYTES = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+    b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+    b"\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01"
+    b"\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+)
 
 
 class FakeMinerUClient:
@@ -65,6 +80,7 @@ class FakeMinerUClient:
         self.query_data_id = None
         self.query_state = "done"
         self.query_full_zip_url = "https://mineru.net/result.zip"
+        self.result_zip_bytes: bytes | None = None
 
     def upload_files_batch(
         self,
@@ -96,7 +112,7 @@ class FakeMinerUClient:
         if self.raise_download_error:
             raise RuntimeError("mineru download boom")
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_bytes(b"fake-parsed-result-zip")
+        output_path.write_bytes(self.result_zip_bytes or b"fake-parsed-result-zip")
         self.download_calls.append({"result_url": result_url, "output_path": str(output_path)})
         return output_path
 
@@ -193,7 +209,15 @@ def build_test_runtime(
     jobs_access_token: str = "",
     jobs_ops_access_mode: str = "admin",
     admin_token: str = "",
+    auth_jwt_secret_key: str = "",
+    auth_access_token_expire_minutes: int = 120,
+    auth_internal_users_json: str = "",
+    jobs_upload_max_bytes: int = 52_428_800,
+    pdf_upload_max_pages: int = 200,
+    p0_document_job_timeout_seconds: int = 1200,
+    p0_document_job_max_retries: int = 2,
     default_translation_mode: str = "direct",
+    document_jobs_worker_backend: str = "disabled",
     templates_manifest_path: str | None = None,
     term_rules_seed_path: str | None = None,
 ) -> AppRuntime:
@@ -217,7 +241,15 @@ def build_test_runtime(
         jobs_access_token=jobs_access_token,
         jobs_ops_access_mode=jobs_ops_access_mode,
         admin_token=admin_token,
+        auth_jwt_secret_key=auth_jwt_secret_key,
+        auth_access_token_expire_minutes=auth_access_token_expire_minutes,
+        auth_internal_users_json=auth_internal_users_json,
+        jobs_upload_max_bytes=jobs_upload_max_bytes,
+        pdf_upload_max_pages=pdf_upload_max_pages,
+        p0_document_job_timeout_seconds=p0_document_job_timeout_seconds,
+        p0_document_job_max_retries=p0_document_job_max_retries,
         default_translation_mode=default_translation_mode,
+        document_jobs_worker_backend=document_jobs_worker_backend,
         **({"templates_manifest_path": templates_manifest_path} if templates_manifest_path else {}),
         **({"term_rules_seed_path": term_rules_seed_path} if term_rules_seed_path else {}),
     )
@@ -233,10 +265,51 @@ def build_test_runtime(
     job_file_repository = repository
     job_event_repository = repository
     audit_event_repository = repository
+    document_file_repository = repository
+    document_job_repository = repository
+    document_job_event_repository = repository
     stage_message_store = repository
     audit_service = AuditService(audit_event_repository)
+    auth_service = AuthService(settings)
+    file_upload_service = FileUploadService(settings, document_file_repository)
+    document_ir_service = MinerUToDocumentIRService()
+    translation_provider = build_translation_provider(settings)
+    document_ir_translation_service = DocumentIRTranslationService(translation_provider)
+    term_version_service = TermVersionService(
+        settings.translation_terms_file,
+        default_term_version_id=settings.default_translation_term_version_id,
+    )
     resource_version_service = ResourceVersionService(repository) if jobs_repository_backend == "mysql" else None
     template_read_service = TemplateReadService(settings, resource_version_service, audit_service)
+    document_word_renderer = DocumentIRWordRenderer()
+    document_job_mineru_client = FakeMinerUClient()
+    document_job_mineru_client.result_zip_bytes = make_mineru_zip_bytes()
+    document_job_execution_service = DocumentJobExecutionService(
+        settings,
+        document_job_repository,
+        document_job_event_repository,
+        document_file_repository,
+        file_upload_service,
+        document_ir_service,
+        template_read_service,
+        document_word_renderer,
+        mineru_client_factory=lambda: document_job_mineru_client,
+    )
+    document_job_execution_service.fake_mineru_client = document_job_mineru_client
+    document_job_task_queue = (
+        EagerDocumentJobTaskQueue(document_job_execution_service)
+        if document_jobs_worker_backend == "eager"
+        else None
+    )
+    document_job_service = DocumentJobService(
+        settings,
+        document_job_repository,
+        document_job_event_repository,
+        document_file_repository,
+        document_job_task_queue,
+        template_read_service,
+        term_version_service,
+    )
     health_service = HealthService(
         settings,
         stage_message_store,
@@ -343,7 +416,20 @@ def build_test_runtime(
         job_file_repository=job_file_repository,
         job_event_repository=job_event_repository,
         audit_event_repository=audit_event_repository,
+        document_file_repository=document_file_repository,
+        document_job_repository=document_job_repository,
+        document_job_event_repository=document_job_event_repository,
         audit_service=audit_service,
+        auth_service=auth_service,
+        file_upload_service=file_upload_service,
+        document_ir_service=document_ir_service,
+        translation_provider=translation_provider,
+        document_ir_translation_service=document_ir_translation_service,
+        term_version_service=term_version_service,
+        document_word_renderer=document_word_renderer,
+        document_job_service=document_job_service,
+        document_job_execution_service=document_job_execution_service,
+        document_job_task_queue=document_job_task_queue,
         health_service=health_service,
         template_read_service=template_read_service,
         term_rule_service=term_rule_service,
@@ -369,6 +455,37 @@ def make_zip_bytes() -> bytes:
     with zipfile.ZipFile(buffer, "w") as archive:
         archive.writestr("content_list_v2.json", "[]")
     return buffer.getvalue()
+
+
+def make_mineru_zip_bytes(*, include_image: bool = True) -> bytes:
+    buffer = io.BytesIO()
+    blocks = [
+        {"type": "title", "text": "数据手册", "text_level": 1, "page_idx": 0},
+        {"type": "text", "text": "主要特性", "page_idx": 0},
+        {
+            "type": "table",
+            "table_caption": "参数表",
+            "table_body": "<table><tr><td>VCC</td></tr></table>",
+            "page_idx": 0,
+        },
+        {"type": "list", "items": ["低功耗", "高可靠"], "page_idx": 1},
+        {"type": "interline_equation", "latex": "E=mc^2", "page_idx": 1},
+    ]
+    if include_image:
+        blocks.insert(3, {"type": "image", "img_path": "images/figure1.png", "caption": "管脚图", "page_idx": 0})
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("content_list_v2.json", json.dumps(blocks, ensure_ascii=False))
+        if include_image:
+            archive.writestr("images/figure1.png", MINIMAL_PNG_BYTES)
+    return buffer.getvalue()
+
+
+def make_pdf_bytes(page_count: int = 1) -> bytes:
+    pages = "\n".join(
+        f"{index} 0 obj << /Type /Page /Parent 0 0 R >> endobj"
+        for index in range(1, page_count + 1)
+    )
+    return f"%PDF-1.4\n{pages}\n%%EOF\n".encode("utf-8")
 
 
 def build_callback_payload(*, batch_id: str, data_id: str, state: str, full_zip_url: str | None = None, uid: str | None = None) -> tuple[dict, str]:
@@ -619,6 +736,58 @@ JOB_FILE_LIST_RESPONSE_KEYS = ["job_id", "files"]
 JOB_EVENT_LIST_RESPONSE_KEYS = ["job_id", "items"]
 
 
+def build_auth_users_json() -> str:
+    return json.dumps(
+        [
+            {
+                "id": "user_admin",
+                "username": "admin",
+                "password_hash": hash_password("admin-pass", salt="admin-salt", iterations=1000),
+                "role": "admin",
+                "tenant_id": "tenant_default",
+                "company_id": "company_default",
+                "status": "active",
+                "display_name": "Admin User",
+            },
+            {
+                "id": "user_operator",
+                "username": "operator",
+                "password_hash": hash_password("operator-pass", salt="operator-salt", iterations=1000),
+                "role": "operator",
+                "tenant_id": "tenant_default",
+                "company_id": "company_default",
+                "status": "active",
+                "display_name": "Operator User",
+            },
+        ],
+        ensure_ascii=False,
+    )
+
+
+def build_multi_operator_auth_users_json() -> str:
+    users = json.loads(build_auth_users_json())
+    users.append(
+        {
+            "id": "user_operator_2",
+            "username": "operator2",
+            "password_hash": hash_password("operator2-pass", salt="operator2-salt", iterations=1000),
+            "role": "operator",
+            "tenant_id": "tenant_default",
+            "company_id": "company_default",
+            "status": "active",
+            "display_name": "Operator Two",
+        }
+    )
+    return json.dumps(users, ensure_ascii=False)
+
+
+def build_auth_header(client: TestClient, username: str = "operator", password: str = "operator-pass") -> dict[str, str]:
+    response = client.post("/api/v1/auth/login", json={"username": username, "password": password})
+    if response.status_code != 200:
+        raise AssertionError(response.json())
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
 class FastAPIJobsBackendTests(TestCase):
     def test_jobs_api_response_contract_snapshot(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -653,9 +822,15 @@ class FastAPIJobsBackendTests(TestCase):
 
     def test_api_v1_schema_imports_remain_compatible_after_resource_split(self):
         from app.schemas import api_v1
+        from app.schemas.document_jobs import DocumentJobCreateResponse
+        from app.schemas.document_jobs import DocumentJobRetryResponse
+        from app.schemas.files import DocumentFileResponse
         from app.schemas.jobs import JobDetailResponse
 
         self.assertIs(api_v1.JobDetailResponse, JobDetailResponse)
+        self.assertIs(api_v1.DocumentFileResponse, DocumentFileResponse)
+        self.assertIs(api_v1.DocumentJobCreateResponse, DocumentJobCreateResponse)
+        self.assertIs(api_v1.DocumentJobRetryResponse, DocumentJobRetryResponse)
 
     def test_health_ready_reports_runtime_dependencies(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -823,6 +998,911 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(workflow_response.json()["detail"], "当前状态不允许执行。")
         self.assertEqual(conversion_response.status_code, 503)
         self.assertEqual(conversion_response.json()["detail"], "转换失败。")
+        self.assertEqual(workflow_response.json()["error_code"], "job_state_conflict")
+        self.assertEqual(conversion_response.json()["error_code"], "conversion_failed")
+
+    def test_internal_auth_login_and_me_support_admin_and_operator(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_login = client.post(
+                    "/api/v1/auth/login",
+                    json={"username": "admin", "password": "admin-pass"},
+                )
+                operator_login = client.post(
+                    "/api/v1/auth/login",
+                    json={"username": "operator", "password": "operator-pass"},
+                )
+                me_response = client.get(
+                    "/api/v1/auth/me",
+                    headers={"Authorization": f"Bearer {admin_login.json()['access_token']}"},
+                )
+
+        self.assertEqual(admin_login.status_code, 200)
+        self.assertEqual(admin_login.json()["token_type"], "bearer")
+        self.assertEqual(admin_login.json()["role"], "admin")
+        self.assertGreater(admin_login.json()["expires_in"], 0)
+        self.assertEqual(operator_login.status_code, 200)
+        self.assertEqual(operator_login.json()["role"], "operator")
+        self.assertEqual(me_response.status_code, 200)
+        self.assertEqual(me_response.json()["id"], "user_admin")
+        self.assertEqual(me_response.json()["role"], "admin")
+
+    def test_internal_auth_rejects_missing_invalid_expired_and_wrong_role(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                auth_access_token_expire_minutes=-1,
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                missing_token = client.get("/api/v1/auth/me")
+                invalid_token = client.get("/api/v1/auth/me", headers={"Authorization": "Bearer bad-token"})
+                expired_login = client.post(
+                    "/api/v1/auth/login",
+                    json={"username": "admin", "password": "admin-pass"},
+                )
+                expired_token = client.get(
+                    "/api/v1/auth/me",
+                    headers={"Authorization": f"Bearer {expired_login.json()['access_token']}"},
+                )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                operator_login = client.post(
+                    "/api/v1/auth/login",
+                    json={"username": "operator", "password": "operator-pass"},
+                )
+                wrong_role = client.patch(
+                    "/api/v1/templates/default/default",
+                    headers={"Authorization": f"Bearer {operator_login.json()['access_token']}"},
+                )
+                invalid_credentials = client.post(
+                    "/api/v1/auth/login",
+                    json={"username": "admin", "password": "bad-pass"},
+                )
+
+        self.assertEqual(missing_token.status_code, 401)
+        self.assertEqual(missing_token.json()["error_code"], "unauthorized")
+        self.assertEqual(invalid_token.status_code, 401)
+        self.assertEqual(invalid_token.json()["error_code"], "invalid_token")
+        self.assertEqual(expired_token.status_code, 401)
+        self.assertEqual(expired_token.json()["error_code"], "token_expired")
+        self.assertEqual(wrong_role.status_code, 403)
+        self.assertEqual(wrong_role.json()["error_code"], "role_forbidden")
+        self.assertEqual(invalid_credentials.status_code, 401)
+        self.assertEqual(invalid_credentials.json()["error_code"], "invalid_credentials")
+
+    def test_file_upload_url_registers_source_pdf_metadata_for_operator(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+            pdf_content = make_pdf_bytes(page_count=2)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                response = client.post(
+                    "/api/v1/files/upload-url",
+                    headers=headers,
+                    json={
+                        "filename": "source.pdf",
+                        "mime_type": "application/pdf",
+                        "size_bytes": len(pdf_content),
+                        "file_type": "source_pdf",
+                    },
+                )
+                self.assertEqual(response.status_code, 201)
+                payload = response.json()
+                file_id = payload["file_id"]
+                detail_response = client.get(f"/api/v1/files/{file_id}", headers=headers)
+
+            record = runtime.document_file_repository.get_document_file(file_id)
+
+        self.assertEqual(payload["method"], "PUT")
+        self.assertTrue(payload["upload_url"].endswith(f"/api/v1/files/{file_id}/content"))
+        self.assertTrue(payload["object_key"].startswith(f"document-files/tenant_default/{file_id}/"))
+        self.assertEqual(payload["file"]["status"], "pending_upload")
+        self.assertEqual(payload["file"]["created_by"], "user_operator")
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertIsNotNone(record)
+        self.assertEqual(record.file_type, "source_pdf")
+        self.assertEqual(record.storage_provider, "local_object")
+        self.assertEqual(record.bucket, "local-object")
+
+    def test_file_authorized_content_upload_validates_pdf_and_writes_object(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+            pdf_content = make_pdf_bytes(page_count=2)
+            checksum = f"sha256:{hashlib.sha256(pdf_content).hexdigest()}"
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                authorize_response = client.post(
+                    "/api/v1/files/upload-url",
+                    headers=headers,
+                    json={
+                        "filename": "source.pdf",
+                        "mime_type": "application/pdf",
+                        "size_bytes": len(pdf_content),
+                        "checksum_sha256": checksum,
+                    },
+                )
+                upload_path = authorize_response.json()["upload_url"].replace("http://testserver", "")
+                upload_response = client.put(
+                    upload_path,
+                    headers={**headers, "Content-Type": "application/pdf"},
+                    content=pdf_content,
+                )
+
+            payload = upload_response.json()["file"]
+            record = runtime.document_file_repository.get_document_file(payload["id"])
+            object_path = runtime.file_upload_service.resolve_local_object_path(payload["object_key"])
+            object_bytes = object_path.read_bytes()
+
+        self.assertEqual(authorize_response.status_code, 201)
+        self.assertEqual(upload_response.status_code, 201)
+        self.assertEqual(payload["status"], "uploaded")
+        self.assertEqual(payload["checksum_sha256"], checksum)
+        self.assertEqual(payload["metadata"]["page_count"], 2)
+        self.assertEqual(record.status, "uploaded")
+        self.assertEqual(object_bytes, pdf_content)
+
+    def test_file_upload_rejects_missing_token_bad_type_oversize_and_too_many_pages(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                jobs_upload_max_bytes=300,
+                pdf_upload_max_pages=2,
+            )
+            app = create_app(runtime)
+            valid_pdf = make_pdf_bytes(page_count=1)
+            too_many_pages_pdf = make_pdf_bytes(page_count=3)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                missing_token = client.post(
+                    "/api/v1/files/upload-url",
+                    json={
+                        "filename": "source.pdf",
+                        "mime_type": "application/pdf",
+                        "size_bytes": len(valid_pdf),
+                    },
+                )
+                bad_type = client.post(
+                    "/api/v1/files/upload-url",
+                    headers=headers,
+                    json={
+                        "filename": "source.txt",
+                        "mime_type": "text/plain",
+                        "size_bytes": len(valid_pdf),
+                    },
+                )
+                oversize = client.post(
+                    "/api/v1/files/upload-url",
+                    headers=headers,
+                    json={
+                        "filename": "source.pdf",
+                        "mime_type": "application/pdf",
+                        "size_bytes": 301,
+                    },
+                )
+                authorize_response = client.post(
+                    "/api/v1/files/upload-url",
+                    headers=headers,
+                    json={
+                        "filename": "source.pdf",
+                        "mime_type": "application/pdf",
+                        "size_bytes": len(too_many_pages_pdf),
+                    },
+                )
+                upload_path = authorize_response.json()["upload_url"].replace("http://testserver", "")
+                too_many_pages = client.put(
+                    upload_path,
+                    headers={**headers, "Content-Type": "application/pdf"},
+                    content=too_many_pages_pdf,
+                )
+
+        self.assertEqual(missing_token.status_code, 401)
+        self.assertEqual(missing_token.json()["error_code"], "unauthorized")
+        self.assertEqual(bad_type.status_code, 400)
+        self.assertEqual(bad_type.json()["error_code"], "invalid_request")
+        self.assertEqual(oversize.status_code, 413)
+        self.assertEqual(oversize.json()["error_code"], "file_too_large")
+        self.assertEqual(authorize_response.status_code, 201)
+        self.assertEqual(too_many_pages.status_code, 400)
+        self.assertEqual(too_many_pages.json()["error_code"], "invalid_request")
+        self.assertIn("页数", too_many_pages.json()["detail"])
+
+    def test_document_job_create_detail_list_and_events_for_operator(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers={**headers, "X-Trace-Id": "trace_docjob_create"},
+                    json={
+                        "source_file_id": source_file["id"],
+                        "mode": "direct_pdf_to_word",
+                        "template_version_id": "default",
+                    },
+                )
+                job_id = create_response.json()["job_id"]
+                detail_response = client.get(f"/api/v1/document-jobs/{job_id}", headers=headers)
+                list_response = client.get("/api/v1/document-jobs", headers=headers)
+                events_response = client.get(f"/api/v1/document-jobs/{job_id}/events", headers=headers)
+
+            stored_job = runtime.document_job_repository.get_document_job(job_id)
+            stored_file = runtime.document_file_repository.get_document_file(source_file["id"])
+
+        self.assertEqual(create_response.status_code, 201)
+        create_payload = create_response.json()
+        self.assertTrue(job_id.startswith("docjob_"))
+        self.assertEqual(create_payload["status"], "pending")
+        self.assertEqual(create_payload["stage"], "uploaded")
+        self.assertEqual(create_payload["progress"], 0)
+        self.assertEqual(create_payload["job"]["created_by"], "user_operator")
+        self.assertEqual(create_payload["job"]["source_file_id"], source_file["id"])
+        self.assertEqual(create_payload["job"]["request_snapshot"]["source_file"]["id"], source_file["id"])
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(detail_response.json()["id"], job_id)
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(list_response.json()["total"], 1)
+        self.assertEqual(list_response.json()["summary"], {"pending": 1})
+        self.assertEqual(events_response.status_code, 200)
+        events = events_response.json()["items"]
+        self.assertEqual([event["event_type"] for event in events], ["job_created"])
+        self.assertEqual(events[0]["stage"], "uploaded")
+        self.assertEqual(events[0]["trace_id"], "trace_docjob_create")
+        self.assertIsNotNone(stored_job)
+        self.assertEqual(stored_job.status, "pending")
+        self.assertEqual(stored_file.job_id, job_id)
+
+    def test_document_job_create_en2zh_binds_default_term_version(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={
+                        "source_file_id": source_file["id"],
+                        "mode": "en2zh_pdf_to_word",
+                        "document_language": "en",
+                    },
+                )
+                job_id = create_response.json()["job_id"]
+                events_response = client.get(f"/api/v1/document-jobs/{job_id}/events", headers=headers)
+
+            stored_job = runtime.document_job_repository.get_document_job(job_id)
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.json()["job"]["term_version_id"], "en2zh@v1")
+        self.assertIsNotNone(stored_job)
+        self.assertEqual(stored_job.term_version_id, "en2zh@v1")
+        self.assertEqual(stored_job.request_snapshot["term_version_id"], "en2zh@v1")
+        self.assertEqual(events_response.json()["items"][0]["payload"]["term_version_id"], "en2zh@v1")
+
+    def test_document_job_create_enqueues_eager_worker_and_updates_status(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers={**headers, "X-Trace-Id": "trace_docjob_worker"},
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+                detail_response = client.get(f"/api/v1/document-jobs/{job_id}", headers=headers)
+                events_response = client.get(f"/api/v1/document-jobs/{job_id}/events", headers=headers)
+
+            stored_job = runtime.document_job_repository.get_document_job(job_id)
+
+        self.assertEqual(create_response.status_code, 201)
+        create_payload = create_response.json()
+        self.assertEqual(create_payload["status"], "succeeded")
+        self.assertEqual(create_payload["stage"], "completed")
+        self.assertEqual(create_payload["progress"], 100)
+        self.assertEqual(detail_response.json()["status"], "succeeded")
+        self.assertEqual(detail_response.json()["stage"], "completed")
+        self.assertIsNotNone(stored_job)
+        self.assertEqual(stored_job.status, "succeeded")
+        self.assertEqual(stored_job.stage, "completed")
+        self.assertIsNotNone(stored_job.started_at)
+        self.assertIsNotNone(stored_job.mineru_raw_result_file_id)
+        self.assertIsNotNone(stored_job.document_ir_file_id)
+        self.assertIsNotNone(stored_job.result_file_id)
+        self.assertEqual(len(stored_job.image_asset_file_ids), 1)
+        events = events_response.json()["items"]
+        self.assertIn(("file_registered", "parsing"), [(event["event_type"], event["stage"]) for event in events])
+        self.assertIn(("file_registered", "ir_converting"), [(event["event_type"], event["stage"]) for event in events])
+        self.assertIn(("file_registered", "uploading"), [(event["event_type"], event["stage"]) for event in events])
+        self.assertEqual(events[-1]["stage"], "completed")
+        self.assertEqual(events[-1]["event_type"], "stage_succeeded")
+        self.assertEqual(events[-1]["payload"]["result_file_id"], stored_job.result_file_id)
+        self.assertEqual({event["trace_id"] for event in events}, {"trace_docjob_worker"})
+
+    def test_document_job_execution_skeleton_is_idempotent_for_duplicate_delivery(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+
+            first_result = runtime.document_job_execution_service.execute_job(job_id, trace_id="trace_duplicate")
+            first_events = runtime.document_job_event_repository.list_document_job_events(job_id)
+            second_result = runtime.document_job_execution_service.execute_job(job_id, trace_id="trace_duplicate")
+            second_events = runtime.document_job_event_repository.list_document_job_events(job_id)
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertIsNotNone(first_result)
+        self.assertEqual(first_result.status, "succeeded")
+        self.assertEqual(first_result.stage, "completed")
+        self.assertIsNotNone(first_result.mineru_raw_result_file_id)
+        self.assertIsNotNone(first_result.document_ir_file_id)
+        self.assertIsNotNone(first_result.result_file_id)
+        self.assertIsNotNone(second_result)
+        self.assertEqual(second_result.status, "succeeded")
+        self.assertEqual(second_result.stage, "completed")
+        self.assertEqual(second_result.mineru_raw_result_file_id, first_result.mineru_raw_result_file_id)
+        self.assertEqual(second_result.document_ir_file_id, first_result.document_ir_file_id)
+        self.assertEqual(second_result.image_asset_file_ids, first_result.image_asset_file_ids)
+        self.assertEqual(second_result.result_file_id, first_result.result_file_id)
+        self.assertEqual([event.id for event in second_events], [event.id for event in first_events])
+        self.assertEqual(second_events[-1].event_type, "stage_succeeded")
+        self.assertEqual(second_events[-1].stage, "completed")
+
+    def test_document_job_worker_saves_mineru_raw_ir_and_image_assets(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+
+            stored_job = runtime.document_job_repository.get_document_job(job_id)
+            raw_file = runtime.document_file_repository.get_document_file(stored_job.mineru_raw_result_file_id)
+            ir_file = runtime.document_file_repository.get_document_file(stored_job.document_ir_file_id)
+            word_file = runtime.document_file_repository.get_document_file(stored_job.result_file_id)
+            image_files = [
+                runtime.document_file_repository.get_document_file(file_id)
+                for file_id in stored_job.image_asset_file_ids
+            ]
+            raw_bytes = runtime.file_upload_service.read_file_content(raw_file)
+            ir_payload = json.loads(runtime.file_upload_service.read_file_content(ir_file).decode("utf-8"))
+            image_bytes = runtime.file_upload_service.read_file_content(image_files[0])
+            word_bytes = runtime.file_upload_service.read_file_content(word_file)
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(stored_job.stage, "completed")
+        self.assertEqual(raw_file.file_type, "mineru_raw_result")
+        self.assertEqual(ir_file.file_type, "document_ir")
+        self.assertEqual(word_file.file_type, "generated_word")
+        self.assertEqual(word_file.metadata["template_version_id"], "default@1")
+        self.assertEqual([file.file_type for file in image_files], ["image_asset"])
+        with zipfile.ZipFile(io.BytesIO(raw_bytes)) as archive:
+            self.assertIn("content_list_v2.json", archive.namelist())
+        with zipfile.ZipFile(io.BytesIO(word_bytes)) as archive:
+            self.assertIn("word/document.xml", archive.namelist())
+        self.assertEqual(ir_payload["schema_version"], "document-ir/v1")
+        self.assertEqual(
+            [block["type"] for block in ir_payload["blocks"]],
+            ["heading", "paragraph", "table", "image", "list", "formula"],
+        )
+        self.assertEqual(ir_payload["assets"][0]["file_id"], image_files[0].id)
+        self.assertEqual(ir_payload["assets"][0]["object_key"], image_files[0].object_key)
+        self.assertEqual(ir_payload["blocks"][3]["asset_ref"], ir_payload["assets"][0]["id"])
+        self.assertEqual(image_bytes, MINIMAL_PNG_BYTES)
+
+    def test_document_job_download_url_returns_temporary_generated_word_link(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+                download_url_response = client.get(
+                    f"/api/v1/document-jobs/{job_id}/download-url",
+                    headers={**headers, "X-Trace-Id": "trace_download_url"},
+                )
+                download_path = download_url_response.json()["download_url"].replace("http://testserver", "")
+                download_response = client.get(download_path)
+                events_response = client.get(f"/api/v1/document-jobs/{job_id}/events", headers=headers)
+                audit_events = runtime.repository.list_audit_events()
+
+        self.assertEqual(download_url_response.status_code, 200)
+        payload = download_url_response.json()
+        self.assertEqual(payload["job_id"], job_id)
+        self.assertEqual(payload["file"]["file_type"], "generated_word")
+        self.assertIn(f"/api/v1/document-jobs/{job_id}/download?token=", payload["download_url"])
+        self.assertEqual(download_response.status_code, 200)
+        with zipfile.ZipFile(io.BytesIO(download_response.content)) as archive:
+            self.assertIn("word/document.xml", archive.namelist())
+        download_events = [
+            event for event in events_response.json()["items"]
+            if event["event_type"] == "download_authorized"
+        ]
+        self.assertEqual(len(download_events), 1)
+        self.assertEqual(download_events[0]["trace_id"], "trace_download_url")
+        download_audit_events = [
+            event for event in audit_events
+            if event.action == "document_job.download_authorize"
+        ]
+        self.assertEqual(len(download_audit_events), 1)
+        self.assertEqual(download_audit_events[0].target_id, job_id)
+
+    def test_document_job_download_url_rejects_unfinished_job(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+                download_url_response = client.get(f"/api/v1/document-jobs/{job_id}/download-url", headers=headers)
+
+        self.assertEqual(download_url_response.status_code, 409)
+        self.assertEqual(download_url_response.json()["error_code"], "conflict")
+
+    def test_document_job_worker_waits_when_mineru_result_is_not_ready(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            runtime.document_job_execution_service.fake_mineru_client.query_state = "running"
+            runtime.document_job_execution_service.fake_mineru_client.query_full_zip_url = None
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+
+            stored_job = runtime.document_job_repository.get_document_job(job_id)
+            events = runtime.document_job_event_repository.list_document_job_events(job_id)
+            job_files = [
+                file
+                for file in runtime.document_file_repository.list_document_files()
+                if file.job_id == job_id
+            ]
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.json()["stage"], "parsing")
+        self.assertEqual(create_response.json()["progress"], 20)
+        self.assertEqual(stored_job.status, "running")
+        self.assertEqual(stored_job.stage, "parsing")
+        self.assertIsNotNone(stored_job.mineru_batch_id)
+        self.assertIsNone(stored_job.mineru_raw_result_file_id)
+        self.assertIsNone(stored_job.document_ir_file_id)
+        self.assertEqual([file.file_type for file in job_files], ["source_pdf"])
+        self.assertEqual(runtime.document_job_execution_service.fake_mineru_client.download_calls, [])
+        self.assertEqual(events[-1].payload["mineru_state"], "running")
+
+    def test_document_job_worker_classifies_timeout_mineru_render_and_oss_failures(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                p0_document_job_timeout_seconds=1,
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+            runtime.document_job_repository.update_document_job(
+                job_id,
+                timeout_at=utc_now() - timedelta(seconds=1),
+            )
+            timed_out = runtime.document_job_execution_service.execute_job(job_id, trace_id="trace_timeout")
+
+        self.assertEqual(timed_out.status, "failed")
+        self.assertEqual(timed_out.error_code, "document_job_timeout")
+        self.assertEqual(timed_out.failed_stage, "uploaded")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            runtime.document_job_execution_service.fake_mineru_client.raise_error = True
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                mineru_failed_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+
+        self.assertEqual(mineru_failed_response.status_code, 201)
+        mineru_failed_job = mineru_failed_response.json()["job"]
+        self.assertEqual(mineru_failed_job["status"], "failed")
+        self.assertEqual(mineru_failed_job["failed_stage"], "parsing")
+        self.assertEqual(mineru_failed_job["error_code"], "mineru_failed")
+
+        class BrokenRenderer:
+            def render_to_bytes(self, *args, **kwargs):
+                raise RuntimeError("render boom")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            runtime.document_job_execution_service.word_renderer = BrokenRenderer()
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                render_failed_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+
+        render_failed_job = render_failed_response.json()["job"]
+        self.assertEqual(render_failed_job["status"], "failed")
+        self.assertEqual(render_failed_job["failed_stage"], "rendering")
+        self.assertEqual(render_failed_job["error_code"], "render_failed")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            original_register = runtime.file_upload_service.register_generated_content
+
+            def broken_register_generated_content(**kwargs):
+                if kwargs["file_type"] == "generated_word":
+                    raise RuntimeError("oss boom")
+                return original_register(**kwargs)
+
+            runtime.file_upload_service.register_generated_content = broken_register_generated_content
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                oss_failed_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+
+        oss_failed_job = oss_failed_response.json()["job"]
+        self.assertEqual(oss_failed_job["status"], "failed")
+        self.assertEqual(oss_failed_job["failed_stage"], "uploading")
+        self.assertEqual(oss_failed_job["error_code"], "oss_failed")
+
+    def test_document_job_retry_requeues_failed_job_and_writes_audit(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            runtime.document_job_execution_service.fake_mineru_client.raise_error = True
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+                runtime.document_job_execution_service.fake_mineru_client.raise_error = False
+                retry_response = client.post(
+                    f"/api/v1/document-jobs/{job_id}/retry",
+                    headers={**headers, "X-Trace-Id": "trace_docjob_retry"},
+                    json={"reason": "rerun after mineru"},
+                )
+                retry_again_response = client.post(
+                    f"/api/v1/document-jobs/{job_id}/retry",
+                    headers=headers,
+                    json={"reason": "already done"},
+                )
+
+            events = runtime.document_job_event_repository.list_document_job_events(job_id)
+            audit_events = runtime.repository.list_audit_events()
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.json()["status"], "failed")
+        self.assertEqual(retry_response.status_code, 200)
+        self.assertEqual(retry_response.json()["status"], "succeeded")
+        self.assertEqual(retry_response.json()["retry_count"], 1)
+        self.assertEqual(retry_again_response.status_code, 409)
+        self.assertIn("failed", retry_again_response.json()["detail"])
+        retry_events = [event for event in events if event.event_type == "retry_requested"]
+        self.assertEqual(len(retry_events), 1)
+        self.assertEqual(retry_events[0].payload["reason"], "rerun after mineru")
+        retry_audit_events = [event for event in audit_events if event.action == "document_job.retry"]
+        self.assertEqual(len(retry_audit_events), 1)
+        self.assertEqual(retry_audit_events[0].target_id, job_id)
+        self.assertEqual(retry_audit_events[0].reason, "rerun after mineru")
+        self.assertIn("auth.login", [event.action for event in audit_events])
+        self.assertIn("file.upload_authorize", [event.action for event in audit_events])
+        self.assertIn("file.upload_content", [event.action for event in audit_events])
+        self.assertIn("document_job.create", [event.action for event in audit_events])
+
+    def test_document_job_retry_rejects_retry_count_limit(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+                p0_document_job_max_retries=1,
+            )
+            runtime.document_job_execution_service.fake_mineru_client.raise_error = True
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+                runtime.document_job_repository.update_document_job(job_id, retry_count=1)
+                retry_response = client.post(
+                    f"/api/v1/document-jobs/{job_id}/retry",
+                    headers=headers,
+                    json={"reason": "too many"},
+                )
+
+        self.assertEqual(retry_response.status_code, 409)
+        self.assertIn("上限", retry_response.json()["detail"])
+
+    def test_document_job_rejects_missing_token_pending_file_and_reused_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+            pdf_content = make_pdf_bytes(page_count=1)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                authorize_response = client.post(
+                    "/api/v1/files/upload-url",
+                    headers=headers,
+                    json={
+                        "filename": "source.pdf",
+                        "mime_type": "application/pdf",
+                        "size_bytes": len(pdf_content),
+                    },
+                )
+                pending_file_id = authorize_response.json()["file_id"]
+                missing_token = client.post(
+                    "/api/v1/document-jobs",
+                    json={"source_file_id": pending_file_id},
+                )
+                pending_file = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": pending_file_id},
+                )
+                source_file = self._upload_source_pdf(client, headers, filename="ready.pdf")
+                first_create = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                reused_file = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+
+        self.assertEqual(authorize_response.status_code, 201)
+        self.assertEqual(missing_token.status_code, 401)
+        self.assertEqual(missing_token.json()["error_code"], "unauthorized")
+        self.assertEqual(pending_file.status_code, 409)
+        self.assertEqual(pending_file.json()["error_code"], "conflict")
+        self.assertEqual(first_create.status_code, 201)
+        self.assertEqual(reused_file.status_code, 409)
+        self.assertEqual(reused_file.json()["error_code"], "conflict")
+
+    def test_document_job_operator_scope_and_admin_visibility(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_multi_operator_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                other_operator_headers = build_auth_header(client, username="operator2", password="operator2-pass")
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                other_source_file = self._upload_source_pdf(client, other_operator_headers)
+                other_job = client.post(
+                    "/api/v1/document-jobs",
+                    headers=other_operator_headers,
+                    json={"source_file_id": other_source_file["id"]},
+                ).json()
+                forbidden_detail = client.get(
+                    f"/api/v1/document-jobs/{other_job['job_id']}",
+                    headers=operator_headers,
+                )
+                operator_list = client.get("/api/v1/document-jobs", headers=operator_headers)
+                admin_detail = client.get(
+                    f"/api/v1/document-jobs/{other_job['job_id']}",
+                    headers=admin_headers,
+                )
+                admin_list = client.get("/api/v1/document-jobs", headers=admin_headers)
+
+        self.assertEqual(forbidden_detail.status_code, 403)
+        self.assertEqual(forbidden_detail.json()["error_code"], "forbidden")
+        self.assertEqual(operator_list.status_code, 200)
+        self.assertEqual(operator_list.json()["total"], 0)
+        self.assertEqual(admin_detail.status_code, 200)
+        self.assertEqual(admin_detail.json()["created_by"], "user_operator_2")
+        self.assertEqual(admin_list.status_code, 200)
+        self.assertEqual(admin_list.json()["total"], 1)
+
+    def _upload_source_pdf(
+        self,
+        client: TestClient,
+        headers: dict[str, str],
+        *,
+        filename: str = "source.pdf",
+        pdf_content: bytes | None = None,
+    ) -> dict:
+        content = pdf_content or make_pdf_bytes(page_count=1)
+        authorize_response = client.post(
+            "/api/v1/files/upload-url",
+            headers=headers,
+            json={
+                "filename": filename,
+                "mime_type": "application/pdf",
+                "size_bytes": len(content),
+            },
+        )
+        if authorize_response.status_code != 201:
+            raise AssertionError(authorize_response.json())
+        upload_path = authorize_response.json()["upload_url"].replace("http://testserver", "")
+        upload_response = client.put(
+            upload_path,
+            headers={**headers, "Content-Type": "application/pdf"},
+            content=content,
+        )
+        if upload_response.status_code != 201:
+            raise AssertionError(upload_response.json())
+        return upload_response.json()["file"]
 
     def test_templates_read_api_returns_default_template_and_bound_configs(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1127,14 +2207,16 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(
             [event.action for event in audit_events],
             [
+                "template.create",
                 "template.publish",
+                "template.version_create",
                 "template.publish",
                 "template.set_default",
                 "template.disable",
             ],
         )
         self.assertEqual(audit_events[0].actor_role, "admin")
-        self.assertEqual(audit_events[0].target_id, "managed@1")
+        self.assertEqual(audit_events[1].target_id, "managed@1")
         self.assertEqual(audit_events[-1].target_id, "managed@1")
         self.assertNotIn("term_rules", records["2"].payload)
 
@@ -1733,16 +2815,17 @@ class FastAPIJobsBackendTests(TestCase):
                 )
 
         self.assertEqual(bad_upload_response.status_code, 400)
-        self.assertEqual(
-            bad_upload_response.json(),
-            {"detail": "上传文件必须是 .zip 格式的 MinerU 输出包。"},
-        )
+        self.assertEqual(bad_upload_response.json()["detail"], "上传文件必须是 .zip 格式的 MinerU 输出包。")
+        self.assertEqual(bad_upload_response.json()["error_code"], "invalid_request")
         self.assertEqual(forbidden_ops_response.status_code, 403)
-        self.assertEqual(forbidden_ops_response.json(), {"detail": "admin token 校验失败。"})
+        self.assertEqual(forbidden_ops_response.json()["detail"], "admin token 校验失败。")
+        self.assertEqual(forbidden_ops_response.json()["error_code"], "forbidden")
         self.assertEqual(result_not_ready_response.status_code, 409)
-        self.assertEqual(result_not_ready_response.json(), {"detail": "任务尚未完成，result.docx 还不可用。"})
+        self.assertEqual(result_not_ready_response.json()["detail"], "任务尚未完成，result.docx 还不可用。")
+        self.assertEqual(result_not_ready_response.json()["error_code"], "conflict")
         self.assertEqual(admin_unconfigured_response.status_code, 503)
-        self.assertEqual(admin_unconfigured_response.json(), {"detail": "ADMIN_TOKEN 未配置，管理接口不可用。"})
+        self.assertEqual(admin_unconfigured_response.json()["detail"], "ADMIN_TOKEN 未配置，管理接口不可用。")
+        self.assertEqual(admin_unconfigured_response.json()["error_code"], "service_unavailable")
 
     def test_download_artifact_supports_stream_storage_result(self):
         class StreamArtifactStorage:
