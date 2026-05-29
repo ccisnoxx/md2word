@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from app.core.audit_models import AuditEvent
+from app.core.document_job_models import DocumentJobEventRecord, DocumentJobRecord
+from app.core.file_models import DocumentFileRecord
 from app.core.job_models import JobEvent, JobFile, JobRecord, JobStageMessage, sync_source_pdf_compatibility_fields
 from app.core.job_paths import build_job_paths, ensure_job_dirs
 
@@ -15,10 +17,12 @@ class FileJobRepository:
     def __init__(self, data_dir: Path) -> None:
         self.data_dir = data_dir
         self.jobs_dir = data_dir / "jobs"
+        self.document_files_dir = data_dir / "document_files"
+        self.document_jobs_dir = data_dir / "document_jobs"
         self.stage_messages_dir = data_dir / "stage_messages"
         self.tmp_dir = data_dir / "tmp"
         self.audit_events_jsonl = data_dir / "audit_events.jsonl"
-        for path in (self.jobs_dir, self.stage_messages_dir, self.tmp_dir):
+        for path in (self.jobs_dir, self.document_files_dir, self.document_jobs_dir, self.stage_messages_dir, self.tmp_dir):
             path.mkdir(parents=True, exist_ok=True)
 
     def _write_json(self, path: Path, payload: Any) -> None:
@@ -98,6 +102,77 @@ class FileJobRepository:
         for line in self.audit_events_jsonl.read_text(encoding="utf-8").splitlines():
             if line.strip():
                 events.append(AuditEvent.model_validate_json(line))
+        return events
+
+    def create_document_file(self, record: DocumentFileRecord) -> DocumentFileRecord:
+        self._write_json(
+            self.document_files_dir / f"{record.id}.json",
+            record.model_dump(mode="json"),
+        )
+        return record
+
+    def get_document_file(self, file_id: str) -> DocumentFileRecord | None:
+        path = self.document_files_dir / f"{file_id}.json"
+        if not path.exists():
+            return None
+        return DocumentFileRecord.model_validate(self._read_json(path, {}))
+
+    def list_document_files(self) -> list[DocumentFileRecord]:
+        records: list[DocumentFileRecord] = []
+        for path in sorted(self.document_files_dir.glob("*.json")):
+            records.append(DocumentFileRecord.model_validate(self._read_json(path, {})))
+        return sorted(records, key=lambda record: (record.created_at, record.id))
+
+    def update_document_file(self, file_id: str, **patch: Any) -> DocumentFileRecord:
+        existing = self.get_document_file(file_id)
+        if existing is None:
+            raise FileNotFoundError(f"文件不存在: {file_id}")
+        updated = existing.model_copy(update=patch)
+        self.create_document_file(updated)
+        return updated
+
+    def create_document_job(self, record: DocumentJobRecord) -> DocumentJobRecord:
+        self._write_json(
+            self.document_jobs_dir / record.id / "job.json",
+            record.model_dump(mode="json"),
+        )
+        return record
+
+    def get_document_job(self, job_id: str) -> DocumentJobRecord | None:
+        path = self.document_jobs_dir / job_id / "job.json"
+        if not path.exists():
+            return None
+        return DocumentJobRecord.model_validate(self._read_json(path, {}))
+
+    def list_document_jobs(self) -> list[DocumentJobRecord]:
+        records: list[DocumentJobRecord] = []
+        for path in sorted(self.document_jobs_dir.glob("*/job.json")):
+            records.append(DocumentJobRecord.model_validate(self._read_json(path, {})))
+        return sorted(records, key=lambda record: (record.created_at, record.id))
+
+    def update_document_job(self, job_id: str, **patch: Any) -> DocumentJobRecord:
+        existing = self.get_document_job(job_id)
+        if existing is None:
+            raise FileNotFoundError(f"文档任务不存在: {job_id}")
+        updated = DocumentJobRecord.model_validate(existing.model_copy(update=patch).model_dump(mode="python"))
+        self.create_document_job(updated)
+        return updated
+
+    def append_document_job_event(self, job_id: str, event: DocumentJobEventRecord) -> None:
+        path = self.document_jobs_dir / job_id / "events.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(event.model_dump_json())
+            handle.write("\n")
+
+    def list_document_job_events(self, job_id: str) -> list[DocumentJobEventRecord]:
+        path = self.document_jobs_dir / job_id / "events.jsonl"
+        if not path.exists():
+            return []
+        events: list[DocumentJobEventRecord] = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                events.append(DocumentJobEventRecord.model_validate_json(line))
         return events
 
     def upsert_file(self, job_id: str, file: JobFile) -> None:

@@ -23,6 +23,15 @@ from app.repositories.file_term_rule_repository import FileTermRuleRepository
 from app.repositories.mysql_job_repository import MysqlJobRepository, MysqlJobRepositoryConfig
 from app.services.health_service import HealthService
 from app.services.audit import AuditService
+from app.services.auth import AuthService
+from app.services.document_jobs import (
+    CeleryDocumentJobTaskQueue,
+    DocumentJobExecutionService,
+    DocumentJobService,
+    EagerDocumentJobTaskQueue,
+)
+from app.services.document_ir import MinerUToDocumentIRService
+from app.services.files import FileUploadService
 from app.services.jobs.artifact_storage import LocalArtifactStorageAdapter
 from app.services.jobs.artifacts import JobArtifactService
 from app.services.jobs.command import JobCommandService
@@ -32,6 +41,7 @@ from app.services.jobs.object_artifact_storage import ObjectArtifactStorageAdapt
 from app.services.jobs.resource_snapshots import JobResourceSnapshotService
 from app.services.jobs.query import JobQueryService
 from app.services.jobs.stage import JobStageService
+from app.services.renderer import DocumentIRWordRenderer
 from app.services.resource_versions import ResourceVersionService
 from app.services.term_rules.bootstrap import TermRuleBootstrapService
 from app.services.term_rules.import_validation import TermRuleImportValidationService
@@ -39,6 +49,8 @@ from app.services.term_rules.service import TermRuleService
 from app.services.term_rules.sync_files import TermRuleFileSyncService
 from app.services.term_rules.versioning_service import TermRuleSetVersionService
 from app.services.templates.read_service import TemplateReadService
+from app.services.terms import TermVersionService
+from app.services.translation import DocumentIRTranslationService, build_translation_provider
 from app.services.translation_profiles import TranslationProfileVersionService
 
 
@@ -98,6 +110,19 @@ def _build_stage_dispatcher(settings: Settings, stage_service: JobStageService):
     return InProcessStageDispatcher(stage_service), "background_tasks"
 
 
+def _build_document_job_task_queue(
+    settings: Settings,
+    execution_service: DocumentJobExecutionService,
+):
+    """按配置选择 document_jobs Worker 投递端口。"""
+
+    if settings.document_jobs_worker_backend == "celery":
+        return CeleryDocumentJobTaskQueue(settings)
+    if settings.document_jobs_worker_backend == "eager":
+        return EagerDocumentJobTaskQueue(execution_service)
+    return None
+
+
 def build_runtime(settings: Settings | None = None) -> AppRuntime:
     resolved_settings = settings or Settings()
     configure_logging(resolved_settings.app_env, resolved_settings.log_format)
@@ -106,14 +131,47 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
     job_file_repository = repository
     job_event_repository = repository
     audit_event_repository = repository
+    document_file_repository = repository
+    document_job_repository = repository
+    document_job_event_repository = repository
     stage_message_store = repository
     audit_service = AuditService(audit_event_repository)
+    auth_service = AuthService(resolved_settings)
+    file_upload_service = FileUploadService(resolved_settings, document_file_repository)
+    document_ir_service = MinerUToDocumentIRService()
+    translation_provider = build_translation_provider(resolved_settings)
+    document_ir_translation_service = DocumentIRTranslationService(translation_provider)
+    term_version_service = TermVersionService(
+        resolved_settings.translation_terms_file,
+        default_term_version_id=resolved_settings.default_translation_term_version_id,
+    )
     resource_version_service = (
         ResourceVersionService(repository)
         if repository_backend == "mysql"
         else None
     )
     template_read_service = TemplateReadService(resolved_settings, resource_version_service, audit_service)
+    document_word_renderer = DocumentIRWordRenderer()
+    document_job_execution_service = DocumentJobExecutionService(
+        resolved_settings,
+        document_job_repository,
+        document_job_event_repository,
+        document_file_repository,
+        file_upload_service,
+        document_ir_service,
+        template_read_service,
+        document_word_renderer,
+    )
+    document_job_task_queue = _build_document_job_task_queue(resolved_settings, document_job_execution_service)
+    document_job_service = DocumentJobService(
+        resolved_settings,
+        document_job_repository,
+        document_job_event_repository,
+        document_file_repository,
+        document_job_task_queue,
+        template_read_service,
+        term_version_service,
+    )
     term_rule_repository = FileTermRuleRepository(resolved_settings.term_rules_store_file)
     term_rule_service = TermRuleService(
         term_rule_repository,
@@ -215,7 +273,20 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         job_file_repository=job_file_repository,
         job_event_repository=job_event_repository,
         audit_event_repository=audit_event_repository,
+        document_file_repository=document_file_repository,
+        document_job_repository=document_job_repository,
+        document_job_event_repository=document_job_event_repository,
         audit_service=audit_service,
+        auth_service=auth_service,
+        file_upload_service=file_upload_service,
+        document_ir_service=document_ir_service,
+        translation_provider=translation_provider,
+        document_ir_translation_service=document_ir_translation_service,
+        term_version_service=term_version_service,
+        document_word_renderer=document_word_renderer,
+        document_job_service=document_job_service,
+        document_job_execution_service=document_job_execution_service,
+        document_job_task_queue=document_job_task_queue,
         health_service=health_service,
         template_read_service=template_read_service,
         term_rule_service=term_rule_service,

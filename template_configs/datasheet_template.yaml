@@ -1,3 +1,5 @@
+schema_version: template-config/v1
+
 # 配置文件名称，仅用于说明用途，不参与版式计算。
 template_name: 数据手册模板
 
@@ -141,6 +143,12 @@ table_content:
   first_line_indent_pt: 0 # 表格单元格首行缩进，单位 pt。
   left_indent_pt: 0       # 表格单元格整体左缩进，单位 pt。
   right_indent_pt: 0      # 表格单元格整体右缩进，单位 pt。
+
+# 表格框线与表头底色：P0 Word 渲染器使用该段生成可编辑基础表格。
+table_style:
+  style_name: Table Grid
+  header_fill: EEF3F8
+  border_color: C7CDD4
 
 # 表格注释：表格下方的“注：”“说明：”等表注文字。
 table_note:

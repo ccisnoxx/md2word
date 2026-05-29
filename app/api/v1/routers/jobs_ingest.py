@@ -11,9 +11,11 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from app.api.dependencies import get_runtime, get_trace_id, require_jobs_access
 from app.api.errors import bad_request_http_exception
 from app.api.v1.routers.jobs_presenters import build_job_resource_snapshot_response
+from app.core.errors import ApiError
 from app.core.job_models import ConversionOptions
 from app.core.runtime import AppRuntime
 from app.schemas.jobs import JobAcceptedResponse
+from app.services.files.pdf_validation import validate_pdf_upload
 
 
 router = APIRouter()
@@ -159,6 +161,17 @@ async def _save_pdf_upload_to_temp(upload: UploadFile, runtime: AppRuntime) -> P
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="上传文件不是合法 PDF。",
         )
+    try:
+        validate_pdf_upload(
+            filename=filename,
+            content_type=upload.content_type,
+            content=temp_path.read_bytes(),
+            max_bytes=runtime.settings.jobs_upload_max_bytes,
+            max_pages=runtime.settings.pdf_upload_max_pages,
+        )
+    except ApiError:
+        temp_path.unlink(missing_ok=True)
+        raise
     return temp_path
 
 

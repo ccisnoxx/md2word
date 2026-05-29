@@ -10,6 +10,9 @@ from app.core.config import Settings
 if TYPE_CHECKING:
     from app.repositories.protocols import (
         AuditEventRepositoryProtocol,
+        DocumentFileRepositoryProtocol,
+        DocumentJobEventRepositoryProtocol,
+        DocumentJobRepositoryProtocol,
         JobEventRepositoryProtocol,
         JobFileRepositoryProtocol,
         JobSnapshotRepositoryProtocol,
@@ -27,7 +30,20 @@ class AppRuntime:
     job_file_repository: JobFileRepositoryProtocol
     job_event_repository: JobEventRepositoryProtocol
     audit_event_repository: AuditEventRepositoryProtocol
+    document_file_repository: DocumentFileRepositoryProtocol
+    document_job_repository: DocumentJobRepositoryProtocol
+    document_job_event_repository: DocumentJobEventRepositoryProtocol
     audit_service: Any
+    auth_service: Any
+    file_upload_service: Any
+    document_ir_service: Any
+    translation_provider: Any
+    document_ir_translation_service: Any
+    term_version_service: Any
+    document_word_renderer: Any
+    document_job_service: Any
+    document_job_execution_service: Any
+    document_job_task_queue: Any | None
     health_service: Any
     template_read_service: Any
     term_rule_service: Any

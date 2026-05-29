@@ -32,6 +32,18 @@ class AssetSpec:
     path_getter: str
 
 
+@dataclass(frozen=True, slots=True)
+class TemplateVersionSelection:
+    """Worker 渲染时使用的模板版本解析结果。"""
+
+    template_id: str
+    version: int
+    template_version_id: str
+    template_path: Path
+    layout_config_path: Path | None
+    render_policy: dict[str, Any]
+
+
 ASSET_SPECS: tuple[AssetSpec, ...] = (
     AssetSpec(key="template", label="Word 模板", path_getter="default_template_path"),
     AssetSpec(key="layout_config", label="页面布局 YAML", path_getter="layout_config_path"),
@@ -443,6 +455,39 @@ class TemplateReadService:
             raise FileNotFoundError(f"模板文件不存在: {resolved_id}")
         return path
 
+    def resolve_template_version(self, template_version_id: str | None) -> TemplateVersionSelection:
+        """把任务入参解析到具体模板版本文件和配置包。"""
+
+        template_id, version = self._parse_template_version_id(template_version_id)
+        if template_id is None:
+            template_id = self.get_default_template_id()
+        template = self._require_template_item(template_id)
+        if not template.enabled:
+            raise FileNotFoundError(f"模板未启用: {template.id}")
+        selected_version = version or template.version
+        if selected_version in template.disabled_versions:
+            raise FileNotFoundError(f"模板版本已禁用: {template.id}@{selected_version}")
+
+        record = self._resource_records_by_version(template.id).get(str(selected_version))
+        payload = record.payload if record is not None else None
+        template_path = self._template_version_path(template, selected_version, payload)
+        if template_path is None or not template_path.exists():
+            raise FileNotFoundError(f"模板版本文件不存在: {template.id}@{selected_version}")
+        layout_config_path = self._template_version_layout_config_path(template, payload)
+        render_policy = self._payload_dict(payload, "render_policy") or template.render_policy
+        return TemplateVersionSelection(
+            template_id=template.id,
+            version=selected_version,
+            template_version_id=self.build_template_version_id(template.id, selected_version),
+            template_path=template_path,
+            layout_config_path=layout_config_path,
+            render_policy=render_policy,
+        )
+
+    @staticmethod
+    def build_template_version_id(template_id: str, version: int) -> str:
+        return f"{template_id}@{version}"
+
     def _load_manifest(self) -> TemplatesManifest:
         if self._manifest_cache is not None:
             return self._manifest_cache
@@ -639,6 +684,8 @@ class TemplateReadService:
         if render_policy is None:
             render_policy = template.render_policy
         return TemplateVersionResponse(
+            template_id=template.id,
+            template_version_id=self.build_template_version_id(template.id, version),
             version=version,
             status=status,
             is_current=version == template.version,
@@ -676,6 +723,31 @@ class TemplateReadService:
             return int(record.version)
         except ValueError:
             return None
+
+    def _template_version_layout_config_path(
+        self,
+        template: TemplateManifestItem,
+        payload: dict[str, Any] | None,
+    ) -> Path | None:
+        payload_path = self._payload_text(payload, "layout_config_path")
+        manifest_path = payload_path or template.layout_config_path
+        return self._resolve_manifest_path(manifest_path) if manifest_path else None
+
+    def _parse_template_version_id(self, template_version_id: str | None) -> tuple[str | None, int | None]:
+        normalized = self._normalize_optional_text(template_version_id)
+        if normalized is None:
+            return None, None
+        template_id, separator, raw_version = normalized.partition("@")
+        if not separator:
+            return self._validate_template_id(template_id), None
+        template_id = self._validate_template_id(template_id)
+        try:
+            version = int(raw_version)
+        except ValueError as exc:
+            raise ValueError("template_version_id 必须使用 template_id@version 格式。") from exc
+        if version < 1:
+            raise ValueError("template_version_id 版本号必须大于 0。")
+        return template_id, version
 
     def _template_version_path(
         self,

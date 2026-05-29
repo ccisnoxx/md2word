@@ -1,0 +1,116 @@
+# tests/golden_samples/manifest.yaml: 维护 P0 PDF 到 Word Golden Sample 样本清单和验收标签。
+schema_version: 1
+sample_root: tests/golden_samples/pdfs
+target_success_rate: 0.9
+default_mode: direct_pdf_to_word
+default_document_language: zh
+default_template_version_id:
+samples:
+  - id: gs-001
+    filename: gs-001-single-column-title-params.pdf
+    title: 单栏标题与参数表
+    source_status: pending_pdf
+    tags: [zh, single_column, headings, parameter_table]
+    acceptance_focus:
+      - 一级/二级标题顺序保留
+      - 关键参数表可编辑
+      - 正文段落无明显串行
+  - id: gs-002
+    filename: gs-002-single-column-long-table.pdf
+    title: 单栏长参数表
+    source_status: pending_pdf
+    tags: [zh, single_column, long_table, parameter_table]
+    acceptance_focus:
+      - 长表格行列数稳定
+      - 表格跨页后仍可编辑
+      - 表头和单位不丢失
+  - id: gs-003
+    filename: gs-003-double-column-datasheet.pdf
+    title: 双栏数据手册正文
+    source_status: pending_pdf
+    tags: [zh, double_column, paragraph_order, headings]
+    acceptance_focus:
+      - 双栏阅读顺序正确
+      - 段落不左右栏交错
+      - 标题层级基本保留
+  - id: gs-004
+    filename: gs-004-key-figures-and-captions.pdf
+    title: 关键图片与图注
+    source_status: pending_pdf
+    tags: [zh, images, captions, figures]
+    acceptance_focus:
+      - 关键图片被保留
+      - 图注靠近对应图片
+      - 图片比例无明显变形
+  - id: gs-005
+    filename: gs-005-mixed-tables-images.pdf
+    title: 表格图片混排
+    source_status: pending_pdf
+    tags: [zh, table, images, mixed_layout]
+    acceptance_focus:
+      - 表格和图片相对顺序正确
+      - 图片不覆盖正文
+      - 表格仍可编辑
+  - id: gs-006
+    filename: gs-006-formula-and-symbols.pdf
+    title: 公式和特殊符号
+    source_status: pending_pdf
+    tags: [zh, formula, symbols, technical_text]
+    acceptance_focus:
+      - 公式块不丢失
+      - 希腊字母和上下标可读
+      - 公式附近正文顺序正确
+  - id: gs-007
+    filename: gs-007-list-heavy-sections.pdf
+    title: 多级列表和条款
+    source_status: pending_pdf
+    tags: [zh, lists, headings, paragraphs]
+    acceptance_focus:
+      - 列表项目顺序保留
+      - 编号/项目符号不大面积丢失
+      - 条款段落可编辑
+  - id: gs-008
+    filename: gs-008-wide-electrical-characteristics.pdf
+    title: 宽电气特性表
+    source_status: pending_pdf
+    tags: [zh, wide_table, parameter_table, landscape_risk]
+    acceptance_focus:
+      - 宽表格列名和单位保留
+      - 单元格文本不大量挤压
+      - 表格内容可编辑
+  - id: gs-009
+    filename: gs-009-scanned-like-low-quality.pdf
+    title: 低质量文本型 PDF
+    source_status: pending_pdf
+    tags: [zh, low_quality, text_pdf, quality_flags]
+    acceptance_focus:
+      - 能给出明确失败阶段或质量标记
+      - 成功时正文可编辑
+      - 不产生空白 Word
+  - id: gs-010
+    filename: gs-010-short-application-note.pdf
+    title: 短应用说明
+    source_status: pending_pdf
+    tags: [zh, short_doc, headings, images]
+    acceptance_focus:
+      - 端到端处理耗时可接受
+      - Word 可打开可编辑
+      - 标题/正文/图片均有输出
+  - id: gs-011
+    filename: gs-011-multi-page-typical.pdf
+    title: 多页典型数据手册
+    source_status: pending_pdf
+    tags: [zh, multi_page, datasheet, mixed_layout]
+    acceptance_focus:
+      - 多页内容完整性可接受
+      - 页面顺序稳定
+      - 生成 Word 不损坏
+  - id: gs-012
+    filename: gs-012-borderless-table.pdf
+    title: 无边框参数表
+    source_status: pending_pdf
+    tags: [zh, borderless_table, parameter_table, layout_risk]
+    acceptance_focus:
+      - 无边框表格被识别为表格或可读段落
+      - 参数名和值不大面积错配
+      - Word 可编辑

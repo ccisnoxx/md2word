@@ -8,8 +8,8 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-ActorRole = Literal["admin", "jobs", "anonymous"]
-ActorSource = Literal["admin_token", "jobs_token", "open"]
+ActorRole = Literal["admin", "operator", "jobs", "anonymous"]
+ActorSource = Literal["admin_token", "jobs_token", "jwt", "open"]
 
 
 def utc_now() -> datetime:

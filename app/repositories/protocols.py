@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from app.core.audit_models import AuditEvent
+from app.core.document_job_models import DocumentJobEventRecord, DocumentJobRecord
+from app.core.file_models import DocumentFileRecord
 from app.core.job_models import JobEvent, JobFile, JobRecord, JobStageMessage
 from app.core.rule_models import TermRuleCategoryRecord, TermRuleRecord, TermRulesStore
 from app.core.resource_models import ResourceType, ResourceVersionRecord
@@ -49,6 +51,31 @@ class AuditEventRepositoryProtocol(Protocol):
 
     def append_audit_event(self, event: AuditEvent) -> None: ...
     def list_audit_events(self) -> list[AuditEvent]: ...
+
+
+class DocumentFileRepositoryProtocol(Protocol):
+    """独立文件资产 metadata 读写合同。"""
+
+    def create_document_file(self, record: DocumentFileRecord) -> DocumentFileRecord: ...
+    def get_document_file(self, file_id: str) -> DocumentFileRecord | None: ...
+    def list_document_files(self) -> list[DocumentFileRecord]: ...
+    def update_document_file(self, file_id: str, **patch: Any) -> DocumentFileRecord: ...
+
+
+class DocumentJobRepositoryProtocol(Protocol):
+    """document_jobs metadata 读写合同。"""
+
+    def create_document_job(self, record: DocumentJobRecord) -> DocumentJobRecord: ...
+    def get_document_job(self, job_id: str) -> DocumentJobRecord | None: ...
+    def list_document_jobs(self) -> list[DocumentJobRecord]: ...
+    def update_document_job(self, job_id: str, **patch: Any) -> DocumentJobRecord: ...
+
+
+class DocumentJobEventRepositoryProtocol(Protocol):
+    """document_jobs 事件读写合同。"""
+
+    def append_document_job_event(self, job_id: str, event: DocumentJobEventRecord) -> None: ...
+    def list_document_job_events(self, job_id: str) -> list[DocumentJobEventRecord]: ...
 
 
 class StageMessageStoreProtocol(Protocol):

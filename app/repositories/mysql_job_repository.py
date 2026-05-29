@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.core.audit_models import AuditEvent
+from app.core.document_job_models import DocumentJobEventRecord, DocumentJobRecord
+from app.core.file_models import DocumentFileRecord
 from app.core.job_models import (
     JobEvent,
     JobFile,
@@ -109,6 +111,24 @@ MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
         payload LONGTEXT NOT NULL,
         created_at VARCHAR(40) NOT NULL,
         KEY idx_audit_events_created_at (created_at, id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS document_files (
+        file_id VARCHAR(128) PRIMARY KEY,
+        payload LONGTEXT NOT NULL,
+        created_at VARCHAR(40) NOT NULL,
+        updated_at VARCHAR(40) NOT NULL,
+        KEY idx_document_files_created_at (created_at, file_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS document_jobs (
+        job_id VARCHAR(128) PRIMARY KEY,
+        payload LONGTEXT NOT NULL,
+        created_at VARCHAR(40) NOT NULL,
+        updated_at VARCHAR(40) NOT NULL,
+        KEY idx_document_jobs_created_at (created_at, job_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
 )
@@ -258,6 +278,130 @@ class MysqlJobRepository:
                 cursor.execute("SELECT payload FROM audit_events ORDER BY created_at, id")
                 rows = cursor.fetchall()
         return [AuditEvent.model_validate_json(row["payload"]) for row in rows]
+
+    def create_document_file(self, record: DocumentFileRecord) -> DocumentFileRecord:
+        with self._connect() as connection:
+            self._upsert_document_file(connection, record)
+        return record
+
+    def _upsert_document_file(self, connection: Any, record: DocumentFileRecord) -> None:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO document_files (file_id, payload, created_at, updated_at)
+                VALUES (%s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    payload = VALUES(payload),
+                    created_at = VALUES(created_at),
+                    updated_at = VALUES(updated_at)
+                """,
+                (
+                    record.id,
+                    self._dump_payload(record),
+                    record.created_at.isoformat(),
+                    record.updated_at.isoformat(),
+                ),
+            )
+
+    def get_document_file(self, file_id: str) -> DocumentFileRecord | None:
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT payload FROM document_files WHERE file_id = %s", (file_id,))
+                row = cursor.fetchone()
+        if row is None:
+            return None
+        return DocumentFileRecord.model_validate_json(row["payload"])
+
+    def list_document_files(self) -> list[DocumentFileRecord]:
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT payload FROM document_files ORDER BY created_at, file_id")
+                rows = cursor.fetchall()
+        return [DocumentFileRecord.model_validate_json(row["payload"]) for row in rows]
+
+    def update_document_file(self, file_id: str, **patch: Any) -> DocumentFileRecord:
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT payload FROM document_files WHERE file_id = %s", (file_id,))
+                row = cursor.fetchone()
+            if row is None:
+                raise FileNotFoundError(f"文件不存在: {file_id}")
+            updated = DocumentFileRecord.model_validate_json(row["payload"]).model_copy(update=patch)
+            self._upsert_document_file(connection, updated)
+        return updated
+
+    def create_document_job(self, record: DocumentJobRecord) -> DocumentJobRecord:
+        with self._connect() as connection:
+            self._upsert_document_job(connection, record)
+        return record
+
+    def _upsert_document_job(self, connection: Any, record: DocumentJobRecord) -> None:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO document_jobs (job_id, payload, created_at, updated_at)
+                VALUES (%s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    payload = VALUES(payload),
+                    created_at = VALUES(created_at),
+                    updated_at = VALUES(updated_at)
+                """,
+                (
+                    record.id,
+                    self._dump_payload(record),
+                    record.created_at.isoformat(),
+                    record.updated_at.isoformat(),
+                ),
+            )
+
+    def get_document_job(self, job_id: str) -> DocumentJobRecord | None:
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT payload FROM document_jobs WHERE job_id = %s", (job_id,))
+                row = cursor.fetchone()
+        if row is None:
+            return None
+        return DocumentJobRecord.model_validate_json(row["payload"])
+
+    def list_document_jobs(self) -> list[DocumentJobRecord]:
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT payload FROM document_jobs ORDER BY created_at, job_id")
+                rows = cursor.fetchall()
+        return [DocumentJobRecord.model_validate_json(row["payload"]) for row in rows]
+
+    def update_document_job(self, job_id: str, **patch: Any) -> DocumentJobRecord:
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT payload FROM document_jobs WHERE job_id = %s", (job_id,))
+                row = cursor.fetchone()
+            if row is None:
+                raise FileNotFoundError(f"文档任务不存在: {job_id}")
+            existing = DocumentJobRecord.model_validate_json(row["payload"])
+            updated = DocumentJobRecord.model_validate(existing.model_copy(update=patch).model_dump(mode="python"))
+            self._upsert_document_job(connection, updated)
+        return updated
+
+    def append_document_job_event(self, job_id: str, event: DocumentJobEventRecord) -> None:
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO job_events (job_id, payload, created_at)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (job_id, self._dump_payload(event), event.created_at.isoformat()),
+                )
+
+    def list_document_job_events(self, job_id: str) -> list[DocumentJobEventRecord]:
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT payload FROM job_events WHERE job_id = %s ORDER BY id",
+                    (job_id,),
+                )
+                rows = cursor.fetchall()
+        return [DocumentJobEventRecord.model_validate_json(row["payload"]) for row in rows]
 
     def upsert_file(self, job_id: str, file: JobFile) -> None:
         with self._connect() as connection:

@@ -57,6 +57,8 @@ class TemplateVersionDefaultRequest(BaseModel):
 
 
 class TemplateVersionResponse(BaseModel):
+    template_id: str | None = None
+    template_version_id: str | None = None
     version: int
     status: str = "published"
     is_current: bool
