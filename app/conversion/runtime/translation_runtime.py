@@ -107,6 +107,75 @@ def write_translation_request_file(pages: list[Any], output_path: Path, config: 
     return payload
 
 
+def build_translation_trace_payload(
+    pages: list[Any],
+    *,
+    request_payload: dict[str, Any],
+    translations: dict[str, str],
+    config: TranslationConfig,
+    job_id: str | None,
+    model: str,
+    translation_profile: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    items = extract_translation_items(pages)
+    validate_translation_responses(items, translations)
+    return {
+        "schema_version": 1,
+        "job_id": job_id,
+        "translation_profile": translation_profile,
+        "target_language": config.target_language,
+        "domain": config.domain,
+        "prompt_version": config.prompt_version,
+        "model": model,
+        "batch_count": len(request_payload.get("batches", [])),
+        "segments": [serialize_trace_segment(item, translations[item.id]) for item in items],
+    }
+
+
+def serialize_trace_segment(item: TranslationItem, translated_text: str) -> dict[str, Any]:
+    final_text = restore_placeholders(translated_text, item.placeholders)
+    return {
+        "id": item.id,
+        "page_number": item.page_number,
+        "page_position": item.page_position,
+        "block_idx": item.block_idx,
+        "block_position": item.block_position,
+        "field": item.field,
+        "index": item.index,
+        "section_id": item.section_id,
+        "section_title": item.section_title,
+        "source_text": item.source_text,
+        "model_input_text": item.text,
+        "ai_translation_text": translated_text,
+        "final_text": final_text,
+    }
+
+
+def write_translation_trace_file(
+    pages: list[Any],
+    output_path: Path,
+    *,
+    request_payload: dict[str, Any],
+    translations: dict[str, str],
+    config: TranslationConfig,
+    job_id: str | None,
+    model: str,
+    translation_profile: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload = build_translation_trace_payload(
+        pages,
+        request_payload=request_payload,
+        translations=translations,
+        config=config,
+        job_id=job_id,
+        model=model,
+        translation_profile=translation_profile,
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return payload
+
+
 def extract_translation_items(pages: list[Any]) -> list[TranslationItem]:
     items: list[TranslationItem] = []
     current_section_title = DEFAULT_FRONT_SECTION

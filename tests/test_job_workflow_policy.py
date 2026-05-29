@@ -11,6 +11,7 @@ from app.core.job_workflow import (
     build_cleanup_local_files_transition,
     build_conversion_completed_transition,
     build_conversion_failed_transition,
+    build_conversion_started_transition,
     build_mineru_callback_transition,
     build_parsed_result_conversion_started_transition,
     build_mineru_submission_failed_transition,
@@ -152,6 +153,29 @@ class JobWorkflowPolicyTests(TestCase):
         self.assertEqual(patch["progress"], 10)
         self.assertEqual(transition.event_intents[0].kind, "stage_enqueued")
 
+    def test_stage_enqueue_transition_rejects_wrong_stage_owner(self):
+        zip_job = JobRecord(
+            id="job_zip",
+            source_filename="input.zip",
+            status="uploaded",
+            progress=0,
+        )
+        pdf_job_not_parsed = JobRecord(
+            id="job_pdf_not_parsed",
+            source_filename="source.pdf",
+            status="queued",
+            progress=10,
+            source_kind="source_pdf",
+            lifecycle_status="uploaded",
+            execution_status="queued",
+            source_pdf_context=SourcePdfJobContext(),
+        )
+
+        with self.assertRaises(JobWorkflowViolation):
+            build_stage_enqueue_transition(zip_job, stage="submit_to_mineru")
+        with self.assertRaises(JobWorkflowViolation):
+            build_stage_enqueue_transition(pdf_job_not_parsed, stage="convert_parsed_result")
+
     def test_parsed_result_stage_requires_parsed_idle_pdf_job(self):
         parsed_job = JobRecord(
             id="job_parsed_ready",
@@ -199,6 +223,26 @@ class JobWorkflowPolicyTests(TestCase):
         self.assertEqual(succeeded_patch["mineru_batch_id"], "batch_1")
         self.assertEqual(succeeded.event_intents[0].kind, "mineru_submit_succeeded")
 
+    def test_mineru_submit_transitions_reject_non_pdf_jobs(self):
+        job = JobRecord(
+            id="job_zip_submit",
+            source_filename="input.zip",
+            status="queued",
+            progress=10,
+        )
+
+        with self.assertRaises(JobWorkflowViolation):
+            build_mineru_submission_started_transition(job)
+        with self.assertRaises(JobWorkflowViolation):
+            build_mineru_submission_failed_transition(job, error_message="mineru boom")
+        with self.assertRaises(JobWorkflowViolation):
+            build_mineru_submission_succeeded_transition(
+                job,
+                batch_id="batch_1",
+                data_id="job_zip_submit",
+                callback_seed=None,
+            )
+
     def test_mineru_submit_failed_transition_marks_job_failed(self):
         job = JobRecord(
             id="job_pdf_submit_failed",
@@ -216,6 +260,56 @@ class JobWorkflowPolicyTests(TestCase):
         self.assertEqual(patch["execution_status"], "idle")
         self.assertEqual(patch["error_code"], "mineru_submit_failed")
         self.assertEqual([item.kind for item in transition.event_intents], ["mineru_submit_failed", "job_failed"])
+
+    def test_mineru_callback_failed_transition_marks_job_failed(self):
+        job = JobRecord(
+            id="job_pdf_callback_failed",
+            source_filename="source.pdf",
+            status="parsing",
+            progress=25,
+            source_kind="source_pdf",
+            source_pdf_context=SourcePdfJobContext(
+                batch_id="batch_1",
+                data_id="job_pdf_callback_failed",
+            ),
+        )
+
+        transition = build_mineru_callback_transition(
+            job,
+            callback_state="failed",
+            batch_id="batch_1",
+            data_id="job_pdf_callback_failed",
+            full_zip_url=None,
+        )
+
+        patch = transition.as_job_update_patch(job)
+        self.assertEqual(transition.resolved_status(job), "failed")
+        self.assertEqual(patch["lifecycle_status"], "failed")
+        self.assertEqual(patch["execution_status"], "idle")
+        self.assertEqual(patch["progress"], 100)
+        self.assertEqual(patch["error_code"], "mineru_failed")
+        self.assertEqual(patch["mineru_status"], "failed")
+        self.assertEqual(transition.event_intents[0].kind, "mineru_callback_failed")
+
+    def test_conversion_started_transition_marks_converting_and_clears_error(self):
+        job = JobRecord(
+            id="job_convert_start",
+            source_filename="input.zip",
+            status="queued",
+            progress=10,
+            error_code="old_error",
+            error_message="old message",
+        )
+
+        transition = build_conversion_started_transition(job)
+
+        patch = transition.as_job_update_patch(job)
+        self.assertEqual(transition.resolved_status(job), "converting")
+        self.assertEqual(patch["execution_status"], "converting")
+        self.assertEqual(patch["progress"], 50)
+        self.assertIsNone(patch["error_code"])
+        self.assertIsNone(patch["error_message"])
+        self.assertEqual(transition.event_intents[0].kind, "conversion_started")
 
     def test_conversion_transitions_cover_failed_and_completed_paths(self):
         job = JobRecord(

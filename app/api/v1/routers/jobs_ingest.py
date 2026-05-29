@@ -9,9 +9,11 @@ from uuid import uuid4
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile, status
 
 from app.api.dependencies import get_runtime, get_trace_id, require_jobs_access
+from app.api.errors import bad_request_http_exception
+from app.api.v1.routers.jobs_presenters import build_job_resource_snapshot_response
 from app.core.job_models import ConversionOptions
 from app.core.runtime import AppRuntime
-from app.schemas.api_v1 import JobAcceptedResponse
+from app.schemas.jobs import JobAcceptedResponse
 
 
 router = APIRouter()
@@ -26,6 +28,11 @@ def _normalize_optional_text(value: str | None) -> str | None:
 
 def _build_conversion_options(
     template_id: str | None,
+    template_version: str | None,
+    term_rule_set_id: str | None,
+    term_rule_set_version: str | None,
+    translation_profile_id: str | None,
+    translation_profile_version: str | None,
     translation_mode: str | None,
     document_language: str | None,
     use_mineru_header_footer: bool,
@@ -36,10 +43,7 @@ def _build_conversion_options(
     try:
         normalized_template_id = runtime.template_read_service.resolve_selected_template_id(_normalize_optional_text(template_id))
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        ) from exc
+        raise bad_request_http_exception(exc) from exc
 
     if normalized_translation_mode not in {"direct", "en2zh"}:
         raise HTTPException(
@@ -54,6 +58,11 @@ def _build_conversion_options(
 
     return ConversionOptions(
         template_id=normalized_template_id,
+        template_version=_normalize_optional_text(template_version),
+        term_rule_set_id=_normalize_optional_text(term_rule_set_id),
+        term_rule_set_version=_normalize_optional_text(term_rule_set_version),
+        translation_profile_id=_normalize_optional_text(translation_profile_id),
+        translation_profile_version=_normalize_optional_text(translation_profile_version),
         translation_mode=normalized_translation_mode,
         document_language=normalized_document_language,
         use_mineru_header_footer=use_mineru_header_footer,
@@ -159,6 +168,11 @@ async def create_job(
     request: Request,
     package: UploadFile = File(...),
     template_id: str | None = Form(default=None),
+    template_version: str | None = Form(default=None),
+    term_rule_set_id: str | None = Form(default=None),
+    term_rule_set_version: str | None = Form(default=None),
+    translation_profile_id: str | None = Form(default=None),
+    translation_profile_version: str | None = Form(default=None),
     translation_mode: str | None = Form(default=None),
     document_language: str | None = Form(default=None),
     use_mineru_header_footer: bool = Form(default=False),
@@ -167,6 +181,11 @@ async def create_job(
 ) -> JobAcceptedResponse:
     options = _build_conversion_options(
         template_id,
+        template_version,
+        term_rule_set_id,
+        term_rule_set_version,
+        translation_profile_id,
+        translation_profile_version,
         translation_mode,
         document_language,
         use_mineru_header_footer,
@@ -192,6 +211,7 @@ async def create_job(
         trace_id=trace_id,
         status=job.status,
         translation_mode=job.translation_mode,
+        resource_snapshot=build_job_resource_snapshot_response(job.resource_snapshot),
     )
 
 
@@ -200,6 +220,11 @@ async def create_pdf_job(
     background_tasks: BackgroundTasks,
     pdf: UploadFile = File(...),
     template_id: str | None = Form(default=None),
+    template_version: str | None = Form(default=None),
+    term_rule_set_id: str | None = Form(default=None),
+    term_rule_set_version: str | None = Form(default=None),
+    translation_profile_id: str | None = Form(default=None),
+    translation_profile_version: str | None = Form(default=None),
     translation_mode: str | None = Form(default=None),
     document_language: str | None = Form(default=None),
     use_mineru_header_footer: bool = Form(default=False),
@@ -213,6 +238,11 @@ async def create_pdf_job(
         )
     options = _build_conversion_options(
         template_id,
+        template_version,
+        term_rule_set_id,
+        term_rule_set_version,
+        translation_profile_id,
+        translation_profile_version,
         translation_mode,
         document_language,
         use_mineru_header_footer,
@@ -238,4 +268,5 @@ async def create_pdf_job(
         trace_id=trace_id,
         status=job.status,
         translation_mode=job.translation_mode,
+        resource_snapshot=build_job_resource_snapshot_response(job.resource_snapshot),
     )

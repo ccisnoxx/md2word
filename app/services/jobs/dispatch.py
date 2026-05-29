@@ -33,3 +33,17 @@ class InProcessStageDispatcher:
         """保持现有行为：直接调用 JobStageService.replay_pending()。"""
 
         self.stage_service.replay_pending()
+
+
+class ExternalWorkerStageDispatcher:
+    """外部 worker 模式 dispatcher：API 只入队，消息由独立 worker 消费。"""
+
+    def dispatch(self, message_id: str) -> None:
+        """保留统一端口；外部 worker 模式下请求进程不执行 stage。"""
+
+        return None
+
+    def replay_pending(self) -> None:
+        """应用启动时不 replay；独立 worker 负责轮询 stage message store。"""
+
+        return None

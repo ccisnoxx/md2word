@@ -598,7 +598,7 @@ def load_input_adapter_module():
     module.IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif", ".svg"}
     module.normalize_formula_text = text_module.normalize_formula_text
     module.prepare_text = lambda text, render_config: text_module.prepare_text(text, render_config)
-    module.PYCHARM_RUN_CONFIG = {
+    module.LOCAL_RUN_CONFIG = {
         "input_path": "",
         "output_path": "",
         "template_path": "",
@@ -625,13 +625,13 @@ def load_input_adapter_module():
         raise ValueError(f"不支持的 translation_mode: {mode}")
 
     def get_configured_input_path() -> Path | None:
-        raw_value = str(module.PYCHARM_RUN_CONFIG.get("input_path", "")).strip()
+        raw_value = str(module.LOCAL_RUN_CONFIG.get("input_path", "")).strip()
         if not raw_value:
             return None
         candidate = module.Path(raw_value).expanduser().resolve()
         return candidate if module.is_supported_input_path(candidate) else None
 
-    def should_use_pycharm_cli_fallback(input_path: str | None, configured_input_path: Path | None) -> bool:
+    def should_use_configured_input_fallback(input_path: str | None, configured_input_path: Path | None) -> bool:
         if input_path is not None or configured_input_path is None:
             return False
         current_dir = module.Path.cwd().resolve()
@@ -641,7 +641,7 @@ def load_input_adapter_module():
             return False
         return module.is_supported_input_path(configured_input_path)
 
-    def resolve_cli_run_options(args: argparse.Namespace) -> dict[str, object]:
+    def resolve_local_run_options(args: argparse.Namespace) -> dict[str, object]:
         input_path = args.input_path
         output_path = args.output
         template_path = args.template
@@ -659,38 +659,38 @@ def load_input_adapter_module():
         translation_max_chars = getattr(args, "translation_max_chars", translation_module.DEFAULT_MAX_CHARS_PER_BATCH)
 
         configured_input_path = get_configured_input_path()
-        if should_use_pycharm_cli_fallback(input_path, configured_input_path):
+        if should_use_configured_input_fallback(input_path, configured_input_path):
             input_path = str(configured_input_path)
             if output_path is None:
-                output_path = module.PYCHARM_RUN_CONFIG.get("output_path")
+                output_path = module.LOCAL_RUN_CONFIG.get("output_path")
             if template_path is None:
-                template_path = module.PYCHARM_RUN_CONFIG.get("template_path")
+                template_path = module.LOCAL_RUN_CONFIG.get("template_path")
             if subscript_config is None:
-                subscript_config = module.PYCHARM_RUN_CONFIG.get("subscript_config")
+                subscript_config = module.LOCAL_RUN_CONFIG.get("subscript_config")
             if not no_template:
-                no_template = bool(module.PYCHARM_RUN_CONFIG.get("no_template", False))
+                no_template = bool(module.LOCAL_RUN_CONFIG.get("no_template", False))
             if not use_mineru_header_footer:
-                use_mineru_header_footer = bool(module.PYCHARM_RUN_CONFIG.get("use_mineru_header_footer", False))
+                use_mineru_header_footer = bool(module.LOCAL_RUN_CONFIG.get("use_mineru_header_footer", False))
             if document_language == "auto":
-                document_language = str(module.PYCHARM_RUN_CONFIG.get("document_language", "auto") or "auto")
+                document_language = str(module.LOCAL_RUN_CONFIG.get("document_language", "auto") or "auto")
             translation_mode = normalize_translation_mode(
-                str(module.PYCHARM_RUN_CONFIG.get("translation_mode", translation_mode) or translation_mode)
+                str(module.LOCAL_RUN_CONFIG.get("translation_mode", translation_mode) or translation_mode)
             )
             if translation_request_output is None:
-                configured_request_output = str(module.PYCHARM_RUN_CONFIG.get("translation_request_output", "") or "")
+                configured_request_output = str(module.LOCAL_RUN_CONFIG.get("translation_request_output", "") or "")
                 translation_request_output = configured_request_output or None
             if translation_response is None:
-                configured_response = str(module.PYCHARM_RUN_CONFIG.get("translation_response", "") or "")
+                configured_response = str(module.LOCAL_RUN_CONFIG.get("translation_response", "") or "")
                 translation_response = configured_response or None
-            translation_model = str(module.PYCHARM_RUN_CONFIG.get("translation_model", translation_model) or translation_model)
+            translation_model = str(module.LOCAL_RUN_CONFIG.get("translation_model", translation_model) or translation_model)
             if translation_api_key is None:
-                configured_api_key = str(module.PYCHARM_RUN_CONFIG.get("translation_api_key", "") or "")
+                configured_api_key = str(module.LOCAL_RUN_CONFIG.get("translation_api_key", "") or "")
                 translation_api_key = configured_api_key or None
             if translation_base_url is None:
-                configured_base_url = str(module.PYCHARM_RUN_CONFIG.get("translation_base_url", "") or "")
+                configured_base_url = str(module.LOCAL_RUN_CONFIG.get("translation_base_url", "") or "")
                 translation_base_url = configured_base_url or None
-            translation_max_pages = int(module.PYCHARM_RUN_CONFIG.get("translation_max_pages", translation_max_pages) or translation_max_pages)
-            translation_max_chars = int(module.PYCHARM_RUN_CONFIG.get("translation_max_chars", translation_max_chars) or translation_max_chars)
+            translation_max_pages = int(module.LOCAL_RUN_CONFIG.get("translation_max_pages", translation_max_pages) or translation_max_pages)
+            translation_max_chars = int(module.LOCAL_RUN_CONFIG.get("translation_max_chars", translation_max_chars) or translation_max_chars)
         elif input_path is None:
             input_path = "."
 
@@ -714,7 +714,7 @@ def load_input_adapter_module():
 
     module.normalize_translation_mode = normalize_translation_mode
     module.get_configured_input_path = get_configured_input_path
-    module.should_use_pycharm_cli_fallback = should_use_pycharm_cli_fallback
-    module.resolve_cli_run_options = resolve_cli_run_options
+    module.should_use_configured_input_fallback = should_use_configured_input_fallback
+    module.resolve_local_run_options = resolve_local_run_options
     module.bind_runtime(module)
     return module

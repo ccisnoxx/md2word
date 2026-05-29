@@ -6,15 +6,17 @@ status: current
 source_files:
   - app/api/v1/router.py
   - app/api/v1/routers/term_rules.py
+  - app/api/v1/routers/term_rule_write_guard.py
   - app/services/term_rules/service.py
   - app/services/term_rules/import_validation.py
   - app/services/term_rules/sync_files.py
   - app/services/term_rules/yaml_codec.py
   - app/repositories/file_term_rule_repository.py
+  - app/schemas/term_rules.py
   - app/schemas/api_v1.py
-summary: Term-rules API 以 v2 manifest 为版本化 seed，以 live runtime store 为可变真源，并向 conversion 导出兼容 runtime YAML。
+summary: Term-rules API 以 v2 manifest 为版本化 seed，以 live runtime store 为可变真源，并在 MySQL versioned mode 下把写入交给 Term Rule Set 发布流程。
 tags: [term-rules, api, runtime-store]
-last_reviewed: 2026-05-18
+last_reviewed: 2026-05-29
 ---
 
 ## 概述
@@ -28,8 +30,11 @@ last_reviewed: 2026-05-18
 运行约定：
 
 - `import` 会整体替换 live runtime store
+- rule CRUD 会增量修改 live runtime store
 - `sync-files` 会把当前 live truth 回写到 seed 与 runtime YAML
 - conversion 仍然只消费 runtime YAML，不直接读取 seed
+- 每次 import 或增量写入成功后都会刷新 runtime YAML
+- 当 MySQL resource service 启用 Term Rule Set versioning 时，legacy 写接口会返回 `400`，调用方应改用 `/api/v1/term-rule-sets/{set_id}/draft/rules` 更新草稿并发布
 
 ## API 参考
 
@@ -46,6 +51,40 @@ last_reviewed: 2026-05-18
 ### `GET /api/v1/term-rules/{rule_id}`
 
 - 用途：查询单条规则详情。
+
+### `POST /api/v1/term-rules`
+
+- 用途：新增单条规则。
+- 认证：`X-Admin-Token`
+- 请求体关键字段：
+  - `id`：可选；不传时自动生成
+  - `category_id`
+  - `source_term`
+  - `segments[]`
+  - `apply_scope`
+  - `case_sensitive`
+  - `enabled`
+  - `priority`
+  - `custom_html`
+  - `custom_markdown`
+  - `notes`
+- 成功后会刷新 `data/config/runtime_subscripts_dictionary.yaml`。
+- MySQL versioned mode 下返回 `400`，避免绕过 Term Rule Set draft / publish。
+
+### `PATCH /api/v1/term-rules/{rule_id}`
+
+- 用途：更新单条规则。
+- 认证：`X-Admin-Token`
+- 请求体为上述字段的任意子集。
+- 若替换 `segments` 且未显式传 `custom_html/custom_markdown`，服务会按 segments 重新生成渲染内容。
+- MySQL versioned mode 下返回 `400`，避免绕过 Term Rule Set draft / publish。
+
+### `DELETE /api/v1/term-rules/{rule_id}`
+
+- 用途：删除单条规则。
+- 认证：`X-Admin-Token`
+- 成功后会刷新 runtime YAML。
+- MySQL versioned mode 下返回 `400`，避免绕过 Term Rule Set draft / publish。
 
 ### `GET /api/v1/term-rules/export`
 
@@ -82,6 +121,7 @@ last_reviewed: 2026-05-18
 - 关键语义：
   - 不做增量 merge
   - 成功后会同步刷新 runtime YAML
+  - MySQL versioned mode 下返回 `400`，避免绕过 Term Rule Set draft / publish
 
 ### `POST /api/v1/term-rules/sync-files`
 
@@ -94,9 +134,10 @@ last_reviewed: 2026-05-18
   - `bootstrap_seed_path`
   - `runtime_yaml_path`
   - `warnings`
+- MySQL versioned mode 下返回 `400`，避免绕过 Term Rule Set draft / publish。
 
 ## 当前限制
 
-- 暂不提供 rule CRUD。
-- 暂不提供 category 写接口。
 - 当前 import 面向 v2 manifest，不再把 legacy `subscript_rules` YAML 当作者真源。
+- `source_term` 在 live store 内保持全局唯一。
+- MySQL versioned mode 下，legacy 写接口只保留 file/sqlite 兼容用途；生产术语变更应走 [term-rule-sets.md](/Users/sc/PycharmProjects/md2word/docs/api/term-rule-sets.md)。

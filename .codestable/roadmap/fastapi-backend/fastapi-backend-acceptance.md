@@ -118,7 +118,7 @@ tags: [acceptance, backend, fastapi, jobs, docx]
   - 归并内容：仓库已从单一 CLI 工具演进为“CLI 转换核心 + FastAPI 后端壳层”的双表面结构
 - [x] `conversion-flow.md` 保持有效，无需额外改写
   - 理由：它仍然准确描述底层转换核心的输入、修补、翻译和渲染流程
-- [x] `module-mineru-to-docx-internal.md` 保持有效，无需额外改写
+- [x] `app-conversion-internal.md` 保持有效，无需额外改写
   - 理由：FastAPI 壳层没有改变底层 runtime 模块边界
 
 ## 6. requirement 回写

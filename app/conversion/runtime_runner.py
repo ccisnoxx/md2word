@@ -31,6 +31,7 @@ DEFAULT_TEMPLATE_CANDIDATES = (
 
 def run_conversion(
     *,
+    job_id: str | None = None,
     input_path: str,
     output_path: str | None,
     template_path: str | None,
@@ -44,8 +45,13 @@ def run_conversion(
     translation_model: str = llm_client.DEFAULT_MODEL,
     translation_api_key: str | None = None,
     translation_base_url: str | None = None,
+    translation_target_language: str = translation_runtime.DEFAULT_TARGET_LANGUAGE,
+    translation_domain: str = translation_runtime.DEFAULT_TRANSLATION_DOMAIN,
+    translation_prompt_version: str = translation_runtime.TRANSLATION_PROMPT_VERSION,
     translation_max_pages: int = APP_CONFIG.translation_max_pages,
     translation_max_chars: int = APP_CONFIG.translation_max_chars,
+    translation_profile: dict | None = None,
+    translation_trace_output: str | None = None,
 ) -> None:
     """
     Shared conversion entrypoint used by both CLI and FastAPI-facing adapters.
@@ -58,10 +64,13 @@ def run_conversion(
         Path(translation_request_output).expanduser().resolve() if translation_request_output else None
     )
     resolved_translation_response = Path(translation_response).expanduser().resolve() if translation_response else None
+    resolved_translation_trace_output = (
+        Path(translation_trace_output).expanduser().resolve() if translation_trace_output else None
+    )
 
     logger.info("start conversion input={} output={}", original_input, resolved_output_path)
     logger.debug(
-        "conversion options template={} subscript_config={} no_template={} use_mineru_header_footer={} document_language={} translation_mode={} translation_request_output={} translation_response={} translation_model={} translation_api_key_present={} translation_base_url={}",
+        "conversion options template={} subscript_config={} no_template={} use_mineru_header_footer={} document_language={} translation_mode={} translation_request_output={} translation_response={} translation_trace_output={} translation_model={} translation_api_key_present={} translation_base_url={}",
         resolved_template_path,
         resolved_subscript_config,
         no_template,
@@ -70,6 +79,7 @@ def run_conversion(
         translation_mode,
         resolved_translation_request_output,
         resolved_translation_response,
+        resolved_translation_trace_output,
         translation_model,
         bool(translation_api_key),
         translation_base_url,
@@ -81,6 +91,9 @@ def run_conversion(
         translation_config = build_translation_config(
             max_pages=translation_max_pages,
             max_chars=translation_max_chars,
+            target_language=translation_target_language,
+            domain=translation_domain,
+            prompt_version=translation_prompt_version,
         )
         if translation_mode == "en2zh":
             if resolved_translation_request_output:
@@ -91,7 +104,19 @@ def run_conversion(
                     len(payload.get("batches", [])),
                 )
             if resolved_translation_response:
+                payload = translation_runtime.build_translation_request_payload(pages, translation_config)
                 translations = translation_runtime.load_translation_response_file(resolved_translation_response)
+                if resolved_translation_trace_output:
+                    translation_runtime.write_translation_trace_file(
+                        pages,
+                        resolved_translation_trace_output,
+                        request_payload=payload,
+                        translations=translations,
+                        config=translation_config,
+                        job_id=job_id,
+                        model=translation_model,
+                        translation_profile=translation_profile,
+                    )
                 translation_runtime.apply_translation_responses(pages, translations)
                 logger.info("translation response applied items={}", len(translations))
             else:
@@ -105,14 +130,25 @@ def run_conversion(
                     ),
                 )
                 translations = load_translations_from_payload(llm_response)
+                if resolved_translation_trace_output:
+                    translation_runtime.write_translation_trace_file(
+                        pages,
+                        resolved_translation_trace_output,
+                        request_payload=payload,
+                        translations=translations,
+                        config=translation_config,
+                        job_id=job_id,
+                        model=translation_model,
+                        translation_profile=translation_profile,
+                    )
                 translation_runtime.apply_translation_responses(pages, translations)
                 logger.info(
                     "llm translation applied batches={} items={}",
                     len(llm_response.get("batches", [])),
                     len(translations),
                 )
-        elif resolved_translation_request_output or resolved_translation_response:
-            logger.warning("translation_mode=direct 时忽略 translation_request_output / translation_response")
+        elif resolved_translation_request_output or resolved_translation_response or resolved_translation_trace_output:
+            logger.warning("translation_mode=direct 时忽略 translation_request_output / translation_response / translation_trace_output")
 
         preferred_document_language = document_language
         if translation_mode == "en2zh" and document_language == "auto":

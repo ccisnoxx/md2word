@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# app/core/config.py: 定义 FastAPI 后端运行配置和路径派生规则。
+
 from pathlib import Path
 from typing import Literal
 
@@ -18,11 +20,38 @@ class Settings(BaseSettings):
 
     app_name: str = "md2word_file"
     app_env: str = "dev"
+    log_format: Literal["text", "json"] = "text"
     app_cors_origins: str = "http://127.0.0.1:3000,http://localhost:3000"
     data_dir: str = "data"
+    # file 保持本地开发默认值；database 表示 sqlite，mysql 需显式配置。
+    jobs_repository_backend: Literal["file", "database", "mysql"] = "file"
+    jobs_metadata_database_path: str = "data/metadata.sqlite3"
+    jobs_mysql_host: str = "127.0.0.1"
+    jobs_mysql_port: int = 3306
+    jobs_mysql_user: str = "md2word"
+    jobs_mysql_password: str = ""
+    jobs_mysql_database: str = "md2word"
+    jobs_mysql_charset: str = "utf8mb4"
+    jobs_mysql_connect_timeout_seconds: int = 10
+    jobs_artifact_storage_backend: Literal["local_file", "local_object", "s3"] = "local_file"
+    jobs_artifact_object_store_path: str = "data/object_artifacts"
+    jobs_artifact_s3_bucket: str = ""
+    jobs_artifact_s3_endpoint_url: str = ""
+    jobs_artifact_s3_region: str = "us-east-1"
+    jobs_artifact_s3_access_key_id: str = ""
+    jobs_artifact_s3_secret_access_key: str = ""
+    jobs_artifact_s3_key_prefix: str = ""
+    jobs_artifact_s3_public_base_url: str = ""
+    jobs_artifact_s3_download_mode: Literal["redirect", "stream"] = "redirect"
+    jobs_artifact_s3_presign_expires_seconds: int = 3600
+    jobs_worker_mode: Literal["in_process", "external"] = "in_process"
+    jobs_worker_poll_interval_seconds: float = 2.0
+    jobs_worker_id: str = "md2word-worker"
+    stage_message_lease_seconds: int = 900
     jobs_upload_max_bytes: int = 52_428_800
     jobs_access_mode: Literal["open", "token", "admin"] = "open"
     jobs_access_token: str = ""
+    jobs_ops_access_mode: Literal["jobs", "admin"] = "admin"
     admin_token: str = ""
     default_translation_mode: Literal["direct", "en2zh"] = "direct"
     mineru_api_token: str = ""
@@ -43,6 +72,7 @@ class Settings(BaseSettings):
     translation_max_chars: int = 60_000
     default_template_id: str = "default"
     templates_manifest_path: str = "template_configs/templates_manifest.yaml"
+    templates_storage_path: str = "data/config/templates"
     template_state_path: str = "data/config/template_state.json"
     term_rules_seed_path: str = "template_configs/term_rules.v2.yaml"
     term_rules_store_path: str = "data/config/term_rules_store.json"
@@ -67,6 +97,14 @@ class Settings(BaseSettings):
     @property
     def tmp_dir(self) -> Path:
         return self.data_path / "tmp"
+
+    @property
+    def jobs_metadata_database_file(self) -> Path:
+        return self._resolve_runtime_data_path(self.jobs_metadata_database_path, "metadata.sqlite3")
+
+    @property
+    def jobs_artifact_object_store_dir(self) -> Path:
+        return self._resolve_runtime_data_path(self.jobs_artifact_object_store_path, "object_artifacts")
 
     def _resolve_config_path(self, raw_path: str) -> Path:
         candidate = Path(raw_path)
@@ -112,6 +150,10 @@ class Settings(BaseSettings):
     @property
     def templates_manifest_file(self) -> Path:
         return self._resolve_config_path(self.templates_manifest_path)
+
+    @property
+    def templates_storage_dir(self) -> Path:
+        return self._resolve_runtime_data_path(self.templates_storage_path, "config/templates")
 
     @property
     def template_state_file(self) -> Path:

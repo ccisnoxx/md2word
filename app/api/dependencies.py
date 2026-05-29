@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+# app/api/dependencies.py: 提供 FastAPI 运行时、trace 和访问控制依赖。
+
 from fastapi import Depends, Header, HTTPException, Request, status
 
+from app.core.audit_models import ActorContext
 from app.core.runtime import AppRuntime
 
 
@@ -18,9 +21,18 @@ def require_jobs_access(
     x_jobs_token: str | None = Header(default=None, alias="X-Jobs-Token"),
     x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
 ) -> None:
+    require_jobs_actor(runtime, x_jobs_token, x_admin_token, None)
+
+
+def require_jobs_actor(
+    runtime: AppRuntime = Depends(get_runtime),
+    x_jobs_token: str | None = Header(default=None, alias="X-Jobs-Token"),
+    x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    x_actor_id: str | None = Header(default=None, alias="X-Actor-Id"),
+) -> ActorContext:
     mode = runtime.settings.jobs_access_mode
     if mode == "open":
-        return
+        return ActorContext(actor_id=None, actor_role="anonymous", source="open")
     if mode == "token":
         if not runtime.settings.jobs_access_token:
             raise HTTPException(
@@ -32,8 +44,12 @@ def require_jobs_access(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="jobs token 校验失败。",
             )
-        return
-    require_admin_access(runtime, x_admin_token)
+        return ActorContext(
+            actor_id=_normalize_optional_text(x_actor_id) or "jobs-client",
+            actor_role="jobs",
+            source="jobs_token",
+        )
+    return require_admin_actor(runtime, x_admin_token, x_actor_id)
 
 
 def require_job_ops_access(
@@ -41,14 +57,32 @@ def require_job_ops_access(
     x_jobs_token: str | None = Header(default=None, alias="X-Jobs-Token"),
     x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
 ) -> None:
-    # 当前按用户要求复用普通 jobs 访问口径；后续若要收紧，只需在这里切回 admin/token 策略。
-    require_jobs_access(runtime, x_jobs_token, x_admin_token)
+    require_job_ops_actor(runtime, x_jobs_token, x_admin_token, None)
+
+
+def require_job_ops_actor(
+    runtime: AppRuntime = Depends(get_runtime),
+    x_jobs_token: str | None = Header(default=None, alias="X-Jobs-Token"),
+    x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    x_actor_id: str | None = Header(default=None, alias="X-Actor-Id"),
+) -> ActorContext:
+    if runtime.settings.jobs_ops_access_mode == "jobs":
+        return require_jobs_actor(runtime, x_jobs_token, x_admin_token, x_actor_id)
+    return require_admin_actor(runtime, x_admin_token, x_actor_id)
 
 
 def require_admin_access(
     runtime: AppRuntime = Depends(get_runtime),
     x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
 ) -> None:
+    require_admin_actor(runtime, x_admin_token, None)
+
+
+def require_admin_actor(
+    runtime: AppRuntime = Depends(get_runtime),
+    x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    x_actor_id: str | None = Header(default=None, alias="X-Actor-Id"),
+) -> ActorContext:
     if not runtime.settings.admin_token:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -59,3 +93,15 @@ def require_admin_access(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="admin token 校验失败。",
         )
+    return ActorContext(
+        actor_id=_normalize_optional_text(x_actor_id) or "admin",
+        actor_role="admin",
+        source="admin_token",
+    )
+
+
+def _normalize_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None

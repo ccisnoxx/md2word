@@ -20,7 +20,8 @@ behavior-preserving characterization tests for legacy conversion code.
 - Do not bypass `FileJobRepository` with direct JSON file edits from routers or
   services.
 - Do not return ad hoc dictionaries from API handlers when a schema already
-  exists in `app/schemas/api_v1.py`.
+  exists in a resource module under `app/schemas/` or the `api_v1.py`
+  compatibility facade.
 - Do not introduce a second testing style casually. The repo currently uses
   `unittest`/`TestCase`; mixing in pytest fixtures and markers without a broader
   migration plan adds maintenance friction.
@@ -58,6 +59,10 @@ behavior-preserving characterization tests for legacy conversion code.
 
 ## Testing Requirements
 
+- Use the project conda interpreter for backend tests and verification:
+  `/Users/sc/miniconda3/envs/md2word/bin/python`. Do not use the macOS system
+  `python3` for normal `unittest` runs because it may not have project
+  dependencies such as `PyYAML`.
 - API and orchestration changes should add or update coverage in
   `tests/test_fastapi_jobs_backend.py`.
 - Legacy conversion/runtime changes should preserve or extend the existing
@@ -71,8 +76,14 @@ behavior-preserving characterization tests for legacy conversion code.
   Existing tests assert 200/201 flows as well as 400/403/409/503 failures.
 - Minimal verification usually means a targeted `unittest` module, not a broad
   whole-repo run. Example targets:
-  - `python3 -m unittest tests.test_fastapi_jobs_backend`
-  - `python3 -m unittest tests.test_translation_runtime_characterization`
+  - `/Users/sc/miniconda3/envs/md2word/bin/python -m unittest tests.test_fastapi_jobs_backend`
+  - `/Users/sc/miniconda3/envs/md2word/bin/python -m unittest tests.test_translation_runtime_characterization`
+- Before release, run
+  `/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_release.py`.
+  The current release check includes the OpenAPI snapshot comparison. If it
+  fails after an intentional API change, regenerate `docs/api/openapi.json`
+  with the project conda interpreter:
+  `/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/export_openapi.py`.
 
 ---
 

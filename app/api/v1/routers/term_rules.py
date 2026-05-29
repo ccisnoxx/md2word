@@ -1,14 +1,20 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+# app/api/v1/routers/term_rules.py: 提供术语规则查询、导入、导出和同步接口。
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.dependencies import get_runtime, require_admin_access
+from app.api.errors import bad_request_http_exception, not_found_http_exception
+from app.api.v1.routers.term_rule_write_guard import ensure_legacy_term_rule_write_allowed
 from app.core.runtime import AppRuntime
-from app.schemas.api_v1 import (
+from app.schemas.term_rules import (
     RuleExportResponse,
     RuleImportRequest,
     RuleSimulationRequest,
     RuleSimulationResponse,
+    TermRuleCreateRequest,
+    TermRuleDeleteResponse,
     TermRuleFileSyncResponse,
     TermRuleImportValidationFindingResponse,
     TermRuleImportValidationReportResponse,
@@ -16,6 +22,7 @@ from app.schemas.api_v1 import (
     TermRuleListResponse,
     TermRuleResponse,
     TermRuleSegmentResponse,
+    TermRuleUpdateRequest,
 )
 
 
@@ -50,6 +57,19 @@ def _serialize_rule(runtime: AppRuntime, rule) -> TermRuleResponse:
     )
 
 
+def _rule_update_fields(payload: TermRuleUpdateRequest) -> dict:
+    fields: dict = {}
+    for field_name in payload.model_fields_set:
+        value = getattr(payload, field_name)
+        if field_name == "segments" and value is not None:
+            fields[field_name] = [item.model_dump() for item in value]
+        elif field_name in {"custom_html", "custom_markdown"}:
+            fields[field_name] = value
+        elif value is not None:
+            fields[field_name] = value
+    return fields
+
+
 @router.get("", response_model=TermRuleListResponse)
 def list_term_rules(
     page: int = Query(default=1, ge=1),
@@ -74,6 +94,33 @@ def list_term_rules(
     )
 
 
+@router.post("", response_model=TermRuleResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin_access)])
+def create_term_rule(
+    payload: TermRuleCreateRequest,
+    runtime: AppRuntime = Depends(get_runtime),
+) -> TermRuleResponse:
+    ensure_legacy_term_rule_write_allowed(runtime)
+    try:
+        rule = runtime.term_rule_service.create_rule(
+            rule_id=payload.id,
+            category_id=payload.category_id,
+            source_term=payload.source_term,
+            apply_scope=payload.apply_scope,
+            case_sensitive=payload.case_sensitive,
+            enabled=payload.enabled,
+            priority=payload.priority,
+            segments=[item.model_dump() for item in payload.segments],
+            custom_html=payload.custom_html,
+            custom_markdown=payload.custom_markdown,
+            notes=payload.notes,
+        )
+    except FileNotFoundError as exc:
+        raise not_found_http_exception(exc) from exc
+    except ValueError as exc:
+        raise bad_request_http_exception(exc) from exc
+    return _serialize_rule(runtime, rule)
+
+
 @router.get("/export", response_model=RuleExportResponse)
 def export_term_rules(
     runtime: AppRuntime = Depends(get_runtime),
@@ -89,8 +136,37 @@ def get_term_rule(
     try:
         rule = runtime.term_rule_service.get_rule(rule_id)
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise not_found_http_exception(exc) from exc
     return _serialize_rule(runtime, rule)
+
+
+@router.patch("/{rule_id}", response_model=TermRuleResponse, dependencies=[Depends(require_admin_access)])
+def update_term_rule(
+    rule_id: str,
+    payload: TermRuleUpdateRequest,
+    runtime: AppRuntime = Depends(get_runtime),
+) -> TermRuleResponse:
+    ensure_legacy_term_rule_write_allowed(runtime)
+    try:
+        rule = runtime.term_rule_service.update_rule(rule_id, _rule_update_fields(payload))
+    except FileNotFoundError as exc:
+        raise not_found_http_exception(exc) from exc
+    except ValueError as exc:
+        raise bad_request_http_exception(exc) from exc
+    return _serialize_rule(runtime, rule)
+
+
+@router.delete("/{rule_id}", response_model=TermRuleDeleteResponse, dependencies=[Depends(require_admin_access)])
+def delete_term_rule(
+    rule_id: str,
+    runtime: AppRuntime = Depends(get_runtime),
+) -> TermRuleDeleteResponse:
+    ensure_legacy_term_rule_write_allowed(runtime)
+    try:
+        runtime.term_rule_service.delete_rule(rule_id)
+    except FileNotFoundError as exc:
+        raise not_found_http_exception(exc) from exc
+    return TermRuleDeleteResponse(id=rule_id, deleted=True)
 
 
 @router.post("/simulate", response_model=RuleSimulationResponse)
@@ -131,6 +207,7 @@ def import_term_rules(
     payload: RuleImportRequest,
     runtime: AppRuntime = Depends(get_runtime),
 ) -> TermRuleListResponse:
+    ensure_legacy_term_rule_write_allowed(runtime)
     result = runtime.term_rule_import_validation_service.validate_yaml_text(payload.yaml_text)
     if not result.valid or result.parsed_store is None:
         raise HTTPException(
@@ -165,6 +242,7 @@ def import_term_rules(
 def sync_term_rule_files(
     runtime: AppRuntime = Depends(get_runtime),
 ) -> TermRuleFileSyncResponse:
+    ensure_legacy_term_rule_write_allowed(runtime)
     result = runtime.term_rule_file_sync_service.sync_files()
     return TermRuleFileSyncResponse(
         repository_backend=result.repository_backend,

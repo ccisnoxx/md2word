@@ -1,0 +1,56 @@
+feature: 2026-05-28-local-artifact-contract-hardening
+created: 2026-05-28
+
+steps:
+  - action: "名词合同先落地：给 JobFile 和 JobFileResponse 增加 size_bytes / sha256，保持旧记录兼容并同步 presenter"
+    exit_signal: "旧 JobFile payload 可读取，新 response keys 稳定，artifact contract 单测覆盖字段默认值和新值"
+    status: done
+
+  - action: "登记时生成 fingerprint：在 local artifact 登记路径计算大小和 sha256，现有 object / S3 adapter 继承共享字段"
+    exit_signal: "zip / pdf 在线主链登记的 artifact 都带 fingerprint，旧下载行为不变"
+    status: done
+
+  - action: "下载诊断加固：将本地文件缺失、路径非法、fingerprint mismatch 映射为稳定 HTTP 状态和 detail"
+    exit_signal: "FastAPI 下载测试覆盖 404 / 400 / 409，detail 不含绝对路径"
+    status: done
+
+  - action: "完整性检查加固：扩展只读检查脚本，报告缺失、大小不匹配、sha256 不匹配和旧记录无 fingerprint"
+    exit_signal: "脚本测试覆盖 mismatch，空目录仍不写文件"
+    status: done
+
+  - action: "retention dry-run 覆盖 local artifact：候选从 object-only 扩展为 local + object，继续不删除"
+    exit_signal: "retention 单测覆盖 local 候选、object 候选和未到期过滤"
+    status: done
+
+  - action: "文档与最小验证：更新 jobs API / runbook artifact 合同说明并运行针对性验证"
+    exit_signal: "相关 unittest 通过，必要时刷新 OpenAPI snapshot"
+    status: done
+
+checks:
+  - item: "不引入新的 S3、OSS、MinIO 或外部对象存储能力"
+    source: 明确不做
+    status: passed
+
+  - item: "JobFile.path 继续保持 job 内 logical path，不变成绝对路径、object key 或 public URL"
+    source: 名词契约
+    status: passed
+
+  - item: "新登记 artifact 持久化 size_bytes 和 sha256，旧记录缺字段仍可读取和下载"
+    source: 验收场景
+    status: passed
+
+  - item: "下载错误能区分未登记 artifact、缺失本地文件、路径非法和 fingerprint 不匹配"
+    source: 流程级约束
+    status: passed
+
+  - item: "本地完整性检查保持只读，并报告缺失、大小不匹配、sha256 不匹配和旧记录无 fingerprint"
+    source: 验收场景
+    status: passed
+
+  - item: "retention 本轮只生成 dry-run 计划，不执行真实删除"
+    source: 范围守护
+    status: passed
+
+  - item: "API 响应和错误详情不暴露服务端本地绝对路径"
+    source: 安全约束
+    status: passed

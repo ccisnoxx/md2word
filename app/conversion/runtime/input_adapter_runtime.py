@@ -872,19 +872,19 @@ def build_missing_content_list_message(package_root: Path) -> str:
     ]
 
     if looks_like_project_root_fn(package_root):
-        lines.append("当前 input_path 看起来是脚本工程目录，不是 MinerU 输出目录。")
+        lines.append("当前 input_path 看起来是后端项目根目录，不是 MinerU 输出目录。")
 
     nearby_dirs = find_nearby_content_directories_fn(package_root)
     if nearby_dirs:
         lines.append("附近发现了可用的 MinerU 输出目录，请把 input_path 指向下面这些目录之一：")
         lines.extend(f"- {candidate}" for candidate in nearby_dirs)
 
-    lines.append("示例：python3 mineru_to_docx.py /path/to/mineru_output_dir")
+    lines.append("请把 input_path 指向 MinerU 输出目录，或通过 FastAPI jobs 接口上传 MinerU 输出 zip。")
     return "\n".join(lines)
 
 
 def looks_like_project_root(package_root: Path) -> bool:
-    return (package_root / "mineru_to_docx.py").exists()
+    return (package_root / "app" / "main.py").exists() and (package_root / "app" / "conversion").is_dir()
 
 
 def find_nearby_content_directories(package_root: Path, limit: int = 5) -> list[Path]:

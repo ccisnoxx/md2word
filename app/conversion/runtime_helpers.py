@@ -50,12 +50,20 @@ DEFAULT_LAYOUT_CONFIG_CANDIDATES = (
 PAGE_MARGIN = Mm(15)
 
 
-def build_translation_config(*, max_pages: int, max_chars: int) -> translation_runtime.TranslationConfig:
+def build_translation_config(
+    *,
+    max_pages: int,
+    max_chars: int,
+    target_language: str = translation_runtime.DEFAULT_TARGET_LANGUAGE,
+    domain: str = translation_runtime.DEFAULT_TRANSLATION_DOMAIN,
+    prompt_version: str = translation_runtime.TRANSLATION_PROMPT_VERSION,
+) -> translation_runtime.TranslationConfig:
     return translation_runtime.TranslationConfig(
-        target_language=translation_runtime.DEFAULT_TARGET_LANGUAGE,
-        domain=translation_runtime.DEFAULT_TRANSLATION_DOMAIN,
+        target_language=target_language,
+        domain=domain,
         max_pages_per_batch=max(int(max_pages), 1),
         max_chars_per_batch=max(int(max_chars), 1),
+        prompt_version=prompt_version,
     )
 
 

@@ -1,0 +1,108 @@
+feature: 2026-05-29-job-resource-snapshot-binding
+created: 2026-05-29
+
+steps:
+  - action: "名词合同先落地：增加 JobResourceSnapshot / response schema / options 字段"
+    exit_signal: "旧 job 可无 snapshot 反序列化，新 job 响应能表达资源版本摘要"
+    status: done
+
+  - action: "创建期解析骨架：增加 snapshot service，在 MySQL resource mode 下解析默认或指定 published resources"
+    exit_signal: "创建 job 时能得到 template / term-rule / en2zh profile 的 ResolvedResourceVersion"
+    status: done
+
+  - action: "source artifact 与 MinerU snapshot 接入：创建时写入 source artifact alias 和非敏感 MinerU 配置"
+    exit_signal: "zip job 与 PDF job 的 snapshot 可区分 source artifact 与 MinerU 请求参数"
+    status: done
+
+  - action: "stage materialization 接通：用 snapshot payload 派生模板路径、job-local term-rule YAML 和 Translation Profile 快照"
+    exit_signal: "默认指针在 job 创建后切换，已创建 job 的 conversion request 仍使用旧版本"
+    status: done
+
+  - action: "错误路径与兼容路径守住：无 resource service、缺默认、指定非 published、旧 job retry/replay 都有明确行为"
+    exit_signal: "file/sqlite legacy 创建测试保持通过，MySQL mode 的资源缺失失败可观察"
+    status: done
+
+  - action: "验证与回写：补充 targeted unittest，覆盖 zip/PDF、direct/en2zh、default 切换和错误路径"
+    exit_signal: "相关后端测试通过，后续 acceptance 可回写架构与 roadmap 状态"
+    status: done
+
+checks:
+  - item: "JobResourceSnapshot 能表达 template、term_rule_set、可选 translation_profile、mineru 和 artifact_ids"
+    source: 名词契约
+    status: passed
+
+  - item: "ConversionOptions 能表达 versioned resource selection 字段且保留 legacy template_id"
+    source: 名词契约
+    status: passed
+
+  - item: "MySQL mode 创建 job 时绑定默认或指定 published resources"
+    source: 编排骨架
+    status: passed
+
+  - item: "stage 执行 snapshot job 时只消费创建时 materialized resources"
+    source: 编排骨架
+    status: passed
+
+  - item: "file/sqlite backend 不传 versioned resource 参数时保持 legacy 成功路径"
+    source: 流程级约束
+    status: passed
+
+  - item: "file/sqlite backend 显式传 versioned resource 参数时返回 503"
+    source: 流程级约束
+    status: passed
+
+  - item: "创建后 resource version 被 disabled 或 superseded 不阻止 retry/replay 读取原 payload"
+    source: 流程级约束
+    status: passed
+
+  - item: "payload hash 不匹配时 stage 失败并记录资源快照损坏错误"
+    source: 流程级约束
+    status: passed
+
+  - item: "jobs create form contract 新增 versioned resource 选择参数"
+    source: 挂载点
+    status: passed
+
+  - item: "JobRecord.resource_snapshot 持久化不可变资源快照"
+    source: 挂载点
+    status: passed
+
+  - item: "JobAcceptedResponse / JobDetailResponse 返回 resource_snapshot 摘要"
+    source: 挂载点
+    status: passed
+
+  - item: "不新增资源编辑 API"
+    source: 范围守护
+    status: passed
+
+  - item: "不新增 zh2en / zh2ru 真实翻译路径或 source_language / target_language jobs API"
+    source: 范围守护
+    status: passed
+
+  - item: "snapshot / event / response 不包含 API key、MinerU token、callback token 或完整 prompt 文本"
+    source: 范围守护
+    status: passed
+
+  - item: "不新增独立 artifact id 体系，不回填历史 job"
+    source: 范围守护
+    status: passed
+
+  - item: "MySQL direct job 返回 template 与 term_rule_set snapshot，translation_profile 为 null"
+    source: 验收场景
+    status: passed
+
+  - item: "MySQL en2zh job 返回三类资源 snapshot，conversion request 使用 snapshot profile 字段"
+    source: 验收场景
+    status: passed
+
+  - item: "默认 Template / Term Rule Set / Translation Profile 切换后已创建 job 仍使用创建时版本"
+    source: 验收场景
+    status: passed
+
+  - item: "PDF job 提交 MinerU stage 时使用 snapshot 中的非敏感 MinerU 请求参数"
+    source: 验收场景
+    status: passed
+
+  - item: "MySQL resource mode 缺少默认 published Template 或 Term Rule Set 时创建 job 返回 409"
+    source: 验收场景
+    status: passed

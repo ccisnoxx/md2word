@@ -182,25 +182,26 @@ class JobFileRepositoryProtocol(Protocol):
 
 ### 4.4 artifact storage 协议
 
-**方向**：JobStageService / query router -> artifact storage port  
+**方向**：JobCommandService / JobStageService / lifecycle service / query router -> artifact storage port
 **形式**：函数调用 + file contract
 
 **契约**：
 
 ```python
 class ArtifactStorageProtocol(Protocol):
-    def register_file(self, job_id: str, file_type: str, logical_path: str) -> JobFile: ...
-    def resolve_download_path(self, job: JobRecord, file: JobFile) -> Path: ...
-    def build_download_url(self, job_id: str, file: JobFile, url_for: Callable[..., str]) -> str: ...
-    def build_download_filename(self, job: JobRecord, file: JobFile) -> str: ...
+    def build_registered_file(self, file_type: ArtifactFileType, paths: JobPaths) -> JobFile: ...
+    def resolve_download(self, paths: JobPaths, file: JobFile) -> DownloadArtifact: ...
 ```
 
 **约束**：
 
-- 第一阶段实现为 local file adapter，继续使用 `JobPaths` 推导本地路径。
+- 默认实现为 local file adapter，切换实现为 local object adapter，继续使用 `JobPaths` 推导本地 fallback。
 - `JobFile.path` 仍是 job 内逻辑路径，不是本地绝对路径。
+- `JobFile.storage_backend=object` 时，`object_key` 只作为服务端内部对象定位字段，不替代 `download_url`。
 - `parsed_result_package` 是受支持的中间 artifact，但 `result_docx` 仍是默认交付物。
-- adapter 只负责存储 / 下载解析，不负责远端 MinerU 下载；远端下载仍属于 `MinerUClient`。
+- adapter 只负责 artifact 注册、shadow upload 和下载结果解析，不负责 file_type / alias / media type / 下载文件名等产品语义。
+- file_type / alias / media type / 下载 URL / 下载文件名仍由 `JobArtifactService` 作为 artifact 合同服务集中定义。
+- adapter 不负责远端 MinerU 下载；远端下载仍属于 `MinerUClient`。
 
 ### 4.5 worker / storage readiness 协议
 
@@ -224,6 +225,7 @@ class ArtifactStorageProtocol(Protocol):
 **约束**：
 
 - 第一阶段只报告当前 adapter 模式，不承诺多实例健康。
+- `artifact_storage` 默认是 `local_file`，切换到本地对象 adapter 时为 `local_object`。
 - readiness 不自动修复 failed message。
 - 若未来独立 worker 落地，应新增 worker heartbeat 或 last-seen 字段，但不应改变已有字段含义。
 
@@ -232,44 +234,44 @@ class ArtifactStorageProtocol(Protocol):
 1. **stage-dispatcher-port** — 抽出后台 stage 调度 port，让 router / lifecycle 通过 dispatcher 触发执行，当前实现仍使用 `BackgroundTasks + JobStageService.dispatch_message()`。
    - 所属模块：stage dispatcher port
    - 依赖：无
-   - 状态：planned
-   - 对应 feature：未启动
-   - 备注：最小闭环；完成后现有 jobs 主链行为不变，但调度入口可替换
+   - 状态：done
+   - 对应 feature：2026-05-28-stage-dispatcher-port
+   - 备注：已抽出 `StageDispatcherProtocol`；当前 `InProcessStageDispatcher` 仍委托 `JobStageService.dispatch_message / replay_pending`
 
 2. **stage-message-store-contract** — 将 stage message 能力从大 repository 依赖里进一步拆出，固定 replayable message 语义和失败消息处理规则。
    - 所属模块：stage message store / recovery policy
    - 依赖：stage-dispatcher-port
-   - 状态：planned
-   - 对应 feature：未启动
-   - 备注：必须保持 `pending/running` 可 replay，`failed` 不自动 replay
+   - 状态：done
+   - 对应 feature：2026-05-28-stage-message-store-contract
+   - 备注：已定义 `StageMessageStoreProtocol`；`pending/running` 可 replay，`failed` 不自动 replay
 
 3. **repository-boundary-split** — 把 job snapshot、events、files、stage messages 的协议拆成更窄的 application 依赖，`FileJobRepository` 继续作为组合实现。
    - 所属模块：repository boundary
    - 依赖：stage-message-store-contract
-   - 状态：planned
-   - 对应 feature：未启动
-   - 备注：不改当前 JSON 物理存储格式
+   - 状态：done
+   - 对应 feature：2026-05-28-repository-boundary-split
+   - 备注：已拆出 job snapshot、events、files 和 stage messages 的窄协议；不改当前 JSON 物理存储格式
 
 4. **artifact-storage-local-adapter** — 在现有 `JobArtifactService` 合同上抽出 local artifact storage adapter，保留当前 file_type / alias / download 行为。
    - 所属模块：artifact storage port
    - 依赖：repository-boundary-split
-   - 状态：planned
-   - 对应 feature：未启动
-   - 备注：暂不接 OSS / S3，只把 local file 边界固定下来
+   - 状态：done
+   - 对应 feature：2026-05-28-artifact-storage-local-adapter
+   - 备注：已新增 `LocalArtifactStorageAdapter`，业务写侧和下载路径解析改走 `artifact_storage`；`JobArtifactService` 继续承担 artifact 合同语义
 
 5. **worker-process-readiness-design** — 补充 worker / storage adapter 模式的 readiness 字段、runbook 和诊断口径，为未来独立 worker 做前置说明。
    - 所属模块：observability readiness / recovery policy
    - 依赖：stage-message-store-contract
-   - 状态：planned
-   - 对应 feature：未启动
-   - 备注：只做当前单实例可观测性，不实现跨进程心跳
+   - 状态：done
+   - 对应 feature：2026-05-28-worker-process-readiness-design
+   - 备注：已在 readiness 暴露 worker/storage adapter 模式和 pending/running/failed spool 计数；failed 只诊断，不自动 replay
 
 6. **storage-backend-migration-plan** — 设计从 local file 到数据库 / 对象存储的迁移顺序、兼容字段和回滚策略。
    - 所属模块：artifact storage port / repository boundary
    - 依赖：artifact-storage-local-adapter, worker-process-readiness-design
-   - 状态：planned
-   - 对应 feature：未启动
-   - 备注：规划型 feature，不直接迁移生产数据
+   - 状态：done
+   - 对应 feature：2026-05-28-storage-backend-migration-plan
+   - 备注：已完成 metadata 与 artifact 的最小迁移边界；worker/queue 独立评估结论为继续单体单实例，未来多实例需求另起 roadmap
 
 **最小闭环**：第 1 条 `stage-dispatcher-port` 做完后，现有 `POST /jobs`、`POST /jobs/pdf`、callback 自动后处理和 retry 路径仍保持通过，同时后台执行触发点已有可替换入口。
 
@@ -283,4 +285,4 @@ repository 协议拆分排在第三，是因为它依赖 stage message 语义先
 
 - `.codestable/architecture/` 和 `.codestable/roadmap/mineru-online-ingestion/` 中仍有部分 PDF 在线链路旧表述，后续应单独做 architecture / roadmap update，不混进本 roadmap。
 - 权限模型收紧应另起 `backend-permission-hardening` 主题，重点处理 `retry/cancel/cleanup-local-files`、jobs access mode、admin token 和 callback public mode。
-- 如果未来真正引入独立 worker，需要单独设计 worker heartbeat、任务抢占锁、并发幂等和多实例部署拓扑。
+- 如果未来真正引入独立 worker，需要另起 roadmap，单独设计 worker heartbeat、任务抢占锁、并发幂等、队列可见性超时和多实例部署拓扑。

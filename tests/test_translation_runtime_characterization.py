@@ -1,17 +1,16 @@
 import tempfile
+import types
 import unittest
 from pathlib import Path
 
-try:
-    from .test_render_table_from_html_characterization import _load_module
-except ImportError:  # pragma: no cover - compatibility for direct execution
-    from test_render_table_from_html_characterization import _load_module
+from app.conversion.runtime import translation_runtime
+from app.conversion.runtime_models import Block, PageData
 
 
 class TranslationRuntimeCharacterizationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.module = _load_module()
+        cls.module = types.SimpleNamespace(Block=Block, PageData=PageData, translation_runtime=translation_runtime)
         cls.translation = cls.module.translation_runtime
 
     def make_page(self, page_idx, blocks):
@@ -173,6 +172,45 @@ class TranslationRuntimeCharacterizationTests(unittest.TestCase):
         self.assertEqual(pages[0].blocks[1].text, "OPA228 输入失调电压的典型值为 10 kΩ。")
         self.assertIn("<th>参数</th>", pages[0].blocks[2].html)
         self.assertIn("<td>输入电压 5 mV</td>", pages[0].blocks[2].html)
+
+    def test_build_translation_trace_payload_records_ai_and_final_text(self):
+        pages = [
+            self.make_page(
+                0,
+                [
+                    self.make_block(
+                        "paragraph",
+                        "Input voltage 5 mV",
+                        block_idx=1,
+                    )
+                ],
+            )
+        ]
+        config = self.translation.TranslationConfig()
+        request_payload = self.translation.build_translation_request_payload(pages, config)
+        translations = {"p0001.b0001.text": "输入电压 {{PH_001}}"}
+
+        trace = self.translation.build_translation_trace_payload(
+            pages,
+            request_payload=request_payload,
+            translations=translations,
+            config=config,
+            job_id="job_trace",
+            model="profile-model",
+            translation_profile={
+                "translation_profile_id": "electronics-en2zh",
+                "version": "2026.05.29-1",
+                "snapshot_hash": "sha256:" + "1" * 64,
+            },
+        )
+
+        segment = trace["segments"][0]
+        self.assertEqual(trace["job_id"], "job_trace")
+        self.assertEqual(trace["model"], "profile-model")
+        self.assertEqual(segment["source_text"], "Input voltage 5 mV")
+        self.assertEqual(segment["model_input_text"], "Input voltage {{PH_001}}")
+        self.assertEqual(segment["ai_translation_text"], "输入电压 {{PH_001}}")
+        self.assertEqual(segment["final_text"], "输入电压 5 mV")
 
     def test_validate_translation_responses_rejects_placeholder_mismatch(self):
         pages = [

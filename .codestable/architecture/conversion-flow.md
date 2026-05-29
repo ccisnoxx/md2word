@@ -1,12 +1,12 @@
 ---
 doc_type: architecture
 slug: conversion-flow
-scope: MinerU 输入到 DOCX 输出的端到端运行流程，包括 CLI 入口、shared runtime runner，以及 direct 和 en2zh 两种模式
-summary: 当前转换流程由 `app/conversion/runtime_runner.py` 统一调度；CLI 入口和 FastAPI 都只是在外层组装参数，再把 MinerU 包规整成页面块模型，做页面修补和可选翻译，最后按模板/YAML 配置生成 Word 文档
+scope: MinerU 输入到 DOCX 输出的端到端运行流程，包括后端 conversion entrypoint、runtime runner，以及 direct 和 en2zh 两种模式
+summary: 当前转换流程由 `app/conversion/runtime_runner.py` 统一调度；FastAPI jobs 在外层组装参数，再把 MinerU 包规整成页面块模型，做页面修补和可选翻译，最后按模板/YAML 配置生成 Word 文档；en2zh 可额外输出 request 与 segment trace
 status: current
-last_reviewed: 2026-05-19
+last_reviewed: 2026-05-29
 tags: [architecture, flow, mineru, docx, translation]
-depends_on: [architecture-index, module-mineru-to-docx-internal]
+depends_on: [architecture-index, app-conversion-internal]
 implements: []
 ---
 
@@ -16,19 +16,17 @@ implements: []
 
 ```mermaid
 flowchart TD
-    A["python mineru_to_docx.py [input_path]"] --> B["main()"]
-    C["ENABLE_PYCHARM_RUN_CONFIG=True"] --> D["run_with_pycharm_config()"]
-    B --> E["parse_args()"]
-    E --> F["resolve_cli_run_options()"]
-    F --> G["mineru_to_docx.run_conversion()"]
-    D --> G
-    G --> H["runtime_runner.run_conversion()"]
+    A["POST /api/v1/jobs 或 jobs/pdf callback 后处理"] --> B["JobStageService.dispatch_message()"]
+    B --> C["build_job_conversion_request()"]
+    C --> D["ConversionService.convert()"]
+    D --> E["runtime_facade.run_conversion()"]
+    E --> F["runtime_runner.run_conversion()"]
 ```
 
-- CLI 是默认路径，`ENABLE_PYCHARM_RUN_CONFIG=False`。锚点：`mineru_to_docx.py:245`
-- PyCharm 路径只在显式打开开关时使用，参数来自 `PYCHARM_RUN_CONFIG`。锚点：`mineru_to_docx.py:388`
-- CLI 不传 `input_path` 且当前目录看起来是脚本工程目录时，会尝试回退到 `PYCHARM_RUN_CONFIG["input_path"]`。锚点：`mineru_to_docx.py:416`、`mineru_to_docx.py:494`
-- 根脚本里的 `run_conversion()` 已经只是兼容 façade，真实共享总调度在 `app/conversion/runtime_runner.py`。锚点：`mineru_to_docx.py:515`、`app/conversion/runtime_runner.py:33`
+- `JobStageService` 是后端任务推进入口，按 stage message 分派到 conversion。锚点：`app/services/jobs/stage.py`
+- `build_job_conversion_request()` 把 job、artifact、模板和翻译参数组装成 conversion request。锚点：`app/conversion/entrypoint.py`
+- `ConversionService.convert()` 负责服务层调用和错误边界。锚点：`app/conversion/service.py`
+- 真实转换总调度在 `app/conversion/runtime_runner.py`。锚点：`app/conversion/runtime_runner.py:33`
 
 ## 2. 输入加载流程
 
@@ -73,21 +71,25 @@ flowchart TD
 flowchart TD
     A["pages"] --> B{"translation_mode"}
     B -->|direct| C["跳过翻译"]
-    B -->|en2zh| D["extract_translation_items()"]
-    D --> E["protect_text() 占位型号/单位/上下标变量"]
-    E --> F["build_translation_batches()"]
-    F --> G{"translation_response 已提供"}
-    G -->|是| H["load_translation_response_file()"]
-    G -->|否| I["llm_client.translate_payload()"]
-    H --> J["apply_translation_responses()"]
-    I --> J
-    J --> K["回到渲染流程"]
+    B -->|en2zh| D["build TranslationConfig from settings/profile"]
+    D --> E["extract_translation_items()"]
+    E --> F["protect_text() 占位型号/单位/上下标变量"]
+    F --> G["build_translation_batches()"]
+    G --> H{"translation_response 已提供"}
+    H -->|是| I["load_translation_response_file()"]
+    H -->|否| J["llm_client.translate_payload()"]
+    I --> K["write_translation_trace_file() if configured"]
+    J --> K
+    K --> L["apply_translation_responses()"]
+    L --> M["回到渲染流程"]
 ```
 
+- `JobStageService` 在 `translation_mode=en2zh` 时可解析默认 published Translation Profile，并由 `build_job_conversion_request()` 覆盖模型、目标语言、领域、prompt 版本和分批阈值；没有默认 profile 时使用 settings / `.env`。锚点：`app/services/jobs/stage.py`、`app/conversion/entrypoint.py`
 - 翻译抽取跳过页眉、页脚、页码和表格占位符。锚点：`translation_runtime.py:15`
 - ID 形式稳定，例如 `p0001.b0003.html.c0001`，用于回填原块。锚点：`translation_runtime.py:230`
 - HTML 表格单元格会被逐格抽取和重写，回填时保留表格标签结构。锚点：`translation_runtime.py:498`、`translation_runtime.py:542`
 - `llm_client.py` 使用 `prompt/translation_en2zh.md` 作为 system prompt。锚点：`llm_client.py:17`、`llm_client.py:144`
+- `write_translation_trace_file()` 在应用翻译前记录 segment 原文、模型输入、AI 初译和最终渲染文本；trace 由 jobs artifact 合同登记为 `translation_trace`。锚点：`translation_runtime.py:154`、`app/services/jobs/stage.py`
 
 ## 5. 渲染配置流程
 
@@ -101,9 +103,9 @@ flowchart TD
     F --> G["apply_document_language_overrides()"]
 ```
 
-- 模板路径默认候选由 `runtime_runner.DEFAULT_TEMPLATE_CANDIDATES` 提供；CLI façade 只是复用该常量。锚点：`app/conversion/runtime_runner.py:25`、`mineru_to_docx.py:185`
+- 模板路径默认候选由 `runtime_runner.DEFAULT_TEMPLATE_CANDIDATES` 提供。锚点：`app/conversion/runtime_runner.py:25`
 - 样式 YAML 默认从 `template_configs/datasheet_template.yaml` 查找，并由 `runtime_helpers.load_render_config()` 继续委托给 `render_config_runtime`。锚点：`app/conversion/runtime_helpers.py:48`、`app/conversion/runtime_helpers.py:118`
-- 上下标词典默认从 `template_configs/subscripts_dictionary.yaml` 查找。锚点：`mineru_to_docx.py:186`、`mineru_to_docx.py:583`
+- 上下标词典默认从 `template_configs/subscripts_dictionary.yaml` 查找，并由 render config runtime 统一加载。锚点：`render_config_runtime.py`
 - 语言判定会抽取前若干页正文片段，按拉丁字母和 CJK 字符比例判断 `en` / `zh`。锚点：`app/conversion/runtime_helpers.py:144`
 
 ## 6. 文档构建流程
@@ -165,4 +167,6 @@ flowchart TD
 
 ## 10. 变更日志
 
-- 2026-05-19：同步 root façade -> shared runtime runner 的现状，回写 config / output 流程的真实实现位置。
+- 2026-05-29：补入 Translation Profile 与 segment trace 的转换链路现状；`en2zh` 可由默认 published profile 覆盖翻译配置，并输出 `translation_trace` artifact。
+- 2026-05-28：阶段 0 入口收口，启动流程只保留 FastAPI jobs 到 `app/conversion/` 的后端路径。
+- 2026-05-19：同步 shared runtime runner 的现状，回写 config / output 流程的真实实现位置。

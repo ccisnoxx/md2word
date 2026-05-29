@@ -1,9 +1,14 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.responses import FileResponse
+# app/api/v1/routers/jobs_query.py: 提供 jobs 查询、文件列表、事件列表和 artifact 下载接口。
 
-from app.api.dependencies import get_runtime, require_jobs_access
+from urllib.parse import quote
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
+
+from app.api.dependencies import get_runtime, get_trace_id, require_jobs_access, require_jobs_actor
+from app.api.errors import artifact_download_http_exception
 from app.api.v1.routers.jobs_presenters import (
     build_job_detail_response,
     build_job_event_response,
@@ -11,11 +16,21 @@ from app.api.v1.routers.jobs_presenters import (
     build_job_summary_response,
 )
 from app.core.job_paths import build_job_paths
+from app.core.audit_models import ActorContext
 from app.core.runtime import AppRuntime
-from app.schemas.api_v1 import JobDetailResponse, JobEventListResponse, JobFileListResponse, JobFileResponse, JobListResponse
+from app.schemas.jobs import JobDetailResponse, JobEventListResponse, JobFileListResponse, JobFileResponse, JobListResponse
 
 
 router = APIRouter()
+
+
+def _attachment_content_disposition(filename: str) -> str:
+    """为流式下载响应补齐 attachment 文件名语义。"""
+
+    quoted_filename = quote(filename)
+    if quoted_filename != filename:
+        return f"attachment; filename*=utf-8''{quoted_filename}"
+    return f'attachment; filename="{filename}"'
 
 
 def _normalize_optional_text(value: str | None) -> str | None:
@@ -107,13 +122,16 @@ def get_job_result(
 @router.get(
     "/{job_id}/download/{artifact_alias}",
     name="download_artifact",
-    dependencies=[Depends(require_jobs_access)],
 )
 def download_artifact(
     job_id: str,
     artifact_alias: str,
+    actor: ActorContext = Depends(require_jobs_actor),
     runtime: AppRuntime = Depends(get_runtime),
-) -> FileResponse:
+    trace_id: str = Depends(get_trace_id),
+) -> Response:
+    """按 artifact storage 下载结果合同生成 HTTP 响应，保持下载 URL 稳定。"""
+
     try:
         file_type = runtime.artifact_service.spec_for_alias(artifact_alias).file_type
     except KeyError:
@@ -126,14 +144,47 @@ def download_artifact(
 
     job_paths = build_job_paths(runtime.settings.data_path, job_id)
     try:
-        artifact_path = runtime.artifact_service.resolve_download_path(job_paths, file)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    if not artifact_path.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="本地产物文件不存在。")
+        download = runtime.artifact_storage.resolve_download(job_paths, file)
+    except (FileNotFoundError, ValueError) as exc:
+        raise artifact_download_http_exception(exc) from exc
 
-    return FileResponse(
-        artifact_path,
-        media_type=runtime.artifact_service.media_type_for_file(file),
-        filename=runtime.artifact_service.build_download_filename(job, file),
+    media_type = runtime.artifact_service.media_type_for_file(file)
+    filename = runtime.artifact_service.build_download_filename(job, file)
+    if download.kind == "local_path":
+        if download.path is None or not download.path.exists():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="本地产物文件不存在。")
+        runtime.audit_service.record(
+            actor=actor,
+            action="artifact.download",
+            target_type="artifact",
+            target_id=f"{job_id}:{artifact_alias}",
+            trace_id=trace_id,
+        )
+        return FileResponse(download.path, media_type=media_type, filename=filename)
+
+    if download.kind == "stream":
+        if download.content is None:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="产物流不可用。")
+        runtime.audit_service.record(
+            actor=actor,
+            action="artifact.download",
+            target_type="artifact",
+            target_id=f"{job_id}:{artifact_alias}",
+            trace_id=trace_id,
+        )
+        return StreamingResponse(
+            download.content,
+            media_type=media_type,
+            headers={"Content-Disposition": _attachment_content_disposition(filename)},
+        )
+
+    if download.redirect_url is None:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="产物重定向地址不可用。")
+    runtime.audit_service.record(
+        actor=actor,
+        action="artifact.download",
+        target_type="artifact",
+        target_id=f"{job_id}:{artifact_alias}",
+        trace_id=trace_id,
     )
+    return RedirectResponse(download.redirect_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)

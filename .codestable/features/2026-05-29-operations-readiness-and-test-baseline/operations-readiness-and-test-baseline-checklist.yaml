@@ -1,0 +1,72 @@
+feature: 2026-05-29-operations-readiness-and-test-baseline
+created: 2026-05-29
+
+steps:
+  - action: "readiness / metrics 契约先落地：扩展 health schema/service/router，补齐 artifact / resource / metrics 字段"
+    exit_signal: "/health/ready 旧字段仍在，/health/metrics 返回 JSON counters 且不含 secret/path payload"
+    status: done
+
+  - action: "MySQL migration baseline：新增 file -> MySQL metadata migration/validation 脚本，明确空目标守护和报告格式"
+    exit_signal: "fake MySQL 测试能验证 schema bootstrap、copy、validate 和非空目标拒绝"
+    status: done
+
+  - action: "release check 与自动 smoke：check_release.py 聚合 OpenAPI check、health/metrics、workflow、MySQL fake smoke、logging tests"
+    exit_signal: "项目 conda interpreter 下 targeted release check 通过；失败报告能定位具体分项"
+    status: done
+
+  - action: "docs / env baseline：新增 .env.example，更新 runbook、health API 和 runtime observability 文档"
+    exit_signal: "文档能从空环境指引到 MySQL metadata + local artifact 单实例部署；真实外部联调步骤单独列明"
+    status: done
+
+checks:
+  - item: "/health/ready 保留旧字段并新增 artifact writable / disk free / default resource version 字段"
+    source: 验收场景
+    status: passed
+
+  - item: "/health/metrics 返回 metadata store、artifact storage、worker mode、job status counts、stage message counts、resource version counts、audit event count"
+    source: 验收场景
+    status: passed
+
+  - item: "health / metrics 不暴露 token、secret、完整 payload、客户文件名或新增本地绝对私密路径"
+    source: 范围守护
+    status: passed
+
+  - item: "file backend metadata 可迁移到空 MySQL 目标，validate 后 source/target totals 一致"
+    source: 验收场景
+    status: passed
+
+  - item: "MySQL migration 默认拒绝写入非空目标"
+    source: 流程级约束
+    status: passed
+
+  - item: "check_release.py 聚合 OpenAPI、health/metrics、metadata migration、job workflow、MySQL fake smoke、logging 分项"
+    source: 验收场景
+    status: passed
+
+  - item: "release check 默认不依赖真实 MinerU、OpenAI 或公网"
+    source: 范围守护
+    status: passed
+
+  - item: "MySQL resource mode 下 PDF -> callback -> completed smoke 仍通过"
+    source: 验收场景
+    status: passed
+
+  - item: "retry/cancel/cleanup 状态机测试通过，stage readiness 语义不倒退"
+    source: 验收场景
+    status: passed
+
+  - item: ".env.example 与 runbook 覆盖 MySQL metadata、artifact storage、worker mode、access token、callback URL、LOG_FORMAT、release check 和真实外部联调步骤"
+    source: 验收场景
+    status: passed
+
+  - item: "不新增 Prometheus / external monitoring dependency"
+    source: 范围守护
+    status: passed
+
+  - item: "不引入 Alembic / ORM migration"
+    source: 范围守护
+    status: passed
+
+  - item: "不改变 artifact 二进制仍在 artifact storage 的边界"
+    source: 范围守护
+    status: passed

@@ -1,0 +1,45 @@
+feature: 2026-05-29-translation-profile-and-segment-trace
+created: 2026-05-29
+
+steps:
+  - action: "名词合同：增加 Translation Profile draft/version/list/detail 请求响应模型和 service payload/hash"
+    exit_signal: "schema 和 service 能表达 draft、published、default、snapshot_hash 和翻译配置字段"
+    status: done
+  - action: "Profile API：增加 router、runtime wiring 和 API v1 注册"
+    exit_signal: "MySQL resource mode 下可完成 draft -> publish -> default -> rollback"
+    status: done
+  - action: "转换执行：stage 层解析默认 profile 并传入 conversion request"
+    exit_signal: "en2zh request 的模型 / prompt / 分批参数可由默认 profile 覆盖，direct 模式不读取 profile"
+    status: done
+  - action: "segment trace artifact：translation runtime 写 trace.json 并登记 translation_trace"
+    exit_signal: "en2zh job 同时登记 translation_request、translation_trace 和 result_docx"
+    status: done
+  - action: "验证与回写：补充 targeted unittest 并更新 checklist"
+    exit_signal: "profile API、fallback path 和 trace artifact 均有测试证据"
+    status: done
+
+checks:
+  - item: "Translation Profile draft/published/default 写入 resource_type=translation_profile"
+    source: 名词契约
+    status: passed
+  - item: "published profile 不可通过 draft 路径覆盖，修改必须发布新版本"
+    source: 流程级约束
+    status: passed
+  - item: "profile payload 不保存 API key、secret header 或完整 prompt 文本"
+    source: 范围守护
+    status: passed
+  - item: "file/sqlite backend profile 写接口返回 503，现有 settings 翻译路径保持"
+    source: 兼容性
+    status: passed
+  - item: "en2zh 执行时默认 published profile 能覆盖 model / prompt / batch 参数"
+    source: 编排骨架
+    status: passed
+  - item: "translation_trace artifact 记录 source、AI 初译和 final text"
+    source: 验收场景
+    status: passed
+  - item: "direct job 不生成 translation trace，也不解析默认 Translation Profile"
+    source: 范围守护
+    status: passed
+  - item: "不修改 jobs 创建 payload，不写 translation_profile_id/version 到 JobRecord"
+    source: 范围守护
+    status: passed

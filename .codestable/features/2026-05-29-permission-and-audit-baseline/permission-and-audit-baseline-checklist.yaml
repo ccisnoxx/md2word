@@ -1,0 +1,92 @@
+feature: 2026-05-29-permission-and-audit-baseline
+created: 2026-05-29
+
+steps:
+  - action: "名词合同先落地：新增 ActorContext、AuditEvent、AuditService 和 repository protocol"
+    exit_signal: "file / sqlite / MySQL repository 都能 append / list audit event"
+    status: done
+
+  - action: "权限 dependency 返回 actor：新增 require_admin_actor / require_jobs_actor / require_job_ops_actor 并保留旧 access 函数"
+    exit_signal: "现有 403 / 503 行为不变，handler 可拿到 actor"
+    status: done
+
+  - action: "资源动作审计接入：template、term-rule-set、translation-profile 的 publish / set-default / rollback / disable 写 audit"
+    exit_signal: "每个成功动作生成 action / target / actor / trace_id 正确的 AuditEvent"
+    status: done
+
+  - action: "job ops 和 download 审计接入：retry / cancel / cleanup-local-files / artifact download 写 audit"
+    exit_signal: "job ops reason 同时进入 audit；download 不暴露本地路径"
+    status: done
+
+  - action: "验证与回写：增加 targeted unittest，覆盖 admin token、jobs token、open download、审计持久化和无 token 失败路径"
+    exit_signal: "相关后端测试通过，后续 acceptance 可回写 architecture / roadmap"
+    status: done
+
+checks:
+  - item: "ActorContext 能表达 admin、jobs、anonymous 三种最小角色且不保存 token 原文"
+    source: 名词契约
+    status: passed
+
+  - item: "AuditEvent 独立于 JobEvent，包含 actor、action、target、reason、trace_id 和 created_at"
+    source: 名词契约
+    status: passed
+
+  - item: "file / sqlite / MySQL backend 都实现 audit event append / list"
+    source: 名词契约
+    status: passed
+
+  - item: "require_admin_actor / require_jobs_actor / require_job_ops_actor 不改变现有 403 / 503 行为"
+    source: 编排骨架
+    status: passed
+
+  - item: "template publish / set-default / disable 写入对应 audit event"
+    source: 挂载点
+    status: passed
+
+  - item: "term-rule-set publish / set-default / rollback 写入对应 audit event"
+    source: 挂载点
+    status: passed
+
+  - item: "translation-profile publish / set-default / rollback 写入对应 audit event"
+    source: 挂载点
+    status: passed
+
+  - item: "job retry / cancel / cleanup-local-files 写入 audit event 且保留原 JobEvent"
+    source: 挂载点
+    status: passed
+
+  - item: "artifact download 成功返回前写入 artifact.download audit event，target_id 不含本地绝对路径"
+    source: 挂载点
+    status: passed
+
+  - item: "权限失败不写成功 audit event"
+    source: 流程级约束
+    status: passed
+
+  - item: "audit event 不记录 token、secret、完整 payload 或本地绝对私密路径"
+    source: 范围守护
+    status: passed
+
+  - item: "不新增 SSO / 用户表 / 多租户字段 / 审计查询 HTTP API"
+    source: 范围守护
+    status: passed
+
+  - item: "admin 资源发布审计场景通过"
+    source: 验收场景
+    status: passed
+
+  - item: "term-rule / translation 回滚审计场景通过"
+    source: 验收场景
+    status: passed
+
+  - item: "job ops admin 审计场景通过"
+    source: 验收场景
+    status: passed
+
+  - item: "JOBS_OPS_ACCESS_MODE=jobs 时 jobs token 审计场景通过"
+    source: 验收场景
+    status: passed
+
+  - item: "open 下载 anonymous 审计场景通过"
+    source: 验收场景
+    status: passed

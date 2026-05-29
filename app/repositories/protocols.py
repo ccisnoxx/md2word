@@ -1,34 +1,91 @@
 from __future__ import annotations
 
+# app/repositories/protocols.py: 定义应用服务依赖的 repository / store 协议边界。
+
 from typing import Any, Protocol
 
+from app.core.audit_models import AuditEvent
 from app.core.job_models import JobEvent, JobFile, JobRecord, JobStageMessage
 from app.core.rule_models import TermRuleCategoryRecord, TermRuleRecord, TermRulesStore
+from app.core.resource_models import ResourceType, ResourceVersionRecord
 
 
-class JobRepositoryProtocol(Protocol):
+class JobSnapshotRepositoryProtocol(Protocol):
+    """Job 主记录读写合同。"""
+
     def create_job(self, job: JobRecord) -> None: ...
     def get_job(self, job_id: str) -> JobRecord | None: ...
     def list_jobs(self) -> list[JobRecord]: ...
     def update_job(self, job_id: str, **patch: Any) -> JobRecord: ...
+
+
+class JobEventRepositoryProtocol(Protocol):
+    """Job 审计事件读写合同。"""
+
     def append_event(self, job_id: str, event: JobEvent) -> None: ...
     def list_events(self, job_id: str) -> list[JobEvent]: ...
+
+
+class JobFileRepositoryProtocol(Protocol):
+    """Job artifact 记录读写合同。"""
+
     def upsert_file(self, job_id: str, file: JobFile) -> None: ...
     def list_files(self, job_id: str) -> list[JobFile]: ...
 
 
-class StageMessageRepositoryProtocol(Protocol):
+class JobRepositoryProtocol(
+    JobSnapshotRepositoryProtocol,
+    JobEventRepositoryProtocol,
+    JobFileRepositoryProtocol,
+    Protocol,
+):
+    """兼容旧的大 repository 命名；新代码优先依赖更窄协议。"""
+
+    pass
+
+
+class AuditEventRepositoryProtocol(Protocol):
+    """跨资源审计事件读写合同。"""
+
+    def append_audit_event(self, event: AuditEvent) -> None: ...
+    def list_audit_events(self) -> list[AuditEvent]: ...
+
+
+class StageMessageStoreProtocol(Protocol):
+    """Stage message spool 的最小存储合同。
+
+    `pending` 和 `running` 都是 replayable；`running` 的 lease 字段用于观察
+    卡住的 in-process worker，不作为跨进程排他锁；`failed` 保留现场且不自动
+    replay。
+    """
+
     def put_stage_message(self, message: JobStageMessage) -> None: ...
     def get_stage_message(self, message_id: str) -> JobStageMessage | None: ...
     def update_stage_message(self, message_id: str, **patch: Any) -> JobStageMessage: ...
-    def list_pending_stage_messages(self) -> list[JobStageMessage]: ...
+    def list_replayable_stage_messages(self) -> list[JobStageMessage]: ...
+    def count_stage_messages_by_status(self) -> dict[str, int]: ...
     def delete_stage_message(self, message_id: str) -> None: ...
 
 
-class JobStageWorkflowRepositoryProtocol(JobRepositoryProtocol, StageMessageRepositoryProtocol, Protocol):
-    """JobStageService 需要的最小 repository 能力组合。"""
+class StageMessageRepositoryProtocol(StageMessageStoreProtocol, Protocol):
+    """兼容旧命名；新代码应优先依赖 StageMessageStoreProtocol。"""
 
     pass
+
+
+class ResourceVersionRepositoryProtocol(Protocol):
+    """模板、术语和翻译配置共用的资源版本持久化合同。"""
+
+    def save_resource_version(self, record: ResourceVersionRecord) -> ResourceVersionRecord: ...
+    def get_resource_version(
+        self,
+        resource_type: ResourceType,
+        resource_id: str,
+        version: str,
+    ) -> ResourceVersionRecord | None: ...
+    def list_resource_versions(self, resource_type: ResourceType, resource_id: str) -> list[ResourceVersionRecord]: ...
+    def set_default_resource_version(self, resource_type: ResourceType, resource_id: str, version: str) -> None: ...
+    def get_default_resource_version(self, resource_type: ResourceType, resource_id: str) -> ResourceVersionRecord | None: ...
 
 
 class TermRuleRepositoryProtocol(Protocol):
