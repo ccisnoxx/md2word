@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-# app/services/jobs/artifacts.py: 定义 jobs artifact 合同、alias 和本地逻辑路径映射。
+# app/services/jobs/artifacts.py: 定义 jobs artifact 合同、alias、排序和下载命名规则。
 
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Literal
 
 from app.core.job_models import JobFile, JobRecord
-from app.core.job_paths import JobPaths, resolve_artifact_path
 
 
-ArtifactAlias = Literal["source-package", "source-pdf", "parsed-result-package", "translation-request", "result"]
-ArtifactFileType = Literal["source_package", "source_pdf", "parsed_result_package", "translation_request", "result_docx"]
+ArtifactAlias = Literal["source-package", "source-pdf", "parsed-result-package", "translation-request", "translation-trace", "result"]
+ArtifactFileType = Literal["source_package", "source_pdf", "parsed_result_package", "translation_request", "translation_trace", "result_docx"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +47,12 @@ ARTIFACT_SPECS: tuple[ArtifactSpec, ...] = (
         media_type="application/json",
     ),
     ArtifactSpec(
+        file_type="translation_trace",
+        alias="translation-trace",
+        path_attr="translation_trace",
+        media_type="application/json",
+    ),
+    ArtifactSpec(
         file_type="result_docx",
         alias="result",
         path_attr="result_docx",
@@ -63,14 +68,6 @@ ARTIFACT_ORDER = {spec.file_type: index for index, spec in enumerate(ARTIFACT_SP
 class JobArtifactService:
     def sort_files(self, files: list[JobFile]) -> list[JobFile]:
         return sorted(files, key=lambda item: (ARTIFACT_ORDER.get(item.file_type, 999), item.path))
-
-    def build_registered_file(self, file_type: ArtifactFileType, paths: JobPaths) -> JobFile:
-        return JobFile(file_type=file_type, path=self.logical_path_for_file_type(file_type, paths))
-
-    def logical_path_for_file_type(self, file_type: ArtifactFileType, paths: JobPaths) -> str:
-        spec = self.spec_for_file_type(file_type)
-        absolute_path = getattr(paths, spec.path_attr)
-        return str(absolute_path.relative_to(paths.root))
 
     def spec_for_alias(self, alias: str) -> ArtifactSpec:
         spec = ARTIFACT_SPEC_BY_ALIAS.get(alias)
@@ -90,14 +87,6 @@ class JobArtifactService:
     def media_type_for_file(self, file: JobFile) -> str:
         return self.spec_for_file_type(file.file_type).media_type
 
-    def resolve_download_path(self, paths: JobPaths, file: JobFile) -> Path:
-        expected_logical_path = self.logical_path_for_file_type(file.file_type, paths)
-        if file.path != expected_logical_path:
-            raise ValueError(
-                f"产物逻辑路径不匹配: expected={expected_logical_path} actual={file.path}"
-            )
-        return resolve_artifact_path(paths, file.path)
-
     def build_download_url(
         self,
         *,
@@ -116,6 +105,8 @@ class JobArtifactService:
             return f"{job.id}-parsed-result.zip"
         if file.file_type == "translation_request":
             return f"{job.id}-translation-request.json"
+        if file.file_type == "translation_trace":
+            return f"{job.id}-translation-trace.json"
         if file.file_type == "result_docx":
             return f"{Path(job.source_filename).stem}.docx"
         return Path(file.path).name

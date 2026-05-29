@@ -26,8 +26,11 @@ class ConversionService:
             request.output_path.parent.mkdir(parents=True, exist_ok=True)
             if request.translation_request_output is not None:
                 request.translation_request_output.parent.mkdir(parents=True, exist_ok=True)
+            if request.translation_trace_output is not None:
+                request.translation_trace_output.parent.mkdir(parents=True, exist_ok=True)
 
             run_conversion(
+                job_id=request.job_id,
                 input_path=str(request.package_path),
                 output_path=str(request.output_path),
                 template_path=str(request.template_path) if request.template_path else None,
@@ -39,9 +42,22 @@ class ConversionService:
                 translation_model=request.translation_model,
                 translation_api_key=request.translation_api_key,
                 translation_base_url=request.translation_base_url,
+                translation_target_language=request.translation_target_language,
+                translation_domain=request.translation_domain,
+                translation_prompt_version=request.translation_prompt_version,
                 translation_max_pages=request.translation_max_pages,
                 translation_max_chars=request.translation_max_chars,
+                translation_profile=(
+                    {
+                        "translation_profile_id": request.translation_profile.translation_profile_id,
+                        "version": request.translation_profile.version,
+                        "snapshot_hash": request.translation_profile.snapshot_hash,
+                    }
+                    if request.translation_profile is not None
+                    else None
+                ),
                 translation_request_output=str(request.translation_request_output) if request.translation_request_output else None,
+                translation_trace_output=str(request.translation_trace_output) if request.translation_trace_output else None,
             )
             if not request.output_path.exists():
                 raise ConversionFailure("docx_save_failed", f"DOCX 输出文件不存在: {request.output_path}")
@@ -52,6 +68,13 @@ class ConversionService:
                     ArtifactDescriptor(
                         file_type="translation_request",
                         path=request.translation_request_output,
+                    )
+                )
+            if request.translation_trace_output is not None and request.translation_trace_output.exists():
+                artifacts.append(
+                    ArtifactDescriptor(
+                        file_type="translation_trace",
+                        path=request.translation_trace_output,
                     )
                 )
 

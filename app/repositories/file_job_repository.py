@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from app.core.audit_models import AuditEvent
 from app.core.job_models import JobEvent, JobFile, JobRecord, JobStageMessage, sync_source_pdf_compatibility_fields
 from app.core.job_paths import build_job_paths, ensure_job_dirs
 
@@ -16,6 +17,7 @@ class FileJobRepository:
         self.jobs_dir = data_dir / "jobs"
         self.stage_messages_dir = data_dir / "stage_messages"
         self.tmp_dir = data_dir / "tmp"
+        self.audit_events_jsonl = data_dir / "audit_events.jsonl"
         for path in (self.jobs_dir, self.stage_messages_dir, self.tmp_dir):
             path.mkdir(parents=True, exist_ok=True)
 
@@ -83,6 +85,21 @@ class FileJobRepository:
                 events.append(JobEvent.model_validate_json(line))
         return events
 
+    def append_audit_event(self, event: AuditEvent) -> None:
+        self.audit_events_jsonl.parent.mkdir(parents=True, exist_ok=True)
+        with self.audit_events_jsonl.open("a", encoding="utf-8") as handle:
+            handle.write(event.model_dump_json())
+            handle.write("\n")
+
+    def list_audit_events(self) -> list[AuditEvent]:
+        if not self.audit_events_jsonl.exists():
+            return []
+        events: list[AuditEvent] = []
+        for line in self.audit_events_jsonl.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                events.append(AuditEvent.model_validate_json(line))
+        return events
+
     def upsert_file(self, job_id: str, file: JobFile) -> None:
         path = build_job_paths(self.data_dir, job_id).files_json
         existing = [
@@ -115,13 +132,29 @@ class FileJobRepository:
         self.put_stage_message(updated)
         return updated
 
-    def list_pending_stage_messages(self) -> list[JobStageMessage]:
+    def list_replayable_stage_messages(self) -> list[JobStageMessage]:
+        """返回可在启动恢复或显式调度时重放的 pending/running message。"""
+
         messages: list[JobStageMessage] = []
         for path in sorted(self.stage_messages_dir.glob("*.json")):
             message = JobStageMessage.model_validate(self._read_json(path, {}))
             if message.status in {"pending", "running"}:
                 messages.append(message)
         return messages
+
+    def list_pending_stage_messages(self) -> list[JobStageMessage]:
+        """兼容旧调用名；语义实际是 replayable，不包含 failed。"""
+
+        return self.list_replayable_stage_messages()
+
+    def count_stage_messages_by_status(self) -> dict[str, int]:
+        """按 pending/running/failed 统计当前 stage spool 中的 message。"""
+
+        counts = {"pending": 0, "running": 0, "failed": 0}
+        for path in sorted(self.stage_messages_dir.glob("*.json")):
+            message = JobStageMessage.model_validate(self._read_json(path, {}))
+            counts[message.status] = counts.get(message.status, 0) + 1
+        return counts
 
     def delete_stage_message(self, message_id: str) -> None:
         (self.stage_messages_dir / f"{message_id}.json").unlink(missing_ok=True)

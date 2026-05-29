@@ -1,0 +1,48 @@
+feature: 2026-05-29-template-profile-versioning
+created: 2026-05-29
+
+steps:
+  - action: "名词合同先落地：扩展 template model / schema 表达 render policy、version status、default 和 snapshot hash"
+    exit_signal: "旧模板响应兼容，新版本响应能表达 draft/published/disabled/default"
+    status: done
+
+  - action: "模板 payload 与 hash 计算落地：service 层集中构建 payload 和 sha256 snapshot hash"
+    exit_signal: "同一版本 payload 可稳定写入 ResourceVersionService"
+    status: done
+
+  - action: "版本状态 API 接通：增加 create version、publish、set-default、disable 路由"
+    exit_signal: "MySQL/fake resource service 下能完成 draft -> published -> default -> disabled"
+    status: done
+
+  - action: "兼容路径守住：旧 create/replace/default 接口继续可用，file backend 下明确不启用发布状态接口"
+    exit_signal: "现有 templates API 测试保持通过"
+    status: done
+
+  - action: "验证与回写：补充 targeted unittest，校验 checklist"
+    exit_signal: "相关测试通过，steps 标记 done"
+    status: done
+
+checks:
+  - item: "Template Profile 只包含 docx、layout_config 和 render_policy，不包含术语规则或翻译配置"
+    source: 范围守护
+    status: passed
+
+  - item: "不改 jobs payload，不在 job 创建时绑定 template version"
+    source: 范围守护
+    status: passed
+
+  - item: "published 版本不得通过草稿路径覆盖"
+    source: 流程级约束
+    status: passed
+
+  - item: "默认指针只能指向 published version"
+    source: 流程级约束
+    status: passed
+
+  - item: "默认 Template Version 不能禁用"
+    source: 验收场景
+    status: passed
+
+  - item: "file backend templates API 保持兼容"
+    source: 兼容性
+    status: passed

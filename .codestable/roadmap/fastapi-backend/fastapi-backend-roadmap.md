@@ -7,7 +7,7 @@ created: 2026-05-18
 last_reviewed: 2026-05-18
 tags: [fastapi, backend, jobs, conversion, docx]
 related_requirements: []
-related_architecture: [architecture-index, conversion-flow, module-mineru-to-docx-internal]
+related_architecture: [architecture-index, conversion-flow, app-conversion-internal]
 reference_projects:
   - /Users/sc/PycharmProjects/create_pdf
 ---

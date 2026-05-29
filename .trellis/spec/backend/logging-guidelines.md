@@ -31,6 +31,9 @@ such as `access`, `business`, and `system`.
 ## Structured Logging
 
 - Formatter: `%(asctime)s | %(name)s | %(levelname)s | %(message)s`
+- `LOG_FORMAT=text` keeps the formatter above. `LOG_FORMAT=json` switches the
+  same records to one-line JSON with top-level `time`, `logger`, `level`, and
+  `message` fields.
 - Named channels:
   - `access` for per-request timing in `app/main.py`
   - `business` for background job/stage lifecycle in `app/services/jobs/stage.py`
@@ -44,18 +47,18 @@ such as `access`, `business`, and `system`.
   - extra identifiers like `batch_id` or result path when useful
 - Use `%s` parameterized logging instead of f-strings so the logger owns string
   interpolation.
-- There is no JSON logger or structured log sink in the current implementation.
-  Keep plain-text logs with stable keys in the message body instead of inventing
-  a second format locally.
+- Do not add another logger stack locally. Extend `app/core/logging.py` if the
+  existing text/JSON switch needs a new field.
 
 Example pattern from the codebase:
 
 ```python
 self.logger.info(
-    "[trace_id=%s job_id=%s stage=%s status=completed] result=%s",
+    "[trace_id=%s job_id=%s stage=%s message_id=%s status=completed] result=%s",
     message.trace_id,
     job.id,
     message.stage,
+    message.id,
     job_paths.result_docx,
 )
 ```

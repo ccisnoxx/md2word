@@ -4,9 +4,15 @@ from __future__ import annotations
 
 from fastapi import Request
 
-from app.core.job_models import JobEvent, JobFile, JobRecord
+from app.core.job_models import JobEvent, JobFile, JobRecord, JobResourceSnapshot
 from app.core.runtime import AppRuntime
-from app.schemas.api_v1 import JobDetailResponse, JobEventResponse, JobFileResponse, JobSummaryResponse
+from app.schemas.jobs import (
+    JobDetailResponse,
+    JobEventResponse,
+    JobFileResponse,
+    JobResourceSnapshotResponse,
+    JobSummaryResponse,
+)
 
 
 def build_job_file_response(runtime: AppRuntime, request: Request, job_id: str, file: JobFile) -> JobFileResponse:
@@ -16,6 +22,8 @@ def build_job_file_response(runtime: AppRuntime, request: Request, job_id: str, 
         storage_backend=file.storage_backend,
         object_key=file.object_key,
         public_url=file.public_url,
+        size_bytes=file.size_bytes,
+        sha256=file.sha256,
         download_url=runtime.artifact_service.build_download_url(
             job_id=job_id,
             file=file,
@@ -35,6 +43,12 @@ def build_job_event_response(event: JobEvent) -> JobEventResponse:
         trace_id=event.trace_id,
         created_at=event.created_at,
     )
+
+
+def build_job_resource_snapshot_response(snapshot: JobResourceSnapshot | None) -> JobResourceSnapshotResponse | None:
+    if snapshot is None:
+        return None
+    return JobResourceSnapshotResponse.model_validate(snapshot.model_dump(mode="json"))
 
 
 def build_job_summary_response(
@@ -84,6 +98,7 @@ def build_job_detail_response(
         document_language=job.document_language,
         resolved_document_language=job.resolved_document_language,
         template_id=job.template_id,
+        resource_snapshot=build_job_resource_snapshot_response(job.resource_snapshot),
         mineru_batch_id=job.read_mineru_batch_id(),
         mineru_data_id=job.read_mineru_data_id(),
         mineru_callback_seed=job.read_mineru_callback_seed(),

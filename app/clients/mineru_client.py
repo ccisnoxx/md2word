@@ -18,8 +18,9 @@ class MinerUError(RuntimeError):
 class MinerUClient:
     API_BASE = "https://mineru.net/api/v4"
     PATH_BATCH_UPLOAD = "/file-urls/batch"
+    PATH_BATCH_RESULT = "/extract-results/batch/{batch_id}"
 
-    def __init__(self, *, api_token: str, model_version: str = "vlm") -> None:
+    def __init__(self, *, api_token: str, model_version: str = "vlm", user_token: str = "") -> None:
         if not api_token:
             raise ValueError("api_token 不能为空")
         self.api_token = api_token
@@ -32,6 +33,8 @@ class MinerUClient:
                 "Authorization": f"Bearer {self.api_token}",
             }
         )
+        if user_token:
+            self.session.headers["token"] = user_token
         retry = Retry(
             total=3,
             backoff_factor=1,
@@ -114,6 +117,23 @@ class MinerUClient:
                     handle.write(chunk)
         self.logger.info("MinerU result zip downloaded url=%s path=%s", result_url, output_path)
         return output_path
+
+    def query_batch_extract_results(self, batch_id: str) -> dict[str, Any]:
+        """主动查询批量解析结果，用于 callback 丢失后的恢复链路。"""
+
+        if not batch_id:
+            raise ValueError("batch_id 不能为空")
+        response = self.session.get(self._url(self.PATH_BATCH_RESULT.format(batch_id=batch_id)), timeout=30)
+        result = self._check_response(response, "查询批量解析结果")
+        data = result.get("data") or {}
+        if not isinstance(data, dict):
+            raise MinerUError("查询批量解析结果失败: 响应 data 不是对象")
+        if not data.get("batch_id"):
+            data["batch_id"] = batch_id
+        extract_result = data.get("extract_result") or []
+        if not isinstance(extract_result, list):
+            raise MinerUError("查询批量解析结果失败: extract_result 不是数组")
+        return data
 
     def _url(self, path: str) -> str:
         return f"{self.API_BASE}{path}"

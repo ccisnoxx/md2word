@@ -1,0 +1,48 @@
+feature: 2026-05-28-mysql-metadata-foundation
+created: 2026-05-28
+
+steps:
+  - action: "落 MySQL schema 与 adapter：新增 MySQL repository，实现现有 job snapshot、events、files、stage message store protocols，并 bootstrap resource_versions 基础表"
+    exit_signal: "同一 repository contract 可在 fake MySQL connection 下通过，且 resource_versions 表创建语句被覆盖"
+    status: done
+
+  - action: "接入配置与 runtime：Settings 增加 mysql backend 和连接参数，build_runtime 能构建 MySQL runtime"
+    exit_signal: "readiness 显示 configured_repository_backend、effective_repository_backend、stage_message_store 均为 mysql"
+    status: done
+
+  - action: "保持主链服务合同不变：jobs 服务继续只依赖 protocols，不引入 MySQL 专属服务分支"
+    exit_signal: "PDF callback / retry / replay 相关测试在 mysql-targeted 替身下证明合同不变"
+    status: done
+
+  - action: "补最小文档和依赖：requirements 增加 MySQL 驱动，开发文档说明 mysql 与 sqlite 的区别和配置"
+    exit_signal: "配置示例、readiness 预期和 artifact 不入 MySQL 的边界可在文档中查到"
+    status: done
+
+  - action: "验证与回写 checklist：运行针对性单测、yaml 校验和 diff 检查"
+    exit_signal: "所有本 feature steps 标记 done，roadmap item 保持 in-progress 等待 acceptance"
+    status: done
+
+checks:
+  - item: "file 仍是默认 repository backend，database 继续指 sqlite，mysql 是显式新增 backend"
+    source: 范围守护
+    status: passed
+
+  - item: "MySQL adapter 覆盖 jobs、events、files、stage messages，并只保存 metadata payload，不保存 artifact 二进制"
+    source: 名词契约
+    status: passed
+
+  - item: "readiness 能准确报告 mysql metadata store 和 mysql stage message store"
+    source: 验收场景
+    status: passed
+
+  - item: "pending/running 可 replay、failed 不自动 replay 的 stage message 语义保持不变"
+    source: 流程级约束
+    status: passed
+
+  - item: "resource_versions 只作为基础表落地，不实现模板/术语/翻译资源版本业务流"
+    source: 明确不做
+    status: passed
+
+  - item: "HTTP API path、job status 枚举、artifact 下载合同不变"
+    source: 反向核对
+    status: passed

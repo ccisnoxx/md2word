@@ -142,8 +142,8 @@ class InputAdapterCharacterizationTests(__import__("unittest").TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)
             project_root = temp_root / "md2word_file"
-            project_root.mkdir()
-            (project_root / "mineru_to_docx.py").write_text("# marker", encoding="utf-8")
+            (project_root / "app" / "conversion").mkdir(parents=True)
+            (project_root / "app" / "main.py").write_text("# marker", encoding="utf-8")
 
             mineru_output_dir = temp_root / "CWQ2P690T.pdf-c7af9c61-d33b-4f8b-ad15-0227ca1f12b5"
             mineru_output_dir.mkdir()
@@ -155,15 +155,15 @@ class InputAdapterCharacterizationTests(__import__("unittest").TestCase):
 
         message = str(context.exception)
         self.assertIn("*_content_list_v2.json", message)
-        self.assertIn("脚本工程目录", message)
+        self.assertIn("后端项目根目录", message)
         self.assertIn(str(mineru_output_dir), message)
 
-    def test_resolve_cli_run_options_falls_back_to_pycharm_config_for_project_root(self):
+    def test_resolve_local_run_options_falls_back_to_configured_input_for_project_root(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)
             project_root = temp_root / "md2word_file"
-            project_root.mkdir()
-            (project_root / "mineru_to_docx.py").write_text("# marker", encoding="utf-8")
+            (project_root / "app" / "conversion").mkdir(parents=True)
+            (project_root / "app" / "main.py").write_text("# marker", encoding="utf-8")
 
             mineru_output_dir = temp_root / "CWQ2P690T.pdf-c7af9c61-d33b-4f8b-ad15-0227ca1f12b5"
             mineru_output_dir.mkdir()
@@ -193,9 +193,9 @@ class InputAdapterCharacterizationTests(__import__("unittest").TestCase):
 
             with (
                 mock.patch.object(self.module.Path, "cwd", return_value=project_root),
-                mock.patch.dict(self.module.PYCHARM_RUN_CONFIG, config_updates, clear=False),
+                mock.patch.dict(self.module.LOCAL_RUN_CONFIG, config_updates, clear=False),
             ):
-                resolved = self.module.resolve_cli_run_options(args)
+                resolved = self.module.resolve_local_run_options(args)
 
         self.assertEqual(Path(resolved["input_path"]).resolve(), mineru_output_dir.resolve())
         self.assertEqual(Path(resolved["output_path"]).resolve(), (temp_root / "out.docx").resolve())

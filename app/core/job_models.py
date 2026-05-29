@@ -9,9 +9,13 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.core.resource_models import ResolvedResourceVersion
+
 JobStatus = Literal["uploaded", "queued", "submitting", "parsing", "parsed", "converting", "completed", "failed", "canceled"]
 JobLifecycleStatus = Literal["uploaded", "parsed", "completed", "failed", "canceled"]
 JobExecutionStatus = Literal["idle", "queued", "submitting", "parsing", "converting"]
+JobStageStatus = Literal["pending", "running", "failed"]
+JobStageName = Literal["convert_package", "submit_to_mineru", "process_callback", "convert_parsed_result"]
 
 
 def utc_now() -> datetime:
@@ -54,9 +58,35 @@ class SourcePdfJobContext(BaseModel):
 
 class ConversionOptions(BaseModel):
     template_id: str | None = None
+    template_version: str | None = None
+    term_rule_set_id: str | None = None
+    term_rule_set_version: str | None = None
+    translation_profile_id: str | None = None
+    translation_profile_version: str | None = None
     translation_mode: Literal["direct", "en2zh"] = "direct"
     document_language: Literal["auto", "zh", "en"] = "auto"
     use_mineru_header_footer: bool = False
+
+
+class JobMineruSnapshot(BaseModel):
+    """记录 job 创建时的非敏感 MinerU 请求配置。"""
+
+    model_version: str | None = None
+    language: str | None = None
+    enable_formula: bool | None = None
+    enable_table: bool | None = None
+    callback_enabled: bool = False
+    data_id: str | None = None
+
+
+class JobResourceSnapshot(BaseModel):
+    """job 创建时绑定的不可变资源版本快照。"""
+
+    template: ResolvedResourceVersion | None = None
+    term_rule_set: ResolvedResourceVersion | None = None
+    translation_profile: ResolvedResourceVersion | None = None
+    mineru: JobMineruSnapshot = Field(default_factory=JobMineruSnapshot)
+    artifact_ids: dict[str, str] = Field(default_factory=dict)
 
 
 class JobRecord(BaseModel):
@@ -73,6 +103,7 @@ class JobRecord(BaseModel):
     use_mineru_header_footer: bool = False
     resolved_document_language: Literal["zh", "en"] | None = None
     template_id: str | None = None
+    resource_snapshot: JobResourceSnapshot | None = None
     # 下面这些 mineru_* 字段保留为兼容投影层。
     # 新代码应优先通过 source_pdf_context 和 read_mineru_*()/build_source_pdf_context_patch() 访问。
     mineru_batch_id: str | None = None
@@ -204,11 +235,13 @@ def sync_source_pdf_compatibility_fields(job: JobRecord) -> JobRecord:
 
 
 class JobFile(BaseModel):
-    file_type: Literal["source_package", "source_pdf", "parsed_result_package", "translation_request", "result_docx"]
+    file_type: Literal["source_package", "source_pdf", "parsed_result_package", "translation_request", "translation_trace", "result_docx"]
     path: str
-    storage_backend: Literal["local"] = "local"
+    storage_backend: Literal["local", "object"] = "local"
     object_key: str | None = None
     public_url: str | None = None
+    size_bytes: int | None = None
+    sha256: str | None = None
     download_url: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
 
@@ -224,13 +257,24 @@ class JobEvent(BaseModel):
 
 
 class JobStageMessage(BaseModel):
+    """后台 stage spool 记录。
+
+    `pending` 表示尚未被 dispatcher 尝试执行；`running` 表示已被当前单实例
+    dispatcher claim，但进程重启后仍允许 replay；`failed` 表示已知失败并保留
+    诊断现场，不进入自动 replay。lease 字段只是未来独立 worker 的非破坏性扩展点，
+    当前 in-process worker 只用它们做 readiness 观察。
+    """
+
     id: str
     job_id: str
-    stage: Literal["convert_package", "submit_to_mineru", "process_callback", "convert_parsed_result"]
+    stage: JobStageName
     trace_id: str
     payload: dict[str, Any] = Field(default_factory=dict)
-    status: Literal["pending", "running", "failed"] = "pending"
+    status: JobStageStatus = "pending"
     attempts: int = 0
+    lease_owner: str | None = None
+    leased_at: datetime | None = None
+    lease_expires_at: datetime | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     error_code: str | None = None

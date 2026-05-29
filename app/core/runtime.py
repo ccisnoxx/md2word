@@ -8,6 +8,14 @@ from typing import TYPE_CHECKING, Any
 from app.core.config import Settings
 
 if TYPE_CHECKING:
+    from app.repositories.protocols import (
+        AuditEventRepositoryProtocol,
+        JobEventRepositoryProtocol,
+        JobFileRepositoryProtocol,
+        JobSnapshotRepositoryProtocol,
+        StageMessageStoreProtocol,
+    )
+    from app.services.jobs.artifact_storage import ArtifactStorageProtocol
     from app.services.jobs.dispatch import StageDispatcherProtocol
 
 
@@ -15,14 +23,25 @@ if TYPE_CHECKING:
 class AppRuntime:
     settings: Settings
     repository: Any
+    job_repository: JobSnapshotRepositoryProtocol
+    job_file_repository: JobFileRepositoryProtocol
+    job_event_repository: JobEventRepositoryProtocol
+    audit_event_repository: AuditEventRepositoryProtocol
+    audit_service: Any
     health_service: Any
     template_read_service: Any
     term_rule_service: Any
     term_rule_import_validation_service: Any
     term_rule_file_sync_service: Any
+    term_rule_set_version_service: Any | None
+    translation_profile_service: Any | None
+    resource_version_service: Any | None
+    job_resource_snapshot_service: Any
     artifact_service: Any
+    artifact_storage: ArtifactStorageProtocol
     command_service: Any
     lifecycle_service: Any
     query_service: Any
     stage_service: Any
     stage_dispatcher: StageDispatcherProtocol
+    stage_message_store: StageMessageStoreProtocol

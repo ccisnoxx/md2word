@@ -6,7 +6,9 @@ import hashlib
 import sys
 import tempfile
 import zipfile
+from datetime import timedelta
 from pathlib import Path
+from typing import Any, Callable
 from unittest import TestCase
 
 import yaml
@@ -22,23 +24,35 @@ from fastapi.testclient import TestClient
 from app.conversion.contracts import ArtifactDescriptor, ConversionFailure, ConversionResult
 from app.core.config import Settings
 from app.core.job_models import JobFile, JobRecord, JobStageMessage, SourcePdfJobContext, build_source_pdf_context_patch, utc_now
+from app.core.job_workflow import JobWorkflowViolation
 from app.core.job_paths import build_job_paths, ensure_job_dirs
 from app.core.runtime import AppRuntime
 from app.main import create_app
+from app.repositories.database_job_repository import DatabaseJobRepository
 from app.repositories.file_job_repository import FileJobRepository
 from app.repositories.file_term_rule_repository import FileTermRuleRepository
+from app.services.audit import AuditService
 from app.services.health_service import HealthService
+from app.services.jobs.artifact_integrity import ArtifactFingerprintMismatch
+from app.services.jobs.artifact_storage import DownloadArtifact, LocalArtifactStorageAdapter
 from app.services.jobs.artifacts import JobArtifactService
 from app.services.jobs.command import JobCommandService
-from app.services.jobs.dispatch import InProcessStageDispatcher
+from app.services.jobs.dispatch import ExternalWorkerStageDispatcher, InProcessStageDispatcher
 from app.services.jobs.lifecycle import JobLifecycleService
+from app.services.jobs.object_artifact_storage import ObjectArtifactStorageAdapter
+from app.services.jobs.resource_snapshots import JobResourceSnapshotService
 from app.services.jobs.query import JobQueryService
 from app.services.jobs.stage import JobStageService
+from app.services.resource_versions import ResourceVersionService
 from app.services.term_rules.bootstrap import TermRuleBootstrapService
 from app.services.term_rules.import_validation import TermRuleImportValidationService
 from app.services.term_rules.service import TermRuleService
 from app.services.term_rules.sync_files import TermRuleFileSyncService
+from app.services.term_rules.versioning_service import DEFAULT_TERM_RULE_SET_ID, TermRuleSetVersionService
+from app.services.term_rules.yaml_codec import CURRENT_SCHEMA_VERSION, TermRuleYamlCodec
 from app.services.templates.read_service import TemplateReadService
+from app.services.translation_profiles import DEFAULT_TRANSLATION_PROFILE_ID, TranslationProfileVersionService
+from app.workers.stage_worker import StageWorker
 
 
 class FakeMinerUClient:
@@ -47,6 +61,10 @@ class FakeMinerUClient:
         self.raise_error = False
         self.download_calls = []
         self.raise_download_error = False
+        self.query_calls = []
+        self.query_data_id = None
+        self.query_state = "done"
+        self.query_full_zip_url = "https://mineru.net/result.zip"
 
     def upload_files_batch(
         self,
@@ -82,6 +100,19 @@ class FakeMinerUClient:
         self.download_calls.append({"result_url": result_url, "output_path": str(output_path)})
         return output_path
 
+    def query_batch_extract_results(self, batch_id):
+        self.query_calls.append({"batch_id": batch_id})
+        item = {
+            "data_id": self.query_data_id,
+            "state": self.query_state,
+        }
+        if self.query_full_zip_url:
+            item["full_zip_url"] = self.query_full_zip_url
+        return {
+            "batch_id": batch_id,
+            "extract_result": [item],
+        }
+
 
 class FakeConversionService:
     def __init__(self) -> None:
@@ -105,6 +136,34 @@ class FakeConversionService:
                 ArtifactDescriptor(
                     file_type="translation_request",
                     path=request.translation_request_output,
+                    )
+            )
+        if request.translation_trace_output is not None:
+            request.translation_trace_output.parent.mkdir(parents=True, exist_ok=True)
+            request.translation_trace_output.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "job_id": request.job_id,
+                        "translation_profile": (
+                            {
+                                "translation_profile_id": request.translation_profile.translation_profile_id,
+                                "version": request.translation_profile.version,
+                                "snapshot_hash": request.translation_profile.snapshot_hash,
+                            }
+                            if request.translation_profile is not None
+                            else None
+                        ),
+                        "segments": [],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            artifacts.append(
+                ArtifactDescriptor(
+                    file_type="translation_trace",
+                    path=request.translation_trace_output,
                 )
             )
         return ConversionResult(
@@ -119,6 +178,10 @@ class FakeConversionService:
 def build_test_runtime(
     data_dir: Path,
     *,
+    repository_factory: Callable[[Path], Any] | None = None,
+    jobs_repository_backend: str = "file",
+    jobs_artifact_storage_backend: str = "local_file",
+    jobs_worker_mode: str = "in_process",
     openai_api_key: str = "",
     mineru_api_token: str = "",
     public_deployment_mode: str = "internal",
@@ -126,7 +189,11 @@ def build_test_runtime(
     mineru_callback_url: str = "",
     mineru_uid: str = "",
     mineru_result_host_allowlist: str = "mineru.net,cdn-mineru.openxlab.org.cn",
+    jobs_access_mode: str = "open",
+    jobs_access_token: str = "",
+    jobs_ops_access_mode: str = "admin",
     admin_token: str = "",
+    default_translation_mode: str = "direct",
     templates_manifest_path: str | None = None,
     term_rules_seed_path: str | None = None,
 ) -> AppRuntime:
@@ -134,6 +201,9 @@ def build_test_runtime(
         _env_file=None,
         data_dir=str(data_dir),
         app_name="md2word_file_test",
+        jobs_repository_backend=jobs_repository_backend,
+        jobs_artifact_storage_backend=jobs_artifact_storage_backend,
+        jobs_worker_mode=jobs_worker_mode,
         openai_api_key=openai_api_key,
         openai_base_url="",
         openai_model="deepseek-v4-flash",
@@ -143,13 +213,42 @@ def build_test_runtime(
         mineru_callback_url=mineru_callback_url,
         mineru_uid=mineru_uid,
         mineru_result_host_allowlist=mineru_result_host_allowlist,
+        jobs_access_mode=jobs_access_mode,
+        jobs_access_token=jobs_access_token,
+        jobs_ops_access_mode=jobs_ops_access_mode,
         admin_token=admin_token,
+        default_translation_mode=default_translation_mode,
         **({"templates_manifest_path": templates_manifest_path} if templates_manifest_path else {}),
         **({"term_rules_seed_path": term_rules_seed_path} if term_rules_seed_path else {}),
     )
-    repository = FileJobRepository(settings.data_path)
-    health_service = HealthService(settings)
-    template_read_service = TemplateReadService(settings)
+    if repository_factory is not None:
+        repository = repository_factory(settings.data_path)
+    elif jobs_repository_backend == "database":
+        settings.jobs_dir.mkdir(parents=True, exist_ok=True)
+        settings.tmp_dir.mkdir(parents=True, exist_ok=True)
+        repository = DatabaseJobRepository(settings.jobs_metadata_database_file)
+    else:
+        repository = FileJobRepository(settings.data_path)
+    job_repository = repository
+    job_file_repository = repository
+    job_event_repository = repository
+    audit_event_repository = repository
+    stage_message_store = repository
+    audit_service = AuditService(audit_event_repository)
+    resource_version_service = ResourceVersionService(repository) if jobs_repository_backend == "mysql" else None
+    template_read_service = TemplateReadService(settings, resource_version_service, audit_service)
+    health_service = HealthService(
+        settings,
+        stage_message_store,
+        effective_repository_backend=jobs_repository_backend,
+        stage_message_store_backend=jobs_repository_backend,
+        artifact_storage_backend=jobs_artifact_storage_backend,
+        stage_dispatcher_backend="external_worker" if jobs_worker_mode == "external" else "background_tasks",
+        job_repository=job_repository,
+        audit_event_repository=audit_event_repository,
+        resource_version_repository=resource_version_service.repository if resource_version_service is not None else None,
+        default_template_id_getter=template_read_service.get_default_template_id,
+    )
     term_rule_repository = FileTermRuleRepository(settings.term_rules_store_file)
     term_rule_service = TermRuleService(
         term_rule_repository,
@@ -163,6 +262,22 @@ def build_test_runtime(
         settings.term_rules_seed_file,
         repository_backend="file",
     )
+    term_rule_set_version_service = (
+        TermRuleSetVersionService(
+            repository=term_rule_repository,
+            runtime_yaml_path=settings.term_rules_runtime_yaml_file,
+            resource_version_service=resource_version_service,
+            audit_service=audit_service,
+        )
+        if resource_version_service is not None
+        else None
+    )
+    translation_profile_service = (
+        TranslationProfileVersionService(settings, resource_version_service, audit_service)
+        if resource_version_service is not None
+        else None
+    )
+    job_resource_snapshot_service = JobResourceSnapshotService(settings, resource_version_service)
     TermRuleBootstrapService(
         term_rule_repository,
         settings.term_rules_runtime_yaml_file,
@@ -172,40 +287,80 @@ def build_test_runtime(
     template_read_service.get_default_template_id()
     conversion_service = FakeConversionService()
     artifact_service = JobArtifactService()
+    if jobs_artifact_storage_backend == "local_object":
+        artifact_storage = ObjectArtifactStorageAdapter(artifact_service, settings.jobs_artifact_object_store_dir)
+    else:
+        artifact_storage = LocalArtifactStorageAdapter(artifact_service)
     fake_mineru_client = FakeMinerUClient()
     stage_service = JobStageService(
         settings,
-        repository,
+        job_repository,
+        job_file_repository,
+        job_event_repository,
         conversion_service,
-        artifact_service,
+        artifact_storage,
+        stage_message_store=stage_message_store,
+        stage_worker_id="md2word-worker" if jobs_worker_mode == "external" else "in_process",
         mineru_client_factory=lambda: fake_mineru_client,
         resolve_template_path=template_read_service.resolve_job_template_path,
         resolve_subscript_config_path=lambda: settings.subscript_config_path,
+        resolve_translation_profile_snapshot=(
+            translation_profile_service.resolve_default_snapshot
+            if translation_profile_service is not None
+            else None
+        ),
+        resource_snapshot_service=job_resource_snapshot_service,
     )
     stage_service.fake_mineru_client = fake_mineru_client
-    stage_dispatcher = InProcessStageDispatcher(stage_service)
-    command_service = JobCommandService(settings, repository, stage_service, artifact_service)
+    if jobs_worker_mode == "external":
+        stage_dispatcher = ExternalWorkerStageDispatcher()
+    else:
+        stage_dispatcher = InProcessStageDispatcher(stage_service)
+    command_service = JobCommandService(
+        settings,
+        job_repository,
+        job_file_repository,
+        job_event_repository,
+        stage_service,
+        artifact_storage,
+        job_resource_snapshot_service,
+    )
     lifecycle_service = JobLifecycleService(
-        repository=repository,
-        stage_repository=repository,
+        job_repository=job_repository,
+        job_file_repository=job_file_repository,
+        job_event_repository=job_event_repository,
+        audit_service=audit_service,
+        stage_message_store=stage_message_store,
         stage_service=stage_service,
         artifact_service=artifact_service,
+        artifact_storage=artifact_storage,
     )
-    query_service = JobQueryService(repository)
+    query_service = JobQueryService(job_repository, job_file_repository, job_event_repository)
     return AppRuntime(
         settings=settings,
         repository=repository,
+        job_repository=job_repository,
+        job_file_repository=job_file_repository,
+        job_event_repository=job_event_repository,
+        audit_event_repository=audit_event_repository,
+        audit_service=audit_service,
         health_service=health_service,
         template_read_service=template_read_service,
         term_rule_service=term_rule_service,
         term_rule_import_validation_service=term_rule_import_validation_service,
         term_rule_file_sync_service=term_rule_file_sync_service,
+        term_rule_set_version_service=term_rule_set_version_service,
+        translation_profile_service=translation_profile_service,
+        resource_version_service=resource_version_service,
+        job_resource_snapshot_service=job_resource_snapshot_service,
         artifact_service=artifact_service,
+        artifact_storage=artifact_storage,
         command_service=command_service,
         lifecycle_service=lifecycle_service,
         query_service=query_service,
         stage_service=stage_service,
         stage_dispatcher=stage_dispatcher,
+        stage_message_store=stage_message_store,
     )
 
 
@@ -239,7 +394,269 @@ def write_templates_manifest(path: Path, entries: list[dict]) -> None:
     path.write_text(yaml.safe_dump({"templates": entries}, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
 
+def resource_payload_hash(payload: dict) -> str:
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
+
+def publish_template_resource_version(
+    runtime: AppRuntime,
+    *,
+    version: str,
+    content: bytes,
+    make_default: bool,
+    template_id: str = "default",
+) -> Path:
+    service = runtime.resource_version_service
+    if service is None:
+        raise AssertionError("resource_version_service is required for this test")
+    template_path = runtime.settings.data_path / "test_resources" / "templates" / template_id / f"v{version}.docx"
+    template_path.parent.mkdir(parents=True, exist_ok=True)
+    template_path.write_bytes(content)
+    payload = {
+        "template_id": template_id,
+        "version": version,
+        "name": f"Template {version}",
+        "description": "test template resource",
+        "docx_path": str(template_path.resolve()),
+        "docx_sha256": f"sha256:{hashlib.sha256(content).hexdigest()}",
+        "layout_config_path": str(runtime.settings.layout_config_path) if runtime.settings.layout_config_path else None,
+        "layout_config_sha256": None,
+        "render_policy": {},
+    }
+    service.create_or_update_draft(
+        resource_type="template",
+        resource_id=template_id,
+        version=version,
+        snapshot_hash=resource_payload_hash(payload),
+        payload_ref=f"template:{template_id}@{version}",
+        payload=payload,
+    )
+    service.publish("template", template_id, version, make_default=make_default)
+    return template_path.resolve()
+
+
+def build_test_term_rules_store(source_term: str):
+    yaml_text = (
+        "schema_version: 2\n"
+        "categories:\n"
+        "  voltage_terms:\n"
+        "    name: 电压相关\n"
+        "    priority: 10\n"
+        "    enabled: true\n"
+        "    description: ''\n"
+        "rules:\n"
+        f"  - source_term: {source_term}\n"
+        "    category: voltage_terms\n"
+        "    segments:\n"
+        "      - segment_text: V\n"
+        "        render_type: plain\n"
+        f"      - segment_text: {source_term.removeprefix('V') or source_term}\n"
+        "        render_type: subscript\n"
+        "    apply_scope: both\n"
+        "    case_sensitive: true\n"
+        "    enabled: true\n"
+        "    priority: 10\n"
+        "    notes: ''\n"
+    )
+    return TermRuleYamlCodec().parse_yaml_text(yaml_text)
+
+
+def publish_term_rule_resource_version(
+    runtime: AppRuntime,
+    *,
+    version: str,
+    source_term: str,
+    make_default: bool,
+    term_rule_set_id: str = DEFAULT_TERM_RULE_SET_ID,
+) -> None:
+    service = runtime.resource_version_service
+    if service is None:
+        raise AssertionError("resource_version_service is required for this test")
+    store = build_test_term_rules_store(source_term)
+    payload = {
+        "term_rule_set_id": term_rule_set_id,
+        "version": version,
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "base_version": None,
+        "rule_count": len(store.rules),
+        "enabled_rule_count": sum(1 for rule in store.rules if rule.enabled),
+        "published_by": "test",
+        "publish_reason": "test resource snapshot",
+        "published_at": None,
+        "store": store.model_dump(mode="json"),
+    }
+    service.create_or_update_draft(
+        resource_type="term_rule_set",
+        resource_id=term_rule_set_id,
+        version=version,
+        snapshot_hash=resource_payload_hash(payload),
+        payload_ref=f"term_rule_set:{term_rule_set_id}@{version}",
+        payload=payload,
+    )
+    service.publish("term_rule_set", term_rule_set_id, version, make_default=make_default)
+
+
+def publish_translation_profile_resource_version(
+    runtime: AppRuntime,
+    *,
+    version: str,
+    model: str,
+    make_default: bool,
+    translation_profile_id: str = DEFAULT_TRANSLATION_PROFILE_ID,
+) -> None:
+    service = runtime.resource_version_service
+    if service is None:
+        raise AssertionError("resource_version_service is required for this test")
+    payload = {
+        "translation_profile_id": translation_profile_id,
+        "version": version,
+        "base_version": None,
+        "target_language": "zh-CN",
+        "domain": "electronics datasheet",
+        "prompt_version": f"prompt-{version}",
+        "model": model,
+        "max_pages_per_batch": 7,
+        "max_chars_per_batch": 1234,
+    }
+    service.create_or_update_draft(
+        resource_type="translation_profile",
+        resource_id=translation_profile_id,
+        version=version,
+        snapshot_hash=resource_payload_hash(payload),
+        payload_ref=f"translation_profile:{translation_profile_id}@{version}",
+        payload=payload,
+    )
+    service.publish("translation_profile", translation_profile_id, version, make_default=make_default)
+
+
+def publish_default_job_resources(runtime: AppRuntime, *, include_translation: bool = False) -> tuple[Path, str]:
+    template_path = publish_template_resource_version(
+        runtime,
+        version="1",
+        content=b"template-v1",
+        make_default=True,
+    )
+    publish_term_rule_resource_version(runtime, version="1", source_term="VONE", make_default=True)
+    if include_translation:
+        publish_translation_profile_resource_version(
+            runtime,
+            version="1",
+            model="snapshot-model-v1",
+            make_default=True,
+        )
+    return template_path, "VONE"
+
+
+def build_mysql_test_runtime(data_dir: Path, **kwargs) -> AppRuntime:
+    from app.repositories.mysql_job_repository import MysqlJobRepository
+    from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+    fake_mysql = _FakeMysqlDatabase()
+    return build_test_runtime(
+        data_dir,
+        jobs_repository_backend="mysql",
+        repository_factory=lambda _data_dir: MysqlJobRepository(
+            _mysql_config(),
+            connect_factory=fake_mysql.connect,
+        ),
+        **kwargs,
+    )
+
+
+JOB_ACCEPTED_RESPONSE_KEYS = ["job_id", "trace_id", "status", "translation_mode", "resource_snapshot"]
+JOB_FILE_RESPONSE_KEYS = [
+    "file_type",
+    "path",
+    "storage_backend",
+    "object_key",
+    "public_url",
+    "size_bytes",
+    "sha256",
+    "download_url",
+    "created_at",
+]
+JOB_EVENT_RESPONSE_KEYS = ["stage", "message", "status", "error_code", "details", "trace_id", "created_at"]
+JOB_SUMMARY_RESPONSE_KEYS = [
+    "id",
+    "source_filename",
+    "status",
+    "progress",
+    "translation_mode",
+    "result_ready",
+    "result_download_url",
+    "created_at",
+    "updated_at",
+]
+JOB_LIST_RESPONSE_KEYS = ["items", "page", "page_size", "total", "summary"]
+JOB_DETAIL_RESPONSE_KEYS = [
+    "id",
+    "source_filename",
+    "status",
+    "progress",
+    "source_kind",
+    "translation_mode",
+    "document_language",
+    "resolved_document_language",
+    "template_id",
+    "resource_snapshot",
+    "mineru_batch_id",
+    "mineru_data_id",
+    "mineru_callback_seed",
+    "mineru_status",
+    "mineru_result_zip_url",
+    "error_code",
+    "error_message",
+    "result_ready",
+    "created_at",
+    "updated_at",
+    "started_at",
+    "completed_at",
+    "files",
+    "events",
+]
+JOB_FILE_LIST_RESPONSE_KEYS = ["job_id", "files"]
+JOB_EVENT_LIST_RESPONSE_KEYS = ["job_id", "items"]
+
+
 class FastAPIJobsBackendTests(TestCase):
+    def test_jobs_api_response_contract_snapshot(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = create_app(build_test_runtime(Path(temp_dir)))
+            with TestClient(app) as client:
+                create_response = client.post(
+                    "/api/v1/jobs",
+                    files={"package": ("mineru-output.zip", make_zip_bytes(), "application/zip")},
+                    data={"translation_mode": "direct"},
+                )
+                self.assertEqual(create_response.status_code, 201)
+                create_payload = create_response.json()
+                job_id = create_payload["job_id"]
+
+                list_payload = client.get("/api/v1/jobs").json()
+                detail_payload = client.get(f"/api/v1/jobs/{job_id}").json()
+                files_payload = client.get(f"/api/v1/jobs/{job_id}/files").json()
+                events_payload = client.get(f"/api/v1/jobs/{job_id}/events").json()
+                result_payload = client.get(f"/api/v1/jobs/{job_id}/result").json()
+
+        self.assertEqual(list(create_payload), JOB_ACCEPTED_RESPONSE_KEYS)
+        self.assertEqual(list(list_payload), JOB_LIST_RESPONSE_KEYS)
+        self.assertEqual(list(list_payload["items"][0]), JOB_SUMMARY_RESPONSE_KEYS)
+        self.assertEqual(list(detail_payload), JOB_DETAIL_RESPONSE_KEYS)
+        self.assertEqual(list(detail_payload["files"][0]), JOB_FILE_RESPONSE_KEYS)
+        self.assertEqual(list(detail_payload["events"][0]), JOB_EVENT_RESPONSE_KEYS)
+        self.assertEqual(list(files_payload), JOB_FILE_LIST_RESPONSE_KEYS)
+        self.assertEqual(list(files_payload["files"][0]), JOB_FILE_RESPONSE_KEYS)
+        self.assertEqual(list(events_payload), JOB_EVENT_LIST_RESPONSE_KEYS)
+        self.assertEqual(list(events_payload["items"][0]), JOB_EVENT_RESPONSE_KEYS)
+        self.assertEqual(list(result_payload), JOB_FILE_RESPONSE_KEYS)
+
+    def test_api_v1_schema_imports_remain_compatible_after_resource_split(self):
+        from app.schemas import api_v1
+        from app.schemas.jobs import JobDetailResponse
+
+        self.assertIs(api_v1.JobDetailResponse, JobDetailResponse)
+
     def test_health_ready_reports_runtime_dependencies(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             app = create_app(build_test_runtime(Path(temp_dir)))
@@ -251,14 +668,161 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(payload["app_name"], "md2word_file_test")
         self.assertEqual(payload["dependency_checks"]["configured_repository_backend"], "file")
         self.assertEqual(payload["dependency_checks"]["effective_repository_backend"], "file")
+        self.assertEqual(payload["dependency_checks"]["worker_mode"], "in_process")
+        self.assertEqual(payload["dependency_checks"]["stage_dispatcher"], "background_tasks")
+        self.assertEqual(payload["dependency_checks"]["stage_message_store"], "file")
+        self.assertEqual(payload["dependency_checks"]["artifact_storage"], "local_file")
+        self.assertIn("jobs_dir_writable", payload["dependency_checks"]["readiness_required_checks"])
+        self.assertIn("translation_available", payload["dependency_checks"]["readiness_non_blocking_checks"])
         self.assertTrue(payload["dependency_checks"]["jobs_dir_exists"])
         self.assertTrue(payload["dependency_checks"]["stage_spool_dir_exists"])
         self.assertTrue(payload["dependency_checks"]["jobs_dir_writable"])
+        self.assertTrue(payload["dependency_checks"]["artifact_root_writable"])
+        self.assertGreater(payload["dependency_checks"]["artifact_disk_free_bytes"], 0)
         self.assertEqual(payload["dependency_checks"]["stage_spool_pending_messages"], 0)
+        self.assertEqual(payload["dependency_checks"]["stage_spool_running_messages"], 0)
+        self.assertEqual(payload["dependency_checks"]["stage_spool_failed_messages"], 0)
+        self.assertEqual(payload["dependency_checks"]["stage_spool_replayable_messages"], 0)
+        self.assertEqual(payload["dependency_checks"]["stage_spool_running_stale_messages"], 0)
+        self.assertEqual(payload["dependency_checks"]["stage_spool_oldest_running_age_seconds"], 0)
+        self.assertFalse(payload["dependency_checks"]["stage_spool_needs_attention"])
+        self.assertEqual(payload["dependency_checks"]["stage_spool_observation_status"], "ok")
         self.assertEqual(payload["dependency_checks"]["default_translation_mode"], "direct")
+        self.assertFalse(payload["dependency_checks"]["translation_required_for_default_mode"])
         self.assertTrue(payload["dependency_checks"]["translation_client_configured"] is False)
         self.assertTrue(payload["dependency_checks"]["translation_prompt_exists"])
         self.assertFalse(payload["dependency_checks"]["mineru_api_token_configured"])
+        self.assertFalse(payload["dependency_checks"]["pdf_submission_available"])
+        self.assertTrue(payload["dependency_checks"]["deployment_init_ready"])
+        self.assertEqual(payload["dependency_checks"]["readiness_blockers"], [])
+        self.assertIn("mineru_api_token_missing", payload["dependency_checks"]["readiness_warnings"])
+        self.assertIn("translation_unavailable", payload["dependency_checks"]["readiness_warnings"])
+        self.assertIsNone(payload["dependency_checks"]["default_template_version"])
+        self.assertIsNone(payload["dependency_checks"]["default_term_rule_version"])
+        self.assertIsNone(payload["dependency_checks"]["default_translation_profile_version"])
+        self.assertFalse(payload["dependency_checks"]["mysql_schema_bootstrap_available"])
+
+    def test_health_metrics_reports_runtime_counters(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir))
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                create_response = client.post(
+                    "/api/v1/jobs",
+                    files={"package": ("mineru-output.zip", make_zip_bytes(), "application/zip")},
+                    data={"translation_mode": "direct"},
+                )
+                response = client.get("/api/v1/health/metrics")
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["metadata_store"], "file")
+        self.assertEqual(payload["artifact_storage"], "local_file")
+        self.assertEqual(payload["worker_mode"], "in_process")
+        self.assertEqual(payload["stage_dispatcher"], "background_tasks")
+        self.assertEqual(payload["jobs"], {"completed": 1})
+        self.assertEqual(payload["stage_messages"], {"pending": 0, "running": 0, "failed": 0})
+        self.assertEqual(payload["resources"]["template_versions"], 0)
+        self.assertEqual(payload["audit_events"]["total"], 0)
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("OPENAI_API_KEY", serialized)
+        self.assertNotIn("ADMIN_TOKEN", serialized)
+
+    def test_health_metrics_reports_default_resource_versions_in_mysql_mode(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(Path(temp_dir))
+            publish_default_job_resources(runtime, include_translation=True)
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                response = client.get("/api/v1/health/metrics")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["metadata_store"], "mysql")
+        self.assertEqual(payload["resources"]["template_versions"], 1)
+        self.assertEqual(payload["resources"]["term_rule_set_versions"], 1)
+        self.assertEqual(payload["resources"]["translation_profile_versions"], 1)
+        self.assertEqual(payload["resources"]["default_template_version"], "default@1")
+        self.assertEqual(payload["resources"]["default_term_rule_version"], "electronics-default@1")
+        self.assertEqual(payload["resources"]["default_translation_profile_version"], "electronics-en2zh@1")
+
+    def test_health_ready_reports_stage_spool_status_counts(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir))
+            runtime.stage_message_store.put_stage_message(
+                JobStageMessage(
+                    id="msg_health_pending",
+                    job_id="job_health",
+                    stage="convert_package",
+                    trace_id="trace_health",
+                    status="pending",
+                )
+            )
+            runtime.stage_message_store.put_stage_message(
+                JobStageMessage(
+                    id="msg_health_running",
+                    job_id="job_health",
+                    stage="submit_to_mineru",
+                    trace_id="trace_health",
+                    status="running",
+                    updated_at=utc_now() - timedelta(seconds=1200),
+                    lease_expires_at=utc_now() - timedelta(seconds=1),
+                )
+            )
+            runtime.stage_message_store.put_stage_message(
+                JobStageMessage(
+                    id="msg_health_failed",
+                    job_id="job_health",
+                    stage="process_callback",
+                    trace_id="trace_health",
+                    status="failed",
+                )
+            )
+            checks = runtime.health_service.build_dependency_checks()
+
+        self.assertEqual(checks["stage_spool_pending_messages"], 1)
+        self.assertEqual(checks["stage_spool_running_messages"], 1)
+        self.assertEqual(checks["stage_spool_failed_messages"], 1)
+        self.assertEqual(checks["stage_spool_replayable_messages"], 2)
+        self.assertEqual(checks["stage_spool_running_stale_messages"], 1)
+        self.assertGreaterEqual(checks["stage_spool_oldest_running_age_seconds"], 1199)
+        self.assertTrue(checks["stage_spool_needs_attention"])
+        self.assertEqual(checks["stage_spool_observation_status"], "needs_attention")
+        self.assertIn("stage_spool_replayable_messages_present", checks["readiness_warnings"])
+        self.assertIn("stage_spool_failed_messages_present", checks["readiness_warnings"])
+        self.assertIn("stage_spool_stale_running_messages_present", checks["readiness_warnings"])
+
+    def test_health_ready_blocks_when_default_translation_mode_requires_missing_client(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir), default_translation_mode="en2zh")
+            checks = runtime.health_service.build_dependency_checks()
+
+        self.assertTrue(checks["translation_required_for_default_mode"])
+        self.assertFalse(checks["translation_available"])
+        self.assertFalse(checks["deployment_init_ready"])
+        self.assertIn("default_translation_unavailable", checks["readiness_blockers"])
+
+    def test_api_error_handlers_map_domain_exceptions(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = create_app(build_test_runtime(Path(temp_dir)))
+
+            @app.get("/test-errors/workflow")
+            def raise_workflow_error():
+                raise JobWorkflowViolation("当前状态不允许执行。")
+
+            @app.get("/test-errors/conversion")
+            def raise_conversion_error():
+                raise ConversionFailure("conversion_failed", "转换失败。")
+
+            with TestClient(app, raise_server_exceptions=False) as client:
+                workflow_response = client.get("/test-errors/workflow")
+                conversion_response = client.get("/test-errors/conversion")
+
+        self.assertEqual(workflow_response.status_code, 409)
+        self.assertEqual(workflow_response.json()["detail"], "当前状态不允许执行。")
+        self.assertEqual(conversion_response.status_code, 503)
+        self.assertEqual(conversion_response.json()["detail"], "转换失败。")
 
     def test_templates_read_api_returns_default_template_and_bound_configs(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -356,6 +920,467 @@ class FastAPIJobsBackendTests(TestCase):
                 self.assertFalse(refreshed[0]["is_default"])
                 self.assertTrue(refreshed[1]["is_default"])
 
+    def test_templates_crud_replace_and_versions_preserve_uploaded_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            manifest_path = temp_root / "templates_manifest.yaml"
+            repo_root = Path(__file__).resolve().parents[1]
+            write_templates_manifest(
+                manifest_path,
+                [
+                    {
+                        "id": "default",
+                        "name": "Default Template",
+                        "description": "default",
+                        "enabled": True,
+                        "is_default_seed": True,
+                        "template_path": str((repo_root / "template" / "datasheet_template.docx").resolve()),
+                        "layout_config_path": str((repo_root / "template_configs" / "datasheet_template.yaml").resolve()),
+                    }
+                ],
+            )
+            runtime = build_test_runtime(
+                temp_root,
+                admin_token="secret-admin",
+                templates_manifest_path=str(manifest_path),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                create_response = client.post(
+                    "/api/v1/templates",
+                    data={
+                        "template_id": "managed",
+                        "name": "Managed Template",
+                        "description": "created by api",
+                    },
+                    files={
+                        "template": (
+                            "managed.docx",
+                            b"managed-template-v1",
+                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        )
+                    },
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(create_response.status_code, 201)
+                self.assertEqual(create_response.json()["version"], 1)
+
+                update_response = client.patch(
+                    "/api/v1/templates/managed",
+                    json={"name": "Managed Template Updated"},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(update_response.status_code, 200)
+                self.assertEqual(update_response.json()["name"], "Managed Template Updated")
+
+                replace_response = client.put(
+                    "/api/v1/templates/managed/file",
+                    files={
+                        "template": (
+                            "managed-v2.docx",
+                            b"managed-template-v2",
+                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        )
+                    },
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(replace_response.status_code, 200)
+                self.assertEqual(replace_response.json()["version"], 2)
+
+                download_response = client.get("/api/v1/templates/managed/download")
+                versions_response = client.get("/api/v1/templates/managed/versions")
+                delete_response = client.delete(
+                    "/api/v1/templates/managed",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                missing_response = client.get("/api/v1/templates/managed")
+
+        self.assertEqual(download_response.status_code, 200)
+        self.assertEqual(download_response.content, b"managed-template-v2")
+        self.assertEqual(versions_response.status_code, 200)
+        self.assertEqual([item["version"] for item in versions_response.json()["items"]], [2, 1])
+        self.assertTrue(versions_response.json()["items"][0]["is_current"])
+        self.assertEqual(delete_response.status_code, 200)
+        self.assertTrue(delete_response.json()["deleted"])
+        self.assertEqual(missing_response.status_code, 404)
+
+    def test_template_profile_versioning_publishes_defaults_and_disables_versions(self):
+        from app.repositories.mysql_job_repository import MysqlJobRepository
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            manifest_path = temp_root / "templates_manifest.yaml"
+            repo_root = Path(__file__).resolve().parents[1]
+            write_templates_manifest(
+                manifest_path,
+                [
+                    {
+                        "id": "default",
+                        "name": "Default Template",
+                        "description": "default",
+                        "enabled": True,
+                        "is_default_seed": True,
+                        "template_path": str((repo_root / "template" / "datasheet_template.docx").resolve()),
+                        "layout_config_path": str((repo_root / "template_configs" / "datasheet_template.yaml").resolve()),
+                    }
+                ],
+            )
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                admin_token="secret-admin",
+                jobs_repository_backend="mysql",
+                repository_factory=lambda _data_dir: MysqlJobRepository(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                templates_manifest_path=str(manifest_path),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                create_response = client.post(
+                    "/api/v1/templates",
+                    data={
+                        "template_id": "managed",
+                        "name": "Managed Template",
+                        "description": "created by api",
+                        "render_policy_json": '{"page_size": "A4"}',
+                    },
+                    files={
+                        "template": (
+                            "managed.docx",
+                            b"managed-template-v1",
+                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        )
+                    },
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(create_response.status_code, 201)
+
+                publish_v1_response = client.post(
+                    "/api/v1/templates/managed/versions/1/publish",
+                    json={"make_default": True},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(publish_v1_response.status_code, 200)
+                self.assertEqual(publish_v1_response.json()["status"], "published")
+                self.assertTrue(publish_v1_response.json()["is_default"])
+
+                create_v2_response = client.post(
+                    "/api/v1/templates/managed/versions",
+                    data={"render_policy_json": '{"density": "compact"}'},
+                    files={
+                        "template": (
+                            "managed-v2.docx",
+                            b"managed-template-v2",
+                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        )
+                    },
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(create_v2_response.status_code, 201)
+                self.assertEqual(create_v2_response.json()["version"], 2)
+                self.assertEqual(create_v2_response.json()["status"], "draft")
+
+                publish_v2_response = client.post(
+                    "/api/v1/templates/managed/versions/2/publish",
+                    json={"make_default": False},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                set_default_v2_response = client.post(
+                    "/api/v1/templates/managed/versions/2/set-default",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                download_response = client.get("/api/v1/templates/managed/download")
+                disable_v1_response = client.post(
+                    "/api/v1/templates/managed/versions/1/disable",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                disable_v2_response = client.post(
+                    "/api/v1/templates/managed/versions/2/disable",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                versions_response = client.get("/api/v1/templates/managed/versions")
+
+        self.assertEqual(publish_v2_response.status_code, 200)
+        self.assertEqual(set_default_v2_response.status_code, 200)
+        self.assertTrue(set_default_v2_response.json()["is_default"])
+        self.assertEqual(download_response.content, b"managed-template-v2")
+        self.assertEqual(disable_v1_response.status_code, 200)
+        self.assertEqual(disable_v1_response.json()["status"], "disabled")
+        self.assertEqual(disable_v2_response.status_code, 400)
+
+        versions = {item["version"]: item for item in versions_response.json()["items"]}
+        self.assertEqual(versions[1]["status"], "disabled")
+        self.assertEqual(versions[2]["status"], "published")
+        self.assertTrue(versions[2]["is_default"])
+        self.assertEqual(versions[2]["render_policy"], {"density": "compact"})
+
+        records = {record.version: record for record in runtime.repository.list_resource_versions("template", "managed")}
+        default_record = runtime.repository.get_default_resource_version("template", "managed")
+        self.assertEqual(records["1"].status.value, "disabled")
+        self.assertEqual(records["2"].status.value, "published")
+        self.assertEqual(default_record.version, "2")
+        self.assertEqual(records["2"].payload["render_policy"], {"density": "compact"})
+        audit_events = runtime.repository.list_audit_events()
+        self.assertEqual(
+            [event.action for event in audit_events],
+            [
+                "template.publish",
+                "template.publish",
+                "template.set_default",
+                "template.disable",
+            ],
+        )
+        self.assertEqual(audit_events[0].actor_role, "admin")
+        self.assertEqual(audit_events[0].target_id, "managed@1")
+        self.assertEqual(audit_events[-1].target_id, "managed@1")
+        self.assertNotIn("term_rules", records["2"].payload)
+
+    def test_template_versioning_endpoints_require_mysql_resource_service(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir), admin_token="secret-admin")
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                response = client.post(
+                    "/api/v1/templates/default/versions",
+                    files={
+                        "template": (
+                            "default-v2.docx",
+                            b"default-template-v2",
+                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        )
+                    },
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("JOBS_REPOSITORY_BACKEND=mysql", response.json()["detail"])
+
+    def test_term_rule_set_versioning_draft_publish_default_and_rollback(self):
+        from app.repositories.mysql_job_repository import MysqlJobRepository
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        yaml_v1 = (
+            "schema_version: 2\n"
+            "categories:\n"
+            "  voltage_terms:\n"
+            "    name: 电压相关\n"
+            "    priority: 10\n"
+            "    enabled: true\n"
+            "    description: ''\n"
+            "rules:\n"
+            "  - source_term: VONE\n"
+            "    category: voltage_terms\n"
+            "    segments:\n"
+            "      - segment_text: V\n"
+            "        render_type: plain\n"
+            "      - segment_text: ONE\n"
+            "        render_type: subscript\n"
+            "    apply_scope: both\n"
+            "    case_sensitive: true\n"
+            "    enabled: true\n"
+            "    priority: 10\n"
+            "    notes: ''\n"
+        )
+        yaml_v2 = yaml_v1.replace("VONE", "VTWO").replace("ONE", "TWO")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                admin_token="secret-admin",
+                jobs_repository_backend="mysql",
+                repository_factory=lambda _data_dir: MysqlJobRepository(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+            )
+            original_runtime_yaml = runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8")
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                draft_response = client.put(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules",
+                    json={"yaml_text": yaml_v1},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(draft_response.status_code, 200)
+                self.assertEqual(draft_response.json()["rule_count"], 1)
+                self.assertEqual(
+                    runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8"),
+                    original_runtime_yaml,
+                )
+
+                publish_v1_response = client.post(
+                    "/api/v1/term-rule-sets/electronics-default/publish",
+                    json={
+                        "make_default": True,
+                        "published_by": "tester",
+                        "publish_reason": "first version",
+                    },
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(publish_v1_response.status_code, 200)
+                version_v1 = publish_v1_response.json()["version"]
+                self.assertEqual(publish_v1_response.json()["status"], "published")
+                self.assertTrue(publish_v1_response.json()["is_default"])
+                self.assertIn("VONE", runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8"))
+
+                draft_default_response = client.post(
+                    "/api/v1/term-rule-sets/electronics-default/versions/draft/set-default",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(draft_default_response.status_code, 400)
+                self.assertIn("published", draft_default_response.json()["detail"])
+                default_after_draft_response = client.get("/api/v1/term-rule-sets/electronics-default")
+                self.assertEqual(default_after_draft_response.json()["default_version"], version_v1)
+
+                draft_v2_response = client.put(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules",
+                    json={"yaml_text": yaml_v2},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(draft_v2_response.status_code, 200)
+                self.assertIn("VTWO", draft_v2_response.json()["yaml_text"])
+                self.assertNotIn("VTWO", runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8"))
+
+                publish_v2_response = client.post(
+                    "/api/v1/term-rule-sets/electronics-default/publish",
+                    json={"make_default": False},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(publish_v2_response.status_code, 200)
+                version_v2 = publish_v2_response.json()["version"]
+                self.assertFalse(publish_v2_response.json()["is_default"])
+                self.assertNotEqual(version_v1, version_v2)
+                self.assertNotIn("VTWO", runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8"))
+
+                set_default_v2_response = client.post(
+                    f"/api/v1/term-rule-sets/electronics-default/versions/{version_v2}/set-default",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(set_default_v2_response.status_code, 200)
+                self.assertTrue(set_default_v2_response.json()["is_default"])
+                self.assertIn("VTWO", runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8"))
+
+                records_before_rollback = {
+                    record.version: record.payload
+                    for record in runtime.repository.list_resource_versions("term_rule_set", "electronics-default")
+                }
+                rollback_response = client.post(
+                    "/api/v1/term-rule-sets/electronics-default/rollback",
+                    json={"version": version_v1},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                export_response = client.get("/api/v1/term-rules/export")
+                detail_response = client.get("/api/v1/term-rule-sets/electronics-default")
+
+        self.assertEqual(rollback_response.status_code, 200)
+        self.assertTrue(rollback_response.json()["is_default"])
+        self.assertIn("VONE", export_response.json()["yaml_text"])
+        self.assertNotIn("VTWO", export_response.json()["yaml_text"])
+        records_after_rollback = {
+            record.version: record.payload
+            for record in runtime.repository.list_resource_versions("term_rule_set", "electronics-default")
+        }
+        self.assertEqual(records_after_rollback[version_v1], records_before_rollback[version_v1])
+        self.assertEqual(detail_response.status_code, 200)
+        audit_events = runtime.repository.list_audit_events()
+        self.assertEqual(
+            [event.action for event in audit_events],
+            [
+                "term_rule_set.publish",
+                "term_rule_set.publish",
+                "term_rule_set.set_default",
+                "term_rule_set.rollback",
+            ],
+        )
+        self.assertEqual(audit_events[0].reason, "first version")
+        self.assertEqual(audit_events[-1].target_id, f"electronics-default@{version_v1}")
+        self.assertEqual(detail_response.json()["default_version"], version_v1)
+        self.assertEqual(len(detail_response.json()["versions"]), 2)
+
+    def test_term_rule_set_draft_rejects_invalid_yaml_without_mutating_draft(self):
+        from app.repositories.mysql_job_repository import MysqlJobRepository
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                admin_token="secret-admin",
+                jobs_repository_backend="mysql",
+                repository_factory=lambda _data_dir: MysqlJobRepository(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                draft_before_response = client.get("/api/v1/term-rule-sets/electronics-default/draft")
+                self.assertEqual(draft_before_response.status_code, 200)
+
+                invalid_response = client.put(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules",
+                    json={"yaml_text": "schema_version: 2\ncategories: [bad]\nrules: []\n"},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                draft_after_response = client.get("/api/v1/term-rule-sets/electronics-default/draft")
+
+        self.assertEqual(invalid_response.status_code, 400)
+        self.assertEqual(invalid_response.json()["detail"]["code"], "invalid_term_rule_set_draft")
+        self.assertEqual(
+            draft_after_response.json()["snapshot_hash"],
+            draft_before_response.json()["snapshot_hash"],
+        )
+
+    def test_term_rule_set_versioning_backend_requirements_and_legacy_write_guard(self):
+        from app.repositories.mysql_job_repository import MysqlJobRepository
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        yaml_text = "schema_version: 2\ncategories: {}\nrules: []\n"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            file_runtime = build_test_runtime(Path(temp_dir), admin_token="secret-admin")
+            app = create_app(file_runtime)
+            with TestClient(app) as client:
+                versioned_response = client.put(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules",
+                    json={"yaml_text": yaml_text},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                legacy_response = client.post(
+                    "/api/v1/term-rule-categories",
+                    json={"id": "file_legacy", "code": "file_legacy", "name": "文件兼容"},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+
+        self.assertEqual(versioned_response.status_code, 503)
+        self.assertEqual(legacy_response.status_code, 201)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_mysql = _FakeMysqlDatabase()
+            mysql_runtime = build_test_runtime(
+                Path(temp_dir),
+                admin_token="secret-admin",
+                jobs_repository_backend="mysql",
+                repository_factory=lambda _data_dir: MysqlJobRepository(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+            )
+            app = create_app(mysql_runtime)
+            with TestClient(app) as client:
+                guarded_response = client.post(
+                    "/api/v1/term-rule-categories",
+                    json={"id": "mysql_legacy", "code": "mysql_legacy", "name": "MySQL 直写"},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+
+        self.assertEqual(guarded_response.status_code, 400)
+        self.assertIn("/api/v1/term-rule-sets", guarded_response.json()["detail"])
+
     def test_term_rule_categories_export_and_simulate_are_available(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             app = create_app(build_test_runtime(Path(temp_dir)))
@@ -431,6 +1456,68 @@ class FastAPIJobsBackendTests(TestCase):
                 self.assertTrue(runtime_yaml_path.exists())
                 self.assertIn("subscript_rules", runtime_yaml_path.read_text(encoding="utf-8"))
 
+    def test_term_rule_category_and_rule_crud_refresh_runtime_yaml(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir), admin_token="secret-admin")
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                category_response = client.post(
+                    "/api/v1/term-rule-categories",
+                    json={
+                        "id": "dynamic_category",
+                        "code": "dynamic_terms",
+                        "name": "动态术语",
+                        "priority": 50,
+                    },
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(category_response.status_code, 201)
+                category = category_response.json()
+                self.assertEqual(category["code"], "dynamic_terms")
+
+                create_rule_response = client.post(
+                    "/api/v1/term-rules",
+                    json={
+                        "id": "rule_dynamic_vtest",
+                        "category_id": category["id"],
+                        "source_term": "VTEST",
+                        "segments": [
+                            {"segment_text": "V", "render_type": "plain"},
+                            {"segment_text": "TEST", "render_type": "subscript"},
+                        ],
+                        "apply_scope": "both",
+                        "priority": 50,
+                    },
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(create_rule_response.status_code, 201)
+                self.assertEqual(create_rule_response.json()["source_term"], "VTEST")
+                self.assertIn("VTEST", runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8"))
+
+                patch_rule_response = client.patch(
+                    "/api/v1/term-rules/rule_dynamic_vtest",
+                    json={"enabled": False, "notes": "disabled in api"},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(patch_rule_response.status_code, 200)
+                self.assertFalse(patch_rule_response.json()["enabled"])
+
+                delete_rule_response = client.delete(
+                    "/api/v1/term-rules/rule_dynamic_vtest",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                delete_category_response = client.delete(
+                    "/api/v1/term-rule-categories/dynamic_category",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                runtime_yaml_after_delete = runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8")
+
+        self.assertEqual(delete_rule_response.status_code, 200)
+        self.assertTrue(delete_rule_response.json()["deleted"])
+        self.assertEqual(delete_category_response.status_code, 200)
+        self.assertTrue(delete_category_response.json()["deleted"])
+        self.assertNotIn("VTEST", runtime_yaml_after_delete)
+
     def test_jobs_accept_visible_template_id_and_fallback_to_runtime_default(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)
@@ -497,7 +1584,8 @@ class FastAPIJobsBackendTests(TestCase):
 
     def test_upload_zip_runs_background_conversion_and_downloads_docx(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            app = create_app(build_test_runtime(Path(temp_dir)))
+            runtime = build_test_runtime(Path(temp_dir))
+            app = create_app(runtime)
             with TestClient(app) as client:
                 create_response = client.post(
                     "/api/v1/jobs",
@@ -514,20 +1602,207 @@ class FastAPIJobsBackendTests(TestCase):
                 self.assertTrue(detail_payload["result_ready"])
                 self.assertEqual(detail_payload["files"][0]["file_type"], "source_package")
                 self.assertEqual(detail_payload["files"][1]["file_type"], "result_docx")
+                for item in detail_payload["files"]:
+                    self.assertGreater(item["size_bytes"], 0)
+                    self.assertTrue(item["sha256"].startswith("sha256:"))
 
                 result_response = client.get(f"/api/v1/jobs/{job_id}/result")
                 self.assertEqual(result_response.status_code, 200)
                 self.assertIn(f"/api/v1/jobs/{job_id}/download/result", result_response.json()["download_url"])
 
-                download_response = client.get(f"/api/v1/jobs/{job_id}/download/result")
+                download_response = client.get(
+                    f"/api/v1/jobs/{job_id}/download/result",
+                    headers={"X-Actor-Id": "spoofed-anonymous"},
+                )
                 self.assertEqual(download_response.status_code, 200)
                 self.assertEqual(download_response.content, b"fake-docx")
+                audit_events = runtime.repository.list_audit_events()
+                self.assertEqual([event.action for event in audit_events], ["artifact.download"])
+                self.assertEqual(audit_events[0].actor_role, "anonymous")
+                self.assertIsNone(audit_events[0].actor_id)
+                self.assertEqual(audit_events[0].target_id, f"{job_id}:result")
+                self.assertNotIn(str(Path(temp_dir)), audit_events[0].target_id)
 
                 events_response = client.get(f"/api/v1/jobs/{job_id}/events")
                 self.assertEqual(events_response.status_code, 200)
                 event_stages = [item["stage"] for item in events_response.json()["items"]]
                 self.assertIn("job_created", event_stages)
                 self.assertIn("job_completed", event_stages)
+
+    def test_download_artifact_maps_storage_errors(self):
+        class BrokenArtifactStorage:
+            """测试用 adapter：模拟 artifact storage 在下载解析阶段抛错。"""
+
+            def __init__(self, error: FileNotFoundError | ValueError) -> None:
+                self.error = error
+
+            def resolve_download(self, paths, file):
+                raise self.error
+
+        cases = [
+            (FileNotFoundError("artifact missing"), 404),
+            (ValueError("artifact path invalid"), 400),
+            (ArtifactFingerprintMismatch("artifact fingerprint mismatch"), 409),
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir))
+            app = create_app(runtime)
+            job = JobRecord(
+                id="job_download_error",
+                source_filename="download-error.zip",
+                status="completed",
+                progress=100,
+                result_ready=True,
+                completed_at=utc_now(),
+            )
+            runtime.repository.create_job(job)
+            runtime.repository.upsert_file(job.id, JobFile(file_type="result_docx", path="output/result.docx"))
+
+            with TestClient(app) as client:
+                for error, expected_status in cases:
+                    with self.subTest(error=type(error).__name__):
+                        runtime.artifact_storage = BrokenArtifactStorage(error)
+                        response = client.get(f"/api/v1/jobs/{job.id}/download/result")
+                        self.assertEqual(response.status_code, expected_status)
+                        self.assertEqual(response.json()["detail"], str(error))
+
+    def test_download_artifact_rejects_fingerprint_mismatch_without_absolute_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir))
+            app = create_app(runtime)
+            job = JobRecord(
+                id="job_fingerprint_mismatch",
+                source_filename="mismatch.zip",
+                status="completed",
+                progress=100,
+                result_ready=True,
+                completed_at=utc_now(),
+            )
+            runtime.repository.create_job(job)
+            job_paths = build_job_paths(runtime.settings.data_path, job.id)
+            ensure_job_dirs(job_paths)
+            job_paths.result_docx.write_bytes(b"actual-docx")
+            runtime.repository.upsert_file(
+                job.id,
+                JobFile(
+                    file_type="result_docx",
+                    path="output/result.docx",
+                    size_bytes=1,
+                    sha256=f"sha256:{hashlib.sha256(b'expected').hexdigest()}",
+                ),
+            )
+
+            with TestClient(app) as client:
+                response = client.get(f"/api/v1/jobs/{job.id}/download/result")
+
+        detail = response.json()["detail"]
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("file_type=result_docx", detail)
+        self.assertIn("path=output/result.docx", detail)
+        self.assertNotIn(str(runtime.settings.data_path), detail)
+
+    def test_core_error_response_contracts_keep_detail_shape_stable(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir), admin_token="secret-admin")
+            app = create_app(runtime)
+            queued_job = JobRecord(
+                id="job_result_not_ready",
+                source_filename="queued.zip",
+                status="queued",
+                progress=0,
+            )
+            runtime.repository.create_job(queued_job)
+
+            with TestClient(app) as client:
+                bad_upload_response = client.post(
+                    "/api/v1/jobs",
+                    files={"package": ("bad.txt", b"not-zip", "text/plain")},
+                )
+                forbidden_ops_response = client.post(
+                    f"/api/v1/jobs/{queued_job.id}/cleanup-local-files",
+                    data={"reason": "auth-check"},
+                )
+                result_not_ready_response = client.get(f"/api/v1/jobs/{queued_job.id}/result")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = create_app(build_test_runtime(Path(temp_dir)))
+            with TestClient(app) as client:
+                admin_unconfigured_response = client.post(
+                    "/api/v1/jobs/job_missing_admin/cleanup-local-files",
+                    data={"reason": "auth-check"},
+                )
+
+        self.assertEqual(bad_upload_response.status_code, 400)
+        self.assertEqual(
+            bad_upload_response.json(),
+            {"detail": "上传文件必须是 .zip 格式的 MinerU 输出包。"},
+        )
+        self.assertEqual(forbidden_ops_response.status_code, 403)
+        self.assertEqual(forbidden_ops_response.json(), {"detail": "admin token 校验失败。"})
+        self.assertEqual(result_not_ready_response.status_code, 409)
+        self.assertEqual(result_not_ready_response.json(), {"detail": "任务尚未完成，result.docx 还不可用。"})
+        self.assertEqual(admin_unconfigured_response.status_code, 503)
+        self.assertEqual(admin_unconfigured_response.json(), {"detail": "ADMIN_TOKEN 未配置，管理接口不可用。"})
+
+    def test_download_artifact_supports_stream_storage_result(self):
+        class StreamArtifactStorage:
+            """测试用 adapter：模拟对象存储 SDK 返回流式内容。"""
+
+            def resolve_download(self, paths, file):
+                return DownloadArtifact.stream([b"stream-docx"])
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir))
+            runtime.artifact_storage = StreamArtifactStorage()
+            app = create_app(runtime)
+            job = JobRecord(
+                id="job_stream_download",
+                source_filename="stream-source.zip",
+                status="completed",
+                progress=100,
+                result_ready=True,
+                completed_at=utc_now(),
+            )
+            runtime.repository.create_job(job)
+            runtime.repository.upsert_file(job.id, JobFile(file_type="result_docx", path="output/result.docx"))
+
+            with TestClient(app) as client:
+                response = client.get(f"/api/v1/jobs/{job.id}/download/result")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"stream-docx")
+        self.assertIn("stream-source.docx", response.headers["content-disposition"])
+
+    def test_download_artifact_supports_redirect_storage_result(self):
+        class RedirectArtifactStorage:
+            """测试用 adapter：模拟对象存储返回临时签名下载地址。"""
+
+            def resolve_download(self, paths, file):
+                return DownloadArtifact.redirect("https://storage.example/jobs/job_redirect_download/result.docx")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir))
+            runtime.artifact_storage = RedirectArtifactStorage()
+            app = create_app(runtime)
+            job = JobRecord(
+                id="job_redirect_download",
+                source_filename="redirect-source.zip",
+                status="completed",
+                progress=100,
+                result_ready=True,
+                completed_at=utc_now(),
+            )
+            runtime.repository.create_job(job)
+            runtime.repository.upsert_file(job.id, JobFile(file_type="result_docx", path="output/result.docx"))
+
+            with TestClient(app) as client:
+                response = client.get(f"/api/v1/jobs/{job.id}/download/result", follow_redirects=False)
+
+        self.assertEqual(response.status_code, 307)
+        self.assertEqual(
+            response.headers["location"],
+            "https://storage.example/jobs/job_redirect_download/result.docx",
+        )
 
     def test_upload_zip_dispatches_stage_through_runtime_dispatcher(self):
         class RecordingDispatcher:
@@ -554,10 +1829,44 @@ class FastAPIJobsBackendTests(TestCase):
                 )
                 self.assertEqual(create_response.status_code, 201)
 
-            pending_messages = runtime.repository.list_pending_stage_messages()
+            pending_messages = runtime.stage_message_store.list_replayable_stage_messages()
             self.assertTrue(dispatcher.replay_called)
             self.assertEqual(dispatcher.message_ids, [pending_messages[0].id])
             self.assertEqual(pending_messages[0].stage, "convert_package")
+
+    def test_external_worker_mode_leaves_stage_for_worker_process(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir), jobs_worker_mode="external")
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                health = client.get("/api/v1/health/ready").json()
+                create_response = client.post(
+                    "/api/v1/jobs",
+                    files={"package": ("mineru-output.zip", make_zip_bytes(), "application/zip")},
+                    data={"translation_mode": "direct"},
+                )
+                self.assertEqual(create_response.status_code, 201)
+                job_id = create_response.json()["job_id"]
+                queued_detail = client.get(f"/api/v1/jobs/{job_id}").json()
+
+            pending_messages = runtime.stage_message_store.list_replayable_stage_messages()
+            requests_before_worker = list(runtime.stage_service.conversion_entrypoint.requests)
+            worker = StageWorker(runtime, poll_interval_seconds=0)
+            processed_count = worker.run_once()
+            completed_job = runtime.repository.get_job(job_id)
+            remaining_messages = runtime.stage_message_store.list_replayable_stage_messages()
+
+        self.assertEqual(health["dependency_checks"]["worker_mode"], "external")
+        self.assertEqual(health["dependency_checks"]["stage_dispatcher"], "external_worker")
+        self.assertEqual(queued_detail["status"], "queued")
+        self.assertEqual(requests_before_worker, [])
+        self.assertEqual(len(runtime.stage_service.conversion_entrypoint.requests), 1)
+        self.assertEqual(len(pending_messages), 1)
+        self.assertEqual(pending_messages[0].stage, "convert_package")
+        self.assertEqual(processed_count, 1)
+        self.assertIsNotNone(completed_job)
+        self.assertEqual(completed_job.status, "completed")
+        self.assertEqual(remaining_messages, [])
 
     def test_upload_en2zh_preserves_conversion_request_options_and_translation_artifact(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -579,7 +1888,7 @@ class FastAPIJobsBackendTests(TestCase):
                 files_response = client.get(f"/api/v1/jobs/{job_id}/files")
                 self.assertEqual(files_response.status_code, 200)
                 file_types = [item["file_type"] for item in files_response.json()["files"]]
-                self.assertEqual(file_types, ["source_package", "translation_request", "result_docx"])
+                self.assertEqual(file_types, ["source_package", "translation_request", "translation_trace", "result_docx"])
                 events_response = client.get(f"/api/v1/jobs/{job_id}/events")
                 self.assertEqual(events_response.status_code, 200)
                 event_stages = [item["stage"] for item in events_response.json()["items"]]
@@ -592,7 +1901,346 @@ class FastAPIJobsBackendTests(TestCase):
             self.assertEqual(request.translation_mode, "en2zh")
             self.assertTrue(request.use_mineru_header_footer)
             self.assertIsNotNone(request.translation_request_output)
+            self.assertIsNotNone(request.translation_trace_output)
             self.assertEqual(request.translation_model, "deepseek-v4-flash")
+
+    def test_translation_profile_versioning_overrides_en2zh_request_and_records_trace(self):
+        from app.repositories.mysql_job_repository import MysqlJobRepository
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                admin_token="secret-admin",
+                openai_api_key="fake-key",
+                jobs_repository_backend="mysql",
+                repository_factory=lambda _data_dir: MysqlJobRepository(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                draft_response = client.put(
+                    "/api/v1/translation-profiles/electronics-en2zh/draft",
+                    json={
+                        "target_language": "zh-CN",
+                        "domain": "electronics datasheet",
+                        "prompt_version": "profile-prompt-v2",
+                        "model": "profile-model",
+                        "max_pages_per_batch": 7,
+                        "max_chars_per_batch": 1234,
+                    },
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(draft_response.status_code, 200)
+                self.assertEqual(draft_response.json()["model"], "profile-model")
+
+                publish_response = client.post(
+                    "/api/v1/translation-profiles/electronics-en2zh/publish",
+                    json={"make_default": True},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(publish_response.status_code, 200)
+                self.assertTrue(publish_response.json()["is_default"])
+                version = publish_response.json()["version"]
+                publish_template_resource_version(
+                    runtime,
+                    version="1",
+                    content=b"template-v1",
+                    make_default=True,
+                )
+                publish_term_rule_resource_version(runtime, version="1", source_term="VONE", make_default=True)
+
+                create_response = client.post(
+                    "/api/v1/jobs",
+                    files={"package": ("mineru-output.zip", make_zip_bytes(), "application/zip")},
+                    data={"translation_mode": "en2zh"},
+                )
+                self.assertEqual(create_response.status_code, 201)
+                job_id = create_response.json()["job_id"]
+                files_response = client.get(f"/api/v1/jobs/{job_id}/files")
+                trace_response = client.get(f"/api/v1/jobs/{job_id}/download/translation-trace")
+                detail_response = client.get("/api/v1/translation-profiles/electronics-en2zh")
+
+        request = runtime.stage_service.conversion_entrypoint.requests[0]
+        self.assertEqual(request.translation_model, "profile-model")
+        self.assertEqual(request.translation_target_language, "zh-CN")
+        self.assertEqual(request.translation_domain, "electronics datasheet")
+        self.assertEqual(request.translation_prompt_version, "profile-prompt-v2")
+        self.assertEqual(request.translation_max_pages, 7)
+        self.assertEqual(request.translation_max_chars, 1234)
+        self.assertIsNotNone(request.translation_profile)
+        self.assertEqual(request.translation_profile.version, version)
+
+        file_types = [item["file_type"] for item in files_response.json()["files"]]
+        self.assertEqual(file_types, ["source_package", "translation_request", "translation_trace", "result_docx"])
+        trace_payload = json.loads(trace_response.content.decode("utf-8"))
+        self.assertEqual(trace_payload["job_id"], job_id)
+        self.assertEqual(trace_payload["translation_profile"]["version"], version)
+        self.assertEqual(detail_response.json()["default_version"], version)
+
+        records = {
+            record.version: record
+            for record in runtime.repository.list_resource_versions("translation_profile", "electronics-en2zh")
+        }
+        self.assertEqual(records[version].status.value, "published")
+        self.assertEqual(records[version].payload["model"], "profile-model")
+        self.assertNotIn("api_key", records[version].payload)
+        audit_events = runtime.repository.list_audit_events()
+        self.assertIn("translation_profile.publish", [event.action for event in audit_events])
+
+    def test_translation_profile_rollback_writes_audit_event(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(Path(temp_dir), admin_token="secret-admin")
+            publish_translation_profile_resource_version(
+                runtime,
+                version="1",
+                model="profile-model-v1",
+                make_default=True,
+            )
+            publish_translation_profile_resource_version(
+                runtime,
+                version="2",
+                model="profile-model-v2",
+                make_default=True,
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                response = client.post(
+                    "/api/v1/translation-profiles/electronics-en2zh/rollback",
+                    json={"version": "1"},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        audit_events = runtime.repository.list_audit_events()
+        self.assertEqual([event.action for event in audit_events], ["translation_profile.rollback"])
+        self.assertEqual(audit_events[0].target_id, "electronics-en2zh@1")
+        self.assertEqual(audit_events[0].actor_role, "admin")
+
+    def test_mysql_direct_job_binds_template_term_snapshot_and_source_alias(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(Path(temp_dir), admin_token="secret-admin")
+            template_path, source_term = publish_default_job_resources(runtime)
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                create_response = client.post(
+                    "/api/v1/jobs",
+                    files={"package": ("mineru-output.zip", make_zip_bytes(), "application/zip")},
+                    data={"translation_mode": "direct"},
+                )
+                self.assertEqual(create_response.status_code, 201)
+                accepted_snapshot = create_response.json()["resource_snapshot"]
+                job_id = create_response.json()["job_id"]
+                detail_snapshot = client.get(f"/api/v1/jobs/{job_id}").json()["resource_snapshot"]
+
+            request = runtime.stage_service.conversion_entrypoint.requests[0]
+            job_paths = build_job_paths(runtime.settings.data_path, job_id)
+            resource_subscript_config_exists = job_paths.resource_subscript_config.exists()
+            resource_subscript_config_text = job_paths.resource_subscript_config.read_text(encoding="utf-8")
+
+        self.assertEqual(accepted_snapshot["template"]["resource_id"], "default")
+        self.assertEqual(accepted_snapshot["template"]["version"], "1")
+        self.assertEqual(accepted_snapshot["term_rule_set"]["resource_id"], DEFAULT_TERM_RULE_SET_ID)
+        self.assertEqual(accepted_snapshot["term_rule_set"]["version"], "1")
+        self.assertIsNone(accepted_snapshot["translation_profile"])
+        self.assertEqual(accepted_snapshot["artifact_ids"], {"source": "source_package"})
+        self.assertIsNone(accepted_snapshot["mineru"]["model_version"])
+        self.assertEqual(detail_snapshot, accepted_snapshot)
+        self.assertEqual(request.template_path, template_path)
+        self.assertEqual(request.subscript_config_path, job_paths.resource_subscript_config)
+        self.assertTrue(resource_subscript_config_exists)
+        self.assertIn(source_term, resource_subscript_config_text)
+
+    def test_mysql_en2zh_job_binds_translation_profile_snapshot_and_uses_payload(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(
+                Path(temp_dir),
+                admin_token="secret-admin",
+                openai_api_key="fake-key",
+            )
+            publish_default_job_resources(runtime, include_translation=True)
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                create_response = client.post(
+                    "/api/v1/jobs",
+                    files={"package": ("mineru-output.zip", make_zip_bytes(), "application/zip")},
+                    data={"translation_mode": "en2zh"},
+                )
+                self.assertEqual(create_response.status_code, 201)
+                snapshot = create_response.json()["resource_snapshot"]
+                job_id = create_response.json()["job_id"]
+                detail = client.get(f"/api/v1/jobs/{job_id}").json()
+
+            request = runtime.stage_service.conversion_entrypoint.requests[0]
+
+        self.assertEqual(snapshot["translation_profile"]["resource_id"], DEFAULT_TRANSLATION_PROFILE_ID)
+        self.assertEqual(snapshot["translation_profile"]["version"], "1")
+        self.assertEqual(detail["resource_snapshot"], snapshot)
+        self.assertEqual(request.translation_model, "snapshot-model-v1")
+        self.assertEqual(request.translation_target_language, "zh-CN")
+        self.assertEqual(request.translation_domain, "electronics datasheet")
+        self.assertEqual(request.translation_prompt_version, "prompt-1")
+        self.assertEqual(request.translation_max_pages, 7)
+        self.assertEqual(request.translation_max_chars, 1234)
+        self.assertIsNotNone(request.translation_profile)
+        self.assertEqual(request.translation_profile.version, "1")
+
+    def test_mysql_default_switch_and_disabled_versions_do_not_change_existing_job_snapshot(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(
+                Path(temp_dir),
+                admin_token="secret-admin",
+                jobs_worker_mode="external",
+            )
+            template_v1, _source_term = publish_default_job_resources(runtime)
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                create_response = client.post(
+                    "/api/v1/jobs",
+                    files={"package": ("mineru-output.zip", make_zip_bytes(), "application/zip")},
+                    data={"translation_mode": "direct"},
+                )
+                self.assertEqual(create_response.status_code, 201)
+                job_id = create_response.json()["job_id"]
+
+            publish_template_resource_version(
+                runtime,
+                version="2",
+                content=b"template-v2",
+                make_default=True,
+            )
+            publish_term_rule_resource_version(runtime, version="2", source_term="VTWO", make_default=True)
+            runtime.resource_version_service.disable("template", "default", "1")
+            runtime.resource_version_service.mark_superseded("term_rule_set", DEFAULT_TERM_RULE_SET_ID, "1")
+
+            worker = StageWorker(runtime, poll_interval_seconds=0)
+            processed_count = worker.run_once()
+            request = runtime.stage_service.conversion_entrypoint.requests[0]
+            job_paths = build_job_paths(runtime.settings.data_path, job_id)
+            updated_job = runtime.repository.get_job(job_id)
+            materialized_yaml = job_paths.resource_subscript_config.read_text(encoding="utf-8")
+
+        self.assertEqual(processed_count, 1)
+        self.assertIsNotNone(updated_job)
+        self.assertEqual(updated_job.status, "completed")
+        self.assertEqual(request.template_path, template_v1)
+        self.assertIn("VONE", materialized_yaml)
+        self.assertNotIn("VTWO", materialized_yaml)
+
+    def test_mysql_snapshot_hash_mismatch_fails_stage_without_live_fallback(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(
+                Path(temp_dir),
+                admin_token="secret-admin",
+                jobs_worker_mode="external",
+            )
+            publish_default_job_resources(runtime)
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                create_response = client.post(
+                    "/api/v1/jobs",
+                    files={"package": ("mineru-output.zip", make_zip_bytes(), "application/zip")},
+                    data={"translation_mode": "direct"},
+                )
+                self.assertEqual(create_response.status_code, 201)
+                job_id = create_response.json()["job_id"]
+
+            message = runtime.stage_message_store.list_replayable_stage_messages()[0]
+            record = runtime.repository.get_resource_version("template", "default", "1")
+            self.assertIsNotNone(record)
+            runtime.repository.save_resource_version(
+                record.model_copy(update={"snapshot_hash": "sha256:" + "f" * 64})
+            )
+
+            worker = StageWorker(runtime, poll_interval_seconds=0)
+            processed_count = worker.run_once()
+            updated_job = runtime.repository.get_job(job_id)
+            failed_message = runtime.stage_message_store.get_stage_message(message.id)
+
+        self.assertEqual(processed_count, 1)
+        self.assertIsNotNone(updated_job)
+        self.assertEqual(updated_job.status, "failed")
+        self.assertEqual(updated_job.error_code, "resource_snapshot_hash_mismatch")
+        self.assertEqual(runtime.stage_service.conversion_entrypoint.requests, [])
+        self.assertIsNotNone(failed_message)
+        self.assertEqual(failed_message.status, "failed")
+        self.assertEqual(failed_message.error_code, "resource_snapshot_hash_mismatch")
+
+    def test_mysql_resource_mode_requires_default_template_and_term_rules(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(Path(temp_dir), admin_token="secret-admin")
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                response = client.post(
+                    "/api/v1/jobs",
+                    files={"package": ("mineru-output.zip", make_zip_bytes(), "application/zip")},
+                    data={"translation_mode": "direct"},
+                )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("默认资源版本不存在", response.json()["detail"])
+
+    def test_file_backend_rejects_versioned_resource_selection(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir))
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                response = client.post(
+                    "/api/v1/jobs",
+                    files={"package": ("mineru-output.zip", make_zip_bytes(), "application/zip")},
+                    data={"translation_mode": "direct", "template_version": "1"},
+                )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("JOBS_REPOSITORY_BACKEND=mysql", response.json()["detail"])
+
+    def test_mysql_pdf_job_uses_mineru_snapshot_and_source_pdf_alias(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(
+                Path(temp_dir),
+                admin_token="secret-admin",
+                mineru_api_token="token-123",
+                jobs_worker_mode="external",
+            )
+            publish_default_job_resources(runtime)
+            runtime.settings.mineru_language = "en"
+            runtime.settings.mineru_enable_formula = False
+            runtime.settings.mineru_enable_table = True
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                create_response = client.post(
+                    "/api/v1/jobs/pdf",
+                    files={"pdf": ("source.pdf", b"%PDF-1.4\nbody", "application/pdf")},
+                    data={"translation_mode": "direct"},
+                )
+                self.assertEqual(create_response.status_code, 201)
+                job_id = create_response.json()["job_id"]
+                snapshot = create_response.json()["resource_snapshot"]
+
+            runtime.settings.mineru_language = "zh"
+            runtime.settings.mineru_enable_formula = True
+            runtime.settings.mineru_enable_table = False
+            worker = StageWorker(runtime, poll_interval_seconds=0)
+            processed_count = worker.run_once()
+            updated_job = runtime.repository.get_job(job_id)
+            fake_call = runtime.stage_service.fake_mineru_client.calls[0]
+
+        self.assertEqual(processed_count, 1)
+        self.assertIsNotNone(updated_job)
+        self.assertEqual(updated_job.status, "parsing")
+        self.assertEqual(snapshot["artifact_ids"], {"source": "source_pdf"})
+        self.assertEqual(snapshot["mineru"]["model_version"], "vlm")
+        self.assertEqual(snapshot["mineru"]["language"], "en")
+        self.assertFalse(snapshot["mineru"]["enable_formula"])
+        self.assertTrue(snapshot["mineru"]["enable_table"])
+        self.assertEqual(snapshot["mineru"]["data_id"], job_id)
+        self.assertEqual(fake_call["task_uuids"], [job_id])
+        self.assertEqual(fake_call["language"], "en")
+        self.assertFalse(fake_call["enable_formula"])
+        self.assertTrue(fake_call["enable_table"])
 
     def test_upload_en2zh_rejects_when_translation_unavailable(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -700,7 +2348,11 @@ class FastAPIJobsBackendTests(TestCase):
 
     def test_retry_requeues_failed_pdf_submit_to_mineru_stage(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            runtime = build_test_runtime(Path(temp_dir), mineru_api_token="token-123")
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                mineru_api_token="token-123",
+                admin_token="secret-admin",
+            )
             runtime.stage_service.fake_mineru_client.raise_error = True
             app = create_app(runtime)
             with TestClient(app) as client:
@@ -718,6 +2370,7 @@ class FastAPIJobsBackendTests(TestCase):
                 retry_response = client.post(
                     f"/api/v1/jobs/{job_id}/retry",
                     data={"reason": "retry-pdf-submit"},
+                    headers={"X-Admin-Token": "secret-admin"},
                 )
                 self.assertEqual(retry_response.status_code, 200)
 
@@ -755,6 +2408,94 @@ class FastAPIJobsBackendTests(TestCase):
                 self.assertEqual(persisted_job.source_pdf_context.result_zip_url, "https://mineru.net/result.zip")
                 files = runtime.repository.list_files(job_id)
                 self.assertEqual([item.file_type for item in files], ["source_pdf", "parsed_result_package", "result_docx"])
+
+    def test_recover_mineru_result_queries_provider_when_callback_is_missing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                mineru_api_token="token-123",
+                admin_token="secret-admin",
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                create_response = client.post(
+                    "/api/v1/jobs/pdf",
+                    files={"pdf": ("source.pdf", b"%PDF-1.4\nbody", "application/pdf")},
+                )
+                job_id = create_response.json()["job_id"]
+                runtime.stage_service.fake_mineru_client.query_data_id = job_id
+
+                recover_response = client.post(
+                    f"/api/v1/jobs/{job_id}/recover-mineru-result",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(recover_response.status_code, 200)
+                self.assertTrue(recover_response.json()["accepted"])
+
+                updated = client.get(f"/api/v1/jobs/{job_id}").json()
+
+        self.assertEqual(updated["status"], "completed")
+        self.assertEqual(updated["mineru_result_zip_url"], "https://mineru.net/result.zip")
+        self.assertEqual(runtime.stage_service.fake_mineru_client.query_calls, [{"batch_id": "batch_test_001"}])
+        event_stages = [item["stage"] for item in updated["events"]]
+        self.assertIn("mineru_result_polled", event_stages)
+        self.assertIn("parsed_result_package_recovered", event_stages)
+        self.assertIn("job_completed", event_stages)
+
+    def test_pdf_online_flow_downloads_artifacts_after_object_storage_switch(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                mineru_api_token="token-123",
+                jobs_artifact_storage_backend="local_object",
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                health = client.get("/api/v1/health/ready").json()
+                self.assertEqual(health["dependency_checks"]["artifact_storage"], "local_object")
+
+                create_response = client.post(
+                    "/api/v1/jobs/pdf",
+                    files={"pdf": ("source.pdf", b"%PDF-1.4\nbody", "application/pdf")},
+                )
+                self.assertEqual(create_response.status_code, 201)
+                job_id = create_response.json()["job_id"]
+                detail = client.get(f"/api/v1/jobs/{job_id}").json()
+                payload, _content = build_callback_payload(
+                    batch_id=detail["mineru_batch_id"],
+                    data_id=job_id,
+                    state="done",
+                    full_zip_url="https://mineru.net/result.zip",
+                )
+                callback_response = client.post("/api/v1/mineru-callbacks/result", json=payload)
+                self.assertEqual(callback_response.status_code, 200)
+
+                source_response = client.get(f"/api/v1/jobs/{job_id}/download/source-pdf")
+                parsed_response = client.get(f"/api/v1/jobs/{job_id}/download/parsed-result-package")
+                result_response = client.get(f"/api/v1/jobs/{job_id}/download/result")
+                files_response = client.get(f"/api/v1/jobs/{job_id}/files").json()
+
+            files = {item.file_type: item for item in runtime.repository.list_files(job_id)}
+            object_root = runtime.settings.jobs_artifact_object_store_dir
+            object_exists = {
+                "source_pdf": (object_root / f"jobs/{job_id}/input/source.pdf").exists(),
+                "parsed_result_package": (object_root / f"jobs/{job_id}/input/parsed-result.zip").exists(),
+                "result_docx": (object_root / f"jobs/{job_id}/output/result.docx").exists(),
+            }
+
+        self.assertEqual(source_response.status_code, 200)
+        self.assertEqual(source_response.content, b"%PDF-1.4\nbody")
+        self.assertEqual(parsed_response.status_code, 200)
+        self.assertEqual(parsed_response.content, b"fake-parsed-result-zip")
+        self.assertEqual(result_response.status_code, 200)
+        self.assertEqual(result_response.content, b"fake-docx")
+        self.assertEqual([item["storage_backend"] for item in files_response["files"]], ["object", "object", "object"])
+        self.assertEqual(files["source_pdf"].object_key, f"jobs/{job_id}/input/source.pdf")
+        self.assertEqual(files["parsed_result_package"].object_key, f"jobs/{job_id}/input/parsed-result.zip")
+        self.assertEqual(files["result_docx"].object_key, f"jobs/{job_id}/output/result.docx")
+        self.assertTrue(object_exists["source_pdf"])
+        self.assertTrue(object_exists["parsed_result_package"])
+        self.assertTrue(object_exists["result_docx"])
 
     def test_callback_public_mode_requires_token(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -884,7 +2625,7 @@ class FastAPIJobsBackendTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(updated["status"], "parsing")
-        self.assertEqual(runtime.repository.list_pending_stage_messages(), [])
+        self.assertEqual(runtime.stage_message_store.list_replayable_stage_messages(), [])
 
     def test_callback_rejects_untrusted_result_url(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -910,7 +2651,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIn("https", response.json()["detail"])
         self.assertEqual(updated["status"], "parsing")
         self.assertIsNone(updated["mineru_result_zip_url"])
-        self.assertEqual(runtime.repository.list_pending_stage_messages(), [])
+        self.assertEqual(runtime.stage_message_store.list_replayable_stage_messages(), [])
 
     def test_callback_failed_state_marks_job_failed(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1002,7 +2743,7 @@ class FastAPIJobsBackendTests(TestCase):
 
             self.assertEqual(response.status_code, 400)
             self.assertIn("不允许处理 MinerU callback", response.json()["detail"])
-            self.assertEqual(runtime.repository.list_pending_stage_messages(), [])
+            self.assertEqual(runtime.stage_message_store.list_replayable_stage_messages(), [])
 
     def test_find_job_for_callback_reads_nested_source_pdf_context(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1065,9 +2806,11 @@ class FastAPIJobsBackendTests(TestCase):
                 trace_id="trace_failed",
                 status="failed",
             )
-            runtime.repository.put_stage_message(pending)
-            runtime.repository.put_stage_message(running)
-            runtime.repository.put_stage_message(failed)
+            runtime.stage_message_store.put_stage_message(pending)
+            runtime.stage_message_store.put_stage_message(running)
+            runtime.stage_message_store.put_stage_message(failed)
+            replayable_messages = runtime.stage_message_store.list_replayable_stage_messages()
+            self.assertEqual([message.id for message in replayable_messages], ["msg_pending", "msg_running"])
 
             dispatched: list[str] = []
             runtime.stage_service.dispatch_message = lambda message_id: dispatched.append(message_id)
@@ -1075,6 +2818,110 @@ class FastAPIJobsBackendTests(TestCase):
             runtime.stage_service.replay_pending()
 
             self.assertEqual(dispatched, ["msg_pending", "msg_running"])
+
+    def test_dispatch_skips_completed_conversion_message_without_rerunning_conversion(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir))
+            job = JobRecord(
+                id="job_completed_replay",
+                source_filename="source.zip",
+                status="completed",
+                progress=100,
+                lifecycle_status="completed",
+                execution_status="idle",
+                result_ready=True,
+                completed_at=utc_now(),
+            )
+            runtime.repository.create_job(job)
+            message = JobStageMessage(
+                id="msg_completed_replay",
+                job_id=job.id,
+                stage="convert_package",
+                trace_id="trace_completed_replay",
+                status="running",
+            )
+            runtime.stage_message_store.put_stage_message(message)
+
+            runtime.stage_service.dispatch_message(message.id)
+
+            self.assertEqual(runtime.stage_service.conversion_entrypoint.requests, [])
+            self.assertIsNone(runtime.stage_message_store.get_stage_message(message.id))
+            self.assertEqual(runtime.repository.get_job(job.id).status, "completed")
+
+    def test_dispatch_skips_replayed_mineru_submit_after_batch_recorded(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir), mineru_api_token="token-123")
+            job = JobRecord(
+                id="job_submitted_replay",
+                source_filename="source.pdf",
+                status="parsing",
+                progress=25,
+                source_kind="source_pdf",
+                lifecycle_status="uploaded",
+                execution_status="parsing",
+                source_pdf_context=SourcePdfJobContext(
+                    batch_id="batch_existing",
+                    data_id="job_submitted_replay",
+                    upstream_status="submitted",
+                ),
+            )
+            runtime.repository.create_job(job)
+            message = JobStageMessage(
+                id="msg_submitted_replay",
+                job_id=job.id,
+                stage="submit_to_mineru",
+                trace_id="trace_submitted_replay",
+                status="running",
+            )
+            runtime.stage_message_store.put_stage_message(message)
+
+            runtime.stage_service.dispatch_message(message.id)
+
+            self.assertEqual(runtime.stage_service.fake_mineru_client.calls, [])
+            self.assertIsNone(runtime.stage_message_store.get_stage_message(message.id))
+            self.assertEqual(runtime.repository.get_job(job.id).status, "parsing")
+
+    def test_dispatch_skips_duplicate_callback_after_job_completed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir), mineru_api_token="token-123")
+            job = JobRecord(
+                id="job_callback_completed",
+                source_filename="source.pdf",
+                status="completed",
+                progress=100,
+                source_kind="source_pdf",
+                lifecycle_status="completed",
+                execution_status="idle",
+                source_pdf_context=SourcePdfJobContext(
+                    batch_id="batch_done",
+                    data_id="job_callback_completed",
+                    upstream_status="done",
+                    result_zip_url="https://mineru.net/result.zip",
+                ),
+                result_ready=True,
+                completed_at=utc_now(),
+            )
+            runtime.repository.create_job(job)
+            message = JobStageMessage(
+                id="msg_callback_completed",
+                job_id=job.id,
+                stage="process_callback",
+                trace_id="trace_callback_completed",
+                status="pending",
+                payload={
+                    "batch_id": "batch_done",
+                    "data_id": job.id,
+                    "state": "done",
+                    "full_zip_url": "https://mineru.net/result.zip",
+                },
+            )
+            runtime.stage_message_store.put_stage_message(message)
+
+            runtime.stage_service.dispatch_message(message.id)
+
+            self.assertEqual(runtime.stage_service.conversion_entrypoint.requests, [])
+            self.assertIsNone(runtime.stage_message_store.get_stage_message(message.id))
+            self.assertEqual(runtime.repository.get_job(job.id).status, "completed")
 
     def test_enqueue_parsed_result_conversion_downloads_zip_and_completes_docx(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1109,7 +2956,7 @@ class FastAPIJobsBackendTests(TestCase):
             self.assertIsNotNone(updated_job)
             self.assertEqual(updated_job.status, "completed")
             self.assertEqual(updated_job.resolved_execution_status(), "idle")
-            self.assertIsNone(runtime.repository.get_stage_message(message.id))
+            self.assertIsNone(runtime.stage_message_store.get_stage_message(message.id))
             files = runtime.repository.list_files(job.id)
             self.assertEqual([item.file_type for item in files], ["parsed_result_package", "result_docx"])
             job_paths = build_job_paths(runtime.settings.data_path, job.id)
@@ -1227,9 +3074,9 @@ class FastAPIJobsBackendTests(TestCase):
                 self.assertIn("mineru_submit_failed", event_stages)
                 self.assertIn("job_failed", event_stages)
 
-    def test_retry_requeues_failed_job_without_admin_token(self):
+    def test_retry_requeues_failed_job_with_admin_token(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            runtime = build_test_runtime(Path(temp_dir))
+            runtime = build_test_runtime(Path(temp_dir), admin_token="secret-admin")
             runtime.stage_service.conversion_entrypoint.raise_error = True
             app = create_app(runtime)
             with TestClient(app) as client:
@@ -1248,6 +3095,7 @@ class FastAPIJobsBackendTests(TestCase):
                 retry_response = client.post(
                     f"/api/v1/jobs/{job_id}/retry",
                     data={"reason": "rerun"},
+                    headers={"X-Admin-Token": "secret-admin"},
                 )
                 self.assertEqual(retry_response.status_code, 200)
                 self.assertEqual(retry_response.json()["operation"], "retry")
@@ -1255,10 +3103,14 @@ class FastAPIJobsBackendTests(TestCase):
                 detail_response = client.get(f"/api/v1/jobs/{job_id}")
                 self.assertEqual(detail_response.status_code, 200)
                 self.assertEqual(detail_response.json()["status"], "completed")
+                audit_events = runtime.repository.list_audit_events()
+                self.assertEqual([event.action for event in audit_events], ["job.retry"])
+                self.assertEqual(audit_events[0].target_id, job_id)
+                self.assertEqual(audit_events[0].reason, "rerun")
 
-    def test_cancel_queued_job_without_admin_token(self):
+    def test_cancel_queued_job_with_admin_token(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            runtime = build_test_runtime(Path(temp_dir))
+            runtime = build_test_runtime(Path(temp_dir), admin_token="secret-admin")
             runtime.stage_service.dispatch_message = lambda _message_id: None
             app = create_app(runtime)
             with TestClient(app) as client:
@@ -1276,14 +3128,101 @@ class FastAPIJobsBackendTests(TestCase):
                 cancel_response = client.post(
                     f"/api/v1/jobs/{job_id}/cancel",
                     data={"reason": "stop"},
+                    headers={"X-Admin-Token": "secret-admin"},
                 )
                 self.assertEqual(cancel_response.status_code, 200)
                 self.assertEqual(cancel_response.json()["status"], "canceled")
-                self.assertEqual(runtime.repository.list_pending_stage_messages(), [])
+                self.assertEqual(runtime.stage_message_store.list_replayable_stage_messages(), [])
+                audit_events = runtime.repository.list_audit_events()
+                self.assertEqual([event.action for event in audit_events], ["job.cancel"])
+                self.assertEqual(audit_events[0].target_id, job_id)
+                self.assertEqual(audit_events[0].reason, "stop")
+
+    def test_job_ops_default_admin_only_checks_no_token_jobs_token_and_admin_token(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_access_mode="token",
+                jobs_access_token="jobs-token",
+                admin_token="secret-admin",
+            )
+            app = create_app(runtime)
+            job = JobRecord(
+                id="job_ops_auth",
+                source_filename="sample.zip",
+                status="completed",
+                progress=100,
+                result_ready=True,
+                completed_at=utc_now(),
+            )
+            runtime.repository.create_job(job)
+
+            with TestClient(app) as client:
+                no_token_response = client.post(
+                    f"/api/v1/jobs/{job.id}/cleanup-local-files",
+                    data={"reason": "auth-check"},
+                )
+                jobs_token_response = client.post(
+                    f"/api/v1/jobs/{job.id}/cleanup-local-files",
+                    data={"reason": "auth-check"},
+                    headers={"X-Jobs-Token": "jobs-token"},
+                )
+                admin_token_response = client.post(
+                    f"/api/v1/jobs/{job.id}/cleanup-local-files",
+                    data={"reason": "auth-check"},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                audit_events = runtime.repository.list_audit_events()
+
+        self.assertEqual(no_token_response.status_code, 403)
+        self.assertEqual(no_token_response.json()["detail"], "admin token 校验失败。")
+        self.assertEqual(jobs_token_response.status_code, 403)
+        self.assertEqual(jobs_token_response.json()["detail"], "admin token 校验失败。")
+        self.assertEqual(admin_token_response.status_code, 200)
+        self.assertEqual([event.action for event in audit_events], ["job.cleanup_local_files"])
+        self.assertEqual(audit_events[0].actor_role, "admin")
+        self.assertEqual(audit_events[0].reason, "auth-check")
+
+    def test_job_ops_can_follow_jobs_access_mode_when_configured(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_access_mode="token",
+                jobs_access_token="jobs-token",
+                jobs_ops_access_mode="jobs",
+            )
+            app = create_app(runtime)
+            job = JobRecord(
+                id="job_ops_jobs_mode",
+                source_filename="sample.zip",
+                status="completed",
+                progress=100,
+                result_ready=True,
+                completed_at=utc_now(),
+            )
+            runtime.repository.create_job(job)
+
+            with TestClient(app) as client:
+                denied_response = client.post(
+                    f"/api/v1/jobs/{job.id}/cleanup-local-files",
+                    data={"reason": "auth-check"},
+                )
+                accepted_response = client.post(
+                    f"/api/v1/jobs/{job.id}/cleanup-local-files",
+                    data={"reason": "auth-check"},
+                    headers={"X-Jobs-Token": "jobs-token"},
+                )
+                audit_events = runtime.repository.list_audit_events()
+
+        self.assertEqual(denied_response.status_code, 403)
+        self.assertEqual(accepted_response.status_code, 200)
+        self.assertEqual([event.action for event in audit_events], ["job.cleanup_local_files"])
+        self.assertEqual(audit_events[0].actor_role, "jobs")
+        self.assertEqual(audit_events[0].actor_id, "jobs-client")
 
     def test_cleanup_local_files_preserves_registered_artifacts_and_removes_work_dir(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            runtime = build_test_runtime(Path(temp_dir))
+            runtime = build_test_runtime(Path(temp_dir), admin_token="secret-admin")
             app = create_app(runtime)
             job = JobRecord(
                 id="job_cleanup",
@@ -1306,6 +3245,7 @@ class FastAPIJobsBackendTests(TestCase):
                 response = client.post(
                     f"/api/v1/jobs/{job.id}/cleanup-local-files",
                     data={"reason": "cleanup"},
+                    headers={"X-Admin-Token": "secret-admin"},
                 )
 
             self.assertEqual(response.status_code, 200)

@@ -10,6 +10,8 @@ from app.core.job_models import (
     JobExecutionStatus,
     JobLifecycleStatus,
     JobRecord,
+    JobResourceSnapshot,
+    JobStageName,
     build_source_pdf_context_patch,
     project_job_status,
 )
@@ -73,6 +75,7 @@ def build_job_created_intent(
     source_kind: str,
     source_filename: str,
     options: ConversionOptions,
+    resource_snapshot: JobResourceSnapshot | None = None,
 ) -> WorkflowEventIntent:
     """返回 job 创建成功后的统一领域事件意图。"""
 
@@ -83,6 +86,8 @@ def build_job_created_intent(
     }
     if source_kind == "source_pdf":
         details["source_kind"] = "source_pdf"
+    if resource_snapshot is not None:
+        details["resource_snapshot"] = resource_snapshot.model_dump(mode="json")
     return WorkflowEventIntent(kind="job_created", details=details)
 
 
@@ -91,6 +96,19 @@ def build_mineru_callback_received_intent(payload: dict[str, Any]) -> WorkflowEv
 
     return WorkflowEventIntent(
         kind="mineru_callback_received",
+        details={
+            "batch_id": payload.get("batch_id"),
+            "data_id": payload.get("data_id"),
+            "state": payload.get("state"),
+        },
+    )
+
+
+def build_mineru_result_polled_intent(payload: dict[str, Any]) -> WorkflowEventIntent:
+    """返回主动查询 MinerU 结果后的统一领域事件意图。"""
+
+    return WorkflowEventIntent(
+        kind="mineru_result_polled",
         details={
             "batch_id": payload.get("batch_id"),
             "data_id": payload.get("data_id"),
@@ -137,6 +155,31 @@ def build_parsed_result_package_recovered_intent(*, source_url: str) -> Workflow
         kind="parsed_result_package_recovered",
         details={"source_url": source_url},
     )
+
+
+def describe_applied_stage(job: JobRecord, *, stage: JobStageName) -> str | None:
+    """判断 replay/重复 dispatch 的 stage 是否已被当前 job 状态覆盖。"""
+
+    lifecycle_status = job.resolved_lifecycle_status()
+    execution_status = job.resolved_execution_status()
+    if stage in {"convert_package", "convert_parsed_result"}:
+        if lifecycle_status == "completed" and job.result_ready:
+            return "job_already_completed"
+        return None
+    if stage == "submit_to_mineru":
+        if lifecycle_status in {"parsed", "completed"}:
+            return "mineru_submission_already_accepted"
+        if execution_status == "parsing" and job.read_mineru_batch_id():
+            return "mineru_submission_already_recorded"
+        return None
+    if stage == "process_callback":
+        if lifecycle_status == "completed":
+            return "job_already_completed"
+        if lifecycle_status == "failed":
+            return "job_already_failed"
+        if lifecycle_status == "parsed" and execution_status != "idle":
+            return "parsed_result_conversion_already_running"
+    return None
 
 
 def build_retry_transition(job: JobRecord) -> WorkflowTransition:

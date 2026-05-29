@@ -3,7 +3,14 @@ status: current
 project: md2word_file
 entry_type: endpoint
 source_root: app/api/v1/routers
-last_scanned: 2026-05-18
+last_scanned: 2026-05-29
+
+openapi:
+  doc_path: docs/api/openapi.json
+  generated_by: scripts/ops/export_openapi.py
+  release_check: "/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_release.py"
+  status: current
+  note: "提交版 OpenAPI JSON 快照；发布前检查必须与当前代码生成结果一致。"
 
 entries:
   - entry: health
@@ -12,26 +19,41 @@ entries:
       - app/api/v1/router.py
       - app/api/v1/routers/health.py
       - app/services/health_service.py
+      - app/schemas/health.py
       - app/schemas/api_v1.py
     doc_path: docs/api/health.md
     status: current
-    note: "服务健康检查入口。"
+    note: "服务健康检查和 JSON metrics 入口。"
   - entry: jobs
     category: endpoint
     source_files:
       - app/api/v1/router.py
       - app/api/v1/routers/jobs.py
+      - app/api/v1/routers/jobs_ingest.py
+      - app/api/v1/routers/jobs_query.py
+      - app/api/v1/routers/jobs_ops.py
+      - app/api/v1/routers/jobs_presenters.py
       - app/api/dependencies.py
+      - app/core/audit_models.py
+      - app/core/job_models.py
+      - app/services/audit.py
       - app/services/jobs/command.py
       - app/services/jobs/lifecycle.py
       - app/services/jobs/query.py
+      - app/services/jobs/resource_snapshots.py
       - app/services/jobs/stage.py
+      - app/clients/mineru_client.py
+      - app/services/jobs/artifact_storage.py
       - app/services/jobs/artifacts.py
+      - app/services/jobs/object_artifact_storage.py
+      - app/services/jobs/artifact_retention.py
       - app/repositories/file_job_repository.py
+      - app/schemas/jobs.py
       - app/schemas/api_v1.py
+      - docs/api/openapi.json
     doc_path: docs/api/jobs.md
     status: current
-    note: "Jobs endpoint family，包括上传 MinerU zip、查询、下载和本地运维动作。"
+    note: "Jobs endpoint family，包括上传 MinerU zip、PDF 在线提交、主动查询恢复、查询、下载、本地运维动作和成功动作审计。"
   - entry: mineru-callbacks
     category: endpoint
     source_files:
@@ -42,6 +64,7 @@ entries:
       - app/services/jobs/stage.py
       - app/core/mineru_callback.py
       - app/core/config.py
+      - app/schemas/jobs.py
       - app/schemas/api_v1.py
     doc_path: docs/api/mineru-callbacks.md
     status: current
@@ -51,36 +74,76 @@ entries:
     source_files:
       - app/api/v1/router.py
       - app/api/v1/routers/templates.py
+      - app/api/dependencies.py
+      - app/core/audit_models.py
+      - app/services/audit.py
       - app/services/templates/read_service.py
+      - app/services/resource_versions/service.py
+      - app/schemas/templates.py
       - app/schemas/api_v1.py
     doc_path: docs/api/templates.md
     status: current
-    note: "多模板清单、模板下载和运行态默认模板切换。"
+    note: "多模板清单、模板下载、运行态默认模板切换、模板 CRUD、文件替换、Template Version 发布管理和成功动作审计。"
   - entry: term-rule-categories
     category: endpoint
     source_files:
       - app/api/v1/router.py
       - app/api/v1/routers/term_rule_categories.py
+      - app/api/v1/routers/term_rule_write_guard.py
       - app/services/term_rules/service.py
       - app/repositories/file_term_rule_repository.py
+      - app/schemas/term_rules.py
       - app/schemas/api_v1.py
     doc_path: docs/api/term-rule-categories.md
     status: current
-    note: "术语分类只读列表。"
+    note: "术语分类列表、规则计数和分类写接口；MySQL versioned mode 下写入口受 Term Rule Set 发布流程保护。"
+  - entry: term-rule-sets
+    category: endpoint
+    source_files:
+      - app/api/v1/router.py
+      - app/api/v1/routers/term_rule_sets.py
+      - app/api/v1/routers/term_rule_write_guard.py
+      - app/api/dependencies.py
+      - app/core/audit_models.py
+      - app/services/audit.py
+      - app/services/term_rules/versioning_service.py
+      - app/services/resource_versions/service.py
+      - app/schemas/term_rules.py
+      - app/schemas/api_v1.py
+    doc_path: docs/api/term-rule-sets.md
+    status: current
+    note: "Term Rule Set draft、publish、set-default、rollback 和成功动作审计接口。"
   - entry: term-rules
     category: endpoint
     source_files:
       - app/api/v1/router.py
       - app/api/v1/routers/term_rules.py
+      - app/api/v1/routers/term_rule_write_guard.py
       - app/services/term_rules/service.py
       - app/services/term_rules/import_validation.py
       - app/services/term_rules/sync_files.py
       - app/services/term_rules/yaml_codec.py
       - app/repositories/file_term_rule_repository.py
+      - app/schemas/term_rules.py
       - app/schemas/api_v1.py
     doc_path: docs/api/term-rules.md
     status: current
-    note: "term-rules 的 live runtime truth、导入校验、导入、导出、模拟和 sync-files 接口。"
+    note: "term-rules 的 live runtime truth、rule CRUD、导入校验、导入、导出、模拟和 sync-files 接口；MySQL versioned mode 下写入口受 Term Rule Set 发布流程保护。"
+  - entry: translation-profiles
+    category: endpoint
+    source_files:
+      - app/api/v1/router.py
+      - app/api/v1/routers/translation_profiles.py
+      - app/api/dependencies.py
+      - app/core/audit_models.py
+      - app/services/audit.py
+      - app/services/translation_profiles/versioning_service.py
+      - app/services/resource_versions/service.py
+      - app/schemas/translation_profiles.py
+      - app/schemas/api_v1.py
+    doc_path: docs/api/translation-profiles.md
+    status: current
+    note: "Translation Profile draft、publish、set-default、rollback 和成功动作审计接口；en2zh job 创建时可绑定默认或显式 profile 快照。"
 
 guides:
   - slug: backend-dev-docs-index
@@ -112,9 +175,39 @@ guides:
     category: dev-guide
     doc_path: docs/dev/runtime-observability-and-health.md
     status: current
-    note: "日志分层和 health readiness 说明。"
+    note: "日志分层、health readiness 和 JSON metrics 说明。"
+  - slug: term-rule-set-versioning-guide
+    category: dev-guide
+    doc_path: docs/dev/term-rule-set-versioning-guide.md
+    status: current
+    note: "Term Rule Set 草稿、发布、设默认和回滚使用指南。"
+  - slug: translation-profile-and-segment-trace-guide
+    category: dev-guide
+    doc_path: docs/dev/translation-profile-and-segment-trace-guide.md
+    status: current
+    note: "Translation Profile 草稿、发布、设默认、回滚和 translation_trace 读取指南。"
+  - slug: backend-design-implementation-plan
+    category: dev-guide
+    doc_path: docs/dev/backend-design-implementation-plan.md
+    status: draft
+    note: "后端设计分阶段实现计划。"
   - slug: runbook
     category: dev-guide
     doc_path: docs/runbook.md
     status: current
     note: "本地运维与联调 runbook。"
+  - slug: openapi-export
+    category: ops-script
+    doc_path: scripts/ops/export_openapi.py
+    status: current
+    note: "OpenAPI 快照导出和发布前一致性检查脚本。"
+  - slug: release-check
+    category: ops-script
+    doc_path: scripts/ops/check_release.py
+    status: current
+    note: "发布前聚合检查入口；当前包含 OpenAPI 快照一致性和 targeted unittest smoke。"
+  - slug: mysql-metadata-shadow-copy
+    category: ops-script
+    doc_path: scripts/ops/shadow_copy_metadata_to_mysql.py
+    status: current
+    note: "file metadata 到 MySQL metadata store 的空目标 shadow copy 和只读校验脚本。"

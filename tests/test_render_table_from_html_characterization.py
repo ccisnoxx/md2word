@@ -1,4 +1,3 @@
-import importlib.util
 import sys
 import tempfile
 import types
@@ -13,11 +12,9 @@ except ImportError:  # pragma: no cover - compatibility for direct execution
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULE_PATH = ROOT / "mineru_to_docx.py"
 TEST_TMPDIR = ROOT / "tests" / ".tmp"
 TEST_TMPDIR.mkdir(parents=True, exist_ok=True)
 tempfile.tempdir = str(TEST_TMPDIR)
-RUNTIME_PKG = "app.conversion.runtime"
 
 
 def _install_dependency_stubs() -> None:
@@ -129,32 +126,6 @@ def _install_dependency_stubs() -> None:
         remove=lambda *_args, **_kwargs: None,
     )
     sys.modules["loguru"] = loguru_mod
-
-
-def _load_module():
-    _install_dependency_stubs()
-    for module_name in (
-        "mineru_to_docx",
-        f"{RUNTIME_PKG}.text_rendering",
-        f"{RUNTIME_PKG}.render_config_runtime",
-        f"{RUNTIME_PKG}.input_adapter_runtime",
-        f"{RUNTIME_PKG}.page_repair_runtime",
-        f"{RUNTIME_PKG}.page_layout_runtime",
-        f"{RUNTIME_PKG}.translation_runtime",
-        f"{RUNTIME_PKG}.llm_client",
-        f"{RUNTIME_PKG}.table_html_parser",
-        f"{RUNTIME_PKG}.table_long_renderer",
-        f"{RUNTIME_PKG}.table_render_runtime",
-        "config",
-    ):
-        sys.modules.pop(module_name, None)
-    spec = importlib.util.spec_from_file_location("mineru_to_docx", MODULE_PATH)
-    module = importlib.util.module_from_spec(spec)
-    assert spec and spec.loader
-    sys.modules["mineru_to_docx"] = module
-    spec.loader.exec_module(module)
-    return module
-
 
 class FakeParagraph:
     def __init__(self):

@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Protocol
 
+from app.core.translation_models import TranslationProfileSnapshot
+
 
 ConversionTranslationMode = Literal["direct", "en2zh"]
 ConversionDocumentLanguage = Literal["auto", "zh", "en"]
@@ -29,9 +31,14 @@ class ConversionRequest:
     translation_model: str
     translation_api_key: str | None
     translation_base_url: str | None
+    translation_target_language: str
+    translation_domain: str
+    translation_prompt_version: str
     translation_max_pages: int
     translation_max_chars: int
+    translation_profile: TranslationProfileSnapshot | None = None
     translation_request_output: Path | None = None
+    translation_trace_output: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)

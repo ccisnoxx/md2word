@@ -8,6 +8,7 @@ from app.api.dependencies import (
     get_runtime,
     get_trace_id,
 )
+from app.api.errors import bad_request_http_exception, not_found_http_exception
 from app.api.mineru_callback_guards import (
     verify_mineru_callback_checksum_for_job,
     verify_mineru_callback_identity,
@@ -17,7 +18,7 @@ from app.api.mineru_callback_guards import (
 from app.core.job_workflow import JobWorkflowViolation, build_mineru_callback_transition
 from app.api.v1.routers.jobs_presenters import build_job_detail_response
 from app.core.runtime import AppRuntime
-from app.schemas.api_v1 import JobDetailResponse
+from app.schemas.jobs import JobDetailResponse
 
 
 router = APIRouter(prefix="/mineru-callbacks", tags=["mineru-callbacks"])
@@ -46,15 +47,15 @@ async def receive_mineru_callback(
                 full_zip_url=normalized_payload.get("full_zip_url"),
             )
         except JobWorkflowViolation as exc:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
+            raise bad_request_http_exception(exc) from exc
         verify_mineru_callback_checksum_for_job(normalized_payload, job, runtime)
         job, stage_message = runtime.command_service.enqueue_callback(normalized_payload, trace_id, job=job)
     except HTTPException:
         raise
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise not_found_http_exception(exc) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise bad_request_http_exception(exc) from exc
 
     background_tasks.add_task(runtime.stage_dispatcher.dispatch, stage_message.id)
     files = runtime.artifact_service.sort_files(runtime.query_service.list_files(job.id))

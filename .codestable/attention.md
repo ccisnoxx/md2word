@@ -14,6 +14,8 @@
 
 ### 测试
 
+- 本项目测试和后端验证默认使用 `/Users/sc/miniconda3/envs/md2word/bin/python`；不要用 macOS 本机 `python3` 跑 `unittest`，该解释器缺少项目依赖（例如 `PyYAML`）。
+
 ### 命令与脚本陷阱
 
 ### 路径与目录约定
