@@ -9,11 +9,14 @@ from pathlib import Path
 from typing import Any, Literal
 
 from app.core.config import Settings
-from app.core.job_paths import build_job_paths
-from app.repositories.database_job_repository import DatabaseJobRepository
-from app.repositories.file_job_repository import FileJobRepository
-from app.services.jobs.artifacts import JobArtifactService
-from app.services.jobs.object_artifact_storage import ObjectArtifactStorageAdapter
+from app.domains.jobs.paths import build_job_paths
+from app.infrastructure.persistence import (
+    PersistenceAdapters,
+    build_file_persistence_adapters,
+    build_sqlite_persistence_adapters,
+)
+from app.domains.jobs.artifacts import JobArtifactService
+from app.domains.jobs.object_artifact_storage import ObjectArtifactStorageAdapter
 
 
 MetadataBackend = Literal["file", "database"]
@@ -71,7 +74,7 @@ def shadow_upload_artifacts_to_object_storage(
     data_dir: Path,
     object_root: Path,
     *,
-    repository: Any | None = None,
+    repository: PersistenceAdapters | None = None,
     metadata_backend: MetadataBackend = "file",
 ) -> ArtifactShadowUploadReport:
     """把已登记本地 artifact 复制到对象目录，并用 upsert 回填 object_key。"""
@@ -79,7 +82,7 @@ def shadow_upload_artifacts_to_object_storage(
     resolved_data_dir = data_dir.resolve()
     resolved_object_root = object_root.resolve()
     artifact_storage = ObjectArtifactStorageAdapter(JobArtifactService(), resolved_object_root)
-    target_repository = repository or FileJobRepository(resolved_data_dir)
+    target_adapters = repository or build_file_persistence_adapters(resolved_data_dir)
     totals = {
         "job_records": 0,
         "job_files": 0,
@@ -88,10 +91,10 @@ def shadow_upload_artifacts_to_object_storage(
     uploaded_files: list[dict[str, str]] = []
     issues: list[ArtifactShadowUploadIssue] = []
 
-    for job in sorted(target_repository.list_jobs(), key=lambda item: item.id):
+    for job in sorted(target_adapters.job_repository.list_jobs(), key=lambda item: item.id):
         totals["job_records"] += 1
         job_paths = build_job_paths(resolved_data_dir, job.id)
-        for file in sorted(target_repository.list_files(job.id), key=lambda item: item.file_type):
+        for file in sorted(target_adapters.job_file_repository.list_files(job.id), key=lambda item: item.file_type):
             totals["job_files"] += 1
             try:
                 updated_file = artifact_storage.shadow_upload_registered_file(job.id, job_paths, file)
@@ -107,7 +110,7 @@ def shadow_upload_artifacts_to_object_storage(
                 )
                 continue
 
-            target_repository.upsert_file(job.id, updated_file)
+            target_adapters.job_file_repository.upsert_file(job.id, updated_file)
             totals["uploaded_artifacts"] += 1
             uploaded_files.append(
                 {
@@ -128,12 +131,12 @@ def shadow_upload_artifacts_to_object_storage(
     )
 
 
-def build_repository(settings: Settings, metadata_backend: MetadataBackend):
+def build_repository(settings: Settings, metadata_backend: MetadataBackend) -> PersistenceAdapters:
     """按 metadata backend 选择需要回填 JobFile 的 repository。"""
 
     if metadata_backend == "database":
-        return DatabaseJobRepository(settings.jobs_metadata_database_file)
-    return FileJobRepository(settings.data_path)
+        return build_sqlite_persistence_adapters(settings.jobs_metadata_database_file)
+    return build_file_persistence_adapters(settings.data_path)
 
 
 def format_pretty_report(report: ArtifactShadowUploadReport) -> str:

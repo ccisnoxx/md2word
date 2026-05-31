@@ -1,7 +1,15 @@
 .env
+deploy/*.env
+deploy/auth_internal_users.json
+.DS_Store
+._*
+.idea/json_assistant_history.xml
 __pycache__/
 tests/__pycache__/
+tests/tmp/*
+!tests/tmp/.gitkeep
 .python_packages/
 data/
+var/
 app/__pycache__/
 app/**/__pycache__/

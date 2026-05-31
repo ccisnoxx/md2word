@@ -77,7 +77,7 @@ curl -sS -X POST \
 | draft | 可变草稿，更新后不影响当前任务使用的 runtime YAML |
 | published version | 不可变发布版本，写入 `resource_type=term_rule_set` |
 | default version | 当前默认 published version，会同步到 legacy live runtime store |
-| live runtime store | `data/config/term_rules_store.json` 和 `data/config/runtime_subscripts_dictionary.yaml` |
+| live runtime store | `var/config/term_rules_store.json` 和 `var/config/runtime_subscripts_dictionary.yaml` |
 
 ## 接口参考
 

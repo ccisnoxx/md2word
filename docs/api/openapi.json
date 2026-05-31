@@ -596,6 +596,11 @@
       },
       "DocumentJobCreateRequest": {
         "properties": {
+          "debug_full_text": {
+            "default": false,
+            "title": "Debug Full Text",
+            "type": "boolean"
+          },
           "document_language": {
             "default": "auto",
             "enum": [
@@ -902,6 +907,11 @@
           "created_by": {
             "title": "Created By",
             "type": "string"
+          },
+          "debug_full_text_enabled": {
+            "default": false,
+            "title": "Debug Full Text Enabled",
+            "type": "boolean"
           },
           "document_ir_file_id": {
             "anyOf": [

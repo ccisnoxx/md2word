@@ -13,7 +13,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from app.core.auth_models import AuthenticatedUser, InternalUser
+from app.services.auth.models import AuthenticatedUser, InternalUser
 from app.core.config import Settings
 
 
@@ -45,7 +45,7 @@ class IssuedToken:
 
 
 def hash_password(password: str, *, salt: str | None = None, iterations: int = 260_000) -> str:
-    """生成可放入 AUTH_INTERNAL_USERS_JSON 的 PBKDF2-SHA256 密码哈希。"""
+    """生成可放入内部账号 JSON 文件的 PBKDF2-SHA256 密码哈希。"""
 
     if not password:
         raise ValueError("password 不能为空。")
@@ -79,7 +79,7 @@ class AuthService:
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self._users_by_username = self._load_users_by_username(settings.auth_internal_users_json)
+        self._users_by_username = self._load_users_by_username(*self._read_users_config())
         self._users_by_id = {item.id: item for item in self._users_by_username.values()}
 
     def authenticate(self, username: str, password: str) -> AuthenticatedUser:
@@ -125,7 +125,9 @@ class AuthService:
     def _ensure_auth_configured(self) -> None:
         self._require_jwt_secret()
         if not self._users_by_username:
-            raise AuthConfigurationError("AUTH_INTERNAL_USERS_JSON 未配置，内部账号登录不可用。")
+            raise AuthConfigurationError(
+                "AUTH_INTERNAL_USERS_FILE/AUTH_INTERNAL_USERS_JSON 未配置，内部账号登录不可用。"
+            )
 
     def _require_jwt_secret(self) -> str:
         secret = self.settings.auth_jwt_secret_key.strip()
@@ -167,26 +169,36 @@ class AuthService:
             raise TokenValidationError("token_expired", "token 已过期。")
         return payload
 
-    def _load_users_by_username(self, raw_users_json: str) -> dict[str, InternalUser]:
+    def _read_users_config(self) -> tuple[str, str]:
+        """从 Settings 读取内部账号 JSON 文本，并把文件读取错误转成鉴权配置错误。"""
+
+        try:
+            return self.settings.read_auth_internal_users_json(), self.settings.auth_internal_users_source_label
+        except OSError as exc:
+            raise AuthConfigurationError(f"AUTH_INTERNAL_USERS_FILE 无法读取: {self.settings.auth_internal_users_file}") from exc
+
+    def _load_users_by_username(self, raw_users_json: str, source_label: str) -> dict[str, InternalUser]:
+        """解析内部账号 JSON，并按标准化用户名建立索引。"""
+
         raw_text = raw_users_json.strip()
         if not raw_text:
             return {}
         try:
             decoded = json.loads(raw_text)
         except json.JSONDecodeError as exc:
-            raise AuthConfigurationError("AUTH_INTERNAL_USERS_JSON 不是合法 JSON。") from exc
+            raise AuthConfigurationError(f"{source_label} 不是合法 JSON。") from exc
         raw_users = decoded.get("users") if isinstance(decoded, dict) else decoded
         if not isinstance(raw_users, list):
-            raise AuthConfigurationError("AUTH_INTERNAL_USERS_JSON 必须是用户数组或包含 users 数组。")
+            raise AuthConfigurationError(f"{source_label} 必须是用户数组或包含 users 数组。")
         users_by_username: dict[str, InternalUser] = {}
         for raw_user in raw_users:
             try:
                 user = InternalUser.model_validate(raw_user)
             except ValidationError as exc:
-                raise AuthConfigurationError(f"AUTH_INTERNAL_USERS_JSON 用户配置无效: {exc}") from exc
+                raise AuthConfigurationError(f"{source_label} 用户配置无效: {exc}") from exc
             username_key = _normalize_username(user.username)
             if username_key in users_by_username:
-                raise AuthConfigurationError(f"AUTH_INTERNAL_USERS_JSON 用户名重复: {user.username}")
+                raise AuthConfigurationError(f"{source_label} 用户名重复: {user.username}")
             users_by_username[username_key] = user
         return users_by_username
 
@@ -216,4 +228,3 @@ def _b64url_encode(data: bytes) -> str:
 def _b64url_decode(data: str) -> bytes:
     padding = "=" * (-len(data) % 4)
     return base64.urlsafe_b64decode(f"{data}{padding}".encode("ascii"))
-

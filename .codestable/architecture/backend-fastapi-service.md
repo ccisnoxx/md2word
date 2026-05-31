@@ -2,9 +2,9 @@
 doc_type: architecture
 slug: backend-fastapi-service
 scope: 当前仓库的 FastAPI 后端表面，覆盖 jobs、templates、term-rules、translation-profiles、health、后台 stage、artifact 合同和本地运维动作
-summary: 当前仓库已经收口为“FastAPI 后端 + app/conversion 转换核心”的结构；后端通过 BackgroundTasks、metadata repository、Job Resource Snapshot、最小 actor/audit 基线、operations readiness / metrics 和 conversion entrypoint 承载 MinerU zip 后处理、翻译、Template Profile、Term Rule Set 和 Translation Profile 版本管理能力
+summary: 当前仓库已经收口为“FastAPI 后端 + app/conversion 转换核心”的结构；后端业务模块采用 `app/domains/` domain-first 布局，通过 BackgroundTasks、metadata adapters、Job Resource Snapshot、最小 actor/audit 基线、operations readiness / metrics 和 conversion entrypoint 承载 MinerU zip 后处理、翻译、Template Profile、Term Rule Set 和 Translation Profile 版本管理能力
 status: current
-last_reviewed: 2026-05-29
+last_reviewed: 2026-05-31
 tags: [architecture, backend, fastapi, jobs, templates, term-rules, translation, operations]
 depends_on: [architecture-index, conversion-flow]
 implements: [fastapi-backend-productization]
@@ -38,39 +38,31 @@ implements: [fastapi-backend-productization]
   - 提供 runtime、trace 和访问控制依赖；`require_admin_actor()`、`require_jobs_actor()`、`require_job_ops_actor()` 在保留旧 403 / 503 语义的同时返回 `ActorContext`。
 - `app/api/v1/routers/health.py`
   - `health/live`、`health/ready` 与 `health/metrics`。
-- `app/api/v1/routers/jobs.py`
-  - jobs 聚合入口，按 ingest / query / ops 三类子 router 组合。
-- `app/api/v1/routers/mineru_callbacks.py`
-  - MinerU callback ingress、payload 归一化、internal/public 鉴权和后台 stage 入队。
-- `app/api/v1/routers/templates.py`
-  - templates 目录、详情、下载、默认模板切换、模板 CRUD / 文件替换和版本发布状态接口。
-- `app/api/v1/routers/term_rule_sets.py`
-  - Term Rule Set 查询、draft YAML 更新、publish、set-default 和 rollback。
-- `app/api/v1/routers/term_rule_categories.py`
-  - term-rule 分类 CRUD；MySQL versioned mode 下写入口受 Term Rule Set 发布流程保护。
-- `app/api/v1/routers/term_rules.py`
-  - term-rules 查询、规则 CRUD、导入校验、导入、导出、模拟和 sync-files；MySQL versioned mode 下写入口受 Term Rule Set 发布流程保护。
-- `app/api/v1/routers/translation_profiles.py`
-  - Translation Profile 查询、draft 更新、publish、set-default 和 rollback；需要 MySQL resource service。
-- `app/core/resource_models.py`
-  - `ResourceVersionStatus`、`ResourceVersionRecord` 和 `ResolvedResourceVersion`。
-- `app/core/audit_models.py`
-  - `ActorContext`、`ActorRole`、`ActorSource` 和 `AuditEvent`。
-- `app/services/audit.py`
-  - `AuditService` 统一生成审计事件并写入 repository。
-- `app/services/resource_versions/`
-  - `ResourceVersionService`，封装草稿更新、发布、设默认、回滚、禁用、supersede 和 published-only 解析。
-- `app/services/jobs/`
+- `app/api/v1/routers/auth_schemas.py`、`app/api/v1/routers/health_schemas.py`
+  - auth/health 路由私有的 v1 请求和响应模型；不再保留集中 API schema 文件。
+- `app/domains/jobs/`
   - `command.py`、`query.py`、`stage.py`、`lifecycle.py`、`artifacts.py`。
   - `resource_snapshots.py`：创建期绑定 published resource versions，stage replay 时按 exact snapshot materialize 模板、job-local term-rule YAML 和 Translation Profile。
   - `artifact_storage.py`：本地 artifact logical path 解析、登记和下载定位。
   - `artifact_integrity.py`：计算并校验 `size_bytes` / `sha256` artifact fingerprint。
   - `object_artifact_storage.py`：本地对象目录 adapter 和本地 fallback 下载口径。
   - `artifact_retention.py`：local + object artifact retention dry-run 候选生成。
-- `app/repositories/`
-  - `file_job_repository.py` 是本地开发默认 metadata backend。
-  - `database_job_repository.py` 是 sqlite metadata backend。
-  - `mysql_job_repository.py` 是 MySQL metadata backend，并 bootstrap jobs、events、files、stage messages、`resource_versions`、`resource_default_versions` 和 `audit_events`。
+- `app/domains/templates/`
+  - templates 目录、详情、下载、默认模板切换、模板 CRUD / 文件替换、Template Version payload/hash 和版本发布状态接口。
+- `app/domains/term_rules/`
+  - Term Rule Set draft/publish/default/rollback、term-rule 分类 / 规则 CRUD、导入校验、导入、导出、模拟、sync-files 和 YAML codec。
+- `app/domains/translation/`
+  - Translation Profile 查询、draft 更新、publish、set-default、rollback、执行时 snapshot、翻译 provider、Document IR translation 和 translation audit。
+- `app/domains/document_jobs/`
+  - document job models、schemas、service、execution queue、router 和 repository ports。
+- `app/domains/files/`
+  - 文件上传授权、PDF 校验、文件 metadata、retention planning、router 和 repository port。
+- `app/domains/resources/`
+  - `ResourceVersionService` 和 resource version models/ports。
+- `app/domains/audit/`
+  - `ActorContext`、`AuditEvent`、`AuditService` 和 audit repository port。
+- `app/infrastructure/persistence/`
+  - `file/`、`sqlite/`、`mysql/` 三类 backend adapter，按 domain responsibility 拆分，并由 `factory.py` 组装 `PersistenceAdapters`。
 - `scripts/ops/check_release.py`
   - 发布前聚合 OpenAPI snapshot 与 targeted unittest smoke。
 - `scripts/ops/shadow_copy_metadata_to_mysql.py`
@@ -80,15 +72,11 @@ implements: [fastapi-backend-productization]
 - `app/conversion/`
   - `contracts.py`、`entrypoint.py`、`service.py` 组成后端 conversion library 边界。
   - `runtime_facade.py` 是 FastAPI 侧稳定导入面，实际委托给 `runtime_runner.py`、`runtime_helpers.py` 和 runtime modules。
-- `app/services/templates/read_service.py`
-  - 模板 manifest、默认模板状态、API 管理模板文件、Template Version payload/hash 构建，以及 `ResourceVersionService` 对接。
-- `app/services/term_rules/`
-  - `service.py`、`versioning_service.py`、`yaml_codec.py`、`import_validation.py`、`sync_files.py`、`bootstrap.py`。
-- `app/services/translation_profiles/`
-  - `versioning_service.py` 管理默认 Translation Profile 草稿、发布版本、默认指针、回滚和 execution snapshot。
 - `app/services/health_service.py`
   - readiness 依赖探针和 metrics JSON snapshot 生成。
-- `data/`
+- `app/services/auth/models.py`、`app/services/document_ir/models.py`、`app/services/renderer/template_config.py`
+  - 分别承载 auth 用户上下文、Document IR 记录和 renderer 模板配置模型，`app/core/` 只保留配置、日志、错误和 runtime 容器等跨域基础设施。
+- `var/`
   - 运行态 jobs、stage spool、term-rule store、template state 和临时目录。
 
 ## 3. 主流程
@@ -112,9 +100,9 @@ flowchart TD
 
 Metadata repository 当前有三种 runtime 选择：
 
-- `file`：代码默认值，使用 `data/jobs/*/*.json`、`events.jsonl` 和 `data/stage_messages/*.json`。
-- `database`：sqlite-backed `DatabaseJobRepository`，使用 `JOBS_METADATA_DATABASE_PATH`。
-- `mysql`：MySQL-backed `MysqlJobRepository`，使用 `JOBS_MYSQL_*` 连接参数，并创建 `resource_versions` 和 `resource_default_versions` 表。
+- `file`：代码默认值，使用 `var/jobs/*/*.json`、`events.jsonl` 和 `var/stage_messages/*.json`。
+- `database`：sqlite-backed infrastructure adapters，使用 `JOBS_METADATA_DATABASE_PATH`。
+- `mysql`：MySQL-backed infrastructure adapters，使用 `JOBS_MYSQL_*` 连接参数，并创建 `resource_versions` 和 `resource_default_versions` 表。
 
 三种 backend 都实现相同 repository / stage message store protocols；jobs services 不直接依赖具体数据库产品。
 
@@ -138,7 +126,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     A["POST /api/v1/templates/{template_id}/versions"] --> B["TemplateReadService.create_template_version()"]
-    B --> C["store DOCX under data/config/templates/{template_id}/v{version}/"]
+    B --> C["store DOCX under var/config/templates/{template_id}/v{version}/"]
     B --> D["build payload + snapshot_hash"]
     D --> E["ResourceVersionService.create_or_update_draft(resource_type=template)"]
     E --> F["POST publish / set-default / disable"]
@@ -444,10 +432,10 @@ flowchart TD
   - `subscript_config_exists`
   - `translation_prompt_exists`
   - `translation_available`
-- `configured_repository_backend/effective_repository_backend/stage_message_store` 可为 `file`、`database` 或 `mysql`；`mysql` 时 stage spool 位于 MySQL 表，不要求 `data/stage_messages` 目录存在。
+- `configured_repository_backend/effective_repository_backend/stage_message_store` 可为 `file`、`database` 或 `mysql`；`mysql` 时 stage spool 位于 MySQL 表，不要求 `var/stage_messages` 目录存在。
 - `health/metrics` 返回 JSON counters：job status counts、stage message status counts、resource version counts 和 audit event count；调用方需要自行接入外部监控或告警系统。
 - 发布前本地基线入口是 `scripts/ops/check_release.py`，当前聚合 OpenAPI snapshot check、health/metrics smoke、metadata migration smoke、job workflow、MySQL fake smoke 和 logging tests。
-- audit events 独立于 JobEvent：file backend 写 `data/audit_events.jsonl`，sqlite / MySQL backend 写 `audit_events` 表；当前不暴露审计查询 HTTP API。
+- audit events 独立于 JobEvent：file backend 写 `var/audit_events.jsonl`，sqlite / MySQL backend 写 `audit_events` 表；当前不暴露审计查询 HTTP API。
 - callback 安全边界：
   - `PUBLIC_DEPLOYMENT_MODE=internal` 时不要求 callback token
   - `PUBLIC_DEPLOYMENT_MODE=single_tenant_public` 时要求 `X-MinerU-Callback-Token` 或 query token

@@ -6,16 +6,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.core.document_ir_models import DocumentIR, DocumentIRAsset, DocumentIRBlock, DocumentIRMetadata
-from app.core.translation_models import (
+from app.services.document_ir.models import DocumentIR, DocumentIRAsset, DocumentIRBlock, DocumentIRMetadata
+from app.domains.translation.models import (
     TermVersionSnapshot,
     TranslationProviderRequest,
     TranslationProviderResult,
     TranslationTermEntry,
     TranslationTextItem,
 )
-from app.services.terms import TermVersionService
-from app.services.translation import DocumentIRTranslationService
+from app.domains.translation.document_ir_translator import DocumentIRTranslationService
+from app.domains.translation.term_version_service import TermVersionService
 
 
 class FakeTranslationProvider:

@@ -5,16 +5,16 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api.v1.routers.auth import router as auth_router
-from app.api.v1.routers.document_jobs import router as document_jobs_router
-from app.api.v1.routers.files import router as files_router
+from app.domains.document_jobs.router import router as document_jobs_router
+from app.domains.files.router import router as files_router
 from app.api.v1.routers.health import router as health_router
-from app.api.v1.routers.jobs import router as jobs_router
-from app.api.v1.routers.mineru_callbacks import router as mineru_callbacks_router
-from app.api.v1.routers.term_rule_categories import router as term_rule_categories_router
-from app.api.v1.routers.term_rule_sets import router as term_rule_sets_router
-from app.api.v1.routers.term_rules import router as term_rules_router
-from app.api.v1.routers.templates import router as templates_router
-from app.api.v1.routers.translation_profiles import router as translation_profiles_router
+from app.domains.jobs.router import router as jobs_router
+from app.domains.jobs.mineru_callbacks_router import router as mineru_callbacks_router
+from app.domains.term_rules.categories_router import router as term_rule_categories_router
+from app.domains.term_rules.sets_router import router as term_rule_sets_router
+from app.domains.term_rules.router import router as term_rules_router
+from app.domains.templates.router import router as templates_router
+from app.domains.translation.router import router as translation_profiles_router
 
 
 router = APIRouter(prefix="/api/v1")

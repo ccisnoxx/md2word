@@ -21,9 +21,10 @@ last_reviewed: 2026-05-30
 7. [term-rule-set-versioning-guide.md](/Users/sc/PycharmProjects/md2word/docs/dev/term-rule-set-versioning-guide.md)
 8. [translation-profile-and-segment-trace-guide.md](/Users/sc/PycharmProjects/md2word/docs/dev/translation-profile-and-segment-trace-guide.md)
 9. [translation-terms-v1.md](/Users/sc/PycharmProjects/md2word/docs/dev/translation-terms-v1.md)
-10. [template-config-package-v1.md](/Users/sc/PycharmProjects/md2word/docs/dev/template-config-package-v1.md)
-11. [runbook.md](/Users/sc/MinerU/md2word_file/docs/runbook.md)
-12. API 细节查 [jobs.md](/Users/sc/MinerU/md2word_file/docs/api/jobs.md)、[mineru-callbacks.md](/Users/sc/MinerU/md2word_file/docs/api/mineru-callbacks.md)、[health.md](/Users/sc/MinerU/md2word_file/docs/api/health.md)、[templates.md](/Users/sc/MinerU/md2word_file/docs/api/templates.md)、[term-rule-sets.md](/Users/sc/PycharmProjects/md2word/docs/api/term-rule-sets.md) 和 [translation-profiles.md](/Users/sc/PycharmProjects/md2word/docs/api/translation-profiles.md)
+10. [translation-ai-audit-debug.md](/Users/sc/PycharmProjects/md2word/docs/dev/translation-ai-audit-debug.md)
+11. [template-config-package-v1.md](/Users/sc/PycharmProjects/md2word/docs/dev/template-config-package-v1.md)
+12. [backend.md](/Users/sc/PycharmProjects/md2word/docs/runbooks/backend.md)
+13. API 细节查 [jobs.md](/Users/sc/MinerU/md2word_file/docs/api/jobs.md)、[mineru-callbacks.md](/Users/sc/MinerU/md2word_file/docs/api/mineru-callbacks.md)、[health.md](/Users/sc/MinerU/md2word_file/docs/api/health.md)、[templates.md](/Users/sc/MinerU/md2word_file/docs/api/templates.md)、[term-rule-sets.md](/Users/sc/PycharmProjects/md2word/docs/api/term-rule-sets.md) 和 [translation-profiles.md](/Users/sc/PycharmProjects/md2word/docs/api/translation-profiles.md)
 
 ## 文档分工
 
@@ -38,8 +39,9 @@ last_reviewed: 2026-05-30
 | [term-rule-set-versioning-guide.md](/Users/sc/PycharmProjects/md2word/docs/dev/term-rule-set-versioning-guide.md) | 要接入术语规则草稿、发布、设默认或回滚 | Term Rule Set versioned API 的使用步骤、核心概念和 legacy 写保护 |
 | [translation-profile-and-segment-trace-guide.md](/Users/sc/PycharmProjects/md2word/docs/dev/translation-profile-and-segment-trace-guide.md) | 要接入翻译配置草稿、发布、设默认、回滚或读取翻译 trace | Translation Profile API 的使用步骤、核心概念和 `translation_trace` 产物读取方式 |
 | [translation-terms-v1.md](/Users/sc/PycharmProjects/md2word/docs/dev/translation-terms-v1.md) | 要接入 P1 DocumentIR 翻译术语表 | 最小 CSV 术语格式、必填字段和 `language_pair@version` 绑定规则 |
+| [translation-ai-audit-debug.md](/Users/sc/PycharmProjects/md2word/docs/dev/translation-ai-audit-debug.md) | 要排查 P1 AI 调用、审计脱敏或全文调试归档 | `ai_call_log` 元数据审计和 `ai_debug_archive` 1 天全文归档开关规则 |
 | [template-config-package-v1.md](/Users/sc/PycharmProjects/md2word/docs/dev/template-config-package-v1.md) | 要调整 P0 Word 模板配置或排查渲染样式 | `template-config/v1` 文件集合、YAML 合同和 `template_id@version` 绑定格式 |
-| [runbook.md](/Users/sc/MinerU/md2word_file/docs/runbook.md) | 日常联调或本地运维 | 真实上传、重试、取消、清理本地文件 |
+| [backend.md](/Users/sc/PycharmProjects/md2word/docs/runbooks/backend.md) | 日常联调或本地运维 | 真实上传、重试、取消、清理本地文件 |
 | [jobs.md](/Users/sc/MinerU/md2word_file/docs/api/jobs.md) | 联调前端或脚本调用方 | jobs 合同、下载入口、运维动作 |
 | [mineru-callbacks.md](/Users/sc/MinerU/md2word_file/docs/api/mineru-callbacks.md) | 联调 MinerU callback | callback 鉴权、checksum、allowlist 和状态推进 |
 | [health.md](/Users/sc/MinerU/md2word_file/docs/api/health.md) | 看实例是否 ready | health/live、health/ready、health/metrics 的精确定义 |

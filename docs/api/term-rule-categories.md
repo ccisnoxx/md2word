@@ -5,15 +5,14 @@ category: endpoint
 status: current
 source_files:
   - app/api/v1/router.py
-  - app/api/v1/routers/term_rule_categories.py
-  - app/api/v1/routers/term_rule_write_guard.py
-  - app/services/term_rules/service.py
-  - app/repositories/file_term_rule_repository.py
-  - app/schemas/term_rules.py
-  - app/schemas/api_v1.py
+  - app/domains/term_rules/categories_router.py
+  - app/domains/term_rules/write_guard.py
+  - app/domains/term_rules/service.py
+  - app/domains/term_rules/file_repository.py
+  - app/domains/term_rules/schemas.py
 summary: Term-rule-categories API 提供分类元数据、规则计数和分类增量写接口；MySQL versioned mode 下写入交给 Term Rule Set 发布流程。
 tags: [term-rules, categories, api]
-last_reviewed: 2026-05-29
+last_reviewed: 2026-05-31
 ---
 
 ## 概述

@@ -5,16 +5,16 @@ category: endpoint
 status: current
 source_files:
   - app/api/v1/router.py
-  - app/api/v1/routers/mineru_callbacks.py
+  - app/domains/jobs/mineru_callbacks_router.py
   - app/api/dependencies.py
-  - app/services/jobs/command.py
-  - app/services/jobs/stage.py
-  - app/core/mineru_callback.py
+  - app/domains/jobs/command.py
+  - app/domains/jobs/stage.py
+  - app/domains/jobs/mineru_callback.py
+  - app/domains/jobs/schemas.py
   - app/core/config.py
-  - app/schemas/api_v1.py
 summary: MinerU callback API 提供 callback ingress、payload 归一化、鉴权和结果 URL 安全校验。
 tags: [mineru, callback, api, guards]
-last_reviewed: 2026-05-28
+last_reviewed: 2026-05-31
 ---
 
 ## 概述

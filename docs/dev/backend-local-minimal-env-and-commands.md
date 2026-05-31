@@ -19,9 +19,9 @@ APP_NAME=md2word_file
 APP_ENV=dev
 LOG_FORMAT=text
 APP_CORS_ORIGINS=http://127.0.0.1:3000,http://localhost:3000
-DATA_DIR=data
+DATA_DIR=var
 JOBS_REPOSITORY_BACKEND=file
-JOBS_METADATA_DATABASE_PATH=data/metadata.sqlite3
+JOBS_METADATA_DATABASE_PATH=var/metadata.sqlite3
 JOBS_MYSQL_HOST=127.0.0.1
 JOBS_MYSQL_PORT=3306
 JOBS_MYSQL_USER=md2word
@@ -30,7 +30,7 @@ JOBS_MYSQL_DATABASE=md2word
 JOBS_MYSQL_CHARSET=utf8mb4
 JOBS_MYSQL_CONNECT_TIMEOUT_SECONDS=10
 JOBS_ARTIFACT_STORAGE_BACKEND=local_file
-JOBS_ARTIFACT_OBJECT_STORE_PATH=data/object_artifacts
+JOBS_ARTIFACT_OBJECT_STORE_PATH=var/object_artifacts
 JOBS_ARTIFACT_S3_BUCKET=
 JOBS_ARTIFACT_S3_ENDPOINT_URL=
 JOBS_ARTIFACT_S3_REGION=us-east-1
@@ -67,9 +67,9 @@ OPENAI_MODEL=deepseek-v4-flash
 TRANSLATION_MAX_PAGES=20
 TRANSLATION_MAX_CHARS=60000
 DEFAULT_TEMPLATE_ID=default
-TEMPLATES_MANIFEST_PATH=template_configs/templates_manifest.yaml
-TEMPLATES_STORAGE_PATH=data/config/templates
-TEMPLATE_STATE_PATH=data/config/template_state.json
+TEMPLATES_MANIFEST_PATH=resources/template_configs/templates_manifest.yaml
+TEMPLATES_STORAGE_PATH=var/config/templates
+TEMPLATE_STATE_PATH=var/config/template_state.json
 ```
 
 说明：
@@ -101,14 +101,14 @@ TEMPLATE_STATE_PATH=data/config/template_state.json
   - `retry`、`cancel`、`cleanup-local-files` 成功会写 audit event；认证通过后可用 `X-Actor-Id` 标记操作者
 - `TEMPLATES_STORAGE_PATH`
   - API 新增或替换模板时保存 DOCX 版本文件的目录
-  - 默认位于 `data/config/templates`
+  - 默认位于 `var/config/templates`
 - `DATA_DIR`
-  - 默认就是仓库内 `data/`
+  - 默认就是仓库内 `var/`
 - `JOBS_REPOSITORY_BACKEND=file`
   - 是代码默认值，适合本地开发和最小联调
   - sqlite 准生产可在完成 integrity check 和 metadata shadow copy 后显式改为 `database`
   - MySQL 生产化 metadata store 可显式改为 `mysql`
-- `JOBS_METADATA_DATABASE_PATH=data/metadata.sqlite3`
+- `JOBS_METADATA_DATABASE_PATH=var/metadata.sqlite3`
   - 仅 `JOBS_REPOSITORY_BACKEND=database` 时使用
   - 保存 jobs、files、events 和 stage messages 的 sqlite metadata；不保存 artifact 二进制文件
 - `JOBS_REPOSITORY_BACKEND=mysql`
@@ -118,14 +118,14 @@ TEMPLATE_STATE_PATH=data/config/template_state.json
   - 启动后 `/health/ready` 预期显示 `configured_repository_backend=mysql`、`effective_repository_backend=mysql`、`stage_message_store=mysql`
   - 从 file metadata 切 MySQL 前，可用 `scripts/ops/shadow_copy_metadata_to_mysql.py` 做空目标 shadow copy 和 `--validate-only` 复核
 - `JOBS_ARTIFACT_STORAGE_BACKEND=local_file`
-  - 是代码默认值，保留 artifact 二进制在 `data/jobs/{job_id}/`
+  - 是代码默认值，保留 artifact 二进制在 `var/jobs/{job_id}/`
   - 可显式切到 `local_object` 或 `s3`
 - `JOBS_ARTIFACT_STORAGE_BACKEND=s3`
   - 需要配置 `JOBS_ARTIFACT_S3_BUCKET`
   - `JOBS_ARTIFACT_S3_DOWNLOAD_MODE=redirect` 返回临时签名 URL，`stream` 由后端流式返回对象内容
 - `JOBS_WORKER_MODE=in_process`
   - 是代码默认值，API 请求返回后仍由 FastAPI `BackgroundTasks` 同进程推进 stage
-  - 若改为 `external`，API 只写入 stage message，不执行转换；必须另起 `run_worker.py`
+  - 若改为 `external`，API 只写入 stage message，不执行转换；必须另起 `scripts/dev/run_stage_worker.py`
 - `JOBS_WORKER_POLL_INTERVAL_SECONDS=2`
   - 独立 worker 轮询 replayable stage message 的间隔
 - `STAGE_MESSAGE_LEASE_SECONDS=900`
@@ -136,7 +136,7 @@ TEMPLATE_STATE_PATH=data/config/template_state.json
 优先使用当前 attention.md 里约定的 conda 环境：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python run_api.py
+/Users/sc/miniconda3/envs/md2word/bin/python scripts/dev/run_api.py
 ```
 
 或者：
@@ -154,8 +154,8 @@ JOBS_WORKER_MODE=external
 然后分别启动 API 和 worker：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python run_api.py
-/Users/sc/miniconda3/envs/md2word/bin/python run_worker.py
+/Users/sc/miniconda3/envs/md2word/bin/python scripts/dev/run_api.py
+/Users/sc/miniconda3/envs/md2word/bin/python scripts/dev/run_stage_worker.py
 ```
 
 ## 第一条检查命令

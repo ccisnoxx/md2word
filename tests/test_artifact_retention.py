@@ -7,41 +7,41 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
-from app.core.file_models import DocumentFileRecord
-from app.core.job_models import JobFile, JobRecord
-from app.repositories.file_job_repository import FileJobRepository
-from app.services.files.retention import DocumentFileRetentionPlanner
-from app.services.jobs.artifact_retention import ArtifactRetentionPlanner, ArtifactRetentionPolicy
+from app.domains.files.models import DocumentFileRecord
+from app.domains.files.retention import DocumentFileRetentionPlanner
+from app.domains.jobs.models import JobFile, JobRecord
+from app.infrastructure.persistence import PersistenceAdapters, build_file_persistence_adapters
+from app.domains.jobs.artifact_retention import ArtifactRetentionPlanner, ArtifactRetentionPolicy
 
 
 class ArtifactRetentionTests(TestCase):
     def test_retention_dry_run_selects_local_and_object_artifacts_by_status_and_age(self):
         now = datetime(2026, 5, 28, tzinfo=timezone.utc)
         with TemporaryDirectory() as temp_dir:
-            repository = FileJobRepository(Path(temp_dir))
+            adapters = build_file_persistence_adapters(Path(temp_dir))
             self._seed_job(
-                repository,
+                adapters,
                 "job_old_completed",
                 status="completed",
                 completed_at=now - timedelta(days=31),
                 object_key="jobs/job_old_completed/output/result.docx",
             )
             self._seed_job(
-                repository,
+                adapters,
                 "job_recent_completed",
                 status="completed",
                 completed_at=now - timedelta(days=29),
                 object_key="jobs/job_recent_completed/output/result.docx",
             )
             self._seed_job(
-                repository,
+                adapters,
                 "job_old_failed",
                 status="failed",
                 completed_at=now - timedelta(days=13),
                 object_key="jobs/job_old_failed/output/result.docx",
             )
             self._seed_job(
-                repository,
+                adapters,
                 "job_old_canceled",
                 status="canceled",
                 completed_at=now - timedelta(days=8),
@@ -49,14 +49,14 @@ class ArtifactRetentionTests(TestCase):
                 file_type="source_pdf",
             )
             self._seed_job(
-                repository,
+                adapters,
                 "job_local_only",
                 status="completed",
                 completed_at=now - timedelta(days=60),
                 object_key=None,
             )
 
-            report = ArtifactRetentionPlanner(repository, repository).build_dry_run(
+            report = ArtifactRetentionPlanner(adapters.job_repository, adapters.job_file_repository).build_dry_run(
                 ArtifactRetentionPolicy({"completed": 30, "failed": 14, "canceled": 7}),
                 now=now,
             )
@@ -83,7 +83,7 @@ class ArtifactRetentionTests(TestCase):
 
     def _seed_job(
         self,
-        repository: FileJobRepository,
+        adapters: PersistenceAdapters,
         job_id: str,
         *,
         status: str,
@@ -91,7 +91,7 @@ class ArtifactRetentionTests(TestCase):
         object_key: str | None,
         file_type: str = "result_docx",
     ) -> None:
-        repository.create_job(
+        adapters.job_repository.create_job(
             JobRecord(
                 id=job_id,
                 source_filename="source.pdf",
@@ -101,7 +101,7 @@ class ArtifactRetentionTests(TestCase):
                 updated_at=completed_at,
             )
         )
-        repository.upsert_file(
+        adapters.job_file_repository.upsert_file(
             job_id,
             JobFile(
                 file_type=file_type,
@@ -118,7 +118,7 @@ class DocumentFileRetentionTests(TestCase):
     def test_document_file_retention_plan_marks_expired_without_deleting_objects(self):
         now = datetime(2026, 5, 28, tzinfo=timezone.utc)
         with TemporaryDirectory() as temp_dir:
-            repository = FileJobRepository(Path(temp_dir))
+            adapters = build_file_persistence_adapters(Path(temp_dir))
             old_file = DocumentFileRecord(
                 id="file_old",
                 tenant_id="tenant_default",
@@ -143,14 +143,14 @@ class DocumentFileRetentionTests(TestCase):
                     "expires_at": now + timedelta(days=1),
                 }
             )
-            repository.create_document_file(old_file)
-            repository.create_document_file(recent_file)
+            adapters.document_file_repository.create_document_file(old_file)
+            adapters.document_file_repository.create_document_file(recent_file)
 
-            planner = DocumentFileRetentionPlanner(repository, retention_days=90)
+            planner = DocumentFileRetentionPlanner(adapters.document_file_repository, retention_days=90)
             plan = planner.build_plan(now=now)
             marked_plan = planner.mark_expired(now=now)
-            old_after_mark = repository.get_document_file("file_old")
-            recent_after_mark = repository.get_document_file("file_recent")
+            old_after_mark = adapters.document_file_repository.get_document_file("file_old")
+            recent_after_mark = adapters.document_file_repository.get_document_file("file_recent")
 
         self.assertEqual(plan.totals["files_seen"], 2)
         self.assertEqual(plan.totals["files_with_expires_at"], 2)

@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config import Settings
-from app.repositories.mysql_job_repository import ConnectFactory, MysqlJobRepository, MysqlJobRepositoryConfig
+from app.infrastructure.persistence import PersistenceAdapters, build_mysql_persistence_adapters
+from app.infrastructure.persistence.mysql import ConnectFactory, MysqlPersistenceConfig
 from scripts.ops.shadow_copy_metadata_to_database import (
     MetadataShadowCopyMismatch,
     _MetadataMirror,
@@ -53,7 +54,7 @@ class MysqlMetadataMigrationReport:
 
 def shadow_copy_metadata_to_mysql(
     data_dir: Path,
-    config: MysqlJobRepositoryConfig,
+    config: MysqlPersistenceConfig,
     *,
     connect_factory: ConnectFactory | None = None,
 ) -> MysqlMetadataMigrationReport:
@@ -61,8 +62,8 @@ def shadow_copy_metadata_to_mysql(
 
     resolved_data_dir = data_dir.resolve()
     source = _collect_file_metadata(resolved_data_dir)
-    target_repository = MysqlJobRepository(config, connect_factory=connect_factory)
-    before = _collect_mysql_metadata(target_repository)
+    target_adapters = build_mysql_persistence_adapters(config, connect_factory=connect_factory)
+    before = _collect_mysql_metadata(target_adapters)
     if not _mirror_is_empty(before):
         return MysqlMetadataMigrationReport(
             data_dir=str(resolved_data_dir),
@@ -78,7 +79,7 @@ def shadow_copy_metadata_to_mysql(
             ],
         )
 
-    _copy_metadata(source, target_repository)
+    _copy_metadata(source, target_adapters)
     return _validate_metadata_shadow_copy_to_mysql(
         resolved_data_dir,
         config,
@@ -90,7 +91,7 @@ def shadow_copy_metadata_to_mysql(
 
 def validate_metadata_shadow_copy_to_mysql(
     data_dir: Path,
-    config: MysqlJobRepositoryConfig,
+    config: MysqlPersistenceConfig,
     *,
     connect_factory: ConnectFactory | None = None,
 ) -> MysqlMetadataMigrationReport:
@@ -107,15 +108,15 @@ def validate_metadata_shadow_copy_to_mysql(
 
 def _validate_metadata_shadow_copy_to_mysql(
     data_dir: Path,
-    config: MysqlJobRepositoryConfig,
+    config: MysqlPersistenceConfig,
     *,
     connect_factory: ConnectFactory | None,
     target_empty_before_copy: bool,
     validate_only: bool,
 ) -> MysqlMetadataMigrationReport:
     source = _collect_file_metadata(data_dir)
-    target_repository = MysqlJobRepository(config, connect_factory=connect_factory)
-    target = _collect_mysql_metadata(target_repository)
+    target_adapters = build_mysql_persistence_adapters(config, connect_factory=connect_factory)
+    target = _collect_mysql_metadata(target_adapters)
     return MysqlMetadataMigrationReport(
         data_dir=str(data_dir),
         mysql_database=config.database,
@@ -127,18 +128,18 @@ def _validate_metadata_shadow_copy_to_mysql(
     )
 
 
-def _collect_mysql_metadata(repository: MysqlJobRepository) -> _MetadataMirror:
-    jobs = sorted(repository.list_jobs(), key=lambda item: item.id)
+def _collect_mysql_metadata(adapters: PersistenceAdapters) -> _MetadataMirror:
+    jobs = sorted(adapters.job_repository.list_jobs(), key=lambda item: item.id)
     files_by_job = {
-        job.id: sorted(repository.list_files(job.id), key=lambda item: item.file_type)
+        job.id: sorted(adapters.job_file_repository.list_files(job.id), key=lambda item: item.file_type)
         for job in jobs
     }
-    events_by_job = {job.id: repository.list_events(job.id) for job in jobs}
+    events_by_job = {job.id: adapters.job_event_repository.list_events(job.id) for job in jobs}
     return _MetadataMirror(
         jobs=jobs,
         files_by_job=files_by_job,
         events_by_job=events_by_job,
-        stage_messages=sorted(repository.list_stage_messages(), key=lambda item: item.id),
+        stage_messages=sorted(adapters.stage_message_store.list_stage_messages(), key=lambda item: item.id),
     )
 
 
@@ -168,8 +169,8 @@ def format_pretty_report(report: MysqlMetadataMigrationReport) -> str:
     return "\n".join(lines)
 
 
-def _config_from_settings(settings: Settings, args: argparse.Namespace) -> MysqlJobRepositoryConfig:
-    return MysqlJobRepositoryConfig(
+def _config_from_settings(settings: Settings, args: argparse.Namespace) -> MysqlPersistenceConfig:
+    return MysqlPersistenceConfig(
         host=args.host or settings.jobs_mysql_host,
         port=args.port or settings.jobs_mysql_port,
         user=args.user or settings.jobs_mysql_user,

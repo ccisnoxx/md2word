@@ -25,7 +25,7 @@ last_reviewed: 2026-05-28
 这份文档最初只是“现状基线 + 问题清单”初稿。经过本轮连续收口，下面这些点已经有代码落地：
 
 - 已完成：
-  - `app/core/job_workflow.py` 已成为 jobs workflow 规则的统一入口，`retry/cancel/cleanup/callback` 以及 `stage enqueue / submit_to_mineru / convert_package` 的关键迁移已集中定义。
+  - `app/domains/jobs/workflow.py` 已成为 jobs workflow 规则的统一入口，`retry/cancel/cleanup/callback` 以及 `stage enqueue / submit_to_mineru / convert_package` 的关键迁移已集中定义。
   - `JobRecord` 已引入内部双层状态：`lifecycle_status` 和 `execution_status`，同时继续保留兼容性的单 `status` 投影。
   - `source_pdf_context` 已成为 `source_pdf` workflow 的内部结构边界，读写两侧都开始优先围绕它工作。
   - `command.py`、`lifecycle.py`、`stage.py` 的主要事件落盘路径已基本进入 `WorkflowEventIntent -> workflow_events.py -> JobEvent` 的统一映射模式。
@@ -66,9 +66,9 @@ last_reviewed: 2026-05-28
 | 语义层 | 当前主要位置 | 当前职责 |
 |---|---|---|
 | boundary | `app/api/`、`app/api/v1/routers/`、`app/api/dependencies.py`、`app/api/mineru_callback_guards.py` | HTTP ingress、callback ingress、access control、请求归一化、response mapping |
-| application | `app/services/jobs/`、`app/services/templates/`、`app/services/term_rules/`、`app/conversion/entrypoint.py` | workflow 编排、命令受理、查询投影、后台执行驱动、配置读取与导入应用 |
-| domain | `app/core/job_models.py`、`app/core/job_workflow.py` | `job` 记录模型、双层状态、workflow 迁移规则、variant-specific context |
-| infrastructure | `app/repositories/`、`app/clients/`、本地 `data/` 目录、`app/services/jobs/artifacts.py` 的 local file 约束 | 文件持久化、外部 MinerU 调用、本地产物存储、stage spool |
+| application | `app/domains/jobs/`、`app/domains/templates/`、`app/domains/term_rules/`、`app/conversion/entrypoint.py` | workflow 编排、命令受理、查询投影、后台执行驱动、配置读取与导入应用 |
+| domain | `app/domains/jobs/models.py`、`app/domains/jobs/workflow.py` | `job` 记录模型、双层状态、workflow 迁移规则、variant-specific context |
+| infrastructure | `app/infrastructure/persistence/`、`app/clients/`、本地 `var/` 目录、`app/domains/jobs/artifacts.py` 的 local file 约束 | 文件持久化、外部 MinerU 调用、本地产物存储、stage spool |
 
 当前分层意图已经存在，但 `domain` 这一层还没有真正独立站稳，导致 workflow 规则仍然分散。
 
@@ -97,7 +97,7 @@ last_reviewed: 2026-05-28
 后续架构演进不应一开始把所有模块接口化，而应先承认这 4 类 seam：
 
 - `job repository`
-  - 协议定义已存在于 `app/repositories/protocols.py`
+  - 协议定义已存在于 `app/domains/jobs/repository.py`
 - `stage message store / executor`
   - 当前是本地 `stage_messages/*.json` + `BackgroundTasks`
 - `external providers`
@@ -218,9 +218,9 @@ last_reviewed: 2026-05-28
 
 当前 workflow 规则没有单一来源，主要分散在：
 
-- `app/services/jobs/command.py`
-- `app/services/jobs/stage.py`
-- `app/services/jobs/lifecycle.py`
+- `app/domains/jobs/command.py`
+- `app/domains/jobs/stage.py`
+- `app/domains/jobs/lifecycle.py`
 - `app/api/mineru_callback_guards.py`
 
 影响：
@@ -231,7 +231,7 @@ last_reviewed: 2026-05-28
 
 当前进展：
 
-- 已抽出 `app/core/job_workflow.py`
+- 已抽出 `app/domains/jobs/workflow.py`
 - `command`、`stage`、`lifecycle`、`callback` 的关键状态迁移已开始共享这套规则
 - `job_created`、`mineru_callback_received` 等非迁移型 application 事件已进入统一 event intent / mapping 路径，但仍不属于状态机本体
 

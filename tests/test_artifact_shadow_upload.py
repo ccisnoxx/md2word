@@ -6,11 +6,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
-from app.core.job_models import JobFile, JobRecord, utc_now
-from app.core.job_paths import build_job_paths
-from app.repositories.file_job_repository import FileJobRepository
-from app.services.jobs.artifacts import JobArtifactService
-from app.services.jobs.object_artifact_storage import ObjectArtifactStorageAdapter
+from app.domains.jobs.models import JobFile, JobRecord, utc_now
+from app.domains.jobs.paths import build_job_paths
+from app.infrastructure.persistence import build_file_persistence_adapters
+from app.domains.jobs.artifacts import JobArtifactService
+from app.domains.jobs.object_artifact_storage import ObjectArtifactStorageAdapter
 from scripts.ops.shadow_upload_artifacts_to_object_storage import shadow_upload_artifacts_to_object_storage
 
 
@@ -19,7 +19,7 @@ class ArtifactShadowUploadTests(TestCase):
         with TemporaryDirectory() as temp_dir:
             data_dir = Path(temp_dir) / "data"
             object_root = Path(temp_dir) / "objects"
-            repository = FileJobRepository(data_dir)
+            adapters = build_file_persistence_adapters(data_dir)
             job = JobRecord(
                 id="job_shadow_artifacts",
                 source_filename="source.pdf",
@@ -29,18 +29,18 @@ class ArtifactShadowUploadTests(TestCase):
                 source_kind="source_pdf",
                 completed_at=utc_now(),
             )
-            repository.create_job(job)
+            adapters.job_repository.create_job(job)
             paths = build_job_paths(data_dir, job.id)
             paths.source_pdf.write_bytes(b"%PDF-1.4\nbody")
             paths.parsed_result_package.write_bytes(b"parsed")
             paths.result_docx.write_bytes(b"docx")
-            repository.upsert_file(job.id, JobFile(file_type="source_pdf", path="input/source.pdf"))
-            repository.upsert_file(job.id, JobFile(file_type="parsed_result_package", path="input/parsed-result.zip"))
-            repository.upsert_file(job.id, JobFile(file_type="result_docx", path="output/result.docx"))
+            adapters.job_file_repository.upsert_file(job.id, JobFile(file_type="source_pdf", path="input/source.pdf"))
+            adapters.job_file_repository.upsert_file(job.id, JobFile(file_type="parsed_result_package", path="input/parsed-result.zip"))
+            adapters.job_file_repository.upsert_file(job.id, JobFile(file_type="result_docx", path="output/result.docx"))
 
-            first_report = shadow_upload_artifacts_to_object_storage(data_dir, object_root, repository=repository)
-            second_report = shadow_upload_artifacts_to_object_storage(data_dir, object_root, repository=repository)
-            files = {item.file_type: item for item in repository.list_files(job.id)}
+            first_report = shadow_upload_artifacts_to_object_storage(data_dir, object_root, repository=adapters)
+            second_report = shadow_upload_artifacts_to_object_storage(data_dir, object_root, repository=adapters)
+            files = {item.file_type: item for item in adapters.job_file_repository.list_files(job.id)}
             object_bytes = {
                 "source_pdf": (object_root / "jobs/job_shadow_artifacts/input/source.pdf").read_bytes(),
                 "parsed_result_package": (object_root / "jobs/job_shadow_artifacts/input/parsed-result.zip").read_bytes(),

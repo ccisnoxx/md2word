@@ -1,0 +1,99 @@
+# docker/dev/docker-compose.yml: 本地开发环境编排，代码热挂载并使用根目录 .env。
+name: md2word-dev
+
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: docker/dev/Dockerfile
+    image: md2word-dev:latest
+    command:
+      [
+        "python",
+        "-m",
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--reload",
+      ]
+    env_file:
+      - ../../.env
+    ports:
+      - "${MD2WORD_API_BIND_HOST:-127.0.0.1}:${MD2WORD_API_BIND_PORT:-18000}:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../..:/app
+      - md2word-dev-var:/app/var
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/live', timeout=3).read()",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  worker:
+    image: md2word-dev:latest
+    command: ["python", "scripts/dev/run_document_worker.py"]
+    env_file:
+      - ../../.env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    volumes:
+      - ../..:/app
+      - md2word-dev-var:/app/var
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - md2word-dev-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
+      MYSQL_DATABASE: ${JOBS_MYSQL_DATABASE:-md2word}
+      MYSQL_USER: ${JOBS_MYSQL_USER:-md2word}
+      MYSQL_PASSWORD: ${JOBS_MYSQL_PASSWORD:?JOBS_MYSQL_PASSWORD is required}
+    command:
+      [
+        "mysqld",
+        "--character-set-server=utf8mb4",
+        "--collation-server=utf8mb4_unicode_ci",
+      ]
+    volumes:
+      - md2word-dev-mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+volumes:
+  md2word-dev-var:
+  md2word-dev-redis:
+  md2word-dev-mysql:

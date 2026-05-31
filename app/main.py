@@ -6,6 +6,7 @@ import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
+from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
@@ -17,65 +18,41 @@ from app.conversion.entrypoint import create_conversion_entrypoint
 from app.core.config import Settings
 from app.core.logging import configure_logging
 from app.core.runtime import AppRuntime
-from app.repositories.database_job_repository import DatabaseJobRepository
-from app.repositories.file_job_repository import FileJobRepository
-from app.repositories.file_term_rule_repository import FileTermRuleRepository
-from app.repositories.mysql_job_repository import MysqlJobRepository, MysqlJobRepositoryConfig
+from app.domains.term_rules.file_repository import FileTermRuleRepository
+from app.infrastructure.persistence import build_persistence_adapters
 from app.services.health_service import HealthService
-from app.services.audit import AuditService
+from app.domains.audit.service import AuditService
 from app.services.auth import AuthService
-from app.services.document_jobs import (
+from app.domains.document_jobs.execution import (
     CeleryDocumentJobTaskQueue,
     DocumentJobExecutionService,
-    DocumentJobService,
     EagerDocumentJobTaskQueue,
 )
+from app.domains.document_jobs.service import DocumentJobService
+from app.domains.files import FileUploadService
 from app.services.document_ir import MinerUToDocumentIRService
-from app.services.files import FileUploadService
-from app.services.jobs.artifact_storage import LocalArtifactStorageAdapter
-from app.services.jobs.artifacts import JobArtifactService
-from app.services.jobs.command import JobCommandService
-from app.services.jobs.dispatch import ExternalWorkerStageDispatcher, InProcessStageDispatcher
-from app.services.jobs.lifecycle import JobLifecycleService
-from app.services.jobs.object_artifact_storage import ObjectArtifactStorageAdapter, S3ArtifactStorageAdapter
-from app.services.jobs.resource_snapshots import JobResourceSnapshotService
-from app.services.jobs.query import JobQueryService
-from app.services.jobs.stage import JobStageService
+from app.domains.jobs.artifact_storage import LocalArtifactStorageAdapter
+from app.domains.jobs.artifacts import JobArtifactService
+from app.domains.jobs.command import JobCommandService
+from app.domains.jobs.dispatch import ExternalWorkerStageDispatcher, InProcessStageDispatcher
+from app.domains.jobs.lifecycle import JobLifecycleService
+from app.domains.jobs.object_artifact_storage import ObjectArtifactStorageAdapter, S3ArtifactStorageAdapter
+from app.domains.jobs.resource_snapshots import JobResourceSnapshotService
+from app.domains.jobs.query import JobQueryService
+from app.domains.jobs.stage import JobStageService
 from app.services.renderer import DocumentIRWordRenderer
-from app.services.resource_versions import ResourceVersionService
-from app.services.term_rules.bootstrap import TermRuleBootstrapService
-from app.services.term_rules.import_validation import TermRuleImportValidationService
-from app.services.term_rules.service import TermRuleService
-from app.services.term_rules.sync_files import TermRuleFileSyncService
-from app.services.term_rules.versioning_service import TermRuleSetVersionService
-from app.services.templates.read_service import TemplateReadService
-from app.services.terms import TermVersionService
-from app.services.translation import DocumentIRTranslationService, build_translation_provider
-from app.services.translation_profiles import TranslationProfileVersionService
-
-
-def _build_job_metadata_repository(settings: Settings):
-    """按配置选择 jobs metadata store；默认仍保持 file backend。"""
-
-    if settings.jobs_repository_backend == "database":
-        settings.jobs_dir.mkdir(parents=True, exist_ok=True)
-        settings.tmp_dir.mkdir(parents=True, exist_ok=True)
-        return DatabaseJobRepository(settings.jobs_metadata_database_file), "database"
-    if settings.jobs_repository_backend == "mysql":
-        settings.jobs_dir.mkdir(parents=True, exist_ok=True)
-        settings.tmp_dir.mkdir(parents=True, exist_ok=True)
-        return MysqlJobRepository(
-            MysqlJobRepositoryConfig(
-                host=settings.jobs_mysql_host,
-                port=settings.jobs_mysql_port,
-                user=settings.jobs_mysql_user,
-                password=settings.jobs_mysql_password,
-                database=settings.jobs_mysql_database,
-                charset=settings.jobs_mysql_charset,
-                connect_timeout_seconds=settings.jobs_mysql_connect_timeout_seconds,
-            )
-        ), "mysql"
-    return FileJobRepository(settings.data_path), "file"
+from app.domains.resources.service import ResourceVersionService
+from app.domains.term_rules.bootstrap import TermRuleBootstrapService
+from app.domains.term_rules.import_validation import TermRuleImportValidationService
+from app.domains.term_rules.service import TermRuleService
+from app.domains.term_rules.sync_files import TermRuleFileSyncService
+from app.domains.term_rules.versioning_service import TermRuleSetVersionService
+from app.domains.templates.read_service import TemplateReadService
+from app.domains.translation.audit import TranslationAuditService
+from app.domains.translation.document_ir_translator import DocumentIRTranslationService
+from app.domains.translation.profiles_service import TranslationProfileVersionService
+from app.domains.translation.provider import build_translation_provider
+from app.domains.translation.term_version_service import TermVersionService
 
 
 def _build_artifact_storage(settings: Settings, artifact_service: JobArtifactService):
@@ -126,28 +103,30 @@ def _build_document_job_task_queue(
 def build_runtime(settings: Settings | None = None) -> AppRuntime:
     resolved_settings = settings or Settings()
     configure_logging(resolved_settings.app_env, resolved_settings.log_format)
-    repository, repository_backend = _build_job_metadata_repository(resolved_settings)
-    job_repository = repository
-    job_file_repository = repository
-    job_event_repository = repository
-    audit_event_repository = repository
-    document_file_repository = repository
-    document_job_repository = repository
-    document_job_event_repository = repository
-    stage_message_store = repository
+    persistence_adapters = build_persistence_adapters(resolved_settings)
+    repository_backend = persistence_adapters.backend_name
+    job_repository = persistence_adapters.job_repository
+    job_file_repository = persistence_adapters.job_file_repository
+    job_event_repository = persistence_adapters.job_event_repository
+    audit_event_repository = persistence_adapters.audit_event_repository
+    document_file_repository = persistence_adapters.document_file_repository
+    document_job_repository = persistence_adapters.document_job_repository
+    document_job_event_repository = persistence_adapters.document_job_event_repository
+    stage_message_store = persistence_adapters.stage_message_store
     audit_service = AuditService(audit_event_repository)
     auth_service = AuthService(resolved_settings)
     file_upload_service = FileUploadService(resolved_settings, document_file_repository)
     document_ir_service = MinerUToDocumentIRService()
     translation_provider = build_translation_provider(resolved_settings)
     document_ir_translation_service = DocumentIRTranslationService(translation_provider)
+    translation_audit_service = TranslationAuditService(resolved_settings, file_upload_service)
     term_version_service = TermVersionService(
         resolved_settings.translation_terms_file,
         default_term_version_id=resolved_settings.default_translation_term_version_id,
     )
     resource_version_service = (
-        ResourceVersionService(repository)
-        if repository_backend == "mysql"
+        ResourceVersionService(persistence_adapters.resource_version_repository)
+        if persistence_adapters.resource_version_repository is not None
         else None
     )
     template_read_service = TemplateReadService(resolved_settings, resource_version_service, audit_service)
@@ -161,6 +140,9 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         document_ir_service,
         template_read_service,
         document_word_renderer,
+        document_ir_translation_service,
+        term_version_service,
+        translation_audit_service,
     )
     document_job_task_queue = _build_document_job_task_queue(resolved_settings, document_job_execution_service)
     document_job_service = DocumentJobService(
@@ -268,7 +250,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
     query_service = JobQueryService(job_repository, job_file_repository, job_event_repository)
     return AppRuntime(
         settings=resolved_settings,
-        repository=repository,
+        persistence_adapters=persistence_adapters,
         job_repository=job_repository,
         job_file_repository=job_file_repository,
         job_event_repository=job_event_repository,
@@ -282,6 +264,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         document_ir_service=document_ir_service,
         translation_provider=translation_provider,
         document_ir_translation_service=document_ir_translation_service,
+        translation_audit_service=translation_audit_service,
         term_version_service=term_version_service,
         document_word_renderer=document_word_renderer,
         document_job_service=document_job_service,
@@ -368,4 +351,22 @@ def create_app(runtime: AppRuntime | None = None) -> FastAPI:
     return app
 
 
-app = create_app()
+class LazyDefaultApp:
+    """延迟构建默认 ASGI app，避免 import app.main 时立刻读取真实 .env 并连接外部依赖。"""
+
+    def __init__(self) -> None:
+        self._app: FastAPI | None = None
+
+    def _get_app(self) -> FastAPI:
+        if self._app is None:
+            self._app = create_app()
+        return self._app
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        await self._get_app()(scope, receive, send)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._get_app(), name)
+
+
+app = LazyDefaultApp()

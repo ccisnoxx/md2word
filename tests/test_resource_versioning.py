@@ -8,10 +8,10 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from app.core.config import Settings
-from app.core.resource_models import ResourceType, ResourceVersionRecord, ResourceVersionStatus
+from app.domains.resources.models import ResourceType, ResourceVersionRecord, ResourceVersionStatus
+from app.infrastructure.persistence import build_mysql_persistence_adapters
 from app.main import build_runtime
-from app.repositories.mysql_job_repository import MysqlJobRepository
-from app.services.resource_versions import ResourceVersionService
+from app.domains.resources.service import ResourceVersionService
 from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
 
 
@@ -152,7 +152,10 @@ class ResourceVersionServiceTests(TestCase):
 class MysqlResourceVersionRepositoryTests(TestCase):
     def test_mysql_repository_persists_resource_versions_and_default_pointer(self):
         fake_mysql = _FakeMysqlDatabase()
-        repository = MysqlJobRepository(_mysql_config(), connect_factory=fake_mysql.connect)
+        repository = build_mysql_persistence_adapters(
+            _mysql_config(),
+            connect_factory=fake_mysql.connect,
+        ).resource_version_repository
         service = ResourceVersionService(repository)
 
         service.create_or_update_draft(
@@ -175,15 +178,19 @@ class MysqlResourceVersionRepositoryTests(TestCase):
     def test_mysql_runtime_exposes_resource_version_service(self):
         fake_mysql = _FakeMysqlDatabase()
 
-        def build_fake_repository(*args: Any, **kwargs: Any) -> MysqlJobRepository:
-            return MysqlJobRepository(*args, connect_factory=fake_mysql.connect, **kwargs)
-
         with TemporaryDirectory() as temp_dir:
             settings = Settings(
-                data_dir=temp_dir,
+                _env_file=None,
+                data_dir=str(temp_dir),
                 jobs_repository_backend="mysql",
             )
-            with patch("app.main.MysqlJobRepository", build_fake_repository):
+            with patch(
+                "app.main.build_persistence_adapters",
+                lambda _settings: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+            ):
                 runtime = build_runtime(settings)
 
         self.assertIsNotNone(runtime.resource_version_service)

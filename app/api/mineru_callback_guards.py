@@ -8,7 +8,7 @@ import secrets
 
 from fastapi import HTTPException, Request
 
-from app.core.mineru_callback import validate_mineru_result_url
+from app.domains.jobs.mineru_callback import validate_mineru_result_url
 from app.core.runtime import AppRuntime
 
 

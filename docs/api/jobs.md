@@ -5,27 +5,26 @@ category: endpoint
 status: current
 source_files:
   - app/api/v1/router.py
-  - app/api/v1/routers/jobs.py
-  - app/api/v1/routers/jobs_ingest.py
-  - app/api/v1/routers/jobs_query.py
-  - app/api/v1/routers/jobs_ops.py
-  - app/api/v1/routers/jobs_presenters.py
+  - app/domains/jobs/router.py
+  - app/domains/jobs/ingest_router.py
+  - app/domains/jobs/query_router.py
+  - app/domains/jobs/ops_router.py
+  - app/domains/jobs/presenters.py
   - app/api/dependencies.py
-  - app/core/audit_models.py
-  - app/core/job_models.py
-  - app/services/audit.py
-  - app/services/jobs/command.py
-  - app/services/jobs/lifecycle.py
-  - app/services/jobs/query.py
-  - app/services/jobs/resource_snapshots.py
-  - app/services/jobs/stage.py
-  - app/services/jobs/artifacts.py
+  - app/domains/audit/models.py
+  - app/domains/audit/service.py
+  - app/domains/jobs/models.py
+  - app/domains/jobs/command.py
+  - app/domains/jobs/lifecycle.py
+  - app/domains/jobs/query.py
+  - app/domains/jobs/resource_snapshots.py
+  - app/domains/jobs/stage.py
+  - app/domains/jobs/artifacts.py
+  - app/domains/jobs/schemas.py
   - app/clients/mineru_client.py
-  - app/repositories/file_job_repository.py
-  - app/schemas/api_v1.py
 summary: Jobs API 提供 MinerU zip 后处理、原始 PDF 在线提交、任务查询、产物下载、本地运维动作和成功动作审计。
 tags: [jobs, api, delivery, audit]
-last_reviewed: 2026-05-29
+last_reviewed: 2026-05-31
 ---
 
 ## 概述
@@ -131,7 +130,7 @@ MinerU callback 不在这组路由下，单独见 [mineru-callbacks.md](/Users/s
   - file / sqlite backend 下，显式传 `template_version`、`term_rule_set_id/version` 或 `translation_profile_id/version` 会返回 `503`
   - `direct` 任务不能绑定 Translation Profile；传入 `translation_profile_id` 或 `translation_profile_version` 会返回 `400`
   - `JOBS_WORKER_MODE=in_process` 时响应返回后会通过 `BackgroundTasks` 推进 `convert_package`
-  - `JOBS_WORKER_MODE=external` 时响应返回后只入队，后续由 `run_worker.py` 消费 stage message
+  - `JOBS_WORKER_MODE=external` 时响应返回后只入队，后续由 `scripts/dev/run_stage_worker.py` 消费 stage message
 
 ### `POST /api/v1/jobs/pdf`
 
@@ -158,7 +157,7 @@ MinerU callback 不在这组路由下，单独见 [mineru-callbacks.md](/Users/s
   - 文件头必须是 `%PDF-`
   - 必须预先配置 `MINERU_API_TOKEN`
   - `JOBS_WORKER_MODE=in_process` 时响应返回后会通过 `BackgroundTasks` 推进 `submit_to_mineru`
-  - `JOBS_WORKER_MODE=external` 时响应返回后只入队，后续由 `run_worker.py` 消费 stage message
+  - `JOBS_WORKER_MODE=external` 时响应返回后只入队，后续由 `scripts/dev/run_stage_worker.py` 消费 stage message
   - `submit_to_mineru` 成功后任务先进入 `parsing`
   - MySQL resource mode 下创建时会绑定不可变 `resource_snapshot`；PDF 链路的 MinerU snapshot 还包含非敏感提交配置
   - 当随后 callback 命中 `done + full_zip_url` 时，服务会自动：

@@ -6,16 +6,18 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
-from app.core.job_models import (
+from app.domains.jobs.models import (
     JobEvent,
     JobFile,
     JobRecord,
     JobStageMessage,
     SourcePdfJobContext,
 )
-from app.repositories.database_job_repository import DatabaseJobRepository
-from app.repositories.file_job_repository import FileJobRepository
-from app.repositories.mysql_job_repository import MysqlJobRepository
+from app.infrastructure.persistence import (
+    build_file_persistence_adapters,
+    build_mysql_persistence_adapters,
+    build_sqlite_persistence_adapters,
+)
 from scripts.ops.shadow_copy_metadata_to_database import (
     shadow_copy_metadata_to_database,
     validate_metadata_shadow_copy,
@@ -36,12 +38,12 @@ class MetadataShadowCopyTests(TestCase):
 
             report = shadow_copy_metadata_to_database(data_dir, database_path)
             validation = validate_metadata_shadow_copy(data_dir, database_path)
-            target = DatabaseJobRepository(database_path)
-            persisted_job = target.get_job("job_shadow")
-            files_count = len(target.list_files("job_shadow"))
-            events_count = len(target.list_events("job_shadow"))
-            stage_messages_count = len(target.list_stage_messages())
-            stage_counts = target.count_stage_messages_by_status()
+            target = build_sqlite_persistence_adapters(database_path)
+            persisted_job = target.job_repository.get_job("job_shadow")
+            files_count = len(target.job_file_repository.list_files("job_shadow"))
+            events_count = len(target.job_event_repository.list_events("job_shadow"))
+            stage_messages_count = len(target.stage_message_store.list_stage_messages())
+            stage_counts = target.stage_message_store.count_stage_messages_by_status()
 
         self.assertTrue(report.ok)
         self.assertTrue(report.target_replaced)
@@ -61,11 +63,11 @@ class MetadataShadowCopyTests(TestCase):
 
             first_report = shadow_copy_metadata_to_database(data_dir, database_path)
             second_report = shadow_copy_metadata_to_database(data_dir, database_path)
-            target = DatabaseJobRepository(database_path)
-            jobs_count = len(target.list_jobs())
-            files_count = len(target.list_files("job_shadow"))
-            events_count = len(target.list_events("job_shadow"))
-            stage_messages_count = len(target.list_stage_messages())
+            target = build_sqlite_persistence_adapters(database_path)
+            jobs_count = len(target.job_repository.list_jobs())
+            files_count = len(target.job_file_repository.list_files("job_shadow"))
+            events_count = len(target.job_event_repository.list_events("job_shadow"))
+            stage_messages_count = len(target.stage_message_store.list_stage_messages())
 
         self.assertTrue(first_report.ok)
         self.assertTrue(second_report.ok)
@@ -79,7 +81,7 @@ class MetadataShadowCopyTests(TestCase):
             data_dir = Path(temp_dir) / "data"
             database_path = Path(temp_dir) / "metadata.sqlite3"
             self._seed_file_metadata(data_dir)
-            DatabaseJobRepository(database_path).create_job(
+            build_sqlite_persistence_adapters(database_path).job_repository.create_job(
                 JobRecord(
                     id="job_other",
                     source_filename="other.zip",
@@ -110,11 +112,11 @@ class MetadataShadowCopyTests(TestCase):
                 _mysql_config(),
                 connect_factory=fake_mysql.connect,
             )
-            target = MysqlJobRepository(_mysql_config(), connect_factory=fake_mysql.connect)
-            persisted_job = target.get_job("job_shadow")
-            files_count = len(target.list_files("job_shadow"))
-            events_count = len(target.list_events("job_shadow"))
-            stage_messages_count = len(target.list_stage_messages())
+            target = build_mysql_persistence_adapters(_mysql_config(), connect_factory=fake_mysql.connect)
+            persisted_job = target.job_repository.get_job("job_shadow")
+            files_count = len(target.job_file_repository.list_files("job_shadow"))
+            events_count = len(target.job_event_repository.list_events("job_shadow"))
+            stage_messages_count = len(target.stage_message_store.list_stage_messages())
 
         self.assertTrue(report.ok)
         self.assertTrue(report.target_empty_before_copy)
@@ -130,7 +132,7 @@ class MetadataShadowCopyTests(TestCase):
             data_dir = Path(temp_dir) / "data"
             fake_mysql = _FakeMysqlDatabase()
             self._seed_file_metadata(data_dir)
-            MysqlJobRepository(_mysql_config(), connect_factory=fake_mysql.connect).create_job(
+            build_mysql_persistence_adapters(_mysql_config(), connect_factory=fake_mysql.connect).job_repository.create_job(
                 JobRecord(
                     id="job_existing",
                     source_filename="existing.zip",
@@ -151,7 +153,7 @@ class MetadataShadowCopyTests(TestCase):
         self.assertIn("target_not_empty", {item.code for item in report.mismatches})
 
     def _seed_file_metadata(self, data_dir: Path) -> None:
-        repository = FileJobRepository(data_dir)
+        adapters = build_file_persistence_adapters(data_dir)
         job = JobRecord(
             id="job_shadow",
             source_filename="source.pdf",
@@ -161,10 +163,10 @@ class MetadataShadowCopyTests(TestCase):
             execution_status="idle",
             source_pdf_context=SourcePdfJobContext(batch_id="batch_shadow", data_id="job_shadow"),
         )
-        repository.create_job(job)
-        repository.upsert_file("job_shadow", JobFile(file_type="source_pdf", path="input/source.pdf"))
-        repository.upsert_file("job_shadow", JobFile(file_type="parsed_result_package", path="input/parsed-result.zip"))
-        repository.append_event(
+        adapters.job_repository.create_job(job)
+        adapters.job_file_repository.upsert_file("job_shadow", JobFile(file_type="source_pdf", path="input/source.pdf"))
+        adapters.job_file_repository.upsert_file("job_shadow", JobFile(file_type="parsed_result_package", path="input/parsed-result.zip"))
+        adapters.job_event_repository.append_event(
             "job_shadow",
             JobEvent(
                 stage="job_created",
@@ -173,7 +175,7 @@ class MetadataShadowCopyTests(TestCase):
                 trace_id="trace_shadow_1",
             ),
         )
-        repository.append_event(
+        adapters.job_event_repository.append_event(
             "job_shadow",
             JobEvent(
                 stage="mineru_callback_processed",
@@ -205,4 +207,4 @@ class MetadataShadowCopyTests(TestCase):
                 status="failed",
             ),
         ):
-            repository.put_stage_message(message)
+            adapters.stage_message_store.put_stage_message(message)

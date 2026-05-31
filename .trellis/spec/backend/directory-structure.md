@@ -6,185 +6,207 @@
 
 ## Overview
 
-The FastAPI backend lives under `app/` and is organized by delivery layer first,
-then by feature. `app/main.py` is the composition root; routers stay thin and
-delegate to services; persistence lives behind repository objects and path
-helpers.
+The FastAPI backend lives under `app/`. Business resources use a domain-first
+layout under `app/domains/`; concrete persistence adapters live under
+`app/infrastructure/persistence/`; versioned non-code assets live under
+`resources/`; ignored mutable runtime state lives under `var/`.
+
+`app/main.py` is the composition root. It builds settings, persistence
+adapters, services, middleware, and the top-level `AppRuntime`.
 
 ---
 
-## Directory Layout
+## Repository Layout
 
+```text
+.
+├── app/
+├── deploy/
+│   ├── env/
+│   ├── hosts/
+│   └── nginx/
+├── docker/
+├── docs/
+│   ├── api/
+│   ├── archive/
+│   ├── deploy/
+│   ├── dev/
+│   ├── runbooks/
+│   └── testing/
+├── resources/
+│   ├── prompts/
+│   ├── template_configs/
+│   ├── templates/
+│   └── term_rules/
+├── scripts/
+│   ├── dev/
+│   └── ops/
+├── tests/
+│   ├── fixtures/
+│   └── tmp/
+└── var/
+    ├── config/
+    ├── jobs/
+    ├── object_artifacts/
+    ├── stage_messages/
+    └── tmp/
 ```
+
+Tool-required dot directories such as `.trellis/`, `.codestable/`, `.idea/`,
+and VCS/config dotfiles stay at the repository root.
+
+---
+
+## App Layout
+
+```text
 app/
 ├── api/
 │   ├── dependencies.py
+│   ├── errors.py
+│   ├── mineru_callback_guards.py
 │   └── v1/
 │       ├── router.py
-│       └── routers/
+│       ├── routers/
+│       │   ├── auth.py
+│       │   ├── auth_schemas.py
+│       │   ├── health.py
+│       │   └── health_schemas.py
 ├── clients/
 ├── conversion/
 ├── core/
-├── repositories/
-├── schemas/
-├── workers/
-└── services/
-    ├── jobs/
-    └── templates/
-
-tests/
-├── test_fastapi_jobs_backend.py
-└── test_*_characterization.py
+├── domains/
+│   ├── audit/
+│   ├── document_jobs/
+│   ├── files/
+│   ├── jobs/
+│   ├── resources/
+│   ├── templates/
+│   ├── term_rules/
+│   └── translation/
+├── infrastructure/
+│   └── persistence/
+│       ├── file/
+│       ├── mysql/
+│       └── sqlite/
+├── services/
+│   ├── auth/
+│   ├── document_ir/
+│   ├── renderer/
+│   └── health_service.py
+└── workers/
 ```
+
+There is no central `app/schemas/` package, no central API v1 schema module,
+and no central `app/repositories/` package. Domain API models live with their
+domain; auth/health API-only models live beside their routers; repository ports
+live with their domain; concrete adapters live under infrastructure.
 
 ---
 
-## Module Organization
+## Module Ownership
 
-- `app/main.py`
-  - Build `Settings`, repositories, services, middleware, and the top-level
-    `AppRuntime`.
-  - Do not place request validation or job lifecycle logic here.
-- `app/core/`
-  - Shared runtime-level primitives: settings, logging, domain records,
-    filesystem path helpers, and pure validation helpers.
-  - Examples: `app/core/config.py`, `app/core/job_models.py`,
-    `app/core/job_paths.py`, `app/core/mineru_callback.py`,
-    `app/core/rule_models.py`.
 - `app/api/`
-  - FastAPI-only wiring: dependencies, auth guards, request extraction, and
-    router registration.
-  - `app/api/v1/router.py` only includes sub-routers; feature routes live in
-    `app/api/v1/routers/*.py`.
-  - When one resource router grows too large, keep the resource-level aggregator
-    file and split companion route modules beside it instead of moving logic far
-    away. Current example: `jobs.py` aggregating `jobs_ingest.py`,
-    `jobs_query.py`, `jobs_ops.py`, plus shared `jobs_presenters.py`.
-- `app/schemas/`
-  - API response contracts built with Pydantic.
-  - Keep HTTP response shapes here instead of defining ad hoc dictionaries in
-    router functions.
-  - Resource-specific v1 schemas live in modules such as `jobs.py`,
-    `templates.py`, and `term_rules.py`; `api_v1.py` is a compatibility facade
-    that re-exports public model names for older imports.
-- `app/services/`
-  - Business workflows and orchestration.
-  - Job flow is split by responsibility instead of one large service:
-    `command.py` (create/enqueue), `query.py` (read/list),
-    `lifecycle.py` (retry/cancel/cleanup), `stage.py` (background execution),
-    `artifacts.py` (artifact metadata).
-  - Template API writes still stay in `app/services/templates/`; routers may
-    handle multipart upload boundaries, but manifest updates, version file
-    placement, and default-template constraints belong in the template service.
-  - For resource domains with seed/runtime/export layering, keep the business
-    logic inside a dedicated package such as `app/services/term_rules/` instead
-    of scattering codec/bootstrap/sync logic across routers.
-- `app/repositories/`
-  - Persistence adapters and repository protocols.
-  - Current backend is file-based: `file_job_repository.py`.
-- `app/clients/`
-  - Outbound integrations. `app/clients/mineru_client.py` owns MinerU HTTP
-    protocol details so services do not build raw requests inline.
+  - FastAPI composition only: shared dependencies, error mapping, callback
+    guards, version router aggregation, auth/health routes, and router-local
+    auth/health schemas.
+  - `app/api/v1/router.py` only includes sub-routers. Business routers are
+    imported from `app.domains.<domain>`.
+- `app/domains/<domain>/`
+  - Owns business models, API schemas, router implementation, services,
+    validation helpers, file codecs, and repository ports for that domain.
+  - Large domains may split companion modules beside a resource-level router
+    aggregator, such as `jobs_ingest.py`, `jobs_query.py`, and `jobs_ops.py`.
+- `app/infrastructure/persistence/`
+  - Owns concrete metadata adapters grouped first by backend (`file`, `sqlite`,
+    `mysql`) and then by domain or port responsibility.
+  - `factory.py` composes a `PersistenceAdapters` bundle for `app/main.py`.
+- `app/core/`
+  - Cross-domain primitives only: settings, logging, base API errors, and the
+    runtime container.
+  - Do not add business-domain records here.
 - `app/conversion/`
-  - Conversion contracts and entrypoint wiring for the DOCX pipeline.
+  - Conversion engine/library boundary for MinerU package to DOCX processing.
+  - Runtime configuration for conversion belongs here, not at repository root.
+- `app/services/`
+  - Active cross-cutting services that are not part of the migrated business
+    domain packages: auth, health readiness/metrics, Document IR conversion,
+    and Word rendering.
+  - Auth user records belong in `app/services/auth/models.py`; Document IR
+    records belong in `app/services/document_ir/models.py`; renderer template
+    config records belong in `app/services/renderer/template_config.py`.
+  - Do not add new business-resource services here; use `app/domains/<domain>/`.
+- `app/clients/`
+  - Outbound integration clients, such as MinerU HTTP protocol details.
 - `app/workers/`
-  - Process-level worker loops. Keep the loop and polling policy here; keep
-    domain execution in services such as `app/services/jobs/stage.py`.
-- `tests/`
-  - `test_fastapi_jobs_backend.py` covers the HTTP API and background-job flow.
-  - `test_*_characterization.py` pins behavior of legacy conversion modules.
+  - Process and queue composition. Workers call domain services; they do not
+    own business logic.
 
 ---
 
 ## Placement Rules
 
-- New HTTP endpoint:
-  - add the route in `app/api/v1/routers/<resource>.py`
-  - add/extend response models in the matching resource module under
-    `app/schemas/`, and re-export from `app/schemas/api_v1.py` only when the
-    public import compatibility surface needs it
-  - put orchestration in a service under `app/services/`
-  - only touch `app/api/dependencies.py` when the validation/auth rule is
-    shared by multiple endpoints
-  - if a single resource accumulates several responsibility clusters, prefer
-    companion modules like `<resource>_ingest.py`, `<resource>_query.py`,
-    `<resource>_ops.py` under the same directory and keep `<resource>.py` as the
-    prefix-owning aggregator
-- New persisted job/artifact/event/stage field:
-  - update `app/core/job_models.py`
-  - update repository read/write logic in `app/repositories/`
-  - update any mapping code that returns API responses
+- New business HTTP endpoint:
+  - put the router and request/response models in `app/domains/<domain>/`
+  - include the router from `app/api/v1/router.py`
+  - keep orchestration and validation in the same domain package
+  - put repository ports in the domain package
+  - put backend-specific persistence in `app/infrastructure/persistence/<backend>/`
+- New auth or health API-only contract:
+  - put request/response models in the route-specific schema companion module
+    under `app/api/v1/routers/`
+  - keep router logic in `app/api/v1/routers/`
+- New persisted field:
+  - update the owning domain model and repository port
+  - update each concrete adapter that persists the field
+  - update API schemas only if the field is part of the HTTP contract
 - New third-party integration:
-  - put transport/protocol logic in `app/clients/`
-  - inject or construct it from `app/main.py` / service wiring instead of from
-    a router
-- New shared path or filesystem rule:
-  - prefer `app/core/job_paths.py` or the relevant artifact helper instead of
-    recomputing paths inside services and routers
-- New independent process entrypoint:
-  - keep the root script thin and PyCharm-friendly, such as `run_worker.py`
-  - put the reusable loop in `app/workers/`
-  - delegate actual job/stage behavior back to existing services
-- New versioned-seed + runtime-store domain:
-  - keep versioned authoring seed under repository assets such as
-    `template_configs/`
-  - keep mutable runtime truth under `data/config/`
-  - keep generated compatibility files clearly separate from both
-
-Current edge cases to be aware of:
-
-- `app/api/v1/routers/mineru_callbacks.py` should consume shared presenter
-  helpers from `jobs_presenters.py`, not private helpers from another router.
-- `app/services/jobs/stage.py` depends on `FileJobRepository` directly, while
-  `query.py` and `lifecycle.py` use repository protocols. When adding new
-  services, prefer the narrower protocol unless the code truly needs the
-  file-backed stage spool methods.
-- `app/api/dependencies.py` is for generic runtime and access dependencies.
-  Callback-only normalization and verification helpers belong in a nearby
-  callback-specific module such as `app/api/mineru_callback_guards.py`.
-- Callback-loss recovery is a jobs operation route, but provider result polling
-  and conversion continuation stay in `JobStageService` so the recovery path can
-  reuse the existing `process_callback` stage contract.
+  - put protocol/transport details in `app/clients/`
+  - inject it through `app/main.py` or service wiring
+- New independent local process runner:
+  - put the PyCharm-friendly direct-run script under `scripts/dev/`
+  - put reusable loop code under `app/workers/`
+- New versioned seed resource:
+  - put source-controlled assets under `resources/`
+  - put mutable runtime truth under `var/`
+  - never add fallback support for old root-level resource directories
 
 ---
 
 ## Naming Conventions
 
 - Modules and packages use `snake_case`.
-- Router files are resource-oriented and plural when they expose a collection:
-  `jobs.py`, `templates.py`, `mineru_callbacks.py`.
+- Domain routers are resource-oriented and plural where they expose
+  collections: `jobs.py`, `templates.py`, `term_rules.py`.
 - Service classes are explicit about responsibility:
   `JobCommandService`, `JobQueryService`, `JobLifecycleService`,
   `JobStageService`, `TemplateReadService`.
-- Shared record types live in `app/core/job_models.py` and use singular
-  Pydantic model names such as `JobRecord`, `JobFile`, `JobEvent`.
-- Runtime path and artifact helpers use descriptive names instead of generic
-  `utils.py`; examples: `job_paths.py`, `artifacts.py`.
+- Avoid generic `utils.py`; use names that expose ownership, such as
+  `artifact_integrity.py`, `resource_snapshots.py`, or `yaml_codec.py`.
 
 ---
 
 ## Examples
 
-- Composition root example: `app/main.py`
-- Thin router + service delegation example: `app/api/v1/routers/jobs.py`
-- Companion route split example: `app/api/v1/routers/jobs_ingest.py`,
-  `app/api/v1/routers/jobs_query.py`, `app/api/v1/routers/jobs_ops.py`,
-  `app/api/v1/routers/jobs_presenters.py`
-- Shared dependency/auth helpers example: `app/api/dependencies.py`
-- Resource schema module example: `app/schemas/jobs.py`
-- API v1 schema compatibility facade example: `app/schemas/api_v1.py`
-- Callback-specific API guard example: `app/api/mineru_callback_guards.py`
-- Filesystem-backed repository example: `app/repositories/file_job_repository.py`
-- Runtime store repository example: `app/repositories/file_term_rule_repository.py`
-- Feature-oriented service split example: `app/services/jobs/`
-- Worker loop example: `app/workers/stage_worker.py`
-- Seed/runtime/export domain example: `app/services/term_rules/`
+- Composition root: `app/main.py`
+- API router aggregation: `app/api/v1/router.py`
+- Auth API-only schemas: `app/api/v1/routers/auth_schemas.py`
+- Health API-only schemas: `app/api/v1/routers/health_schemas.py`
+- Domain package: `app/domains/jobs/`
+- Domain repository port: `app/domains/jobs/repository.py`
+- File persistence adapter: `app/infrastructure/persistence/file/jobs.py`
+- MySQL schema bootstrap: `app/infrastructure/persistence/mysql/schema.py`
+- Conversion runtime config: `app/conversion/runtime_config.py`
+- Local API runner: `scripts/dev/run_api.py`
+- Versioned template manifest: `resources/template_configs/templates_manifest.yaml`
+- Mutable runtime config: `var/config/`
 
 Avoid these mismatches:
 
 - Do not put business logic directly into `app/api/v1/router.py`; it is only
   for including routers.
-- Do not write files directly from routers when repository/path helpers already
-  own the storage layout.
-- Do not add generic `utils.py` buckets when the code fits an existing feature
-  module or `app/core/` helper.
+- Do not add central business schemas under `app/api/` or `app/core/`.
+- Do not recreate central schemas or repositories.
+- Do not write files directly from routers when a domain service or persistence
+  adapter owns the storage rule.
+- Do not add new root-level `run_*.py`, resource, or runtime-state directories.

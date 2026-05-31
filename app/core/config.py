@@ -22,10 +22,10 @@ class Settings(BaseSettings):
     app_env: str = "dev"
     log_format: Literal["text", "json"] = "text"
     app_cors_origins: str = "http://127.0.0.1:3000,http://localhost:3000"
-    data_dir: str = "data"
+    data_dir: str = "var"
     # file 保持本地开发默认值；database 表示 sqlite，mysql 需显式配置。
     jobs_repository_backend: Literal["file", "database", "mysql"] = "file"
-    jobs_metadata_database_path: str = "data/metadata.sqlite3"
+    jobs_metadata_database_path: str = "var/metadata.sqlite3"
     jobs_mysql_host: str = "127.0.0.1"
     jobs_mysql_port: int = 3306
     jobs_mysql_user: str = "md2word"
@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     jobs_mysql_charset: str = "utf8mb4"
     jobs_mysql_connect_timeout_seconds: int = 10
     jobs_artifact_storage_backend: Literal["local_file", "local_object", "s3"] = "local_file"
-    jobs_artifact_object_store_path: str = "data/object_artifacts"
+    jobs_artifact_object_store_path: str = "var/object_artifacts"
     jobs_artifact_s3_bucket: str = ""
     jobs_artifact_s3_endpoint_url: str = ""
     jobs_artifact_s3_region: str = "us-east-1"
@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     auth_jwt_secret_key: str = ""
     auth_jwt_algorithm: Literal["HS256"] = "HS256"
     auth_access_token_expire_minutes: int = 120
+    auth_internal_users_file: str = ""
     auth_internal_users_json: str = ""
     default_translation_mode: Literal["direct", "en2zh"] = "direct"
     mineru_api_token: str = ""
@@ -85,17 +86,19 @@ class Settings(BaseSettings):
     translation_provider_backend: Literal["disabled", "openai_compatible"] = "disabled"
     translation_provider_timeout_seconds: float = 120.0
     translation_provider_max_output_tokens: int = 12000
+    translation_debug_archive_enabled: bool = False
+    translation_debug_archive_retention_days: int = 1
     translation_max_pages: int = 20
     translation_max_chars: int = 60_000
-    translation_terms_path: str = "template_configs/translation_terms.csv"
+    translation_terms_path: str = "resources/term_rules/translation_terms.csv"
     default_translation_term_version_id: str = "en2zh@v1"
     default_template_id: str = "default"
-    templates_manifest_path: str = "template_configs/templates_manifest.yaml"
-    templates_storage_path: str = "data/config/templates"
-    template_state_path: str = "data/config/template_state.json"
-    term_rules_seed_path: str = "template_configs/term_rules.v2.yaml"
-    term_rules_store_path: str = "data/config/term_rules_store.json"
-    term_rules_runtime_yaml_path: str = "data/config/runtime_subscripts_dictionary.yaml"
+    templates_manifest_path: str = "resources/template_configs/templates_manifest.yaml"
+    templates_storage_path: str = "var/config/templates"
+    template_state_path: str = "var/config/template_state.json"
+    term_rules_seed_path: str = "resources/term_rules/term_rules.v2.yaml"
+    term_rules_store_path: str = "var/config/term_rules_store.json"
+    term_rules_runtime_yaml_path: str = "var/config/runtime_subscripts_dictionary.yaml"
 
     @property
     def root_dir(self) -> Path:
@@ -131,13 +134,38 @@ class Settings(BaseSettings):
             return candidate
         return (self.root_dir / candidate).resolve()
 
+    @property
+    def auth_internal_users_file_path(self) -> Path | None:
+        """返回内部账号配置文件绝对路径；未配置文件入口时返回 None。"""
+
+        raw_path = self.auth_internal_users_file.strip()
+        if not raw_path:
+            return None
+        return self._resolve_config_path(raw_path)
+
+    @property
+    def auth_internal_users_source_label(self) -> str:
+        """返回当前内部账号配置来源名称，用于错误信息。"""
+
+        if self.auth_internal_users_file.strip():
+            return "AUTH_INTERNAL_USERS_FILE"
+        return "AUTH_INTERNAL_USERS_JSON"
+
+    def read_auth_internal_users_json(self) -> str:
+        """读取内部账号配置；优先读取文件，兼容旧的 JSON 环境变量。"""
+
+        file_path = self.auth_internal_users_file_path
+        if file_path is None:
+            return self.auth_internal_users_json
+        return file_path.read_text(encoding="utf-8")
+
     def _resolve_runtime_data_path(self, raw_path: str, fallback_relative_to_data: str) -> Path:
         candidate = Path(raw_path)
         if candidate.is_absolute():
             return candidate
         raw_text = raw_path.strip()
-        if raw_text.startswith("data/"):
-            suffix = raw_text[len("data/"):]
+        if raw_text.startswith("var/"):
+            suffix = raw_text[len("var/"):]
             return (self.data_path / suffix).resolve()
         return (self.data_path / fallback_relative_to_data).resolve()
 
@@ -149,21 +177,20 @@ class Settings(BaseSettings):
     @property
     def template_candidates(self) -> tuple[Path, ...]:
         return (
-            self.root_dir / "template" / "datasheet_template.docx",
-            self.root_dir / "templates" / "datasheet_template.docx",
+            self.root_dir / "resources" / "templates" / "default" / "datasheet_template.docx",
         )
 
     @property
     def layout_config_candidates(self) -> tuple[Path, ...]:
         return (
-            self.root_dir / "template_configs" / "datasheet_template.yaml",
+            self.root_dir / "resources" / "template_configs" / "datasheet_template.yaml",
         )
 
     @property
     def subscript_config_candidates(self) -> tuple[Path, ...]:
         return (
             self.term_rules_runtime_yaml_file,
-            self.root_dir / "template_configs" / "subscripts_dictionary.yaml",
+            self.root_dir / "resources" / "term_rules" / "subscripts_dictionary.yaml",
         )
 
     @property

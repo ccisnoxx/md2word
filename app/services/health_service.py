@@ -10,14 +10,14 @@ from typing import Any, Literal
 
 from app.conversion.runtime import llm_client
 from app.core.config import Settings
-from app.core.job_models import JobStageMessage, utc_now
-from app.repositories.protocols import (
-    AuditEventRepositoryProtocol,
+from app.domains.audit.repository import AuditEventRepositoryProtocol
+from app.domains.jobs.models import JobStageMessage, utc_now
+from app.domains.jobs.repository import (
     JobSnapshotRepositoryProtocol,
-    ResourceVersionRepositoryProtocol,
     StageMessageStoreProtocol,
 )
-from app.schemas.health import HealthMetricsResponse, HealthReadyResponse
+from app.domains.resources.repository import ResourceVersionRepositoryProtocol
+from app.api.v1.routers.health_schemas import HealthMetricsResponse, HealthReadyResponse
 
 
 DEFAULT_TERM_RULE_SET_ID = "electronics-default"

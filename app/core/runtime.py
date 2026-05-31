@@ -8,24 +8,27 @@ from typing import TYPE_CHECKING, Any
 from app.core.config import Settings
 
 if TYPE_CHECKING:
-    from app.repositories.protocols import (
-        AuditEventRepositoryProtocol,
-        DocumentFileRepositoryProtocol,
+    from app.domains.audit.repository import AuditEventRepositoryProtocol
+    from app.domains.document_jobs.repository import (
         DocumentJobEventRepositoryProtocol,
         DocumentJobRepositoryProtocol,
+    )
+    from app.domains.files.repository import DocumentFileRepositoryProtocol
+    from app.domains.jobs.repository import (
         JobEventRepositoryProtocol,
         JobFileRepositoryProtocol,
         JobSnapshotRepositoryProtocol,
         StageMessageStoreProtocol,
     )
-    from app.services.jobs.artifact_storage import ArtifactStorageProtocol
-    from app.services.jobs.dispatch import StageDispatcherProtocol
+    from app.domains.jobs.artifact_storage import ArtifactStorageProtocol
+    from app.domains.jobs.dispatch import StageDispatcherProtocol
+    from app.infrastructure.persistence import PersistenceAdapters
 
 
 @dataclass(slots=True)
 class AppRuntime:
     settings: Settings
-    repository: Any
+    persistence_adapters: PersistenceAdapters
     job_repository: JobSnapshotRepositoryProtocol
     job_file_repository: JobFileRepositoryProtocol
     job_event_repository: JobEventRepositoryProtocol
@@ -39,6 +42,7 @@ class AppRuntime:
     document_ir_service: Any
     translation_provider: Any
     document_ir_translation_service: Any
+    translation_audit_service: Any
     term_version_service: Any
     document_word_renderer: Any
     document_job_service: Any

@@ -5,17 +5,16 @@ category: endpoint
 status: current
 source_files:
   - app/api/v1/router.py
-  - app/api/v1/routers/templates.py
+  - app/domains/templates/router.py
   - app/api/dependencies.py
-  - app/core/audit_models.py
-  - app/services/audit.py
-  - app/services/templates/read_service.py
-  - app/services/resource_versions/service.py
-  - app/schemas/templates.py
-  - app/schemas/api_v1.py
+  - app/domains/audit/models.py
+  - app/domains/audit/service.py
+  - app/domains/templates/read_service.py
+  - app/domains/resources/service.py
+  - app/domains/templates/schemas.py
 summary: Templates API 提供多模板清单、详情、下载、默认模板切换、模板 CRUD、文件替换、Template Version 发布管理和成功动作审计。
 tags: [templates, api, manifest, audit]
-last_reviewed: 2026-05-29
+last_reviewed: 2026-05-31
 ---
 
 ## 概述

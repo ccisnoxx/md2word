@@ -18,14 +18,12 @@ from app.conversion.runtime_helpers import (
     resolve_output_path,
     resolve_template_path,
 )
-from config import APP_CONFIG
+from app.conversion.runtime_config import APP_CONFIG
 
 
 DEFAULT_TEMPLATE_CANDIDATES = (
-    Path("template/datasheet_template.docx"),
-    Path("templates/datasheet_template.docx"),
-    Path(__file__).resolve().parents[2] / "template" / "datasheet_template.docx",
-    Path(__file__).resolve().parents[2] / "templates" / "datasheet_template.docx",
+    Path("resources/templates/default/datasheet_template.docx"),
+    Path(__file__).resolve().parents[2] / "resources" / "templates" / "default" / "datasheet_template.docx",
 )
 
 

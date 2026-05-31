@@ -6,10 +6,10 @@ trying to auto-adapt arbitrary `.docx` files.
 
 ## File Set
 
-- `template/datasheet_template.docx`: base Word template, preserving reusable
+- `resources/templates/default/datasheet_template.docx`: base Word template, preserving reusable
   styles, header/footer definitions, and embedded assets.
-- `template_configs/datasheet_template.yaml`: structured render configuration.
-- `template_configs/templates_manifest.yaml`: read-only seed registry that
+- `resources/template_configs/datasheet_template.yaml`: structured render configuration.
+- `resources/template_configs/templates_manifest.yaml`: read-only seed registry that
   binds a template id to the `.docx` file and YAML config.
 
 ## YAML Contract

@@ -4,7 +4,7 @@ slug: conversion-flow
 scope: MinerU 输入到 DOCX 输出的端到端运行流程，包括后端 conversion entrypoint、runtime runner，以及 direct 和 en2zh 两种模式
 summary: 当前转换流程由 `app/conversion/runtime_runner.py` 统一调度；FastAPI jobs 在外层组装参数，再把 MinerU 包规整成页面块模型，做页面修补和可选翻译，最后按模板/YAML 配置生成 Word 文档；en2zh 可额外输出 request 与 segment trace
 status: current
-last_reviewed: 2026-05-29
+last_reviewed: 2026-05-31
 tags: [architecture, flow, mineru, docx, translation]
 depends_on: [architecture-index, app-conversion-internal]
 implements: []
@@ -23,7 +23,7 @@ flowchart TD
     E --> F["runtime_runner.run_conversion()"]
 ```
 
-- `JobStageService` 是后端任务推进入口，按 stage message 分派到 conversion。锚点：`app/services/jobs/stage.py`
+- `JobStageService` 是后端任务推进入口，按 stage message 分派到 conversion。锚点：`app/domains/jobs/stage.py`
 - `build_job_conversion_request()` 把 job、artifact、模板和翻译参数组装成 conversion request。锚点：`app/conversion/entrypoint.py`
 - `ConversionService.convert()` 负责服务层调用和错误边界。锚点：`app/conversion/service.py`
 - 真实转换总调度在 `app/conversion/runtime_runner.py`。锚点：`app/conversion/runtime_runner.py:33`
@@ -84,12 +84,12 @@ flowchart TD
     L --> M["回到渲染流程"]
 ```
 
-- `JobStageService` 在 `translation_mode=en2zh` 时可解析默认 published Translation Profile，并由 `build_job_conversion_request()` 覆盖模型、目标语言、领域、prompt 版本和分批阈值；没有默认 profile 时使用 settings / `.env`。锚点：`app/services/jobs/stage.py`、`app/conversion/entrypoint.py`
+- `JobStageService` 在 `translation_mode=en2zh` 时可解析默认 published Translation Profile，并由 `build_job_conversion_request()` 覆盖模型、目标语言、领域、prompt 版本和分批阈值；没有默认 profile 时使用 settings / `.env`。锚点：`app/domains/jobs/stage.py`、`app/conversion/entrypoint.py`
 - 翻译抽取跳过页眉、页脚、页码和表格占位符。锚点：`translation_runtime.py:15`
 - ID 形式稳定，例如 `p0001.b0003.html.c0001`，用于回填原块。锚点：`translation_runtime.py:230`
 - HTML 表格单元格会被逐格抽取和重写，回填时保留表格标签结构。锚点：`translation_runtime.py:498`、`translation_runtime.py:542`
-- `llm_client.py` 使用 `prompt/translation_en2zh.md` 作为 system prompt。锚点：`llm_client.py:17`、`llm_client.py:144`
-- `write_translation_trace_file()` 在应用翻译前记录 segment 原文、模型输入、AI 初译和最终渲染文本；trace 由 jobs artifact 合同登记为 `translation_trace`。锚点：`translation_runtime.py:154`、`app/services/jobs/stage.py`
+- `llm_client.py` 使用 `resources/prompts/translation_en2zh.md` 作为 system prompt。锚点：`llm_client.py`、`app/conversion/runtime_config.py`
+- `write_translation_trace_file()` 在应用翻译前记录 segment 原文、模型输入、AI 初译和最终渲染文本；trace 由 jobs artifact 合同登记为 `translation_trace`。锚点：`translation_runtime.py:154`、`app/domains/jobs/stage.py`
 
 ## 5. 渲染配置流程
 
@@ -104,8 +104,8 @@ flowchart TD
 ```
 
 - 模板路径默认候选由 `runtime_runner.DEFAULT_TEMPLATE_CANDIDATES` 提供。锚点：`app/conversion/runtime_runner.py:25`
-- 样式 YAML 默认从 `template_configs/datasheet_template.yaml` 查找，并由 `runtime_helpers.load_render_config()` 继续委托给 `render_config_runtime`。锚点：`app/conversion/runtime_helpers.py:48`、`app/conversion/runtime_helpers.py:118`
-- 上下标词典默认从 `template_configs/subscripts_dictionary.yaml` 查找，并由 render config runtime 统一加载。锚点：`render_config_runtime.py`
+- 样式 YAML 默认从 `resources/template_configs/datasheet_template.yaml` 查找，并由 `runtime_helpers.load_render_config()` 继续委托给 `render_config_runtime`。锚点：`app/conversion/runtime_helpers.py`
+- 上下标词典默认从 `resources/term_rules/subscripts_dictionary.yaml` 查找，并由 render config runtime 统一加载。锚点：`render_config_runtime.py`
 - 语言判定会抽取前若干页正文片段，按拉丁字母和 CJK 字符比例判断 `en` / `zh`。锚点：`app/conversion/runtime_helpers.py:144`
 
 ## 6. 文档构建流程

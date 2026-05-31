@@ -4,7 +4,7 @@ slug: app-conversion-internal
 scope: 当前转换核心的运行时模块边界，覆盖后端 conversion entrypoint、shared runtime runner、输入适配、页面修补、配置解析、页面编排、表格渲染、文本规范化、翻译和 LLM 客户端
 summary: `app/conversion/` 是当前唯一转换入口；FastAPI jobs 通过 entrypoint/service/facade 调用 runtime runner，底层 runtime 模块继续承载 MinerU 输入到 DOCX 输出的转换细节
 status: current
-last_reviewed: 2026-05-28
+last_reviewed: 2026-05-31
 tags: [architecture, module-boundary, mineru, docx, translation]
 depends_on: [architecture-index]
 implements: []
@@ -18,7 +18,7 @@ implements: []
 
 ```mermaid
 flowchart TD
-    A["app/services/jobs/stage.py\nstage dispatch"] --> L["app/conversion/entrypoint.py\njob request 组装"]
+    A["app/domains/jobs/stage.py\nstage dispatch"] --> L["app/conversion/entrypoint.py\njob request 组装"]
     L --> M["app/conversion/service.py\nconversion 服务层"]
     M --> N["app/conversion/runtime_facade.py\n稳定导入面"]
     N --> O["app/conversion/runtime_runner.py\n转换总调度"]
@@ -127,7 +127,7 @@ flowchart TD
 
 ## 10. 翻译与 LLM 客户端
 
-- 文件：`translation_runtime.py`、`llm_client.py`、`config.py`、`prompt/translation_en2zh.md`
+- 文件：`translation_runtime.py`、`llm_client.py`、`app/conversion/runtime_config.py`、`resources/prompts/translation_en2zh.md`
 - 职责：抽取可翻译文本、构造最小 JSON payload、校验并回填译文、调用 OpenAI 兼容接口。
 - 关键入口：
   - `extract_translation_items()`：从页面块抽取 text/items/captions/footnotes/html cell。
@@ -146,10 +146,11 @@ flowchart TD
 ## 12. 后续维护原则
 
 - 若继续拆模块，优先移除 runtime 反查耦合，而不是新增更深的 wrapper。
-- 不要把 `prompt/translation_en2zh.md` 迁进 `.codestable/`；它是运行时资源。
+- 不要把 `resources/prompts/translation_en2zh.md` 迁进 `.codestable/`；它是运行时资源。
 - 表格和文本应保持单向依赖：表格可调用文本工具，文本层不应感知表格模型。
 - 翻译链路应优先修正“只导出请求并退出”的文案/行为不一致，再继续扩展批处理能力。
 
 ## 变更日志
 
 - 2026-05-28：阶段 0 入口收口，改为记录 `app/conversion/` 的后端转换边界。
+- 2026-05-31：同步项目目录重构后的 conversion 资源路径和 jobs stage domain 路径。

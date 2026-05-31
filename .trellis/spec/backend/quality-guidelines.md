@@ -17,11 +17,11 @@ behavior-preserving characterization tests for legacy conversion code.
 
 - Do not put new business workflow logic directly into `app/main.py` or
   `app/api/v1/router.py`.
-- Do not bypass `FileJobRepository` with direct JSON file edits from routers or
-  services.
+- Do not bypass persistence adapters with direct JSON/sqlite/MySQL metadata
+  edits from routers or services.
 - Do not return ad hoc dictionaries from API handlers when a schema already
-  exists in a resource module under `app/schemas/` or the `api_v1.py`
-  compatibility facade.
+  exists in the owning domain package or in the route-specific API schema
+  companion module under `app/api/v1/routers/`.
 - Do not introduce a second testing style casually. The repo currently uses
   `unittest`/`TestCase`; mixing in pytest fixtures and markers without a broader
   migration plan adds maintenance friction.

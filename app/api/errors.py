@@ -8,9 +8,9 @@ from fastapi.responses import JSONResponse
 
 from app.conversion.contracts import ConversionFailure
 from app.core.errors import ApiError, ApiErrorCode
-from app.core.job_workflow import JobWorkflowViolation
-from app.services.jobs.artifact_integrity import ArtifactFingerprintMismatch
-from app.services.jobs.resource_snapshots import JobResourceSnapshotError
+from app.domains.jobs.workflow import JobWorkflowViolation
+from app.domains.jobs.artifact_integrity import ArtifactFingerprintMismatch
+from app.domains.jobs.resource_snapshots import JobResourceSnapshotError
 
 
 _STATUS_ERROR_CODES: dict[int, ApiErrorCode] = {

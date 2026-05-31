@@ -13,5 +13,8 @@ __pycache__
 .env
 .python_packages
 data
-tests/golden_samples/pdfs
-tests/golden_samples/runs
+var
+.DS_Store
+._*
+tests/fixtures/golden_samples/pdfs
+tests/tmp

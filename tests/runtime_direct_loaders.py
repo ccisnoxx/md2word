@@ -6,6 +6,8 @@ import types
 from pathlib import Path
 
 
+# tests/runtime_direct_loaders.py: 提供 conversion runtime characterization tests 的直接模块加载器。
+
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_PKG = "app.conversion.runtime"
 
@@ -125,6 +127,11 @@ def _install_dependency_stubs() -> None:
 def _reset_modules(*module_names: str) -> None:
     for module_name in module_names:
         sys.modules.pop(module_name, None)
+
+
+def load_llm_client_module():
+    _reset_modules(f"{RUNTIME_PKG}.llm_client")
+    return importlib.import_module(f"{RUNTIME_PKG}.llm_client")
 
 
 def load_render_config_module():

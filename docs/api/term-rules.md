@@ -5,27 +5,26 @@ category: endpoint
 status: current
 source_files:
   - app/api/v1/router.py
-  - app/api/v1/routers/term_rules.py
-  - app/api/v1/routers/term_rule_write_guard.py
-  - app/services/term_rules/service.py
-  - app/services/term_rules/import_validation.py
-  - app/services/term_rules/sync_files.py
-  - app/services/term_rules/yaml_codec.py
-  - app/repositories/file_term_rule_repository.py
-  - app/schemas/term_rules.py
-  - app/schemas/api_v1.py
+  - app/domains/term_rules/router.py
+  - app/domains/term_rules/write_guard.py
+  - app/domains/term_rules/service.py
+  - app/domains/term_rules/import_validation.py
+  - app/domains/term_rules/sync_files.py
+  - app/domains/term_rules/yaml_codec.py
+  - app/domains/term_rules/file_repository.py
+  - app/domains/term_rules/schemas.py
 summary: Term-rules API 以 v2 manifest 为版本化 seed，以 live runtime store 为可变真源，并在 MySQL versioned mode 下把写入交给 Term Rule Set 发布流程。
 tags: [term-rules, api, runtime-store]
-last_reviewed: 2026-05-29
+last_reviewed: 2026-05-31
 ---
 
 ## 概述
 
 当前 `term-rules` 统一挂在 `/api/v1/term-rules` 下，职责分三层：
 
-- 版本化 seed：`template_configs/term_rules.v2.yaml`
-- live runtime store：`data/config/term_rules_store.json`
-- conversion 兼容 runtime YAML：`data/config/runtime_subscripts_dictionary.yaml`
+- 版本化 seed：`resources/term_rules/term_rules.v2.yaml`
+- live runtime store：`var/config/term_rules_store.json`
+- conversion 兼容 runtime YAML：`var/config/runtime_subscripts_dictionary.yaml`
 
 运行约定：
 
@@ -68,7 +67,7 @@ last_reviewed: 2026-05-29
   - `custom_html`
   - `custom_markdown`
   - `notes`
-- 成功后会刷新 `data/config/runtime_subscripts_dictionary.yaml`。
+- 成功后会刷新 `var/config/runtime_subscripts_dictionary.yaml`。
 - MySQL versioned mode 下返回 `400`，避免绕过 Term Rule Set draft / publish。
 
 ### `PATCH /api/v1/term-rules/{rule_id}`

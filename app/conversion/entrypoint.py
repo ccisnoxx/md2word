@@ -5,9 +5,9 @@ from pathlib import Path
 from app.conversion.contracts import ConversionEntrypoint, ConversionRequest
 from app.conversion.service import ConversionService
 from app.core.config import Settings
-from app.core.job_models import JobRecord
-from app.core.job_paths import JobPaths
-from app.core.translation_models import TranslationProfileSnapshot
+from app.domains.jobs.models import JobRecord
+from app.domains.jobs.paths import JobPaths
+from app.domains.translation.models import TranslationProfileSnapshot
 
 
 def build_job_conversion_request(

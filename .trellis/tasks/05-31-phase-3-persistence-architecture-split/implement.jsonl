@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Defines the staged target layout and records that persistence adapters move after the files domain sample."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Defines current file/sqlite metadata behavior, storage layouts, and schema-evolution constraints that Phase 3 must preserve."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Defines repository boundary and unittest verification expectations for backend refactors."}
+{"file": ".codestable/refactors/2026-05-31-project-directory-restructure/project-directory-restructure-scan.md", "reason": "Source scan evidence for parent Phase 3 / scan item #8, including all-purpose repository adapter risks."}

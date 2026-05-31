@@ -18,8 +18,8 @@ import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_MANIFEST_PATH = REPO_ROOT / "tests" / "golden_samples" / "manifest.yaml"
-DEFAULT_RUNS_DIR = REPO_ROOT / "tests" / "golden_samples" / "runs"
+DEFAULT_MANIFEST_PATH = REPO_ROOT / "tests" / "fixtures" / "golden_samples" / "manifest.yaml"
+DEFAULT_RUNS_DIR = REPO_ROOT / "tests" / "tmp" / "golden_sample_runs"
 TERMINAL_STATUSES = {"succeeded", "failed", "canceled"}
 
 
@@ -114,7 +114,7 @@ def load_manifest(path: Path) -> dict[str, Any]:
 
 
 def resolve_sample_root(manifest_path: Path, manifest: dict[str, Any]) -> Path:
-    raw_root = str(manifest.get("sample_root") or "tests/golden_samples/pdfs")
+    raw_root = str(manifest.get("sample_root") or "tests/fixtures/golden_samples/pdfs")
     candidate = Path(raw_root)
     if candidate.is_absolute():
         return candidate

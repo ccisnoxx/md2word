@@ -5,12 +5,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, status
 
 from app.api.dependencies import get_runtime, get_trace_id, require_current_user
-from app.core.audit_models import ActorContext
-from app.core.auth_models import AuthenticatedUser
+from app.domains.audit.models import ActorContext
 from app.core.errors import ApiError
 from app.core.runtime import AppRuntime
-from app.schemas.auth import AuthLoginRequest, AuthTokenResponse, CurrentUserResponse
+from app.api.v1.routers.auth_schemas import AuthLoginRequest, AuthTokenResponse, CurrentUserResponse
 from app.services.auth.service import AuthConfigurationError, InvalidCredentialsError
+from app.services.auth.models import AuthenticatedUser
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])

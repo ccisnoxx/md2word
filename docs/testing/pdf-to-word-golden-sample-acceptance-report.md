@@ -16,11 +16,11 @@ last_reviewed: 2026-05-29
 
 ## 已完成
 
-- 样本目录：`tests/golden_samples/pdfs/`
-- 样本清单：`tests/golden_samples/manifest.yaml`
-- 人工验收模板：`tests/golden_samples/acceptance-record-template.md`
+- 样本目录：`tests/fixtures/golden_samples/pdfs/`
+- 样本清单：`tests/fixtures/golden_samples/manifest.yaml`
+- 人工验收模板：`tests/fixtures/golden_samples/acceptance-record-template.md`
 - 批量回归脚本：`scripts/ops/run_golden_sample_regression.py`
-- 回归输出目录：`tests/golden_samples/runs/`
+- 回归输出目录：`tests/tmp/golden_sample_runs/`
 
 ## 待执行
 
@@ -43,4 +43,4 @@ GOLDEN_SAMPLE_PASSWORD='<password>' \
 /Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/run_golden_sample_regression.py
 ```
 
-正式执行后，把 `tests/golden_samples/runs/{timestamp}/report.md` 的汇总结果回填到本报告，人工打开每个成功样本 Word 后按 `tests/golden_samples/acceptance-record-template.md` 记录结论。
+正式执行后，把 `tests/tmp/golden_sample_runs/{timestamp}/report.md` 的汇总结果回填到本报告，人工打开每个成功样本 Word 后按 `tests/fixtures/golden_samples/acceptance-record-template.md` 记录结论。

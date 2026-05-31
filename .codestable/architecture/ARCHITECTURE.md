@@ -2,9 +2,9 @@
 doc_type: architecture
 slug: architecture-index
 scope: 当前仓库的整体实现地图，覆盖 FastAPI 后端表面、conversion library，以及 MinerU 结构化结果到 DOCX 的本地转换链路与可选英文转中文翻译链路
-summary: 当前系统已收口为“FastAPI 后端 + app/conversion 转换核心”的结构；`app/main.py` 是后端组合根，MySQL resource mode 下 jobs 创建会绑定不可变资源快照，高风险管理动作和 artifact download 已写入最小 actor/audit 事件，operations readiness / metrics / release check 已形成单实例生产化基线，转换编排和运行时边界集中在 `app/conversion/`
+summary: 当前系统已收口为“FastAPI 后端 + app/conversion 转换核心”的结构；后端业务代码采用 `app/domains/` domain-first 布局，`app/main.py` 是组合根，MySQL resource mode 下 jobs 创建会绑定不可变资源快照，高风险管理动作和 artifact download 已写入最小 actor/audit 事件，operations readiness / metrics / release check 已形成单实例生产化基线
 status: current
-last_reviewed: 2026-05-29
+last_reviewed: 2026-05-31
 tags: [architecture, mineru, docx, backend, fastapi, translation, operations]
 depends_on: []
 implements: [fastapi-backend-productization]
@@ -130,39 +130,35 @@ MinerU 结构化结果 -> 页面修补 -> 可选英文转中文翻译 -> 模板/
   - 表格解析与渲染。
 - `text_rendering.py`
   - 文本与公式规范化。
-- `translation_runtime.py`、`llm_client.py`、`config.py`
+- `translation_runtime.py`、`llm_client.py`、`app/conversion/runtime_config.py`
   - 翻译请求构造、segment trace 构建、响应回填、OpenAI 兼容调用。
 - `app/`
   - FastAPI 后端表面，详见 [backend-fastapi-service.md](/Users/sc/PycharmProjects/md2word/.codestable/architecture/backend-fastapi-service.md)。
-- `app/core/resource_models.py`
-  - 模板、术语规则集、翻译配置共用的资源版本状态、持久化记录和已发布解析结果模型。
-- `app/core/audit_models.py`
-  - `ActorContext`、`ActorRole` 和 `AuditEvent`，用于跨资源成功动作审计。
-- `app/core/translation_models.py`
-  - 已发布 Translation Profile 的执行时快照，明确不包含 secret。
-- `app/core/template_models.py`
-  - 模板 manifest、当前版本、`render_policy` 和已禁用版本列表。
-- `app/services/resource_versions/`
+- `app/domains/`
+  - 业务 domain 入口。`audit`、`resources`、`templates`、`term_rules`、`translation`、`document_jobs`、`jobs` 和 `files` 分别拥有自己的 models、schemas、routers、services 和 repository ports。
+- `app/infrastructure/persistence/`
+  - file / sqlite / mysql 三类 metadata backend 的具体 adapter 与 schema bootstrap，按 backend 和 domain responsibility 拆分。
+- `app/domains/resources/service.py`
   - 资源版本内部 service，统一草稿更新、发布、默认指针、回滚、禁用、supersede 和 published-only 解析规则。
-- `app/services/audit.py`
+- `app/domains/audit/service.py`
   - `AuditService` 统一生成 `audit_id`、归一化 reason，并写入 metadata repository 的 audit event 端口。
 - `app/services/health_service.py`
   - readiness 依赖探针和 metrics snapshot 生成，覆盖 repository backend、stage spool、artifact storage、默认资源版本、audit event 和运行时计数。
-- `app/services/templates/read_service.py`
+- `app/domains/templates/read_service.py`
   - 模板 manifest 读取、默认模板状态、API 管理模板文件、Template Version payload/hash 构建，以及 MySQL resource version service 对接。
-- `app/services/term_rules/versioning_service.py`
+- `app/domains/term_rules/versioning_service.py`
   - Term Rule Set draft payload、版本号生成、发布、设默认、回滚和 live runtime store / runtime YAML 同步。
-- `app/services/translation_profiles/versioning_service.py`
+- `app/domains/translation/profiles_service.py`
   - Translation Profile draft payload、版本号生成、发布、设默认、回滚和默认 published snapshot 解析。
-- `app/services/jobs/resource_snapshots.py`
+- `app/domains/jobs/resource_snapshots.py`
   - job 创建期资源快照构造与 stage 物化；无 MySQL resource service 时守住 file/sqlite legacy 路径，显式 versioned resource selection 返回 503。
-- `app/core/job_paths.py`
-  - job 本地目录布局；snapshot term-rule materialization 使用 `data/jobs/{job_id}/resources/runtime_subscripts_dictionary.yaml`。
-- `app/api/v1/routers/translation_profiles.py`、`app/schemas/translation_profiles.py`
+- `app/domains/jobs/paths.py`
+  - job 本地目录布局；snapshot term-rule materialization 使用 `var/jobs/{job_id}/resources/runtime_subscripts_dictionary.yaml`。
+- `app/domains/translation/router.py`、`app/domains/translation/schemas.py`
   - Translation Profile HTTP 管理入口与 v1 请求 / 响应模型。
-- `template/`、`template_configs/`
-  - 默认模板、页面布局 YAML、术语上下标 YAML、模板 manifest seed 和 term-rule v2 seed。
-- `data/config/`
+- `resources/`
+  - 默认模板、页面布局 YAML、术语上下标 YAML、模板 manifest seed、term-rule v2 seed 和翻译 prompt。
+- `var/config/`
   - runtime term-rule store、兼容 runtime YAML、默认模板状态，以及 API 管理的模板版本文件目录 `config/templates/{template_id}/v{version}/`。
 - `docs/`
   - 后端 API 与运行文档出口。
@@ -227,12 +223,13 @@ flowchart TD
 
 ### 7.2 FastAPI 后端
 
-- 运行态目录在 `data/`：
+- 运行态目录在 `var/`：
   - `config/`
   - `jobs/{job_id}/`
   - `stage_messages/`
+  - `object_artifacts/`
   - `tmp/`
-- 当前默认是 file backend；jobs metadata 可配置切换到 sqlite-backed `DatabaseJobRepository` 或 MySQL-backed `MysqlJobRepository`，artifact 可配置切换到本地对象目录 `local_object` adapter。
+- 当前默认是 file backend；jobs metadata 可配置切换到 sqlite-backed 或 MySQL-backed infrastructure adapters，artifact 可配置切换到本地对象目录 `local_object` adapter。
 - MySQL metadata store 保存 jobs、job events、job files、stage messages、`resource_versions`、`resource_default_versions` 和 `audit_events`；PDF、DOCX、MinerU zip 等 artifact 二进制仍由 artifact storage 保存。
 - Operations readiness 当前通过 `/health/ready` 报告 metadata backend、worker mode、stage dispatcher、stage spool、artifact storage、artifact root 可写性、磁盘剩余空间、默认 Template / Term Rule / Translation Profile 版本标签和 MySQL schema bootstrap 可用性。
 - `/health/metrics` 返回 JSON counters：job status counts、stage message status counts、resource version counts、audit event count、metadata store、artifact storage、worker mode 和 stage dispatcher；该 endpoint 不是 Prometheus 格式，不暴露 token、payload、客户文件名或新增本地绝对私密路径。
@@ -267,7 +264,7 @@ flowchart TD
 ## 8. 已知边界
 
 - 当前转换核心仍有部分 runtime 模块通过注入对象读取外部符号，属于已拆物理文件但尚未完全解耦的状态。
-- `prompt/translation_en2zh.md` 是运行时资源，不应迁进 `.codestable/`。
+- `resources/prompts/translation_en2zh.md` 是运行时资源，不应迁进 `.codestable/`。
 - 当前 FastAPI 后端已支持“上传原始 PDF -> 成功提交 MinerU -> 接收 callback -> 恢复 `parsed_result_package` -> DOCX 后处理 -> completed/failed”；`parsed` 保留为短暂可观察里程碑。
 - 当前 FastAPI 后端默认仍使用 file backend，但已具备 sqlite database metadata adapter、MySQL metadata adapter、local object artifact adapter、metadata shadow copy 和 artifact shadow upload 的最小迁移边界。
 - MySQL adapter 已完成 schema bootstrap、existing repository protocol / resource version protocol 适配、fake MySQL release smoke，以及 file -> MySQL metadata 空目标 shadow copy / validate baseline；真实外部 MySQL 服务 smoke 和 Alembic / SQLAlchemy 迁移体系仍未纳入当前能力。
@@ -294,6 +291,8 @@ flowchart TD
 
 ## 10. 变更日志
 
+- 2026-05-31：补入项目目录重构 Phase 9 现状；`app/core/` 收窄为 config/logging/errors/runtime 等跨域基础设施，auth 用户上下文、Document IR 和 renderer 模板配置模型移入对应 services；集中 API schema 文件拆为 auth/health 路由私有 schema companion。
+- 2026-05-31：补入项目目录重构 Phase 5 现状；业务后端代码迁入 `app/domains/`，persistence adapter 拆到 `app/infrastructure/persistence/`，运行时状态改为 `var/`，版本化资源改为 `resources/`，并移除长期 `app/schemas` / `app/repositories` 中央包。
 - 2026-05-29：补入 Permission and Audit Baseline 现状；高风险资源动作、job ops 和 artifact download 写入独立 `AuditEvent`，actor 从现有 admin/jobs/open token 边界派生，不引入 SSO、多租户或审计查询 API。
 - 2026-05-29：补入 Job Resource Snapshot Binding 现状；MySQL resource mode 下 job 创建绑定 Template / Term Rule / `en2zh` Translation Profile published versions 和非敏感 MinerU snapshot，stage 按 exact snapshot materialize 模板、job-local term-rule YAML 和 Translation Profile。
 - 2026-05-29：补入 Translation Profile and Segment Trace 现状；MySQL-backed `/translation-profiles` 支持草稿、发布、设默认和回滚，`en2zh` job 生成 `translation_trace` artifact。

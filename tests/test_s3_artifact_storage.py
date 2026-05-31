@@ -6,10 +6,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
-from app.core.job_models import JobFile
-from app.core.job_paths import build_job_paths
-from app.services.jobs.artifacts import JobArtifactService
-from app.services.jobs.object_artifact_storage import S3ArtifactStorageAdapter
+from app.domains.jobs.models import JobFile
+from app.domains.jobs.paths import build_job_paths
+from app.domains.jobs.artifacts import JobArtifactService
+from app.domains.jobs.object_artifact_storage import S3ArtifactStorageAdapter
 
 
 class FakeS3Body:
