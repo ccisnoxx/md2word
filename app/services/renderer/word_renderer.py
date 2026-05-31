@@ -15,8 +15,8 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
-from app.core.document_ir_models import DocumentIR, DocumentIRAsset, DocumentIRBlock
-from app.core.template_config_models import TemplateConfigPackage, TemplateParagraphStyleConfig
+from app.services.document_ir.models import DocumentIR, DocumentIRAsset, DocumentIRBlock
+from app.services.renderer.template_config import TemplateConfigPackage, TemplateParagraphStyleConfig
 
 
 ImageContentLoader = Callable[[DocumentIRAsset], bytes | None]

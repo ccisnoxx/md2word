@@ -22,8 +22,8 @@ DEFAULT_UNITTEST_TARGETS: tuple[str, ...] = (
     "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_metrics_reports_default_resource_versions_in_mysql_mode",
     "tests.test_metadata_shadow_copy.MetadataShadowCopyTests.test_shadow_copy_writes_mysql_and_validates_all_metadata",
     "tests.test_metadata_shadow_copy.MetadataShadowCopyTests.test_shadow_copy_to_mysql_refuses_non_empty_target_by_default",
-    "tests.test_database_job_repository.DatabaseJobRepositoryTests.test_jobs_api_pdf_callback_flow_uses_mysql_repository",
-    "tests.test_database_job_repository.DatabaseJobRepositoryTests.test_build_runtime_switches_to_mysql_repository_and_readiness",
+    "tests.test_database_job_repository.PersistenceAdapterTests.test_jobs_api_pdf_callback_flow_uses_mysql_repository",
+    "tests.test_database_job_repository.PersistenceAdapterTests.test_build_runtime_switches_to_mysql_repository_and_readiness",
     "tests.test_job_workflow_policy",
     "tests.test_backend_logging",
 )

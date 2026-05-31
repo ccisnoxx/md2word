@@ -133,7 +133,7 @@ metrics 适合被脚本轮询或人工排障读取；如果后续接 Prometheus 
 当前支持两种 worker 形态：
 
 - `JOBS_WORKER_MODE=in_process`：默认模式，API 进程通过 `BackgroundTasks` 同进程推进 stage。
-- `JOBS_WORKER_MODE=external`：API 只写入 stage message，`run_worker.py` 独立轮询并消费。
+- `JOBS_WORKER_MODE=external`：API 只写入 stage message，`scripts/dev/run_stage_worker.py` 独立轮询并消费。
 
 stage message 的持久化语义：
 
@@ -160,7 +160,7 @@ worker 仍按单 worker 进程设计，不把它们当成多 worker 抢占锁；
 
 如果 `stage_spool_pending_messages > 0` 或 `stage_spool_running_messages > 0`，说明有后台消息还没完成，重启应用会 replay。
 如果 `stage_spool_failed_messages > 0`，说明有失败消息留存在 spool 中；它不会被启动 replay 自动恢复，需要通过 job 详情、events 和 retry 决定下一步。
-如果 `stage_spool_running_stale_messages > 0`，说明存在已经超过 lease 的 `running` message；`in_process` 模式通常可以先重启服务触发 replay，`external` 模式应先确认 `run_worker.py` 进程是否存活，再结合 job events 判断是否需要 retry。
+如果 `stage_spool_running_stale_messages > 0`，说明存在已经超过 lease 的 `running` message；`in_process` 模式通常可以先重启服务触发 replay，`external` 模式应先确认 `scripts/dev/run_stage_worker.py` 进程是否存活，再结合 job events 判断是否需要 retry。
 `stage_spool_observation_status=ok` 表示没有遗留消息，`replayable` 表示有 pending/running 消息可恢复，`needs_attention` 表示存在 failed 或 stale running 消息。
 
 如果 `effective_repository_backend=database`，说明 jobs snapshot、events、files 和 stage messages 已经切到 sqlite metadata store；如果是 `mysql`，说明这些 metadata 已切到 MySQL metadata store。artifact 二进制看 `artifact_storage`：`local_file` 表示仍读写 job 本地目录，`local_object` 表示登记时会 shadow upload 到本地对象目录并优先从 `object_key` 下载，`s3` 表示 artifact 登记时会上传到 S3-compatible bucket，下载时返回临时重定向或对象流。

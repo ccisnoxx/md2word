@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from unittest import TestCase
 
-from app.core.job_models import JobRecord, SourcePdfJobContext, build_source_pdf_context_patch, sync_source_pdf_compatibility_fields
-from app.core.job_workflow import (
+from app.domains.jobs.models import JobRecord, SourcePdfJobContext, build_source_pdf_context_patch, sync_source_pdf_compatibility_fields
+from app.domains.jobs.workflow import (
     JobWorkflowViolation,
     build_cancel_transition,
     build_cleanup_local_files_transition,

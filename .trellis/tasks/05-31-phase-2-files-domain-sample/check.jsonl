@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Check Phase 2 against the backend layout spec and the expected update to document app/domains/files as the sample."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Check that the plan preserves thin routers, service/repository boundaries, and uses the project unittest workflow."}
+{"file": ".codestable/refactors/2026-05-31-project-directory-restructure/project-directory-restructure-scan.md", "reason": "Check that the child task remains limited to the scan-approved files domain sample and does not drift into later phases."}

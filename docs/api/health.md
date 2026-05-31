@@ -6,11 +6,11 @@ status: current
 source_files:
   - app/api/v1/router.py
   - app/api/v1/routers/health.py
+  - app/api/v1/routers/health_schemas.py
   - app/services/health_service.py
-  - app/schemas/api_v1.py
 summary: Health API 提供 liveness、readiness、运行时依赖状态检查和 JSON metrics。
 tags: [health, api, ops]
-last_reviewed: 2026-05-28
+last_reviewed: 2026-05-31
 ---
 
 ## 概述
@@ -47,7 +47,7 @@ Health API 当前有四条入口：
 {
   "status": "ok",
   "app_name": "md2word_file",
-  "jobs_dir": "/abs/path/data/jobs",
+  "jobs_dir": "/abs/path/var/jobs",
   "dependency_checks": {
     "configured_repository_backend": "file",
     "effective_repository_backend": "file",
@@ -136,22 +136,22 @@ Health API 当前有四条入口：
 | `stage_dispatcher` | 当前后台 stage 调度 adapter；`background_tasks` 或 `external_worker` |
 | `stage_message_store` | 当前 stage message store adapter；随 jobs metadata backend 为 `file`、`database` 或 `mysql` |
 | `artifact_storage` | 当前 artifact storage adapter；默认 `local_file`，可切换为 `local_object` 或 `s3` |
-| `jobs_dir_exists` | `data/jobs/` 是否存在 |
+| `jobs_dir_exists` | `var/jobs/` 是否存在 |
 | `jobs_dir_writable` | 运行态根目录是否可写 |
 | `artifact_root_writable` | 当前 artifact 本地根目录是否可写；`local_file` 检查 jobs 目录，`local_object` 检查对象目录 |
 | `artifact_disk_free_bytes` | 当前 artifact 本地根所在磁盘剩余字节数 |
-| `stage_spool_dir_exists` | stage spool 是否可用；file 模式检查 `data/stage_messages/`，database/mysql 模式表示数据库内 store 可用 |
+| `stage_spool_dir_exists` | stage spool 是否可用；file 模式检查 `var/stage_messages/`，database/mysql 模式表示数据库内 store 可用 |
 | `stage_spool_pending_messages` | 当前 pending 的 stage message 数量；启动 replay 会尝试恢复 |
 | `stage_spool_running_messages` | 当前 running 的 stage message 数量；启动 replay 会尝试恢复 |
 | `stage_spool_failed_messages` | 当前 failed 的 stage message 数量；不会被启动 replay 自动恢复 |
 | `stage_spool_running_stale_messages` | 当前 running 且 lease 已过期的 stage message 数量 |
 | `stage_spool_oldest_running_age_seconds` | 最老 running stage message 距离最后更新时间的秒数 |
 | `stage_spool_needs_attention` | 是否存在 failed 或 stale running stage message，需要人工关注 |
-| `tmp_dir_exists` | `data/tmp/` 是否存在 |
+| `tmp_dir_exists` | `var/tmp/` 是否存在 |
 | `template_docx_exists` | 默认 Word 模板是否可读 |
 | `layout_config_exists` | 页面布局 YAML 是否可读 |
 | `subscript_config_exists` | 术语上下标 YAML 是否可读 |
-| `translation_prompt_exists` | `prompt/translation_en2zh.md` 是否存在 |
+| `translation_prompt_exists` | `resources/prompts/translation_en2zh.md` 是否存在 |
 | `mineru_api_token_configured` | 是否配置 `MINERU_API_TOKEN` |
 | `openai_api_key_configured` | 是否配置 `OPENAI_API_KEY` |
 | `openai_base_url_configured` | 是否显式配置 `OPENAI_BASE_URL` |
@@ -186,4 +186,4 @@ Health API 当前有四条入口：
 - `stage_spool_failed_messages>0`
   - 说明存在失败的后台 stage message；需要结合 job 详情和 events 判断是否 retry。
 - `stage_spool_running_stale_messages>0`
-  - 说明存在超过 lease 的 running stage message；`in_process` 可先重启服务触发 replay，`external` 应检查 `run_worker.py` 进程是否仍在运行。
+  - 说明存在超过 lease 的 running stage message；`in_process` 可先重启服务触发 replay，`external` 应检查 `scripts/dev/run_stage_worker.py` 进程是否仍在运行。

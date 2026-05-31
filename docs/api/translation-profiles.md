@@ -5,17 +5,16 @@ category: endpoint
 status: current
 source_files:
   - app/api/v1/router.py
-  - app/api/v1/routers/translation_profiles.py
+  - app/domains/translation/router.py
   - app/api/dependencies.py
-  - app/core/audit_models.py
-  - app/services/audit.py
-  - app/services/translation_profiles/versioning_service.py
-  - app/services/resource_versions/service.py
-  - app/schemas/translation_profiles.py
-  - app/schemas/api_v1.py
+  - app/domains/audit/models.py
+  - app/domains/audit/service.py
+  - app/domains/translation/profiles_service.py
+  - app/domains/resources/service.py
+  - app/domains/translation/schemas.py
 summary: Translation Profiles API 在 MySQL resource service 下提供翻译配置 draft、publish、set-default、rollback 和成功动作审计。
 tags: [translation, resource-versioning, api, audit]
-last_reviewed: 2026-05-29
+last_reviewed: 2026-05-31
 ---
 
 ## 概述

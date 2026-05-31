@@ -1,0 +1,8 @@
+templates:
+  - id: default
+    name: datasheet_template
+    description: 当前默认 DOCX 模板与绑定页面布局配置。
+    enabled: true
+    is_default_seed: true
+    template_path: resources/templates/default/datasheet_template.docx
+    layout_config_path: resources/template_configs/datasheet_template.yaml

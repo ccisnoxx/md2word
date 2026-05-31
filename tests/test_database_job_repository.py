@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-# tests/test_database_job_repository.py: 校验 sqlite/MySQL metadata adapter 与 file backend 的协议行为一致。
+# tests/test_database_job_repository.py: 校验 file/sqlite/MySQL metadata adapter 的协议行为一致。
 
 from datetime import timedelta
 from pathlib import Path
@@ -12,8 +12,8 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from app.core.document_job_models import DocumentJobEventRecord, DocumentJobRecord
-from app.core.job_models import (
+from app.domains.document_jobs.models import DocumentJobEventRecord, DocumentJobRecord
+from app.domains.jobs.models import (
     JobEvent,
     JobFile,
     JobRecord,
@@ -22,14 +22,20 @@ from app.core.job_models import (
     build_source_pdf_context_patch,
     utc_now,
 )
-from app.core.audit_models import AuditEvent
+from app.domains.audit.models import AuditEvent
 from app.core.config import Settings
-from app.core.file_models import DocumentFileRecord
+from app.domains.files.models import DocumentFileRecord
+from app.infrastructure.persistence import (
+    PersistenceAdapters,
+    build_file_persistence_adapters,
+    build_mysql_persistence_adapters,
+    build_sqlite_persistence_adapters,
+)
+from app.infrastructure.persistence.file import FileJobSnapshotRepository
+from app.infrastructure.persistence.mysql import MysqlJobSnapshotRepository, MysqlPersistenceConfig
+from app.infrastructure.persistence.sqlite import SqliteJobSnapshotRepository
 from app.main import build_runtime, create_app
-from app.repositories.database_job_repository import DatabaseJobRepository
-from app.repositories.file_job_repository import FileJobRepository
-from app.repositories.mysql_job_repository import MysqlJobRepository, MysqlJobRepositoryConfig
-from app.services.jobs.query import JobQueryService
+from app.domains.jobs.query import JobQueryService
 from tests.test_fastapi_jobs_backend import (
     build_callback_payload,
     build_test_runtime,
@@ -38,8 +44,8 @@ from tests.test_fastapi_jobs_backend import (
 )
 
 
-def _mysql_config() -> MysqlJobRepositoryConfig:
-    return MysqlJobRepositoryConfig(
+def _mysql_config() -> MysqlPersistenceConfig:
+    return MysqlPersistenceConfig(
         host="127.0.0.1",
         port=3306,
         user="md2word",
@@ -336,14 +342,14 @@ class _FakeMysqlCursor:
         return list(self._rows)
 
 
-class DatabaseJobRepositoryTests(TestCase):
+class PersistenceAdapterTests(TestCase):
     def test_metadata_repository_contract_matches_file_backend(self):
-        for repository_name, build_repository in (
-            ("file", lambda data_dir: FileJobRepository(data_dir / "file")),
-            ("database", lambda data_dir: DatabaseJobRepository(data_dir / "metadata.sqlite3")),
+        for repository_name, build_adapters in (
+            ("file", lambda data_dir: build_file_persistence_adapters(data_dir / "file")),
+            ("database", lambda data_dir: build_sqlite_persistence_adapters(data_dir / "metadata.sqlite3")),
             (
                 "mysql",
-                lambda data_dir: MysqlJobRepository(
+                lambda data_dir: build_mysql_persistence_adapters(
                     _mysql_config(),
                     connect_factory=_FakeMysqlDatabase().connect,
                 ),
@@ -351,14 +357,14 @@ class DatabaseJobRepositoryTests(TestCase):
         ):
             with self.subTest(repository=repository_name):
                 with TemporaryDirectory() as temp_dir:
-                    repository = build_repository(Path(temp_dir))
+                    adapters = build_adapters(Path(temp_dir))
 
-                    self._exercise_metadata_contract(repository)
+                    self._exercise_metadata_contract(adapters)
 
     def test_mysql_schema_bootstrap_includes_resource_versions(self):
         fake_mysql = _FakeMysqlDatabase()
 
-        MysqlJobRepository(_mysql_config(), connect_factory=fake_mysql.connect)
+        build_mysql_persistence_adapters(_mysql_config(), connect_factory=fake_mysql.connect)
 
         self.assertEqual(
             fake_mysql.created_tables,
@@ -391,11 +397,11 @@ class DatabaseJobRepositoryTests(TestCase):
     def test_database_repository_persists_records_across_instances(self):
         with TemporaryDirectory() as temp_dir:
             database_path = Path(temp_dir) / "metadata.sqlite3"
-            first_repository = DatabaseJobRepository(database_path)
+            first_adapters = build_sqlite_persistence_adapters(database_path)
             job = self._build_source_pdf_job("job_persisted")
 
-            first_repository.create_job(job)
-            first_repository.append_event(
+            first_adapters.job_repository.create_job(job)
+            first_adapters.job_event_repository.append_event(
                 job.id,
                 JobEvent(
                     stage="job_created",
@@ -405,9 +411,9 @@ class DatabaseJobRepositoryTests(TestCase):
                 ),
             )
 
-            second_repository = DatabaseJobRepository(database_path)
-            persisted_job = second_repository.get_job(job.id)
-            persisted_events = second_repository.list_events(job.id)
+            second_adapters = build_sqlite_persistence_adapters(database_path)
+            persisted_job = second_adapters.job_repository.get_job(job.id)
+            persisted_events = second_adapters.job_event_repository.list_events(job.id)
 
         self.assertIsNotNone(persisted_job)
         self.assertEqual(persisted_job.id, job.id)
@@ -436,14 +442,15 @@ class DatabaseJobRepositoryTests(TestCase):
                 callback_response = client.post("/api/v1/mineru-callbacks/result", json=callback_payload)
                 detail_response = client.get(f"/api/v1/jobs/{job_id}")
 
-            persisted_job = runtime.repository.get_job(job_id)
-            persisted_files = runtime.repository.list_files(job_id)
+            persisted_job = runtime.job_repository.get_job(job_id)
+            persisted_files = runtime.job_file_repository.list_files(job_id)
             replayable_messages = runtime.stage_message_store.list_replayable_stage_messages()
 
         self.assertEqual(create_response.status_code, 201)
         self.assertEqual(callback_response.status_code, 200)
         self.assertEqual(detail_response.status_code, 200)
-        self.assertIsInstance(runtime.repository, DatabaseJobRepository)
+        self.assertIsInstance(runtime.job_repository, SqliteJobSnapshotRepository)
+        self.assertIsNot(runtime.job_repository, runtime.stage_message_store)
         self.assertEqual(detail_response.json()["status"], "completed")
         self.assertEqual(persisted_job.status, "completed")
         self.assertEqual(
@@ -459,7 +466,7 @@ class DatabaseJobRepositoryTests(TestCase):
                 Path(temp_dir),
                 mineru_api_token="token",
                 jobs_repository_backend="mysql",
-                repository_factory=lambda data_dir: MysqlJobRepository(
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
                     _mysql_config(),
                     connect_factory=fake_mysql.connect,
                 ),
@@ -482,14 +489,15 @@ class DatabaseJobRepositoryTests(TestCase):
                 detail_response = client.get(f"/api/v1/jobs/{job_id}")
 
             checks = runtime.health_service.build_dependency_checks()
-            persisted_job = runtime.repository.get_job(job_id)
-            persisted_files = runtime.repository.list_files(job_id)
+            persisted_job = runtime.job_repository.get_job(job_id)
+            persisted_files = runtime.job_file_repository.list_files(job_id)
             replayable_messages = runtime.stage_message_store.list_replayable_stage_messages()
 
         self.assertEqual(create_response.status_code, 201)
         self.assertEqual(callback_response.status_code, 200)
         self.assertEqual(detail_response.status_code, 200)
-        self.assertIsInstance(runtime.repository, MysqlJobRepository)
+        self.assertIsInstance(runtime.job_repository, MysqlJobSnapshotRepository)
+        self.assertIsNot(runtime.job_repository, runtime.stage_message_store)
         self.assertEqual(detail_response.json()["status"], "completed")
         self.assertEqual(persisted_job.status, "completed")
         self.assertEqual(
@@ -527,7 +535,7 @@ class DatabaseJobRepositoryTests(TestCase):
                 )
                 completed_detail = client.get(f"/api/v1/jobs/{job_id}").json()
 
-            persisted_job = runtime.repository.get_job(job_id)
+            persisted_job = runtime.job_repository.get_job(job_id)
 
         self.assertEqual(create_response.status_code, 201)
         self.assertEqual(failed_detail["status"], "failed")
@@ -548,7 +556,7 @@ class DatabaseJobRepositoryTests(TestCase):
                 execution_status="queued",
                 source_pdf_context=SourcePdfJobContext(),
             )
-            runtime.repository.create_job(job)
+            runtime.job_repository.create_job(job)
             for message in (
                 JobStageMessage(
                     id="msg_database_pending",
@@ -592,9 +600,8 @@ class DatabaseJobRepositoryTests(TestCase):
             runtime = build_runtime(settings)
             checks = runtime.health_service.build_dependency_checks()
 
-        self.assertIsInstance(runtime.repository, DatabaseJobRepository)
-        self.assertIs(runtime.job_repository, runtime.repository)
-        self.assertIs(runtime.stage_message_store, runtime.repository)
+        self.assertIsInstance(runtime.job_repository, SqliteJobSnapshotRepository)
+        self.assertIsNot(runtime.job_repository, runtime.stage_message_store)
         self.assertEqual(checks["configured_repository_backend"], "database")
         self.assertEqual(checks["effective_repository_backend"], "database")
         self.assertEqual(checks["stage_message_store"], "database")
@@ -612,16 +619,23 @@ class DatabaseJobRepositoryTests(TestCase):
                 jobs_repository_backend="mysql",
                 jobs_mysql_database="md2word_test",
             )
+            def build_fake_adapters(runtime_settings: Settings) -> PersistenceAdapters:
+                runtime_settings.jobs_dir.mkdir(parents=True, exist_ok=True)
+                runtime_settings.tmp_dir.mkdir(parents=True, exist_ok=True)
+                return build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                )
+
             with patch(
-                "app.main.MysqlJobRepository",
-                lambda config: MysqlJobRepository(config, connect_factory=fake_mysql.connect),
+                "app.main.build_persistence_adapters",
+                build_fake_adapters,
             ):
                 runtime = build_runtime(settings)
             checks = runtime.health_service.build_dependency_checks()
 
-        self.assertIsInstance(runtime.repository, MysqlJobRepository)
-        self.assertIs(runtime.job_repository, runtime.repository)
-        self.assertIs(runtime.stage_message_store, runtime.repository)
+        self.assertIsInstance(runtime.job_repository, MysqlJobSnapshotRepository)
+        self.assertIsNot(runtime.job_repository, runtime.stage_message_store)
         self.assertEqual(checks["configured_repository_backend"], "mysql")
         self.assertEqual(checks["effective_repository_backend"], "mysql")
         self.assertEqual(checks["stage_message_store"], "mysql")
@@ -638,22 +652,31 @@ class DatabaseJobRepositoryTests(TestCase):
             database_file_exists = settings.jobs_metadata_database_file.exists()
 
         self.assertEqual(settings.jobs_repository_backend, "file")
-        self.assertIsInstance(runtime.repository, FileJobRepository)
+        self.assertIsInstance(runtime.job_repository, FileJobSnapshotRepository)
         self.assertEqual(checks["configured_repository_backend"], "file")
         self.assertEqual(checks["effective_repository_backend"], "file")
         self.assertEqual(checks["stage_message_store"], "file")
         self.assertFalse(database_file_exists)
 
-    def _exercise_metadata_contract(self, repository: Any) -> None:
-        job = self._build_source_pdf_job("job_contract")
-        repository.create_job(job)
+    def _exercise_metadata_contract(self, adapters: PersistenceAdapters) -> None:
+        job_repository = adapters.job_repository
+        job_file_repository = adapters.job_file_repository
+        job_event_repository = adapters.job_event_repository
+        audit_event_repository = adapters.audit_event_repository
+        document_file_repository = adapters.document_file_repository
+        document_job_repository = adapters.document_job_repository
+        document_job_event_repository = adapters.document_job_event_repository
+        stage_message_store = adapters.stage_message_store
 
-        stored_job = repository.get_job(job.id)
+        job = self._build_source_pdf_job("job_contract")
+        job_repository.create_job(job)
+
+        stored_job = job_repository.get_job(job.id)
         self.assertIsNotNone(stored_job)
         self.assertEqual(stored_job.read_mineru_batch_id(), "batch_1")
         self.assertEqual(stored_job.mineru_batch_id, "batch_1")
 
-        updated_job = repository.update_job(
+        updated_job = job_repository.update_job(
             job.id,
             status="parsed",
             lifecycle_status="parsed",
@@ -661,16 +684,16 @@ class DatabaseJobRepositoryTests(TestCase):
         )
         self.assertEqual(updated_job.status, "parsed")
         self.assertEqual(updated_job.read_mineru_result_zip_url(), "https://mineru.net/result.zip")
-        self.assertEqual(repository.get_job(job.id).mineru_result_zip_url, "https://mineru.net/result.zip")
+        self.assertEqual(job_repository.get_job(job.id).mineru_result_zip_url, "https://mineru.net/result.zip")
 
-        repository.upsert_file(job.id, JobFile(file_type="source_pdf", path="input/source.pdf"))
-        repository.upsert_file(job.id, JobFile(file_type="result_docx", path="output/result.docx"))
-        repository.upsert_file(job.id, JobFile(file_type="source_pdf", path="input/replaced-source.pdf"))
-        files_by_type = {file.file_type: file for file in repository.list_files(job.id)}
+        job_file_repository.upsert_file(job.id, JobFile(file_type="source_pdf", path="input/source.pdf"))
+        job_file_repository.upsert_file(job.id, JobFile(file_type="result_docx", path="output/result.docx"))
+        job_file_repository.upsert_file(job.id, JobFile(file_type="source_pdf", path="input/replaced-source.pdf"))
+        files_by_type = {file.file_type: file for file in job_file_repository.list_files(job.id)}
         self.assertEqual(set(files_by_type), {"source_pdf", "result_docx"})
         self.assertEqual(files_by_type["source_pdf"].path, "input/replaced-source.pdf")
 
-        repository.append_event(
+        job_event_repository.append_event(
             job.id,
             JobEvent(
                 stage="job_created",
@@ -679,7 +702,7 @@ class DatabaseJobRepositoryTests(TestCase):
                 trace_id="trace_1",
             ),
         )
-        repository.append_event(
+        job_event_repository.append_event(
             job.id,
             JobEvent(
                 stage="translation_completed",
@@ -689,11 +712,11 @@ class DatabaseJobRepositoryTests(TestCase):
             ),
         )
         self.assertEqual(
-            [event.stage for event in repository.list_events(job.id)],
+            [event.stage for event in job_event_repository.list_events(job.id)],
             ["job_created", "translation_completed"],
         )
 
-        repository.append_audit_event(
+        audit_event_repository.append_audit_event(
             AuditEvent(
                 audit_id="audit_contract",
                 actor_id="admin",
@@ -705,7 +728,7 @@ class DatabaseJobRepositoryTests(TestCase):
                 trace_id="trace_audit",
             )
         )
-        audit_events = repository.list_audit_events()
+        audit_events = audit_event_repository.list_audit_events()
         self.assertEqual([event.action for event in audit_events], ["job.retry"])
         self.assertEqual(audit_events[0].reason, "contract")
 
@@ -725,9 +748,9 @@ class DatabaseJobRepositoryTests(TestCase):
             expires_at=utc_now() + timedelta(days=90),
             created_by="operator",
         )
-        repository.create_document_file(document_file)
-        self.assertEqual(repository.get_document_file("file_contract").object_key, document_file.object_key)
-        updated_document_file = repository.update_document_file(
+        document_file_repository.create_document_file(document_file)
+        self.assertEqual(document_file_repository.get_document_file("file_contract").object_key, document_file.object_key)
+        updated_document_file = document_file_repository.update_document_file(
             "file_contract",
             status="uploaded",
             etag="etag_contract",
@@ -735,7 +758,7 @@ class DatabaseJobRepositoryTests(TestCase):
         self.assertEqual(updated_document_file.status, "uploaded")
         self.assertEqual(updated_document_file.etag, "etag_contract")
         self.assertEqual(
-            [record.id for record in repository.list_document_files()],
+            [record.id for record in document_file_repository.list_document_files()],
             ["file_contract"],
         )
 
@@ -753,9 +776,9 @@ class DatabaseJobRepositoryTests(TestCase):
             template_version_id="default",
             timeout_at=utc_now() + timedelta(seconds=1200),
         )
-        repository.create_document_job(document_job)
-        self.assertEqual(repository.get_document_job(document_job.id).source_file_id, document_file.id)
-        updated_document_job = repository.update_document_job(
+        document_job_repository.create_document_job(document_job)
+        self.assertEqual(document_job_repository.get_document_job(document_job.id).source_file_id, document_file.id)
+        updated_document_job = document_job_repository.update_document_job(
             document_job.id,
             status="queued",
             stage="uploaded",
@@ -763,9 +786,9 @@ class DatabaseJobRepositoryTests(TestCase):
         )
         self.assertEqual(updated_document_job.status, "queued")
         with self.assertRaises(ValidationError):
-            repository.update_document_job(document_job.id, status="succeeded", stage="uploaded")
-        self.assertEqual([record.id for record in repository.list_document_jobs()], [document_job.id])
-        repository.append_document_job_event(
+            document_job_repository.update_document_job(document_job.id, status="succeeded", stage="uploaded")
+        self.assertEqual([record.id for record in document_job_repository.list_document_jobs()], [document_job.id])
+        document_job_event_repository.append_document_job_event(
             document_job.id,
             DocumentJobEventRecord(
                 id="event_docjob_contract",
@@ -779,7 +802,7 @@ class DatabaseJobRepositoryTests(TestCase):
                 trace_id="trace_docjob",
             ),
         )
-        document_job_events = repository.list_document_job_events(document_job.id)
+        document_job_events = document_job_event_repository.list_document_job_events(document_job.id)
         self.assertEqual([event.event_type for event in document_job_events], ["job_created"])
         self.assertEqual(document_job_events[0].trace_id, "trace_docjob")
 
@@ -805,10 +828,10 @@ class DatabaseJobRepositoryTests(TestCase):
             status="failed",
         )
         for message in (pending, running, failed):
-            repository.put_stage_message(message)
+            stage_message_store.put_stage_message(message)
 
         lease_expires_at = utc_now() + timedelta(seconds=900)
-        updated_message = repository.update_stage_message(
+        updated_message = stage_message_store.update_stage_message(
             "msg_pending",
             status="running",
             attempts=1,
@@ -821,15 +844,15 @@ class DatabaseJobRepositoryTests(TestCase):
         self.assertEqual(updated_message.lease_owner, "in_process")
         self.assertEqual(updated_message.lease_expires_at, lease_expires_at)
         self.assertEqual(
-            {message.id for message in repository.list_replayable_stage_messages()},
+            {message.id for message in stage_message_store.list_replayable_stage_messages()},
             {"msg_pending", "msg_running"},
         )
-        self.assertEqual(repository.count_stage_messages_by_status(), {"pending": 0, "running": 2, "failed": 1})
-        repository.delete_stage_message("msg_running")
-        self.assertIsNone(repository.get_stage_message("msg_running"))
-        self.assertEqual(repository.count_stage_messages_by_status(), {"pending": 0, "running": 1, "failed": 1})
+        self.assertEqual(stage_message_store.count_stage_messages_by_status(), {"pending": 0, "running": 2, "failed": 1})
+        stage_message_store.delete_stage_message("msg_running")
+        self.assertIsNone(stage_message_store.get_stage_message("msg_running"))
+        self.assertEqual(stage_message_store.count_stage_messages_by_status(), {"pending": 0, "running": 1, "failed": 1})
 
-        query_service = JobQueryService(repository, repository, repository)
+        query_service = JobQueryService(job_repository, job_file_repository, job_event_repository)
         detail_job, detail_files, detail_events = query_service.get_job_detail(job.id)
         listed_jobs, total, summary = query_service.list_jobs(
             page=1,

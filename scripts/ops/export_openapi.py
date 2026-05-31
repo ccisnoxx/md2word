@@ -53,12 +53,22 @@ def _openapi_export_environment(data_dir: Path) -> Iterator[None]:
         "DATA_DIR": str(data_dir),
         "JOBS_REPOSITORY_BACKEND": "file",
         "JOBS_ARTIFACT_STORAGE_BACKEND": "local_file",
+        "JOBS_ARTIFACT_OBJECT_STORE_PATH": "var/object_artifacts",
         "JOBS_WORKER_MODE": "external",
         "JOBS_ACCESS_MODE": "open",
         "JOBS_OPS_ACCESS_MODE": "admin",
         "ADMIN_TOKEN": "",
+        "AUTH_INTERNAL_USERS_FILE": "",
+        "AUTH_INTERNAL_USERS_JSON": "",
         "MINERU_API_TOKEN": "",
         "OPENAI_API_KEY": "",
+        "TEMPLATES_MANIFEST_PATH": "resources/template_configs/templates_manifest.yaml",
+        "TEMPLATES_STORAGE_PATH": "var/config/templates",
+        "TEMPLATE_STATE_PATH": "var/config/template_state.json",
+        "TERM_RULES_SEED_PATH": "resources/term_rules/term_rules.v2.yaml",
+        "TERM_RULES_STORE_PATH": "var/config/term_rules_store.json",
+        "TERM_RULES_RUNTIME_YAML_PATH": "var/config/runtime_subscripts_dictionary.yaml",
+        "TRANSLATION_TERMS_PATH": "resources/term_rules/translation_terms.csv",
     }
     previous = {key: os.environ.get(key) for key in overrides}
     os.environ.update(overrides)

@@ -8,8 +8,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
-from app.core.job_models import JobEvent, JobFile, JobRecord, JobStageMessage, SourcePdfJobContext
-from app.core.job_paths import build_job_paths, ensure_job_dirs
+from app.domains.jobs.models import JobEvent, JobFile, JobRecord, JobStageMessage, SourcePdfJobContext
+from app.domains.jobs.paths import build_job_paths, ensure_job_dirs
 from scripts.ops.check_local_file_storage_integrity import check_local_file_storage_integrity
 
 

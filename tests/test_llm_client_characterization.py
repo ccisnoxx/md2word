@@ -3,17 +3,19 @@ import os
 import unittest
 from unittest import mock
 
+
+# tests/test_llm_client_characterization.py: 固化 conversion LLM client 的现有行为。
+
 try:
-    from .test_render_table_from_html_characterization import _load_module
+    from .runtime_direct_loaders import load_llm_client_module
 except ImportError:  # pragma: no cover - compatibility for direct execution
-    from test_render_table_from_html_characterization import _load_module
+    from runtime_direct_loaders import load_llm_client_module
 
 
 class LLMClientCharacterizationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.module = _load_module()
-        cls.llm = cls.module.llm_client
+        cls.llm = load_llm_client_module()
 
     def test_build_client_requires_sdk(self):
         with mock.patch.object(self.llm, "OpenAI", None):

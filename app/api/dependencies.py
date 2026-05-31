@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from fastapi import Depends, Header, Request, status
 
-from app.core.audit_models import ActorContext
-from app.core.auth_models import AuthenticatedUser
+from app.domains.audit.models import ActorContext
+from app.services.auth.models import AuthenticatedUser
 from app.core.errors import ApiError
 from app.core.runtime import AppRuntime
 from app.services.auth.service import AuthConfigurationError, TokenValidationError

@@ -7,10 +7,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
-from app.core.job_models import JobFile, JobRecord
-from app.core.job_paths import build_job_paths
-from app.services.jobs.artifact_storage import DownloadArtifact, LocalArtifactStorageAdapter
-from app.services.jobs.artifacts import JobArtifactService
+from app.domains.jobs.models import JobFile, JobRecord
+from app.domains.jobs.paths import build_job_paths
+from app.domains.jobs.artifact_storage import DownloadArtifact, LocalArtifactStorageAdapter
+from app.domains.jobs.artifacts import JobArtifactService
 
 
 class JobArtifactContractTests(TestCase):

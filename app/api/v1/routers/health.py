@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.dependencies import get_runtime
 from app.core.runtime import AppRuntime
-from app.schemas.health import HealthLiveResponse, HealthMetricsResponse, HealthReadyResponse
+from app.api.v1.routers.health_schemas import HealthLiveResponse, HealthMetricsResponse, HealthReadyResponse
 
 
 router = APIRouter(prefix="/health", tags=["health"])

@@ -5,18 +5,17 @@ category: endpoint
 status: current
 source_files:
   - app/api/v1/router.py
-  - app/api/v1/routers/term_rule_sets.py
-  - app/api/v1/routers/term_rule_write_guard.py
+  - app/domains/term_rules/sets_router.py
+  - app/domains/term_rules/write_guard.py
   - app/api/dependencies.py
-  - app/core/audit_models.py
-  - app/services/audit.py
-  - app/services/term_rules/versioning_service.py
-  - app/services/resource_versions/service.py
-  - app/schemas/term_rules.py
-  - app/schemas/api_v1.py
+  - app/domains/audit/models.py
+  - app/domains/audit/service.py
+  - app/domains/term_rules/versioning_service.py
+  - app/domains/resources/service.py
+  - app/domains/term_rules/schemas.py
 summary: Term-rule-sets API 在 MySQL resource service 下提供术语规则集 draft、publish、set-default、rollback 和成功动作审计。
 tags: [term-rules, resource-versioning, api, audit]
-last_reviewed: 2026-05-29
+last_reviewed: 2026-05-31
 ---
 
 ## 概述

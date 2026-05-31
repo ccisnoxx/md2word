@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from app.core.document_ir_models import (
+from app.services.document_ir.models import (
     DocumentIR,
     DocumentIRAsset,
     DocumentIRBlock,

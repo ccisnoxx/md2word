@@ -10,15 +10,18 @@ from typing import Any
 from uuid import uuid4
 
 from app.core.config import Settings
-from app.core.job_models import (
+from app.domains.jobs.models import (
     JobEvent,
     JobFile,
     JobRecord,
     JobStageMessage,
     sync_source_pdf_compatibility_fields,
 )
-from app.repositories.database_job_repository import DatabaseJobRepository
-from app.repositories.file_job_repository import FileJobRepository
+from app.infrastructure.persistence import (
+    PersistenceAdapters,
+    build_file_persistence_adapters,
+    build_sqlite_persistence_adapters,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,8 +101,8 @@ def shadow_copy_metadata_to_database(data_dir: Path, database_path: Path) -> Met
     resolved_database_path = database_path.resolve()
     temp_database_path = resolved_database_path.with_name(f"{resolved_database_path.name}.shadow-{uuid4().hex}.tmp")
     try:
-        temp_repository = DatabaseJobRepository(temp_database_path)
-        _copy_metadata(_collect_file_metadata(resolved_data_dir), temp_repository)
+        temp_adapters = build_sqlite_persistence_adapters(temp_database_path)
+        _copy_metadata(_collect_file_metadata(resolved_data_dir), temp_adapters)
         temp_validation = _validate_metadata_shadow_copy(
             resolved_data_dir,
             temp_database_path,
@@ -168,28 +171,28 @@ def _validate_metadata_shadow_copy(
     )
 
 
-def _copy_metadata(source: _MetadataMirror, target: DatabaseJobRepository) -> None:
+def _copy_metadata(source: _MetadataMirror, target: PersistenceAdapters) -> None:
     for job in source.jobs:
-        target.create_job(job)
+        target.job_repository.create_job(job)
         for file in source.files_by_job[job.id]:
-            target.upsert_file(job.id, file)
+            target.job_file_repository.upsert_file(job.id, file)
         for event in source.events_by_job[job.id]:
-            target.append_event(job.id, event)
+            target.job_event_repository.append_event(job.id, event)
     for message in source.stage_messages:
-        target.put_stage_message(message)
+        target.stage_message_store.put_stage_message(message)
 
 
 def _collect_file_metadata(data_dir: Path) -> _MetadataMirror:
-    repository = FileJobRepository(data_dir)
+    adapters = build_file_persistence_adapters(data_dir)
     jobs = sorted(
-        [sync_source_pdf_compatibility_fields(job) for job in repository.list_jobs()],
+        [sync_source_pdf_compatibility_fields(job) for job in adapters.job_repository.list_jobs()],
         key=lambda item: item.id,
     )
     files_by_job = {
-        job.id: sorted(repository.list_files(job.id), key=lambda item: item.file_type)
+        job.id: sorted(adapters.job_file_repository.list_files(job.id), key=lambda item: item.file_type)
         for job in jobs
     }
-    events_by_job = {job.id: repository.list_events(job.id) for job in jobs}
+    events_by_job = {job.id: adapters.job_event_repository.list_events(job.id) for job in jobs}
     return _MetadataMirror(
         jobs=jobs,
         files_by_job=files_by_job,
@@ -199,18 +202,18 @@ def _collect_file_metadata(data_dir: Path) -> _MetadataMirror:
 
 
 def _collect_database_metadata(database_path: Path) -> _MetadataMirror:
-    repository = DatabaseJobRepository(database_path)
-    jobs = sorted(repository.list_jobs(), key=lambda item: item.id)
+    adapters = build_sqlite_persistence_adapters(database_path)
+    jobs = sorted(adapters.job_repository.list_jobs(), key=lambda item: item.id)
     files_by_job = {
-        job.id: sorted(repository.list_files(job.id), key=lambda item: item.file_type)
+        job.id: sorted(adapters.job_file_repository.list_files(job.id), key=lambda item: item.file_type)
         for job in jobs
     }
-    events_by_job = {job.id: repository.list_events(job.id) for job in jobs}
+    events_by_job = {job.id: adapters.job_event_repository.list_events(job.id) for job in jobs}
     return _MetadataMirror(
         jobs=jobs,
         files_by_job=files_by_job,
         events_by_job=events_by_job,
-        stage_messages=sorted(repository.list_stage_messages(), key=lambda item: item.id),
+        stage_messages=sorted(adapters.stage_message_store.list_stage_messages(), key=lambda item: item.id),
     )
 
 
@@ -323,11 +326,11 @@ def format_pretty_report(report: MetadataShadowCopyReport) -> str:
 def main() -> None:
     default_data_dir = Settings().data_path
     parser = argparse.ArgumentParser(description="离线复制 local file metadata 到 database 并校验一致性。")
-    parser.add_argument("--data-dir", default=str(default_data_dir), help="运行态 data 目录，默认读取当前 Settings.data_path。")
+    parser.add_argument("--data-dir", default=str(default_data_dir), help="运行态目录，默认读取当前 Settings.data_path。")
     parser.add_argument(
         "--database-path",
         default=str(default_data_dir / "metadata-shadow.sqlite3"),
-        help="目标 shadow database 文件，默认写入 data/metadata-shadow.sqlite3。",
+        help="目标 shadow database 文件，默认写入 var/metadata-shadow.sqlite3。",
     )
     parser.add_argument("--validate-only", action="store_true", help="只校验，不执行 shadow copy。")
     parser.add_argument("--format", choices=("pretty", "json"), default="pretty", help="输出格式。")

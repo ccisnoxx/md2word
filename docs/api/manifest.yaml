@@ -2,8 +2,8 @@ doc_type: api-manifest
 status: current
 project: md2word_file
 entry_type: endpoint
-source_root: app/api/v1/routers
-last_scanned: 2026-05-29
+source_root: app
+last_scanned: 2026-05-31
 
 openapi:
   doc_path: docs/api/openapi.json
@@ -18,9 +18,8 @@ entries:
     source_files:
       - app/api/v1/router.py
       - app/api/v1/routers/health.py
+      - app/api/v1/routers/health_schemas.py
       - app/services/health_service.py
-      - app/schemas/health.py
-      - app/schemas/api_v1.py
     doc_path: docs/api/health.md
     status: current
     note: "服务健康检查和 JSON metrics 入口。"
@@ -28,28 +27,26 @@ entries:
     category: endpoint
     source_files:
       - app/api/v1/router.py
-      - app/api/v1/routers/jobs.py
-      - app/api/v1/routers/jobs_ingest.py
-      - app/api/v1/routers/jobs_query.py
-      - app/api/v1/routers/jobs_ops.py
-      - app/api/v1/routers/jobs_presenters.py
+      - app/domains/jobs/router.py
+      - app/domains/jobs/ingest_router.py
+      - app/domains/jobs/query_router.py
+      - app/domains/jobs/ops_router.py
+      - app/domains/jobs/presenters.py
       - app/api/dependencies.py
-      - app/core/audit_models.py
-      - app/core/job_models.py
-      - app/services/audit.py
-      - app/services/jobs/command.py
-      - app/services/jobs/lifecycle.py
-      - app/services/jobs/query.py
-      - app/services/jobs/resource_snapshots.py
-      - app/services/jobs/stage.py
+      - app/domains/audit/models.py
+      - app/domains/audit/service.py
+      - app/domains/jobs/models.py
+      - app/domains/jobs/command.py
+      - app/domains/jobs/lifecycle.py
+      - app/domains/jobs/query.py
+      - app/domains/jobs/resource_snapshots.py
+      - app/domains/jobs/stage.py
       - app/clients/mineru_client.py
-      - app/services/jobs/artifact_storage.py
-      - app/services/jobs/artifacts.py
-      - app/services/jobs/object_artifact_storage.py
-      - app/services/jobs/artifact_retention.py
-      - app/repositories/file_job_repository.py
-      - app/schemas/jobs.py
-      - app/schemas/api_v1.py
+      - app/domains/jobs/artifact_storage.py
+      - app/domains/jobs/artifacts.py
+      - app/domains/jobs/object_artifact_storage.py
+      - app/domains/jobs/artifact_retention.py
+      - app/domains/jobs/schemas.py
       - docs/api/openapi.json
     doc_path: docs/api/jobs.md
     status: current
@@ -58,14 +55,13 @@ entries:
     category: endpoint
     source_files:
       - app/api/v1/router.py
-      - app/api/v1/routers/mineru_callbacks.py
+      - app/domains/jobs/mineru_callbacks_router.py
       - app/api/dependencies.py
-      - app/services/jobs/command.py
-      - app/services/jobs/stage.py
-      - app/core/mineru_callback.py
+      - app/domains/jobs/command.py
+      - app/domains/jobs/stage.py
+      - app/domains/jobs/mineru_callback.py
       - app/core/config.py
-      - app/schemas/jobs.py
-      - app/schemas/api_v1.py
+      - app/domains/jobs/schemas.py
     doc_path: docs/api/mineru-callbacks.md
     status: current
     note: "MinerU callback ingress、鉴权、payload 归一化和结果地址安全校验。"
@@ -73,14 +69,13 @@ entries:
     category: endpoint
     source_files:
       - app/api/v1/router.py
-      - app/api/v1/routers/templates.py
+      - app/domains/templates/router.py
       - app/api/dependencies.py
-      - app/core/audit_models.py
-      - app/services/audit.py
-      - app/services/templates/read_service.py
-      - app/services/resource_versions/service.py
-      - app/schemas/templates.py
-      - app/schemas/api_v1.py
+      - app/domains/audit/models.py
+      - app/domains/audit/service.py
+      - app/domains/templates/read_service.py
+      - app/domains/resources/service.py
+      - app/domains/templates/schemas.py
     doc_path: docs/api/templates.md
     status: current
     note: "多模板清单、模板下载、运行态默认模板切换、模板 CRUD、文件替换、Template Version 发布管理和成功动作审计。"
@@ -88,12 +83,11 @@ entries:
     category: endpoint
     source_files:
       - app/api/v1/router.py
-      - app/api/v1/routers/term_rule_categories.py
-      - app/api/v1/routers/term_rule_write_guard.py
-      - app/services/term_rules/service.py
-      - app/repositories/file_term_rule_repository.py
-      - app/schemas/term_rules.py
-      - app/schemas/api_v1.py
+      - app/domains/term_rules/categories_router.py
+      - app/domains/term_rules/write_guard.py
+      - app/domains/term_rules/service.py
+      - app/domains/term_rules/file_repository.py
+      - app/domains/term_rules/schemas.py
     doc_path: docs/api/term-rule-categories.md
     status: current
     note: "术语分类列表、规则计数和分类写接口；MySQL versioned mode 下写入口受 Term Rule Set 发布流程保护。"
@@ -101,15 +95,14 @@ entries:
     category: endpoint
     source_files:
       - app/api/v1/router.py
-      - app/api/v1/routers/term_rule_sets.py
-      - app/api/v1/routers/term_rule_write_guard.py
+      - app/domains/term_rules/sets_router.py
+      - app/domains/term_rules/write_guard.py
       - app/api/dependencies.py
-      - app/core/audit_models.py
-      - app/services/audit.py
-      - app/services/term_rules/versioning_service.py
-      - app/services/resource_versions/service.py
-      - app/schemas/term_rules.py
-      - app/schemas/api_v1.py
+      - app/domains/audit/models.py
+      - app/domains/audit/service.py
+      - app/domains/term_rules/versioning_service.py
+      - app/domains/resources/service.py
+      - app/domains/term_rules/schemas.py
     doc_path: docs/api/term-rule-sets.md
     status: current
     note: "Term Rule Set draft、publish、set-default、rollback 和成功动作审计接口。"
@@ -117,15 +110,14 @@ entries:
     category: endpoint
     source_files:
       - app/api/v1/router.py
-      - app/api/v1/routers/term_rules.py
-      - app/api/v1/routers/term_rule_write_guard.py
-      - app/services/term_rules/service.py
-      - app/services/term_rules/import_validation.py
-      - app/services/term_rules/sync_files.py
-      - app/services/term_rules/yaml_codec.py
-      - app/repositories/file_term_rule_repository.py
-      - app/schemas/term_rules.py
-      - app/schemas/api_v1.py
+      - app/domains/term_rules/router.py
+      - app/domains/term_rules/write_guard.py
+      - app/domains/term_rules/service.py
+      - app/domains/term_rules/import_validation.py
+      - app/domains/term_rules/sync_files.py
+      - app/domains/term_rules/yaml_codec.py
+      - app/domains/term_rules/file_repository.py
+      - app/domains/term_rules/schemas.py
     doc_path: docs/api/term-rules.md
     status: current
     note: "term-rules 的 live runtime truth、rule CRUD、导入校验、导入、导出、模拟和 sync-files 接口；MySQL versioned mode 下写入口受 Term Rule Set 发布流程保护。"
@@ -133,14 +125,13 @@ entries:
     category: endpoint
     source_files:
       - app/api/v1/router.py
-      - app/api/v1/routers/translation_profiles.py
+      - app/domains/translation/router.py
       - app/api/dependencies.py
-      - app/core/audit_models.py
-      - app/services/audit.py
-      - app/services/translation_profiles/versioning_service.py
-      - app/services/resource_versions/service.py
-      - app/schemas/translation_profiles.py
-      - app/schemas/api_v1.py
+      - app/domains/audit/models.py
+      - app/domains/audit/service.py
+      - app/domains/translation/profiles_service.py
+      - app/domains/resources/service.py
+      - app/domains/translation/schemas.py
     doc_path: docs/api/translation-profiles.md
     status: current
     note: "Translation Profile draft、publish、set-default、rollback 和成功动作审计接口；en2zh job 创建时可绑定默认或显式 profile 快照。"
@@ -193,7 +184,7 @@ guides:
     note: "后端设计分阶段实现计划。"
   - slug: runbook
     category: dev-guide
-    doc_path: docs/runbook.md
+    doc_path: docs/runbooks/backend.md
     status: current
     note: "本地运维与联调 runbook。"
   - slug: openapi-export

@@ -5,7 +5,7 @@ component: pdf-to-word-backend
 status: current
 summary: 内部人员按步骤完成 PDF 上传、建任务、查状态、下载和排错。
 tags: [integration, pdf, word, api, worker]
-last_reviewed: 2026-05-29
+last_reviewed: 2026-05-31
 ---
 
 # PDF 到 Word P0 内部联调说明
@@ -13,9 +13,9 @@ last_reviewed: 2026-05-29
 ## 前置条件
 
 - API 已启动，默认地址 `http://127.0.0.1:8000`。
-- Worker 已启动：Docker 使用 `worker` 服务，本地使用 `run_document_worker.py`。
+- Worker 已启动：Docker 使用 `worker` 服务，本地使用 `scripts/dev/run_document_worker.py`。
 - Redis、MySQL 或本地 metadata backend 可用。
-- `AUTH_JWT_SECRET_KEY` 和 `AUTH_INTERNAL_USERS_JSON` 已配置。
+- `AUTH_JWT_SECRET_KEY` 和 `AUTH_INTERNAL_USERS_FILE` 已配置。
 - `MINERU_API_TOKEN` 已配置，否则任务会停在解析失败或无法完成。
 
 ## 1. 登录
@@ -113,7 +113,7 @@ curl -L "${DOWNLOAD_URL}" -o result.docx
 
 ## 7. Golden Sample 批量回归
 
-先把业务确认后的 PDF 放到 `tests/golden_samples/pdfs/`，文件名与 `tests/golden_samples/manifest.yaml` 一致，然后执行：
+先把业务确认后的 PDF 放到 `tests/fixtures/golden_samples/pdfs/`，文件名与 `tests/fixtures/golden_samples/manifest.yaml` 一致，然后执行：
 
 ```bash
 GOLDEN_SAMPLE_USERNAME=operator \
@@ -121,13 +121,13 @@ GOLDEN_SAMPLE_PASSWORD='<password>' \
 /Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/run_golden_sample_regression.py
 ```
 
-脚本会在 `tests/golden_samples/runs/{timestamp}/` 写入 `report.json` 和 `report.md`，并下载成功样本的 Word 文件。
+脚本会在 `tests/tmp/golden_sample_runs/{timestamp}/` 写入 `report.json` 和 `report.md`，并下载成功样本的 Word 文件。
 
 ## 排错速查
 
 | 现象 | 优先检查 |
 |---|---|
-| `auth_unconfigured` | `AUTH_JWT_SECRET_KEY`、`AUTH_INTERNAL_USERS_JSON` |
+| `auth_unconfigured` | `AUTH_JWT_SECRET_KEY`、`AUTH_INTERNAL_USERS_FILE` 或兼容入口 `AUTH_INTERNAL_USERS_JSON` |
 | `file_too_large` | `JOBS_UPLOAD_MAX_BYTES` 和 PDF 实际大小 |
 | `invalid_pdf` 或页数超限 | PDF 是否可读、`PDF_UPLOAD_MAX_PAGES` |
 | 任务停在 `queued` | Worker 是否启动、Redis broker 是否连通 |

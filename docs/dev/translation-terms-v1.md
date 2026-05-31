@@ -15,7 +15,7 @@ P1 DocumentIR translation uses a read-only CSV glossary. It is intentionally sma
 Default path:
 
 ```text
-template_configs/translation_terms.csv
+resources/term_rules/translation_terms.csv
 ```
 
 Required columns:

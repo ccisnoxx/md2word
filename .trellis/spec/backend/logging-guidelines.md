@@ -36,7 +36,7 @@ such as `access`, `business`, and `system`.
   `message` fields.
 - Named channels:
   - `access` for per-request timing in `app/main.py`
-  - `business` for background job/stage lifecycle in `app/services/jobs/stage.py`
+  - `business` for background job/stage lifecycle in `app/domains/jobs/stage.py`
   - `system` for request-level exceptions and external client activity
 - Prefer metadata inside the message body using stable keys. Current messages
   consistently include fields such as:

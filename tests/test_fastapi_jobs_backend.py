@@ -23,42 +23,50 @@ from fastapi.testclient import TestClient
 
 from app.conversion.contracts import ArtifactDescriptor, ConversionFailure, ConversionResult
 from app.core.config import Settings
-from app.core.job_models import JobFile, JobRecord, JobStageMessage, SourcePdfJobContext, build_source_pdf_context_patch, utc_now
-from app.core.job_workflow import JobWorkflowViolation
-from app.core.job_paths import build_job_paths, ensure_job_dirs
+from app.domains.jobs.models import JobFile, JobRecord, JobStageMessage, SourcePdfJobContext, build_source_pdf_context_patch, utc_now
+from app.domains.jobs.workflow import JobWorkflowViolation
+from app.domains.jobs.paths import build_job_paths, ensure_job_dirs
 from app.core.runtime import AppRuntime
+from app.infrastructure.persistence import (
+    PersistenceAdapters,
+    build_file_persistence_adapters,
+    build_mysql_persistence_adapters,
+    build_sqlite_persistence_adapters,
+)
+from app.infrastructure.persistence.mysql import MysqlPersistenceConfig
 from app.main import create_app
-from app.repositories.database_job_repository import DatabaseJobRepository
-from app.repositories.file_job_repository import FileJobRepository
-from app.repositories.file_term_rule_repository import FileTermRuleRepository
-from app.services.audit import AuditService
+from app.domains.term_rules.file_repository import FileTermRuleRepository
+from app.domains.audit.service import AuditService
 from app.services.auth import AuthService, hash_password
-from app.services.document_jobs import DocumentJobExecutionService, DocumentJobService, EagerDocumentJobTaskQueue
+from app.domains.document_jobs.execution import DocumentJobExecutionService, EagerDocumentJobTaskQueue
+from app.domains.document_jobs.service import DocumentJobService
 from app.services.document_ir import MinerUToDocumentIRService
-from app.services.files import FileUploadService
+from app.domains.files import FileUploadService
 from app.services.health_service import HealthService
-from app.services.jobs.artifact_integrity import ArtifactFingerprintMismatch
-from app.services.jobs.artifact_storage import DownloadArtifact, LocalArtifactStorageAdapter
-from app.services.jobs.artifacts import JobArtifactService
-from app.services.jobs.command import JobCommandService
-from app.services.jobs.dispatch import ExternalWorkerStageDispatcher, InProcessStageDispatcher
-from app.services.jobs.lifecycle import JobLifecycleService
-from app.services.jobs.object_artifact_storage import ObjectArtifactStorageAdapter
-from app.services.jobs.resource_snapshots import JobResourceSnapshotService
-from app.services.jobs.query import JobQueryService
-from app.services.jobs.stage import JobStageService
+from app.domains.jobs.artifact_integrity import ArtifactFingerprintMismatch
+from app.domains.jobs.artifact_storage import DownloadArtifact, LocalArtifactStorageAdapter
+from app.domains.jobs.artifacts import JobArtifactService
+from app.domains.jobs.command import JobCommandService
+from app.domains.jobs.dispatch import ExternalWorkerStageDispatcher, InProcessStageDispatcher
+from app.domains.jobs.lifecycle import JobLifecycleService
+from app.domains.jobs.object_artifact_storage import ObjectArtifactStorageAdapter
+from app.domains.jobs.resource_snapshots import JobResourceSnapshotService
+from app.domains.jobs.query import JobQueryService
+from app.domains.jobs.stage import JobStageService
 from app.services.renderer import DocumentIRWordRenderer
-from app.services.resource_versions import ResourceVersionService
-from app.services.term_rules.bootstrap import TermRuleBootstrapService
-from app.services.term_rules.import_validation import TermRuleImportValidationService
-from app.services.term_rules.service import TermRuleService
-from app.services.term_rules.sync_files import TermRuleFileSyncService
-from app.services.term_rules.versioning_service import DEFAULT_TERM_RULE_SET_ID, TermRuleSetVersionService
-from app.services.term_rules.yaml_codec import CURRENT_SCHEMA_VERSION, TermRuleYamlCodec
-from app.services.templates.read_service import TemplateReadService
-from app.services.terms import TermVersionService
-from app.services.translation import DocumentIRTranslationService, build_translation_provider
-from app.services.translation_profiles import DEFAULT_TRANSLATION_PROFILE_ID, TranslationProfileVersionService
+from app.domains.resources.service import ResourceVersionService
+from app.domains.term_rules.bootstrap import TermRuleBootstrapService
+from app.domains.term_rules.import_validation import TermRuleImportValidationService
+from app.domains.term_rules.service import TermRuleService
+from app.domains.term_rules.sync_files import TermRuleFileSyncService
+from app.domains.term_rules.versioning_service import DEFAULT_TERM_RULE_SET_ID, TermRuleSetVersionService
+from app.domains.term_rules.yaml_codec import CURRENT_SCHEMA_VERSION, TermRuleYamlCodec
+from app.domains.templates.read_service import TemplateReadService
+from app.domains.translation.audit import TranslationAuditService
+from app.domains.translation.document_ir_translator import DocumentIRTranslationService
+from app.domains.translation.profiles_service import DEFAULT_TRANSLATION_PROFILE_ID, TranslationProfileVersionService
+from app.domains.translation.provider import build_translation_provider
+from app.domains.translation.term_version_service import TermVersionService
 from app.workers.stage_worker import StageWorker
 
 
@@ -191,10 +199,39 @@ class FakeConversionService:
         )
 
 
+class FakeDocumentJobTranslationProvider:
+    def __init__(self, *, raise_error: bool = False) -> None:
+        self.raise_error = raise_error
+        self.requests = []
+
+    def translate(self, request):
+        self.requests.append(request)
+        if self.raise_error:
+            raise RuntimeError("provider unavailable")
+        translations = {
+            "block_0001.text": "1 特性",
+            "block_0002.text": "输入失调电压很低。",
+            "block_0003.text": "电气特性",
+            "block_0003.html.0000": "参数",
+            "block_0003.html.0001": "输入电压",
+            "block_0004.text": "图 1. 引脚图",
+            "block_0005.list_items.0000": "低噪声",
+            "block_0005.list_items.0001": "高压摆率",
+        }
+        from app.domains.translation.models import TranslationProviderResult, TranslationTextItem
+
+        return TranslationProviderResult(
+            items=tuple(
+                TranslationTextItem(id=item.id, text=translations.get(item.id, f"译文:{item.text}"))
+                for item in request.items
+            )
+        )
+
+
 def build_test_runtime(
     data_dir: Path,
     *,
-    repository_factory: Callable[[Path], Any] | None = None,
+    repository_factory: Callable[[Path], PersistenceAdapters] | None = None,
     jobs_repository_backend: str = "file",
     jobs_artifact_storage_backend: str = "local_file",
     jobs_worker_mode: str = "in_process",
@@ -211,6 +248,7 @@ def build_test_runtime(
     admin_token: str = "",
     auth_jwt_secret_key: str = "",
     auth_access_token_expire_minutes: int = 120,
+    auth_internal_users_file: str = "",
     auth_internal_users_json: str = "",
     jobs_upload_max_bytes: int = 52_428_800,
     pdf_upload_max_pages: int = 200,
@@ -218,6 +256,8 @@ def build_test_runtime(
     p0_document_job_max_retries: int = 2,
     default_translation_mode: str = "direct",
     document_jobs_worker_backend: str = "disabled",
+    translation_debug_archive_enabled: bool = False,
+    translation_debug_archive_retention_days: int = 1,
     templates_manifest_path: str | None = None,
     term_rules_seed_path: str | None = None,
 ) -> AppRuntime:
@@ -243,6 +283,7 @@ def build_test_runtime(
         admin_token=admin_token,
         auth_jwt_secret_key=auth_jwt_secret_key,
         auth_access_token_expire_minutes=auth_access_token_expire_minutes,
+        auth_internal_users_file=auth_internal_users_file,
         auth_internal_users_json=auth_internal_users_json,
         jobs_upload_max_bytes=jobs_upload_max_bytes,
         pdf_upload_max_pages=pdf_upload_max_pages,
@@ -250,36 +291,57 @@ def build_test_runtime(
         p0_document_job_max_retries=p0_document_job_max_retries,
         default_translation_mode=default_translation_mode,
         document_jobs_worker_backend=document_jobs_worker_backend,
+        translation_debug_archive_enabled=translation_debug_archive_enabled,
+        translation_debug_archive_retention_days=translation_debug_archive_retention_days,
         **({"templates_manifest_path": templates_manifest_path} if templates_manifest_path else {}),
         **({"term_rules_seed_path": term_rules_seed_path} if term_rules_seed_path else {}),
     )
     if repository_factory is not None:
-        repository = repository_factory(settings.data_path)
+        persistence_adapters = repository_factory(settings.data_path)
     elif jobs_repository_backend == "database":
         settings.jobs_dir.mkdir(parents=True, exist_ok=True)
         settings.tmp_dir.mkdir(parents=True, exist_ok=True)
-        repository = DatabaseJobRepository(settings.jobs_metadata_database_file)
+        persistence_adapters = build_sqlite_persistence_adapters(settings.jobs_metadata_database_file)
+    elif jobs_repository_backend == "mysql":
+        settings.jobs_dir.mkdir(parents=True, exist_ok=True)
+        settings.tmp_dir.mkdir(parents=True, exist_ok=True)
+        persistence_adapters = build_mysql_persistence_adapters(
+            MysqlPersistenceConfig(
+                host=settings.jobs_mysql_host,
+                port=settings.jobs_mysql_port,
+                user=settings.jobs_mysql_user,
+                password=settings.jobs_mysql_password,
+                database=settings.jobs_mysql_database,
+                charset=settings.jobs_mysql_charset,
+                connect_timeout_seconds=settings.jobs_mysql_connect_timeout_seconds,
+            )
+        )
     else:
-        repository = FileJobRepository(settings.data_path)
-    job_repository = repository
-    job_file_repository = repository
-    job_event_repository = repository
-    audit_event_repository = repository
-    document_file_repository = repository
-    document_job_repository = repository
-    document_job_event_repository = repository
-    stage_message_store = repository
+        persistence_adapters = build_file_persistence_adapters(settings.data_path)
+    job_repository = persistence_adapters.job_repository
+    job_file_repository = persistence_adapters.job_file_repository
+    job_event_repository = persistence_adapters.job_event_repository
+    audit_event_repository = persistence_adapters.audit_event_repository
+    document_file_repository = persistence_adapters.document_file_repository
+    document_job_repository = persistence_adapters.document_job_repository
+    document_job_event_repository = persistence_adapters.document_job_event_repository
+    stage_message_store = persistence_adapters.stage_message_store
     audit_service = AuditService(audit_event_repository)
     auth_service = AuthService(settings)
     file_upload_service = FileUploadService(settings, document_file_repository)
     document_ir_service = MinerUToDocumentIRService()
     translation_provider = build_translation_provider(settings)
     document_ir_translation_service = DocumentIRTranslationService(translation_provider)
+    translation_audit_service = TranslationAuditService(settings, file_upload_service)
     term_version_service = TermVersionService(
         settings.translation_terms_file,
         default_term_version_id=settings.default_translation_term_version_id,
     )
-    resource_version_service = ResourceVersionService(repository) if jobs_repository_backend == "mysql" else None
+    resource_version_service = (
+        ResourceVersionService(persistence_adapters.resource_version_repository)
+        if persistence_adapters.resource_version_repository is not None
+        else None
+    )
     template_read_service = TemplateReadService(settings, resource_version_service, audit_service)
     document_word_renderer = DocumentIRWordRenderer()
     document_job_mineru_client = FakeMinerUClient()
@@ -293,6 +355,9 @@ def build_test_runtime(
         document_ir_service,
         template_read_service,
         document_word_renderer,
+        document_ir_translation_service,
+        term_version_service,
+        translation_audit_service,
         mineru_client_factory=lambda: document_job_mineru_client,
     )
     document_job_execution_service.fake_mineru_client = document_job_mineru_client
@@ -411,7 +476,7 @@ def build_test_runtime(
     query_service = JobQueryService(job_repository, job_file_repository, job_event_repository)
     return AppRuntime(
         settings=settings,
-        repository=repository,
+        persistence_adapters=persistence_adapters,
         job_repository=job_repository,
         job_file_repository=job_file_repository,
         job_event_repository=job_event_repository,
@@ -425,6 +490,7 @@ def build_test_runtime(
         document_ir_service=document_ir_service,
         translation_provider=translation_provider,
         document_ir_translation_service=document_ir_translation_service,
+        translation_audit_service=translation_audit_service,
         term_version_service=term_version_service,
         document_word_renderer=document_word_renderer,
         document_job_service=document_job_service,
@@ -477,6 +543,27 @@ def make_mineru_zip_bytes(*, include_image: bool = True) -> bytes:
         archive.writestr("content_list_v2.json", json.dumps(blocks, ensure_ascii=False))
         if include_image:
             archive.writestr("images/figure1.png", MINIMAL_PNG_BYTES)
+    return buffer.getvalue()
+
+
+def make_english_mineru_zip_bytes() -> bytes:
+    buffer = io.BytesIO()
+    blocks = [
+        {"type": "title", "text": "1 Features", "text_level": 1, "page_idx": 0},
+        {"type": "text", "text": "The input offset voltage is low.", "page_idx": 0},
+        {
+            "type": "table",
+            "table_caption": "Electrical Characteristics",
+            "table_body": "<table><tr><th>Parameter</th><td>Input voltage</td></tr></table>",
+            "page_idx": 0,
+        },
+        {"type": "image", "img_path": "images/figure1.png", "caption": "Figure 1. Pin diagram", "page_idx": 0},
+        {"type": "list", "items": ["Low noise", "High slew rate"], "page_idx": 1},
+        {"type": "interline_equation", "latex": "E=mc^2", "page_idx": 1},
+    ]
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("content_list_v2.json", json.dumps(blocks, ensure_ascii=False))
+        archive.writestr("images/figure1.png", MINIMAL_PNG_BYTES)
     return buffer.getvalue()
 
 
@@ -666,14 +753,13 @@ def publish_default_job_resources(runtime: AppRuntime, *, include_translation: b
 
 
 def build_mysql_test_runtime(data_dir: Path, **kwargs) -> AppRuntime:
-    from app.repositories.mysql_job_repository import MysqlJobRepository
     from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
 
     fake_mysql = _FakeMysqlDatabase()
     return build_test_runtime(
         data_dir,
         jobs_repository_backend="mysql",
-        repository_factory=lambda _data_dir: MysqlJobRepository(
+        repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
             _mysql_config(),
             connect_factory=fake_mysql.connect,
         ),
@@ -820,17 +906,18 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(list(events_payload["items"][0]), JOB_EVENT_RESPONSE_KEYS)
         self.assertEqual(list(result_payload), JOB_FILE_RESPONSE_KEYS)
 
-    def test_api_v1_schema_imports_remain_compatible_after_resource_split(self):
-        from app.schemas import api_v1
-        from app.schemas.document_jobs import DocumentJobCreateResponse
-        from app.schemas.document_jobs import DocumentJobRetryResponse
-        from app.schemas.files import DocumentFileResponse
-        from app.schemas.jobs import JobDetailResponse
+    def test_api_v1_schema_imports_use_final_owners_after_resource_split(self):
+        from app.api.v1.routers.health_schemas import HealthReadyResponse
+        from app.domains.document_jobs.schemas import DocumentJobCreateResponse
+        from app.domains.document_jobs.schemas import DocumentJobRetryResponse
+        from app.domains.files.schemas import DocumentFileResponse
+        from app.domains.jobs.schemas import JobDetailResponse
 
-        self.assertIs(api_v1.JobDetailResponse, JobDetailResponse)
-        self.assertIs(api_v1.DocumentFileResponse, DocumentFileResponse)
-        self.assertIs(api_v1.DocumentJobCreateResponse, DocumentJobCreateResponse)
-        self.assertIs(api_v1.DocumentJobRetryResponse, DocumentJobRetryResponse)
+        self.assertEqual(JobDetailResponse.__module__, "app.domains.jobs.schemas")
+        self.assertEqual(DocumentFileResponse.__module__, "app.domains.files.schemas")
+        self.assertEqual(DocumentJobCreateResponse.__module__, "app.domains.document_jobs.schemas")
+        self.assertEqual(DocumentJobRetryResponse.__module__, "app.domains.document_jobs.schemas")
+        self.assertEqual(HealthReadyResponse.__module__, "app.api.v1.routers.health_schemas")
 
     def test_health_ready_reports_runtime_dependencies(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1034,6 +1121,26 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(me_response.json()["id"], "user_admin")
         self.assertEqual(me_response.json()["role"], "admin")
 
+    def test_internal_auth_loads_users_from_file_to_avoid_env_dollar_escaping(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            users_file = Path(temp_dir) / "auth_internal_users.json"
+            users_file.write_text(build_auth_users_json(), encoding="utf-8")
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_file=str(users_file),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                response = client.post(
+                    "/api/v1/auth/login",
+                    json={"username": "operator", "password": "operator-pass"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["role"], "operator")
+
     def test_internal_auth_rejects_missing_invalid_expired_and_wrong_role(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(
@@ -1172,6 +1279,32 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(payload["metadata"]["page_count"], 2)
         self.assertEqual(record.status, "uploaded")
         self.assertEqual(object_bytes, pdf_content)
+
+    def test_file_upload_url_uses_forwarded_https_scheme(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+            pdf_content = make_pdf_bytes(page_count=1)
+
+            with TestClient(app) as client:
+                headers = {**build_auth_header(client), "X-Forwarded-Proto": "https"}
+                response = client.post(
+                    "/api/v1/files/upload-url",
+                    headers=headers,
+                    json={
+                        "filename": "source.pdf",
+                        "mime_type": "application/pdf",
+                        "size_bytes": len(pdf_content),
+                    },
+                )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.json()["upload_url"].startswith("https://testserver/"))
 
     def test_file_upload_rejects_missing_token_bad_type_oversize_and_too_many_pages(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1473,6 +1606,133 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(ir_payload["blocks"][3]["asset_ref"], ir_payload["assets"][0]["id"])
         self.assertEqual(image_bytes, MINIMAL_PNG_BYTES)
 
+    def test_document_job_en2zh_worker_translates_ir_and_saves_ai_audit_artifacts(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+                translation_debug_archive_enabled=True,
+            )
+            provider = FakeDocumentJobTranslationProvider()
+            runtime.document_ir_translation_service = DocumentIRTranslationService(provider)
+            runtime.document_job_execution_service.document_ir_translation_service = runtime.document_ir_translation_service
+            runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = make_english_mineru_zip_bytes()
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers, filename="english-datasheet.pdf")
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={
+                        "source_file_id": source_file["id"],
+                        "mode": "en2zh_pdf_to_word",
+                        "document_language": "en",
+                        "debug_full_text": True,
+                    },
+                )
+                job_id = create_response.json()["job_id"]
+                events_response = client.get(f"/api/v1/document-jobs/{job_id}/events", headers=headers)
+
+            stored_job = runtime.document_job_repository.get_document_job(job_id)
+            files = [
+                file
+                for file in runtime.document_file_repository.list_document_files()
+                if file.job_id == job_id
+            ]
+            files_by_type = {file.file_type: file for file in files}
+            ir_payload = json.loads(
+                runtime.file_upload_service.read_file_content(files_by_type["document_ir"]).decode("utf-8")
+            )
+            ai_log_text = runtime.file_upload_service.read_file_content(files_by_type["ai_call_log"]).decode("utf-8")
+            ai_log_payload = json.loads(ai_log_text)
+            debug_text = runtime.file_upload_service.read_file_content(files_by_type["ai_debug_archive"]).decode("utf-8")
+            debug_payload = json.loads(debug_text)
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.json()["status"], "succeeded")
+        self.assertIsNotNone(stored_job)
+        self.assertEqual(stored_job.term_version_id, "en2zh@v1")
+        self.assertTrue(stored_job.debug_full_text_enabled)
+        self.assertEqual(len(provider.requests), 1)
+        self.assertEqual(ir_payload["metadata"]["document_language"], "zh")
+        self.assertEqual(ir_payload["blocks"][0]["text"], "1 特性")
+        self.assertEqual(ir_payload["blocks"][1]["text"], "输入失调电压很低。")
+        self.assertIn("<th>参数</th>", ir_payload["blocks"][2]["html"])
+        self.assertEqual(ir_payload["blocks"][4]["list_items"], ["低噪声", "高压摆率"])
+        self.assertEqual(files_by_type["document_ir"].metadata["translation"]["applied"], True)
+        self.assertEqual(files_by_type["ai_call_log"].metadata["status"], "succeeded")
+        self.assertEqual(ai_log_payload["status"], "succeeded")
+        self.assertEqual(ai_log_payload["request"]["item_count"], 8)
+        self.assertIn("sha256:", ai_log_payload["request"]["redacted_items"][0]["sha256"])
+        self.assertNotIn("The input offset voltage is low.", ai_log_text)
+        self.assertIn("The input offset voltage is low.", debug_text)
+        self.assertIn("输入失调电压很低。", debug_text)
+        self.assertEqual(debug_payload["schema_version"], "translation-debug-archive/v1")
+        self.assertEqual(files_by_type["ai_debug_archive"].metadata["contains_full_text"], True)
+        self.assertLessEqual(
+            files_by_type["ai_debug_archive"].expires_at - files_by_type["ai_debug_archive"].created_at,
+            timedelta(days=1, seconds=1),
+        )
+        event_types = [event["event_type"] for event in events_response.json()["items"]]
+        self.assertIn("ai_call_logged", event_types)
+        self.assertIn("debug_archive_saved", event_types)
+
+    def test_document_job_en2zh_translation_failure_records_ai_call_log_without_full_text(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            provider = FakeDocumentJobTranslationProvider(raise_error=True)
+            runtime.document_ir_translation_service = DocumentIRTranslationService(provider)
+            runtime.document_job_execution_service.document_ir_translation_service = runtime.document_ir_translation_service
+            runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = make_english_mineru_zip_bytes()
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers, filename="english-failure.pdf")
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={
+                        "source_file_id": source_file["id"],
+                        "mode": "en2zh_pdf_to_word",
+                        "document_language": "en",
+                    },
+                )
+                job_id = create_response.json()["job_id"]
+
+            stored_job = runtime.document_job_repository.get_document_job(job_id)
+            files = [
+                file
+                for file in runtime.document_file_repository.list_document_files()
+                if file.job_id == job_id
+            ]
+            ai_logs = [file for file in files if file.file_type == "ai_call_log"]
+            debug_archives = [file for file in files if file.file_type == "ai_debug_archive"]
+            ai_log_text = runtime.file_upload_service.read_file_content(ai_logs[0]).decode("utf-8")
+            ai_log_payload = json.loads(ai_log_text)
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.json()["status"], "failed")
+        self.assertIsNotNone(stored_job)
+        self.assertEqual(stored_job.error_code, "translation_failed")
+        self.assertEqual(len(provider.requests), 1)
+        self.assertEqual(len(ai_logs), 1)
+        self.assertEqual(debug_archives, [])
+        self.assertEqual(ai_log_payload["status"], "failed")
+        self.assertEqual(ai_log_payload["error"]["type"], "RuntimeError")
+        self.assertNotIn("The input offset voltage is low.", ai_log_text)
+
     def test_document_job_download_url_returns_temporary_generated_word_link(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(
@@ -1500,7 +1760,7 @@ class FastAPIJobsBackendTests(TestCase):
                 download_path = download_url_response.json()["download_url"].replace("http://testserver", "")
                 download_response = client.get(download_path)
                 events_response = client.get(f"/api/v1/document-jobs/{job_id}/events", headers=headers)
-                audit_events = runtime.repository.list_audit_events()
+                audit_events = runtime.audit_event_repository.list_audit_events()
 
         self.assertEqual(download_url_response.status_code, 200)
         payload = download_url_response.json()
@@ -1522,6 +1782,34 @@ class FastAPIJobsBackendTests(TestCase):
         ]
         self.assertEqual(len(download_audit_events), 1)
         self.assertEqual(download_audit_events[0].target_id, job_id)
+
+    def test_document_job_download_url_uses_forwarded_https_scheme(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+                download_url_response = client.get(
+                    f"/api/v1/document-jobs/{job_id}/download-url",
+                    headers={**headers, "X-Forwarded-Proto": "https"},
+                )
+
+        self.assertEqual(download_url_response.status_code, 200)
+        self.assertTrue(download_url_response.json()["download_url"].startswith("https://testserver/"))
 
     def test_document_job_download_url_rejects_unfinished_job(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1731,7 +2019,7 @@ class FastAPIJobsBackendTests(TestCase):
                 )
 
             events = runtime.document_job_event_repository.list_document_job_events(job_id)
-            audit_events = runtime.repository.list_audit_events()
+            audit_events = runtime.audit_event_repository.list_audit_events()
 
         self.assertEqual(create_response.status_code, 201)
         self.assertEqual(create_response.json()["status"], "failed")
@@ -1956,8 +2244,8 @@ class FastAPIJobsBackendTests(TestCase):
                         "description": "default",
                         "enabled": True,
                         "is_default_seed": True,
-                        "template_path": str((repo_root / "template" / "datasheet_template.docx").resolve()),
-                        "layout_config_path": str((repo_root / "template_configs" / "datasheet_template.yaml").resolve()),
+                        "template_path": str((repo_root / "resources" / "templates" / "default" / "datasheet_template.docx").resolve()),
+                        "layout_config_path": str((repo_root / "resources" / "template_configs" / "datasheet_template.yaml").resolve()),
                     },
                     {
                         "id": "alt",
@@ -1966,7 +2254,7 @@ class FastAPIJobsBackendTests(TestCase):
                         "enabled": True,
                         "is_default_seed": False,
                         "template_path": str(alt_template_path.resolve()),
-                        "layout_config_path": str((repo_root / "template_configs" / "datasheet_template.yaml").resolve()),
+                        "layout_config_path": str((repo_root / "resources" / "template_configs" / "datasheet_template.yaml").resolve()),
                     },
                 ],
             )
@@ -2014,8 +2302,8 @@ class FastAPIJobsBackendTests(TestCase):
                         "description": "default",
                         "enabled": True,
                         "is_default_seed": True,
-                        "template_path": str((repo_root / "template" / "datasheet_template.docx").resolve()),
-                        "layout_config_path": str((repo_root / "template_configs" / "datasheet_template.yaml").resolve()),
+                        "template_path": str((repo_root / "resources" / "templates" / "default" / "datasheet_template.docx").resolve()),
+                        "layout_config_path": str((repo_root / "resources" / "template_configs" / "datasheet_template.yaml").resolve()),
                     }
                 ],
             )
@@ -2085,7 +2373,6 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(missing_response.status_code, 404)
 
     def test_template_profile_versioning_publishes_defaults_and_disables_versions(self):
-        from app.repositories.mysql_job_repository import MysqlJobRepository
         from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2101,8 +2388,8 @@ class FastAPIJobsBackendTests(TestCase):
                         "description": "default",
                         "enabled": True,
                         "is_default_seed": True,
-                        "template_path": str((repo_root / "template" / "datasheet_template.docx").resolve()),
-                        "layout_config_path": str((repo_root / "template_configs" / "datasheet_template.yaml").resolve()),
+                        "template_path": str((repo_root / "resources" / "templates" / "default" / "datasheet_template.docx").resolve()),
+                        "layout_config_path": str((repo_root / "resources" / "template_configs" / "datasheet_template.yaml").resolve()),
                     }
                 ],
             )
@@ -2111,7 +2398,7 @@ class FastAPIJobsBackendTests(TestCase):
                 temp_root,
                 admin_token="secret-admin",
                 jobs_repository_backend="mysql",
-                repository_factory=lambda _data_dir: MysqlJobRepository(
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
                     _mysql_config(),
                     connect_factory=fake_mysql.connect,
                 ),
@@ -2197,13 +2484,13 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertTrue(versions[2]["is_default"])
         self.assertEqual(versions[2]["render_policy"], {"density": "compact"})
 
-        records = {record.version: record for record in runtime.repository.list_resource_versions("template", "managed")}
-        default_record = runtime.repository.get_default_resource_version("template", "managed")
+        records = {record.version: record for record in runtime.resource_version_service.repository.list_resource_versions("template", "managed")}
+        default_record = runtime.resource_version_service.repository.get_default_resource_version("template", "managed")
         self.assertEqual(records["1"].status.value, "disabled")
         self.assertEqual(records["2"].status.value, "published")
         self.assertEqual(default_record.version, "2")
         self.assertEqual(records["2"].payload["render_policy"], {"density": "compact"})
-        audit_events = runtime.repository.list_audit_events()
+        audit_events = runtime.audit_event_repository.list_audit_events()
         self.assertEqual(
             [event.action for event in audit_events],
             [
@@ -2241,7 +2528,6 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIn("JOBS_REPOSITORY_BACKEND=mysql", response.json()["detail"])
 
     def test_term_rule_set_versioning_draft_publish_default_and_rollback(self):
-        from app.repositories.mysql_job_repository import MysqlJobRepository
         from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
 
         yaml_v1 = (
@@ -2274,7 +2560,7 @@ class FastAPIJobsBackendTests(TestCase):
                 Path(temp_dir),
                 admin_token="secret-admin",
                 jobs_repository_backend="mysql",
-                repository_factory=lambda _data_dir: MysqlJobRepository(
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
                     _mysql_config(),
                     connect_factory=fake_mysql.connect,
                 ),
@@ -2348,7 +2634,7 @@ class FastAPIJobsBackendTests(TestCase):
 
                 records_before_rollback = {
                     record.version: record.payload
-                    for record in runtime.repository.list_resource_versions("term_rule_set", "electronics-default")
+                    for record in runtime.resource_version_service.repository.list_resource_versions("term_rule_set", "electronics-default")
                 }
                 rollback_response = client.post(
                     "/api/v1/term-rule-sets/electronics-default/rollback",
@@ -2364,11 +2650,11 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertNotIn("VTWO", export_response.json()["yaml_text"])
         records_after_rollback = {
             record.version: record.payload
-            for record in runtime.repository.list_resource_versions("term_rule_set", "electronics-default")
+            for record in runtime.resource_version_service.repository.list_resource_versions("term_rule_set", "electronics-default")
         }
         self.assertEqual(records_after_rollback[version_v1], records_before_rollback[version_v1])
         self.assertEqual(detail_response.status_code, 200)
-        audit_events = runtime.repository.list_audit_events()
+        audit_events = runtime.audit_event_repository.list_audit_events()
         self.assertEqual(
             [event.action for event in audit_events],
             [
@@ -2384,7 +2670,6 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(len(detail_response.json()["versions"]), 2)
 
     def test_term_rule_set_draft_rejects_invalid_yaml_without_mutating_draft(self):
-        from app.repositories.mysql_job_repository import MysqlJobRepository
         from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2393,7 +2678,7 @@ class FastAPIJobsBackendTests(TestCase):
                 Path(temp_dir),
                 admin_token="secret-admin",
                 jobs_repository_backend="mysql",
-                repository_factory=lambda _data_dir: MysqlJobRepository(
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
                     _mysql_config(),
                     connect_factory=fake_mysql.connect,
                 ),
@@ -2418,7 +2703,6 @@ class FastAPIJobsBackendTests(TestCase):
         )
 
     def test_term_rule_set_versioning_backend_requirements_and_legacy_write_guard(self):
-        from app.repositories.mysql_job_repository import MysqlJobRepository
         from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
 
         yaml_text = "schema_version: 2\ncategories: {}\nrules: []\n"
@@ -2447,7 +2731,7 @@ class FastAPIJobsBackendTests(TestCase):
                 Path(temp_dir),
                 admin_token="secret-admin",
                 jobs_repository_backend="mysql",
-                repository_factory=lambda _data_dir: MysqlJobRepository(
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
                     _mysql_config(),
                     connect_factory=fake_mysql.connect,
                 ),
@@ -2616,8 +2900,8 @@ class FastAPIJobsBackendTests(TestCase):
                         "description": "default",
                         "enabled": True,
                         "is_default_seed": True,
-                        "template_path": str((repo_root / "template" / "datasheet_template.docx").resolve()),
-                        "layout_config_path": str((repo_root / "template_configs" / "datasheet_template.yaml").resolve()),
+                        "template_path": str((repo_root / "resources" / "templates" / "default" / "datasheet_template.docx").resolve()),
+                        "layout_config_path": str((repo_root / "resources" / "template_configs" / "datasheet_template.yaml").resolve()),
                     },
                     {
                         "id": "alt",
@@ -2626,7 +2910,7 @@ class FastAPIJobsBackendTests(TestCase):
                         "enabled": True,
                         "is_default_seed": False,
                         "template_path": str(alt_template_path.resolve()),
-                        "layout_config_path": str((repo_root / "template_configs" / "datasheet_template.yaml").resolve()),
+                        "layout_config_path": str((repo_root / "resources" / "template_configs" / "datasheet_template.yaml").resolve()),
                     },
                 ],
             )
@@ -2698,7 +2982,7 @@ class FastAPIJobsBackendTests(TestCase):
                 )
                 self.assertEqual(download_response.status_code, 200)
                 self.assertEqual(download_response.content, b"fake-docx")
-                audit_events = runtime.repository.list_audit_events()
+                audit_events = runtime.audit_event_repository.list_audit_events()
                 self.assertEqual([event.action for event in audit_events], ["artifact.download"])
                 self.assertEqual(audit_events[0].actor_role, "anonymous")
                 self.assertIsNone(audit_events[0].actor_id)
@@ -2737,8 +3021,8 @@ class FastAPIJobsBackendTests(TestCase):
                 result_ready=True,
                 completed_at=utc_now(),
             )
-            runtime.repository.create_job(job)
-            runtime.repository.upsert_file(job.id, JobFile(file_type="result_docx", path="output/result.docx"))
+            runtime.job_repository.create_job(job)
+            runtime.job_file_repository.upsert_file(job.id, JobFile(file_type="result_docx", path="output/result.docx"))
 
             with TestClient(app) as client:
                 for error, expected_status in cases:
@@ -2760,11 +3044,11 @@ class FastAPIJobsBackendTests(TestCase):
                 result_ready=True,
                 completed_at=utc_now(),
             )
-            runtime.repository.create_job(job)
+            runtime.job_repository.create_job(job)
             job_paths = build_job_paths(runtime.settings.data_path, job.id)
             ensure_job_dirs(job_paths)
             job_paths.result_docx.write_bytes(b"actual-docx")
-            runtime.repository.upsert_file(
+            runtime.job_file_repository.upsert_file(
                 job.id,
                 JobFile(
                     file_type="result_docx",
@@ -2793,7 +3077,7 @@ class FastAPIJobsBackendTests(TestCase):
                 status="queued",
                 progress=0,
             )
-            runtime.repository.create_job(queued_job)
+            runtime.job_repository.create_job(queued_job)
 
             with TestClient(app) as client:
                 bad_upload_response = client.post(
@@ -2846,8 +3130,8 @@ class FastAPIJobsBackendTests(TestCase):
                 result_ready=True,
                 completed_at=utc_now(),
             )
-            runtime.repository.create_job(job)
-            runtime.repository.upsert_file(job.id, JobFile(file_type="result_docx", path="output/result.docx"))
+            runtime.job_repository.create_job(job)
+            runtime.job_file_repository.upsert_file(job.id, JobFile(file_type="result_docx", path="output/result.docx"))
 
             with TestClient(app) as client:
                 response = client.get(f"/api/v1/jobs/{job.id}/download/result")
@@ -2875,8 +3159,8 @@ class FastAPIJobsBackendTests(TestCase):
                 result_ready=True,
                 completed_at=utc_now(),
             )
-            runtime.repository.create_job(job)
-            runtime.repository.upsert_file(job.id, JobFile(file_type="result_docx", path="output/result.docx"))
+            runtime.job_repository.create_job(job)
+            runtime.job_file_repository.upsert_file(job.id, JobFile(file_type="result_docx", path="output/result.docx"))
 
             with TestClient(app) as client:
                 response = client.get(f"/api/v1/jobs/{job.id}/download/result", follow_redirects=False)
@@ -2936,7 +3220,7 @@ class FastAPIJobsBackendTests(TestCase):
             requests_before_worker = list(runtime.stage_service.conversion_entrypoint.requests)
             worker = StageWorker(runtime, poll_interval_seconds=0)
             processed_count = worker.run_once()
-            completed_job = runtime.repository.get_job(job_id)
+            completed_job = runtime.job_repository.get_job(job_id)
             remaining_messages = runtime.stage_message_store.list_replayable_stage_messages()
 
         self.assertEqual(health["dependency_checks"]["worker_mode"], "external")
@@ -2988,7 +3272,6 @@ class FastAPIJobsBackendTests(TestCase):
             self.assertEqual(request.translation_model, "deepseek-v4-flash")
 
     def test_translation_profile_versioning_overrides_en2zh_request_and_records_trace(self):
-        from app.repositories.mysql_job_repository import MysqlJobRepository
         from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2998,7 +3281,7 @@ class FastAPIJobsBackendTests(TestCase):
                 admin_token="secret-admin",
                 openai_api_key="fake-key",
                 jobs_repository_backend="mysql",
-                repository_factory=lambda _data_dir: MysqlJobRepository(
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
                     _mysql_config(),
                     connect_factory=fake_mysql.connect,
                 ),
@@ -3066,12 +3349,12 @@ class FastAPIJobsBackendTests(TestCase):
 
         records = {
             record.version: record
-            for record in runtime.repository.list_resource_versions("translation_profile", "electronics-en2zh")
+            for record in runtime.resource_version_service.repository.list_resource_versions("translation_profile", "electronics-en2zh")
         }
         self.assertEqual(records[version].status.value, "published")
         self.assertEqual(records[version].payload["model"], "profile-model")
         self.assertNotIn("api_key", records[version].payload)
-        audit_events = runtime.repository.list_audit_events()
+        audit_events = runtime.audit_event_repository.list_audit_events()
         self.assertIn("translation_profile.publish", [event.action for event in audit_events])
 
     def test_translation_profile_rollback_writes_audit_event(self):
@@ -3098,7 +3381,7 @@ class FastAPIJobsBackendTests(TestCase):
                 )
 
         self.assertEqual(response.status_code, 200)
-        audit_events = runtime.repository.list_audit_events()
+        audit_events = runtime.audit_event_repository.list_audit_events()
         self.assertEqual([event.action for event in audit_events], ["translation_profile.rollback"])
         self.assertEqual(audit_events[0].target_id, "electronics-en2zh@1")
         self.assertEqual(audit_events[0].actor_role, "admin")
@@ -3203,7 +3486,7 @@ class FastAPIJobsBackendTests(TestCase):
             processed_count = worker.run_once()
             request = runtime.stage_service.conversion_entrypoint.requests[0]
             job_paths = build_job_paths(runtime.settings.data_path, job_id)
-            updated_job = runtime.repository.get_job(job_id)
+            updated_job = runtime.job_repository.get_job(job_id)
             materialized_yaml = job_paths.resource_subscript_config.read_text(encoding="utf-8")
 
         self.assertEqual(processed_count, 1)
@@ -3232,15 +3515,15 @@ class FastAPIJobsBackendTests(TestCase):
                 job_id = create_response.json()["job_id"]
 
             message = runtime.stage_message_store.list_replayable_stage_messages()[0]
-            record = runtime.repository.get_resource_version("template", "default", "1")
+            record = runtime.resource_version_service.repository.get_resource_version("template", "default", "1")
             self.assertIsNotNone(record)
-            runtime.repository.save_resource_version(
+            runtime.resource_version_service.repository.save_resource_version(
                 record.model_copy(update={"snapshot_hash": "sha256:" + "f" * 64})
             )
 
             worker = StageWorker(runtime, poll_interval_seconds=0)
             processed_count = worker.run_once()
-            updated_job = runtime.repository.get_job(job_id)
+            updated_job = runtime.job_repository.get_job(job_id)
             failed_message = runtime.stage_message_store.get_stage_message(message.id)
 
         self.assertEqual(processed_count, 1)
@@ -3308,7 +3591,7 @@ class FastAPIJobsBackendTests(TestCase):
             runtime.settings.mineru_enable_table = False
             worker = StageWorker(runtime, poll_interval_seconds=0)
             processed_count = worker.run_once()
-            updated_job = runtime.repository.get_job(job_id)
+            updated_job = runtime.job_repository.get_job(job_id)
             fake_call = runtime.stage_service.fake_mineru_client.calls[0]
 
         self.assertEqual(processed_count, 1)
@@ -3370,7 +3653,7 @@ class FastAPIJobsBackendTests(TestCase):
                 self.assertEqual(detail["mineru_data_id"], job_id)
                 self.assertEqual(detail["mineru_status"], "submitted")
                 self.assertEqual(detail["mineru_result_zip_url"], None)
-                persisted_job = runtime.repository.get_job(job_id)
+                persisted_job = runtime.job_repository.get_job(job_id)
                 self.assertIsNotNone(persisted_job)
                 self.assertIsNotNone(persisted_job.source_pdf_context)
                 self.assertEqual(persisted_job.source_pdf_context.batch_id, "batch_test_001")
@@ -3485,11 +3768,11 @@ class FastAPIJobsBackendTests(TestCase):
                 self.assertEqual(updated["status"], "completed")
                 self.assertEqual(updated["mineru_result_zip_url"], "https://mineru.net/result.zip")
                 self.assertTrue(updated["result_ready"])
-                persisted_job = runtime.repository.get_job(job_id)
+                persisted_job = runtime.job_repository.get_job(job_id)
                 self.assertIsNotNone(persisted_job)
                 self.assertIsNotNone(persisted_job.source_pdf_context)
                 self.assertEqual(persisted_job.source_pdf_context.result_zip_url, "https://mineru.net/result.zip")
-                files = runtime.repository.list_files(job_id)
+                files = runtime.job_file_repository.list_files(job_id)
                 self.assertEqual([item.file_type for item in files], ["source_pdf", "parsed_result_package", "result_docx"])
 
     def test_recover_mineru_result_queries_provider_when_callback_is_missing(self):
@@ -3558,7 +3841,7 @@ class FastAPIJobsBackendTests(TestCase):
                 result_response = client.get(f"/api/v1/jobs/{job_id}/download/result")
                 files_response = client.get(f"/api/v1/jobs/{job_id}/files").json()
 
-            files = {item.file_type: item for item in runtime.repository.list_files(job_id)}
+            files = {item.file_type: item for item in runtime.job_file_repository.list_files(job_id)}
             object_root = runtime.settings.jobs_artifact_object_store_dir
             object_exists = {
                 "source_pdf": (object_root / f"jobs/{job_id}/input/source.pdf").exists(),
@@ -3776,9 +4059,9 @@ class FastAPIJobsBackendTests(TestCase):
 
                 first_detail = client.get(f"/api/v1/jobs/{first_job_id}").json()
                 second_detail = client.get(f"/api/v1/jobs/{second_job_id}").json()
-                second_job = runtime.repository.get_job(second_job_id)
+                second_job = runtime.job_repository.get_job(second_job_id)
                 self.assertIsNotNone(second_job)
-                runtime.repository.update_job(
+                runtime.job_repository.update_job(
                     second_job_id,
                     **build_source_pdf_context_patch(second_job, batch_id=first_detail["mineru_batch_id"]),
                 )
@@ -3814,7 +4097,7 @@ class FastAPIJobsBackendTests(TestCase):
                 ),
                 completed_at=utc_now(),
             )
-            runtime.repository.create_job(job)
+            runtime.job_repository.create_job(job)
             with TestClient(app) as client:
                 payload, _content = build_callback_payload(
                     batch_id="batch_completed",
@@ -3846,7 +4129,7 @@ class FastAPIJobsBackendTests(TestCase):
                     upstream_status="submitted",
                 ),
             )
-            runtime.repository.create_job(job)
+            runtime.job_repository.create_job(job)
 
             by_data_id = runtime.command_service.find_job_for_callback({"data_id": "job_nested_callback"})
             by_batch_id = runtime.command_service.find_job_for_callback({"batch_id": "batch_nested"})
@@ -3867,7 +4150,7 @@ class FastAPIJobsBackendTests(TestCase):
                 execution_status="queued",
                 source_pdf_context=SourcePdfJobContext(),
             )
-            runtime.repository.create_job(job)
+            runtime.job_repository.create_job(job)
             pending = JobStageMessage(
                 id="msg_pending",
                 job_id=job.id,
@@ -3915,7 +4198,7 @@ class FastAPIJobsBackendTests(TestCase):
                 result_ready=True,
                 completed_at=utc_now(),
             )
-            runtime.repository.create_job(job)
+            runtime.job_repository.create_job(job)
             message = JobStageMessage(
                 id="msg_completed_replay",
                 job_id=job.id,
@@ -3929,7 +4212,7 @@ class FastAPIJobsBackendTests(TestCase):
 
             self.assertEqual(runtime.stage_service.conversion_entrypoint.requests, [])
             self.assertIsNone(runtime.stage_message_store.get_stage_message(message.id))
-            self.assertEqual(runtime.repository.get_job(job.id).status, "completed")
+            self.assertEqual(runtime.job_repository.get_job(job.id).status, "completed")
 
     def test_dispatch_skips_replayed_mineru_submit_after_batch_recorded(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -3948,7 +4231,7 @@ class FastAPIJobsBackendTests(TestCase):
                     upstream_status="submitted",
                 ),
             )
-            runtime.repository.create_job(job)
+            runtime.job_repository.create_job(job)
             message = JobStageMessage(
                 id="msg_submitted_replay",
                 job_id=job.id,
@@ -3962,7 +4245,7 @@ class FastAPIJobsBackendTests(TestCase):
 
             self.assertEqual(runtime.stage_service.fake_mineru_client.calls, [])
             self.assertIsNone(runtime.stage_message_store.get_stage_message(message.id))
-            self.assertEqual(runtime.repository.get_job(job.id).status, "parsing")
+            self.assertEqual(runtime.job_repository.get_job(job.id).status, "parsing")
 
     def test_dispatch_skips_duplicate_callback_after_job_completed(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -3984,7 +4267,7 @@ class FastAPIJobsBackendTests(TestCase):
                 result_ready=True,
                 completed_at=utc_now(),
             )
-            runtime.repository.create_job(job)
+            runtime.job_repository.create_job(job)
             message = JobStageMessage(
                 id="msg_callback_completed",
                 job_id=job.id,
@@ -4004,7 +4287,7 @@ class FastAPIJobsBackendTests(TestCase):
 
             self.assertEqual(runtime.stage_service.conversion_entrypoint.requests, [])
             self.assertIsNone(runtime.stage_message_store.get_stage_message(message.id))
-            self.assertEqual(runtime.repository.get_job(job.id).status, "completed")
+            self.assertEqual(runtime.job_repository.get_job(job.id).status, "completed")
 
     def test_enqueue_parsed_result_conversion_downloads_zip_and_completes_docx(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -4024,10 +4307,10 @@ class FastAPIJobsBackendTests(TestCase):
                     result_zip_url="https://mineru.net/result.zip",
                 ),
             )
-            runtime.repository.create_job(job)
+            runtime.job_repository.create_job(job)
 
             message = runtime.stage_service.enqueue_parsed_result_conversion(job, trace_id="trace_parsed")
-            queued_job = runtime.repository.get_job(job.id)
+            queued_job = runtime.job_repository.get_job(job.id)
             self.assertIsNotNone(queued_job)
             self.assertEqual(queued_job.status, "queued")
             self.assertEqual(queued_job.progress, 65)
@@ -4035,12 +4318,12 @@ class FastAPIJobsBackendTests(TestCase):
 
             runtime.stage_service.dispatch_message(message.id)
 
-            updated_job = runtime.repository.get_job(job.id)
+            updated_job = runtime.job_repository.get_job(job.id)
             self.assertIsNotNone(updated_job)
             self.assertEqual(updated_job.status, "completed")
             self.assertEqual(updated_job.resolved_execution_status(), "idle")
             self.assertIsNone(runtime.stage_message_store.get_stage_message(message.id))
-            files = runtime.repository.list_files(job.id)
+            files = runtime.job_file_repository.list_files(job.id)
             self.assertEqual([item.file_type for item in files], ["parsed_result_package", "result_docx"])
             job_paths = build_job_paths(runtime.settings.data_path, job.id)
             self.assertTrue(job_paths.parsed_result_package.exists())
@@ -4050,7 +4333,7 @@ class FastAPIJobsBackendTests(TestCase):
             self.assertEqual(fake_conversion.requests[0].package_path, job_paths.parsed_result_package)
             self.assertEqual(job_paths.result_docx.read_bytes(), b"fake-docx")
 
-            event_stages = [item.stage for item in runtime.repository.list_events(job.id)]
+            event_stages = [item.stage for item in runtime.job_event_repository.list_events(job.id)]
             self.assertIn("parsed_result_conversion_started", event_stages)
             self.assertIn("parsed_result_package_recovered", event_stages)
             self.assertIn("job_completed", event_stages)
@@ -4074,16 +4357,16 @@ class FastAPIJobsBackendTests(TestCase):
                     result_zip_url="https://mineru.net/result.zip",
                 ),
             )
-            runtime.repository.create_job(job)
+            runtime.job_repository.create_job(job)
 
             message = runtime.stage_service.enqueue_parsed_result_conversion(job, trace_id="trace_parsed_fail")
             runtime.stage_service.dispatch_message(message.id)
 
-            updated_job = runtime.repository.get_job(job.id)
+            updated_job = runtime.job_repository.get_job(job.id)
             self.assertIsNotNone(updated_job)
             self.assertEqual(updated_job.status, "failed")
             self.assertEqual(updated_job.error_code, "parsed_result_download_failed")
-            event_stages = [item.stage for item in runtime.repository.list_events(job.id)]
+            event_stages = [item.stage for item in runtime.job_event_repository.list_events(job.id)]
             self.assertIn("job_failed", event_stages)
 
     def test_upload_pdf_submits_to_mineru_and_enters_parsing(self):
@@ -4186,7 +4469,7 @@ class FastAPIJobsBackendTests(TestCase):
                 detail_response = client.get(f"/api/v1/jobs/{job_id}")
                 self.assertEqual(detail_response.status_code, 200)
                 self.assertEqual(detail_response.json()["status"], "completed")
-                audit_events = runtime.repository.list_audit_events()
+                audit_events = runtime.audit_event_repository.list_audit_events()
                 self.assertEqual([event.action for event in audit_events], ["job.retry"])
                 self.assertEqual(audit_events[0].target_id, job_id)
                 self.assertEqual(audit_events[0].reason, "rerun")
@@ -4216,7 +4499,7 @@ class FastAPIJobsBackendTests(TestCase):
                 self.assertEqual(cancel_response.status_code, 200)
                 self.assertEqual(cancel_response.json()["status"], "canceled")
                 self.assertEqual(runtime.stage_message_store.list_replayable_stage_messages(), [])
-                audit_events = runtime.repository.list_audit_events()
+                audit_events = runtime.audit_event_repository.list_audit_events()
                 self.assertEqual([event.action for event in audit_events], ["job.cancel"])
                 self.assertEqual(audit_events[0].target_id, job_id)
                 self.assertEqual(audit_events[0].reason, "stop")
@@ -4238,7 +4521,7 @@ class FastAPIJobsBackendTests(TestCase):
                 result_ready=True,
                 completed_at=utc_now(),
             )
-            runtime.repository.create_job(job)
+            runtime.job_repository.create_job(job)
 
             with TestClient(app) as client:
                 no_token_response = client.post(
@@ -4255,7 +4538,7 @@ class FastAPIJobsBackendTests(TestCase):
                     data={"reason": "auth-check"},
                     headers={"X-Admin-Token": "secret-admin"},
                 )
-                audit_events = runtime.repository.list_audit_events()
+                audit_events = runtime.audit_event_repository.list_audit_events()
 
         self.assertEqual(no_token_response.status_code, 403)
         self.assertEqual(no_token_response.json()["detail"], "admin token 校验失败。")
@@ -4283,7 +4566,7 @@ class FastAPIJobsBackendTests(TestCase):
                 result_ready=True,
                 completed_at=utc_now(),
             )
-            runtime.repository.create_job(job)
+            runtime.job_repository.create_job(job)
 
             with TestClient(app) as client:
                 denied_response = client.post(
@@ -4295,7 +4578,7 @@ class FastAPIJobsBackendTests(TestCase):
                     data={"reason": "auth-check"},
                     headers={"X-Jobs-Token": "jobs-token"},
                 )
-                audit_events = runtime.repository.list_audit_events()
+                audit_events = runtime.audit_event_repository.list_audit_events()
 
         self.assertEqual(denied_response.status_code, 403)
         self.assertEqual(accepted_response.status_code, 200)
@@ -4315,14 +4598,14 @@ class FastAPIJobsBackendTests(TestCase):
                 result_ready=True,
                 completed_at=utc_now(),
             )
-            runtime.repository.create_job(job)
+            runtime.job_repository.create_job(job)
             job_paths = build_job_paths(runtime.settings.data_path, job.id)
             ensure_job_dirs(job_paths)
             job_paths.source_package.write_bytes(b"zip")
             job_paths.result_docx.write_bytes(b"docx")
             (job_paths.work_dir / "temp.txt").write_text("tmp", encoding="utf-8")
-            runtime.repository.upsert_file(job.id, JobFile(file_type="source_package", path="input/source.zip"))
-            runtime.repository.upsert_file(job.id, JobFile(file_type="result_docx", path="output/result.docx"))
+            runtime.job_file_repository.upsert_file(job.id, JobFile(file_type="source_package", path="input/source.zip"))
+            runtime.job_file_repository.upsert_file(job.id, JobFile(file_type="result_docx", path="output/result.docx"))
 
             with TestClient(app) as client:
                 response = client.post(

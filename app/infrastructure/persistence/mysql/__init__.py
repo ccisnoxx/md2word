@@ -1,0 +1,33 @@
+from __future__ import annotations
+
+# app/infrastructure/persistence/mysql/__init__.py: MySQL metadata backend 的端口 adapter。
+
+from app.infrastructure.persistence.mysql.audit import MysqlAuditEventRepository
+from app.infrastructure.persistence.mysql.backend import (
+    ConnectFactory,
+    MysqlPersistenceBackend,
+    MysqlPersistenceConfig,
+)
+from app.infrastructure.persistence.mysql.document_jobs import (
+    MysqlDocumentJobEventRepository,
+    MysqlDocumentJobRepository,
+)
+from app.infrastructure.persistence.mysql.files import MysqlDocumentFileRepository, MysqlJobFileRepository
+from app.infrastructure.persistence.mysql.jobs import MysqlJobEventRepository, MysqlJobSnapshotRepository
+from app.infrastructure.persistence.mysql.resources import MysqlResourceVersionRepository
+from app.infrastructure.persistence.mysql.stage_messages import MysqlStageMessageStore
+
+__all__ = [
+    "ConnectFactory",
+    "MysqlAuditEventRepository",
+    "MysqlDocumentFileRepository",
+    "MysqlDocumentJobEventRepository",
+    "MysqlDocumentJobRepository",
+    "MysqlJobEventRepository",
+    "MysqlJobFileRepository",
+    "MysqlJobSnapshotRepository",
+    "MysqlPersistenceBackend",
+    "MysqlPersistenceConfig",
+    "MysqlResourceVersionRepository",
+    "MysqlStageMessageStore",
+]

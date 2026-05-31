@@ -18,17 +18,18 @@ returns.
 - `HTTPException`
   - Used for request validation, permission checks, missing resources, and
     business-state conflicts that are already at the HTTP boundary.
-  - Examples: `app/api/dependencies.py`, `app/services/jobs/query.py`,
-    `app/services/jobs/lifecycle.py`.
+  - Examples: `app/api/dependencies.py`, `app/domains/jobs/query.py`,
+    `app/domains/jobs/lifecycle.py`.
 - `ValueError`
   - Used by pure validation/path helpers and then translated to HTTP 400 near
     the router boundary.
-  - Examples: `app/core/mineru_callback.py`, `app/core/job_paths.py`.
+  - Examples: `app/domains/jobs/mineru_callback.py`,
+    `app/domains/jobs/paths.py`.
 - `FileNotFoundError`
   - Used by repository/storage lookup code and translated to HTTP 404 where
     needed.
-  - Examples: `app/repositories/file_job_repository.py`,
-    `app/services/jobs/command.py`.
+  - Examples: `app/infrastructure/persistence/file/`,
+    `app/domains/jobs/command.py`.
 - `ConversionFailure`
   - Domain-specific failure type for the conversion pipeline.
   - `JobStageService` catches it, updates job + stage state, appends failure
@@ -44,7 +45,7 @@ returns.
     `_save_upload_to_temp()` and `_save_pdf_upload_to_temp()`.
 - Translate local exceptions once, at the layer boundary that understands the
   target contract.
-  - `app/api/v1/routers/mineru_callbacks.py` converts `FileNotFoundError` to
+  - `app/domains/jobs/mineru_callbacks_router.py` converts `FileNotFoundError` to
     404 and `ValueError` to 400.
   - When translating, preserve chaining with `raise ... from exc`.
 - For background workflows, never fail silently.

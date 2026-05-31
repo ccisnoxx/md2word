@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Protocol
 
-from app.core.translation_models import TranslationProfileSnapshot
+from app.domains.translation.models import TranslationProfileSnapshot
 
 
 ConversionTranslationMode = Literal["direct", "en2zh"]

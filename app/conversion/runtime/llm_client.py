@@ -8,7 +8,7 @@ from typing import Any
 
 from loguru import logger
 
-from config import APP_CONFIG, ROOT_DIR
+from app.conversion.runtime_config import APP_CONFIG, ROOT_DIR
 
 
 try:
@@ -20,7 +20,7 @@ except ImportError:  # pragma: no cover - exercised through runtime error path
 DEFAULT_MODEL = APP_CONFIG.openai_model or "deepseek-v4-flash"
 DEFAULT_TIMEOUT_SECONDS = 120.0
 DEFAULT_MAX_OUTPUT_TOKENS = 12000
-SYSTEM_PROMPT_PATH = ROOT_DIR / "prompt" / "translation_en2zh.md"
+SYSTEM_PROMPT_PATH = ROOT_DIR / "resources" / "prompts" / "translation_en2zh.md"
 
 
 @dataclass(slots=True)

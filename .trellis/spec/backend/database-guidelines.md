@@ -6,16 +6,19 @@
 
 ## Overview
 
-This backend supports two jobs metadata backends:
+This backend supports three jobs metadata backends:
 
-- `file`, implemented by `app/repositories/file_job_repository.py`
-- `database`, implemented by `app/repositories/database_job_repository.py`
+- `file`, implemented by `app/infrastructure/persistence/file/`
+- `database`, the sqlite backend implemented by `app/infrastructure/persistence/sqlite/`
+- `mysql`, implemented by `app/infrastructure/persistence/mysql/`
 
 `file` remains the code default and is the local-development backend.
 `database` is the sqlite metadata backend for staging-like single-instance
-deployments. It stores jobs, job files, events, and stage messages in one
-sqlite file, but it does not move artifact binaries by itself. Artifact
-binaries are controlled separately by `JOBS_ARTIFACT_STORAGE_BACKEND`.
+deployments. It stores jobs, job files, events, audit events, document-file
+metadata, document-job metadata, and stage messages in one sqlite file, but it
+does not move artifact binaries by itself. `mysql` mirrors the same metadata
+ports and additionally backs resource-version records. Artifact binaries are
+controlled separately by `JOBS_ARTIFACT_STORAGE_BACKEND`.
 
 Health reporting in `app/services/health_service.py` exposes both the
 configured backend and the effective backend through
@@ -23,26 +26,26 @@ configured backend and the effective backend through
 
 Current file-backend storage layout:
 
-- `data/jobs/<job_id>/job.json` for the primary job record
-- `data/jobs/<job_id>/files.json` for registered artifacts
-- `data/jobs/<job_id>/events.jsonl` for append-only events
-- `data/stage_messages/<message_id>.json` for background stage spool messages
-- `data/config/term_rules_store.json` for live runtime term-rule truth
-- `data/config/runtime_subscripts_dictionary.yaml` for generated conversion
+- `var/jobs/<job_id>/job.json` for the primary job record
+- `var/jobs/<job_id>/files.json` for registered artifacts
+- `var/jobs/<job_id>/events.jsonl` for append-only events
+- `var/stage_messages/<message_id>.json` for background stage spool messages
+- `var/config/term_rules_store.json` for live runtime term-rule truth
+- `var/config/runtime_subscripts_dictionary.yaml` for generated conversion
   compatibility YAML
-- `data/config/template_state.json` for runtime default-template state
+- `var/config/template_state.json` for runtime default-template state
 
 Current database-backend layout:
 
-- `data/metadata.sqlite3` by default, or `JOBS_METADATA_DATABASE_PATH`
+- `var/metadata.sqlite3` by default, or `JOBS_METADATA_DATABASE_PATH`
 - sqlite tables for jobs, job files, job events, and stage messages
-- local artifact files stay under `data/jobs/<job_id>/...` unless the artifact
+- local artifact files stay under `var/jobs/<job_id>/...` unless the artifact
   storage backend is separately switched
 
 Current artifact-storage backends:
 
 - `local_file`, the default, registers job-local logical paths and serves files
-  from `data/jobs/<job_id>/...`
+  from `var/jobs/<job_id>/...`
 - `local_object`, implemented by `ObjectArtifactStorageAdapter`, shadow uploads
   artifacts to a local object directory and serves by `object_key` with a local
   fallback
@@ -65,7 +68,7 @@ reviewing the generated candidates.
   the runtime store as the live API truth and the versioned file as bootstrap /
   sync material, not as something routers write directly.
 - Reads are intentionally simple and in-memory:
-  - `FileJobRepository.list_jobs()` scans `jobs/*/job.json`
+  - `FileJobSnapshotRepository.list_jobs()` scans `jobs/*/job.json`
   - `JobQueryService.list_jobs()` applies filtering, sorting, and pagination in
     Python after loading the records
 - Writes go through repository methods instead of ad hoc JSON access:
@@ -74,7 +77,7 @@ reviewing the generated candidates.
   - `append_event()` appends one JSON line per event
   - `upsert_file()` replaces existing entries by `file_type`
 - Use `build_job_paths()` / `ensure_job_dirs()` for path layout instead of
-  recomputing `data/jobs/...` paths inline.
+  recomputing `var/jobs/...` paths inline.
 - Crash safety is adapter-specific:
   - file backend uses `_write_json()` with `*.tmp` replacement
   - sqlite backend commits each repository method call through a short-lived
@@ -96,16 +99,17 @@ Stage message states are intentionally small:
   still uses the same repository and `JobStageService` contracts; API handlers
   should only enqueue stage messages in that mode.
 
-Current dependency boundaries are adapter based:
+Current dependency boundaries are protocol based:
 
 - `JobQueryService` and `JobLifecycleService` depend on repository protocols.
-- `JobStageService` receives both repository protocols and the stage message
-  store so it can run against either `file` or `database`.
+- `JobStageService` receives job repository protocols and the stage message
+  store so it can run against `file`, `database`, or `mysql`.
+- `app/main.py` receives a `PersistenceAdapters` bundle and passes distinct
+  per-port adapters to services.
 
 When adding a new service, default to the protocol boundary first. Only bind to
-`FileJobRepository` or `DatabaseJobRepository` directly if the service truly
-needs backend-specific behavior that is not already expressed in repository
-protocols.
+a concrete backend adapter if the code truly needs backend-specific behavior
+that is not already expressed in repository protocols.
 
 ---
 
@@ -124,10 +128,11 @@ protocols.
   - live runtime JSON store
   - generated compatibility/runtime export file
 - When storage shape changes, update all of these in the same change:
-  - `app/core/job_models.py`
-  - `app/repositories/file_job_repository.py`
-  - `app/repositories/database_job_repository.py`
-  - any path helpers in `app/core/job_paths.py`
+  - the owning domain model, usually `app/domains/jobs/models.py`
+  - `app/infrastructure/persistence/file/`
+  - `app/infrastructure/persistence/sqlite/`
+  - `app/infrastructure/persistence/mysql/` when MySQL supports that port
+  - any path helpers in the owning domain, usually `app/domains/jobs/paths.py`
   - tests that read/write the affected records
 - Favor additive changes to JSON payloads where possible so old files continue
   to validate. If a breaking on-disk change is unavoidable, document the manual
