@@ -153,6 +153,9 @@ Health API 当前有四条入口：
 | `subscript_config_exists` | 术语上下标 YAML 是否可读 |
 | `translation_prompt_exists` | `resources/prompts/translation_en2zh.md` 是否存在 |
 | `mineru_api_token_configured` | 是否配置 `MINERU_API_TOKEN` |
+| `mineru_callback_url_configured` | 是否配置 `MINERU_CALLBACK_URL` |
+| `mineru_uid_configured` | 是否配置 `MINERU_UID`，用于 callback checksum 验签 |
+| `public_deployment_mode` | 当前公开部署模式；公开域名部署应为 `single_tenant_public` |
 | `openai_api_key_configured` | 是否配置 `OPENAI_API_KEY` |
 | `openai_base_url_configured` | 是否显式配置 `OPENAI_BASE_URL` |
 | `openai_model` | 当前默认翻译模型名 |
@@ -181,6 +184,10 @@ Health API 当前有四条入口：
   - 说明翻译 prompt 资源缺失，`en2zh` 会被预检拒绝。
 - `mineru_api_token_configured=false`
   - 说明 `POST /api/v1/jobs/pdf` 当前不可用，系统只能接收 MinerU 已完成的输出 zip。
+- `mineru_callback_url_missing`
+  - 说明已配置 MinerU token 但未配置异步回调 URL，document_jobs 可能停在 `running/parsing` 等待重投递或人工恢复。
+- `mineru_uid_missing`
+  - 说明已启用 MinerU callback，但实例缺少 `MINERU_UID`，无法按官方 `uid + seed + content` 规则验签。
 - `stage_spool_pending_messages>0`
   - 说明有上次未完成的后台 stage；应用启动时会尝试 replay。
 - `stage_spool_failed_messages>0`

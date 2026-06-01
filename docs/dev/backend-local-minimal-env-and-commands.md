@@ -56,8 +56,6 @@ MINERU_ENABLE_FORMULA=true
 MINERU_ENABLE_TABLE=true
 MINERU_CALLBACK_URL=
 MINERU_UID=
-MINERU_CALLBACK_TOKEN=
-MINERU_CALLBACK_TOKEN_QUERY_NAME=callback_token
 MINERU_RESULT_HOST_ALLOWLIST=mineru.net,cdn-mineru.openxlab.org.cn
 PUBLIC_DEPLOYMENT_MODE=internal
 
@@ -78,10 +76,10 @@ TEMPLATE_STATE_PATH=var/config/template_state.json
   - `POST /api/v1/jobs/pdf` 不可用
   - `POST /api/v1/jobs` 仍可继续接收 MinerU 输出 zip
 - `PUBLIC_DEPLOYMENT_MODE=internal`
-  - 本地联调 callback 最省事，不要求 callback token
+  - 本地联调 callback 最省事，但仍按 checksum 验签
 - 若切到 `PUBLIC_DEPLOYMENT_MODE=single_tenant_public`
-  - 需要同时配置 `MINERU_CALLBACK_TOKEN`
-  - MinerU 回调时必须带 header 或 query token
+  - 仍按 checksum 验签，不依赖额外 callback token
+  - `MINERU_UID` 需要配置正确，否则无法验证 callback
 - `OPENAI_API_KEY` 为空时：
   - `translation_mode=direct` 仍可用
   - `translation_mode=en2zh` 会被 health 标记为 unavailable，`POST /api/v1/jobs` 也会直接返回 `503`

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -76,8 +75,6 @@ class Settings(BaseSettings):
     mineru_enable_table: bool = True
     mineru_callback_url: str = ""
     mineru_uid: str = ""
-    mineru_callback_token: str = ""
-    mineru_callback_token_query_name: str = "callback_token"
     mineru_result_host_allowlist: str = "mineru.net,cdn-mineru.openxlab.org.cn"
     public_deployment_mode: Literal["internal", "single_tenant_public"] = "internal"
     openai_base_url: str = ""

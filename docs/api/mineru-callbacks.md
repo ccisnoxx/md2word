@@ -11,40 +11,49 @@ source_files:
   - app/domains/jobs/stage.py
   - app/domains/jobs/mineru_callback.py
   - app/domains/jobs/schemas.py
+  - app/domains/document_jobs/execution.py
+  - app/domains/document_jobs/schemas.py
   - app/core/config.py
-summary: MinerU callback API 提供 callback ingress、payload 归一化、鉴权和结果 URL 安全校验。
+summary: MinerU callback API 提供 legacy jobs 和 P0 document_jobs 的 callback ingress、payload 归一化、checksum 验签和结果 URL 安全校验。
 tags: [mineru, callback, api, guards]
 last_reviewed: 2026-05-31
 ---
 
 ## 概述
 
-MinerU callback 当前单独挂在 `/api/v1/mineru-callbacks` 下，不和 jobs 上传入口混在一起。
+MinerU callback 当前单独挂在 `/api/v1/mineru-callbacks` 下，不和上传入口混在一起。当前同一个入口同时支持：
+
+- legacy `/api/v1/jobs/pdf` 链路
+- P0 `/api/v1/document-jobs` 链路
 
 这组接口只负责：
 
 - 接收 MinerU callback
-- 做 internal / public 模式鉴权
 - 做 payload 归一化
 - 校验 checksum 和 `full_zip_url`
-- 匹配 job 并入队 `process_callback`
+- 匹配 legacy job 并入队 `process_callback`
+- 或匹配 document_job，保存 MinerU 原始结果后继续执行 DocumentIR / Word 生成
 
 callback ingress 本身不做：
 
-- 不下载结果 zip
-- 不生成 DOCX
 - 不替代 `/api/v1/jobs/pdf`
+- 不替代 `/api/v1/document-jobs`
 
-但 `process_callback` 成功处理 `done + full_zip_url` 后，后台 workflow 会自动继续恢复 `parsed_result_package` 并推进后处理 conversion。
+legacy job 的 `process_callback` 成功处理 `done + full_zip_url` 后，后台 workflow 会自动继续恢复 `parsed_result_package` 并推进后处理 conversion。document_job 收到 `done + full_zip_url` 后会直接保存 MinerU 原始 zip，并继续推进到 DocumentIR / Word 生成。
 
 ## 部署模式
 
 | `PUBLIC_DEPLOYMENT_MODE` | 入口要求 |
 |---|---|
-| `internal` | 不要求 callback token |
-| `single_tenant_public` | 要求 `X-MinerU-Callback-Token` 或 query token |
+| `internal` | callback 入口按 checksum 验签 |
+| `single_tenant_public` | callback 入口同样按 checksum 验签，不依赖额外 token |
 
-query token 键名由 `MINERU_CALLBACK_TOKEN_QUERY_NAME` 控制，默认是 `callback_token`。
+提交给 MinerU 的 URL 直接使用 `MINERU_CALLBACK_URL`。按官方文档，callback 开启后提交任务时必须携带 `seed`，而 callback 请求体会回传 `checksum` 和 `content`。生产 `.env` 推荐至少配置：
+
+```env
+MINERU_CALLBACK_URL=https://md2word-api.962850.xyz/api/v1/mineru-callbacks/result
+MINERU_UID=...
+```
 
 ## `POST /api/v1/mineru-callbacks/result`
 
@@ -100,10 +109,11 @@ query token 键名由 `MINERU_CALLBACK_TOKEN_QUERY_NAME` 控制，默认是 `cal
 
 ### Checksum 规则
 
-- 只有 payload 带 `checksum` 时才做校验
+- callback 必须带 `checksum`
 - 算法：`sha256(uid + job.mineru_callback_seed + content)`
 - `uid` 缺失时会回退 `MINERU_UID`
 - job 缺 `mineru_callback_seed` 时返回 `409`
+- `uid` 和 `MINERU_UID` 都缺失时返回 `503`
 
 ### 结果 URL 规则
 
@@ -116,17 +126,22 @@ query token 键名由 `MINERU_CALLBACK_TOKEN_QUERY_NAME` 控制，默认是 `cal
 ### 响应
 
 - 状态码：`200 OK`
-- 响应体：`JobDetailResponse`
+- 响应体：
+  - legacy jobs：`JobDetailResponse`
+  - document_jobs：`DocumentJobResponse`
 
 注意：
 
 - 这份响应主要表示 callback 已被接受并入队
-- 真正的最终结果应以随后查询 `GET /api/v1/jobs/{job_id}` 为准
-- 正常自动链路下，job 可能短暂经过 `parsed`，但最终通常会继续到 `completed`
+- legacy jobs 的最终结果以随后查询 `GET /api/v1/jobs/{job_id}` 为准
+- document_jobs 的最终结果以随后查询 `GET /api/v1/document-jobs/{job_id}` 为准
+- 正常自动链路下，任务可能短暂经过 `parsed`，但最终通常会继续到完成态
 
 ## 状态推进
 
 ### `done + full_zip_url`
+
+legacy jobs：
 
 - 持久化 `mineru_result_zip_url`
 - `status` 通常会继续推进到 `completed`
@@ -137,6 +152,12 @@ query token 键名由 `MINERU_CALLBACK_TOKEN_QUERY_NAME` 控制，默认是 `cal
   - `mineru_callback_processed`
   - `parsed_result_package_recovered`
   - `job_completed`
+
+document_jobs：
+
+- 保存 `mineru_raw_result`
+- `stage` 从 `parsing` 推进到 `parsed`
+- 随后继续执行 DocumentIR 转换、Word 渲染和结果文件登记
 
 ### `failed`
 
@@ -156,8 +177,8 @@ query token 键名由 `MINERU_CALLBACK_TOKEN_QUERY_NAME` 控制，默认是 `cal
 
 | 场景 | 状态码 | 说明 |
 |---|---|---|
-| 公开模式但 `MINERU_CALLBACK_TOKEN` 未配置 | `503` | 当前实例不接受公开 callback |
-| callback token 错误 | `403` | header/query token 校验失败 |
+| `MINERU_UID` 缺失且 payload 也没有 `uid` | `503` | 无法按官方规则校验 checksum |
+| checksum 缺失 | `400` | 不接受未签名 callback |
 | checksum 错误 | `403` | callback 内容可能被篡改 |
 | payload 缺 `batch_id/data_id` | `400` | 无法匹配任务 |
 | `content` 不是合法 JSON | `400` | 无法归一化 payload |

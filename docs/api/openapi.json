@@ -6105,7 +6105,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JobDetailResponse"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/JobDetailResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DocumentJobResponse"
+                    }
+                  ],
+                  "title": "Response Receive Mineru Callback Api V1 Mineru Callbacks Result Post"
                 }
               }
             },

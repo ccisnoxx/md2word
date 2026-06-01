@@ -49,6 +49,11 @@ cp .env.example .env
 | `AUTH_JWT_SECRET_KEY` | 内部账号 JWT 签名密钥 |
 | `AUTH_INTERNAL_USERS_FILE` | 内部账号 JSON 文件路径，默认 `deploy/auth_internal_users.json` |
 | `MINERU_API_TOKEN` | MinerU 在线解析 token |
+| `MINERU_CALLBACK_URL` | MinerU 回调基础地址，例如 `https://md2word-api.962850.xyz/api/v1/mineru-callbacks/result` |
+| `MINERU_UID` | MinerU 官方 checksum 验签使用的用户 uid |
+| `PUBLIC_DEPLOYMENT_MODE` | 公开域名部署设为 `single_tenant_public` |
+
+按 MinerU 官方文档，callback 请求体依赖 `checksum + content`，提交任务时必须同时携带 `seed`。这里不要给 `MINERU_CALLBACK_URL` 追加自定义 token 或 query 参数；服务端会按 `uid + seed + content` 校验 callback。
 
 如果要启用 P1 英译中实验链路，还需要：
 
@@ -116,4 +121,6 @@ docker compose --env-file .env -f docker/dev/docker-compose.yml up -d --build
 - 当前 compose 是单机 P0 部署，不包含 HTTPS、反向代理、对象存储生命周期规则和外部密钥系统。
 - `AUTH_INTERNAL_USERS_FILE` 和 `AUTH_INTERNAL_USERS_JSON` 都为空时，`/api/v1/auth/login` 会返回 `auth_unconfigured`。
 - `MINERU_API_TOKEN` 为空时，PDF 端到端解析不能完成。
+- `MINERU_CALLBACK_URL` 为空时，MinerU 异步完成不会主动推回；document_jobs 可能停在 `running/parsing` 等待后续重投递或人工排查。
+- `MINERU_UID` 为空且 callback payload 也不带 `uid` 时，ready health 会把 `mineru_uid_missing` 标为 blocker。
 - 如改用 S3/OSS，需要把 `JOBS_ARTIFACT_STORAGE_BACKEND` 改为 `s3` 并补齐 bucket、endpoint、access key、secret 和下载模式。

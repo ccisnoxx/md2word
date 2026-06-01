@@ -1,3 +1,0 @@
-{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Defines current backend layout rules and the directory-structure spec that Phase 2 intentionally updates with the files domain sample."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Defines backend import, router/service/repository, and targeted unittest verification expectations for this refactor."}
-{"file": ".codestable/refactors/2026-05-31-project-directory-restructure/project-directory-restructure-scan.md", "reason": "Source scan evidence for parent Phase 2 / scan item #7, including current files module locations and migration target."}

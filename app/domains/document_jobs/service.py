@@ -379,6 +379,7 @@ class DocumentJobService:
         if job.failed_stage == "parsing" and job.mineru_raw_result_file_id is None:
             patch["mineru_batch_id"] = None
             patch["mineru_data_id"] = None
+            patch["mineru_callback_seed"] = None
         return patch
 
     def _get_source_file_for_create(self, file_id: str, user: AuthenticatedUser) -> DocumentFileRecord:

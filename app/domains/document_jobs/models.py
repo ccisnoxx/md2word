@@ -69,6 +69,7 @@ class DocumentJobRecord(BaseModel):
     debug_full_text_enabled: bool = False
     mineru_batch_id: str | None = None
     mineru_data_id: str | None = None
+    mineru_callback_seed: str | None = None
     failed_stage: DocumentJobStage | None = None
     error_code: str | None = None
     error_message: str | None = None
