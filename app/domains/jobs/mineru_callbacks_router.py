@@ -18,25 +18,39 @@ from app.api.mineru_callback_guards import (
 from app.domains.jobs.workflow import JobWorkflowViolation, build_mineru_callback_transition
 from app.domains.jobs.presenters import build_job_detail_response
 from app.core.runtime import AppRuntime
+from app.domains.document_jobs.schemas import DocumentJobResponse
 from app.domains.jobs.schemas import JobDetailResponse
 
 
 router = APIRouter(prefix="/mineru-callbacks", tags=["mineru-callbacks"])
 
 
-@router.post("/result", response_model=JobDetailResponse, status_code=status.HTTP_200_OK)
+@router.post("/result", response_model=JobDetailResponse | DocumentJobResponse, status_code=status.HTTP_200_OK)
 async def receive_mineru_callback(
     request: Request,
     background_tasks: BackgroundTasks,
     runtime: AppRuntime = Depends(get_runtime),
     trace_id: str = Depends(get_trace_id),
-) -> JobDetailResponse:
+) -> JobDetailResponse | DocumentJobResponse:
     payload = await request.json()
     try:
         verify_mineru_callback_identity(request, runtime)
         normalized_payload = verify_mineru_callback_request(payload)
         verify_mineru_callback_result_url(normalized_payload, runtime)
-        job = runtime.command_service.find_job_for_callback(normalized_payload)
+        try:
+            job = runtime.command_service.find_job_for_callback(normalized_payload)
+        except FileNotFoundError as legacy_not_found:
+            document_job = runtime.document_job_execution_service.find_job_for_mineru_callback(normalized_payload)
+            if document_job is None:
+                raise legacy_not_found
+            verify_mineru_callback_checksum_for_job(normalized_payload, document_job, runtime)
+            document_job = runtime.document_job_execution_service.process_mineru_callback_for_job(
+                document_job,
+                normalized_payload,
+                trace_id=trace_id,
+            )
+            return DocumentJobResponse(**document_job.model_dump(mode="python"))
+
         # 可信 callback 是否允许推进当前 job，由纯 workflow 规则统一判定。
         try:
             build_mineru_callback_transition(

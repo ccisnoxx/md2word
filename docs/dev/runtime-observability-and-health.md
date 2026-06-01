@@ -201,12 +201,13 @@ worker 仍按单 worker 进程设计，不把它们当成多 worker 抢占锁；
 优先看：
 
 - `PUBLIC_DEPLOYMENT_MODE`
-- `MINERU_CALLBACK_TOKEN`
+- `MINERU_UID`
 - `MINERU_RESULT_HOST_ALLOWLIST`
 - access 日志里的 `POST /api/v1/mineru-callbacks/result -> 4xx`
 
 常见原因：
 
-- 公开模式缺 token 或 token 不匹配
+- `checksum` 不匹配
+- `MINERU_UID` 配错或未配置
 - `full_zip_url` 不是 `https`
 - `full_zip_url` host 不在 allowlist

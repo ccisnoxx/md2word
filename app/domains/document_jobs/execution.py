@@ -3,6 +3,7 @@ from __future__ import annotations
 # app/domains/document_jobs/execution.py: 提供 document_jobs Worker 投递端口和幂等执行骨架。
 
 import logging
+import secrets
 import tempfile
 import zipfile
 from pathlib import Path
@@ -193,18 +194,22 @@ class DocumentJobExecutionService:
             data_id = job.mineru_data_id or job.id
             batch_id = job.mineru_batch_id
             if not batch_id:
+                callback = self.settings.mineru_callback_url or None
+                callback_seed = self._build_callback_seed() if callback else None
                 batch_id, _file_urls = client.upload_files_batch(
                     [source_path],
                     task_uuids=[data_id],
                     enable_formula=self.settings.mineru_enable_formula,
                     enable_table=self.settings.mineru_enable_table,
                     language=self.settings.mineru_language,
-                    callback=self.settings.mineru_callback_url or None,
+                    callback=callback,
+                    seed=callback_seed,
                 )
                 job = self.job_repository.update_document_job(
                     job.id,
                     mineru_batch_id=batch_id,
                     mineru_data_id=data_id,
+                    mineru_callback_seed=callback_seed,
                     progress=max(job.progress, 15),
                     updated_at=utc_now(),
                 )
@@ -239,55 +244,156 @@ class DocumentJobExecutionService:
                 )
                 return waiting
 
-            raw_zip_path = Path(temp_dir) / "mineru_raw_result.zip"
-            client.download_result_zip(str(full_zip_url), raw_zip_path)
-            raw_file = self.file_service.register_generated_content(
-                tenant_id=job.tenant_id,
-                company_id=job.company_id,
-                job_id=job.id,
-                created_by=job.created_by,
-                file_type="mineru_raw_result",
-                filename="mineru_raw_result.zip",
-                mime_type="application/zip",
-                content=raw_zip_path.read_bytes(),
-                metadata={
-                    "source_file_id": job.source_file_id,
-                    "mineru_batch_id": batch_id,
-                    "mineru_data_id": data_id,
-                    "full_zip_url": str(full_zip_url),
-                },
+            return self._download_and_register_mineru_result(
+                job,
+                client=client,
+                full_zip_url=str(full_zip_url),
+                batch_id=str(batch_id),
+                data_id=str(data_id),
+                temp_dir=Path(temp_dir),
+                trace_id=trace_id,
             )
-            parsed = self.job_repository.update_document_job(
+
+    def find_job_for_mineru_callback(self, payload: dict[str, Any]) -> DocumentJobRecord | None:
+        """按 MinerU callback 里的 data_id/batch_id 匹配 document_job。"""
+
+        data_id = str(payload.get("data_id") or "").strip()
+        batch_id = str(payload.get("batch_id") or "").strip()
+        jobs = self.job_repository.list_document_jobs()
+        if data_id:
+            for job in jobs:
+                if job.mineru_data_id == data_id or job.id == data_id:
+                    return job
+        if batch_id:
+            for job in jobs:
+                if job.mineru_batch_id == batch_id:
+                    return job
+        return None
+
+    def process_mineru_callback_for_job(
+        self,
+        job: DocumentJobRecord,
+        payload: dict[str, Any],
+        *,
+        trace_id: str | None,
+    ) -> DocumentJobRecord:
+        """消费 document_job 的 MinerU callback，并在结果就绪时继续推进后续阶段。"""
+
+        if job.status in {"succeeded", "failed", "canceled"}:
+            return job
+        if job.status != "running" or job.stage != "parsing":
+            raise ValueError(f"当前 document_job 状态不允许处理 MinerU callback: status={job.status} stage={job.stage}")
+
+        state = str(payload.get("state") or "").lower()
+        batch_id = str(payload.get("batch_id") or job.mineru_batch_id or "").strip()
+        data_id = str(payload.get("data_id") or job.mineru_data_id or job.id).strip()
+        if batch_id and batch_id != (job.mineru_batch_id or ""):
+            job = self.job_repository.update_document_job(job.id, mineru_batch_id=batch_id, updated_at=utc_now())
+        if data_id and data_id != (job.mineru_data_id or ""):
+            job = self.job_repository.update_document_job(job.id, mineru_data_id=data_id, updated_at=utc_now())
+
+        if state == "failed":
+            return self._mark_failed(
+                job,
+                failed_stage="parsing",
+                error_code="mineru_failed",
+                error_message="MinerU callback 返回 failed。",
+                trace_id=trace_id,
+            )
+
+        full_zip_url = payload.get("full_zip_url")
+        if state not in {"done", "success", "succeeded"} or not full_zip_url:
+            waiting = self.job_repository.update_document_job(
                 job.id,
                 status="running",
-                stage="parsed",
-                progress=max(job.progress, 30),
-                mineru_raw_result_file_id=raw_file.id,
+                stage="parsing",
+                progress=max(job.progress, 20),
                 updated_at=utc_now(),
             )
             self._record_event(
-                parsed,
-                event_type="file_registered",
+                waiting,
+                event_type="stage_started",
                 stage="parsing",
-                message="MinerU 原始结果已保存。",
-                payload={"file_id": raw_file.id, "file_type": raw_file.file_type, "object_key": raw_file.object_key},
+                message="MinerU callback 已接收，结果尚未就绪。",
+                payload={"mineru_batch_id": batch_id or None, "mineru_state": state or "unknown"},
                 trace_id=trace_id,
             )
-            self._record_event(
-                parsed,
-                event_type="stage_succeeded",
-                stage="parsing",
-                message="解析阶段已完成。",
-                payload={"mineru_raw_result_file_id": raw_file.id},
+            return waiting
+
+        with tempfile.TemporaryDirectory(prefix="document_job_mineru_callback_") as temp_dir:
+            parsed = self._download_and_register_mineru_result(
+                job,
+                client=self.mineru_client_factory(),
+                full_zip_url=str(full_zip_url),
+                batch_id=batch_id or str(job.mineru_batch_id or ""),
+                data_id=data_id or job.id,
+                temp_dir=Path(temp_dir),
                 trace_id=trace_id,
             )
-            self.logger.info(
-                "[trace_id=%s job_id=%s stage=parsing status=parsed] mineru_raw_result_file_id=%s",
-                trace_id,
-                job.id,
-                raw_file.id,
-            )
-            return parsed
+        return self.execute_job(parsed.id, trace_id=trace_id) or parsed
+
+    def _download_and_register_mineru_result(
+        self,
+        job: DocumentJobRecord,
+        *,
+        client: Any,
+        full_zip_url: str,
+        batch_id: str,
+        data_id: str,
+        temp_dir: Path,
+        trace_id: str | None,
+    ) -> DocumentJobRecord:
+        """下载 MinerU 原始结果包，登记为 document_file 并把任务推进到 parsed。"""
+
+        raw_zip_path = temp_dir / "mineru_raw_result.zip"
+        client.download_result_zip(full_zip_url, raw_zip_path)
+        raw_file = self.file_service.register_generated_content(
+            tenant_id=job.tenant_id,
+            company_id=job.company_id,
+            job_id=job.id,
+            created_by=job.created_by,
+            file_type="mineru_raw_result",
+            filename="mineru_raw_result.zip",
+            mime_type="application/zip",
+            content=raw_zip_path.read_bytes(),
+            metadata={
+                "source_file_id": job.source_file_id,
+                "mineru_batch_id": batch_id,
+                "mineru_data_id": data_id,
+                "full_zip_url": full_zip_url,
+            },
+        )
+        parsed = self.job_repository.update_document_job(
+            job.id,
+            status="running",
+            stage="parsed",
+            progress=max(job.progress, 30),
+            mineru_raw_result_file_id=raw_file.id,
+            updated_at=utc_now(),
+        )
+        self._record_event(
+            parsed,
+            event_type="file_registered",
+            stage="parsing",
+            message="MinerU 原始结果已保存。",
+            payload={"file_id": raw_file.id, "file_type": raw_file.file_type, "object_key": raw_file.object_key},
+            trace_id=trace_id,
+        )
+        self._record_event(
+            parsed,
+            event_type="stage_succeeded",
+            stage="parsing",
+            message="解析阶段已完成。",
+            payload={"mineru_raw_result_file_id": raw_file.id},
+            trace_id=trace_id,
+        )
+        self.logger.info(
+            "[trace_id=%s job_id=%s stage=parsing status=parsed] mineru_raw_result_file_id=%s",
+            trace_id,
+            job.id,
+            raw_file.id,
+        )
+        return parsed
 
     def _mark_ir_converting_started(
         self,
@@ -868,6 +974,13 @@ class DocumentJobExecutionService:
             error_message,
         )
         return failed
+
+    @staticmethod
+    def _build_callback_seed(length: int = 32) -> str:
+        """生成 MinerU checksum 使用的单任务 seed。"""
+
+        alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
+        return "".join(secrets.choice(alphabet) for _ in range(length))
 
     def _build_mineru_client(self) -> MinerUClient:
         if not self.settings.mineru_api_token:

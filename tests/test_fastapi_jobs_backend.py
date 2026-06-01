@@ -238,7 +238,6 @@ def build_test_runtime(
     openai_api_key: str = "",
     mineru_api_token: str = "",
     public_deployment_mode: str = "internal",
-    mineru_callback_token: str = "",
     mineru_callback_url: str = "",
     mineru_uid: str = "",
     mineru_result_host_allowlist: str = "mineru.net,cdn-mineru.openxlab.org.cn",
@@ -273,7 +272,6 @@ def build_test_runtime(
         openai_model="deepseek-v4-flash",
         mineru_api_token=mineru_api_token,
         public_deployment_mode=public_deployment_mode,
-        mineru_callback_token=mineru_callback_token,
         mineru_callback_url=mineru_callback_url,
         mineru_uid=mineru_uid,
         mineru_result_host_allowlist=mineru_result_host_allowlist,
@@ -591,6 +589,10 @@ def build_callback_payload(*, batch_id: str, data_id: str, state: str, full_zip_
     if uid is not None:
         payload["uid"] = uid
     return payload, content
+
+
+def build_callback_checksum(*, uid: str, seed: str, content: str) -> str:
+    return hashlib.sha256(f"{uid}{seed}{content}".encode("utf-8")).hexdigest()
 
 
 def write_templates_manifest(path: Path, entries: list[dict]) -> None:
@@ -954,6 +956,8 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertTrue(payload["dependency_checks"]["translation_client_configured"] is False)
         self.assertTrue(payload["dependency_checks"]["translation_prompt_exists"])
         self.assertFalse(payload["dependency_checks"]["mineru_api_token_configured"])
+        self.assertFalse(payload["dependency_checks"]["mineru_callback_url_configured"])
+        self.assertFalse(payload["dependency_checks"]["mineru_uid_configured"])
         self.assertFalse(payload["dependency_checks"]["pdf_submission_available"])
         self.assertTrue(payload["dependency_checks"]["deployment_init_ready"])
         self.assertEqual(payload["dependency_checks"]["readiness_blockers"], [])
@@ -1064,6 +1068,19 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertFalse(checks["translation_available"])
         self.assertFalse(checks["deployment_init_ready"])
         self.assertIn("default_translation_unavailable", checks["readiness_blockers"])
+
+    def test_health_ready_blocks_when_callback_uid_missing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                mineru_api_token="token-123",
+                mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
+                mineru_uid="",
+            )
+            checks = runtime.health_service.build_dependency_checks()
+
+        self.assertFalse(checks["deployment_init_ready"])
+        self.assertIn("mineru_uid_missing", checks["readiness_blockers"])
 
     def test_api_error_handlers_map_domain_exceptions(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1508,6 +1525,66 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(events[-1]["event_type"], "stage_succeeded")
         self.assertEqual(events[-1]["payload"]["result_file_id"], stored_job.result_file_id)
         self.assertEqual({event["trace_id"] for event in events}, {"trace_docjob_worker"})
+
+    def test_document_job_mineru_callback_completes_pending_parse(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+                public_deployment_mode="single_tenant_public",
+                mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
+                mineru_uid="mineru-user-1",
+            )
+            runtime.document_job_execution_service.fake_mineru_client.query_state = "running"
+            runtime.document_job_execution_service.fake_mineru_client.query_full_zip_url = None
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+                waiting_job = runtime.document_job_repository.get_document_job(job_id)
+                payload, content = build_callback_payload(
+                    batch_id=waiting_job.mineru_batch_id,
+                    data_id=job_id,
+                    state="done",
+                    full_zip_url="https://mineru.net/result.zip",
+                )
+                payload["checksum"] = build_callback_checksum(
+                    uid="mineru-user-1",
+                    seed=waiting_job.mineru_callback_seed,
+                    content=content,
+                )
+                callback_response = client.post("/api/v1/mineru-callbacks/result", json=payload)
+                detail_response = client.get(f"/api/v1/document-jobs/{job_id}", headers=headers)
+
+            completed_job = runtime.document_job_repository.get_document_job(job_id)
+            fake_client = runtime.document_job_execution_service.fake_mineru_client
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.json()["status"], "running")
+        self.assertEqual(create_response.json()["stage"], "parsing")
+        self.assertIsNotNone(waiting_job)
+        self.assertIsNotNone(waiting_job.mineru_callback_seed)
+        self.assertEqual(
+            fake_client.calls[0]["callback"],
+            "https://md2word.example/api/v1/mineru-callbacks/result",
+        )
+        self.assertEqual(callback_response.status_code, 200)
+        self.assertEqual(callback_response.json()["id"], job_id)
+        self.assertEqual(detail_response.json()["status"], "succeeded")
+        self.assertIsNotNone(completed_job)
+        self.assertEqual(completed_job.status, "succeeded")
+        self.assertEqual(completed_job.stage, "completed")
+        self.assertEqual(fake_client.download_calls[0]["result_url"], "https://mineru.net/result.zip")
 
     def test_document_job_execution_skeleton_is_idempotent_for_duplicate_delivery(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -3746,7 +3823,12 @@ class FastAPIJobsBackendTests(TestCase):
 
     def test_callback_internal_mode_accepts_and_auto_completes_job(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            runtime = build_test_runtime(Path(temp_dir), mineru_api_token="token-123")
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                mineru_api_token="token-123",
+                mineru_callback_url="https://example.com/api/v1/mineru-callbacks/result",
+                mineru_uid="mineru-user-1",
+            )
             app = create_app(runtime)
             with TestClient(app) as client:
                 create_response = client.post(
@@ -3755,11 +3837,16 @@ class FastAPIJobsBackendTests(TestCase):
                 )
                 job_id = create_response.json()["job_id"]
                 detail = client.get(f"/api/v1/jobs/{job_id}").json()
-                payload, _content = build_callback_payload(
+                payload, content = build_callback_payload(
                     batch_id=detail["mineru_batch_id"],
                     data_id=job_id,
                     state="done",
                     full_zip_url="https://mineru.net/result.zip",
+                )
+                payload["checksum"] = build_callback_checksum(
+                    uid="mineru-user-1",
+                    seed=detail["mineru_callback_seed"],
+                    content=content,
                 )
                 callback_response = client.post("/api/v1/mineru-callbacks/result", json=payload)
                 self.assertEqual(callback_response.status_code, 200)
@@ -3814,6 +3901,8 @@ class FastAPIJobsBackendTests(TestCase):
                 Path(temp_dir),
                 mineru_api_token="token-123",
                 jobs_artifact_storage_backend="local_object",
+                mineru_callback_url="https://example.com/api/v1/mineru-callbacks/result",
+                mineru_uid="mineru-user-1",
             )
             app = create_app(runtime)
             with TestClient(app) as client:
@@ -3827,11 +3916,16 @@ class FastAPIJobsBackendTests(TestCase):
                 self.assertEqual(create_response.status_code, 201)
                 job_id = create_response.json()["job_id"]
                 detail = client.get(f"/api/v1/jobs/{job_id}").json()
-                payload, _content = build_callback_payload(
+                payload, content = build_callback_payload(
                     batch_id=detail["mineru_batch_id"],
                     data_id=job_id,
                     state="done",
                     full_zip_url="https://mineru.net/result.zip",
+                )
+                payload["checksum"] = build_callback_checksum(
+                    uid="mineru-user-1",
+                    seed=detail["mineru_callback_seed"],
+                    content=content,
                 )
                 callback_response = client.post("/api/v1/mineru-callbacks/result", json=payload)
                 self.assertEqual(callback_response.status_code, 200)
@@ -3863,32 +3957,13 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertTrue(object_exists["parsed_result_package"])
         self.assertTrue(object_exists["result_docx"])
 
-    def test_callback_public_mode_requires_token(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            runtime = build_test_runtime(
-                Path(temp_dir),
-                public_deployment_mode="single_tenant_public",
-                mineru_callback_token="secret-token",
-            )
-            app = create_app(runtime)
-            with TestClient(app) as client:
-                payload, _content = build_callback_payload(
-                    batch_id="batch_x",
-                    data_id="job_x",
-                    state="done",
-                    full_zip_url="https://mineru.net/result.zip",
-                )
-                response = client.post("/api/v1/mineru-callbacks/result", json=payload)
-
-        self.assertEqual(response.status_code, 403)
-
-    def test_callback_public_mode_accepts_query_token(self):
+    def test_callback_rejects_missing_checksum(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(
                 Path(temp_dir),
                 mineru_api_token="token-123",
-                public_deployment_mode="single_tenant_public",
-                mineru_callback_token="secret-token",
+                mineru_callback_url="https://example.com/api/v1/mineru-callbacks/result",
+                mineru_uid="mineru-user-1",
             )
             app = create_app(runtime)
             with TestClient(app) as client:
@@ -3904,32 +3979,42 @@ class FastAPIJobsBackendTests(TestCase):
                     state="done",
                     full_zip_url="https://mineru.net/result.zip",
                 )
-                response = client.post(
-                    "/api/v1/mineru-callbacks/result?callback_token=secret-token",
-                    json=payload,
-                )
-                self.assertEqual(response.status_code, 200)
-                updated = client.get(f"/api/v1/jobs/{job_id}").json()
-                self.assertEqual(updated["status"], "completed")
+                response = client.post("/api/v1/mineru-callbacks/result", json=payload)
 
-    def test_callback_public_mode_missing_token_config_returns_503(self):
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["detail"], "回调 payload checksum 缺失")
+
+    def test_callback_requires_uid_when_payload_lacks_uid_and_setting_missing(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(
                 Path(temp_dir),
-                public_deployment_mode="single_tenant_public",
-                mineru_callback_token="",
+                mineru_api_token="token-123",
+                mineru_callback_url="https://example.com/api/v1/mineru-callbacks/result",
+                mineru_uid="",
             )
             app = create_app(runtime)
             with TestClient(app) as client:
-                payload, _content = build_callback_payload(
-                    batch_id="batch_x",
-                    data_id="job_x",
+                create_response = client.post(
+                    "/api/v1/jobs/pdf",
+                    files={"pdf": ("source.pdf", b"%PDF-1.4\nbody", "application/pdf")},
+                )
+                job_id = create_response.json()["job_id"]
+                detail = client.get(f"/api/v1/jobs/{job_id}").json()
+                payload, content = build_callback_payload(
+                    batch_id=detail["mineru_batch_id"],
+                    data_id=job_id,
                     state="done",
                     full_zip_url="https://mineru.net/result.zip",
+                )
+                payload["checksum"] = build_callback_checksum(
+                    uid="mineru-user-1",
+                    seed=detail["mineru_callback_seed"],
+                    content=content,
                 )
                 response = client.post("/api/v1/mineru-callbacks/result", json=payload)
 
         self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["detail"], "MINERU_UID 未配置，无法校验 MinerU callback checksum")
 
     def test_callback_checksum_uses_seed_and_uid_fallback(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -4021,7 +4106,12 @@ class FastAPIJobsBackendTests(TestCase):
 
     def test_callback_failed_state_marks_job_failed(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            runtime = build_test_runtime(Path(temp_dir), mineru_api_token="token-123")
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                mineru_api_token="token-123",
+                mineru_callback_url="https://example.com/api/v1/mineru-callbacks/result",
+                mineru_uid="mineru-user-1",
+            )
             app = create_app(runtime)
             with TestClient(app) as client:
                 create_response = client.post(
@@ -4030,10 +4120,15 @@ class FastAPIJobsBackendTests(TestCase):
                 )
                 job_id = create_response.json()["job_id"]
                 detail = client.get(f"/api/v1/jobs/{job_id}").json()
-                payload, _content = build_callback_payload(
+                payload, content = build_callback_payload(
                     batch_id=detail["mineru_batch_id"],
                     data_id=job_id,
                     state="failed",
+                )
+                payload["checksum"] = build_callback_checksum(
+                    uid="mineru-user-1",
+                    seed=detail["mineru_callback_seed"],
+                    content=content,
                 )
                 response = client.post("/api/v1/mineru-callbacks/result", json=payload)
                 self.assertEqual(response.status_code, 200)
@@ -4043,7 +4138,12 @@ class FastAPIJobsBackendTests(TestCase):
 
     def test_callback_matches_data_id_before_batch_id(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            runtime = build_test_runtime(Path(temp_dir), mineru_api_token="token-123")
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                mineru_api_token="token-123",
+                mineru_callback_url="https://example.com/api/v1/mineru-callbacks/result",
+                mineru_uid="mineru-user-1",
+            )
             app = create_app(runtime)
             with TestClient(app) as client:
                 first_response = client.post(
@@ -4066,11 +4166,16 @@ class FastAPIJobsBackendTests(TestCase):
                     **build_source_pdf_context_patch(second_job, batch_id=first_detail["mineru_batch_id"]),
                 )
 
-                payload, _content = build_callback_payload(
+                payload, content = build_callback_payload(
                     batch_id=first_detail["mineru_batch_id"],
                     data_id=second_detail["mineru_data_id"],
                     state="done",
                     full_zip_url="https://mineru.net/result.zip",
+                )
+                payload["checksum"] = build_callback_checksum(
+                    uid="mineru-user-1",
+                    seed=second_detail["mineru_callback_seed"],
+                    content=content,
                 )
                 response = client.post("/api/v1/mineru-callbacks/result", json=payload)
 

@@ -37,6 +37,7 @@ from app.infrastructure.persistence.sqlite import SqliteJobSnapshotRepository
 from app.main import build_runtime, create_app
 from app.domains.jobs.query import JobQueryService
 from tests.test_fastapi_jobs_backend import (
+    build_callback_checksum,
     build_callback_payload,
     build_test_runtime,
     make_zip_bytes,
@@ -424,6 +425,8 @@ class PersistenceAdapterTests(TestCase):
             runtime = build_test_runtime(
                 Path(temp_dir),
                 mineru_api_token="token",
+                mineru_callback_url="https://example.com/api/v1/mineru-callbacks/result",
+                mineru_uid="mineru-user-1",
                 jobs_repository_backend="database",
             )
             app = create_app(runtime)
@@ -433,11 +436,17 @@ class PersistenceAdapterTests(TestCase):
                     files={"pdf": ("source.pdf", b"%PDF-1.4\n", "application/pdf")},
                 )
                 job_id = create_response.json()["job_id"]
-                callback_payload, _content = build_callback_payload(
+                detail = client.get(f"/api/v1/jobs/{job_id}").json()
+                callback_payload, content = build_callback_payload(
                     batch_id="batch_test_001",
                     data_id=job_id,
                     state="done",
                     full_zip_url="https://mineru.net/result.zip",
+                )
+                callback_payload["checksum"] = build_callback_checksum(
+                    uid="mineru-user-1",
+                    seed=detail["mineru_callback_seed"],
+                    content=content,
                 )
                 callback_response = client.post("/api/v1/mineru-callbacks/result", json=callback_payload)
                 detail_response = client.get(f"/api/v1/jobs/{job_id}")
@@ -465,6 +474,8 @@ class PersistenceAdapterTests(TestCase):
             runtime = build_test_runtime(
                 Path(temp_dir),
                 mineru_api_token="token",
+                mineru_callback_url="https://example.com/api/v1/mineru-callbacks/result",
+                mineru_uid="mineru-user-1",
                 jobs_repository_backend="mysql",
                 repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
                     _mysql_config(),
@@ -479,11 +490,17 @@ class PersistenceAdapterTests(TestCase):
                     files={"pdf": ("source.pdf", b"%PDF-1.4\n", "application/pdf")},
                 )
                 job_id = create_response.json()["job_id"]
-                callback_payload, _content = build_callback_payload(
+                detail = client.get(f"/api/v1/jobs/{job_id}").json()
+                callback_payload, content = build_callback_payload(
                     batch_id="batch_test_001",
                     data_id=job_id,
                     state="done",
                     full_zip_url="https://mineru.net/result.zip",
+                )
+                callback_payload["checksum"] = build_callback_checksum(
+                    uid="mineru-user-1",
+                    seed=detail["mineru_callback_seed"],
+                    content=content,
                 )
                 callback_response = client.post("/api/v1/mineru-callbacks/result", json=callback_payload)
                 detail_response = client.get(f"/api/v1/jobs/{job_id}")

@@ -35,8 +35,10 @@ jobs 运维动作默认由 `JOBS_OPS_ACCESS_MODE=admin` 控制，需要 `X-Admin
 - `JOBS_ARTIFACT_STORAGE_BACKEND=local_file`，artifact 二进制仍保存在 artifact storage，不写入 MySQL
 - `JOBS_WORKER_MODE=in_process` / `external`
 - `JOBS_ACCESS_MODE`、`JOBS_ACCESS_TOKEN`、`JOBS_OPS_ACCESS_MODE`、`ADMIN_TOKEN`
-- `MINERU_CALLBACK_URL`、`MINERU_CALLBACK_TOKEN` 和 `MINERU_RESULT_HOST_ALLOWLIST`
+- `MINERU_CALLBACK_URL`、`MINERU_UID` 和 `MINERU_RESULT_HOST_ALLOWLIST`
 - `LOG_FORMAT=json`
+
+`MINERU_CALLBACK_URL` 直接按官方 callback 地址填写；callback 验签依赖 `uid + seed + content`，不要再给 URL 追加自定义 token 或 query 参数。
 
 不要把真实 token 或 password 提交到仓库；复制样例后在本地 `.env` 或部署环境里填真实值。
 
@@ -392,12 +394,12 @@ curl -X POST "http://127.0.0.1:8000/api/v1/jobs/pdf" \
 curl "http://127.0.0.1:8000/api/v1/jobs/{job_id}"
 ```
 
-然后发送 callback：
+然后按 `uid + mineru_callback_seed + content` 计算 `sha256`，再发送 callback：
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/api/v1/mineru-callbacks/result" \
   -H "Content-Type: application/json" \
-  -d '{"batch_id":"batch_test_001","content":"{\"batch_id\":\"batch_test_001\",\"extract_result\":[{\"data_id\":\"job_123\",\"state\":\"done\",\"full_zip_url\":\"https://mineru.net/result.zip\"}]}"}'
+  -d '{"batch_id":"batch_test_001","checksum":"sha256(uid+seed+content) 的十六进制值","content":"{\"batch_id\":\"batch_test_001\",\"extract_result\":[{\"data_id\":\"job_123\",\"state\":\"done\",\"full_zip_url\":\"https://mineru.net/result.zip\"}]}"}'
 ```
 
 预期：

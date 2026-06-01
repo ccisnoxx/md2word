@@ -13,16 +13,8 @@ from app.core.runtime import AppRuntime
 
 
 def verify_mineru_callback_identity(request: Request, runtime: AppRuntime) -> None:
-    settings = runtime.settings
-    if settings.public_deployment_mode == "internal":
-        return
-    if not settings.mineru_callback_token:
-        raise HTTPException(status_code=503, detail="MINERU_CALLBACK_TOKEN 未配置，公开 callback 已关闭")
-
-    query_token_name = settings.mineru_callback_token_query_name or "callback_token"
-    token = request.headers.get("X-MinerU-Callback-Token") or request.query_params.get(query_token_name)
-    if not secrets.compare_digest(str(token or ""), settings.mineru_callback_token):
-        raise HTTPException(status_code=403, detail="MinerU callback 鉴权失败")
+    # MinerU 官方 callback 合同只约定 checksum/content，不支持额外 callback token。
+    return None
 
 
 def verify_mineru_callback_request(payload: dict) -> dict:
@@ -89,15 +81,17 @@ def normalize_mineru_callback_payload(payload: dict) -> dict:
 def verify_mineru_callback_checksum_for_job(payload: dict, job, runtime: AppRuntime) -> None:
     checksum = payload.get("checksum")
     content = payload.get("content")
-    if checksum is None:
-        return
     if not isinstance(content, str) or not content.strip():
         raise HTTPException(status_code=400, detail="回调 payload content 缺失，无法校验 checksum")
+    if checksum is None:
+        raise HTTPException(status_code=400, detail="回调 payload checksum 缺失")
     uid = payload.get("uid")
     if uid is None and isinstance(payload.get("data"), dict):
         uid = payload["data"].get("uid")
     if uid is None:
         uid = runtime.settings.mineru_uid
+    if not isinstance(uid, str) or not uid.strip():
+        raise HTTPException(status_code=503, detail="MINERU_UID 未配置，无法校验 MinerU callback checksum")
     seed = job.read_mineru_callback_seed() if hasattr(job, "read_mineru_callback_seed") else getattr(job, "mineru_callback_seed", None)
     _verify_mineru_callback_checksum(checksum, str(uid or ""), content, seed)
 

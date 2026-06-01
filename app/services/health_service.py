@@ -103,6 +103,8 @@ class HealthService:
         pdf_submission_available = bool(self.settings.mineru_api_token)
         artifact_root = self._artifact_root()
         resource_labels = self._build_default_resource_labels()
+        mineru_callback_url_configured = bool(self.settings.mineru_callback_url)
+        mineru_uid_configured = bool(self.settings.mineru_uid)
 
         checks: dict[str, Any] = {
             "readiness_required_checks": list(READINESS_REQUIRED_CHECKS),
@@ -135,7 +137,10 @@ class HealthService:
             "subscript_config_exists": subscript_config_path is not None and subscript_config_path.exists(),
             "translation_prompt_exists": translation_prompt_exists,
             "mineru_api_token_configured": bool(self.settings.mineru_api_token),
+            "mineru_callback_url_configured": mineru_callback_url_configured,
+            "mineru_uid_configured": mineru_uid_configured,
             "pdf_submission_available": pdf_submission_available,
+            "public_deployment_mode": self.settings.public_deployment_mode,
             "openai_api_key_configured": bool(self.settings.openai_api_key),
             "openai_base_url_configured": bool(self.settings.openai_base_url),
             "openai_model": self.settings.openai_model,
@@ -166,11 +171,15 @@ class HealthService:
             blockers.append("subscript_config_missing")
         if checks["translation_required_for_default_mode"] and not checks["translation_available"]:
             blockers.append("default_translation_unavailable")
+        if mineru_callback_url_configured and not mineru_uid_configured:
+            blockers.append("mineru_uid_missing")
 
         warnings: list[str] = []
         if not checks["pdf_submission_available"]:
             warnings.append("mineru_api_token_missing")
             checks["pdf_submission_unavailable_reason"] = "MINERU_API_TOKEN 未配置"
+        if checks["pdf_submission_available"] and not mineru_callback_url_configured:
+            warnings.append("mineru_callback_url_missing")
         if not checks["translation_available"] and not checks["translation_required_for_default_mode"]:
             warnings.append("translation_unavailable")
         if stage_spool_replayable_messages > 0:
