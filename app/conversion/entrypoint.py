@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# app/conversion/entrypoint.py: 组装 job 记录、资源路径与 conversion service 请求。
+
 from pathlib import Path
 
 from app.conversion.contracts import ConversionEntrypoint, ConversionRequest
@@ -7,7 +9,7 @@ from app.conversion.service import ConversionService
 from app.core.config import Settings
 from app.domains.jobs.models import JobRecord
 from app.domains.jobs.paths import JobPaths
-from app.domains.translation.models import TranslationProfileSnapshot
+from app.domains.translation.models import TermVersionSnapshot, TranslationProfileSnapshot
 
 
 def build_job_conversion_request(
@@ -17,8 +19,10 @@ def build_job_conversion_request(
     settings: Settings,
     package_path: Path | None = None,
     template_path: Path | None = None,
+    layout_config_path: Path | None = None,
     subscript_config_path: Path | None = None,
     translation_profile: TranslationProfileSnapshot | None = None,
+    translation_term_version: TermVersionSnapshot | None = None,
 ) -> ConversionRequest:
     translation_model = (
         translation_profile.model
@@ -30,6 +34,7 @@ def build_job_conversion_request(
         package_path=package_path if package_path is not None else job_paths.source_package,
         output_path=job_paths.result_docx,
         template_path=template_path if template_path is not None else settings.default_template_path,
+        layout_config_path=layout_config_path if layout_config_path is not None else settings.layout_config_path,
         subscript_config_path=subscript_config_path if subscript_config_path is not None else settings.subscript_config_path,
         translation_mode=job.translation_mode,
         document_language=job.document_language,
@@ -63,6 +68,7 @@ def build_job_conversion_request(
             else settings.translation_max_chars
         ),
         translation_profile=translation_profile,
+        translation_term_version=translation_term_version,
         translation_request_output=job_paths.translation_request if job.translation_mode == "en2zh" else None,
         translation_trace_output=job_paths.translation_trace if job.translation_mode == "en2zh" else None,
     )

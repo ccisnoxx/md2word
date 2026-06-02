@@ -16,6 +16,8 @@ from app.infrastructure.persistence.mysql.files import MysqlDocumentFileReposito
 from app.infrastructure.persistence.mysql.jobs import MysqlJobEventRepository, MysqlJobSnapshotRepository
 from app.infrastructure.persistence.mysql.resources import MysqlResourceVersionRepository
 from app.infrastructure.persistence.mysql.stage_messages import MysqlStageMessageStore
+from app.infrastructure.persistence.mysql.term_assets import MysqlTermRuleAssetRepository, MysqlTranslationTermRepository
+from app.infrastructure.persistence.mysql.term_rule_proposals import MysqlTermRuleProposalRepository
 
 __all__ = [
     "ConnectFactory",
@@ -30,4 +32,7 @@ __all__ = [
     "MysqlPersistenceConfig",
     "MysqlResourceVersionRepository",
     "MysqlStageMessageStore",
+    "MysqlTermRuleAssetRepository",
+    "MysqlTermRuleProposalRepository",
+    "MysqlTranslationTermRepository",
 ]

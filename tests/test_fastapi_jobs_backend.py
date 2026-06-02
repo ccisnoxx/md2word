@@ -37,6 +37,7 @@ from app.infrastructure.persistence.mysql import MysqlPersistenceConfig
 from app.main import create_app
 from app.domains.term_rules.file_repository import FileTermRuleRepository
 from app.domains.audit.service import AuditService
+from app.domains.document_jobs.models import DocumentJobRecord
 from app.services.auth import AuthService, hash_password
 from app.domains.document_jobs.execution import DocumentJobExecutionService, EagerDocumentJobTaskQueue
 from app.domains.document_jobs.service import DocumentJobService
@@ -57,6 +58,7 @@ from app.services.renderer import DocumentIRWordRenderer
 from app.domains.resources.service import ResourceVersionService
 from app.domains.term_rules.bootstrap import TermRuleBootstrapService
 from app.domains.term_rules.import_validation import TermRuleImportValidationService
+from app.domains.term_rules.proposals_service import TermRuleProposalService
 from app.domains.term_rules.service import TermRuleService
 from app.domains.term_rules.sync_files import TermRuleFileSyncService
 from app.domains.term_rules.versioning_service import DEFAULT_TERM_RULE_SET_ID, TermRuleSetVersionService
@@ -64,8 +66,11 @@ from app.domains.term_rules.yaml_codec import CURRENT_SCHEMA_VERSION, TermRuleYa
 from app.domains.templates.read_service import TemplateReadService
 from app.domains.translation.audit import TranslationAuditService
 from app.domains.translation.document_ir_translator import DocumentIRTranslationService
+from app.domains.translation.models import TranslationTermEntry, TranslationTermProposalChangeRecord
 from app.domains.translation.profiles_service import DEFAULT_TRANSLATION_PROFILE_ID, TranslationProfileVersionService
+from app.domains.translation.proposals_service import TranslationTermProposalService
 from app.domains.translation.provider import build_translation_provider
+from app.domains.translation.term_set_version_service import TranslationTermSetVersionService
 from app.domains.translation.term_version_service import TermVersionService
 from app.workers.stage_worker import StageWorker
 
@@ -259,6 +264,7 @@ def build_test_runtime(
     translation_debug_archive_retention_days: int = 1,
     templates_manifest_path: str | None = None,
     term_rules_seed_path: str | None = None,
+    translation_terms_path: str | None = None,
 ) -> AppRuntime:
     settings = Settings(
         _env_file=None,
@@ -293,6 +299,7 @@ def build_test_runtime(
         translation_debug_archive_retention_days=translation_debug_archive_retention_days,
         **({"templates_manifest_path": templates_manifest_path} if templates_manifest_path else {}),
         **({"term_rules_seed_path": term_rules_seed_path} if term_rules_seed_path else {}),
+        **({"translation_terms_path": translation_terms_path} if translation_terms_path else {}),
     )
     if repository_factory is not None:
         persistence_adapters = repository_factory(settings.data_path)
@@ -334,13 +341,25 @@ def build_test_runtime(
     term_version_service = TermVersionService(
         settings.translation_terms_file,
         default_term_version_id=settings.default_translation_term_version_id,
+        repository=persistence_adapters.translation_term_repository,
     )
+    term_version_service.bootstrap_repository_from_csv_if_empty()
     resource_version_service = (
         ResourceVersionService(persistence_adapters.resource_version_repository)
         if persistence_adapters.resource_version_repository is not None
         else None
     )
-    template_read_service = TemplateReadService(settings, resource_version_service, audit_service)
+    job_resource_snapshot_service = JobResourceSnapshotService(
+        settings,
+        resource_version_service,
+        persistence_adapters.translation_term_repository,
+    )
+    template_read_service = TemplateReadService(
+        settings,
+        resource_version_service,
+        audit_service,
+        document_job_repository=document_job_repository,
+    )
     document_word_renderer = DocumentIRWordRenderer()
     document_job_mineru_client = FakeMinerUClient()
     document_job_mineru_client.result_zip_bytes = make_mineru_zip_bytes()
@@ -372,6 +391,7 @@ def build_test_runtime(
         document_job_task_queue,
         template_read_service,
         term_version_service,
+        job_resource_snapshot_service,
     )
     health_service = HealthService(
         settings,
@@ -404,8 +424,20 @@ def build_test_runtime(
             runtime_yaml_path=settings.term_rules_runtime_yaml_file,
             resource_version_service=resource_version_service,
             audit_service=audit_service,
+            asset_repository=persistence_adapters.term_rule_asset_repository,
         )
         if resource_version_service is not None
+        else None
+    )
+    term_rule_proposal_service = (
+        TermRuleProposalService(
+            repository=persistence_adapters.term_rule_proposal_repository,
+            term_rule_service=term_rule_service,
+            term_rule_set_version_service=term_rule_set_version_service,
+            audit_service=audit_service,
+        )
+        if persistence_adapters.term_rule_proposal_repository is not None
+        and term_rule_set_version_service is not None
         else None
     )
     translation_profile_service = (
@@ -413,13 +445,30 @@ def build_test_runtime(
         if resource_version_service is not None
         else None
     )
-    job_resource_snapshot_service = JobResourceSnapshotService(settings, resource_version_service)
-    TermRuleBootstrapService(
-        term_rule_repository,
-        settings.term_rules_runtime_yaml_file,
-        settings.term_rules_seed_file,
-        repository_backend="file",
-    ).bootstrap()
+    translation_term_set_version_service = (
+        TranslationTermSetVersionService(persistence_adapters.translation_term_repository, audit_service)
+        if persistence_adapters.translation_term_repository is not None
+        else None
+    )
+    translation_term_proposal_service = (
+        TranslationTermProposalService(
+            repository=persistence_adapters.translation_term_repository,
+            term_set_version_service=translation_term_set_version_service,
+            audit_service=audit_service,
+        )
+        if persistence_adapters.translation_term_repository is not None
+        and translation_term_set_version_service is not None
+        else None
+    )
+    if term_rule_set_version_service is not None:
+        term_rule_set_version_service.bootstrap_seed_as_default_if_empty(settings.term_rules_seed_file)
+    else:
+        TermRuleBootstrapService(
+            term_rule_repository,
+            settings.term_rules_runtime_yaml_file,
+            settings.term_rules_seed_file,
+            repository_backend="file",
+        ).bootstrap()
     template_read_service.get_default_template_id()
     conversion_service = FakeConversionService()
     artifact_service = JobArtifactService()
@@ -439,6 +488,7 @@ def build_test_runtime(
         stage_worker_id="md2word-worker" if jobs_worker_mode == "external" else "in_process",
         mineru_client_factory=lambda: fake_mineru_client,
         resolve_template_path=template_read_service.resolve_job_template_path,
+        resolve_layout_config_path=template_read_service.resolve_job_layout_config_path,
         resolve_subscript_config_path=lambda: settings.subscript_config_path,
         resolve_translation_profile_snapshot=(
             translation_profile_service.resolve_default_snapshot
@@ -470,6 +520,7 @@ def build_test_runtime(
         stage_service=stage_service,
         artifact_service=artifact_service,
         artifact_storage=artifact_storage,
+        resource_snapshot_service=job_resource_snapshot_service,
     )
     query_service = JobQueryService(job_repository, job_file_repository, job_event_repository)
     return AppRuntime(
@@ -500,6 +551,9 @@ def build_test_runtime(
         term_rule_import_validation_service=term_rule_import_validation_service,
         term_rule_file_sync_service=term_rule_file_sync_service,
         term_rule_set_version_service=term_rule_set_version_service,
+        term_rule_proposal_service=term_rule_proposal_service,
+        translation_term_set_version_service=translation_term_set_version_service,
+        translation_term_proposal_service=translation_term_proposal_service,
         translation_profile_service=translation_profile_service,
         resource_version_service=resource_version_service,
         job_resource_snapshot_service=job_resource_snapshot_service,
@@ -603,6 +657,31 @@ def write_templates_manifest(path: Path, entries: list[dict]) -> None:
 def resource_payload_hash(payload: dict) -> str:
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
+
+def create_template_verification_job(
+    runtime: AppRuntime,
+    *,
+    job_id: str,
+    template_version_id: str,
+    status: str = "succeeded",
+) -> DocumentJobRecord:
+    stage = "completed" if status == "succeeded" else "uploaded"
+    now = utc_now()
+    return runtime.document_job_repository.create_document_job(
+        DocumentJobRecord(
+            id=job_id,
+            tenant_id="tenant_demo",
+            company_id="company_demo",
+            created_by="user_admin",
+            source_file_id=f"file_{job_id}",
+            status=status,
+            stage=stage,
+            progress=100 if status == "succeeded" else 0,
+            template_version_id=template_version_id,
+            completed_at=now if status == "succeeded" else None,
+        )
+    )
 
 
 def publish_template_resource_version(
@@ -734,6 +813,36 @@ def publish_translation_profile_resource_version(
         payload=payload,
     )
     service.publish("translation_profile", translation_profile_id, version, make_default=make_default)
+
+
+def publish_translation_term_set_version(
+    runtime: AppRuntime,
+    *,
+    source_term: str,
+    target_term: str,
+    make_default: bool,
+    set_id: str = "translation-terms-en2zh",
+) -> str:
+    service = runtime.translation_term_set_version_service
+    if service is None:
+        raise AssertionError("translation_term_set_version_service is required for this test")
+    draft = service.get_draft(set_id)
+    entries = [
+        TranslationTermEntry(
+            language_pair=draft.language_pair,
+            source_term=source_term,
+            target_term=target_term,
+            version=draft.version,
+        )
+    ]
+    service.update_draft(set_id, entries)
+    published = service.publish_draft(
+        set_id,
+        make_default=make_default,
+        published_by="admin",
+        release_note="test translation term resource snapshot",
+    )
+    return published.version.version
 
 
 def publish_default_job_resources(runtime: AppRuntime, *, include_translation: bool = False) -> tuple[Path, str]:
@@ -1007,7 +1116,7 @@ class FastAPIJobsBackendTests(TestCase):
         payload = response.json()
         self.assertEqual(payload["metadata_store"], "mysql")
         self.assertEqual(payload["resources"]["template_versions"], 1)
-        self.assertEqual(payload["resources"]["term_rule_set_versions"], 1)
+        self.assertEqual(payload["resources"]["term_rule_set_versions"], 2)
         self.assertEqual(payload["resources"]["translation_profile_versions"], 1)
         self.assertEqual(payload["resources"]["default_template_version"], "default@1")
         self.assertEqual(payload["resources"]["default_term_rule_version"], "electronics-default@1")
@@ -1526,6 +1635,198 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(events[-1]["payload"]["result_file_id"], stored_job.result_file_id)
         self.assertEqual({event["trace_id"] for event in events}, {"trace_docjob_worker"})
 
+    def test_document_job_archive_hides_terminal_job_without_deleting_artifacts(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers, filename="archive-source.pdf")
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+                archive_response = client.delete(
+                    f"/api/v1/document-jobs/{job_id}",
+                    headers={**headers, "X-Trace-Id": "trace_docjob_archive"},
+                )
+                list_response = client.get("/api/v1/document-jobs", headers=headers)
+                detail_response = client.get(f"/api/v1/document-jobs/{job_id}", headers=headers)
+                events_response = client.get(f"/api/v1/document-jobs/{job_id}/events", headers=headers)
+                download_url_response = client.get(f"/api/v1/document-jobs/{job_id}/download-url", headers=headers)
+
+            stored_job = runtime.document_job_repository.get_document_job(job_id)
+            stored_source_file = runtime.document_file_repository.get_document_file(source_file["id"])
+            stored_result_file = runtime.document_file_repository.get_document_file(stored_job.result_file_id)
+            audit_events = runtime.audit_event_repository.list_audit_events()
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.json()["status"], "succeeded")
+        self.assertEqual(archive_response.status_code, 200)
+        archive_payload = archive_response.json()
+        self.assertEqual(archive_payload["job_id"], job_id)
+        self.assertIsNotNone(archive_payload["archived_at"])
+        self.assertEqual(archive_payload["job"]["archived_by"], "user_operator")
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(list_response.json()["total"], 0)
+        self.assertEqual(list_response.json()["summary"], {})
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(detail_response.json()["id"], job_id)
+        self.assertIsNotNone(detail_response.json()["archived_at"])
+        self.assertEqual(download_url_response.status_code, 200)
+        self.assertIsNotNone(stored_job)
+        self.assertIsNotNone(stored_job.archived_at)
+        self.assertEqual(stored_job.archived_by, "user_operator")
+        self.assertIsNotNone(stored_source_file)
+        self.assertIsNotNone(stored_result_file)
+        event_types = [event["event_type"] for event in events_response.json()["items"]]
+        self.assertIn("stage_succeeded", event_types)
+        self.assertIn("job_archived", event_types)
+        archive_audit_events = [event for event in audit_events if event.action == "document_job.archive"]
+        self.assertEqual(len(archive_audit_events), 1)
+        self.assertEqual(archive_audit_events[0].target_id, job_id)
+
+    def test_document_job_archive_rejects_non_terminal_job(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+                archive_response = client.delete(f"/api/v1/document-jobs/{job_id}", headers=headers)
+                list_response = client.get("/api/v1/document-jobs", headers=headers)
+
+            stored_job = runtime.document_job_repository.get_document_job(job_id)
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.json()["status"], "pending")
+        self.assertEqual(archive_response.status_code, 409)
+        self.assertEqual(archive_response.json()["error_code"], "conflict")
+        self.assertIn("终态", archive_response.json()["detail"])
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(list_response.json()["total"], 1)
+        self.assertIsNotNone(stored_job)
+        self.assertIsNone(stored_job.archived_at)
+
+    def test_document_job_cancel_running_job_and_then_archive(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+                runtime.document_job_repository.update_document_job(
+                    job_id,
+                    status="running",
+                    stage="parsing",
+                    progress=20,
+                )
+                cancel_response = client.post(
+                    f"/api/v1/document-jobs/{job_id}/cancel",
+                    headers={**headers, "X-Trace-Id": "trace_docjob_cancel"},
+                )
+                archive_response = client.delete(f"/api/v1/document-jobs/{job_id}", headers=headers)
+                list_response = client.get("/api/v1/document-jobs", headers=headers)
+                events_response = client.get(f"/api/v1/document-jobs/{job_id}/events", headers=headers)
+
+            stored_job = runtime.document_job_repository.get_document_job(job_id)
+            audit_events = runtime.audit_event_repository.list_audit_events()
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(cancel_response.status_code, 200)
+        cancel_payload = cancel_response.json()
+        self.assertEqual(cancel_payload["job_id"], job_id)
+        self.assertEqual(cancel_payload["status"], "canceled")
+        self.assertEqual(cancel_payload["stage"], "canceled")
+        self.assertIsNotNone(cancel_payload["canceled_at"])
+        self.assertEqual(archive_response.status_code, 200)
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(list_response.json()["total"], 0)
+        self.assertIsNotNone(stored_job)
+        self.assertEqual(stored_job.status, "canceled")
+        self.assertEqual(stored_job.stage, "canceled")
+        self.assertIsNotNone(stored_job.canceled_at)
+        self.assertIsNotNone(stored_job.archived_at)
+        cancel_events = [
+            event for event in events_response.json()["items"]
+            if event["event_type"] == "job_canceled"
+        ]
+        self.assertEqual(len(cancel_events), 1)
+        self.assertEqual(cancel_events[0]["payload"]["previous_status"], "running")
+        self.assertEqual(cancel_events[0]["payload"]["previous_stage"], "parsing")
+        cancel_audit_events = [event for event in audit_events if event.action == "document_job.cancel"]
+        self.assertEqual(len(cancel_audit_events), 1)
+        self.assertEqual(cancel_audit_events[0].target_id, job_id)
+
+    def test_document_job_cancel_rejects_terminal_job(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+                runtime.document_job_repository.update_document_job(
+                    job_id,
+                    status="failed",
+                    stage="failed",
+                    failed_stage="parsing",
+                    error_code="historical_failure",
+                    error_message="terminal job",
+                )
+                cancel_response = client.post(f"/api/v1/document-jobs/{job_id}/cancel", headers=headers)
+
+            stored_job = runtime.document_job_repository.get_document_job(job_id)
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(cancel_response.status_code, 409)
+        self.assertEqual(cancel_response.json()["error_code"], "conflict")
+        self.assertIn("pending", cancel_response.json()["detail"])
+        self.assertIsNotNone(stored_job)
+        self.assertEqual(stored_job.status, "failed")
+        self.assertIsNone(stored_job.canceled_at)
+
     def test_document_job_mineru_callback_completes_pending_parse(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(
@@ -1661,27 +1962,53 @@ class FastAPIJobsBackendTests(TestCase):
             ir_payload = json.loads(runtime.file_upload_service.read_file_content(ir_file).decode("utf-8"))
             image_bytes = runtime.file_upload_service.read_file_content(image_files[0])
             word_bytes = runtime.file_upload_service.read_file_content(word_file)
+            events = runtime.document_job_event_repository.list_document_job_events(job_id)
 
         self.assertEqual(create_response.status_code, 201)
         self.assertEqual(stored_job.stage, "completed")
+        expected_layout_page_count = len(ir_payload["pages"])
         self.assertEqual(raw_file.file_type, "mineru_raw_result")
         self.assertEqual(ir_file.file_type, "document_ir")
         self.assertEqual(word_file.file_type, "generated_word")
+        self.assertEqual(ir_file.metadata["schema_version"], "document-ir/v2")
+        self.assertEqual(ir_file.metadata["layout_page_count"], expected_layout_page_count)
+        self.assertEqual(ir_file.metadata["layout_block_count"], 6)
+        self.assertEqual(word_file.metadata["schema_version"], "document-ir/v2")
+        self.assertEqual(word_file.metadata["renderer_mode"], "layout_v2")
+        self.assertEqual(word_file.metadata["layout_page_count"], expected_layout_page_count)
+        self.assertEqual(word_file.metadata["layout_block_count"], 6)
         self.assertEqual(word_file.metadata["template_version_id"], "default@1")
         self.assertEqual([file.file_type for file in image_files], ["image_asset"])
         with zipfile.ZipFile(io.BytesIO(raw_bytes)) as archive:
             self.assertIn("content_list_v2.json", archive.namelist())
         with zipfile.ZipFile(io.BytesIO(word_bytes)) as archive:
             self.assertIn("word/document.xml", archive.namelist())
-        self.assertEqual(ir_payload["schema_version"], "document-ir/v1")
+        self.assertEqual(ir_payload["schema_version"], "document-ir/v2")
+        self.assertTrue(ir_payload["pages"])
         self.assertEqual(
             [block["type"] for block in ir_payload["blocks"]],
             ["heading", "paragraph", "table", "image", "list", "formula"],
         )
+        self.assertEqual(ir_payload["blocks"][0]["layout"]["page_index"], 0)
         self.assertEqual(ir_payload["assets"][0]["file_id"], image_files[0].id)
         self.assertEqual(ir_payload["assets"][0]["object_key"], image_files[0].object_key)
         self.assertEqual(ir_payload["blocks"][3]["asset_ref"], ir_payload["assets"][0]["id"])
         self.assertEqual(image_bytes, MINIMAL_PNG_BYTES)
+        ir_registered_event = next(
+            event
+            for event in events
+            if event.event_type == "file_registered" and event.payload.get("file_type") == "document_ir"
+        )
+        rendered_event = next(event for event in events if event.event_type == "stage_succeeded" and event.stage == "rendering")
+        word_registered_event = next(
+            event
+            for event in events
+            if event.event_type == "file_registered" and event.payload.get("file_type") == "generated_word"
+        )
+        self.assertEqual(ir_registered_event.payload["schema_version"], "document-ir/v2")
+        self.assertEqual(ir_registered_event.payload["layout_block_count"], 6)
+        self.assertEqual(rendered_event.payload["renderer_mode"], "layout_v2")
+        self.assertEqual(word_registered_event.payload["renderer_mode"], "layout_v2")
 
     def test_document_job_en2zh_worker_translates_ir_and_saves_ai_audit_artifacts(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2309,7 +2636,9 @@ class FastAPIJobsBackendTests(TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)
             alt_template_path = temp_root / "alt_template.docx"
+            alt_layout_path = temp_root / "alt_layout.yaml"
             alt_template_path.write_bytes(b"alt-docx")
+            alt_layout_path.write_text("schema_version: template-config/v1\n", encoding="utf-8")
             manifest_path = temp_root / "templates_manifest.yaml"
             repo_root = Path(__file__).resolve().parents[1]
             write_templates_manifest(
@@ -2331,7 +2660,7 @@ class FastAPIJobsBackendTests(TestCase):
                         "enabled": True,
                         "is_default_seed": False,
                         "template_path": str(alt_template_path.resolve()),
-                        "layout_config_path": str((repo_root / "resources" / "template_configs" / "datasheet_template.yaml").resolve()),
+                        "layout_config_path": str(alt_layout_path.resolve()),
                     },
                 ],
             )
@@ -2364,6 +2693,18 @@ class FastAPIJobsBackendTests(TestCase):
                 refreshed = client.get("/api/v1/templates").json()["items"]
                 self.assertFalse(refreshed[0]["is_default"])
                 self.assertTrue(refreshed[1]["is_default"])
+
+                job_response = client.post(
+                    "/api/v1/jobs",
+                    files={"package": ("mineru-output.zip", make_zip_bytes(), "application/zip")},
+                    data={"translation_mode": "direct"},
+                )
+                self.assertEqual(job_response.status_code, 201)
+
+            request = runtime.stage_service.conversion_entrypoint.requests[0]
+
+        self.assertEqual(request.template_path, alt_template_path.resolve())
+        self.assertEqual(request.layout_config_path, alt_layout_path.resolve())
 
     def test_templates_crud_replace_and_versions_preserve_uploaded_file(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2502,14 +2843,26 @@ class FastAPIJobsBackendTests(TestCase):
                 )
                 self.assertEqual(create_response.status_code, 201)
 
+                create_template_verification_job(
+                    runtime,
+                    job_id="docjob_template_v1",
+                    template_version_id="managed@1",
+                )
                 publish_v1_response = client.post(
                     "/api/v1/templates/managed/versions/1/publish",
-                    json={"make_default": True},
+                    json={
+                        "make_default": True,
+                        "publish_reason": "initial template verification",
+                        "verification_job_id": "docjob_template_v1",
+                        "verification_note": "v1 validation succeeded",
+                    },
                     headers={"X-Admin-Token": "secret-admin"},
                 )
                 self.assertEqual(publish_v1_response.status_code, 200)
                 self.assertEqual(publish_v1_response.json()["status"], "published")
                 self.assertTrue(publish_v1_response.json()["is_default"])
+                self.assertEqual(publish_v1_response.json()["verification_job_id"], "docjob_template_v1")
+                self.assertEqual(publish_v1_response.json()["publish_reason"], "initial template verification")
 
                 create_v2_response = client.post(
                     "/api/v1/templates/managed/versions",
@@ -2527,13 +2880,48 @@ class FastAPIJobsBackendTests(TestCase):
                 self.assertEqual(create_v2_response.json()["version"], 2)
                 self.assertEqual(create_v2_response.json()["status"], "draft")
 
+                invalid_publish_v2_response = client.post(
+                    "/api/v1/templates/managed/versions/2/publish",
+                    json={
+                        "make_default": False,
+                        "publish_reason": "missing verification evidence",
+                    },
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                create_template_verification_job(
+                    runtime,
+                    job_id="docjob_template_v2_pending",
+                    template_version_id="managed@2",
+                    status="pending",
+                )
+                pending_job_publish_v2_response = client.post(
+                    "/api/v1/templates/managed/versions/2/publish",
+                    json={
+                        "make_default": False,
+                        "publish_reason": "pending validation should fail",
+                        "verification_job_id": "docjob_template_v2_pending",
+                        "verification_note": "v2 validation is not done",
+                    },
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                create_template_verification_job(
+                    runtime,
+                    job_id="docjob_template_v2",
+                    template_version_id="managed@2",
+                )
                 publish_v2_response = client.post(
                     "/api/v1/templates/managed/versions/2/publish",
-                    json={"make_default": False},
+                    json={
+                        "make_default": False,
+                        "publish_reason": "validated compact density",
+                        "verification_job_id": "docjob_template_v2",
+                        "verification_note": "v2 validation succeeded",
+                    },
                     headers={"X-Admin-Token": "secret-admin"},
                 )
                 set_default_v2_response = client.post(
                     "/api/v1/templates/managed/versions/2/set-default",
+                    json={"set_default_reason": "switch production to compact density"},
                     headers={"X-Admin-Token": "secret-admin"},
                 )
                 download_response = client.get("/api/v1/templates/managed/download")
@@ -2547,6 +2935,9 @@ class FastAPIJobsBackendTests(TestCase):
                 )
                 versions_response = client.get("/api/v1/templates/managed/versions")
 
+        self.assertEqual(invalid_publish_v2_response.status_code, 422)
+        self.assertEqual(pending_job_publish_v2_response.status_code, 400)
+        self.assertIn("succeeded", pending_job_publish_v2_response.json()["detail"])
         self.assertEqual(publish_v2_response.status_code, 200)
         self.assertEqual(set_default_v2_response.status_code, 200)
         self.assertTrue(set_default_v2_response.json()["is_default"])
@@ -2560,6 +2951,11 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(versions[2]["status"], "published")
         self.assertTrue(versions[2]["is_default"])
         self.assertEqual(versions[2]["render_policy"], {"density": "compact"})
+        self.assertEqual(versions[2]["verification_job_id"], "docjob_template_v2")
+        self.assertEqual(versions[2]["verification_note"], "v2 validation succeeded")
+        self.assertEqual(versions[2]["verified_by"], "admin")
+        self.assertIsNotNone(versions[2]["verified_at"])
+        self.assertEqual(versions[2]["publish_reason"], "validated compact density")
 
         records = {record.version: record for record in runtime.resource_version_service.repository.list_resource_versions("template", "managed")}
         default_record = runtime.resource_version_service.repository.get_default_resource_version("template", "managed")
@@ -2567,6 +2963,11 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(records["2"].status.value, "published")
         self.assertEqual(default_record.version, "2")
         self.assertEqual(records["2"].payload["render_policy"], {"density": "compact"})
+        self.assertEqual(records["2"].payload["verification_job_id"], "docjob_template_v2")
+        self.assertEqual(records["2"].payload["verification_note"], "v2 validation succeeded")
+        self.assertEqual(records["2"].payload["verified_by"], "admin")
+        self.assertIsNotNone(records["2"].payload["verified_at"])
+        self.assertEqual(records["2"].payload["publish_reason"], "validated compact density")
         audit_events = runtime.audit_event_repository.list_audit_events()
         self.assertEqual(
             [event.action for event in audit_events],
@@ -2581,6 +2982,8 @@ class FastAPIJobsBackendTests(TestCase):
         )
         self.assertEqual(audit_events[0].actor_role, "admin")
         self.assertEqual(audit_events[1].target_id, "managed@1")
+        self.assertEqual(audit_events[1].reason, "initial template verification")
+        self.assertEqual(audit_events[4].reason, "switch production to compact density")
         self.assertEqual(audit_events[-1].target_id, "managed@1")
         self.assertNotIn("term_rules", records["2"].payload)
 
@@ -2690,9 +3093,14 @@ class FastAPIJobsBackendTests(TestCase):
                 self.assertIn("VTWO", draft_v2_response.json()["yaml_text"])
                 self.assertNotIn("VTWO", runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8"))
 
-                publish_v2_response = client.post(
+                missing_reason_publish_response = client.post(
                     "/api/v1/term-rule-sets/electronics-default/publish",
                     json={"make_default": False},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                publish_v2_response = client.post(
+                    "/api/v1/term-rule-sets/electronics-default/publish",
+                    json={"make_default": False, "publish_reason": "second version"},
                     headers={"X-Admin-Token": "secret-admin"},
                 )
                 self.assertEqual(publish_v2_response.status_code, 200)
@@ -2722,6 +3130,7 @@ class FastAPIJobsBackendTests(TestCase):
                 detail_response = client.get("/api/v1/term-rule-sets/electronics-default")
 
         self.assertEqual(rollback_response.status_code, 200)
+        self.assertEqual(missing_reason_publish_response.status_code, 422)
         self.assertTrue(rollback_response.json()["is_default"])
         self.assertIn("VONE", export_response.json()["yaml_text"])
         self.assertNotIn("VTWO", export_response.json()["yaml_text"])
@@ -2744,7 +3153,87 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(audit_events[0].reason, "first version")
         self.assertEqual(audit_events[-1].target_id, f"electronics-default@{version_v1}")
         self.assertEqual(detail_response.json()["default_version"], version_v1)
-        self.assertEqual(len(detail_response.json()["versions"]), 2)
+        self.assertEqual(len(detail_response.json()["versions"]), 3)
+
+    def test_term_rule_set_publish_default_blocks_legacy_runtime_yaml_half_success(self):
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        yaml_v2 = (
+            "schema_version: 2\n"
+            "categories:\n"
+            "  voltage_terms:\n"
+            "    name: 电压相关\n"
+            "    priority: 10\n"
+            "    enabled: true\n"
+            "rules:\n"
+            "  - source_term: VFAIL\n"
+            "    category: voltage_terms\n"
+            "    segments:\n"
+            "      - segment_text: V\n"
+            "        render_type: plain\n"
+            "      - segment_text: FAIL\n"
+            "        render_type: subscript\n"
+            "    apply_scope: both\n"
+            "    case_sensitive: true\n"
+            "    enabled: true\n"
+            "    priority: 10\n"
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                admin_token="secret-admin",
+                jobs_repository_backend="mysql",
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+            )
+            service = runtime.term_rule_set_version_service
+            original_default = runtime.resource_version_service.repository.get_default_resource_version(
+                "term_rule_set",
+                "electronics-default",
+            )
+            original_runtime_yaml = runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8")
+
+            def fail_sync(_record):
+                raise ValueError("legacy runtime yaml write failed")
+
+            service._sync_live_store = fail_sync
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                draft_response = client.put(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules",
+                    json={"yaml_text": yaml_v2},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                publish_response = client.post(
+                    "/api/v1/term-rule-sets/electronics-default/publish",
+                    json={
+                        "make_default": True,
+                        "published_by": "tester",
+                        "publish_reason": "should fail before default switch",
+                    },
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                detail_response = client.get("/api/v1/term-rule-sets/electronics-default")
+
+            default_after_failure = runtime.resource_version_service.repository.get_default_resource_version(
+                "term_rule_set",
+                "electronics-default",
+            )
+            runtime_yaml_after_failure = runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8")
+
+        self.assertEqual(draft_response.status_code, 200)
+        self.assertEqual(publish_response.status_code, 400)
+        self.assertIn("默认版本切换失败", publish_response.json()["detail"])
+        self.assertIsNotNone(original_default)
+        self.assertIsNotNone(default_after_failure)
+        self.assertEqual(default_after_failure.version, original_default.version)
+        self.assertEqual(detail_response.json()["default_version"], original_default.version)
+        self.assertEqual(runtime_yaml_after_failure, original_runtime_yaml)
+        self.assertEqual(runtime.audit_event_repository.list_audit_events(), [])
 
     def test_term_rule_set_draft_rejects_invalid_yaml_without_mutating_draft(self):
         from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
@@ -2823,6 +3312,501 @@ class FastAPIJobsBackendTests(TestCase):
 
         self.assertEqual(guarded_response.status_code, 400)
         self.assertIn("/api/v1/term-rule-sets", guarded_response.json()["detail"])
+
+    def test_term_rule_set_import_export_api_reports_duplicates_and_exports_history(self):
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        yaml_with_duplicate = (
+            "schema_version: 2\n"
+            "categories:\n"
+            "  voltage_terms:\n"
+            "    name: 电压相关\n"
+            "    priority: 10\n"
+            "    enabled: true\n"
+            "    description: ''\n"
+            "rules:\n"
+            "  - source_term: VIN\n"
+            "    category: voltage_terms\n"
+            "    segments:\n"
+            "      - segment_text: V\n"
+            "        render_type: plain\n"
+            "      - segment_text: IN\n"
+            "        render_type: subscript\n"
+            "    apply_scope: both\n"
+            "    case_sensitive: true\n"
+            "    enabled: true\n"
+            "    priority: 10\n"
+            "    notes: ''\n"
+            "  - source_term: VIN\n"
+            "    category: voltage_terms\n"
+            "    segments:\n"
+            "      - segment_text: duplicate\n"
+            "        render_type: plain\n"
+            "    apply_scope: both\n"
+            "    case_sensitive: true\n"
+            "    enabled: true\n"
+            "    priority: 20\n"
+            "    notes: ''\n"
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                admin_token="secret-admin",
+                jobs_repository_backend="mysql",
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                reject_response = client.post(
+                    "/api/v1/term-rule-sets/electronics-default/import",
+                    json={"yaml_text": yaml_with_duplicate},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                import_response = client.post(
+                    "/api/v1/term-rule-sets/electronics-default/import",
+                    json={
+                        "yaml_text": yaml_with_duplicate,
+                        "dedupe": "keep_first",
+                    },
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                publish_response = client.post(
+                    "/api/v1/term-rule-sets/electronics-default/publish",
+                    json={"make_default": False, "publish_reason": "publish imported yaml"},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                version = publish_response.json()["version"]
+                yaml_export_response = client.get(
+                    f"/api/v1/term-rule-sets/electronics-default/export?version={version}",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                legacy_export_response = client.get(
+                    f"/api/v1/term-rule-sets/electronics-default/export?version={version}&format=legacy_runtime",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+
+        self.assertEqual(reject_response.status_code, 400)
+        self.assertEqual(reject_response.json()["detail"]["code"], "invalid_term_rule_set_import")
+        self.assertEqual(import_response.status_code, 200)
+        self.assertEqual(import_response.json()["version"], "draft")
+        self.assertEqual(import_response.json()["import_report"]["duplicate_rules"], 1)
+        self.assertEqual(import_response.json()["import_report"]["duplicates"][0]["source_term"], "VIN")
+        self.assertEqual(publish_response.status_code, 200)
+        self.assertEqual(yaml_export_response.status_code, 200)
+        self.assertEqual(yaml_export_response.json()["manifest"]["version"], version)
+        self.assertEqual(yaml_export_response.json()["manifest"]["format"], "term_rules_v2")
+        self.assertEqual(yaml_export_response.json()["manifest"]["exported_by"], "admin")
+        self.assertIn("source_term: VIN", yaml_export_response.json()["yaml_text"])
+        self.assertEqual(legacy_export_response.status_code, 200)
+        self.assertEqual(legacy_export_response.json()["manifest"]["format"], "legacy_runtime")
+        self.assertIn("subscript_rules", legacy_export_response.json()["yaml_text"])
+        audit_actions = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+        self.assertIn("term_rule_set.import", audit_actions)
+        self.assertIn("term_rule_set.export", audit_actions)
+
+    def test_term_rule_proposals_persist_and_approve_into_draft(self):
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        seed_yaml = (
+            "schema_version: 2\n"
+            "categories:\n"
+            "  voltage_terms:\n"
+            "    name: 电压相关\n"
+            "    priority: 10\n"
+            "    enabled: true\n"
+            "rules:\n"
+            "  - source_term: VOLD\n"
+            "    category: voltage_terms\n"
+            "    segments:\n"
+            "      - segment_text: V\n"
+            "        render_type: plain\n"
+            "      - segment_text: OLD\n"
+            "        render_type: subscript\n"
+            "    enabled: true\n"
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            seed_path = temp_root / "term_rules_seed.yaml"
+            seed_path.write_text(seed_yaml, encoding="utf-8")
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                term_rules_seed_path=str(seed_path),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                category_id = client.get("/api/v1/term-rule-categories").json()["items"][0]["id"]
+                create_response = client.post(
+                    "/api/v1/term-rule-proposals",
+                    headers=operator_headers,
+                    json={
+                        "intent": "create",
+                        "source_term": "VIN",
+                        "category_id": category_id,
+                        "segments": [
+                            {"segment_text": "V", "render_type": "plain"},
+                            {"segment_text": "IN", "render_type": "subscript"},
+                        ],
+                        "reason": "VIN should render with IN as subscript",
+                        "source_job_id": "docjob_source",
+                        "source_file_id": "file_source",
+                        "page_number": 3,
+                        "context_before": "input voltage",
+                        "context_after": "pin should render",
+                        "observed_term_rule_set_id": "electronics-default",
+                        "observed_term_rule_version": "seed",
+                    },
+                )
+                proposal_id = create_response.json()["id"]
+                my_list_response = client.get("/api/v1/term-rule-proposals", headers=operator_headers)
+                forbidden_list_response = client.get(
+                    "/api/v1/term-rule-proposals?scope=all",
+                    headers=operator_headers,
+                )
+                operator_approve_response = client.post(
+                    f"/api/v1/term-rule-proposals/{proposal_id}/approve",
+                    headers=operator_headers,
+                    json={"review_comment": "operator should not approve"},
+                )
+                approve_response = client.post(
+                    f"/api/v1/term-rule-proposals/{proposal_id}/approve",
+                    headers=admin_headers,
+                    json={"review_comment": "approved for draft"},
+                )
+                approved_unpublished_before_publish_response = client.get(
+                    "/api/v1/term-rule-proposals?scope=approved_unpublished",
+                    headers=admin_headers,
+                )
+                refreshed_response = client.get(
+                    f"/api/v1/term-rule-proposals/{proposal_id}",
+                    headers=operator_headers,
+                )
+                runtime_yaml_text = runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8")
+                draft_response = client.get("/api/v1/term-rule-sets/electronics-default/draft")
+                publish_response = client.post(
+                    "/api/v1/term-rule-sets/electronics-default/publish",
+                    headers=admin_headers,
+                    json={"make_default": True, "publish_reason": "publish approved VIN proposal"},
+                )
+                approved_unpublished_after_publish_response = client.get(
+                    "/api/v1/term-rule-proposals?scope=approved_unpublished",
+                    headers=admin_headers,
+                )
+                published_proposal_response = client.get(
+                    f"/api/v1/term-rule-proposals/{proposal_id}",
+                    headers=operator_headers,
+                )
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.json()["status"], "pending_review")
+        self.assertEqual(create_response.json()["created_by"], "user_operator")
+        self.assertEqual(create_response.json()["page_number"], 3)
+        self.assertEqual(create_response.json()["context_before"], "input voltage")
+        self.assertEqual(create_response.json()["context_after"], "pin should render")
+        self.assertEqual(create_response.json()["observed_term_rule_set_id"], "electronics-default")
+        self.assertEqual(create_response.json()["observed_term_rule_version"], "seed")
+        self.assertEqual(my_list_response.status_code, 200)
+        self.assertEqual(my_list_response.json()["total"], 1)
+        self.assertEqual(forbidden_list_response.status_code, 403)
+        self.assertEqual(operator_approve_response.status_code, 403)
+        self.assertEqual(approve_response.status_code, 200)
+        self.assertEqual(approve_response.json()["status"], "approved")
+        self.assertEqual(approve_response.json()["reviewed_by"], "user_admin")
+        self.assertEqual(approve_response.json()["merged_term_rule_set_id"], "electronics-default")
+        self.assertIsNotNone(approve_response.json()["merged_draft_snapshot_hash"])
+        self.assertEqual(approved_unpublished_before_publish_response.status_code, 200)
+        self.assertEqual(approved_unpublished_before_publish_response.json()["total"], 1)
+        self.assertEqual(refreshed_response.json()["status"], "approved")
+        self.assertIn("VIN", draft_response.json()["yaml_text"])
+        self.assertEqual(publish_response.status_code, 200)
+        self.assertEqual(approved_unpublished_after_publish_response.json()["total"], 0)
+        self.assertEqual(
+            published_proposal_response.json()["published_term_rule_set_version"],
+            publish_response.json()["version"],
+        )
+        stored = runtime.term_rule_proposal_service.get_proposal(proposal_id)
+        self.assertEqual(stored.status.value, "published")
+        self.assertEqual(stored.created_by, "user_operator")
+        self.assertEqual(stored.published_term_rule_set_version, publish_response.json()["version"])
+        audit_events = runtime.audit_event_repository.list_audit_events()
+        self.assertIn("term_rule_proposal.approve", [event.action for event in audit_events])
+
+    def test_term_rule_proposal_admin_can_approve_and_publish_default_version(self):
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        seed_yaml = (
+            "schema_version: 2\n"
+            "categories:\n"
+            "  voltage_terms:\n"
+            "    name: 电压相关\n"
+            "    priority: 10\n"
+            "    enabled: true\n"
+            "rules: []\n"
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            seed_path = temp_root / "term_rules_seed.yaml"
+            seed_path.write_text(seed_yaml, encoding="utf-8")
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                term_rules_seed_path=str(seed_path),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                category_id = client.get("/api/v1/term-rule-categories").json()["items"][0]["id"]
+                create_response = client.post(
+                    "/api/v1/term-rule-proposals",
+                    headers=operator_headers,
+                    json={
+                        "intent": "create",
+                        "source_term": "VFAST",
+                        "category_id": category_id,
+                        "segments": [
+                            {"segment_text": "V", "render_type": "plain"},
+                            {"segment_text": "FAST", "render_type": "subscript"},
+                        ],
+                        "reason": "missing term from job detail",
+                        "source_job_id": "docjob_source",
+                        "source_file_id": "file_source",
+                    },
+                )
+                proposal_id = create_response.json()["id"]
+                operator_publish_response = client.post(
+                    f"/api/v1/term-rule-proposals/{proposal_id}/approve-and-publish",
+                    headers=operator_headers,
+                    json={"review_comment": "operator should not publish"},
+                )
+                publish_response = client.post(
+                    f"/api/v1/term-rule-proposals/{proposal_id}/approve-and-publish",
+                    headers=admin_headers,
+                    json={
+                        "review_comment": "approved and publish now",
+                        "publish_reason": "publish urgent missing rule",
+                    },
+                )
+                detail_response = client.get("/api/v1/term-rule-sets/electronics-default")
+                refreshed_response = client.get(
+                    f"/api/v1/term-rule-proposals/{proposal_id}",
+                    headers=operator_headers,
+                )
+                runtime_yaml_text = runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8")
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(operator_publish_response.status_code, 403)
+        self.assertEqual(publish_response.status_code, 200)
+        self.assertEqual(publish_response.json()["status"], "published")
+        self.assertIsNotNone(publish_response.json()["published_term_rule_set_version"])
+        self.assertEqual(
+            publish_response.json()["published_term_rule_set_version"],
+            detail_response.json()["default_version"],
+        )
+        self.assertEqual(refreshed_response.json()["published_term_rule_set_id"], "electronics-default")
+        self.assertIn("VFAST", runtime_yaml_text)
+        self.assertTrue(
+            any(row["term_rule_set_id"] == "electronics-default" and row["source_term"] == "VFAST" for row in fake_mysql.term_rules.values())
+        )
+        audit_actions = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+        self.assertIn("term_rule_proposal.approve", audit_actions)
+        self.assertIn("term_rule_set.publish", audit_actions)
+
+    def test_term_rule_proposal_update_disable_snapshots_and_reject_reason(self):
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        seed_yaml = (
+            "schema_version: 2\n"
+            "categories:\n"
+            "  voltage_terms:\n"
+            "    name: 电压相关\n"
+            "    priority: 10\n"
+            "    enabled: true\n"
+            "rules:\n"
+            "  - source_term: VOLD\n"
+            "    category: voltage_terms\n"
+            "    segments:\n"
+            "      - segment_text: V\n"
+            "        render_type: plain\n"
+            "      - segment_text: OLD\n"
+            "        render_type: subscript\n"
+            "    enabled: true\n"
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            seed_path = temp_root / "term_rules_seed.yaml"
+            seed_path.write_text(seed_yaml, encoding="utf-8")
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                term_rules_seed_path=str(seed_path),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                category_id = client.get("/api/v1/term-rule-categories").json()["items"][0]["id"]
+                target_rule_id = client.get("/api/v1/term-rules?q=VOLD").json()["items"][0]["id"]
+                update_response = client.post(
+                    "/api/v1/term-rule-proposals",
+                    headers=operator_headers,
+                    json={
+                        "intent": "update",
+                        "target_rule_id": target_rule_id,
+                        "source_term": "VNEW",
+                        "category_id": category_id,
+                        "segments": [
+                            {"segment_text": "V", "render_type": "plain"},
+                            {"segment_text": "NEW", "render_type": "subscript"},
+                        ],
+                        "reason": "update VOLD display",
+                    },
+                )
+                disable_response = client.post(
+                    "/api/v1/term-rule-proposals",
+                    headers=operator_headers,
+                    json={
+                        "intent": "disable",
+                        "target_rule_id": target_rule_id,
+                        "reason": "disable obsolete VOLD",
+                    },
+                )
+                reject_without_reason_response = client.post(
+                    f"/api/v1/term-rule-proposals/{disable_response.json()['id']}/reject",
+                    headers=admin_headers,
+                    json={"review_comment": ""},
+                )
+                reject_response = client.post(
+                    f"/api/v1/term-rule-proposals/{disable_response.json()['id']}/reject",
+                    headers=admin_headers,
+                    json={"review_comment": "obsolete term should not change now"},
+                )
+
+        self.assertEqual(update_response.status_code, 201)
+        self.assertEqual(update_response.json()["intent"], "update")
+        self.assertEqual(update_response.json()["target_rule_id"], target_rule_id)
+        self.assertEqual(update_response.json()["target_rule_snapshot"]["id"], target_rule_id)
+        self.assertEqual(disable_response.status_code, 201)
+        self.assertEqual(disable_response.json()["intent"], "disable")
+        self.assertEqual(disable_response.json()["source_term"], "VOLD")
+        self.assertEqual(disable_response.json()["target_rule_snapshot"]["id"], target_rule_id)
+        self.assertEqual(reject_without_reason_response.status_code, 400)
+        self.assertEqual(reject_response.status_code, 200)
+        self.assertEqual(reject_response.json()["status"], "rejected")
+        self.assertEqual(reject_response.json()["review_comment"], "obsolete term should not change now")
+
+    def test_term_rule_proposal_update_conflict_keeps_pending_status(self):
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        seed_yaml = (
+            "schema_version: 2\n"
+            "categories:\n"
+            "  voltage_terms:\n"
+            "    name: 电压相关\n"
+            "    priority: 10\n"
+            "    enabled: true\n"
+            "rules:\n"
+            "  - source_term: VOLD\n"
+            "    category: voltage_terms\n"
+            "    segments:\n"
+            "      - segment_text: V\n"
+            "        render_type: plain\n"
+            "      - segment_text: OLD\n"
+            "        render_type: subscript\n"
+            "    enabled: true\n"
+        )
+        changed_yaml = seed_yaml.replace("VOLD", "VCHANGED").replace("OLD", "CHANGED")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            seed_path = temp_root / "term_rules_seed.yaml"
+            seed_path.write_text(seed_yaml, encoding="utf-8")
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                term_rules_seed_path=str(seed_path),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                category_id = client.get("/api/v1/term-rule-categories").json()["items"][0]["id"]
+                target_rule_id = client.get("/api/v1/term-rules?q=VOLD").json()["items"][0]["id"]
+                create_response = client.post(
+                    "/api/v1/term-rule-proposals",
+                    headers=operator_headers,
+                    json={
+                        "intent": "update",
+                        "target_rule_id": target_rule_id,
+                        "source_term": "VNEW",
+                        "category_id": category_id,
+                        "segments": [
+                            {"segment_text": "V", "render_type": "plain"},
+                            {"segment_text": "NEW", "render_type": "subscript"},
+                        ],
+                        "reason": "update VOLD display",
+                    },
+                )
+                proposal_id = create_response.json()["id"]
+                draft_mutation_response = client.put(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules",
+                    headers=admin_headers,
+                    json={"yaml_text": changed_yaml},
+                )
+                approve_response = client.post(
+                    f"/api/v1/term-rule-proposals/{proposal_id}/approve",
+                    headers=admin_headers,
+                    json={"review_comment": "try approve stale snapshot"},
+                )
+                refreshed_response = client.get(
+                    f"/api/v1/term-rule-proposals/{proposal_id}",
+                    headers=operator_headers,
+                )
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertIsNotNone(create_response.json()["target_rule_snapshot"])
+        self.assertEqual(draft_mutation_response.status_code, 200)
+        self.assertEqual(approve_response.status_code, 409)
+        self.assertIn("目标规则已发生变化", approve_response.json()["detail"])
+        self.assertEqual(refreshed_response.json()["status"], "pending_review")
 
     def test_term_rule_categories_export_and_simulate_are_available(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -3348,6 +4332,557 @@ class FastAPIJobsBackendTests(TestCase):
             self.assertIsNotNone(request.translation_trace_output)
             self.assertEqual(request.translation_model, "deepseek-v4-flash")
 
+    def test_translation_term_set_version_service_draft_publish_default_rollback_and_archive(self):
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            terms_path = temp_root / "translation_terms.csv"
+            terms_path.write_text(
+                "language_pair,source_term,target_term,version\n"
+                "en2zh,ADC,模数转换器,v1\n"
+                "en2zh,DAC,数模转换器,v1\n",
+                encoding="utf-8",
+            )
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                translation_terms_path=str(terms_path),
+            )
+            service = runtime.translation_term_set_version_service
+            self.assertIsNotNone(service)
+
+            draft = service.get_draft("translation-terms-en2zh")
+            self.assertEqual(draft.version, "draft")
+            self.assertEqual(draft.base_version, "v1")
+            self.assertEqual([entry.source_term for entry in draft.entries], ["ADC", "DAC"])
+            self.assertEqual(fake_mysql.translation_term_sets["translation-terms-en2zh"]["draft_version"], "draft")
+
+            edited_entries = list(draft.entries) + [
+                TranslationTermEntry(
+                    language_pair="en2zh",
+                    source_term="High Speed ADC",
+                    target_term="高速模数转换器",
+                    version="draft",
+                    priority=10,
+                )
+            ]
+            edited_draft = service.update_draft("translation-terms-en2zh", edited_entries)
+            publish_result = service.publish_draft(
+                "translation-terms-en2zh",
+                make_default=False,
+                published_by="admin",
+                release_note="add high speed adc",
+            )
+            published_version = publish_result.version.version
+            set_after_publish = runtime.persistence_adapters.translation_term_repository.get_set("translation-terms-en2zh")
+
+            self.assertRegex(published_version, r"^\d{8}-\d{6}-\d{3}$")
+            self.assertIn("overlapping_source_term", [item.code for item in edited_draft.validation.warnings])
+            self.assertIn("overlapping_source_term", [item.code for item in publish_result.validation.warnings])
+            self.assertEqual(publish_result.version.status, "published")
+            self.assertEqual(publish_result.version.published_by, "admin")
+            self.assertEqual(publish_result.version.release_note, "add high speed adc")
+            self.assertEqual(set_after_publish.default_version, "v1")
+            self.assertIsNone(set_after_publish.draft_version)
+
+            service.set_default_version("translation-terms-en2zh", published_version)
+            set_after_default = runtime.persistence_adapters.translation_term_repository.get_set("translation-terms-en2zh")
+            versions_before_rollback = runtime.persistence_adapters.translation_term_repository.list_versions("translation-terms-en2zh")
+            service.rollback("translation-terms-en2zh", "v1")
+            set_after_rollback = runtime.persistence_adapters.translation_term_repository.get_set("translation-terms-en2zh")
+            versions_after_rollback = runtime.persistence_adapters.translation_term_repository.list_versions("translation-terms-en2zh")
+            archived = service.archive("translation-terms-en2zh", published_version)
+
+        self.assertEqual(set_after_default.default_version, published_version)
+        self.assertEqual(set_after_rollback.default_version, "v1")
+        self.assertEqual([item.version for item in versions_after_rollback], [item.version for item in versions_before_rollback])
+        self.assertEqual(archived.status, "archived")
+        with self.assertRaises(ValueError):
+            service.set_default_version("translation-terms-en2zh", published_version)
+        with self.assertRaises(ValueError):
+            service.archive("translation-terms-en2zh", "v1")
+
+    def test_translation_term_set_version_service_blocks_errors_and_reports_warnings(self):
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            terms_path = temp_root / "translation_terms.csv"
+            terms_path.write_text(
+                "language_pair,source_term,target_term,version\n"
+                "en2zh,ADC,模数转换器,v1\n",
+                encoding="utf-8",
+            )
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                translation_terms_path=str(terms_path),
+            )
+            service = runtime.translation_term_set_version_service
+            draft = service.get_draft("translation-terms-en2zh")
+
+            duplicate_entries = list(draft.entries) + [
+                TranslationTermEntry(
+                    language_pair="en2zh",
+                    source_term=" adc ",
+                    target_term="重复项",
+                    version="draft",
+                )
+            ]
+            empty_target_entries = [
+                TranslationTermEntry(
+                    language_pair="en2zh",
+                    source_term="FPGA",
+                    target_term=" ",
+                    version="draft",
+                )
+            ]
+            missing_change_report = service.validate_changes(
+                list(draft.entries),
+                [
+                    TranslationTermProposalChangeRecord(
+                        proposal_id="proposal_1",
+                        seq=1,
+                        action="update",
+                        source_term="FPGA",
+                        target_term="现场可编程门阵列",
+                    ),
+                    TranslationTermProposalChangeRecord(
+                        proposal_id="proposal_1",
+                        seq=2,
+                        action="delete",
+                        source_term="DSP",
+                    ),
+                ],
+                observed_version="old-version",
+                current_version="v1",
+            )
+            no_change_report = service.validate_changes(
+                list(draft.entries),
+                [
+                    TranslationTermProposalChangeRecord(
+                        proposal_id="proposal_2",
+                        seq=1,
+                        action="update",
+                        source_term="ADC",
+                        target_term="模数转换器",
+                    ),
+                ],
+            )
+            no_change_entry_report = service.validate_entries(list(draft.entries), base_entries=list(draft.entries))
+
+        with self.assertRaises(ValueError):
+            service.update_draft("translation-terms-en2zh", duplicate_entries)
+        with self.assertRaises(ValueError):
+            service.update_draft("translation-terms-en2zh", empty_target_entries)
+        self.assertEqual(
+            [item.code for item in missing_change_report.errors],
+            ["update_missing_term", "delete_missing_term"],
+        )
+        self.assertEqual([item.code for item in missing_change_report.warnings], ["stale_observed_version"])
+        self.assertEqual([item.code for item in no_change_report.warnings], ["no_actual_changes"])
+        self.assertEqual([item.code for item in no_change_entry_report.warnings], ["no_actual_changes"])
+
+    def test_translation_term_set_import_export_api_reports_duplicates_and_exports_manifest(self):
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            terms_path = temp_root / "translation_terms.csv"
+            terms_path.write_text(
+                "language_pair,source_term,target_term,version\n"
+                "en2zh,ADC,模数转换器,v1\n",
+                encoding="utf-8",
+            )
+            csv_with_duplicate = (
+                "language_pair,source_term,target_term,version,case_sensitive,status,priority,domain,category,note\n"
+                "en2zh,FPGA,现场可编程门阵列,draft,false,active,5,electronics,chip,first\n"
+                "en2zh, fpga ,重复项,draft,false,active,9,electronics,chip,duplicate\n"
+            )
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                admin_token="secret-admin",
+                jobs_repository_backend="mysql",
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                translation_terms_path=str(terms_path),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                reject_response = client.post(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/import",
+                    json={"csv_text": csv_with_duplicate},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                import_response = client.post(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/import",
+                    json={
+                        "csv_text": csv_with_duplicate,
+                        "dedupe": "keep_first",
+                    },
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                published = runtime.translation_term_set_version_service.publish_draft(
+                    "translation-terms-en2zh",
+                    make_default=False,
+                    published_by="admin",
+                    release_note="publish imported csv",
+                )
+                default_export_response = client.get(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/export",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                version_export_response = client.get(
+                    f"/api/v1/translation-term-sets/translation-terms-en2zh/export?version={published.version.version}",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+
+        self.assertEqual(reject_response.status_code, 400)
+        self.assertIn("重复 normalized_source_term", reject_response.json()["detail"])
+        self.assertEqual(import_response.status_code, 200)
+        self.assertEqual(import_response.json()["version"], "draft")
+        self.assertEqual(import_response.json()["term_count"], 1)
+        self.assertEqual(import_response.json()["import_report"]["duplicate_rows"], 1)
+        self.assertEqual(import_response.json()["import_report"]["duplicates"][0]["normalized_source_term"], "fpga")
+        self.assertEqual(default_export_response.status_code, 200)
+        self.assertEqual(default_export_response.json()["manifest"]["version"], "v1")
+        self.assertIn("ADC", default_export_response.json()["csv_text"])
+        self.assertEqual(version_export_response.status_code, 200)
+        self.assertEqual(version_export_response.json()["manifest"]["version"], published.version.version)
+        self.assertEqual(version_export_response.json()["manifest"]["format"], "csv")
+        self.assertEqual(version_export_response.json()["manifest"]["exported_by"], "admin")
+        self.assertIn("FPGA", version_export_response.json()["csv_text"])
+        self.assertNotIn("重复项", version_export_response.json()["csv_text"])
+        audit_actions = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+        self.assertIn("translation_term_set.import", audit_actions)
+        self.assertIn("translation_term_set.export", audit_actions)
+
+    def test_translation_term_proposals_approve_batch_changes_into_draft_and_reject(self):
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            terms_path = temp_root / "translation_terms.csv"
+            terms_path.write_text(
+                "language_pair,source_term,target_term,version\n"
+                "en2zh,ADC,模数转换器,v1\n"
+                "en2zh,DAC,数模转换器,v1\n",
+                encoding="utf-8",
+            )
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                translation_terms_path=str(terms_path),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                create_response = client.post(
+                    "/api/v1/translation-term-proposals",
+                    headers=operator_headers,
+                    json={
+                        "language_pair": "en2zh",
+                        "source_job_id": "docjob_source",
+                        "source_file_id": "file_source",
+                        "observed_translation_term_version": "v1",
+                        "changes": [
+                            {
+                                "action": "add",
+                                "source_term": "FPGA",
+                                "target_term": "现场可编程门阵列",
+                                "priority": 5,
+                                "domain": "electronics",
+                            },
+                            {
+                                "action": "update",
+                                "source_term": "ADC",
+                                "target_term": "模拟数字转换器",
+                                "note": "operator correction",
+                            },
+                        ],
+                    },
+                )
+                proposal_id = create_response.json()["id"]
+                my_list_response = client.get("/api/v1/translation-term-proposals", headers=operator_headers)
+                forbidden_list_response = client.get(
+                    "/api/v1/translation-term-proposals?scope=all",
+                    headers=operator_headers,
+                )
+                operator_approve_response = client.post(
+                    f"/api/v1/translation-term-proposals/{proposal_id}/approve",
+                    headers=operator_headers,
+                    json={"review_note": "operator should not approve"},
+                )
+                approve_response = client.post(
+                    f"/api/v1/translation-term-proposals/{proposal_id}/approve",
+                    headers=admin_headers,
+                    json={"review_note": "approved for draft"},
+                )
+                reject_create_response = client.post(
+                    "/api/v1/translation-term-proposals",
+                    headers=operator_headers,
+                    json={
+                        "language_pair": "en2zh",
+                        "changes": [
+                            {
+                                "action": "delete",
+                                "source_term": "DAC",
+                            }
+                        ],
+                    },
+                )
+                reject_without_note_response = client.post(
+                    f"/api/v1/translation-term-proposals/{reject_create_response.json()['id']}/reject",
+                    headers=admin_headers,
+                    json={"review_note": ""},
+                )
+                reject_response = client.post(
+                    f"/api/v1/translation-term-proposals/{reject_create_response.json()['id']}/reject",
+                    headers=admin_headers,
+                    json={"review_note": "keep DAC for now"},
+                )
+                draft = runtime.translation_term_set_version_service.get_draft("translation-terms-en2zh")
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.json()["status"], "pending")
+        self.assertEqual(create_response.json()["submitted_by"], "user_operator")
+        self.assertEqual(create_response.json()["source_job_id"], "docjob_source")
+        self.assertEqual(create_response.json()["source_file_id"], "file_source")
+        self.assertEqual(create_response.json()["observed_translation_term_set_id"], "translation-terms-en2zh")
+        self.assertEqual(create_response.json()["observed_translation_term_version"], "v1")
+        self.assertEqual([item["action"] for item in create_response.json()["changes"]], ["add", "update"])
+        self.assertEqual(my_list_response.status_code, 200)
+        self.assertEqual(my_list_response.json()["total"], 1)
+        self.assertEqual(forbidden_list_response.status_code, 403)
+        self.assertEqual(operator_approve_response.status_code, 403)
+        self.assertEqual(approve_response.status_code, 200)
+        self.assertEqual(approve_response.json()["status"], "approved")
+        self.assertEqual(approve_response.json()["reviewed_by"], "user_admin")
+        draft_by_source = {entry.source_term: entry for entry in draft.entries}
+        self.assertEqual(draft_by_source["ADC"].target_term, "模拟数字转换器")
+        self.assertEqual(draft_by_source["FPGA"].target_term, "现场可编程门阵列")
+        self.assertEqual(reject_without_note_response.status_code, 400)
+        self.assertEqual(reject_response.status_code, 200)
+        self.assertEqual(reject_response.json()["status"], "rejected")
+        audit_actions = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+        self.assertIn("translation_term_proposal.create", audit_actions)
+        self.assertIn("translation_term_proposal.approve", audit_actions)
+        self.assertIn("translation_term_proposal.reject", audit_actions)
+        self.assertIn("translation_term_set.draft_update", audit_actions)
+
+    def test_translation_term_proposal_approve_and_publish_sets_default_and_conflict_blocks_merge(self):
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            terms_path = temp_root / "translation_terms.csv"
+            terms_path.write_text(
+                "language_pair,source_term,target_term,version\n"
+                "en2zh,ADC,模数转换器,v1\n",
+                encoding="utf-8",
+            )
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                translation_terms_path=str(terms_path),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                publish_create_response = client.post(
+                    "/api/v1/translation-term-proposals",
+                    headers=operator_headers,
+                    json={
+                        "language_pair": "en2zh",
+                        "changes": [
+                            {
+                                "action": "add",
+                                "source_term": "FPGA",
+                                "target_term": "现场可编程门阵列",
+                            }
+                        ],
+                    },
+                )
+                proposal_id = publish_create_response.json()["id"]
+                operator_publish_response = client.post(
+                    f"/api/v1/translation-term-proposals/{proposal_id}/approve-and-publish",
+                    headers=operator_headers,
+                    json={"review_note": "operator should not publish"},
+                )
+                publish_response = client.post(
+                    f"/api/v1/translation-term-proposals/{proposal_id}/approve-and-publish",
+                    headers=admin_headers,
+                    json={
+                        "review_note": "approved and publish now",
+                        "release_note": "add FPGA term",
+                    },
+                )
+                stale_create_response = client.post(
+                    "/api/v1/translation-term-proposals",
+                    headers=operator_headers,
+                    json={
+                        "language_pair": "en2zh",
+                        "observed_translation_term_version": "v1",
+                        "changes": [
+                            {
+                                "action": "update",
+                                "source_term": "ADC",
+                                "target_term": "模拟数字转换器",
+                            }
+                        ],
+                    },
+                )
+                draft = runtime.translation_term_set_version_service.get_draft("translation-terms-en2zh")
+                runtime.translation_term_set_version_service.update_draft(
+                    "translation-terms-en2zh",
+                    [
+                        TranslationTermEntry(
+                            language_pair="en2zh",
+                            source_term="ADC",
+                            target_term="另一个译文",
+                            version="draft",
+                        )
+                    ],
+                )
+                conflict_response = client.post(
+                    f"/api/v1/translation-term-proposals/{stale_create_response.json()['id']}/approve",
+                    headers=admin_headers,
+                    json={"review_note": "try stale update"},
+                )
+                refreshed_conflict_response = client.get(
+                    f"/api/v1/translation-term-proposals/{stale_create_response.json()['id']}",
+                    headers=operator_headers,
+                )
+                term_set = runtime.persistence_adapters.translation_term_repository.get_set("translation-terms-en2zh")
+
+        self.assertEqual(publish_create_response.status_code, 201)
+        self.assertEqual(operator_publish_response.status_code, 403)
+        self.assertEqual(publish_response.status_code, 200)
+        self.assertEqual(publish_response.json()["status"], "published")
+        self.assertEqual(publish_response.json()["published_translation_term_set_id"], "translation-terms-en2zh")
+        self.assertIsNotNone(publish_response.json()["published_translation_term_version"])
+        self.assertEqual(term_set.default_version, publish_response.json()["published_translation_term_version"])
+        self.assertIn("FPGA", [row["source_term"] for row in fake_mysql.translation_terms.values()])
+        self.assertEqual(stale_create_response.status_code, 201)
+        self.assertEqual(conflict_response.status_code, 409)
+        self.assertEqual(conflict_response.json()["detail"]["code"], "translation_term_proposal_conflict")
+        self.assertIn("已被其他变更修改", conflict_response.json()["detail"]["conflicts"][0])
+        self.assertEqual(refreshed_conflict_response.json()["status"], "pending")
+        audit_actions = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+        self.assertIn("translation_term_proposal.approve_and_publish", audit_actions)
+        self.assertIn("translation_term_set.publish", audit_actions)
+
+    def test_translation_term_proposal_publish_changes_new_job_default_not_existing_job(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            terms_path = temp_root / "translation_terms.csv"
+            terms_path.write_text(
+                "language_pair,source_term,target_term,version\n"
+                "en2zh,ADC,模数转换器,v1\n",
+                encoding="utf-8",
+            )
+            runtime = build_mysql_test_runtime(
+                temp_root,
+                admin_token="secret-admin",
+                openai_api_key="fake-key",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                translation_terms_path=str(terms_path),
+            )
+            publish_default_job_resources(runtime, include_translation=True)
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                old_job_response = client.post(
+                    "/api/v1/jobs",
+                    headers=operator_headers,
+                    files={"package": ("old.zip", make_zip_bytes(), "application/zip")},
+                    data={"translation_mode": "en2zh"},
+                )
+                old_job_id = old_job_response.json()["job_id"]
+                old_snapshot = old_job_response.json()["resource_snapshot"]
+                proposal_response = client.post(
+                    "/api/v1/translation-term-proposals",
+                    headers=operator_headers,
+                    json={
+                        "language_pair": "en2zh",
+                        "source_job_id": old_job_id,
+                        "source_file_id": old_snapshot["artifact_ids"]["source"],
+                        "observed_translation_term_set_id": old_snapshot["translation_term_set"]["set_id"],
+                        "observed_translation_term_version": old_snapshot["translation_term_set"]["version"],
+                        "changes": [
+                            {
+                                "action": "add",
+                                "source_term": "FPGA",
+                                "target_term": "现场可编程门阵列",
+                                "priority": 5,
+                            }
+                        ],
+                    },
+                )
+                publish_response = client.post(
+                    f"/api/v1/translation-term-proposals/{proposal_response.json()['id']}/approve-and-publish",
+                    headers=admin_headers,
+                    json={
+                        "review_note": "publish for new jobs",
+                        "release_note": "add FPGA default term",
+                    },
+                )
+                new_job_response = client.post(
+                    "/api/v1/jobs",
+                    headers=operator_headers,
+                    files={"package": ("new.zip", make_zip_bytes(), "application/zip")},
+                    data={"translation_mode": "en2zh"},
+                )
+                old_detail_after_publish = client.get(f"/api/v1/jobs/{old_job_id}", headers=operator_headers)
+
+        self.assertEqual(old_job_response.status_code, 201)
+        self.assertEqual(old_snapshot["translation_term_set"]["version"], "v1")
+        self.assertEqual(proposal_response.status_code, 201)
+        self.assertEqual(proposal_response.json()["source_job_id"], old_job_id)
+        self.assertEqual(publish_response.status_code, 200)
+        published_version = publish_response.json()["published_translation_term_version"]
+        self.assertNotEqual(published_version, "v1")
+        self.assertEqual(new_job_response.status_code, 201)
+        self.assertEqual(new_job_response.json()["resource_snapshot"]["translation_term_set"]["version"], published_version)
+        self.assertEqual(
+            old_detail_after_publish.json()["resource_snapshot"]["translation_term_set"]["version"],
+            "v1",
+        )
+        term_set = runtime.persistence_adapters.translation_term_repository.get_set("translation-terms-en2zh")
+        self.assertEqual(term_set.default_version, published_version)
+
     def test_translation_profile_versioning_overrides_en2zh_request_and_records_trace(self):
         from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
 
@@ -3493,6 +5028,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIsNone(accepted_snapshot["mineru"]["model_version"])
         self.assertEqual(detail_snapshot, accepted_snapshot)
         self.assertEqual(request.template_path, template_path)
+        self.assertEqual(request.layout_config_path, runtime.settings.layout_config_path)
         self.assertEqual(request.subscript_config_path, job_paths.resource_subscript_config)
         self.assertTrue(resource_subscript_config_exists)
         self.assertIn(source_term, resource_subscript_config_text)
@@ -3521,6 +5057,8 @@ class FastAPIJobsBackendTests(TestCase):
 
         self.assertEqual(snapshot["translation_profile"]["resource_id"], DEFAULT_TRANSLATION_PROFILE_ID)
         self.assertEqual(snapshot["translation_profile"]["version"], "1")
+        self.assertEqual(snapshot["translation_term_set"]["set_id"], "translation-terms-en2zh")
+        self.assertEqual(snapshot["translation_term_set"]["version"], "v1")
         self.assertEqual(detail["resource_snapshot"], snapshot)
         self.assertEqual(request.translation_model, "snapshot-model-v1")
         self.assertEqual(request.translation_target_language, "zh-CN")
@@ -3530,6 +5068,57 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(request.translation_max_chars, 1234)
         self.assertIsNotNone(request.translation_profile)
         self.assertEqual(request.translation_profile.version, "1")
+        self.assertIsNotNone(request.translation_term_version)
+        self.assertEqual(request.translation_term_version.version, "v1")
+
+    def test_operator_cannot_select_term_asset_versions_but_admin_can_bind_published_history(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(
+                Path(temp_dir),
+                admin_token="secret-admin",
+                openai_api_key="fake-key",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            publish_default_job_resources(runtime, include_translation=True)
+            publish_term_rule_resource_version(runtime, version="2", source_term="VTWO", make_default=True)
+            new_term_version = publish_translation_term_set_version(
+                runtime,
+                source_term="FPGA",
+                target_term="现场可编程门阵列",
+                make_default=True,
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_response = client.post(
+                    "/api/v1/jobs",
+                    headers=operator_headers,
+                    files={"package": ("mineru-output.zip", make_zip_bytes(), "application/zip")},
+                    data={"translation_mode": "direct", "term_rule_set_version": "1"},
+                )
+                admin_response = client.post(
+                    "/api/v1/jobs",
+                    headers=admin_headers,
+                    files={"package": ("mineru-output.zip", make_zip_bytes(), "application/zip")},
+                    data={
+                        "translation_mode": "en2zh",
+                        "term_rule_set_version": "1",
+                        "translation_term_version": "v1",
+                    },
+                )
+
+        self.assertEqual(operator_response.status_code, 403)
+        self.assertIn("operator 不能选择术语资产历史版本", operator_response.json()["detail"])
+        self.assertNotEqual(new_term_version, "v1")
+        self.assertEqual(admin_response.status_code, 201)
+        snapshot = admin_response.json()["resource_snapshot"]
+        self.assertEqual(snapshot["term_rule_set"]["version"], "1")
+        self.assertEqual(snapshot["translation_term_set"]["version"], "v1")
+        request = runtime.stage_service.conversion_entrypoint.requests[0]
+        self.assertIsNotNone(request.translation_term_version)
+        self.assertEqual(request.translation_term_version.version, "v1")
 
     def test_mysql_default_switch_and_disabled_versions_do_not_change_existing_job_snapshot(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -3572,6 +5161,147 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(request.template_path, template_v1)
         self.assertIn("VONE", materialized_yaml)
         self.assertNotIn("VTWO", materialized_yaml)
+
+    def test_retry_term_asset_binding_keeps_original_latest_or_admin_selected_history(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(
+                Path(temp_dir),
+                admin_token="secret-admin",
+                openai_api_key="fake-key",
+            )
+            publish_default_job_resources(runtime, include_translation=True)
+            runtime.stage_service.conversion_entrypoint.raise_error = True
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                first_response = client.post(
+                    "/api/v1/jobs",
+                    files={"package": ("first.zip", make_zip_bytes(), "application/zip")},
+                    data={"translation_mode": "en2zh"},
+                )
+                second_response = client.post(
+                    "/api/v1/jobs",
+                    files={"package": ("second.zip", make_zip_bytes(), "application/zip")},
+                    data={"translation_mode": "en2zh"},
+                )
+                self.assertEqual(first_response.status_code, 201)
+                self.assertEqual(second_response.status_code, 201)
+                first_job_id = first_response.json()["job_id"]
+                second_job_id = second_response.json()["job_id"]
+                self.assertEqual(client.get(f"/api/v1/jobs/{first_job_id}").json()["status"], "failed")
+                self.assertEqual(client.get(f"/api/v1/jobs/{second_job_id}").json()["status"], "failed")
+
+                publish_term_rule_resource_version(runtime, version="2", source_term="VTWO", make_default=True)
+                latest_term_version = publish_translation_term_set_version(
+                    runtime,
+                    source_term="FPGA",
+                    target_term="现场可编程门阵列",
+                    make_default=True,
+                )
+
+                third_response = client.post(
+                    "/api/v1/jobs",
+                    files={"package": ("third.zip", make_zip_bytes(), "application/zip")},
+                    data={"translation_mode": "en2zh"},
+                )
+                self.assertEqual(third_response.status_code, 201)
+                third_job_id = third_response.json()["job_id"]
+                self.assertEqual(client.get(f"/api/v1/jobs/{third_job_id}").json()["status"], "failed")
+
+                runtime.stage_service.conversion_entrypoint.raise_error = False
+                keep_original_response = client.post(
+                    f"/api/v1/jobs/{first_job_id}/retry",
+                    data={"reason": "keep original"},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                latest_response = client.post(
+                    f"/api/v1/jobs/{second_job_id}/retry",
+                    data={"reason": "use latest", "use_latest_term_assets": "true"},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                history_response = client.post(
+                    f"/api/v1/jobs/{third_job_id}/retry",
+                    data={
+                        "reason": "use history",
+                        "term_rule_set_version": "1",
+                        "translation_term_version": "v1",
+                    },
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+
+        self.assertEqual(keep_original_response.status_code, 200)
+        self.assertEqual(latest_response.status_code, 200)
+        self.assertEqual(history_response.status_code, 200)
+        first_job = runtime.job_repository.get_job(first_job_id)
+        second_job = runtime.job_repository.get_job(second_job_id)
+        third_job = runtime.job_repository.get_job(third_job_id)
+        self.assertIsNotNone(first_job)
+        self.assertIsNotNone(second_job)
+        self.assertIsNotNone(third_job)
+        self.assertEqual(first_job.resource_snapshot.term_rule_set.version, "1")
+        self.assertEqual(first_job.resource_snapshot.translation_term_set.version, "v1")
+        self.assertEqual(second_job.resource_snapshot.term_rule_set.version, "2")
+        self.assertEqual(second_job.resource_snapshot.translation_term_set.version, latest_term_version)
+        self.assertEqual(third_job.resource_snapshot.term_rule_set.version, "1")
+        self.assertEqual(third_job.resource_snapshot.translation_term_set.version, "v1")
+        requests = runtime.stage_service.conversion_entrypoint.requests
+        self.assertEqual([request.job_id for request in requests], [first_job_id, second_job_id, third_job_id])
+        self.assertEqual(requests[0].translation_term_version.version, "v1")
+        self.assertEqual(requests[1].translation_term_version.version, latest_term_version)
+        self.assertEqual(requests[2].translation_term_version.version, "v1")
+
+    def test_translation_term_set_rollback_changes_default_pointer_not_existing_jobs(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            terms_path = temp_root / "translation_terms.csv"
+            terms_path.write_text(
+                "language_pair,source_term,target_term,version\n"
+                "en2zh,ADC,模数转换器,v1\n",
+                encoding="utf-8",
+            )
+            runtime = build_mysql_test_runtime(
+                temp_root,
+                admin_token="secret-admin",
+                openai_api_key="fake-key",
+                translation_terms_path=str(terms_path),
+            )
+            publish_default_job_resources(runtime, include_translation=True)
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                first_response = client.post(
+                    "/api/v1/jobs",
+                    files={"package": ("first.zip", make_zip_bytes(), "application/zip")},
+                    data={"translation_mode": "en2zh"},
+                )
+                latest_version = publish_translation_term_set_version(
+                    runtime,
+                    source_term="FPGA",
+                    target_term="现场可编程门阵列",
+                    make_default=True,
+                )
+                second_response = client.post(
+                    "/api/v1/jobs",
+                    files={"package": ("second.zip", make_zip_bytes(), "application/zip")},
+                    data={"translation_mode": "en2zh"},
+                )
+                runtime.translation_term_set_version_service.rollback("translation-terms-en2zh", "v1")
+                third_response = client.post(
+                    "/api/v1/jobs",
+                    files={"package": ("third.zip", make_zip_bytes(), "application/zip")},
+                    data={"translation_mode": "en2zh"},
+                )
+                first_detail = client.get(f"/api/v1/jobs/{first_response.json()['job_id']}")
+                second_detail = client.get(f"/api/v1/jobs/{second_response.json()['job_id']}")
+
+        self.assertEqual(first_response.status_code, 201)
+        self.assertEqual(second_response.status_code, 201)
+        self.assertEqual(third_response.status_code, 201)
+        self.assertEqual(first_response.json()["resource_snapshot"]["translation_term_set"]["version"], "v1")
+        self.assertEqual(second_response.json()["resource_snapshot"]["translation_term_set"]["version"], latest_version)
+        self.assertEqual(third_response.json()["resource_snapshot"]["translation_term_set"]["version"], "v1")
+        self.assertEqual(first_detail.json()["resource_snapshot"]["translation_term_set"]["version"], "v1")
+        self.assertEqual(second_detail.json()["resource_snapshot"]["translation_term_set"]["version"], latest_version)
+        term_set = runtime.persistence_adapters.translation_term_repository.get_set("translation-terms-en2zh")
+        self.assertEqual(term_set.default_version, "v1")
 
     def test_mysql_snapshot_hash_mismatch_fails_stage_without_live_fallback(self):
         with tempfile.TemporaryDirectory() as temp_dir:

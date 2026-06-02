@@ -19,6 +19,8 @@ from app.domains.files.schemas import DocumentFileResponse
 from app.domains.jobs.models import utc_now
 from app.core.runtime import AppRuntime
 from app.domains.document_jobs.schemas import (
+    DocumentJobArchiveResponse,
+    DocumentJobCancelResponse,
     DocumentJobCreateRequest,
     DocumentJobCreateResponse,
     DocumentJobDownloadUrlResponse,
@@ -49,6 +51,10 @@ def create_document_job(
         document_language=payload.document_language,
         template_version_id=payload.template_version_id,
         term_version_id=payload.term_version_id,
+        term_rule_set_id=payload.term_rule_set_id,
+        term_rule_set_version=payload.term_rule_set_version,
+        translation_term_set_id=payload.translation_term_set_id,
+        translation_term_version=payload.translation_term_version,
         debug_full_text=payload.debug_full_text,
         trace_id=trace_id,
     )
@@ -126,6 +132,11 @@ def retry_document_job(
         job_id,
         user=user,
         reason=reason,
+        use_latest_term_assets=payload.use_latest_term_assets if payload is not None else False,
+        term_rule_set_id=payload.term_rule_set_id if payload is not None else None,
+        term_rule_set_version=payload.term_rule_set_version if payload is not None else None,
+        translation_term_set_id=payload.translation_term_set_id if payload is not None else None,
+        translation_term_version=payload.translation_term_version if payload is not None else None,
         trace_id=trace_id,
     )
     runtime.audit_service.record(
@@ -142,6 +153,52 @@ def retry_document_job(
         stage=job.stage,
         progress=job.progress,
         retry_count=job.retry_count,
+        job=_build_document_job_response(job),
+    )
+
+
+@router.post("/{job_id}/cancel", response_model=DocumentJobCancelResponse)
+def cancel_document_job(
+    job_id: str,
+    runtime: AppRuntime = Depends(get_runtime),
+    user: AuthenticatedUser = Depends(require_current_user),
+    trace_id: str = Depends(get_trace_id),
+) -> DocumentJobCancelResponse:
+    job = runtime.document_job_service.cancel_job(job_id, user=user, trace_id=trace_id)
+    runtime.audit_service.record(
+        actor=_actor_from_user(user),
+        action="document_job.cancel",
+        target_type="document_job",
+        target_id=job.id,
+        trace_id=trace_id,
+    )
+    return DocumentJobCancelResponse(
+        job_id=job.id,
+        status=job.status,
+        stage=job.stage,
+        canceled_at=job.canceled_at,
+        job=_build_document_job_response(job),
+    )
+
+
+@router.delete("/{job_id}", response_model=DocumentJobArchiveResponse)
+def archive_document_job(
+    job_id: str,
+    runtime: AppRuntime = Depends(get_runtime),
+    user: AuthenticatedUser = Depends(require_current_user),
+    trace_id: str = Depends(get_trace_id),
+) -> DocumentJobArchiveResponse:
+    job = runtime.document_job_service.archive_job(job_id, user=user, trace_id=trace_id)
+    runtime.audit_service.record(
+        actor=_actor_from_user(user),
+        action="document_job.archive",
+        target_type="document_job",
+        target_id=job.id,
+        trace_id=trace_id,
+    )
+    return DocumentJobArchiveResponse(
+        job_id=job.id,
+        archived_at=job.archived_at,
         job=_build_document_job_response(job),
     )
 

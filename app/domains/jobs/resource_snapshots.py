@@ -8,15 +8,26 @@ from typing import Literal
 
 from app.conversion.runtime import translation_runtime
 from app.core.config import Settings
-from app.domains.jobs.models import ConversionOptions, JobMineruSnapshot, JobRecord, JobResourceSnapshot
+from app.domains.jobs.models import (
+    ConversionOptions,
+    JobMineruSnapshot,
+    JobRecord,
+    JobResourceSnapshot,
+    ResolvedTranslationTermVersion,
+)
 from app.domains.jobs.paths import JobPaths
 from app.domains.resources.models import ResolvedResourceVersion, ResourceType, ResourceVersionRecord, ResourceVersionStatus
 from app.domains.term_rules.models import TermRulesStore
-from app.domains.translation.models import TranslationProfileSnapshot
+from app.domains.translation.models import (
+    TermVersionSnapshot,
+    TranslationProfileSnapshot,
+    derive_translation_term_set_id,
+)
 from app.domains.resources.service import ResourceVersionService
 from app.domains.term_rules.yaml_codec import TermRuleYamlCodec
 from app.domains.term_rules.versioning_service import DEFAULT_TERM_RULE_SET_ID
 from app.domains.translation.profiles_service import DEFAULT_TRANSLATION_PROFILE_ID
+from app.domains.translation.repository import TranslationTermRepositoryProtocol
 
 
 SourceKind = Literal["mineru_package", "source_pdf"]
@@ -35,8 +46,10 @@ class JobResourceSnapshotError(RuntimeError):
 @dataclass(frozen=True, slots=True)
 class MaterializedJobResources:
     template_path: Path | None
+    layout_config_path: Path | None
     subscript_config_path: Path | None
     translation_profile: TranslationProfileSnapshot | None
+    translation_term_version: TermVersionSnapshot | None
 
 
 class JobResourceSnapshotService:
@@ -46,9 +59,11 @@ class JobResourceSnapshotService:
         self,
         settings: Settings,
         resource_version_service: ResourceVersionService | None,
+        translation_term_repository: TranslationTermRepositoryProtocol | None = None,
     ) -> None:
         self.settings = settings
         self.resource_version_service = resource_version_service
+        self.translation_term_repository = translation_term_repository
         self.term_rule_yaml_codec = TermRuleYamlCodec()
 
     def build_snapshot(
@@ -76,19 +91,69 @@ class JobResourceSnapshotService:
             version=options.term_rule_set_version,
             default_missing_status=409,
         )
+        translation_term_set = self._resolve_translation_term_set(options)
         translation_profile = self._resolve_translation_profile(options)
         return JobResourceSnapshot(
             template=template,
             term_rule_set=term_rule_set,
+            translation_term_set=translation_term_set,
             translation_profile=translation_profile,
             mineru=self._build_mineru_snapshot(source_kind=source_kind, job_id=job_id),
             artifact_ids={"source": "source_pdf" if source_kind == "source_pdf" else "source_package"},
         )
 
+    def rebind_term_assets(
+        self,
+        *,
+        job: JobRecord,
+        options: ConversionOptions,
+        use_latest_defaults: bool,
+    ) -> JobResourceSnapshot | None:
+        """为 retry 重绑术语资产；默认路径保留原 job snapshot。"""
+
+        if not use_latest_defaults and not self._has_term_asset_selection(options):
+            return job.resource_snapshot
+        if job.resource_snapshot is None:
+            return self.build_snapshot(options=options, source_kind=job.source_kind, job_id=job.id)
+        if self.resource_version_service is None:
+            self._ensure_no_versioned_selection(options)
+            return job.resource_snapshot
+
+        next_term_rule_set = job.resource_snapshot.term_rule_set
+        if use_latest_defaults or self._has_term_rule_selection(options):
+            term_rule_set_id = (
+                self._optional_text(options.term_rule_set_id)
+                or (job.resource_snapshot.term_rule_set.resource_id if job.resource_snapshot.term_rule_set is not None else None)
+                or DEFAULT_TERM_RULE_SET_ID
+            )
+            next_term_rule_set = self._resolve_resource(
+                resource_type="term_rule_set",
+                resource_id=term_rule_set_id,
+                version=self._optional_text(options.term_rule_set_version) if not use_latest_defaults else None,
+                default_missing_status=409,
+            )
+
+        next_translation_term_set = job.resource_snapshot.translation_term_set
+        if use_latest_defaults or self._has_translation_term_selection(options):
+            next_translation_term_set = self._resolve_translation_term_set(options, use_default_version=use_latest_defaults)
+
+        return job.resource_snapshot.model_copy(
+            update={
+                "term_rule_set": next_term_rule_set,
+                "translation_term_set": next_translation_term_set,
+            }
+        )
+
     def materialize(self, job: JobRecord, job_paths: JobPaths) -> MaterializedJobResources:
         snapshot = job.resource_snapshot
         if snapshot is None:
-            return MaterializedJobResources(template_path=None, subscript_config_path=None, translation_profile=None)
+            return MaterializedJobResources(
+                template_path=None,
+                layout_config_path=None,
+                subscript_config_path=None,
+                translation_profile=None,
+                translation_term_version=None,
+            )
         if self.resource_version_service is None:
             raise JobResourceSnapshotError(
                 "当前 runtime 缺少 resource version service，无法物化 job resource snapshot。",
@@ -108,9 +173,15 @@ class JobResourceSnapshotService:
                 code="resource_snapshot_missing_term_rule_set",
             )
         template_path = self._materialize_template(snapshot.template)
+        layout_config_path = self._materialize_template_layout_config(snapshot.template)
         subscript_config_path = self._materialize_term_rule_set(snapshot.term_rule_set, job_paths)
         translation_profile = (
             self._materialize_translation_profile(snapshot.translation_profile)
+            if job.translation_mode == "en2zh"
+            else None
+        )
+        translation_term_version = (
+            self._materialize_translation_term_set(snapshot.translation_term_set)
             if job.translation_mode == "en2zh"
             else None
         )
@@ -120,10 +191,18 @@ class JobResourceSnapshotService:
                 status_code=409,
                 code="resource_snapshot_missing_translation_profile",
             )
+        if job.translation_mode == "en2zh" and translation_term_version is None:
+            raise JobResourceSnapshotError(
+                "en2zh 任务缺少 Translation Term Set 快照。",
+                status_code=409,
+                code="resource_snapshot_missing_translation_term_set",
+            )
         return MaterializedJobResources(
             template_path=template_path,
+            layout_config_path=layout_config_path,
             subscript_config_path=subscript_config_path,
             translation_profile=translation_profile,
+            translation_term_version=translation_term_version,
         )
 
     def _resolve_translation_profile(self, options: ConversionOptions) -> ResolvedResourceVersion | None:
@@ -141,6 +220,75 @@ class JobResourceSnapshotService:
             resource_id=profile_id,
             version=options.translation_profile_version,
             default_missing_status=409,
+        )
+
+    def _resolve_translation_term_set(
+        self,
+        options: ConversionOptions,
+        *,
+        use_default_version: bool = False,
+    ) -> ResolvedTranslationTermVersion | None:
+        has_translation_term_selection = self._has_translation_term_selection(options)
+        if options.translation_mode != "en2zh":
+            if has_translation_term_selection:
+                raise JobResourceSnapshotError("direct 任务不能绑定 Translation Term Set。", status_code=400)
+            return None
+        set_id = self._optional_text(options.translation_term_set_id) or derive_translation_term_set_id("en2zh")
+        version = None if use_default_version else self._optional_text(options.translation_term_version)
+        return self._resolve_translation_term_version(
+            set_id=set_id,
+            version=version,
+            default_missing_status=409,
+        )
+
+    def _resolve_translation_term_version(
+        self,
+        *,
+        set_id: str,
+        version: str | None,
+        default_missing_status: int,
+    ) -> ResolvedTranslationTermVersion:
+        if self.translation_term_repository is None:
+            raise JobResourceSnapshotError(
+                "Translation Term Set 绑定需要 JOBS_REPOSITORY_BACKEND=mysql。",
+                status_code=503,
+                code="translation_term_set_unavailable",
+            )
+        term_set = self.translation_term_repository.get_set(set_id)
+        if term_set is None:
+            status_code = 404 if version is not None else default_missing_status
+            raise JobResourceSnapshotError(
+                f"Translation Term Set 不存在: {set_id}",
+                status_code=status_code,
+                code="translation_term_set_not_found",
+            )
+        resolved_version = version or term_set.default_version
+        if not resolved_version:
+            raise JobResourceSnapshotError(
+                f"Translation Term Set 缺少默认版本: {set_id}",
+                status_code=default_missing_status,
+                code="translation_term_set_default_missing",
+            )
+        version_record = self.translation_term_repository.get_version(term_set.set_id, resolved_version)
+        if version_record is None:
+            status_code = 404 if version is not None else default_missing_status
+            raise JobResourceSnapshotError(
+                f"Translation Term Set 版本不存在: {term_set.set_id}@{resolved_version}",
+                status_code=status_code,
+                code="translation_term_version_not_found",
+            )
+        if version_record.status != "published":
+            raise JobResourceSnapshotError(
+                "只能绑定 published Translation Term Set 版本。",
+                status_code=400,
+                code="translation_term_version_not_published",
+            )
+        return ResolvedTranslationTermVersion(
+            set_id=version_record.set_id,
+            language_pair=version_record.language_pair,
+            version=version_record.version,
+            snapshot_hash=version_record.snapshot_hash,
+            term_count=version_record.term_count,
         )
 
     def _resolve_resource(
@@ -187,6 +335,21 @@ class JobResourceSnapshotService:
             raise JobResourceSnapshotError(f"Template Version 文件不存在: {docx_path}", status_code=409)
         return resolved
 
+    def _materialize_template_layout_config(self, snapshot: ResolvedResourceVersion | None) -> Path | None:
+        """返回 Template Version 绑定的版式 YAML；缺省时交给全局默认配置兜底。"""
+
+        if snapshot is None:
+            return None
+        record = self._load_snapshot_record(snapshot)
+        payload = record.payload or {}
+        layout_config_path = self._payload_text(payload, "layout_config_path")
+        if layout_config_path is None:
+            return None
+        resolved = self._resolve_payload_path(layout_config_path)
+        if not resolved.exists() or not resolved.is_file():
+            raise JobResourceSnapshotError(f"Template Version 版式配置不存在: {layout_config_path}", status_code=409)
+        return resolved
+
     def _materialize_term_rule_set(
         self,
         snapshot: ResolvedResourceVersion | None,
@@ -225,6 +388,46 @@ class JobResourceSnapshotService:
             model=self._payload_text(payload, "model"),
             max_pages_per_batch=self._payload_int(payload, "max_pages_per_batch", self.settings.translation_max_pages),
             max_chars_per_batch=self._payload_int(payload, "max_chars_per_batch", self.settings.translation_max_chars),
+        )
+
+    def _materialize_translation_term_set(
+        self,
+        snapshot: ResolvedTranslationTermVersion | None,
+    ) -> TermVersionSnapshot | None:
+        if snapshot is None:
+            return None
+        if self.translation_term_repository is None:
+            raise JobResourceSnapshotError(
+                "当前 stage runtime 缺少 Translation Term Set repository。",
+                status_code=503,
+                code="translation_term_set_unavailable",
+            )
+        record = self.translation_term_repository.get_version(snapshot.set_id, snapshot.version)
+        if record is None:
+            raise JobResourceSnapshotError(
+                f"资源快照指向的 Translation Term Set 版本不存在: {snapshot.set_id}@{snapshot.version}",
+                status_code=409,
+                code="translation_term_version_not_found",
+            )
+        if record.status != "published":
+            raise JobResourceSnapshotError(
+                f"资源快照指向了非 published Translation Term Set 版本: {snapshot.set_id}@{snapshot.version}",
+                status_code=409,
+                code="translation_term_version_invalid_status",
+            )
+        if record.snapshot_hash != snapshot.snapshot_hash:
+            raise JobResourceSnapshotError(
+                f"Translation Term Set 快照 hash 不匹配: {snapshot.set_id}@{snapshot.version}",
+                status_code=409,
+                code="translation_term_snapshot_hash_mismatch",
+            )
+        entries = self.translation_term_repository.load_version(snapshot.language_pair, snapshot.version)
+        return TermVersionSnapshot(
+            term_version_id=f"{snapshot.language_pair}@{snapshot.version}",
+            language_pair=snapshot.language_pair,
+            version=snapshot.version,
+            snapshot_hash=snapshot.snapshot_hash,
+            entries=tuple(entries),
         )
 
     def _load_snapshot_record(self, snapshot: ResolvedResourceVersion) -> ResourceVersionRecord:
@@ -272,6 +475,8 @@ class JobResourceSnapshotService:
             "template_version": options.template_version,
             "term_rule_set_id": options.term_rule_set_id,
             "term_rule_set_version": options.term_rule_set_version,
+            "translation_term_set_id": options.translation_term_set_id,
+            "translation_term_version": options.translation_term_version,
             "translation_profile_id": options.translation_profile_id,
             "translation_profile_version": options.translation_profile_version,
         }
@@ -283,6 +488,24 @@ class JobResourceSnapshotService:
                 status_code=503,
                 code="resource_snapshot_unavailable",
             )
+
+    @staticmethod
+    def _has_term_asset_selection(options: ConversionOptions) -> bool:
+        return JobResourceSnapshotService._has_term_rule_selection(options) or JobResourceSnapshotService._has_translation_term_selection(options)
+
+    @staticmethod
+    def _has_term_rule_selection(options: ConversionOptions) -> bool:
+        return any(
+            JobResourceSnapshotService._optional_text(value)
+            for value in (options.term_rule_set_id, options.term_rule_set_version)
+        )
+
+    @staticmethod
+    def _has_translation_term_selection(options: ConversionOptions) -> bool:
+        return any(
+            JobResourceSnapshotService._optional_text(value)
+            for value in (options.translation_term_set_id, options.translation_term_version)
+        )
 
     @staticmethod
     def _optional_text(value: str | None) -> str | None:

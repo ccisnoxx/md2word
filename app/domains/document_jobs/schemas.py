@@ -16,6 +16,10 @@ class DocumentJobCreateRequest(BaseModel):
     document_language: Literal["auto", "zh", "en"] = "auto"
     template_version_id: str | None = None
     term_version_id: str | None = None
+    term_rule_set_id: str | None = None
+    term_rule_set_version: str | None = None
+    translation_term_set_id: str | None = None
+    translation_term_version: str | None = None
     debug_full_text: bool = False
 
 
@@ -47,6 +51,8 @@ class DocumentJobResponse(BaseModel):
     started_at: datetime | None = None
     completed_at: datetime | None = None
     canceled_at: datetime | None = None
+    archived_at: datetime | None = None
+    archived_by: str | None = None
     request_snapshot: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
@@ -66,6 +72,20 @@ class DocumentJobListResponse(BaseModel):
     page_size: int
     total: int
     summary: dict[str, int] = Field(default_factory=dict)
+
+
+class DocumentJobArchiveResponse(BaseModel):
+    job_id: str
+    archived_at: datetime
+    job: DocumentJobResponse
+
+
+class DocumentJobCancelResponse(BaseModel):
+    job_id: str
+    status: str
+    stage: str
+    canceled_at: datetime
+    job: DocumentJobResponse
 
 
 class DocumentJobEventResponse(BaseModel):
@@ -100,6 +120,11 @@ class DocumentJobDownloadUrlResponse(BaseModel):
 
 class DocumentJobRetryRequest(BaseModel):
     reason: str | None = None
+    use_latest_term_assets: bool = False
+    term_rule_set_id: str | None = None
+    term_rule_set_version: str | None = None
+    translation_term_set_id: str | None = None
+    translation_term_version: str | None = None
 
 
 class DocumentJobRetryResponse(BaseModel):

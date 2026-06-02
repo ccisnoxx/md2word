@@ -26,6 +26,8 @@ DocumentJobStage = Literal[
 DocumentJobEventLevel = Literal["info", "warning", "error"]
 DocumentJobEventType = Literal[
     "job_created",
+    "job_archived",
+    "job_canceled",
     "stage_started",
     "stage_succeeded",
     "stage_failed",
@@ -78,6 +80,8 @@ class DocumentJobRecord(BaseModel):
     started_at: datetime | None = None
     completed_at: datetime | None = None
     canceled_at: datetime | None = None
+    archived_at: datetime | None = None
+    archived_by: str | None = None
     request_snapshot: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)

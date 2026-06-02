@@ -8,8 +8,9 @@ from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile, status
 
-from app.api.dependencies import get_runtime, get_trace_id, require_jobs_access
+from app.api.dependencies import get_runtime, get_trace_id, require_jobs_actor
 from app.api.errors import bad_request_http_exception
+from app.domains.audit.models import ActorContext
 from app.domains.jobs.presenters import build_job_resource_snapshot_response
 from app.core.errors import ApiError
 from app.domains.jobs.models import ConversionOptions
@@ -33,12 +34,15 @@ def _build_conversion_options(
     template_version: str | None,
     term_rule_set_id: str | None,
     term_rule_set_version: str | None,
+    translation_term_set_id: str | None,
+    translation_term_version: str | None,
     translation_profile_id: str | None,
     translation_profile_version: str | None,
     translation_mode: str | None,
     document_language: str | None,
     use_mineru_header_footer: bool,
     runtime: AppRuntime,
+    actor: ActorContext,
 ) -> ConversionOptions:
     normalized_translation_mode = (_normalize_optional_text(translation_mode) or runtime.settings.default_translation_mode).lower()
     normalized_document_language = (_normalize_optional_text(document_language) or "auto").lower()
@@ -58,17 +62,41 @@ def _build_conversion_options(
             detail="document_language 仅支持 auto、zh、en。",
         )
 
-    return ConversionOptions(
+    options = ConversionOptions(
         template_id=normalized_template_id,
         template_version=_normalize_optional_text(template_version),
         term_rule_set_id=_normalize_optional_text(term_rule_set_id),
         term_rule_set_version=_normalize_optional_text(term_rule_set_version),
+        translation_term_set_id=_normalize_optional_text(translation_term_set_id),
+        translation_term_version=_normalize_optional_text(translation_term_version),
         translation_profile_id=_normalize_optional_text(translation_profile_id),
         translation_profile_version=_normalize_optional_text(translation_profile_version),
         translation_mode=normalized_translation_mode,
         document_language=normalized_document_language,
         use_mineru_header_footer=use_mineru_header_footer,
     )
+    _ensure_term_asset_selection_allowed(options, actor)
+    return options
+
+
+def _ensure_term_asset_selection_allowed(options: ConversionOptions, actor: ActorContext) -> None:
+    if actor.actor_role == "admin":
+        return
+    selected = [
+        name
+        for name, value in {
+            "term_rule_set_id": options.term_rule_set_id,
+            "term_rule_set_version": options.term_rule_set_version,
+            "translation_term_set_id": options.translation_term_set_id,
+            "translation_term_version": options.translation_term_version,
+        }.items()
+        if value
+    ]
+    if selected:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"operator 不能选择术语资产历史版本: {', '.join(selected)}。",
+        )
 
 
 def _ensure_translation_available(runtime: AppRuntime, options: ConversionOptions) -> None:
@@ -175,7 +203,7 @@ async def _save_pdf_upload_to_temp(upload: UploadFile, runtime: AppRuntime) -> P
     return temp_path
 
 
-@router.post("", response_model=JobAcceptedResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_jobs_access)])
+@router.post("", response_model=JobAcceptedResponse, status_code=status.HTTP_201_CREATED)
 async def create_job(
     background_tasks: BackgroundTasks,
     request: Request,
@@ -184,11 +212,14 @@ async def create_job(
     template_version: str | None = Form(default=None),
     term_rule_set_id: str | None = Form(default=None),
     term_rule_set_version: str | None = Form(default=None),
+    translation_term_set_id: str | None = Form(default=None),
+    translation_term_version: str | None = Form(default=None),
     translation_profile_id: str | None = Form(default=None),
     translation_profile_version: str | None = Form(default=None),
     translation_mode: str | None = Form(default=None),
     document_language: str | None = Form(default=None),
     use_mineru_header_footer: bool = Form(default=False),
+    actor: ActorContext = Depends(require_jobs_actor),
     runtime: AppRuntime = Depends(get_runtime),
     trace_id: str = Depends(get_trace_id),
 ) -> JobAcceptedResponse:
@@ -197,12 +228,15 @@ async def create_job(
         template_version,
         term_rule_set_id,
         term_rule_set_version,
+        translation_term_set_id,
+        translation_term_version,
         translation_profile_id,
         translation_profile_version,
         translation_mode,
         document_language,
         use_mineru_header_footer,
         runtime,
+        actor,
     )
     _ensure_translation_available(runtime, options)
     temp_upload_path = await _save_upload_to_temp(package, runtime)
@@ -228,7 +262,7 @@ async def create_job(
     )
 
 
-@router.post("/pdf", response_model=JobAcceptedResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_jobs_access)])
+@router.post("/pdf", response_model=JobAcceptedResponse, status_code=status.HTTP_201_CREATED)
 async def create_pdf_job(
     background_tasks: BackgroundTasks,
     pdf: UploadFile = File(...),
@@ -236,11 +270,14 @@ async def create_pdf_job(
     template_version: str | None = Form(default=None),
     term_rule_set_id: str | None = Form(default=None),
     term_rule_set_version: str | None = Form(default=None),
+    translation_term_set_id: str | None = Form(default=None),
+    translation_term_version: str | None = Form(default=None),
     translation_profile_id: str | None = Form(default=None),
     translation_profile_version: str | None = Form(default=None),
     translation_mode: str | None = Form(default=None),
     document_language: str | None = Form(default=None),
     use_mineru_header_footer: bool = Form(default=False),
+    actor: ActorContext = Depends(require_jobs_actor),
     runtime: AppRuntime = Depends(get_runtime),
     trace_id: str = Depends(get_trace_id),
 ) -> JobAcceptedResponse:
@@ -254,12 +291,15 @@ async def create_pdf_job(
         template_version,
         term_rule_set_id,
         term_rule_set_version,
+        translation_term_set_id,
+        translation_term_version,
         translation_profile_id,
         translation_profile_version,
         translation_mode,
         document_language,
         use_mineru_header_footer,
         runtime,
+        actor,
     )
     _ensure_translation_available(runtime, options)
     temp_upload_path = await _save_pdf_upload_to_temp(pdf, runtime)

@@ -25,6 +25,12 @@ from app.domains.jobs.models import (
 from app.domains.audit.models import AuditEvent
 from app.core.config import Settings
 from app.domains.files.models import DocumentFileRecord
+from app.domains.translation.models import (
+    TranslationTermEntry,
+    TranslationTermMatchTraceRecord,
+    TranslationTermProposalChangeRecord,
+    TranslationTermProposalRecord,
+)
 from app.infrastructure.persistence import (
     PersistenceAdapters,
     build_file_persistence_adapters,
@@ -66,6 +72,16 @@ class _FakeMysqlDatabase:
         self.stage_messages: dict[str, dict[str, Any]] = {}
         self.resource_versions: dict[tuple[str, str, str], dict[str, Any]] = {}
         self.resource_default_versions: dict[tuple[str, str], dict[str, Any]] = {}
+        self.term_rule_proposals: dict[str, dict[str, Any]] = {}
+        self.term_rule_categories: dict[tuple[str, str, str], dict[str, Any]] = {}
+        self.term_rules: dict[tuple[str, str, str], dict[str, Any]] = {}
+        self.term_rule_segments: dict[tuple[str, str, str, int], dict[str, Any]] = {}
+        self.translation_term_sets: dict[str, dict[str, Any]] = {}
+        self.translation_term_versions: dict[tuple[str, str], dict[str, Any]] = {}
+        self.translation_terms: dict[tuple[str, str, int], dict[str, Any]] = {}
+        self.translation_term_proposals: dict[str, dict[str, Any]] = {}
+        self.translation_term_proposal_changes: dict[tuple[str, int], dict[str, Any]] = {}
+        self.translation_term_match_traces: dict[str, dict[str, Any]] = {}
         self.next_event_id = 1
         self.created_tables: set[str] = set()
 
@@ -111,6 +127,16 @@ class _FakeMysqlCursor:
                 "stage_messages",
                 "resource_versions",
                 "resource_default_versions",
+                "term_rule_proposals",
+                "term_rule_categories",
+                "term_rules",
+                "term_rule_segments",
+                "translation_term_sets",
+                "translation_term_versions",
+                "translation_terms",
+                "translation_term_proposals",
+                "translation_term_proposal_changes",
+                "translation_term_match_traces",
                 "audit_events",
                 "document_files",
                 "document_jobs",
@@ -334,6 +360,404 @@ class _FakeMysqlCursor:
                 row = self.database.resource_versions.get((resource_type, resource_id, pointer["version"]))
             self._rows = [row] if row is not None else []
             return
+        if normalized.startswith("insert into term_rule_proposals"):
+            proposal_id, proposal_status, intent, created_by, payload, created_at, updated_at = params
+            self.database.term_rule_proposals[proposal_id] = {
+                "id": proposal_id,
+                "status": proposal_status,
+                "intent": intent,
+                "created_by": created_by,
+                "payload": payload,
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+            self._rows = []
+            return
+        if "from term_rule_proposals where id" in normalized:
+            row = self.database.term_rule_proposals.get(params[0])
+            self._rows = [row] if row is not None else []
+            return
+        if "from term_rule_proposals" in normalized:
+            rows = list(self.database.term_rule_proposals.values())
+            if "where status" in normalized and "created_by" in normalized:
+                proposal_status, created_by = params
+                rows = [row for row in rows if row["status"] == proposal_status and row["created_by"] == created_by]
+            elif "where status" in normalized:
+                (proposal_status,) = params
+                rows = [row for row in rows if row["status"] == proposal_status]
+            elif "where created_by" in normalized:
+                (created_by,) = params
+                rows = [row for row in rows if row["created_by"] == created_by]
+            self._rows = sorted(rows, key=lambda item: (item["created_at"], item["id"]), reverse=True)
+            return
+        if normalized.startswith("delete from term_rule_segments"):
+            term_rule_set_id, version = params
+            self.database.term_rule_segments = {
+                key: row
+                for key, row in self.database.term_rule_segments.items()
+                if key[0] != term_rule_set_id or key[1] != version
+            }
+            self._rows = []
+            return
+        if normalized.startswith("delete from term_rules"):
+            term_rule_set_id, version = params
+            self.database.term_rules = {
+                key: row
+                for key, row in self.database.term_rules.items()
+                if key[0] != term_rule_set_id or key[1] != version
+            }
+            self._rows = []
+            return
+        if normalized.startswith("delete from term_rule_categories"):
+            term_rule_set_id, version = params
+            self.database.term_rule_categories = {
+                key: row
+                for key, row in self.database.term_rule_categories.items()
+                if key[0] != term_rule_set_id or key[1] != version
+            }
+            self._rows = []
+            return
+        if normalized.startswith("insert into term_rule_categories"):
+            term_rule_set_id, version, category_id, code, name, priority, enabled, description, created_at, updated_at = params
+            self.database.term_rule_categories[(term_rule_set_id, version, category_id)] = {
+                "term_rule_set_id": term_rule_set_id,
+                "version": version,
+                "category_id": category_id,
+                "code": code,
+                "name": name,
+                "priority": priority,
+                "enabled": enabled,
+                "description": description,
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+            self._rows = []
+            return
+        if normalized.startswith("insert into term_rules"):
+            (
+                term_rule_set_id,
+                version,
+                rule_id,
+                category_id,
+                source_term,
+                rule_mode,
+                apply_scope,
+                case_sensitive,
+                enabled,
+                priority,
+                custom_html,
+                custom_markdown,
+                notes,
+                created_at,
+                updated_at,
+            ) = params
+            self.database.term_rules[(term_rule_set_id, version, rule_id)] = {
+                "term_rule_set_id": term_rule_set_id,
+                "version": version,
+                "rule_id": rule_id,
+                "category_id": category_id,
+                "source_term": source_term,
+                "rule_mode": rule_mode,
+                "apply_scope": apply_scope,
+                "case_sensitive": case_sensitive,
+                "enabled": enabled,
+                "priority": priority,
+                "custom_html": custom_html,
+                "custom_markdown": custom_markdown,
+                "notes": notes,
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+            self._rows = []
+            return
+        if normalized.startswith("insert into term_rule_segments"):
+            term_rule_set_id, version, rule_id, seq, segment_text, render_type = params
+            self.database.term_rule_segments[(term_rule_set_id, version, rule_id, seq)] = {
+                "term_rule_set_id": term_rule_set_id,
+                "version": version,
+                "rule_id": rule_id,
+                "seq": seq,
+                "segment_text": segment_text,
+                "render_type": render_type,
+            }
+            self._rows = []
+            return
+        if normalized.startswith("insert into translation_term_sets"):
+            set_id, language_pair, default_version, draft_version, created_at, updated_at = params
+            existing = self.database.translation_term_sets.get(set_id, {})
+            self.database.translation_term_sets[set_id] = {
+                "set_id": set_id,
+                "language_pair": language_pair,
+                "default_version": default_version,
+                "draft_version": draft_version,
+                "created_at": existing.get("created_at", created_at),
+                "updated_at": updated_at,
+            }
+            self._rows = []
+            return
+        if "from translation_term_sets" in normalized and "where set_id" in normalized:
+            row = self.database.translation_term_sets.get(params[0])
+            self._rows = [row] if row is not None else []
+            return
+        if "from translation_term_sets" in normalized and "where language_pair" in normalized:
+            (language_pair,) = params
+            row = next(
+                (item for item in self.database.translation_term_sets.values() if item["language_pair"] == language_pair),
+                None,
+            )
+            self._rows = [row] if row is not None else []
+            return
+        if normalized.startswith("insert into translation_term_versions"):
+            (
+                set_id,
+                language_pair,
+                version,
+                version_status,
+                snapshot_hash,
+                term_count,
+                published_by,
+                published_at,
+                release_note,
+                created_at,
+                updated_at,
+            ) = params
+            existing = self.database.translation_term_versions.get((set_id, version), {})
+            self.database.translation_term_versions[(set_id, version)] = {
+                "set_id": set_id,
+                "language_pair": language_pair,
+                "version": version,
+                "status": version_status,
+                "snapshot_hash": snapshot_hash,
+                "term_count": term_count,
+                "published_by": published_by,
+                "published_at": published_at,
+                "release_note": release_note,
+                "created_at": existing.get("created_at", created_at),
+                "updated_at": updated_at,
+            }
+            self._rows = []
+            return
+        if "from translation_term_versions" in normalized and "where set_id = %s" in normalized and "and version" not in normalized:
+            (set_id,) = params
+            rows = [
+                row
+                for key, row in self.database.translation_term_versions.items()
+                if key[0] == set_id
+            ]
+            self._rows = sorted(rows, key=lambda item: (item["created_at"], item["version"]))
+            return
+        if "from translation_term_versions" in normalized:
+            set_id, version = params
+            row = self.database.translation_term_versions.get((set_id, version))
+            self._rows = [row] if row is not None else []
+            return
+        if normalized.startswith("delete from translation_terms"):
+            set_id, version = params
+            self.database.translation_terms = {
+                key: row
+                for key, row in self.database.translation_terms.items()
+                if key[0] != set_id or key[1] != version
+            }
+            self._rows = []
+            return
+        if normalized.startswith("insert into translation_terms"):
+            (
+                set_id,
+                language_pair,
+                version,
+                seq,
+                source_term,
+                normalized_source_term,
+                target_term,
+                case_sensitive,
+                term_status,
+                priority,
+                domain,
+                category,
+                note,
+                created_at,
+                updated_at,
+            ) = params
+            self.database.translation_terms[(set_id, version, seq)] = {
+                "set_id": set_id,
+                "language_pair": language_pair,
+                "version": version,
+                "seq": seq,
+                "source_term": source_term,
+                "normalized_source_term": normalized_source_term,
+                "target_term": target_term,
+                "case_sensitive": case_sensitive,
+                "status": term_status,
+                "priority": priority,
+                "domain": domain,
+                "category": category,
+                "note": note,
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+            self._rows = []
+            return
+        if "from translation_terms" in normalized:
+            set_id, version = params
+            rows = [
+                row
+                for key, row in self.database.translation_terms.items()
+                if key[0] == set_id and key[1] == version
+            ]
+            self._rows = sorted(rows, key=lambda item: item["seq"])
+            return
+        if normalized.startswith("insert into translation_term_proposals"):
+            (
+                proposal_id,
+                proposal_status,
+                submitted_by,
+                source_job_id,
+                source_file_id,
+                observed_set_id,
+                observed_version,
+                reviewed_by,
+                reviewed_at,
+                review_note,
+                published_set_id,
+                published_version,
+                published_at,
+                created_at,
+                updated_at,
+            ) = params
+            existing = self.database.translation_term_proposals.get(proposal_id, {})
+            self.database.translation_term_proposals[proposal_id] = {
+                "id": proposal_id,
+                "status": proposal_status,
+                "submitted_by": submitted_by,
+                "source_job_id": source_job_id,
+                "source_file_id": source_file_id,
+                "observed_translation_term_set_id": observed_set_id,
+                "observed_translation_term_version": observed_version,
+                "reviewed_by": reviewed_by,
+                "reviewed_at": reviewed_at,
+                "review_note": review_note,
+                "published_translation_term_set_id": published_set_id,
+                "published_translation_term_version": published_version,
+                "published_at": published_at,
+                "created_at": existing.get("created_at", created_at),
+                "updated_at": updated_at,
+            }
+            self._rows = []
+            return
+        if normalized.startswith("delete from translation_term_proposal_changes"):
+            (proposal_id,) = params
+            self.database.translation_term_proposal_changes = {
+                key: row
+                for key, row in self.database.translation_term_proposal_changes.items()
+                if key[0] != proposal_id
+            }
+            self._rows = []
+            return
+        if normalized.startswith("insert into translation_term_proposal_changes"):
+            (
+                proposal_id,
+                seq,
+                action,
+                source_term,
+                normalized_source_term,
+                target_term,
+                case_sensitive,
+                term_status,
+                priority,
+                domain,
+                category,
+                note,
+                created_at,
+                updated_at,
+            ) = params
+            self.database.translation_term_proposal_changes[(proposal_id, seq)] = {
+                "proposal_id": proposal_id,
+                "seq": seq,
+                "action": action,
+                "source_term": source_term,
+                "normalized_source_term": normalized_source_term,
+                "target_term": target_term,
+                "case_sensitive": case_sensitive,
+                "term_status": term_status,
+                "priority": priority,
+                "domain": domain,
+                "category": category,
+                "note": note,
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+            self._rows = []
+            return
+        if "from translation_term_proposal_changes" in normalized:
+            (proposal_id,) = params
+            rows = [
+                row
+                for key, row in self.database.translation_term_proposal_changes.items()
+                if key[0] == proposal_id
+            ]
+            self._rows = sorted(rows, key=lambda item: item["seq"])
+            return
+        if "from translation_term_proposals" in normalized:
+            rows = list(self.database.translation_term_proposals.values())
+            if "where id" in normalized:
+                row = self.database.translation_term_proposals.get(params[0])
+                self._rows = [row] if row is not None else []
+                return
+            if "where status" in normalized and "submitted_by" in normalized:
+                proposal_status, submitted_by = params
+                rows = [row for row in rows if row["status"] == proposal_status and row["submitted_by"] == submitted_by]
+            elif "where status" in normalized:
+                (proposal_status,) = params
+                rows = [row for row in rows if row["status"] == proposal_status]
+            elif "where submitted_by" in normalized:
+                (submitted_by,) = params
+                rows = [row for row in rows if row["submitted_by"] == submitted_by]
+            self._rows = sorted(rows, key=lambda item: (item["created_at"], item["id"]), reverse=True)
+            return
+        if normalized.startswith("insert into translation_term_match_traces"):
+            (
+                trace_id,
+                job_id,
+                segment_id,
+                batch_id,
+                set_id,
+                version,
+                source_term,
+                target_term,
+                match_start,
+                match_end,
+                context_snippet,
+                injected_to_glossary,
+                provider_trace_id,
+                created_at,
+            ) = params
+            self.database.translation_term_match_traces[trace_id] = {
+                "id": trace_id,
+                "job_id": job_id,
+                "segment_id": segment_id,
+                "batch_id": batch_id,
+                "translation_term_set_id": set_id,
+                "translation_term_version": version,
+                "source_term": source_term,
+                "target_term": target_term,
+                "match_start": match_start,
+                "match_end": match_end,
+                "context_snippet": context_snippet,
+                "injected_to_glossary": injected_to_glossary,
+                "provider_trace_id": provider_trace_id,
+                "created_at": created_at,
+            }
+            self._rows = []
+            return
+        if "from translation_term_match_traces" in normalized:
+            (job_id,) = params
+            rows = [
+                row
+                for row in self.database.translation_term_match_traces.values()
+                if row["job_id"] == job_id
+            ]
+            self._rows = sorted(rows, key=lambda item: (item["created_at"], item["id"]))
+            return
         raise AssertionError(f"Unexpected SQL: {sql}")
 
     def fetchone(self) -> dict[str, Any] | None:
@@ -376,11 +800,196 @@ class PersistenceAdapterTests(TestCase):
                 "stage_messages",
                 "resource_versions",
                 "resource_default_versions",
+                "term_rule_proposals",
+                "term_rule_categories",
+                "term_rules",
+                "term_rule_segments",
+                "translation_term_sets",
+                "translation_term_versions",
+                "translation_terms",
+                "translation_term_proposals",
+                "translation_term_proposal_changes",
+                "translation_term_match_traces",
                 "audit_events",
                 "document_files",
                 "document_jobs",
             },
         )
+
+    def test_mysql_runtime_bootstraps_term_assets_and_translation_terms(self):
+        from app.main import build_runtime
+
+        seed_yaml = (
+            "schema_version: 2\n"
+            "categories:\n"
+            "  voltage_terms:\n"
+            "    name: 电压相关\n"
+            "    priority: 10\n"
+            "    enabled: true\n"
+            "rules:\n"
+            "  - source_term: VOLD\n"
+            "    category: voltage_terms\n"
+            "    segments:\n"
+            "      - segment_text: V\n"
+            "        render_type: plain\n"
+            "      - segment_text: OLD\n"
+            "        render_type: subscript\n"
+            "    enabled: true\n"
+        )
+        changed_seed_yaml = seed_yaml.replace("VOLD", "VCHANGED").replace("OLD", "CHANGED")
+        terms_csv = (
+            "language_pair,source_term,target_term,version\n"
+            "en2zh,ADC,模数转换器,v1\n"
+            "en2zh,DAC,数模转换器,v1\n"
+        )
+        with TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            seed_path = temp_root / "term_rules.v2.yaml"
+            terms_path = temp_root / "translation_terms.csv"
+            seed_path.write_text(seed_yaml, encoding="utf-8")
+            terms_path.write_text(terms_csv, encoding="utf-8")
+            fake_mysql = _FakeMysqlDatabase()
+            settings = Settings(
+                data_dir=temp_dir,
+                jobs_repository_backend="mysql",
+                term_rules_seed_path=str(seed_path),
+                translation_terms_path=str(terms_path),
+            )
+            with patch(
+                "app.main.build_persistence_adapters",
+                lambda _settings: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+            ):
+                runtime = build_runtime(settings)
+                expected_term_rule_store = runtime.term_rule_service.repository.load()
+                rogue_store = runtime.term_rule_set_version_service.yaml_codec.parse_yaml_text(changed_seed_yaml)
+                runtime.term_rule_service.repository.save(rogue_store)
+                seed_path.write_text(changed_seed_yaml, encoding="utf-8")
+                terms_path.unlink()
+                restarted_runtime = build_runtime(settings)
+                restarted_rule_terms = [rule.source_term for rule in restarted_runtime.term_rule_service.repository.load().rules]
+                restarted_runtime_yaml_text = restarted_runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8")
+                snapshot = restarted_runtime.term_version_service.load_version("en2zh@v1", language_pair="en2zh")
+
+        self.assertIsNotNone(runtime.term_rule_set_version_service)
+        self.assertEqual(
+            fake_mysql.resource_default_versions[("term_rule_set", "electronics-default")]["version"],
+            "seed",
+        )
+        self.assertEqual(
+            fake_mysql.resource_versions[("term_rule_set", "electronics-default", "seed")]["status"],
+            "published",
+        )
+        self.assertEqual(len(fake_mysql.term_rule_categories), len(expected_term_rule_store.categories))
+        self.assertEqual(len(fake_mysql.term_rules), len(expected_term_rule_store.rules))
+        self.assertEqual(
+            len(fake_mysql.term_rule_segments),
+            sum(len(rule.segments) for rule in expected_term_rule_store.rules),
+        )
+        self.assertEqual(restarted_rule_terms, ["VOLD"])
+        self.assertIn("VOLD", restarted_runtime_yaml_text)
+        self.assertFalse(any(row["source_term"] == "VCHANGED" for row in fake_mysql.term_rules.values()))
+        self.assertEqual(
+            fake_mysql.translation_term_sets["translation-terms-en2zh"]["default_version"],
+            "v1",
+        )
+        self.assertIn(("translation-terms-en2zh", "v1"), fake_mysql.translation_term_versions)
+        self.assertEqual(len(fake_mysql.translation_terms), 2)
+        self.assertEqual(len(snapshot.entries), 2)
+        self.assertEqual([entry.source_term for entry in snapshot.entries], ["ADC", "DAC"])
+        self.assertEqual(snapshot.entries[0].set_id, "translation-terms-en2zh")
+        self.assertTrue(all(entry.normalized_source_term for entry in snapshot.entries))
+
+    def test_mysql_translation_term_repository_supports_stage1_assets(self):
+        fake_mysql = _FakeMysqlDatabase()
+        adapters = build_mysql_persistence_adapters(
+            _mysql_config(),
+            connect_factory=fake_mysql.connect,
+        )
+        repository = adapters.translation_term_repository
+        self.assertIsNotNone(repository)
+
+        repository.replace_version(
+            "en2zh",
+            "v1",
+            [
+                TranslationTermEntry(
+                    language_pair="en2zh",
+                    source_term="High Speed ADC",
+                    target_term="高速模数转换器",
+                    version="v1",
+                    priority=10,
+                    domain="electronics",
+                    category="converter",
+                    note="seed",
+                )
+            ],
+            "sha256:" + "a" * 64,
+        )
+        term_set = repository.get_set_by_language_pair("en2zh")
+        version = repository.get_version("translation-terms-en2zh", "v1")
+        entries = repository.load_version("en2zh", "v1")
+
+        self.assertIsNotNone(term_set)
+        self.assertEqual(term_set.set_id, "translation-terms-en2zh")
+        self.assertEqual(term_set.default_version, "v1")
+        self.assertIsNotNone(version)
+        self.assertEqual(version.status, "published")
+        self.assertEqual(version.term_count, 1)
+        self.assertEqual(entries[0].normalized_source_term, "high speed adc")
+        self.assertEqual(entries[0].priority, 10)
+
+        proposal = TranslationTermProposalRecord(
+            id="ttp_1",
+            status="pending",
+            submitted_by="operator",
+            source_job_id="job_1",
+            source_file_id="source_pdf",
+            observed_translation_term_set_id="translation-terms-en2zh",
+            observed_translation_term_version="v1",
+            changes=(
+                TranslationTermProposalChangeRecord(
+                    proposal_id="ttp_1",
+                    seq=1,
+                    action="add",
+                    source_term="FPGA",
+                    target_term="现场可编程门阵列",
+                    priority=5,
+                ),
+            ),
+        )
+        repository.save_proposal(proposal)
+        loaded_proposal = repository.get_proposal("ttp_1")
+        listed_proposals = repository.list_proposals(status="pending", submitted_by="operator")
+
+        self.assertIsNotNone(loaded_proposal)
+        self.assertEqual(loaded_proposal.changes[0].normalized_source_term, "fpga")
+        self.assertEqual([item.id for item in listed_proposals], ["ttp_1"])
+
+        repository.append_match_trace(
+            TranslationTermMatchTraceRecord(
+                id="ttmt_1",
+                job_id="job_1",
+                segment_id="seg_1",
+                batch_id="batch_1",
+                translation_term_set_id="translation-terms-en2zh",
+                translation_term_version="v1",
+                source_term="FPGA",
+                target_term="现场可编程门阵列",
+                match_start=3,
+                match_end=7,
+                context_snippet="use FPGA here",
+                injected_to_glossary=True,
+                provider_trace_id="provider_1",
+            )
+        )
+        traces = repository.list_match_traces("job_1")
+
+        self.assertEqual(len(traces), 1)
+        self.assertTrue(traces[0].injected_to_glossary)
+        self.assertEqual(traces[0].context_snippet, "use FPGA here")
 
     def test_document_job_status_machine_rejects_invalid_stage(self):
         with self.assertRaises(ValidationError):

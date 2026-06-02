@@ -14,7 +14,7 @@ source_files:
   - app/domains/translation/schemas.py
 summary: Translation Profiles API 在 MySQL resource service 下提供翻译配置 draft、publish、set-default、rollback 和成功动作审计。
 tags: [translation, resource-versioning, api, audit]
-last_reviewed: 2026-05-31
+last_reviewed: 2026-06-01
 ---
 
 ## 概述
@@ -53,7 +53,7 @@ last_reviewed: 2026-05-31
 ### `PUT /api/v1/translation-profiles/{profile_id}/draft`
 
 - 用途：更新完整 Translation Profile draft。
-- 认证：`X-Admin-Token`
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 请求体字段：
   - `target_language`
   - `domain`
@@ -66,7 +66,7 @@ last_reviewed: 2026-05-31
 ### `POST /api/v1/translation-profiles/{profile_id}/publish`
 
 - 用途：把当前 draft 发布为新的 immutable published version。
-- 认证：`X-Admin-Token`
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 请求体字段：
   - `make_default`：是否发布后设为默认，默认 `true`
 - 版本号格式：`YYYY.MM.DD-N`
@@ -75,7 +75,7 @@ last_reviewed: 2026-05-31
 ### `POST /api/v1/translation-profiles/{profile_id}/versions/{version}/set-default`
 
 - 用途：把指定 published version 设为默认版本。
-- 认证：`X-Admin-Token`
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 请求体：无
 - 审计：成功后写 `translation_profile.set_default`，`target_id={profile_id}@{version}`。
 - 关键语义：只能指向 published version，`version=draft` 会返回 `400`。
@@ -83,7 +83,7 @@ last_reviewed: 2026-05-31
 ### `POST /api/v1/translation-profiles/{profile_id}/rollback`
 
 - 用途：把默认指针切回指定 published version。
-- 认证：`X-Admin-Token`
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 请求体：
   - `version`
 - 审计：成功后写 `translation_profile.rollback`，`target_id={profile_id}@{version}`。
@@ -101,7 +101,7 @@ MySQL resource mode 下，不传时绑定当前默认 published profile；显式
 ## 常见状态
 
 - `400`：payload 无效、版本状态不允许，或尝试把 draft 设为默认
-- `403`：admin-only 写接口缺少或未通过 `X-Admin-Token`
+- `403`：admin-only 写接口缺少或未通过 Bearer admin JWT / legacy `X-Admin-Token`
 - `404`：profile 不存在，或目标版本不存在
 - `503`：未启用 MySQL resource service
 

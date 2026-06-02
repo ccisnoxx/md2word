@@ -90,7 +90,47 @@ export type DocumentJobCreateRequest = {
   document_language: DocumentLanguage;
   template_version_id?: string | null;
   term_version_id?: string | null;
+  term_rule_set_id?: string | null;
+  term_rule_set_version?: string | null;
+  translation_term_set_id?: string | null;
+  translation_term_version?: string | null;
   debug_full_text?: boolean;
+};
+
+export type DocumentJobRetryRequest = {
+  reason?: string | null;
+  use_latest_term_assets?: boolean;
+  term_rule_set_id?: string | null;
+  term_rule_set_version?: string | null;
+  translation_term_set_id?: string | null;
+  translation_term_version?: string | null;
+};
+
+export type BoundResourceVersion = {
+  resource_type: string;
+  resource_id: string;
+  version: string;
+  status: string;
+  snapshot_hash: string;
+  payload_ref?: string | null;
+};
+
+export type BoundTranslationTermVersion = {
+  set_id: string;
+  language_pair: string;
+  version: string;
+  status: string;
+  snapshot_hash: string;
+  term_count: number;
+};
+
+export type DocumentJobResourceSnapshot = {
+  template?: BoundResourceVersion | null;
+  term_rule_set?: BoundResourceVersion | null;
+  translation_term_set?: BoundTranslationTermVersion | null;
+  translation_profile?: BoundResourceVersion | null;
+  mineru?: Record<string, unknown>;
+  artifact_ids?: Record<string, string>;
 };
 
 export type DocumentJobResponse = {
@@ -121,6 +161,8 @@ export type DocumentJobResponse = {
   started_at: string | null;
   completed_at: string | null;
   canceled_at: string | null;
+  archived_at: string | null;
+  archived_by: string | null;
   request_snapshot: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -140,6 +182,20 @@ export type DocumentJobListResponse = {
   page_size: number;
   total: number;
   summary: Record<string, number>;
+};
+
+export type DocumentJobArchiveResponse = {
+  job_id: string;
+  archived_at: string;
+  job: DocumentJobResponse;
+};
+
+export type DocumentJobCancelResponse = {
+  job_id: string;
+  status: DocumentJobStatus;
+  stage: DocumentJobStage;
+  canceled_at: string;
+  job: DocumentJobResponse;
 };
 
 export type DocumentJobEventResponse = {
@@ -179,4 +235,374 @@ export type DocumentJobRetryResponse = {
   progress: number;
   retry_count: number;
   job: DocumentJobResponse;
+};
+
+export type TemplateAssetResponse = {
+  label: string;
+  exists: boolean;
+  file_name: string | null;
+  size_bytes: number | null;
+  updated_at: string | null;
+  sha256: string | null;
+  download_url: string | null;
+};
+
+export type TemplateListItemResponse = {
+  id: string;
+  name: string;
+  description: string;
+  version: number;
+  is_default: boolean;
+  downloadable: boolean;
+  download_url: string | null;
+  template: TemplateAssetResponse;
+  layout_config: TemplateAssetResponse;
+  subscript_config: TemplateAssetResponse;
+};
+
+export type TemplateDetailResponse = TemplateListItemResponse;
+
+export type TemplateListResponse = {
+  items: TemplateListItemResponse[];
+};
+
+export type TemplateVersionStatus = "draft" | "published" | "disabled" | string;
+
+export type TemplateVersionResponse = {
+  template_id: string | null;
+  template_version_id: string | null;
+  version: number;
+  status: TemplateVersionStatus;
+  is_current: boolean;
+  is_default: boolean;
+  snapshot_hash: string | null;
+  render_policy: Record<string, unknown>;
+  verification_job_id: string | null;
+  verification_note: string | null;
+  verified_by: string | null;
+  verified_at: string | null;
+  publish_reason: string | null;
+  published_by: string | null;
+  published_at: string | null;
+  template: TemplateAssetResponse;
+  layout_config: TemplateAssetResponse | null;
+};
+
+export type TemplateVersionListResponse = {
+  template_id: string;
+  items: TemplateVersionResponse[];
+};
+
+export type TemplateVersionPublishRequest = {
+  make_default: false;
+  publish_reason: string;
+  verification_job_id: string;
+  verification_note: string;
+};
+
+export type TemplateVersionDefaultRequest = {
+  set_default_reason: string;
+};
+
+export type TermRuleRenderType = "plain" | "subscript" | "superscript";
+
+export type TermRuleCategoryListItemResponse = {
+  id: string;
+  code: string;
+  name: string;
+  priority: number;
+  enabled: boolean;
+  description: string;
+  rule_count: number;
+  enabled_rule_count: number;
+};
+
+export type TermRuleCategoryListResponse = {
+  items: TermRuleCategoryListItemResponse[];
+};
+
+export type TermRuleSegmentResponse = {
+  seq: number;
+  segment_text: string;
+  render_type: TermRuleRenderType;
+};
+
+export type TermRuleSegmentWriteRequest = {
+  segment_text: string;
+  render_type: TermRuleRenderType;
+};
+
+export type TermRuleResponse = {
+  id: string;
+  category_id: string;
+  category_code: string;
+  category_name: string;
+  source_term: string;
+  rule_mode: string;
+  apply_scope: string;
+  case_sensitive: boolean;
+  enabled: boolean;
+  priority: number;
+  segments: TermRuleSegmentResponse[];
+  custom_html: string | null;
+  custom_markdown: string | null;
+  notes: string;
+};
+
+export type TermRuleListResponse = {
+  items: TermRuleResponse[];
+  page: number;
+  page_size: number;
+  total: number;
+};
+
+export type TermRuleProposalIntent = "create" | "update" | "disable";
+export type TermRuleProposalStatus = "pending_review" | "approved" | "rejected" | "published";
+
+export type TermRuleProposalCreateRequest = {
+  intent: TermRuleProposalIntent;
+  source_term?: string | null;
+  category_id?: string | null;
+  segments?: TermRuleSegmentWriteRequest[] | null;
+  reason: string;
+  source_job_id?: string | null;
+  source_file_id?: string | null;
+  page_number?: number | null;
+  context_before?: string | null;
+  context_after?: string | null;
+  observed_term_rule_set_id?: string | null;
+  observed_term_rule_version?: string | null;
+  target_rule_id?: string | null;
+};
+
+export type TermRuleProposalApproveAndPublishRequest = {
+  review_comment?: string | null;
+  publish_reason?: string | null;
+};
+
+export type TermRuleProposalResponse = {
+  id: string;
+  intent: TermRuleProposalIntent;
+  status: TermRuleProposalStatus;
+  source_term: string;
+  category_id: string;
+  segments: TermRuleSegmentResponse[];
+  reason: string;
+  source_job_id: string | null;
+  source_file_id: string | null;
+  page_number: number | null;
+  context_before: string | null;
+  context_after: string | null;
+  observed_term_rule_set_id: string | null;
+  observed_term_rule_version: string | null;
+  target_rule_id: string | null;
+  target_rule_snapshot: Record<string, unknown> | null;
+  created_by: string;
+  created_at: string;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_comment: string | null;
+  merged_term_rule_set_id: string | null;
+  merged_draft_snapshot_hash: string | null;
+  published_term_rule_set_id: string | null;
+  published_term_rule_set_version: string | null;
+  published_at: string | null;
+};
+
+export type TermRuleProposalListResponse = {
+  items: TermRuleProposalResponse[];
+  total: number;
+};
+
+export type TermRuleSetListItemResponse = {
+  id: string;
+  default_version: string | null;
+  version_count: number;
+  rule_count: number;
+  enabled_rule_count: number;
+};
+
+export type TermRuleSetListResponse = {
+  items: TermRuleSetListItemResponse[];
+};
+
+export type TermRuleSetVersionResponse = {
+  term_rule_set_id: string;
+  version: string;
+  status: string;
+  rule_count: number;
+  enabled_rule_count: number;
+  snapshot_hash: string | null;
+  is_default: boolean;
+  published_by: string | null;
+  publish_reason: string | null;
+  published_at: string | null;
+};
+
+export type TermRuleSetDetailResponse = {
+  id: string;
+  default_version: string | null;
+  versions: TermRuleSetVersionResponse[];
+};
+
+export type TermRuleSetDraftResponse = {
+  term_rule_set_id: string;
+  base_version: string | null;
+  rule_count: number;
+  enabled_rule_count: number;
+  yaml_text: string;
+  snapshot_hash: string | null;
+};
+
+export type TermRuleSetPublishRequest = {
+  make_default: boolean;
+  publish_reason: string;
+};
+
+export type TermRuleSetDraftUpdateRequest = {
+  yaml_text: string;
+};
+
+export type TermRuleSetRollbackRequest = {
+  version: string;
+};
+
+export type TranslationProfileListItemResponse = {
+  id: string;
+  default_version: string | null;
+  version_count: number;
+  target_language: string;
+  domain: string;
+  prompt_version: string;
+  model: string | null;
+  max_pages_per_batch: number;
+  max_chars_per_batch: number;
+};
+
+export type TranslationProfileListResponse = {
+  items: TranslationProfileListItemResponse[];
+};
+
+export type TranslationProfileVersionResponse = {
+  translation_profile_id: string;
+  version: string;
+  status: string;
+  snapshot_hash: string | null;
+  is_default: boolean;
+  target_language: string;
+  domain: string;
+  prompt_version: string;
+  model: string | null;
+  max_pages_per_batch: number;
+  max_chars_per_batch: number;
+  published_at: string | null;
+};
+
+export type TranslationProfileDetailResponse = {
+  id: string;
+  default_version: string | null;
+  versions: TranslationProfileVersionResponse[];
+};
+
+export type TranslationProfileDraftResponse = {
+  translation_profile_id: string;
+  base_version: string | null;
+  target_language: string;
+  domain: string;
+  prompt_version: string;
+  model: string | null;
+  max_pages_per_batch: number;
+  max_chars_per_batch: number;
+  snapshot_hash: string | null;
+};
+
+export type TranslationProfileDraftUpdateRequest = {
+  target_language: string;
+  domain: string;
+  prompt_version: string;
+  model: string | null;
+  max_pages_per_batch: number;
+  max_chars_per_batch: number;
+};
+
+export type TranslationProfilePublishRequest = {
+  make_default: boolean;
+};
+
+export type TranslationProfileRollbackRequest = {
+  version: string;
+};
+
+export type TranslationTermProposalStatus = "pending" | "approved" | "rejected" | "published";
+export type TranslationTermProposalAction = "add" | "update" | "delete";
+
+export type TranslationTermProposalChangeRequest = {
+  action: TranslationTermProposalAction;
+  source_term: string;
+  target_term?: string | null;
+  case_sensitive?: boolean | null;
+  status?: string | null;
+  priority?: number | null;
+  domain?: string | null;
+  category?: string | null;
+  note?: string | null;
+};
+
+export type TranslationTermProposalCreateRequest = {
+  language_pair?: string;
+  source_job_id?: string | null;
+  source_file_id?: string | null;
+  observed_translation_term_set_id?: string | null;
+  observed_translation_term_version?: string | null;
+  changes: TranslationTermProposalChangeRequest[];
+};
+
+export type TranslationTermProposalReviewRequest = {
+  review_note?: string | null;
+};
+
+export type TranslationTermProposalApproveAndPublishRequest = {
+  review_note?: string | null;
+  release_note?: string | null;
+};
+
+export type TranslationTermProposalRejectRequest = {
+  review_note: string;
+};
+
+export type TranslationTermProposalChangeResponse = {
+  seq: number;
+  action: TranslationTermProposalAction;
+  source_term: string;
+  normalized_source_term: string;
+  target_term: string | null;
+  case_sensitive: boolean | null;
+  status: string | null;
+  priority: number | null;
+  domain: string | null;
+  category: string | null;
+  note: string | null;
+};
+
+export type TranslationTermProposalResponse = {
+  id: string;
+  status: TranslationTermProposalStatus;
+  submitted_by: string;
+  source_job_id: string | null;
+  source_file_id: string | null;
+  observed_translation_term_set_id: string | null;
+  observed_translation_term_version: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  published_translation_term_set_id: string | null;
+  published_translation_term_version: string | null;
+  published_at: string | null;
+  changes: TranslationTermProposalChangeResponse[];
+  created_at: string;
+};
+
+export type TranslationTermProposalListResponse = {
+  items: TranslationTermProposalResponse[];
+  total: number;
 };

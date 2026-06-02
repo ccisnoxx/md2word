@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+# app/conversion/contracts.py: 定义转换服务边界的请求、结果和错误合同。
+
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Protocol
 
-from app.domains.translation.models import TranslationProfileSnapshot
+from app.domains.translation.models import TermVersionSnapshot, TranslationProfileSnapshot
 
 
 ConversionTranslationMode = Literal["direct", "en2zh"]
@@ -24,6 +26,7 @@ class ConversionRequest:
     package_path: Path
     output_path: Path
     template_path: Path | None
+    layout_config_path: Path | None
     subscript_config_path: Path | None
     translation_mode: ConversionTranslationMode
     document_language: ConversionDocumentLanguage
@@ -37,6 +40,7 @@ class ConversionRequest:
     translation_max_pages: int
     translation_max_chars: int
     translation_profile: TranslationProfileSnapshot | None = None
+    translation_term_version: TermVersionSnapshot | None = None
     translation_request_output: Path | None = None
     translation_trace_output: Path | None = None
 

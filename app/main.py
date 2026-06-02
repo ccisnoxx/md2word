@@ -44,6 +44,7 @@ from app.services.renderer import DocumentIRWordRenderer
 from app.domains.resources.service import ResourceVersionService
 from app.domains.term_rules.bootstrap import TermRuleBootstrapService
 from app.domains.term_rules.import_validation import TermRuleImportValidationService
+from app.domains.term_rules.proposals_service import TermRuleProposalService
 from app.domains.term_rules.service import TermRuleService
 from app.domains.term_rules.sync_files import TermRuleFileSyncService
 from app.domains.term_rules.versioning_service import TermRuleSetVersionService
@@ -51,7 +52,9 @@ from app.domains.templates.read_service import TemplateReadService
 from app.domains.translation.audit import TranslationAuditService
 from app.domains.translation.document_ir_translator import DocumentIRTranslationService
 from app.domains.translation.profiles_service import TranslationProfileVersionService
+from app.domains.translation.proposals_service import TranslationTermProposalService
 from app.domains.translation.provider import build_translation_provider
+from app.domains.translation.term_set_version_service import TranslationTermSetVersionService
 from app.domains.translation.term_version_service import TermVersionService
 
 
@@ -123,13 +126,25 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
     term_version_service = TermVersionService(
         resolved_settings.translation_terms_file,
         default_term_version_id=resolved_settings.default_translation_term_version_id,
+        repository=persistence_adapters.translation_term_repository,
     )
+    term_version_service.bootstrap_repository_from_csv_if_empty()
     resource_version_service = (
         ResourceVersionService(persistence_adapters.resource_version_repository)
         if persistence_adapters.resource_version_repository is not None
         else None
     )
-    template_read_service = TemplateReadService(resolved_settings, resource_version_service, audit_service)
+    job_resource_snapshot_service = JobResourceSnapshotService(
+        resolved_settings,
+        resource_version_service,
+        persistence_adapters.translation_term_repository,
+    )
+    template_read_service = TemplateReadService(
+        resolved_settings,
+        resource_version_service,
+        audit_service,
+        document_job_repository=document_job_repository,
+    )
     document_word_renderer = DocumentIRWordRenderer()
     document_job_execution_service = DocumentJobExecutionService(
         resolved_settings,
@@ -153,6 +168,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         document_job_task_queue,
         template_read_service,
         term_version_service,
+        job_resource_snapshot_service,
     )
     term_rule_repository = FileTermRuleRepository(resolved_settings.term_rules_store_file)
     term_rule_service = TermRuleService(
@@ -173,8 +189,20 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
             runtime_yaml_path=resolved_settings.term_rules_runtime_yaml_file,
             resource_version_service=resource_version_service,
             audit_service=audit_service,
+            asset_repository=persistence_adapters.term_rule_asset_repository,
         )
         if resource_version_service is not None
+        else None
+    )
+    term_rule_proposal_service = (
+        TermRuleProposalService(
+            repository=persistence_adapters.term_rule_proposal_repository,
+            term_rule_service=term_rule_service,
+            term_rule_set_version_service=term_rule_set_version_service,
+            audit_service=audit_service,
+        )
+        if persistence_adapters.term_rule_proposal_repository is not None
+        and term_rule_set_version_service is not None
         else None
     )
     translation_profile_service = (
@@ -182,13 +210,30 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         if resource_version_service is not None
         else None
     )
-    job_resource_snapshot_service = JobResourceSnapshotService(resolved_settings, resource_version_service)
-    TermRuleBootstrapService(
-        term_rule_repository,
-        resolved_settings.term_rules_runtime_yaml_file,
-        resolved_settings.term_rules_seed_file,
-        repository_backend="file",
-    ).bootstrap()
+    translation_term_set_version_service = (
+        TranslationTermSetVersionService(persistence_adapters.translation_term_repository, audit_service)
+        if persistence_adapters.translation_term_repository is not None
+        else None
+    )
+    translation_term_proposal_service = (
+        TranslationTermProposalService(
+            repository=persistence_adapters.translation_term_repository,
+            term_set_version_service=translation_term_set_version_service,
+            audit_service=audit_service,
+        )
+        if persistence_adapters.translation_term_repository is not None
+        and translation_term_set_version_service is not None
+        else None
+    )
+    if term_rule_set_version_service is not None:
+        term_rule_set_version_service.bootstrap_seed_as_default_if_empty(resolved_settings.term_rules_seed_file)
+    else:
+        TermRuleBootstrapService(
+            term_rule_repository,
+            resolved_settings.term_rules_runtime_yaml_file,
+            resolved_settings.term_rules_seed_file,
+            repository_backend="file",
+        ).bootstrap()
     template_read_service.get_default_template_id()
     artifact_service = JobArtifactService()
     artifact_storage, artifact_storage_backend = _build_artifact_storage(resolved_settings, artifact_service)
@@ -207,6 +252,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
             else "in_process"
         ),
         resolve_template_path=template_read_service.resolve_job_template_path,
+        resolve_layout_config_path=template_read_service.resolve_job_layout_config_path,
         resolve_subscript_config_path=lambda: resolved_settings.subscript_config_path,
         resolve_translation_profile_snapshot=(
             translation_profile_service.resolve_default_snapshot
@@ -246,6 +292,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         stage_service=stage_service,
         artifact_service=artifact_service,
         artifact_storage=artifact_storage,
+        resource_snapshot_service=job_resource_snapshot_service,
     )
     query_service = JobQueryService(job_repository, job_file_repository, job_event_repository)
     return AppRuntime(
@@ -276,6 +323,9 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         term_rule_import_validation_service=term_rule_import_validation_service,
         term_rule_file_sync_service=term_rule_file_sync_service,
         term_rule_set_version_service=term_rule_set_version_service,
+        term_rule_proposal_service=term_rule_proposal_service,
+        translation_term_set_version_service=translation_term_set_version_service,
+        translation_term_proposal_service=translation_term_proposal_service,
         translation_profile_service=translation_profile_service,
         resource_version_service=resource_version_service,
         job_resource_snapshot_service=job_resource_snapshot_service,

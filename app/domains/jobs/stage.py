@@ -69,6 +69,7 @@ class JobStageService:
         stage_worker_id: str = "in_process",
         mineru_client_factory: Callable[[], MinerUClient] | None = None,
         resolve_template_path: Callable[[str | None], Path | None] | None = None,
+        resolve_layout_config_path: Callable[[str | None], Path | None] | None = None,
         resolve_subscript_config_path: Callable[[], Path | None] | None = None,
         resolve_translation_profile_snapshot: Callable[[], TranslationProfileSnapshot | None] | None = None,
         resource_snapshot_service: JobResourceSnapshotService | None = None,
@@ -84,6 +85,7 @@ class JobStageService:
         self._custom_mineru_client_factory = mineru_client_factory
         self.mineru_client_factory = mineru_client_factory or self._build_mineru_client
         self.resolve_template_path = resolve_template_path or (lambda _template_id: self.settings.default_template_path)
+        self.resolve_layout_config_path = resolve_layout_config_path or (lambda _template_id: self.settings.layout_config_path)
         self.resolve_subscript_config_path = resolve_subscript_config_path or (lambda: self.settings.subscript_config_path)
         self.resolve_translation_profile_snapshot = resolve_translation_profile_snapshot or (lambda: None)
         self.resource_snapshot_service = resource_snapshot_service
@@ -380,12 +382,22 @@ class JobStageService:
                     if materialized_resources is not None
                     else self.resolve_template_path(job.template_id)
                 ),
+                layout_config_path=(
+                    materialized_resources.layout_config_path
+                    if materialized_resources is not None
+                    else self.resolve_layout_config_path(job.template_id)
+                ),
                 subscript_config_path=(
                     materialized_resources.subscript_config_path
                     if materialized_resources is not None
                     else self.resolve_subscript_config_path()
                 ),
                 translation_profile=translation_profile,
+                translation_term_version=(
+                    materialized_resources.translation_term_version
+                    if materialized_resources is not None
+                    else None
+                ),
             )
         except JobResourceSnapshotError as exc:
             failure_transition = build_conversion_failed_transition(

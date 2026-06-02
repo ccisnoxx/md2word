@@ -500,3 +500,99 @@ type ApiClientError = {
 - succeeded 任务能下载 Word。
 - failed 任务显示错误并可尝试重试。
 - token 过期后回到登录页。
+
+## 15. V2.1 配置版本管理补充实施清单
+
+> V1 任务工作台已完成后，V2.1 进入配置版本管理闭环：Template Profile -> Term Rule Set -> Translation Profile。
+
+### 阶段 1：后端最小合同补齐
+
+目标：先补齐前端工作流必须依赖的可追溯后端合同。
+
+任务：
+
+- 为 Template Version 发布流程持久化验证证据：`verification_job_id`、`verification_note`、`verified_by`、`verified_at`。
+- 为 Template Version `publish` 增加必填 `publish_reason`，为 `set-default` 增加必填 `set_default_reason`。
+- 新增 Term Rule Proposal 持久化模型和 API，支持 `pending_review`、`approved`、`rejected`。
+- Term Rule Proposal 支持新增、编辑、禁用三类意图；编辑和禁用必须保存目标规则快照。
+- Admin `approve` proposal 时原子合并到 Term Rule Set draft；合并失败时 proposal 不得进入 `approved`。
+
+验证：
+
+- Template 验证证据刷新页面后仍可查看。
+- 未填写验证任务 ID、验证说明或发布原因时，Template Version 不能发布。
+- 术语 proposal 刷新页面后仍保留状态、提交人、目标规则快照和审核结果。
+
+### 阶段 2：配置中心和 Template Profile
+
+目标：admin 能完成模板版本验证、发布和设默认；operator 只读可见。
+
+任务：
+
+- 新增静态导航：任务工作台、配置中心、术语建议。
+- 新增配置中心待办汇总，只展示配置发布相关事项。
+- 实现模板列表、模板详情、版本列表、模板文件下载。
+- 实现上传 Template draft version。
+- 在 Template Version 页面提供“创建验证任务”入口，仅 admin 可见。
+- 发布 Template Version 前强制填写已成功的验证任务 ID 和验证说明。
+- 发布和设默认拆成两个显式动作，不提供默认勾选的 publish+default 快捷操作。
+
+验证：
+
+- admin 能完成一次 `Template draft -> 验证任务 -> 发布 -> 设默认`。
+- operator 能查看模板和版本，但看不到上传、发布、设默认和禁用操作。
+- 普通 `/jobs` 上传不暴露指定 Template Version 选择。
+
+### 阶段 3：术语 proposal 和 Term Rule Set 发布
+
+目标：operator 能提交术语建议，admin 审核后合并到 draft 并发布规则集。
+
+任务：
+
+- 实现 `/term-proposals`，operator 默认“我的建议 + 新建建议”，admin 默认“待审核队列”。
+- Operator 新建 proposal 使用轻量表单：变更意图、`source_term`、分类、分段展示建议、说明、可选来源。
+- 分类下拉显示中文 `name`，提交 `category_id`。
+- 实现有序分段编辑器，每段支持 `plain`、`subscript`、`superscript`。
+- 编辑和禁用 proposal 必须选择现有规则；禁用只填写禁用原因，不允许修改 segments。
+- Admin 审核页展示当前规则、提交时快照和提议变更；发现冲突时提示，不自动 rebase。
+- Term Rule Set 发布页展示 draft 的 `rule_count`、`enabled_rule_count`、`snapshot_hash` 和本次已 approve proposals。
+
+验证：
+
+- operator 能提交一条 `VIN = V/plain + IN/subscript` proposal。
+- admin 能 approve 该 proposal，并确认它合并到 Term Rule Set draft。
+- admin 能发布 Term Rule Set，新规则进入默认版本。
+- rejected proposal 必须填写拒绝原因。
+
+### 阶段 4：Translation Profile 基础管理
+
+目标：admin 能管理翻译配置版本，但不编辑 Prompt 正文。
+
+任务：
+
+- 实现 Translation Profile 列表、详情、draft 查看和基础字段编辑。
+- 仅开放 `target_language`、`domain`、`prompt_version`、`model`、`max_pages_per_batch`、`max_chars_per_batch`。
+- 实现 publish、set-default、rollback。
+- 处理 MySQL resource service 未启用时的 `503` 不可用态。
+
+验证：
+
+- admin 能编辑 draft 并发布 Translation Profile。
+- operator 只读可见。
+- 页面不提供 Prompt 正文编辑入口。
+
+### 阶段 5：V2.1 端到端验收
+
+目标：证明配置版本管理闭环可追溯、可审核、可回滚。
+
+任务：
+
+- 执行 Template 端到端验收：admin 完成一次 `Template draft -> 验证任务 -> 发布 -> 设默认`。
+- 执行术语端到端验收：operator 提交 `VIN = V/plain + IN/subscript` proposal，admin approve 并发布 Term Rule Set。
+- 覆盖 403、409、503、表单缺失、冲突提示和刷新恢复。
+
+验证：
+
+- Template 验证证据、发布原因和设默认原因都能在后端追溯。
+- Term proposal 的提交、审核、合并、发布全链路状态可追溯。
+- operator 无法执行 admin-only 操作。

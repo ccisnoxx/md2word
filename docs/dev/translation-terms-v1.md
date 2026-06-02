@@ -10,7 +10,10 @@ last_reviewed: 2026-05-30
 
 # Translation Terms v1
 
-P1 DocumentIR translation uses a read-only CSV glossary. It is intentionally small: online editing, conflict handling, priorities, and rollback are out of scope for this phase.
+P1 DocumentIR translation uses a minimal read-only glossary. In file mode, the
+glossary is loaded from CSV. In MySQL mode, startup imports the CSV seed into
+`translation_term_versions` and `translation_terms`, and runtime reads matching
+versions from SQL first.
 
 Default path:
 
@@ -29,4 +32,7 @@ Required columns:
 
 Runtime binding uses `language_pair@version`, for example `en2zh@v1`. `document_jobs.term_version_id` stores that canonical value for translation tasks.
 
-The loader validates the required columns, rejects blank required values, and computes a `sha256:<hex>` snapshot hash from the matched rows. It does not mutate the CSV or write a runtime store.
+The loader validates the required columns, rejects blank required values, and
+computes a `sha256:<hex>` snapshot hash from the matched rows. MySQL bootstrap
+does not overwrite an existing `language_pair@version`; CSV remains the seed
+source for initial import only.

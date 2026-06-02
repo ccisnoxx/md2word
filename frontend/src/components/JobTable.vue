@@ -2,55 +2,79 @@
 <template>
   <div class="job-table">
     <el-table v-loading="loading" :data="jobs" border class="table" empty-text="暂无任务">
-      <el-table-column label="任务 ID" min-width="170">
+      <el-table-column label="任务 ID" min-width="150">
         <template #default="{ row }">
           <router-link class="mono" :to="`/jobs/${row.id}`">{{ row.id }}</router-link>
         </template>
       </el-table-column>
-      <el-table-column label="模式" min-width="150">
+      <el-table-column label="源 PDF" min-width="190">
+        <template #default="{ row }">
+          <span class="filename" :title="getJobSourceFilename(row)">{{ getJobSourceFilename(row) }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="模式" min-width="130">
         <template #default="{ row }">{{ jobModeText[row.mode] || row.mode }}</template>
       </el-table-column>
-      <el-table-column label="状态" width="120">
+      <el-table-column label="状态" min-width="110">
         <template #default="{ row }"><JobStatusBadge :status="row.status" /></template>
       </el-table-column>
-      <el-table-column label="进度" min-width="190">
+      <el-table-column label="进度" min-width="170">
         <template #default="{ row }">
           <JobProgress :status="row.status" :stage="row.stage" :progress="row.progress" />
         </template>
       </el-table-column>
-      <el-table-column label="错误" min-width="140">
+      <el-table-column label="错误" min-width="120">
         <template #default="{ row }">
           <span v-if="row.error_code" class="mono error-code">{{ row.error_code }}</span>
           <span v-else class="muted">-</span>
         </template>
       </el-table-column>
-      <el-table-column label="创建时间" min-width="170">
-        <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
-      </el-table-column>
-      <el-table-column label="更新时间" min-width="170">
+      <el-table-column label="更新时间" min-width="155">
         <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="190" fixed="right">
+      <el-table-column label="操作" min-width="150">
         <template #default="{ row }">
-          <el-button size="small" text type="primary" @click="$router.push(`/jobs/${row.id}`)">查看</el-button>
-          <el-button
-            size="small"
-            text
-            type="primary"
-            :disabled="row.status !== 'succeeded'"
-            @click="$emit('download', row)"
-          >
-            下载
-          </el-button>
-          <el-button
-            size="small"
-            text
-            type="warning"
-            :disabled="row.status !== 'failed'"
-            @click="$emit('retry', row)"
-          >
-            重试
-          </el-button>
+          <div class="action-row">
+            <el-button size="small" text type="primary" @click="$router.push(`/jobs/${row.id}`)">查看</el-button>
+            <el-button
+              size="small"
+              text
+              type="primary"
+              :disabled="row.status !== 'succeeded'"
+              @click="$emit('download', row)"
+            >
+              下载
+            </el-button>
+            <el-button
+              size="small"
+              text
+              type="warning"
+              :disabled="row.status !== 'failed'"
+              @click="$emit('retry', row)"
+            >
+              重试
+            </el-button>
+            <el-button
+              size="small"
+              text
+              type="danger"
+              :loading="cancelingJobId === row.id"
+              :disabled="!isCancelableJobStatus(row.status)"
+              @click="$emit('cancel', row)"
+            >
+              取消
+            </el-button>
+            <el-button
+              size="small"
+              text
+              type="danger"
+              :loading="archivingJobId === row.id"
+              :disabled="!isArchivableJobStatus(row.status)"
+              @click="$emit('archive', row)"
+            >
+              归档
+            </el-button>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -72,7 +96,13 @@
 import type { DocumentJobResponse } from "@/api/types";
 import JobProgress from "@/components/JobProgress.vue";
 import JobStatusBadge from "@/components/JobStatusBadge.vue";
-import { formatDateTime, jobModeText } from "@/utils/format";
+import {
+  formatDateTime,
+  getJobSourceFilename,
+  isArchivableJobStatus,
+  isCancelableJobStatus,
+  jobModeText,
+} from "@/utils/format";
 
 defineProps<{
   jobs: DocumentJobResponse[];
@@ -80,12 +110,16 @@ defineProps<{
   page: number;
   pageSize: number;
   total: number;
+  cancelingJobId?: string | null;
+  archivingJobId?: string | null;
 }>();
 
 defineEmits<{
   "page-change": [page: number];
   download: [job: DocumentJobResponse];
   retry: [job: DocumentJobResponse];
+  cancel: [job: DocumentJobResponse];
+  archive: [job: DocumentJobResponse];
 }>();
 </script>
 
@@ -100,6 +134,25 @@ defineEmits<{
 
 .error-code {
   color: #b42318;
+}
+
+.filename {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.action-row :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
 .pagination-row {

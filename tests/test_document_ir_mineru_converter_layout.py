@@ -1,0 +1,99 @@
+from __future__ import annotations
+
+# tests/test_document_ir_mineru_converter_layout.py: 覆盖 MinerU -> DocumentIR v2 layout signal 提取。
+
+import json
+import tempfile
+import unittest
+import zipfile
+from pathlib import Path
+
+from app.services.document_ir import MinerUToDocumentIRService
+
+
+class MinerUToDocumentIRLayoutTests(unittest.TestCase):
+    def test_convert_zip_outputs_v2_pages_layout_roles_and_annotations(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "mineru.zip"
+            self._write_zip(
+                zip_path,
+                blocks=[
+                    {"type": "title", "text": "1 Features", "text_level": 1, "bbox": [72, 80, 180, 100], "page_idx": 0},
+                    {"type": "list", "list_items": ["Low noise", "High slew rate"], "bbox": [72, 120, 260, 180], "page_idx": 0},
+                    {
+                        "type": "chart",
+                        "img_path": "images/chart.png",
+                        "chart_caption": ["Noise Density"],
+                        "chart_footnote": ["Typical values."],
+                        "bbox": [72, 200, 360, 320],
+                        "page_idx": 0,
+                    },
+                    {
+                        "type": "table",
+                        "table_caption": ["Device Information"],
+                        "table_footnote": ["All packages are listed in the addendum."],
+                        "table_body": "<table><tr><td>Part</td></tr></table>",
+                        "bbox": [72, 340, 540, 430],
+                        "page_idx": 0,
+                        "continuation_heights": [120],
+                    },
+                    {"type": "header", "text": "Header text", "bbox": [72, 20, 200, 40], "page_idx": 0},
+                    {"type": "footer", "text": "Footer text", "bbox": [72, 740, 300, 760], "page_idx": 0},
+                ],
+                layout={"pdf_info": [{"page_idx": 0, "page_size": [612, 792]}]},
+            )
+
+            result = MinerUToDocumentIRService().convert_zip(
+                zip_path,
+                job_id="docjob_layout",
+                source_file_id="file_layout",
+                document_language="en",
+            )
+
+        document = result.document
+        self.assertEqual(document.schema_version, "document-ir/v2")
+        self.assertEqual(document.pages[0].width, 612)
+        self.assertEqual(document.pages[0].height, 792)
+        self.assertEqual(document.pages[0].metadata["page_size_source"], "layout.json")
+        self.assertEqual(document.blocks[0].layout.bbox, (72.0, 80.0, 180.0, 100.0))
+        self.assertEqual(document.blocks[1].list_items, ["Low noise", "High slew rate"])
+        self.assertEqual(document.blocks[2].type, "image")
+        self.assertEqual(document.blocks[2].text, "Noise Density")
+        self.assertEqual(document.blocks[2].captions, ["Noise Density"])
+        self.assertEqual(document.blocks[2].footnotes, ["Typical values."])
+        self.assertEqual(document.blocks[3].captions, ["Device Information"])
+        self.assertEqual(document.blocks[3].footnotes, ["All packages are listed in the addendum."])
+        self.assertEqual(document.blocks[3].layout.continuation_heights, [120.0])
+        self.assertEqual(document.blocks[4].layout.role, "page_header")
+        self.assertEqual(document.blocks[5].layout.role, "page_footer")
+        self.assertNotIn("unsupported_block_type:header", document.quality_flags)
+        self.assertIn("table_continuation:block_0004", document.quality_flags)
+        self.assertEqual(len(result.image_assets), 1)
+
+    def test_convert_zip_records_missing_layout_source_and_bbox(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "mineru.zip"
+            self._write_zip(zip_path, blocks=[{"type": "text", "text": "Body", "page_idx": 0}], layout=None)
+
+            result = MinerUToDocumentIRService().convert_zip(
+                zip_path,
+                job_id="docjob_missing_layout",
+                source_file_id="file_missing_layout",
+                document_language="en",
+            )
+
+        self.assertEqual(result.document.schema_version, "document-ir/v2")
+        self.assertEqual(result.document.pages[0].index, 0)
+        self.assertIn("middle_json_missing", result.document.quality_flags)
+        self.assertIn("layout_bbox_missing:block_0001", result.document.quality_flags)
+
+    def _write_zip(self, zip_path: Path, *, blocks: list[dict], layout: dict | None) -> None:
+        with zipfile.ZipFile(zip_path, "w") as archive:
+            archive.writestr("content_list.json", json.dumps(blocks, ensure_ascii=False))
+            if layout is not None:
+                archive.writestr("layout.json", json.dumps(layout, ensure_ascii=False))
+            archive.writestr("images/chart.png", b"fake-image")
+
+
+if __name__ == "__main__":
+    unittest.main()

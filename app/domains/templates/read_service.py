@@ -15,7 +15,8 @@ import yaml
 
 from app.domains.audit.models import ActorContext
 from app.core.config import Settings
-from app.domains.resources.models import ResourceVersionRecord
+from app.domains.document_jobs.repository import DocumentJobRepositoryProtocol
+from app.domains.resources.models import ResourceVersionRecord, utc_now
 from app.domains.templates.models import TemplateManifestItem, TemplateState, TemplatesManifest
 from app.domains.templates.schemas import (
     TemplateAssetResponse,
@@ -59,10 +60,12 @@ class TemplateReadService:
         settings: Settings,
         resource_version_service: Any | None = None,
         audit_service: Any | None = None,
+        document_job_repository: DocumentJobRepositoryProtocol | None = None,
     ) -> None:
         self.settings = settings
         self.resource_version_service = resource_version_service
         self.audit_service = audit_service
+        self.document_job_repository = document_job_repository
         self._manifest_cache: TemplatesManifest | None = None
 
     def list_templates(self, *, url_for: Callable[..., str] | None) -> list[TemplateListItemResponse]:
@@ -277,6 +280,9 @@ class TemplateReadService:
         version: int,
         *,
         make_default: bool,
+        publish_reason: str,
+        verification_job_id: str,
+        verification_note: str,
         actor: ActorContext | None = None,
         trace_id: str | None = None,
     ) -> TemplateVersionResponse:
@@ -284,6 +290,33 @@ class TemplateReadService:
 
         template = self._require_template_item(template_id)
         service = self._require_resource_version_service()
+        draft_record = service.repository.get_resource_version("template", template.id, str(version))
+        if draft_record is None:
+            raise FileNotFoundError(f"模板版本不存在: {template.id}@{version}")
+        normalized_verification_job_id = self._normalize_required_text(verification_job_id, "verification_job_id")
+        normalized_verification_note = self._normalize_required_text(verification_note, "verification_note")
+        normalized_publish_reason = self._normalize_required_text(publish_reason, "publish_reason")
+        self._validate_verification_job(template.id, version, normalized_verification_job_id)
+        now = utc_now()
+        payload = {
+            **(draft_record.payload or {}),
+            "verification_job_id": normalized_verification_job_id,
+            "verification_note": normalized_verification_note,
+            "verified_by": actor.actor_id if actor is not None else None,
+            "verified_at": now.isoformat(),
+            "publish_reason": normalized_publish_reason,
+            "published_by": actor.actor_id if actor is not None else None,
+            "published_at": now.isoformat(),
+        }
+        service.repository.save_resource_version(
+            draft_record.model_copy(
+                update={
+                    "payload": payload,
+                    "snapshot_hash": self._snapshot_hash(payload),
+                    "updated_at": now,
+                }
+            )
+        )
         record = service.publish("template", template.id, str(version), make_default=make_default)
         if make_default:
             self._activate_template_version(template, version, record.payload)
@@ -292,6 +325,7 @@ class TemplateReadService:
             action="template.publish",
             target_id=f"{template.id}@{version}",
             trace_id=trace_id,
+            reason=normalized_publish_reason,
         )
         refreshed_template = self._require_template_item(template.id)
         return self._build_template_version_response(
@@ -301,11 +335,29 @@ class TemplateReadService:
             record=record,
         )
 
+    def _validate_verification_job(self, template_id: str, version: int, verification_job_id: str) -> None:
+        """校验模板发布证据来自成功的同版本验证任务。"""
+
+        if self.document_job_repository is None:
+            raise RuntimeError("Template publish requires document_job_repository for verification.")
+        job = self.document_job_repository.get_document_job(verification_job_id)
+        if job is None:
+            raise FileNotFoundError(f"验证任务不存在: {verification_job_id}")
+        if job.status != "succeeded":
+            raise ValueError("验证任务必须是 succeeded 状态。")
+        expected_template_version_id = self.build_template_version_id(template_id, version)
+        if job.template_version_id != expected_template_version_id:
+            raise ValueError(
+                "验证任务 template_version_id 与待发布版本不匹配: "
+                f"expected={expected_template_version_id} actual={job.template_version_id}"
+            )
+
     def set_default_template_version(
         self,
         template_id: str,
         version: int,
         *,
+        set_default_reason: str,
         actor: ActorContext | None = None,
         trace_id: str | None = None,
     ) -> TemplateVersionResponse:
@@ -323,6 +375,7 @@ class TemplateReadService:
             action="template.set_default",
             target_id=f"{template.id}@{version}",
             trace_id=trace_id,
+            reason=set_default_reason,
         )
         refreshed_template = self._require_template_item(template.id)
         return self._build_template_version_response(
@@ -455,6 +508,18 @@ class TemplateReadService:
             raise FileNotFoundError(f"模板文件不存在: {resolved_id}")
         return path
 
+    def resolve_job_layout_config_path(self, template_id: str | None) -> Path | None:
+        """返回 job 选中模板绑定的版式 YAML；模板未绑定时允许 conversion 使用默认配置。"""
+
+        resolved_id = self.resolve_selected_template_id(template_id)
+        template = self._get_template_item(resolved_id)
+        if template is None or not template.layout_config_path:
+            return None
+        path = self._resolve_manifest_path(template.layout_config_path)
+        if not path.exists() or not path.is_file():
+            raise FileNotFoundError(f"模板版式配置不存在: {resolved_id}")
+        return path
+
     def resolve_template_version(self, template_version_id: str | None) -> TemplateVersionSelection:
         """把任务入参解析到具体模板版本文件和配置包。"""
 
@@ -524,6 +589,7 @@ class TemplateReadService:
         action: str,
         target_id: str,
         trace_id: str | None,
+        reason: str | None = None,
     ) -> None:
         if actor is None or self.audit_service is None:
             return
@@ -533,6 +599,7 @@ class TemplateReadService:
             target_type="template",
             target_id=target_id,
             trace_id=trace_id or "",
+            reason=reason,
         )
 
     def _write_manifest(self, manifest: TemplatesManifest) -> None:
@@ -692,6 +759,13 @@ class TemplateReadService:
             is_default=is_default,
             snapshot_hash=record.snapshot_hash if record is not None else None,
             render_policy=render_policy,
+            verification_job_id=self._payload_text(payload, "verification_job_id"),
+            verification_note=self._payload_text(payload, "verification_note"),
+            verified_by=self._payload_text(payload, "verified_by"),
+            verified_at=self._payload_datetime(payload, "verified_at"),
+            publish_reason=self._payload_text(payload, "publish_reason"),
+            published_by=self._payload_text(payload, "published_by"),
+            published_at=self._payload_datetime(payload, "published_at"),
             template=self._build_asset(path=template_path, label="Word 模板", download_url=None),
             layout_config=self._build_asset(
                 path=self._resolve_manifest_path(layout_config_path) if layout_config_path else None,
@@ -774,6 +848,15 @@ class TemplateReadService:
     def _payload_dict(payload: dict[str, Any] | None, key: str) -> dict[str, Any] | None:
         value = payload.get(key) if payload is not None else None
         return value if isinstance(value, dict) else None
+
+    @staticmethod
+    def _payload_datetime(payload: dict[str, Any] | None, key: str) -> datetime | None:
+        value = payload.get(key) if payload is not None else None
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str) and value:
+            return datetime.fromisoformat(value)
+        return None
 
     def _template_is_enabled(self, template_id: str) -> bool:
         item = self._get_template_item(template_id)

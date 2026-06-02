@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-# app/domains/translation/schemas.py: 定义 Translation Profile 版本管理 API 的 v1 请求/响应模型。
+# app/domains/translation/schemas.py: 定义 Translation Profile 和 Translation Term Proposal API 的 v1 请求/响应模型。
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -71,3 +72,132 @@ class TranslationProfilePublishRequest(BaseModel):
 
 class TranslationProfileRollbackRequest(BaseModel):
     version: str
+
+
+class TranslationTermProposalChangeRequest(BaseModel):
+    action: str
+    source_term: str
+    target_term: str | None = None
+    case_sensitive: bool | None = None
+    status: str | None = None
+    priority: int | None = None
+    domain: str | None = None
+    category: str | None = None
+    note: str | None = None
+
+
+class TranslationTermProposalCreateRequest(BaseModel):
+    language_pair: str = Field(default="en2zh", min_length=1, max_length=32)
+    source_job_id: str | None = None
+    source_file_id: str | None = None
+    observed_translation_term_set_id: str | None = None
+    observed_translation_term_version: str | None = None
+    changes: list[TranslationTermProposalChangeRequest]
+
+
+class TranslationTermProposalReviewRequest(BaseModel):
+    review_note: str | None = None
+
+
+class TranslationTermProposalApproveAndPublishRequest(BaseModel):
+    review_note: str | None = None
+    release_note: str | None = None
+
+
+class TranslationTermProposalRejectRequest(BaseModel):
+    review_note: str
+
+
+class TranslationTermProposalChangeResponse(BaseModel):
+    seq: int
+    action: str
+    source_term: str
+    normalized_source_term: str
+    target_term: str | None = None
+    case_sensitive: bool | None = None
+    status: str | None = None
+    priority: int | None = None
+    domain: str | None = None
+    category: str | None = None
+    note: str | None = None
+
+
+class TranslationTermProposalResponse(BaseModel):
+    id: str
+    status: str
+    submitted_by: str
+    source_job_id: str | None = None
+    source_file_id: str | None = None
+    observed_translation_term_set_id: str | None = None
+    observed_translation_term_version: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    review_note: str | None = None
+    published_translation_term_set_id: str | None = None
+    published_translation_term_version: str | None = None
+    published_at: datetime | None = None
+    changes: list[TranslationTermProposalChangeResponse]
+    created_at: datetime
+
+
+class TranslationTermProposalListResponse(BaseModel):
+    items: list[TranslationTermProposalResponse]
+    total: int
+
+
+class TranslationTermValidationFindingResponse(BaseModel):
+    code: str
+    message: str
+    normalized_source_term: str | None = None
+
+
+class TranslationTermValidationReportResponse(BaseModel):
+    valid: bool
+    errors: list[TranslationTermValidationFindingResponse]
+    warnings: list[TranslationTermValidationFindingResponse]
+
+
+class TranslationTermSetImportRequest(BaseModel):
+    csv_text: str
+    target: Literal["draft", "seed"] = "draft"
+    dedupe: Literal["reject", "keep_first"] = "reject"
+
+
+class TranslationTermSetImportDuplicateResponse(BaseModel):
+    row_number: int
+    kept_row_number: int
+    source_term: str
+    normalized_source_term: str
+
+
+class TranslationTermSetImportReportResponse(BaseModel):
+    dedupe: str
+    total_rows: int
+    imported_rows: int
+    duplicate_rows: int
+    duplicates: list[TranslationTermSetImportDuplicateResponse]
+
+
+class TranslationTermSetImportResponse(BaseModel):
+    target: str
+    set_id: str
+    language_pair: str
+    version: str
+    term_count: int
+    snapshot_hash: str
+    validation: TranslationTermValidationReportResponse
+    import_report: TranslationTermSetImportReportResponse
+
+
+class TranslationTermSetExportManifestResponse(BaseModel):
+    set_id: str
+    language_pair: str
+    version: str
+    format: str
+    exported_at: datetime
+    exported_by: str | None = None
+
+
+class TranslationTermSetExportResponse(BaseModel):
+    manifest: TranslationTermSetExportManifestResponse
+    csv_text: str

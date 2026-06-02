@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# app/conversion/runtime_runner.py: legacy MinerU 输出到 DOCX 转换链路的共享运行入口。
+
 from pathlib import Path
 
 from docx import Document
@@ -36,6 +38,7 @@ def run_conversion(
     subscript_config: str | None,
     no_template: bool,
     use_mineru_header_footer: bool,
+    layout_config_path: str | None = None,
     document_language: str = "auto",
     translation_mode: str = "direct",
     translation_request_output: str | None = None,
@@ -57,6 +60,9 @@ def run_conversion(
     original_input = Path(input_path).expanduser().resolve()
     resolved_output_path = resolve_output_path(original_input, output_path)
     resolved_template_path = None if no_template else resolve_template_path(template_arg=template_path, default_candidates=DEFAULT_TEMPLATE_CANDIDATES)
+    resolved_layout_config_path = Path(layout_config_path).expanduser().resolve() if layout_config_path else None
+    if resolved_layout_config_path is not None and not resolved_layout_config_path.exists():
+        raise FileNotFoundError(f"版式配置文件不存在: {resolved_layout_config_path}")
     resolved_subscript_config = Path(subscript_config).expanduser().resolve() if subscript_config else None
     resolved_translation_request_output = (
         Path(translation_request_output).expanduser().resolve() if translation_request_output else None
@@ -68,8 +74,9 @@ def run_conversion(
 
     logger.info("start conversion input={} output={}", original_input, resolved_output_path)
     logger.debug(
-        "conversion options template={} subscript_config={} no_template={} use_mineru_header_footer={} document_language={} translation_mode={} translation_request_output={} translation_response={} translation_trace_output={} translation_model={} translation_api_key_present={} translation_base_url={}",
+        "conversion options template={} layout_config={} subscript_config={} no_template={} use_mineru_header_footer={} document_language={} translation_mode={} translation_request_output={} translation_response={} translation_trace_output={} translation_model={} translation_api_key_present={} translation_base_url={}",
         resolved_template_path,
+        resolved_layout_config_path,
         resolved_subscript_config,
         no_template,
         use_mineru_header_footer,
@@ -158,6 +165,7 @@ def run_conversion(
                 template_document=template_document,
                 subscript_config=resolved_subscript_config,
                 use_mineru_header_footer=use_mineru_header_footer,
+                layout_config_path=resolved_layout_config_path,
             ),
             resolved_document_language,
         )

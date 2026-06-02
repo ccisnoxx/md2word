@@ -6,6 +6,8 @@ status: current
 source_files:
   - app/api/v1/router.py
   - app/domains/term_rules/router.py
+  - app/domains/term_rules/proposals_router.py
+  - app/domains/term_rules/proposals_service.py
   - app/domains/term_rules/write_guard.py
   - app/domains/term_rules/service.py
   - app/domains/term_rules/import_validation.py
@@ -15,7 +17,7 @@ source_files:
   - app/domains/term_rules/schemas.py
 summary: Term-rules API 以 v2 manifest 为版本化 seed，以 live runtime store 为可变真源，并在 MySQL versioned mode 下把写入交给 Term Rule Set 发布流程。
 tags: [term-rules, api, runtime-store]
-last_reviewed: 2026-05-31
+last_reviewed: 2026-06-01
 ---
 
 ## 概述
@@ -54,7 +56,7 @@ last_reviewed: 2026-05-31
 ### `POST /api/v1/term-rules`
 
 - 用途：新增单条规则。
-- 认证：`X-Admin-Token`
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 请求体关键字段：
   - `id`：可选；不传时自动生成
   - `category_id`
@@ -73,7 +75,7 @@ last_reviewed: 2026-05-31
 ### `PATCH /api/v1/term-rules/{rule_id}`
 
 - 用途：更新单条规则。
-- 认证：`X-Admin-Token`
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 请求体为上述字段的任意子集。
 - 若替换 `segments` 且未显式传 `custom_html/custom_markdown`，服务会按 segments 重新生成渲染内容。
 - MySQL versioned mode 下返回 `400`，避免绕过 Term Rule Set draft / publish。
@@ -81,7 +83,7 @@ last_reviewed: 2026-05-31
 ### `DELETE /api/v1/term-rules/{rule_id}`
 
 - 用途：删除单条规则。
-- 认证：`X-Admin-Token`
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 成功后会刷新 runtime YAML。
 - MySQL versioned mode 下返回 `400`，避免绕过 Term Rule Set draft / publish。
 
@@ -114,7 +116,7 @@ last_reviewed: 2026-05-31
 ### `POST /api/v1/term-rules/import`
 
 - 用途：把校验通过的规则集整体替换为新的 live runtime truth。
-- 认证：`X-Admin-Token`
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 请求体：
   - `yaml_text`
 - 关键语义：
@@ -125,7 +127,7 @@ last_reviewed: 2026-05-31
 ### `POST /api/v1/term-rules/sync-files`
 
 - 用途：把当前 live truth 回写到版本化 seed，并同时刷新 runtime YAML。
-- 认证：`X-Admin-Token`
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 返回：
   - `repository_backend`
   - `category_count`
@@ -135,8 +137,87 @@ last_reviewed: 2026-05-31
   - `warnings`
 - MySQL versioned mode 下返回 `400`，避免绕过 Term Rule Set draft / publish。
 
+## Term Rule Proposal API
+
+`/api/v1/term-rule-proposals` 用于 V2.1 术语建议审核流。该能力需要 MySQL resource service；未启用时返回 `503`。
+
+### `POST /api/v1/term-rule-proposals`
+
+- 用途：operator/admin 提交术语变更建议。
+- 认证：Bearer JWT。
+- 请求体字段：
+  - `intent`：`create`、`update` 或 `disable`
+  - `source_term`：`create/update` 必填
+  - `category_id`：`create/update` 必填，提交分类 ID
+  - `segments[]`：`create/update` 必填；每段支持 `plain`、`subscript`、`superscript`
+  - `reason`：必填
+  - `target_rule_id`：`update/disable` 必填
+  - `source_job_id`、`source_file_id`：可选来源线索
+- 关键语义：
+  - `update/disable` 会保存 `target_rule_snapshot`
+  - `disable` 会从目标规则继承 `source_term`、`category_id` 和 `segments`
+
+### `GET /api/v1/term-rule-proposals`
+
+- 用途：查询 proposal 列表。
+- 认证：Bearer JWT。
+- 查询参数：
+  - `scope=my`：默认，仅返回当前用户提交的 proposals
+  - `scope=all`：admin-only，返回全部
+  - `scope=pending_review`：admin-only，返回待审核队列
+  - `scope=approved_unpublished`：admin-only，返回已 approve 但尚未随 Term Rule Set 发布的 proposals
+  - `status`：可选状态过滤，支持 `pending_review`、`approved`、`rejected`
+
+### `GET /api/v1/term-rule-proposals/{proposal_id}`
+
+- 用途：查看单条 proposal。
+- 认证：Bearer JWT。
+- 权限：operator 只能查看自己提交的 proposal；admin 可查看全部。
+
+### `POST /api/v1/term-rule-proposals/{proposal_id}/approve`
+
+- 用途：admin 审核通过并原子合并到 Term Rule Set draft。
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
+- 请求体字段：
+  - `review_comment`：可选
+- 冲突语义：
+  - `update/disable` 的当前规则与 `target_rule_snapshot` 不一致时返回 `409`
+  - 冲突时 proposal 保持 `pending_review`，后端不自动 rebase
+
+### `POST /api/v1/term-rule-proposals/{proposal_id}/approve-and-publish`
+
+- 用途：admin 审核通过、合并 draft、发布新的 Term Rule Set 版本并设为默认版本。
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
+- 请求体字段：
+  - `review_comment`：可选
+  - `publish_reason`：可选；为空时后端使用 proposal ID 和 source term 生成默认发布原因
+- 关键语义：
+  - 仍然走 Term Rule Set draft/publish/default 流程，不直接修改 live 规则
+  - 发布成功后刷新 conversion runtime YAML，并回填 `published_term_rule_set_version`
+
+### `POST /api/v1/term-rule-proposals/{proposal_id}/reject`
+
+- 用途：admin 拒绝 proposal。
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
+- 请求体字段：
+  - `review_comment`：必填拒绝原因
+
+### `TermRuleProposalResponse` 关键字段
+
+| 字段 | 说明 |
+|---|---|
+| `id` | proposal ID |
+| `intent` | `create` / `update` / `disable` |
+| `status` | `pending_review` / `approved` / `rejected` |
+| `target_rule_id` | update/disable 目标规则 |
+| `target_rule_snapshot` | 提交时的目标规则快照 |
+| `merged_term_rule_set_id` | approve 后合入的规则集 |
+| `merged_draft_snapshot_hash` | approve 后 draft snapshot hash |
+| `published_term_rule_set_version` | 随 Term Rule Set publish 后关联的版本号 |
+
 ## 当前限制
 
 - 当前 import 面向 v2 manifest，不再把 legacy `subscript_rules` YAML 当作者真源。
 - `source_term` 在 live store 内保持全局唯一。
 - MySQL versioned mode 下，legacy 写接口只保留 file/sqlite 兼容用途；生产术语变更应走 [term-rule-sets.md](/Users/sc/PycharmProjects/md2word/docs/api/term-rule-sets.md)。
+- MySQL mode 会把当前 term rule seed/runtime 投影到 `term_rule_categories`、`term_rules`、`term_rule_segments` 明细表；发布版本仍以 Term Rule Set 版本流程为准。

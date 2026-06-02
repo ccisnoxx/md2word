@@ -5,14 +5,20 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from dataclasses import dataclass
 from datetime import timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from app.domains.audit.models import ActorContext
-from app.domains.resources.models import ResourceVersionRecord, utc_now
-from app.domains.term_rules.models import TermRulesStore
-from app.domains.term_rules.repository import TermRuleRepositoryProtocol
+from app.domains.resources.models import ResourceVersionRecord, ResourceVersionStatus, utc_now
+from app.domains.term_rules.models import (
+    TermRuleImportValidationFinding,
+    TermRuleImportValidationReport,
+    TermRuleImportValidationSummary,
+    TermRulesStore,
+)
+from app.domains.term_rules.repository import TermRuleAssetRepositoryProtocol, TermRuleRepositoryProtocol
 from app.domains.term_rules.schemas import (
     TermRuleSetDetailResponse,
     TermRuleSetDraftResponse,
@@ -28,6 +34,52 @@ DEFAULT_TERM_RULE_SET_ID = "electronics-default"
 DRAFT_VERSION = "draft"
 TERM_RULE_SET_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 SHANGHAI_TZ = timezone(timedelta(hours=8))
+TERM_RULE_IMPORT_DEDUPE_MODES = {"reject", "keep_first"}
+TERM_RULE_IMPORT_TARGETS = {"draft", "seed"}
+TERM_RULE_EXPORT_FORMATS = {"term_rules_v2", "legacy_runtime"}
+
+
+@dataclass(frozen=True, slots=True)
+class TermRuleSetImportDuplicate:
+    """Term Rule Set YAML 导入时被去重丢弃的一条重复规则。"""
+
+    source_term: str
+    path: str | None
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class TermRuleSetImportReport:
+    """Term Rule Set YAML 导入报告。"""
+
+    dedupe: str
+    total_rules: int
+    imported_rules: int
+    duplicate_rules: int
+    duplicates: tuple[TermRuleSetImportDuplicate, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class TermRuleSetImportResult:
+    """Term Rule Set 导入执行结果。"""
+
+    target: str
+    version: str
+    record: ResourceVersionRecord
+    validation: TermRuleImportValidationReport
+    import_report: TermRuleSetImportReport
+
+
+@dataclass(frozen=True, slots=True)
+class TermRuleSetExportResult:
+    """Term Rule Set 导出结果。"""
+
+    set_id: str
+    version: str
+    format: str
+    yaml_text: str
+    exported_at: Any
+    exported_by: str | None
 
 
 class TermRuleSetVersionService:
@@ -40,11 +92,13 @@ class TermRuleSetVersionService:
         runtime_yaml_path: Path,
         resource_version_service: ResourceVersionService,
         audit_service: Any | None = None,
+        asset_repository: TermRuleAssetRepositoryProtocol | None = None,
     ) -> None:
         self.repository = repository
         self.runtime_yaml_path = runtime_yaml_path
         self.resource_version_service = resource_version_service
         self.audit_service = audit_service
+        self.asset_repository = asset_repository
         self.yaml_codec = TermRuleYamlCodec()
 
     def list_sets(self) -> TermRuleSetListResponse:
@@ -80,6 +134,13 @@ class TermRuleSetVersionService:
         record = self._ensure_draft_record(normalized_id)
         return self._draft_response(record)
 
+    def get_draft_store(self, term_rule_set_id: str) -> TermRulesStore:
+        """返回当前 draft 的结构化 store，供 proposal 审核原子合并使用。"""
+
+        normalized_id = self._require_known_set_id(term_rule_set_id)
+        record = self._ensure_draft_record(normalized_id)
+        return self._store_from_record(record)
+
     def update_draft(self, term_rule_set_id: str, store: TermRulesStore) -> TermRuleSetDraftResponse:
         normalized_id = self._require_known_set_id(term_rule_set_id)
         existing = self.resource_version_service.repository.get_resource_version(
@@ -106,6 +167,46 @@ class TermRuleSetVersionService:
             payload=payload,
         )
         return self._draft_response(record)
+
+    def import_store(
+        self,
+        term_rule_set_id: str,
+        store: TermRulesStore,
+        *,
+        target: str,
+        dedupe: str,
+        validation: TermRuleImportValidationReport,
+        import_report: TermRuleSetImportReport,
+        actor: ActorContext | None = None,
+        trace_id: str | None = None,
+    ) -> TermRuleSetImportResult:
+        """把已校验的 YAML store 导入 draft，或在空集时作为 seed/default 初始化。"""
+
+        normalized_id = self._require_known_set_id(term_rule_set_id)
+        if target not in TERM_RULE_IMPORT_TARGETS:
+            raise ValueError(f"不支持的 Term Rule Set 导入目标: {target}")
+        if dedupe not in TERM_RULE_IMPORT_DEDUPE_MODES:
+            raise ValueError(f"不支持的 Term Rule Set 去重策略: {dedupe}")
+        if target == "seed":
+            record = self._import_seed_store(normalized_id, store, actor=actor, trace_id=trace_id)
+            version = record.version
+        else:
+            record = self._replace_draft_record(normalized_id, store)
+            version = DRAFT_VERSION
+        self._record_audit(
+            actor=actor,
+            action="term_rule_set.import",
+            target_id=f"{normalized_id}@{version}",
+            trace_id=trace_id,
+            reason=f"target={target}; dedupe={dedupe}",
+        )
+        return TermRuleSetImportResult(
+            target=target,
+            version=version,
+            record=record,
+            validation=validation,
+            import_report=import_report,
+        )
 
     def publish_draft(
         self,
@@ -142,10 +243,11 @@ class TermRuleSetVersionService:
             "term_rule_set",
             normalized_id,
             version,
-            make_default=make_default,
+            make_default=False,
         )
+        self._mirror_version(record)
         if make_default:
-            self._sync_live_store(record)
+            self._sync_live_store_then_set_default(normalized_id, record)
         self._record_audit(
             actor=actor,
             action="term_rule_set.publish",
@@ -164,9 +266,8 @@ class TermRuleSetVersionService:
         trace_id: str | None = None,
     ) -> TermRuleSetVersionResponse:
         normalized_id = self._require_known_set_id(term_rule_set_id)
-        self.resource_version_service.set_default("term_rule_set", normalized_id, version)
-        record = self._require_version_record(normalized_id, version)
-        self._sync_live_store(record)
+        record = self._require_published_version_record(normalized_id, version)
+        self._sync_live_store_then_set_default(normalized_id, record)
         self._record_audit(
             actor=actor,
             action="term_rule_set.set_default",
@@ -184,9 +285,8 @@ class TermRuleSetVersionService:
         trace_id: str | None = None,
     ) -> TermRuleSetVersionResponse:
         normalized_id = self._require_known_set_id(term_rule_set_id)
-        self.resource_version_service.rollback_default("term_rule_set", normalized_id, version)
-        record = self._require_version_record(normalized_id, version)
-        self._sync_live_store(record)
+        record = self._require_published_version_record(normalized_id, version)
+        self._sync_live_store_then_set_default(normalized_id, record)
         self._record_audit(
             actor=actor,
             action="term_rule_set.rollback",
@@ -194,6 +294,151 @@ class TermRuleSetVersionService:
             trace_id=trace_id,
         )
         return self._version_response(record)
+
+    def export_version(
+        self,
+        term_rule_set_id: str,
+        *,
+        version: str | None = None,
+        export_format: str = "term_rules_v2",
+        actor: ActorContext | None = None,
+        trace_id: str | None = None,
+    ) -> TermRuleSetExportResult:
+        """导出指定或默认 Term Rule Set 版本为 term_rules.v2.yaml 或 legacy runtime YAML。"""
+
+        normalized_id = self._require_known_set_id(term_rule_set_id)
+        if export_format not in TERM_RULE_EXPORT_FORMATS:
+            raise ValueError(f"不支持的 Term Rule Set 导出格式: {export_format}")
+        record = self._default_record(normalized_id) if version is None else self._require_version_record(normalized_id, version)
+        if record is None:
+            raise FileNotFoundError(f"术语规则集缺少默认版本: {normalized_id}")
+        store = self._store_from_record(record)
+        yaml_text = (
+            self.yaml_codec.dump_legacy_runtime_yaml(store)
+            if export_format == "legacy_runtime"
+            else self.yaml_codec.dump_store(store)
+        )
+        exported_at = utc_now()
+        exported_by = actor.actor_id if actor is not None else None
+        self._record_audit(
+            actor=actor,
+            action="term_rule_set.export",
+            target_id=f"{normalized_id}@{record.version}",
+            trace_id=trace_id,
+            reason=f"format={export_format}",
+        )
+        return TermRuleSetExportResult(
+            set_id=normalized_id,
+            version=record.version,
+            format=export_format,
+            yaml_text=yaml_text,
+            exported_at=exported_at,
+            exported_by=exported_by,
+        )
+
+    def bootstrap_seed_as_default_if_empty(self, seed_path: Path, *, version: str = "seed") -> ResourceVersionRecord:
+        """MySQL mode 下仅在 SQL 无默认版本时从 seed 建立初始 published/default 版本。"""
+
+        normalized_id = self._require_known_set_id(DEFAULT_TERM_RULE_SET_ID)
+        default_record = self._default_record(normalized_id)
+        if default_record is not None:
+            self._sync_live_store(default_record)
+            return default_record
+        if not seed_path.exists():
+            raise FileNotFoundError(f"bootstrap 规则文件不存在: {seed_path}")
+        result = self.yaml_codec.validate_yaml_text(seed_path.read_text(encoding="utf-8"))
+        if result.errors or result.store is None:
+            message = result.errors[0].message if result.errors else "bootstrap 规则导入失败"
+            raise ValueError(message)
+        duplicate = next((item for item in result.warnings if item.code == "duplicate_source_term"), None)
+        if duplicate is not None:
+            raise ValueError(duplicate.message)
+        payload = self._build_payload(
+            term_rule_set_id=normalized_id,
+            version=version,
+            store=result.store,
+            base_version=None,
+            published_by="seed",
+            publish_reason="seed initialization",
+            published_at=utc_now(),
+        )
+        self.resource_version_service.create_or_update_draft(
+            resource_type="term_rule_set",
+            resource_id=normalized_id,
+            version=version,
+            snapshot_hash=self._snapshot_hash(payload),
+            payload_ref=f"term_rule_set:{normalized_id}@{version}",
+            payload=payload,
+        )
+        published = self.resource_version_service.publish(
+            "term_rule_set",
+            normalized_id,
+            version,
+            make_default=False,
+        )
+        self._sync_live_store_then_set_default(normalized_id, published)
+        return published
+
+    def _replace_draft_record(self, term_rule_set_id: str, store: TermRulesStore) -> ResourceVersionRecord:
+        existing = self.resource_version_service.repository.get_resource_version(
+            "term_rule_set",
+            term_rule_set_id,
+            DRAFT_VERSION,
+        )
+        base_version = self._payload_text(existing.payload if existing is not None else None, "base_version")
+        if base_version is None:
+            default_record = self._default_record(term_rule_set_id)
+            base_version = default_record.version if default_record is not None else None
+        payload = self._build_payload(
+            term_rule_set_id=term_rule_set_id,
+            version=DRAFT_VERSION,
+            store=store,
+            base_version=base_version,
+        )
+        return self.resource_version_service.create_or_update_draft(
+            resource_type="term_rule_set",
+            resource_id=term_rule_set_id,
+            version=DRAFT_VERSION,
+            snapshot_hash=self._snapshot_hash(payload),
+            payload_ref=f"term_rule_set:{term_rule_set_id}@{DRAFT_VERSION}",
+            payload=payload,
+        )
+
+    def _import_seed_store(
+        self,
+        term_rule_set_id: str,
+        store: TermRulesStore,
+        *,
+        actor: ActorContext | None,
+        trace_id: str | None,
+    ) -> ResourceVersionRecord:
+        if self._default_record(term_rule_set_id) is not None:
+            raise ValueError("seed 初始化只能在 Term Rule Set 缺少默认版本时执行。")
+        payload = self._build_payload(
+            term_rule_set_id=term_rule_set_id,
+            version="seed",
+            store=store,
+            base_version=None,
+            published_by=actor.actor_id if actor is not None else "seed",
+            publish_reason="import seed initialization",
+            published_at=utc_now(),
+        )
+        self.resource_version_service.create_or_update_draft(
+            resource_type="term_rule_set",
+            resource_id=term_rule_set_id,
+            version="seed",
+            snapshot_hash=self._snapshot_hash(payload),
+            payload_ref=f"term_rule_set:{term_rule_set_id}@seed",
+            payload=payload,
+        )
+        published = self.resource_version_service.publish(
+            "term_rule_set",
+            term_rule_set_id,
+            "seed",
+            make_default=False,
+        )
+        self._sync_live_store_then_set_default(term_rule_set_id, published)
+        return published
 
     def _ensure_draft_record(self, term_rule_set_id: str) -> ResourceVersionRecord:
         existing = self.resource_version_service.repository.get_resource_version(
@@ -245,11 +490,47 @@ class TermRuleSetVersionService:
             raise FileNotFoundError(f"术语规则版本不存在: {term_rule_set_id}@{version}")
         return record
 
+    def _require_published_version_record(self, term_rule_set_id: str, version: str) -> ResourceVersionRecord:
+        record = self._require_version_record(term_rule_set_id, version)
+        if record.status != ResourceVersionStatus.PUBLISHED:
+            raise ValueError("默认术语规则版本只能指向 published 版本。")
+        return record
+
+    def _sync_live_store_then_set_default(self, term_rule_set_id: str, record: ResourceVersionRecord) -> None:
+        previous_default = self._default_record(term_rule_set_id)
+        try:
+            self._sync_live_store(record)
+            self.resource_version_service.set_default("term_rule_set", term_rule_set_id, record.version)
+        except Exception as exc:
+            if previous_default is not None:
+                self.resource_version_service.repository.set_default_resource_version(
+                    "term_rule_set",
+                    term_rule_set_id,
+                    previous_default.version,
+                )
+            raise ValueError("Term Rule Set 默认版本切换失败，已保留原默认指针。") from exc
+
     def _sync_live_store(self, record: ResourceVersionRecord) -> None:
         store = self._store_from_record(record)
         self.repository.save(store)
         self.runtime_yaml_path.parent.mkdir(parents=True, exist_ok=True)
         self.runtime_yaml_path.write_text(self.yaml_codec.dump_legacy_runtime_yaml(store), encoding="utf-8")
+        self._mirror_store(record.resource_id, record.version, store)
+
+    def mirror_seed_store(self, store: TermRulesStore) -> None:
+        """MySQL mode 下把当前本地 seed/runtime 规则写入 SQL 明细表。"""
+
+        self._mirror_store(DEFAULT_TERM_RULE_SET_ID, "seed", store)
+
+    def _mirror_version(self, record: ResourceVersionRecord) -> None:
+        if self.asset_repository is None:
+            return
+        self._mirror_store(record.resource_id, record.version, self._store_from_record(record))
+
+    def _mirror_store(self, term_rule_set_id: str, version: str, store: TermRulesStore) -> None:
+        if self.asset_repository is None:
+            return
+        self.asset_repository.replace_version(term_rule_set_id, version, store)
 
     def _record_audit(
         self,
@@ -340,6 +621,26 @@ class TermRuleSetVersionService:
     @staticmethod
     def _count_rules(store: TermRulesStore) -> tuple[int, int]:
         return len(store.rules), sum(1 for rule in store.rules if rule.enabled)
+
+    @staticmethod
+    def build_import_validation_report(
+        *,
+        valid: bool,
+        store: TermRulesStore | None,
+        errors: list[TermRuleImportValidationFinding],
+        warnings: list[TermRuleImportValidationFinding],
+    ) -> TermRuleImportValidationReport:
+        return TermRuleImportValidationReport(
+            valid=valid,
+            summary=TermRuleImportValidationSummary(
+                category_count=len(store.categories) if store is not None else 0,
+                rule_count=len(store.rules) if store is not None else 0,
+                error_count=len(errors),
+                warning_count=len(warnings),
+            ),
+            errors=errors,
+            warnings=warnings,
+        )
 
     def _next_version(self, term_rule_set_id: str) -> str:
         prefix = utc_now().astimezone(SHANGHAI_TZ).strftime("%Y.%m.%d-")

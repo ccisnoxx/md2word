@@ -24,6 +24,7 @@ from app.domains.jobs.repository import (
 )
 from app.domains.jobs.artifact_storage import ArtifactStorageProtocol
 from app.domains.jobs.artifacts import JobArtifactService
+from app.domains.jobs.resource_snapshots import JobResourceSnapshotError, JobResourceSnapshotService
 from app.domains.jobs.stage import JobStageService
 from app.domains.jobs.workflow_events import build_job_event_from_intent
 
@@ -58,6 +59,7 @@ class JobLifecycleService:
         stage_service: JobStageService,
         artifact_service: JobArtifactService,
         artifact_storage: ArtifactStorageProtocol,
+        resource_snapshot_service: JobResourceSnapshotService,
     ) -> None:
         self.job_repository = job_repository
         self.job_file_repository = job_file_repository
@@ -67,6 +69,7 @@ class JobLifecycleService:
         self.stage_service = stage_service
         self.artifact_service = artifact_service
         self.artifact_storage = artifact_storage
+        self.resource_snapshot_service = resource_snapshot_service
 
     def _append_intent_event(
         self,
@@ -100,6 +103,11 @@ class JobLifecycleService:
         reason: str,
         trace_id: str,
         actor: ActorContext | None = None,
+        use_latest_term_assets: bool = False,
+        term_rule_set_id: str | None = None,
+        term_rule_set_version: str | None = None,
+        translation_term_set_id: str | None = None,
+        translation_term_version: str | None = None,
     ) -> JobOperationAccepted:
         job = self._get_job_or_404(job_id)
         # retry 的合法性和 reset patch 统一由 workflow 规则层给出。
@@ -108,17 +116,31 @@ class JobLifecycleService:
         except JobWorkflowViolation as exc:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
 
+        options = ConversionOptions(
+            template_id=job.template_id,
+            term_rule_set_id=term_rule_set_id,
+            term_rule_set_version=term_rule_set_version,
+            translation_term_set_id=translation_term_set_id,
+            translation_term_version=translation_term_version,
+            translation_mode=job.translation_mode,
+            document_language=job.document_language,
+            use_mineru_header_footer=job.use_mineru_header_footer,
+        )
+        try:
+            resource_snapshot = self.resource_snapshot_service.rebind_term_assets(
+                job=job,
+                options=options,
+                use_latest_defaults=use_latest_term_assets,
+            )
+        except JobResourceSnapshotError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
         self._delete_pending_stage_messages(job.id)
         updated_job = self.job_repository.update_job(
             job.id,
             updated_at=utc_now(),
+            resource_snapshot=resource_snapshot,
             **transition.as_job_update_patch(job),
-        )
-        options = ConversionOptions(
-            template_id=job.template_id,
-            translation_mode=job.translation_mode,
-            document_language=job.document_language,
-            use_mineru_header_footer=job.use_mineru_header_footer,
         )
         if job.source_kind == "source_pdf":
             stage_message = self.stage_service.enqueue_mineru_submission(updated_job, options, trace_id)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# app/conversion/service.py: 运行 MinerU 包到 DOCX 的转换并返回产物描述。
+
 from app.conversion.contracts import (
     ArtifactDescriptor,
     ConversionFailure,
@@ -34,6 +36,7 @@ class ConversionService:
                 input_path=str(request.package_path),
                 output_path=str(request.output_path),
                 template_path=str(request.template_path) if request.template_path else None,
+                layout_config_path=str(request.layout_config_path) if request.layout_config_path else None,
                 subscript_config=str(request.subscript_config_path) if request.subscript_config_path else None,
                 no_template=request.template_path is None,
                 use_mineru_header_footer=request.use_mineru_header_footer,
