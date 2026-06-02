@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class TemplateAssetResponse(BaseModel):
@@ -50,10 +50,29 @@ class TemplateUpdateRequest(BaseModel):
 
 class TemplateVersionPublishRequest(BaseModel):
     make_default: bool = False
+    publish_reason: str
+    verification_job_id: str
+    verification_note: str
+
+    @field_validator("publish_reason", "verification_job_id", "verification_note")
+    @classmethod
+    def validate_required_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("字段不能为空")
+        return normalized
 
 
 class TemplateVersionDefaultRequest(BaseModel):
-    reason: str | None = None
+    set_default_reason: str
+
+    @field_validator("set_default_reason")
+    @classmethod
+    def validate_set_default_reason(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("set_default_reason 不能为空")
+        return normalized
 
 
 class TemplateVersionResponse(BaseModel):
@@ -65,6 +84,13 @@ class TemplateVersionResponse(BaseModel):
     is_default: bool = False
     snapshot_hash: str | None = None
     render_policy: dict[str, Any] = Field(default_factory=dict)
+    verification_job_id: str | None = None
+    verification_note: str | None = None
+    verified_by: str | None = None
+    verified_at: datetime | None = None
+    publish_reason: str | None = None
+    published_by: str | None = None
+    published_at: datetime | None = None
     template: TemplateAssetResponse
     layout_config: TemplateAssetResponse | None = None
 

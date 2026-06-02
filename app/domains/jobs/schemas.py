@@ -44,9 +44,19 @@ class JobMineruSnapshotResponse(BaseModel):
     data_id: str | None = None
 
 
+class ResolvedTranslationTermVersionResponse(BaseModel):
+    set_id: str
+    language_pair: str
+    version: str
+    status: Literal["published"] = "published"
+    snapshot_hash: str
+    term_count: int
+
+
 class JobResourceSnapshotResponse(BaseModel):
     template: ResolvedResourceVersionResponse | None = None
     term_rule_set: ResolvedResourceVersionResponse | None = None
+    translation_term_set: ResolvedTranslationTermVersionResponse | None = None
     translation_profile: ResolvedResourceVersionResponse | None = None
     mineru: JobMineruSnapshotResponse
     artifact_ids: dict[str, str] = Field(default_factory=dict)

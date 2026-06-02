@@ -135,6 +135,35 @@ entries:
     doc_path: docs/api/translation-profiles.md
     status: current
     note: "Translation Profile draft、publish、set-default、rollback 和成功动作审计接口；en2zh job 创建时可绑定默认或显式 profile 快照。"
+  - entry: translation-term-sets
+    category: endpoint
+    source_files:
+      - app/api/v1/router.py
+      - app/domains/translation/sets_router.py
+      - app/api/dependencies.py
+      - app/domains/audit/models.py
+      - app/domains/audit/service.py
+      - app/domains/translation/term_set_version_service.py
+      - app/domains/translation/repository.py
+      - app/domains/translation/schemas.py
+    doc_path: docs/api/translation-term-sets.md
+    status: current
+    note: "Translation Term Set CSV 导入导出接口；MySQL mode 下翻译术语 SQL 真源的版本化导入/导出入口。"
+  - entry: translation-term-proposals
+    category: endpoint
+    source_files:
+      - app/api/v1/router.py
+      - app/domains/translation/proposals_router.py
+      - app/api/dependencies.py
+      - app/domains/audit/models.py
+      - app/domains/audit/service.py
+      - app/domains/translation/proposals_service.py
+      - app/domains/translation/term_set_version_service.py
+      - app/domains/translation/repository.py
+      - app/domains/translation/schemas.py
+    doc_path: docs/api/translation-term-proposals.md
+    status: current
+    note: "Translation Term Proposal 提交、列表、审核、拒绝和一键审核发布接口。"
 
 guides:
   - slug: backend-dev-docs-index
@@ -172,6 +201,16 @@ guides:
     doc_path: docs/dev/term-rule-set-versioning-guide.md
     status: current
     note: "Term Rule Set 草稿、发布、设默认和回滚使用指南。"
+  - slug: term-assets-sql-versioning
+    category: dev-guide
+    doc_path: docs/dev/term-assets-sql-versioning.md
+    status: approved
+    note: "术语规则和翻译术语 SQL 唯一真源、proposal、版本发布、job 绑定和导入导出设计。"
+  - slug: term-assets-sql-versioning-tasks
+    category: implementation-plan
+    doc_path: docs/dev/term-assets-sql-versioning-tasks.md
+    status: approved
+    note: "术语资产 SQL 版本化实施任务清单。"
   - slug: translation-profile-and-segment-trace-guide
     category: dev-guide
     doc_path: docs/dev/translation-profile-and-segment-trace-guide.md

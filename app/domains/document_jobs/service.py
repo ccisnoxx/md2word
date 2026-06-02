@@ -22,13 +22,18 @@ from app.domains.document_jobs.models import (
 from app.core.errors import ApiError
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.repository import DocumentFileRepositoryProtocol
-from app.domains.jobs.models import utc_now
+from app.domains.jobs.models import ConversionOptions, utc_now
+from app.domains.jobs.resource_snapshots import JobResourceSnapshotError
 from app.domains.document_jobs.repository import (
     DocumentJobEventRepositoryProtocol,
     DocumentJobRepositoryProtocol,
 )
 from app.domains.document_jobs.execution import DocumentJobTaskQueueProtocol
 from app.services.auth.models import AuthenticatedUser
+
+
+ARCHIVABLE_DOCUMENT_JOB_STATUSES: set[DocumentJobStatus] = {"succeeded", "failed", "canceled"}
+CANCELABLE_DOCUMENT_JOB_STATUSES: set[DocumentJobStatus] = {"pending", "queued", "running"}
 
 
 class DocumentJobService:
@@ -43,6 +48,7 @@ class DocumentJobService:
         task_queue: DocumentJobTaskQueueProtocol | None = None,
         template_read_service: Any | None = None,
         term_version_service: Any | None = None,
+        job_resource_snapshot_service: Any | None = None,
     ) -> None:
         self.settings = settings
         self.job_repository = job_repository
@@ -51,6 +57,7 @@ class DocumentJobService:
         self.task_queue = task_queue
         self.template_read_service = template_read_service
         self.term_version_service = term_version_service
+        self.job_resource_snapshot_service = job_resource_snapshot_service
 
     def create_job(
         self,
@@ -61,18 +68,55 @@ class DocumentJobService:
         document_language: str,
         template_version_id: str | None,
         term_version_id: str | None,
+        term_rule_set_id: str | None,
+        term_rule_set_version: str | None,
+        translation_term_set_id: str | None,
+        translation_term_version: str | None,
         debug_full_text: bool,
         trace_id: str | None,
     ) -> DocumentJobRecord:
         """创建待处理 document_job，并在启用 Worker 后按 job_id 投递。"""
 
         source_file = self._get_source_file_for_create(source_file_id, user)
+        self._ensure_term_asset_selection_allowed(
+            user=user,
+            use_latest_term_assets=False,
+            term_rule_set_id=term_rule_set_id,
+            term_rule_set_version=term_rule_set_version,
+            translation_term_set_id=translation_term_set_id,
+            translation_term_version=translation_term_version,
+        )
         normalized_template_version_id = self._resolve_template_version_id(template_version_id)
-        normalized_term_version_id = self._resolve_term_version_id(mode, term_version_id)
+        normalized_term_version_id = self._resolve_term_version_id(
+            mode,
+            self._legacy_translation_term_version_id(mode, term_version_id, translation_term_version),
+        )
         debug_full_text_enabled = self._resolve_debug_full_text_enabled(mode, debug_full_text)
         now = utc_now()
+        job_id = f"docjob_{uuid4().hex[:12]}"
+        request_snapshot = self._build_request_snapshot(
+            source_file,
+            mode=mode,
+            document_language=document_language,
+            template_version_id=normalized_template_version_id,
+            term_version_id=normalized_term_version_id,
+            debug_full_text_enabled=debug_full_text_enabled,
+            term_rule_set_id=term_rule_set_id,
+            term_rule_set_version=term_rule_set_version,
+            translation_term_set_id=translation_term_set_id,
+            translation_term_version=translation_term_version,
+            resource_snapshot=self._build_resource_snapshot(
+                job_id=job_id,
+                mode=mode,
+                document_language=document_language,
+                term_rule_set_id=term_rule_set_id,
+                term_rule_set_version=term_rule_set_version,
+                translation_term_set_id=translation_term_set_id,
+                translation_term_version=translation_term_version,
+            ),
+        )
         job = DocumentJobRecord(
-            id=f"docjob_{uuid4().hex[:12]}",
+            id=job_id,
             tenant_id=user.tenant_id,
             company_id=user.company_id,
             created_by=user.id,
@@ -86,14 +130,7 @@ class DocumentJobService:
             term_version_id=normalized_term_version_id,
             debug_full_text_enabled=debug_full_text_enabled,
             timeout_at=now + timedelta(seconds=self.settings.p0_document_job_timeout_seconds),
-            request_snapshot=self._build_request_snapshot(
-                source_file,
-                mode=mode,
-                document_language=document_language,
-                template_version_id=normalized_template_version_id,
-                term_version_id=normalized_term_version_id,
-                debug_full_text_enabled=debug_full_text_enabled,
-            ),
+            request_snapshot=request_snapshot,
             created_at=now,
             updated_at=now,
         )
@@ -110,6 +147,8 @@ class DocumentJobService:
                 "mode": mode,
                 "template_version_id": normalized_template_version_id,
                 "term_version_id": normalized_term_version_id,
+                "term_assets": request_snapshot.get("term_assets"),
+                "resources": request_snapshot.get("resources"),
                 "debug_full_text_enabled": debug_full_text_enabled,
             },
             trace_id=trace_id,
@@ -139,7 +178,11 @@ class DocumentJobService:
 
         if status_filter is not None and status_filter not in get_args(DocumentJobStatus):
             raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "status 查询参数非法。")
-        visible_jobs = [job for job in self.job_repository.list_document_jobs() if self._is_visible(job, user)]
+        visible_jobs = [
+            job
+            for job in self.job_repository.list_document_jobs()
+            if self._is_visible(job, user) and job.archived_at is None
+        ]
         summary = dict(Counter(job.status for job in visible_jobs))
         filtered_jobs = [
             job
@@ -189,15 +232,39 @@ class DocumentJobService:
         *,
         user: AuthenticatedUser,
         reason: str | None,
-        trace_id: str | None,
+        use_latest_term_assets: bool = False,
+        term_rule_set_id: str | None = None,
+        term_rule_set_version: str | None = None,
+        translation_term_set_id: str | None = None,
+        translation_term_version: str | None = None,
+        trace_id: str | None = None,
     ) -> DocumentJobRecord:
         """对可重试失败任务按原 job_id 重新投递，保留既有中间产物用于幂等恢复。"""
 
         job = self.get_job(job_id, user=user)
+        self._ensure_term_asset_selection_allowed(
+            user=user,
+            use_latest_term_assets=use_latest_term_assets,
+            term_rule_set_id=term_rule_set_id,
+            term_rule_set_version=term_rule_set_version,
+            translation_term_set_id=translation_term_set_id,
+            translation_term_version=translation_term_version,
+        )
+        if job.archived_at is not None:
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "已归档文档任务不允许重试。")
         self._ensure_retry_allowed(job)
         now = utc_now()
         retry_count = job.retry_count + 1
-        patch = self._build_retry_patch(job, retry_count=retry_count, now=now)
+        patch = self._build_retry_patch(
+            job,
+            retry_count=retry_count,
+            now=now,
+            use_latest_term_assets=use_latest_term_assets,
+            term_rule_set_id=term_rule_set_id,
+            term_rule_set_version=term_rule_set_version,
+            translation_term_set_id=translation_term_set_id,
+            translation_term_version=translation_term_version,
+        )
         retried = self.job_repository.update_document_job(job.id, **patch)
         self.record_event(
             retried,
@@ -210,6 +277,9 @@ class DocumentJobService:
                 "reason": self._normalize_optional_text(reason),
                 "previous_error_code": job.error_code,
                 "previous_failed_stage": job.failed_stage,
+                "use_latest_term_assets": use_latest_term_assets,
+                "term_assets": retried.request_snapshot.get("term_assets"),
+                "resources": retried.request_snapshot.get("resources"),
             },
             trace_id=trace_id,
         )
@@ -225,6 +295,75 @@ class DocumentJobService:
                 f"Worker 投递失败: {failed.error_message}",
             ) from exc
         return self.job_repository.get_document_job(job.id) or retried
+
+    def archive_job(
+        self,
+        job_id: str,
+        *,
+        user: AuthenticatedUser,
+        trace_id: str | None,
+    ) -> DocumentJobRecord:
+        """归档终态 document_job，仅隐藏列表记录，不删除文件或事件。"""
+
+        job = self.get_job(job_id, user=user)
+        if job.archived_at is not None:
+            return job
+        if job.status not in ARCHIVABLE_DOCUMENT_JOB_STATUSES:
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "只有 succeeded、failed、canceled 终态任务允许归档。")
+        now = utc_now()
+        archived = self.job_repository.update_document_job(
+            job.id,
+            archived_at=now,
+            archived_by=user.id,
+            updated_at=now,
+        )
+        self.record_event(
+            archived,
+            event_type="job_archived",
+            stage=archived.stage,
+            level="info",
+            message="文档任务已归档并从默认列表隐藏。",
+            payload={"archived_by": user.id, "status": archived.status},
+            trace_id=trace_id,
+        )
+        return archived
+
+    def cancel_job(
+        self,
+        job_id: str,
+        *,
+        user: AuthenticatedUser,
+        trace_id: str | None,
+    ) -> DocumentJobRecord:
+        """把未终态 document_job 标记为 canceled，保留所有文件和事件。"""
+
+        job = self.get_job(job_id, user=user)
+        if job.archived_at is not None:
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "已归档文档任务不允许取消。")
+        if job.status not in CANCELABLE_DOCUMENT_JOB_STATUSES:
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "只有 pending、queued、running 任务允许取消。")
+        now = utc_now()
+        canceled = self.job_repository.update_document_job(
+            job.id,
+            status="canceled",
+            stage="canceled",
+            canceled_at=now,
+            updated_at=now,
+        )
+        self.record_event(
+            canceled,
+            event_type="job_canceled",
+            stage="canceled",
+            level="info",
+            message="文档任务已取消，文件和事件记录已保留。",
+            payload={
+                "canceled_by": user.id,
+                "previous_status": job.status,
+                "previous_stage": job.stage,
+            },
+            trace_id=trace_id,
+        )
+        return canceled
 
     def record_download_authorized(
         self,
@@ -362,6 +501,11 @@ class DocumentJobService:
         *,
         retry_count: int,
         now,
+        use_latest_term_assets: bool,
+        term_rule_set_id: str | None,
+        term_rule_set_version: str | None,
+        translation_term_set_id: str | None,
+        translation_term_version: str | None,
     ) -> dict:
         patch = {
             "status": "queued" if self.task_queue is not None else "pending",
@@ -376,6 +520,22 @@ class DocumentJobService:
             "completed_at": None,
             "updated_at": now,
         }
+        next_request_snapshot = self._build_retry_request_snapshot(
+            job,
+            use_latest_term_assets=use_latest_term_assets,
+            term_rule_set_id=term_rule_set_id,
+            term_rule_set_version=term_rule_set_version,
+            translation_term_set_id=translation_term_set_id,
+            translation_term_version=translation_term_version,
+        )
+        if next_request_snapshot is not None:
+            patch["request_snapshot"] = next_request_snapshot
+            selected_term_version = self._legacy_translation_term_version_id(
+                job.mode,
+                None if use_latest_term_assets else job.term_version_id,
+                None if use_latest_term_assets else translation_term_version,
+            )
+            patch["term_version_id"] = self._resolve_term_version_id(job.mode, selected_term_version)
         if job.failed_stage == "parsing" and job.mineru_raw_result_file_id is None:
             patch["mineru_batch_id"] = None
             patch["mineru_data_id"] = None
@@ -431,6 +591,11 @@ class DocumentJobService:
         template_version_id: str,
         term_version_id: str | None,
         debug_full_text_enabled: bool,
+        term_rule_set_id: str | None = None,
+        term_rule_set_version: str | None = None,
+        translation_term_set_id: str | None = None,
+        translation_term_version: str | None = None,
+        resource_snapshot: dict | None = None,
     ) -> dict:
         return {
             "source_file": {
@@ -445,8 +610,135 @@ class DocumentJobService:
             "document_language": document_language,
             "template_version_id": template_version_id,
             "term_version_id": term_version_id,
+            "term_assets": {
+                "term_rule_set_id": self._normalize_optional_text(term_rule_set_id),
+                "term_rule_set_version": self._normalize_optional_text(term_rule_set_version),
+                "translation_term_set_id": self._normalize_optional_text(translation_term_set_id),
+                "translation_term_version": self._normalize_optional_text(translation_term_version),
+            },
+            "resources": resource_snapshot,
             "debug_full_text_enabled": debug_full_text_enabled,
         }
+
+    def _build_retry_request_snapshot(
+        self,
+        job: DocumentJobRecord,
+        *,
+        use_latest_term_assets: bool,
+        term_rule_set_id: str | None,
+        term_rule_set_version: str | None,
+        translation_term_set_id: str | None,
+        translation_term_version: str | None,
+    ) -> dict | None:
+        has_selection = any(
+            self._normalize_optional_text(value)
+            for value in (term_rule_set_id, term_rule_set_version, translation_term_set_id, translation_term_version)
+        )
+        if not use_latest_term_assets and not has_selection:
+            return None
+        snapshot = dict(job.request_snapshot)
+        resource_snapshot = self._build_resource_snapshot(
+            job_id=job.id,
+            mode=job.mode,
+            document_language=job.document_language,
+            term_rule_set_id=term_rule_set_id,
+            term_rule_set_version=None if use_latest_term_assets else term_rule_set_version,
+            translation_term_set_id=translation_term_set_id,
+            translation_term_version=None if use_latest_term_assets else translation_term_version,
+        )
+        snapshot["term_assets"] = {
+            "use_latest_term_assets": use_latest_term_assets,
+            "term_rule_set_id": self._normalize_optional_text(term_rule_set_id),
+            "term_rule_set_version": self._normalize_optional_text(term_rule_set_version),
+            "translation_term_set_id": self._normalize_optional_text(translation_term_set_id),
+            "translation_term_version": self._normalize_optional_text(translation_term_version),
+        }
+        snapshot["resources"] = resource_snapshot
+        return snapshot
+
+    def _build_resource_snapshot(
+        self,
+        *,
+        job_id: str,
+        mode: DocumentJobMode,
+        document_language: str,
+        term_rule_set_id: str | None,
+        term_rule_set_version: str | None,
+        translation_term_set_id: str | None,
+        translation_term_version: str | None,
+    ) -> dict | None:
+        if self.job_resource_snapshot_service is None:
+            return None
+        has_explicit_selection = any(
+            self._normalize_optional_text(value)
+            for value in (term_rule_set_id, term_rule_set_version, translation_term_set_id, translation_term_version)
+        )
+        options = ConversionOptions(
+            term_rule_set_id=self._normalize_optional_text(term_rule_set_id),
+            term_rule_set_version=self._normalize_optional_text(term_rule_set_version),
+            translation_term_set_id=self._normalize_optional_text(translation_term_set_id),
+            translation_term_version=self._normalize_optional_text(translation_term_version),
+            translation_mode="en2zh" if mode == "en2zh_pdf_to_word" else "direct",
+            document_language=document_language,
+        )
+        try:
+            snapshot = self.job_resource_snapshot_service.build_snapshot(
+                options=options,
+                source_kind="source_pdf",
+                job_id=job_id,
+            )
+        except JobResourceSnapshotError as exc:
+            if not has_explicit_selection:
+                return None
+            raise ApiError(exc.status_code, exc.code, exc.message) from exc
+        if snapshot is None:
+            return None
+        return snapshot.model_dump(mode="json")
+
+    def _ensure_term_asset_selection_allowed(
+        self,
+        *,
+        user: AuthenticatedUser,
+        use_latest_term_assets: bool,
+        term_rule_set_id: str | None,
+        term_rule_set_version: str | None,
+        translation_term_set_id: str | None,
+        translation_term_version: str | None,
+    ) -> None:
+        if user.role == "admin":
+            return
+        selected = [
+            name
+            for name, value in {
+                "use_latest_term_assets": use_latest_term_assets,
+                "term_rule_set_id": term_rule_set_id,
+                "term_rule_set_version": term_rule_set_version,
+                "translation_term_set_id": translation_term_set_id,
+                "translation_term_version": translation_term_version,
+            }.items()
+            if value
+        ]
+        if selected:
+            raise ApiError(
+                status.HTTP_403_FORBIDDEN,
+                "forbidden",
+                f"operator 不能选择术语资产历史版本: {', '.join(selected)}。",
+            )
+
+    def _legacy_translation_term_version_id(
+        self,
+        mode: DocumentJobMode,
+        term_version_id: str | None,
+        translation_term_version: str | None,
+    ) -> str | None:
+        if mode != "en2zh_pdf_to_word":
+            return term_version_id
+        normalized_translation_term_version = self._normalize_optional_text(translation_term_version)
+        if normalized_translation_term_version is None:
+            return term_version_id
+        if "@" in normalized_translation_term_version:
+            return normalized_translation_term_version
+        return f"en2zh@{normalized_translation_term_version}"
 
     def _normalize_optional_text(self, value: str | None) -> str | None:
         if value is None:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# app/conversion/runtime_helpers.py: 提供 legacy conversion runner 复用的配置解析与语言推断。
+
 import re
 from dataclasses import replace
 from pathlib import Path
@@ -126,13 +128,14 @@ def load_render_config(
     subscript_config: Path | None,
     use_mineru_header_footer: bool,
     *,
+    layout_config_path: Path | None = None,
     default_layout_candidates: tuple[Path, ...] = DEFAULT_LAYOUT_CONFIG_CANDIDATES,
 ) -> RenderConfig:
     return render_config_runtime.load_render_config(
         template_document,
         subscript_config,
         use_mineru_header_footer,
-        find_layout_config_path_fn=lambda: find_layout_config_path(default_layout_candidates),
+        find_layout_config_path_fn=lambda: layout_config_path or find_layout_config_path(default_layout_candidates),
         load_section_layout_fn=load_section_layout,
         terminology_factory=TerminologyReplacer,
         load_paragraph_styles_fn=load_paragraph_styles,

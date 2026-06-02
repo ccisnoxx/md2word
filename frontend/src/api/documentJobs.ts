@@ -3,9 +3,12 @@ import { apiRequest } from "@/api/client";
 import type {
   DocumentJobCreateRequest,
   DocumentJobCreateResponse,
+  DocumentJobArchiveResponse,
+  DocumentJobCancelResponse,
   DocumentJobDownloadUrlResponse,
   DocumentJobEventListResponse,
   DocumentJobListResponse,
+  DocumentJobRetryRequest,
   DocumentJobResponse,
   DocumentJobRetryResponse,
 } from "@/api/types";
@@ -47,11 +50,26 @@ export const documentJobsApi = {
     });
   },
 
-  retry(jobId: string, reason?: string): Promise<DocumentJobRetryResponse> {
+  retry(jobId: string, payload?: string | DocumentJobRetryRequest): Promise<DocumentJobRetryResponse> {
+    const data = typeof payload === "string" ? { reason: payload || null } : { reason: null, ...(payload || {}) };
     return apiRequest<DocumentJobRetryResponse>({
       url: `/api/v1/document-jobs/${jobId}/retry`,
       method: "POST",
-      data: { reason: reason || null },
+      data,
+    });
+  },
+
+  archive(jobId: string): Promise<DocumentJobArchiveResponse> {
+    return apiRequest<DocumentJobArchiveResponse>({
+      url: `/api/v1/document-jobs/${jobId}`,
+      method: "DELETE",
+    });
+  },
+
+  cancel(jobId: string): Promise<DocumentJobCancelResponse> {
+    return apiRequest<DocumentJobCancelResponse>({
+      url: `/api/v1/document-jobs/${jobId}/cancel`,
+      method: "POST",
     });
   },
 

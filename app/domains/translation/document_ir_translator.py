@@ -2,6 +2,8 @@ from __future__ import annotations
 
 # app/domains/translation/document_ir_translator.py: 只翻译 DocumentIR 文本节点并保持结构字段稳定。
 
+import hashlib
+import re
 import time
 from dataclasses import dataclass
 from typing import Protocol
@@ -12,11 +14,18 @@ from bs4.element import NavigableString
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock
 from app.domains.translation.models import (
     TermVersionSnapshot,
+    TranslationTermEntry,
+    TranslationTermMatchTraceRecord,
     TranslationProviderRequest,
     TranslationProviderResult,
     TranslationTextItem,
+    normalize_translation_source_term,
 )
 from app.domains.translation.provider import TranslationProvider
+
+
+_TRACE_CONTEXT_RADIUS = 40
+_TRACE_CONTEXT_MAX_CHARS = 120
 
 
 class DocumentIRTranslationError(RuntimeError):
@@ -52,6 +61,21 @@ class _TextTarget:
     index: int | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class _TermMatch:
+    entry: TranslationTermEntry
+    item_id: str
+    item_index: int
+    match_start: int
+    match_end: int
+    context_snippet: str
+    term_index: int
+
+    @property
+    def matched_length(self) -> int:
+        return self.match_end - self.match_start
+
+
 class DocumentIRTranslationService:
     """DocumentIR 文本翻译服务；不让 AI 接触结构、资产或样式信息。"""
 
@@ -72,12 +96,19 @@ class DocumentIRTranslationService:
         targets, items = self._extract_items(translated)
         if not items:
             return translated
+        matched_terms, term_traces = self._match_request_terms(
+            items=items,
+            term_version=term_version,
+            language_pair=language_pair,
+            job_id=document_ir.metadata.job_id or "",
+        )
         request = TranslationProviderRequest(
             language_pair=language_pair,
             source_language=self._source_language(language_pair),
             target_language=self._target_language(language_pair),
             items=tuple(items),
-            terms=term_version.entries if term_version is not None else (),
+            terms=matched_terms,
+            term_traces=term_traces,
         )
         started_at = time.perf_counter()
         result: TranslationProviderResult | None = None
@@ -95,6 +126,148 @@ class DocumentIRTranslationService:
             call_recorder.record_success(request, result, duration_ms=duration_ms)
         translated.metadata.document_language = self._target_document_language(language_pair)
         return translated
+
+    def _match_request_terms(
+        self,
+        *,
+        items: list[TranslationTextItem],
+        term_version: TermVersionSnapshot | None,
+        language_pair: str,
+        job_id: str,
+    ) -> tuple[tuple[TranslationTermEntry, ...], tuple[TranslationTermMatchTraceRecord, ...]]:
+        if term_version is None:
+            return (), ()
+        matches: list[_TermMatch] = []
+        for item_index, item in enumerate(items):
+            item_matches: list[_TermMatch] = []
+            for term_index, entry in enumerate(term_version.entries):
+                if entry.language_pair != language_pair or entry.status != "active":
+                    continue
+                pattern = self._build_term_pattern(entry)
+                if pattern is None:
+                    continue
+                for match in pattern.finditer(item.text):
+                    item_matches.append(
+                        _TermMatch(
+                            entry=entry,
+                            item_id=item.id,
+                            item_index=item_index,
+                            match_start=match.start(),
+                            match_end=match.end(),
+                            context_snippet=self._context_snippet(item.text, match.start(), match.end()),
+                            term_index=term_index,
+                        )
+                    )
+            matches.extend(self._select_non_overlapping_matches(item_matches))
+        if not matches:
+            return (), ()
+
+        injected_matches = self._dedupe_injected_matches(matches)
+        terms = tuple(match.entry for match in injected_matches)
+        traces = tuple(
+            self._build_trace_record(
+                match=match,
+                term_version=term_version,
+                job_id=job_id,
+                sequence=index,
+            )
+            for index, match in enumerate(injected_matches, start=1)
+        )
+        return terms, traces
+
+    def _select_non_overlapping_matches(self, matches: list[_TermMatch]) -> list[_TermMatch]:
+        selected: list[_TermMatch] = []
+        selected_ranges: list[tuple[int, int]] = []
+        for match in sorted(matches, key=self._match_rank):
+            if any(match.match_start < end and start < match.match_end for start, end in selected_ranges):
+                continue
+            selected.append(match)
+            selected_ranges.append((match.match_start, match.match_end))
+        return selected
+
+    def _dedupe_injected_matches(self, matches: list[_TermMatch]) -> list[_TermMatch]:
+        injected: list[_TermMatch] = []
+        seen_terms: set[tuple[str, str, str]] = set()
+        for match in sorted(matches, key=self._match_rank):
+            normalized_source_term = (
+                match.entry.normalized_source_term
+                or normalize_translation_source_term(match.entry.source_term)
+            )
+            term_key = (match.entry.set_id, match.entry.version, normalized_source_term)
+            if term_key in seen_terms:
+                continue
+            seen_terms.add(term_key)
+            injected.append(match)
+        return injected
+
+    def _build_trace_record(
+        self,
+        *,
+        match: _TermMatch,
+        term_version: TermVersionSnapshot,
+        job_id: str,
+        sequence: int,
+    ) -> TranslationTermMatchTraceRecord:
+        trace_key = "|".join(
+            [
+                job_id,
+                match.item_id,
+                match.entry.set_id,
+                term_version.version,
+                match.entry.source_term,
+                str(match.match_start),
+                str(match.match_end),
+                str(sequence),
+            ]
+        )
+        trace_id = f"ttmt_{hashlib.sha256(trace_key.encode('utf-8')).hexdigest()[:16]}"
+        return TranslationTermMatchTraceRecord(
+            id=trace_id,
+            job_id=job_id,
+            segment_id=match.item_id,
+            batch_id="document_ir_provider_request_0001",
+            translation_term_set_id=match.entry.set_id,
+            translation_term_version=term_version.version,
+            source_term=match.entry.source_term,
+            target_term=match.entry.target_term,
+            match_start=match.match_start,
+            match_end=match.match_end,
+            context_snippet=match.context_snippet,
+            injected_to_glossary=True,
+        )
+
+    @staticmethod
+    def _build_term_pattern(entry: TranslationTermEntry) -> re.Pattern[str] | None:
+        source_term = " ".join(entry.source_term.strip().split())
+        if not source_term:
+            return None
+        escaped_parts = [re.escape(part) for part in source_term.split(" ")]
+        flags = 0 if entry.case_sensitive else re.IGNORECASE
+        return re.compile(r"\s+".join(escaped_parts), flags=flags)
+
+    @staticmethod
+    def _match_rank(match: _TermMatch) -> tuple[int, int, int, int, int, int]:
+        return (
+            -match.matched_length,
+            -match.entry.priority,
+            match.term_index,
+            match.item_index,
+            match.match_start,
+            match.match_end,
+        )
+
+    @staticmethod
+    def _context_snippet(text: str, match_start: int, match_end: int) -> str:
+        snippet_start = max(0, match_start - _TRACE_CONTEXT_RADIUS)
+        snippet_end = min(len(text), match_end + _TRACE_CONTEXT_RADIUS)
+        snippet = text[snippet_start:snippet_end]
+        if snippet_start > 0:
+            snippet = "..." + snippet
+        if snippet_end < len(text):
+            snippet += "..."
+        if len(snippet) > _TRACE_CONTEXT_MAX_CHARS:
+            return snippet[: _TRACE_CONTEXT_MAX_CHARS - 3] + "..."
+        return snippet
 
     def _extract_items(self, document_ir: DocumentIR) -> tuple[list[_TextTarget], list[TranslationTextItem]]:
         targets: list[_TextTarget] = []

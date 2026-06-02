@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from app.domains.term_rules.models import TermRuleCategoryRecord, TermRuleRecord, TermRulesStore
+from app.domains.term_rules.models import (
+    TermRuleCategoryRecord,
+    TermRuleProposalRecord,
+    TermRuleProposalStatus,
+    TermRuleRecord,
+    TermRulesStore,
+)
 
 
 class TermRuleRepositoryProtocol(Protocol):
@@ -29,3 +35,22 @@ class TermRuleRepositoryProtocol(Protocol):
     def add_rule(self, rule: TermRuleRecord) -> TermRuleRecord: ...
     def update_rule(self, rule: TermRuleRecord) -> TermRuleRecord: ...
     def delete_rule(self, rule_id: str) -> None: ...
+
+
+class TermRuleProposalRepositoryProtocol(Protocol):
+    """术语建议审核流的持久化合同。"""
+
+    def save_proposal(self, proposal: TermRuleProposalRecord) -> TermRuleProposalRecord: ...
+    def get_proposal(self, proposal_id: str) -> TermRuleProposalRecord | None: ...
+    def list_proposals(
+        self,
+        *,
+        status: TermRuleProposalStatus | None = None,
+        created_by: str | None = None,
+    ) -> list[TermRuleProposalRecord]: ...
+
+
+class TermRuleAssetRepositoryProtocol(Protocol):
+    """术语规则版本的 SQL 明细投影持久化合同。"""
+
+    def replace_version(self, term_rule_set_id: str, version: str, store: TermRulesStore) -> None: ...

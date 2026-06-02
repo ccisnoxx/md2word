@@ -14,7 +14,7 @@ source_files:
   - app/domains/templates/schemas.py
 summary: Templates API 提供多模板清单、详情、下载、默认模板切换、模板 CRUD、文件替换、Template Version 发布管理和成功动作审计。
 tags: [templates, api, manifest, audit]
-last_reviewed: 2026-05-31
+last_reviewed: 2026-06-01
 ---
 
 ## 概述
@@ -88,13 +88,17 @@ Template Version 的 publish / set-default / disable 成功路径会写入 audit
   - `items[].is_default`
   - `items[].snapshot_hash`
   - `items[].render_policy`
+  - `items[].verification_job_id`
+  - `items[].verification_note`
+  - `items[].verified_by`
+  - `items[].verified_at`
   - `items[].template`
   - `items[].layout_config`
 
 ### `POST /api/v1/templates`
 
 - 用途：创建模板记录并上传第一个 DOCX 文件。
-- 认证：`X-Admin-Token`
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 请求体：`multipart/form-data`
 
 | 参数 | 必填 | 说明 |
@@ -112,7 +116,7 @@ Template Version 的 publish / set-default / disable 成功路径会写入 audit
 ### `PATCH /api/v1/templates/{template_id}`
 
 - 用途：更新模板元数据。
-- 认证：`X-Admin-Token`
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 请求体：JSON，可选字段：
   - `name`
   - `description`
@@ -123,7 +127,7 @@ Template Version 的 publish / set-default / disable 成功路径会写入 audit
 ### `PUT /api/v1/templates/{template_id}/file`
 
 - 用途：替换模板 DOCX 文件。
-- 认证：`X-Admin-Token`
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 请求体：`multipart/form-data`
   - `template`: `.docx` 文件
 - 成功后当前 `version` 递增，旧版本文件保留。
@@ -131,7 +135,7 @@ Template Version 的 publish / set-default / disable 成功路径会写入 audit
 ### `POST /api/v1/templates/{template_id}/versions`
 
 - 用途：为已有 Template Profile 上传下一版 DOCX 并创建 draft 版本。
-- 认证：`X-Admin-Token`
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 前置：需要 `JOBS_REPOSITORY_BACKEND=mysql`，因为发布状态由 `ResourceVersionService` 管理。
 - 请求体：`multipart/form-data`
   - `template`: `.docx` 文件
@@ -142,16 +146,26 @@ Template Version 的 publish / set-default / disable 成功路径会写入 audit
 ### `POST /api/v1/templates/{template_id}/versions/{version}/publish`
 
 - 用途：发布 draft 模板版本。
-- 认证：`X-Admin-Token`
-- 审计：成功后写 `template.publish`，`target_id={template_id}@{version}`。
-- 请求体：JSON，可选字段：
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
+- 审计：成功后写 `template.publish`，`target_id={template_id}@{version}`，`publish_reason` 写入 audit reason。
+- 请求体：JSON
   - `make_default`: 是否发布后同时设为默认版本，默认 `false`
+  - `publish_reason`: 必填，发布原因
+  - `verification_job_id`: 必填，验证任务 ID
+  - `verification_note`: 必填，验证说明
+- 发布校验：
+  - `verification_job_id` 必须对应已存在的 Document Job
+  - 验证任务 `status` 必须是 `succeeded`
+  - 验证任务 `template_version_id` 必须匹配 `{template_id}@{version}`
+- 成功响应会返回 `verification_job_id`、`verification_note`、`verified_by`、`verified_at`、`publish_reason`、`published_by`、`published_at`。
 
 ### `POST /api/v1/templates/{template_id}/versions/{version}/set-default`
 
 - 用途：把指定已发布版本设为当前默认模板版本。
-- 认证：`X-Admin-Token`
-- 审计：成功后写 `template.set_default`，`target_id={template_id}@{version}`。
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
+- 请求体：JSON
+  - `set_default_reason`: 必填，切换原因
+- 审计：成功后写 `template.set_default`，`target_id={template_id}@{version}`，`set_default_reason` 写入 audit reason。
 - 关键语义：
   - 只切资源版本默认指针，不改历史版本内容
   - 同步 manifest 当前 `version` 和 `template_state.json`，让现有 conversion path 使用该 DOCX
@@ -159,7 +173,7 @@ Template Version 的 publish / set-default / disable 成功路径会写入 audit
 ### `POST /api/v1/templates/{template_id}/versions/{version}/disable`
 
 - 用途：禁用非默认模板版本。
-- 认证：`X-Admin-Token`
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 审计：成功后写 `template.disable`，`target_id={template_id}@{version}`。
 - 约束：
   - 默认版本不能直接禁用
@@ -168,7 +182,7 @@ Template Version 的 publish / set-default / disable 成功路径会写入 audit
 ### `PATCH /api/v1/templates/{template_id}/default`
 
 - 用途：将指定模板设为当前运行态默认模板。
-- 认证：`X-Admin-Token`
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 关键语义：
   - 不改模板 manifest
   - 只改运行态 default state
@@ -180,7 +194,7 @@ Template Version 的 publish / set-default / disable 成功路径会写入 audit
 ### `DELETE /api/v1/templates/{template_id}`
 
 - 用途：从 manifest 删除模板记录。
-- 认证：`X-Admin-Token`
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 约束：
   - 当前默认模板不能删除
   - 历史版本文件保留，不在删除接口中物理清理

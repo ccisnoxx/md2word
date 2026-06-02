@@ -1,5 +1,5 @@
 // frontend/src/utils/format.ts: Shared labels and formatting helpers for job pages.
-import type { DocumentJobStage, DocumentJobStatus } from "@/api/types";
+import type { DocumentJobResponse, DocumentJobStage, DocumentJobStatus } from "@/api/types";
 
 export const jobStatusText: Record<DocumentJobStatus, string> = {
   pending: "等待投递",
@@ -62,4 +62,23 @@ export function formatBytes(bytes?: number | null): string {
 
 export function isActiveJobStatus(status: string): boolean {
   return status === "pending" || status === "queued" || status === "running";
+}
+
+export function isArchivableJobStatus(status: string): boolean {
+  return status === "succeeded" || status === "failed" || status === "canceled";
+}
+
+export function isCancelableJobStatus(status: string): boolean {
+  return status === "pending" || status === "queued" || status === "running";
+}
+
+export function getJobSourceFilename(job: DocumentJobResponse): string {
+  const sourceFile = job.request_snapshot.source_file;
+  if (typeof sourceFile === "object" && sourceFile !== null && "original_filename" in sourceFile) {
+    const filename = sourceFile.original_filename;
+    if (typeof filename === "string" && filename.trim()) {
+      return filename;
+    }
+  }
+  return job.source_file_id;
 }

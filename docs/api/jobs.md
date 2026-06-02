@@ -103,6 +103,8 @@ MinerU callback 不在这组路由下，单独见 [mineru-callbacks.md](/Users/s
 | `template_version` | 否 | MySQL resource mode 下绑定指定 published Template Version |
 | `term_rule_set_id` | 否 | MySQL resource mode 下绑定指定 Term Rule Set；留空时使用默认规则集 |
 | `term_rule_set_version` | 否 | MySQL resource mode 下绑定指定 published Term Rule Set Version |
+| `translation_term_set_id` | 否 | `en2zh` + MySQL resource mode 下绑定指定 Translation Term Set；留空时按语言方向使用默认 set |
+| `translation_term_version` | 否 | `en2zh` + MySQL resource mode 下绑定指定 published Translation Term Set Version |
 | `translation_profile_id` | 否 | `en2zh` + MySQL resource mode 下绑定指定 Translation Profile |
 | `translation_profile_version` | 否 | `en2zh` + MySQL resource mode 下绑定指定 published Translation Profile Version |
 | `translation_mode` | 否 | `direct` / `en2zh` |
@@ -126,9 +128,11 @@ MinerU callback 不在这组路由下，单独见 [mineru-callbacks.md](/Users/s
   - 文件大小不能超过 `JOBS_UPLOAD_MAX_BYTES`
   - 上传包必须是合法 zip
   - 当 `translation_mode=en2zh` 时，会先检查当前实例翻译能力是否可用；若 `OPENAI_API_KEY` 或 prompt 缺失，接口直接返回 `503`
-  - MySQL resource mode 下会在创建时绑定 `template`、`term_rule_set`、MinerU 配置和可选 `translation_profile` 的不可变 `resource_snapshot`
-  - file / sqlite backend 下，显式传 `template_version`、`term_rule_set_id/version` 或 `translation_profile_id/version` 会返回 `503`
+  - MySQL resource mode 下会在创建时绑定 `template`、`term_rule_set`、MinerU 配置，以及 `en2zh` 任务的 `translation_term_set` 和可选 `translation_profile` 不可变 `resource_snapshot`
+  - file / sqlite backend 下，显式传 `template_version`、`term_rule_set_id/version`、`translation_term_set_id/version` 或 `translation_profile_id/version` 会返回 `503`
   - `direct` 任务不能绑定 Translation Profile；传入 `translation_profile_id` 或 `translation_profile_version` 会返回 `400`
+  - operator 不能选择术语资产历史版本；传 `term_rule_set_id/version` 或 `translation_term_set_id/version` 会返回 `403`
+  - admin 可以选择已发布历史 Term Rule Set 和 Translation Term Set 版本创建 job
   - `JOBS_WORKER_MODE=in_process` 时响应返回后会通过 `BackgroundTasks` 推进 `convert_package`
   - `JOBS_WORKER_MODE=external` 时响应返回后只入队，后续由 `scripts/dev/run_stage_worker.py` 消费 stage message
 
@@ -144,6 +148,8 @@ MinerU callback 不在这组路由下，单独见 [mineru-callbacks.md](/Users/s
 | `template_version` | 否 | MySQL resource mode 下绑定指定 published Template Version |
 | `term_rule_set_id` | 否 | MySQL resource mode 下绑定指定 Term Rule Set；留空时使用默认规则集 |
 | `term_rule_set_version` | 否 | MySQL resource mode 下绑定指定 published Term Rule Set Version |
+| `translation_term_set_id` | 否 | `en2zh` + MySQL resource mode 下绑定指定 Translation Term Set；留空时按语言方向使用默认 set |
+| `translation_term_version` | 否 | `en2zh` + MySQL resource mode 下绑定指定 published Translation Term Set Version |
 | `translation_profile_id` | 否 | `en2zh` + MySQL resource mode 下绑定指定 Translation Profile |
 | `translation_profile_version` | 否 | `en2zh` + MySQL resource mode 下绑定指定 published Translation Profile Version |
 | `translation_mode` | 否 | `direct` / `en2zh` |
@@ -191,7 +197,22 @@ MinerU callback 不在这组路由下，单独见 [mineru-callbacks.md](/Users/s
     - `mineru_status`
     - `mineru_result_zip_url`
   - 这些 `mineru_*` 字段当前仍对外返回，但内部已经被视为 `source_pdf_context` 的兼容投影
-  - MySQL resource mode 创建的任务会带 `resource_snapshot`，包含 `template`、`term_rule_set`、可选 `translation_profile`、MinerU snapshot 和 artifact id
+  - MySQL resource mode 创建的任务会带 `resource_snapshot`，包含 `template`、`term_rule_set`、`en2zh` 任务的 `translation_term_set`、可选 `translation_profile`、MinerU snapshot 和 artifact id
+
+## Job 术语资产版本选择
+
+MySQL resource mode 下，job 创建时会把当时解析到的术语资产版本固化到 `resource_snapshot`：
+
+- `term_rule_set.resource_id/version`
+- `translation_term_set.set_id/version`
+
+版本选择边界：
+
+- operator 创建 job 时只能使用当前默认版本，不能传 `term_rule_set_id/version` 或 `translation_term_set_id/version`
+- admin 创建 job 时可以显式选择历史 published Term Rule Set 和 Translation Term Set 版本
+- admin 发布或 rollback 默认版本只影响之后创建的新 job
+- 已创建 job 的 `resource_snapshot` 不会因默认指针切换而改变
+- stage 执行只使用 job 绑定版本，不重新解析当前默认指针
 
 ### `GET /api/v1/jobs/{job_id}/files`
 
@@ -271,6 +292,11 @@ MinerU callback 不在这组路由下，单独见 [mineru-callbacks.md](/Users/s
 | 参数 | 必填 | 说明 |
 |---|---|---|
 | `reason` | 是 | 重试原因 |
+| `use_latest_term_assets` | 否 | admin-only；`true` 时重试改用当前默认 Term Rule Set 和 Translation Term Set |
+| `term_rule_set_id` | 否 | admin-only；重试时指定 Term Rule Set |
+| `term_rule_set_version` | 否 | admin-only；重试时指定 published Term Rule Set Version |
+| `translation_term_set_id` | 否 | admin-only；重试时指定 Translation Term Set |
+| `translation_term_version` | 否 | admin-only；重试时指定 published Translation Term Set Version |
 
 - 响应：
 
@@ -285,6 +311,7 @@ MinerU callback 不在这组路由下，单独见 [mineru-callbacks.md](/Users/s
 ```
 
 - 审计：成功后写 `job.retry` audit event，`reason` 同请求体。
+- 关键语义：不传术语资产选择时沿用原 job 绑定版本；`use_latest_term_assets=true` 或显式选择版本只允许 admin 使用。
 
 ### `POST /api/v1/jobs/{job_id}/cancel`
 
@@ -352,7 +379,7 @@ MinerU callback 不在这组路由下，单独见 [mineru-callbacks.md](/Users/s
 | `POST /jobs/pdf` 时缺 `MINERU_API_TOKEN` | `503` | PDF 在线解析当前不可用 |
 | `translation_mode=en2zh` 但翻译能力不可用 | `503` | 例如 `OPENAI_API_KEY` 未配置 |
 | 显式资源版本选择但 backend 不是 MySQL resource mode | `503` | 需要 `JOBS_REPOSITORY_BACKEND=mysql` |
-| 指定资源版本不存在 | `404` | 例如 template / term-rule-set / translation-profile version 不存在 |
+| 指定资源版本不存在 | `404` | 例如 template / term-rule-set / translation-term-set / translation-profile version 不存在 |
 | 默认资源版本缺失或 snapshot 无法物化 | `409` | 例如 MySQL resource mode 下缺默认 published profile |
 | `direct` 任务传 Translation Profile | `400` | `direct` 不解析翻译 profile |
 | 上传大小超限 | `413` | 超过 `JOBS_UPLOAD_MAX_BYTES` |

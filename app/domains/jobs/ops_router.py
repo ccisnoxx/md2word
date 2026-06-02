@@ -16,6 +16,42 @@ from app.domains.jobs.schemas import JobCleanupLocalFilesResponse, JobDetailResp
 router = APIRouter()
 
 
+def _normalize_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _ensure_retry_term_asset_selection_allowed(
+    *,
+    actor: ActorContext,
+    use_latest_term_assets: bool,
+    term_rule_set_id: str | None,
+    term_rule_set_version: str | None,
+    translation_term_set_id: str | None,
+    translation_term_version: str | None,
+) -> None:
+    if actor.actor_role == "admin":
+        return
+    selected = [
+        name
+        for name, value in {
+            "use_latest_term_assets": use_latest_term_assets,
+            "term_rule_set_id": term_rule_set_id,
+            "term_rule_set_version": term_rule_set_version,
+            "translation_term_set_id": translation_term_set_id,
+            "translation_term_version": translation_term_version,
+        }.items()
+        if value
+    ]
+    if selected:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"operator 不能选择术语资产重跑版本: {', '.join(selected)}。",
+        )
+
+
 @router.post(
     "/{job_id}/retry",
     response_model=JobOperationAcceptedResponse,
@@ -25,11 +61,38 @@ def retry_job(
     background_tasks: BackgroundTasks,
     request: Request,
     reason: str = Form(...),
+    use_latest_term_assets: bool = Form(default=False),
+    term_rule_set_id: str | None = Form(default=None),
+    term_rule_set_version: str | None = Form(default=None),
+    translation_term_set_id: str | None = Form(default=None),
+    translation_term_version: str | None = Form(default=None),
     actor: ActorContext = Depends(require_job_ops_actor),
     runtime: AppRuntime = Depends(get_runtime),
     trace_id: str = Depends(get_trace_id),
 ) -> JobOperationAcceptedResponse:
-    result = runtime.lifecycle_service.retry_job(job_id, reason=reason, trace_id=trace_id, actor=actor)
+    normalized_term_rule_set_id = _normalize_optional_text(term_rule_set_id)
+    normalized_term_rule_set_version = _normalize_optional_text(term_rule_set_version)
+    normalized_translation_term_set_id = _normalize_optional_text(translation_term_set_id)
+    normalized_translation_term_version = _normalize_optional_text(translation_term_version)
+    _ensure_retry_term_asset_selection_allowed(
+        actor=actor,
+        use_latest_term_assets=use_latest_term_assets,
+        term_rule_set_id=normalized_term_rule_set_id,
+        term_rule_set_version=normalized_term_rule_set_version,
+        translation_term_set_id=normalized_translation_term_set_id,
+        translation_term_version=normalized_translation_term_version,
+    )
+    result = runtime.lifecycle_service.retry_job(
+        job_id,
+        reason=reason,
+        trace_id=trace_id,
+        actor=actor,
+        use_latest_term_assets=use_latest_term_assets,
+        term_rule_set_id=normalized_term_rule_set_id,
+        term_rule_set_version=normalized_term_rule_set_version,
+        translation_term_set_id=normalized_translation_term_set_id,
+        translation_term_version=normalized_translation_term_version,
+    )
     pending_messages = [
         message
         for message in runtime.stage_message_store.list_replayable_stage_messages()

@@ -15,7 +15,7 @@ source_files:
   - app/domains/term_rules/schemas.py
 summary: Term-rule-sets API 在 MySQL resource service 下提供术语规则集 draft、publish、set-default、rollback 和成功动作审计。
 tags: [term-rules, resource-versioning, api, audit]
-last_reviewed: 2026-05-31
+last_reviewed: 2026-06-01
 ---
 
 ## 概述
@@ -30,6 +30,7 @@ last_reviewed: 2026-05-31
 - publish / set-default / rollback 只有目标版本成为默认 published 版本时，才同步 legacy live runtime store 和 runtime YAML
 - MySQL versioned mode 下，legacy `/term-rules` 和 `/term-rule-categories` 写接口会拒绝直写
 - publish / set-default / rollback 成功后会写 audit event
+- publish 成功后会把已 approve 且尚未发布的 term rule proposals 关联到本次 published version
 
 ## API 参考
 
@@ -73,7 +74,7 @@ last_reviewed: 2026-05-31
 ### `PUT /api/v1/term-rule-sets/{set_id}/draft/rules`
 
 - 用途：用完整 v2 YAML 更新 draft。
-- 认证：`X-Admin-Token`
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 请求体：
   - `yaml_text`
 - 成功响应：`TermRuleSetDraftResponse`
@@ -104,22 +105,23 @@ last_reviewed: 2026-05-31
 ### `POST /api/v1/term-rule-sets/{set_id}/publish`
 
 - 用途：把当前 draft 发布为新的 immutable published version。
-- 认证：`X-Admin-Token`
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 请求体字段：
   - `make_default`：是否发布后设为默认，默认 `true`
   - `published_by`：可选发布人标识，仅写入 payload 元数据
-  - `publish_reason`：可选发布原因，仅写入 payload 元数据
+  - `publish_reason`：必填发布说明，写入 payload 元数据和 audit reason
 - 成功响应：`TermRuleSetVersionResponse`
 - 版本号格式：`YYYY.MM.DD-N`
 - 审计：成功后写 `term_rule_set.publish`，`target_id={set_id}@{version}`；`publish_reason` 同时作为 audit reason。
 - 关键语义：
   - `make_default=true` 时同步 live runtime store 和 runtime YAML
   - `make_default=false` 时只保存 published version，不改变默认指针和 runtime YAML
+  - 发布成功后，`/api/v1/term-rule-proposals?scope=approved_unpublished` 中属于该规则集的 proposal 会写入 `published_term_rule_set_version`，避免继续显示为待发布
 
 ### `POST /api/v1/term-rule-sets/{set_id}/versions/{version}/set-default`
 
 - 用途：把指定 published version 设为默认版本。
-- 认证：`X-Admin-Token`
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 请求体：无
 - 审计：成功后写 `term_rule_set.set_default`，`target_id={set_id}@{version}`。
 - 关键语义：
@@ -130,7 +132,7 @@ last_reviewed: 2026-05-31
 ### `POST /api/v1/term-rule-sets/{set_id}/rollback`
 
 - 用途：把默认指针切回指定 published version。
-- 认证：`X-Admin-Token`
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 请求体：
   - `version`
 - 审计：成功后写 `term_rule_set.rollback`，`target_id={set_id}@{version}`。
@@ -170,7 +172,7 @@ last_reviewed: 2026-05-31
 ## 常见状态
 
 - `400`：YAML 无效、版本状态不允许、`set_id` 格式非法，或尝试把 draft 设为默认
-- `403`：admin-only 写接口缺少或未通过 `X-Admin-Token`
+- `403`：admin-only 写接口缺少或未通过 Bearer admin JWT / legacy `X-Admin-Token`
 - `404`：规则集不存在，或目标版本不存在
 - `503`：未启用 MySQL resource service
 

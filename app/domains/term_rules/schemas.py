@@ -3,8 +3,9 @@ from __future__ import annotations
 # app/domains/term_rules/schemas.py: 定义 term-rules API 的 v1 请求/响应模型。
 
 from datetime import datetime
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class TermRuleCategoryListItemResponse(BaseModel):
@@ -197,11 +198,126 @@ class TermRuleSetDraftUpdateRequest(BaseModel):
     yaml_text: str
 
 
+class TermRuleSetImportRequest(BaseModel):
+    yaml_text: str
+    target: Literal["draft", "seed"] = "draft"
+    dedupe: Literal["reject", "keep_first"] = "reject"
+
+
+class TermRuleSetImportDuplicateResponse(BaseModel):
+    source_term: str
+    path: str | None = None
+    message: str
+
+
+class TermRuleSetImportReportResponse(BaseModel):
+    dedupe: str
+    total_rules: int
+    imported_rules: int
+    duplicate_rules: int
+    duplicates: list[TermRuleSetImportDuplicateResponse]
+
+
+class TermRuleSetImportResponse(BaseModel):
+    target: str
+    term_rule_set_id: str
+    version: str
+    rule_count: int
+    enabled_rule_count: int
+    snapshot_hash: str | None = None
+    validation: TermRuleImportValidationReportResponse
+    import_report: TermRuleSetImportReportResponse
+
+
+class TermRuleSetExportManifestResponse(BaseModel):
+    set_id: str
+    version: str
+    format: str
+    exported_at: datetime
+    exported_by: str | None = None
+
+
+class TermRuleSetExportResponse(BaseModel):
+    manifest: TermRuleSetExportManifestResponse
+    yaml_text: str
+
+
 class TermRuleSetPublishRequest(BaseModel):
     make_default: bool = True
     published_by: str | None = None
-    publish_reason: str | None = None
+    publish_reason: str
+
+    @field_validator("publish_reason")
+    @classmethod
+    def _validate_publish_reason(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("publish_reason 不能为空")
+        return normalized
 
 
 class TermRuleSetRollbackRequest(BaseModel):
     version: str
+
+
+class TermRuleProposalCreateRequest(BaseModel):
+    intent: str
+    source_term: str | None = None
+    category_id: str | None = None
+    segments: list[TermRuleSegmentWriteRequest] | None = None
+    reason: str
+    source_job_id: str | None = None
+    source_file_id: str | None = None
+    page_number: int | None = None
+    context_before: str | None = None
+    context_after: str | None = None
+    observed_term_rule_set_id: str | None = None
+    observed_term_rule_version: str | None = None
+    target_rule_id: str | None = None
+
+
+class TermRuleProposalReviewRequest(BaseModel):
+    review_comment: str | None = None
+
+
+class TermRuleProposalApproveAndPublishRequest(BaseModel):
+    review_comment: str | None = None
+    publish_reason: str | None = None
+
+
+class TermRuleProposalRejectRequest(BaseModel):
+    review_comment: str
+
+
+class TermRuleProposalResponse(BaseModel):
+    id: str
+    intent: str
+    status: str
+    source_term: str
+    category_id: str
+    segments: list[TermRuleSegmentResponse]
+    reason: str
+    source_job_id: str | None = None
+    source_file_id: str | None = None
+    page_number: int | None = None
+    context_before: str | None = None
+    context_after: str | None = None
+    observed_term_rule_set_id: str | None = None
+    observed_term_rule_version: str | None = None
+    target_rule_id: str | None = None
+    target_rule_snapshot: dict[str, Any] | None = None
+    created_by: str
+    created_at: datetime
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    review_comment: str | None = None
+    merged_term_rule_set_id: str | None = None
+    merged_draft_snapshot_hash: str | None = None
+    published_term_rule_set_id: str | None = None
+    published_term_rule_set_version: str | None = None
+    published_at: datetime | None = None
+
+
+class TermRuleProposalListResponse(BaseModel):
+    items: list[TermRuleProposalResponse]
+    total: int

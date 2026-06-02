@@ -6,6 +6,12 @@ import AppLayout from "@/layouts/AppLayout.vue";
 import JobDetailPage from "@/pages/JobDetailPage.vue";
 import JobsPage from "@/pages/JobsPage.vue";
 import LoginPage from "@/pages/LoginPage.vue";
+import SettingsHomePage from "@/pages/SettingsHomePage.vue";
+import TemplateDetailPage from "@/pages/TemplateDetailPage.vue";
+import TemplateListPage from "@/pages/TemplateListPage.vue";
+import TermRuleSetPage from "@/pages/TermRuleSetPage.vue";
+import TermProposalsPage from "@/pages/TermProposalsPage.vue";
+import TranslationProfilesPage from "@/pages/TranslationProfilesPage.vue";
 import { pinia } from "@/stores";
 import { useAuthStore } from "@/stores/auth";
 
@@ -26,6 +32,21 @@ const router = createRouter({
         { path: "", redirect: "/jobs" },
         { path: "jobs", name: "jobs", component: JobsPage },
         { path: "jobs/:jobId", name: "job-detail", component: JobDetailPage, props: true },
+        { path: "settings", name: "settings", component: SettingsHomePage },
+        { path: "settings/templates", name: "settings-templates", component: TemplateListPage },
+        { path: "settings/term-rule-sets", name: "settings-term-rule-sets", component: TermRuleSetPage },
+        {
+          path: "settings/translation-profiles",
+          name: "settings-translation-profiles",
+          component: TranslationProfilesPage,
+        },
+        {
+          path: "settings/templates/:templateId",
+          name: "settings-template-detail",
+          component: TemplateDetailPage,
+          props: true,
+        },
+        { path: "term-proposals", name: "term-proposals", component: TermProposalsPage },
       ],
     },
     {

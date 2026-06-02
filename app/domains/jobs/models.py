@@ -61,6 +61,8 @@ class ConversionOptions(BaseModel):
     template_version: str | None = None
     term_rule_set_id: str | None = None
     term_rule_set_version: str | None = None
+    translation_term_set_id: str | None = None
+    translation_term_version: str | None = None
     translation_profile_id: str | None = None
     translation_profile_version: str | None = None
     translation_mode: Literal["direct", "en2zh"] = "direct"
@@ -79,11 +81,23 @@ class JobMineruSnapshot(BaseModel):
     data_id: str | None = None
 
 
+class ResolvedTranslationTermVersion(BaseModel):
+    """job 创建时绑定的 Translation Term Set published 版本。"""
+
+    set_id: str
+    language_pair: str
+    version: str
+    status: Literal["published"] = "published"
+    snapshot_hash: str
+    term_count: int
+
+
 class JobResourceSnapshot(BaseModel):
     """job 创建时绑定的不可变资源版本快照。"""
 
     template: ResolvedResourceVersion | None = None
     term_rule_set: ResolvedResourceVersion | None = None
+    translation_term_set: ResolvedTranslationTermVersion | None = None
     translation_profile: ResolvedResourceVersion | None = None
     mineru: JobMineruSnapshot = Field(default_factory=JobMineruSnapshot)
     artifact_ids: dict[str, str] = Field(default_factory=dict)

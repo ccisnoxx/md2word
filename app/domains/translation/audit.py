@@ -14,6 +14,7 @@ from app.domains.translation.models import (
     TermVersionSnapshot,
     TranslationProviderRequest,
     TranslationProviderResult,
+    TranslationTermMatchTraceRecord,
     TranslationTextItem,
 )
 from app.domains.files import FileUploadService
@@ -108,6 +109,7 @@ class TranslationCallAuditRecorder:
             "term_version_id": self.term_version.term_version_id if self.term_version is not None else None,
             "term_snapshot_hash": self.term_version.snapshot_hash if self.term_version is not None else None,
             "term_count": len(request.terms),
+            "glossary_trace": self._term_trace_summary(request.term_traces),
             "request": {
                 "item_count": len(request.items),
                 "char_count": sum(len(item.text) for item in request.items),
@@ -214,6 +216,32 @@ class TranslationCallAuditRecorder:
         if result is None:
             return None
         return {"items": [{"id": item.id, "text": item.text} for item in result.items]}
+
+    def _term_trace_summary(self, traces: tuple[TranslationTermMatchTraceRecord, ...]) -> list[dict]:
+        return [
+            {
+                "segment_id": trace.segment_id,
+                "batch_id": trace.batch_id,
+                "translation_term_set_id": trace.translation_term_set_id,
+                "translation_term_version": trace.translation_term_version,
+                "source_term": trace.source_term,
+                "target_term": trace.target_term,
+                "match_start": trace.match_start,
+                "match_end": trace.match_end,
+                "context": self._redacted_context_summary(trace.context_snippet),
+                "injected_to_glossary": trace.injected_to_glossary,
+                "provider_trace_id": trace.provider_trace_id,
+            }
+            for trace in traces
+        ]
+
+    def _redacted_context_summary(self, context_snippet: str | None) -> dict | None:
+        if context_snippet is None:
+            return None
+        return {
+            "char_count": len(context_snippet),
+            "sha256": self._hash_text(context_snippet),
+        }
 
     def _redacted_items_summary(self, items: tuple[TranslationTextItem, ...]) -> list[dict]:
         return [

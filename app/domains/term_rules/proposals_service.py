@@ -1,0 +1,457 @@
+from __future__ import annotations
+
+# app/domains/term_rules/proposals_service.py: 编排术语建议提交、审核和合并到规则集 draft。
+
+from typing import Any
+from uuid import uuid4
+
+from app.domains.audit.models import ActorContext
+from app.domains.term_rules.models import (
+    RuleApplyScope,
+    RuleMode,
+    RuleRenderType,
+    TermRuleProposalIntent,
+    TermRuleProposalRecord,
+    TermRuleProposalStatus,
+    TermRuleRecord,
+    TermRuleSegmentRecord,
+    TermRulesStore,
+    utc_now,
+)
+from app.domains.term_rules.repository import TermRuleProposalRepositoryProtocol
+from app.domains.term_rules.service import TermRuleService
+from app.domains.term_rules.versioning_service import DEFAULT_TERM_RULE_SET_ID, TermRuleSetVersionService
+from app.domains.term_rules.yaml_codec import render_segments_html, render_segments_markdown
+
+
+class TermRuleProposalConflictError(RuntimeError):
+    """目标规则已变化，proposal 不能无提示合并。"""
+
+
+class TermRuleProposalService:
+    """维护 operator proposal 到 admin 审核合并的最小后端合同。"""
+
+    def __init__(
+        self,
+        *,
+        repository: TermRuleProposalRepositoryProtocol,
+        term_rule_service: TermRuleService,
+        term_rule_set_version_service: TermRuleSetVersionService,
+        audit_service: Any | None = None,
+    ) -> None:
+        self.repository = repository
+        self.term_rule_service = term_rule_service
+        self.term_rule_set_version_service = term_rule_set_version_service
+        self.audit_service = audit_service
+
+    def create_proposal(
+        self,
+        *,
+        intent: TermRuleProposalIntent,
+        source_term: str | None,
+        category_id: str | None,
+        segments: list[dict[str, Any]] | None,
+        reason: str,
+        source_job_id: str | None,
+        source_file_id: str | None,
+        target_rule_id: str | None,
+        created_by: str,
+        page_number: int | None = None,
+        context_before: str | None = None,
+        context_after: str | None = None,
+        observed_term_rule_set_id: str | None = None,
+        observed_term_rule_version: str | None = None,
+        actor: ActorContext | None = None,
+        trace_id: str | None = None,
+    ) -> TermRuleProposalRecord:
+        """创建 pending_review proposal，并在 update/disable 时保存目标规则快照。"""
+
+        normalized_reason = self._normalize_required_text(reason, "reason")
+        target_rule = self._load_target_rule(intent, target_rule_id)
+        if intent == TermRuleProposalIntent.CREATE and target_rule_id is not None:
+            raise ValueError("create proposal 不能绑定 target_rule_id。")
+        if intent == TermRuleProposalIntent.DISABLE:
+            assert target_rule is not None
+            normalized_source_term = target_rule.source_term
+            normalized_category_id = target_rule.category_id
+            parsed_segments = target_rule.segments
+        else:
+            normalized_source_term = self._normalize_required_text(source_term or "", "source_term")
+            normalized_category_id = self._normalize_required_text(category_id or "", "category_id")
+            self._require_category(self.term_rule_service.repository.load(), normalized_category_id)
+            parsed_segments = self._build_segments(segments or [])
+
+        proposal = TermRuleProposalRecord(
+            id=f"trp_{uuid4().hex[:12]}",
+            intent=intent,
+            source_term=normalized_source_term,
+            category_id=normalized_category_id,
+            segments=parsed_segments,
+            reason=normalized_reason,
+            source_job_id=self._normalize_optional_text(source_job_id),
+            source_file_id=self._normalize_optional_text(source_file_id),
+            page_number=page_number,
+            context_before=self._normalize_optional_text(context_before),
+            context_after=self._normalize_optional_text(context_after),
+            observed_term_rule_set_id=self._normalize_optional_text(observed_term_rule_set_id) or DEFAULT_TERM_RULE_SET_ID,
+            observed_term_rule_version=self._normalize_optional_text(observed_term_rule_version) or self._current_default_version(),
+            target_rule_id=target_rule.id if target_rule is not None else None,
+            target_rule_snapshot=self._rule_snapshot(target_rule) if target_rule is not None else None,
+            created_by=self._normalize_required_text(created_by, "created_by"),
+        )
+        saved = self.repository.save_proposal(proposal)
+        self._record_audit(actor=actor, action="term_rule_proposal.create", proposal=saved, trace_id=trace_id)
+        return saved
+
+    def list_proposals(
+        self,
+        *,
+        status: TermRuleProposalStatus | None = None,
+        created_by: str | None = None,
+    ) -> list[TermRuleProposalRecord]:
+        """按状态和提交人查询 proposals。"""
+
+        return self.repository.list_proposals(status=status, created_by=created_by)
+
+    def list_approved_unpublished_proposals(
+        self,
+        term_rule_set_id: str = DEFAULT_TERM_RULE_SET_ID,
+    ) -> list[TermRuleProposalRecord]:
+        """查询已合入 draft 但尚未随 Term Rule Set 版本发布的 proposal。"""
+
+        return [
+            proposal
+            for proposal in self.repository.list_proposals(status=TermRuleProposalStatus.APPROVED)
+            if proposal.merged_term_rule_set_id == term_rule_set_id
+            and proposal.published_term_rule_set_version is None
+        ]
+
+    def mark_approved_proposals_published(
+        self,
+        *,
+        term_rule_set_id: str,
+        published_version: str,
+    ) -> list[TermRuleProposalRecord]:
+        """在规则集发布成功后，把本轮已 approve proposal 关联到发布版本。"""
+
+        now = utc_now()
+        published: list[TermRuleProposalRecord] = []
+        for proposal in self.list_approved_unpublished_proposals(term_rule_set_id):
+            updated = proposal.model_copy(
+                update={
+                    "status": TermRuleProposalStatus.PUBLISHED,
+                    "published_term_rule_set_id": term_rule_set_id,
+                    "published_term_rule_set_version": published_version,
+                    "published_at": now,
+                    "updated_at": now,
+                }
+            )
+            published.append(self.repository.save_proposal(updated))
+        return published
+
+    def get_proposal(self, proposal_id: str) -> TermRuleProposalRecord:
+        """读取单条 proposal。"""
+
+        proposal = self.repository.get_proposal(proposal_id)
+        if proposal is None:
+            raise FileNotFoundError(f"术语建议不存在: {proposal_id}")
+        return proposal
+
+    def approve_proposal(
+        self,
+        proposal_id: str,
+        *,
+        reviewed_by: str,
+        review_comment: str | None,
+        actor: ActorContext | None = None,
+        trace_id: str | None = None,
+    ) -> TermRuleProposalRecord:
+        """把 pending proposal 合并到 Term Rule Set draft 后再标记 approved。"""
+
+        proposal = self._require_pending(proposal_id)
+        draft_store = self.term_rule_set_version_service.get_draft_store(DEFAULT_TERM_RULE_SET_ID)
+        updated_store = self._apply_to_store(proposal, draft_store)
+        draft = self.term_rule_set_version_service.update_draft(DEFAULT_TERM_RULE_SET_ID, updated_store)
+        now = utc_now()
+        approved = proposal.model_copy(
+            update={
+                "status": TermRuleProposalStatus.APPROVED,
+                "reviewed_by": self._normalize_required_text(reviewed_by, "reviewed_by"),
+                "reviewed_at": now,
+                "review_comment": self._normalize_optional_text(review_comment),
+                "merged_term_rule_set_id": DEFAULT_TERM_RULE_SET_ID,
+                "merged_draft_snapshot_hash": draft.snapshot_hash,
+                "updated_at": now,
+            }
+        )
+        saved = self.repository.save_proposal(approved)
+        self._record_audit(actor=actor, action="term_rule_proposal.approve", proposal=saved, trace_id=trace_id)
+        return saved
+
+    def approve_and_publish_proposal(
+        self,
+        proposal_id: str,
+        *,
+        reviewed_by: str,
+        review_comment: str | None,
+        publish_reason: str | None,
+        actor: ActorContext | None = None,
+        trace_id: str | None = None,
+    ) -> TermRuleProposalRecord:
+        """审核 proposal、发布当前 draft 为默认版本，并回填发布版本。"""
+
+        approved = self.approve_proposal(
+            proposal_id,
+            reviewed_by=reviewed_by,
+            review_comment=review_comment,
+            actor=actor,
+            trace_id=trace_id,
+        )
+        reason = self._normalize_optional_text(publish_reason) or f"publish approved term rule proposal {approved.id}: {approved.source_term}"
+        published = self.term_rule_set_version_service.publish_draft(
+            DEFAULT_TERM_RULE_SET_ID,
+            make_default=True,
+            published_by=reviewed_by,
+            publish_reason=reason,
+            actor=actor,
+            trace_id=trace_id,
+        )
+        self.mark_approved_proposals_published(
+            term_rule_set_id=DEFAULT_TERM_RULE_SET_ID,
+            published_version=published.version,
+        )
+        published_proposal = self.get_proposal(proposal_id)
+        self._record_audit(
+            actor=actor,
+            action="term_rule_proposal.approve_and_publish",
+            proposal=published_proposal,
+            trace_id=trace_id,
+        )
+        return published_proposal
+
+    def reject_proposal(
+        self,
+        proposal_id: str,
+        *,
+        reviewed_by: str,
+        review_comment: str,
+        actor: ActorContext | None = None,
+        trace_id: str | None = None,
+    ) -> TermRuleProposalRecord:
+        """拒绝 pending proposal，拒绝原因必填。"""
+
+        proposal = self._require_pending(proposal_id)
+        now = utc_now()
+        rejected = proposal.model_copy(
+            update={
+                "status": TermRuleProposalStatus.REJECTED,
+                "reviewed_by": self._normalize_required_text(reviewed_by, "reviewed_by"),
+                "reviewed_at": now,
+                "review_comment": self._normalize_required_text(review_comment, "review_comment"),
+                "updated_at": now,
+            }
+        )
+        saved = self.repository.save_proposal(rejected)
+        self._record_audit(actor=actor, action="term_rule_proposal.reject", proposal=saved, trace_id=trace_id)
+        return saved
+
+    def _require_pending(self, proposal_id: str) -> TermRuleProposalRecord:
+        proposal = self.get_proposal(proposal_id)
+        if proposal.status != TermRuleProposalStatus.PENDING_REVIEW:
+            raise ValueError("只有 pending_review proposal 可以审核。")
+        return proposal
+
+    def _load_target_rule(
+        self,
+        intent: TermRuleProposalIntent,
+        target_rule_id: str | None,
+    ) -> TermRuleRecord | None:
+        if intent in {TermRuleProposalIntent.UPDATE, TermRuleProposalIntent.DISABLE}:
+            normalized_target = self._normalize_required_text(target_rule_id or "", "target_rule_id")
+            return self.term_rule_service.get_rule(normalized_target)
+        return None
+
+    def _apply_to_store(self, proposal: TermRuleProposalRecord, store: TermRulesStore) -> TermRulesStore:
+        if proposal.intent == TermRuleProposalIntent.CREATE:
+            self._require_category(store, proposal.category_id)
+            self._ensure_no_conflicting_source_segments(store, proposal)
+            self._ensure_unique_source_term(store, proposal.source_term, exclude_rule_id=None)
+            return store.model_copy(
+                update={
+                    "rules": [
+                        *store.rules,
+                        self._build_rule_record(
+                            rule_id=uuid4().hex,
+                            category_id=proposal.category_id,
+                            source_term=proposal.source_term,
+                            segments=proposal.segments,
+                            notes=proposal.reason,
+                        ),
+                    ]
+                }
+            )
+
+        if proposal.target_rule_id is None or proposal.target_rule_snapshot is None:
+            raise ValueError("update/disable proposal 缺少目标规则快照。")
+        try:
+            target = self._find_rule(store, proposal.target_rule_id)
+        except FileNotFoundError as exc:
+            raise TermRuleProposalConflictError("目标规则已发生变化，请重新提交 proposal。") from exc
+        if self._rule_snapshot(target) != proposal.target_rule_snapshot:
+            raise TermRuleProposalConflictError("目标规则已发生变化，请重新提交 proposal。")
+
+        if proposal.intent == TermRuleProposalIntent.DISABLE:
+            replacement = target.model_copy(update={"enabled": False, "notes": proposal.reason, "updated_at": utc_now()})
+        else:
+            self._require_category(store, proposal.category_id)
+            self._ensure_unique_source_term(store, proposal.source_term, exclude_rule_id=target.id)
+            replacement = self._build_rule_record(
+                rule_id=target.id,
+                category_id=proposal.category_id,
+                source_term=proposal.source_term,
+                segments=proposal.segments,
+                notes=proposal.reason,
+                apply_scope=target.apply_scope,
+                case_sensitive=target.case_sensitive,
+                enabled=target.enabled,
+                priority=target.priority,
+                created_at=target.created_at,
+            ).model_copy(update={"updated_at": utc_now()})
+        return store.model_copy(
+            update={
+                "rules": [
+                    replacement if rule.id == target.id else rule
+                    for rule in store.rules
+                ]
+            }
+        )
+
+    @staticmethod
+    def _rule_snapshot(rule: TermRuleRecord) -> dict[str, Any]:
+        return rule.model_dump(mode="json")
+
+    @staticmethod
+    def _require_category(store: TermRulesStore, category_id: str) -> None:
+        if not any(category.id == category_id for category in store.categories):
+            raise FileNotFoundError(f"分类不存在: {category_id}")
+
+    @staticmethod
+    def _find_rule(store: TermRulesStore, rule_id: str) -> TermRuleRecord:
+        for rule in store.rules:
+            if rule.id == rule_id:
+                return rule
+        raise FileNotFoundError(f"规则不存在: {rule_id}")
+
+    @staticmethod
+    def _ensure_unique_source_term(
+        store: TermRulesStore,
+        source_term: str,
+        *,
+        exclude_rule_id: str | None,
+    ) -> None:
+        for rule in store.rules:
+            if rule.source_term == source_term and rule.id != exclude_rule_id:
+                raise ValueError(f"规则 source_term 已存在: {source_term}")
+
+    @staticmethod
+    def _ensure_no_conflicting_source_segments(store: TermRulesStore, proposal: TermRuleProposalRecord) -> None:
+        proposed_segments = [segment.model_dump(mode="json") for segment in proposal.segments]
+        for rule in store.rules:
+            if rule.source_term != proposal.source_term:
+                continue
+            existing_segments = [segment.model_dump(mode="json") for segment in rule.segments]
+            if existing_segments != proposed_segments:
+                raise TermRuleProposalConflictError("同一 source_term 已存在不同 segments，请手动处理 draft 冲突。")
+
+    def _build_rule_record(
+        self,
+        *,
+        rule_id: str,
+        category_id: str,
+        source_term: str,
+        segments: list[TermRuleSegmentRecord],
+        notes: str,
+        apply_scope: RuleApplyScope = RuleApplyScope.BOTH,
+        case_sensitive: bool = True,
+        enabled: bool = True,
+        priority: int = 100,
+        created_at: Any | None = None,
+    ) -> TermRuleRecord:
+        return TermRuleRecord(
+            id=rule_id,
+            category_id=category_id,
+            source_term=source_term,
+            rule_mode=RuleMode.SIMPLE if len(segments) <= 2 else RuleMode.ADVANCED,
+            apply_scope=apply_scope,
+            case_sensitive=case_sensitive,
+            enabled=enabled,
+            priority=int(priority),
+            segments=segments,
+            custom_html=render_segments_html(segments),
+            custom_markdown=render_segments_markdown(segments),
+            notes=notes,
+            **({"created_at": created_at} if created_at is not None else {}),
+        )
+
+    @staticmethod
+    def _build_segments(raw_segments: list[dict[str, Any]]) -> list[TermRuleSegmentRecord]:
+        if not raw_segments:
+            raise ValueError("segments 必须是非空数组")
+        segments: list[TermRuleSegmentRecord] = []
+        for index, raw_segment in enumerate(raw_segments):
+            segment_text = str(raw_segment.get("segment_text", "") or "")
+            if not segment_text:
+                raise ValueError("segment_text 不能为空")
+            render_type_value = str(raw_segment.get("render_type", "") or "").strip().lower()
+            try:
+                render_type = RuleRenderType(render_type_value)
+            except ValueError as exc:
+                raise ValueError(f"不支持的 render_type: {render_type_value}") from exc
+            segments.append(
+                TermRuleSegmentRecord(
+                    seq=index + 1,
+                    segment_text=segment_text,
+                    render_type=render_type,
+                )
+            )
+        return segments
+
+    def _record_audit(
+        self,
+        *,
+        actor: ActorContext | None,
+        action: str,
+        proposal: TermRuleProposalRecord,
+        trace_id: str | None,
+    ) -> None:
+        if actor is None or self.audit_service is None:
+            return
+        self.audit_service.record(
+            actor=actor,
+            action=action,
+            target_type="term_rule_proposal",
+            target_id=proposal.id,
+            trace_id=trace_id or "",
+            reason=proposal.review_comment,
+        )
+
+    def _current_default_version(self) -> str | None:
+        try:
+            detail = self.term_rule_set_version_service.get_set_detail(DEFAULT_TERM_RULE_SET_ID)
+        except (FileNotFoundError, ValueError):
+            return None
+        return detail.default_version
+
+    @staticmethod
+    def _normalize_required_text(value: str, field_name: str) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise ValueError(f"{field_name} 不能为空")
+        return normalized
+
+    @staticmethod
+    def _normalize_optional_text(value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None

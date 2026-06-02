@@ -7,8 +7,11 @@ from app.services.document_ir.mineru_converter import (
     MinerUToDocumentIRResult,
     MinerUToDocumentIRService,
 )
+from app.services.document_ir.models import DocumentIRBlockLayout, DocumentIRPage
 
 __all__ = [
+    "DocumentIRBlockLayout",
+    "DocumentIRPage",
     "MinerUImageAsset",
     "MinerUToDocumentIRResult",
     "MinerUToDocumentIRService",

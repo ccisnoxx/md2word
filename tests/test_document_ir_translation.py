@@ -6,7 +6,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.services.document_ir.models import DocumentIR, DocumentIRAsset, DocumentIRBlock, DocumentIRMetadata
+from app.services.document_ir.models import (
+    DocumentIR,
+    DocumentIRAsset,
+    DocumentIRBlock,
+    DocumentIRBlockLayout,
+    DocumentIRMetadata,
+    DocumentIRPage,
+)
 from app.domains.translation.models import (
     TermVersionSnapshot,
     TranslationProviderRequest,
@@ -42,6 +49,31 @@ class FakeTranslationProvider:
         )
 
 
+class RecordingTranslationCallRecorder:
+    def __init__(self) -> None:
+        self.success_requests: list[TranslationProviderRequest] = []
+        self.failure_requests: list[TranslationProviderRequest] = []
+
+    def record_success(
+        self,
+        request: TranslationProviderRequest,
+        result: TranslationProviderResult,
+        *,
+        duration_ms: int,
+    ) -> None:
+        self.success_requests.append(request)
+
+    def record_failure(
+        self,
+        request: TranslationProviderRequest,
+        result: TranslationProviderResult | None,
+        *,
+        error: Exception,
+        duration_ms: int,
+    ) -> None:
+        self.failure_requests.append(request)
+
+
 class DocumentIRTranslationTests(unittest.TestCase):
     def test_term_version_service_loads_csv_and_builds_canonical_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -65,6 +97,41 @@ class DocumentIRTranslationTests(unittest.TestCase):
             [("input offset voltage", "输入失调电压"), ("slew rate", "压摆率")],
         )
 
+    def test_term_version_service_rejects_duplicate_normalized_terms_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            terms_path = Path(temp_dir) / "translation_terms.csv"
+            terms_path.write_text(
+                "language_pair,source_term,target_term,version\n"
+                "en2zh, ADC ,模数转换器,v1\n"
+                "en2zh,adc,重复项,v1\n",
+                encoding="utf-8",
+            )
+            service = TermVersionService(terms_path, default_term_version_id="en2zh@v1")
+
+            with self.assertRaises(ValueError) as context:
+                service.resolve_for_job(None, language_pair="en2zh")
+
+        self.assertIn("重复 normalized_source_term", str(context.exception))
+
+    def test_term_version_service_keep_first_import_reports_duplicates(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            terms_path = Path(temp_dir) / "translation_terms.csv"
+            terms_path.write_text(
+                "language_pair,source_term,target_term,version\n"
+                "en2zh, ADC ,模数转换器,v1\n"
+                "en2zh,adc,重复项,v1\n"
+                "en2zh,DAC,数模转换器,v1\n",
+                encoding="utf-8",
+            )
+            service = TermVersionService(terms_path, default_term_version_id="en2zh@v1")
+
+            entries, report = service.load_csv_entries_for_import(dedupe="keep_first")
+
+        self.assertEqual([(entry.source_term, entry.target_term) for entry in entries], [("ADC", "模数转换器"), ("DAC", "数模转换器")])
+        self.assertEqual(report.imported_rows, 2)
+        self.assertEqual(report.duplicate_rows, 1)
+        self.assertEqual(report.duplicates[0].kept_row_number, 2)
+
     def test_document_ir_translation_rewrites_text_nodes_without_touching_structure_or_assets(self) -> None:
         provider = FakeTranslationProvider()
         service = DocumentIRTranslationService(provider)
@@ -87,8 +154,12 @@ class DocumentIRTranslationTests(unittest.TestCase):
         translated = service.translate(document, term_version=terms)
 
         self.assertEqual(translated.schema_version, document.schema_version)
+        self.assertEqual(translated.pages, document.pages)
         self.assertEqual([block.id for block in translated.blocks], [block.id for block in document.blocks])
         self.assertEqual([block.type for block in translated.blocks], [block.type for block in document.blocks])
+        self.assertEqual([block.layout for block in translated.blocks], [block.layout for block in document.blocks])
+        self.assertEqual([block.captions for block in translated.blocks], [block.captions for block in document.blocks])
+        self.assertEqual([block.footnotes for block in translated.blocks], [block.footnotes for block in document.blocks])
         self.assertEqual(translated.assets, document.assets)
         self.assertEqual(document.blocks[1].text, "The input offset voltage is low.")
         self.assertEqual(translated.metadata.document_language, "zh")
@@ -101,24 +172,140 @@ class DocumentIRTranslationTests(unittest.TestCase):
         self.assertEqual(translated.blocks[5].text, "图 1. 引脚图")
         self.assertEqual(len(provider.requests), 1)
         self.assertEqual(provider.requests[0].terms, terms.entries)
+        self.assertEqual([trace.source_term for trace in provider.requests[0].term_traces], ["input offset voltage"])
         self.assertNotIn("block_0005", [item.id for item in provider.requests[0].items])
+
+    def test_document_ir_translation_injects_only_matched_terms_with_trace(self) -> None:
+        provider = FakeTranslationProvider()
+        recorder = RecordingTranslationCallRecorder()
+        service = DocumentIRTranslationService(provider)
+        document = self._make_document_ir()
+        document.blocks[1].text = (
+            " ".join(["leading"] * 20)
+            + " input offset voltage "
+            + " ".join(["trailing"] * 20)
+        )
+        terms = TermVersionSnapshot(
+            term_version_id="en2zh@v1",
+            language_pair="en2zh",
+            version="v1",
+            snapshot_hash="sha256:" + "1" * 64,
+            entries=(
+                TranslationTermEntry(
+                    language_pair="en2zh",
+                    source_term="offset voltage",
+                    target_term="偏移电压",
+                    version="v1",
+                    priority=999,
+                ),
+                TranslationTermEntry(
+                    language_pair="en2zh",
+                    source_term="input offset voltage",
+                    target_term="输入失调电压",
+                    version="v1",
+                ),
+                TranslationTermEntry(
+                    language_pair="en2zh",
+                    source_term="low noise",
+                    target_term="低噪声",
+                    version="v1",
+                ),
+                TranslationTermEntry(
+                    language_pair="en2zh",
+                    source_term="LOW NOISE",
+                    target_term="不应命中",
+                    version="v1",
+                    case_sensitive=True,
+                    priority=1000,
+                ),
+                TranslationTermEntry(
+                    language_pair="en2zh",
+                    source_term="slew rate",
+                    target_term="压摆率",
+                    version="v1",
+                    priority=5,
+                ),
+                TranslationTermEntry(
+                    language_pair="en2zh",
+                    source_term="High slew rate",
+                    target_term="禁用术语",
+                    version="v1",
+                    status="disabled",
+                    priority=1000,
+                ),
+                TranslationTermEntry(
+                    language_pair="en2zh",
+                    source_term="unused term",
+                    target_term="未使用术语",
+                    version="v1",
+                    priority=1000,
+                ),
+            ),
+        )
+
+        service.translate(document, term_version=terms, call_recorder=recorder)
+
+        self.assertEqual(len(provider.requests), 1)
+        request = provider.requests[0]
+        self.assertEqual(
+            [term.source_term for term in request.terms],
+            ["input offset voltage", "slew rate", "low noise"],
+        )
+        self.assertEqual(
+            [trace.source_term for trace in request.term_traces],
+            [term.source_term for term in request.terms],
+        )
+        self.assertTrue(all(trace.injected_to_glossary for trace in request.term_traces))
+        self.assertEqual(
+            [trace.segment_id for trace in request.term_traces],
+            ["block_0002.text", "block_0004.list_items.0001", "block_0004.list_items.0000"],
+        )
+        input_trace = next(trace for trace in request.term_traces if trace.source_term == "input offset voltage")
+        paragraph_text = next(item.text for item in request.items if item.id == "block_0002.text")
+        self.assertLessEqual(len(input_trace.context_snippet or ""), 120)
+        self.assertNotEqual(input_trace.context_snippet, paragraph_text)
+        self.assertEqual(recorder.success_requests, [request])
+        self.assertEqual(recorder.failure_requests, [])
 
     def _make_document_ir(self) -> DocumentIR:
         return DocumentIR(
+            schema_version="document-ir/v2",
             metadata=DocumentIRMetadata(
                 job_id="docjob_test",
                 source_file_id="file_test",
                 document_language="en",
             ),
+            pages=[DocumentIRPage(index=0, width=612.0, height=792.0)],
             blocks=[
-                DocumentIRBlock(id="block_0001", type="heading", order=0, text="1 Features", level=1),
-                DocumentIRBlock(id="block_0002", type="paragraph", order=1, text="The input offset voltage is low."),
+                DocumentIRBlock(
+                    id="block_0001",
+                    type="heading",
+                    order=0,
+                    text="1 Features",
+                    level=1,
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(72.0, 72.0, 240.0, 96.0), role="body"),
+                ),
+                DocumentIRBlock(
+                    id="block_0002",
+                    type="paragraph",
+                    order=1,
+                    text="The input offset voltage is low.",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(72.0, 110.0, 540.0, 140.0), role="body"),
+                ),
                 DocumentIRBlock(
                     id="block_0003",
                     type="table",
                     order=2,
                     text="Electrical Characteristics",
                     html="<table><tr><th>Parameter</th><td>Input voltage</td></tr></table>",
+                    layout=DocumentIRBlockLayout(
+                        page_index=0,
+                        bbox=(72.0, 150.0, 540.0, 260.0),
+                        role="body",
+                        continuation_heights=[80.0],
+                    ),
+                    captions=["Table 1. Electrical Characteristics"],
+                    footnotes=["All values are typical."],
                 ),
                 DocumentIRBlock(
                     id="block_0004",
@@ -126,9 +313,25 @@ class DocumentIRTranslationTests(unittest.TestCase):
                     order=3,
                     text="Low noise\nHigh slew rate",
                     list_items=["Low noise", "High slew rate"],
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(72.0, 280.0, 300.0, 330.0), role="body"),
                 ),
-                DocumentIRBlock(id="block_0005", type="formula", order=4, text="E=mc^2", latex="E=mc^2"),
-                DocumentIRBlock(id="block_0006", type="image", order=5, text="Figure 1. Pin diagram", asset_ref="asset_0001"),
+                DocumentIRBlock(
+                    id="block_0005",
+                    type="formula",
+                    order=4,
+                    text="E=mc^2",
+                    latex="E=mc^2",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(72.0, 350.0, 240.0, 380.0), role="body"),
+                ),
+                DocumentIRBlock(
+                    id="block_0006",
+                    type="image",
+                    order=5,
+                    text="Figure 1. Pin diagram",
+                    asset_ref="asset_0001",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(72.0, 400.0, 360.0, 540.0), role="body"),
+                    captions=["Figure 1. Pin diagram"],
+                ),
             ],
             assets=[
                 DocumentIRAsset(

@@ -191,7 +191,7 @@ def list_template_versions(
 def publish_template_version(
     template_id: str,
     version: int,
-    payload: TemplateVersionPublishRequest | None = None,
+    payload: TemplateVersionPublishRequest,
     actor: ActorContext = Depends(require_admin_actor),
     runtime: AppRuntime = Depends(get_runtime),
     trace_id: str = Depends(get_trace_id),
@@ -200,7 +200,10 @@ def publish_template_version(
         return runtime.template_read_service.publish_template_version(
             template_id,
             version,
-            make_default=payload.make_default if payload is not None else False,
+            make_default=payload.make_default,
+            publish_reason=payload.publish_reason,
+            verification_job_id=payload.verification_job_id,
+            verification_note=payload.verification_note,
             actor=actor,
             trace_id=trace_id,
         )
@@ -216,16 +219,16 @@ def publish_template_version(
 def set_default_template_version(
     template_id: str,
     version: int,
-    payload: TemplateVersionDefaultRequest | None = None,
+    payload: TemplateVersionDefaultRequest,
     actor: ActorContext = Depends(require_admin_actor),
     runtime: AppRuntime = Depends(get_runtime),
     trace_id: str = Depends(get_trace_id),
 ) -> TemplateVersionResponse:
-    del payload
     try:
         return runtime.template_read_service.set_default_template_version(
             template_id,
             version,
+            set_default_reason=payload.set_default_reason,
             actor=actor,
             trace_id=trace_id,
         )

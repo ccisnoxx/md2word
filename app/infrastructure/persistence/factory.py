@@ -19,6 +19,8 @@ from app.domains.jobs.repository import (
     StageMessageStoreProtocol,
 )
 from app.domains.resources.repository import ResourceVersionRepositoryProtocol
+from app.domains.term_rules.repository import TermRuleAssetRepositoryProtocol, TermRuleProposalRepositoryProtocol
+from app.domains.translation.repository import TranslationTermRepositoryProtocol
 from app.infrastructure.persistence.file import (
     FileAuditEventRepository,
     FileDocumentFileRepository,
@@ -43,6 +45,9 @@ from app.infrastructure.persistence.mysql import (
     MysqlPersistenceConfig,
     MysqlResourceVersionRepository,
     MysqlStageMessageStore,
+    MysqlTermRuleAssetRepository,
+    MysqlTermRuleProposalRepository,
+    MysqlTranslationTermRepository,
 )
 from app.infrastructure.persistence.sqlite import (
     SqliteAuditEventRepository,
@@ -71,6 +76,9 @@ class PersistenceAdapters:
     document_job_event_repository: DocumentJobEventRepositoryProtocol
     stage_message_store: StageMessageStoreProtocol
     resource_version_repository: ResourceVersionRepositoryProtocol | None = None
+    term_rule_proposal_repository: TermRuleProposalRepositoryProtocol | None = None
+    term_rule_asset_repository: TermRuleAssetRepositoryProtocol | None = None
+    translation_term_repository: TranslationTermRepositoryProtocol | None = None
 
 
 def build_file_persistence_adapters(data_dir: Path) -> PersistenceAdapters:
@@ -88,6 +96,9 @@ def build_file_persistence_adapters(data_dir: Path) -> PersistenceAdapters:
         document_job_event_repository=FileDocumentJobEventRepository(backend),
         stage_message_store=FileStageMessageStore(backend),
         resource_version_repository=None,
+        term_rule_proposal_repository=None,
+        term_rule_asset_repository=None,
+        translation_term_repository=None,
     )
 
 
@@ -106,6 +117,9 @@ def build_sqlite_persistence_adapters(database_path: Path) -> PersistenceAdapter
         document_job_event_repository=SqliteDocumentJobEventRepository(backend),
         stage_message_store=SqliteStageMessageStore(backend),
         resource_version_repository=None,
+        term_rule_proposal_repository=None,
+        term_rule_asset_repository=None,
+        translation_term_repository=None,
     )
 
 
@@ -128,6 +142,9 @@ def build_mysql_persistence_adapters(
         document_job_event_repository=MysqlDocumentJobEventRepository(backend),
         stage_message_store=MysqlStageMessageStore(backend),
         resource_version_repository=MysqlResourceVersionRepository(backend),
+        term_rule_proposal_repository=MysqlTermRuleProposalRepository(backend),
+        term_rule_asset_repository=MysqlTermRuleAssetRepository(backend),
+        translation_term_repository=MysqlTranslationTermRepository(backend),
     )
 
 

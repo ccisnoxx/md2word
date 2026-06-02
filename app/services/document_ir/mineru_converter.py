@@ -2,14 +2,19 @@ from __future__ import annotations
 
 # app/services/document_ir/mineru_converter.py: 将 MinerU 原始结果包转换为 DocumentIR v1。
 
-import json
 import mimetypes
 import tempfile
-import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from app.services.document_ir.layout_signals import (
+    build_block_layout,
+    build_pages,
+    parse_page_index,
+    role_for_source_type,
+)
+from app.services.document_ir.mineru_package import extract_zip, find_content_list, load_content_blocks
 from app.services.document_ir.models import (
     DocumentIR,
     DocumentIRAsset,
@@ -51,9 +56,9 @@ class MinerUToDocumentIRService:
 
         with tempfile.TemporaryDirectory(prefix="document_ir_mineru_") as temp_dir:
             package_root = Path(temp_dir)
-            self._extract_zip(zip_path, package_root)
-            content_list_path = self._find_content_list(package_root)
-            raw_blocks = self._load_content_blocks(content_list_path)
+            extract_zip(zip_path, package_root)
+            content_list_path = find_content_list(package_root)
+            raw_blocks = load_content_blocks(content_list_path)
             return self._convert_blocks(
                 raw_blocks,
                 package_root=package_root,
@@ -61,36 +66,6 @@ class MinerUToDocumentIRService:
                 source_file_id=source_file_id,
                 document_language=document_language,
             )
-
-    def _extract_zip(self, zip_path: Path, target_dir: Path) -> None:
-        with zipfile.ZipFile(zip_path) as archive:
-            for member in archive.infolist():
-                member_path = Path(member.filename)
-                if member_path.is_absolute() or any(part in {"", ".", ".."} for part in member_path.parts):
-                    raise ValueError(f"MinerU 结果包包含非法路径: {member.filename}")
-                archive.extract(member, target_dir)
-
-    def _find_content_list(self, package_root: Path) -> Path:
-        candidates = []
-        for path in package_root.rglob("*.json"):
-            name = path.name
-            if name in {"content_list_v2.json", "content_list.json"}:
-                candidates.append(path)
-            elif name.endswith("_content_list_v2.json") or name.endswith("_content_list.json"):
-                candidates.append(path)
-        if not candidates:
-            raise FileNotFoundError("MinerU 结果包缺少 content_list_v2.json 或 content_list.json。")
-        return sorted(candidates, key=lambda item: (len(item.parts), item.as_posix()))[0]
-
-    def _load_content_blocks(self, content_list_path: Path) -> list[dict[str, Any]]:
-        payload = json.loads(content_list_path.read_text(encoding="utf-8"))
-        if isinstance(payload, list):
-            blocks = payload
-        elif isinstance(payload, dict) and isinstance(payload.get("content_list"), list):
-            blocks = payload["content_list"]
-        else:
-            raise ValueError("MinerU content_list 不是数组，也不包含 content_list 数组。")
-        return [block for block in blocks if isinstance(block, dict)]
 
     def _convert_blocks(
         self,
@@ -111,7 +86,8 @@ class MinerUToDocumentIRService:
             block_id = f"block_{index + 1:04d}"
             source_type = str(raw_block.get("type") or raw_block.get("block_type") or "text").strip().lower()
             block_type = self._map_block_type(raw_block, source_type)
-            if block_type == "paragraph" and source_type not in {"", "text", "paragraph", "para"}:
+            block_role = role_for_source_type(source_type)
+            if block_type == "paragraph" and block_role == "body" and source_type not in {"", "text", "paragraph", "para"}:
                 unsupported_types.add(source_type)
             metadata = self._metadata_from_raw(raw_block, source_type)
             asset_ref = None
@@ -139,13 +115,22 @@ class MinerUToDocumentIRService:
                     id=block_id,
                     type=block_type,
                     order=index,
-                    page_index=self._page_index(raw_block),
+                    page_index=parse_page_index(raw_block),
                     text=self._text_for_block(raw_block, block_type),
                     level=self._heading_level(raw_block) if block_type == "heading" else None,
                     html=self._table_html(raw_block) if block_type == "table" else None,
                     latex=self._formula_text(raw_block) if block_type == "formula" else None,
                     list_items=self._list_items(raw_block) if block_type == "list" else None,
                     asset_ref=asset_ref,
+                    layout=build_block_layout(
+                        raw_block,
+                        source_type=source_type,
+                        source_index=index,
+                        quality_flags=quality_flags,
+                        block_id=block_id,
+                    ),
+                    captions=self._captions(raw_block, source_type),
+                    footnotes=self._footnotes(raw_block, source_type),
                     metadata=metadata,
                 )
             )
@@ -156,11 +141,13 @@ class MinerUToDocumentIRService:
             quality_flags.append(f"unsupported_block_type:{source_type}")
 
         document = DocumentIR(
+            schema_version="document-ir/v2",
             metadata=DocumentIRMetadata(
                 job_id=job_id,
                 source_file_id=source_file_id,
                 document_language=document_language,
             ),
+            pages=build_pages(raw_blocks, package_root, quality_flags),
             blocks=blocks,
             assets=ir_assets,
             quality_flags=quality_flags,
@@ -168,6 +155,8 @@ class MinerUToDocumentIRService:
         return MinerUToDocumentIRResult(document=document, image_assets=image_assets)
 
     def _map_block_type(self, raw_block: dict[str, Any], source_type: str) -> DocumentIRBlockType:
+        if source_type in {"header", "footer", "page_header", "page_footer", "page_number"}:
+            return "paragraph"
         if source_type in {"title", "heading"} or raw_block.get("text_level") is not None:
             return "heading"
         if source_type in {"table"} or raw_block.get("table_body") or raw_block.get("table_html"):
@@ -187,15 +176,6 @@ class MinerUToDocumentIRService:
                 metadata[key] = raw_block[key]
         return metadata
 
-    def _page_index(self, raw_block: dict[str, Any]) -> int | None:
-        raw_page = raw_block.get("page_idx", raw_block.get("page_index"))
-        if isinstance(raw_page, int):
-            return raw_page
-        try:
-            return int(raw_page)
-        except (TypeError, ValueError):
-            return None
-
     def _heading_level(self, raw_block: dict[str, Any]) -> int:
         raw_level = raw_block.get("text_level", raw_block.get("level", 1))
         try:
@@ -206,7 +186,11 @@ class MinerUToDocumentIRService:
 
     def _text_for_block(self, raw_block: dict[str, Any], block_type: str) -> str | None:
         if block_type == "table":
-            return self._string_or_none(raw_block.get("table_caption")) or self._string_or_none(raw_block.get("caption"))
+            captions = self._captions(raw_block, str(raw_block.get("type") or raw_block.get("block_type") or "").strip().lower())
+            return captions[0] if captions else self._string_or_none(raw_block.get("caption"))
+        if block_type == "image":
+            captions = self._captions(raw_block, str(raw_block.get("type") or raw_block.get("block_type") or "").strip().lower())
+            return captions[0] if captions else self._string_or_none(raw_block.get("text"))
         if block_type == "formula":
             return self._formula_text(raw_block)
         if block_type == "list":
@@ -233,11 +217,39 @@ class MinerUToDocumentIRService:
         )
 
     def _list_items(self, raw_block: dict[str, Any]) -> list[str] | None:
-        raw_items = raw_block.get("items")
+        raw_items = raw_block.get("items", raw_block.get("list_items"))
         if not isinstance(raw_items, list):
             return None
         items = [str(item).strip() for item in raw_items if str(item).strip()]
         return items or None
+
+    def _captions(self, raw_block: dict[str, Any], source_type: str) -> list[str]:
+        keys = ["caption"]
+        if source_type == "table":
+            keys.insert(0, "table_caption")
+        elif source_type in {"chart", "image", "figure"}:
+            keys.insert(0, f"{source_type}_caption")
+        return self._text_list_from_keys(raw_block, keys)
+
+    def _footnotes(self, raw_block: dict[str, Any], source_type: str) -> list[str]:
+        keys = ["footnote"]
+        if source_type == "table":
+            keys.insert(0, "table_footnote")
+        elif source_type in {"chart", "image", "figure"}:
+            keys.insert(0, f"{source_type}_footnote")
+        return self._text_list_from_keys(raw_block, keys)
+
+    def _text_list_from_keys(self, raw_block: dict[str, Any], keys: list[str]) -> list[str]:
+        values: list[str] = []
+        for key in keys:
+            raw_value = raw_block.get(key)
+            if isinstance(raw_value, list):
+                values.extend(str(item).strip() for item in raw_value if str(item).strip())
+            elif raw_value is not None:
+                text = str(raw_value).strip()
+                if text:
+                    values.append(text)
+        return values
 
     def _resolve_image_path(self, raw_block: dict[str, Any], package_root: Path) -> Path | None:
         raw_path = (

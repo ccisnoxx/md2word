@@ -37,6 +37,23 @@
       </el-radio-group>
     </div>
 
+    <section v-if="isAdmin" class="term-assets-panel" aria-label="术语资产版本选择">
+      <div class="mode-label">术语资产版本</div>
+      <el-select v-model="termRuleSetId" clearable filterable placeholder="默认 Term Rule Set" @change="handleTermRuleSetChange">
+        <el-option v-for="set in termRuleSets" :key="set.id" :label="set.id" :value="set.id" />
+      </el-select>
+      <el-select v-model="termRuleSetVersion" clearable filterable placeholder="默认或 published 历史版本">
+        <el-option
+          v-for="version in selectedTermRuleVersions"
+          :key="version.version"
+          :label="`${version.version}${version.is_default ? '（默认）' : ''}`"
+          :value="version.version"
+        />
+      </el-select>
+      <el-input v-model="translationTermSetId" placeholder="Translation Term Set，默认 translation-terms-en2zh" />
+      <el-input v-model="translationTermVersion" placeholder="Translation Term Version，例如 v1" />
+    </section>
+
     <div class="upload-footer">
       <div class="muted">{{ statusText }}</div>
       <el-button type="primary" :icon="Upload" :loading="submitting" :disabled="!selectedFile" @click="submit">
@@ -47,13 +64,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { ElMessage, type UploadFile, type UploadInstance, type UploadRawFile } from "element-plus";
 import { Upload, UploadFilled } from "@element-plus/icons-vue";
 
-import type { DocumentJobMode } from "@/api/types";
+import type { DocumentJobMode, TermRuleSetDetailResponse, TermRuleSetListItemResponse } from "@/api/types";
 import { documentJobsApi } from "@/api/documentJobs";
 import { filesApi } from "@/api/files";
+import { termRuleSetsApi } from "@/api/termRuleSets";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import { useAuthStore } from "@/stores/auth";
 import { getMaxUploadBytes, uploadFileContent, validatePdfFile } from "@/utils/upload";
@@ -72,6 +90,17 @@ const error = ref<ApiClientError | null>(null);
 const mode = ref<DocumentJobMode>("direct_pdf_to_word");
 const enableEn2zh = import.meta.env.VITE_ENABLE_EN2ZH === "true";
 const maxUploadMb = computed(() => Math.round(getMaxUploadBytes() / 1024 / 1024));
+const isAdmin = computed(() => auth.user?.role === "admin");
+const termRuleSets = ref<TermRuleSetListItemResponse[]>([]);
+const termRuleSetDetails = ref<Record<string, TermRuleSetDetailResponse>>({});
+const termRuleSetId = ref("");
+const termRuleSetVersion = ref("");
+const translationTermSetId = ref("");
+const translationTermVersion = ref("");
+const selectedTermRuleVersions = computed(() => {
+  const selected = termRuleSetId.value || termRuleSets.value[0]?.id || "";
+  return termRuleSetDetails.value[selected]?.versions || [];
+});
 
 function handleFileChange(uploadFile: UploadFile): void {
   const rawFile = uploadFile.raw as UploadRawFile | undefined;
@@ -99,6 +128,35 @@ function handleExceed(): void {
   ElMessage.warning("MVP 只支持单文件上传。");
 }
 
+async function loadTermRuleSets(): Promise<void> {
+  if (!isAdmin.value) {
+    return;
+  }
+  try {
+    const response = await termRuleSetsApi.list();
+    termRuleSets.value = response.items;
+    await Promise.all(response.items.map((item) => loadTermRuleSetDetail(item.id)));
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  }
+}
+
+async function loadTermRuleSetDetail(setId: string): Promise<void> {
+  if (!setId || termRuleSetDetails.value[setId]) {
+    return;
+  }
+  termRuleSetDetails.value[setId] = await termRuleSetsApi.get(setId);
+}
+
+async function handleTermRuleSetChange(): Promise<void> {
+  termRuleSetVersion.value = "";
+  try {
+    await loadTermRuleSetDetail(termRuleSetId.value);
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  }
+}
+
 async function submit(): Promise<void> {
   if (!selectedFile.value || submitting.value) {
     return;
@@ -124,6 +182,10 @@ async function submit(): Promise<void> {
       source_file_id: authorization.file_id,
       mode: mode.value,
       document_language: mode.value === "en2zh_pdf_to_word" ? "en" : "auto",
+      term_rule_set_id: isAdmin.value ? termRuleSetId.value || null : null,
+      term_rule_set_version: isAdmin.value ? termRuleSetVersion.value || null : null,
+      translation_term_set_id: isAdmin.value ? translationTermSetId.value || null : null,
+      translation_term_version: isAdmin.value ? translationTermVersion.value || null : null,
       debug_full_text: false,
     });
 
@@ -139,6 +201,10 @@ async function submit(): Promise<void> {
     submitting.value = false;
   }
 }
+
+onMounted(() => {
+  void loadTermRuleSets();
+});
 </script>
 
 <style scoped lang="scss">
@@ -157,6 +223,14 @@ async function submit(): Promise<void> {
 .mode-label {
   color: #344054;
   font-size: 14px;
+}
+
+.term-assets-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #d9e2ec;
 }
 
 .upload-footer {
