@@ -28,9 +28,9 @@ requirement: fastapi-backend-productization
 - [x] Golden Sample 报告已回填真实样本结果。
 - [x] `en2zh_pdf_to_word` 明确作为实验能力，不阻塞 P0 direct 发布。
 
-## 2. 当前未提交范围
+## 2. 发布候选范围与当前提交状态
 
-当前分支是 `main`，工作区存在未提交改动。本轮未 revert 任何已有改动。
+2026-06-03 复盘时，当前分支是 `main`，与 `origin/main` 对齐，工作区无未提交 diff。本轮未 revert 任何已有改动。
 
 与本次发布候选相关：
 
@@ -101,7 +101,7 @@ Warnings：
 - `gs-003` 人工质量 triage 未通过 P0 版面与语义质量，只能证明主链路可交付，不证明 datasheet 结构还原质量达标。
 - `en2zh_pdf_to_word` smoke 通过，但仍按实验能力发布，不阻塞 P0 direct。
 - 前端真实后端联调未在本轮重跑，deploy 前需要人工确认。
-- 当前在 `main` 分支直接积累改动；merge 前应选择提交策略。`resources/term_rules/term_rules.v2.yaml` 和 `OPA228_P2/P6/P7.pdf` 已确认纳入本次发布范围。
+- `resources/term_rules/term_rules.v2.yaml` 和 `OPA228_P2/P6/P7.pdf` 已确认纳入本次发布范围；当前提交已在 `main` 上，后续第二轮应先起 feature design 再实现，避免继续无设计扩范围。
 
 可接受残余风险：
 
@@ -142,6 +142,6 @@ deploy 前必须人工确认：
 
 ## 9. 下一步
 
-- 进入 merge 准备：确认范围、提交策略和是否拆分 commit。
+- 第二轮 feature design 前先完成 architecture / requirements / API reference / attention.md gate。
 - merge 后、deploy 前执行第 7 节人工 gate。
 - deploy 后若出现质量问题，优先从 `document-ir-layout-risk-pass` 或 `word-renderer-editable-output-pass` 开新 feature，而不是在发布分支继续扩大范围。

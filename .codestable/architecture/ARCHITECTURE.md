@@ -2,10 +2,10 @@
 doc_type: architecture
 slug: architecture-index
 scope: 当前仓库的整体实现地图，覆盖 FastAPI 后端表面、conversion library，以及 MinerU 结构化结果到 DOCX 的本地转换链路与可选英文转中文翻译链路
-summary: 当前系统已收口为“FastAPI 后端 + app/conversion 转换核心”的结构；后端业务代码采用 `app/domains/` domain-first 布局，`app/main.py` 是组合根，MySQL resource mode 下 jobs 创建会绑定不可变资源快照，高风险管理动作和 artifact download 已写入最小 actor/audit 事件，operations readiness / metrics / release check 已形成单实例生产化基线
+summary: 当前系统已收口为“FastAPI 后端 + app/conversion 转换核心 + document_jobs PDF -> Word 主链路”的结构；后端业务代码采用 `app/domains/` domain-first 布局，`app/main.py` 是组合根，MySQL resource mode 下 legacy jobs 创建会绑定不可变资源快照，P0 document_jobs 通过 files 上传授权、Worker、MinerU、DocumentIR v2 和 Word renderer 生成可下载 DOCX，operations readiness / metrics / release check 已形成单实例生产化基线
 status: current
-last_reviewed: 2026-05-31
-tags: [architecture, mineru, docx, backend, fastapi, translation, operations]
+last_reviewed: 2026-06-03
+tags: [architecture, mineru, docx, backend, fastapi, translation, operations, document-jobs]
 depends_on: []
 implements: [fastapi-backend-productization]
 ---
@@ -18,7 +18,7 @@ implements: [fastapi-backend-productization]
 
 - **FastAPI 后端**
   - 面向前端、脚本调用方和本地服务化联调
-  - 当前提供 `jobs`、`mineru-callbacks`、`templates`、`term-rule-sets`、`term-rules`、`term-rule-categories`、`translation-profiles`、`health` 八组 HTTP 接口
+  - 当前提供 `files`、`document-jobs`、legacy `jobs`、`mineru-callbacks`、`templates`、`term-rule-sets`、`term-rules`、`term-rule-categories`、`translation-profiles`、`health` 等 HTTP 接口
 - **app/conversion 转换核心**
   - 面向后端任务编排，接收 MinerU 输出目录或 zip，生成 DOCX、可选翻译请求 JSON 和可选 segment trace JSON
 
@@ -62,6 +62,10 @@ MinerU 结构化结果 -> 页面修补 -> 可选英文转中文翻译 -> 模板/
   - FastAPI 任务状态中的“已拿到 MinerU 终态结果 zip 地址，但尚未进入 DOCX 后处理”的中间态。
 - **process_callback**
   - FastAPI 后台 stage，负责处理 MinerU callback、校验结果地址并更新在线解析任务状态。
+- **Document Job / Document File**
+  - P0 PDF -> Word 主链路的业务任务与文件记录；调用方先通过 `/api/v1/files/upload-url` 获取上传授权，再用 `/api/v1/document-jobs` 创建 `direct_pdf_to_word` 或实验性 `en2zh_pdf_to_word` 任务。任务失败会记录 `failed_stage`、`error_code`、`error_message` 和事件，成功后通过 `download-url` 获取临时 Word 下载链接。
+- **DocumentIR v2 / layout_v2**
+  - `document_jobs` Worker 在 MinerU raw result 后生成的中间结构和 renderer layout metadata，用于追踪标题、段落、表格、图片、双栏和质量风险。
 
 ## 3. 外部表面
 
@@ -70,6 +74,8 @@ MinerU 结构化结果 -> 页面修补 -> 可选英文转中文翻译 -> 模板/
 - 入口：`app.main:create_app()`
 - 路由：
   - `/api/v1/health`
+  - `/api/v1/files`
+  - `/api/v1/document-jobs`
   - `/api/v1/jobs`
   - `/api/v1/mineru-callbacks`
   - `/api/v1/templates`
@@ -79,6 +85,9 @@ MinerU 结构化结果 -> 页面修补 -> 可选英文转中文翻译 -> 模板/
   - `/api/v1/translation-profiles`
 - 当前支持：
   - 上传 MinerU 输出 zip
+  - 通过 `/api/v1/files` 上传原始 PDF，并通过 `/api/v1/document-jobs` 创建 P0 PDF -> Word 任务
+  - `document_jobs` Worker 调用 MinerU、保存 raw result、生成 DocumentIR v2、渲染 Word，并登记 `mineru_raw_result`、`document_ir`、`image_asset` 和 result DOCX 文件
+  - `document_jobs` 查询、事件、retry、cancel、archive、download-url 和短期 token 下载；失败状态包含 `failed_stage` / `error_code` / `error_message`
   - 上传原始 PDF 并把任务送进 MinerU 进入 `parsing`
   - 接收 MinerU callback，并在成功后自动恢复结果 zip、继续后处理到 `completed` / `failed`
   - 查询任务状态、事件、产物
@@ -212,6 +221,22 @@ flowchart TD
 
 - [backend-fastapi-service.md](/Users/sc/PycharmProjects/md2word/.codestable/architecture/backend-fastapi-service.md)
 
+## 6.1 Document Jobs P0 流程
+
+```mermaid
+flowchart TD
+    A["POST /api/v1/files/upload-url"] --> B["PUT /api/v1/files/{file_id}/content"]
+    B --> C["POST /api/v1/document-jobs mode=direct_pdf_to_word"]
+    C --> D["DocumentJobExecutionService"]
+    D --> E["MinerU raw result"]
+    E --> F["DocumentIR v2 + image assets"]
+    F --> G["Word renderer layout_v2"]
+    G --> H["result DOCX file"]
+    H --> I["GET /document-jobs/{job_id}/download-url"]
+```
+
+P0 document_jobs 是当前 PDF -> Word 内部工作台和 Golden Sample 回归消费的主链路；legacy `/api/v1/jobs` 仍保留为 MinerU zip / PDF 在线历史入口。
+
 ## 7. 数据与状态
 
 ### 7.1 转换核心
@@ -253,6 +278,7 @@ flowchart TD
   - `translation_trace`
   - `result_docx`
 - 已登记 artifact 对外暴露 logical path、download_url 和可为空的 fingerprint；本地下载时会校验 logical path / 文件存在性 / fingerprint，路径非法是 400，本地文件缺失是 404，fingerprint 不匹配是 409。
+- document_jobs 文件记录覆盖 `source_pdf`、`mineru_raw_result`、`document_ir`、`image_asset` 和生成 Word；上传授权和下载授权都会写审计事件。
 - 在线解析任务当前额外持久化：
   - `mineru_batch_id`
   - `mineru_data_id`
@@ -272,7 +298,7 @@ flowchart TD
 - audit event 当前没有 HTTP 查询 API 或 UI；测试和运维脚本可通过 repository 端口读取 file/sqlite/MySQL audit events。
 - artifact fingerprint 只对新登记产物强制写入；旧 `JobFile` 记录缺少 `size_bytes` / `sha256` 时保持兼容，不在当前能力内强制 backfill。
 - artifact retention 当前只有 local + object dry-run 计划，不执行真实删除；cleanup-local-files 会写 audit event，但真实删除、删除审计和恢复策略仍留给后续运维 feature。
-- 当前仍没有 callback 丢失后的主动远端结果查询恢复，也没有独立 worker / queue、多实例 lease 或 heartbeat。
+- legacy jobs 已有 callback 丢失后的主动 `recover-mineru-result` 查询恢复；当前仍没有独立 worker / queue、多实例 lease 或 heartbeat。
 - templates 当前支持目录可见、详情、下载、默认模板切换、模板 CRUD / replace，以及 MySQL-backed Template Version draft/publish/set-default/disable；暂不做可视化模板编辑器。
 - term-rules legacy API 当前支持分类 / 规则 CRUD、导入、导出、模拟和 sync-files；MySQL versioned mode 下 legacy 写入口不再直改 runtime，必须通过 Term Rule Set draft / publish 流程发布到 live runtime。
 - characterization suites 现在大多通过 `tests/runtime_direct_loaders.py` 直接加载 runtime 模块，不再依赖旧根入口作为唯一 patch seam。
@@ -280,6 +306,7 @@ flowchart TD
 - Job Resource Snapshot 不回填历史 job；`resource_snapshot=None` 的旧 job 继续走 legacy 默认模板 / 全局 runtime YAML / settings 翻译配置路径。snapshot 中 `artifact_ids` 只保存 source artifact alias（`source_package` 或 `source_pdf`），不引入独立 artifact id 体系，也不保存 API key、MinerU token、callback token 或完整 prompt 文本。
 - Translation Profile 当前只支持 `electronics-en2zh`；jobs API 仍只支持 `direct` / `en2zh`，不新增 `zh2en` / `zh2ru` 或 `source_language` / `target_language` 创建参数。
 - 测试覆盖虽然已包含对象级后端测试和真实链路验证，但仍不能代替完整的长期视觉版式验收。
+- Golden Sample 当前有 4 个正式匹配 PDF，其中 1 个已跑通真实主链路；P0 正式质量验收仍 blocked，后续质量修复以 `document-ir-layout-risk-pass` 和 `word-renderer-editable-output-pass` 为主。
 
 ## 9. 相关文档
 
@@ -288,9 +315,11 @@ flowchart TD
 - [app-conversion-internal.md](/Users/sc/PycharmProjects/md2word/.codestable/architecture/app-conversion-internal.md)
 - [fastapi-backend-roadmap.md](/Users/sc/PycharmProjects/md2word/.codestable/roadmap/fastapi-backend/fastapi-backend-roadmap.md)
 - [fastapi-backend-acceptance.md](/Users/sc/PycharmProjects/md2word/.codestable/roadmap/fastapi-backend/fastapi-backend-acceptance.md)
+- [pdf-to-word-delivery-hardening-roadmap.md](/Users/sc/PycharmProjects/md2word/.codestable/roadmap/pdf-to-word-delivery-hardening/pdf-to-word-delivery-hardening-roadmap.md)
 
 ## 10. 变更日志
 
+- 2026-06-03：补入 P0 `document_jobs` PDF -> Word 主链路现状、DocumentIR v2 / renderer metadata、Golden Sample blocked 质量状态，并修正 legacy `recover-mineru-result` 主动恢复边界。
 - 2026-05-31：补入项目目录重构 Phase 9 现状；`app/core/` 收窄为 config/logging/errors/runtime 等跨域基础设施，auth 用户上下文、Document IR 和 renderer 模板配置模型移入对应 services；集中 API schema 文件拆为 auth/health 路由私有 schema companion。
 - 2026-05-31：补入项目目录重构 Phase 5 现状；业务后端代码迁入 `app/domains/`，persistence adapter 拆到 `app/infrastructure/persistence/`，运行时状态改为 `var/`，版本化资源改为 `resources/`，并移除长期 `app/schemas` / `app/repositories` 中央包。
 - 2026-05-29：补入 Permission and Audit Baseline 现状；高风险资源动作、job ops 和 artifact download 写入独立 `AuditEvent`，actor 从现有 admin/jobs/open token 边界派生，不引入 SSO、多租户或审计查询 API。

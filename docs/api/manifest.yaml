@@ -3,7 +3,7 @@ status: current
 project: md2word_file
 entry_type: endpoint
 source_root: app
-last_scanned: 2026-05-31
+last_scanned: 2026-06-03
 
 openapi:
   doc_path: docs/api/openapi.json
@@ -51,6 +51,36 @@ entries:
     doc_path: docs/api/jobs.md
     status: current
     note: "Jobs endpoint family，包括上传 MinerU zip、PDF 在线提交、主动查询恢复、查询、下载、本地运维动作和成功动作审计。"
+  - entry: files
+    category: endpoint
+    source_files:
+      - app/api/v1/router.py
+      - app/domains/files/router.py
+      - app/domains/files/schemas.py
+      - app/domains/files/models.py
+      - app/domains/files/service.py
+      - app/domains/audit/models.py
+      - app/domains/audit/service.py
+      - docs/api/openapi.json
+    doc_path: docs/api/files.md
+    status: current
+    note: "PDF 文件上传授权、本地代理上传和文件 metadata 查询入口。"
+  - entry: document-jobs
+    category: endpoint
+    source_files:
+      - app/api/v1/router.py
+      - app/domains/document_jobs/router.py
+      - app/domains/document_jobs/schemas.py
+      - app/domains/document_jobs/models.py
+      - app/domains/document_jobs/service.py
+      - app/domains/document_jobs/execution.py
+      - app/domains/files/schemas.py
+      - app/domains/audit/models.py
+      - app/domains/audit/service.py
+      - docs/api/openapi.json
+    doc_path: docs/api/document-jobs.md
+    status: current
+    note: "P0 PDF -> Word document_jobs 创建、查询、事件、重试、取消、归档和下载入口。"
   - entry: mineru-callbacks
     category: endpoint
     source_files:

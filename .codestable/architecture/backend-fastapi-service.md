@@ -1,11 +1,11 @@
 ---
 doc_type: architecture
 slug: backend-fastapi-service
-scope: 当前仓库的 FastAPI 后端表面，覆盖 jobs、templates、term-rules、translation-profiles、health、后台 stage、artifact 合同和本地运维动作
-summary: 当前仓库已经收口为“FastAPI 后端 + app/conversion 转换核心”的结构；后端业务模块采用 `app/domains/` domain-first 布局，通过 BackgroundTasks、metadata adapters、Job Resource Snapshot、最小 actor/audit 基线、operations readiness / metrics 和 conversion entrypoint 承载 MinerU zip 后处理、翻译、Template Profile、Term Rule Set 和 Translation Profile 版本管理能力
+scope: 当前仓库的 FastAPI 后端表面，覆盖 files、document_jobs、legacy jobs、templates、term-rules、translation-profiles、health、后台 stage、artifact 合同和本地运维动作
+summary: 当前仓库已经收口为“FastAPI 后端 + app/conversion 转换核心 + document_jobs PDF -> Word 主链路”的结构；后端业务模块采用 `app/domains/` domain-first 布局，通过 files 上传授权、document_jobs Worker、DocumentIR v2、renderer metadata、BackgroundTasks、metadata adapters、Job Resource Snapshot、最小 actor/audit 基线和 operations readiness / metrics 承载 P0 PDF -> Word 与 legacy jobs 能力
 status: current
-last_reviewed: 2026-05-31
-tags: [architecture, backend, fastapi, jobs, templates, term-rules, translation, operations]
+last_reviewed: 2026-06-03
+tags: [architecture, backend, fastapi, jobs, document-jobs, files, templates, term-rules, translation, operations]
 depends_on: [architecture-index, conversion-flow]
 implements: [fastapi-backend-productization]
 ---
@@ -17,6 +17,8 @@ implements: [fastapi-backend-productization]
 当前仓库的可部署后端入口是 `app/main.py`，转换能力由 `app/conversion/` 提供。FastAPI 不是第二套转换算法，而是对 conversion library 的服务化封装，负责：
 
 - 接收 MinerU 输出 zip
+- 通过 `/api/v1/files` 授权上传 PDF
+- 通过 `/api/v1/document-jobs` 创建、查询、重试和下载 P0 PDF -> Word 任务
 - 接收原始 PDF 并提交 MinerU
 - 通过后台 stage 推进转换
 - 暴露任务状态、事件和产物下载
@@ -230,6 +232,31 @@ flowchart TD
 
 ## 4. API 合同
 
+### 4.0 files / document-jobs P0 主链路
+
+- `POST /api/v1/files/upload-url`
+  - 登录用户获取 PDF 上传授权；请求包含 `filename`、`mime_type`、`size_bytes`、可选 `checksum_sha256`。
+  - 返回 `file_id`、`upload_url`、`method=PUT`、`headers`、`expires_at`、`object_key` 和文件 metadata；成功写 `file.upload_authorize` audit event。
+- `PUT /api/v1/files/{file_id}/content`
+  - 本地代理上传 PDF 内容；会校验大小、内容类型、PDF 头和授权状态；成功写 `file.upload_content` audit event。
+- `GET /api/v1/files/{file_id}`
+  - 返回文件 metadata。
+- `POST /api/v1/document-jobs`
+  - 用 `source_file_id` 创建 `direct_pdf_to_word` 或实验性 `en2zh_pdf_to_word` 任务；默认 `document_language=auto`。
+  - 成功返回 `job_id`、`status`、`stage`、`progress` 和完整 job snapshot；成功写 `document_job.create` audit event。
+- `GET /api/v1/document-jobs` / `GET /api/v1/document-jobs/{job_id}` / `GET /api/v1/document-jobs/{job_id}/events`
+  - 查询任务列表、详情和事件。失败任务必须可见 `failed_stage`、`error_code`、`error_message`。
+- `POST /api/v1/document-jobs/{job_id}/retry`
+  - 对失败任务有限重试；可选择是否使用最新术语资产，成功写 `document_job.retry` audit event。
+- `POST /api/v1/document-jobs/{job_id}/cancel`
+  - 取消可取消任务，成功写 `document_job.cancel` audit event。
+- `DELETE /api/v1/document-jobs/{job_id}`
+  - 归档任务，成功写 `document_job.archive` audit event。
+- `GET /api/v1/document-jobs/{job_id}/download-url`
+  - 对 succeeded 任务生成临时下载链接，成功写 `document_job.download_authorize` audit event。
+- `GET /api/v1/document-jobs/{job_id}/download`
+  - 使用短期 token 下载 Word；本地文件缺失返回 404，token 无效或过期返回 403。
+
 ### 4.1 jobs
 
 - `POST /api/v1/jobs`
@@ -244,6 +271,8 @@ flowchart TD
   - 查看任务状态、事件、已登记产物和可为空的 `resource_snapshot`。
 - `GET /api/v1/jobs/{job_id}/download/{artifact_alias}`
   - 下载 `source-package`、`source-pdf`、`parsed-result-package`、`translation-request`、`translation-trace`、`result`；成功返回文件 / stream / redirect 前写 `artifact.download` audit event，`target_id` 使用 `{job_id}:{artifact_alias}`。
+- `POST /api/v1/jobs/{job_id}/recover-mineru-result`
+  - callback 丢失或长时间未到时主动查询 MinerU batch 结果，并复用 `process_callback` stage 完成后续恢复。
 - `POST /api/v1/jobs/{job_id}/retry`
   - 对 `failed/canceled` 任务重新入队；成功后保留原 JobEvent，并写 `job.retry` audit event。
 - `POST /api/v1/jobs/{job_id}/cancel`
@@ -467,6 +496,7 @@ flowchart TD
 
 ## 10. 变更日志
 
+- 2026-06-03：补入 P0 `/api/v1/files`、`/api/v1/document-jobs` 主链路合同、DocumentIR v2 / renderer metadata 交付现状，并补齐 legacy `recover-mineru-result` API 边界。
 - 2026-05-29：补入 Operations Readiness and Test Baseline；`health/ready` 扩展 artifact / resource / MySQL schema 字段，新增 `health/metrics` JSON counters，补入 file -> MySQL metadata shadow copy / validate、`.env.example`、release check 和运维文档基线。
 - 2026-05-29：补入 Permission and Audit Baseline；`require_*_actor()` 派生最小 actor，上述高风险资源动作、job ops 和 artifact download 成功路径写入独立 audit event，open 下载保持 anonymous 且不接受自报 actor。
 - 2026-05-29：补入 Job Resource Snapshot Binding；MySQL resource mode 下 job 创建绑定 published Template / Term Rule / `en2zh` Translation Profile versions，stage 按 exact snapshot materialize runtime resources，file/sqlite 维持 legacy 路径。
