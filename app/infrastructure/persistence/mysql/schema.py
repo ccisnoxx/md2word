@@ -102,7 +102,7 @@ MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
         version VARCHAR(64) NOT NULL,
         rule_id VARCHAR(128) NOT NULL,
         category_id VARCHAR(128) NOT NULL,
-        source_term VARCHAR(255) NOT NULL,
+        source_term VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
         rule_mode VARCHAR(32) NOT NULL,
         apply_scope VARCHAR(32) NOT NULL,
         case_sensitive TINYINT(1) NOT NULL,
@@ -269,10 +269,19 @@ MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
     """,
 )
 
+MYSQL_SCHEMA_MAINTENANCE_STATEMENTS: tuple[str, ...] = (
+    """
+    ALTER TABLE term_rules
+    MODIFY source_term VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL
+    """,
+)
+
 
 def initialize_schema(connection: Any) -> None:
     """创建 MySQL metadata backend 当前需要的表。"""
 
     with connection.cursor() as cursor:
         for statement in MYSQL_SCHEMA_STATEMENTS:
+            cursor.execute(statement)
+        for statement in MYSQL_SCHEMA_MAINTENANCE_STATEMENTS:
             cursor.execute(statement)

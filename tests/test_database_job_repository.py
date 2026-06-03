@@ -145,6 +145,9 @@ class _FakeMysqlCursor:
                     self.database.created_tables.add(table)
             self._rows = []
             return
+        if normalized.startswith("alter table term_rules modify source_term"):
+            self._rows = []
+            return
         if normalized.startswith("insert into jobs"):
             job_id, payload, created_at, updated_at = params
             self.database.jobs[job_id] = {
@@ -867,6 +870,7 @@ class PersistenceAdapterTests(TestCase):
                 rogue_store = runtime.term_rule_set_version_service.yaml_codec.parse_yaml_text(changed_seed_yaml)
                 runtime.term_rule_service.repository.save(rogue_store)
                 seed_path.write_text(changed_seed_yaml, encoding="utf-8")
+                fake_mysql.resource_default_versions.pop(("term_rule_set", "electronics-default"))
                 terms_path.unlink()
                 restarted_runtime = build_runtime(settings)
                 restarted_rule_terms = [rule.source_term for rule in restarted_runtime.term_rule_service.repository.load().rules]
