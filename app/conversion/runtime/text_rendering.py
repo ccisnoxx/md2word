@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+# app/conversion/runtime/text_rendering.py: 渲染正文、标题、列表和内联公式文本到 DOCX。
+
 import re
 from html import unescape
 from typing import Any
 
 from bs4 import BeautifulSoup, NavigableString, Tag
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
+from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 
@@ -28,6 +31,8 @@ TRAILING_PAGE_NOISE_RE = re.compile(r"(?:[.\s·。…]{2,}|\s+)\d+\s*$")
 INLINE_TEX_RE = re.compile(r"\$(?P<dollar>[^$\n]+)\$|\\\((?P<paren>.*?)\\\)")
 WRAPPER_RE = re.compile(r"\\(?:mathrm|mathsf|text)\s*\{([^{}]+)\}")
 CONTROL_WORD_RE = re.compile(r"\\([A-Za-z]+)")
+SQRT_RE = re.compile(r"\\sqrt\s*\{([^{}]+)\}")
+LIST_MARKER_RE = re.compile(r"^\s*(?:[•■*]|[-–—])\s+")
 SIMPLE_EXPR_RE = re.compile(
     r"(?P<base>[A-Za-zΑ-Ωα-ωΔΨθρμπμΩ]+[A-Za-z0-9Α-Ωα-ωΔΨθρμπμΩ]*)"
     r"(?:_(?:\{(?P<sub_braced>[^{}]+)\}|(?P<sub_plain>[A-Za-z0-9()+/\-]+)))?"
@@ -85,6 +90,7 @@ GREEK_AND_TEXT_COMMANDS = {
     "pk": "pk",
     "pp": "pp",
 }
+MD2WORD_BULLET_NUM_ID_ATTR = "_md2word_bullet_num_id"
 
 _RUNTIME_MODULE: Any | None = None
 
@@ -168,6 +174,7 @@ def normalize_formula_text(text: str) -> str:
     normalized = re.sub(r"([±+\-])\s+(\d)", r"\1\2", normalized)
     normalized = re.sub(r"(\d)\s*°\s*([CFK])\b", r"\1°\2", normalized)
     normalized = re.sub(r"([A-Za-zµμ])\s+Ω\b", r"\1Ω", normalized)
+    normalized = re.sub(r"/\s+√", "/√", normalized)
     normalized = re.sub(r"[ \t]+", " ", normalized)
     normalized = re.sub(r" ?\n ?", "\n", normalized)
     return normalized.strip()
@@ -178,6 +185,7 @@ def normalize_tex_text(text: str) -> str:
     prev = None
     while prev != normalized:
         prev = normalized
+        normalized = SQRT_RE.sub(lambda match: f"√{compact_math_token_runs(match.group(1) or '')}", normalized)
         normalized = WRAPPER_RE.sub(lambda match: compact_math_token_runs(match.group(1) or ""), normalized)
 
     normalized = CONTROL_WORD_RE.sub(replace_control_word, normalized)
@@ -247,6 +255,7 @@ def clean_tex_fragment(text: str) -> str:
     prev = None
     while prev != cleaned:
         prev = cleaned
+        cleaned = SQRT_RE.sub(lambda match: f"√{compact_math_token_runs(match.group(1) or '')}", cleaned)
         cleaned = WRAPPER_RE.sub(lambda match: compact_math_token_runs(match.group(1) or ""), cleaned)
 
     cleaned = CONTROL_WORD_RE.sub(replace_control_word, cleaned)
@@ -386,6 +395,7 @@ def render_inline_html_into_paragraph(
     italic: bool = False,
     subscript: bool = False,
     superscript: bool = False,
+    table_header_bold: bool = True,
 ) -> None:
     style_config = _runtime_value("get_style_config", get_style_config)(render_config, style_name)
     soup = _runtime_value("BeautifulSoup", BeautifulSoup)(f"<root>{text_or_html}</root>", "html.parser")
@@ -411,6 +421,7 @@ def render_inline_html_into_paragraph(
         italic=italic,
         subscript=subscript,
         superscript=superscript,
+        table_header_bold=table_header_bold,
     )
 
 
@@ -423,6 +434,7 @@ def render_html_children(
     italic: bool,
     subscript: bool,
     superscript: bool,
+    table_header_bold: bool = True,
 ) -> None:
     for child in parent.children:
         if isinstance(child, NavigableString):
@@ -448,10 +460,11 @@ def render_html_children(
             child,
             paragraph,
             style_config=style_config,
-            bold=bold or child.name in {"b", "strong", "th"},
+            bold=bold or child.name in {"b", "strong"} or (table_header_bold and child.name == "th"),
             italic=italic or child.name in {"i", "em"},
             subscript=subscript or child.name == "sub",
             superscript=superscript or child.name == "sup",
+            table_header_bold=table_header_bold,
         )
 
 
@@ -465,9 +478,15 @@ def render_normalized_text_fragment(
     subscript: bool,
     superscript: bool,
 ) -> None:
+    had_leading_space = bool(text[:1].isspace())
+    had_trailing_space = bool(text[-1:].isspace())
     normalized = _runtime_value("normalize_formula_text", normalize_formula_text)(text)
     if not normalized:
         return
+    if had_leading_space and not normalized.startswith(" "):
+        normalized = f" {normalized}"
+    if had_trailing_space and not normalized.endswith(" "):
+        normalized = f"{normalized} "
 
     if "<" not in normalized or ">" not in normalized:
         _runtime_value("append_text_run", append_text_run)(
@@ -681,6 +700,8 @@ def is_cover_title(block: Any, text: str, page_width: float) -> bool:
         return False
     if block.y1 >= 220 or block.width < page_width * 0.22:
         return False
+    if re.match(r"^\d+\s+\S+", text):
+        return False
     if HEADING_NUMBER_RE.match(text):
         return False
     if TOC_TITLE_RE.match(text.strip()):
@@ -702,30 +723,122 @@ def fill_body_paragraph(paragraph: Any, text: str, render_config: Any) -> None:
         apply_run_defaults_fn(run, get_style_config_fn(render_config, "Normal"))
 
 
-def fill_list_paragraph(paragraph: Any, text: str, render_config: Any) -> None:
+def fill_list_paragraph(paragraph: Any, text: str, render_config: Any, *, level: int = 0) -> None:
+    """Render a MinerU list item as real Word numbering, not manual bullet text."""
     paragraph.text = ""
     apply_named_style_config_fn = _runtime_value("apply_named_style_config", apply_named_style_config)
+    apply_bullet_numbering_fn = _runtime_value("apply_bullet_numbering", apply_bullet_numbering)
     fill_rich_text_fn = _runtime_value("fill_rich_text", fill_rich_text)
     prepare_text_fn = _runtime_value("prepare_text", prepare_text)
     get_style_config_fn = _runtime_value("get_style_config", get_style_config)
     apply_run_defaults_fn = _runtime_value("apply_run_defaults", apply_run_defaults)
 
     apply_named_style_config_fn(paragraph, render_config, "Normal")
+    apply_bullet_numbering_fn(paragraph, level=level)
     paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    if paragraph.paragraph_format.left_indent is None:
-        paragraph.paragraph_format.left_indent = Pt(10)
-    if paragraph.paragraph_format.first_line_indent is None:
-        paragraph.paragraph_format.first_line_indent = Pt(-10)
-    fill_rich_text_fn(paragraph, f"• {prepare_text_fn(text, render_config)}", render_config=render_config, style_name="Normal")
+    paragraph.paragraph_format.space_before = Pt(0)
+    paragraph.paragraph_format.space_after = Pt(0)
+    paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
+    paragraph.paragraph_format.line_spacing = 1.0
+    paragraph.paragraph_format.left_indent = Pt(12 + min(max(level, 0), 1) * 12)
+    paragraph.paragraph_format.first_line_indent = Pt(-9)
+    fill_rich_text_fn(paragraph, prepare_text_fn(text, render_config), render_config=render_config, style_name="Normal")
     for run in paragraph.runs:
         apply_run_defaults_fn(run, get_style_config_fn(render_config, "Normal"))
 
 
+def apply_bullet_numbering(paragraph: Any, *, level: int = 0) -> None:
+    """Attach a shared two-level bullet numbering definition to a paragraph."""
+    normalized_level = min(max(level, 0), 1)
+    num_id = _runtime_value("ensure_bullet_numbering", ensure_bullet_numbering)(paragraph)
+    p_pr = paragraph._p.get_or_add_pPr()
+    num_pr = p_pr.find(qn("w:numPr"))
+    if num_pr is None:
+        num_pr = OxmlElement("w:numPr")
+        p_pr.append(num_pr)
+
+    _runtime_value("set_numbering_child_value", set_numbering_child_value)(num_pr, "w:ilvl", str(normalized_level))
+    _runtime_value("set_numbering_child_value", set_numbering_child_value)(num_pr, "w:numId", str(num_id))
+
+
+def ensure_bullet_numbering(paragraph: Any) -> str:
+    """Create the local bullet numbering definition once per DOCX part."""
+    part = paragraph.part
+    cached_num_id = getattr(part, MD2WORD_BULLET_NUM_ID_ATTR, None)
+    if cached_num_id is not None:
+        return str(cached_num_id)
+
+    numbering = part.numbering_part.element
+    abstract_num_id = str(_runtime_value("next_numbering_id", next_numbering_id)(numbering, "w:abstractNum", "w:abstractNumId"))
+    num_id = str(_runtime_value("next_numbering_id", next_numbering_id)(numbering, "w:num", "w:numId"))
+
+    abstract_num = OxmlElement("w:abstractNum")
+    abstract_num.set(qn("w:abstractNumId"), abstract_num_id)
+    multi_level_type = OxmlElement("w:multiLevelType")
+    multi_level_type.set(qn("w:val"), "hybridMultilevel")
+    abstract_num.append(multi_level_type)
+
+    for ilvl, marker, left in ((0, "•", "240"), (1, "–", "480")):
+        lvl = OxmlElement("w:lvl")
+        lvl.set(qn("w:ilvl"), str(ilvl))
+        for tag, value in (
+            ("w:start", "1"),
+            ("w:numFmt", "bullet"),
+            ("w:lvlText", marker),
+            ("w:lvlJc", "left"),
+        ):
+            child = OxmlElement(tag)
+            child.set(qn("w:val"), value)
+            lvl.append(child)
+        p_pr = OxmlElement("w:pPr")
+        ind = OxmlElement("w:ind")
+        ind.set(qn("w:left"), left)
+        ind.set(qn("w:hanging"), "180")
+        p_pr.append(ind)
+        lvl.append(p_pr)
+        abstract_num.append(lvl)
+
+    num = OxmlElement("w:num")
+    num.set(qn("w:numId"), num_id)
+    abstract_num_id_element = OxmlElement("w:abstractNumId")
+    abstract_num_id_element.set(qn("w:val"), abstract_num_id)
+    num.append(abstract_num_id_element)
+
+    numbering.append(abstract_num)
+    numbering.append(num)
+    setattr(part, MD2WORD_BULLET_NUM_ID_ATTR, num_id)
+    return num_id
+
+
+def next_numbering_id(numbering: Any, element_tag: str, attr_name: str) -> int:
+    values: list[int] = []
+    for element in numbering.findall(qn(element_tag)):
+        raw_value = element.get(qn(attr_name))
+        if raw_value is not None and raw_value.isdigit():
+            values.append(int(raw_value))
+    return max(values, default=0) + 1
+
+
+def set_numbering_child_value(parent: Any, tag: str, value: str) -> None:
+    child = parent.find(qn(tag))
+    if child is None:
+        child = OxmlElement(tag)
+        parent.append(child)
+    child.set(qn("w:val"), value)
+
+
+def infer_list_item_level(text: str) -> int:
+    """Infer one nested level from dash-like MinerU list markers."""
+    return 1 if re.match(r"^\s*[-–—]\s+", text or "") else 0
+
+
 def normalize_list_item(text: str) -> str:
     normalized = text.strip()
-    while normalized.startswith(("•", "■", "", "-", "*")):
-        normalized = normalized[1:].strip()
-    return normalized
+    while True:
+        match = LIST_MARKER_RE.match(normalized)
+        if match is None:
+            return normalized
+        normalized = normalized[match.end() :].strip()
 
 
 def infer_heading_level(text: str) -> int:

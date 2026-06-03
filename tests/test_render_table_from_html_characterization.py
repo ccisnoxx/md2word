@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+# tests/test_render_table_from_html_characterization.py: 固化 HTML 表格到 DOCX 的渲染 seam 行为。
+
 import sys
 import tempfile
 import types
@@ -132,6 +136,7 @@ class FakeParagraph:
         self.text = ""
         self.rendered = None
         self.runs = []
+        self.paragraph_format = types.SimpleNamespace(keep_with_next=False)
 
     def add_run(self, text=""):
         run = FakeRun(text)
@@ -381,16 +386,17 @@ class RenderTableFromHtmlCharacterizationTests(unittest.TestCase):
         self.assertEqual(border_map["w:insideH"]["w:val"], "single")
         self.assertEqual(border_map["w:insideH"]["w:sz"], self.module.TABLE_INNER_BORDER_SZ)
 
-    def test_fill_table_cell_applies_header_shading(self):
+    def test_fill_table_cell_keeps_header_cell_plain(self):
         cell = FakeCell()
         render_config = self.make_render_config()
 
-        with mock.patch.object(self.module, "fill_table_cell_impl"):
+        with mock.patch.object(self.module, "fill_table_cell_impl") as fill_table_cell_impl:
             self.module.fill_table_cell(cell, self.module.HtmlCell("H1"), True, render_config)
 
         shading = cell._tc.tcPr.find("w:shd")
-        self.assertIsNotNone(shading)
-        self.assertEqual(shading.attrs["w:fill"], self.module.TABLE_HEADER_FILL)
+        self.assertIsNone(shading)
+        self.assertFalse(self.module.TABLE_HEADER_FILL)
+        self.assertFalse(fill_table_cell_impl.call_args.kwargs["compact"])
 
     def test_split_long_simple_table_rows_without_source_pages_keeps_default_packing(self):
         table_long_renderer = self.module.table_long_renderer
@@ -476,7 +482,7 @@ class RenderTableFromHtmlCharacterizationTests(unittest.TestCase):
         )
         fill_calls = []
 
-        def record_fill(cell, cell_model, is_header, _render_config):
+        def record_fill(cell, cell_model, is_header, _render_config, *, compact=False):
             fill_calls.append((cell_model.text, is_header))
 
         def record_rich_text(paragraph, text, **_kwargs):
@@ -499,6 +505,14 @@ class RenderTableFromHtmlCharacterizationTests(unittest.TestCase):
         self.assertEqual(len(container.tables[0].columns), 2)
         self.assertEqual(fill_calls, [("H1", True), ("H2", True), ("A1", False), ("A2", False)])
         self.assertEqual([paragraph.rendered for paragraph in container.paragraphs], ["Caption 1", "Note 1"])
+        self.assertTrue(container.paragraphs[0].paragraph_format.keep_with_next)
+
+    def test_five_column_datasheet_table_uses_wide_description_column(self):
+        widths = self.module.compute_table_column_widths(5, 10_000)
+
+        self.assertEqual(sum(widths), 10_000)
+        self.assertGreater(widths[1], widths[0] * 3)
+        self.assertGreater(widths[1], widths[4] * 3)
 
     def test_terminology_replacement_runs_before_table_parsing(self):
         container = FakeContainer()

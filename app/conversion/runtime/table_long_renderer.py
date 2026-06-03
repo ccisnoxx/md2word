@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# app/conversion/runtime/table_long_renderer.py: 将跨页长表渲染为带重复表头的连续 DOCX 表格。
+
 from typing import Any
 
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
@@ -47,6 +49,7 @@ def render_long_simple_table(
     caption_base = block.captions[0] if block.captions else "长表"
 
     caption_paragraph = container.add_paragraph()
+    caption_paragraph.paragraph_format.keep_with_next = True
     apply_named_style_config_fn(caption_paragraph, render_config, "LongTableCaption")
     fill_rich_text_fn(
         caption_paragraph,

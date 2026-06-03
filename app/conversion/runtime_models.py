@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# app/conversion/runtime_models.py: 定义 MinerU 到 DOCX 转换 runtime 的块、页面和渲染配置模型。
+
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -90,6 +92,12 @@ class RenderConfig:
     use_mineru_header_footer: bool
     terminology: "TerminologyReplacer | None" = None
     paragraph_styles: dict[str, "ParagraphStyleConfig"] = field(default_factory=dict)
+    table_style: "TableStyleConfig" = field(default_factory=lambda: TableStyleConfig())
+
+
+@dataclass(slots=True)
+class TableStyleConfig:
+    header_bold: bool = True
 
 
 @dataclass(slots=True)

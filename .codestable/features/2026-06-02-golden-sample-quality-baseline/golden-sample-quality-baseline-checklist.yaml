@@ -1,0 +1,51 @@
+# .codestable/features/2026-06-02-golden-sample-quality-baseline/golden-sample-quality-baseline-checklist.yaml: golden-sample-quality-baseline 执行和验收清单。
+feature: 2026-06-02-golden-sample-quality-baseline
+roadmap: pdf-to-word-delivery-hardening
+roadmap_item: golden-sample-quality-baseline
+
+steps:
+  - id: inventory-baseline
+    status: done
+    description: 为 Golden Sample 回归脚本建立 manifest-matched、missing、orphan PDF inventory 分类
+    exit_signal: report summary 能列出 manifest_samples、manifest_matched_pdfs、missing_pdf_samples、orphan_pdf_files 和 runnable_samples
+
+  - id: report-output
+    status: done
+    description: 扩展 console、report.json、report.md 的 Golden Sample inventory 输出
+    exit_signal: 离线构造报告时 orphan PDF 只报告不计入 runnable/pass_rate
+
+  - id: docs-reconciliation
+    status: done
+    description: 更新 Golden Sample README 和 acceptance report，反映当前 manifest 外 PDF 与正式验收阻塞状态
+    exit_signal: 文档区分正式匹配 PDF 数和 manifest 外 PDF 数，不再只写实际 PDF 数 0
+
+  - id: targeted-tests
+    status: done
+    description: 补充 Golden Sample inventory/report 单测，并运行 targeted tests
+    exit_signal: Golden Sample 相关 targeted tests 通过
+
+  - id: implementation-review
+    status: done
+    description: 复核实现范围、状态机和反向约束，确认未修改 backend/frontend 业务代码
+    exit_signal: git status 范围只包含本 feature 规划产物、Golden Sample 脚本/文档/测试和 roadmap 状态文件
+
+checks:
+  - id: orphan-not-counted
+    status: passed
+    description: baseline 阶段 OPA228_P1.pdf 作为 orphan PDF 报告，不自动纳入 manifest 或正式通过率；后续样本映射决策已将其纳入 gs-003
+
+  - id: missing-pdfs-visible
+    status: passed
+    description: 12 个 manifest 样本当前缺失 PDF 的事实能在报告中直接看到
+
+  - id: docs-current-facts
+    status: passed
+    description: Golden Sample 验收报告和 README 反映当前事实，而不是旧的“真实 PDF 数 0”单一表述
+
+  - id: no-business-code-change
+    status: passed
+    description: 本 feature 不修改 backend/frontend 业务代码，不新增 API 或后台功能
+
+  - id: targeted-tests-pass
+    status: passed
+    description: Golden Sample manifest/report 相关 targeted tests 通过

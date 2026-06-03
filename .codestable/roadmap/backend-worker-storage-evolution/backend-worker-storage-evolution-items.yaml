@@ -1,0 +1,53 @@
+# .codestable/roadmap/backend-worker-storage-evolution/backend-worker-storage-evolution-items.yaml: worker/storage 历史 roadmap 子 feature 状态清单。
+roadmap: backend-worker-storage-evolution
+created: 2026-05-28
+last_reviewed: 2026-06-02
+
+items:
+  - slug: stage-dispatcher-port
+    description: 抽出后台 stage 调度 port，让 router / lifecycle 通过 dispatcher 触发执行
+    depends_on: []
+    status: done
+    feature: 2026-05-28-stage-dispatcher-port
+    minimal_loop: true
+    notes: 历史完成项。
+
+  - slug: stage-message-store-contract
+    description: 固定 stage message store、replayable message 语义和失败消息处理规则
+    depends_on: [stage-dispatcher-port]
+    status: done
+    feature: 2026-05-28-stage-message-store-contract
+    minimal_loop: false
+    notes: 历史完成项。
+
+  - slug: repository-boundary-split
+    description: 把 job snapshot、events、files、stage messages 的协议拆成更窄的 application 依赖
+    depends_on: [stage-message-store-contract]
+    status: done
+    feature: 2026-05-28-repository-boundary-split
+    minimal_loop: false
+    notes: 历史完成项。
+
+  - slug: artifact-storage-local-adapter
+    description: 抽出 local artifact storage adapter，保留 file_type、alias 和 download 行为
+    depends_on: [repository-boundary-split]
+    status: done
+    feature: 2026-05-28-artifact-storage-local-adapter
+    minimal_loop: false
+    notes: 历史完成项。
+
+  - slug: worker-process-readiness-design
+    description: 补充 worker / storage adapter 模式的 readiness 字段、runbook 和诊断口径
+    depends_on: [stage-message-store-contract]
+    status: done
+    feature: 2026-05-28-worker-process-readiness-design
+    minimal_loop: false
+    notes: 历史完成项。
+
+  - slug: storage-backend-migration-plan
+    description: 设计从 local file 到数据库 / 对象存储的迁移顺序、兼容字段和回滚策略
+    depends_on: [artifact-storage-local-adapter, worker-process-readiness-design]
+    status: done
+    feature: 2026-05-28-storage-backend-migration-plan
+    minimal_loop: false
+    notes: 历史完成项。

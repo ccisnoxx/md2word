@@ -62,6 +62,14 @@
           <p>使用内部账号进入转换工作台。</p>
         </div>
         <ApiErrorAlert :error="error" />
+        <el-alert
+          v-if="authNotice"
+          class="auth-notice"
+          type="warning"
+          :closable="false"
+          show-icon
+          :title="authNotice"
+        />
         <el-form
           ref="formRef"
           class="login-form"
@@ -113,7 +121,7 @@
 
 <script setup lang="ts">
 import { ArrowRight, DocumentChecked, Lock, User } from "@element-plus/icons-vue";
-import { reactive, ref } from "vue";
+import { computed, reactive, ref } from "vue";
 import type { FormInstance, FormRules } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
 
@@ -137,6 +145,17 @@ const rules: FormRules<typeof form> = {
   username: [{ required: true, message: "请输入用户名。", trigger: "blur" }],
   password: [{ required: true, message: "请输入密码。", trigger: "blur" }],
 };
+
+const authNotice = computed(() => {
+  const reason = route.query.auth;
+  if (reason === "token_expired") {
+    return "登录已过期，请重新登录。";
+  }
+  if (reason === "invalid_token") {
+    return "登录状态无效，请重新登录。";
+  }
+  return "";
+});
 
 async function submit(): Promise<void> {
   if (submitting.value) {
@@ -464,6 +483,10 @@ async function submit(): Promise<void> {
   color: var(--login-muted);
   font-size: 14px;
   line-height: 1.6;
+}
+
+.auth-notice {
+  margin-bottom: 12px;
 }
 
 .login-form {

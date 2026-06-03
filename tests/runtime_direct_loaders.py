@@ -1,12 +1,13 @@
+from __future__ import annotations
+
+# tests/runtime_direct_loaders.py: 提供 conversion runtime characterization tests 的直接模块加载器。
+
 import importlib
 import re
 import argparse
 import sys
 import types
 from pathlib import Path
-
-
-# tests/runtime_direct_loaders.py: 提供 conversion runtime characterization tests 的直接模块加载器。
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_PKG = "app.conversion.runtime"
@@ -150,9 +151,11 @@ def load_render_config_module():
     original_load_render_config = module.load_render_config
     original_load_section_layout = module.load_section_layout
     original_load_paragraph_styles = module.load_paragraph_styles
+    original_load_table_style = module.load_table_style
     module.SectionLayout = runtime_models.SectionLayout
     module.RenderConfig = runtime_models.RenderConfig
     module.ParagraphStyleConfig = runtime_models.ParagraphStyleConfig
+    module.TableStyleConfig = runtime_models.TableStyleConfig
     module.Block = runtime_models.Block
     module.PageData = runtime_models.PageData
     module.Mm = sys.modules["docx.shared"].Mm
@@ -173,6 +176,12 @@ def load_render_config_module():
             paragraph_style_config_cls=runtime_models.ParagraphStyleConfig,
         )
 
+    def _load_table_style(config_path=None):
+        return original_load_table_style(
+            config_path,
+            table_style_config_cls=runtime_models.TableStyleConfig,
+        )
+
     def _load_render_config(template_document, subscript_config, use_mineru_header_footer):
         return original_load_render_config(
             template_document,
@@ -182,11 +191,13 @@ def load_render_config_module():
             load_section_layout_fn=module.load_section_layout,
             terminology_factory=module.TerminologyReplacer,
             load_paragraph_styles_fn=module.load_paragraph_styles,
+            load_table_style_fn=module.load_table_style,
             render_config_cls=runtime_models.RenderConfig,
         )
 
     module.load_section_layout = _load_section_layout
     module.load_paragraph_styles = _load_paragraph_styles
+    module.load_table_style = _load_table_style
     module.load_render_config = _load_render_config
     module.resolve_document_language = runtime_helpers.resolve_document_language
     module.apply_document_language_overrides = runtime_helpers.apply_document_language_overrides
@@ -205,6 +216,7 @@ def load_text_render_module():
     module.SectionLayout = runtime_models.SectionLayout
     module.RenderConfig = runtime_models.RenderConfig
     module.ParagraphStyleConfig = runtime_models.ParagraphStyleConfig
+    module.TableStyleConfig = runtime_models.TableStyleConfig
     module.bind_runtime(module)
     return module
 
@@ -273,6 +285,7 @@ def load_page_layout_module():
     module.SectionLayout = runtime_models.SectionLayout
     module.RenderConfig = runtime_models.RenderConfig
     module.ParagraphStyleConfig = runtime_models.ParagraphStyleConfig
+    module.TableStyleConfig = runtime_models.TableStyleConfig
     module.TOC_TITLE_RE = text_module.TOC_TITLE_RE
     module.TOC_ENTRY_RE = re.compile(
         r"^(?:\d+[.、]|\d+\.\d+|附录\s*[A-Z\d.\-]+|appendix\s+[A-Z\d.\-]+|(?:表|table|图|figure)\s*[A-Z\d.\-]+|(?:chapter|section|part)\s+(?:[ivxlcdm]+|\d+))",
@@ -329,6 +342,7 @@ def load_render_table_module():
     module.SectionLayout = runtime_models.SectionLayout
     module.RenderConfig = runtime_models.RenderConfig
     module.ParagraphStyleConfig = runtime_models.ParagraphStyleConfig
+    module.TableStyleConfig = runtime_models.TableStyleConfig
     module.HtmlCell = table_parser.HtmlCell
     module.HtmlTable = table_parser.HtmlTable
     module.parse_html_table = table_parser.parse_html_table
@@ -345,6 +359,7 @@ def load_render_table_module():
     module.get_style_config = text_module.get_style_config
     module.render_inline_html_into_paragraph = text_module.render_inline_html_into_paragraph
     module.fill_table_cell_impl = table_runtime.fill_table_cell_impl
+    module.compute_table_column_widths = table_runtime.compute_table_column_widths
     module.normalize_formula_text = text_module.normalize_formula_text
     module.append_text_run = text_module.append_text_run
     module.render_inline_markup_fragment = text_module.render_inline_markup_fragment
@@ -362,12 +377,33 @@ def load_render_table_module():
     module.MAX_COMPLEX_TABLE_ROWS = 400
     module.MAX_COMPLEX_TABLE_HTML_LEN = 30000
     module.TABLE_BORDER_COLOR = "C7CDD4"
-    module.TABLE_HEADER_FILL = "EEF3F8"
+    module.TABLE_HEADER_FILL = ""
     module.TABLE_OUTER_BORDER_SZ = "8"
     module.TABLE_INNER_BORDER_SZ = "4"
 
     def render_block_annotations(container, block, render_config):
         return table_runtime.render_block_annotations_impl(
+            container,
+            block,
+            render_config,
+            apply_named_style_config_fn=module.apply_named_style_config,
+            fill_rich_text_fn=module.fill_rich_text,
+            prepare_text_fn=module.prepare_text,
+        )
+
+    def render_block_captions(container, block, render_config, *, keep_with_next=False):
+        return table_runtime.render_block_captions_impl(
+            container,
+            block,
+            render_config,
+            apply_named_style_config_fn=module.apply_named_style_config,
+            fill_rich_text_fn=module.fill_rich_text,
+            prepare_text_fn=module.prepare_text,
+            keep_with_next=keep_with_next,
+        )
+
+    def render_block_footnotes(container, block, render_config):
+        return table_runtime.render_block_footnotes_impl(
             container,
             block,
             render_config,
@@ -456,11 +492,12 @@ def load_render_table_module():
             compute_visual_width_fn=module.compute_visual_width,
             remove_table_borders_fn=module.remove_table_borders,
             fill_table_cell_fn=module.fill_table_cell,
-            render_block_annotations_fn=module.render_block_annotations,
+            render_block_captions_fn=module.render_block_captions,
+            render_block_footnotes_fn=module.render_block_footnotes,
             html_cell_cls=module.HtmlCell,
         )
 
-    def fill_table_cell(cell, cell_model, is_header, render_config):
+    def fill_table_cell(cell, cell_model, is_header, render_config, *, compact=False):
         module.fill_table_cell_impl(
             cell,
             cell_model,
@@ -469,6 +506,7 @@ def load_render_table_module():
             apply_named_style_config_fn=module.apply_named_style_config,
             render_inline_html_into_paragraph_fn=module.render_inline_html_into_paragraph,
             prepare_text_fn=module.prepare_text,
+            compact=compact,
         )
         if is_header:
             module.apply_table_header_cell_style(cell)
@@ -503,15 +541,8 @@ def load_render_table_module():
             borders.append(element)
         table_properties.append(borders)
 
-    def apply_table_header_cell_style(cell):
-        cell_properties = cell._tc.get_or_add_tcPr()
-        shading = cell_properties.find(module.qn("w:shd"))
-        if shading is None:
-            shading = module.OxmlElement("w:shd")
-            cell_properties.append(shading)
-        shading.set(module.qn("w:val"), "clear")
-        shading.set(module.qn("w:color"), "auto")
-        shading.set(module.qn("w:fill"), module.TABLE_HEADER_FILL)
+    def apply_table_header_cell_style(_cell):
+        return
 
     def render_table_from_html(container, block, usable_width, render_config):
         module.logger.debug(
@@ -536,8 +567,9 @@ def load_render_table_module():
         )
         if module.render_large_table_if_needed(container, block, table_model, max_cols, len(html or ""), render_config, usable_width):
             return True
+        module.render_block_captions(container, block, render_config, keep_with_next=True)
         merge_failures = module.render_standard_html_table(container, table_model, max_cols, usable_width, render_config)
-        module.render_block_annotations(container, block, render_config)
+        module.render_block_footnotes(container, block, render_config)
         if merge_failures > 0:
             module.logger.warning(
                 "table merge fallback page={} block={} bbox={} count={} caption={}",
@@ -558,6 +590,8 @@ def load_render_table_module():
         return True
 
     module.render_block_annotations = render_block_annotations
+    module.render_block_captions = render_block_captions
+    module.render_block_footnotes = render_block_footnotes
     module.prepare_html_table_model = prepare_html_table_model
     module.render_large_table_if_needed = render_large_table_if_needed
     module.render_standard_html_table = render_standard_html_table

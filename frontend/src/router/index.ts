@@ -56,11 +56,25 @@ const router = createRouter({
   ],
 });
 
-function loginRedirect(to: RouteLocationNormalized): { path: string; query: Record<string, string> } {
+function loginRedirect(
+  to: RouteLocationNormalized,
+  authReason?: string,
+): { path: string; query: Record<string, string> } {
+  const query: Record<string, string> = to.fullPath === "/login" ? {} : { redirect: to.fullPath };
+  if (authReason) {
+    query.auth = authReason;
+  }
   return {
     path: "/login",
-    query: to.fullPath === "/login" ? {} : { redirect: to.fullPath },
+    query,
   };
+}
+
+function authFailureReason(caught: unknown): string {
+  if (typeof caught === "object" && caught !== null && "code" in caught && caught.code === "token_expired") {
+    return "token_expired";
+  }
+  return "invalid_token";
 }
 
 router.beforeEach(async (to) => {
@@ -86,20 +100,20 @@ router.beforeEach(async (to) => {
   if (!isPublic && auth.token && !auth.user) {
     try {
       await auth.loadCurrentUser();
-    } catch {
+    } catch (caught) {
       auth.logout();
-      return loginRedirect(to);
+      return loginRedirect(to, authFailureReason(caught));
     }
   }
 
   return true;
 });
 
-setUnauthorizedHandler(() => {
+setUnauthorizedHandler((error) => {
   const auth = useAuthStore(pinia);
   auth.logout();
   if (router.currentRoute.value.path !== "/login") {
-    void router.push(loginRedirect(router.currentRoute.value));
+    void router.push(loginRedirect(router.currentRoute.value, authFailureReason(error)));
   }
 });
 

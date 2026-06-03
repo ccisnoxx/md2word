@@ -25,23 +25,25 @@ samples:
       - 表格跨页后仍可编辑
       - 表头和单位不丢失
   - id: gs-003
-    filename: gs-003-double-column-datasheet.pdf
-    title: 双栏数据手册正文
-    source_status: pending_pdf
-    tags: [zh, double_column, paragraph_order, headings]
+    filename: OPA228_P1.pdf
+    title: OPA228 双栏数据手册首页
+    source_status: available
+    document_language: en
+    tags: [en, double_column, datasheet, paragraph_order, headings, figures, table]
     acceptance_focus:
-      - 双栏阅读顺序正确
-      - 段落不左右栏交错
-      - 标题层级基本保留
+      - 双栏阅读顺序正确，Features/Applications/Description 不左右栏交错
+      - 标题层级和项目符号列表基本保留
+      - 噪声曲线图和 Device Information 表格相对位置可追溯
   - id: gs-004
-    filename: gs-004-key-figures-and-captions.pdf
-    title: 关键图片与图注
-    source_status: pending_pdf
-    tags: [zh, images, captions, figures]
+    filename: OPA228_P2.pdf
+    title: OPA228 目录与修订历史
+    source_status: available
+    document_language: en
+    tags: [en, datasheet, table_of_contents, revision_history, double_column, lists]
     acceptance_focus:
-      - 关键图片被保留
-      - 图注靠近对应图片
-      - 图片比例无明显变形
+      - 双栏目录条目和页码顺序可追溯
+      - Revision History 项目符号列表顺序保留
+      - 页眉、页脚和正文边界不互相覆盖
   - id: gs-005
     filename: gs-005-mixed-tables-images.pdf
     title: 表格图片混排
@@ -52,14 +54,15 @@ samples:
       - 图片不覆盖正文
       - 表格仍可编辑
   - id: gs-006
-    filename: gs-006-formula-and-symbols.pdf
-    title: 公式和特殊符号
-    source_status: pending_pdf
-    tags: [zh, formula, symbols, technical_text]
+    filename: OPA228_P6.pdf
+    title: OPA228 热阻信息表
+    source_status: available
+    document_language: en
+    tags: [en, datasheet, thermal_table, parameter_table, symbols, wide_table]
     acceptance_focus:
-      - 公式块不丢失
-      - 希腊字母和上下标可读
-      - 公式附近正文顺序正确
+      - 多张 Thermal Information 表行列稳定
+      - θ/ψ、°C/W、封装和 pin 数等符号可读
+      - 表格脚注靠近对应表格且正文顺序正确
   - id: gs-007
     filename: gs-007-list-heavy-sections.pdf
     title: 多级列表和条款
@@ -70,14 +73,15 @@ samples:
       - 编号/项目符号不大面积丢失
       - 条款段落可编辑
   - id: gs-008
-    filename: gs-008-wide-electrical-characteristics.pdf
-    title: 宽电气特性表
-    source_status: pending_pdf
-    tags: [zh, wide_table, parameter_table, landscape_risk]
+    filename: OPA228_P7.pdf
+    title: OPA228 电气特性宽表
+    source_status: available
+    document_language: en
+    tags: [en, datasheet, wide_table, electrical_characteristics, parameter_table, symbols]
     acceptance_focus:
-      - 宽表格列名和单位保留
-      - 单元格文本不大量挤压
-      - 表格内容可编辑
+      - Electrical Characteristics 宽表列名、单位和分组保留
+      - VOS、PSRR、CMRR、nV/√Hz、µV/°C 等上下标和特殊符号可读
+      - 表格内容可编辑且不大面积挤压或错列
   - id: gs-009
     filename: gs-009-scanned-like-low-quality.pdf
     title: 低质量文本型 PDF

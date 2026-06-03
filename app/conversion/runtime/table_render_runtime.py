@@ -1,10 +1,54 @@
 from __future__ import annotations
 
+# app/conversion/runtime/table_render_runtime.py: 渲染 MinerU HTML 表格、caption 和 footnote 到 DOCX。
+
 from typing import Any
 
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.shared import Emu, Mm, Pt
+
+
+def render_block_captions_impl(
+    container: Any,
+    block: Any,
+    render_config: Any,
+    *,
+    apply_named_style_config_fn: Any,
+    fill_rich_text_fn: Any,
+    prepare_text_fn: Any,
+    keep_with_next: bool = False,
+) -> None:
+    for caption in block.captions:
+        caption_paragraph = container.add_paragraph()
+        caption_paragraph.paragraph_format.keep_with_next = keep_with_next
+        apply_named_style_config_fn(caption_paragraph, render_config, "Caption")
+        fill_rich_text_fn(
+            caption_paragraph,
+            prepare_text_fn(caption, render_config),
+            render_config=render_config,
+            style_name="Caption",
+        )
+
+
+def render_block_footnotes_impl(
+    container: Any,
+    block: Any,
+    render_config: Any,
+    *,
+    apply_named_style_config_fn: Any,
+    fill_rich_text_fn: Any,
+    prepare_text_fn: Any,
+) -> None:
+    for footnote in block.footnotes:
+        note_paragraph = container.add_paragraph()
+        apply_named_style_config_fn(note_paragraph, render_config, "TableNote")
+        fill_rich_text_fn(
+            note_paragraph,
+            prepare_text_fn(footnote, render_config),
+            render_config=render_config,
+            style_name="TableNote",
+        )
 
 
 def render_block_annotations_impl(
@@ -16,25 +60,22 @@ def render_block_annotations_impl(
     fill_rich_text_fn: Any,
     prepare_text_fn: Any,
 ) -> None:
-    for caption in block.captions:
-        caption_paragraph = container.add_paragraph()
-        apply_named_style_config_fn(caption_paragraph, render_config, "Caption")
-        fill_rich_text_fn(
-            caption_paragraph,
-            prepare_text_fn(caption, render_config),
-            render_config=render_config,
-            style_name="Caption",
-        )
-
-    for footnote in block.footnotes:
-        note_paragraph = container.add_paragraph()
-        apply_named_style_config_fn(note_paragraph, render_config, "TableNote")
-        fill_rich_text_fn(
-            note_paragraph,
-            prepare_text_fn(footnote, render_config),
-            render_config=render_config,
-            style_name="TableNote",
-        )
+    render_block_captions_impl(
+        container,
+        block,
+        render_config,
+        apply_named_style_config_fn=apply_named_style_config_fn,
+        fill_rich_text_fn=fill_rich_text_fn,
+        prepare_text_fn=prepare_text_fn,
+    )
+    render_block_footnotes_impl(
+        container,
+        block,
+        render_config,
+        apply_named_style_config_fn=apply_named_style_config_fn,
+        fill_rich_text_fn=fill_rich_text_fn,
+        prepare_text_fn=prepare_text_fn,
+    )
 
 
 def render_large_table_if_needed_impl(
@@ -96,12 +137,13 @@ def render_standard_html_table_impl(
     table.autofit = False
     remove_table_borders_fn(table)
 
-    column_width = max(int(usable_width // max_cols), int(Emu(Mm(16))))
-    for col in table.columns:
-        col.width = column_width
+    column_widths = compute_table_column_widths(max_cols, usable_width)
+    for col_idx, col in enumerate(table.columns):
+        col.width = column_widths[col_idx]
 
     occupied: dict[tuple[int, int], bool] = {}
     merge_failures = 0
+    compact = max_cols >= 4 or len(table_model.rows) >= 10
     for row_idx, row in enumerate(table_model.rows):
         col_idx = 0
         for cell_model in row:
@@ -121,7 +163,8 @@ def render_standard_html_table_impl(
                 except ValueError:
                     merge_failures += 1
 
-            fill_table_cell_fn(merged_cell, cell_model, row_idx == 0, render_config)
+            merged_cell.width = sum(column_widths[col_idx : end_col + 1])
+            fill_table_cell_fn(merged_cell, cell_model, row_idx == 0, render_config, compact=compact)
             merged_cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
 
             for r in range(row_idx, end_row + 1):
@@ -131,6 +174,18 @@ def render_standard_html_table_impl(
             col_idx = end_col + 1
 
     return merge_failures
+
+
+def compute_table_column_widths(max_cols: int, usable_width: int) -> list[int]:
+    """Give 5-column datasheet tables a wider description column to avoid row inflation."""
+    if max_cols == 5:
+        weights = [0.11, 0.37, 0.21, 0.21, 0.10]
+        widths = [int(usable_width * weight) for weight in weights]
+        widths[1] += int(usable_width) - sum(widths)
+        return widths
+
+    column_width = max(int(usable_width // max_cols), int(Emu(Mm(16))))
+    return [column_width for _ in range(max_cols)]
 
 
 def expand_table_rows(table_model: Any) -> list[list[str]]:
@@ -182,9 +237,11 @@ def render_large_table_fallback_impl(
     compute_visual_width_fn: Any,
     remove_table_borders_fn: Any,
     fill_table_cell_fn: Any,
-    render_block_annotations_fn: Any,
+    render_block_captions_fn: Any,
+    render_block_footnotes_fn: Any,
     html_cell_cls: Any,
 ) -> None:
+    render_block_captions_fn(container, block, render_config, keep_with_next=True)
     if block.image_path and block.image_path.exists():
         picture_paragraph = container.add_paragraph()
         picture_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -217,7 +274,7 @@ def render_large_table_fallback_impl(
                 )
                 cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
 
-    render_block_annotations_fn(container, block, render_config)
+    render_block_footnotes_fn(container, block, render_config)
 
 
 def fill_table_cell_impl(
@@ -229,6 +286,7 @@ def fill_table_cell_impl(
     apply_named_style_config_fn: Any,
     render_inline_html_into_paragraph_fn: Any,
     prepare_text_fn: Any,
+    compact: bool = False,
 ) -> None:
     paragraph = cell.paragraphs[0]
     paragraph.text = ""
@@ -236,10 +294,25 @@ def fill_table_cell_impl(
     paragraph.paragraph_format.space_after = Pt(0)
     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER if is_header else WD_ALIGN_PARAGRAPH.LEFT
     apply_named_style_config_fn(paragraph, render_config, "TableContent")
+    header_bold = is_header and should_bold_table_header(render_config)
     render_inline_html_into_paragraph_fn(
         paragraph,
         cell_model.html or prepare_text_fn(cell_model.text, None),
         render_config=render_config,
         style_name="TableContent",
-        bold=is_header,
+        bold=header_bold,
+        table_header_bold=header_bold,
     )
+    if compact:
+        paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
+        paragraph.paragraph_format.line_spacing = 0.92
+        for run in paragraph.runs:
+            run.font.size = Pt(8)
+
+
+def should_bold_table_header(render_config: Any) -> bool:
+    """Read table header bolding from template config, preserving bold by default."""
+    table_style = getattr(render_config, "table_style", None)
+    if table_style is None:
+        return True
+    return bool(getattr(table_style, "header_bold", True))

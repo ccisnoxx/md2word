@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+# tests/test_text_render_characterization.py: 固化 DOCX 文本、标题、列表和公式归一化行为。
+
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -259,27 +263,41 @@ class TextRenderCharacterizationTests(unittest.TestCase):
         )
         self.assertEqual(paragraph.style, "Normal")
 
-    def test_fill_list_paragraph_sets_hanging_indent_and_prefixes_bullet(self):
+    def test_fill_list_paragraph_uses_word_numbering_without_manual_marker(self):
         paragraph = FakeParagraph()
         render_config = self.make_render_config()
 
         with (
+            mock.patch.object(self.module, "apply_bullet_numbering") as apply_bullet_numbering,
             mock.patch.object(self.module, "prepare_text", return_value="条目") as prepare_text,
             mock.patch.object(self.module, "fill_rich_text") as fill_rich_text,
         ):
-            self.module.fill_list_paragraph(paragraph, "raw item", render_config)
+            self.module.fill_list_paragraph(paragraph, "raw item", render_config, level=1)
 
         prepare_text.assert_called_once_with("raw item", render_config)
+        apply_bullet_numbering.assert_called_once_with(paragraph, level=1)
         fill_rich_text.assert_called_once_with(
             paragraph,
-            "• 条目",
+            "条目",
             render_config=render_config,
             style_name="Normal",
         )
         self.assertEqual(paragraph.style, "Normal")
         self.assertEqual(paragraph.alignment, self.module.WD_ALIGN_PARAGRAPH.LEFT)
-        self.assertEqual(paragraph.paragraph_format.left_indent, self.module.Pt(10))
-        self.assertEqual(paragraph.paragraph_format.first_line_indent, self.module.Pt(-10))
+        self.assertEqual(paragraph.paragraph_format.space_before, self.module.Pt(0))
+        self.assertEqual(paragraph.paragraph_format.space_after, self.module.Pt(0))
+        self.assertEqual(paragraph.paragraph_format.line_spacing_rule, self.module.WD_LINE_SPACING.MULTIPLE)
+        self.assertEqual(paragraph.paragraph_format.line_spacing, 1.0)
+        self.assertEqual(paragraph.paragraph_format.left_indent, self.module.Pt(24))
+        self.assertEqual(paragraph.paragraph_format.first_line_indent, self.module.Pt(-9))
+
+    def test_normalize_formula_text_converts_sqrt_and_compacts_units(self):
+        self.assertEqual(self.module.normalize_formula_text(r"nV/ \sqrt{Hz}"), "nV/√Hz")
+
+    def test_normalize_list_item_keeps_negative_temperature_text(self):
+        self.assertEqual(self.module.normalize_list_item("• Low noise"), "Low noise")
+        self.assertEqual(self.module.normalize_list_item("-40°C operation"), "-40°C operation")
+        self.assertEqual(self.module.infer_list_item_level("– nested item"), 1)
 
     def test_infer_heading_level_treats_english_appendix_as_level_one(self):
         self.assertEqual(self.module.infer_heading_level("Appendix A"), 1)

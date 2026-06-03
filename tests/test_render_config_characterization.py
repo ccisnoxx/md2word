@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+# tests/test_render_config_characterization.py: 固化渲染配置、术语替换和语言覆盖的加载行为。
+
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -103,15 +107,29 @@ class RenderConfigCharacterizationTests(unittest.TestCase):
         self.assertEqual(styles["Normal"].left_indent_pt, 4.0)
         self.assertEqual(styles["Normal"].right_indent_pt, 5.0)
 
+    def test_load_table_style_maps_header_bold_flag(self):
+        config_path = Path(__file__)
+
+        with mock.patch.object(
+            self.module.yaml,
+            "safe_load",
+            return_value={"table_style": {"header_bold": False}},
+        ):
+            table_style = self.module.load_table_style(config_path)
+
+        self.assertFalse(table_style.header_bold)
+
     def test_load_render_config_omits_empty_terminology(self):
         layout = self.module.SectionLayout(1, 2, 3, 4, 5, 6)
         styles = {"Normal": self.module.ParagraphStyleConfig(font_name="SimSun")}
+        table_style = self.module.TableStyleConfig(header_bold=False)
         empty_terminology = SimpleNamespace(rules=[])
 
         with (
             mock.patch.object(self.module, "find_layout_config_path", return_value=Path("/tmp/layout.yaml")),
             mock.patch.object(self.module, "load_section_layout", return_value=layout) as load_section_layout,
             mock.patch.object(self.module, "load_paragraph_styles", return_value=styles) as load_paragraph_styles,
+            mock.patch.object(self.module, "load_table_style", return_value=table_style) as load_table_style,
             mock.patch.object(self.module, "TerminologyReplacer", return_value=empty_terminology) as terminology_ctor,
         ):
             render_config = self.module.load_render_config(
@@ -123,9 +141,11 @@ class RenderConfigCharacterizationTests(unittest.TestCase):
         terminology_ctor.assert_called_once_with(Path("/tmp/subscripts.yaml"))
         load_section_layout.assert_called_once_with("template", Path("/tmp/layout.yaml"))
         load_paragraph_styles.assert_called_once_with(Path("/tmp/layout.yaml"))
+        load_table_style.assert_called_once_with(Path("/tmp/layout.yaml"))
         self.assertIs(render_config.section_layout, layout)
         self.assertIsNone(render_config.terminology)
         self.assertIs(render_config.paragraph_styles, styles)
+        self.assertIs(render_config.table_style, table_style)
         self.assertTrue(render_config.use_mineru_header_footer)
 
     def test_load_render_config_keeps_non_empty_terminology(self):
