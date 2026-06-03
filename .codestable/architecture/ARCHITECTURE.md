@@ -67,6 +67,9 @@ MinerU 结构化结果 -> 页面修补 -> 可选英文转中文翻译 -> 模板/
 - **DocumentIR v2 / layout_v2**
   - `document_jobs` Worker 在 MinerU raw result 后生成的中间结构和 renderer layout metadata，用于追踪标题、段落、表格、图片、双栏和质量风险。
   - 当前 v2 layout facts 已标准化页级 `metadata.orientation`、块级 `layout.column_hint`、表格 `continuation_heights`、caption / footnote binding 以及非敏感 `quality_flags`；renderer layout plan 优先消费这些事实，缺失时回退到 bbox 推断。
+- **DocumentIR renderer editable semantic pass**
+  - generated Word renderer 现在把现有 DocumentIR 字段映射为可编辑 OOXML 语义：heading 写 `Heading 1/2/3` 或模板 `word_style_name`，list 写真实 `w:numPr`，formula / table cell / table note 清理常见 TeX 残留并复用 rich text 上下标，table caption 在表格前且 `keep_with_next`，footnote/table note 在表格后并走 `table_note` 配置。
+  - 该能力不新增 DocumentIR block 类型、不改变 HTTP API，也不代表 Golden Sample 视觉版面或 P0 正式质量验收已经通过。
 
 ## 3. 外部表面
 
@@ -240,6 +243,8 @@ P0 document_jobs 是当前 PDF -> Word 内部工作台和 Golden Sample 回归�
 
 `document_jobs` 保存的 DocumentIR artifact metadata 记录 `quality_flags`、layout page/block count；generated Word artifact 和渲染事件记录 `renderer_mode`、layout region/block count 和 `layout_quality_flags`。这些诊断只记录 block id 和风险类型，不写入凭证或客户文件全文。
 
+generated Word 当前还包含 renderer editable semantic pass：DocumentIR heading/list/formula/table annotation 会在 Word OOXML 中体现为命名标题样式、真实列表编号、上下标 rich text、caption-before-table 和 TableNote 顺序语义；document_jobs 回归通过读取 `word/document.xml` 与 `word/numbering.xml` 取证。
+
 ## 7. 数据与状态
 
 ### 7.1 转换核心
@@ -309,7 +314,7 @@ P0 document_jobs 是当前 PDF -> Word 内部工作台和 Golden Sample 回归�
 - Job Resource Snapshot 不回填历史 job；`resource_snapshot=None` 的旧 job 继续走 legacy 默认模板 / 全局 runtime YAML / settings 翻译配置路径。snapshot 中 `artifact_ids` 只保存 source artifact alias（`source_package` 或 `source_pdf`），不引入独立 artifact id 体系，也不保存 API key、MinerU token、callback token 或完整 prompt 文本。
 - Translation Profile 当前只支持 `electronics-en2zh`；jobs API 仍只支持 `direct` / `en2zh`，不新增 `zh2en` / `zh2ru` 或 `source_language` / `target_language` 创建参数。
 - 测试覆盖虽然已包含对象级后端测试和真实链路验证，但仍不能代替完整的长期视觉版式验收。
-- Golden Sample 当前有 4 个正式匹配 PDF，`gs-003/004/006/008` 已在 hostdzire 真实 API / Worker / MinerU 链路跑通且 DOCX 可打开；P0 正式质量验收仍 blocked，因为样本规模未达 10-20 份且人工质量 0/4 P0 pass。当前主要缺口归为 `pipeline-parity-gap`：`document-ir-layout-risk-pass` 已把 orientation、column hint、wide table、caption/footnote binding 和 continuation 的最小 layout facts 接入 API DocumentIR renderer 链路；heading/list/formula、caption-before-table 和表格 Word 样式质量仍属于 `word-renderer-editable-output-pass`。
+- Golden Sample 当前有 4 个正式匹配 PDF，`gs-003/004/006/008` 已在 hostdzire 真实 API / Worker / MinerU 链路跑通且 DOCX 可打开；P0 正式质量验收仍 blocked，因为样本规模未达 10-20 份且人工质量 0/4 P0 pass。当前 `pipeline-parity-gap` 已分两步收敛：`document-ir-layout-risk-pass` 接入 orientation、column hint、wide table、caption/footnote binding 和 continuation 的最小 layout facts；`word-renderer-editable-output-pass` 接入 heading/list/formula、caption-before-table 和表格 annotation 的可编辑 OOXML 语义。剩余风险主要是正式样本规模、人工质量复验、TOC/页码和完整视觉版面。
 
 ## 9. 相关文档
 
@@ -322,6 +327,7 @@ P0 document_jobs 是当前 PDF -> Word 内部工作台和 Golden Sample 回归�
 
 ## 10. 变更日志
 
+- 2026-06-03：补入 `word-renderer-editable-output-pass` 实现现状；DocumentIR renderer generated Word 已接入 heading named style、真实 list numbering、formula/table note rich text normalization、caption-before-table 和 TableNote 顺序语义，P0 正式质量仍受样本规模和人工复验约束。
 - 2026-06-03：补入 `document-ir-layout-risk-pass` 实现现状；DocumentIR v2 可记录 orientation、column_hint、wide table、caption/footnote binding 和 table continuation flags，document_jobs generated Word metadata 暴露 `layout_quality_flags`，renderer layout plan 优先消费 `column_hint`。
 - 2026-06-03：更新 Golden Sample live regression 现状；`gs-003/004/006/008` 主链路 4/4 succeeded、DOCX 4/4 openable，但人工质量 0/4 P0 pass，主要缺口为 `pipeline-parity-gap`。
 - 2026-06-03：补入 P0 `document_jobs` PDF -> Word 主链路现状、DocumentIR v2 / renderer metadata、Golden Sample blocked 质量状态，并修正 legacy `recover-mineru-result` 主动恢复边界。

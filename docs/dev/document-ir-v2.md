@@ -2,17 +2,18 @@
 doc_type: dev-guide
 slug: document-ir-v2
 component: pdf-to-word-backend
-status: draft
+status: current
 summary: DocumentIR v2 layout-aware schema contract for MinerU to Word rendering.
 tags: [document-ir, mineru, parser, renderer, layout]
-last_reviewed: 2026-06-01
+last_reviewed: 2026-06-03
 ---
 
 # DocumentIR v2
 
-DocumentIR v2 extends the P0 v1 contract with layout facts from MinerU. The
-renderer still owns Word-specific style decisions; v2 only stores parser facts
-that are needed to build a layout plan.
+DocumentIR v2 extends the P0 v1 contract with layout facts from MinerU. It keeps
+parser facts separate from Word output decisions: the renderer owns Word-specific
+styles and editable OOXML semantics, while v2 provides the fields needed to make
+those decisions deterministic.
 
 ## Compatibility
 
@@ -53,6 +54,26 @@ Each block may include `layout`:
 
 Blocks also support `captions` and `footnotes` lists so visual annotations are
 not collapsed into `text` or unstructured metadata.
+
+## Renderer Semantic Consumption
+
+The Word renderer consumes existing v1/v2 fields for editable output semantics:
+
+- `type=heading` plus `level` maps to Word `Heading 1` / `Heading 2` /
+  `Heading 3`, or a template-configured named style.
+- `type=list` plus `list_items` maps to real Word numbering after common MinerU
+  bullet markers are removed from visible text.
+- `type=formula` uses `latex` first, then `text`, and normalizes common TeX
+  fragments before rich text rendering.
+- `type=table` uses `html` for the editable Word table. `captions` render before
+  the table and `footnotes` render after it as table notes.
+- Formula-like text in table cells and table notes is normalized before rendering
+  when it matches supported simple TeX patterns.
+
+These renderer semantics do not add new DocumentIR block types or change stored
+artifact contracts. They also do not claim full visual layout recovery for TOC
+leaders, complete landscape sections, long-table pagination, or formal Golden
+Sample P0 quality pass.
 
 ## Translation Constraint
 
