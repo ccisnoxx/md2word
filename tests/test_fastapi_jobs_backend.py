@@ -1618,6 +1618,113 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(stored_job.status, "pending")
         self.assertEqual(stored_file.job_id, job_id)
 
+    def test_document_job_list_supports_workbench_filters_without_running_worker(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+            now = utc_now()
+            old_time = now - timedelta(days=2)
+            middle_time = now - timedelta(days=1)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                alpha_source = self._upload_source_pdf(client, headers, filename="alpha-source.pdf")
+                beta_source = self._upload_source_pdf(client, headers, filename="beta-source.pdf")
+                archived_source = self._upload_source_pdf(client, headers, filename="archived-source.pdf")
+                alpha_job_id = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": alpha_source["id"]},
+                ).json()["job_id"]
+                beta_job_id = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": beta_source["id"]},
+                ).json()["job_id"]
+                archived_job_id = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": archived_source["id"]},
+                ).json()["job_id"]
+                runtime.document_job_repository.update_document_job(
+                    alpha_job_id,
+                    status="failed",
+                    stage="failed",
+                    failed_stage="parsing",
+                    error_code="alpha_error",
+                    error_message="Needs OCR",
+                    created_at=old_time,
+                    updated_at=old_time,
+                )
+                runtime.document_job_repository.update_document_job(
+                    beta_job_id,
+                    created_at=middle_time,
+                    updated_at=middle_time,
+                )
+                runtime.document_job_repository.update_document_job(
+                    archived_job_id,
+                    status="failed",
+                    stage="failed",
+                    failed_stage="parsing",
+                    error_code="archived_error",
+                    error_message="Archived failure",
+                    created_at=now,
+                    updated_at=now,
+                )
+                archive_response = client.delete(f"/api/v1/document-jobs/{archived_job_id}", headers=headers)
+                default_response = client.get("/api/v1/document-jobs", headers=headers)
+                include_archived_response = client.get(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    params={"include_archived": True, "sort": "created_at_asc"},
+                )
+                filename_search_response = client.get(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    params={"q": "beta-source"},
+                )
+                error_search_response = client.get(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    params={"q": "alpha_error"},
+                )
+                range_response = client.get(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    params={
+                        "created_from": (middle_time - timedelta(hours=1)).isoformat(),
+                        "created_to": (middle_time + timedelta(hours=1)).isoformat(),
+                    },
+                )
+                invalid_sort_response = client.get(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    params={"sort": "status_desc"},
+                )
+
+        self.assertEqual(archive_response.status_code, 200)
+        self.assertEqual(default_response.status_code, 200)
+        self.assertEqual(default_response.json()["total"], 2)
+        self.assertEqual(default_response.json()["summary"], {"failed": 1, "pending": 1})
+        self.assertEqual(include_archived_response.status_code, 200)
+        include_archived_payload = include_archived_response.json()
+        self.assertEqual(include_archived_payload["total"], 3)
+        self.assertEqual(include_archived_payload["summary"], {"failed": 2, "pending": 1})
+        self.assertEqual([item["id"] for item in include_archived_payload["items"]], [alpha_job_id, beta_job_id, archived_job_id])
+        self.assertEqual(filename_search_response.status_code, 200)
+        self.assertEqual([item["id"] for item in filename_search_response.json()["items"]], [beta_job_id])
+        self.assertEqual(error_search_response.status_code, 200)
+        self.assertEqual([item["id"] for item in error_search_response.json()["items"]], [alpha_job_id])
+        self.assertEqual(range_response.status_code, 200)
+        self.assertEqual([item["id"] for item in range_response.json()["items"]], [beta_job_id])
+        self.assertEqual(invalid_sort_response.status_code, 400)
+        self.assertEqual(invalid_sort_response.json()["error_code"], "invalid_request")
+        self.assertIn("sort", invalid_sort_response.json()["detail"])
+
     def test_document_job_create_en2zh_binds_default_term_version(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(

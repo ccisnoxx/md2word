@@ -1,0 +1,29 @@
+{
+  "id": "product-roadmap",
+  "name": "product-roadmap",
+  "title": "md2word 产品成熟化路线图规划",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "md2word",
+  "assignee": "md2word",
+  "createdAt": "2026-06-03",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "06-03-frontend-information-architecture",
+    "06-03-document-job-workbench-completion"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

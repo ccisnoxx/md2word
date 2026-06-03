@@ -7,6 +7,7 @@ import JobDetailPage from "@/pages/JobDetailPage.vue";
 import JobsPage from "@/pages/JobsPage.vue";
 import LoginPage from "@/pages/LoginPage.vue";
 import SettingsHomePage from "@/pages/SettingsHomePage.vue";
+import SystemStatusPage from "@/pages/SystemStatusPage.vue";
 import TemplateDetailPage from "@/pages/TemplateDetailPage.vue";
 import TemplateListPage from "@/pages/TemplateListPage.vue";
 import TermRuleSetPage from "@/pages/TermRuleSetPage.vue";
@@ -32,21 +33,29 @@ const router = createRouter({
         { path: "", redirect: "/jobs" },
         { path: "jobs", name: "jobs", component: JobsPage },
         { path: "jobs/:jobId", name: "job-detail", component: JobDetailPage, props: true },
-        { path: "settings", name: "settings", component: SettingsHomePage },
-        { path: "settings/templates", name: "settings-templates", component: TemplateListPage },
-        { path: "settings/term-rule-sets", name: "settings-term-rule-sets", component: TermRuleSetPage },
+        { path: "settings", name: "settings", component: SettingsHomePage, meta: { roles: ["admin"] } },
+        { path: "settings/templates", name: "settings-templates", component: TemplateListPage, meta: { roles: ["admin"] } },
+        {
+          path: "settings/term-rule-sets",
+          name: "settings-term-rule-sets",
+          component: TermRuleSetPage,
+          meta: { roles: ["admin"] },
+        },
         {
           path: "settings/translation-profiles",
           name: "settings-translation-profiles",
           component: TranslationProfilesPage,
+          meta: { roles: ["admin"] },
         },
         {
           path: "settings/templates/:templateId",
           name: "settings-template-detail",
           component: TemplateDetailPage,
           props: true,
+          meta: { roles: ["admin"] },
         },
         { path: "term-proposals", name: "term-proposals", component: TermProposalsPage },
+        { path: "system-status", name: "system-status", component: SystemStatusPage, meta: { roles: ["admin"] } },
       ],
     },
     {
@@ -77,6 +86,13 @@ function authFailureReason(caught: unknown): string {
   return "invalid_token";
 }
 
+function routeRoles(to: RouteLocationNormalized): string[] {
+  if (!Array.isArray(to.meta.roles)) {
+    return [];
+  }
+  return to.meta.roles.filter((role): role is string => typeof role === "string");
+}
+
 router.beforeEach(async (to) => {
   const auth = useAuthStore(pinia);
   const isPublic = Boolean(to.meta.public);
@@ -104,6 +120,11 @@ router.beforeEach(async (to) => {
       auth.logout();
       return loginRedirect(to, authFailureReason(caught));
     }
+  }
+
+  const allowedRoles = routeRoles(to);
+  if (allowedRoles.length > 0 && !allowedRoles.includes(auth.user?.role ?? "")) {
+    return "/jobs";
   }
 
   return true;

@@ -72,6 +72,26 @@ export function isCancelableJobStatus(status: string): boolean {
   return status === "pending" || status === "queued" || status === "running";
 }
 
+export function isArchivedDocumentJob(job: DocumentJobResponse): boolean {
+  return Boolean(job.archived_at);
+}
+
+export function canDownloadDocumentJob(job: DocumentJobResponse): boolean {
+  return job.status === "succeeded";
+}
+
+export function canRetryDocumentJob(job: DocumentJobResponse): boolean {
+  return job.status === "failed" && !isArchivedDocumentJob(job);
+}
+
+export function canArchiveDocumentJob(job: DocumentJobResponse): boolean {
+  return isArchivableJobStatus(job.status) && !isArchivedDocumentJob(job);
+}
+
+export function canCancelDocumentJob(job: DocumentJobResponse): boolean {
+  return isCancelableJobStatus(job.status) && !isArchivedDocumentJob(job);
+}
+
 export function getJobSourceFilename(job: DocumentJobResponse): string {
   const sourceFile = job.request_snapshot.source_file;
   if (typeof sourceFile === "object" && sourceFile !== null && "original_filename" in sourceFile) {

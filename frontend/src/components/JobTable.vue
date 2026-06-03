@@ -1,7 +1,15 @@
 <!-- frontend/src/components/JobTable.vue: Paginated table for document_jobs. -->
 <template>
   <div class="job-table">
-    <el-table v-loading="loading" :data="jobs" border class="table" empty-text="暂无任务">
+    <el-table
+      v-loading="loading"
+      :data="jobs"
+      border
+      class="table"
+      empty-text="暂无任务"
+      @selection-change="$emit('selection-change', $event)"
+    >
+      <el-table-column type="selection" width="46" :selectable="isBatchSelectable" />
       <el-table-column label="任务 ID" min-width="150">
         <template #default="{ row }">
           <router-link class="mono" :to="`/jobs/${row.id}`">{{ row.id }}</router-link>
@@ -17,6 +25,15 @@
       </el-table-column>
       <el-table-column label="状态" min-width="110">
         <template #default="{ row }"><JobStatusBadge :status="row.status" /></template>
+      </el-table-column>
+      <el-table-column label="归档" min-width="150">
+        <template #default="{ row }">
+          <span v-if="row.archived_at" class="archived-mark">
+            <el-tag size="small" type="info" effect="plain">已归档</el-tag>
+            <span>{{ formatDateTime(row.archived_at) }}</span>
+          </span>
+          <span v-else class="muted">-</span>
+        </template>
       </el-table-column>
       <el-table-column label="进度" min-width="170">
         <template #default="{ row }">
@@ -40,7 +57,7 @@
               size="small"
               text
               type="primary"
-              :disabled="row.status !== 'succeeded'"
+              :disabled="!canDownloadDocumentJob(row)"
               @click="$emit('download', row)"
             >
               下载
@@ -49,10 +66,27 @@
               size="small"
               text
               type="warning"
-              :disabled="row.status !== 'failed'"
+              :disabled="!canRetryDocumentJob(row)"
               @click="$emit('retry', row)"
             >
               重试
+            </el-button>
+            <el-button
+              size="small"
+              text
+              type="danger"
+              :disabled="!canCancelDocumentJob(row)"
+              @click="$emit('cancel', row)"
+            >
+              取消
+            </el-button>
+            <el-button
+              size="small"
+              text
+              :disabled="!canArchiveDocumentJob(row)"
+              @click="$emit('archive', row)"
+            >
+              归档
             </el-button>
           </div>
         </template>
@@ -76,7 +110,15 @@
 import type { DocumentJobResponse } from "@/api/types";
 import JobProgress from "@/components/JobProgress.vue";
 import JobStatusBadge from "@/components/JobStatusBadge.vue";
-import { formatDateTime, getJobSourceFilename, jobModeText } from "@/utils/format";
+import {
+  canArchiveDocumentJob,
+  canCancelDocumentJob,
+  canDownloadDocumentJob,
+  canRetryDocumentJob,
+  formatDateTime,
+  getJobSourceFilename,
+  jobModeText,
+} from "@/utils/format";
 
 defineProps<{
   jobs: DocumentJobResponse[];
@@ -88,9 +130,16 @@ defineProps<{
 
 defineEmits<{
   "page-change": [page: number];
+  "selection-change": [jobs: DocumentJobResponse[]];
   download: [job: DocumentJobResponse];
   retry: [job: DocumentJobResponse];
+  cancel: [job: DocumentJobResponse];
+  archive: [job: DocumentJobResponse];
 }>();
+
+function isBatchSelectable(row: DocumentJobResponse): boolean {
+  return canRetryDocumentJob(row) || canArchiveDocumentJob(row);
+}
 </script>
 
 <style scoped lang="scss">
@@ -113,6 +162,13 @@ defineEmits<{
   text-overflow: ellipsis;
   vertical-align: bottom;
   white-space: nowrap;
+}
+
+.archived-mark {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
 }
 
 .action-row {

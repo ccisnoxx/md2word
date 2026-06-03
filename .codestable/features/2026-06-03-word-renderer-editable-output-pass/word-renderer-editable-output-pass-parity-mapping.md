@@ -11,6 +11,7 @@ summary: renderer editable output pass 的 legacy runtime 策略映射证据。
 
 - live regression 分类：当前 4 个 runnable Golden Sample 主链路成功但人工质量 0/4 P0 pass，核心缺口是 `pipeline-parity-gap`。
 - design 约束：只迁移 DocumentIR 当前字段可驱动的 heading/list/formula/caption/table 可编辑语义；不把 `app/conversion/runtime` 变成线上第二渲染入口。
+- 长期接入规约：`.codestable/compound/2026-06-03-decision-md2word-main-layout-lab-to-document-ir-renderer-parity.md` 要求 `md2word_main` 作为 layout lab，`md2word` 只把稳定策略迁移到 `app/services/renderer` 并由 `document_jobs` generated Word OOXML 验收。
 - legacy strategy 来源：
   - `app/conversion/runtime/text_rendering.py`
   - `app/conversion/runtime/table_render_runtime.py`
@@ -38,3 +39,7 @@ summary: renderer editable output pass 的 legacy runtime 策略映射证据。
 - formula：局部迁移，理由是 normalization 可由文本字段驱动，但完整公式对象超出本轮。
 - caption：直接迁移，理由是 `captions` / `footnotes` 已在 DocumentIR 合同中稳定存在。
 - table：局部迁移，理由是 `html` 已足够驱动可编辑表格和单元格 rich text，但不覆盖长表视觉分页。
+
+## 后续接入要求
+
+未来继续从 `md2word_main` 迁移排版修复时，必须先补本表或新建同类 parity mapping，写清楚 layout lab 证据、DocumentIR 字段驱动条件、迁移范围和 document_jobs OOXML 验收点。

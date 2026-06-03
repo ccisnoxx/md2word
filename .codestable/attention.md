@@ -22,6 +22,7 @@
 ### 路径与目录约定
 
 - 部署文档里的 `md2word-api.962850.xyz` 与现场 hostdzire nginx `server_name` 曾出现不一致；真实环境联调或更新公开入口文档前先核对现场配置。
+- Word 排版质量问题先在 `/Users/sc/PycharmProjects/PythonProject/md2word_main` 作为 layout lab 用 Golden Sample 本地调试；`md2word` 只迁移可由 DocumentIR 驱动的稳定策略到 `app/services/renderer`，验收看 `document_jobs` generated Word OOXML（详见 `.codestable/compound/2026-06-03-decision-md2word-main-layout-lab-to-document-ir-renderer-parity.md`）。
 
 ### 环境变量与凭证
 

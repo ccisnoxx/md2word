@@ -8,6 +8,7 @@ import type {
   DocumentJobDownloadUrlResponse,
   DocumentJobEventListResponse,
   DocumentJobListResponse,
+  DocumentJobListSort,
   DocumentJobRetryRequest,
   DocumentJobResponse,
   DocumentJobRetryResponse,
@@ -17,6 +18,11 @@ export type DocumentJobListParams = {
   page: number;
   page_size: number;
   status?: string;
+  q?: string;
+  sort?: DocumentJobListSort;
+  include_archived?: boolean;
+  created_from?: string;
+  created_to?: string;
 };
 
 export const documentJobsApi = {

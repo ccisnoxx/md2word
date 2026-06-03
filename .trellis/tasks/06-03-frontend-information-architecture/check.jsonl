@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "Check that the implementation stayed within the intended frontend IA boundary."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Check direct URL access and role behavior across frontend/backend auth assumptions."}

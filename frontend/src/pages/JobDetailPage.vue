@@ -13,9 +13,13 @@
           :job="job"
           :download-loading="downloadLoading"
           :retry-loading="retryLoading"
+          :cancel-loading="cancelLoading"
+          :archive-loading="archiveLoading"
           @refresh="loadAll"
           @download="handleDownload"
           @retry="handleRetry"
+          @cancel="handleCancel"
+          @archive="handleArchive"
         />
       </div>
     </div>
@@ -131,7 +135,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { ArrowLeft, Refresh } from "@element-plus/icons-vue";
 import { useRoute } from "vue-router";
 
@@ -157,6 +161,8 @@ const loading = ref(false);
 const eventsLoading = ref(false);
 const downloadLoading = ref(false);
 const retryLoading = ref(false);
+const cancelLoading = ref(false);
+const archiveLoading = ref(false);
 const retryDialogVisible = ref(false);
 const error = ref<ApiClientError | null>(null);
 let pollTimer: number | undefined;
@@ -339,6 +345,70 @@ async function handleDownload(target: DocumentJobResponse): Promise<void> {
 
 function handleRetry(target: DocumentJobResponse): void {
   openRetryDialog(target);
+}
+
+async function handleCancel(target: DocumentJobResponse): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      "取消会将任务标记为 canceled 并停止后续处理；如果任务已进入外部服务，系统不承诺强制中断该外部处理。文件和事件记录会保留。",
+      "取消任务",
+      {
+        confirmButtonText: "确认取消",
+        cancelButtonText: "返回",
+        type: "warning",
+      },
+    );
+  } catch (caught) {
+    if (caught === "cancel" || caught === "close") {
+      return;
+    }
+    error.value = normalizeApiError(caught);
+    return;
+  }
+  cancelLoading.value = true;
+  error.value = null;
+  try {
+    const response = await documentJobsApi.cancel(target.id);
+    job.value = response.job;
+    ElMessage.success("任务已取消。");
+    await loadAll();
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    cancelLoading.value = false;
+  }
+}
+
+async function handleArchive(target: DocumentJobResponse): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      "归档只会把终态任务从默认列表隐藏，不会删除源文件、结果文件或事件记录。开启列表的“含归档”后仍可查看。",
+      "归档任务",
+      {
+        confirmButtonText: "确认归档",
+        cancelButtonText: "返回",
+        type: "info",
+      },
+    );
+  } catch (caught) {
+    if (caught === "cancel" || caught === "close") {
+      return;
+    }
+    error.value = normalizeApiError(caught);
+    return;
+  }
+  archiveLoading.value = true;
+  error.value = null;
+  try {
+    const response = await documentJobsApi.archive(target.id);
+    job.value = response.job;
+    ElMessage.success("任务已归档。");
+    await loadAll();
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    archiveLoading.value = false;
+  }
 }
 
 async function submitRetryDialog(): Promise<void> {

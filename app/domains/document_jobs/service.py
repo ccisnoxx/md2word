@@ -3,7 +3,7 @@ from __future__ import annotations
 # app/domains/document_jobs/service.py: 创建、投递、查询 document_jobs 并记录任务事件。
 
 from collections import Counter
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, get_args
 from uuid import uuid4
 
@@ -34,6 +34,7 @@ from app.services.auth.models import AuthenticatedUser
 
 ARCHIVABLE_DOCUMENT_JOB_STATUSES: set[DocumentJobStatus] = {"succeeded", "failed", "canceled"}
 CANCELABLE_DOCUMENT_JOB_STATUSES: set[DocumentJobStatus] = {"pending", "queued", "running"}
+DOCUMENT_JOB_LIST_SORTS = {"created_at_desc", "created_at_asc", "updated_at_desc", "updated_at_asc"}
 
 
 class DocumentJobService:
@@ -173,23 +174,35 @@ class DocumentJobService:
         page: int,
         page_size: int,
         status_filter: str | None,
+        q: str | None = None,
+        sort: str = "created_at_desc",
+        include_archived: bool = False,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
     ) -> tuple[list[DocumentJobRecord], int, dict[str, int]]:
         """返回当前用户可见的 document_jobs 分页列表。"""
 
         if status_filter is not None and status_filter not in get_args(DocumentJobStatus):
             raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "status 查询参数非法。")
+        if sort not in DOCUMENT_JOB_LIST_SORTS:
+            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "sort 查询参数非法。")
+        if created_from is not None and created_to is not None and created_from > created_to:
+            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "created_from 不能晚于 created_to。")
+        normalized_q = self._normalize_optional_text(q)
         visible_jobs = [
             job
             for job in self.job_repository.list_document_jobs()
-            if self._is_visible(job, user) and job.archived_at is None
+            if self._is_visible(job, user) and (include_archived or job.archived_at is None)
         ]
         summary = dict(Counter(job.status for job in visible_jobs))
         filtered_jobs = [
             job
             for job in visible_jobs
-            if status_filter is None or job.status == status_filter
+            if (status_filter is None or job.status == status_filter)
+            and self._matches_document_job_query(job, normalized_q)
+            and self._matches_created_range(job, created_from=created_from, created_to=created_to)
         ]
-        filtered_jobs.sort(key=lambda job: (job.created_at, job.id), reverse=True)
+        filtered_jobs.sort(key=lambda job: self._document_job_sort_key(job, sort), reverse=sort.endswith("_desc"))
         start = (page - 1) * page_size
         return filtered_jobs[start:start + page_size], len(filtered_jobs), summary
 
@@ -581,6 +594,49 @@ class DocumentJobService:
         if user.role == "admin":
             return True
         return job.created_by == user.id
+
+    def _matches_document_job_query(self, job: DocumentJobRecord, q: str | None) -> bool:
+        if q is None:
+            return True
+        needle = q.casefold()
+        return any(needle in value.casefold() for value in self._document_job_search_values(job))
+
+    def _document_job_search_values(self, job: DocumentJobRecord) -> list[str]:
+        source_file = job.request_snapshot.get("source_file")
+        source_filename = None
+        if isinstance(source_file, dict):
+            raw_filename = source_file.get("original_filename")
+            if isinstance(raw_filename, str):
+                source_filename = raw_filename
+        return [
+            value
+            for value in (
+                job.id,
+                job.source_file_id,
+                source_filename,
+                job.error_code,
+                job.error_message,
+            )
+            if value
+        ]
+
+    def _matches_created_range(
+        self,
+        job: DocumentJobRecord,
+        *,
+        created_from: datetime | None,
+        created_to: datetime | None,
+    ) -> bool:
+        if created_from is not None and job.created_at < created_from:
+            return False
+        if created_to is not None and job.created_at > created_to:
+            return False
+        return True
+
+    def _document_job_sort_key(self, job: DocumentJobRecord, sort: str) -> tuple[datetime, str]:
+        if sort.startswith("updated_at"):
+            return job.updated_at, job.id
+        return job.created_at, job.id
 
     def _build_request_snapshot(
         self,
