@@ -43,6 +43,15 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertEqual([block.text for block in plan.pages[0].footer_blocks], ["Footer"])
         self.assertEqual([region.kind for region in plan.pages[0].regions], ["two_col", "one_col"])
 
+    def test_build_layout_plan_prefers_column_hint_for_stable_non_overlapping_regions(self) -> None:
+        document = self._make_v2_stable_hint_document()
+
+        plan = build_layout_plan(document)
+
+        self.assertEqual(plan.mode, "layout_v2")
+        self.assertEqual([region.kind for region in plan.pages[0].regions], ["two_col", "one_col"])
+        self.assertEqual([block.text for block in plan.pages[0].regions[0].blocks], ["Left A", "Right A", "Left B", "Right B"])
+
     def test_render_to_bytes_uses_two_column_table_for_v2_region(self) -> None:
         renderer = DocumentIRWordRenderer()
 
@@ -58,6 +67,21 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertIn("Left column", rendered.tables[0].cell(0, 0).text)
         self.assertIn("Right column", rendered.tables[0].cell(0, 1).text)
         self.assertTrue(any(paragraph.text == "Wide block" for paragraph in rendered.paragraphs))
+
+    def test_render_to_bytes_prefers_column_hint_when_splitting_two_column_cells(self) -> None:
+        renderer = DocumentIRWordRenderer()
+
+        content = renderer.render_to_bytes(
+            self._make_v2_hint_override_document(),
+            template_path=None,
+            config_path=None,
+            image_loader=lambda _asset: None,
+        )
+        rendered = Document(io.BytesIO(content))
+
+        self.assertGreaterEqual(len(rendered.tables), 1)
+        self.assertIn("Left by hint", rendered.tables[0].cell(0, 0).text)
+        self.assertIn("Right by hint", rendered.tables[0].cell(0, 1).text)
 
     def test_render_to_bytes_preserves_template_decorations_when_config_disabled(self) -> None:
         renderer = DocumentIRWordRenderer()
@@ -243,6 +267,73 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
                     order=4,
                     text="Footer",
                     layout=DocumentIRBlockLayout(page_index=0, bbox=(0, 560, 400, 590), role="page_footer"),
+                ),
+            ],
+        )
+
+    def _make_v2_stable_hint_document(self) -> DocumentIR:
+        return DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="docjob_hint", source_file_id="file_hint", document_language="en"),
+            pages=[DocumentIRPage(index=0, width=400.0, height=600.0)],
+            blocks=[
+                DocumentIRBlock(
+                    id="block_left_a",
+                    type="paragraph",
+                    order=0,
+                    text="Left A",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(0, 60, 150, 80), role="body", column_hint="left"),
+                ),
+                DocumentIRBlock(
+                    id="block_right_a",
+                    type="paragraph",
+                    order=1,
+                    text="Right A",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(220, 90, 380, 110), role="body", column_hint="right"),
+                ),
+                DocumentIRBlock(
+                    id="block_left_b",
+                    type="paragraph",
+                    order=2,
+                    text="Left B",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(0, 200, 150, 220), role="body", column_hint="left"),
+                ),
+                DocumentIRBlock(
+                    id="block_right_b",
+                    type="paragraph",
+                    order=3,
+                    text="Right B",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(220, 240, 380, 260), role="body", column_hint="right"),
+                ),
+                DocumentIRBlock(
+                    id="block_wide",
+                    type="paragraph",
+                    order=4,
+                    text="Wide after hints",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(0, 300, 400, 330), role="body", column_hint="wide"),
+                ),
+            ],
+        )
+
+    def _make_v2_hint_override_document(self) -> DocumentIR:
+        return DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="docjob_override", source_file_id="file_override", document_language="en"),
+            pages=[DocumentIRPage(index=0, width=400.0, height=600.0)],
+            blocks=[
+                DocumentIRBlock(
+                    id="block_left_hint",
+                    type="paragraph",
+                    order=0,
+                    text="Left by hint",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(220, 60, 380, 100), role="body", column_hint="left"),
+                ),
+                DocumentIRBlock(
+                    id="block_right_hint",
+                    type="paragraph",
+                    order=1,
+                    text="Right by hint",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(0, 70, 150, 110), role="body", column_hint="right"),
                 ),
             ],
         )

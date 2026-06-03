@@ -121,10 +121,13 @@ def _detect_two_col_bands(body_blocks: list[DocumentIRBlock], page_width: float)
             merged[-1] = (merged[-1][0], bottom, label)
         else:
             merged.append((top, bottom, label))
-    return [(top, bottom) for top, bottom, label in merged if label == "two_col"]
+    interval_bands = [(top, bottom) for top, bottom, label in merged if label == "two_col"]
+    return _merge_bands([*interval_bands, *_detect_stable_two_col_bands(body_blocks, page_width)])
 
 
 def _classify_body_block(block: DocumentIRBlock, page_width: float) -> str:
+    if block.layout is not None and block.layout.column_hint in {"left", "right", "wide"}:
+        return block.layout.column_hint
     bbox = _bbox(block)
     if bbox is None:
         return "wide"
@@ -133,6 +136,32 @@ def _classify_body_block(block: DocumentIRBlock, page_width: float) -> str:
         return "wide"
     center_x = (bbox[0] + bbox[2]) / 2
     return "left" if center_x < page_width / 2 else "right"
+
+
+def _detect_stable_two_col_bands(
+    body_blocks: list[DocumentIRBlock],
+    page_width: float,
+) -> list[tuple[float, float]]:
+    left_blocks = [block for block in body_blocks if _classify_body_block(block, page_width) == "left" and _bbox(block)]
+    right_blocks = [block for block in body_blocks if _classify_body_block(block, page_width) == "right" and _bbox(block)]
+    if len(left_blocks) < 2 or len(right_blocks) < 2:
+        return []
+    top = min(_bbox(block)[1] for block in [*left_blocks, *right_blocks] if _bbox(block) is not None)
+    bottom = max(_bbox(block)[3] for block in [*left_blocks, *right_blocks] if _bbox(block) is not None)
+    return [(top, bottom)] if bottom - top >= 120 else []
+
+
+def _merge_bands(bands: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    if not bands:
+        return []
+    sorted_bands = sorted(bands)
+    merged: list[tuple[float, float]] = []
+    for top, bottom in sorted_bands:
+        if merged and top - merged[-1][1] <= 12:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], bottom))
+        else:
+            merged.append((top, bottom))
+    return merged
 
 
 def _sort_blocks(blocks: list[DocumentIRBlock]) -> list[DocumentIRBlock]:

@@ -1,0 +1,68 @@
+# .codestable/features/2026-06-03-document-ir-layout-risk-pass/document-ir-layout-risk-pass-checklist.yaml: document-ir-layout-risk-pass 执行和验收清单。
+feature: 2026-06-03-document-ir-layout-risk-pass
+roadmap: pdf-to-word-delivery-hardening
+roadmap_item: document-ir-layout-risk-pass
+
+steps:
+  - id: parity-audit
+    status: done
+    description: 对照 live run、failure classification、manual records 和 legacy runtime，落“可迁移 / 需补 IR / 留给 renderer”的 layout risk 表
+    exit_signal: 每个 gs-003/006/008 layout 风险都有分类，不再把所有问题笼统归 renderer
+
+  - id: ir-contract-update
+    status: done
+    description: 补最小 DocumentIR v2 layout facts 或 metadata，并更新合同测试
+    exit_signal: v2 payload round-trip 覆盖 orientation、column_hint、wide table、continuation、caption binding 风险，v1 fallback 不变
+
+  - id: mineru-to-ir-fact-extraction
+    status: done
+    description: 让 MinerU converter 从 raw blocks、layout JSON、middle JSON 或 placeholder signals 生成 layout facts
+    exit_signal: converter layout tests 覆盖 page orientation、left/right/wide column_hint、caption/footnote、continuation 和风险 flags
+
+  - id: renderer-layout-plan-consumption
+    status: done
+    description: renderer layout plan 优先消费 IR facts，并在缺失时保持 bbox fallback
+    exit_signal: layout_plan tests 证明 column_hint 能稳定决定 one_col/two_col，缺字段仍按旧逻辑运行
+
+  - id: document-jobs-regression
+    status: done
+    description: 增加 document_jobs 链路回归，检查保存的 IR metadata、layout flags、renderer mode 和 DOCX openable
+    exit_signal: 近似覆盖 gs-003 双栏/figure/table binding、gs-006 caption + continuation、gs-008 wide table / landscape risk
+
+  - id: docs-and-roadmap-backfill
+    status: done
+    description: 更新 architecture / requirement / Golden Sample 报告中本 feature 的 layout facts 结论
+    exit_signal: 下一项 word-renderer-editable-output-pass 可直接读取哪些 facts 可消费、哪些仍是 renderer 样式问题
+
+checks:
+  - id: design-approved
+    status: passed
+    description: design frontmatter 为 approved，roadmap item 已回写 in-progress 并绑定当前 feature
+
+  - id: parity-audit-recorded
+    status: passed
+    description: feature evidence 中有 layout parity audit，明确可迁移、需补 IR、留给 renderer 的分类
+
+  - id: ir-v2-compatible
+    status: passed
+    description: DocumentIR v2 新增/标准化 layout facts 可序列化，v1 payload 默认行为不变
+
+  - id: converter-extracts-layout-facts
+    status: passed
+    description: MinerU -> DocumentIR converter 能输出 orientation、column_hint、caption/footnote、continuation 和非敏感 quality flags
+
+  - id: renderer-plan-consumes-facts
+    status: passed
+    description: renderer layout plan 优先消费 DocumentIR facts，缺字段时仍 fallback 到 bbox 推断
+
+  - id: document-jobs-regression-covered
+    status: passed
+    description: document_jobs eager worker 或 execution service 回归覆盖 IR artifact metadata、renderer metadata 和 DOCX openable
+
+  - id: scope-guardrails-kept
+    status: passed
+    description: 未改前端、未扩 API、未改 Golden Sample manifest，未修 heading/list/formula 或 caption-before-table Word 输出
+
+  - id: no-secret-leakage
+    status: passed
+    description: 新增 evidence、测试和文档不写入凭证、token、客户文件正文或完整解析文本
