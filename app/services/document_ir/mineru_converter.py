@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-# app/services/document_ir/mineru_converter.py: 将 MinerU 原始结果包转换为 DocumentIR v1。
+# app/services/document_ir/mineru_converter.py: 将 MinerU 原始结果包转换为 DocumentIR v2。
 
 import mimetypes
 import tempfile
@@ -10,7 +10,9 @@ from typing import Any
 
 from app.services.document_ir.layout_signals import (
     build_block_layout,
+    build_block_layout_metadata,
     build_pages,
+    merge_table_placeholder_continuations,
     parse_page_index,
     role_for_source_type,
 )
@@ -42,7 +44,7 @@ class MinerUToDocumentIRResult:
 
 
 class MinerUToDocumentIRService:
-    """P0 MinerU -> DocumentIR v1 转换器，优先保留块顺序和资产引用。"""
+    """P0 MinerU -> DocumentIR v2 转换器，优先保留块顺序和资产引用。"""
 
     def convert_zip(
         self,
@@ -52,7 +54,7 @@ class MinerUToDocumentIRService:
         source_file_id: str,
         document_language: str,
     ) -> MinerUToDocumentIRResult:
-        """读取 MinerU 结果 zip，生成 DocumentIR v1 和待登记图片资产。"""
+        """读取 MinerU 结果 zip，生成 DocumentIR v2 和待登记图片资产。"""
 
         with tempfile.TemporaryDirectory(prefix="document_ir_mineru_") as temp_dir:
             package_root = Path(temp_dir)
@@ -81,6 +83,9 @@ class MinerUToDocumentIRService:
         ir_assets: list[DocumentIRAsset] = []
         quality_flags: list[str] = []
         unsupported_types: set[str] = set()
+        raw_blocks = merge_table_placeholder_continuations(raw_blocks)
+        pages = build_pages(raw_blocks, package_root, quality_flags)
+        page_width_by_index = {page.index: page.width for page in pages}
 
         for index, raw_block in enumerate(raw_blocks):
             block_id = f"block_{index + 1:04d}"
@@ -89,7 +94,24 @@ class MinerUToDocumentIRService:
             block_role = role_for_source_type(source_type)
             if block_type == "paragraph" and block_role == "body" and source_type not in {"", "text", "paragraph", "para"}:
                 unsupported_types.add(source_type)
+            page_index = parse_page_index(raw_block)
+            page_width = page_width_by_index.get(page_index)
+            layout = build_block_layout(
+                raw_block,
+                source_type=source_type,
+                source_index=index,
+                quality_flags=quality_flags,
+                block_id=block_id,
+                page_width=page_width,
+            )
             metadata = self._metadata_from_raw(raw_block, source_type)
+            metadata.update(build_block_layout_metadata(layout, page_width=page_width))
+            captions = self._captions(raw_block, source_type)
+            footnotes = self._footnotes(raw_block, source_type)
+            if captions:
+                quality_flags.append(f"layout_caption_binding:{block_id}")
+            if footnotes:
+                quality_flags.append(f"layout_footnote_binding:{block_id}")
             asset_ref = None
             if block_type == "image":
                 image_path = self._resolve_image_path(raw_block, package_root)
@@ -115,22 +137,16 @@ class MinerUToDocumentIRService:
                     id=block_id,
                     type=block_type,
                     order=index,
-                    page_index=parse_page_index(raw_block),
+                    page_index=page_index,
                     text=self._text_for_block(raw_block, block_type),
                     level=self._heading_level(raw_block) if block_type == "heading" else None,
                     html=self._table_html(raw_block) if block_type == "table" else None,
                     latex=self._formula_text(raw_block) if block_type == "formula" else None,
                     list_items=self._list_items(raw_block) if block_type == "list" else None,
                     asset_ref=asset_ref,
-                    layout=build_block_layout(
-                        raw_block,
-                        source_type=source_type,
-                        source_index=index,
-                        quality_flags=quality_flags,
-                        block_id=block_id,
-                    ),
-                    captions=self._captions(raw_block, source_type),
-                    footnotes=self._footnotes(raw_block, source_type),
+                    layout=layout,
+                    captions=captions,
+                    footnotes=footnotes,
                     metadata=metadata,
                 )
             )
@@ -147,7 +163,7 @@ class MinerUToDocumentIRService:
                 source_file_id=source_file_id,
                 document_language=document_language,
             ),
-            pages=build_pages(raw_blocks, package_root, quality_flags),
+            pages=pages,
             blocks=blocks,
             assets=ir_assets,
             quality_flags=quality_flags,

@@ -20,36 +20,36 @@ steps:
     exit_signal: 每个成功样本都有人工质量结论，且不把主链路通过等同于 P0 质量通过
 
   - id: failure-classification
-    status: pending
+    status: done
     description: 汇总真实链路失败、IR/layout 风险、renderer/editable 风险、样本扩容缺口和环境阻塞
     exit_signal: 每个失败或质量不通过项都能路由到 environment、sample-sourcing、document-ir-layout-risk-pass 或 word-renderer-editable-output-pass
 
   - id: docs-and-roadmap-backfill
-    status: pending
+    status: done
     description: 回填 Golden Sample 验收报告、roadmap notes 和 feature acceptance 输入
     exit_signal: 下一条 design 可直接读取最新回归结果、人工结论和分类表作为输入
 
 checks:
   - id: four-runnable-samples-accounted
-    status: done
+    status: passed
     description: gs-003/004/006/008 均被真实回归尝试执行，或逐样本记录未执行阻塞原因
 
   - id: report-current-status
-    status: pending
+    status: passed
     description: Golden Sample 验收报告反映 4 个正式样本最新执行状态，而不是只停留在 1/1 smoke
 
   - id: manual-quality-not-overclaimed
-    status: done
+    status: passed
     description: 成功样本均有人工质量记录，且不把 DOCX 可打开声明为 P0 版面与语义质量通过
 
   - id: classification-routes-next-features
-    status: pending
+    status: passed
     description: 分类表明确哪些问题进入 document-ir-layout-risk-pass、哪些进入 word-renderer-editable-output-pass、哪些属于环境或样本缺口
 
   - id: no-business-code-change
-    status: pending
+    status: passed
     description: 本 feature 不修改 DocumentIR、renderer、前端、后端 API 或部署配置
 
   - id: no-secret-leakage
-    status: pending
+    status: passed
     description: 回归执行和文档落档不写入凭证、token、客户文件正文或完整解析文本

@@ -77,9 +77,9 @@ pdf-to-word-delivery-hardening
 | roadmap-state-reconciliation | done | 恢复/校准 roadmap，补当前 active 交付路线，写 feature design 输入 |
 | golden-sample-quality-baseline | done | 对齐 manifest、真实 PDF、回归脚本和验收报告，建立第一版质量基线 |
 | document-job-smoke-stability | done | 用 gs-003 / OPA228_P1.pdf 验证 hostdzire 真实 API + worker + MinerU + 下载主链路 smoke |
-| golden-sample-live-regression-scale-up | in-progress | 复跑当前 4 个正式样本，补齐真实链路失败分类、人工质量结论和样本扩容缺口 |
-| document-ir-layout-risk-pass | planned | 基于真实样本失败分类收敛 DocumentIR v2 layout / quality flags 风险 |
-| word-renderer-editable-output-pass | planned | 在 IR layout 风险收敛后，针对标题、列表、表格、图片、双栏和可编辑 DOCX 输出做 renderer 硬化 |
+| golden-sample-live-regression-scale-up | done | 已完成当前 4 个 runnable 样本 live regression 与 acceptance：主链路 4/4 succeeded，DOCX 4/4 openable；人工质量 0/4 P0 pass，失败分类为 `pipeline-parity-gap` |
+| document-ir-layout-risk-pass | in-progress | design 已 approved，implementation checklist 已完成；DocumentIR v2 已接入 orientation、column_hint、wide table、caption/footnote binding 和 continuation facts，等待 cs-feat-accept 验收闭环后回写 done |
+| word-renderer-editable-output-pass | planned | 优先把 `app/conversion/runtime` 的 heading/list/formula/caption/table 策略同步到 `app/services/renderer`，并补 document_jobs 回归 |
 | delivery-acceptance-report | done | 汇总发布前验证、剩余风险、merge 建议和 deploy 前人工 gate |
 
 最小闭环：`golden-sample-quality-baseline` 完成后，系统至少能明确报告当前可运行样本数、成功率、失败阶段和人工验收状态，不再出现 docs 与样本事实冲突。
@@ -101,13 +101,17 @@ pdf-to-word-delivery-hardening
 - `frontend/` 已存在工作台和配置管理页面；本路线不继续扩后台 UI。
 - `docs/testing/pdf-to-word-golden-sample-acceptance-report.md` 当前 blocked 判断仍成立，但 PDF 数量描述需要跟 manifest 事实重新对齐。
 - `tests/fixtures/golden_samples/pdfs/OPA228_P1.pdf`、`OPA228_P2.pdf`、`OPA228_P6.pdf` 和 `OPA228_P7.pdf` 已映射到 `manifest.yaml`，当前正式 runnable sample 为 4。
-- hostdzire 真实部署链路已用 `gs-003 / OPA228_P1.pdf` 跑通；上传、建任务、Worker、MinerU、DocumentIR、Word 渲染和下载均未发现卡点。
-- 正式 P0 通过还需要补齐 10-20 份 manifest-matched PDF，并做人工质量验收。
+- hostdzire 真实部署链路已在 `gs-003/004/006/008` 跑通；上传、建任务、Worker、MinerU、DocumentIR、Word 渲染和下载均未发现卡点。
+- 当前 4 个 runnable 样本均可生成可打开 DOCX，但人工质量 0/4 P0 pass；`document-ir-layout-risk-pass` 已先把 orientation、column_hint、wide table、caption/footnote binding 和 continuation facts 接入 API DocumentIR renderer 链路，剩余主要缺口为 heading/list/formula、caption-before-table 和表格 Word 样式质量。
+- 本轮失败分类为 `pipeline-parity-gap`：`md2word_main` / `app/conversion/runtime` 已有部分修复，但 `document_jobs -> DocumentIR -> app/services/renderer` 线上链路未接入。
+- 正式 P0 通过还需要补齐 10-20 份 manifest-matched PDF，并让成功样本通过人工质量验收。
 - `.codestable/features/` 已开始承载本路线的 design / checklist / acceptance 产物，后续 feature 继续从 roadmap item 起头。
 - 第二轮 feature design 启动前 gate：architecture / requirements 必须同步 `document_jobs` 主链路现状；API 参考需补 `/files` 与 `/document-jobs`；`delivery-acceptance-report` 需修正工作区状态；attention.md 需记录线上 Golden Sample 复跑和部署入口核对注意事项。
 
 ## 8. 变更日志
 
+- 2026-06-03：`document-ir-layout-risk-pass` design approved 并完成 implementation checklist；DocumentIR v2 layout facts、renderer layout plan consumption 和 document_jobs metadata 回归已落地，roadmap item 保持 in-progress 等待 cs-feat-accept。
+- 2026-06-03：`golden-sample-live-regression-scale-up` 完成 acceptance 闭环并回写为 done：hostdzire 真实回归 `gs-003/004/006/008` 主链路 4/4 succeeded、DOCX 4/4 openable，但人工质量 0/4 P0 pass；核心分类为 `pipeline-parity-gap`，后续 `document-ir-layout-risk-pass` 和 `word-renderer-editable-output-pass` 需优先做 legacy runtime 到 DocumentIR renderer 的 parity 判断与迁移。
 - 2026-06-03：完成 `delivery-acceptance-report` 发布验收；后端 release check、前端 build、direct/en2zh smoke、失败分类和 DocumentIR v2 metadata 验证通过，建议进入 merge；deploy 前保留真实环境人工 gate。
 - 2026-06-03：确认第二轮只推进 `golden-sample-live-regression-scale-up`、`document-ir-layout-risk-pass`、`word-renderer-editable-output-pass`；进入 feature design 前先完成现状文档与 API 参考 gate。
 - 2026-06-03：merge 前范围确认，`resources/term_rules/term_rules.v2.yaml` 纳入发布，`OPA228_P2/P6/P7.pdf` 映射为 `gs-004/006/008`，manifest 外 PDF 清零。

@@ -227,6 +227,16 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         left_blocks: list[DocumentIRBlock] = []
         right_blocks: list[DocumentIRBlock] = []
         for block in blocks:
+            column_hint = block.layout.column_hint if block.layout is not None else None
+            if column_hint == "left":
+                left_blocks.append(block)
+                continue
+            if column_hint == "right":
+                right_blocks.append(block)
+                continue
+            if column_hint == "wide":
+                left_blocks.append(block)
+                continue
             bbox = block.layout.bbox if block.layout is not None else None
             if bbox is None:
                 left_blocks.append(block)

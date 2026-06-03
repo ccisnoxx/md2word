@@ -578,21 +578,43 @@ def make_zip_bytes() -> bytes:
 def make_mineru_zip_bytes(*, include_image: bool = True) -> bytes:
     buffer = io.BytesIO()
     blocks = [
-        {"type": "title", "text": "数据手册", "text_level": 1, "page_idx": 0},
-        {"type": "text", "text": "主要特性", "page_idx": 0},
+        {"type": "title", "text": "数据手册", "text_level": 1, "page_idx": 0, "bbox": [72, 80, 180, 100]},
+        {"type": "text", "text": "主要特性", "page_idx": 0, "bbox": [72, 120, 260, 150]},
         {
             "type": "table",
             "table_caption": "参数表",
             "table_body": "<table><tr><td>VCC</td></tr></table>",
             "page_idx": 0,
+            "bbox": [72, 180, 560, 260],
         },
-        {"type": "list", "items": ["低功耗", "高可靠"], "page_idx": 1},
-        {"type": "interline_equation", "latex": "E=mc^2", "page_idx": 1},
+        {"type": "list", "items": ["低功耗", "高可靠"], "page_idx": 1, "bbox": [72, 80, 260, 140]},
+        {"type": "interline_equation", "latex": "E=mc^2", "page_idx": 1, "bbox": [72, 160, 260, 180]},
     ]
     if include_image:
-        blocks.insert(3, {"type": "image", "img_path": "images/figure1.png", "caption": "管脚图", "page_idx": 0})
+        blocks.insert(
+            3,
+            {
+                "type": "image",
+                "img_path": "images/figure1.png",
+                "caption": "管脚图",
+                "page_idx": 0,
+                "bbox": [300, 120, 520, 210],
+            },
+        )
     with zipfile.ZipFile(buffer, "w") as archive:
         archive.writestr("content_list_v2.json", json.dumps(blocks, ensure_ascii=False))
+        archive.writestr(
+            "layout.json",
+            json.dumps(
+                {
+                    "pdf_info": [
+                        {"page_idx": 0, "page_size": [612, 792]},
+                        {"page_idx": 1, "page_size": [792, 612]},
+                    ]
+                },
+                ensure_ascii=False,
+            ),
+        )
         if include_image:
             archive.writestr("images/figure1.png", MINIMAL_PNG_BYTES)
     return buffer.getvalue()
@@ -1978,6 +2000,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(word_file.metadata["renderer_mode"], "layout_v2")
         self.assertEqual(word_file.metadata["layout_page_count"], expected_layout_page_count)
         self.assertEqual(word_file.metadata["layout_block_count"], 6)
+        self.assertIn("layout_wide_table:block_0003", word_file.metadata["layout_quality_flags"])
         self.assertEqual(word_file.metadata["template_version_id"], "default@1")
         self.assertEqual([file.file_type for file in image_files], ["image_asset"])
         with zipfile.ZipFile(io.BytesIO(raw_bytes)) as archive:
@@ -1986,11 +2009,17 @@ class FastAPIJobsBackendTests(TestCase):
             self.assertIn("word/document.xml", archive.namelist())
         self.assertEqual(ir_payload["schema_version"], "document-ir/v2")
         self.assertTrue(ir_payload["pages"])
+        self.assertEqual(ir_payload["pages"][0]["metadata"]["orientation"], "portrait")
+        self.assertEqual(ir_payload["pages"][1]["metadata"]["orientation"], "landscape")
         self.assertEqual(
             [block["type"] for block in ir_payload["blocks"]],
             ["heading", "paragraph", "table", "image", "list", "formula"],
         )
         self.assertEqual(ir_payload["blocks"][0]["layout"]["page_index"], 0)
+        self.assertEqual(ir_payload["blocks"][2]["layout"]["column_hint"], "wide")
+        self.assertEqual(ir_payload["blocks"][3]["layout"]["column_hint"], "right")
+        self.assertIn("layout_wide_table:block_0003", ir_payload["quality_flags"])
+        self.assertIn("layout_caption_binding:block_0003", ir_payload["quality_flags"])
         self.assertEqual(ir_payload["assets"][0]["file_id"], image_files[0].id)
         self.assertEqual(ir_payload["assets"][0]["object_key"], image_files[0].object_key)
         self.assertEqual(ir_payload["blocks"][3]["asset_ref"], ir_payload["assets"][0]["id"])
@@ -2009,7 +2038,9 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(ir_registered_event.payload["schema_version"], "document-ir/v2")
         self.assertEqual(ir_registered_event.payload["layout_block_count"], 6)
         self.assertEqual(rendered_event.payload["renderer_mode"], "layout_v2")
+        self.assertIn("layout_wide_table:block_0003", rendered_event.payload["layout_quality_flags"])
         self.assertEqual(word_registered_event.payload["renderer_mode"], "layout_v2")
+        self.assertIn("layout_wide_table:block_0003", word_registered_event.payload["layout_quality_flags"])
 
     def test_document_job_en2zh_worker_translates_ir_and_saves_ai_audit_artifacts(self):
         with tempfile.TemporaryDirectory() as temp_dir:

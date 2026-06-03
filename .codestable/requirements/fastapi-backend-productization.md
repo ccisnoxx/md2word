@@ -41,6 +41,7 @@ tags: [backend, fastapi, jobs, docx]
 - `POST /api/v1/document-jobs` 提供 P0 PDF -> Word 任务创建，默认 `direct_pdf_to_word`
 - `GET /api/v1/document-jobs/*` 提供任务列表、详情、事件、重试、取消、归档、download-url 和短期下载
 - `document_jobs` Worker 保存 MinerU raw result、DocumentIR v2、图片资产和生成 Word，并把失败阶段、错误码、错误消息和 trace 事件落到任务详情
+- DocumentIR v2 和 generated Word artifact metadata 暴露 orientation、column_hint、wide table、caption/footnote binding、table continuation 与 renderer layout flags，便于从 `document_jobs` 主链路定位版面风险
 - Golden Sample 回归和人工质量 triage 区分主链路可运行、Word 可打开、可编辑质量和版式/语义质量
 - `POST /api/v1/jobs` 接收 MinerU 输出 zip
 - `POST /api/v1/jobs/pdf` 接收原始 PDF，并把任务送进 MinerU；callback 成功后会短暂经过 `parsed`，随后自动恢复结果 zip 并继续后处理到 `completed/failed`
@@ -69,7 +70,7 @@ tags: [backend, fastapi, jobs, docx]
   - 上传 PDF 文件 -> 创建 `document_jobs` -> Worker / MinerU / DocumentIR / Word renderer -> 下载 DOCX
   - 上传 MinerU 输出 zip -> 后处理 -> 生成 DOCX
   - 上传原始 PDF -> 成功提交 MinerU -> 接收 callback -> 恢复 `parsed_result_package` -> 后处理 -> 生成 DOCX
-- P0 document_jobs 当前能证明主链路可交付，但 Golden Sample 正式规模仍 blocked：4 个正式匹配 PDF 中只有 1 个跑过真实链路，尚未达到 10-20 份样本成功率 `>= 90%` 和人工质量验收。
+- P0 document_jobs 当前能证明主链路可交付，但 Golden Sample 正式验收仍 blocked：4 个正式匹配 PDF 已在 hostdzire 真实链路跑通且 DOCX 可打开，仍未达到 10-20 份样本规模，且人工质量 0/4 P0 pass。当前 `pipeline-parity-gap` 已先补上 DocumentIR layout fact 入口：orientation、column_hint、wide table、caption/footnote binding 和 continuation 可从 API DocumentIR renderer 链路观察；heading/list/formula、caption-before-table 和表格 Word 样式质量仍未接入。
 - `en2zh_pdf_to_word` 当前按实验能力发布，不阻塞 P0 `direct_pdf_to_word`。
 - 当前默认仍是 file backend，但 jobs metadata 已有 sqlite-backed database adapter、MySQL adapter 和 shadow copy / switch 能力，artifact 已有本地对象目录 adapter 和 shadow upload / switch 能力；仍不包含 PostgreSQL，也未把 artifact 二进制写入 MySQL。
 - artifact 合同已覆盖新登记产物的 `size_bytes` / `sha256`、本地下载诊断和 local + object retention dry-run；旧记录缺少 fingerprint 时保持兼容，不强制 backfill，不执行真实删除，也不新增 S3 / OSS / MinIO。
@@ -86,6 +87,8 @@ tags: [backend, fastapi, jobs, docx]
 
 ## 变更日志
 
+- 2026-06-03：补入 `document-ir-layout-risk-pass` 实现边界；主链路 metadata 可追踪 DocumentIR layout facts 和 renderer layout flags，但 renderer 可编辑输出质量仍 blocked。
+- 2026-06-03：更新 Golden Sample blocked 边界；`gs-003/004/006/008` 在 hostdzire 真实链路 4/4 succeeded 且 DOCX 可打开，但人工质量 0/4 P0 pass，主要缺口归为 `pipeline-parity-gap`。
 - 2026-06-03：补入 P0 `document_jobs` PDF -> Word 主链路、内部工作台、Golden Sample 质量基线和当前 blocked 边界。
 
 ## 变更日志

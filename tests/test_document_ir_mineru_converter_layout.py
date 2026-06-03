@@ -55,20 +55,69 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
         self.assertEqual(document.pages[0].width, 612)
         self.assertEqual(document.pages[0].height, 792)
         self.assertEqual(document.pages[0].metadata["page_size_source"], "layout.json")
+        self.assertEqual(document.pages[0].metadata["orientation"], "portrait")
         self.assertEqual(document.blocks[0].layout.bbox, (72.0, 80.0, 180.0, 100.0))
+        self.assertEqual(document.blocks[0].layout.column_hint, "left")
         self.assertEqual(document.blocks[1].list_items, ["Low noise", "High slew rate"])
+        self.assertEqual(document.blocks[1].layout.column_hint, "left")
         self.assertEqual(document.blocks[2].type, "image")
         self.assertEqual(document.blocks[2].text, "Noise Density")
+        self.assertEqual(document.blocks[2].layout.column_hint, "left")
         self.assertEqual(document.blocks[2].captions, ["Noise Density"])
         self.assertEqual(document.blocks[2].footnotes, ["Typical values."])
+        self.assertEqual(document.blocks[2].metadata["layout_role_reason"], "column_hint=left;bbox_width=288.00;page_width=612.00")
         self.assertEqual(document.blocks[3].captions, ["Device Information"])
         self.assertEqual(document.blocks[3].footnotes, ["All packages are listed in the addendum."])
         self.assertEqual(document.blocks[3].layout.continuation_heights, [120.0])
+        self.assertEqual(document.blocks[3].layout.column_hint, "wide")
+        self.assertEqual(document.blocks[3].metadata["layout_role_reason"], "column_hint=wide;bbox_width=468.00;page_width=612.00")
         self.assertEqual(document.blocks[4].layout.role, "page_header")
         self.assertEqual(document.blocks[5].layout.role, "page_footer")
         self.assertNotIn("unsupported_block_type:header", document.quality_flags)
         self.assertIn("table_continuation:block_0004", document.quality_flags)
+        self.assertIn("layout_wide_table:block_0004", document.quality_flags)
+        self.assertIn("layout_caption_binding:block_0003", document.quality_flags)
+        self.assertIn("layout_footnote_binding:block_0004", document.quality_flags)
         self.assertEqual(len(result.image_assets), 1)
+
+    def test_convert_zip_merges_table_placeholder_continuation_and_landscape_orientation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "mineru.zip"
+            self._write_zip(
+                zip_path,
+                blocks=[
+                    {
+                        "type": "table",
+                        "table_caption": ["Wide table"],
+                        "table_body": "<table><tr><td>Part</td></tr></table>",
+                        "bbox": [72, 120, 720, 240],
+                        "page_idx": 0,
+                    },
+                    {"type": "table_placeholder", "bbox": [72, 50, 720, 250], "page_idx": 1},
+                ],
+                layout={
+                    "pdf_info": [
+                        {"page_idx": 0, "page_size": [792, 612]},
+                        {"page_idx": 1, "page_size": [792, 612]},
+                    ]
+                },
+            )
+
+            result = MinerUToDocumentIRService().convert_zip(
+                zip_path,
+                job_id="docjob_continuation",
+                source_file_id="file_continuation",
+                document_language="en",
+            )
+
+        document = result.document
+        self.assertEqual([page.metadata["orientation"] for page in document.pages], ["landscape", "landscape"])
+        self.assertEqual(len(document.blocks), 1)
+        self.assertEqual(document.blocks[0].type, "table")
+        self.assertEqual(document.blocks[0].layout.column_hint, "wide")
+        self.assertEqual(document.blocks[0].layout.continuation_heights, [200.0])
+        self.assertIn("table_continuation:block_0001", document.quality_flags)
+        self.assertIn("layout_wide_table:block_0001", document.quality_flags)
 
     def test_convert_zip_records_missing_layout_source_and_bbox(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

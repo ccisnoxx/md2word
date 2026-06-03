@@ -51,7 +51,7 @@ class DocumentIRLayoutContractTests(unittest.TestCase):
                 document_language="en",
             ),
             pages=[
-                DocumentIRPage(index=0, width=612.0, height=792.0),
+                DocumentIRPage(index=0, width=612.0, height=792.0, metadata={"orientation": "portrait"}),
             ],
             blocks=[
                 DocumentIRBlock(
@@ -71,19 +71,28 @@ class DocumentIRLayoutContractTests(unittest.TestCase):
                     ),
                     captions=["Table 1. Electrical Characteristics"],
                     footnotes=["All values are typical."],
+                    metadata={"layout_role_reason": "column_hint=wide;source=bbox"},
                 )
             ],
-            quality_flags=["table_continuation:block_0001"],
+            quality_flags=[
+                "layout_wide_table:block_0001",
+                "table_continuation:block_0001",
+                "layout_caption_binding:block_0001",
+            ],
         )
 
         decoded = DocumentIR.model_validate_json(document.model_dump_json())
 
         self.assertEqual(decoded.schema_version, "document-ir/v2")
         self.assertEqual(decoded.pages[0].width, 612.0)
+        self.assertEqual(decoded.pages[0].metadata["orientation"], "portrait")
         self.assertEqual(decoded.blocks[0].layout.bbox, (72.0, 120.0, 540.0, 240.0))
         self.assertEqual(decoded.blocks[0].layout.continuation_heights, [100.0])
+        self.assertEqual(decoded.blocks[0].layout.column_hint, "wide")
         self.assertEqual(decoded.blocks[0].captions, ["Table 1. Electrical Characteristics"])
         self.assertEqual(decoded.blocks[0].footnotes, ["All values are typical."])
+        self.assertEqual(decoded.blocks[0].metadata["layout_role_reason"], "column_hint=wide;source=bbox")
+        self.assertIn("layout_wide_table:block_0001", decoded.quality_flags)
 
 
 if __name__ == "__main__":

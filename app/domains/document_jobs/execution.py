@@ -803,6 +803,7 @@ class DocumentJobExecutionService:
             "layout_page_count": len(layout_plan.pages),
             "layout_region_count": sum(len(page.regions) for page in layout_plan.pages),
             "layout_block_count": sum(len(region.blocks) for page in layout_plan.pages for region in page.regions),
+            "layout_quality_flags": document_ir.quality_flags,
         }
 
     def _record_event(

@@ -6,7 +6,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from app.services.document_ir.models import DocumentIRBlockLayout, DocumentIRBlockRole, DocumentIRPage
+from app.services.document_ir.models import (
+    DocumentIRBlockLayout,
+    DocumentIRBlockRole,
+    DocumentIRColumnHint,
+    DocumentIRPage,
+)
 
 
 ROLE_BY_SOURCE_TYPE: dict[str, DocumentIRBlockRole] = {
@@ -47,6 +52,8 @@ def build_pages(
             metadata["page_size_source"] = source_name
         if max_width is not None and max_height is not None:
             metadata["bbox_extent"] = [max_width, max_height]
+        if width is not None and height is not None:
+            metadata["orientation"] = "landscape" if width > height else "portrait"
         pages.append(DocumentIRPage(index=page_index, width=width, height=height, metadata=metadata))
     return pages
 
@@ -58,6 +65,7 @@ def build_block_layout(
     source_index: int,
     quality_flags: list[str],
     block_id: str,
+    page_width: float | None = None,
 ) -> DocumentIRBlockLayout:
     """把 MinerU 块级 page/bbox/role 信息收口为 DocumentIRBlockLayout。"""
 
@@ -69,13 +77,63 @@ def build_block_layout(
     )
     if continuation_heights:
         quality_flags.append(f"table_continuation:{block_id}")
+    column_hint = _parse_column_hint(raw_block.get("column_hint")) or _classify_column_hint(bbox, page_width)
+    if column_hint in {"left", "right"}:
+        quality_flags.append(f"layout_two_column_candidate:{block_id}:{column_hint}")
+    if source_type == "table" and column_hint == "wide":
+        quality_flags.append(f"layout_wide_table:{block_id}")
     return DocumentIRBlockLayout(
         page_index=parse_page_index(raw_block),
         bbox=bbox,
         role=role_for_source_type(source_type),
         source_index=source_index,
         continuation_heights=continuation_heights,
+        column_hint=column_hint,
     )
+
+
+def build_block_layout_metadata(
+    layout: DocumentIRBlockLayout,
+    *,
+    page_width: float | None,
+) -> dict[str, Any]:
+    """生成只用于排障的块级布局诊断 metadata。"""
+
+    if layout.column_hint is None:
+        return {}
+    if layout.bbox is None or page_width is None or page_width <= 0:
+        return {"layout_role_reason": f"column_hint={layout.column_hint}"}
+    bbox_width = layout.bbox[2] - layout.bbox[0]
+    return {
+        "layout_role_reason": (
+            f"column_hint={layout.column_hint};bbox_width={bbox_width:.2f};page_width={page_width:.2f}"
+        )
+    }
+
+
+def merge_table_placeholder_continuations(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """把连续 table_placeholder 高度并入前一张真实表，保持 DocumentIR 不输出占位块。"""
+
+    merged: list[dict[str, Any]] = []
+    pending_table: dict[str, Any] | None = None
+    for raw_block in raw_blocks:
+        source_type = _source_type(raw_block)
+        if source_type == "table_placeholder" and pending_table is not None:
+            placeholder_height = _placeholder_height(raw_block)
+            if placeholder_height is not None:
+                continuation_heights = _parse_float_list(
+                    pending_table.get("continuation_heights", pending_table.get("table_continuation_heights"))
+                )
+                pending_table["continuation_heights"] = [*continuation_heights, placeholder_height]
+            continue
+
+        copied = dict(raw_block)
+        merged.append(copied)
+        if _is_table_block(copied):
+            pending_table = copied
+        elif source_type not in {"header", "footer", "page_header", "page_footer", "page_number"}:
+            pending_table = None
+    return merged
 
 
 def role_for_source_type(source_type: str) -> DocumentIRBlockRole:
@@ -148,6 +206,46 @@ def _parse_float_list(raw_value: Any) -> list[float]:
         except (TypeError, ValueError):
             continue
     return values
+
+
+def _parse_column_hint(raw_value: Any) -> DocumentIRColumnHint | None:
+    if raw_value in {"left", "right", "wide"}:
+        return raw_value
+    return None
+
+
+def _classify_column_hint(
+    bbox: tuple[float, float, float, float] | None,
+    page_width: float | None,
+) -> DocumentIRColumnHint | None:
+    if bbox is None or page_width is None or page_width <= 0:
+        return None
+    bbox_width = bbox[2] - bbox[0]
+    if bbox_width >= page_width * 0.6:
+        return "wide"
+    center_x = (bbox[0] + bbox[2]) / 2
+    return "left" if center_x < page_width / 2 else "right"
+
+
+def _placeholder_height(raw_block: dict[str, Any]) -> float | None:
+    raw_height = raw_block.get("height")
+    try:
+        height = float(raw_height)
+    except (TypeError, ValueError):
+        bbox = parse_bbox(raw_block.get("bbox"))
+        height = bbox[3] - bbox[1] if bbox is not None else None
+    if height is None or height <= 0:
+        return None
+    return height
+
+
+def _source_type(raw_block: dict[str, Any]) -> str:
+    return str(raw_block.get("type") or raw_block.get("block_type") or "").strip().lower()
+
+
+def _is_table_block(raw_block: dict[str, Any]) -> bool:
+    source_type = _source_type(raw_block)
+    return source_type == "table" or bool(raw_block.get("table_body") or raw_block.get("table_html"))
 
 
 def _bbox_extents_by_page(raw_blocks: list[dict[str, Any]]) -> dict[int, tuple[float, float]]:
