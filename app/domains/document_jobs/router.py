@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+from datetime import datetime
 from datetime import timedelta
 from urllib.parse import urlsplit, urlunsplit
 
@@ -79,6 +80,11 @@ def list_document_jobs(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     status_filter: str | None = Query(default=None, alias="status"),
+    q: str | None = Query(default=None),
+    sort: str = Query(default="created_at_desc"),
+    include_archived: bool = Query(default=False),
+    created_from: datetime | None = Query(default=None),
+    created_to: datetime | None = Query(default=None),
     runtime: AppRuntime = Depends(get_runtime),
     user: AuthenticatedUser = Depends(require_current_user),
 ) -> DocumentJobListResponse:
@@ -87,6 +93,11 @@ def list_document_jobs(
         page=page,
         page_size=page_size,
         status_filter=status_filter.strip() if status_filter else None,
+        q=q,
+        sort=sort,
+        include_archived=include_archived,
+        created_from=created_from,
+        created_to=created_to,
     )
     return DocumentJobListResponse(
         items=[_build_document_job_response(job) for job in jobs],

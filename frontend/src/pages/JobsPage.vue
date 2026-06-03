@@ -47,9 +47,33 @@
             <p class="section-subtitle">查看当前账号可见的 document_jobs。</p>
           </div>
           <div class="toolbar">
+            <el-input
+              v-model="searchKeyword"
+              clearable
+              placeholder="搜索任务/文件/错误"
+              style="width: 210px"
+              @clear="handleFilter"
+              @keyup.enter="handleFilter"
+            />
             <el-select v-model="statusFilter" clearable placeholder="全部状态" style="width: 156px" @change="handleFilter">
               <el-option v-for="status in statuses" :key="status" :label="jobStatusText[status]" :value="status" />
             </el-select>
+            <el-select v-model="sortFilter" style="width: 156px" @change="handleFilter">
+              <el-option v-for="option in sortOptions" :key="option.value" :label="option.label" :value="option.value" />
+            </el-select>
+            <el-switch
+              v-model="includeArchived"
+              active-text="含归档"
+              inactive-text="默认"
+              @change="handleFilter"
+            />
+            <el-button :disabled="!selectedRetryableJobs.length" :loading="batchLoading" @click="handleBatchRetry">
+              批量重试 {{ selectedRetryableJobs.length }}
+            </el-button>
+            <el-button :disabled="!selectedArchivableJobs.length" :loading="batchLoading" @click="handleBatchArchive">
+              批量归档 {{ selectedArchivableJobs.length }}
+            </el-button>
+            <el-button :icon="Refresh" :loading="loading" @click="handleFilter">搜索</el-button>
             <el-button :icon="Refresh" :loading="loading" @click="loadJobs">刷新</el-button>
           </div>
         </div>
@@ -70,8 +94,11 @@
             :page-size="pageSize"
             :total="total"
             @page-change="handlePageChange"
+            @selection-change="handleSelectionChange"
             @download="handleDownload"
             @retry="handleRetry"
+            @cancel="handleCancel"
+            @archive="handleArchive"
           />
         </el-card>
       </section>
@@ -81,16 +108,21 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { CircleCheck, Files, Refresh, Timer, Warning } from "@element-plus/icons-vue";
 import { useRouter } from "vue-router";
 
-import type { DocumentJobResponse, DocumentJobStatus } from "@/api/types";
+import type { DocumentJobListSort, DocumentJobResponse, DocumentJobStatus } from "@/api/types";
 import { documentJobsApi } from "@/api/documentJobs";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import JobTable from "@/components/JobTable.vue";
 import PdfUploadPanel from "@/components/PdfUploadPanel.vue";
-import { formatDateTime, jobStatusText } from "@/utils/format";
+import {
+  canArchiveDocumentJob,
+  canRetryDocumentJob,
+  formatDateTime,
+  jobStatusText,
+} from "@/utils/format";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 
 const router = useRouter();
@@ -101,14 +133,30 @@ const page = ref(1);
 const pageSize = 20;
 const total = ref(0);
 const statusFilter = ref<DocumentJobStatus | "">("");
+const searchKeyword = ref("");
+const sortFilter = ref<DocumentJobListSort>("created_at_desc");
+const includeArchived = ref(false);
+const selectedJobs = ref<DocumentJobResponse[]>([]);
+const batchLoading = ref(false);
 const summary = ref<Record<string, number>>({});
 const statuses: DocumentJobStatus[] = ["pending", "queued", "running", "succeeded", "failed", "canceled"];
+const sortOptions: Array<{ label: string; value: DocumentJobListSort }> = [
+  { label: "创建时间新到旧", value: "created_at_desc" },
+  { label: "创建时间旧到新", value: "created_at_asc" },
+  { label: "更新时间新到旧", value: "updated_at_desc" },
+  { label: "更新时间旧到新", value: "updated_at_asc" },
+];
 
 const summaryEntries = computed(() => Object.entries(summary.value).filter(([, count]) => count > 0));
-const activeFilterLabel = computed(() => (statusFilter.value ? statusLabel(statusFilter.value) : "全部状态"));
+const activeFilterLabel = computed(() => {
+  const statusText = statusFilter.value ? statusLabel(statusFilter.value) : "全部状态";
+  return includeArchived.value ? `${statusText} · 含归档` : statusText;
+});
 const activeCount = computed(
   () => countByStatus("pending") + countByStatus("queued") + countByStatus("running"),
 );
+const selectedRetryableJobs = computed(() => selectedJobs.value.filter(canRetryDocumentJob));
+const selectedArchivableJobs = computed(() => selectedJobs.value.filter(canArchiveDocumentJob));
 const metrics = computed(() => [
   {
     key: "total",
@@ -152,8 +200,12 @@ async function loadJobs(): Promise<void> {
       page: page.value,
       page_size: pageSize,
       status: statusFilter.value || undefined,
+      q: searchKeyword.value.trim() || undefined,
+      sort: sortFilter.value,
+      include_archived: includeArchived.value,
     });
     jobs.value = response.items;
+    selectedJobs.value = [];
     total.value = response.total;
     summary.value = response.summary;
   } catch (caught) {
@@ -171,6 +223,10 @@ function handlePageChange(nextPage: number): void {
 function handleFilter(): void {
   page.value = 1;
   void loadJobs();
+}
+
+function handleSelectionChange(selection: DocumentJobResponse[]): void {
+  selectedJobs.value = selection;
 }
 
 function statusLabel(status: string): string {
@@ -197,6 +253,111 @@ async function handleDownload(job: DocumentJobResponse): Promise<void> {
 
 async function handleRetry(job: DocumentJobResponse): Promise<void> {
   await router.push({ path: `/jobs/${job.id}`, query: { retry: "1" } });
+}
+
+async function handleCancel(job: DocumentJobResponse): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      "取消会将任务标记为 canceled 并停止后续处理；如果任务已进入外部服务，系统不承诺强制中断该外部处理。文件和事件记录会保留。",
+      "取消任务",
+      {
+        confirmButtonText: "确认取消",
+        cancelButtonText: "返回",
+        type: "warning",
+      },
+    );
+    await documentJobsApi.cancel(job.id);
+    ElMessage.success("任务已取消。");
+    await loadJobs();
+  } catch (caught) {
+    if (caught === "cancel" || caught === "close") {
+      return;
+    }
+    error.value = normalizeApiError(caught);
+  }
+}
+
+async function handleArchive(job: DocumentJobResponse): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      "归档只会把终态任务从默认列表隐藏，不会删除源文件、结果文件或事件记录。开启“含归档”后仍可查看。",
+      "归档任务",
+      {
+        confirmButtonText: "确认归档",
+        cancelButtonText: "返回",
+        type: "info",
+      },
+    );
+    await documentJobsApi.archive(job.id);
+    ElMessage.success("任务已归档。");
+    await loadJobs();
+  } catch (caught) {
+    if (caught === "cancel" || caught === "close") {
+      return;
+    }
+    error.value = normalizeApiError(caught);
+  }
+}
+
+async function handleBatchRetry(): Promise<void> {
+  const targets = selectedRetryableJobs.value;
+  if (!targets.length) {
+    return;
+  }
+  batchLoading.value = true;
+  error.value = null;
+  try {
+    const results = await Promise.allSettled(
+      targets.map((job) => documentJobsApi.retry(job.id, { reason: "frontend batch retry" })),
+    );
+    showBatchResult("批量重试", results);
+    await loadJobs();
+  } finally {
+    batchLoading.value = false;
+  }
+}
+
+async function handleBatchArchive(): Promise<void> {
+  const targets = selectedArchivableJobs.value;
+  if (!targets.length) {
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      `将归档 ${targets.length} 个终态任务。归档不是删除，源文件、结果文件和事件记录会保留。`,
+      "批量归档任务",
+      {
+        confirmButtonText: "确认归档",
+        cancelButtonText: "返回",
+        type: "info",
+      },
+    );
+  } catch (caught) {
+    if (caught === "cancel" || caught === "close") {
+      return;
+    }
+    error.value = normalizeApiError(caught);
+    return;
+  }
+  batchLoading.value = true;
+  error.value = null;
+  try {
+    const results = await Promise.allSettled(targets.map((job) => documentJobsApi.archive(job.id)));
+    showBatchResult("批量归档", results);
+    await loadJobs();
+  } finally {
+    batchLoading.value = false;
+  }
+}
+
+function showBatchResult(label: string, results: PromiseSettledResult<unknown>[]): void {
+  const succeeded = results.filter((result) => result.status === "fulfilled").length;
+  const failed = results.length - succeeded;
+  if (failed > 0) {
+    ElMessage.warning(`${label}完成：成功 ${succeeded} 个，失败 ${failed} 个。`);
+    return;
+  }
+  ElMessage.success(`${label}完成：成功 ${succeeded} 个。`);
 }
 
 onMounted(() => {

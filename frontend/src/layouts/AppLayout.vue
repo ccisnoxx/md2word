@@ -27,6 +27,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from "vue";
 import { SwitchButton } from "@element-plus/icons-vue";
 import { useRouter } from "vue-router";
 
@@ -34,9 +35,24 @@ import { useAuthStore } from "@/stores/auth";
 
 const auth = useAuthStore();
 const router = useRouter();
-const navItems = [
-  { label: "任务工作台", to: "/jobs" },
-];
+
+type NavItem = {
+  label: string;
+  to: string;
+};
+
+const navItems = computed<NavItem[]>(() => {
+  const isAdmin = auth.user?.role === "admin";
+  const items: NavItem[] = [{ label: "任务工作台", to: "/jobs" }];
+  if (isAdmin) {
+    items.push({ label: "配置中心", to: "/settings" });
+  }
+  items.push({ label: isAdmin ? "提案审核" : "术语建议", to: "/term-proposals" });
+  if (isAdmin) {
+    items.push({ label: "系统状态", to: "/system-status" });
+  }
+  return items;
+});
 
 function handleLogout(): void {
   auth.logout();

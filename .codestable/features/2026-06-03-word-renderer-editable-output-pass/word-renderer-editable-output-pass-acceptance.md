@@ -114,7 +114,8 @@ summary: renderer editable output pass 的验收闭环，覆盖实现核对、�
 
 ## 8. attention.md 候选盘点
 
-- [x] 无候选：本 feature 未暴露需要补入 `.codestable/attention.md` 的新内容。测试解释器、Golden Sample 线上复跑和部署入口核对注意事项已经存在。
+- [x] 原验收时无环境/命令类候选：测试解释器、Golden Sample 线上复跑和部署入口核对注意事项已经存在。
+- [x] 后续用户明确要求固化 `md2word_main layout lab -> md2word DocumentIR renderer` 接入标准；已补 `.codestable/compound/2026-06-03-decision-md2word-main-layout-lab-to-document-ir-renderer-parity.md`，并在 `.codestable/attention.md` 写入启动摘要，避免后续迁移只看 sandbox DOCX。
 
 ## 9. 遗留
 

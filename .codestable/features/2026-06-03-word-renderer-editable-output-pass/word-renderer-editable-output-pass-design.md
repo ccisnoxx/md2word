@@ -45,6 +45,7 @@ requirement: fastapi-backend-productization
 变化：
 
 - 先做 renderer parity mapping：只迁移 legacy runtime 中成熟、可被 DocumentIR 当前字段驱动的策略，不复制整套 `app/conversion/runtime`。
+- 按 `.codestable/compound/2026-06-03-decision-md2word-main-layout-lab-to-document-ir-renderer-parity.md` 执行接入标准：`md2word_main` 是本地 layout lab，`md2word` 只接入稳定策略到 `DocumentIRWordRenderer` 生产链路。
 - 在 renderer 侧补“语义写入”层：同一个 block type 先归一化文本和样式语义，再交给现有 paragraph/table/image writer。
 - 模板配置保持向后兼容：允许 renderer 使用内建 Word style fallback，也允许配置显式提供 named style / table note 语义；旧 YAML 缺字段时仍可运行。
 - document_jobs 回归必须通过生成的 Word artifact 取证，覆盖 heading style、`w:numPr`、LaTeX 残留、caption/table 顺序。
@@ -154,7 +155,7 @@ flowchart TD
 ### 2.4 推进策略
 
 1. renderer parity mapping：对照 failure classification、manual records 和 legacy runtime，落一份策略映射证据。
-   - 退出信号：heading/list/formula/caption/table 每类都标明“直接迁移 / 局部迁移 / 暂不迁移”的理由。
+   - 退出信号：heading/list/formula/caption/table 每类都标明“layout lab 证据 / 直接迁移 / 局部迁移 / 暂不迁移”的理由。
 2. text semantic pass：补 heading named style、真实 list numbering、formula normalization 和 rich text 输出。
    - 退出信号：DocumentIR renderer 单元回归能检查 `w:pStyle`、`w:numPr`、`w:vertAlign` 与常见 LaTeX 残留清理。
 3. table annotation / table content pass：补 caption-before-table、TableNote、TableContent 与 header/cell editable style 语义。
