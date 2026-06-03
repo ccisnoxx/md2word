@@ -94,6 +94,55 @@
       <el-card class="page-section card-flat" shadow="never">
         <div class="section-header">
           <div>
+            <h2 class="section-title">文件和结果</h2>
+            <p class="section-subtitle">任务绑定文件与生成产物。</p>
+          </div>
+          <el-button :icon="Refresh" :loading="filesLoading" @click="loadFiles">刷新文件</el-button>
+        </div>
+        <el-table v-loading="filesLoading" :data="files" empty-text="暂无已登记文件" class="job-file-table">
+          <el-table-column label="角色" width="128">
+            <template #default="{ row }">
+              <el-tag size="small" :type="fileTagType(row.file_type)">{{ fileRoleText(row.file_type) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="文件名" min-width="220">
+            <template #default="{ row }">
+              <div class="file-name">{{ row.original_filename }}</div>
+              <div class="file-meta mono">{{ row.id }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="类型" min-width="150">
+            <template #default="{ row }">{{ fileTypeText(row.file_type) }}</template>
+          </el-table-column>
+          <el-table-column label="大小" width="110">
+            <template #default="{ row }">{{ formatBytes(row.size_bytes) }}</template>
+          </el-table-column>
+          <el-table-column label="状态" width="116">
+            <template #default="{ row }">{{ fileAvailabilityText(row) }}</template>
+          </el-table-column>
+          <el-table-column label="过期时间" min-width="170">
+            <template #default="{ row }">{{ formatDateTime(row.expires_at) }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="108" fixed="right">
+            <template #default="{ row }">
+              <el-button
+                size="small"
+                type="primary"
+                :icon="Download"
+                :disabled="!canDownloadFile(row)"
+                :loading="downloadingFileId === row.id"
+                @click="handleFileDownload(row)"
+              >
+                下载
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-card>
+
+      <el-card class="page-section card-flat" shadow="never">
+        <div class="section-header">
+          <div>
             <h2 class="section-title">请求快照</h2>
             <p class="section-subtitle">次级排障信息；主流程通常只需查看状态、失败信息和事件流。</p>
           </div>
@@ -136,10 +185,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { ArrowLeft, Refresh } from "@element-plus/icons-vue";
+import { ArrowLeft, Download, Refresh } from "@element-plus/icons-vue";
 import { useRoute } from "vue-router";
 
 import type {
+  DocumentFileResponse,
   DocumentJobResourceSnapshot,
   DocumentJobEventResponse,
   DocumentJobResponse,
@@ -150,16 +200,19 @@ import JobActions from "@/components/JobActions.vue";
 import JobEventTimeline from "@/components/JobEventTimeline.vue";
 import JobProgress from "@/components/JobProgress.vue";
 import JobStatusBadge from "@/components/JobStatusBadge.vue";
-import { formatDateTime, getJobSourceFilename, isActiveJobStatus, jobModeText } from "@/utils/format";
+import { formatBytes, formatDateTime, getJobSourceFilename, isActiveJobStatus, jobModeText } from "@/utils/format";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 
 const route = useRoute();
 const jobId = computed(() => String(route.params.jobId || ""));
 const job = ref<DocumentJobResponse | null>(null);
 const events = ref<DocumentJobEventResponse[]>([]);
+const files = ref<DocumentFileResponse[]>([]);
 const loading = ref(false);
 const eventsLoading = ref(false);
+const filesLoading = ref(false);
 const downloadLoading = ref(false);
+const downloadingFileId = ref<string | null>(null);
 const retryLoading = ref(false);
 const cancelLoading = ref(false);
 const archiveLoading = ref(false);
@@ -299,10 +352,25 @@ async function loadEvents(): Promise<void> {
   }
 }
 
+async function loadFiles(): Promise<void> {
+  filesLoading.value = true;
+  try {
+    const response = await documentJobsApi.listFiles(jobId.value);
+    files.value = response.files;
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    filesLoading.value = false;
+  }
+}
+
 async function loadAll(): Promise<void> {
   await loadJob();
   if (job.value) {
-    await loadEvents();
+    await Promise.all([loadEvents(), loadFiles()]);
+  } else {
+    events.value = [];
+    files.value = [];
   }
 }
 
@@ -340,6 +408,23 @@ async function handleDownload(target: DocumentJobResponse): Promise<void> {
     error.value = normalizeApiError(caught);
   } finally {
     downloadLoading.value = false;
+  }
+}
+
+async function handleFileDownload(file: DocumentFileResponse): Promise<void> {
+  if (!job.value) {
+    return;
+  }
+  downloadingFileId.value = file.id;
+  error.value = null;
+  try {
+    const response = await documentJobsApi.createDownloadUrl(job.value.id, file.id);
+    window.open(response.download_url, "_blank", "noopener");
+    ElMessage.success(`下载链接已生成，有效期至 ${formatDateTime(response.expires_at)}。`);
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    downloadingFileId.value = null;
   }
 }
 
@@ -441,6 +526,62 @@ function handleVisibilityChange(): void {
   syncPolling();
 }
 
+// 文件区只做展示映射；文件归属、过期和下载权限以后端校验为准。
+function fileRoleText(fileType: string): string {
+  if (fileType === "source_pdf") {
+    return "源文件";
+  }
+  if (fileType === "generated_word") {
+    return "结果";
+  }
+  if (fileType === "ai_call_log" || fileType === "ai_debug_archive") {
+    return "日志";
+  }
+  return "中间产物";
+}
+
+function fileTypeText(fileType: string): string {
+  const labels: Record<string, string> = {
+    source_pdf: "源 PDF",
+    generated_word: "生成 Word",
+    mineru_raw_result: "MinerU 原始结果",
+    document_ir: "DocumentIR",
+    image_asset: "图片资产",
+    ai_call_log: "AI 调用日志",
+    ai_debug_archive: "AI debug 归档",
+  };
+  return labels[fileType] || fileType;
+}
+
+function fileTagType(fileType: string): "success" | "warning" | "info" {
+  if (fileType === "generated_word") {
+    return "success";
+  }
+  if (fileType === "ai_call_log" || fileType === "ai_debug_archive") {
+    return "warning";
+  }
+  return "info";
+}
+
+function isFileExpired(file: DocumentFileResponse): boolean {
+  const expiresAt = parseDate(file.expires_at);
+  return Boolean(expiresAt && expiresAt.getTime() <= Date.now());
+}
+
+function canDownloadFile(file: DocumentFileResponse): boolean {
+  return file.status === "uploaded" && !isFileExpired(file);
+}
+
+function fileAvailabilityText(file: DocumentFileResponse): string {
+  if (file.status !== "uploaded") {
+    return file.status;
+  }
+  if (isFileExpired(file)) {
+    return "已过期";
+  }
+  return "可下载";
+}
+
 watch(() => job.value?.status, syncPolling);
 
 onMounted(async () => {
@@ -500,6 +641,23 @@ onBeforeUnmount(() => {
   color: #344054;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.job-file-table {
+  width: 100%;
+}
+
+.file-name {
+  word-break: break-word;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.file-meta {
+  margin-top: 3px;
+  color: #667085;
+  font-size: 12px;
+  word-break: break-all;
 }
 
 @media (max-width: 760px) {

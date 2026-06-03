@@ -7,6 +7,7 @@ import type {
   DocumentJobCancelResponse,
   DocumentJobDownloadUrlResponse,
   DocumentJobEventListResponse,
+  DocumentJobFileListResponse,
   DocumentJobListResponse,
   DocumentJobListSort,
   DocumentJobRetryRequest,
@@ -56,6 +57,13 @@ export const documentJobsApi = {
     });
   },
 
+  listFiles(jobId: string): Promise<DocumentJobFileListResponse> {
+    return apiRequest<DocumentJobFileListResponse>({
+      url: `/api/v1/document-jobs/${jobId}/files`,
+      method: "GET",
+    });
+  },
+
   retry(jobId: string, payload?: string | DocumentJobRetryRequest): Promise<DocumentJobRetryResponse> {
     const data = typeof payload === "string" ? { reason: payload || null } : { reason: null, ...(payload || {}) };
     return apiRequest<DocumentJobRetryResponse>({
@@ -79,10 +87,11 @@ export const documentJobsApi = {
     });
   },
 
-  createDownloadUrl(jobId: string): Promise<DocumentJobDownloadUrlResponse> {
+  createDownloadUrl(jobId: string, fileId?: string): Promise<DocumentJobDownloadUrlResponse> {
     return apiRequest<DocumentJobDownloadUrlResponse>({
       url: `/api/v1/document-jobs/${jobId}/download-url`,
       method: "GET",
+      params: fileId ? { file_id: fileId } : undefined,
     });
   },
 };
