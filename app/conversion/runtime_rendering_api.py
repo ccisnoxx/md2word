@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# app/conversion/runtime_rendering_api.py: 汇总运行时渲染 API，连接表格、图片和文本渲染实现。
+
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +18,8 @@ from app.conversion.runtime.table_long_renderer import is_long_simple_table, ren
 from app.conversion.runtime.table_render_runtime import (
     fill_table_cell_impl,
     render_block_annotations_impl,
+    render_block_captions_impl,
+    render_block_footnotes_impl,
     render_large_table_fallback_impl,
     render_large_table_if_needed_impl,
     render_standard_html_table_impl,
@@ -34,7 +38,7 @@ MIN_VISUAL_WIDTH = Mm(45)
 MAX_COMPLEX_TABLE_ROWS = 400
 MAX_COMPLEX_TABLE_HTML_LEN = 30000
 TABLE_BORDER_COLOR = "C7CDD4"
-TABLE_HEADER_FILL = "EEF3F8"
+TABLE_HEADER_FILL = ""
 TABLE_OUTER_BORDER_SZ = "8"
 TABLE_INNER_BORDER_SZ = "4"
 
@@ -81,6 +85,35 @@ def render_block_annotations(container: Any, block: Block, render_config: Render
     )
 
 
+def render_block_captions(
+    container: Any,
+    block: Block,
+    render_config: RenderConfig,
+    *,
+    keep_with_next: bool = False,
+) -> None:
+    render_block_captions_impl(
+        container,
+        block,
+        render_config,
+        apply_named_style_config_fn=apply_named_style_config,
+        fill_rich_text_fn=fill_rich_text,
+        prepare_text_fn=prepare_text,
+        keep_with_next=keep_with_next,
+    )
+
+
+def render_block_footnotes(container: Any, block: Block, render_config: RenderConfig) -> None:
+    render_block_footnotes_impl(
+        container,
+        block,
+        render_config,
+        apply_named_style_config_fn=apply_named_style_config,
+        fill_rich_text_fn=fill_rich_text,
+        prepare_text_fn=prepare_text,
+    )
+
+
 def render_table_from_html(
     container: Any,
     block: Block,
@@ -112,8 +145,9 @@ def render_table_from_html(
     if render_large_table_if_needed(container, block, table_model, max_cols, len(html or ""), render_config, usable_width):
         return True
 
+    render_block_captions(container, block, render_config, keep_with_next=True)
     merge_failures = render_standard_html_table(container, table_model, max_cols, usable_width, render_config)
-    render_block_annotations(container, block, render_config)
+    render_block_footnotes(container, block, render_config)
 
     if merge_failures > 0:
         logger.warning(
@@ -249,12 +283,20 @@ def render_large_table_fallback(
         compute_visual_width_fn=compute_visual_width,
         remove_table_borders_fn=remove_table_borders,
         fill_table_cell_fn=fill_table_cell,
-        render_block_annotations_fn=render_block_annotations,
+        render_block_captions_fn=render_block_captions,
+        render_block_footnotes_fn=render_block_footnotes,
         html_cell_cls=HtmlCell,
     )
 
 
-def fill_table_cell(cell: Any, cell_model: "HtmlCell", is_header: bool, render_config: RenderConfig) -> None:
+def fill_table_cell(
+    cell: Any,
+    cell_model: "HtmlCell",
+    is_header: bool,
+    render_config: RenderConfig,
+    *,
+    compact: bool = False,
+) -> None:
     fill_table_cell_impl(
         cell,
         cell_model,
@@ -263,6 +305,7 @@ def fill_table_cell(cell: Any, cell_model: "HtmlCell", is_header: bool, render_c
         apply_named_style_config_fn=apply_named_style_config,
         render_inline_html_into_paragraph_fn=render_inline_html_into_paragraph,
         prepare_text_fn=prepare_text,
+        compact=compact,
     )
     if is_header:
         apply_table_header_cell_style(cell)
@@ -301,11 +344,5 @@ def remove_table_borders(table: Any) -> None:
 
 
 def apply_table_header_cell_style(cell: Any) -> None:
-    cell_properties = cell._tc.get_or_add_tcPr()
-    shading = cell_properties.find(qn("w:shd"))
-    if shading is None:
-        shading = OxmlElement("w:shd")
-        cell_properties.append(shading)
-    shading.set(qn("w:val"), "clear")
-    shading.set(qn("w:color"), "auto")
-    shading.set(qn("w:fill"), TABLE_HEADER_FILL)
+    """Keep header cells visually plain; bold text is handled during cell fill."""
+    return

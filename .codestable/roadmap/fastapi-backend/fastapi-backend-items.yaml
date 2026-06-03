@@ -1,0 +1,69 @@
+# .codestable/roadmap/fastapi-backend/fastapi-backend-items.yaml: fastapi-backend 历史 roadmap 子 feature 状态清单。
+roadmap: fastapi-backend
+created: 2026-05-18
+last_reviewed: 2026-06-02
+
+items:
+  - slug: backend-minimal-direct-conversion
+    description: 建立 FastAPI app、file job repository、上传 MinerU zip 后台直出 DOCX 的最小闭环
+    depends_on: []
+    status: done
+    feature: null
+    minimal_loop: true
+    notes: 历史完成项；当前只作为 legacy jobs 后端产品化记录。
+
+  - slug: conversion-library-boundary
+    description: 把转换入口拆成服务可调用的 app/conversion 后端边界
+    depends_on: [backend-minimal-direct-conversion]
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: 历史完成项；当前 app/conversion 仍是后端转换边界。
+
+  - slug: job-artifact-contract
+    description: 固定 legacy JobFile、下载接口、逻辑路径和本地路径隔离合同
+    depends_on: [backend-minimal-direct-conversion]
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: 历史完成项；后续 document_jobs artifact 质量另走交付硬化路线。
+
+  - slug: translation-en2zh-api
+    description: 接入 legacy translation_mode=en2zh，处理 LLM 配置和翻译产物
+    depends_on: [conversion-library-boundary, job-artifact-contract]
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: 历史完成项。
+
+  - slug: template-config-read-api
+    description: 提供模板和渲染配置只读 API
+    depends_on: [backend-minimal-direct-conversion]
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: 历史完成项。
+
+  - slug: admin-ops-and-events
+    description: 补齐 retry、cancel、cleanup-local-files、events 查询和运维动作
+    depends_on: [job-artifact-contract]
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: 历史完成项。
+
+  - slug: runtime-observability-and-docs
+    description: 固定日志、health readiness、运行文档和本地启动说明
+    depends_on: [backend-minimal-direct-conversion]
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: 历史完成项。
+
+  - slug: pdf-mineru-ingestion-spike
+    description: 调研是否把 PDF 上传和在线 MinerU 解析纳入后端
+    depends_on: [backend-minimal-direct-conversion]
+    status: done
+    feature: null
+    minimal_loop: false
+    notes: 历史结论是另开 mineru-online-ingestion；当前 PDF -> Word 主链路硬化另走 pdf-to-word-delivery-hardening。

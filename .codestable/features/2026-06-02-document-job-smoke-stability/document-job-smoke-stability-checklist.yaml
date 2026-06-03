@@ -1,0 +1,51 @@
+# .codestable/features/2026-06-02-document-job-smoke-stability/document-job-smoke-stability-checklist.yaml: document-job-smoke-stability 执行和验收清单。
+feature: 2026-06-02-document-job-smoke-stability
+roadmap: pdf-to-word-delivery-hardening
+roadmap_item: document-job-smoke-stability
+
+steps:
+  - id: deployed-environment-readonly-check
+    status: done
+    description: 只读确认 DMIT/hostdzire SSH、WireGuard、nginx、防火墙、Docker Compose 和 API readiness
+    exit_signal: 主部署机 API/worker/mysql/redis 可用，网络边界状态清楚，未改线上配置
+
+  - id: golden-sample-runtime-setup
+    status: done
+    description: 在 hostdzire API 容器内临时放入 Golden Sample 脚本、manifest 和 gs-003 PDF
+    exit_signal: 容器内可执行 `gs-003 / OPA228_P1.pdf` 回归，且未把凭证写入仓库
+
+  - id: real-chain-smoke-run
+    status: done
+    description: 使用真实 API、worker 和 MinerU 配置运行一次 Golden Sample 回归
+    exit_signal: report 显示 gs-003 succeeded，Word 可打开，失败 stage 不存在
+
+  - id: evidence-reconciliation
+    status: done
+    description: 读取 report、worker/API 日志和产物清单，形成主链路 stage 结论
+    exit_signal: 上传、建任务、worker、MinerU、DocumentIR、Word 渲染、下载均有通过证据
+
+  - id: docs-and-roadmap-backfill
+    status: done
+    description: 回写 feature acceptance、roadmap 状态和 Golden Sample 验收报告
+    exit_signal: 文档明确 1/1 smoke 成功但不等于 10-20 样本 P0 达标
+
+checks:
+  - id: real-api-worker-mineru-used
+    status: passed
+    description: 本次使用 hostdzire 真实 API、worker、MySQL、Redis 和 MinerU 配置，不是 dummy token inventory smoke
+
+  - id: gs003-main-chain-succeeded
+    status: passed
+    description: gs-003 / OPA228_P1.pdf 从上传到下载完整成功，生成 DOCX 可打开
+
+  - id: stage-localized
+    status: passed
+    description: 未发现卡点；主链路 stage 经过 worker、MinerU raw result、DocumentIR、Word render 和 download
+
+  - id: no-layout-fix
+    status: passed
+    description: 本 feature 未修改 renderer/layout/DocumentIR 业务代码，不处理排版质量
+
+  - id: p0-not-overclaimed
+    status: passed
+    description: 文档保留 10-20 份 Golden Sample 目标阻塞，不把 1 个样本 smoke 成功声明为 P0 正式通过

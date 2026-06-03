@@ -1,0 +1,42 @@
+# .codestable/features/2026-06-02-roadmap-state-reconciliation/roadmap-state-reconciliation-checklist.yaml: roadmap-state-reconciliation 执行和验收清单。
+feature: 2026-06-02-roadmap-state-reconciliation
+roadmap: pdf-to-word-delivery-hardening
+roadmap_item: roadmap-state-reconciliation
+
+steps:
+  - id: restore-historical-roadmaps
+    status: done
+    description: 恢复 4 组历史 roadmap 的主文档和 items，并明确它们是 completed 历史档案
+    exit_signal: 4 组 roadmap 子目录均有 roadmap.md 和 items.yaml，且状态不再误导为当前 backlog
+
+  - id: create-delivery-hardening-roadmap
+    status: done
+    description: 创建 pdf-to-word-delivery-hardening active roadmap，写入 2-4 周交付硬化子 feature 清单
+    exit_signal: active roadmap 存在，golden-sample-quality-baseline 是下一条 minimal_loop 条目
+
+  - id: bind-feature-design
+    status: done
+    description: 写 roadmap-state-reconciliation design，并将 active roadmap item 绑定到 feature 目录
+    exit_signal: design frontmatter 带 roadmap 和 roadmap_item，items.yaml 中对应条目为 in-progress
+
+  - id: validate-planning-artifacts
+    status: done
+    description: 校验新增 Markdown frontmatter、YAML 文件和 roadmap 断链
+    exit_signal: validate-yaml 通过，architecture 中 fastapi-backend 相关 roadmap 链接可解析
+
+checks:
+  - id: no-business-code-change
+    status: passed
+    description: 本 feature 不修改 backend/frontend 业务代码
+
+  - id: historical-roadmaps-completed
+    status: passed
+    description: 历史 roadmap 均被校准为 completed 或 archived，不再作为当前执行 backlog
+
+  - id: active-roadmap-focused
+    status: passed
+    description: 当前 active roadmap 只聚焦 PDF -> Word 主链路交付硬化，不扩新后台功能
+
+  - id: golden-sample-next
+    status: passed
+    description: 下一条 feature 明确为 golden-sample-quality-baseline，且已在 roadmap-state-reconciliation 完成后启动 design

@@ -1969,6 +1969,7 @@ class FastAPIJobsBackendTests(TestCase):
         expected_layout_page_count = len(ir_payload["pages"])
         self.assertEqual(raw_file.file_type, "mineru_raw_result")
         self.assertEqual(ir_file.file_type, "document_ir")
+        self.assertEqual(ir_file.original_filename, "document_ir_v2.json")
         self.assertEqual(word_file.file_type, "generated_word")
         self.assertEqual(ir_file.metadata["schema_version"], "document-ir/v2")
         self.assertEqual(ir_file.metadata["layout_page_count"], expected_layout_page_count)
@@ -2354,11 +2355,18 @@ class FastAPIJobsBackendTests(TestCase):
                     headers=headers,
                     json={"source_file_id": source_file["id"]},
                 )
+                render_failed_job_id = render_failed_response.json()["job_id"]
+            render_failed_events = runtime.document_job_event_repository.list_document_job_events(render_failed_job_id)
 
         render_failed_job = render_failed_response.json()["job"]
         self.assertEqual(render_failed_job["status"], "failed")
         self.assertEqual(render_failed_job["failed_stage"], "rendering")
         self.assertEqual(render_failed_job["error_code"], "render_failed")
+        render_failed_event = render_failed_events[-1]
+        self.assertEqual(render_failed_event.event_type, "stage_failed")
+        self.assertEqual(render_failed_event.stage, "rendering")
+        self.assertEqual(render_failed_event.level, "error")
+        self.assertEqual(render_failed_event.payload["error_code"], "render_failed")
 
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(

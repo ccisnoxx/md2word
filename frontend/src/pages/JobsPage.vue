@@ -69,13 +69,9 @@
             :page="page"
             :page-size="pageSize"
             :total="total"
-            :canceling-job-id="cancelingJobId"
-            :archiving-job-id="archivingJobId"
             @page-change="handlePageChange"
             @download="handleDownload"
             @retry="handleRetry"
-            @cancel="handleCancel"
-            @archive="handleArchive"
           />
         </el-card>
       </section>
@@ -85,7 +81,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessage } from "element-plus";
 import { CircleCheck, Files, Refresh, Timer, Warning } from "@element-plus/icons-vue";
 import { useRouter } from "vue-router";
 
@@ -94,16 +90,12 @@ import { documentJobsApi } from "@/api/documentJobs";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import JobTable from "@/components/JobTable.vue";
 import PdfUploadPanel from "@/components/PdfUploadPanel.vue";
-import { useAuthStore } from "@/stores/auth";
-import { jobStatusText } from "@/utils/format";
+import { formatDateTime, jobStatusText } from "@/utils/format";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 
 const router = useRouter();
-const auth = useAuthStore();
 const jobs = ref<DocumentJobResponse[]>([]);
 const loading = ref(false);
-const cancelingJobId = ref<string | null>(null);
-const archivingJobId = ref<string | null>(null);
 const error = ref<ApiClientError | null>(null);
 const page = ref(1);
 const pageSize = 20;
@@ -197,79 +189,14 @@ async function handleDownload(job: DocumentJobResponse): Promise<void> {
   try {
     const response = await documentJobsApi.createDownloadUrl(job.id);
     window.open(response.download_url, "_blank", "noopener");
+    ElMessage.success(`下载链接已生成，有效期至 ${formatDateTime(response.expires_at)}。`);
   } catch (caught) {
     error.value = normalizeApiError(caught);
   }
 }
 
 async function handleRetry(job: DocumentJobResponse): Promise<void> {
-  if (auth.user?.role === "admin") {
-    await router.push({ path: `/jobs/${job.id}`, query: { retry: "1" } });
-    return;
-  }
-  try {
-    await documentJobsApi.retry(job.id, "frontend retry");
-    ElMessage.success("已提交重试。");
-    await loadJobs();
-  } catch (caught) {
-    error.value = normalizeApiError(caught);
-  }
-}
-
-async function handleCancel(job: DocumentJobResponse): Promise<void> {
-  try {
-    await ElMessageBox.confirm(
-      "取消后任务会变为终态，不会删除源 PDF、生成 Word 或事件记录。取消后可继续归档隐藏。",
-      `取消任务 ${job.id}`,
-      {
-        confirmButtonText: "取消任务",
-        cancelButtonText: "返回",
-        type: "warning",
-      },
-    );
-  } catch {
-    return;
-  }
-
-  cancelingJobId.value = job.id;
-  error.value = null;
-  try {
-    await documentJobsApi.cancel(job.id);
-    ElMessage.success("任务已取消。");
-    await loadJobs();
-  } catch (caught) {
-    error.value = normalizeApiError(caught);
-  } finally {
-    cancelingJobId.value = null;
-  }
-}
-
-async function handleArchive(job: DocumentJobResponse): Promise<void> {
-  try {
-    await ElMessageBox.confirm(
-      "归档后任务会从列表隐藏，不会删除源 PDF、生成 Word 或事件记录。",
-      `归档任务 ${job.id}`,
-      {
-        confirmButtonText: "归档",
-        cancelButtonText: "取消",
-        type: "warning",
-      },
-    );
-  } catch {
-    return;
-  }
-
-  archivingJobId.value = job.id;
-  error.value = null;
-  try {
-    await documentJobsApi.archive(job.id);
-    ElMessage.success("任务已归档。");
-    await loadJobs();
-  } catch (caught) {
-    error.value = normalizeApiError(caught);
-  } finally {
-    archivingJobId.value = null;
-  }
+  await router.push({ path: `/jobs/${job.id}`, query: { retry: "1" } });
 }
 
 onMounted(() => {

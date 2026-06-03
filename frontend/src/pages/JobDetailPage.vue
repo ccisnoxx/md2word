@@ -8,22 +8,14 @@
       </div>
       <div class="toolbar">
         <el-button :icon="ArrowLeft" @click="$router.push('/jobs')">返回列表</el-button>
-        <el-button v-if="job" :icon="EditPen" @click="openTermRuleProposalDialog">新增术语规则建议</el-button>
-        <el-button v-if="job" :icon="EditPen" @click="openTranslationTermProposalDialog">
-          新增翻译术语建议
-        </el-button>
         <JobActions
           v-if="job"
           :job="job"
           :download-loading="downloadLoading"
           :retry-loading="retryLoading"
-          :cancel-loading="cancelLoading"
-          :archive-loading="archiveLoading"
           @refresh="loadAll"
           @download="handleDownload"
           @retry="handleRetry"
-          @cancel="handleCancel"
-          @archive="handleArchive"
         />
       </div>
     </div>
@@ -55,6 +47,23 @@
           <el-descriptions-item label="取消时间">{{ formatDateTime(job.canceled_at) }}</el-descriptions-item>
           <el-descriptions-item label="归档时间">{{ formatDateTime(job.archived_at) }}</el-descriptions-item>
         </el-descriptions>
+
+        <el-alert
+          v-if="runningNotice"
+          class="state-alert"
+          :type="runningNoticeType"
+          :closable="false"
+          show-icon
+          :title="runningNotice"
+        />
+        <el-alert
+          v-if="downloadHint"
+          class="state-alert"
+          type="success"
+          :closable="false"
+          show-icon
+          :title="downloadHint"
+        />
       </el-card>
 
       <el-card v-if="job.status === 'failed'" class="page-section card-flat" shadow="never">
@@ -64,6 +73,13 @@
             <p class="section-subtitle">按后端返回展示，不在前端推断可重试原因。</p>
           </div>
         </div>
+        <el-alert class="failure-summary" type="error" :closable="false" show-icon :title="failureSummary">
+          <p>{{ failureHelpText }}</p>
+          <p v-if="latestErrorEvent">
+            最近错误事件：{{ latestErrorEvent.message }}
+            <span v-if="latestErrorEvent.trace_id" class="mono">trace_id={{ latestErrorEvent.trace_id }}</span>
+          </p>
+        </el-alert>
         <el-descriptions :column="1" border>
           <el-descriptions-item label="失败阶段">{{ job.failed_stage || "-" }}</el-descriptions-item>
           <el-descriptions-item label="错误码">{{ job.error_code || "-" }}</el-descriptions-item>
@@ -75,10 +91,13 @@
         <div class="section-header">
           <div>
             <h2 class="section-title">请求快照</h2>
-            <p class="section-subtitle">后端记录的非正文任务参数摘要。</p>
+            <p class="section-subtitle">次级排障信息；主流程通常只需查看状态、失败信息和事件流。</p>
           </div>
         </div>
-        <pre class="snapshot">{{ requestSnapshotPreview }}</pre>
+        <details class="snapshot-details">
+          <summary>查看后端记录的非正文任务参数摘要</summary>
+          <pre class="snapshot">{{ requestSnapshotPreview }}</pre>
+        </details>
       </el-card>
 
       <el-card class="page-section card-flat" shadow="never">
@@ -92,91 +111,6 @@
         <JobEventTimeline :events="events" />
       </el-card>
 
-      <el-dialog v-model="proposalDialogVisible" title="新增术语规则建议" width="720px">
-        <el-form label-width="110px">
-          <el-form-item label="来源任务">
-            <el-input :model-value="job.id" disabled />
-          </el-form-item>
-          <el-form-item label="绑定规则版本">
-            <el-input :model-value="boundTermRuleSetLabel" disabled />
-          </el-form-item>
-          <el-form-item label="原文术语" required>
-            <el-input v-model="proposalForm.source_term" placeholder="例如 VIN" />
-          </el-form-item>
-          <el-form-item label="分类" required>
-            <el-select v-model="proposalForm.category_id" filterable placeholder="选择分类">
-              <el-option
-                v-for="category in termRuleCategories"
-                :key="category.id"
-                :label="category.name"
-                :value="category.id"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="展示分段" required>
-            <TermSegmentEditor v-model="proposalForm.segments" />
-          </el-form-item>
-          <el-form-item label="原因说明" required>
-            <el-input v-model="proposalForm.reason" type="textarea" :rows="3" />
-          </el-form-item>
-          <el-form-item label="页码">
-            <el-input-number v-model="proposalForm.page_number" :min="1" controls-position="right" />
-          </el-form-item>
-          <el-form-item label="前置上下文">
-            <el-input v-model="proposalForm.context_before" type="textarea" :rows="2" />
-          </el-form-item>
-          <el-form-item label="后置上下文">
-            <el-input v-model="proposalForm.context_after" type="textarea" :rows="2" />
-          </el-form-item>
-        </el-form>
-        <template #footer>
-          <el-button @click="proposalDialogVisible = false">取消</el-button>
-          <el-button type="primary" :loading="proposalSubmitting" @click="submitTermRuleProposal">提交建议</el-button>
-        </template>
-      </el-dialog>
-
-      <el-dialog v-model="translationProposalDialogVisible" title="新增翻译术语建议" width="680px">
-        <el-form label-width="120px">
-          <el-form-item label="来源任务">
-            <el-input :model-value="job.id" disabled />
-          </el-form-item>
-          <el-form-item label="绑定术语版本">
-            <el-input :model-value="boundTranslationTermSetLabel" disabled />
-          </el-form-item>
-          <el-form-item label="动作">
-            <el-radio-group v-model="translationProposalForm.action">
-              <el-radio-button label="add">新增</el-radio-button>
-              <el-radio-button label="update">编辑</el-radio-button>
-              <el-radio-button label="delete">删除</el-radio-button>
-            </el-radio-group>
-          </el-form-item>
-          <el-form-item label="原文术语" required>
-            <el-input v-model="translationProposalForm.source_term" placeholder="例如 FPGA" />
-          </el-form-item>
-          <el-form-item v-if="translationProposalForm.action !== 'delete'" label="目标译文" required>
-            <el-input v-model="translationProposalForm.target_term" placeholder="例如 现场可编程门阵列" />
-          </el-form-item>
-          <el-form-item label="优先级">
-            <el-input-number v-model="translationProposalForm.priority" :min="0" controls-position="right" />
-          </el-form-item>
-          <el-form-item label="领域">
-            <el-input v-model="translationProposalForm.domain" placeholder="可选" />
-          </el-form-item>
-          <el-form-item label="分类">
-            <el-input v-model="translationProposalForm.category" placeholder="可选" />
-          </el-form-item>
-          <el-form-item label="说明">
-            <el-input v-model="translationProposalForm.note" type="textarea" :rows="3" />
-          </el-form-item>
-        </el-form>
-        <template #footer>
-          <el-button @click="translationProposalDialogVisible = false">取消</el-button>
-          <el-button type="primary" :loading="translationProposalSubmitting" @click="submitTranslationTermProposal">
-            提交建议
-          </el-button>
-        </template>
-      </el-dialog>
-
       <el-dialog v-model="retryDialogVisible" title="重试任务" width="640px">
         <el-form label-width="150px">
           <el-form-item label="任务 ID">
@@ -185,52 +119,6 @@
           <el-form-item label="原因">
             <el-input v-model="retryDialog.reason" type="textarea" :rows="2" />
           </el-form-item>
-          <template v-if="isAdmin">
-            <el-form-item label="使用最新术语资产">
-              <el-switch v-model="retryDialog.use_latest_term_assets" />
-            </el-form-item>
-            <el-form-item label="Term Rule Set">
-              <el-select
-                v-model="retryDialog.term_rule_set_id"
-                clearable
-                filterable
-                placeholder="默认规则集"
-                @change="handleRetryTermRuleSetChange"
-              >
-                <el-option v-for="set in termRuleSets" :key="set.id" :label="set.id" :value="set.id" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="Term Rule Version">
-              <el-select
-                v-model="retryDialog.term_rule_set_version"
-                clearable
-                filterable
-                :disabled="retryDialog.use_latest_term_assets"
-                placeholder="默认版本或选择 published 历史版本"
-              >
-                <el-option
-                  v-for="version in selectedRetryTermRuleVersions"
-                  :key="version.version"
-                  :label="`${version.version}${version.is_default ? '（默认）' : ''}`"
-                  :value="version.version"
-                />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="Translation Term Set">
-              <el-input
-                v-model="retryDialog.translation_term_set_id"
-                :disabled="retryDialog.use_latest_term_assets"
-                placeholder="默认 translation-terms-en2zh"
-              />
-            </el-form-item>
-            <el-form-item label="Translation Version">
-              <el-input
-                v-model="retryDialog.translation_term_version"
-                :disabled="retryDialog.use_latest_term_assets"
-                placeholder="例如 v1；为空使用默认"
-              />
-            </el-form-item>
-          </template>
         </el-form>
         <template #footer>
           <el-button @click="retryDialogVisible = false">取消</el-button>
@@ -243,37 +131,25 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
-import { ArrowLeft, EditPen, Refresh } from "@element-plus/icons-vue";
-import { useRoute, useRouter } from "vue-router";
+import { ElMessage } from "element-plus";
+import { ArrowLeft, Refresh } from "@element-plus/icons-vue";
+import { useRoute } from "vue-router";
 
 import type {
   DocumentJobResourceSnapshot,
   DocumentJobEventResponse,
   DocumentJobResponse,
-  TermRuleCategoryListItemResponse,
-  TermRuleSetDetailResponse,
-  TermRuleSetListItemResponse,
-  TermRuleSegmentWriteRequest,
-  TranslationTermProposalAction,
 } from "@/api/types";
 import { documentJobsApi } from "@/api/documentJobs";
-import { termProposalsApi, translationTermProposalsApi } from "@/api/termProposals";
-import { termRulesApi } from "@/api/termRules";
-import { termRuleSetsApi } from "@/api/termRuleSets";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import JobActions from "@/components/JobActions.vue";
 import JobEventTimeline from "@/components/JobEventTimeline.vue";
 import JobProgress from "@/components/JobProgress.vue";
 import JobStatusBadge from "@/components/JobStatusBadge.vue";
-import TermSegmentEditor from "@/components/TermSegmentEditor.vue";
-import { useAuthStore } from "@/stores/auth";
 import { formatDateTime, getJobSourceFilename, isActiveJobStatus, jobModeText } from "@/utils/format";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 
 const route = useRoute();
-const router = useRouter();
-const auth = useAuthStore();
 const jobId = computed(() => String(route.params.jobId || ""));
 const job = ref<DocumentJobResponse | null>(null);
 const events = ref<DocumentJobEventResponse[]>([]);
@@ -281,55 +157,17 @@ const loading = ref(false);
 const eventsLoading = ref(false);
 const downloadLoading = ref(false);
 const retryLoading = ref(false);
-const cancelLoading = ref(false);
-const archiveLoading = ref(false);
-const proposalDialogVisible = ref(false);
-const proposalSubmitting = ref(false);
-const translationProposalDialogVisible = ref(false);
-const translationProposalSubmitting = ref(false);
 const retryDialogVisible = ref(false);
-const termRuleCategories = ref<TermRuleCategoryListItemResponse[]>([]);
-const termRuleSets = ref<TermRuleSetListItemResponse[]>([]);
-const termRuleSetDetails = ref<Record<string, TermRuleSetDetailResponse>>({});
 const error = ref<ApiClientError | null>(null);
 let pollTimer: number | undefined;
-
-const proposalForm = reactive({
-  source_term: "",
-  category_id: "",
-  segments: [
-    { segment_text: "V", render_type: "plain" },
-    { segment_text: "IN", render_type: "subscript" },
-  ] as TermRuleSegmentWriteRequest[],
-  reason: "",
-  page_number: null as number | null,
-  context_before: "",
-  context_after: "",
-});
-
-const translationProposalForm = reactive({
-  action: "add" as TranslationTermProposalAction,
-  source_term: "",
-  target_term: "",
-  priority: 0,
-  domain: "",
-  category: "",
-  note: "",
-});
 
 const retryDialog = reactive({
   job: null as DocumentJobResponse | null,
   reason: "frontend retry",
-  use_latest_term_assets: false,
-  term_rule_set_id: "",
-  term_rule_set_version: "",
-  translation_term_set_id: "",
-  translation_term_version: "",
 });
 
 const requestSnapshotPreview = computed(() => JSON.stringify(job.value?.request_snapshot || {}, null, 2));
 const sourceFilename = computed(() => (job.value ? getJobSourceFilename(job.value) : "-"));
-const isAdmin = computed(() => auth.user?.role === "admin");
 const resourceSnapshot = computed(() => readResourceSnapshot(job.value?.request_snapshot.resources));
 const boundTermRuleSet = computed(() => resourceSnapshot.value?.term_rule_set || null);
 const boundTranslationTermSet = computed(() => resourceSnapshot.value?.translation_term_set || null);
@@ -351,9 +189,58 @@ const boundTranslationTermSetLabel = computed(() => {
   }
   return `${bound.set_id}@${bound.version}`;
 });
-const selectedRetryTermRuleVersions = computed(() => {
-  const selected = retryDialog.term_rule_set_id || termRuleSets.value[0]?.id || "";
-  return termRuleSetDetails.value[selected]?.versions || [];
+const latestErrorEvent = computed(() => [...events.value].reverse().find((event) => event.level === "error") || null);
+const failureSummary = computed(() => {
+  if (!job.value) {
+    return "任务处理失败。";
+  }
+  const stage = job.value.failed_stage || job.value.stage || "unknown";
+  const code = job.value.error_code || "unknown";
+  return `任务在 ${stage} 阶段失败，错误码 ${code}。`;
+});
+const failureHelpText = computed(() => {
+  const code = job.value?.error_code || "";
+  if (code === "document_job_invalid_input") {
+    return "输入文件或任务参数不满足后端校验。请换一个 PDF 或联系管理员确认输入限制。";
+  }
+  if (job.value?.failed_stage === "parsing") {
+    return "PDF 解析阶段失败。可先重试；如果仍失败，请把错误码和 trace_id 交给技术运营排查 MinerU 或文件内容问题。";
+  }
+  if (job.value?.failed_stage === "uploading") {
+    return "结果保存阶段失败。通常与对象存储或文件登记有关，请重试后再联系技术运营。";
+  }
+  return "可以点击重试；如果后端返回 409，说明当前失败不可重试或次数已达上限，请按返回原因处理。";
+});
+const runningNotice = computed(() => {
+  if (!job.value || !isActiveJobStatus(job.value.status)) {
+    return "";
+  }
+  const timeoutAt = parseDate(job.value.timeout_at);
+  if (timeoutAt && timeoutAt.getTime() <= Date.now()) {
+    return "任务已超过预计超时时间，仍会继续轮询；请刷新事件流，必要时联系技术运营。";
+  }
+  const updatedAt = parseDate(job.value.updated_at);
+  if (updatedAt && Date.now() - updatedAt.getTime() > 10 * 60 * 1000) {
+    return "任务已超过 10 分钟没有状态更新，请查看事件流或稍后刷新。";
+  }
+  return "任务处理中，页面会自动轮询，终态后停止。";
+});
+const runningNoticeType = computed<"info" | "warning">(() => {
+  if (!job.value || !isActiveJobStatus(job.value.status)) {
+    return "info";
+  }
+  const timeoutAt = parseDate(job.value.timeout_at);
+  const updatedAt = parseDate(job.value.updated_at);
+  if ((timeoutAt && timeoutAt.getTime() <= Date.now()) || (updatedAt && Date.now() - updatedAt.getTime() > 10 * 60 * 1000)) {
+    return "warning";
+  }
+  return "info";
+});
+const downloadHint = computed(() => {
+  if (job.value?.status !== "succeeded") {
+    return "";
+  }
+  return "结果已生成。点击下载会重新获取临时链接，链接失效后再次点击下载即可。";
 });
 
 function readRecord(value: unknown): Record<string, unknown> | null {
@@ -372,6 +259,14 @@ function versionLabel(setId?: string | null, version?: string | null): string {
   const normalizedSetId = setId || "-";
   const normalizedVersion = version || "-";
   return normalizedSetId === "-" && normalizedVersion === "-" ? "-" : `${normalizedSetId}@${normalizedVersion}`;
+}
+
+function parseDate(value?: string | null): Date | null {
+  if (!value) {
+    return null;
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 async function loadJob(): Promise<void> {
@@ -405,197 +300,10 @@ async function loadAll(): Promise<void> {
   }
 }
 
-async function loadTermRuleCategories(): Promise<void> {
-  const response = await termRulesApi.listCategories();
-  termRuleCategories.value = response.items.filter((category) => category.enabled);
-}
-
-async function loadTermRuleSets(): Promise<void> {
-  const response = await termRuleSetsApi.list();
-  termRuleSets.value = response.items;
-  await Promise.all(response.items.map((item) => loadTermRuleSetDetail(item.id)));
-}
-
-async function loadTermRuleSetDetail(setId: string): Promise<void> {
-  if (!setId || termRuleSetDetails.value[setId]) {
-    return;
-  }
-  termRuleSetDetails.value[setId] = await termRuleSetsApi.get(setId);
-}
-
-async function openTermRuleProposalDialog(): Promise<void> {
-  if (!job.value) {
-    return;
-  }
-  resetProposalForm();
-  proposalDialogVisible.value = true;
-  error.value = null;
-  try {
-    if (!termRuleCategories.value.length) {
-      await loadTermRuleCategories();
-    }
-    if (!proposalForm.category_id && termRuleCategories.value.length) {
-      proposalForm.category_id = termRuleCategories.value[0].id;
-    }
-  } catch (caught) {
-    error.value = normalizeApiError(caught);
-  }
-}
-
-async function openRetryDialog(target: DocumentJobResponse): Promise<void> {
+function openRetryDialog(target: DocumentJobResponse): void {
   retryDialog.job = target;
   retryDialog.reason = "frontend retry";
-  retryDialog.use_latest_term_assets = false;
-  retryDialog.term_rule_set_id = boundTermRuleSet.value?.resource_id || "";
-  retryDialog.term_rule_set_version = boundTermRuleSet.value?.version || "";
-  retryDialog.translation_term_set_id = boundTranslationTermSet.value?.set_id || "";
-  retryDialog.translation_term_version = boundTranslationTermSet.value?.version || "";
   retryDialogVisible.value = true;
-  if (isAdmin.value && !termRuleSets.value.length) {
-    try {
-      await loadTermRuleSets();
-      retryDialog.term_rule_set_id ||= termRuleSets.value[0]?.id || "";
-    } catch (caught) {
-      error.value = normalizeApiError(caught);
-    }
-  }
-}
-
-async function handleRetryTermRuleSetChange(): Promise<void> {
-  retryDialog.term_rule_set_version = "";
-  try {
-    await loadTermRuleSetDetail(retryDialog.term_rule_set_id);
-  } catch (caught) {
-    error.value = normalizeApiError(caught);
-  }
-}
-
-function resetProposalForm(): void {
-  proposalForm.source_term = "";
-  proposalForm.category_id = termRuleCategories.value[0]?.id || "";
-  proposalForm.segments = [
-    { segment_text: "V", render_type: "plain" },
-    { segment_text: "IN", render_type: "subscript" },
-  ];
-  proposalForm.reason = "";
-  proposalForm.page_number = null;
-  proposalForm.context_before = job.value ? `source=${sourceFilename.value}; mode=${job.value.mode}` : "";
-  proposalForm.context_after = "";
-}
-
-function validateProposalForm(): boolean {
-  if (!proposalForm.source_term.trim()) {
-    ElMessage.warning("请填写原文术语。");
-    return false;
-  }
-  if (!proposalForm.category_id) {
-    ElMessage.warning("请选择分类。");
-    return false;
-  }
-  if (!proposalForm.reason.trim()) {
-    ElMessage.warning("请填写原因说明。");
-    return false;
-  }
-  if (!proposalForm.segments.length || proposalForm.segments.some((segment) => !segment.segment_text.trim())) {
-    ElMessage.warning("请填写完整分段文本。");
-    return false;
-  }
-  return true;
-}
-
-async function submitTermRuleProposal(): Promise<void> {
-  if (!job.value || !validateProposalForm()) {
-    return;
-  }
-  proposalSubmitting.value = true;
-  error.value = null;
-  try {
-    await termProposalsApi.create({
-      intent: "create",
-      source_term: proposalForm.source_term,
-      category_id: proposalForm.category_id,
-      segments: proposalForm.segments,
-      reason: proposalForm.reason,
-      source_job_id: job.value.id,
-      source_file_id: job.value.source_file_id,
-      page_number: proposalForm.page_number,
-      context_before: proposalForm.context_before || null,
-      context_after: proposalForm.context_after || null,
-      observed_term_rule_set_id: boundTermRuleSet.value?.resource_id || null,
-      observed_term_rule_version: boundTermRuleSet.value?.version || null,
-      target_rule_id: null,
-    });
-    ElMessage.success("术语规则建议已提交。");
-    proposalDialogVisible.value = false;
-  } catch (caught) {
-    error.value = normalizeApiError(caught);
-  } finally {
-    proposalSubmitting.value = false;
-  }
-}
-
-function openTranslationTermProposalDialog(): void {
-  if (!job.value) {
-    return;
-  }
-  resetTranslationProposalForm();
-  translationProposalDialogVisible.value = true;
-}
-
-function resetTranslationProposalForm(): void {
-  translationProposalForm.action = "add";
-  translationProposalForm.source_term = "";
-  translationProposalForm.target_term = "";
-  translationProposalForm.priority = 0;
-  translationProposalForm.domain = "";
-  translationProposalForm.category = "";
-  translationProposalForm.note = job.value ? `source=${sourceFilename.value}; mode=${job.value.mode}` : "";
-}
-
-function validateTranslationProposalForm(): boolean {
-  if (!translationProposalForm.source_term.trim()) {
-    ElMessage.warning("请填写原文术语。");
-    return false;
-  }
-  if (translationProposalForm.action !== "delete" && !translationProposalForm.target_term.trim()) {
-    ElMessage.warning("请填写目标译文。");
-    return false;
-  }
-  return true;
-}
-
-async function submitTranslationTermProposal(): Promise<void> {
-  if (!job.value || !validateTranslationProposalForm()) {
-    return;
-  }
-  translationProposalSubmitting.value = true;
-  error.value = null;
-  try {
-    await translationTermProposalsApi.create({
-      language_pair: "en2zh",
-      source_job_id: job.value.id,
-      source_file_id: job.value.source_file_id,
-      observed_translation_term_set_id: boundTranslationTermSet.value?.set_id || null,
-      observed_translation_term_version: boundTranslationTermSet.value?.version || null,
-      changes: [
-        {
-          action: translationProposalForm.action,
-          source_term: translationProposalForm.source_term,
-          target_term: translationProposalForm.action === "delete" ? null : translationProposalForm.target_term,
-          priority: translationProposalForm.priority,
-          domain: translationProposalForm.domain || null,
-          category: translationProposalForm.category || null,
-          note: translationProposalForm.note || null,
-        },
-      ],
-    });
-    ElMessage.success("翻译术语建议已提交。");
-    translationProposalDialogVisible.value = false;
-  } catch (caught) {
-    error.value = normalizeApiError(caught);
-  } finally {
-    translationProposalSubmitting.value = false;
-  }
 }
 
 function stopPolling(): void {
@@ -621,6 +329,7 @@ async function handleDownload(target: DocumentJobResponse): Promise<void> {
   try {
     const response = await documentJobsApi.createDownloadUrl(target.id);
     window.open(response.download_url, "_blank", "noopener");
+    ElMessage.success(`下载链接已生成，有效期至 ${formatDateTime(response.expires_at)}。`);
   } catch (caught) {
     error.value = normalizeApiError(caught);
   } finally {
@@ -628,26 +337,15 @@ async function handleDownload(target: DocumentJobResponse): Promise<void> {
   }
 }
 
-async function handleRetry(target: DocumentJobResponse): Promise<void> {
-  if (isAdmin.value) {
-    await openRetryDialog(target);
-    return;
-  }
-  await submitRetry(target, { reason: "frontend retry" });
+function handleRetry(target: DocumentJobResponse): void {
+  openRetryDialog(target);
 }
 
 async function submitRetryDialog(): Promise<void> {
   if (!retryDialog.job) {
     return;
   }
-  await submitRetry(retryDialog.job, {
-    reason: retryDialog.reason || "frontend retry",
-    use_latest_term_assets: retryDialog.use_latest_term_assets,
-    term_rule_set_id: retryDialog.term_rule_set_id || null,
-    term_rule_set_version: retryDialog.use_latest_term_assets ? null : retryDialog.term_rule_set_version || null,
-    translation_term_set_id: retryDialog.use_latest_term_assets ? null : retryDialog.translation_term_set_id || null,
-    translation_term_version: retryDialog.use_latest_term_assets ? null : retryDialog.translation_term_version || null,
-  });
+  await submitRetry(retryDialog.job, { reason: retryDialog.reason || "frontend retry" });
   retryDialogVisible.value = false;
 }
 
@@ -669,63 +367,6 @@ async function submitRetry(
   }
 }
 
-async function handleCancel(target: DocumentJobResponse): Promise<void> {
-  try {
-    await ElMessageBox.confirm(
-      "取消后任务会变为终态，不会删除源 PDF、生成 Word 或事件记录。取消后可继续归档隐藏。",
-      `取消任务 ${target.id}`,
-      {
-        confirmButtonText: "取消任务",
-        cancelButtonText: "返回",
-        type: "warning",
-      },
-    );
-  } catch {
-    return;
-  }
-
-  cancelLoading.value = true;
-  error.value = null;
-  try {
-    const response = await documentJobsApi.cancel(target.id);
-    job.value = response.job;
-    ElMessage.success("任务已取消。");
-    await loadAll();
-  } catch (caught) {
-    error.value = normalizeApiError(caught);
-  } finally {
-    cancelLoading.value = false;
-  }
-}
-
-async function handleArchive(target: DocumentJobResponse): Promise<void> {
-  try {
-    await ElMessageBox.confirm(
-      "归档后任务会从列表隐藏，不会删除源 PDF、生成 Word 或事件记录。",
-      `归档任务 ${target.id}`,
-      {
-        confirmButtonText: "归档",
-        cancelButtonText: "取消",
-        type: "warning",
-      },
-    );
-  } catch {
-    return;
-  }
-
-  archiveLoading.value = true;
-  error.value = null;
-  try {
-    await documentJobsApi.archive(target.id);
-    ElMessage.success("任务已归档。");
-    await router.push("/jobs");
-  } catch (caught) {
-    error.value = normalizeApiError(caught);
-  } finally {
-    archiveLoading.value = false;
-  }
-}
-
 function handleVisibilityChange(): void {
   syncPolling();
 }
@@ -736,8 +377,8 @@ onMounted(async () => {
   document.addEventListener("visibilitychange", handleVisibilityChange);
   await loadAll();
   syncPolling();
-  if (route.query.retry === "1" && isAdmin.value && job.value?.status === "failed") {
-    await openRetryDialog(job.value);
+  if (route.query.retry === "1" && job.value?.status === "failed") {
+    openRetryDialog(job.value);
   }
 });
 
@@ -754,6 +395,28 @@ onBeforeUnmount(() => {
   gap: 18px;
   align-items: center;
   margin-bottom: 18px;
+}
+
+.state-alert {
+  margin-top: 14px;
+}
+
+.failure-summary {
+  margin-bottom: 14px;
+}
+
+.failure-summary p {
+  margin: 4px 0 0;
+}
+
+.snapshot-details {
+  color: #344054;
+}
+
+.snapshot-details summary {
+  margin-bottom: 10px;
+  cursor: pointer;
+  font-weight: 600;
 }
 
 .snapshot {

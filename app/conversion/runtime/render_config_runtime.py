@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# app/conversion/runtime/render_config_runtime.py: 加载 DOCX 渲染版式、段落样式、表格样式和术语配置。
+
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -186,17 +188,20 @@ def load_render_config(
     load_section_layout_fn: Any,
     terminology_factory: Any,
     load_paragraph_styles_fn: Any,
+    load_table_style_fn: Any,
     render_config_cls: Any,
 ) -> Any:
     layout_config_path = find_layout_config_path_fn()
     layout = load_section_layout_fn(template_document, layout_config_path)
     terminology = terminology_factory(subscript_config)
     paragraph_styles = load_paragraph_styles_fn(layout_config_path)
+    table_style = load_table_style_fn(layout_config_path)
     return render_config_cls(
         section_layout=layout,
         use_mineru_header_footer=use_mineru_header_footer,
         terminology=terminology if terminology.rules else None,
         paragraph_styles=paragraph_styles,
+        table_style=table_style,
     )
 
 
@@ -299,6 +304,24 @@ def load_paragraph_styles(
         )
 
     return styles
+
+
+def load_table_style(
+    config_path: Path | None,
+    *,
+    table_style_config_cls: Any,
+) -> Any:
+    if not config_path or not config_path.exists():
+        return table_style_config_cls()
+
+    raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    value = raw.get("table_style")
+    if not isinstance(value, dict):
+        return table_style_config_cls()
+
+    return table_style_config_cls(
+        header_bold=bool(value.get("header_bold", True)),
+    )
 
 
 def build_replacement_pattern(source: str) -> str:

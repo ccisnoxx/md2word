@@ -54,26 +54,6 @@
             >
               重试
             </el-button>
-            <el-button
-              size="small"
-              text
-              type="danger"
-              :loading="cancelingJobId === row.id"
-              :disabled="!isCancelableJobStatus(row.status)"
-              @click="$emit('cancel', row)"
-            >
-              取消
-            </el-button>
-            <el-button
-              size="small"
-              text
-              type="danger"
-              :loading="archivingJobId === row.id"
-              :disabled="!isArchivableJobStatus(row.status)"
-              @click="$emit('archive', row)"
-            >
-              归档
-            </el-button>
           </div>
         </template>
       </el-table-column>
@@ -96,13 +76,7 @@
 import type { DocumentJobResponse } from "@/api/types";
 import JobProgress from "@/components/JobProgress.vue";
 import JobStatusBadge from "@/components/JobStatusBadge.vue";
-import {
-  formatDateTime,
-  getJobSourceFilename,
-  isArchivableJobStatus,
-  isCancelableJobStatus,
-  jobModeText,
-} from "@/utils/format";
+import { formatDateTime, getJobSourceFilename, jobModeText } from "@/utils/format";
 
 defineProps<{
   jobs: DocumentJobResponse[];
@@ -110,16 +84,12 @@ defineProps<{
   page: number;
   pageSize: number;
   total: number;
-  cancelingJobId?: string | null;
-  archivingJobId?: string | null;
 }>();
 
 defineEmits<{
   "page-change": [page: number];
   download: [job: DocumentJobResponse];
   retry: [job: DocumentJobResponse];
-  cancel: [job: DocumentJobResponse];
-  archive: [job: DocumentJobResponse];
 }>();
 </script>
 

@@ -486,7 +486,7 @@ class DocumentJobExecutionService:
             job_id=job.id,
             created_by=job.created_by,
             file_type="document_ir",
-            filename="document_ir_v1.json",
+            filename="document_ir_v2.json",
             mime_type="application/json",
             content=ir_content,
             metadata={

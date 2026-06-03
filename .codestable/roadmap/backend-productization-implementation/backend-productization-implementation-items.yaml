@@ -1,0 +1,77 @@
+# .codestable/roadmap/backend-productization-implementation/backend-productization-implementation-items.yaml: 后端产品化历史 roadmap 子 feature 状态清单。
+roadmap: backend-productization-implementation
+created: 2026-05-28
+last_reviewed: 2026-06-02
+
+items:
+  - slug: mysql-metadata-foundation
+    description: 建立 MySQL 业务 metadata 基线，使现有 job 主链可在 MySQL metadata store 下跑通
+    depends_on: []
+    status: done
+    feature: 2026-05-28-mysql-metadata-foundation
+    minimal_loop: true
+    notes: 当前 architecture 已记录 file/sqlite/mysql metadata adapter 为现状。
+
+  - slug: local-artifact-contract-hardening
+    description: 加固本地 artifact 合同，补齐 hash、大小、retention、下载诊断和缺失文件错误
+    depends_on: [mysql-metadata-foundation]
+    status: done
+    feature: 2026-05-28-local-artifact-contract-hardening
+    minimal_loop: false
+    notes: 当前 artifact 合同已进入 architecture 现状。
+
+  - slug: resource-versioning-foundation
+    description: 建立资源版本通用协议，统一 draft/published/disabled/superseded、默认指针和发布版本规则
+    depends_on: [mysql-metadata-foundation]
+    status: done
+    feature: 2026-05-28-resource-versioning-foundation
+    minimal_loop: false
+    notes: 当前 Template Profile、Term Rule Set、Translation Profile 已复用该底座。
+
+  - slug: template-profile-versioning
+    description: 实现 Template Profile 版本管理
+    depends_on: [resource-versioning-foundation, local-artifact-contract-hardening]
+    status: done
+    feature: 2026-05-29-template-profile-versioning
+    minimal_loop: false
+    notes: 历史完成项。
+
+  - slug: term-rule-set-versioning
+    description: 实现术语规则草稿、发布、回滚和默认版本查询
+    depends_on: [resource-versioning-foundation]
+    status: done
+    feature: 2026-05-29-term-rule-set-versioning
+    minimal_loop: false
+    notes: 历史完成项。
+
+  - slug: translation-profile-and-segment-trace
+    description: 建立 Translation Profile 与 segment trace
+    depends_on: [resource-versioning-foundation]
+    status: done
+    feature: 2026-05-29-translation-profile-and-segment-trace
+    minimal_loop: false
+    notes: 历史完成项。
+
+  - slug: job-resource-snapshot-binding
+    description: 任务创建时解析模板、术语、翻译配置发布版本，并写入不可变资源快照
+    depends_on: [template-profile-versioning, term-rule-set-versioning, translation-profile-and-segment-trace]
+    status: done
+    feature: 2026-05-29-job-resource-snapshot-binding
+    minimal_loop: false
+    notes: 历史完成项。
+
+  - slug: permission-and-audit-baseline
+    description: 建立最小 actor、role 和 audit event
+    depends_on: [resource-versioning-foundation, job-resource-snapshot-binding]
+    status: done
+    feature: 2026-05-29-permission-and-audit-baseline
+    minimal_loop: false
+    notes: 历史完成项。
+
+  - slug: operations-readiness-and-test-baseline
+    description: 补齐部署说明、readiness、metrics、结构化日志、状态机测试和 release check
+    depends_on: [mysql-metadata-foundation, job-resource-snapshot-binding, permission-and-audit-baseline]
+    status: done
+    feature: 2026-05-29-operations-readiness-and-test-baseline
+    minimal_loop: false
+    notes: 历史完成项；当前不继续扩后台功能。

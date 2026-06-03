@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# app/conversion/runtime/page_layout_runtime.py: 按 MinerU 页面和 block 位置组织 DOCX 页面布局。
+
 import re
 from typing import Any
 
@@ -7,6 +9,8 @@ from docx import Document
 from docx.enum.section import WD_ORIENTATION, WD_SECTION_START
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from docx.shared import Emu, Mm, Pt
 
 
@@ -56,7 +60,7 @@ def _visual_types() -> set[str]:
 
 
 def _product_title_re() -> Any:
-    return _runtime_value("PRODUCT_TITLE_RE", re.compile(r"^(?P<part>.*)$"))
+    return _runtime_value("PRODUCT_TITLE_RE", re.compile(r"^(?P<part>[A-Z0-9xX,+/\- ]{3,})\s+(?P<category>.+)$"))
 
 
 def _appendix_title_re() -> Any:
@@ -269,8 +273,16 @@ def render_document_page_body(
 ) -> None:
     render_toc_page_fn = _runtime_value("render_toc_page", render_toc_page)
     render_page_body_fn = _runtime_value("render_page_body", render_page_body)
+    is_toc_page_fn = _runtime_value("is_toc_page", is_toc_page)
+    split_toc_page_blocks_fn = _runtime_value("split_toc_page_blocks", split_toc_page_blocks)
     if current_is_toc:
-        render_toc_page_fn(document, body_blocks, render_config, skip_product_title)
+        if is_toc_page_fn(body_blocks):
+            toc_blocks, remaining_blocks = split_toc_page_blocks_fn(body_blocks)
+            render_toc_page_fn(document, toc_blocks, render_config, skip_product_title)
+            if remaining_blocks:
+                render_page_body_fn(document, remaining_blocks, render_config, False)
+        else:
+            render_toc_page_fn(document, body_blocks, render_config, skip_product_title)
     else:
         render_page_body_fn(document, body_blocks, render_config, skip_product_title)
 
@@ -317,7 +329,7 @@ def extract_document_identity(pages: list[Any]) -> tuple[str, str]:
     if match:
         return match.group("part").strip(), match.group("category").strip()
 
-    return first_title, ""
+    return "", ""
 
 
 def fill_template_intro(document: Document, part_number: str, category: str, render_config: Any) -> None:
@@ -335,7 +347,9 @@ def fill_template_intro(document: Document, part_number: str, category: str, ren
 
 
 def is_primary_product_title(block: Any, page_width: float) -> bool:
-    return bool(block.y1 < 220 and block.width >= page_width * 0.22)
+    """Only skip first-page titles that match the product-name intro pattern."""
+    text = (block.text or "").strip()
+    return bool(text and _product_title_re().match(text) and block.y1 < 220 and block.width >= page_width * 0.22)
 
 
 def render_header(section: Any, header_blocks: list[Any]) -> None:
@@ -429,6 +443,7 @@ def render_page_body(
     prepare_body_render_plan_fn = _runtime_value("prepare_body_render_plan", prepare_body_render_plan)
     render_two_col_region_fn = _runtime_value("render_two_col_region", render_two_col_region)
     render_one_col_region_fn = _runtime_value("render_one_col_region", render_one_col_region)
+    split_toc_page_blocks_fn = _runtime_value("split_toc_page_blocks", split_toc_page_blocks)
 
     if not body_blocks:
         return
@@ -437,8 +452,12 @@ def render_page_body(
     _logger().debug("render page body page={} body_blocks={} skip_product_title={}", page_idx, len(body_blocks), skip_product_title)
 
     if is_toc_page_fn(body_blocks):
-        render_toc_page_fn(document, body_blocks, render_config, skip_product_title)
-        return
+        toc_blocks, remaining_blocks = split_toc_page_blocks_fn(body_blocks)
+        render_toc_page_fn(document, toc_blocks, render_config, skip_product_title)
+        body_blocks = remaining_blocks
+        skip_product_title = False
+        if not body_blocks:
+            return
 
     body_render_plan = prepare_body_render_plan_fn(document, body_blocks, skip_product_title)
     if body_render_plan is None:
@@ -533,6 +552,20 @@ def count_toc_like_entries(body_blocks: list[Any]) -> tuple[int, int]:
     return text_like, toc_like
 
 
+def split_toc_page_blocks(body_blocks: list[Any]) -> tuple[list[Any], list[Any]]:
+    """Split mixed TOC pages so later body content keeps normal semantics."""
+    normalize_toc_text_fn = _runtime_value("normalize_toc_text", lambda text: text)
+    sorted_blocks = sorted(body_blocks, key=lambda current: (current.y1, current.x1))
+    seen_toc_title = False
+    for idx, block in enumerate(sorted_blocks):
+        if block.type == "title" and _toc_title_re().match(normalize_toc_text_fn(block.text)):
+            seen_toc_title = True
+            continue
+        if seen_toc_title and block.type == "title" and block.y1 > 360:
+            return sorted_blocks[:idx], sorted_blocks[idx:]
+    return sorted_blocks, []
+
+
 def render_toc_page(
     document: Document,
     body_blocks: list[Any],
@@ -577,13 +610,15 @@ def render_toc_page(
 
 def build_regions(body_blocks: list[Any], page_width: float) -> list[Any]:
     detect_two_col_bands_fn = _runtime_value("detect_two_col_bands", detect_two_col_bands)
+    classify_body_block_fn = _runtime_value("classify_body_block", classify_body_block)
     region_cls = _region_cls()
     two_col_bands = detect_two_col_bands_fn(body_blocks, page_width)
     sorted_blocks = sorted(body_blocks, key=lambda block: (block.y1, block.x1))
 
     regions: list[Any] = []
     for block in sorted_blocks:
-        kind = "two_col" if any(start <= block.mid_y <= end for start, end in two_col_bands) else "one_col"
+        role = classify_body_block_fn(block, page_width)
+        kind = "two_col" if role != "wide" and any(start <= block.mid_y <= end for start, end in two_col_bands) else "one_col"
         if regions and regions[-1].kind == kind:
             regions[-1].blocks.append(block)
         else:
@@ -593,6 +628,7 @@ def build_regions(body_blocks: list[Any], page_width: float) -> list[Any]:
 
 def detect_two_col_bands(body_blocks: list[Any], page_width: float) -> list[tuple[float, float]]:
     classify_body_block_fn = _runtime_value("classify_body_block", classify_body_block)
+    detect_stable_two_col_band_fn = _runtime_value("detect_stable_two_col_band", detect_stable_two_col_band)
     y_points = sorted({block.y1 for block in body_blocks} | {block.y2 for block in body_blocks})
     intervals: list[tuple[float, float, str]] = []
 
@@ -614,7 +650,39 @@ def detect_two_col_bands(body_blocks: list[Any], page_width: float) -> list[tupl
         else:
             merged.append((top, bottom, label))
 
-    return [(top, bottom) for top, bottom, label in merged if label == "two_col"]
+    bands = [(top, bottom) for top, bottom, label in merged if label == "two_col"]
+    stable_band = detect_stable_two_col_band_fn(body_blocks, page_width)
+    if stable_band is not None:
+        bands.append(stable_band)
+    return merge_two_col_bands(bands)
+
+
+def detect_stable_two_col_band(body_blocks: list[Any], page_width: float) -> tuple[float, float] | None:
+    """Detect separated source columns even when their y-ranges do not overlap continuously."""
+    classify_body_block_fn = _runtime_value("classify_body_block", classify_body_block)
+    left_blocks = [block for block in body_blocks if classify_body_block_fn(block, page_width) == "left"]
+    right_blocks = [block for block in body_blocks if classify_body_block_fn(block, page_width) == "right"]
+    if len(left_blocks) < 2 or len(right_blocks) < 2:
+        return None
+
+    top = min(block.y1 for block in [*left_blocks, *right_blocks])
+    bottom = max(block.y2 for block in [*left_blocks, *right_blocks])
+    if bottom - top < 120:
+        return None
+
+    return top, bottom
+
+
+def merge_two_col_bands(bands: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    if not bands:
+        return []
+    merged: list[tuple[float, float]] = []
+    for top, bottom in sorted(bands):
+        if merged and top - merged[-1][1] <= 12:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], bottom))
+        else:
+            merged.append((top, bottom))
+    return merged
 
 
 def classify_body_block(block: Any, page_width: float) -> str:
@@ -645,7 +713,7 @@ def render_two_col_region(
 ) -> None:
     classify_body_block_fn = _runtime_value("classify_body_block", classify_body_block)
     render_blocks_in_cell_fn = _runtime_value("render_blocks_in_cell", render_blocks_in_cell)
-    remove_table_borders_fn = _runtime_value("remove_table_borders", lambda *_args, **_kwargs: None)
+    clear_table_borders_fn = _runtime_value("clear_table_borders", clear_table_borders)
     left_blocks: list[Any] = []
     right_blocks: list[Any] = []
 
@@ -659,11 +727,12 @@ def render_two_col_region(
     table = document.add_table(rows=1, cols=2)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
-    remove_table_borders_fn(table)
+    clear_table_borders_fn(table)
 
     column_width = usable_width // 2
     content_width = column_width - Emu(int(Mm(4)))
 
+    source_column_width = max(page_width / 2, 1.0)
     for idx, cell in enumerate(table.rows[0].cells):
         cell.width = column_width
         cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
@@ -671,10 +740,28 @@ def render_two_col_region(
         render_blocks_in_cell_fn(
             cell,
             left_blocks if idx == 0 else right_blocks,
-            page_width,
+            source_column_width,
             content_width,
             render_config,
         )
+
+
+def clear_table_borders(table: Any) -> None:
+    """Hide borders on layout-only tables used to hold source columns."""
+    table_properties = table._tbl.tblPr
+    borders = table_properties.find(qn("w:tblBorders"))
+    if borders is None:
+        borders = OxmlElement("w:tblBorders")
+        table_properties.append(borders)
+    for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        element = borders.find(qn(f"w:{edge}"))
+        if element is None:
+            element = OxmlElement(f"w:{edge}")
+            borders.append(element)
+        element.set(qn("w:val"), "none")
+        element.set(qn("w:sz"), "0")
+        element.set(qn("w:space"), "0")
+        element.set(qn("w:color"), "auto")
 
 
 def render_blocks_in_cell(
@@ -717,6 +804,7 @@ def render_block_into_container(
 ) -> None:
     render_visual_block_fn = _runtime_value("render_visual_block", render_visual_block)
     normalize_list_item_fn = _runtime_value("normalize_list_item", lambda text: text)
+    infer_list_item_level_fn = _runtime_value("infer_list_item_level", infer_list_item_level)
     fill_list_paragraph_fn = _runtime_value("fill_list_paragraph", lambda *_args, **_kwargs: None)
     looks_like_heading_text_fn = _runtime_value("looks_like_heading_text", lambda _text: False)
     fill_title_paragraph_fn = _runtime_value("fill_title_paragraph", lambda *_args, **_kwargs: None)
@@ -727,10 +815,15 @@ def render_block_into_container(
         return
 
     if block.type == "list":
-        items = [normalize_list_item_fn(item) for item in block.items if item]
-        for idx, item in enumerate(items):
+        raw_items = [item for item in block.items if item]
+        for idx, raw_item in enumerate(raw_items):
             paragraph = first_paragraph if idx == 0 and first_paragraph is not None else container.add_paragraph()
-            fill_list_paragraph_fn(paragraph, item, render_config)
+            fill_list_paragraph_fn(
+                paragraph,
+                normalize_list_item_fn(raw_item),
+                render_config,
+                level=infer_list_item_level_fn(raw_item),
+            )
         return
 
     paragraph = first_paragraph if first_paragraph is not None else container.add_paragraph()
@@ -773,6 +866,7 @@ def render_visual_block(
     paragraph = first_paragraph if first_paragraph is not None else container.add_paragraph()
     paragraph.text = ""
     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    paragraph.paragraph_format.keep_with_next = bool(block.captions or block.footnotes)
     paragraph.paragraph_format.space_before = Pt(2)
     paragraph.paragraph_format.space_after = Pt(2)
     apply_style_if_exists_fn(paragraph, "Normal")
@@ -794,3 +888,8 @@ def render_visual_block(
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     render_block_annotations_fn(container, block, render_config)
+
+
+def infer_list_item_level(text: str) -> int:
+    """Fallback list-level inference used when the CLI compatibility runtime is not bound."""
+    return 1 if re.match(r"^\s*[-–—]\s+", text or "") else 0

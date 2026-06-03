@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+# tests/test_page_layout_characterization.py: 固化 MinerU 页面 block 到 DOCX 页面区域的布局行为。
+
 from types import SimpleNamespace
 from unittest import mock
 
@@ -115,6 +119,61 @@ class PageLayoutCharacterizationTests(__import__("unittest").TestCase):
 
         self.assertEqual([region.kind for region in regions], ["two_col", "one_col"])
         self.assertEqual([len(region.blocks) for region in regions], [2, 1])
+
+    def test_build_regions_keeps_separated_source_columns_in_one_two_col_region(self):
+        blocks = [
+            self.make_block("title", (88, 133, 191, 150), text="1 Features"),
+            self.make_block("list", (88, 157, 401, 327), items=["• Low noise"]),
+            self.make_block("chart", (94, 463, 478, 661), captions=["Chart Caption"]),
+            self.make_block("title", (509, 133, 638, 152), text="3 Description"),
+            self.make_block("paragraph", (508, 157, 906, 234), text="First paragraph"),
+            self.make_block("paragraph", (508, 407, 906, 500), text="Later paragraph"),
+            self.make_block("table", (511, 604, 906, 731), captions=["Device Information"]),
+        ]
+
+        regions = self.module.build_regions(blocks, page_width=906)
+
+        self.assertEqual(len(regions), 1)
+        self.assertEqual(regions[0].kind, "two_col")
+        self.assertEqual(len(regions[0].blocks), len(blocks))
+
+    def test_split_toc_page_blocks_separates_later_body_title(self):
+        blocks = [
+            self.make_block("title", (413, 103, 581, 119), text="Table of Contents"),
+            self.make_block("list", (89, 128, 485, 375), items=["1 Features... 1"]),
+            self.make_block("title", (86, 410, 264, 428), text="4 Revision History"),
+            self.make_block("list", (88, 467, 906, 741), items=["• Updated numbering"]),
+        ]
+
+        toc_blocks, body_blocks = self.module.split_toc_page_blocks(blocks)
+
+        self.assertEqual([block.text for block in toc_blocks if block.type == "title"], ["Table of Contents"])
+        self.assertEqual(body_blocks[0].text, "4 Revision History")
+
+    def test_render_document_page_body_renders_mixed_toc_remainder_as_body(self):
+        document = FakeDocument()
+        render_config = self.make_render_config()
+        blocks = [
+            self.make_block("title", (413, 103, 581, 119), text="Table of Contents"),
+            self.make_block("list", (89, 128, 485, 375), items=["1 Features... 1"]),
+            self.make_block("title", (86, 410, 264, 428), text="4 Revision History"),
+        ]
+
+        with (
+            mock.patch.object(self.module, "render_toc_page") as render_toc_page,
+            mock.patch.object(self.module, "render_page_body") as render_page_body,
+        ):
+            self.module.render_document_page_body(
+                document,
+                blocks,
+                render_config,
+                current_is_toc=True,
+                skip_product_title=False,
+            )
+
+        render_toc_page.assert_called_once()
+        render_page_body.assert_called_once()
+        self.assertEqual(render_page_body.call_args.args[1][0].text, "4 Revision History")
 
     def test_render_page_body_skips_primary_product_title_when_requested(self):
         document = FakeDocument()

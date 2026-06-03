@@ -58,6 +58,16 @@ class SampleResult:
     docx_openable: bool | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class SampleInventory:
+    """Golden Sample 文件盘点结果；orphan PDF 只报告，不参与正式通过率。"""
+
+    manifest_samples: int
+    manifest_matched_pdf_files: list[str]
+    missing_pdf_files: list[str]
+    orphan_pdf_files: list[str]
+
+
 def main() -> None:
     config = RegressionConfig()
     report = run_regression(config)
@@ -70,8 +80,11 @@ def run_regression(config: RegressionConfig) -> dict[str, Any]:
     manifest = load_manifest(config.manifest_path)
     run_dir = create_run_dir(config.runs_dir)
     sample_root = resolve_sample_root(config.manifest_path, manifest)
-    samples = [item for item in manifest.get("samples", []) if item.get("enabled", True)]
-    runnable_samples = [item for item in samples if (sample_root / item["filename"]).exists()]
+    all_samples = manifest.get("samples", [])
+    samples = [item for item in all_samples if item.get("enabled", True)]
+    inventory = build_sample_inventory(sample_root, samples, all_samples)
+    matched_filenames = set(inventory.manifest_matched_pdf_files)
+    runnable_samples = [item for item in samples if item["filename"] in matched_filenames]
 
     results: list[SampleResult] = []
     for sample in samples:
@@ -94,7 +107,7 @@ def run_regression(config: RegressionConfig) -> dict[str, Any]:
         for sample in runnable_samples:
             results.append(run_one_sample(config, session, sample_root, run_dir, manifest, sample))
 
-    report = build_report(config, manifest, run_dir, results)
+    report = build_report(config, manifest, run_dir, results, inventory)
     write_report_files(run_dir, report)
     if config.fail_on_missing_samples and not runnable_samples:
         report["summary"]["met_target"] = False
@@ -126,6 +139,35 @@ def create_run_dir(runs_dir: Path) -> Path:
     run_dir = runs_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=False)
     return run_dir
+
+
+def build_sample_inventory(
+    sample_root: Path,
+    enabled_samples: list[dict[str, Any]],
+    all_samples: list[dict[str, Any]],
+) -> SampleInventory:
+    manifest_filenames = {str(item["filename"]) for item in all_samples}
+    enabled_filenames = {str(item["filename"]) for item in enabled_samples}
+    pdf_filenames = list_sample_pdf_filenames(sample_root)
+    matched = sorted(filename for filename in enabled_filenames if (sample_root / filename).exists())
+    missing = sorted(filename for filename in enabled_filenames if not (sample_root / filename).exists())
+    orphan = sorted(filename for filename in pdf_filenames if filename not in manifest_filenames)
+    return SampleInventory(
+        manifest_samples=len(enabled_samples),
+        manifest_matched_pdf_files=matched,
+        missing_pdf_files=missing,
+        orphan_pdf_files=orphan,
+    )
+
+
+def list_sample_pdf_filenames(sample_root: Path) -> list[str]:
+    if not sample_root.exists():
+        return []
+    return sorted(
+        path.name
+        for path in sample_root.iterdir()
+        if path.is_file() and path.suffix.lower() == ".pdf"
+    )
 
 
 def build_authenticated_session(config: RegressionConfig) -> requests.Session:
@@ -310,6 +352,7 @@ def build_report(
     manifest: dict[str, Any],
     run_dir: Path,
     results: list[SampleResult],
+    inventory: SampleInventory,
 ) -> dict[str, Any]:
     runnable = [item for item in results if item.status != "missing_pdf"]
     succeeded = [item for item in runnable if item.status == "succeeded" and item.docx_openable is not False]
@@ -329,8 +372,12 @@ def build_report(
         },
         "summary": {
             "configured_samples": len(results),
+            "manifest_samples": inventory.manifest_samples,
+            "manifest_matched_pdfs": len(inventory.manifest_matched_pdf_files),
             "runnable_samples": len(runnable),
             "missing_pdf_samples": len(missing),
+            "orphan_pdf_count": len(inventory.orphan_pdf_files),
+            "orphan_pdf_files": inventory.orphan_pdf_files,
             "succeeded": len(succeeded),
             "failed": len(failed),
             "pass_rate": round(pass_rate, 4),
@@ -350,11 +397,13 @@ def write_report_files(run_dir: Path, report: dict[str, Any]) -> None:
 
 def format_console_report(report: dict[str, Any]) -> str:
     summary = report["summary"]
+    orphan_files = ", ".join(summary["orphan_pdf_files"]) or "none"
     return (
         "Golden Sample regression\n"
         f"run_dir: {report['run_dir']}\n"
-        f"configured: {summary['configured_samples']}, runnable: {summary['runnable_samples']}, "
-        f"missing_pdf: {summary['missing_pdf_samples']}\n"
+        f"manifest: {summary['manifest_samples']}, manifest_matched: {summary['manifest_matched_pdfs']}, "
+        f"runnable: {summary['runnable_samples']}, missing_pdf: {summary['missing_pdf_samples']}\n"
+        f"orphan_pdf: {summary['orphan_pdf_count']} ({orphan_files})\n"
         f"succeeded: {summary['succeeded']}, failed: {summary['failed']}, "
         f"pass_rate: {summary['pass_rate']:.2%}, target: {summary['target_success_rate']:.0%}\n"
         f"met_target: {summary['met_target']}"
@@ -368,9 +417,12 @@ def format_markdown_report(report: dict[str, Any]) -> str:
         "",
         f"- 执行时间: `{report['generated_at']}`",
         f"- 结果目录: `{report['run_dir']}`",
-        f"- 样本总数: `{summary['configured_samples']}`",
+        f"- Manifest 样本数: `{summary['manifest_samples']}`",
+        f"- 正式匹配 PDF 数: `{summary['manifest_matched_pdfs']}`",
         f"- 实际执行: `{summary['runnable_samples']}`",
         f"- 缺少 PDF: `{summary['missing_pdf_samples']}`",
+        f"- Manifest 外 PDF 数: `{summary['orphan_pdf_count']}`",
+        f"- Manifest 外 PDF: `{', '.join(summary['orphan_pdf_files']) or 'none'}`",
         f"- 成功: `{summary['succeeded']}`",
         f"- 失败: `{summary['failed']}`",
         f"- 成功率: `{summary['pass_rate']:.2%}`",

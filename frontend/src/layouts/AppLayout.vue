@@ -36,8 +36,6 @@ const auth = useAuthStore();
 const router = useRouter();
 const navItems = [
   { label: "任务工作台", to: "/jobs" },
-  { label: "配置中心", to: "/settings" },
-  { label: "术语建议", to: "/term-proposals" },
 ];
 
 function handleLogout(): void {

@@ -11,7 +11,7 @@ from app.conversion.runtime import page_repair_runtime, render_config_runtime, t
 from docx.shared import Mm
 from app.conversion.runtime.render_config_runtime import TerminologyReplacer
 
-from app.conversion.runtime_models import PageData, ParagraphStyleConfig, RenderConfig, SectionLayout
+from app.conversion.runtime_models import PageData, ParagraphStyleConfig, RenderConfig, SectionLayout, TableStyleConfig
 
 
 LATIN_LETTER_RE = re.compile(r"[A-Za-z]")
@@ -123,6 +123,13 @@ def load_paragraph_styles(config_path: Path | None) -> dict[str, ParagraphStyleC
     )
 
 
+def load_table_style(config_path: Path | None) -> TableStyleConfig:
+    return render_config_runtime.load_table_style(
+        config_path,
+        table_style_config_cls=TableStyleConfig,
+    )
+
+
 def load_render_config(
     template_document: Any | None,
     subscript_config: Path | None,
@@ -139,6 +146,7 @@ def load_render_config(
         load_section_layout_fn=load_section_layout,
         terminology_factory=TerminologyReplacer,
         load_paragraph_styles_fn=load_paragraph_styles,
+        load_table_style_fn=load_table_style,
         render_config_cls=RenderConfig,
     )
 
