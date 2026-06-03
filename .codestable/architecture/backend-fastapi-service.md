@@ -56,7 +56,7 @@ implements: [fastapi-backend-productization]
 - `app/domains/translation/`
   - Translation Profile 查询、draft 更新、publish、set-default、rollback、执行时 snapshot、翻译 provider、Document IR translation 和 translation audit。
 - `app/domains/document_jobs/`
-  - document job models、schemas、service、execution queue、router 和 repository ports。
+  - document job models、schemas、service、execution queue、router、repository ports，以及 DocumentIR / generated Word artifact metadata 诊断摘要。
 - `app/domains/files/`
   - 文件上传授权、PDF 校验、文件 metadata、retention planning、router 和 repository port。
 - `app/domains/resources/`
@@ -256,6 +256,12 @@ flowchart TD
   - 对 succeeded 任务生成临时下载链接，成功写 `document_job.download_authorize` audit event。
 - `GET /api/v1/document-jobs/{job_id}/download`
   - 使用短期 token 下载 Word；本地文件缺失返回 404，token 无效或过期返回 403。
+
+Document jobs 当前登记的 layout 诊断 metadata：
+
+- `document_ir` artifact：`schema_version`、`layout_page_count`、`layout_block_count` 和非敏感 `quality_flags`。
+- `generated_word` artifact 与 rendering / uploading 事件：`renderer_mode`、`layout_page_count`、`layout_region_count`、`layout_block_count` 和 `layout_quality_flags`。
+- layout flags 只保存 block id 与风险类型，例如 wide table、caption binding、table continuation；不保存凭证、客户文件全文或完整解析文本。
 
 ### 4.1 jobs
 
@@ -496,6 +502,7 @@ flowchart TD
 
 ## 10. 变更日志
 
+- 2026-06-03：补入 `document_jobs` DocumentIR / generated Word layout 诊断 metadata；`document_ir` artifact 暴露 `quality_flags`，generated Word artifact 和 rendering/uploading 事件暴露 `layout_quality_flags`。
 - 2026-06-03：补入 P0 `/api/v1/files`、`/api/v1/document-jobs` 主链路合同、DocumentIR v2 / renderer metadata 交付现状，并补齐 legacy `recover-mineru-result` API 边界。
 - 2026-05-29：补入 Operations Readiness and Test Baseline；`health/ready` 扩展 artifact / resource / MySQL schema 字段，新增 `health/metrics` JSON counters，补入 file -> MySQL metadata shadow copy / validate、`.env.example`、release check 和运维文档基线。
 - 2026-05-29：补入 Permission and Audit Baseline；`require_*_actor()` 派生最小 actor，上述高风险资源动作、job ops 和 artifact download 成功路径写入独立 audit event，open 下载保持 anonymous 且不接受自报 actor。
