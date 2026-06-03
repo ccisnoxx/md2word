@@ -344,6 +344,14 @@ class TermRuleSetVersionService:
         if default_record is not None:
             self._sync_live_store(default_record)
             return default_record
+        existing_seed = self.resource_version_service.repository.get_resource_version(
+            "term_rule_set",
+            normalized_id,
+            version,
+        )
+        if existing_seed is not None and existing_seed.status == ResourceVersionStatus.PUBLISHED:
+            self._sync_live_store_then_set_default(normalized_id, existing_seed)
+            return existing_seed
         if not seed_path.exists():
             raise FileNotFoundError(f"bootstrap 规则文件不存在: {seed_path}")
         result = self.yaml_codec.validate_yaml_text(seed_path.read_text(encoding="utf-8"))
