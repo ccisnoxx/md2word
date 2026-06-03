@@ -109,6 +109,13 @@ class DocumentJobEventListResponse(BaseModel):
     items: list[DocumentJobEventResponse]
 
 
+class DocumentJobFileListResponse(BaseModel):
+    """任务详情页使用的文件汇总响应，不包含长期下载地址。"""
+
+    job_id: str
+    files: list[DocumentFileResponse]
+
+
 class DocumentJobDownloadUrlResponse(BaseModel):
     job_id: str
     file_id: str

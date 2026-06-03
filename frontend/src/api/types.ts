@@ -220,6 +220,11 @@ export type DocumentJobEventListResponse = {
   items: DocumentJobEventResponse[];
 };
 
+export type DocumentJobFileListResponse = {
+  job_id: string;
+  files: DocumentFileResponse[];
+};
+
 export type DocumentJobDownloadUrlResponse = {
   job_id: string;
   file_id: string;

@@ -20,7 +20,7 @@ from app.domains.document_jobs.models import (
     DocumentJobStatus,
 )
 from app.core.errors import ApiError
-from app.domains.files.models import DocumentFileRecord
+from app.domains.files.models import DocumentFileRecord, DocumentFileType
 from app.domains.files.repository import DocumentFileRepositoryProtocol
 from app.domains.jobs.models import ConversionOptions, utc_now
 from app.domains.jobs.resource_snapshots import JobResourceSnapshotError
@@ -35,6 +35,24 @@ from app.services.auth.models import AuthenticatedUser
 ARCHIVABLE_DOCUMENT_JOB_STATUSES: set[DocumentJobStatus] = {"succeeded", "failed", "canceled"}
 CANCELABLE_DOCUMENT_JOB_STATUSES: set[DocumentJobStatus] = {"pending", "queued", "running"}
 DOCUMENT_JOB_LIST_SORTS = {"created_at_desc", "created_at_asc", "updated_at_desc", "updated_at_asc"}
+DOCUMENT_JOB_DOWNLOAD_FILE_TYPES: set[DocumentFileType] = {
+    "source_pdf",
+    "mineru_raw_result",
+    "document_ir",
+    "image_asset",
+    "generated_word",
+    "ai_call_log",
+    "ai_debug_archive",
+}
+DOCUMENT_JOB_FILE_TYPE_ORDER = {
+    "source_pdf": 0,
+    "generated_word": 10,
+    "mineru_raw_result": 20,
+    "document_ir": 30,
+    "image_asset": 40,
+    "ai_call_log": 50,
+    "ai_debug_archive": 60,
+}
 
 
 class DocumentJobService:
@@ -212,6 +230,12 @@ class DocumentJobService:
         self.get_job(job_id, user=user)
         return self.event_repository.list_document_job_events(job_id)
 
+    def list_files(self, job_id: str, *, user: AuthenticatedUser) -> list[DocumentFileRecord]:
+        """先按任务权限校验，再返回任务上下文内可展示的文件元数据。"""
+
+        job = self.get_job(job_id, user=user)
+        return self._list_files_for_job(job)
+
     def get_result_file_for_download(
         self,
         job_id: str,
@@ -222,6 +246,20 @@ class DocumentJobService:
 
         job = self.get_job(job_id, user=user)
         return job, self._get_completed_result_file(job)
+
+    def get_file_for_download(
+        self,
+        job_id: str,
+        *,
+        user: AuthenticatedUser,
+        file_id: str | None,
+    ) -> tuple[DocumentJobRecord, DocumentFileRecord]:
+        """按可见任务签发文件下载前，校验文件归属、状态、过期和类型。"""
+
+        job = self.get_job(job_id, user=user)
+        if file_id is None:
+            return job, self._get_completed_result_file(job)
+        return job, self._get_downloadable_task_file(job, file_id=file_id)
 
     def get_result_file_for_authorized_download(
         self,
@@ -238,6 +276,19 @@ class DocumentJobService:
         if file.id != file_id:
             raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "下载链接与结果文件不匹配。")
         return job, file
+
+    def get_file_for_authorized_download(
+        self,
+        job_id: str,
+        *,
+        file_id: str,
+    ) -> tuple[DocumentJobRecord, DocumentFileRecord]:
+        """临时下载 URL 已验签后，按 token 中的 file_id 重新校验文件合同。"""
+
+        job = self.job_repository.get_document_job(job_id)
+        if job is None:
+            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"文档任务不存在: {job_id}")
+        return job, self._get_downloadable_task_file(job, file_id=file_id)
 
     def retry_job(
         self,
@@ -391,9 +442,9 @@ class DocumentJobService:
         self.record_event(
             job,
             event_type="download_authorized",
-            stage="completed",
+            stage=job.stage,
             level="info",
-            message="生成 Word 下载链接已授权。",
+            message="任务文件下载链接已授权。",
             payload={"file_id": file.id, "file_type": file.file_type, "expires_at": expires_at},
             trace_id=trace_id,
         )
@@ -582,6 +633,43 @@ class DocumentJobService:
         if file.status != "uploaded":
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "结果文件尚未完成上传。")
         return file
+
+    def _list_files_for_job(self, job: DocumentJobRecord) -> list[DocumentFileRecord]:
+        files = [
+            file
+            for file in self.file_repository.list_document_files()
+            if file.tenant_id == job.tenant_id
+            and file.company_id == job.company_id
+            and file.file_type in DOCUMENT_JOB_DOWNLOAD_FILE_TYPES
+            and self._file_belongs_to_job(job, file)
+        ]
+        return sorted(
+            files,
+            key=lambda file: (
+                DOCUMENT_JOB_FILE_TYPE_ORDER.get(file.file_type, 100),
+                file.created_at,
+                file.id,
+            ),
+        )
+
+    def _get_downloadable_task_file(self, job: DocumentJobRecord, *, file_id: str) -> DocumentFileRecord:
+        file = self.file_repository.get_document_file(file_id)
+        if file is None:
+            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"文件不存在: {file_id}")
+        if file.tenant_id != job.tenant_id or file.company_id != job.company_id:
+            raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "下载文件与文档任务不匹配。")
+        if not self._file_belongs_to_job(job, file):
+            raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "下载文件与文档任务不匹配。")
+        if file.file_type not in DOCUMENT_JOB_DOWNLOAD_FILE_TYPES:
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "该文件类型不支持从任务详情下载。")
+        if file.status != "uploaded":
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文件尚未完成上传，不能下载。")
+        if file.expires_at is not None and file.expires_at <= utc_now():
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文件已过期，不能下载。")
+        return file
+
+    def _file_belongs_to_job(self, job: DocumentJobRecord, file: DocumentFileRecord) -> bool:
+        return file.job_id == job.id or file.id == job.source_file_id
 
     def _ensure_visible(self, job: DocumentJobRecord, user: AuthenticatedUser) -> None:
         if self._is_visible(job, user):

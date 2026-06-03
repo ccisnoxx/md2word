@@ -27,6 +27,7 @@ from app.domains.document_jobs.schemas import (
     DocumentJobDownloadUrlResponse,
     DocumentJobEventListResponse,
     DocumentJobEventResponse,
+    DocumentJobFileListResponse,
     DocumentJobListResponse,
     DocumentJobResponse,
     DocumentJobRetryRequest,
@@ -130,6 +131,19 @@ def get_document_job_events(
     )
 
 
+@router.get("/{job_id}/files", response_model=DocumentJobFileListResponse)
+def get_document_job_files(
+    job_id: str,
+    runtime: AppRuntime = Depends(get_runtime),
+    user: AuthenticatedUser = Depends(require_current_user),
+) -> DocumentJobFileListResponse:
+    files = runtime.document_job_service.list_files(job_id, user=user)
+    return DocumentJobFileListResponse(
+        job_id=job_id,
+        files=[_build_document_file_response(file) for file in files],
+    )
+
+
 @router.post("/{job_id}/retry", response_model=DocumentJobRetryResponse)
 def retry_document_job(
     job_id: str,
@@ -218,11 +232,12 @@ def archive_document_job(
 def create_document_job_download_url(
     job_id: str,
     request: Request,
+    file_id: str | None = Query(default=None),
     runtime: AppRuntime = Depends(get_runtime),
     user: AuthenticatedUser = Depends(require_current_user),
     trace_id: str = Depends(get_trace_id),
 ) -> DocumentJobDownloadUrlResponse:
-    job, file = runtime.document_job_service.get_result_file_for_download(job_id, user=user)
+    job, file = runtime.document_job_service.get_file_for_download(job_id, user=user, file_id=file_id)
     expires_at = utc_now() + timedelta(seconds=runtime.settings.oss_download_presign_expires_seconds)
     if file.storage_provider == "s3":
         download_url = runtime.file_upload_service.create_presigned_download_url(
@@ -262,7 +277,7 @@ def download_document_job_result(
     runtime: AppRuntime = Depends(get_runtime),
 ):
     file_id = _verify_download_token(runtime, job_id=job_id, token=token)
-    _job, file = runtime.document_job_service.get_result_file_for_authorized_download(job_id, file_id=file_id)
+    _job, file = runtime.document_job_service.get_file_for_authorized_download(job_id, file_id=file_id)
     if file.storage_provider == "s3":
         download_url = runtime.file_upload_service.create_presigned_download_url(
             file,
@@ -271,10 +286,10 @@ def download_document_job_result(
         return RedirectResponse(download_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
     path = runtime.file_upload_service.resolve_local_object_path(file.object_key)
     if not path.exists():
-        raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"结果文件不存在: {file.id}")
+        raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"文件不存在: {file.id}")
     return FileResponse(
         path,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        media_type=file.mime_type,
         filename=file.original_filename,
     )
 

@@ -1024,6 +1024,28 @@
         "title": "DocumentJobEventResponse",
         "type": "object"
       },
+      "DocumentJobFileListResponse": {
+        "description": "任务详情页使用的文件汇总响应，不包含长期下载地址。",
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentFileResponse"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "files"
+        ],
+        "title": "DocumentJobFileListResponse",
+        "type": "object"
+      },
       "DocumentJobListResponse": {
         "properties": {
           "items": {
@@ -6016,6 +6038,76 @@
             }
           },
           {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "created_at_desc",
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created To"
+            }
+          },
+          {
             "in": "header",
             "name": "Authorization",
             "required": false,
@@ -6352,6 +6444,22 @@
             }
           },
           {
+            "in": "query",
+            "name": "file_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "File Id"
+            }
+          },
+          {
             "in": "header",
             "name": "Authorization",
             "required": false,
@@ -6449,6 +6557,64 @@
           }
         },
         "summary": "Get Document Job Events",
+        "tags": [
+          "document-jobs"
+        ]
+      }
+    },
+    "/api/v1/document-jobs/{job_id}/files": {
+      "get": {
+        "operationId": "get_document_job_files_api_v1_document_jobs__job_id__files_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentJobFileListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Document Job Files",
         "tags": [
           "document-jobs"
         ]

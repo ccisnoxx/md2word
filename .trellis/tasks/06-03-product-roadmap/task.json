@@ -20,7 +20,8 @@
   "subtasks": [],
   "children": [
     "06-03-frontend-information-architecture",
-    "06-03-document-job-workbench-completion"
+    "06-03-document-job-workbench-completion",
+    "06-03-document-job-files-and-results"
   ],
   "parent": null,
   "relatedFiles": [],

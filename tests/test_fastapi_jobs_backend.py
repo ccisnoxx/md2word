@@ -2269,6 +2269,7 @@ class FastAPIJobsBackendTests(TestCase):
                 )
                 job_id = create_response.json()["job_id"]
                 events_response = client.get(f"/api/v1/document-jobs/{job_id}/events", headers=headers)
+                files_response = client.get(f"/api/v1/document-jobs/{job_id}/files", headers=headers)
 
             stored_job = runtime.document_job_repository.get_document_job(job_id)
             files = [
@@ -2313,6 +2314,10 @@ class FastAPIJobsBackendTests(TestCase):
         event_types = [event["event_type"] for event in events_response.json()["items"]]
         self.assertIn("ai_call_logged", event_types)
         self.assertIn("debug_archive_saved", event_types)
+        self.assertEqual(files_response.status_code, 200)
+        file_types = [file["file_type"] for file in files_response.json()["files"]]
+        self.assertIn("ai_call_log", file_types)
+        self.assertIn("ai_debug_archive", file_types)
 
     def test_document_job_en2zh_translation_failure_records_ai_call_log_without_full_text(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2465,6 +2470,97 @@ class FastAPIJobsBackendTests(TestCase):
 
         self.assertEqual(download_url_response.status_code, 409)
         self.assertEqual(download_url_response.json()["error_code"], "conflict")
+
+    def test_document_job_files_endpoint_lists_artifacts_and_authorizes_source_download(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers, filename="files-source.pdf")
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+                files_response = client.get(f"/api/v1/document-jobs/{job_id}/files", headers=headers)
+                source_download_url_response = client.get(
+                    f"/api/v1/document-jobs/{job_id}/download-url",
+                    headers={**headers, "X-Trace-Id": "trace_source_download"},
+                    params={"file_id": source_file["id"]},
+                )
+                source_download_path = source_download_url_response.json()["download_url"].replace("http://testserver", "")
+                source_download_response = client.get(source_download_path)
+                events_response = client.get(f"/api/v1/document-jobs/{job_id}/events", headers=headers)
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(files_response.status_code, 200)
+        file_payloads = files_response.json()["files"]
+        file_types = [file["file_type"] for file in file_payloads]
+        self.assertEqual(file_types[0], "source_pdf")
+        self.assertIn("generated_word", file_types)
+        self.assertIn("mineru_raw_result", file_types)
+        self.assertIn("document_ir", file_types)
+        self.assertIn("image_asset", file_types)
+        self.assertEqual(source_download_url_response.status_code, 200)
+        self.assertEqual(source_download_url_response.json()["file_id"], source_file["id"])
+        self.assertEqual(source_download_url_response.json()["file"]["file_type"], "source_pdf")
+        self.assertEqual(source_download_response.status_code, 200)
+        self.assertTrue(source_download_response.content.startswith(b"%PDF"))
+        download_events = [
+            event for event in events_response.json()["items"]
+            if event["event_type"] == "download_authorized" and event["payload"]["file_id"] == source_file["id"]
+        ]
+        self.assertEqual(len(download_events), 1)
+        self.assertEqual(download_events[0]["trace_id"], "trace_source_download")
+
+    def test_document_job_file_download_rejects_mismatched_and_expired_files(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers, filename="download-source.pdf")
+                other_file = self._upload_source_pdf(client, headers, filename="other-source.pdf")
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+                mismatched_response = client.get(
+                    f"/api/v1/document-jobs/{job_id}/download-url",
+                    headers=headers,
+                    params={"file_id": other_file["id"]},
+                )
+                runtime.document_file_repository.update_document_file(
+                    source_file["id"],
+                    expires_at=utc_now() - timedelta(seconds=1),
+                )
+                expired_response = client.get(
+                    f"/api/v1/document-jobs/{job_id}/download-url",
+                    headers=headers,
+                    params={"file_id": source_file["id"]},
+                )
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(mismatched_response.status_code, 403)
+        self.assertEqual(mismatched_response.json()["error_code"], "forbidden")
+        self.assertEqual(expired_response.status_code, 409)
+        self.assertEqual(expired_response.json()["error_code"], "conflict")
 
     def test_document_job_worker_waits_when_mineru_result_is_not_ready(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2785,19 +2881,31 @@ class FastAPIJobsBackendTests(TestCase):
                     f"/api/v1/document-jobs/{other_job['job_id']}",
                     headers=operator_headers,
                 )
+                forbidden_files = client.get(
+                    f"/api/v1/document-jobs/{other_job['job_id']}/files",
+                    headers=operator_headers,
+                )
                 operator_list = client.get("/api/v1/document-jobs", headers=operator_headers)
                 admin_detail = client.get(
                     f"/api/v1/document-jobs/{other_job['job_id']}",
+                    headers=admin_headers,
+                )
+                admin_files = client.get(
+                    f"/api/v1/document-jobs/{other_job['job_id']}/files",
                     headers=admin_headers,
                 )
                 admin_list = client.get("/api/v1/document-jobs", headers=admin_headers)
 
         self.assertEqual(forbidden_detail.status_code, 403)
         self.assertEqual(forbidden_detail.json()["error_code"], "forbidden")
+        self.assertEqual(forbidden_files.status_code, 403)
+        self.assertEqual(forbidden_files.json()["error_code"], "forbidden")
         self.assertEqual(operator_list.status_code, 200)
         self.assertEqual(operator_list.json()["total"], 0)
         self.assertEqual(admin_detail.status_code, 200)
         self.assertEqual(admin_detail.json()["created_by"], "user_operator_2")
+        self.assertEqual(admin_files.status_code, 200)
+        self.assertEqual([file["file_type"] for file in admin_files.json()["files"]], ["source_pdf"])
         self.assertEqual(admin_list.status_code, 200)
         self.assertEqual(admin_list.json()["total"], 1)
 
