@@ -7,10 +7,15 @@ from typing import Any
 from bs4 import BeautifulSoup, NavigableString, Tag
 
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
+from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 
-from app.services.renderer.template_config import TemplateParagraphStyleConfig
+from app.services.renderer.semantic_text import infer_list_item_level, normalize_formula_text, normalize_list_item
+from app.services.renderer.template_config import TemplateConfigPackage, TemplateParagraphStyleConfig
+
+
+MD2WORD_RENDERER_BULLET_NUM_ID_ATTR = "_md2word_renderer_bullet_num_id"
 
 
 class WordTextRendererMixin:
@@ -23,9 +28,11 @@ class WordTextRendererMixin:
         style: TemplateParagraphStyleConfig,
         *,
         prefix: str = "",
+        word_style_name: str | None = None,
     ) -> None:
         """写入段落文本；支持 MinerU 常见的内联 HTML 标记。"""
 
+        self._apply_named_style(paragraph, word_style_name or style.word_style_name)
         self._apply_paragraph_style(paragraph, style)
         if self._looks_like_inline_markup(text):
             if prefix:
@@ -35,6 +42,47 @@ class WordTextRendererMixin:
 
         run = paragraph.add_run(f"{prefix}{text}")
         self._apply_run_style(run, style)
+
+    def _fill_heading_paragraph(
+        self,
+        paragraph: Any,
+        text: str,
+        level: int | None,
+        template_config: TemplateConfigPackage,
+    ) -> None:
+        style = template_config.heading_style_for_level(level)
+        self._fill_paragraph(
+            paragraph,
+            normalize_formula_text(text),
+            style,
+            word_style_name=template_config.heading_word_style_name_for_level(level),
+        )
+
+    def _fill_list_paragraph(
+        self,
+        paragraph: Any,
+        text: str,
+        template_config: TemplateConfigPackage,
+    ) -> None:
+        level = infer_list_item_level(text)
+        self._fill_paragraph(paragraph, normalize_formula_text(normalize_list_item(text)), template_config.normal)
+        self._apply_bullet_numbering(paragraph, level=level)
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        paragraph_format = paragraph.paragraph_format
+        paragraph_format.space_before = Pt(0)
+        paragraph_format.space_after = Pt(0)
+        paragraph_format.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
+        paragraph_format.line_spacing = 1.0
+        paragraph_format.left_indent = Pt(12 + min(max(level, 0), 1) * 12)
+        paragraph_format.first_line_indent = Pt(-9)
+
+    def _fill_formula_paragraph(
+        self,
+        paragraph: Any,
+        text: str,
+        template_config: TemplateConfigPackage,
+    ) -> None:
+        self._fill_paragraph(paragraph, normalize_formula_text(text), template_config.normal)
 
     def _looks_like_inline_markup(self, text: str) -> bool:
         lowered = text.lower()
@@ -140,6 +188,14 @@ class WordTextRendererMixin:
         if style.right_indent_pt is not None:
             paragraph_format.right_indent = Pt(style.right_indent_pt)
 
+    def _apply_named_style(self, paragraph: Any, style_name: str | None) -> None:
+        if not style_name:
+            return
+        try:
+            paragraph.style = style_name
+        except (KeyError, ValueError):
+            return
+
     def _apply_run_style(self, run: Any, style: TemplateParagraphStyleConfig) -> None:
         if style.font_name:
             run.font.name = style.font_name
@@ -175,3 +231,77 @@ class WordTextRendererMixin:
             return RGBColor.from_string(raw.upper())
         except ValueError:
             return RGBColor(0, 0, 0)
+
+    def _apply_bullet_numbering(self, paragraph: Any, *, level: int = 0) -> None:
+        normalized_level = min(max(level, 0), 1)
+        num_id = self._ensure_bullet_numbering(paragraph)
+        paragraph_properties = paragraph._p.get_or_add_pPr()
+        num_properties = paragraph_properties.find(qn("w:numPr"))
+        if num_properties is None:
+            num_properties = OxmlElement("w:numPr")
+            paragraph_properties.append(num_properties)
+
+        self._set_numbering_child_value(num_properties, "w:ilvl", str(normalized_level))
+        self._set_numbering_child_value(num_properties, "w:numId", str(num_id))
+
+    def _ensure_bullet_numbering(self, paragraph: Any) -> str:
+        part = paragraph.part
+        cached_num_id = getattr(part, MD2WORD_RENDERER_BULLET_NUM_ID_ATTR, None)
+        if cached_num_id is not None:
+            return str(cached_num_id)
+
+        numbering = part.numbering_part.element
+        abstract_num_id = str(self._next_numbering_id(numbering, "w:abstractNum", "w:abstractNumId"))
+        num_id = str(self._next_numbering_id(numbering, "w:num", "w:numId"))
+
+        abstract_num = OxmlElement("w:abstractNum")
+        abstract_num.set(qn("w:abstractNumId"), abstract_num_id)
+        multi_level_type = OxmlElement("w:multiLevelType")
+        multi_level_type.set(qn("w:val"), "hybridMultilevel")
+        abstract_num.append(multi_level_type)
+
+        for ilvl, marker, left in ((0, "•", "240"), (1, "–", "480")):
+            level = OxmlElement("w:lvl")
+            level.set(qn("w:ilvl"), str(ilvl))
+            for tag, value in (
+                ("w:start", "1"),
+                ("w:numFmt", "bullet"),
+                ("w:lvlText", marker),
+                ("w:lvlJc", "left"),
+            ):
+                child = OxmlElement(tag)
+                child.set(qn("w:val"), value)
+                level.append(child)
+            paragraph_properties = OxmlElement("w:pPr")
+            indent = OxmlElement("w:ind")
+            indent.set(qn("w:left"), left)
+            indent.set(qn("w:hanging"), "180")
+            paragraph_properties.append(indent)
+            level.append(paragraph_properties)
+            abstract_num.append(level)
+
+        num = OxmlElement("w:num")
+        num.set(qn("w:numId"), num_id)
+        abstract_num_id_element = OxmlElement("w:abstractNumId")
+        abstract_num_id_element.set(qn("w:val"), abstract_num_id)
+        num.append(abstract_num_id_element)
+
+        numbering.append(abstract_num)
+        numbering.append(num)
+        setattr(part, MD2WORD_RENDERER_BULLET_NUM_ID_ATTR, num_id)
+        return num_id
+
+    def _next_numbering_id(self, numbering: Any, element_tag: str, attr_name: str) -> int:
+        values: list[int] = []
+        for element in numbering.findall(qn(element_tag)):
+            raw_value = element.get(qn(attr_name))
+            if raw_value is not None and raw_value.isdigit():
+                values.append(int(raw_value))
+        return max(values, default=0) + 1
+
+    def _set_numbering_child_value(self, parent: Any, tag: str, value: str) -> None:
+        child = parent.find(qn(tag))
+        if child is None:
+            child = OxmlElement(tag)
+            parent.append(child)
+        child.set(qn("w:val"), value)

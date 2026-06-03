@@ -39,6 +39,7 @@ class TemplateParagraphStyleConfig(BaseModel):
     first_line_indent_pt: float | None = None
     left_indent_pt: float | None = None
     right_indent_pt: float | None = None
+    word_style_name: str | None = None
 
 
 class TemplateHeaderConfig(BaseModel):
@@ -94,6 +95,7 @@ class TemplateConfigPackage(BaseModel):
     heading3: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
     normal: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
     table_content: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
+    table_note: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
     caption: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
 
     @classmethod
@@ -114,3 +116,8 @@ class TemplateConfigPackage(BaseModel):
         if normalized_level == 2:
             return self.heading2
         return self.heading3
+
+    def heading_word_style_name_for_level(self, level: int | None) -> str:
+        normalized_level = max(1, min(int(level or 1), 3))
+        configured = self.heading_style_for_level(normalized_level).word_style_name
+        return configured or f"Heading {normalized_level}"

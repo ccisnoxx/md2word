@@ -263,6 +263,8 @@ Document jobs 当前登记的 layout 诊断 metadata：
 - `generated_word` artifact 与 rendering / uploading 事件：`renderer_mode`、`layout_page_count`、`layout_region_count`、`layout_block_count` 和 `layout_quality_flags`。
 - layout flags 只保存 block id 与风险类型，例如 wide table、caption binding、table continuation；不保存凭证、客户文件全文或完整解析文本。
 
+Document jobs 当前 generated Word 还会经过 renderer editable semantic pass：DocumentIR heading/list/formula/table annotation 使用现有 block 字段生成命名标题样式、`w:numPr` 列表编号、上下标 rich text、caption-before-table 和 TableNote 顺序语义。该能力只改变 DOCX 内容质量，不改变 `/api/v1/files`、`/api/v1/document-jobs` 请求/响应合同。
+
 ### 4.1 jobs
 
 - `POST /api/v1/jobs`
@@ -493,6 +495,7 @@ Document jobs 当前登记的 layout 诊断 metadata：
 - term-rules 当前支持分类 / 规则 CRUD、整库替换导入、导出、模拟和 sync-files；MySQL versioned mode 下写入口必须通过 Term Rule Set draft / publish 流程。
 - job resource snapshot 不回填历史 job；file/sqlite backend 仍保持 legacy 默认模板 / runtime YAML / settings 翻译配置路径，显式传 versioned resource selection 时返回 503。
 - translation-profiles 当前只支持 `electronics-en2zh`；jobs API 仍只支持 `direct` / `en2zh`，不新增 `zh2en` / `zh2ru` 或 `source_language` / `target_language`。
+- document_jobs generated Word 已接入 renderer 可编辑语义，但 Golden Sample P0 正式质量仍需要 10-20 份样本规模、真实复跑和人工质量验收；TOC leader、页码对齐、完整 landscape section 和长表分页视觉还原仍不在当前后端合同内。
 
 ## 9. 相关文档
 
@@ -502,6 +505,7 @@ Document jobs 当前登记的 layout 诊断 metadata：
 
 ## 10. 变更日志
 
+- 2026-06-03：补入 `word-renderer-editable-output-pass`；`document_jobs -> DocumentIR -> generated Word` 主链路已写入 heading named style、真实 list numbering、formula rich text、caption-before-table 和 TableNote 语义，HTTP API 合同不变。
 - 2026-06-03：补入 `document_jobs` DocumentIR / generated Word layout 诊断 metadata；`document_ir` artifact 暴露 `quality_flags`，generated Word artifact 和 rendering/uploading 事件暴露 `layout_quality_flags`。
 - 2026-06-03：补入 P0 `/api/v1/files`、`/api/v1/document-jobs` 主链路合同、DocumentIR v2 / renderer metadata 交付现状，并补齐 legacy `recover-mineru-result` API 边界。
 - 2026-05-29：补入 Operations Readiness and Test Baseline；`health/ready` 扩展 artifact / resource / MySQL schema 字段，新增 `health/metrics` JSON counters，补入 file -> MySQL metadata shadow copy / validate、`.env.example`、release check 和运维文档基线。

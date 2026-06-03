@@ -79,7 +79,7 @@ pdf-to-word-delivery-hardening
 | document-job-smoke-stability | done | 用 gs-003 / OPA228_P1.pdf 验证 hostdzire 真实 API + worker + MinerU + 下载主链路 smoke |
 | golden-sample-live-regression-scale-up | done | 已完成当前 4 个 runnable 样本 live regression 与 acceptance：主链路 4/4 succeeded，DOCX 4/4 openable；人工质量 0/4 P0 pass，失败分类为 `pipeline-parity-gap` |
 | document-ir-layout-risk-pass | done | 已完成 acceptance 闭环；DocumentIR v2 已接入 orientation、column_hint、wide table、caption/footnote binding 和 continuation facts，document_jobs metadata 可暴露 layout flags |
-| word-renderer-editable-output-pass | planned | 优先把 `app/conversion/runtime` 的 heading/list/formula/caption/table 策略同步到 `app/services/renderer`，并补 document_jobs 回归 |
+| word-renderer-editable-output-pass | done | 已接入 heading/list/formula/caption/table annotation 的可编辑 OOXML 语义，并补 document_jobs generated Word 回归 |
 | delivery-acceptance-report | done | 汇总发布前验证、剩余风险、merge 建议和 deploy 前人工 gate |
 
 最小闭环：`golden-sample-quality-baseline` 完成后，系统至少能明确报告当前可运行样本数、成功率、失败阶段和人工验收状态，不再出现 docs 与样本事实冲突。
@@ -102,7 +102,7 @@ pdf-to-word-delivery-hardening
 - `docs/testing/pdf-to-word-golden-sample-acceptance-report.md` 当前 blocked 判断仍成立，但 PDF 数量描述需要跟 manifest 事实重新对齐。
 - `tests/fixtures/golden_samples/pdfs/OPA228_P1.pdf`、`OPA228_P2.pdf`、`OPA228_P6.pdf` 和 `OPA228_P7.pdf` 已映射到 `manifest.yaml`，当前正式 runnable sample 为 4。
 - hostdzire 真实部署链路已在 `gs-003/004/006/008` 跑通；上传、建任务、Worker、MinerU、DocumentIR、Word 渲染和下载均未发现卡点。
-- 当前 4 个 runnable 样本均可生成可打开 DOCX，但人工质量 0/4 P0 pass；`document-ir-layout-risk-pass` 已先把 orientation、column_hint、wide table、caption/footnote binding 和 continuation facts 接入 API DocumentIR renderer 链路，剩余主要缺口为 heading/list/formula、caption-before-table 和表格 Word 样式质量。
+- 当前 4 个 runnable 样本均可生成可打开 DOCX，但人工质量 0/4 P0 pass；`document-ir-layout-risk-pass` 已把 orientation、column_hint、wide table、caption/footnote binding 和 continuation facts 接入 API DocumentIR renderer 链路，`word-renderer-editable-output-pass` 已把 heading/list/formula、caption-before-table 和表格 annotation 的可编辑 OOXML 语义接入 generated Word。正式 P0 仍缺 10-20 份 manifest-matched PDF、真实复跑、人工质量验收和后续视觉版面修复。
 - 本轮失败分类为 `pipeline-parity-gap`：`md2word_main` / `app/conversion/runtime` 已有部分修复，但 `document_jobs -> DocumentIR -> app/services/renderer` 线上链路未接入。
 - 正式 P0 通过还需要补齐 10-20 份 manifest-matched PDF，并让成功样本通过人工质量验收。
 - `.codestable/features/` 已开始承载本路线的 design / checklist / acceptance 产物，后续 feature 继续从 roadmap item 起头。
@@ -110,6 +110,7 @@ pdf-to-word-delivery-hardening
 
 ## 8. 变更日志
 
+- 2026-06-03：`word-renderer-editable-output-pass` 完成 acceptance 闭环并回写为 done；renderer generated Word 已覆盖 heading named style、真实 list numbering、formula/table note rich text normalization、caption-before-table 和 TableNote 顺序语义，剩余 P0 风险回到样本规模、真实复跑、人工质量和视觉版面。
 - 2026-06-03：`document-ir-layout-risk-pass` 完成 acceptance 闭环并回写为 done；DocumentIR v2 layout facts、renderer layout plan consumption 和 document_jobs metadata 回归已落地，后续进入 `word-renderer-editable-output-pass`。
 - 2026-06-03：`golden-sample-live-regression-scale-up` 完成 acceptance 闭环并回写为 done：hostdzire 真实回归 `gs-003/004/006/008` 主链路 4/4 succeeded、DOCX 4/4 openable，但人工质量 0/4 P0 pass；核心分类为 `pipeline-parity-gap`，后续 `document-ir-layout-risk-pass` 和 `word-renderer-editable-output-pass` 需优先做 legacy runtime 到 DocumentIR renderer 的 parity 判断与迁移。
 - 2026-06-03：完成 `delivery-acceptance-report` 发布验收；后端 release check、前端 build、direct/en2zh smoke、失败分类和 DocumentIR v2 metadata 验证通过，建议进入 merge；deploy 前保留真实环境人工 gate。

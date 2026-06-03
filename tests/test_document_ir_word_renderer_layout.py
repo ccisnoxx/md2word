@@ -163,8 +163,42 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertIn("A", rendered.tables[0].cell(1, 0).text)
         self.assertIn('w:gridSpan', xml)
         self.assertIn('w:vMerge', xml)
+        self.assertLess(xml.index("Table 1: merged cells"), xml.index("<w:tbl>"))
+        self.assertLess(xml.index("<w:tbl>"), xml.index("Note: kept editable"))
+        self.assertIn("<w:keepNext/>", xml[: xml.index("<w:tbl>")])
         self.assertTrue(any(paragraph.text == "Table 1: merged cells" for paragraph in rendered.paragraphs))
         self.assertTrue(any(paragraph.text == "Note: kept editable" for paragraph in rendered.paragraphs))
+
+    def test_render_to_bytes_normalizes_formula_text_in_table_cells_and_notes(self) -> None:
+        renderer = DocumentIRWordRenderer()
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="docjob_table_formula", source_file_id="file_table_formula", document_language="en"),
+            blocks=[
+                DocumentIRBlock(
+                    id="block_table_formula",
+                    type="table",
+                    order=0,
+                    html=(
+                        r"<table><tr><th>Parameter</th><th>Value</th></tr>"
+                        r"<tr><td>$R_{\theta JA}$</td><td>nV/ \sqrt{Hz}</td></tr></table>"
+                    ),
+                    captions=["Table 1: formulas"],
+                    footnotes=[r"Note: E=mc^2"],
+                )
+            ],
+        )
+
+        content = renderer.render_to_bytes(document, template_path=None, config_path=None, image_loader=lambda _asset: None)
+        xml = self._document_xml(content)
+
+        self.assertIn("R</w:t>", xml)
+        self.assertIn("θJA", xml)
+        self.assertIn("nV/√Hz", xml)
+        self.assertIn("Note: E=mc", xml)
+        self.assertIn('w:val="subscript"', xml)
+        self.assertIn('w:val="superscript"', xml)
+        self.assertNotIn(r"\theta", xml)
+        self.assertNotIn(r"\sqrt", xml)
 
     def test_render_to_bytes_uses_bbox_width_for_images_and_annotations(self) -> None:
         renderer = DocumentIRWordRenderer()
@@ -223,9 +257,92 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertIn('w:val="superscript"', xml)
         self.assertIn("<w:br", xml)
 
+    def test_render_to_bytes_writes_heading_list_and_formula_ooxml_semantics(self) -> None:
+        renderer = DocumentIRWordRenderer()
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="docjob_semantic", source_file_id="file_semantic", document_language="en"),
+            blocks=[
+                DocumentIRBlock(
+                    id="block_heading",
+                    type="heading",
+                    order=0,
+                    level=2,
+                    text="6.5 Thermal Information",
+                ),
+                DocumentIRBlock(
+                    id="block_list",
+                    type="list",
+                    order=1,
+                    list_items=["• Low noise", "- Stable supply"],
+                ),
+                DocumentIRBlock(
+                    id="block_formula",
+                    type="formula",
+                    order=2,
+                    latex=r"$R_{\theta JA}$, E=mc^2, nV/ \sqrt{Hz}",
+                ),
+            ],
+        )
+
+        content = renderer.render_to_bytes(document, template_path=None, config_path=None, image_loader=lambda _asset: None)
+        rendered = Document(io.BytesIO(content))
+        xml = self._document_xml(content)
+        numbering_xml = self._numbering_xml(content)
+
+        self.assertEqual(rendered.paragraphs[0].style.name, "Heading 2")
+        self.assertEqual([paragraph.text for paragraph in rendered.paragraphs[1:3]], ["Low noise", "Stable supply"])
+        self.assertIn('w:val="Heading2"', xml)
+        self.assertIn("<w:numPr>", xml)
+        self.assertIn('w:val="bullet"', numbering_xml)
+        self.assertIn('w:val="subscript"', xml)
+        self.assertIn('w:val="superscript"', xml)
+        self.assertIn("nV/√Hz", xml)
+        self.assertNotIn("• Low noise", xml)
+        self.assertNotIn(r"\sqrt", xml)
+
+    def test_render_to_bytes_uses_configured_heading_word_style_when_available(self) -> None:
+        renderer = DocumentIRWordRenderer()
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="docjob_heading_style", source_file_id="file_heading_style", document_language="en"),
+            blocks=[
+                DocumentIRBlock(
+                    id="block_heading",
+                    type="heading",
+                    order=0,
+                    level=2,
+                    text="Configured title style",
+                )
+            ],
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "template.yaml"
+            config_path.write_text(
+                (
+                    "schema_version: template-config/v1\n"
+                    "heading2:\n"
+                    "  word_style_name: Title\n"
+                    "  font_size: 14\n"
+                ),
+                encoding="utf-8",
+            )
+
+            content = renderer.render_to_bytes(
+                document,
+                template_path=None,
+                config_path=config_path,
+                image_loader=lambda _asset: None,
+            )
+            rendered = Document(io.BytesIO(content))
+
+        self.assertEqual(rendered.paragraphs[0].style.name, "Title")
+
     def _document_xml(self, content: bytes) -> str:
         with zipfile.ZipFile(io.BytesIO(content)) as docx_zip:
             return docx_zip.read("word/document.xml").decode("utf-8")
+
+    def _numbering_xml(self, content: bytes) -> str:
+        with zipfile.ZipFile(io.BytesIO(content)) as docx_zip:
+            return docx_zip.read("word/numbering.xml").decode("utf-8")
 
     def _make_v2_two_column_document(self) -> DocumentIR:
         return DocumentIR(

@@ -144,8 +144,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
     ) -> None:
         if block.type == "heading":
             paragraph = document.add_paragraph()
-            style = template_config.heading_style_for_level(block.level)
-            self._fill_paragraph(paragraph, block.text or "", style)
+            self._fill_heading_paragraph(paragraph, block.text or "", block.level, template_config)
             return
         if block.type == "paragraph":
             paragraph = document.add_paragraph()
@@ -154,11 +153,11 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         if block.type == "list":
             for item in block.list_items or []:
                 paragraph = document.add_paragraph()
-                self._fill_paragraph(paragraph, item, template_config.normal, prefix="• ")
+                self._fill_list_paragraph(paragraph, item, template_config)
             return
         if block.type == "formula":
             paragraph = document.add_paragraph()
-            self._fill_paragraph(paragraph, block.latex or block.text or "", template_config.normal)
+            self._fill_formula_paragraph(paragraph, block.latex or block.text or "", template_config)
             return
         if block.type == "table":
             self._render_table(document, block, template_config)

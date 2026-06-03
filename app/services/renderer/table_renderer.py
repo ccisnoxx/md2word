@@ -11,6 +11,7 @@ from docx.shared import Cm, Emu, Mm
 
 from app.conversion.runtime.table_html_parser import HtmlCell, HtmlTable, parse_html_table
 from app.services.document_ir.models import DocumentIRBlock
+from app.services.renderer.semantic_text import normalize_formula_text
 from app.services.renderer.template_config import TemplateConfigPackage
 
 
@@ -24,10 +25,11 @@ class WordTableRendererMixin:
 
     def _render_table(self, document: Any, block: DocumentIRBlock, template_config: TemplateConfigPackage) -> None:
         table_model = parse_html_table(block.html)
+        self._render_table_captions(document, block, template_config)
         if table_model is None or not table_model.rows or table_model.max_columns <= 0:
             paragraph = document.add_paragraph()
             self._fill_paragraph(paragraph, block.text or "", template_config.normal)
-            self._render_block_annotations(document, block, template_config)
+            self._render_table_notes(document, block, template_config)
             return
 
         max_cols = table_model.max_columns
@@ -36,7 +38,7 @@ class WordTableRendererMixin:
             self._render_expanded_table(document, table_model, max_cols, usable_width, template_config)
         else:
             self._render_standard_html_table(document, table_model, max_cols, usable_width, template_config)
-        self._render_block_annotations(document, block, template_config)
+        self._render_table_notes(document, block, template_config)
 
     def _render_standard_html_table(
         self,
@@ -123,7 +125,7 @@ class WordTableRendererMixin:
     ) -> None:
         cell.text = ""
         paragraph = cell.paragraphs[0]
-        self._fill_paragraph(paragraph, cell_model.html or cell_model.text, template_config.table_content)
+        self._fill_paragraph(paragraph, normalize_formula_text(cell_model.html or cell_model.text), template_config.table_content)
         if is_header and template_config.table_style.header_fill:
             self._set_cell_fill(cell, template_config.table_style.header_fill)
         cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
@@ -167,12 +169,29 @@ class WordTableRendererMixin:
         block: DocumentIRBlock,
         template_config: TemplateConfigPackage,
     ) -> None:
+        self._render_table_captions(document, block, template_config)
+        self._render_table_notes(document, block, template_config)
+
+    def _render_table_captions(
+        self,
+        document: Any,
+        block: DocumentIRBlock,
+        template_config: TemplateConfigPackage,
+    ) -> None:
         for text in self._unique_annotation_texts(block.captions):
             paragraph = document.add_paragraph()
+            paragraph.paragraph_format.keep_with_next = True
             self._fill_paragraph(paragraph, text, template_config.caption)
+
+    def _render_table_notes(
+        self,
+        document: Any,
+        block: DocumentIRBlock,
+        template_config: TemplateConfigPackage,
+    ) -> None:
         for text in self._unique_annotation_texts(block.footnotes):
             paragraph = document.add_paragraph()
-            self._fill_paragraph(paragraph, text, template_config.caption)
+            self._fill_paragraph(paragraph, normalize_formula_text(text), template_config.table_note)
 
     def _unique_annotation_texts(self, values: list[str]) -> list[str]:
         seen: set[str] = set()

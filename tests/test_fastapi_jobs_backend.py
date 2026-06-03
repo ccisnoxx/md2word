@@ -641,6 +641,49 @@ def make_english_mineru_zip_bytes() -> bytes:
     return buffer.getvalue()
 
 
+def make_semantic_mineru_zip_bytes() -> bytes:
+    buffer = io.BytesIO()
+    blocks = [
+        {
+            "type": "title",
+            "text": "6.5 Thermal Information",
+            "text_level": 2,
+            "page_idx": 0,
+            "bbox": [72, 80, 360, 105],
+        },
+        {
+            "type": "list",
+            "items": ["• Low noise", "- Stable supply"],
+            "page_idx": 0,
+            "bbox": [72, 120, 360, 170],
+        },
+        {
+            "type": "interline_equation",
+            "latex": r"$R_{\theta JA}$, E=mc^2, nV/ \sqrt{Hz}",
+            "page_idx": 0,
+            "bbox": [72, 190, 360, 215],
+        },
+        {
+            "type": "table",
+            "table_caption": "Table 1: Electrical Characteristics",
+            "table_body": (
+                r"<table><tr><th>Parameter</th><th>Value</th></tr>"
+                r"<tr><td>$R_{\theta JA}$</td><td>nV/ \sqrt{Hz}</td></tr></table>"
+            ),
+            "table_footnote": r"Note: E=mc^2",
+            "page_idx": 0,
+            "bbox": [40, 240, 580, 330],
+        },
+    ]
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("content_list_v2.json", json.dumps(blocks, ensure_ascii=False))
+        archive.writestr(
+            "layout.json",
+            json.dumps({"pdf_info": [{"page_idx": 0, "page_size": [612, 792]}]}, ensure_ascii=False),
+        )
+    return buffer.getvalue()
+
+
 def make_pdf_bytes(page_count: int = 1) -> bytes:
     pages = "\n".join(
         f"{index} 0 obj << /Type /Page /Parent 0 0 R >> endobj"
@@ -2041,6 +2084,52 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIn("layout_wide_table:block_0003", rendered_event.payload["layout_quality_flags"])
         self.assertEqual(word_registered_event.payload["renderer_mode"], "layout_v2")
         self.assertIn("layout_wide_table:block_0003", word_registered_event.payload["layout_quality_flags"])
+
+    def test_document_job_worker_generated_word_keeps_renderer_ooxml_semantics(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = make_semantic_mineru_zip_bytes()
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+
+            stored_job = runtime.document_job_repository.get_document_job(job_id)
+            word_file = runtime.document_file_repository.get_document_file(stored_job.result_file_id)
+            word_bytes = runtime.file_upload_service.read_file_content(word_file)
+
+        with zipfile.ZipFile(io.BytesIO(word_bytes)) as archive:
+            document_xml = archive.read("word/document.xml").decode("utf-8")
+            numbering_xml = archive.read("word/numbering.xml").decode("utf-8")
+
+        table_index = document_xml.index("<w:tbl>")
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(stored_job.status, "succeeded")
+        self.assertEqual(word_file.file_type, "generated_word")
+        self.assertIn("<w:pStyle", document_xml[: document_xml.index("6.5 Thermal Information")])
+        self.assertIn("<w:numPr>", document_xml)
+        self.assertIn('w:val="bullet"', numbering_xml)
+        self.assertIn('w:val="subscript"', document_xml)
+        self.assertIn('w:val="superscript"', document_xml)
+        self.assertLess(document_xml.index("Table 1: Electrical Characteristics"), table_index)
+        self.assertLess(table_index, document_xml.index("Note: E=mc"))
+        self.assertIn("<w:keepNext/>", document_xml[:table_index])
+        self.assertNotIn("• Low noise", document_xml)
+        self.assertNotIn(r"\sqrt", document_xml)
+        self.assertNotIn(r"\theta", document_xml)
 
     def test_document_job_en2zh_worker_translates_ir_and_saves_ai_audit_artifacts(self):
         with tempfile.TemporaryDirectory() as temp_dir:
