@@ -78,7 +78,7 @@ pdf-to-word-delivery-hardening
 | golden-sample-quality-baseline | done | 对齐 manifest、真实 PDF、回归脚本和验收报告，建立第一版质量基线 |
 | document-job-smoke-stability | done | 用 gs-003 / OPA228_P1.pdf 验证 hostdzire 真实 API + worker + MinerU + 下载主链路 smoke |
 | golden-sample-live-regression-scale-up | done | 已完成当前 4 个 runnable 样本 live regression 与 acceptance：主链路 4/4 succeeded，DOCX 4/4 openable；人工质量 0/4 P0 pass，失败分类为 `pipeline-parity-gap` |
-| document-ir-layout-risk-pass | in-progress | design 已 approved，implementation checklist 已完成；DocumentIR v2 已接入 orientation、column_hint、wide table、caption/footnote binding 和 continuation facts，等待 cs-feat-accept 验收闭环后回写 done |
+| document-ir-layout-risk-pass | done | 已完成 acceptance 闭环；DocumentIR v2 已接入 orientation、column_hint、wide table、caption/footnote binding 和 continuation facts，document_jobs metadata 可暴露 layout flags |
 | word-renderer-editable-output-pass | planned | 优先把 `app/conversion/runtime` 的 heading/list/formula/caption/table 策略同步到 `app/services/renderer`，并补 document_jobs 回归 |
 | delivery-acceptance-report | done | 汇总发布前验证、剩余风险、merge 建议和 deploy 前人工 gate |
 
@@ -110,7 +110,7 @@ pdf-to-word-delivery-hardening
 
 ## 8. 变更日志
 
-- 2026-06-03：`document-ir-layout-risk-pass` design approved 并完成 implementation checklist；DocumentIR v2 layout facts、renderer layout plan consumption 和 document_jobs metadata 回归已落地，roadmap item 保持 in-progress 等待 cs-feat-accept。
+- 2026-06-03：`document-ir-layout-risk-pass` 完成 acceptance 闭环并回写为 done；DocumentIR v2 layout facts、renderer layout plan consumption 和 document_jobs metadata 回归已落地，后续进入 `word-renderer-editable-output-pass`。
 - 2026-06-03：`golden-sample-live-regression-scale-up` 完成 acceptance 闭环并回写为 done：hostdzire 真实回归 `gs-003/004/006/008` 主链路 4/4 succeeded、DOCX 4/4 openable，但人工质量 0/4 P0 pass；核心分类为 `pipeline-parity-gap`，后续 `document-ir-layout-risk-pass` 和 `word-renderer-editable-output-pass` 需优先做 legacy runtime 到 DocumentIR renderer 的 parity 判断与迁移。
 - 2026-06-03：完成 `delivery-acceptance-report` 发布验收；后端 release check、前端 build、direct/en2zh smoke、失败分类和 DocumentIR v2 metadata 验证通过，建议进入 merge；deploy 前保留真实环境人工 gate。
 - 2026-06-03：确认第二轮只推进 `golden-sample-live-regression-scale-up`、`document-ir-layout-risk-pass`、`word-renderer-editable-output-pass`；进入 feature design 前先完成现状文档与 API 参考 gate。
