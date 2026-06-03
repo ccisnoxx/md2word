@@ -3,7 +3,7 @@ doc_type: requirement
 slug: fastapi-backend-productization
 pitch: 把 MinerU 结果转 DOCX 的能力产品化为可调用、可观察、可运维的 FastAPI 后端
 status: current
-last_reviewed: 2026-05-29
+last_reviewed: 2026-06-03
 implemented_by:
   - fastapi-backend
 tags: [backend, fastapi, jobs, docx]
@@ -26,6 +26,8 @@ tags: [backend, fastapi, jobs, docx]
 - 作为生产部署维护者，我希望发布前有 `.env.example`、readiness、JSON metrics、MySQL metadata shadow copy / validate、release check 和真实外部联调 runbook，这样能用同一套基线判断单实例后端是否可上线。
 - 作为维护者和集成方，我希望 jobs 产物能暴露稳定的大小、hash 和下载诊断，这样可以区分缺失文件、路径错误和内容被改动，而不是只看到模糊下载失败。
 - 作为维护者，我希望模板、术语规则集和翻译配置后续都复用同一套版本状态、默认指针和回滚规则，避免三套资源各自实现不一致的发布语义。
+- 作为内部操作员，我希望上传原始 PDF 后能在工作台看到任务进度、失败阶段、下载入口和重试操作，而不是只拿到一个后台脚本结果。
+- 作为交付负责人，我希望系统能用 Golden Sample 明确报告真实可运行样本数、主链路成功率、失败阶段和人工质量结论，而不是把“能生成 Word”和“质量达标”混在一起。
 
 ## 为什么需要
 
@@ -35,6 +37,11 @@ tags: [backend, fastapi, jobs, docx]
 
 提供一个以 `FastAPI + BackgroundTasks + metadata repository + conversion library` 为核心的后端表面：
 
+- `POST /api/v1/files/upload-url` 和 `PUT /api/v1/files/{file_id}/content` 提供 PDF 上传授权与本地代理上传
+- `POST /api/v1/document-jobs` 提供 P0 PDF -> Word 任务创建，默认 `direct_pdf_to_word`
+- `GET /api/v1/document-jobs/*` 提供任务列表、详情、事件、重试、取消、归档、download-url 和短期下载
+- `document_jobs` Worker 保存 MinerU raw result、DocumentIR v2、图片资产和生成 Word，并把失败阶段、错误码、错误消息和 trace 事件落到任务详情
+- Golden Sample 回归和人工质量 triage 区分主链路可运行、Word 可打开、可编辑质量和版式/语义质量
 - `POST /api/v1/jobs` 接收 MinerU 输出 zip
 - `POST /api/v1/jobs/pdf` 接收原始 PDF，并把任务送进 MinerU；callback 成功后会短暂经过 `parsed`，随后自动恢复结果 zip 并继续后处理到 `completed/failed`
 - `POST /api/v1/mineru-callbacks/result` 承载 callback ingress、安全校验和结果收口
@@ -59,8 +66,11 @@ tags: [backend, fastapi, jobs, docx]
 ## 边界
 
 - 当前支持两条入口：
+  - 上传 PDF 文件 -> 创建 `document_jobs` -> Worker / MinerU / DocumentIR / Word renderer -> 下载 DOCX
   - 上传 MinerU 输出 zip -> 后处理 -> 生成 DOCX
   - 上传原始 PDF -> 成功提交 MinerU -> 接收 callback -> 恢复 `parsed_result_package` -> 后处理 -> 生成 DOCX
+- P0 document_jobs 当前能证明主链路可交付，但 Golden Sample 正式规模仍 blocked：4 个正式匹配 PDF 中只有 1 个跑过真实链路，尚未达到 10-20 份样本成功率 `>= 90%` 和人工质量验收。
+- `en2zh_pdf_to_word` 当前按实验能力发布，不阻塞 P0 `direct_pdf_to_word`。
 - 当前默认仍是 file backend，但 jobs metadata 已有 sqlite-backed database adapter、MySQL adapter 和 shadow copy / switch 能力，artifact 已有本地对象目录 adapter 和 shadow upload / switch 能力；仍不包含 PostgreSQL，也未把 artifact 二进制写入 MySQL。
 - artifact 合同已覆盖新登记产物的 `size_bytes` / `sha256`、本地下载诊断和 local + object retention dry-run；旧记录缺少 fingerprint 时保持兼容，不强制 backfill，不执行真实删除，也不新增 S3 / OSS / MinIO。
 - MySQL adapter 当前覆盖 jobs、events、files、stage messages、`resource_versions`、`resource_default_versions` 和 `audit_events`；schema bootstrap、file -> MySQL 空目标 shadow copy / validate、fake MySQL release smoke 和部署 runbook 已进入当前运维基线。真实外部 MySQL 服务 smoke 仍按 runbook 手工执行，Alembic / SQLAlchemy 迁移体系仍不在当前范围。
@@ -73,6 +83,10 @@ tags: [backend, fastapi, jobs, docx]
 - snapshot 不保存 API key、MinerU token、callback token、完整 prompt 文本或 term-rule payload；`artifact_ids` 只记录 source artifact alias（`source_package` / `source_pdf`），不新增独立 artifact id 体系。
 - 审计基线当前只表达 `admin`、`jobs`、`anonymous` 三类 actor；不新增 SSO、用户表、多租户字段、资源所有者校验、审计查询 HTTP API 或审计 UI。open 下载始终写 anonymous actor，不接受匿名请求用 `X-Actor-Id` 自报身份。
 - jobs API 仍只支持 `direct` / `en2zh`，不新增 `zh2en` / `zh2ru` 或 `source_language` / `target_language` 创建参数。
+
+## 变更日志
+
+- 2026-06-03：补入 P0 `document_jobs` PDF -> Word 主链路、内部工作台、Golden Sample 质量基线和当前 blocked 边界。
 
 ## 变更日志
 

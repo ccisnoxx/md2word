@@ -28,21 +28,29 @@ items:
     minimal_loop: false
     notes: 已用 hostdzire 真实 API + worker + MinerU 配置跑通 gs-003 / OPA228_P1.pdf；job docjob_d4c4101592ad succeeded，Word 可打开，P0 正式验收仍受样本数量阻塞。
 
+  - slug: golden-sample-live-regression-scale-up
+    description: 复跑当前 4 个正式 PDF，补齐真实链路失败分类、人工质量结论和 10-20 样本扩容缺口
+    depends_on: [document-job-smoke-stability]
+    status: in-progress
+    feature: 2026-06-03-golden-sample-live-regression-scale-up
+    minimal_loop: false
+    notes: 第二轮第 1 步；先跑真实样本与分类，再进入 IR layout 和 renderer 质量修复。
+
   - slug: document-ir-layout-risk-pass
     description: 基于样本失败分类收敛 DocumentIR v2 layout、质量标记和块顺序风险
-    depends_on: [golden-sample-quality-baseline]
+    depends_on: [golden-sample-live-regression-scale-up]
     status: planned
     feature: null
     minimal_loop: false
-    notes: 只处理 Golden Sample 暴露的 P0 layout 风险。
+    notes: 第二轮第 2 步；只处理真实样本复跑暴露的 P0 layout 风险。
 
   - slug: word-renderer-editable-output-pass
     description: 针对标题、正文、表格、图片、双栏输出做可编辑 Word 质量硬化
-    depends_on: [golden-sample-quality-baseline]
+    depends_on: [document-ir-layout-risk-pass]
     status: planned
     feature: null
     minimal_loop: false
-    notes: 只处理 P0 direct 输出质量，不扩在线校对。
+    notes: 第二轮第 3 步；在 IR layout 风险收敛后处理 P0 direct 可编辑输出质量，不扩在线校对。
 
   - slug: delivery-acceptance-report
     description: 汇总 2-4 周验证结果、剩余风险、已知阻塞和下一轮 feature 输入

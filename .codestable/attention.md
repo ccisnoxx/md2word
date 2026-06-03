@@ -11,6 +11,7 @@
 ### 运行与本地起服务
 
 - 真实 MinerU 转 DOCX 转换、LLM 翻译联调优先使用 `/Users/sc/miniconda3/envs/md2word/bin/python`；这个 conda 环境已包含 `openai`、`python-docx`、`PyYAML`、`beautifulsoup4`、`loguru` 等运行依赖。当前主模式约定是 `translation_mode=direct`（默认直出）和 `translation_mode=en2zh`（英文 PDF 翻译成中文 Word）。
+- 线上 Golden Sample 复跑不能假设部署容器内已有 `tests/fixtures/golden_samples/`；需要先准备脚本、manifest 和 PDF，或走专门的线上复跑方案。
 
 ### 测试
 
@@ -19,6 +20,8 @@
 ### 命令与脚本陷阱
 
 ### 路径与目录约定
+
+- 部署文档里的 `md2word-api.962850.xyz` 与现场 hostdzire nginx `server_name` 曾出现不一致；真实环境联调或更新公开入口文档前先核对现场配置。
 
 ### 环境变量与凭证
 

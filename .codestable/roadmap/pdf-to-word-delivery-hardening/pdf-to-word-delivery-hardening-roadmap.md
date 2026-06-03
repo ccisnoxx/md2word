@@ -77,8 +77,9 @@ pdf-to-word-delivery-hardening
 | roadmap-state-reconciliation | done | 恢复/校准 roadmap，补当前 active 交付路线，写 feature design 输入 |
 | golden-sample-quality-baseline | done | 对齐 manifest、真实 PDF、回归脚本和验收报告，建立第一版质量基线 |
 | document-job-smoke-stability | done | 用 gs-003 / OPA228_P1.pdf 验证 hostdzire 真实 API + worker + MinerU + 下载主链路 smoke |
-| document-ir-layout-risk-pass | planned | 基于样本失败分类收敛 DocumentIR v2 layout / quality flags 风险 |
-| word-renderer-editable-output-pass | planned | 针对标题、正文、表格、图片、双栏输出做可编辑 Word 硬化 |
+| golden-sample-live-regression-scale-up | in-progress | 复跑当前 4 个正式样本，补齐真实链路失败分类、人工质量结论和样本扩容缺口 |
+| document-ir-layout-risk-pass | planned | 基于真实样本失败分类收敛 DocumentIR v2 layout / quality flags 风险 |
+| word-renderer-editable-output-pass | planned | 在 IR layout 风险收敛后，针对标题、列表、表格、图片、双栏和可编辑 DOCX 输出做 renderer 硬化 |
 | delivery-acceptance-report | done | 汇总发布前验证、剩余风险、merge 建议和 deploy 前人工 gate |
 
 最小闭环：`golden-sample-quality-baseline` 完成后，系统至少能明确报告当前可运行样本数、成功率、失败阶段和人工验收状态，不再出现 docs 与样本事实冲突。
@@ -90,7 +91,9 @@ pdf-to-word-delivery-hardening
 - 第 1 批：`roadmap-state-reconciliation`。
 - 第 2 批：`golden-sample-quality-baseline`。
 - 第 3 批：`document-job-smoke-stability`。
-- 第 4 批：根据 Golden Sample 失败分类选择 `document-ir-layout-risk-pass` 或 `word-renderer-editable-output-pass`。
+- 第 4 批：`golden-sample-live-regression-scale-up`，先复跑当前正式样本并形成失败分类。
+- 第 5 批：`document-ir-layout-risk-pass`，按真实失败分类收敛 DocumentIR v2 layout 风险。
+- 第 6 批：`word-renderer-editable-output-pass`，在 IR 输入稳定后修 renderer 可编辑输出质量。
 - 收尾：`delivery-acceptance-report`。
 
 ## 7. 观察项
@@ -101,10 +104,12 @@ pdf-to-word-delivery-hardening
 - hostdzire 真实部署链路已用 `gs-003 / OPA228_P1.pdf` 跑通；上传、建任务、Worker、MinerU、DocumentIR、Word 渲染和下载均未发现卡点。
 - 正式 P0 通过还需要补齐 10-20 份 manifest-matched PDF，并做人工质量验收。
 - `.codestable/features/` 已开始承载本路线的 design / checklist / acceptance 产物，后续 feature 继续从 roadmap item 起头。
+- 第二轮 feature design 启动前 gate：architecture / requirements 必须同步 `document_jobs` 主链路现状；API 参考需补 `/files` 与 `/document-jobs`；`delivery-acceptance-report` 需修正工作区状态；attention.md 需记录线上 Golden Sample 复跑和部署入口核对注意事项。
 
 ## 8. 变更日志
 
 - 2026-06-03：完成 `delivery-acceptance-report` 发布验收；后端 release check、前端 build、direct/en2zh smoke、失败分类和 DocumentIR v2 metadata 验证通过，建议进入 merge；deploy 前保留真实环境人工 gate。
+- 2026-06-03：确认第二轮只推进 `golden-sample-live-regression-scale-up`、`document-ir-layout-risk-pass`、`word-renderer-editable-output-pass`；进入 feature design 前先完成现状文档与 API 参考 gate。
 - 2026-06-03：merge 前范围确认，`resources/term_rules/term_rules.v2.yaml` 纳入发布，`OPA228_P2/P6/P7.pdf` 映射为 `gs-004/006/008`，manifest 外 PDF 清零。
 - 2026-06-02：`document-job-smoke-stability` 完成 acceptance；hostdzire 真实链路执行 `gs-003 / OPA228_P1.pdf` 成功，`job_id=docjob_d4c4101592ad`，Word 可打开。
 - 2026-06-02：`roadmap-state-reconciliation` 完成 acceptance 收尾，历史 roadmap 断链修复，当前 active 交付硬化路线进入 Golden Sample 基线阶段。
