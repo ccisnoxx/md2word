@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend quality checklist for final review."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify response status semantics for new management endpoints."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify targeted unittest coverage and no broad exception handling."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Check API/frontend/doc contract consistency after implementation."}
+{"file": "docs/api/translation-term-sets.md", "reason": "Check API documentation and OpenAPI snapshot alignment."}

@@ -498,6 +498,12 @@ class _FakeMysqlCursor:
             }
             self._rows = []
             return
+        if "from translation_term_sets" in normalized and "order by language_pair" in normalized:
+            self._rows = sorted(
+                self.database.translation_term_sets.values(),
+                key=lambda item: (item["language_pair"], item["set_id"]),
+            )
+            return
         if "from translation_term_sets" in normalized and "where set_id" in normalized:
             row = self.database.translation_term_sets.get(params[0])
             self._rows = [row] if row is not None else []

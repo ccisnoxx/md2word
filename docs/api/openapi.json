@@ -6024,6 +6024,86 @@
         "title": "TranslationProfileVersionResponse",
         "type": "object"
       },
+      "TranslationTermEntryResponse": {
+        "properties": {
+          "case_sensitive": {
+            "default": false,
+            "title": "Case Sensitive",
+            "type": "boolean"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "language_pair": {
+            "title": "Language Pair",
+            "type": "string"
+          },
+          "normalized_source_term": {
+            "title": "Normalized Source Term",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "priority": {
+            "default": 0,
+            "title": "Priority",
+            "type": "integer"
+          },
+          "set_id": {
+            "title": "Set Id",
+            "type": "string"
+          },
+          "source_term": {
+            "title": "Source Term",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target_term": {
+            "title": "Target Term",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "language_pair",
+          "source_term",
+          "normalized_source_term",
+          "target_term",
+          "version",
+          "set_id",
+          "status"
+        ],
+        "title": "TranslationTermEntryResponse",
+        "type": "object"
+      },
       "TranslationTermProposalApproveAndPublishRequest": {
         "properties": {
           "release_note": {
@@ -6519,6 +6599,110 @@
         "title": "TranslationTermProposalReviewRequest",
         "type": "object"
       },
+      "TranslationTermSetDetailResponse": {
+        "properties": {
+          "default_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Version"
+          },
+          "draft_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Version"
+          },
+          "language_pair": {
+            "title": "Language Pair",
+            "type": "string"
+          },
+          "set_id": {
+            "title": "Set Id",
+            "type": "string"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/TranslationTermSetVersionResponse"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "set_id",
+          "language_pair",
+          "versions"
+        ],
+        "title": "TranslationTermSetDetailResponse",
+        "type": "object"
+      },
+      "TranslationTermSetDraftResponse": {
+        "properties": {
+          "base_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Version"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/TranslationTermEntryResponse"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "language_pair": {
+            "title": "Language Pair",
+            "type": "string"
+          },
+          "set_id": {
+            "title": "Set Id",
+            "type": "string"
+          },
+          "snapshot_hash": {
+            "title": "Snapshot Hash",
+            "type": "string"
+          },
+          "term_count": {
+            "title": "Term Count",
+            "type": "integer"
+          },
+          "validation": {
+            "$ref": "#/components/schemas/TranslationTermValidationReportResponse"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "set_id",
+          "language_pair",
+          "version",
+          "term_count",
+          "snapshot_hash",
+          "validation",
+          "entries"
+        ],
+        "title": "TranslationTermSetDraftResponse",
+        "type": "object"
+      },
       "TranslationTermSetExportManifestResponse": {
         "properties": {
           "exported_at": {
@@ -6720,6 +6904,221 @@
           "import_report"
         ],
         "title": "TranslationTermSetImportResponse",
+        "type": "object"
+      },
+      "TranslationTermSetListItemResponse": {
+        "properties": {
+          "default_term_count": {
+            "default": 0,
+            "title": "Default Term Count",
+            "type": "integer"
+          },
+          "default_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Version"
+          },
+          "draft_term_count": {
+            "default": 0,
+            "title": "Draft Term Count",
+            "type": "integer"
+          },
+          "draft_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Version"
+          },
+          "language_pair": {
+            "title": "Language Pair",
+            "type": "string"
+          },
+          "set_id": {
+            "title": "Set Id",
+            "type": "string"
+          },
+          "snapshot_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Hash"
+          },
+          "version_count": {
+            "title": "Version Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "set_id",
+          "language_pair",
+          "version_count"
+        ],
+        "title": "TranslationTermSetListItemResponse",
+        "type": "object"
+      },
+      "TranslationTermSetListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TranslationTermSetListItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "TranslationTermSetListResponse",
+        "type": "object"
+      },
+      "TranslationTermSetPublishRequest": {
+        "properties": {
+          "make_default": {
+            "default": true,
+            "title": "Make Default",
+            "type": "boolean"
+          },
+          "release_note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Note"
+          }
+        },
+        "title": "TranslationTermSetPublishRequest",
+        "type": "object"
+      },
+      "TranslationTermSetRollbackRequest": {
+        "properties": {
+          "version": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "TranslationTermSetRollbackRequest",
+        "type": "object"
+      },
+      "TranslationTermSetVersionResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "is_default": {
+            "default": false,
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "language_pair": {
+            "title": "Language Pair",
+            "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "published_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published By"
+          },
+          "release_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Note"
+          },
+          "set_id": {
+            "title": "Set Id",
+            "type": "string"
+          },
+          "snapshot_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Hash"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "term_count": {
+            "title": "Term Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "set_id",
+          "language_pair",
+          "version",
+          "status",
+          "term_count",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TranslationTermSetVersionResponse",
         "type": "object"
       },
       "TranslationTermValidationFindingResponse": {
@@ -13477,6 +13876,111 @@
         ]
       }
     },
+    "/api/v1/translation-term-sets": {
+      "get": {
+        "operationId": "list_translation_term_sets_api_v1_translation_term_sets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationTermSetListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Translation Term Sets",
+        "tags": [
+          "translation-term-sets"
+        ]
+      }
+    },
+    "/api/v1/translation-term-sets/{set_id}": {
+      "get": {
+        "operationId": "get_translation_term_set_api_v1_translation_term_sets__set_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "set_id",
+            "required": true,
+            "schema": {
+              "title": "Set Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationTermSetDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Translation Term Set",
+        "tags": [
+          "translation-term-sets"
+        ]
+      }
+    },
+    "/api/v1/translation-term-sets/{set_id}/draft": {
+      "get": {
+        "operationId": "get_translation_term_set_draft_api_v1_translation_term_sets__set_id__draft_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "set_id",
+            "required": true,
+            "schema": {
+              "title": "Set Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationTermSetDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Translation Term Set Draft",
+        "tags": [
+          "translation-term-sets"
+        ]
+      }
+    },
     "/api/v1/translation-term-sets/{set_id}/export": {
       "get": {
         "operationId": "export_translation_term_set_api_v1_translation_term_sets__set_id__export_get",
@@ -13678,6 +14182,312 @@
           }
         },
         "summary": "Import Translation Term Set",
+        "tags": [
+          "translation-term-sets"
+        ]
+      }
+    },
+    "/api/v1/translation-term-sets/{set_id}/publish": {
+      "post": {
+        "operationId": "publish_translation_term_set_draft_api_v1_translation_term_sets__set_id__publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "set_id",
+            "required": true,
+            "schema": {
+              "title": "Set Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TranslationTermSetPublishRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationTermSetVersionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Translation Term Set Draft",
+        "tags": [
+          "translation-term-sets"
+        ]
+      }
+    },
+    "/api/v1/translation-term-sets/{set_id}/rollback": {
+      "post": {
+        "operationId": "rollback_translation_term_set_version_api_v1_translation_term_sets__set_id__rollback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "set_id",
+            "required": true,
+            "schema": {
+              "title": "Set Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranslationTermSetRollbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationTermSetVersionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rollback Translation Term Set Version",
+        "tags": [
+          "translation-term-sets"
+        ]
+      }
+    },
+    "/api/v1/translation-term-sets/{set_id}/versions/{version}/set-default": {
+      "post": {
+        "operationId": "set_default_translation_term_set_version_api_v1_translation_term_sets__set_id__versions__version__set_default_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "set_id",
+            "required": true,
+            "schema": {
+              "title": "Set Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationTermSetVersionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Default Translation Term Set Version",
         "tags": [
           "translation-term-sets"
         ]

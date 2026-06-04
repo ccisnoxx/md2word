@@ -717,6 +717,137 @@ export type TranslationProfileRollbackRequest = {
   version: string;
 };
 
+export type TranslationTermValidationFindingResponse = {
+  code: string;
+  message: string;
+  normalized_source_term: string | null;
+};
+
+export type TranslationTermValidationReportResponse = {
+  valid: boolean;
+  errors: TranslationTermValidationFindingResponse[];
+  warnings: TranslationTermValidationFindingResponse[];
+};
+
+export type TranslationTermSetImportDuplicateResponse = {
+  row_number: number;
+  kept_row_number: number;
+  source_term: string;
+  normalized_source_term: string;
+};
+
+export type TranslationTermSetImportReportResponse = {
+  dedupe: string;
+  total_rows: number;
+  imported_rows: number;
+  duplicate_rows: number;
+  duplicates: TranslationTermSetImportDuplicateResponse[];
+};
+
+export type TranslationTermSetImportRequest = {
+  csv_text: string;
+  target?: "draft" | "seed";
+  dedupe?: "reject" | "keep_first";
+};
+
+export type TranslationTermSetImportResponse = {
+  target: string;
+  set_id: string;
+  language_pair: string;
+  version: string;
+  term_count: number;
+  snapshot_hash: string;
+  validation: TranslationTermValidationReportResponse;
+  import_report: TranslationTermSetImportReportResponse;
+};
+
+export type TranslationTermSetExportManifestResponse = {
+  set_id: string;
+  language_pair: string;
+  version: string;
+  format: string;
+  exported_at: string;
+  exported_by: string | null;
+};
+
+export type TranslationTermSetExportResponse = {
+  manifest: TranslationTermSetExportManifestResponse;
+  csv_text: string;
+};
+
+export type TranslationTermEntryResponse = {
+  language_pair: string;
+  source_term: string;
+  normalized_source_term: string;
+  target_term: string;
+  version: string;
+  set_id: string;
+  case_sensitive: boolean;
+  status: string;
+  priority: number;
+  domain: string | null;
+  category: string | null;
+  note: string;
+};
+
+export type TranslationTermSetListItemResponse = {
+  set_id: string;
+  language_pair: string;
+  default_version: string | null;
+  draft_version: string | null;
+  version_count: number;
+  default_term_count: number;
+  draft_term_count: number;
+  snapshot_hash: string | null;
+};
+
+export type TranslationTermSetListResponse = {
+  items: TranslationTermSetListItemResponse[];
+};
+
+export type TranslationTermSetVersionResponse = {
+  set_id: string;
+  language_pair: string;
+  version: string;
+  status: string;
+  snapshot_hash: string | null;
+  term_count: number;
+  is_default: boolean;
+  published_by: string | null;
+  published_at: string | null;
+  release_note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TranslationTermSetDetailResponse = {
+  set_id: string;
+  language_pair: string;
+  default_version: string | null;
+  draft_version: string | null;
+  versions: TranslationTermSetVersionResponse[];
+};
+
+export type TranslationTermSetDraftResponse = {
+  set_id: string;
+  language_pair: string;
+  version: string;
+  base_version: string | null;
+  term_count: number;
+  snapshot_hash: string;
+  validation: TranslationTermValidationReportResponse;
+  entries: TranslationTermEntryResponse[];
+};
+
+export type TranslationTermSetPublishRequest = {
+  make_default: boolean;
+  release_note?: string | null;
+};
+
+export type TranslationTermSetRollbackRequest = {
+  version: string;
+};
+
 export type TranslationTermProposalStatus = "pending" | "approved" | "rejected" | "published";
 export type TranslationTermProposalAction = "add" | "update" | "delete";
 

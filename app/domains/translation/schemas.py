@@ -201,3 +201,76 @@ class TranslationTermSetExportManifestResponse(BaseModel):
 class TranslationTermSetExportResponse(BaseModel):
     manifest: TranslationTermSetExportManifestResponse
     csv_text: str
+
+
+class TranslationTermEntryResponse(BaseModel):
+    language_pair: str
+    source_term: str
+    normalized_source_term: str
+    target_term: str
+    version: str
+    set_id: str
+    case_sensitive: bool = False
+    status: str
+    priority: int = 0
+    domain: str | None = None
+    category: str | None = None
+    note: str = ""
+
+
+class TranslationTermSetListItemResponse(BaseModel):
+    set_id: str
+    language_pair: str
+    default_version: str | None = None
+    draft_version: str | None = None
+    version_count: int
+    default_term_count: int = 0
+    draft_term_count: int = 0
+    snapshot_hash: str | None = None
+
+
+class TranslationTermSetListResponse(BaseModel):
+    items: list[TranslationTermSetListItemResponse]
+
+
+class TranslationTermSetVersionResponse(BaseModel):
+    set_id: str
+    language_pair: str
+    version: str
+    status: str
+    snapshot_hash: str | None = None
+    term_count: int
+    is_default: bool = False
+    published_by: str | None = None
+    published_at: datetime | None = None
+    release_note: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class TranslationTermSetDetailResponse(BaseModel):
+    set_id: str
+    language_pair: str
+    default_version: str | None = None
+    draft_version: str | None = None
+    versions: list[TranslationTermSetVersionResponse]
+
+
+class TranslationTermSetDraftResponse(BaseModel):
+    set_id: str
+    language_pair: str
+    version: str
+    base_version: str | None = None
+    term_count: int
+    snapshot_hash: str
+    validation: TranslationTermValidationReportResponse
+    entries: list[TranslationTermEntryResponse]
+
+
+class TranslationTermSetPublishRequest(BaseModel):
+    make_default: bool = True
+    release_note: str | None = Field(default=None, max_length=500)
+
+
+class TranslationTermSetRollbackRequest(BaseModel):
+    version: str = Field(min_length=1, max_length=128)

@@ -160,6 +160,19 @@ class MysqlTranslationTermRepository:
                 row = cursor.fetchone()
         return self._load_set(row) if row is not None else None
 
+    def list_sets(self) -> list[TranslationTermSetRecord]:
+        with self.backend.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT set_id, language_pair, default_version, draft_version, created_at, updated_at
+                    FROM translation_term_sets
+                    ORDER BY language_pair, set_id
+                    """
+                )
+                rows = cursor.fetchall()
+        return [self._load_set(row) for row in rows]
+
     def save_version(self, record: TranslationTermVersionRecord) -> TranslationTermVersionRecord:
         with self.backend.connect() as connection:
             with connection.cursor() as cursor:
