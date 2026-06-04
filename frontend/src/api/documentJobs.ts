@@ -1,6 +1,10 @@
-// frontend/src/api/documentJobs.ts: document_jobs API wrappers used by workbench pages.
+// File: frontend/src/api/documentJobs.ts
+// Purpose: Provide document_jobs API wrappers used by workbench pages.
 import { apiRequest } from "@/api/client";
 import type {
+  DocumentJobBulkJobIdsRequest,
+  DocumentJobBulkResponse,
+  DocumentJobBulkRetryRequest,
   DocumentJobCreateRequest,
   DocumentJobCreateResponse,
   DocumentJobArchiveResponse,
@@ -103,6 +107,15 @@ export const documentJobsApi = {
     });
   },
 
+  // 批量重试失败任务，后端逐项返回成功和失败结果。
+  bulkRetry(payload: DocumentJobBulkRetryRequest): Promise<DocumentJobBulkResponse> {
+    return apiRequest<DocumentJobBulkResponse>({
+      url: "/api/v1/document-jobs/bulk-retry",
+      method: "POST",
+      data: payload,
+    });
+  },
+
   archive(jobId: string): Promise<DocumentJobArchiveResponse> {
     return apiRequest<DocumentJobArchiveResponse>({
       url: `/api/v1/document-jobs/${jobId}`,
@@ -110,10 +123,28 @@ export const documentJobsApi = {
     });
   },
 
+  // 批量归档终态任务；归档不会删除文件或事件。
+  bulkArchive(payload: DocumentJobBulkJobIdsRequest): Promise<DocumentJobBulkResponse> {
+    return apiRequest<DocumentJobBulkResponse>({
+      url: "/api/v1/document-jobs/bulk-archive",
+      method: "POST",
+      data: payload,
+    });
+  },
+
   cancel(jobId: string): Promise<DocumentJobCancelResponse> {
     return apiRequest<DocumentJobCancelResponse>({
       url: `/api/v1/document-jobs/${jobId}/cancel`,
       method: "POST",
+    });
+  },
+
+  // 批量取消未终态任务，语义与单任务取消一致。
+  bulkCancel(payload: DocumentJobBulkJobIdsRequest): Promise<DocumentJobBulkResponse> {
+    return apiRequest<DocumentJobBulkResponse>({
+      url: "/api/v1/document-jobs/bulk-cancel",
+      method: "POST",
+      data: payload,
     });
   },
 

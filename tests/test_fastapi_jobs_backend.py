@@ -1,4 +1,5 @@
-# tests/test_fastapi_jobs_backend.py: 覆盖 FastAPI jobs/files API、workflow 和 artifact 合同。
+# File: tests/test_fastapi_jobs_backend.py
+# Purpose: 覆盖 FastAPI jobs/files API、workflow 和 artifact 合同。
 
 import io
 import json
@@ -2397,6 +2398,256 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(stored_job.status, "failed")
         self.assertIsNone(stored_job.canceled_at)
 
+    def test_document_job_bulk_archive_returns_per_item_results_and_writes_audit(self):
+        """验证批量归档支持部分失败，并且只隐藏任务不删除文件。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                succeeded_job_id = self._create_document_job_from_upload(client, headers, filename="bulk-archive-ok.pdf")
+                failed_job_id = self._create_document_job_from_upload(client, headers, filename="bulk-archive-failed.pdf")
+                pending_job_id = self._create_document_job_from_upload(client, headers, filename="bulk-archive-pending.pdf")
+                now = utc_now()
+                runtime.document_job_repository.update_document_job(
+                    succeeded_job_id,
+                    status="succeeded",
+                    stage="completed",
+                    progress=100,
+                    completed_at=now,
+                )
+                runtime.document_job_repository.update_document_job(
+                    failed_job_id,
+                    status="failed",
+                    stage="failed",
+                    failed_stage="parsing",
+                    error_code="historical_failure",
+                    error_message="failed before archive",
+                    completed_at=now,
+                )
+                response = client.post(
+                    "/api/v1/document-jobs/bulk-archive",
+                    headers={**headers, "X-Trace-Id": "trace_docjob_bulk_archive"},
+                    json={"job_ids": [succeeded_job_id, failed_job_id, pending_job_id]},
+                )
+
+            succeeded_job = runtime.document_job_repository.get_document_job(succeeded_job_id)
+            failed_job = runtime.document_job_repository.get_document_job(failed_job_id)
+            pending_job = runtime.document_job_repository.get_document_job(pending_job_id)
+            audit_events = runtime.audit_event_repository.list_audit_events()
+            succeeded_events = runtime.document_job_event_repository.list_document_job_events(succeeded_job_id)
+            failed_events = runtime.document_job_event_repository.list_document_job_events(failed_job_id)
+            succeeded_source_file = runtime.document_file_repository.get_document_file(succeeded_job.source_file_id)
+            failed_source_file = runtime.document_file_repository.get_document_file(failed_job.source_file_id)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["action"], "archive")
+        self.assertEqual(payload["total"], 3)
+        self.assertEqual(payload["succeeded"], 2)
+        self.assertEqual(payload["failed"], 1)
+        self.assertTrue(payload["items"][0]["ok"])
+        self.assertTrue(payload["items"][1]["ok"])
+        self.assertFalse(payload["items"][2]["ok"])
+        self.assertEqual(payload["items"][2]["job_id"], pending_job_id)
+        self.assertEqual(payload["items"][2]["status_code"], 409)
+        self.assertEqual(payload["items"][2]["error_code"], "conflict")
+        self.assertIn("终态", payload["items"][2]["detail"])
+        self.assertIsNotNone(succeeded_job.archived_at)
+        self.assertIsNotNone(failed_job.archived_at)
+        self.assertIsNone(pending_job.archived_at)
+        self.assertIsNotNone(succeeded_source_file)
+        self.assertIsNotNone(failed_source_file)
+        self.assertIn("job_archived", [event.event_type for event in succeeded_events])
+        self.assertIn("job_archived", [event.event_type for event in failed_events])
+        archive_audit_events = [event for event in audit_events if event.action == "document_job.archive"]
+        self.assertEqual(len(archive_audit_events), 2)
+        self.assertEqual({event.target_id for event in archive_audit_events}, {succeeded_job_id, failed_job_id})
+
+    def test_document_job_bulk_cancel_returns_per_item_results_and_writes_audit(self):
+        """验证批量取消复用单任务取消语义，并保留终态失败项。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                pending_job_id = self._create_document_job_from_upload(client, headers, filename="bulk-cancel-pending.pdf")
+                running_job_id = self._create_document_job_from_upload(client, headers, filename="bulk-cancel-running.pdf")
+                failed_job_id = self._create_document_job_from_upload(client, headers, filename="bulk-cancel-failed.pdf")
+                runtime.document_job_repository.update_document_job(
+                    running_job_id,
+                    status="running",
+                    stage="parsing",
+                    progress=20,
+                )
+                runtime.document_job_repository.update_document_job(
+                    failed_job_id,
+                    status="failed",
+                    stage="failed",
+                    failed_stage="parsing",
+                    error_code="historical_failure",
+                    error_message="terminal job",
+                )
+                response = client.post(
+                    "/api/v1/document-jobs/bulk-cancel",
+                    headers={**headers, "X-Trace-Id": "trace_docjob_bulk_cancel"},
+                    json={"job_ids": [pending_job_id, running_job_id, failed_job_id]},
+                )
+
+            pending_job = runtime.document_job_repository.get_document_job(pending_job_id)
+            running_job = runtime.document_job_repository.get_document_job(running_job_id)
+            failed_job = runtime.document_job_repository.get_document_job(failed_job_id)
+            audit_events = runtime.audit_event_repository.list_audit_events()
+            running_events = runtime.document_job_event_repository.list_document_job_events(running_job_id)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["action"], "cancel")
+        self.assertEqual(payload["succeeded"], 2)
+        self.assertEqual(payload["failed"], 1)
+        self.assertEqual(pending_job.status, "canceled")
+        self.assertEqual(running_job.status, "canceled")
+        self.assertEqual(running_job.stage, "canceled")
+        self.assertIsNotNone(pending_job.canceled_at)
+        self.assertIsNotNone(running_job.canceled_at)
+        self.assertEqual(failed_job.status, "failed")
+        self.assertIsNone(failed_job.canceled_at)
+        failed_item = payload["items"][2]
+        self.assertFalse(failed_item["ok"])
+        self.assertEqual(failed_item["status_code"], 409)
+        self.assertEqual(failed_item["error_code"], "conflict")
+        self.assertIn("pending", failed_item["detail"])
+        cancel_audit_events = [event for event in audit_events if event.action == "document_job.cancel"]
+        self.assertEqual(len(cancel_audit_events), 2)
+        self.assertEqual({event.target_id for event in cancel_audit_events}, {pending_job_id, running_job_id})
+        cancel_events = [event for event in running_events if event.event_type == "job_canceled"]
+        self.assertEqual(len(cancel_events), 1)
+        self.assertEqual(cancel_events[0].payload["previous_status"], "running")
+
+    def test_document_job_bulk_retry_requeues_failed_jobs_without_eager_worker(self):
+        """验证批量重试只重新排队失败任务，不运行解析或生成主流程。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                failed_a_id = self._create_document_job_from_upload(client, headers, filename="bulk-retry-a.pdf")
+                failed_b_id = self._create_document_job_from_upload(client, headers, filename="bulk-retry-b.pdf")
+                pending_job_id = self._create_document_job_from_upload(client, headers, filename="bulk-retry-pending.pdf")
+                runtime.document_job_repository.update_document_job(
+                    failed_a_id,
+                    status="failed",
+                    stage="failed",
+                    failed_stage="parsing",
+                    error_code="mineru_failed",
+                    error_message="mineru failed",
+                )
+                runtime.document_job_repository.update_document_job(
+                    failed_b_id,
+                    status="failed",
+                    stage="failed",
+                    failed_stage="rendering",
+                    error_code="render_failed",
+                    error_message="render failed",
+                )
+                response = client.post(
+                    "/api/v1/document-jobs/bulk-retry",
+                    headers={**headers, "X-Trace-Id": "trace_docjob_bulk_retry"},
+                    json={
+                        "job_ids": [failed_a_id, failed_b_id, pending_job_id],
+                        "reason": "bulk retry after failures",
+                    },
+                )
+
+            failed_a = runtime.document_job_repository.get_document_job(failed_a_id)
+            failed_b = runtime.document_job_repository.get_document_job(failed_b_id)
+            pending_job = runtime.document_job_repository.get_document_job(pending_job_id)
+            audit_events = runtime.audit_event_repository.list_audit_events()
+            retry_events = runtime.document_job_event_repository.list_document_job_events(failed_a_id)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["action"], "retry")
+        self.assertEqual(payload["succeeded"], 2)
+        self.assertEqual(payload["failed"], 1)
+        self.assertEqual(failed_a.status, "pending")
+        self.assertEqual(failed_b.status, "pending")
+        self.assertEqual(failed_a.retry_count, 1)
+        self.assertEqual(failed_b.retry_count, 1)
+        self.assertIsNone(failed_a.error_code)
+        self.assertIsNone(failed_b.error_code)
+        self.assertEqual(pending_job.status, "pending")
+        self.assertEqual(pending_job.retry_count, 0)
+        self.assertEqual(runtime.document_job_execution_service.fake_mineru_client.calls, [])
+        failed_item = payload["items"][2]
+        self.assertFalse(failed_item["ok"])
+        self.assertEqual(failed_item["status_code"], 409)
+        self.assertIn("failed", failed_item["detail"])
+        retry_audit_events = [event for event in audit_events if event.action == "document_job.retry"]
+        self.assertEqual(len(retry_audit_events), 2)
+        self.assertEqual({event.target_id for event in retry_audit_events}, {failed_a_id, failed_b_id})
+        self.assertEqual({event.reason for event in retry_audit_events}, {"bulk retry after failures"})
+        retry_requested_events = [event for event in retry_events if event.event_type == "retry_requested"]
+        self.assertEqual(len(retry_requested_events), 1)
+        self.assertEqual(retry_requested_events[0].payload["reason"], "bulk retry after failures")
+
+    def test_document_job_bulk_request_validation_rejects_invalid_job_ids(self):
+        """验证批量接口对空列表、重复项和超上限列表返回 400。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = create_app(
+                build_test_runtime(
+                    Path(temp_dir),
+                    auth_jwt_secret_key="test-jwt-secret",
+                    auth_internal_users_json=build_auth_users_json(),
+                )
+            )
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                empty_response = client.post(
+                    "/api/v1/document-jobs/bulk-archive",
+                    headers=headers,
+                    json={"job_ids": []},
+                )
+                duplicate_response = client.post(
+                    "/api/v1/document-jobs/bulk-cancel",
+                    headers=headers,
+                    json={"job_ids": ["docjob_duplicate", "docjob_duplicate"]},
+                )
+                too_many_response = client.post(
+                    "/api/v1/document-jobs/bulk-retry",
+                    headers=headers,
+                    json={"job_ids": [f"docjob_{index:02d}" for index in range(51)]},
+                )
+
+        self.assertEqual(empty_response.status_code, 400)
+        self.assertEqual(empty_response.json()["error_code"], "invalid_request")
+        self.assertIn("不能为空", empty_response.json()["detail"])
+        self.assertEqual(duplicate_response.status_code, 400)
+        self.assertEqual(duplicate_response.json()["error_code"], "invalid_request")
+        self.assertIn("重复", duplicate_response.json()["detail"])
+        self.assertEqual(too_many_response.status_code, 400)
+        self.assertEqual(too_many_response.json()["error_code"], "invalid_request")
+        self.assertIn("最多支持 50", too_many_response.json()["detail"])
+
     def test_document_job_mineru_callback_completes_pending_parse(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(
@@ -3450,6 +3701,25 @@ class FastAPIJobsBackendTests(TestCase):
         if upload_response.status_code != 201:
             raise AssertionError(upload_response.json())
         return upload_response.json()["file"]
+
+    def _create_document_job_from_upload(
+        self,
+        client: TestClient,
+        headers: dict[str, str],
+        *,
+        filename: str,
+    ) -> str:
+        """上传源 PDF 并创建一个 document_job，返回任务 ID。"""
+
+        source_file = self._upload_source_pdf(client, headers, filename=filename)
+        response = client.post(
+            "/api/v1/document-jobs",
+            headers=headers,
+            json={"source_file_id": source_file["id"]},
+        )
+        if response.status_code != 201:
+            raise AssertionError(response.json())
+        return response.json()["job_id"]
 
     def _seed_expired_document_file(self, runtime: AppRuntime, *, file_id: str) -> DocumentFileRecord:
         """创建一个已过 expires_at 的 document_file，并写入对应本地对象内容。"""

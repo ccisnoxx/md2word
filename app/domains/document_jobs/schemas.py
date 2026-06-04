@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-# app/domains/document_jobs/schemas.py: 定义 document_jobs API 的 v1 请求/响应模型。
+# File: app/domains/document_jobs/schemas.py
+# Purpose: 定义 document_jobs API 的 v1 请求/响应模型。
 
 from datetime import datetime
 from typing import Any, Literal
@@ -306,3 +307,42 @@ class DocumentJobRetryResponse(BaseModel):
     progress: int
     retry_count: int
     job: DocumentJobResponse
+
+
+class DocumentJobBulkJobIdsRequest(BaseModel):
+    """批量任务操作的 job_id 列表。"""
+
+    job_ids: list[str] = Field(default_factory=list)
+
+
+class DocumentJobBulkRetryRequest(BaseModel):
+    """批量重试请求；重试选项与单任务重试保持一致。"""
+
+    job_ids: list[str] = Field(default_factory=list)
+    reason: str | None = None
+    use_latest_term_assets: bool = False
+    term_rule_set_id: str | None = None
+    term_rule_set_version: str | None = None
+    translation_term_set_id: str | None = None
+    translation_term_version: str | None = None
+
+
+class DocumentJobBulkItemResponse(BaseModel):
+    """批量操作中单个任务的成功或失败结果。"""
+
+    job_id: str
+    ok: bool
+    status_code: int
+    error_code: str | None = None
+    detail: str | None = None
+    job: DocumentJobResponse | None = None
+
+
+class DocumentJobBulkResponse(BaseModel):
+    """批量任务操作响应；允许部分成功。"""
+
+    action: Literal["retry", "archive", "cancel"]
+    total: int
+    succeeded: int
+    failed: int
+    items: list[DocumentJobBulkItemResponse] = Field(default_factory=list)

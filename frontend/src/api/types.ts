@@ -1,4 +1,5 @@
-// frontend/src/api/types.ts: TypeScript contracts for backend v1 schemas used by MVP and Admin pages.
+// File: frontend/src/api/types.ts
+// Purpose: Define TypeScript contracts for backend v1 schemas used by MVP and Admin pages.
 export type AuthLoginRequest = {
   username: string;
   password: string;
@@ -191,6 +192,14 @@ export type DocumentJobRetryRequest = {
   translation_term_version?: string | null;
 };
 
+export type DocumentJobBulkAction = "retry" | "archive" | "cancel";
+
+export type DocumentJobBulkJobIdsRequest = {
+  job_ids: string[];
+};
+
+export type DocumentJobBulkRetryRequest = DocumentJobBulkJobIdsRequest & DocumentJobRetryRequest;
+
 export type BoundResourceVersion = {
   resource_type: string;
   resource_id: string;
@@ -272,6 +281,23 @@ export type DocumentJobListResponse = {
   page_size: number;
   total: number;
   summary: Record<string, number>;
+};
+
+export type DocumentJobBulkItemResponse = {
+  job_id: string;
+  ok: boolean;
+  status_code: number;
+  error_code: string | null;
+  detail: string | null;
+  job: DocumentJobResponse | null;
+};
+
+export type DocumentJobBulkResponse = {
+  action: DocumentJobBulkAction;
+  total: number;
+  succeeded: number;
+  failed: number;
+  items: DocumentJobBulkItemResponse[];
 };
 
 export type DocumentJobArchiveResponse = {

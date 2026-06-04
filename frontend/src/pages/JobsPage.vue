@@ -1,4 +1,5 @@
-<!-- frontend/src/pages/JobsPage.vue: Main document job workbench with upload and job list. -->
+<!-- File: frontend/src/pages/JobsPage.vue -->
+<!-- Purpose: Render the document job workbench with upload, filtering, and batch actions. -->
 <template>
   <main class="jobs-page" aria-labelledby="jobs-title">
     <section class="jobs-hero">
@@ -327,6 +328,7 @@ async function handleArchive(job: DocumentJobResponse): Promise<void> {
   }
 }
 
+// 调用后端批量重试接口，避免前端逐个发起单任务请求。
 async function handleBatchRetry(): Promise<void> {
   const targets = selectedRetryableJobs.value;
   if (!targets.length) {
@@ -335,16 +337,20 @@ async function handleBatchRetry(): Promise<void> {
   batchLoading.value = true;
   error.value = null;
   try {
-    const results = await Promise.allSettled(
-      targets.map((job) => documentJobsApi.retry(job.id, { reason: "frontend batch retry" })),
-    );
-    showBatchResult("批量重试", results);
+    const response = await documentJobsApi.bulkRetry({
+      job_ids: targets.map((job) => job.id),
+      reason: "frontend batch retry",
+    });
+    showBatchResult("批量重试", response.succeeded, response.failed);
     await loadJobs();
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
   } finally {
     batchLoading.value = false;
   }
 }
 
+// 调用后端批量归档接口，并保留现有归档确认语义。
 async function handleBatchArchive(): Promise<void> {
   const targets = selectedArchivableJobs.value;
   if (!targets.length) {
@@ -370,17 +376,20 @@ async function handleBatchArchive(): Promise<void> {
   batchLoading.value = true;
   error.value = null;
   try {
-    const results = await Promise.allSettled(targets.map((job) => documentJobsApi.archive(job.id)));
-    showBatchResult("批量归档", results);
+    const response = await documentJobsApi.bulkArchive({
+      job_ids: targets.map((job) => job.id),
+    });
+    showBatchResult("批量归档", response.succeeded, response.failed);
     await loadJobs();
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
   } finally {
     batchLoading.value = false;
   }
 }
 
-function showBatchResult(label: string, results: PromiseSettledResult<unknown>[]): void {
-  const succeeded = results.filter((result) => result.status === "fulfilled").length;
-  const failed = results.length - succeeded;
+// 用后端聚合结果展示批量操作的成功和失败数量。
+function showBatchResult(label: string, succeeded: number, failed: number): void {
   if (failed > 0) {
     ElMessage.warning(`${label}完成：成功 ${succeeded} 个，失败 ${failed} 个。`);
     return;

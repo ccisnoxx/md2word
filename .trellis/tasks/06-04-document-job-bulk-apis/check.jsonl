@@ -1,0 +1,4 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": "tests/test_fastapi_jobs_backend.py", "reason": "Targeted FastAPI tests for document_jobs bulk API behavior"}
+{"file": "docs/api/openapi.json", "reason": "OpenAPI snapshot must change after adding bulk endpoints"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verification commands and backend testing expectations"}
