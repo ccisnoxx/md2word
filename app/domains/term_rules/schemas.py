@@ -1,11 +1,12 @@
-from __future__ import annotations
+# File: app/domains/term_rules/schemas.py
+# Purpose: 定义 term-rules API 的 v1 请求和响应模型。
 
-# app/domains/term_rules/schemas.py: 定义 term-rules API 的 v1 请求/响应模型。
+from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class TermRuleCategoryListItemResponse(BaseModel):
@@ -242,6 +243,102 @@ class TermRuleSetExportResponse(BaseModel):
     yaml_text: str
 
 
+class TermRuleDraftRuleMutationResponse(BaseModel):
+    """返回 draft 规则写入结果和更新后的 draft 元数据。"""
+
+    rule: TermRuleResponse
+    draft: TermRuleSetDraftResponse
+
+
+class TermRuleDraftRuleDeleteResponse(BaseModel):
+    """返回 draft 规则移除结果和更新后的 draft 元数据。"""
+
+    id: str
+    removed: bool
+    draft: TermRuleSetDraftResponse
+
+
+class TermRuleSetVersionRefResponse(BaseModel):
+    """描述 diff/preflight 中解析后的规则集版本引用。"""
+
+    ref: str
+    version: str
+    snapshot_hash: str | None = None
+    rule_count: int
+    enabled_rule_count: int
+
+
+class TermRuleSetDiffSummaryResponse(BaseModel):
+    """汇总 draft 与基线版本之间的规则变化数量。"""
+
+    added: int
+    updated: int
+    disabled: int
+    removed: int
+    unchanged: int
+    total: int
+
+
+class TermRuleSetDiffItemResponse(BaseModel):
+    """描述一条规则在 diff 中的变化。"""
+
+    change_type: Literal["added", "updated", "disabled", "removed", "unchanged"]
+    rule_id: str
+    source_term: str
+    category_id: str
+    changed_fields: list[str]
+    before: TermRuleResponse | None = None
+    after: TermRuleResponse | None = None
+
+
+class TermRuleSetDiffResponse(BaseModel):
+    """返回 Term Rule Set draft 相对基线版本的结构化差异。"""
+
+    term_rule_set_id: str
+    base_ref: TermRuleSetVersionRefResponse
+    target_ref: TermRuleSetVersionRefResponse
+    summary: TermRuleSetDiffSummaryResponse
+    items: list[TermRuleSetDiffItemResponse]
+
+
+class TermRuleGovernanceFindingResponse(BaseModel):
+    """描述发布前治理校验的一条错误、告警或冲突。"""
+
+    severity: Literal["error", "warning", "conflict"]
+    code: str
+    message: str
+    path: str | None = None
+    rule_id: str | None = None
+    source_term: str | None = None
+    category_id: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class TermRuleSetPreflightSummaryResponse(BaseModel):
+    """汇总发布前校验报告的发现数量和 draft 规模。"""
+
+    error_count: int
+    warning_count: int
+    conflict_count: int
+    rule_count: int
+    enabled_rule_count: int
+
+
+class TermRuleSetPreflightResponse(BaseModel):
+    """返回 Term Rule Set draft 发布前校验结果。"""
+
+    term_rule_set_id: str
+    valid: bool
+    blocking: bool
+    base_ref: TermRuleSetVersionRefResponse
+    draft_ref: TermRuleSetVersionRefResponse
+    summary: TermRuleSetPreflightSummaryResponse
+    errors: list[TermRuleGovernanceFindingResponse]
+    warnings: list[TermRuleGovernanceFindingResponse]
+    conflicts: list[TermRuleGovernanceFindingResponse]
+    diff_summary: TermRuleSetDiffSummaryResponse
+
+
 class TermRuleSetPublishRequest(BaseModel):
     make_default: bool = True
     published_by: str | None = None
@@ -316,6 +413,28 @@ class TermRuleProposalResponse(BaseModel):
     published_term_rule_set_id: str | None = None
     published_term_rule_set_version: str | None = None
     published_at: datetime | None = None
+
+
+class TermRuleProposalConflictItemResponse(BaseModel):
+    """描述 Term Rule Proposal 审核时发现的一条结构化冲突。"""
+
+    type: Literal["stale_target_rule", "missing_target_rule", "source_term_segments_conflict"]
+    message: str
+    proposal_id: str
+    target_rule_id: str | None = None
+    source_term: str
+    category_id: str
+    current_rule: TermRuleResponse | None = None
+    target_rule_snapshot: dict[str, Any] | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class TermRuleProposalConflictResponse(BaseModel):
+    """返回 Term Rule Proposal 审核冲突的稳定 409 响应 payload。"""
+
+    code: Literal["term_rule_proposal_conflict"] = "term_rule_proposal_conflict"
+    message: str
+    conflicts: list[TermRuleProposalConflictItemResponse]
 
 
 class TermRuleProposalListResponse(BaseModel):

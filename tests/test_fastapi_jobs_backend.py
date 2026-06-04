@@ -4421,6 +4421,504 @@ class FastAPIJobsBackendTests(TestCase):
             draft_before_response.json()["snapshot_hash"],
         )
 
+    def test_term_rule_set_draft_rule_crud_only_mutates_draft(self):
+        """验证结构化 draft rule CRUD 不会提前刷新 live runtime YAML。"""
+
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        seed_yaml = (
+            "schema_version: 2\n"
+            "categories:\n"
+            "  voltage_terms:\n"
+            "    name: 电压相关\n"
+            "    priority: 10\n"
+            "    enabled: true\n"
+            "rules:\n"
+            "  - source_term: VOLD\n"
+            "    category: voltage_terms\n"
+            "    segments:\n"
+            "      - segment_text: V\n"
+            "        render_type: plain\n"
+            "      - segment_text: OLD\n"
+            "        render_type: subscript\n"
+            "    enabled: true\n"
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            seed_path = temp_root / "term_rules_seed.yaml"
+            seed_path.write_text(seed_yaml, encoding="utf-8")
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                admin_token="secret-admin",
+                jobs_repository_backend="mysql",
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                term_rules_seed_path=str(seed_path),
+            )
+            original_runtime_yaml = runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8")
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                category_id = client.get("/api/v1/term-rule-categories").json()["items"][0]["id"]
+                list_before_response = client.get("/api/v1/term-rule-sets/electronics-default/draft/rules?q=VOLD")
+                existing_rule_id = list_before_response.json()["items"][0]["id"]
+                get_before_response = client.get(
+                    f"/api/v1/term-rule-sets/electronics-default/draft/rules/{existing_rule_id}",
+                )
+                create_response = client.post(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules",
+                    headers={"X-Admin-Token": "secret-admin"},
+                    json={
+                        "id": "rule_draft_vin",
+                        "category_id": category_id,
+                        "source_term": "VIN",
+                        "segments": [
+                            {"segment_text": "V", "render_type": "plain"},
+                            {"segment_text": "IN", "render_type": "subscript"},
+                        ],
+                        "apply_scope": "both",
+                        "priority": 20,
+                        "notes": "draft only",
+                    },
+                )
+                runtime_yaml_after_create = runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8")
+                duplicate_response = client.post(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules",
+                    headers={"X-Admin-Token": "secret-admin"},
+                    json={
+                        "category_id": category_id,
+                        "source_term": "VIN",
+                        "segments": [{"segment_text": "VIN", "render_type": "plain"}],
+                    },
+                )
+                patch_response = client.patch(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules/rule_draft_vin",
+                    headers={"X-Admin-Token": "secret-admin"},
+                    json={
+                        "enabled": False,
+                        "segments": [
+                            {"segment_text": "V", "render_type": "plain"},
+                            {"segment_text": "IN2", "render_type": "subscript"},
+                        ],
+                        "notes": "disabled before publish",
+                    },
+                )
+                disabled_list_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules?enabled=false&q=VIN",
+                )
+                runtime_yaml_after_patch = runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8")
+                delete_response = client.delete(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules/rule_draft_vin",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                missing_after_delete_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules/rule_draft_vin",
+                )
+                runtime_yaml_after_delete = runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8")
+
+        self.assertEqual(list_before_response.status_code, 200)
+        self.assertEqual(list_before_response.json()["total"], 1)
+        self.assertEqual(get_before_response.status_code, 200)
+        self.assertEqual(get_before_response.json()["source_term"], "VOLD")
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.json()["rule"]["source_term"], "VIN")
+        self.assertEqual(create_response.json()["draft"]["rule_count"], 2)
+        self.assertEqual(runtime_yaml_after_create, original_runtime_yaml)
+        self.assertEqual(duplicate_response.status_code, 400)
+        self.assertIn("source_term", duplicate_response.json()["detail"])
+        self.assertEqual(patch_response.status_code, 200)
+        self.assertFalse(patch_response.json()["rule"]["enabled"])
+        self.assertIn("IN2", patch_response.json()["rule"]["custom_html"])
+        self.assertEqual(patch_response.json()["draft"]["enabled_rule_count"], 1)
+        self.assertEqual(disabled_list_response.status_code, 200)
+        self.assertEqual(disabled_list_response.json()["total"], 1)
+        self.assertEqual(runtime_yaml_after_patch, original_runtime_yaml)
+        self.assertEqual(delete_response.status_code, 200)
+        self.assertTrue(delete_response.json()["removed"])
+        self.assertEqual(delete_response.json()["draft"]["rule_count"], 1)
+        self.assertEqual(missing_after_delete_response.status_code, 404)
+        self.assertEqual(runtime_yaml_after_delete, original_runtime_yaml)
+
+    def test_term_rule_set_draft_rule_crud_auth_backend_and_validation_errors(self):
+        """覆盖 draft rule CRUD 的鉴权、后端开关和基础校验错误。"""
+
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        seed_yaml = (
+            "schema_version: 2\n"
+            "categories:\n"
+            "  voltage_terms:\n"
+            "    name: 电压相关\n"
+            "    priority: 10\n"
+            "    enabled: true\n"
+            "rules:\n"
+            "  - source_term: VOLD\n"
+            "    category: voltage_terms\n"
+            "    segments:\n"
+            "      - segment_text: V\n"
+            "        render_type: plain\n"
+            "      - segment_text: OLD\n"
+            "        render_type: subscript\n"
+            "    enabled: true\n"
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            file_runtime = build_test_runtime(Path(temp_dir), admin_token="secret-admin")
+            app = create_app(file_runtime)
+            with TestClient(app) as client:
+                file_list_response = client.get("/api/v1/term-rule-sets/electronics-default/draft/rules")
+                file_create_response = client.post(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules",
+                    headers={"X-Admin-Token": "secret-admin"},
+                    json={
+                        "category_id": "missing",
+                        "source_term": "VFILE",
+                        "segments": [{"segment_text": "VFILE", "render_type": "plain"}],
+                    },
+                )
+
+        self.assertEqual(file_list_response.status_code, 503)
+        self.assertEqual(file_create_response.status_code, 503)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            seed_path = temp_root / "term_rules_seed.yaml"
+            seed_path.write_text(seed_yaml, encoding="utf-8")
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                term_rules_seed_path=str(seed_path),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                category_id = client.get("/api/v1/term-rule-categories").json()["items"][0]["id"]
+                operator_create_response = client.post(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules",
+                    headers=operator_headers,
+                    json={
+                        "category_id": category_id,
+                        "source_term": "VOP",
+                        "segments": [{"segment_text": "VOP", "render_type": "plain"}],
+                    },
+                )
+                duplicate_response = client.post(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules",
+                    headers=admin_headers,
+                    json={
+                        "category_id": category_id,
+                        "source_term": "VOLD",
+                        "segments": [{"segment_text": "VOLD", "render_type": "plain"}],
+                    },
+                )
+                unknown_category_response = client.post(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules",
+                    headers=admin_headers,
+                    json={
+                        "category_id": "missing_category",
+                        "source_term": "VMISSING",
+                        "segments": [{"segment_text": "VMISSING", "render_type": "plain"}],
+                    },
+                )
+                empty_segments_response = client.post(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules",
+                    headers=admin_headers,
+                    json={
+                        "category_id": category_id,
+                        "source_term": "VEMPTY",
+                        "segments": [],
+                    },
+                )
+                invalid_render_response = client.post(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules",
+                    headers=admin_headers,
+                    json={
+                        "category_id": category_id,
+                        "source_term": "VBADRENDER",
+                        "segments": [{"segment_text": "VBAD", "render_type": "bad"}],
+                    },
+                )
+                invalid_scope_response = client.post(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules",
+                    headers=admin_headers,
+                    json={
+                        "category_id": category_id,
+                        "source_term": "VBADSCOPE",
+                        "apply_scope": "bad",
+                        "segments": [{"segment_text": "VBAD", "render_type": "plain"}],
+                    },
+                )
+
+        self.assertEqual(operator_create_response.status_code, 403)
+        self.assertEqual(duplicate_response.status_code, 400)
+        self.assertIn("source_term", duplicate_response.json()["detail"])
+        self.assertEqual(unknown_category_response.status_code, 404)
+        self.assertIn("分类不存在", unknown_category_response.json()["detail"])
+        self.assertEqual(empty_segments_response.status_code, 400)
+        self.assertIn("segments", empty_segments_response.json()["detail"])
+        self.assertEqual(invalid_render_response.status_code, 400)
+        self.assertIn("render_type", invalid_render_response.json()["detail"])
+        self.assertEqual(invalid_scope_response.status_code, 400)
+        self.assertIn("apply_scope", invalid_scope_response.json()["detail"])
+
+    def test_term_rule_set_diff_preflight_reports_changes_and_allows_warning_publish(self):
+        """验证 draft diff/preflight 能报告变更，并允许 warning-only 发布。"""
+
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        seed_yaml = (
+            "schema_version: 2\n"
+            "categories:\n"
+            "  voltage_terms:\n"
+            "    name: 电压相关\n"
+            "    priority: 10\n"
+            "    enabled: true\n"
+            "rules:\n"
+            "  - source_term: VKEEP\n"
+            "    category: voltage_terms\n"
+            "    segments:\n"
+            "      - segment_text: VKEEP\n"
+            "        render_type: plain\n"
+            "    enabled: true\n"
+            "  - source_term: VUPDATE\n"
+            "    category: voltage_terms\n"
+            "    segments:\n"
+            "      - segment_text: VUPDATE\n"
+            "        render_type: plain\n"
+            "    enabled: true\n"
+            "  - source_term: VDISABLE\n"
+            "    category: voltage_terms\n"
+            "    segments:\n"
+            "      - segment_text: VDISABLE\n"
+            "        render_type: plain\n"
+            "    enabled: true\n"
+            "  - source_term: VREMOVE\n"
+            "    category: voltage_terms\n"
+            "    segments:\n"
+            "      - segment_text: VREMOVE\n"
+            "        render_type: plain\n"
+            "    enabled: true\n"
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            seed_path = temp_root / "term_rules_seed.yaml"
+            seed_path.write_text(seed_yaml, encoding="utf-8")
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                admin_token="secret-admin",
+                jobs_repository_backend="mysql",
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                term_rules_seed_path=str(seed_path),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                default_version = client.get("/api/v1/term-rule-sets/electronics-default").json()["default_version"]
+                category_id = client.get("/api/v1/term-rule-categories").json()["items"][0]["id"]
+                draft_rules = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules?page_size=20",
+                ).json()["items"]
+                rule_ids = {item["source_term"]: item["id"] for item in draft_rules}
+                update_response = client.patch(
+                    f"/api/v1/term-rule-sets/electronics-default/draft/rules/{rule_ids['VUPDATE']}",
+                    headers={"X-Admin-Token": "secret-admin"},
+                    json={
+                        "source_term": "VUPDATED",
+                        "segments": [{"segment_text": "VUPDATED", "render_type": "plain"}],
+                    },
+                )
+                disable_response = client.patch(
+                    f"/api/v1/term-rule-sets/electronics-default/draft/rules/{rule_ids['VDISABLE']}",
+                    headers={"X-Admin-Token": "secret-admin"},
+                    json={"enabled": False},
+                )
+                remove_response = client.delete(
+                    f"/api/v1/term-rule-sets/electronics-default/draft/rules/{rule_ids['VREMOVE']}",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                add_response = client.post(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules",
+                    headers={"X-Admin-Token": "secret-admin"},
+                    json={
+                        "id": "rule_added_vadd",
+                        "category_id": category_id,
+                        "source_term": "VADD",
+                        "segments": [{"segment_text": "VADD", "render_type": "plain"}],
+                    },
+                )
+                diff_response = client.get("/api/v1/term-rule-sets/electronics-default/diff?from=default")
+                explicit_diff_response = client.get(
+                    f"/api/v1/term-rule-sets/electronics-default/diff?from={default_version}&to=draft",
+                )
+                include_unchanged_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/diff?include_unchanged=true",
+                )
+                preflight_response = client.get("/api/v1/term-rule-sets/electronics-default/preflight")
+                runtime_yaml_before_publish = runtime.settings.term_rules_runtime_yaml_file.read_text(
+                    encoding="utf-8"
+                )
+                publish_response = client.post(
+                    "/api/v1/term-rule-sets/electronics-default/publish",
+                    headers={"X-Admin-Token": "secret-admin"},
+                    json={"make_default": False, "publish_reason": "warning-only diff publish"},
+                )
+                runtime_yaml_after_publish = runtime.settings.term_rules_runtime_yaml_file.read_text(
+                    encoding="utf-8"
+                )
+
+        self.assertEqual(update_response.status_code, 200)
+        self.assertEqual(disable_response.status_code, 200)
+        self.assertEqual(remove_response.status_code, 200)
+        self.assertEqual(add_response.status_code, 201)
+        self.assertEqual(diff_response.status_code, 200)
+        self.assertEqual(
+            diff_response.json()["summary"],
+            {
+                "added": 1,
+                "updated": 1,
+                "disabled": 1,
+                "removed": 1,
+                "unchanged": 1,
+                "total": 5,
+            },
+        )
+        self.assertEqual(explicit_diff_response.status_code, 200)
+        self.assertEqual(explicit_diff_response.json()["summary"], diff_response.json()["summary"])
+        self.assertEqual(len(diff_response.json()["items"]), 4)
+        self.assertEqual(len(include_unchanged_response.json()["items"]), 5)
+        updated_item = next(item for item in diff_response.json()["items"] if item["change_type"] == "updated")
+        disabled_item = next(item for item in diff_response.json()["items"] if item["change_type"] == "disabled")
+        removed_item = next(item for item in diff_response.json()["items"] if item["change_type"] == "removed")
+        added_item = next(item for item in diff_response.json()["items"] if item["change_type"] == "added")
+        self.assertIn("source_term", updated_item["changed_fields"])
+        self.assertIn("segments", updated_item["changed_fields"])
+        self.assertEqual(disabled_item["changed_fields"], ["enabled"])
+        self.assertIsNone(removed_item["after"])
+        self.assertEqual(removed_item["before"]["source_term"], "VREMOVE")
+        self.assertIsNone(added_item["before"])
+        self.assertEqual(added_item["after"]["source_term"], "VADD")
+        self.assertEqual(preflight_response.status_code, 200)
+        self.assertTrue(preflight_response.json()["valid"])
+        self.assertFalse(preflight_response.json()["blocking"])
+        warning_codes = {item["code"] for item in preflight_response.json()["warnings"]}
+        self.assertIn("removed_rules", warning_codes)
+        self.assertIn("disabled_rules", warning_codes)
+        self.assertEqual(publish_response.status_code, 200)
+        self.assertEqual(runtime_yaml_after_publish, runtime_yaml_before_publish)
+
+    def test_term_rule_set_preflight_blocks_invalid_draft_publish(self):
+        """验证 preflight blocking finding 会阻止发布且不产生新版本。"""
+
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        seed_yaml = (
+            "schema_version: 2\n"
+            "categories:\n"
+            "  voltage_terms:\n"
+            "    name: 电压相关\n"
+            "    priority: 10\n"
+            "    enabled: true\n"
+            "rules:\n"
+            "  - source_term: VOLD\n"
+            "    category: voltage_terms\n"
+            "    segments:\n"
+            "      - segment_text: VOLD\n"
+            "        render_type: plain\n"
+            "    enabled: true\n"
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            file_runtime = build_test_runtime(Path(temp_dir), admin_token="secret-admin")
+            file_app = create_app(file_runtime)
+            with TestClient(file_app) as client:
+                file_diff_response = client.get("/api/v1/term-rule-sets/electronics-default/diff")
+                file_preflight_response = client.get("/api/v1/term-rule-sets/electronics-default/preflight")
+
+        self.assertEqual(file_diff_response.status_code, 503)
+        self.assertEqual(file_preflight_response.status_code, 503)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            seed_path = temp_root / "term_rules_seed.yaml"
+            seed_path.write_text(seed_yaml, encoding="utf-8")
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                admin_token="secret-admin",
+                jobs_repository_backend="mysql",
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                term_rules_seed_path=str(seed_path),
+            )
+            service = runtime.term_rule_set_version_service
+            store = service.get_draft_store("electronics-default")
+            duplicate_rule = store.rules[0].model_copy(update={"id": "rule_duplicate_vold"})
+            missing_category_rule = store.rules[0].model_copy(
+                update={
+                    "id": "rule_missing_category",
+                    "source_term": "VMISSING",
+                    "category_id": "missing_category",
+                    "segments": [],
+                }
+            )
+            invalid_store = store.model_copy(update={"rules": [*store.rules, duplicate_rule, missing_category_rule]})
+            service.update_draft("electronics-default", invalid_store)
+            versions_before_publish = {
+                record.version: record.status.value
+                for record in runtime.resource_version_service.repository.list_resource_versions(
+                    "term_rule_set",
+                    "electronics-default",
+                )
+            }
+            runtime_yaml_before_publish = runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8")
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                preflight_response = client.get("/api/v1/term-rule-sets/electronics-default/preflight")
+                publish_response = client.post(
+                    "/api/v1/term-rule-sets/electronics-default/publish",
+                    headers={"X-Admin-Token": "secret-admin"},
+                    json={"make_default": True, "publish_reason": "must be blocked"},
+                )
+            versions_after_publish = {
+                record.version: record.status.value
+                for record in runtime.resource_version_service.repository.list_resource_versions(
+                    "term_rule_set",
+                    "electronics-default",
+                )
+            }
+            runtime_yaml_after_publish = runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8")
+
+        self.assertEqual(preflight_response.status_code, 200)
+        self.assertFalse(preflight_response.json()["valid"])
+        self.assertTrue(preflight_response.json()["blocking"])
+        error_codes = {item["code"] for item in preflight_response.json()["errors"]}
+        self.assertIn("duplicate_source_term", error_codes)
+        self.assertIn("missing_category", error_codes)
+        self.assertIn("empty_segments", error_codes)
+        self.assertEqual(publish_response.status_code, 400)
+        self.assertEqual(publish_response.json()["detail"]["code"], "term_rule_set_preflight_failed")
+        self.assertGreaterEqual(publish_response.json()["detail"]["report"]["summary"]["error_count"], 3)
+        self.assertEqual(versions_after_publish, versions_before_publish)
+        self.assertEqual(runtime_yaml_after_publish, runtime_yaml_before_publish)
+        self.assertEqual(runtime.audit_event_repository.list_audit_events(), [])
+
     def test_term_rule_set_versioning_backend_requirements_and_legacy_write_guard(self):
         from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
 
@@ -4880,6 +5378,8 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(reject_response.json()["review_comment"], "obsolete term should not change now")
 
     def test_term_rule_proposal_update_conflict_keeps_pending_status(self):
+        """验证目标规则已从 draft 消失时返回结构化冲突且 proposal 保持待审核。"""
+
         from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
 
         seed_yaml = (
@@ -4944,10 +5444,18 @@ class FastAPIJobsBackendTests(TestCase):
                     headers=admin_headers,
                     json={"yaml_text": changed_yaml},
                 )
+                draft_before_approve_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/draft",
+                    headers=admin_headers,
+                )
                 approve_response = client.post(
                     f"/api/v1/term-rule-proposals/{proposal_id}/approve",
                     headers=admin_headers,
                     json={"review_comment": "try approve stale snapshot"},
+                )
+                draft_after_approve_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/draft",
+                    headers=admin_headers,
                 )
                 refreshed_response = client.get(
                     f"/api/v1/term-rule-proposals/{proposal_id}",
@@ -4958,8 +5466,325 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIsNotNone(create_response.json()["target_rule_snapshot"])
         self.assertEqual(draft_mutation_response.status_code, 200)
         self.assertEqual(approve_response.status_code, 409)
-        self.assertIn("目标规则已发生变化", approve_response.json()["detail"])
+        detail = approve_response.json()["detail"]
+        self.assertEqual(detail["code"], "term_rule_proposal_conflict")
+        self.assertEqual(detail["message"], "proposal 与当前 draft 存在冲突，请重新核对后处理。")
+        conflict = detail["conflicts"][0]
+        self.assertEqual(conflict["type"], "missing_target_rule")
+        self.assertEqual(conflict["proposal_id"], proposal_id)
+        self.assertEqual(conflict["target_rule_id"], target_rule_id)
+        self.assertEqual(conflict["source_term"], "VNEW")
+        self.assertEqual(conflict["category_id"], category_id)
+        self.assertIsNone(conflict["current_rule"])
+        self.assertEqual(conflict["target_rule_snapshot"]["id"], target_rule_id)
+        self.assertEqual(draft_before_approve_response.json()["snapshot_hash"], draft_after_approve_response.json()["snapshot_hash"])
+        self.assertEqual(draft_before_approve_response.json()["yaml_text"], draft_after_approve_response.json()["yaml_text"])
         self.assertEqual(refreshed_response.json()["status"], "pending_review")
+
+    def test_term_rule_proposal_stale_target_conflict_returns_current_rule(self):
+        """验证目标规则仍存在但内容变化时返回 stale_target_rule 和当前规则。"""
+
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        seed_yaml = (
+            "schema_version: 2\n"
+            "categories:\n"
+            "  voltage_terms:\n"
+            "    name: 电压相关\n"
+            "    priority: 10\n"
+            "    enabled: true\n"
+            "rules:\n"
+            "  - source_term: VOLD\n"
+            "    category: voltage_terms\n"
+            "    segments:\n"
+            "      - segment_text: V\n"
+            "        render_type: plain\n"
+            "      - segment_text: OLD\n"
+            "        render_type: subscript\n"
+            "    enabled: true\n"
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            seed_path = temp_root / "term_rules_seed.yaml"
+            seed_path.write_text(seed_yaml, encoding="utf-8")
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                term_rules_seed_path=str(seed_path),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                category_id = client.get("/api/v1/term-rule-categories").json()["items"][0]["id"]
+                target_rule_id = client.get("/api/v1/term-rules?q=VOLD").json()["items"][0]["id"]
+                create_response = client.post(
+                    "/api/v1/term-rule-proposals",
+                    headers=operator_headers,
+                    json={
+                        "intent": "update",
+                        "target_rule_id": target_rule_id,
+                        "source_term": "VNEW",
+                        "category_id": category_id,
+                        "segments": [
+                            {"segment_text": "V", "render_type": "plain"},
+                            {"segment_text": "NEW", "render_type": "subscript"},
+                        ],
+                        "reason": "update VOLD display",
+                    },
+                )
+                proposal_id = create_response.json()["id"]
+                draft_patch_response = client.patch(
+                    f"/api/v1/term-rule-sets/electronics-default/draft/rules/{target_rule_id}",
+                    headers=admin_headers,
+                    json={"notes": "admin direct edit before review"},
+                )
+                draft_before_approve_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/draft",
+                    headers=admin_headers,
+                )
+                approve_response = client.post(
+                    f"/api/v1/term-rule-proposals/{proposal_id}/approve",
+                    headers=admin_headers,
+                    json={"review_comment": "try approve stale snapshot"},
+                )
+                draft_after_approve_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/draft",
+                    headers=admin_headers,
+                )
+                refreshed_response = client.get(
+                    f"/api/v1/term-rule-proposals/{proposal_id}",
+                    headers=operator_headers,
+                )
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(draft_patch_response.status_code, 200)
+        self.assertEqual(draft_patch_response.json()["rule"]["id"], target_rule_id)
+        self.assertEqual(approve_response.status_code, 409)
+        detail = approve_response.json()["detail"]
+        self.assertEqual(detail["code"], "term_rule_proposal_conflict")
+        conflict = detail["conflicts"][0]
+        self.assertEqual(conflict["type"], "stale_target_rule")
+        self.assertEqual(conflict["proposal_id"], proposal_id)
+        self.assertEqual(conflict["target_rule_id"], target_rule_id)
+        self.assertEqual(conflict["current_rule"]["id"], target_rule_id)
+        self.assertEqual(conflict["current_rule"]["notes"], "admin direct edit before review")
+        self.assertEqual(conflict["target_rule_snapshot"]["id"], target_rule_id)
+        self.assertEqual(draft_before_approve_response.json()["snapshot_hash"], draft_after_approve_response.json()["snapshot_hash"])
+        self.assertEqual(refreshed_response.json()["status"], "pending_review")
+
+    def test_term_rule_proposal_create_source_term_segments_conflict_keeps_draft(self):
+        """验证 create proposal 遇到同名不同 segments 时返回结构化冲突且不改 draft。"""
+
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        seed_yaml = (
+            "schema_version: 2\n"
+            "categories:\n"
+            "  voltage_terms:\n"
+            "    name: 电压相关\n"
+            "    priority: 10\n"
+            "    enabled: true\n"
+            "rules:\n"
+            "  - source_term: VOLD\n"
+            "    category: voltage_terms\n"
+            "    segments:\n"
+            "      - segment_text: V\n"
+            "        render_type: plain\n"
+            "      - segment_text: OLD\n"
+            "        render_type: subscript\n"
+            "    enabled: true\n"
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            seed_path = temp_root / "term_rules_seed.yaml"
+            seed_path.write_text(seed_yaml, encoding="utf-8")
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                term_rules_seed_path=str(seed_path),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                category_id = client.get("/api/v1/term-rule-categories").json()["items"][0]["id"]
+                existing_rule = client.get("/api/v1/term-rules?q=VOLD").json()["items"][0]
+                create_response = client.post(
+                    "/api/v1/term-rule-proposals",
+                    headers=operator_headers,
+                    json={
+                        "intent": "create",
+                        "source_term": "VOLD",
+                        "category_id": category_id,
+                        "segments": [
+                            {"segment_text": "VO", "render_type": "plain"},
+                            {"segment_text": "LD", "render_type": "subscript"},
+                        ],
+                        "reason": "operator proposes conflicting VOLD rendering",
+                    },
+                )
+                proposal_id = create_response.json()["id"]
+                draft_before_approve_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/draft",
+                    headers=admin_headers,
+                )
+                approve_response = client.post(
+                    f"/api/v1/term-rule-proposals/{proposal_id}/approve",
+                    headers=admin_headers,
+                    json={"review_comment": "try conflicting create"},
+                )
+                draft_after_approve_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/draft",
+                    headers=admin_headers,
+                )
+                refreshed_response = client.get(
+                    f"/api/v1/term-rule-proposals/{proposal_id}",
+                    headers=operator_headers,
+                )
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertIsNone(create_response.json()["target_rule_snapshot"])
+        self.assertEqual(approve_response.status_code, 409)
+        detail = approve_response.json()["detail"]
+        self.assertEqual(detail["code"], "term_rule_proposal_conflict")
+        conflict = detail["conflicts"][0]
+        self.assertEqual(conflict["type"], "source_term_segments_conflict")
+        self.assertEqual(conflict["proposal_id"], proposal_id)
+        self.assertEqual(conflict["target_rule_id"], existing_rule["id"])
+        self.assertEqual(conflict["source_term"], "VOLD")
+        self.assertEqual(conflict["current_rule"]["source_term"], "VOLD")
+        self.assertIsNone(conflict["target_rule_snapshot"])
+        self.assertEqual(conflict["metadata"]["proposed_segments"][0]["segment_text"], "VO")
+        self.assertEqual(conflict["metadata"]["existing_segments"][0]["segment_text"], "V")
+        self.assertEqual(draft_before_approve_response.json()["snapshot_hash"], draft_after_approve_response.json()["snapshot_hash"])
+        self.assertEqual(refreshed_response.json()["status"], "pending_review")
+
+    def test_term_rule_proposal_approve_and_publish_conflict_does_not_publish(self):
+        """验证 approve-and-publish 在 approve 冲突时不发布规则集版本。"""
+
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        seed_yaml = (
+            "schema_version: 2\n"
+            "categories:\n"
+            "  voltage_terms:\n"
+            "    name: 电压相关\n"
+            "    priority: 10\n"
+            "    enabled: true\n"
+            "rules:\n"
+            "  - source_term: VOLD\n"
+            "    category: voltage_terms\n"
+            "    segments:\n"
+            "      - segment_text: V\n"
+            "        render_type: plain\n"
+            "      - segment_text: OLD\n"
+            "        render_type: subscript\n"
+            "    enabled: true\n"
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            seed_path = temp_root / "term_rules_seed.yaml"
+            seed_path.write_text(seed_yaml, encoding="utf-8")
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                term_rules_seed_path=str(seed_path),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                category_id = client.get("/api/v1/term-rule-categories").json()["items"][0]["id"]
+                target_rule_id = client.get("/api/v1/term-rules?q=VOLD").json()["items"][0]["id"]
+                detail_before_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default",
+                    headers=admin_headers,
+                )
+                create_response = client.post(
+                    "/api/v1/term-rule-proposals",
+                    headers=operator_headers,
+                    json={
+                        "intent": "update",
+                        "target_rule_id": target_rule_id,
+                        "source_term": "VNEW",
+                        "category_id": category_id,
+                        "segments": [
+                            {"segment_text": "V", "render_type": "plain"},
+                            {"segment_text": "NEW", "render_type": "subscript"},
+                        ],
+                        "reason": "update VOLD display",
+                    },
+                )
+                proposal_id = create_response.json()["id"]
+                draft_patch_response = client.patch(
+                    f"/api/v1/term-rule-sets/electronics-default/draft/rules/{target_rule_id}",
+                    headers=admin_headers,
+                    json={"notes": "admin direct edit before approve and publish"},
+                )
+                draft_before_publish_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/draft",
+                    headers=admin_headers,
+                )
+                publish_response = client.post(
+                    f"/api/v1/term-rule-proposals/{proposal_id}/approve-and-publish",
+                    headers=admin_headers,
+                    json={
+                        "review_comment": "try stale approve and publish",
+                        "publish_reason": "should not publish stale proposal",
+                    },
+                )
+                draft_after_publish_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/draft",
+                    headers=admin_headers,
+                )
+                detail_after_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default",
+                    headers=admin_headers,
+                )
+                refreshed_response = client.get(
+                    f"/api/v1/term-rule-proposals/{proposal_id}",
+                    headers=operator_headers,
+                )
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(draft_patch_response.status_code, 200)
+        self.assertEqual(publish_response.status_code, 409)
+        detail = publish_response.json()["detail"]
+        self.assertEqual(detail["code"], "term_rule_proposal_conflict")
+        self.assertEqual(detail["conflicts"][0]["type"], "stale_target_rule")
+        self.assertEqual(refreshed_response.json()["status"], "pending_review")
+        self.assertIsNone(refreshed_response.json()["published_term_rule_set_version"])
+        self.assertEqual(detail_before_response.json()["default_version"], detail_after_response.json()["default_version"])
+        self.assertEqual(len(detail_before_response.json()["versions"]), len(detail_after_response.json()["versions"]))
+        self.assertEqual(draft_before_publish_response.json()["snapshot_hash"], draft_after_publish_response.json()["snapshot_hash"])
+        audit_actions = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+        self.assertNotIn("term_rule_proposal.approve_and_publish", audit_actions)
+        self.assertNotIn("term_rule_set.publish", audit_actions)
 
     def test_term_rule_categories_export_and_simulate_are_available(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -617,6 +617,33 @@ export type TermRuleListResponse = {
   total: number;
 };
 
+export type TermRuleCreateRequest = {
+  id?: string | null;
+  category_id: string;
+  source_term: string;
+  apply_scope?: string;
+  case_sensitive?: boolean;
+  enabled?: boolean;
+  priority?: number;
+  segments: TermRuleSegmentWriteRequest[];
+  custom_html?: string | null;
+  custom_markdown?: string | null;
+  notes?: string;
+};
+
+export type TermRuleUpdateRequest = {
+  category_id?: string | null;
+  source_term?: string | null;
+  apply_scope?: string | null;
+  case_sensitive?: boolean | null;
+  enabled?: boolean | null;
+  priority?: number | null;
+  segments?: TermRuleSegmentWriteRequest[] | null;
+  custom_html?: string | null;
+  custom_markdown?: string | null;
+  notes?: string | null;
+};
+
 export type RuleSimulationRequest = {
   text: string;
 };
@@ -680,6 +707,32 @@ export type TermRuleProposalResponse = {
   published_at: string | null;
 };
 
+// 描述 Term Rule Proposal 审核冲突的稳定分类。
+export type TermRuleProposalConflictType =
+  | "stale_target_rule"
+  | "missing_target_rule"
+  | "source_term_segments_conflict";
+
+// 描述 Term Rule Proposal 审核时发现的一条结构化冲突。
+export type TermRuleProposalConflictItemResponse = {
+  type: TermRuleProposalConflictType;
+  message: string;
+  proposal_id: string;
+  target_rule_id: string | null;
+  source_term: string;
+  category_id: string;
+  current_rule: TermRuleResponse | null;
+  target_rule_snapshot: Record<string, unknown> | null;
+  metadata: Record<string, unknown>;
+};
+
+// 返回 Term Rule Proposal 审核冲突的稳定 409 响应 payload。
+export type TermRuleProposalConflictResponse = {
+  code: "term_rule_proposal_conflict";
+  message: string;
+  conflicts: TermRuleProposalConflictItemResponse[];
+};
+
 export type TermRuleProposalListResponse = {
   items: TermRuleProposalResponse[];
   total: number;
@@ -723,6 +776,84 @@ export type TermRuleSetDraftResponse = {
   enabled_rule_count: number;
   yaml_text: string;
   snapshot_hash: string | null;
+};
+
+export type TermRuleDraftRuleMutationResponse = {
+  rule: TermRuleResponse;
+  draft: TermRuleSetDraftResponse;
+};
+
+export type TermRuleDraftRuleDeleteResponse = {
+  id: string;
+  removed: boolean;
+  draft: TermRuleSetDraftResponse;
+};
+
+export type TermRuleSetVersionRefResponse = {
+  ref: string;
+  version: string;
+  snapshot_hash: string | null;
+  rule_count: number;
+  enabled_rule_count: number;
+};
+
+export type TermRuleSetDiffSummaryResponse = {
+  added: number;
+  updated: number;
+  disabled: number;
+  removed: number;
+  unchanged: number;
+  total: number;
+};
+
+export type TermRuleSetDiffItemResponse = {
+  change_type: "added" | "updated" | "disabled" | "removed" | "unchanged";
+  rule_id: string;
+  source_term: string;
+  category_id: string;
+  changed_fields: string[];
+  before: TermRuleResponse | null;
+  after: TermRuleResponse | null;
+};
+
+export type TermRuleSetDiffResponse = {
+  term_rule_set_id: string;
+  base_ref: TermRuleSetVersionRefResponse;
+  target_ref: TermRuleSetVersionRefResponse;
+  summary: TermRuleSetDiffSummaryResponse;
+  items: TermRuleSetDiffItemResponse[];
+};
+
+export type TermRuleGovernanceFindingResponse = {
+  severity: "error" | "warning" | "conflict";
+  code: string;
+  message: string;
+  path: string | null;
+  rule_id: string | null;
+  source_term: string | null;
+  category_id: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export type TermRuleSetPreflightSummaryResponse = {
+  error_count: number;
+  warning_count: number;
+  conflict_count: number;
+  rule_count: number;
+  enabled_rule_count: number;
+};
+
+export type TermRuleSetPreflightResponse = {
+  term_rule_set_id: string;
+  valid: boolean;
+  blocking: boolean;
+  base_ref: TermRuleSetVersionRefResponse;
+  draft_ref: TermRuleSetVersionRefResponse;
+  summary: TermRuleSetPreflightSummaryResponse;
+  errors: TermRuleGovernanceFindingResponse[];
+  warnings: TermRuleGovernanceFindingResponse[];
+  conflicts: TermRuleGovernanceFindingResponse[];
+  diff_summary: TermRuleSetDiffSummaryResponse;
 };
 
 export type TermRuleSetPublishRequest = {

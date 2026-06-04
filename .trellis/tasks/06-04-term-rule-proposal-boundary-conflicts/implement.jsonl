@@ -1,0 +1,1 @@
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Proposal conflict contract crosses service, router, OpenAPI, frontend parsing, and tests."}

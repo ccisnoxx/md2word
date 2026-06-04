@@ -1,6 +1,7 @@
-from __future__ import annotations
+# File: app/domains/term_rules/proposals_router.py
+# Purpose: 提供术语 proposal 提交、查询和审核接口。
 
-# app/domains/term_rules/proposals_router.py: 提供术语 proposal 提交、查询和审核接口。
+from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -21,6 +22,7 @@ from app.domains.term_rules.proposals_service import (
 from app.domains.term_rules.versioning_service import DEFAULT_TERM_RULE_SET_ID
 from app.domains.term_rules.schemas import (
     TermRuleProposalApproveAndPublishRequest,
+    TermRuleProposalConflictResponse,
     TermRuleProposalCreateRequest,
     TermRuleProposalListResponse,
     TermRuleProposalRejectRequest,
@@ -32,6 +34,12 @@ from app.services.auth.models import AuthenticatedUser
 
 
 router = APIRouter(prefix="/term-rule-proposals", tags=["term-rule-proposals"])
+TERM_RULE_PROPOSAL_CONFLICT_RESPONSES = {
+    status.HTTP_409_CONFLICT: {
+        "model": TermRuleProposalConflictResponse,
+        "description": "Term Rule Proposal 与当前 draft 存在冲突。",
+    },
+}
 
 
 def _require_proposal_service(runtime: AppRuntime) -> TermRuleProposalService:
@@ -108,6 +116,16 @@ def _actor_from_user(user: AuthenticatedUser) -> ActorContext:
     return ActorContext(actor_id=user.id, actor_role=user.role, source="jwt")
 
 
+def _proposal_conflict_http_exception(exc: TermRuleProposalConflictError) -> HTTPException:
+    """把 service 层 proposal 冲突转换为稳定的结构化 409 响应。"""
+
+    detail = TermRuleProposalConflictResponse(
+        message="proposal 与当前 draft 存在冲突，请重新核对后处理。",
+        conflicts=list(exc.conflicts),
+    ).model_dump(mode="json")
+    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+
+
 @router.post("", response_model=TermRuleProposalResponse, status_code=status.HTTP_201_CREATED)
 def create_term_rule_proposal(
     payload: TermRuleProposalCreateRequest,
@@ -174,7 +192,11 @@ def get_term_rule_proposal(
     return _serialize_proposal(proposal)
 
 
-@router.post("/{proposal_id}/approve", response_model=TermRuleProposalResponse)
+@router.post(
+    "/{proposal_id}/approve",
+    response_model=TermRuleProposalResponse,
+    responses=TERM_RULE_PROPOSAL_CONFLICT_RESPONSES,
+)
 def approve_term_rule_proposal(
     proposal_id: str,
     payload: TermRuleProposalReviewRequest | None = None,
@@ -182,6 +204,8 @@ def approve_term_rule_proposal(
     runtime: AppRuntime = Depends(get_runtime),
     trace_id: str = Depends(get_trace_id),
 ) -> TermRuleProposalResponse:
+    """审核 proposal，并在 draft 证据冲突时返回结构化 409。"""
+
     try:
         proposal = _require_proposal_service(runtime).approve_proposal(
             proposal_id,
@@ -191,7 +215,7 @@ def approve_term_rule_proposal(
             trace_id=trace_id,
         )
     except TermRuleProposalConflictError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        raise _proposal_conflict_http_exception(exc) from exc
     except FileNotFoundError as exc:
         raise not_found_http_exception(exc) from exc
     except ValueError as exc:
@@ -199,7 +223,11 @@ def approve_term_rule_proposal(
     return _serialize_proposal(proposal)
 
 
-@router.post("/{proposal_id}/approve-and-publish", response_model=TermRuleProposalResponse)
+@router.post(
+    "/{proposal_id}/approve-and-publish",
+    response_model=TermRuleProposalResponse,
+    responses=TERM_RULE_PROPOSAL_CONFLICT_RESPONSES,
+)
 def approve_and_publish_term_rule_proposal(
     proposal_id: str,
     payload: TermRuleProposalApproveAndPublishRequest | None = None,
@@ -207,6 +235,8 @@ def approve_and_publish_term_rule_proposal(
     runtime: AppRuntime = Depends(get_runtime),
     trace_id: str = Depends(get_trace_id),
 ) -> TermRuleProposalResponse:
+    """审核并发布 proposal；approve 阶段冲突时不执行发布。"""
+
     try:
         proposal = _require_proposal_service(runtime).approve_and_publish_proposal(
             proposal_id,
@@ -217,7 +247,7 @@ def approve_and_publish_term_rule_proposal(
             trace_id=trace_id,
         )
     except TermRuleProposalConflictError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        raise _proposal_conflict_http_exception(exc) from exc
     except FileNotFoundError as exc:
         raise not_found_http_exception(exc) from exc
     except ValueError as exc:

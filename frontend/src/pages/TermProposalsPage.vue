@@ -1,4 +1,5 @@
-<!-- frontend/src/pages/TermProposalsPage.vue: Operator proposal form and admin review queue. -->
+<!-- File: frontend/src/pages/TermProposalsPage.vue -->
+<!-- Purpose: Render operator proposal forms and admin review queues for term governance. -->
 <template>
   <main class="term-proposals-page" aria-labelledby="term-proposals-title">
     <section class="page-heading">
@@ -383,6 +384,8 @@ import {
 import { termRulesApi } from "@/api/termRules";
 import type {
   TermRuleCategoryListItemResponse,
+  TermRuleProposalConflictItemResponse,
+  TermRuleProposalConflictResponse,
   TermRuleProposalIntent,
   TermRuleProposalResponse,
   TermRuleResponse,
@@ -674,26 +677,86 @@ function categoryName(categoryId: string): string {
   return categoryMap.value[categoryId] || categoryId || "-";
 }
 
+// 从后端错误 payload 中提取结构化冲突、告警和旧字符串 detail。
 function extractErrorDetailItems(raw: unknown): string[] {
   const body = readRecord(raw);
   const detail = readRecord(body?.detail);
+  if (isTermRuleProposalConflictDetail(detail)) {
+    return detail.conflicts.map((item) => formatTermRuleProposalConflictItem(item));
+  }
+
   const items: string[] = [];
   for (const key of ["conflicts", "warnings", "errors"]) {
     const value = detail?.[key];
     if (Array.isArray(value)) {
-      items.push(...value.map((item) => stringifyDetailItem(item)));
+      items.push(...value.map((item) => formatDetailItem(item)));
     }
   }
   return items;
 }
 
+// 判断未知值是否为对象，作为后端错误 payload 的读取边界。
 function readRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null ? value as Record<string, unknown> : null;
 }
 
-function stringifyDetailItem(value: unknown): string {
+// 读取非空字符串字段，避免 UI 展示空白上下文。
+function readString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+// 识别 Term Rule Proposal 的结构化 409 响应。
+function isTermRuleProposalConflictDetail(value: Record<string, unknown> | null): value is TermRuleProposalConflictResponse {
+  return (
+    value?.code === "term_rule_proposal_conflict" &&
+    Array.isArray(value.conflicts)
+  );
+}
+
+// 识别单条 Term Rule Proposal 结构化冲突，兼容 detail.conflicts[] 被单独遍历的场景。
+function isTermRuleProposalConflictItem(value: unknown): value is TermRuleProposalConflictItemResponse {
+  const record = readRecord(value);
+  return Boolean(
+    record &&
+    readString(record.type) &&
+    readString(record.message) &&
+    readString(record.proposal_id) &&
+    readString(record.source_term) &&
+    readString(record.category_id),
+  );
+}
+
+// 将结构化冲突压缩成一行稳定摘要，供页面顶部错误区展示。
+function formatTermRuleProposalConflictItem(item: TermRuleProposalConflictItemResponse): string {
+  const typeText: Record<string, string> = {
+    stale_target_rule: "目标规则已变化",
+    missing_target_rule: "目标规则不存在",
+    source_term_segments_conflict: "同名术语分段冲突",
+  };
+  const context = [
+    `proposal ${item.proposal_id}`,
+    `target rule ${item.target_rule_id || "-"}`,
+    `source_term ${item.source_term}`,
+    `category ${categoryName(item.category_id)}`,
+  ];
+  const currentRuleText = item.current_rule
+    ? `当前规则 ${item.current_rule.source_term} (${item.current_rule.id})`
+    : "当前规则 -";
+  return `${typeText[item.type] || item.type}: ${item.message}（${context.join("；")}；${currentRuleText}）`;
+}
+
+// 格式化后端 detail 数组项；结构化对象优先读 message，未知对象保留 JSON。
+function formatDetailItem(value: unknown): string {
   if (typeof value === "string") {
     return value;
+  }
+  if (isTermRuleProposalConflictItem(value)) {
+    return formatTermRuleProposalConflictItem(value);
+  }
+  const record = readRecord(value);
+  const message = readString(record?.message);
+  if (message) {
+    return message;
   }
   return JSON.stringify(value);
 }

@@ -1,8 +1,9 @@
+# File: app/domains/term_rules/proposals_service.py
+# Purpose: 编排术语建议提交、审核和合并到规则集 draft。
+
 from __future__ import annotations
 
-# app/domains/term_rules/proposals_service.py: 编排术语建议提交、审核和合并到规则集 draft。
-
-from typing import Any
+from typing import Any, Literal, NoReturn
 from uuid import uuid4
 
 from app.domains.audit.models import ActorContext
@@ -19,13 +20,25 @@ from app.domains.term_rules.models import (
     utc_now,
 )
 from app.domains.term_rules.repository import TermRuleProposalRepositoryProtocol
+from app.domains.term_rules.schemas import (
+    TermRuleProposalConflictItemResponse,
+    TermRuleResponse,
+    TermRuleSegmentResponse,
+)
 from app.domains.term_rules.service import TermRuleService
 from app.domains.term_rules.versioning_service import DEFAULT_TERM_RULE_SET_ID, TermRuleSetVersionService
 from app.domains.term_rules.yaml_codec import render_segments_html, render_segments_markdown
 
 
 class TermRuleProposalConflictError(RuntimeError):
-    """目标规则已变化，proposal 不能无提示合并。"""
+    """目标规则或 draft 状态已变化，proposal 不能无提示合并。"""
+
+    def __init__(self, conflicts: list[TermRuleProposalConflictItemResponse]) -> None:
+        """保存结构化冲突，同时保留字符串消息兼容旧 router。"""
+
+        self.conflicts = tuple(conflicts)
+        message = "; ".join(conflict.message for conflict in conflicts) or "proposal 与当前 draft 存在冲突。"
+        super().__init__(message)
 
 
 class TermRuleProposalService:
@@ -272,6 +285,8 @@ class TermRuleProposalService:
         return None
 
     def _apply_to_store(self, proposal: TermRuleProposalRecord, store: TermRulesStore) -> TermRulesStore:
+        """把 proposal 应用到 draft store；遇到证据冲突时先抛错避免写入。"""
+
         if proposal.intent == TermRuleProposalIntent.CREATE:
             self._require_category(store, proposal.category_id)
             self._ensure_no_conflicting_source_segments(store, proposal)
@@ -295,10 +310,23 @@ class TermRuleProposalService:
             raise ValueError("update/disable proposal 缺少目标规则快照。")
         try:
             target = self._find_rule(store, proposal.target_rule_id)
-        except FileNotFoundError as exc:
-            raise TermRuleProposalConflictError("目标规则已发生变化，请重新提交 proposal。") from exc
+        except FileNotFoundError:
+            self._raise_conflict(
+                conflict_type="missing_target_rule",
+                message="目标规则已发生变化，当前 draft 中已不存在，请重新提交 proposal。",
+                proposal=proposal,
+                store=store,
+                target_rule_id=proposal.target_rule_id,
+            )
         if self._rule_snapshot(target) != proposal.target_rule_snapshot:
-            raise TermRuleProposalConflictError("目标规则已发生变化，请重新提交 proposal。")
+            self._raise_conflict(
+                conflict_type="stale_target_rule",
+                message="目标规则已发生变化，请重新提交 proposal。",
+                proposal=proposal,
+                store=store,
+                target_rule=target,
+                target_rule_id=target.id,
+            )
 
         if proposal.intent == TermRuleProposalIntent.DISABLE:
             replacement = target.model_copy(update={"enabled": False, "notes": proposal.reason, "updated_at": utc_now()})
@@ -330,6 +358,87 @@ class TermRuleProposalService:
     def _rule_snapshot(rule: TermRuleRecord) -> dict[str, Any]:
         return rule.model_dump(mode="json")
 
+    def _raise_conflict(
+        self,
+        *,
+        conflict_type: Literal["stale_target_rule", "missing_target_rule", "source_term_segments_conflict"],
+        message: str,
+        proposal: TermRuleProposalRecord,
+        store: TermRulesStore,
+        target_rule: TermRuleRecord | None = None,
+        target_rule_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> NoReturn:
+        """构造单条结构化 proposal 冲突并中断审核写入。"""
+
+        raise TermRuleProposalConflictError(
+            [
+                self._build_conflict_item(
+                    conflict_type=conflict_type,
+                    message=message,
+                    proposal=proposal,
+                    store=store,
+                    target_rule=target_rule,
+                    target_rule_id=target_rule_id,
+                    metadata=metadata,
+                )
+            ]
+        )
+
+    def _build_conflict_item(
+        self,
+        *,
+        conflict_type: Literal["stale_target_rule", "missing_target_rule", "source_term_segments_conflict"],
+        message: str,
+        proposal: TermRuleProposalRecord,
+        store: TermRulesStore,
+        target_rule: TermRuleRecord | None = None,
+        target_rule_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> TermRuleProposalConflictItemResponse:
+        """把 draft 现场和 proposal 快照整理成稳定的冲突响应项。"""
+
+        return TermRuleProposalConflictItemResponse(
+            type=conflict_type,
+            message=message,
+            proposal_id=proposal.id,
+            target_rule_id=target_rule_id or proposal.target_rule_id,
+            source_term=proposal.source_term,
+            category_id=proposal.category_id,
+            current_rule=self._rule_response_for_conflict(store, target_rule) if target_rule is not None else None,
+            target_rule_snapshot=proposal.target_rule_snapshot,
+            metadata=metadata or {},
+        )
+
+    @staticmethod
+    def _rule_response_for_conflict(store: TermRulesStore, rule: TermRuleRecord) -> TermRuleResponse:
+        """把 draft 中的当前规则转换为 conflict payload 使用的 API 规则形态。"""
+
+        category = next((item for item in store.categories if item.id == rule.category_id), None)
+        return TermRuleResponse(
+            id=rule.id,
+            category_id=rule.category_id,
+            category_code=category.code if category is not None else "",
+            category_name=category.name if category is not None else "",
+            source_term=rule.source_term,
+            rule_mode=rule.rule_mode.value,
+            apply_scope=rule.apply_scope.value,
+            case_sensitive=rule.case_sensitive,
+            enabled=rule.enabled,
+            priority=rule.priority,
+            segments=[
+                TermRuleSegmentResponse(
+                    seq=segment.seq,
+                    segment_text=segment.segment_text,
+                    render_type=segment.render_type.value,
+                )
+                for segment in sorted(rule.segments, key=lambda item: item.seq)
+            ],
+            custom_html=rule.custom_html,
+            custom_markdown=rule.custom_markdown,
+            notes=rule.notes,
+        )
+
     @staticmethod
     def _require_category(store: TermRulesStore, category_id: str) -> None:
         if not any(category.id == category_id for category in store.categories):
@@ -353,15 +462,27 @@ class TermRuleProposalService:
             if rule.source_term == source_term and rule.id != exclude_rule_id:
                 raise ValueError(f"规则 source_term 已存在: {source_term}")
 
-    @staticmethod
-    def _ensure_no_conflicting_source_segments(store: TermRulesStore, proposal: TermRuleProposalRecord) -> None:
+    def _ensure_no_conflicting_source_segments(self, store: TermRulesStore, proposal: TermRuleProposalRecord) -> None:
+        """阻止同名 source term 但 segments 不一致的 create proposal 自动合并。"""
+
         proposed_segments = [segment.model_dump(mode="json") for segment in proposal.segments]
         for rule in store.rules:
             if rule.source_term != proposal.source_term:
                 continue
             existing_segments = [segment.model_dump(mode="json") for segment in rule.segments]
             if existing_segments != proposed_segments:
-                raise TermRuleProposalConflictError("同一 source_term 已存在不同 segments，请手动处理 draft 冲突。")
+                self._raise_conflict(
+                    conflict_type="source_term_segments_conflict",
+                    message="同一 source_term 已存在不同 segments，请手动处理 draft 冲突。",
+                    proposal=proposal,
+                    store=store,
+                    target_rule=rule,
+                    target_rule_id=rule.id,
+                    metadata={
+                        "existing_segments": existing_segments,
+                        "proposed_segments": proposed_segments,
+                    },
+                )
 
     def _build_rule_record(
         self,
