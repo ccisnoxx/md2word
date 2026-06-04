@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verify frontend display follows backend health contract"}
+{"file": "frontend/src/pages/SystemStatusPage.vue", "reason": "Review readonly status page behavior"}
+{"file": "docs/api/health.md", "reason": "Review health fields used by UI"}
