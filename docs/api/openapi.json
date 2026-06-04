@@ -656,6 +656,7 @@
         "type": "object"
       },
       "DocumentFileResponse": {
+        "description": "返回单个 document_file 的元数据，不包含文件内容。",
         "properties": {
           "bucket": {
             "title": "Bucket",
@@ -2482,7 +2483,129 @@
         "title": "DocumentJobTranslationQaUpdateResponse",
         "type": "object"
       },
+      "FileRetentionCandidateResponse": {
+        "description": "返回一条过期 document_file 候选；仅用于计划展示，不代表会被物理删除。",
+        "properties": {
+          "bucket": {
+            "title": "Bucket",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "file_id": {
+            "title": "File Id",
+            "type": "string"
+          },
+          "file_type": {
+            "title": "File Type",
+            "type": "string"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "object_key": {
+            "title": "Object Key",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "storage_provider": {
+            "title": "Storage Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_id",
+          "file_type",
+          "storage_provider",
+          "bucket",
+          "object_key",
+          "size_bytes",
+          "status",
+          "expires_at",
+          "reason"
+        ],
+        "title": "FileRetentionCandidateResponse",
+        "type": "object"
+      },
+      "FileRetentionPlanResponse": {
+        "description": "返回 document_files 保留期 dry-run 或 metadata 标记结果。",
+        "properties": {
+          "action_mode": {
+            "enum": [
+              "dry_run",
+              "mark_expired"
+            ],
+            "title": "Action Mode",
+            "type": "string"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/FileRetentionCandidateResponse"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "deletion_supported": {
+            "default": false,
+            "title": "Deletion Supported",
+            "type": "boolean"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "marked_file_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Marked File Ids",
+            "type": "array"
+          },
+          "retention_days": {
+            "title": "Retention Days",
+            "type": "integer"
+          },
+          "totals": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Totals",
+            "type": "object"
+          }
+        },
+        "required": [
+          "generated_at",
+          "retention_days",
+          "action_mode"
+        ],
+        "title": "FileRetentionPlanResponse",
+        "type": "object"
+      },
       "FileUploadResponse": {
+        "description": "返回代理上传完成后的文件元数据。",
         "properties": {
           "file": {
             "$ref": "#/components/schemas/DocumentFileResponse"
@@ -2495,6 +2618,7 @@
         "type": "object"
       },
       "FileUploadUrlRequest": {
+        "description": "创建 source_pdf 上传授权的请求。",
         "properties": {
           "checksum_sha256": {
             "anyOf": [
@@ -2546,6 +2670,7 @@
         "type": "object"
       },
       "FileUploadUrlResponse": {
+        "description": "返回上传授权和已登记文件元数据。",
         "properties": {
           "expires_at": {
             "format": "date-time",
@@ -8527,6 +8652,106 @@
         "summary": "Update Document Job Translation Qa",
         "tags": [
           "document-jobs"
+        ]
+      }
+    },
+    "/api/v1/files/retention/mark-expired": {
+      "post": {
+        "description": "把当前过期候选标记为 expired；不删除本地文件或对象存储对象。",
+        "operationId": "mark_file_retention_expired_api_v1_files_retention_mark_expired_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRetentionPlanResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark File Retention Expired",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/retention/plan": {
+      "get": {
+        "description": "返回过期文件 metadata 候选计划，不修改文件状态或删除二进制。",
+        "operationId": "get_file_retention_plan_api_v1_files_retention_plan_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRetentionPlanResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get File Retention Plan",
+        "tags": [
+          "files"
         ]
       }
     },

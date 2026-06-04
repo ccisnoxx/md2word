@@ -1,0 +1,7 @@
+{"file": ".trellis/tasks/06-04-file-retention-management/prd.md", "reason": "Task-specific requirements and acceptance criteria."}
+{"file": ".trellis/tasks/06-04-file-retention-management/design.md", "reason": "Task-specific API/page/files design for review."}
+{"file": ".trellis/tasks/06-04-file-retention-management/implement.md", "reason": "Task-specific verification plan and rollback points."}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend completion checklist."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "No physical deletion and persistence contract constraints."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Targeted backend test expectations."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "API/frontend contract verification."}

@@ -1,4 +1,4 @@
-<!-- frontend/src/pages/SystemStatusPage.vue: Admin-only read-only overview for backend health and metrics. -->
+<!-- frontend/src/pages/SystemStatusPage.vue: Admin-only overview for backend health, metrics, and storage operations. -->
 <template>
   <main class="system-status-page" aria-labelledby="system-status-title">
     <section class="page-heading">
@@ -93,6 +93,9 @@
           <div>
             <h2 class="section-title">Storage</h2>
             <p class="section-subtitle">artifact storage、本地可写性和剩余空间。</p>
+          </div>
+          <div class="toolbar">
+            <router-link to="/system-status/file-retention">文件保留计划</router-link>
           </div>
         </div>
         <el-descriptions :column="1" border size="small">

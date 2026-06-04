@@ -1,4 +1,4 @@
-# tests/test_fastapi_jobs_backend.py: 覆盖 FastAPI jobs API、workflow 和 artifact 合同。
+# tests/test_fastapi_jobs_backend.py: 覆盖 FastAPI jobs/files API、workflow 和 artifact 合同。
 
 import io
 import json
@@ -44,6 +44,7 @@ from app.domains.document_jobs.execution import DocumentJobExecutionService, Eag
 from app.domains.document_jobs.service import DocumentJobService
 from app.services.document_ir import MinerUToDocumentIRService
 from app.domains.files import FileUploadService
+from app.domains.files.models import DocumentFileRecord
 from app.services.health_service import HealthService
 from app.domains.jobs.artifact_integrity import ArtifactFingerprintMismatch
 from app.domains.jobs.artifact_storage import DownloadArtifact, LocalArtifactStorageAdapter
@@ -1536,6 +1537,84 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(record.file_type, "source_pdf")
         self.assertEqual(record.storage_provider, "local_object")
         self.assertEqual(record.bucket, "local-object")
+
+    def test_file_retention_plan_is_admin_only_and_reports_dry_run_candidates(self):
+        """验证 Admin 可查看保留期计划，Operator 不能访问且接口不删除文件。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            stale_file = self._seed_expired_document_file(runtime, file_id="file_retention_old")
+            stale_path = runtime.file_upload_service.resolve_local_object_path(stale_file.object_key)
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                admin_response = client.get("/api/v1/files/retention/plan", headers=admin_headers)
+                operator_response = client.get("/api/v1/files/retention/plan", headers=operator_headers)
+            object_still_exists = stale_path.exists()
+
+        self.assertEqual(admin_response.status_code, 200)
+        payload = admin_response.json()
+        self.assertEqual(payload["action_mode"], "dry_run")
+        self.assertFalse(payload["deletion_supported"])
+        self.assertEqual(payload["totals"]["candidate_files"], 1)
+        self.assertEqual(payload["candidates"][0]["file_id"], stale_file.id)
+        self.assertEqual(payload["candidates"][0]["job_id"], stale_file.job_id)
+        self.assertTrue(object_still_exists)
+        self.assertEqual(operator_response.status_code, 403)
+        self.assertEqual(operator_response.json()["error_code"], "role_forbidden")
+
+    def test_file_retention_mark_expired_updates_metadata_without_removing_object(self):
+        """验证标记过期只更新 metadata，保留对象文件并记录审计事件。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            stale_file = self._seed_expired_document_file(runtime, file_id="file_retention_mark")
+            stale_path = runtime.file_upload_service.resolve_local_object_path(stale_file.object_key)
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                mark_response = client.post(
+                    "/api/v1/files/retention/mark-expired",
+                    headers={**admin_headers, "X-Trace-Id": "trace_retention_mark"},
+                )
+                plan_after_response = client.get("/api/v1/files/retention/plan", headers=admin_headers)
+
+            updated_file = runtime.document_file_repository.get_document_file(stale_file.id)
+            audit_events = runtime.audit_event_repository.list_audit_events()
+            object_still_exists = stale_path.exists()
+            object_bytes = stale_path.read_bytes()
+
+        self.assertEqual(mark_response.status_code, 200)
+        mark_payload = mark_response.json()
+        self.assertEqual(mark_payload["action_mode"], "mark_expired")
+        self.assertEqual(mark_payload["marked_file_ids"], [stale_file.id])
+        self.assertEqual(mark_payload["candidates"][0]["status"], "expired")
+        self.assertIsNotNone(updated_file)
+        self.assertEqual(updated_file.status, "expired")
+        self.assertTrue(object_still_exists)
+        self.assertEqual(object_bytes, b"expired-file-content")
+        self.assertEqual(plan_after_response.status_code, 200)
+        self.assertEqual(plan_after_response.json()["candidates"][0]["status"], "expired")
+        retention_events = [
+            event
+            for event in audit_events
+            if event.action == "file.retention_mark_expired"
+        ]
+        self.assertEqual(len(retention_events), 1)
+        self.assertEqual(retention_events[0].trace_id, "trace_retention_mark")
 
     def test_file_authorized_content_upload_validates_pdf_and_writes_object(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -3371,6 +3450,34 @@ class FastAPIJobsBackendTests(TestCase):
         if upload_response.status_code != 201:
             raise AssertionError(upload_response.json())
         return upload_response.json()["file"]
+
+    def _seed_expired_document_file(self, runtime: AppRuntime, *, file_id: str) -> DocumentFileRecord:
+        """创建一个已过 expires_at 的 document_file，并写入对应本地对象内容。"""
+
+        now = utc_now()
+        record = DocumentFileRecord(
+            id=file_id,
+            tenant_id="tenant_default",
+            company_id="company_default",
+            job_id="docjob_retention",
+            file_type="generated_word",
+            storage_provider="local_object",
+            bucket="local-object",
+            object_key=f"document-jobs/tenant_default/docjob_retention/generated_word/{file_id}.docx",
+            original_filename=f"{file_id}.docx",
+            mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            size_bytes=len(b"expired-file-content"),
+            status="uploaded",
+            expires_at=now - timedelta(seconds=1),
+            created_by="user_operator",
+            created_at=now - timedelta(days=2),
+            updated_at=now - timedelta(days=2),
+        )
+        runtime.document_file_repository.create_document_file(record)
+        object_path = runtime.file_upload_service.resolve_local_object_path(record.object_key)
+        object_path.parent.mkdir(parents=True, exist_ok=True)
+        object_path.write_bytes(b"expired-file-content")
+        return record
 
     def test_templates_read_api_returns_default_template_and_bound_configs(self):
         with tempfile.TemporaryDirectory() as temp_dir:

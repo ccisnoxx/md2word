@@ -1,9 +1,10 @@
-// frontend/src/router/index.ts: Static MVP routes and auth guard.
+// frontend/src/router/index.ts: Static MVP/Admin routes and auth guard.
 import { createRouter, createWebHistory, type RouteLocationNormalized } from "vue-router";
 
 import { setUnauthorizedHandler } from "@/api/client";
 import AppLayout from "@/layouts/AppLayout.vue";
 import AuditLogPage from "@/pages/AuditLogPage.vue";
+import FileRetentionPage from "@/pages/FileRetentionPage.vue";
 import JobDetailPage from "@/pages/JobDetailPage.vue";
 import JobsPage from "@/pages/JobsPage.vue";
 import LoginPage from "@/pages/LoginPage.vue";
@@ -77,6 +78,12 @@ const router = createRouter({
           path: "system-status/audit-events",
           name: "system-status-audit-events",
           component: AuditLogPage,
+          meta: { roles: ["admin"] },
+        },
+        {
+          path: "system-status/file-retention",
+          name: "system-status-file-retention",
+          component: FileRetentionPage,
           meta: { roles: ["admin"] },
         },
       ],
