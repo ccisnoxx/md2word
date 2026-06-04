@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Health status spans backend contracts and frontend display"}
+{"file": "frontend/src/pages/SystemStatusPage.vue", "reason": "Target placeholder page for admin system status"}
+{"file": "frontend/src/api/types.ts", "reason": "Frontend API contract definitions"}
+{"file": "frontend/src/pages/JobsPage.vue", "reason": "Potential minimal URL query filter target for status links"}
+{"file": "app/api/v1/routers/health_schemas.py", "reason": "Backend health response models to mirror in frontend types"}
+{"file": "docs/api/health.md", "reason": "Field reference for readiness and metrics display"}
