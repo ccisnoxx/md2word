@@ -392,6 +392,7 @@ def build_test_runtime(
         template_read_service,
         term_version_service,
         job_resource_snapshot_service,
+        file_upload_service=file_upload_service,
     )
     health_service = HealthService(
         settings,
@@ -2527,6 +2528,120 @@ class FastAPIJobsBackendTests(TestCase):
         file_types = [file["file_type"] for file in files_response.json()["files"]]
         self.assertIn("ai_call_log", file_types)
         self.assertIn("ai_debug_archive", file_types)
+
+    def test_document_job_translation_qa_reads_existing_artifacts_and_updates_review_state(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+                translation_debug_archive_enabled=True,
+            )
+            provider = FakeDocumentJobTranslationProvider()
+            runtime.document_ir_translation_service = DocumentIRTranslationService(provider)
+            runtime.document_job_execution_service.document_ir_translation_service = runtime.document_ir_translation_service
+            runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = make_english_mineru_zip_bytes()
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers, filename="qa-english.pdf")
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={
+                        "source_file_id": source_file["id"],
+                        "mode": "en2zh_pdf_to_word",
+                        "document_language": "en",
+                        "debug_full_text": True,
+                    },
+                )
+                job_id = create_response.json()["job_id"]
+
+                qa_response = client.get(f"/api/v1/document-jobs/{job_id}/translation-qa", headers=headers)
+                update_response = client.patch(
+                    f"/api/v1/document-jobs/{job_id}/translation-qa",
+                    headers=headers,
+                    json={
+                        "status": "needs_fix",
+                        "issue_type": "terminology",
+                        "note": "术语译法需要复核。",
+                    },
+                )
+                detail_response = client.get(f"/api/v1/document-jobs/{job_id}", headers=headers)
+                events_response = client.get(f"/api/v1/document-jobs/{job_id}/events", headers=headers)
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(qa_response.status_code, 200)
+        qa_payload = qa_response.json()
+        self.assertTrue(qa_payload["available"])
+        self.assertIsNone(qa_payload["availability_reason"])
+        self.assertEqual(qa_payload["qa"]["status"], "unreviewed")
+        self.assertGreater(qa_payload["summary"]["final_segment_count"], 0)
+        self.assertGreater(qa_payload["summary"]["ai_call_count"], 0)
+        self.assertGreater(qa_payload["summary"]["term_trace_count"], 0)
+        self.assertTrue(qa_payload["summary"]["source_comparison_available"])
+        self.assertIn("document_ir_file_id", qa_payload["artifacts"])
+        self.assertTrue(qa_payload["artifacts"]["ai_call_log_file_ids"])
+        self.assertTrue(qa_payload["artifacts"]["ai_debug_archive_file_ids"])
+        self.assertTrue(any(call["status"] == "succeeded" for call in qa_payload["ai_calls"]))
+        self.assertTrue(any(trace["source_term"] == "input offset voltage" for trace in qa_payload["term_traces"]))
+        matching_segments = [
+            segment
+            for segment in qa_payload["segments"]
+            if segment["id"] == "block_0002.text"
+        ]
+        self.assertEqual(matching_segments[0]["source_text"], "The input offset voltage is low.")
+        self.assertEqual(matching_segments[0]["final_text"], "输入失调电压很低。")
+
+        self.assertEqual(update_response.status_code, 200)
+        self.assertEqual(update_response.json()["qa"]["status"], "needs_fix")
+        self.assertEqual(update_response.json()["qa"]["issue_type"], "terminology")
+        self.assertEqual(detail_response.json()["translation_qa_status"], "needs_fix")
+        self.assertEqual(detail_response.json()["translation_qa_issue_type"], "terminology")
+        qa_events = [
+            event
+            for event in events_response.json()["items"]
+            if event["event_type"] == "translation_qa_updated"
+        ]
+        self.assertEqual(len(qa_events), 1)
+        self.assertEqual(qa_events[0]["payload"]["note_length"], len("术语译法需要复核。"))
+        self.assertNotIn("note", qa_events[0]["payload"])
+        self.assertNotIn("The input offset voltage is low.", json.dumps(qa_events[0]["payload"], ensure_ascii=False))
+
+    def test_document_job_translation_qa_marks_direct_jobs_unavailable_and_rejects_review(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers, filename="direct-qa.pdf")
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+                qa_response = client.get(f"/api/v1/document-jobs/{job_id}/translation-qa", headers=headers)
+                update_response = client.patch(
+                    f"/api/v1/document-jobs/{job_id}/translation-qa",
+                    headers=headers,
+                    json={"status": "approved", "issue_type": None, "note": None},
+                )
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(qa_response.status_code, 200)
+        self.assertFalse(qa_response.json()["available"])
+        self.assertEqual(qa_response.json()["availability_reason"], "unsupported_mode")
+        self.assertEqual(update_response.status_code, 409)
 
     def test_document_job_en2zh_translation_failure_records_ai_call_log_without_full_text(self):
         with tempfile.TemporaryDirectory() as temp_dir:

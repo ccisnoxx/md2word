@@ -14,6 +14,9 @@ import type {
   DocumentJobRetryRequest,
   DocumentJobResponse,
   DocumentJobRetryResponse,
+  DocumentJobTranslationQaResponse,
+  DocumentJobTranslationQaUpdateRequest,
+  DocumentJobTranslationQaUpdateResponse,
 } from "@/api/types";
 
 export type DocumentJobListParams = {
@@ -69,6 +72,25 @@ export const documentJobsApi = {
     return apiRequest<DocumentJobFileListResponse>({
       url: `/api/v1/document-jobs/${jobId}/files`,
       method: "GET",
+    });
+  },
+
+  getTranslationQa(jobId: string, limit = 200): Promise<DocumentJobTranslationQaResponse> {
+    return apiRequest<DocumentJobTranslationQaResponse>({
+      url: `/api/v1/document-jobs/${jobId}/translation-qa`,
+      method: "GET",
+      params: { limit },
+    });
+  },
+
+  updateTranslationQa(
+    jobId: string,
+    payload: DocumentJobTranslationQaUpdateRequest,
+  ): Promise<DocumentJobTranslationQaUpdateResponse> {
+    return apiRequest<DocumentJobTranslationQaUpdateResponse>({
+      url: `/api/v1/document-jobs/${jobId}/translation-qa`,
+      method: "PATCH",
+      data: payload,
     });
   },
 

@@ -24,6 +24,15 @@ DocumentJobStage = Literal[
     "canceled",
 ]
 DocumentJobEventLevel = Literal["info", "warning", "error"]
+DocumentJobTranslationQaStatus = Literal["unreviewed", "approved", "needs_fix", "blocked"]
+DocumentJobTranslationQaIssueType = Literal[
+    "translation",
+    "terminology",
+    "layout",
+    "source_quality",
+    "artifact_missing",
+    "other",
+]
 DocumentJobEventType = Literal[
     "job_created",
     "job_archived",
@@ -36,6 +45,7 @@ DocumentJobEventType = Literal[
     "download_authorized",
     "ai_call_logged",
     "debug_archive_saved",
+    "translation_qa_updated",
 ]
 
 
@@ -82,6 +92,11 @@ class DocumentJobRecord(BaseModel):
     canceled_at: datetime | None = None
     archived_at: datetime | None = None
     archived_by: str | None = None
+    translation_qa_status: DocumentJobTranslationQaStatus = "unreviewed"
+    translation_qa_issue_type: DocumentJobTranslationQaIssueType | None = None
+    translation_qa_note: str | None = None
+    translation_qa_reviewed_by: str | None = None
+    translation_qa_reviewed_at: datetime | None = None
     request_snapshot: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
