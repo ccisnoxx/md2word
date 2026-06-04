@@ -28,6 +28,9 @@ POST /api/v1/document-jobs
 GET /api/v1/document-jobs/{job_id}
 GET /api/v1/document-jobs/{job_id}/events
 GET /api/v1/document-jobs/config-summary
+POST /api/v1/document-jobs/bulk-retry
+POST /api/v1/document-jobs/bulk-archive
+POST /api/v1/document-jobs/bulk-cancel
 GET /api/v1/document-jobs/{job_id}/download-url
 GET /api/v1/document-jobs/{job_id}/download?token=...
 ```
@@ -112,15 +115,60 @@ GET /api/v1/document-jobs/{job_id}/download?token=...
 - 成功动作写入 `document_job.retry` audit event。
 - 权限：Operator 只能提交原因并沿用原配置；Admin 可选择使用最新默认术语资产或指定 published 术语资产。Retry 当前不重新绑定模板或翻译配置。
 
+### `POST /api/v1/document-jobs/bulk-retry`
+
+- 用途：批量重试失败任务。
+- 请求体：`job_ids` 加单任务 retry 的现有选项字段。
+- 行为：逐个复用单任务 retry 语义，支持部分成功；不会因为某个任务失败而阻断后续任务。
+- 成功项写入 `document_job.retry` audit event。
+- 响应：`action=retry`、`total`、`succeeded`、`failed`、`items`。
+
+单个 `items` 元素：
+
+| 字段 | 说明 |
+|---|---|
+| `job_id` | 本次处理的任务 ID。 |
+| `ok` | 单项是否成功。 |
+| `status_code` | 成功为 `200`，失败为单任务接口对应 HTTP 状态。 |
+| `error_code` | 失败时返回稳定错误码，成功为 `null`。 |
+| `detail` | 失败原因，成功为 `null`。 |
+| `job` | 成功时返回最新任务摘要，失败为 `null`。 |
+
 ### `POST /api/v1/document-jobs/{job_id}/cancel`
 
 - 用途：取消可取消任务。
 - 成功动作写入 `document_job.cancel` audit event。
 
+### `POST /api/v1/document-jobs/bulk-cancel`
+
+- 用途：批量取消 pending / queued / running 任务。
+- 请求体：`job_ids`。
+- 行为：逐个复用单任务 cancel 语义；取消只标记任务为 `canceled` 并停止后续处理，不承诺强制中断已进入外部服务的长任务。
+- 成功项写入 `document_job.cancel` audit event。
+- 响应结构同 `bulk-retry`，`action=cancel`。
+
 ### `DELETE /api/v1/document-jobs/{job_id}`
 
 - 用途：归档任务。
 - 成功动作写入 `document_job.archive` audit event。
+
+### `POST /api/v1/document-jobs/bulk-archive`
+
+- 用途：批量归档 succeeded / failed / canceled 终态任务。
+- 请求体：`job_ids`。
+- 行为：逐个复用单任务 archive 语义；归档只从默认列表隐藏任务，不删除源文件、结果文件、debug/log 文件或事件。
+- 成功项写入 `document_job.archive` audit event。
+- 响应结构同 `bulk-retry`，`action=archive`。
+
+### 批量请求校验
+
+三个批量接口都会对请求整体做校验：
+
+- `job_ids` 为空：`400 invalid_request`。
+- `job_ids` 超过 50 个：`400 invalid_request`。
+- `job_ids` 包含重复或空白项：`400 invalid_request`。
+
+通过整体校验后，单个任务的 `404`、`403`、`409` 等错误进入对应 item，不改变批量响应的 `200 OK`。
 
 ### `GET /api/v1/document-jobs/{job_id}/download-url`
 

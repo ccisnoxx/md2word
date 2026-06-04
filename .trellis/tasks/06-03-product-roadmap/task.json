@@ -30,7 +30,8 @@
     "06-04-translation-result-qa",
     "06-04-file-retention-management",
     "06-04-audit-log-viewer",
-    "06-04-ops-dashboard"
+    "06-04-ops-dashboard",
+    "06-04-document-job-bulk-apis"
   ],
   "parent": null,
   "relatedFiles": [],

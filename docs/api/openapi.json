@@ -815,6 +815,191 @@
         "title": "DocumentJobArchiveResponse",
         "type": "object"
       },
+      "DocumentJobBulkItemResponse": {
+        "description": "批量操作中单个任务的成功或失败结果。",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentJobResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "status_code": {
+            "title": "Status Code",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "job_id",
+          "ok",
+          "status_code"
+        ],
+        "title": "DocumentJobBulkItemResponse",
+        "type": "object"
+      },
+      "DocumentJobBulkJobIdsRequest": {
+        "description": "批量任务操作的 job_id 列表。",
+        "properties": {
+          "job_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Job Ids",
+            "type": "array"
+          }
+        },
+        "title": "DocumentJobBulkJobIdsRequest",
+        "type": "object"
+      },
+      "DocumentJobBulkResponse": {
+        "description": "批量任务操作响应；允许部分成功。",
+        "properties": {
+          "action": {
+            "enum": [
+              "retry",
+              "archive",
+              "cancel"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentJobBulkItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "succeeded": {
+            "title": "Succeeded",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action",
+          "total",
+          "succeeded",
+          "failed"
+        ],
+        "title": "DocumentJobBulkResponse",
+        "type": "object"
+      },
+      "DocumentJobBulkRetryRequest": {
+        "description": "批量重试请求；重试选项与单任务重试保持一致。",
+        "properties": {
+          "job_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Job Ids",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "term_rule_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Term Rule Set Id"
+          },
+          "term_rule_set_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Term Rule Set Version"
+          },
+          "translation_term_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translation Term Set Id"
+          },
+          "translation_term_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translation Term Version"
+          },
+          "use_latest_term_assets": {
+            "default": false,
+            "title": "Use Latest Term Assets",
+            "type": "boolean"
+          }
+        },
+        "title": "DocumentJobBulkRetryRequest",
+        "type": "object"
+      },
       "DocumentJobCancelResponse": {
         "properties": {
           "canceled_at": {
@@ -7979,6 +8164,186 @@
           }
         },
         "summary": "Create Document Job",
+        "tags": [
+          "document-jobs"
+        ]
+      }
+    },
+    "/api/v1/document-jobs/bulk-archive": {
+      "post": {
+        "description": "批量归档终态 document_jobs，不删除文件或事件。",
+        "operationId": "bulk_archive_document_jobs_api_v1_document_jobs_bulk_archive_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentJobBulkJobIdsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentJobBulkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bulk Archive Document Jobs",
+        "tags": [
+          "document-jobs"
+        ]
+      }
+    },
+    "/api/v1/document-jobs/bulk-cancel": {
+      "post": {
+        "description": "批量取消未终态 document_jobs，保留所有文件和事件。",
+        "operationId": "bulk_cancel_document_jobs_api_v1_document_jobs_bulk_cancel_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentJobBulkJobIdsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentJobBulkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bulk Cancel Document Jobs",
+        "tags": [
+          "document-jobs"
+        ]
+      }
+    },
+    "/api/v1/document-jobs/bulk-retry": {
+      "post": {
+        "description": "批量重试 document_jobs，逐项复用单任务重试语义。",
+        "operationId": "bulk_retry_document_jobs_api_v1_document_jobs_bulk_retry_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentJobBulkRetryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentJobBulkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bulk Retry Document Jobs",
         "tags": [
           "document-jobs"
         ]
