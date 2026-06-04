@@ -1,4 +1,5 @@
-<!-- frontend/src/pages/TranslationTermSetPage.vue: Admin Translation Term Set CSV import, export and version actions. -->
+<!-- File: frontend/src/pages/TranslationTermSetPage.vue -->
+<!-- Purpose: Provide the Admin Translation Term Set CSV import, export, default switching, and rollback page. -->
 <template>
   <main class="translation-term-set-page" aria-labelledby="translation-term-set-title">
     <section class="page-heading">
@@ -11,6 +12,14 @@
     </section>
 
     <ApiErrorAlert :error="error" />
+    <el-alert
+      v-if="errorActionHint"
+      class="context-alert"
+      type="info"
+      :title="errorActionHint"
+      :closable="false"
+      show-icon
+    />
 
     <el-alert
       v-if="unavailable"
@@ -62,6 +71,26 @@
       </el-card>
     </section>
 
+    <el-card v-if="!unavailable && lastImportReport" class="card-flat" shadow="never">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">最近一次 CSV 导入</h2>
+          <p class="section-subtitle">{{ importReportSummary }}</p>
+        </div>
+        <el-tag effect="plain">dedupe={{ lastImportReport.dedupe }}</el-tag>
+      </div>
+      <el-table
+        :data="lastImportReport.duplicates"
+        empty-text="本次导入没有重复项"
+        class="import-report-table"
+      >
+        <el-table-column prop="row_number" label="重复行" width="100" />
+        <el-table-column prop="kept_row_number" label="保留行" width="100" />
+        <el-table-column prop="source_term" label="source_term" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="normalized_source_term" label="normalized" min-width="180" show-overflow-tooltip />
+      </el-table>
+    </el-card>
+
     <el-card v-if="!unavailable" class="card-flat" shadow="never">
       <div class="section-header">
         <div>
@@ -108,7 +137,7 @@
             <RoleGate>
               <el-button link type="primary" @click="exportVersion(row.version)">导出</el-button>
               <el-button link type="warning" :disabled="row.is_default" @click="setDefault(row.version)">设默认</el-button>
-              <el-button link type="danger" @click="rollback(row.version)">Rollback</el-button>
+              <el-button link type="danger" :disabled="row.is_default" @click="rollback(row.version)">Rollback</el-button>
             </RoleGate>
           </template>
         </el-table-column>
@@ -137,6 +166,7 @@
       <el-form ref="importFormRef" :model="importDialog.form" :rules="importRules" label-width="90px">
         <el-form-item label="dedupe" prop="dedupe">
           <el-segmented v-model="importDialog.form.dedupe" :options="dedupeOptions" />
+          <p class="form-help">{{ dedupeHint }}</p>
         </el-form-item>
         <el-form-item label="CSV" prop="csv_text">
           <el-input
@@ -152,7 +182,7 @@
         v-if="lastImportReport"
         class="dialog-alert"
         type="success"
-        :title="`导入 ${lastImportReport.imported_rows} 行，重复 ${lastImportReport.duplicate_rows} 行。`"
+        :title="importReportSummary"
         :closable="false"
         show-icon
       />
@@ -219,6 +249,8 @@ type FindingRow = {
   normalized_source_term: string | null;
 };
 
+type DedupeMode = "reject" | "keep_first";
+
 const auth = useAuthStore();
 const isAdmin = computed(() => auth.user?.role === "admin");
 const sets = ref<TranslationTermSetListItemResponse[]>([]);
@@ -243,7 +275,7 @@ const importDialog = reactive({
   visible: false,
   form: {
     csv_text: "",
-    dedupe: "reject" as "reject" | "keep_first",
+    dedupe: "reject" as DedupeMode,
   },
 });
 
@@ -269,6 +301,21 @@ const publishRules: FormRules = {
   release_note: [{ required: true, message: "请填写发布说明", trigger: "blur" }],
 };
 
+const dedupeHints: Record<DedupeMode, string> = {
+  reject: "默认策略。只要 CSV 存在重复 normalized_source_term，后端会拒绝导入，draft 不会保存。",
+  keep_first: "治理导入策略。保留第一条重复术语，丢弃后续重复行，并在导入报告中列出被丢弃的行。",
+};
+
+const dedupeHint = computed(() => dedupeHints[importDialog.form.dedupe]);
+
+const importReportSummary = computed(() => {
+  const report = lastImportReport.value;
+  if (!report) {
+    return "";
+  }
+  return `总行数 ${report.total_rows}，导入 ${report.imported_rows} 行，重复 ${report.duplicate_rows} 行。`;
+});
+
 const validationFindings = computed<FindingRow[]>(() => {
   const report = draft.value?.validation;
   if (!report) {
@@ -280,6 +327,37 @@ const validationFindings = computed<FindingRow[]>(() => {
   ];
 });
 
+// 根据 Translation Term Set 页面语境给 Admin 提供下一步处理建议。
+const errorActionHint = computed(() => {
+  const currentError = error.value;
+  if (!currentError) {
+    return "";
+  }
+  if (currentError.status === 503) {
+    return "当前部署未启用 MySQL resource service，本页面不会保存任何 Translation Term Set 变更。";
+  }
+  if (currentError.status === 404) {
+    return "目标 set 或 version 不存在。请刷新术语集列表后确认版本仍可用。";
+  }
+  if (currentError.status === 400 && /CSV|重复|dedupe|language_pair|字段/.test(currentError.message)) {
+    return "CSV 未导入，draft 未保存。请按错误信息修正 CSV，或在确认可丢弃重复行后改用 keep_first。";
+  }
+  if (currentError.status === 400) {
+    return "操作未执行。请确认目标版本是 published 状态，且请求参数符合当前 API 合同。";
+  }
+  return "";
+});
+
+// 记录页面级 API 错误，并在 503 时切到不可用状态。
+function setPageError(caught: unknown): void {
+  const normalized = normalizeApiError(caught);
+  if (normalized.status === 503) {
+    unavailable.value = true;
+  }
+  error.value = normalized;
+}
+
+// 加载 set 列表和当前选中 set 的详情。
 async function loadAll(): Promise<void> {
   loading.value = true;
   error.value = null;
@@ -292,21 +370,20 @@ async function loadAll(): Promise<void> {
       await loadSelectedSet();
     }
   } catch (caught) {
-    const normalized = normalizeApiError(caught);
-    if (normalized.status === 503) {
-      unavailable.value = true;
-    }
-    error.value = normalized;
+    setPageError(caught);
   } finally {
     loading.value = false;
   }
 }
 
+// 切换当前管理的 Translation Term Set，并清空旧 set 的导入报告。
 async function selectSet(row: TranslationTermSetListItemResponse): Promise<void> {
   selectedSetId.value = row.set_id;
+  lastImportReport.value = null;
   await loadSelectedSet();
 }
 
+// 加载当前 set 的详情和 draft 预览。
 async function loadSelectedSet(): Promise<void> {
   if (!selectedSetId.value) {
     return;
@@ -319,6 +396,7 @@ async function loadSelectedSet(): Promise<void> {
   draft.value = draftResponse;
 }
 
+// 打开 CSV 导入对话框，并重置导入策略为安全的 reject。
 function openImportDialog(): void {
   importDialog.form.csv_text = "";
   importDialog.form.dedupe = "reject";
@@ -326,6 +404,7 @@ function openImportDialog(): void {
   importDialog.visible = true;
 }
 
+// 将 CSV 导入 draft；失败时保留后端错误并提示 draft 未保存。
 async function importCsv(): Promise<void> {
   if (!selectedSetId.value) {
     return;
@@ -346,18 +425,20 @@ async function importCsv(): Promise<void> {
     ElMessage.success("CSV 已导入 draft。");
     await loadAll();
   } catch (caught) {
-    error.value = normalizeApiError(caught);
+    setPageError(caught);
   } finally {
     importing.value = false;
   }
 }
 
+// 打开发布 draft 对话框，要求填写发布说明。
 function openPublishDialog(): void {
   publishDialog.form.release_note = "";
   publishDialog.form.make_default = true;
   publishDialog.visible = true;
 }
 
+// 发布当前 draft，并按开关决定是否设为默认版本。
 async function publishDraft(): Promise<void> {
   if (!selectedSetId.value) {
     return;
@@ -377,12 +458,13 @@ async function publishDraft(): Promise<void> {
     publishDialog.visible = false;
     await loadAll();
   } catch (caught) {
-    error.value = normalizeApiError(caught);
+    setPageError(caught);
   } finally {
     publishing.value = false;
   }
 }
 
+// 导出默认版本或指定 published version 的 CSV。
 async function exportVersion(version: string | null): Promise<void> {
   if (!selectedSetId.value) {
     return;
@@ -394,10 +476,11 @@ async function exportVersion(version: string | null): Promise<void> {
     exportDialog.csv_text = response.csv_text;
     exportDialog.visible = true;
   } catch (caught) {
-    error.value = normalizeApiError(caught);
+    setPageError(caught);
   }
 }
 
+// 将导出的 CSV 正文复制到剪贴板。
 async function copyExport(): Promise<void> {
   if (!exportDialog.csv_text) {
     return;
@@ -406,6 +489,7 @@ async function copyExport(): Promise<void> {
   ElMessage.success("CSV 已复制。");
 }
 
+// 在浏览器侧下载导出的 CSV，不触发后端文件删除或文件管理。
 function downloadExport(): void {
   if (!exportDialog.csv_text || !exportDialog.manifest) {
     return;
@@ -419,16 +503,21 @@ function downloadExport(): void {
   URL.revokeObjectURL(url);
 }
 
+// 切换默认指针；只影响后续默认绑定，不改已有 job 快照。
 async function setDefault(version: string): Promise<void> {
   if (!selectedSetId.value) {
     return;
   }
   try {
-    await ElMessageBox.confirm("将该 published version 切换为默认翻译术语集版本。", `设默认 ${version}`, {
-      confirmButtonText: "设默认",
-      cancelButtonText: "取消",
-      type: "warning",
-    });
+    await ElMessageBox.confirm(
+      "将该 published version 切换为默认翻译术语集版本。此操作只影响后续使用默认配置的新 job；已创建 job 的 resource snapshot 不会改变。",
+      `设默认 ${version}`,
+      {
+        confirmButtonText: "设默认",
+        cancelButtonText: "取消",
+        type: "warning",
+      },
+    );
   } catch {
     return;
   }
@@ -438,17 +527,18 @@ async function setDefault(version: string): Promise<void> {
     ElMessage.success("默认翻译术语集已切换。");
     await loadAll();
   } catch (caught) {
-    error.value = normalizeApiError(caught);
+    setPageError(caught);
   }
 }
 
+// Rollback 只切默认指针，不生成新版本、不删除历史版本、不改已有 job 快照。
 async function rollback(version: string): Promise<void> {
   if (!selectedSetId.value) {
     return;
   }
   try {
     await ElMessageBox.confirm(
-      "Rollback 只会切换默认版本指针，不会生成新版本。",
+      "Rollback 只会把默认版本指针切回该 published version，不会生成新版本，不会删除或修改历史版本，也不会改变已创建 job 的 resource snapshot。",
       `Rollback ${version}`,
       {
         confirmButtonText: "Rollback",
@@ -465,7 +555,7 @@ async function rollback(version: string): Promise<void> {
     ElMessage.success("已完成 rollback。");
     await loadAll();
   } catch (caught) {
-    error.value = normalizeApiError(caught);
+    setPageError(caught);
   }
 }
 
@@ -513,6 +603,22 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.context-alert {
+  margin-bottom: 4px;
+}
+
+.form-help {
+  flex-basis: 100%;
+  margin: 6px 0 0;
+  color: #667085;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.import-report-table {
+  width: 100%;
 }
 
 .dialog-alert {
