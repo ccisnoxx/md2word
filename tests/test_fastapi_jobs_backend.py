@@ -5238,6 +5238,115 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIn("translation_term_set.import", audit_actions)
         self.assertIn("translation_term_set.export", audit_actions)
 
+    def test_translation_term_set_management_api_lists_draft_publishes_defaults_and_rolls_back(self):
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            terms_path = temp_root / "translation_terms.csv"
+            terms_path.write_text(
+                "language_pair,source_term,target_term,version\n"
+                "en2zh,ADC,模数转换器,v1\n"
+                "en2zh,DAC,数模转换器,v1\n",
+                encoding="utf-8",
+            )
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                translation_terms_path=str(terms_path),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                list_response = client.get("/api/v1/translation-term-sets", headers=operator_headers)
+                detail_response = client.get("/api/v1/translation-term-sets/translation-terms-en2zh", headers=operator_headers)
+                draft_response = client.get("/api/v1/translation-term-sets/translation-terms-en2zh/draft", headers=operator_headers)
+                missing_response = client.get("/api/v1/translation-term-sets/missing-set", headers=operator_headers)
+                operator_publish_response = client.post(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/publish",
+                    headers=operator_headers,
+                    json={"make_default": True, "release_note": "operator should not publish"},
+                )
+                import_response = client.post(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/import",
+                    headers=admin_headers,
+                    json={
+                        "csv_text": (
+                            "language_pair,source_term,target_term,version\n"
+                            "en2zh,FPGA,现场可编程门阵列,draft\n"
+                        )
+                    },
+                )
+                publish_response = client.post(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/publish",
+                    headers=admin_headers,
+                    json={"make_default": False, "release_note": "add FPGA term"},
+                )
+                published_version = publish_response.json()["version"]
+                set_default_response = client.post(
+                    f"/api/v1/translation-term-sets/translation-terms-en2zh/versions/{published_version}/set-default",
+                    headers=admin_headers,
+                )
+                draft_default_response = client.post(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/versions/draft/set-default",
+                    headers=admin_headers,
+                )
+                rollback_response = client.post(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/rollback",
+                    headers=admin_headers,
+                    json={"version": "v1"},
+                )
+                final_detail_response = client.get("/api/v1/translation-term-sets/translation-terms-en2zh", headers=operator_headers)
+
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(list_response.json()["items"][0]["set_id"], "translation-terms-en2zh")
+        self.assertEqual(list_response.json()["items"][0]["language_pair"], "en2zh")
+        self.assertEqual(list_response.json()["items"][0]["default_version"], "v1")
+        self.assertEqual(list_response.json()["items"][0]["version_count"], 1)
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(detail_response.json()["versions"][0]["term_count"], 2)
+        self.assertTrue(detail_response.json()["versions"][0]["is_default"])
+        self.assertEqual(draft_response.status_code, 200)
+        self.assertEqual(draft_response.json()["base_version"], "v1")
+        self.assertEqual(draft_response.json()["term_count"], 2)
+        self.assertEqual([entry["source_term"] for entry in draft_response.json()["entries"]], ["ADC", "DAC"])
+        self.assertEqual(missing_response.status_code, 404)
+        self.assertEqual(operator_publish_response.status_code, 403)
+        self.assertEqual(import_response.status_code, 200)
+        self.assertEqual(publish_response.status_code, 200)
+        self.assertFalse(publish_response.json()["is_default"])
+        self.assertEqual(publish_response.json()["published_by"], "user_admin")
+        self.assertEqual(publish_response.json()["release_note"], "add FPGA term")
+        self.assertEqual(set_default_response.status_code, 200)
+        self.assertTrue(set_default_response.json()["is_default"])
+        self.assertEqual(draft_default_response.status_code, 400)
+        self.assertEqual(rollback_response.status_code, 200)
+        self.assertEqual(rollback_response.json()["version"], "v1")
+        self.assertTrue(rollback_response.json()["is_default"])
+        self.assertEqual(final_detail_response.json()["default_version"], "v1")
+        self.assertEqual(len(final_detail_response.json()["versions"]), 2)
+        audit_actions = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+        self.assertIn("translation_term_set.publish", audit_actions)
+        self.assertIn("translation_term_set.set_default", audit_actions)
+        self.assertIn("translation_term_set.rollback", audit_actions)
+
+    def test_translation_term_set_management_api_returns_503_without_mysql_service(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir))
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                response = client.get("/api/v1/translation-term-sets")
+
+        self.assertEqual(response.status_code, 503)
+
     def test_translation_term_proposals_approve_batch_changes_into_draft_and_reject(self):
         from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
 

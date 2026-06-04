@@ -21,6 +21,16 @@ from app.domains.translation.models import (
     utc_now,
 )
 from app.domains.translation.repository import TranslationTermRepositoryProtocol
+from app.domains.translation.schemas import (
+    TranslationTermEntryResponse,
+    TranslationTermSetDetailResponse,
+    TranslationTermSetDraftResponse,
+    TranslationTermSetListItemResponse,
+    TranslationTermSetListResponse,
+    TranslationTermSetVersionResponse,
+    TranslationTermValidationFindingResponse,
+    TranslationTermValidationReportResponse,
+)
 
 
 DRAFT_VERSION = "draft"
@@ -141,6 +151,59 @@ class TranslationTermSetVersionService:
     ) -> None:
         self.repository = repository
         self.audit_service = audit_service
+
+    def list_sets(self) -> TranslationTermSetListResponse:
+        """列出可管理 Translation Term Set 及其当前指针摘要。"""
+
+        items: list[TranslationTermSetListItemResponse] = []
+        for term_set in self.repository.list_sets():
+            versions = self.repository.list_versions(term_set.set_id)
+            default_record = self.repository.get_version(term_set.set_id, term_set.default_version) if term_set.default_version else None
+            draft_record = self.repository.get_version(term_set.set_id, term_set.draft_version) if term_set.draft_version else None
+            items.append(
+                TranslationTermSetListItemResponse(
+                    set_id=term_set.set_id,
+                    language_pair=term_set.language_pair,
+                    default_version=term_set.default_version,
+                    draft_version=term_set.draft_version,
+                    version_count=len([record for record in versions if record.status != "draft"]),
+                    default_term_count=default_record.term_count if default_record is not None else 0,
+                    draft_term_count=draft_record.term_count if draft_record is not None else 0,
+                    snapshot_hash=default_record.snapshot_hash if default_record is not None else None,
+                )
+            )
+        return TranslationTermSetListResponse(items=items)
+
+    def get_set_detail(self, set_id: str) -> TranslationTermSetDetailResponse:
+        """返回 set 默认指针、draft 指针和已发布版本列表。"""
+
+        term_set = self._require_set(set_id)
+        return TranslationTermSetDetailResponse(
+            set_id=term_set.set_id,
+            language_pair=term_set.language_pair,
+            default_version=term_set.default_version,
+            draft_version=term_set.draft_version,
+            versions=[
+                self._version_api_response(record, default_version=term_set.default_version)
+                for record in self.repository.list_versions(term_set.set_id)
+                if record.status != "draft"
+            ],
+        )
+
+    def get_draft_response(self, set_id: str) -> TranslationTermSetDraftResponse:
+        """返回当前 draft 条目和发布前校验结果；没有 draft 时复制默认版本生成。"""
+
+        draft = self.get_draft(set_id)
+        return TranslationTermSetDraftResponse(
+            set_id=draft.set_id,
+            language_pair=draft.language_pair,
+            version=draft.version,
+            base_version=draft.base_version,
+            term_count=len(draft.entries),
+            snapshot_hash=draft.snapshot_hash,
+            validation=self._validation_api_response(draft.validation),
+            entries=[self._entry_api_response(entry) for entry in draft.entries],
+        )
 
     def get_draft(self, set_id: str) -> TranslationTermDraft:
         """没有 draft 时从当前默认 published 版本复制。"""
@@ -299,6 +362,29 @@ class TranslationTermSetVersionService:
         )
         return result
 
+    def publish_draft_response(
+        self,
+        set_id: str,
+        *,
+        make_default: bool,
+        published_by: str | None = None,
+        release_note: str | None = None,
+        actor: ActorContext | None = None,
+        trace_id: str | None = None,
+    ) -> TranslationTermSetVersionResponse:
+        """发布 draft 并返回 API 版本模型。"""
+
+        result = self.publish_draft(
+            set_id,
+            make_default=make_default,
+            published_by=published_by,
+            release_note=release_note,
+            actor=actor,
+            trace_id=trace_id,
+        )
+        refreshed_set = self._require_set(set_id)
+        return self._version_api_response(result.version, default_version=refreshed_set.default_version)
+
     def set_default_version(
         self,
         set_id: str,
@@ -328,6 +414,20 @@ class TranslationTermSetVersionService:
         )
         return version_record
 
+    def set_default_version_response(
+        self,
+        set_id: str,
+        version: str,
+        *,
+        actor: ActorContext | None = None,
+        trace_id: str | None = None,
+    ) -> TranslationTermSetVersionResponse:
+        """切换默认版本并返回 API 版本模型。"""
+
+        record = self.set_default_version(set_id, version, actor=actor, trace_id=trace_id)
+        refreshed_set = self._require_set(set_id)
+        return self._version_api_response(record, default_version=refreshed_set.default_version)
+
     def rollback(
         self,
         set_id: str,
@@ -346,6 +446,20 @@ class TranslationTermSetVersionService:
             trace_id=trace_id,
         )
         return version_record
+
+    def rollback_response(
+        self,
+        set_id: str,
+        version: str,
+        *,
+        actor: ActorContext | None = None,
+        trace_id: str | None = None,
+    ) -> TranslationTermSetVersionResponse:
+        """Rollback 只切默认指针，并返回 API 版本模型。"""
+
+        record = self.rollback(set_id, version, actor=actor, trace_id=trace_id)
+        refreshed_set = self._require_set(set_id)
+        return self._version_api_response(record, default_version=refreshed_set.default_version)
 
     def archive(
         self,
@@ -896,4 +1010,64 @@ class TranslationTermSetVersionService:
             target_id=target_id,
             trace_id=trace_id or "",
             reason=reason,
+        )
+
+    @staticmethod
+    def _validation_api_response(report: TranslationTermValidationReport) -> TranslationTermValidationReportResponse:
+        return TranslationTermValidationReportResponse(
+            valid=report.valid,
+            errors=[
+                TranslationTermValidationFindingResponse(
+                    code=item.code,
+                    message=item.message,
+                    normalized_source_term=item.normalized_source_term,
+                )
+                for item in report.errors
+            ],
+            warnings=[
+                TranslationTermValidationFindingResponse(
+                    code=item.code,
+                    message=item.message,
+                    normalized_source_term=item.normalized_source_term,
+                )
+                for item in report.warnings
+            ],
+        )
+
+    @staticmethod
+    def _entry_api_response(entry: TranslationTermEntry) -> TranslationTermEntryResponse:
+        return TranslationTermEntryResponse(
+            language_pair=entry.language_pair,
+            source_term=entry.source_term,
+            normalized_source_term=entry.normalized_source_term,
+            target_term=entry.target_term,
+            version=entry.version,
+            set_id=entry.set_id,
+            case_sensitive=entry.case_sensitive,
+            status=entry.status,
+            priority=entry.priority,
+            domain=entry.domain,
+            category=entry.category,
+            note=entry.note,
+        )
+
+    @staticmethod
+    def _version_api_response(
+        record: TranslationTermVersionRecord,
+        *,
+        default_version: str | None,
+    ) -> TranslationTermSetVersionResponse:
+        return TranslationTermSetVersionResponse(
+            set_id=record.set_id,
+            language_pair=record.language_pair,
+            version=record.version,
+            status=record.status,
+            snapshot_hash=record.snapshot_hash,
+            term_count=record.term_count,
+            is_default=default_version == record.version,
+            published_by=record.published_by,
+            published_at=record.published_at,
+            release_note=record.release_note,
+            created_at=record.created_at,
+            updated_at=record.updated_at,
         )

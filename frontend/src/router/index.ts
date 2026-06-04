@@ -15,6 +15,7 @@ import TermRuleSetPage from "@/pages/TermRuleSetPage.vue";
 import TermProposalsPage from "@/pages/TermProposalsPage.vue";
 import TranslationProfilesPage from "@/pages/TranslationProfilesPage.vue";
 import TranslationResultQaPage from "@/pages/TranslationResultQaPage.vue";
+import TranslationTermSetPage from "@/pages/TranslationTermSetPage.vue";
 import { pinia } from "@/stores";
 import { useAuthStore } from "@/stores/auth";
 
@@ -54,6 +55,12 @@ const router = createRouter({
           path: "settings/translation-profiles",
           name: "settings-translation-profiles",
           component: TranslationProfilesPage,
+          meta: { roles: ["admin"] },
+        },
+        {
+          path: "settings/translation-term-sets",
+          name: "settings-translation-term-sets",
+          component: TranslationTermSetPage,
           meta: { roles: ["admin"] },
         },
         {

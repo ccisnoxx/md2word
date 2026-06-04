@@ -30,7 +30,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { Collection, DocumentChecked, Files, Search } from "@element-plus/icons-vue";
+import { Collection, DocumentChecked, Files, Search, Tickets } from "@element-plus/icons-vue";
 
 import { configSummaryApi, type ConfigTodoSummaryResponse } from "@/api/configSummary";
 import ConfigTodoSummary from "@/components/ConfigTodoSummary.vue";
@@ -67,6 +67,12 @@ const cards = [
     description: "管理基础字段 draft、发布和回滚。",
     to: "/settings/translation-profiles",
     icon: DocumentChecked,
+  },
+  {
+    title: "翻译术语集",
+    description: "管理 CSV draft、导出和版本指针。",
+    to: "/settings/translation-term-sets",
+    icon: Tickets,
   },
 ];
 
@@ -124,7 +130,7 @@ onMounted(() => {
 
 .settings-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 14px;
 }
 

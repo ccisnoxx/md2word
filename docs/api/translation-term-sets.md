@@ -21,19 +21,68 @@ last_reviewed: 2026-06-02
 
 ## 概述
 
-`translation-term-sets` 统一挂在 `/api/v1/translation-term-sets` 下，用于把翻译术语 CSV 导入 SQL draft/seed，并从默认或历史版本导出 CSV。
+`translation-term-sets` 统一挂在 `/api/v1/translation-term-sets` 下，用于查看翻译术语集、把翻译术语 CSV 导入 SQL draft/seed、从默认或历史版本导出 CSV，并管理 published version 的默认指针。
 
 当前约束：
 
 - 需要 `JOBS_REPOSITORY_BACKEND=mysql`，否则接口返回 `503`
 - 第一版每个 `language_pair` 只有一个固定派生 set，例如 `translation-terms-en2zh`
 - `translation_terms.csv` 是 seed、导入、导出和备份格式，不是 MySQL mode 运行时真源
+- list/detail/draft/read 接口用于管理台展示；mutation 接口保持 admin-only
 - 导入默认 `dedupe=reject`，重复 `normalized_source_term` 会拒绝
 - admin 可显式使用 `dedupe=keep_first`，保留第一条并返回重复项报告
 - 导出默认当前默认版本；admin 可传 `version` 导出历史版本
+- 发布 draft 后清除 draft 指针；rollback 只切默认指针，不生成新版本
 - import/export 成功后写 audit event
 
 ## API 参考
+
+### `GET /api/v1/translation-term-sets`
+
+- 用途：列出当前可管理的 Translation Term Set。
+- 成功响应字段：
+
+| 字段 | 说明 |
+|---|---|
+| `items[].set_id` | Translation Term Set ID |
+| `items[].language_pair` | 语言方向 |
+| `items[].default_version` | 当前默认 published version |
+| `items[].draft_version` | 当前 draft 指针 |
+| `items[].version_count` | published version 数量 |
+| `items[].default_term_count` | 默认版本术语数 |
+| `items[].draft_term_count` | draft 术语数 |
+| `items[].snapshot_hash` | 默认版本 snapshot hash |
+
+### `GET /api/v1/translation-term-sets/{set_id}`
+
+- 用途：查看 set 默认指针、draft 指针和 published versions。
+- 成功响应字段：
+
+| 字段 | 说明 |
+|---|---|
+| `set_id` | Translation Term Set ID |
+| `language_pair` | 语言方向 |
+| `default_version` | 当前默认 published version |
+| `draft_version` | 当前 draft 指针 |
+| `versions[]` | published versions，不包含 draft |
+
+`versions[]` 包含 `version`、`status`、`term_count`、`snapshot_hash`、`is_default`、`published_by`、`published_at`、`release_note`、`created_at` 和 `updated_at`。
+
+### `GET /api/v1/translation-term-sets/{set_id}/draft`
+
+- 用途：查看当前 draft entries 和发布前校验结果；没有 draft 时从默认版本复制生成。
+- 成功响应字段：
+
+| 字段 | 说明 |
+|---|---|
+| `set_id` | Translation Term Set ID |
+| `language_pair` | 语言方向 |
+| `version` | 固定为 `draft` |
+| `base_version` | draft 基于的默认版本 |
+| `term_count` | draft 术语数 |
+| `snapshot_hash` | draft snapshot hash |
+| `validation` | 发布前校验结果 |
+| `entries[]` | draft 术语条目，只读展示 |
 
 ### `POST /api/v1/translation-term-sets/{set_id}/import`
 
@@ -104,9 +153,40 @@ en2zh,FPGA,现场可编程门阵列,draft,false,active,5,electronics,chip,first
 
 manifest 作为旁路元信息返回，不写入 CSV 正文，避免破坏现有 CSV 读取器。
 
+### `POST /api/v1/translation-term-sets/{set_id}/publish`
+
+- 用途：发布当前 draft。
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
+- 请求体字段：
+
+| 字段 | 默认值 | 说明 |
+|---|---|---|
+| `make_default` | `true` | 发布后是否设为默认版本 |
+| `release_note` | `null` | 发布说明 |
+
+成功响应为单个 `TranslationTermSetVersionResponse`。
+
+### `POST /api/v1/translation-term-sets/{set_id}/versions/{version}/set-default`
+
+- 用途：把指定 published version 设为默认版本。
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
+- 成功响应为单个 `TranslationTermSetVersionResponse`。
+
+### `POST /api/v1/translation-term-sets/{set_id}/rollback`
+
+- 用途：rollback 默认指针到指定 published version；不生成新版本。
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
+- 请求体字段：
+
+| 字段 | 说明 |
+|---|---|
+| `version` | 要回滚到的 published version |
+
+成功响应为单个 `TranslationTermSetVersionResponse`。
+
 ## 常见状态
 
-- `400`：CSV 字段缺失、字段值非法、重复项未显式去重、`set_id` 与 `language_pair` 不匹配，或 seed 初始化条件不满足
+- `400`：CSV 字段缺失、字段值非法、重复项未显式去重、`set_id` 与 `language_pair` 不匹配、seed 初始化条件不满足，或 set-default/rollback 指向非 published 版本
 - `403`：admin-only 接口缺少或未通过 Bearer admin JWT / legacy `X-Admin-Token`
 - `404`：Translation Term Set 或指定版本不存在
 - `503`：未启用 MySQL resource service
