@@ -20,6 +20,8 @@ class DocumentJobCreateRequest(BaseModel):
     term_rule_set_version: str | None = None
     translation_term_set_id: str | None = None
     translation_term_version: str | None = None
+    translation_profile_id: str | None = None
+    translation_profile_version: str | None = None
     debug_full_text: bool = False
 
 
@@ -114,6 +116,45 @@ class DocumentJobFileListResponse(BaseModel):
 
     job_id: str
     files: list[DocumentFileResponse]
+
+
+class DocumentJobConfigVersionOption(BaseModel):
+    """任务创建配置中一个可绑定的 published 资源版本。"""
+
+    resource_id: str
+    version: str
+    label: str
+    status: str = "published"
+    is_default: bool = False
+    snapshot_hash: str | None = None
+    summary: dict[str, Any] = Field(default_factory=dict)
+
+
+class DocumentJobConfigDefaults(BaseModel):
+    template: DocumentJobConfigVersionOption | None = None
+    term_rule_set: DocumentJobConfigVersionOption | None = None
+    translation_term_set: DocumentJobConfigVersionOption | None = None
+    translation_profile: DocumentJobConfigVersionOption | None = None
+
+
+class DocumentJobConfigOptions(BaseModel):
+    templates: list[DocumentJobConfigVersionOption] = Field(default_factory=list)
+    term_rule_sets: list[DocumentJobConfigVersionOption] = Field(default_factory=list)
+    translation_term_sets: list[DocumentJobConfigVersionOption] = Field(default_factory=list)
+    translation_profiles: list[DocumentJobConfigVersionOption] = Field(default_factory=list)
+
+
+class DocumentJobConfigReadiness(BaseModel):
+    en2zh_available: bool = False
+    warnings: list[str] = Field(default_factory=list)
+
+
+class DocumentJobConfigSummaryResponse(BaseModel):
+    role: str
+    resource_mode: Literal["legacy", "versioned"]
+    defaults: DocumentJobConfigDefaults
+    options: DocumentJobConfigOptions
+    readiness: DocumentJobConfigReadiness
 
 
 class DocumentJobDownloadUrlResponse(BaseModel):

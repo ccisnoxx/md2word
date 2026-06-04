@@ -10,6 +10,7 @@ import SettingsHomePage from "@/pages/SettingsHomePage.vue";
 import SystemStatusPage from "@/pages/SystemStatusPage.vue";
 import TemplateDetailPage from "@/pages/TemplateDetailPage.vue";
 import TemplateListPage from "@/pages/TemplateListPage.vue";
+import TermRuleWorkbenchPage from "@/pages/TermRuleWorkbenchPage.vue";
 import TermRuleSetPage from "@/pages/TermRuleSetPage.vue";
 import TermProposalsPage from "@/pages/TermProposalsPage.vue";
 import TranslationProfilesPage from "@/pages/TranslationProfilesPage.vue";
@@ -39,6 +40,12 @@ const router = createRouter({
           path: "settings/term-rule-sets",
           name: "settings-term-rule-sets",
           component: TermRuleSetPage,
+          meta: { roles: ["admin"] },
+        },
+        {
+          path: "settings/term-rules",
+          name: "settings-term-rules",
+          component: TermRuleWorkbenchPage,
           meta: { roles: ["admin"] },
         },
         {

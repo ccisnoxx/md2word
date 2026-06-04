@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 
 from app.api.dependencies import get_runtime, get_trace_id, require_current_user
 from app.domains.audit.models import ActorContext
+from app.domains.document_jobs.config_summary import build_document_job_config_summary
 from app.domains.document_jobs.models import DocumentJobEventRecord, DocumentJobRecord
 from app.core.errors import ApiError
 from app.domains.files.models import DocumentFileRecord
@@ -24,6 +25,7 @@ from app.domains.document_jobs.schemas import (
     DocumentJobCancelResponse,
     DocumentJobCreateRequest,
     DocumentJobCreateResponse,
+    DocumentJobConfigSummaryResponse,
     DocumentJobDownloadUrlResponse,
     DocumentJobEventListResponse,
     DocumentJobEventResponse,
@@ -57,6 +59,8 @@ def create_document_job(
         term_rule_set_version=payload.term_rule_set_version,
         translation_term_set_id=payload.translation_term_set_id,
         translation_term_version=payload.translation_term_version,
+        translation_profile_id=payload.translation_profile_id,
+        translation_profile_version=payload.translation_profile_version,
         debug_full_text=payload.debug_full_text,
         trace_id=trace_id,
     )
@@ -107,6 +111,14 @@ def list_document_jobs(
         total=total,
         summary=summary,
     )
+
+
+@router.get("/config-summary", response_model=DocumentJobConfigSummaryResponse)
+def get_document_job_config_summary(
+    runtime: AppRuntime = Depends(get_runtime),
+    user: AuthenticatedUser = Depends(require_current_user),
+) -> DocumentJobConfigSummaryResponse:
+    return build_document_job_config_summary(runtime, user=user)
 
 
 @router.get("/{job_id}", response_model=DocumentJobResponse)

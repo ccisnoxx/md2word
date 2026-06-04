@@ -21,7 +21,11 @@
   "children": [
     "06-03-frontend-information-architecture",
     "06-03-document-job-workbench-completion",
-    "06-03-document-job-files-and-results"
+    "06-03-document-job-files-and-results",
+    "06-03-admin-job-configuration",
+    "06-04-job-context-proposals",
+    "06-04-admin-system-status",
+    "06-04-term-rule-workbench"
   ],
   "parent": null,
   "relatedFiles": [],

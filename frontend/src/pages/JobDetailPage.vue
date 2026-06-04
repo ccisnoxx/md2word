@@ -41,8 +41,10 @@
           <el-descriptions-item label="源 PDF">{{ sourceFilename }}</el-descriptions-item>
           <el-descriptions-item label="源文件 ID">{{ job.source_file_id }}</el-descriptions-item>
           <el-descriptions-item label="结果文件 ID">{{ job.result_file_id || "-" }}</el-descriptions-item>
+          <el-descriptions-item label="Template">{{ boundTemplateLabel }}</el-descriptions-item>
           <el-descriptions-item label="Term Rule Set">{{ boundTermRuleSetLabel }}</el-descriptions-item>
           <el-descriptions-item label="Translation Term Set">{{ boundTranslationTermSetLabel }}</el-descriptions-item>
+          <el-descriptions-item label="Translation Profile">{{ boundTranslationProfileLabel }}</el-descriptions-item>
           <el-descriptions-item label="legacy term_version_id">{{ job.term_version_id || "-" }}</el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ formatDateTime(job.created_at) }}</el-descriptions-item>
           <el-descriptions-item label="更新时间">{{ formatDateTime(job.updated_at) }}</el-descriptions-item>
@@ -88,6 +90,33 @@
           <el-descriptions-item label="失败阶段">{{ job.failed_stage || "-" }}</el-descriptions-item>
           <el-descriptions-item label="错误码">{{ job.error_code || "-" }}</el-descriptions-item>
           <el-descriptions-item label="错误信息">{{ job.error_message || "-" }}</el-descriptions-item>
+        </el-descriptions>
+      </el-card>
+
+      <el-card class="page-section card-flat" shadow="never">
+        <div class="section-header">
+          <div>
+            <h2 class="section-title">任务上下文建议</h2>
+            <p class="section-subtitle">从当前任务带入来源文件和绑定术语版本。</p>
+          </div>
+          <div class="toolbar">
+            <el-button type="primary" :icon="EditPen" @click="openTermRuleProposal">提交术语规则建议</el-button>
+            <el-button
+              v-if="job.mode === 'en2zh_pdf_to_word'"
+              :icon="EditPen"
+              @click="openTranslationTermProposal"
+            >
+              提交翻译术语建议
+            </el-button>
+          </div>
+        </div>
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="来源任务">{{ job.id }}</el-descriptions-item>
+          <el-descriptions-item label="来源文件">{{ job.source_file_id }}</el-descriptions-item>
+          <el-descriptions-item label="Observed Term Rule Set">{{ termRuleProposalVersionLabel }}</el-descriptions-item>
+          <el-descriptions-item v-if="job.mode === 'en2zh_pdf_to_word'" label="Observed Translation Term Set">
+            {{ translationTermProposalVersionLabel }}
+          </el-descriptions-item>
         </el-descriptions>
       </el-card>
 
@@ -172,6 +201,55 @@
           <el-form-item label="原因">
             <el-input v-model="retryDialog.reason" type="textarea" :rows="2" />
           </el-form-item>
+          <el-form-item label="配置策略">
+            <el-radio-group v-model="retryDialog.strategy">
+              <el-radio label="keep_original">沿用原配置</el-radio>
+              <el-radio v-if="isAdmin" label="use_latest_term_assets">使用最新术语默认值</el-radio>
+              <el-radio v-if="isAdmin" label="select_term_assets">指定术语版本</el-radio>
+            </el-radio-group>
+          </el-form-item>
+          <template v-if="isAdmin && retryDialog.strategy === 'select_term_assets'">
+            <el-form-item label="术语规则集">
+              <el-select
+                v-model="retryDialog.termRuleVersion"
+                clearable
+                filterable
+                :loading="configLoading"
+                placeholder="沿用原术语规则集"
+              >
+                <el-option
+                  v-for="option in configSummary?.options.term_rule_sets || []"
+                  :key="option.label"
+                  :label="option.label"
+                  :value="option.label"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item v-if="retryDialog.job?.mode === 'en2zh_pdf_to_word'" label="翻译术语集">
+              <el-select
+                v-model="retryDialog.translationTermVersion"
+                clearable
+                filterable
+                :loading="configLoading"
+                placeholder="沿用原翻译术语集"
+              >
+                <el-option
+                  v-for="option in configSummary?.options.translation_term_sets || []"
+                  :key="option.label"
+                  :label="option.label"
+                  :value="option.label"
+                />
+              </el-select>
+            </el-form-item>
+          </template>
+          <el-alert
+            v-if="isAdmin && retryDialog.strategy === 'use_latest_term_assets'"
+            type="info"
+            :closable="false"
+            show-icon
+            title="重试只重绑术语规则集和翻译术语集默认值；模板和翻译配置沿用原任务快照。"
+          />
+          <ApiErrorAlert :error="configError" />
         </el-form>
         <template #footer>
           <el-button @click="retryDialogVisible = false">取消</el-button>
@@ -185,13 +263,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { ArrowLeft, Download, Refresh } from "@element-plus/icons-vue";
-import { useRoute } from "vue-router";
+import { ArrowLeft, Download, EditPen, Refresh } from "@element-plus/icons-vue";
+import { useRoute, useRouter } from "vue-router";
 
 import type {
   DocumentFileResponse,
+  DocumentJobConfigSummaryResponse,
+  DocumentJobConfigVersionOption,
   DocumentJobResourceSnapshot,
   DocumentJobEventResponse,
+  DocumentJobRetryRequest,
   DocumentJobResponse,
 } from "@/api/types";
 import { documentJobsApi } from "@/api/documentJobs";
@@ -200,10 +281,13 @@ import JobActions from "@/components/JobActions.vue";
 import JobEventTimeline from "@/components/JobEventTimeline.vue";
 import JobProgress from "@/components/JobProgress.vue";
 import JobStatusBadge from "@/components/JobStatusBadge.vue";
+import { useAuthStore } from "@/stores/auth";
 import { formatBytes, formatDateTime, getJobSourceFilename, isActiveJobStatus, jobModeText } from "@/utils/format";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 
 const route = useRoute();
+const router = useRouter();
+const auth = useAuthStore();
 const jobId = computed(() => String(route.params.jobId || ""));
 const job = ref<DocumentJobResponse | null>(null);
 const events = ref<DocumentJobEventResponse[]>([]);
@@ -218,18 +302,33 @@ const cancelLoading = ref(false);
 const archiveLoading = ref(false);
 const retryDialogVisible = ref(false);
 const error = ref<ApiClientError | null>(null);
+const configError = ref<ApiClientError | null>(null);
+const configLoading = ref(false);
+const configSummary = ref<DocumentJobConfigSummaryResponse | null>(null);
 let pollTimer: number | undefined;
+
+type RetryStrategy = "keep_original" | "use_latest_term_assets" | "select_term_assets";
 
 const retryDialog = reactive({
   job: null as DocumentJobResponse | null,
   reason: "frontend retry",
+  strategy: "keep_original" as RetryStrategy,
+  termRuleVersion: "",
+  translationTermVersion: "",
 });
 
+const isAdmin = computed(() => auth.user?.role === "admin");
 const requestSnapshotPreview = computed(() => JSON.stringify(job.value?.request_snapshot || {}, null, 2));
 const sourceFilename = computed(() => (job.value ? getJobSourceFilename(job.value) : "-"));
 const resourceSnapshot = computed(() => readResourceSnapshot(job.value?.request_snapshot.resources));
+const boundTemplate = computed(() => resourceSnapshot.value?.template || null);
 const boundTermRuleSet = computed(() => resourceSnapshot.value?.term_rule_set || null);
 const boundTranslationTermSet = computed(() => resourceSnapshot.value?.translation_term_set || null);
+const boundTranslationProfile = computed(() => resourceSnapshot.value?.translation_profile || null);
+const boundTemplateLabel = computed(() => {
+  const bound = boundTemplate.value;
+  return bound ? `${bound.resource_id}@${bound.version}` : job.value?.template_version_id || "-";
+});
 const boundTermRuleSetLabel = computed(() => {
   const bound = boundTermRuleSet.value;
   if (!bound) {
@@ -248,6 +347,61 @@ const boundTranslationTermSetLabel = computed(() => {
   }
   return `${bound.set_id}@${bound.version}`;
 });
+const boundTranslationProfileLabel = computed(() => {
+  const bound = boundTranslationProfile.value;
+  if (!bound) {
+    const profile = readRecord(job.value?.request_snapshot.translation_profile);
+    return versionLabel(
+      readString(profile?.translation_profile_id),
+      readString(profile?.translation_profile_version),
+    );
+  }
+  return `${bound.resource_id}@${bound.version}`;
+});
+const termRuleProposalVersionLabel = computed(() =>
+  versionLabel(termRuleProposalSetId.value, termRuleProposalVersion.value),
+);
+const translationTermProposalVersionLabel = computed(() =>
+  versionLabel(translationTermProposalSetId.value, translationTermProposalVersion.value),
+);
+const termRuleProposalSetId = computed(() => {
+  const bound = boundTermRuleSet.value;
+  if (bound) {
+    return bound.resource_id;
+  }
+  const assets = readRecord(job.value?.request_snapshot.term_assets);
+  return readString(assets?.term_rule_set_id);
+});
+const termRuleProposalVersion = computed(() => {
+  const bound = boundTermRuleSet.value;
+  if (bound) {
+    return bound.version;
+  }
+  const assets = readRecord(job.value?.request_snapshot.term_assets);
+  return readString(assets?.term_rule_set_version);
+});
+const translationTermProposalSetId = computed(() => {
+  const bound = boundTranslationTermSet.value;
+  if (bound) {
+    return bound.set_id;
+  }
+  const assets = readRecord(job.value?.request_snapshot.term_assets);
+  return readString(assets?.translation_term_set_id);
+});
+const translationTermProposalVersion = computed(() => {
+  const bound = boundTranslationTermSet.value;
+  if (bound) {
+    return bound.version;
+  }
+  const assets = readRecord(job.value?.request_snapshot.term_assets);
+  return readString(assets?.translation_term_version) || job.value?.term_version_id || null;
+});
+const selectedRetryTermRuleOption = computed(() =>
+  findConfigOption(configSummary.value?.options.term_rule_sets || [], retryDialog.termRuleVersion),
+);
+const selectedRetryTranslationTermOption = computed(() =>
+  findConfigOption(configSummary.value?.options.translation_term_sets || [], retryDialog.translationTermVersion),
+);
 const latestErrorEvent = computed(() => [...events.value].reverse().find((event) => event.level === "error") || null);
 const failureSummary = computed(() => {
   if (!job.value) {
@@ -377,7 +531,13 @@ async function loadAll(): Promise<void> {
 function openRetryDialog(target: DocumentJobResponse): void {
   retryDialog.job = target;
   retryDialog.reason = "frontend retry";
+  retryDialog.strategy = "keep_original";
+  retryDialog.termRuleVersion = "";
+  retryDialog.translationTermVersion = "";
   retryDialogVisible.value = true;
+  if (isAdmin.value && !configSummary.value) {
+    void loadConfigSummary();
+  }
 }
 
 function stopPolling(): void {
@@ -395,6 +555,37 @@ function syncPolling(): void {
   pollTimer = window.setInterval(() => {
     void loadAll();
   }, 4000);
+}
+
+function proposalBaseQuery(tab: "new" | "translation-new"): Record<string, string> {
+  if (!job.value) {
+    return { tab };
+  }
+  return {
+    tab,
+    source_job_id: job.value.id,
+    source_file_id: job.value.source_file_id,
+  };
+}
+
+function appendQueryValue(query: Record<string, string>, key: string, value?: string | null): void {
+  if (value) {
+    query[key] = value;
+  }
+}
+
+function openTermRuleProposal(): void {
+  const query = proposalBaseQuery("new");
+  appendQueryValue(query, "observed_term_rule_set_id", termRuleProposalSetId.value);
+  appendQueryValue(query, "observed_term_rule_version", termRuleProposalVersion.value);
+  void router.push({ name: "term-proposals", query });
+}
+
+function openTranslationTermProposal(): void {
+  const query = proposalBaseQuery("translation-new");
+  appendQueryValue(query, "observed_translation_term_set_id", translationTermProposalSetId.value);
+  appendQueryValue(query, "observed_translation_term_version", translationTermProposalVersion.value);
+  void router.push({ name: "term-proposals", query });
 }
 
 async function handleDownload(target: DocumentJobResponse): Promise<void> {
@@ -500,8 +691,33 @@ async function submitRetryDialog(): Promise<void> {
   if (!retryDialog.job) {
     return;
   }
-  await submitRetry(retryDialog.job, { reason: retryDialog.reason || "frontend retry" });
+  await submitRetry(retryDialog.job, buildRetryPayload());
   retryDialogVisible.value = false;
+}
+
+function buildRetryPayload(): DocumentJobRetryRequest {
+  const payload: DocumentJobRetryRequest = {
+    reason: retryDialog.reason || "frontend retry",
+  };
+  if (!isAdmin.value) {
+    return payload;
+  }
+  if (retryDialog.strategy === "use_latest_term_assets") {
+    payload.use_latest_term_assets = true;
+    return payload;
+  }
+  if (retryDialog.strategy !== "select_term_assets") {
+    return payload;
+  }
+  if (selectedRetryTermRuleOption.value) {
+    payload.term_rule_set_id = selectedRetryTermRuleOption.value.resource_id;
+    payload.term_rule_set_version = selectedRetryTermRuleOption.value.version;
+  }
+  if (retryDialog.job?.mode === "en2zh_pdf_to_word" && selectedRetryTranslationTermOption.value) {
+    payload.translation_term_set_id = selectedRetryTranslationTermOption.value.resource_id;
+    payload.translation_term_version = selectedRetryTranslationTermOption.value.version;
+  }
+  return payload;
 }
 
 async function submitRetry(
@@ -520,6 +736,25 @@ async function submitRetry(
   } finally {
     retryLoading.value = false;
   }
+}
+
+async function loadConfigSummary(): Promise<void> {
+  configLoading.value = true;
+  configError.value = null;
+  try {
+    configSummary.value = await documentJobsApi.getConfigSummary();
+  } catch (caught) {
+    configError.value = normalizeApiError(caught);
+  } finally {
+    configLoading.value = false;
+  }
+}
+
+function findConfigOption(
+  options: DocumentJobConfigVersionOption[],
+  label: string,
+): DocumentJobConfigVersionOption | null {
+  return options.find((option) => option.label === label) || null;
 }
 
 function handleVisibilityChange(): void {

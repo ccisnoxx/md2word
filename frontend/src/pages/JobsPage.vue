@@ -110,7 +110,7 @@
 import { computed, onMounted, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { CircleCheck, Files, Refresh, Timer, Warning } from "@element-plus/icons-vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 import type { DocumentJobListSort, DocumentJobResponse, DocumentJobStatus } from "@/api/types";
 import { documentJobsApi } from "@/api/documentJobs";
@@ -126,6 +126,7 @@ import {
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 
 const router = useRouter();
+const route = useRoute();
 const jobs = ref<DocumentJobResponse[]>([]);
 const loading = ref(false);
 const error = ref<ApiClientError | null>(null);
@@ -235,6 +236,33 @@ function statusLabel(status: string): string {
 
 function countByStatus(status: DocumentJobStatus): number {
   return summary.value[status] || 0;
+}
+
+function firstQueryValue(value: unknown): string {
+  if (Array.isArray(value)) {
+    return typeof value[0] === "string" ? value[0] : "";
+  }
+  return typeof value === "string" ? value : "";
+}
+
+function isDocumentJobStatus(value: string): value is DocumentJobStatus {
+  return statuses.includes(value as DocumentJobStatus);
+}
+
+function isDocumentJobSort(value: string): value is DocumentJobListSort {
+  return sortOptions.some((option) => option.value === value);
+}
+
+function applyRouteQueryFilters(): void {
+  const nextStatus = firstQueryValue(route.query.status);
+  const nextSort = firstQueryValue(route.query.sort);
+  if (isDocumentJobStatus(nextStatus)) {
+    statusFilter.value = nextStatus;
+  }
+  if (isDocumentJobSort(nextSort)) {
+    sortFilter.value = nextSort;
+  }
+  includeArchived.value = firstQueryValue(route.query.include_archived) === "true";
 }
 
 function handleCreated(jobId: string): void {
@@ -361,6 +389,7 @@ function showBatchResult(label: string, results: PromiseSettledResult<unknown>[]
 }
 
 onMounted(() => {
+  applyRouteQueryFilters();
   void loadJobs();
 });
 </script>

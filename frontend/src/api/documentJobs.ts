@@ -5,6 +5,7 @@ import type {
   DocumentJobCreateResponse,
   DocumentJobArchiveResponse,
   DocumentJobCancelResponse,
+  DocumentJobConfigSummaryResponse,
   DocumentJobDownloadUrlResponse,
   DocumentJobEventListResponse,
   DocumentJobFileListResponse,
@@ -27,6 +28,13 @@ export type DocumentJobListParams = {
 };
 
 export const documentJobsApi = {
+  getConfigSummary(): Promise<DocumentJobConfigSummaryResponse> {
+    return apiRequest<DocumentJobConfigSummaryResponse>({
+      url: "/api/v1/document-jobs/config-summary",
+      method: "GET",
+    });
+  },
+
   create(payload: DocumentJobCreateRequest): Promise<DocumentJobCreateResponse> {
     return apiRequest<DocumentJobCreateResponse>({
       url: "/api/v1/document-jobs",

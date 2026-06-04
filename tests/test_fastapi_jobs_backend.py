@@ -1584,7 +1584,6 @@ class FastAPIJobsBackendTests(TestCase):
                     json={
                         "source_file_id": source_file["id"],
                         "mode": "direct_pdf_to_word",
-                        "template_version_id": "default",
                     },
                 )
                 job_id = create_response.json()["job_id"]
@@ -1617,6 +1616,216 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIsNotNone(stored_job)
         self.assertEqual(stored_job.status, "pending")
         self.assertEqual(stored_file.job_id, job_id)
+
+    def test_document_job_config_summary_hides_options_for_operator_and_lists_admin_options(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            publish_default_job_resources(runtime, include_translation=True)
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_response = client.get("/api/v1/document-jobs/config-summary", headers=operator_headers)
+                admin_response = client.get("/api/v1/document-jobs/config-summary", headers=admin_headers)
+
+        self.assertEqual(operator_response.status_code, 200)
+        operator_payload = operator_response.json()
+        self.assertEqual(operator_payload["role"], "operator")
+        self.assertEqual(operator_payload["resource_mode"], "versioned")
+        self.assertEqual(operator_payload["defaults"]["template"]["label"], "default@1")
+        self.assertEqual(operator_payload["defaults"]["term_rule_set"]["label"], "electronics-default@1")
+        self.assertEqual(operator_payload["defaults"]["translation_term_set"]["label"], "translation-terms-en2zh@v1")
+        self.assertEqual(operator_payload["defaults"]["translation_profile"]["label"], "electronics-en2zh@1")
+        self.assertEqual(operator_payload["options"]["templates"], [])
+        self.assertTrue(operator_payload["readiness"]["en2zh_available"])
+        self.assertEqual(admin_response.status_code, 200)
+        admin_payload = admin_response.json()
+        self.assertEqual(admin_payload["role"], "admin")
+        self.assertIn("default@1", [item["label"] for item in admin_payload["options"]["templates"]])
+        self.assertIn("electronics-default@1", [item["label"] for item in admin_payload["options"]["term_rule_sets"]])
+        self.assertIn(
+            "translation-terms-en2zh@v1",
+            [item["label"] for item in admin_payload["options"]["translation_term_sets"]],
+        )
+        self.assertIn("electronics-en2zh@1", [item["label"] for item in admin_payload["options"]["translation_profiles"]])
+
+    def test_document_job_operator_cannot_select_explicit_resource_versions(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            publish_default_job_resources(runtime, include_translation=True)
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={
+                        "source_file_id": source_file["id"],
+                        "template_version_id": "default@1",
+                    },
+                )
+
+        self.assertEqual(create_response.status_code, 403)
+        self.assertIn("operator 不能选择任务资源版本", create_response.json()["detail"])
+
+    def test_document_job_admin_can_bind_explicit_create_resource_versions(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            publish_default_job_resources(runtime, include_translation=True)
+            publish_template_resource_version(runtime, version="2", content=b"template-v2", make_default=False)
+            publish_term_rule_resource_version(runtime, version="2", source_term="VTWO", make_default=False)
+            publish_translation_profile_resource_version(
+                runtime,
+                version="2",
+                model="snapshot-model-v2",
+                make_default=False,
+            )
+            translation_term_version = publish_translation_term_set_version(
+                runtime,
+                source_term="FPGA",
+                target_term="现场可编程门阵列",
+                make_default=False,
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                source_file = self._upload_source_pdf(client, admin_headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=admin_headers,
+                    json={
+                        "source_file_id": source_file["id"],
+                        "mode": "en2zh_pdf_to_word",
+                        "document_language": "en",
+                        "template_version_id": "default@2",
+                        "term_rule_set_version": "2",
+                        "translation_term_version": translation_term_version,
+                        "translation_profile_version": "2",
+                    },
+                )
+
+        self.assertEqual(create_response.status_code, 201)
+        snapshot = create_response.json()["job"]["request_snapshot"]["resources"]
+        self.assertEqual(snapshot["template"]["resource_id"], "default")
+        self.assertEqual(snapshot["template"]["version"], "2")
+        self.assertEqual(snapshot["term_rule_set"]["resource_id"], "electronics-default")
+        self.assertEqual(snapshot["term_rule_set"]["version"], "2")
+        self.assertEqual(snapshot["translation_term_set"]["set_id"], "translation-terms-en2zh")
+        self.assertEqual(snapshot["translation_term_set"]["version"], translation_term_version)
+        self.assertEqual(snapshot["translation_profile"]["resource_id"], "electronics-en2zh")
+        self.assertEqual(snapshot["translation_profile"]["version"], "2")
+
+    def test_document_job_retry_resource_selection_requires_admin_and_rebinds_term_assets(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            publish_default_job_resources(runtime, include_translation=True)
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_source = self._upload_source_pdf(client, operator_headers, filename="operator-retry.pdf")
+                latest_source = self._upload_source_pdf(client, admin_headers, filename="latest-retry.pdf")
+                explicit_source = self._upload_source_pdf(client, admin_headers, filename="explicit-retry.pdf")
+                operator_job_id = client.post(
+                    "/api/v1/document-jobs",
+                    headers=operator_headers,
+                    json={
+                        "source_file_id": operator_source["id"],
+                        "mode": "en2zh_pdf_to_word",
+                        "document_language": "en",
+                    },
+                ).json()["job_id"]
+                latest_job_id = client.post(
+                    "/api/v1/document-jobs",
+                    headers=admin_headers,
+                    json={
+                        "source_file_id": latest_source["id"],
+                        "mode": "en2zh_pdf_to_word",
+                        "document_language": "en",
+                    },
+                ).json()["job_id"]
+                explicit_job_id = client.post(
+                    "/api/v1/document-jobs",
+                    headers=admin_headers,
+                    json={
+                        "source_file_id": explicit_source["id"],
+                        "mode": "en2zh_pdf_to_word",
+                        "document_language": "en",
+                    },
+                ).json()["job_id"]
+                for job_id in (operator_job_id, latest_job_id, explicit_job_id):
+                    runtime.document_job_repository.update_document_job(
+                        job_id,
+                        status="failed",
+                        stage="failed",
+                        failed_stage="parsing",
+                        error_code="mineru_failed",
+                        error_message="retryable",
+                    )
+                publish_term_rule_resource_version(runtime, version="2", source_term="VTWO", make_default=True)
+                latest_translation_term_version = publish_translation_term_set_version(
+                    runtime,
+                    source_term="FPGA",
+                    target_term="现场可编程门阵列",
+                    make_default=True,
+                )
+                operator_retry_response = client.post(
+                    f"/api/v1/document-jobs/{operator_job_id}/retry",
+                    headers=operator_headers,
+                    json={"use_latest_term_assets": True},
+                )
+                latest_retry_response = client.post(
+                    f"/api/v1/document-jobs/{latest_job_id}/retry",
+                    headers=admin_headers,
+                    json={"use_latest_term_assets": True},
+                )
+                explicit_retry_response = client.post(
+                    f"/api/v1/document-jobs/{explicit_job_id}/retry",
+                    headers=admin_headers,
+                    json={
+                        "term_rule_set_version": "1",
+                        "translation_term_version": "v1",
+                    },
+                )
+
+        self.assertEqual(operator_retry_response.status_code, 403)
+        self.assertIn("operator 不能选择任务资源版本", operator_retry_response.json()["detail"])
+        self.assertEqual(latest_retry_response.status_code, 200)
+        latest_snapshot = latest_retry_response.json()["job"]["request_snapshot"]
+        self.assertTrue(latest_snapshot["term_assets"]["use_latest_term_assets"])
+        self.assertEqual(latest_snapshot["resources"]["template"]["version"], "1")
+        self.assertEqual(latest_snapshot["resources"]["term_rule_set"]["version"], "2")
+        self.assertEqual(latest_snapshot["resources"]["translation_term_set"]["version"], latest_translation_term_version)
+        self.assertEqual(latest_snapshot["resources"]["translation_profile"]["version"], "1")
+        self.assertEqual(explicit_retry_response.status_code, 200)
+        explicit_snapshot = explicit_retry_response.json()["job"]["request_snapshot"]
+        self.assertEqual(explicit_snapshot["term_assets"]["term_rule_set_version"], "1")
+        self.assertEqual(explicit_snapshot["term_assets"]["translation_term_version"], "v1")
+        self.assertEqual(explicit_snapshot["resources"]["template"]["version"], "1")
+        self.assertEqual(explicit_snapshot["resources"]["term_rule_set"]["version"], "1")
+        self.assertEqual(explicit_snapshot["resources"]["translation_term_set"]["version"], "v1")
+        self.assertEqual(explicit_snapshot["resources"]["translation_profile"]["version"], "1")
 
     def test_document_job_list_supports_workbench_filters_without_running_worker(self):
         with tempfile.TemporaryDirectory() as temp_dir:
