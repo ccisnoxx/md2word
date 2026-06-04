@@ -1,4 +1,5 @@
-<!-- frontend/src/pages/SystemStatusPage.vue: Admin-only overview for backend health, metrics, and storage operations. -->
+<!-- File: frontend/src/pages/SystemStatusPage.vue -->
+<!-- Purpose: Render the Admin-only overview for backend health, metrics, and storage operations. -->
 <template>
   <main class="system-status-page" aria-labelledby="system-status-title">
     <section class="page-heading">
@@ -114,6 +115,7 @@
             <p class="section-subtitle">任务状态和 stage message 计数。</p>
           </div>
           <div class="toolbar">
+            <router-link to="/system-status/ops-dashboard">运维看板</router-link>
             <router-link :to="{ path: '/jobs', query: { status: 'failed', sort: 'updated_at_desc' } }">
               失败任务
             </router-link>
