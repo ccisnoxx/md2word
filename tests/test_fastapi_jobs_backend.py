@@ -36,6 +36,7 @@ from app.infrastructure.persistence import (
 from app.infrastructure.persistence.mysql import MysqlPersistenceConfig
 from app.main import create_app
 from app.domains.term_rules.file_repository import FileTermRuleRepository
+from app.domains.audit.models import AuditEvent
 from app.domains.audit.service import AuditService
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.services.auth import AuthService, hash_password
@@ -1169,6 +1170,114 @@ class FastAPIJobsBackendTests(TestCase):
         serialized = json.dumps(payload, ensure_ascii=False)
         self.assertNotIn("OPENAI_API_KEY", serialized)
         self.assertNotIn("ADMIN_TOKEN", serialized)
+
+    def test_audit_events_api_filters_sorts_and_paginates_for_admin(self):
+        """验证 Admin 可按稳定审计字段筛选、排序和分页查询审计事件。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            base_time = utc_now()
+            runtime.audit_event_repository.append_audit_event(
+                AuditEvent(
+                    audit_id="audit_archive_old",
+                    actor_id="user_operator",
+                    actor_role="operator",
+                    action="document_job.archive",
+                    target_type="document_job",
+                    target_id="job_archive",
+                    reason="archive terminal job",
+                    trace_id="trace_archive",
+                    created_at=base_time - timedelta(minutes=3),
+                )
+            )
+            runtime.audit_event_repository.append_audit_event(
+                AuditEvent(
+                    audit_id="audit_retry_mid",
+                    actor_id="user_admin",
+                    actor_role="admin",
+                    action="document_job.retry",
+                    target_type="document_job",
+                    target_id="job_retry",
+                    reason="rerun issue",
+                    trace_id="trace_retry",
+                    created_at=base_time - timedelta(minutes=2),
+                )
+            )
+            runtime.audit_event_repository.append_audit_event(
+                AuditEvent(
+                    audit_id="audit_retention_new",
+                    actor_id="user_admin",
+                    actor_role="admin",
+                    action="file.retention_mark_expired",
+                    target_type="document_file_retention",
+                    target_id="document_files",
+                    reason="marked=1 candidates=1",
+                    trace_id="trace_retention",
+                    created_at=base_time - timedelta(minutes=1),
+                )
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                page_response = client.get(
+                    "/api/v1/audit-events",
+                    headers=admin_headers,
+                    params={
+                        "target_type": "document_job",
+                        "sort": "created_at_asc",
+                        "page": 2,
+                        "page_size": 1,
+                    },
+                )
+                filter_response = client.get(
+                    "/api/v1/audit-events",
+                    headers=admin_headers,
+                    params={
+                        "actor_role": "admin",
+                        "actor_id": "user_admin",
+                        "action": "document_job.retry",
+                        "target_id": "job_retry",
+                        "q": "rerun",
+                        "created_from": (base_time - timedelta(minutes=2, seconds=30)).isoformat(),
+                        "created_to": (base_time - timedelta(minutes=1, seconds=30)).isoformat(),
+                    },
+                )
+
+        self.assertEqual(page_response.status_code, 200)
+        page_payload = page_response.json()
+        self.assertEqual(page_payload["total"], 2)
+        self.assertEqual(page_payload["page"], 2)
+        self.assertEqual(page_payload["page_size"], 1)
+        self.assertEqual([item["audit_id"] for item in page_payload["items"]], ["audit_retry_mid"])
+
+        self.assertEqual(filter_response.status_code, 200)
+        filter_payload = filter_response.json()
+        self.assertEqual(filter_payload["total"], 1)
+        self.assertEqual(filter_payload["items"][0]["audit_id"], "audit_retry_mid")
+        self.assertEqual(filter_payload["items"][0]["reason"], "rerun issue")
+
+    def test_audit_events_api_rejects_operator(self):
+        """验证 Operator 不能访问 Admin-only 审计事件查询接口。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                response = client.get("/api/v1/audit-events", headers=operator_headers)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["error_code"], "role_forbidden")
 
     def test_health_metrics_reports_default_resource_versions_in_mysql_mode(self):
         with tempfile.TemporaryDirectory() as temp_dir:

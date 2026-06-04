@@ -45,6 +45,42 @@ export type HealthMetricsResponse = {
   audit_events: Record<string, number>;
 };
 
+export type AuditActorRole = "admin" | "operator" | "jobs" | "anonymous";
+export type AuditEventSort = "created_at_desc" | "created_at_asc";
+
+export type AuditEventListQuery = {
+  page: number;
+  page_size: number;
+  sort?: AuditEventSort;
+  actor_role?: AuditActorRole;
+  action?: string;
+  target_type?: string;
+  target_id?: string;
+  actor_id?: string;
+  q?: string;
+  created_from?: string;
+  created_to?: string;
+};
+
+export type AuditEventResponse = {
+  audit_id: string;
+  actor_id: string | null;
+  actor_role: AuditActorRole;
+  action: string;
+  target_type: string;
+  target_id: string;
+  reason: string | null;
+  trace_id: string;
+  created_at: string;
+};
+
+export type AuditEventListResponse = {
+  items: AuditEventResponse[];
+  page: number;
+  page_size: number;
+  total: number;
+};
+
 export type DocumentFileResponse = {
   id: string;
   tenant_id: string;
