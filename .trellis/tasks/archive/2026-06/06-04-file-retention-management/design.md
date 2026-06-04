@@ -190,7 +190,15 @@ Response shape: same base response as plan, with:
   checks rely on file status. This is intended only for files past
   `expires_at`, and tests must confirm binaries are not removed.
 
-## Review Gate
+## Closeout Status
 
-Do not run `task.py start` or implement code until this design is reviewed and
-approved.
+This design has been implemented as the metadata-only slice originally scoped:
+
+- Admin-only `GET /api/v1/files/retention/plan`.
+- Admin-only `POST /api/v1/files/retention/mark-expired`.
+- Admin route `/system-status/file-retention`.
+- Files API documentation and targeted backend tests.
+
+The implemented surface still deliberately excludes physical deletion, retention
+policy editing, scheduled cleanup, storage quota enforcement, and a full file
+management library.

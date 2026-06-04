@@ -51,18 +51,18 @@ The feature must stay metadata-only and dry-run-first.
 
 ## Acceptance Criteria
 
-- [ ] Admin can call a retention plan endpoint and receive current
+- [x] Admin can call a retention plan endpoint and receive current
       `document_files` retention totals plus candidate metadata.
-- [ ] Operator cannot call the retention plan or metadata marking endpoint.
-- [ ] The retention plan clearly reports that physical deletion is unsupported.
-- [ ] Metadata marking changes eligible uploaded files to `expired` only; local
+- [x] Operator cannot call the retention plan or metadata marking endpoint.
+- [x] The retention plan clearly reports that physical deletion is unsupported.
+- [x] Metadata marking changes eligible uploaded files to `expired` only; local
       or object-storage binaries remain untouched.
-- [ ] The Admin frontend page displays totals, policy, candidate rows, expiry
+- [x] The Admin frontend page displays totals, policy, candidate rows, expiry
       times, size, status, object key, and job link when `job_id` exists.
-- [ ] The page contains no file download, physical delete, policy-editing, or
+- [x] The page contains no file download, physical delete, policy-editing, or
       cleanup schedule controls.
-- [ ] Existing upload, document job list/detail/download behavior is unchanged.
-- [ ] Minimal backend and frontend verification passes without running
+- [x] Existing upload, document job list/detail/download behavior is unchanged.
+- [x] Minimal backend and frontend verification passes without running
       pdf-mineru parsing, translation, or Word generation.
 
 ## Notes
@@ -70,4 +70,7 @@ The feature must stay metadata-only and dry-run-first.
 - Keep `prd.md` focused on requirements, constraints, and acceptance criteria.
 - Lightweight tasks can remain PRD-only.
 - For complex tasks, add `design.md` for technical design and `implement.md` for execution planning before `task.py start`.
-- Current planning status: not approved for implementation yet.
+- Completion status: metadata-only file retention management is implemented and
+  verified on 2026-06-04. Physical deletion, policy CRUD, cleanup schedules,
+  quota enforcement, cross-task search, and a full file library remain out of
+  scope for this task and belong to later Operations work.
