@@ -1057,6 +1057,46 @@ export type TranslationTermSetDraftResponse = {
   entries: TranslationTermEntryResponse[];
 };
 
+export type TranslationTermSetDiffSummaryResponse = {
+  added: number;
+  removed: number;
+  changed: number;
+  unchanged: number;
+  total_before: number;
+  total_after: number;
+};
+
+export type TranslationTermSetDiffEntryPayload = Record<string, string | number | boolean | null>;
+
+export type TranslationTermSetDiffEntryResponse = {
+  kind: "added" | "removed" | "changed" | "unchanged";
+  normalized_source_term: string;
+  source_term: string;
+  changed_fields: string[];
+  before: TranslationTermSetDiffEntryPayload | null;
+  after: TranslationTermSetDiffEntryPayload | null;
+};
+
+export type TranslationTermSetDiffResponse = {
+  set_id: string;
+  language_pair: string;
+  base_version: string;
+  target_version: string;
+  summary: TranslationTermSetDiffSummaryResponse;
+  items: TranslationTermSetDiffEntryResponse[];
+};
+
+export type TranslationTermSetPreflightResponse = {
+  set_id: string;
+  language_pair: string;
+  base_version: string;
+  target_version: string;
+  publish_blocked: boolean;
+  blocking_reasons: string[];
+  validation: TranslationTermValidationReportResponse;
+  diff_summary: TranslationTermSetDiffSummaryResponse;
+};
+
 export type TranslationTermSetPublishRequest = {
   make_default: boolean;
   release_note?: string | null;
@@ -1064,6 +1104,39 @@ export type TranslationTermSetPublishRequest = {
 
 export type TranslationTermSetRollbackRequest = {
   version: string;
+};
+
+export type TranslationTermProposalCompatibilityFindingResponse = {
+  severity: "warning" | "conflict";
+  code: string;
+  message: string;
+  normalized_source_term: string | null;
+  action: string | null;
+  current_entry: TranslationTermSetDiffEntryPayload | null;
+  observed_entry: TranslationTermSetDiffEntryPayload | null;
+};
+
+export type TranslationTermProposalCompatibilityItemResponse = {
+  proposal_id: string;
+  compatibility: "compatible" | "warning" | "conflict";
+  observed_version: string | null;
+  change_count: number;
+  conflicts: TranslationTermProposalCompatibilityFindingResponse[];
+  warnings: TranslationTermProposalCompatibilityFindingResponse[];
+};
+
+export type TranslationTermProposalCompatibilitySummaryResponse = {
+  total: number;
+  compatible: number;
+  warning: number;
+  conflict: number;
+};
+
+export type TranslationTermProposalCompatibilityResponse = {
+  set_id: string;
+  language_pair: string;
+  summary: TranslationTermProposalCompatibilitySummaryResponse;
+  items: TranslationTermProposalCompatibilityItemResponse[];
 };
 
 export type TranslationTermProposalStatus = "pending" | "approved" | "rejected" | "published";

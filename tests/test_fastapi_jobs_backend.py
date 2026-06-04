@@ -6658,6 +6658,279 @@ class FastAPIJobsBackendTests(TestCase):
 
         self.assertEqual(response.status_code, 503)
 
+    def test_translation_term_set_diff_and_preflight_reports_draft_changes(self):
+        """验证 Admin 可读取 default-vs-draft diff 和发布前预检摘要。"""
+
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            terms_path = temp_root / "translation_terms.csv"
+            terms_path.write_text(
+                "language_pair,source_term,target_term,version\n"
+                "en2zh,ADC,模数转换器,v1\n"
+                "en2zh,DAC,数模转换器,v1\n",
+                encoding="utf-8",
+            )
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                translation_terms_path=str(terms_path),
+            )
+            runtime.translation_term_set_version_service.update_draft(
+                "translation-terms-en2zh",
+                [
+                    TranslationTermEntry(
+                        language_pair="en2zh",
+                        source_term="ADC",
+                        target_term="模拟数字转换器",
+                        version="draft",
+                        note="operator correction",
+                    ),
+                    TranslationTermEntry(
+                        language_pair="en2zh",
+                        source_term="FPGA",
+                        target_term="现场可编程门阵列",
+                        version="draft",
+                        priority=5,
+                    ),
+                ],
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                diff_response = client.get(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/diff",
+                    headers=admin_headers,
+                )
+                preflight_response = client.get(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/preflight",
+                    headers=admin_headers,
+                )
+
+        self.assertEqual(diff_response.status_code, 200)
+        diff_payload = diff_response.json()
+        self.assertEqual(diff_payload["base_version"], "v1")
+        self.assertEqual(diff_payload["target_version"], "draft")
+        self.assertEqual(
+            diff_payload["summary"],
+            {
+                "added": 1,
+                "removed": 1,
+                "changed": 1,
+                "unchanged": 0,
+                "total_before": 2,
+                "total_after": 2,
+            },
+        )
+        diff_by_key = {item["normalized_source_term"]: item for item in diff_payload["items"]}
+        self.assertEqual(diff_by_key["adc"]["kind"], "changed")
+        self.assertIn("target_term", diff_by_key["adc"]["changed_fields"])
+        self.assertIn("note", diff_by_key["adc"]["changed_fields"])
+        self.assertEqual(diff_by_key["dac"]["kind"], "removed")
+        self.assertEqual(diff_by_key["fpga"]["kind"], "added")
+        self.assertEqual(preflight_response.status_code, 200)
+        preflight_payload = preflight_response.json()
+        self.assertFalse(preflight_payload["publish_blocked"])
+        self.assertTrue(preflight_payload["validation"]["valid"])
+        self.assertEqual(preflight_payload["diff_summary"]["changed"], 1)
+
+    def test_translation_term_set_preflight_blocks_invalid_draft_and_preserves_error_boundaries(self):
+        """验证 preflight 能报告阻断项，并保持 admin-only、404 和 503 边界。"""
+
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            terms_path = temp_root / "translation_terms.csv"
+            terms_path.write_text(
+                "language_pair,source_term,target_term,version\n"
+                "en2zh,ADC,模数转换器,v1\n",
+                encoding="utf-8",
+            )
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                translation_terms_path=str(terms_path),
+            )
+            runtime.persistence_adapters.translation_term_repository.replace_version(
+                "en2zh",
+                "draft",
+                [
+                    TranslationTermEntry(
+                        language_pair="en2zh",
+                        source_term="BROKEN",
+                        target_term=" ",
+                        version="draft",
+                    )
+                ],
+                "sha256:manual-invalid-draft",
+                status="draft",
+                set_draft=True,
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                forbidden_response = client.get(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/diff",
+                    headers=operator_headers,
+                )
+                missing_response = client.get(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/diff?base_version=missing",
+                    headers=admin_headers,
+                )
+                preflight_response = client.get(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/preflight",
+                    headers=admin_headers,
+                )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            unavailable_runtime = build_test_runtime(
+                Path(temp_dir),
+                admin_token="secret-admin",
+            )
+            unavailable_app = create_app(unavailable_runtime)
+            with TestClient(unavailable_app) as client:
+                unavailable_response = client.get(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/diff",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+
+        self.assertEqual(forbidden_response.status_code, 403)
+        self.assertEqual(missing_response.status_code, 404)
+        self.assertEqual(unavailable_response.status_code, 503)
+        self.assertEqual(preflight_response.status_code, 200)
+        preflight_payload = preflight_response.json()
+        self.assertTrue(preflight_payload["publish_blocked"])
+        self.assertFalse(preflight_payload["validation"]["valid"])
+        self.assertEqual(preflight_payload["validation"]["errors"][0]["code"], "empty_target_term")
+        self.assertIn("target_term 不能为空", preflight_payload["blocking_reasons"][0])
+
+    def test_translation_term_set_proposal_compatibility_preview_is_read_only(self):
+        """验证 proposal compatibility preview 返回结构化冲突且不改变 proposal/draft。"""
+
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            terms_path = temp_root / "translation_terms.csv"
+            terms_path.write_text(
+                "language_pair,source_term,target_term,version\n"
+                "en2zh,ADC,模数转换器,v1\n"
+                "en2zh,DAC,数模转换器,v1\n",
+                encoding="utf-8",
+            )
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                translation_terms_path=str(terms_path),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                compatible_create_response = client.post(
+                    "/api/v1/translation-term-proposals",
+                    headers=operator_headers,
+                    json={
+                        "language_pair": "en2zh",
+                        "observed_translation_term_version": "v1",
+                        "changes": [
+                            {
+                                "action": "add",
+                                "source_term": "FPGA",
+                                "target_term": "现场可编程门阵列",
+                            }
+                        ],
+                    },
+                )
+                conflict_create_response = client.post(
+                    "/api/v1/translation-term-proposals",
+                    headers=operator_headers,
+                    json={
+                        "language_pair": "en2zh",
+                        "observed_translation_term_version": "v1",
+                        "changes": [
+                            {
+                                "action": "update",
+                                "source_term": "ADC",
+                                "target_term": "模拟数字转换器",
+                            }
+                        ],
+                    },
+                )
+                runtime.translation_term_set_version_service.update_draft(
+                    "translation-terms-en2zh",
+                    [
+                        TranslationTermEntry(
+                            language_pair="en2zh",
+                            source_term="ADC",
+                            target_term="另一个译文",
+                            version="draft",
+                        ),
+                        TranslationTermEntry(
+                            language_pair="en2zh",
+                            source_term="DAC",
+                            target_term="数模转换器",
+                            version="draft",
+                        ),
+                    ],
+                )
+                preview_response = client.get(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/proposal-compatibility",
+                    headers=admin_headers,
+                )
+                compatible_after = client.get(
+                    f"/api/v1/translation-term-proposals/{compatible_create_response.json()['id']}",
+                    headers=operator_headers,
+                )
+                conflict_after = client.get(
+                    f"/api/v1/translation-term-proposals/{conflict_create_response.json()['id']}",
+                    headers=operator_headers,
+                )
+                draft_after = runtime.translation_term_set_version_service.get_draft("translation-terms-en2zh")
+
+        self.assertEqual(preview_response.status_code, 200)
+        preview_payload = preview_response.json()
+        self.assertEqual(preview_payload["summary"]["total"], 2)
+        self.assertEqual(preview_payload["summary"]["compatible"], 1)
+        self.assertEqual(preview_payload["summary"]["conflict"], 1)
+        preview_by_id = {item["proposal_id"]: item for item in preview_payload["items"]}
+        compatible_item = preview_by_id[compatible_create_response.json()["id"]]
+        conflict_item = preview_by_id[conflict_create_response.json()["id"]]
+        self.assertEqual(compatible_item["compatibility"], "compatible")
+        self.assertEqual(conflict_item["compatibility"], "conflict")
+        self.assertEqual(conflict_item["conflicts"][0]["code"], "stale_target_term")
+        self.assertEqual(conflict_item["conflicts"][0]["normalized_source_term"], "adc")
+        self.assertEqual(compatible_after.json()["status"], "pending")
+        self.assertEqual(conflict_after.json()["status"], "pending")
+        self.assertEqual({entry.source_term for entry in draft_after.entries}, {"ADC", "DAC"})
+
     def test_translation_term_proposals_approve_batch_changes_into_draft_and_reject(self):
         from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
 

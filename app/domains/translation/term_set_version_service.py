@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-# app/domains/translation/term_set_version_service.py: 编排 Translation Term Set 草稿、发布、默认指针和归档。
+# File: app/domains/translation/term_set_version_service.py
+# Purpose: 编排 Translation Term Set 草稿、发布、默认指针、归档和治理预览。
 
 import csv
 import hashlib
@@ -23,10 +24,18 @@ from app.domains.translation.models import (
 from app.domains.translation.repository import TranslationTermRepositoryProtocol
 from app.domains.translation.schemas import (
     TranslationTermEntryResponse,
+    TranslationTermProposalCompatibilityFindingResponse,
+    TranslationTermProposalCompatibilityItemResponse,
+    TranslationTermProposalCompatibilityResponse,
+    TranslationTermProposalCompatibilitySummaryResponse,
+    TranslationTermSetDiffEntryResponse,
+    TranslationTermSetDiffResponse,
+    TranslationTermSetDiffSummaryResponse,
     TranslationTermSetDetailResponse,
     TranslationTermSetDraftResponse,
     TranslationTermSetListItemResponse,
     TranslationTermSetListResponse,
+    TranslationTermSetPreflightResponse,
     TranslationTermSetVersionResponse,
     TranslationTermValidationFindingResponse,
     TranslationTermValidationReportResponse,
@@ -203,6 +212,106 @@ class TranslationTermSetVersionService:
             snapshot_hash=draft.snapshot_hash,
             validation=self._validation_api_response(draft.validation),
             entries=[self._entry_api_response(entry) for entry in draft.entries],
+        )
+
+    def get_diff_response(
+        self,
+        set_id: str,
+        *,
+        base_version: str | None = None,
+        target_version: str | None = None,
+    ) -> TranslationTermSetDiffResponse:
+        """返回 base 与 target 的只读术语 diff；默认比较当前默认版本和有效 draft。"""
+
+        term_set = self._require_set(set_id)
+        resolved_base_version, base_entries = self._resolve_comparison_entries(
+            term_set,
+            base_version or term_set.default_version,
+        )
+        resolved_target_version, target_entries = self._resolve_comparison_entries(
+            term_set,
+            target_version or DRAFT_VERSION,
+        )
+        return self._build_diff_response(
+            term_set,
+            base_version=resolved_base_version,
+            target_version=resolved_target_version,
+            base_entries=base_entries,
+            target_entries=target_entries,
+        )
+
+    def get_preflight_response(
+        self,
+        set_id: str,
+        *,
+        base_version: str | None = None,
+        target_version: str | None = None,
+    ) -> TranslationTermSetPreflightResponse:
+        """返回发布前只读校验报告，不发布、不切默认指针、不修改 draft。"""
+
+        term_set = self._require_set(set_id)
+        resolved_base_version, base_entries = self._resolve_comparison_entries(
+            term_set,
+            base_version or term_set.default_version,
+        )
+        resolved_target_version, target_entries = self._resolve_comparison_entries(
+            term_set,
+            target_version or DRAFT_VERSION,
+        )
+        validation = self.validate_entries(target_entries, base_entries=base_entries)
+        diff = self._build_diff_response(
+            term_set,
+            base_version=resolved_base_version,
+            target_version=resolved_target_version,
+            base_entries=base_entries,
+            target_entries=target_entries,
+        )
+        return TranslationTermSetPreflightResponse(
+            set_id=term_set.set_id,
+            language_pair=term_set.language_pair,
+            base_version=resolved_base_version,
+            target_version=resolved_target_version,
+            publish_blocked=bool(validation.errors),
+            blocking_reasons=[item.message for item in validation.errors],
+            validation=self._validation_api_response(validation),
+            diff_summary=diff.summary,
+        )
+
+    def get_proposal_compatibility_response(
+        self,
+        set_id: str,
+        *,
+        status: str = "pending",
+    ) -> TranslationTermProposalCompatibilityResponse:
+        """预览 pending proposal 与当前有效 draft 的兼容性，不改变 proposal 或 draft。"""
+
+        if status != "pending":
+            raise ValueError("第一版 Translation Term Proposal 兼容性预览只支持 pending status。")
+        term_set = self._require_set(set_id)
+        _draft_version, draft_entries = self._resolve_comparison_entries(term_set, DRAFT_VERSION)
+        proposals = [
+            proposal
+            for proposal in self.repository.list_proposals()
+            if proposal.status == "pending" and proposal.observed_translation_term_set_id == term_set.set_id
+        ]
+        items = [
+            self._proposal_compatibility_item(
+                proposal,
+                term_set=term_set,
+                draft_entries=draft_entries,
+            )
+            for proposal in proposals
+        ]
+        return TranslationTermProposalCompatibilityResponse(
+            set_id=term_set.set_id,
+            language_pair=term_set.language_pair,
+            summary=TranslationTermProposalCompatibilitySummaryResponse(
+                total=len(items),
+                compatible=len([item for item in items if item.compatibility == "compatible"]),
+                warning=len([item for item in items if item.compatibility == "warning"]),
+                conflict=len([item for item in items if item.compatibility == "conflict"]),
+            ),
+            items=items,
         )
 
     def get_draft(self, set_id: str) -> TranslationTermDraft:
@@ -864,6 +973,256 @@ class TranslationTermSetVersionService:
             return []
         return self.repository.load_version(term_set.language_pair, term_set.default_version)
 
+    def _resolve_comparison_entries(
+        self,
+        term_set: TranslationTermSetRecord,
+        version: str | None,
+    ) -> tuple[str, list[TranslationTermEntry]]:
+        """解析 diff/preflight 使用的版本条目；缺省 draft 只做内存视图，不落库。"""
+
+        normalized_version = (version or "").strip()
+        if not normalized_version:
+            default_record = self._require_default_version(term_set)
+            return default_record.version, self.repository.load_version(term_set.language_pair, default_record.version)
+        if normalized_version == DRAFT_VERSION:
+            if term_set.draft_version:
+                draft_record = self._require_version(term_set, DRAFT_VERSION)
+                if draft_record.status != "draft":
+                    raise ValueError("Translation Term Set draft 指针指向了非 draft 版本。")
+                return DRAFT_VERSION, self.repository.load_version(term_set.language_pair, DRAFT_VERSION)
+            default_record = self._require_default_version(term_set)
+            return DRAFT_VERSION, self.repository.load_version(term_set.language_pair, default_record.version)
+
+        version_record = self._require_version(term_set, normalized_version)
+        return version_record.version, self.repository.load_version(term_set.language_pair, version_record.version)
+
+    def _build_diff_response(
+        self,
+        term_set: TranslationTermSetRecord,
+        *,
+        base_version: str,
+        target_version: str,
+        base_entries: list[TranslationTermEntry],
+        target_entries: list[TranslationTermEntry],
+    ) -> TranslationTermSetDiffResponse:
+        """构造字段级 diff；比较字段和 snapshot hash 使用同一 payload 口径。"""
+
+        base_by_key = {entry.normalized_source_term: self._entry_payload(entry) for entry in base_entries}
+        target_by_key = {entry.normalized_source_term: self._entry_payload(entry) for entry in target_entries}
+        ordered_keys = [entry.normalized_source_term for entry in target_entries]
+        ordered_keys.extend(
+            entry.normalized_source_term
+            for entry in base_entries
+            if entry.normalized_source_term not in target_by_key
+        )
+        items: list[TranslationTermSetDiffEntryResponse] = []
+        for key in ordered_keys:
+            before = base_by_key.get(key)
+            after = target_by_key.get(key)
+            if before is None and after is not None:
+                kind = "added"
+                changed_fields = sorted(after.keys())
+            elif before is not None and after is None:
+                kind = "removed"
+                changed_fields = sorted(before.keys())
+            elif before == after:
+                kind = "unchanged"
+                changed_fields = []
+            else:
+                kind = "changed"
+                changed_fields = sorted(
+                    field
+                    for field in set(before or {}) | set(after or {})
+                    if (before or {}).get(field) != (after or {}).get(field)
+                )
+            payload = after or before or {}
+            items.append(
+                TranslationTermSetDiffEntryResponse(
+                    kind=kind,
+                    normalized_source_term=key,
+                    source_term=str(payload.get("source_term") or key),
+                    changed_fields=changed_fields,
+                    before=before,
+                    after=after,
+                )
+            )
+
+        summary = TranslationTermSetDiffSummaryResponse(
+            added=len([item for item in items if item.kind == "added"]),
+            removed=len([item for item in items if item.kind == "removed"]),
+            changed=len([item for item in items if item.kind == "changed"]),
+            unchanged=len([item for item in items if item.kind == "unchanged"]),
+            total_before=len(base_entries),
+            total_after=len(target_entries),
+        )
+        return TranslationTermSetDiffResponse(
+            set_id=term_set.set_id,
+            language_pair=term_set.language_pair,
+            base_version=base_version,
+            target_version=target_version,
+            summary=summary,
+            items=items,
+        )
+
+    def _proposal_compatibility_item(
+        self,
+        proposal,
+        *,
+        term_set: TranslationTermSetRecord,
+        draft_entries: list[TranslationTermEntry],
+    ) -> TranslationTermProposalCompatibilityItemResponse:
+        """把一条 pending proposal 映射为当前 draft 下的兼容性预览。"""
+
+        observed_version = proposal.observed_translation_term_version or term_set.default_version
+        observed_entries, missing_observed_finding = self._proposal_observed_entries(
+            term_set,
+            observed_version=observed_version,
+        )
+        validation = self.validate_changes(
+            observed_entries,
+            list(proposal.changes),
+            observed_version=observed_version,
+            current_version=term_set.default_version,
+        )
+        warnings = [
+            self._proposal_compatibility_finding(
+                severity="warning",
+                code=item.code,
+                message=item.message,
+                normalized_source_term=item.normalized_source_term,
+            )
+            for item in validation.warnings
+        ]
+        conflicts = [
+            self._proposal_compatibility_finding(
+                severity="conflict",
+                code=item.code,
+                message=item.message,
+                normalized_source_term=item.normalized_source_term,
+            )
+            for item in validation.errors
+        ]
+        if missing_observed_finding is not None:
+            conflicts.insert(0, missing_observed_finding)
+        conflicts.extend(
+            self._proposal_draft_conflicts(
+                proposal,
+                draft_entries=draft_entries,
+                observed_entries=observed_entries,
+            )
+        )
+        compatibility = "conflict" if conflicts else "warning" if warnings else "compatible"
+        return TranslationTermProposalCompatibilityItemResponse(
+            proposal_id=proposal.id,
+            compatibility=compatibility,
+            observed_version=observed_version,
+            change_count=len(proposal.changes),
+            conflicts=conflicts,
+            warnings=warnings,
+        )
+
+    def _proposal_observed_entries(
+        self,
+        term_set: TranslationTermSetRecord,
+        *,
+        observed_version: str | None,
+    ) -> tuple[list[TranslationTermEntry], TranslationTermProposalCompatibilityFindingResponse | None]:
+        """读取 proposal 证据版本；缺失时返回结构化 conflict 而不是抛出。"""
+
+        if not observed_version:
+            return [], self._proposal_compatibility_finding(
+                severity="conflict",
+                code="missing_observed_version",
+                message="proposal 缺少 observed Translation Term Set version，不能安全预览兼容性。",
+            )
+        if self.repository.get_version(term_set.set_id, observed_version) is None:
+            return [], self._proposal_compatibility_finding(
+                severity="conflict",
+                code="missing_observed_version",
+                message=f"proposal 绑定的 Translation Term Set version 不存在: {observed_version}",
+            )
+        return self.repository.load_version(term_set.language_pair, observed_version), None
+
+    def _proposal_draft_conflicts(
+        self,
+        proposal,
+        *,
+        draft_entries: list[TranslationTermEntry],
+        observed_entries: list[TranslationTermEntry],
+    ) -> list[TranslationTermProposalCompatibilityFindingResponse]:
+        """检查 proposal 应用到当前 draft 时可能出现的结构化冲突。"""
+
+        draft_by_key = {entry.normalized_source_term: entry for entry in draft_entries}
+        observed_by_key = {entry.normalized_source_term: entry for entry in observed_entries}
+        conflicts: list[TranslationTermProposalCompatibilityFindingResponse] = []
+        for change in proposal.changes:
+            key = normalize_translation_source_term(change.source_term)
+            draft_entry = draft_by_key.get(key)
+            observed_entry = observed_by_key.get(key)
+            if change.action == "add":
+                if draft_entry is not None:
+                    conflicts.append(
+                        self._proposal_compatibility_finding(
+                            severity="conflict",
+                            code="add_existing_term",
+                            message=f"新增术语已存在于当前 draft: {key}",
+                            normalized_source_term=key,
+                            action=change.action,
+                            current_entry=self._entry_payload(draft_entry),
+                            observed_entry=self._entry_payload(observed_entry) if observed_entry else None,
+                        )
+                    )
+                continue
+            if draft_entry is None:
+                conflicts.append(
+                    self._proposal_compatibility_finding(
+                        severity="conflict",
+                        code="missing_target_term",
+                        message=f"{change.action} 目标术语不存在于当前 draft: {key}",
+                        normalized_source_term=key,
+                        action=change.action,
+                        current_entry=None,
+                        observed_entry=self._entry_payload(observed_entry) if observed_entry else None,
+                    )
+                )
+                continue
+            if observed_entry is not None and self._entry_payload(draft_entry) != self._entry_payload(observed_entry):
+                conflicts.append(
+                    self._proposal_compatibility_finding(
+                        severity="conflict",
+                        code="stale_target_term",
+                        message=f"{change.action} 目标术语已被其他变更修改: {key}",
+                        normalized_source_term=key,
+                        action=change.action,
+                        current_entry=self._entry_payload(draft_entry),
+                        observed_entry=self._entry_payload(observed_entry),
+                    )
+                )
+        return conflicts
+
+    @staticmethod
+    def _proposal_compatibility_finding(
+        *,
+        severity: str,
+        code: str,
+        message: str,
+        normalized_source_term: str | None = None,
+        action: str | None = None,
+        current_entry: dict[str, Any] | None = None,
+        observed_entry: dict[str, Any] | None = None,
+    ) -> TranslationTermProposalCompatibilityFindingResponse:
+        """创建 proposal 兼容性 finding 的稳定 API 模型。"""
+
+        return TranslationTermProposalCompatibilityFindingResponse(
+            severity=severity,
+            code=code,
+            message=message,
+            normalized_source_term=normalized_source_term,
+            action=action,
+            current_entry=current_entry,
+            observed_entry=observed_entry,
+        )
+
     def _next_version(self, set_id: str) -> str:
         prefix = utc_now().astimezone(SHANGHAI_TZ).strftime("%Y%m%d-%H%M%S-")
         max_suffix = 0
@@ -899,20 +1258,23 @@ class TranslationTermSetVersionService:
 
     @staticmethod
     def _entries_payload(entries: list[TranslationTermEntry]) -> list[dict[str, Any]]:
-        return [
-            {
-                "source_term": entry.source_term.strip(),
-                "normalized_source_term": normalize_translation_source_term(entry.source_term),
-                "target_term": entry.target_term.strip(),
-                "case_sensitive": bool(entry.case_sensitive),
-                "status": entry.status,
-                "priority": int(entry.priority),
-                "domain": entry.domain,
-                "category": entry.category,
-                "note": entry.note,
-            }
-            for entry in entries
-        ]
+        return [TranslationTermSetVersionService._entry_payload(entry) for entry in entries]
+
+    @staticmethod
+    def _entry_payload(entry: TranslationTermEntry) -> dict[str, Any]:
+        """返回参与 hash、diff 和冲突判断的稳定字段集合。"""
+
+        return {
+            "source_term": entry.source_term.strip(),
+            "normalized_source_term": normalize_translation_source_term(entry.source_term),
+            "target_term": entry.target_term.strip(),
+            "case_sensitive": bool(entry.case_sensitive),
+            "status": entry.status,
+            "priority": int(entry.priority),
+            "domain": entry.domain,
+            "category": entry.category,
+            "note": entry.note,
+        }
 
     def _snapshot_hash(self, entries: list[TranslationTermEntry]) -> str:
         encoded = json.dumps(self._entries_payload(entries), ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")

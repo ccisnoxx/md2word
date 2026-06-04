@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-# app/domains/translation/sets_router.py: 提供 Translation Term Set CSV 导入导出接口。
+# File: app/domains/translation/sets_router.py
+# Purpose: 提供 Translation Term Set CSV 导入导出、版本指针和治理预览接口。
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -10,6 +11,7 @@ from app.core.runtime import AppRuntime
 from app.domains.audit.models import ActorContext
 from app.domains.translation.schemas import (
     TranslationTermSetDetailResponse,
+    TranslationTermSetDiffResponse,
     TranslationTermSetExportManifestResponse,
     TranslationTermSetExportResponse,
     TranslationTermSetDraftResponse,
@@ -18,6 +20,8 @@ from app.domains.translation.schemas import (
     TranslationTermSetImportRequest,
     TranslationTermSetImportResponse,
     TranslationTermSetListResponse,
+    TranslationTermSetPreflightResponse,
+    TranslationTermProposalCompatibilityResponse,
     TranslationTermSetPublishRequest,
     TranslationTermSetRollbackRequest,
     TranslationTermSetVersionResponse,
@@ -107,6 +111,70 @@ def get_translation_term_set_draft(
 ) -> TranslationTermSetDraftResponse:
     try:
         return _require_translation_term_set_version_service(runtime).get_draft_response(set_id)
+    except FileNotFoundError as exc:
+        raise not_found_http_exception(exc) from exc
+    except ValueError as exc:
+        raise bad_request_http_exception(exc) from exc
+
+
+@router.get("/{set_id}/diff", response_model=TranslationTermSetDiffResponse)
+def get_translation_term_set_diff(
+    set_id: str,
+    base_version: str | None = Query(default=None),
+    target_version: str | None = Query(default=None),
+    _actor: ActorContext = Depends(require_admin_actor),
+    runtime: AppRuntime = Depends(get_runtime),
+) -> TranslationTermSetDiffResponse:
+    """返回 Translation Term Set 的 read-only 版本 diff，不修改 draft。"""
+
+    try:
+        return _require_translation_term_set_version_service(runtime).get_diff_response(
+            set_id,
+            base_version=base_version,
+            target_version=target_version,
+        )
+    except FileNotFoundError as exc:
+        raise not_found_http_exception(exc) from exc
+    except ValueError as exc:
+        raise bad_request_http_exception(exc) from exc
+
+
+@router.get("/{set_id}/preflight", response_model=TranslationTermSetPreflightResponse)
+def get_translation_term_set_preflight(
+    set_id: str,
+    base_version: str | None = Query(default=None),
+    target_version: str | None = Query(default=None),
+    _actor: ActorContext = Depends(require_admin_actor),
+    runtime: AppRuntime = Depends(get_runtime),
+) -> TranslationTermSetPreflightResponse:
+    """返回 Translation Term Set 发布前 read-only 校验和 diff 摘要。"""
+
+    try:
+        return _require_translation_term_set_version_service(runtime).get_preflight_response(
+            set_id,
+            base_version=base_version,
+            target_version=target_version,
+        )
+    except FileNotFoundError as exc:
+        raise not_found_http_exception(exc) from exc
+    except ValueError as exc:
+        raise bad_request_http_exception(exc) from exc
+
+
+@router.get("/{set_id}/proposal-compatibility", response_model=TranslationTermProposalCompatibilityResponse)
+def get_translation_term_set_proposal_compatibility(
+    set_id: str,
+    proposal_status: str = Query(default="pending", alias="status"),
+    _actor: ActorContext = Depends(require_admin_actor),
+    runtime: AppRuntime = Depends(get_runtime),
+) -> TranslationTermProposalCompatibilityResponse:
+    """预览 pending Translation Term Proposals 和当前 draft 的兼容性。"""
+
+    try:
+        return _require_translation_term_set_version_service(runtime).get_proposal_compatibility_response(
+            set_id,
+            status=proposal_status,
+        )
     except FileNotFoundError as exc:
         raise not_found_http_exception(exc) from exc
     except ValueError as exc:
