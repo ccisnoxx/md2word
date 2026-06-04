@@ -7244,6 +7244,192 @@
         "title": "TranslationTermProposalChangeResponse",
         "type": "object"
       },
+      "TranslationTermProposalCompatibilityFindingResponse": {
+        "description": "pending Translation Term Proposal 与当前 draft 的兼容性 finding。",
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "current_entry": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Entry"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "normalized_source_term": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized Source Term"
+          },
+          "observed_entry": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Entry"
+          },
+          "severity": {
+            "enum": [
+              "warning",
+              "conflict"
+            ],
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "code",
+          "message"
+        ],
+        "title": "TranslationTermProposalCompatibilityFindingResponse",
+        "type": "object"
+      },
+      "TranslationTermProposalCompatibilityItemResponse": {
+        "description": "单个 pending Translation Term Proposal 的 read-only 兼容性预览。",
+        "properties": {
+          "change_count": {
+            "title": "Change Count",
+            "type": "integer"
+          },
+          "compatibility": {
+            "enum": [
+              "compatible",
+              "warning",
+              "conflict"
+            ],
+            "title": "Compatibility",
+            "type": "string"
+          },
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/TranslationTermProposalCompatibilityFindingResponse"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
+          "observed_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Version"
+          },
+          "proposal_id": {
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/TranslationTermProposalCompatibilityFindingResponse"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "compatibility",
+          "change_count"
+        ],
+        "title": "TranslationTermProposalCompatibilityItemResponse",
+        "type": "object"
+      },
+      "TranslationTermProposalCompatibilityResponse": {
+        "description": "返回当前 set 的 pending proposal 兼容性预览，不修改 proposal 或 draft。",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TranslationTermProposalCompatibilityItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "language_pair": {
+            "title": "Language Pair",
+            "type": "string"
+          },
+          "set_id": {
+            "title": "Set Id",
+            "type": "string"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/TranslationTermProposalCompatibilitySummaryResponse"
+          }
+        },
+        "required": [
+          "set_id",
+          "language_pair",
+          "summary",
+          "items"
+        ],
+        "title": "TranslationTermProposalCompatibilityResponse",
+        "type": "object"
+      },
+      "TranslationTermProposalCompatibilitySummaryResponse": {
+        "description": "Translation Term Proposal 兼容性预览的聚合计数。",
+        "properties": {
+          "compatible": {
+            "default": 0,
+            "title": "Compatible",
+            "type": "integer"
+          },
+          "conflict": {
+            "default": 0,
+            "title": "Conflict",
+            "type": "integer"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          },
+          "warning": {
+            "default": 0,
+            "title": "Warning",
+            "type": "integer"
+          }
+        },
+        "title": "TranslationTermProposalCompatibilitySummaryResponse",
+        "type": "object"
+      },
       "TranslationTermProposalCreateRequest": {
         "properties": {
           "changes": {
@@ -7557,6 +7743,145 @@
           "versions"
         ],
         "title": "TranslationTermSetDetailResponse",
+        "type": "object"
+      },
+      "TranslationTermSetDiffEntryResponse": {
+        "description": "Translation Term Set diff 中的一条术语级变化。",
+        "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "changed_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Changed Fields",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "added",
+              "removed",
+              "changed",
+              "unchanged"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "normalized_source_term": {
+            "title": "Normalized Source Term",
+            "type": "string"
+          },
+          "source_term": {
+            "title": "Source Term",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "normalized_source_term",
+          "source_term"
+        ],
+        "title": "TranslationTermSetDiffEntryResponse",
+        "type": "object"
+      },
+      "TranslationTermSetDiffResponse": {
+        "description": "返回两个 Translation Term Set 版本之间的 read-only diff。",
+        "properties": {
+          "base_version": {
+            "title": "Base Version",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TranslationTermSetDiffEntryResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "language_pair": {
+            "title": "Language Pair",
+            "type": "string"
+          },
+          "set_id": {
+            "title": "Set Id",
+            "type": "string"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/TranslationTermSetDiffSummaryResponse"
+          },
+          "target_version": {
+            "title": "Target Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "set_id",
+          "language_pair",
+          "base_version",
+          "target_version",
+          "summary",
+          "items"
+        ],
+        "title": "TranslationTermSetDiffResponse",
+        "type": "object"
+      },
+      "TranslationTermSetDiffSummaryResponse": {
+        "description": "Translation Term Set 版本 diff 的聚合计数。",
+        "properties": {
+          "added": {
+            "default": 0,
+            "title": "Added",
+            "type": "integer"
+          },
+          "changed": {
+            "default": 0,
+            "title": "Changed",
+            "type": "integer"
+          },
+          "removed": {
+            "default": 0,
+            "title": "Removed",
+            "type": "integer"
+          },
+          "total_after": {
+            "default": 0,
+            "title": "Total After",
+            "type": "integer"
+          },
+          "total_before": {
+            "default": 0,
+            "title": "Total Before",
+            "type": "integer"
+          },
+          "unchanged": {
+            "default": 0,
+            "title": "Unchanged",
+            "type": "integer"
+          }
+        },
+        "title": "TranslationTermSetDiffSummaryResponse",
         "type": "object"
       },
       "TranslationTermSetDraftResponse": {
@@ -7898,6 +8223,55 @@
           "items"
         ],
         "title": "TranslationTermSetListResponse",
+        "type": "object"
+      },
+      "TranslationTermSetPreflightResponse": {
+        "description": "返回发布前 read-only 校验、阻断原因和 diff 摘要。",
+        "properties": {
+          "base_version": {
+            "title": "Base Version",
+            "type": "string"
+          },
+          "blocking_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blocking Reasons",
+            "type": "array"
+          },
+          "diff_summary": {
+            "$ref": "#/components/schemas/TranslationTermSetDiffSummaryResponse"
+          },
+          "language_pair": {
+            "title": "Language Pair",
+            "type": "string"
+          },
+          "publish_blocked": {
+            "title": "Publish Blocked",
+            "type": "boolean"
+          },
+          "set_id": {
+            "title": "Set Id",
+            "type": "string"
+          },
+          "target_version": {
+            "title": "Target Version",
+            "type": "string"
+          },
+          "validation": {
+            "$ref": "#/components/schemas/TranslationTermValidationReportResponse"
+          }
+        },
+        "required": [
+          "set_id",
+          "language_pair",
+          "base_version",
+          "target_version",
+          "publish_blocked",
+          "validation",
+          "diff_summary"
+        ],
+        "title": "TranslationTermSetPreflightResponse",
         "type": "object"
       },
       "TranslationTermSetPublishRequest": {
@@ -15924,6 +16298,129 @@
         ]
       }
     },
+    "/api/v1/translation-term-sets/{set_id}/diff": {
+      "get": {
+        "description": "返回 Translation Term Set 的 read-only 版本 diff，不修改 draft。",
+        "operationId": "get_translation_term_set_diff_api_v1_translation_term_sets__set_id__diff_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "set_id",
+            "required": true,
+            "schema": {
+              "title": "Set Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "base_version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Base Version"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Version"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationTermSetDiffResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Translation Term Set Diff",
+        "tags": [
+          "translation-term-sets"
+        ]
+      }
+    },
     "/api/v1/translation-term-sets/{set_id}/draft": {
       "get": {
         "operationId": "get_translation_term_set_draft_api_v1_translation_term_sets__set_id__draft_get",
@@ -16167,6 +16664,230 @@
           }
         },
         "summary": "Import Translation Term Set",
+        "tags": [
+          "translation-term-sets"
+        ]
+      }
+    },
+    "/api/v1/translation-term-sets/{set_id}/preflight": {
+      "get": {
+        "description": "返回 Translation Term Set 发布前 read-only 校验和 diff 摘要。",
+        "operationId": "get_translation_term_set_preflight_api_v1_translation_term_sets__set_id__preflight_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "set_id",
+            "required": true,
+            "schema": {
+              "title": "Set Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "base_version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Base Version"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Version"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationTermSetPreflightResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Translation Term Set Preflight",
+        "tags": [
+          "translation-term-sets"
+        ]
+      }
+    },
+    "/api/v1/translation-term-sets/{set_id}/proposal-compatibility": {
+      "get": {
+        "description": "预览 pending Translation Term Proposals 和当前 draft 的兼容性。",
+        "operationId": "get_translation_term_set_proposal_compatibility_api_v1_translation_term_sets__set_id__proposal_compatibility_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "set_id",
+            "required": true,
+            "schema": {
+              "title": "Set Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "pending",
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationTermProposalCompatibilityResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Translation Term Set Proposal Compatibility",
         "tags": [
           "translation-term-sets"
         ]

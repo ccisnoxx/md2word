@@ -805,14 +805,16 @@ function queryString(key: string): string {
   return typeof value === "string" ? value : "";
 }
 
+// 根据路由 query 打开指定 tab，支持从治理页面跳转到翻译术语审核流。
 function initialActiveTab(): string {
   const tab = queryString("tab");
-  if (["new", "translation-new", "mine", "translation-mine"].includes(tab)) {
+  if (["new", "translation-new", "mine", "all", "translation-mine", "translation-review", "translation-all"].includes(tab)) {
     return tab;
   }
   return isAdmin.value ? "review" : "mine";
 }
 
+// 将任务详情或治理页面传入的上下文写入当前 proposal 表单/tab。
 function applyRouteProposalContext(): void {
   const tab = queryString("tab");
   if (tab === "new") {
@@ -834,6 +836,9 @@ function applyRouteProposalContext(): void {
     translationContextLocked.value = Boolean(translationProposalForm.source_job_id);
     activeTab.value = "translation-new";
     return;
+  }
+  if (["mine", "all", "translation-mine", "translation-review", "translation-all"].includes(tab)) {
+    activeTab.value = tab;
   }
   termRuleContextLocked.value = false;
   translationContextLocked.value = false;

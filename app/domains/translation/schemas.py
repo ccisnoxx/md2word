@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-# app/domains/translation/schemas.py: 定义 Translation Profile 和 Translation Term Proposal API 的 v1 请求/响应模型。
+# File: app/domains/translation/schemas.py
+# Purpose: 定义 Translation Profile、Translation Term Proposal 和 Translation Term Set API 的 v1 请求/响应模型。
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -267,6 +268,52 @@ class TranslationTermSetDraftResponse(BaseModel):
     entries: list[TranslationTermEntryResponse]
 
 
+class TranslationTermSetDiffSummaryResponse(BaseModel):
+    """Translation Term Set 版本 diff 的聚合计数。"""
+
+    added: int = 0
+    removed: int = 0
+    changed: int = 0
+    unchanged: int = 0
+    total_before: int = 0
+    total_after: int = 0
+
+
+class TranslationTermSetDiffEntryResponse(BaseModel):
+    """Translation Term Set diff 中的一条术语级变化。"""
+
+    kind: Literal["added", "removed", "changed", "unchanged"]
+    normalized_source_term: str
+    source_term: str
+    changed_fields: list[str] = Field(default_factory=list)
+    before: dict[str, Any] | None = None
+    after: dict[str, Any] | None = None
+
+
+class TranslationTermSetDiffResponse(BaseModel):
+    """返回两个 Translation Term Set 版本之间的 read-only diff。"""
+
+    set_id: str
+    language_pair: str
+    base_version: str
+    target_version: str
+    summary: TranslationTermSetDiffSummaryResponse
+    items: list[TranslationTermSetDiffEntryResponse]
+
+
+class TranslationTermSetPreflightResponse(BaseModel):
+    """返回发布前 read-only 校验、阻断原因和 diff 摘要。"""
+
+    set_id: str
+    language_pair: str
+    base_version: str
+    target_version: str
+    publish_blocked: bool
+    blocking_reasons: list[str] = Field(default_factory=list)
+    validation: TranslationTermValidationReportResponse
+    diff_summary: TranslationTermSetDiffSummaryResponse
+
+
 class TranslationTermSetPublishRequest(BaseModel):
     make_default: bool = True
     release_note: str | None = Field(default=None, max_length=500)
@@ -274,3 +321,44 @@ class TranslationTermSetPublishRequest(BaseModel):
 
 class TranslationTermSetRollbackRequest(BaseModel):
     version: str = Field(min_length=1, max_length=128)
+
+
+class TranslationTermProposalCompatibilityFindingResponse(BaseModel):
+    """pending Translation Term Proposal 与当前 draft 的兼容性 finding。"""
+
+    severity: Literal["warning", "conflict"]
+    code: str
+    message: str
+    normalized_source_term: str | None = None
+    action: str | None = None
+    current_entry: dict[str, Any] | None = None
+    observed_entry: dict[str, Any] | None = None
+
+
+class TranslationTermProposalCompatibilityItemResponse(BaseModel):
+    """单个 pending Translation Term Proposal 的 read-only 兼容性预览。"""
+
+    proposal_id: str
+    compatibility: Literal["compatible", "warning", "conflict"]
+    observed_version: str | None = None
+    change_count: int
+    conflicts: list[TranslationTermProposalCompatibilityFindingResponse] = Field(default_factory=list)
+    warnings: list[TranslationTermProposalCompatibilityFindingResponse] = Field(default_factory=list)
+
+
+class TranslationTermProposalCompatibilitySummaryResponse(BaseModel):
+    """Translation Term Proposal 兼容性预览的聚合计数。"""
+
+    total: int = 0
+    compatible: int = 0
+    warning: int = 0
+    conflict: int = 0
+
+
+class TranslationTermProposalCompatibilityResponse(BaseModel):
+    """返回当前 set 的 pending proposal 兼容性预览，不修改 proposal 或 draft。"""
+
+    set_id: str
+    language_pair: str
+    summary: TranslationTermProposalCompatibilitySummaryResponse
+    items: list[TranslationTermProposalCompatibilityItemResponse]

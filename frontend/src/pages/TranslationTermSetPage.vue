@@ -113,6 +113,135 @@
     <el-card v-if="!unavailable" class="card-flat" shadow="never">
       <div class="section-header">
         <div>
+          <h2 class="section-title">Diff / Preflight</h2>
+          <p class="section-subtitle">default-vs-draft 的只读治理预览，不会发布或修改 draft。</p>
+        </div>
+        <el-tag v-if="diff" effect="plain">{{ diff.base_version }} -> {{ diff.target_version }}</el-tag>
+      </div>
+
+      <div class="governance-summary-grid" aria-label="Translation Term Set diff summary">
+        <article class="summary-metric">
+          <span>Added</span>
+          <strong>{{ diff?.summary.added ?? "-" }}</strong>
+        </article>
+        <article class="summary-metric">
+          <span>Removed</span>
+          <strong>{{ diff?.summary.removed ?? "-" }}</strong>
+        </article>
+        <article class="summary-metric">
+          <span>Changed</span>
+          <strong>{{ diff?.summary.changed ?? "-" }}</strong>
+        </article>
+        <article class="summary-metric">
+          <span>Unchanged</span>
+          <strong>{{ diff?.summary.unchanged ?? "-" }}</strong>
+        </article>
+      </div>
+
+      <el-alert
+        v-if="preflight?.publish_blocked"
+        class="context-alert"
+        type="error"
+        title="Preflight 阻断发布"
+        :closable="false"
+        show-icon
+      >
+        <ul class="blocking-list">
+          <li v-for="reason in preflight.blocking_reasons" :key="reason">{{ reason }}</li>
+        </ul>
+      </el-alert>
+      <el-alert
+        v-else-if="preflight"
+        class="context-alert"
+        type="success"
+        title="Preflight 未发现阻断项"
+        :closable="false"
+        show-icon
+      />
+
+      <el-table :data="visibleDiffItems" :loading="loading" empty-text="暂无 draft diff 变化">
+        <el-table-column label="Kind" width="110">
+          <template #default="{ row }">
+            <el-tag :type="diffKindTag(row.kind)" effect="plain">{{ row.kind }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="source_term" label="source_term" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="normalized_source_term" label="normalized" min-width="170" show-overflow-tooltip />
+        <el-table-column label="changed_fields" min-width="220">
+          <template #default="{ row }">
+            <span v-if="!row.changed_fields.length" class="muted">-</span>
+            <span v-else class="tag-stack">
+              <el-tag v-for="field in row.changed_fields" :key="field" size="small" effect="plain">{{ field }}</el-tag>
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="before" min-width="260">
+          <template #default="{ row }">
+            <pre class="diff-payload">{{ formatDiffPayload(row.before) }}</pre>
+          </template>
+        </el-table-column>
+        <el-table-column label="after" min-width="260">
+          <template #default="{ row }">
+            <pre class="diff-payload">{{ formatDiffPayload(row.after) }}</pre>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <el-card v-if="!unavailable" class="card-flat" shadow="never">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Pending proposal compatibility</h2>
+          <p class="section-subtitle">只读预览 pending proposals 与当前 draft 的兼容性。</p>
+        </div>
+      </div>
+
+      <div class="governance-summary-grid" aria-label="Translation Term Proposal compatibility summary">
+        <article class="summary-metric">
+          <span>Total</span>
+          <strong>{{ proposalCompatibility?.summary.total ?? "-" }}</strong>
+        </article>
+        <article class="summary-metric">
+          <span>Compatible</span>
+          <strong>{{ proposalCompatibility?.summary.compatible ?? "-" }}</strong>
+        </article>
+        <article class="summary-metric">
+          <span>Warnings</span>
+          <strong>{{ proposalCompatibility?.summary.warning ?? "-" }}</strong>
+        </article>
+        <article class="summary-metric">
+          <span>Conflicts</span>
+          <strong>{{ proposalCompatibility?.summary.conflict ?? "-" }}</strong>
+        </article>
+      </div>
+
+      <el-table :data="proposalCompatibility?.items || []" :loading="loading" empty-text="暂无 pending Translation Term Proposal">
+        <el-table-column prop="proposal_id" label="Proposal" min-width="160">
+          <template #default="{ row }">
+            <router-link :to="{ name: 'term-proposals', query: { tab: 'translation-review', proposal_id: row.proposal_id } }" class="mono">
+              {{ row.proposal_id }}
+            </router-link>
+          </template>
+        </el-table-column>
+        <el-table-column label="Compatibility" width="140">
+          <template #default="{ row }">
+            <el-tag :type="compatibilityTag(row.compatibility)" effect="plain">{{ row.compatibility }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="observed_version" label="Observed" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="change_count" label="Changes" width="100" />
+        <el-table-column label="Conflicts" min-width="220">
+          <template #default="{ row }">{{ findingCodes(row.conflicts) }}</template>
+        </el-table-column>
+        <el-table-column label="Warnings" min-width="220">
+          <template #default="{ row }">{{ findingCodes(row.warnings) }}</template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <el-card v-if="!unavailable" class="card-flat" shadow="never">
+      <div class="section-header">
+        <div>
           <h2 class="section-title">Published versions</h2>
           <p class="section-subtitle">rollback 只切默认指针，不生成新版本。</p>
         </div>
@@ -230,11 +359,18 @@ import { Refresh } from "@element-plus/icons-vue";
 
 import { translationTermSetsApi } from "@/api/translationTermSets";
 import type {
+  TranslationTermProposalCompatibilityFindingResponse,
+  TranslationTermProposalCompatibilityItemResponse,
+  TranslationTermProposalCompatibilityResponse,
   TranslationTermSetDetailResponse,
+  TranslationTermSetDiffEntryPayload,
+  TranslationTermSetDiffEntryResponse,
+  TranslationTermSetDiffResponse,
   TranslationTermSetDraftResponse,
   TranslationTermSetExportManifestResponse,
   TranslationTermSetImportReportResponse,
   TranslationTermSetListItemResponse,
+  TranslationTermSetPreflightResponse,
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import RoleGate from "@/components/RoleGate.vue";
@@ -250,6 +386,9 @@ type FindingRow = {
 };
 
 type DedupeMode = "reject" | "keep_first";
+type DiffKind = TranslationTermSetDiffEntryResponse["kind"];
+type Compatibility = TranslationTermProposalCompatibilityItemResponse["compatibility"];
+type TagType = "success" | "warning" | "info" | "danger";
 
 const auth = useAuthStore();
 const isAdmin = computed(() => auth.user?.role === "admin");
@@ -257,6 +396,9 @@ const sets = ref<TranslationTermSetListItemResponse[]>([]);
 const selectedSetId = ref("");
 const detail = ref<TranslationTermSetDetailResponse | null>(null);
 const draft = ref<TranslationTermSetDraftResponse | null>(null);
+const diff = ref<TranslationTermSetDiffResponse | null>(null);
+const preflight = ref<TranslationTermSetPreflightResponse | null>(null);
+const proposalCompatibility = ref<TranslationTermProposalCompatibilityResponse | null>(null);
 const loading = ref(false);
 const unavailable = ref(false);
 const importing = ref(false);
@@ -327,6 +469,10 @@ const validationFindings = computed<FindingRow[]>(() => {
   ];
 });
 
+const visibleDiffItems = computed(() => (
+  diff.value?.items.filter((item) => item.kind !== "unchanged") ?? []
+));
+
 // 根据 Translation Term Set 页面语境给 Admin 提供下一步处理建议。
 const errorActionHint = computed(() => {
   const currentError = error.value;
@@ -380,7 +526,12 @@ async function loadAll(): Promise<void> {
 async function selectSet(row: TranslationTermSetListItemResponse): Promise<void> {
   selectedSetId.value = row.set_id;
   lastImportReport.value = null;
-  await loadSelectedSet();
+  error.value = null;
+  try {
+    await loadSelectedSet();
+  } catch (caught) {
+    setPageError(caught);
+  }
 }
 
 // 加载当前 set 的详情和 draft 预览。
@@ -388,12 +539,24 @@ async function loadSelectedSet(): Promise<void> {
   if (!selectedSetId.value) {
     return;
   }
-  const [detailResponse, draftResponse] = await Promise.all([
+  const [
+    detailResponse,
+    draftResponse,
+    diffResponse,
+    preflightResponse,
+    proposalCompatibilityResponse,
+  ] = await Promise.all([
     translationTermSetsApi.get(selectedSetId.value),
     translationTermSetsApi.getDraft(selectedSetId.value),
+    translationTermSetsApi.getDiff(selectedSetId.value),
+    translationTermSetsApi.getPreflight(selectedSetId.value),
+    translationTermSetsApi.getProposalCompatibility(selectedSetId.value),
   ]);
   detail.value = detailResponse;
   draft.value = draftResponse;
+  diff.value = diffResponse;
+  preflight.value = preflightResponse;
+  proposalCompatibility.value = proposalCompatibilityResponse;
 }
 
 // 打开 CSV 导入对话框，并重置导入策略为安全的 reject。
@@ -503,6 +666,41 @@ function downloadExport(): void {
   URL.revokeObjectURL(url);
 }
 
+// 将 diff payload 压缩为页面内可扫描 JSON。
+function formatDiffPayload(payload: TranslationTermSetDiffEntryPayload | null): string {
+  return payload ? JSON.stringify(payload, null, 2) : "-";
+}
+
+// 将 diff kind 映射为表格标签样式。
+function diffKindTag(kind: DiffKind): TagType {
+  if (kind === "added") {
+    return "success";
+  }
+  if (kind === "removed") {
+    return "danger";
+  }
+  if (kind === "changed") {
+    return "warning";
+  }
+  return "info";
+}
+
+// 将 proposal compatibility 映射为表格标签样式。
+function compatibilityTag(compatibility: Compatibility): TagType {
+  if (compatibility === "compatible") {
+    return "success";
+  }
+  if (compatibility === "warning") {
+    return "warning";
+  }
+  return "danger";
+}
+
+// 汇总 finding codes，避免在列表中渲染大段冲突 payload。
+function findingCodes(findings: TranslationTermProposalCompatibilityFindingResponse[]): string {
+  return findings.length ? findings.map((item) => item.code).join(", ") : "-";
+}
+
 // 切换默认指针；只影响后续默认绑定，不改已有 job 快照。
 async function setDefault(version: string): Promise<void> {
   if (!selectedSetId.value) {
@@ -609,6 +807,54 @@ onMounted(() => {
   margin-bottom: 4px;
 }
 
+.governance-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.summary-metric {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #e4e7ec;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.summary-metric span {
+  display: block;
+  color: #667085;
+  font-size: 12px;
+}
+
+.summary-metric strong {
+  display: block;
+  margin-top: 4px;
+  color: #111827;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.blocking-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.tag-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.diff-payload {
+  max-height: 140px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .form-help {
   flex-basis: 100%;
   margin: 6px 0 0;
@@ -632,6 +878,10 @@ onMounted(() => {
 @media (max-width: 1040px) {
   .term-set-grid {
     grid-template-columns: 1fr;
+  }
+
+  .governance-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>

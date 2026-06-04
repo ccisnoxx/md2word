@@ -36,6 +36,7 @@ last_reviewed: 2026-06-04
 - 发布 draft 后清除 draft 指针；set-default 和 rollback 只切默认指针，不生成新版本
 - 默认指针变化只影响后续使用默认配置的新 job；已创建 job 的 `resource_snapshot` 不会被改写
 - import/export 成功后写 audit event
+- diff、preflight 和 proposal compatibility 是 Admin-only read-only 治理接口，不发布、不修改 draft、不改变 proposal 状态
 
 ## API 参考
 
@@ -85,6 +86,81 @@ last_reviewed: 2026-06-04
 | `snapshot_hash` | draft snapshot hash |
 | `validation` | 发布前校验结果 |
 | `entries[]` | draft 术语条目，只读展示 |
+
+### `GET /api/v1/translation-term-sets/{set_id}/diff`
+
+- 用途：读取 Translation Term Set 两个版本之间的 read-only diff。
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
+- 查询参数：
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `base_version` | 当前默认版本 | 对比基准版本。 |
+| `target_version` | `draft` | 对比目标版本；没有持久 draft 时使用默认版本的内存视图，不创建 draft。 |
+
+- 响应：`TranslationTermSetDiffResponse`。
+- 行为：
+  - 不修改 draft。
+  - 不发布版本。
+  - 不切换默认指针。
+  - 不改变 proposal 状态。
+
+关键字段：
+
+| 字段 | 说明 |
+|---|---|
+| `summary.added` | target 相对 base 新增的 normalized source term 数。 |
+| `summary.removed` | target 相对 base 移除的 normalized source term 数。 |
+| `summary.changed` | normalized source term 相同但字段变化的术语数。 |
+| `summary.unchanged` | 完全未变化的术语数。 |
+| `items[].kind` | `added`、`removed`、`changed` 或 `unchanged`。 |
+| `items[].changed_fields` | 字段级变化列表，例如 `target_term`、`status`、`note`。 |
+| `items[].before` | base 侧术语 payload；新增项为 `null`。 |
+| `items[].after` | target 侧术语 payload；移除项为 `null`。 |
+
+### `GET /api/v1/translation-term-sets/{set_id}/preflight`
+
+- 用途：发布前 read-only 预检，汇总 validation、阻断原因和 diff summary。
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
+- 查询参数同 `diff`。
+- 响应：`TranslationTermSetPreflightResponse`。
+
+关键字段：
+
+| 字段 | 说明 |
+|---|---|
+| `publish_blocked` | 当前 target 是否因 validation errors 阻断发布。 |
+| `blocking_reasons[]` | 阻断发布的人类可读原因。 |
+| `validation` | 与 draft validation 同一语义；errors 阻断，warnings 提醒。 |
+| `diff_summary` | 与 `diff.summary` 相同的聚合计数。 |
+
+### `GET /api/v1/translation-term-sets/{set_id}/proposal-compatibility`
+
+- 用途：预览 pending Translation Term Proposals 与当前 draft/default 上下文的兼容性。
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
+- 查询参数：
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `status` | `pending` | 第一版仅支持 `pending`。 |
+
+- 响应：`TranslationTermProposalCompatibilityResponse`。
+- 行为：
+  - 不 approve proposal。
+  - 不 reject proposal。
+  - 不 publish draft。
+  - 不修改 draft entries。
+
+关键字段：
+
+| 字段 | 说明 |
+|---|---|
+| `summary.compatible` | 可安全进入人工审核的 proposal 数。 |
+| `summary.warning` | 有 warning 但未发现冲突的 proposal 数。 |
+| `summary.conflict` | 当前 draft 下存在结构化冲突的 proposal 数。 |
+| `items[].compatibility` | `compatible`、`warning` 或 `conflict`。 |
+| `items[].conflicts[]` | 结构化冲突，包含 `code`、`message`、`normalized_source_term`、`action`、`current_entry`、`observed_entry`。 |
+| `items[].warnings[]` | 结构化 warning，例如 `stale_observed_version`。 |
 
 ### `POST /api/v1/translation-term-sets/{set_id}/import`
 
@@ -197,9 +273,9 @@ rollback 是运维语义更强的 set-default：它只把默认指针切回指�
 
 ## 常见状态
 
-- `400`：CSV 字段缺失、字段值非法、重复项未显式去重、`set_id` 与 `language_pair` 不匹配、seed 初始化条件不满足，或 set-default/rollback 指向非 published 版本
+- `400`：CSV 字段缺失、字段值非法、重复项未显式去重、`set_id` 与 `language_pair` 不匹配、seed 初始化条件不满足、proposal compatibility 不支持的 status，或 set-default/rollback 指向非 published 版本
 - `403`：admin-only 接口缺少或未通过 Bearer admin JWT / legacy `X-Admin-Token`
-- `404`：Translation Term Set 或指定版本不存在
+- `404`：Translation Term Set、指定版本或 diff/preflight base/target 版本不存在
 - `503`：未启用 MySQL resource service
 
 ## 相关条目
