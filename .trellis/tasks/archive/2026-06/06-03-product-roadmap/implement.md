@@ -69,10 +69,57 @@
 
 不阻塞 Phase 1 收口的后续项：
 
-- `file-retention-management` 属于后续 Operations and Retention 方向，不纳入 Phase 1 完成条件。
+- `file-retention-management` 属于后续 Operations and Retention 方向，不纳入 Phase 1 完成条件；其中 metadata-only Admin 基础切片已在 2026-06-04 完成，真实删除、策略 CRUD、定时清理和完整文件库仍后置。
 - `term-rule-workbench` 和 `translation-term-set-management` 属于 Phase 2 Configuration Governance，需要按治理深度继续确认完整性。
 - `translation-result-qa` 属于 Phase 3 Result QA and Traceability。
 - `audit-log-viewer`、`ops-dashboard`、`document-job-bulk-apis` 是 Phase 4 / 运维增强或跨阶段加速项，不改变 Phase 1 收口结论。
+
+## Phase 2 Acceptance Closeout
+
+收口日期：2026-06-04。
+
+结论：当前路线图中的 Phase 2 “Configuration Governance”切片可以收口。已归档的完成任务包括：
+
+- `term-rule-workbench`
+- `term-rule-governance-phase2`
+- `translation-term-set-management`
+- `translation-term-set-governance-hardening`
+
+已满足的 Phase 2 验收面：
+
+- Term Rule Set 已覆盖 draft CRUD contract、diff、preflight、治理 UI 和 proposal 边界冲突提示。
+- Translation Term Set 已覆盖 Admin 管理入口、CSV 导入/导出、版本发布、默认版本切换、rollback 和治理硬化文案/错误体验。
+- 任务创建和重试时绑定资源版本的行为保持不变。
+- 归档 Trellis 文档中的 Translation Term Set 完成状态已与实际实现同步。
+- 所有 Phase 2 收口任务均明确未运行 pdf-mineru 解析、翻译或 Word 生成主流程。
+
+Phase 2 明确未做、需要后续独立任务承接的能力：
+
+- 逐条 Translation Term CRUD。
+- Translation Term Set 完整 diff、冲突解决和批量审核联动工作台。
+- Term Rule governance 的自动 rebase、批量审核和更复杂发布策略。
+- 面向外部客户的配置治理门户。
+
+## Operations and Retention Slice Closeout
+
+收口日期：2026-06-04。
+
+`file-retention-management` 已作为 metadata-only Operations 基础切片完成：
+
+- Admin-only `GET /api/v1/files/retention/plan`。
+- Admin-only `POST /api/v1/files/retention/mark-expired`。
+- Admin-only `/system-status/file-retention` 前端页面。
+- API 文档和 targeted backend/frontend 验证记录。
+- 明确不删除本地文件、对象存储对象、任务记录、metadata 记录或 `object_key`。
+
+仍属于后续 Phase 4 / Operations 的能力：
+
+- 物理文件删除。
+- 保留策略 CRUD。
+- 定时清理计划和后台执行器。
+- 存储配额与清理建议。
+- 跨任务文件搜索或完整文件管理库。
+- 审计导出、告警和恢复动作的更完整运维闭环。
 
 ## Phase 2 Archived Task Inventory
 
@@ -194,22 +241,18 @@
 - 可先复用 health endpoints。
 - 后续可增加系统状态聚合 API。
 
-## Later Trellis Tasks
+## Remaining Future Task Candidates
 
-- `term-rule-workbench`
-  - 完整术语规则 CRUD、分类、启停、导入导出、模拟、版本 diff。
-- `translation-term-set-management`
-  - 翻译术语集列表、详情、导入导出、版本、默认、回滚。
-- `translation-result-qa`
-  - 段落对照、术语命中、AI call trace、质检状态。
-- `file-retention-management`
-  - 文件搜索、物理删除、保留策略、清理计划、存储统计。
-- `audit-log-viewer`
-  - 操作审计查询、筛选、导出。
-- `ops-dashboard`
-  - Worker/队列监控、告警、恢复动作。
-- `document-job-bulk-apis`
-  - 后端批量重试、批量归档、批量取消接口。
+- `translation-term-governance-diff`
+  - Translation Term Set diff、冲突解决和批量审核联动工作台。
+- `file-retention-operations-phase4`
+  - 文件搜索、物理删除、保留策略 CRUD、定时清理计划、存储配额和清理建议。
+- `ops-alerting-and-recovery`
+  - Worker/队列告警、恢复动作、运维 runbook 联动。
+- `audit-log-export`
+  - 审计日志导出、长期留存和合规查询。
+- `customer-portal`
+  - 外部客户自助上传、下载、状态查看和权限边界。
 
 ## Explicit Non-goals For Phase 1
 
