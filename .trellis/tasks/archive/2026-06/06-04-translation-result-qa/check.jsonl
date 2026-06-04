@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Final backend quality checklist."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify invalid mode, missing artifact, and update errors use existing status semantics."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify targeted unittest and frontend build/typecheck expectations."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Verify QA events do not include full text, prompts, responses, or secrets."}
+{"file": ".trellis/tasks/06-04-translation-result-qa/prd.md", "reason": "Task-specific acceptance criteria."}
+{"file": ".trellis/tasks/06-04-translation-result-qa/design.md", "reason": "Task-specific API and page contract."}
+{"file": ".trellis/tasks/06-04-translation-result-qa/implement.md", "reason": "Ordered implementation and verification plan."}

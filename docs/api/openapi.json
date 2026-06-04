@@ -1530,6 +1530,70 @@
             ],
             "title": "Timeout At"
           },
+          "translation_qa_issue_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "translation",
+                  "terminology",
+                  "layout",
+                  "source_quality",
+                  "artifact_missing",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translation Qa Issue Type"
+          },
+          "translation_qa_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translation Qa Note"
+          },
+          "translation_qa_reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translation Qa Reviewed At"
+          },
+          "translation_qa_reviewed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translation Qa Reviewed By"
+          },
+          "translation_qa_status": {
+            "default": "unreviewed",
+            "enum": [
+              "unreviewed",
+              "approved",
+              "needs_fix",
+              "blocked"
+            ],
+            "title": "Translation Qa Status",
+            "type": "string"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -1656,6 +1720,662 @@
           "job"
         ],
         "title": "DocumentJobRetryResponse",
+        "type": "object"
+      },
+      "DocumentJobTranslationQaAiCallResponse": {
+        "properties": {
+          "call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Id"
+          },
+          "char_count": {
+            "default": 0,
+            "title": "Char Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "error_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Type"
+          },
+          "file_id": {
+            "title": "File Id",
+            "type": "string"
+          },
+          "item_count": {
+            "default": 0,
+            "title": "Item Count",
+            "type": "integer"
+          },
+          "language_pair": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language Pair"
+          },
+          "provider": {
+            "additionalProperties": true,
+            "title": "Provider",
+            "type": "object"
+          },
+          "source_language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Language"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "target_language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Language"
+          },
+          "term_count": {
+            "default": 0,
+            "title": "Term Count",
+            "type": "integer"
+          },
+          "term_snapshot_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Term Snapshot Hash"
+          },
+          "term_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Term Version Id"
+          }
+        },
+        "required": [
+          "file_id"
+        ],
+        "title": "DocumentJobTranslationQaAiCallResponse",
+        "type": "object"
+      },
+      "DocumentJobTranslationQaArtifactsResponse": {
+        "properties": {
+          "ai_call_log_file_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ai Call Log File Ids",
+            "type": "array"
+          },
+          "ai_debug_archive_file_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ai Debug Archive File Ids",
+            "type": "array"
+          },
+          "document_ir_file_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Ir File Id"
+          }
+        },
+        "title": "DocumentJobTranslationQaArtifactsResponse",
+        "type": "object"
+      },
+      "DocumentJobTranslationQaResponse": {
+        "properties": {
+          "ai_calls": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentJobTranslationQaAiCallResponse"
+            },
+            "title": "Ai Calls",
+            "type": "array"
+          },
+          "artifacts": {
+            "$ref": "#/components/schemas/DocumentJobTranslationQaArtifactsResponse"
+          },
+          "availability_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Availability Reason"
+          },
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "qa": {
+            "$ref": "#/components/schemas/DocumentJobTranslationQaStateResponse"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentJobTranslationQaSegmentResponse"
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/DocumentJobTranslationQaSummaryResponse"
+          },
+          "term_traces": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentJobTranslationQaTermTraceResponse"
+            },
+            "title": "Term Traces",
+            "type": "array"
+          }
+        },
+        "required": [
+          "job_id",
+          "available",
+          "qa",
+          "artifacts",
+          "summary"
+        ],
+        "title": "DocumentJobTranslationQaResponse",
+        "type": "object"
+      },
+      "DocumentJobTranslationQaSegmentResponse": {
+        "properties": {
+          "ai_translation_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Translation Text"
+          },
+          "block_id": {
+            "title": "Block Id",
+            "type": "string"
+          },
+          "block_type": {
+            "title": "Block Type",
+            "type": "string"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "final_text": {
+            "title": "Final Text",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index"
+          },
+          "order": {
+            "title": "Order",
+            "type": "integer"
+          },
+          "page_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Index"
+          },
+          "source_available": {
+            "default": false,
+            "title": "Source Available",
+            "type": "boolean"
+          },
+          "source_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Text"
+          }
+        },
+        "required": [
+          "id",
+          "block_id",
+          "order",
+          "block_type",
+          "field",
+          "final_text"
+        ],
+        "title": "DocumentJobTranslationQaSegmentResponse",
+        "type": "object"
+      },
+      "DocumentJobTranslationQaStateResponse": {
+        "description": "任务级翻译 QA 复核状态。",
+        "properties": {
+          "issue_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "translation",
+                  "terminology",
+                  "layout",
+                  "source_quality",
+                  "artifact_missing",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issue Type"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          },
+          "status": {
+            "enum": [
+              "unreviewed",
+              "approved",
+              "needs_fix",
+              "blocked"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "DocumentJobTranslationQaStateResponse",
+        "type": "object"
+      },
+      "DocumentJobTranslationQaSummaryResponse": {
+        "properties": {
+          "ai_call_count": {
+            "default": 0,
+            "title": "Ai Call Count",
+            "type": "integer"
+          },
+          "ai_call_statuses": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Ai Call Statuses",
+            "type": "object"
+          },
+          "final_segment_count": {
+            "default": 0,
+            "title": "Final Segment Count",
+            "type": "integer"
+          },
+          "quality_flags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Quality Flags",
+            "type": "array"
+          },
+          "returned_segment_count": {
+            "default": 0,
+            "title": "Returned Segment Count",
+            "type": "integer"
+          },
+          "source_comparison_available": {
+            "default": false,
+            "title": "Source Comparison Available",
+            "type": "boolean"
+          },
+          "source_comparison_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Comparison Reason"
+          },
+          "term_trace_count": {
+            "default": 0,
+            "title": "Term Trace Count",
+            "type": "integer"
+          }
+        },
+        "title": "DocumentJobTranslationQaSummaryResponse",
+        "type": "object"
+      },
+      "DocumentJobTranslationQaTermTraceResponse": {
+        "properties": {
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "context": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context"
+          },
+          "injected_to_glossary": {
+            "default": false,
+            "title": "Injected To Glossary",
+            "type": "boolean"
+          },
+          "match_end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match End"
+          },
+          "match_start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match Start"
+          },
+          "provider_trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Trace Id"
+          },
+          "segment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segment Id"
+          },
+          "source_term": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Term"
+          },
+          "target_term": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Term"
+          },
+          "translation_term_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translation Term Set Id"
+          },
+          "translation_term_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translation Term Version"
+          }
+        },
+        "title": "DocumentJobTranslationQaTermTraceResponse",
+        "type": "object"
+      },
+      "DocumentJobTranslationQaUpdateRequest": {
+        "properties": {
+          "issue_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "translation",
+                  "terminology",
+                  "layout",
+                  "source_quality",
+                  "artifact_missing",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issue Type"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "status": {
+            "enum": [
+              "unreviewed",
+              "approved",
+              "needs_fix",
+              "blocked"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "DocumentJobTranslationQaUpdateRequest",
+        "type": "object"
+      },
+      "DocumentJobTranslationQaUpdateResponse": {
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/DocumentJobResponse"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "qa": {
+            "$ref": "#/components/schemas/DocumentJobTranslationQaStateResponse"
+          }
+        },
+        "required": [
+          "job_id",
+          "qa",
+          "job"
+        ],
+        "title": "DocumentJobTranslationQaUpdateResponse",
         "type": "object"
       },
       "FileUploadResponse": {
@@ -6943,6 +7663,142 @@
           }
         },
         "summary": "Retry Document Job",
+        "tags": [
+          "document-jobs"
+        ]
+      }
+    },
+    "/api/v1/document-jobs/{job_id}/translation-qa": {
+      "get": {
+        "operationId": "get_document_job_translation_qa_api_v1_document_jobs__job_id__translation_qa_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentJobTranslationQaResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Document Job Translation Qa",
+        "tags": [
+          "document-jobs"
+        ]
+      },
+      "patch": {
+        "operationId": "update_document_job_translation_qa_api_v1_document_jobs__job_id__translation_qa_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentJobTranslationQaUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentJobTranslationQaUpdateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Document Job Translation Qa",
         "tags": [
           "document-jobs"
         ]

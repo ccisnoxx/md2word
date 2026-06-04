@@ -169,6 +169,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         template_read_service,
         term_version_service,
         job_resource_snapshot_service,
+        file_upload_service=file_upload_service,
     )
     term_rule_repository = FileTermRuleRepository(resolved_settings.term_rules_store_file)
     term_rule_service = TermRuleService(

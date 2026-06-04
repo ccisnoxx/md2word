@@ -187,6 +187,11 @@ export type DocumentJobResponse = {
   canceled_at: string | null;
   archived_at: string | null;
   archived_by: string | null;
+  translation_qa_status: TranslationQaStatus;
+  translation_qa_issue_type: TranslationQaIssueType | null;
+  translation_qa_note: string | null;
+  translation_qa_reviewed_by: string | null;
+  translation_qa_reviewed_at: string | null;
   request_snapshot: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -246,6 +251,111 @@ export type DocumentJobEventListResponse = {
 export type DocumentJobFileListResponse = {
   job_id: string;
   files: DocumentFileResponse[];
+};
+
+export type TranslationQaStatus = "unreviewed" | "approved" | "needs_fix" | "blocked";
+export type TranslationQaIssueType =
+  | "translation"
+  | "terminology"
+  | "layout"
+  | "source_quality"
+  | "artifact_missing"
+  | "other";
+
+export type DocumentJobTranslationQaStateResponse = {
+  status: TranslationQaStatus;
+  issue_type: TranslationQaIssueType | null;
+  note: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+};
+
+export type DocumentJobTranslationQaArtifactsResponse = {
+  document_ir_file_id: string | null;
+  ai_call_log_file_ids: string[];
+  ai_debug_archive_file_ids: string[];
+};
+
+export type DocumentJobTranslationQaSummaryResponse = {
+  final_segment_count: number;
+  returned_segment_count: number;
+  quality_flags: string[];
+  ai_call_count: number;
+  ai_call_statuses: Record<string, number>;
+  term_trace_count: number;
+  source_comparison_available: boolean;
+  source_comparison_reason: string | null;
+};
+
+export type DocumentJobTranslationQaSegmentResponse = {
+  id: string;
+  block_id: string;
+  page_index: number | null;
+  order: number;
+  block_type: string;
+  field: string;
+  index: number | null;
+  source_text: string | null;
+  ai_translation_text: string | null;
+  final_text: string;
+  source_available: boolean;
+};
+
+export type DocumentJobTranslationQaTermTraceResponse = {
+  segment_id: string | null;
+  batch_id: string | null;
+  translation_term_set_id: string | null;
+  translation_term_version: string | null;
+  source_term: string | null;
+  target_term: string | null;
+  match_start: number | null;
+  match_end: number | null;
+  context: Record<string, unknown> | null;
+  injected_to_glossary: boolean;
+  provider_trace_id: string | null;
+};
+
+export type DocumentJobTranslationQaAiCallResponse = {
+  file_id: string;
+  call_id: string | null;
+  status: string | null;
+  provider: Record<string, unknown>;
+  language_pair: string | null;
+  source_language: string | null;
+  target_language: string | null;
+  term_version_id: string | null;
+  term_snapshot_hash: string | null;
+  term_count: number;
+  item_count: number;
+  char_count: number;
+  duration_ms: number | null;
+  created_at: string | null;
+  error_type: string | null;
+  error_message: string | null;
+};
+
+export type DocumentJobTranslationQaResponse = {
+  job_id: string;
+  available: boolean;
+  availability_reason: string | null;
+  qa: DocumentJobTranslationQaStateResponse;
+  artifacts: DocumentJobTranslationQaArtifactsResponse;
+  summary: DocumentJobTranslationQaSummaryResponse;
+  segments: DocumentJobTranslationQaSegmentResponse[];
+  term_traces: DocumentJobTranslationQaTermTraceResponse[];
+  ai_calls: DocumentJobTranslationQaAiCallResponse[];
+};
+
+export type DocumentJobTranslationQaUpdateRequest = {
+  status: TranslationQaStatus;
+  issue_type?: TranslationQaIssueType | null;
+  note?: string | null;
+};
+
+export type DocumentJobTranslationQaUpdateResponse = {
+  job_id: string;
+  qa: DocumentJobTranslationQaStateResponse;
+  job: DocumentJobResponse;
 };
 
 export type DocumentJobConfigVersionOption = {

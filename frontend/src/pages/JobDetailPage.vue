@@ -8,6 +8,9 @@
       </div>
       <div class="toolbar">
         <el-button :icon="ArrowLeft" @click="$router.push('/jobs')">返回列表</el-button>
+        <el-button v-if="job?.mode === 'en2zh_pdf_to_word'" :icon="DataAnalysis" @click="openTranslationQa">
+          翻译 QA
+        </el-button>
         <JobActions
           v-if="job"
           :job="job"
@@ -263,7 +266,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { ArrowLeft, Download, EditPen, Refresh } from "@element-plus/icons-vue";
+import { ArrowLeft, DataAnalysis, Download, EditPen, Refresh } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 
 import type {
@@ -586,6 +589,13 @@ function openTranslationTermProposal(): void {
   appendQueryValue(query, "observed_translation_term_set_id", translationTermProposalSetId.value);
   appendQueryValue(query, "observed_translation_term_version", translationTermProposalVersion.value);
   void router.push({ name: "term-proposals", query });
+}
+
+function openTranslationQa(): void {
+  if (!job.value) {
+    return;
+  }
+  void router.push({ name: "job-translation-qa", params: { jobId: job.value.id } });
 }
 
 async function handleDownload(target: DocumentJobResponse): Promise<void> {

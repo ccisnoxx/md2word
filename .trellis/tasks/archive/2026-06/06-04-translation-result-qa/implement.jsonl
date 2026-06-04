@@ -1,0 +1,11 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend pre-development checklist and quality gate for document_jobs API/service changes."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Endpoint and service placement rules for domain-first backend changes."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "JSON payload persistence and additive DocumentJobRecord field guidance."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "HTTP status semantics for unavailable QA evidence and invalid job modes."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Thin-router, schema, and targeted unittest requirements."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Event/log payload sensitivity rules for QA updates and AI artifacts."}
+{"file": ".trellis/tasks/06-03-product-roadmap/prd.md", "reason": "Parent product boundaries and explicit non-goals."}
+{"file": ".trellis/tasks/06-03-product-roadmap/design.md", "reason": "Phase 3 result QA and traceability roadmap scope."}
+{"file": ".trellis/tasks/06-03-product-roadmap/implement.md", "reason": "Parent task decomposition and translation-result-qa placement."}
+{"file": "docs/dev/translation-ai-audit-debug.md", "reason": "AI call log and debug archive retention/security contract."}
+{"file": "docs/dev/translation-profile-and-segment-trace-guide.md", "reason": "Existing trace fields and known segment-trace limitations."}

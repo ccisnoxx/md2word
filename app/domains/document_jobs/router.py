@@ -34,6 +34,10 @@ from app.domains.document_jobs.schemas import (
     DocumentJobResponse,
     DocumentJobRetryRequest,
     DocumentJobRetryResponse,
+    DocumentJobTranslationQaResponse,
+    DocumentJobTranslationQaStateResponse,
+    DocumentJobTranslationQaUpdateRequest,
+    DocumentJobTranslationQaUpdateResponse,
 )
 from app.services.auth.models import AuthenticatedUser
 
@@ -153,6 +157,39 @@ def get_document_job_files(
     return DocumentJobFileListResponse(
         job_id=job_id,
         files=[_build_document_file_response(file) for file in files],
+    )
+
+
+@router.get("/{job_id}/translation-qa", response_model=DocumentJobTranslationQaResponse)
+def get_document_job_translation_qa(
+    job_id: str,
+    limit: int = Query(default=200, ge=1, le=500),
+    runtime: AppRuntime = Depends(get_runtime),
+    user: AuthenticatedUser = Depends(require_current_user),
+) -> DocumentJobTranslationQaResponse:
+    return runtime.document_job_service.get_translation_qa(job_id, user=user, limit=limit)
+
+
+@router.patch("/{job_id}/translation-qa", response_model=DocumentJobTranslationQaUpdateResponse)
+def update_document_job_translation_qa(
+    job_id: str,
+    payload: DocumentJobTranslationQaUpdateRequest,
+    runtime: AppRuntime = Depends(get_runtime),
+    user: AuthenticatedUser = Depends(require_current_user),
+    trace_id: str = Depends(get_trace_id),
+) -> DocumentJobTranslationQaUpdateResponse:
+    job = runtime.document_job_service.update_translation_qa(
+        job_id,
+        user=user,
+        qa_status=payload.status,
+        issue_type=payload.issue_type,
+        note=payload.note,
+        trace_id=trace_id,
+    )
+    return DocumentJobTranslationQaUpdateResponse(
+        job_id=job.id,
+        qa=_build_translation_qa_state_response(job),
+        job=_build_document_job_response(job),
     )
 
 
@@ -316,6 +353,16 @@ def _build_document_job_event_response(event: DocumentJobEventRecord) -> Documen
 
 def _build_document_file_response(file: DocumentFileRecord) -> DocumentFileResponse:
     return DocumentFileResponse(**file.model_dump(mode="python"))
+
+
+def _build_translation_qa_state_response(job: DocumentJobRecord) -> DocumentJobTranslationQaStateResponse:
+    return DocumentJobTranslationQaStateResponse(
+        status=job.translation_qa_status,
+        issue_type=job.translation_qa_issue_type,
+        note=job.translation_qa_note,
+        reviewed_by=job.translation_qa_reviewed_by,
+        reviewed_at=job.translation_qa_reviewed_at,
+    )
 
 
 def _actor_from_user(user: AuthenticatedUser) -> ActorContext:
