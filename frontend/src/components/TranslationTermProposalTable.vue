@@ -20,6 +20,18 @@
           {{ row.observed_translation_term_set_id || "-" }}@{{ row.observed_translation_term_version || "-" }}
         </template>
       </el-table-column>
+      <el-table-column label="来源任务" min-width="150">
+        <template #default="{ row }">
+          <router-link
+            v-if="row.source_job_id"
+            class="job-link"
+            :to="{ name: 'job-detail', params: { jobId: row.source_job_id } }"
+          >
+            {{ row.source_job_id }}
+          </router-link>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
       <el-table-column label="创建时间" width="190">
         <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
       </el-table-column>
@@ -62,5 +74,10 @@ const statusText: Record<string, string> = {
 <style scoped lang="scss">
 .proposal-table-wrap {
   overflow-x: auto;
+}
+
+.job-link {
+  color: #2563eb;
+  font-weight: 600;
 }
 </style>

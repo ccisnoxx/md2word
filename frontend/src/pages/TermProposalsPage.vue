@@ -70,10 +70,102 @@
               <el-input v-model="proposalForm.reason" type="textarea" :rows="3" placeholder="说明来源、问题和期望效果。" />
             </el-form-item>
             <el-form-item label="来源任务" prop="source_job_id">
-              <el-input v-model="proposalForm.source_job_id" clearable placeholder="可选 job_id" />
+              <el-input
+                v-model="proposalForm.source_job_id"
+                :disabled="termRuleContextLocked"
+                clearable
+                placeholder="可选 job_id"
+              />
             </el-form-item>
+            <div v-if="termRuleContextVisible" class="proposal-context-summary">
+              <el-descriptions :column="2" border size="small">
+                <el-descriptions-item label="来源任务">
+                  <router-link
+                    v-if="proposalForm.source_job_id"
+                    class="context-link"
+                    :to="{ name: 'job-detail', params: { jobId: proposalForm.source_job_id } }"
+                  >
+                    {{ proposalForm.source_job_id }}
+                  </router-link>
+                  <span v-else>-</span>
+                </el-descriptions-item>
+                <el-descriptions-item label="来源文件">{{ proposalForm.source_file_id || "-" }}</el-descriptions-item>
+                <el-descriptions-item label="Observed Set">
+                  {{ proposalForm.observed_term_rule_set_id || "-" }}
+                </el-descriptions-item>
+                <el-descriptions-item label="Observed Version">
+                  {{ proposalForm.observed_term_rule_version || "-" }}
+                </el-descriptions-item>
+              </el-descriptions>
+            </div>
             <el-form-item>
               <el-button type="primary" :loading="submitting" @click="submitProposal">提交建议</el-button>
+            </el-form-item>
+          </el-form>
+        </el-card>
+      </el-tab-pane>
+      <el-tab-pane label="翻译术语新建" name="translation-new">
+        <el-card class="card-flat" shadow="never">
+          <el-form
+            ref="translationProposalFormRef"
+            :model="translationProposalForm"
+            :rules="translationProposalRules"
+            label-width="110px"
+          >
+            <el-form-item label="动作" prop="action">
+              <el-radio-group v-model="translationProposalForm.action" @change="handleTranslationActionChange">
+                <el-radio-button value="add">新增</el-radio-button>
+                <el-radio-button value="update">编辑</el-radio-button>
+                <el-radio-button value="delete">删除</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item label="原文术语" prop="source_term">
+              <el-input v-model="translationProposalForm.source_term" placeholder="例如 FPGA" />
+            </el-form-item>
+            <el-form-item v-if="translationProposalForm.action !== 'delete'" label="目标译文" prop="target_term">
+              <el-input v-model="translationProposalForm.target_term" placeholder="例如 现场可编程门阵列" />
+            </el-form-item>
+            <el-form-item label="原因说明">
+              <el-input
+                v-model="translationProposalForm.note"
+                type="textarea"
+                :rows="3"
+                placeholder="说明来源、问题和期望译法。"
+              />
+            </el-form-item>
+            <el-form-item label="来源任务" prop="source_job_id">
+              <el-input
+                v-model="translationProposalForm.source_job_id"
+                :disabled="translationContextLocked"
+                clearable
+                placeholder="可选 job_id"
+              />
+            </el-form-item>
+            <div v-if="translationContextVisible" class="proposal-context-summary">
+              <el-descriptions :column="2" border size="small">
+                <el-descriptions-item label="来源任务">
+                  <router-link
+                    v-if="translationProposalForm.source_job_id"
+                    class="context-link"
+                    :to="{ name: 'job-detail', params: { jobId: translationProposalForm.source_job_id } }"
+                  >
+                    {{ translationProposalForm.source_job_id }}
+                  </router-link>
+                  <span v-else>-</span>
+                </el-descriptions-item>
+                <el-descriptions-item label="来源文件">{{ translationProposalForm.source_file_id || "-" }}</el-descriptions-item>
+                <el-descriptions-item label="Observed Set">
+                  {{ translationProposalForm.observed_translation_term_set_id || "-" }}
+                </el-descriptions-item>
+                <el-descriptions-item label="Observed Version">
+                  {{ translationProposalForm.observed_translation_term_version || "-" }}
+                </el-descriptions-item>
+              </el-descriptions>
+            </div>
+            <el-form-item>
+              <el-button type="primary" :loading="submitting" @click="submitTranslationProposal">
+                提交翻译术语建议
+              </el-button>
             </el-form-item>
           </el-form>
         </el-card>
@@ -110,6 +202,19 @@
                   <p><b>分类：</b>{{ categoryName(selectedProposal.category_id) }}</p>
                   <p><b>分段：</b><TermPreview :segments="selectedProposal.segments" /></p>
                   <p><b>原因：</b>{{ selectedProposal.reason }}</p>
+                  <p>
+                    <b>来源任务：</b>
+                    <router-link
+                      v-if="selectedProposal.source_job_id"
+                      class="context-link"
+                      :to="{ name: 'job-detail', params: { jobId: selectedProposal.source_job_id } }"
+                    >
+                      {{ selectedProposal.source_job_id }}
+                    </router-link>
+                    <span v-else>-</span>
+                  </p>
+                  <p><b>来源文件：</b>{{ selectedProposal.source_file_id || "-" }}</p>
+                  <p><b>绑定版本：</b>{{ selectedTermRuleObservedVersionLabel }}</p>
                 </div>
                 <div>
                   <h3>当前规则</h3>
@@ -192,7 +297,17 @@
                 <div>
                   <h3>提议变更</h3>
                   <p><b>绑定版本：</b>{{ translationObservedVersionLabel }}</p>
-                  <p><b>来源任务：</b>{{ selectedTranslationProposal.source_job_id || "-" }}</p>
+                  <p>
+                    <b>来源任务：</b>
+                    <router-link
+                      v-if="selectedTranslationProposal.source_job_id"
+                      class="context-link"
+                      :to="{ name: 'job-detail', params: { jobId: selectedTranslationProposal.source_job_id } }"
+                    >
+                      {{ selectedTranslationProposal.source_job_id }}
+                    </router-link>
+                    <span v-else>-</span>
+                  </p>
                   <p><b>来源文件：</b>{{ selectedTranslationProposal.source_file_id || "-" }}</p>
                   <pre>{{ translationChangesText }}</pre>
                 </div>
@@ -254,9 +369,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { ElMessage, type FormInstance, type FormRules } from "element-plus";
 import { Refresh } from "@element-plus/icons-vue";
+import { useRoute } from "vue-router";
 
 import {
   termProposalsApi,
@@ -272,6 +388,7 @@ import type {
   TermRuleResponse,
   TermRuleSegmentResponse,
   TermRuleSegmentWriteRequest,
+  TranslationTermProposalAction,
   TranslationTermProposalResponse,
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
@@ -302,9 +419,10 @@ const translationProposalStatusText: Record<string, string> = {
   published: "已发布",
 };
 
+const route = useRoute();
 const auth = useAuthStore();
 const isAdmin = computed(() => auth.user?.role === "admin");
-const activeTab = ref(isAdmin.value ? "review" : "mine");
+const activeTab = ref(initialActiveTab());
 const loading = ref(false);
 const submitting = ref(false);
 const reviewing = ref(false);
@@ -319,6 +437,9 @@ const currentRule = ref<TermRuleResponse | null>(null);
 const reviewComment = ref("");
 const translationReviewNote = ref("");
 const proposalFormRef = ref<FormInstance>();
+const translationProposalFormRef = ref<FormInstance>();
+const termRuleContextLocked = ref(false);
+const translationContextLocked = ref(false);
 
 const proposalForm = reactive({
   intent: "create" as TermRuleProposalIntent,
@@ -330,16 +451,55 @@ const proposalForm = reactive({
   ] as TermRuleSegmentWriteRequest[],
   reason: "",
   source_job_id: "",
+  source_file_id: "",
+  page_number: null as number | null,
+  context_before: "",
+  context_after: "",
+  observed_term_rule_set_id: "",
+  observed_term_rule_version: "",
   target_rule_id: "",
+});
+
+const translationProposalForm = reactive({
+  action: "add" as TranslationTermProposalAction,
+  source_term: "",
+  target_term: "",
+  note: "",
+  source_job_id: "",
+  source_file_id: "",
+  observed_translation_term_set_id: "",
+  observed_translation_term_version: "",
 });
 
 const categoryMap = computed(() =>
   Object.fromEntries(categories.value.map((category) => [category.id, category.name])),
 );
 
+const termRuleContextVisible = computed(() =>
+  Boolean(
+    proposalForm.source_job_id ||
+    proposalForm.source_file_id ||
+    proposalForm.observed_term_rule_set_id ||
+    proposalForm.observed_term_rule_version,
+  ),
+);
+const translationContextVisible = computed(() =>
+  Boolean(
+    translationProposalForm.source_job_id ||
+    translationProposalForm.source_file_id ||
+    translationProposalForm.observed_translation_term_set_id ||
+    translationProposalForm.observed_translation_term_version,
+  ),
+);
 const snapshotText = computed(() => JSON.stringify(selectedProposal.value?.target_rule_snapshot ?? null, null, 2));
 const currentRuleText = computed(() => JSON.stringify(currentRule.value ?? null, null, 2));
 const translationChangesText = computed(() => JSON.stringify(selectedTranslationProposal.value?.changes ?? [], null, 2));
+const selectedTermRuleObservedVersionLabel = computed(() => {
+  if (!selectedProposal.value) {
+    return "-";
+  }
+  return `${selectedProposal.value.observed_term_rule_set_id || "-"}@${selectedProposal.value.observed_term_rule_version || "-"}`;
+});
 const translationObservedVersionLabel = computed(() => {
   if (!selectedTranslationProposal.value) {
     return "-";
@@ -407,6 +567,34 @@ const proposalRules: FormRules = {
   reason: [{ required: true, message: "请填写原因说明", trigger: "blur" }],
 };
 
+const translationProposalRules: FormRules = {
+  action: [{ required: true, message: "请选择动作", trigger: "change" }],
+  source_term: [
+    {
+      validator: (_rule, value, callback) => {
+        if (!String(value || "").trim()) {
+          callback(new Error("请填写原文术语。"));
+          return;
+        }
+        callback();
+      },
+      trigger: "blur",
+    },
+  ],
+  target_term: [
+    {
+      validator: (_rule, value, callback) => {
+        if (translationProposalForm.action === "add" && !String(value || "").trim()) {
+          callback(new Error("新增翻译术语必须填写目标译文。"));
+          return;
+        }
+        callback();
+      },
+      trigger: "blur",
+    },
+  ],
+};
+
 async function loadReferenceData(): Promise<void> {
   const [categoryResponse, ruleResponse] = await Promise.all([
     termRulesApi.listCategories(),
@@ -423,6 +611,13 @@ async function loadActiveTab(): Promise<void> {
   selectedTranslationProposal.value = null;
   currentRule.value = null;
   try {
+    if (activeTab.value === "new") {
+      await loadReferenceData();
+      return;
+    }
+    if (activeTab.value === "translation-new") {
+      return;
+    }
     if (activeTab.value.startsWith("translation-")) {
       const scope = translationActiveTabScope();
       translationProposals.value = (await translationTermProposalsApi.list({ scope })).items;
@@ -459,9 +654,14 @@ function translationActiveTabScope(): TranslationTermProposalScope {
 }
 
 function handleTabChange(): void {
-  if (activeTab.value !== "new") {
-    void loadActiveTab();
+  if (activeTab.value === "new") {
+    void loadReferenceData();
+    return;
   }
+  if (activeTab.value === "translation-new") {
+    return;
+  }
+  void loadActiveTab();
 }
 
 function handleIntentChange(): void {
@@ -534,6 +734,48 @@ function normalizeRuleSnapshot(rule: TermRuleResponse): Record<string, unknown> 
   };
 }
 
+function queryString(key: string): string {
+  const value = route.query[key];
+  if (Array.isArray(value)) {
+    return typeof value[0] === "string" ? value[0] : "";
+  }
+  return typeof value === "string" ? value : "";
+}
+
+function initialActiveTab(): string {
+  const tab = queryString("tab");
+  if (["new", "translation-new", "mine", "translation-mine"].includes(tab)) {
+    return tab;
+  }
+  return isAdmin.value ? "review" : "mine";
+}
+
+function applyRouteProposalContext(): void {
+  const tab = queryString("tab");
+  if (tab === "new") {
+    resetProposalForm();
+    proposalForm.source_job_id = queryString("source_job_id");
+    proposalForm.source_file_id = queryString("source_file_id");
+    proposalForm.observed_term_rule_set_id = queryString("observed_term_rule_set_id");
+    proposalForm.observed_term_rule_version = queryString("observed_term_rule_version");
+    termRuleContextLocked.value = Boolean(proposalForm.source_job_id);
+    activeTab.value = "new";
+    return;
+  }
+  if (tab === "translation-new") {
+    resetTranslationProposalForm();
+    translationProposalForm.source_job_id = queryString("source_job_id");
+    translationProposalForm.source_file_id = queryString("source_file_id");
+    translationProposalForm.observed_translation_term_set_id = queryString("observed_translation_term_set_id");
+    translationProposalForm.observed_translation_term_version = queryString("observed_translation_term_version");
+    translationContextLocked.value = Boolean(translationProposalForm.source_job_id);
+    activeTab.value = "translation-new";
+    return;
+  }
+  termRuleContextLocked.value = false;
+  translationContextLocked.value = false;
+}
+
 async function submitProposal(): Promise<void> {
   const valid = await proposalFormRef.value?.validate().catch(() => false);
   if (!valid) {
@@ -550,6 +792,12 @@ async function submitProposal(): Promise<void> {
       segments: proposalForm.intent === "disable" ? null : proposalForm.segments,
       reason: proposalForm.reason,
       source_job_id: proposalForm.source_job_id || null,
+      source_file_id: proposalForm.source_file_id || null,
+      page_number: proposalForm.page_number,
+      context_before: proposalForm.context_before || null,
+      context_after: proposalForm.context_after || null,
+      observed_term_rule_set_id: proposalForm.observed_term_rule_set_id || null,
+      observed_term_rule_version: proposalForm.observed_term_rule_version || null,
       target_rule_id: proposalForm.target_rule_id || null,
     });
     ElMessage.success("术语建议已提交。");
@@ -573,7 +821,67 @@ function resetProposalForm(): void {
   ];
   proposalForm.reason = "";
   proposalForm.source_job_id = "";
+  proposalForm.source_file_id = "";
+  proposalForm.page_number = null;
+  proposalForm.context_before = "";
+  proposalForm.context_after = "";
+  proposalForm.observed_term_rule_set_id = "";
+  proposalForm.observed_term_rule_version = "";
   proposalForm.target_rule_id = "";
+  termRuleContextLocked.value = false;
+}
+
+function resetTranslationProposalForm(): void {
+  translationProposalForm.action = "add";
+  translationProposalForm.source_term = "";
+  translationProposalForm.target_term = "";
+  translationProposalForm.note = "";
+  translationProposalForm.source_job_id = "";
+  translationProposalForm.source_file_id = "";
+  translationProposalForm.observed_translation_term_set_id = "";
+  translationProposalForm.observed_translation_term_version = "";
+  translationContextLocked.value = false;
+}
+
+function handleTranslationActionChange(): void {
+  if (translationProposalForm.action === "delete") {
+    translationProposalForm.target_term = "";
+  }
+}
+
+async function submitTranslationProposal(): Promise<void> {
+  const valid = await translationProposalFormRef.value?.validate().catch(() => false);
+  if (!valid) {
+    return;
+  }
+
+  submitting.value = true;
+  error.value = null;
+  try {
+    await translationTermProposalsApi.create({
+      language_pair: "en2zh",
+      source_job_id: translationProposalForm.source_job_id || null,
+      source_file_id: translationProposalForm.source_file_id || null,
+      observed_translation_term_set_id: translationProposalForm.observed_translation_term_set_id || null,
+      observed_translation_term_version: translationProposalForm.observed_translation_term_version || null,
+      changes: [
+        {
+          action: translationProposalForm.action,
+          source_term: translationProposalForm.source_term,
+          target_term: translationProposalForm.action === "delete" ? null : translationProposalForm.target_term || null,
+          note: translationProposalForm.note || null,
+        },
+      ],
+    });
+    ElMessage.success("翻译术语建议已提交。");
+    activeTab.value = "translation-mine";
+    resetTranslationProposalForm();
+    await loadActiveTab();
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    submitting.value = false;
+  }
 }
 
 async function selectProposal(proposal: TermRuleProposalResponse): Promise<void> {
@@ -711,9 +1019,10 @@ async function rejectTranslationProposal(): Promise<void> {
   }
 }
 
-onMounted(() => {
+watch(() => route.fullPath, () => {
+  applyRouteProposalContext();
   void loadActiveTab();
-});
+}, { immediate: true });
 </script>
 
 <style scoped lang="scss">

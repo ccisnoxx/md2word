@@ -1,0 +1,232 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - link "内部文档转换工作台" [ref=e6] [cursor=pointer]:
+        - /url: /jobs
+      - generic [ref=e170]: MVP
+    - navigation "主导航" [ref=e7]:
+      - link "任务工作台" [ref=e8] [cursor=pointer]:
+        - /url: /jobs
+      - link "配置中心" [ref=e9] [cursor=pointer]:
+        - /url: /settings
+      - link "提案审核" [ref=e10] [cursor=pointer]:
+        - /url: /term-proposals
+      - link "系统状态" [ref=e11] [cursor=pointer]:
+        - /url: /system-status
+    - generic [ref=e12]:
+      - generic [ref=e13]: Admin Demo (admin)
+      - button "退出" [ref=e14] [cursor=pointer]:
+        - img [ref=e16]
+        - generic [ref=e19]: 退出
+  - main [ref=e20]:
+    - main "术语规则检查" [ref=e21]:
+      - generic [ref=e22]:
+        - generic [ref=e23]:
+          - paragraph [ref=e24]: Term Rule Workbench
+          - heading "术语规则检查" [level=1] [ref=e25]
+          - paragraph [ref=e26]: 只读查看当前术语规则，并用模拟接口检查文本渲染结果。
+        - button "刷新" [ref=e171] [cursor=pointer]:
+          - img [ref=e173]
+          - generic [ref=e175]: 刷新
+      - region "术语规则统计" [ref=e27]:
+        - generic [ref=e29]:
+          - text: 分类数
+          - strong [ref=e30]: "2"
+        - generic [ref=e32]:
+          - text: 规则总数
+          - strong [ref=e33]: "3"
+        - generic [ref=e35]:
+          - text: 启用规则
+          - strong [ref=e36]: "2"
+      - generic [ref=e37]:
+        - generic [ref=e39]:
+          - generic [ref=e41]:
+            - heading "分类概览" [level=2] [ref=e42]
+            - paragraph [ref=e43]: 来自当前 live term rules store。
+          - generic [ref=e45]:
+            - table [ref=e47]:
+              - rowgroup [ref=e53]:
+                - row "分类 状态 规则 启用" [ref=e54]:
+                  - columnheader "分类" [ref=e55]:
+                    - generic [ref=e56]: 分类
+                  - columnheader "状态" [ref=e57]:
+                    - generic [ref=e58]: 状态
+                  - columnheader "规则" [ref=e59]:
+                    - generic [ref=e60]: 规则
+                  - columnheader "启用" [ref=e61]:
+                    - generic [ref=e62]: 启用
+            - table [ref=e67]:
+              - rowgroup [ref=e73]:
+                - row "电源 启用 2 2" [ref=e74]:
+                  - cell "电源" [ref=e75]:
+                    - generic [ref=e76]: 电源
+                  - cell "启用" [ref=e77]:
+                    - generic [ref=e177]: 启用
+                  - cell "2" [ref=e79]:
+                    - generic [ref=e80]: "2"
+                  - cell "2" [ref=e81]:
+                    - generic [ref=e82]: "2"
+                - row "历史规则 停用 1 0" [ref=e83]:
+                  - cell "历史规则" [ref=e84]:
+                    - generic [ref=e85]: 历史规则
+                  - cell "停用" [ref=e86]:
+                    - generic [ref=e179]: 停用
+                  - cell "1" [ref=e88]:
+                    - generic [ref=e89]: "1"
+                  - cell "0" [ref=e90]:
+                    - generic [ref=e91]: "0"
+        - generic [ref=e93]:
+          - generic [ref=e94]:
+            - generic [ref=e95]:
+              - heading "规则列表" [level=2] [ref=e96]
+              - paragraph [ref=e97]: 仅支持查看、筛选和模拟，不提供编辑入口。
+            - generic [ref=e98]: 共 2 条
+          - search [ref=e99]:
+            - generic [ref=e101] [cursor=pointer]:
+              - generic:
+                - combobox [ref=e103]
+                - generic [ref=e104]: 全部分类
+              - img [ref=e107]
+            - generic [ref=e110] [cursor=pointer]:
+              - generic:
+                - combobox [ref=e112]
+                - generic [ref=e113]: 全部状态
+              - img [ref=e116]
+            - textbox "搜索 source term" [ref=e120]
+            - button "搜索" [ref=e180] [cursor=pointer]:
+              - img [ref=e182]
+              - generic [ref=e184]: 搜索
+            - button "清除" [ref=e122] [cursor=pointer]:
+              - generic [ref=e123]: 清除
+          - generic [ref=e125]:
+            - table [ref=e127]:
+              - rowgroup [ref=e136]:
+                - row "Source term 预览 分类 Scope Priority 状态 详情" [ref=e137]:
+                  - columnheader "Source term" [ref=e138]:
+                    - generic [ref=e139]: Source term
+                  - columnheader "预览" [ref=e140]:
+                    - generic [ref=e141]: 预览
+                  - columnheader "分类" [ref=e142]:
+                    - generic [ref=e143]: 分类
+                  - columnheader "Scope" [ref=e144]:
+                    - generic [ref=e145]: Scope
+                  - columnheader "Priority" [ref=e146]:
+                    - generic [ref=e147]: Priority
+                  - columnheader "状态" [ref=e148]:
+                    - generic [ref=e149]: 状态
+                  - columnheader "详情" [ref=e150]:
+                    - generic [ref=e151]: 详情
+            - table [ref=e185]:
+              - rowgroup [ref=e194]:
+                - row "VIN V IN 电源 all 10 启用 查看" [ref=e195]:
+                  - cell "VIN" [ref=e196]:
+                    - generic [ref=e197]: VIN
+                  - cell "V IN" [ref=e198]:
+                    - generic [ref=e200]:
+                      - generic [ref=e201]: V
+                      - subscript [ref=e202]: IN
+                  - cell "电源" [ref=e203]:
+                    - generic [ref=e204]: 电源
+                  - cell "all" [ref=e205]:
+                    - generic [ref=e206]: all
+                  - cell "10" [ref=e207]:
+                    - generic [ref=e208]: "10"
+                  - cell "启用" [ref=e209]:
+                    - generic [ref=e212]: 启用
+                  - cell "查看" [ref=e213]:
+                    - button "查看" [ref=e215] [cursor=pointer]:
+                      - generic [ref=e216]: 查看
+                - row "VOUT V OUT 电源 all 20 启用 查看" [ref=e217]:
+                  - cell "VOUT" [ref=e218]:
+                    - generic [ref=e219]: VOUT
+                  - cell "V OUT" [ref=e220]:
+                    - generic [ref=e222]:
+                      - generic [ref=e223]: V
+                      - subscript [ref=e224]: OUT
+                  - cell "电源" [ref=e225]:
+                    - generic [ref=e226]: 电源
+                  - cell "all" [ref=e227]:
+                    - generic [ref=e228]: all
+                  - cell "20" [ref=e229]:
+                    - generic [ref=e230]: "20"
+                  - cell "启用" [ref=e231]:
+                    - generic [ref=e234]: 启用
+                  - cell "查看" [ref=e235]:
+                    - button "查看" [ref=e237] [cursor=pointer]:
+                      - generic [ref=e238]: 查看
+      - generic [ref=e159]:
+        - generic [ref=e161]:
+          - heading "规则模拟" [level=2] [ref=e162]
+          - paragraph [ref=e163]: 结果按文本展示，HTML preview 不直接渲染。
+        - textbox "输入需要检查的文本，例如 VIN and VOUT" [ref=e165]
+        - button "模拟" [disabled] [ref=e167]:
+          - generic [ref=e168]: 模拟
+      - dialog "规则详情" [ref=e240]:
+        - generic [ref=e241]:
+          - heading "规则详情" [level=2] [ref=e242]
+          - button "关闭此对话框" [ref=e243] [cursor=pointer]:
+            - img [ref=e245]
+        - generic [ref=e248]:
+          - table [ref=e251]:
+            - rowgroup [ref=e252]:
+              - row "ID rule_vin" [ref=e253]:
+                - cell "ID" [ref=e254]
+                - cell "rule_vin" [ref=e255]
+              - row "Source term VIN" [ref=e256]:
+                - cell "Source term" [ref=e257]
+                - cell "VIN" [ref=e258]
+              - row "分类 电源" [ref=e259]:
+                - cell "分类" [ref=e260]
+                - cell "电源" [ref=e261]
+              - row "Scope all" [ref=e262]:
+                - cell "Scope" [ref=e263]
+                - cell "all" [ref=e264]
+              - row "Case sensitive 是" [ref=e265]:
+                - cell "Case sensitive" [ref=e266]
+                - cell "是" [ref=e267]
+              - row "Priority 10" [ref=e268]:
+                - cell "Priority" [ref=e269]
+                - cell "10" [ref=e270]
+              - row "状态 启用" [ref=e271]:
+                - cell "状态" [ref=e272]
+                - cell "启用" [ref=e273]
+          - generic [ref=e274]:
+            - heading "Segments" [level=3] [ref=e275]
+            - generic [ref=e276]:
+              - generic [ref=e277]: V
+              - subscript [ref=e278]: IN
+            - generic [ref=e280]:
+              - table [ref=e282]:
+                - rowgroup [ref=e287]:
+                  - row "Seq Text Render" [ref=e288]:
+                    - columnheader "Seq" [ref=e289]:
+                      - generic [ref=e290]: Seq
+                    - columnheader "Text" [ref=e291]:
+                      - generic [ref=e292]: Text
+                    - columnheader "Render" [ref=e293]:
+                      - generic [ref=e294]: Render
+              - table [ref=e299]:
+                - rowgroup [ref=e304]:
+                  - row "1 V plain" [ref=e305]:
+                    - cell "1" [ref=e306]:
+                      - generic [ref=e307]: "1"
+                    - cell "V" [ref=e308]:
+                      - generic [ref=e309]: V
+                    - cell "plain" [ref=e310]:
+                      - generic [ref=e311]: plain
+                  - row "2 IN subscript" [ref=e312]:
+                    - cell "2" [ref=e313]:
+                      - generic [ref=e314]: "2"
+                    - cell "IN" [ref=e315]:
+                      - generic [ref=e316]: IN
+                    - cell "subscript" [ref=e317]:
+                      - generic [ref=e318]: subscript
+          - generic [ref=e319]:
+            - heading "Custom markdown" [level=3] [ref=e320]
+            - generic [ref=e321]: V~IN~
+          - generic [ref=e322]:
+            - heading "Custom HTML" [level=3] [ref=e323]
+            - generic [ref=e324]: V<sub>IN</sub>
+          - generic [ref=e325]:
+            - heading "Notes" [level=3] [ref=e326]
+            - paragraph [ref=e327]: input voltage

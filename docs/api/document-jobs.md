@@ -27,6 +27,7 @@ PUT /api/v1/files/{file_id}/content
 POST /api/v1/document-jobs
 GET /api/v1/document-jobs/{job_id}
 GET /api/v1/document-jobs/{job_id}/events
+GET /api/v1/document-jobs/config-summary
 GET /api/v1/document-jobs/{job_id}/download-url
 GET /api/v1/document-jobs/{job_id}/download?token=...
 ```
@@ -68,10 +69,25 @@ GET /api/v1/document-jobs/{job_id}/download?token=...
 | `term_rule_set_version` | 否 | 术语规则集版本。 |
 | `translation_term_set_id` | 否 | 翻译术语集。 |
 | `translation_term_version` | 否 | 翻译术语集版本。 |
+| `translation_profile_id` | 否 | 翻译配置 ID，仅 Admin 可显式选择。 |
+| `translation_profile_version` | 否 | 翻译配置版本，仅 Admin 可显式选择。 |
 | `debug_full_text` | 否 | 是否保留全文调试信息。 |
 
 - 响应：`201 Created`，包含 `job_id`、`status`、`stage`、`progress` 和完整 `job`。
 - 成功动作写入 `document_job.create` audit event。
+- 权限：Operator 只能使用默认配置；显式传 `template_version_id`、`term_version_id`、术语资产、翻译术语资产或翻译配置选择字段会返回 `403`。Admin 可绑定 published 资源版本。
+
+### `GET /api/v1/document-jobs/config-summary`
+
+- 用途：读取创建/重试任务所需的配置摘要。
+- 认证：Bearer JWT。
+- 响应：
+  - `role`
+  - `resource_mode`：`legacy` / `versioned`
+  - `defaults`：默认 Template、Term Rule Set、Translation Term Set、Translation Profile 摘要
+  - `options`：Admin 可选 published 版本；Operator 返回空列表
+  - `readiness`：`en2zh_available` 和非阻塞 warning
+- 语义：只读聚合接口，不修改默认指针、不导入导出术语、不触发任务处理。
 
 ### `GET /api/v1/document-jobs`
 
@@ -94,6 +110,7 @@ GET /api/v1/document-jobs/{job_id}/download?token=...
 - 用途：对失败任务重试。
 - 请求体可包含 `reason`、`use_latest_term_assets` 和术语资产选择字段。
 - 成功动作写入 `document_job.retry` audit event。
+- 权限：Operator 只能提交原因并沿用原配置；Admin 可选择使用最新默认术语资产或指定 published 术语资产。Retry 当前不重新绑定模板或翻译配置。
 
 ### `POST /api/v1/document-jobs/{job_id}/cancel`
 

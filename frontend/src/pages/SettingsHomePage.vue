@@ -30,7 +30,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { Collection, DocumentChecked, Files } from "@element-plus/icons-vue";
+import { Collection, DocumentChecked, Files, Search } from "@element-plus/icons-vue";
 
 import { configSummaryApi, type ConfigTodoSummaryResponse } from "@/api/configSummary";
 import ConfigTodoSummary from "@/components/ConfigTodoSummary.vue";
@@ -55,6 +55,12 @@ const cards = [
     description: "查看 draft 摘要、已发布版本和发布动作。",
     to: "/settings/term-rule-sets",
     icon: Collection,
+  },
+  {
+    title: "术语规则检查",
+    description: "浏览当前规则、检查渲染片段并模拟文本命中。",
+    to: "/settings/term-rules",
+    icon: Search,
   },
   {
     title: "翻译配置",
@@ -118,7 +124,7 @@ onMounted(() => {
 
 .settings-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
 }
 

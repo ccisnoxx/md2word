@@ -91,19 +91,24 @@ class DocumentJobService:
         term_rule_set_version: str | None,
         translation_term_set_id: str | None,
         translation_term_version: str | None,
+        translation_profile_id: str | None,
+        translation_profile_version: str | None,
         debug_full_text: bool,
         trace_id: str | None,
     ) -> DocumentJobRecord:
         """创建待处理 document_job，并在启用 Worker 后按 job_id 投递。"""
 
         source_file = self._get_source_file_for_create(source_file_id, user)
-        self._ensure_term_asset_selection_allowed(
+        self._ensure_resource_selection_allowed(
             user=user,
-            use_latest_term_assets=False,
+            template_version_id=template_version_id,
+            term_version_id=term_version_id,
             term_rule_set_id=term_rule_set_id,
             term_rule_set_version=term_rule_set_version,
             translation_term_set_id=translation_term_set_id,
             translation_term_version=translation_term_version,
+            translation_profile_id=translation_profile_id,
+            translation_profile_version=translation_profile_version,
         )
         normalized_template_version_id = self._resolve_template_version_id(template_version_id)
         normalized_term_version_id = self._resolve_term_version_id(
@@ -124,14 +129,19 @@ class DocumentJobService:
             term_rule_set_version=term_rule_set_version,
             translation_term_set_id=translation_term_set_id,
             translation_term_version=translation_term_version,
+            translation_profile_id=translation_profile_id,
+            translation_profile_version=translation_profile_version,
             resource_snapshot=self._build_resource_snapshot(
                 job_id=job_id,
                 mode=mode,
                 document_language=document_language,
+                template_version_id=normalized_template_version_id if self._normalize_optional_text(template_version_id) else None,
                 term_rule_set_id=term_rule_set_id,
                 term_rule_set_version=term_rule_set_version,
                 translation_term_set_id=translation_term_set_id,
                 translation_term_version=translation_term_version,
+                translation_profile_id=translation_profile_id,
+                translation_profile_version=translation_profile_version,
             ),
         )
         job = DocumentJobRecord(
@@ -306,7 +316,7 @@ class DocumentJobService:
         """对可重试失败任务按原 job_id 重新投递，保留既有中间产物用于幂等恢复。"""
 
         job = self.get_job(job_id, user=user)
-        self._ensure_term_asset_selection_allowed(
+        self._ensure_resource_selection_allowed(
             user=user,
             use_latest_term_assets=use_latest_term_assets,
             term_rule_set_id=term_rule_set_id,
@@ -739,6 +749,8 @@ class DocumentJobService:
         term_rule_set_version: str | None = None,
         translation_term_set_id: str | None = None,
         translation_term_version: str | None = None,
+        translation_profile_id: str | None = None,
+        translation_profile_version: str | None = None,
         resource_snapshot: dict | None = None,
     ) -> dict:
         return {
@@ -759,6 +771,10 @@ class DocumentJobService:
                 "term_rule_set_version": self._normalize_optional_text(term_rule_set_version),
                 "translation_term_set_id": self._normalize_optional_text(translation_term_set_id),
                 "translation_term_version": self._normalize_optional_text(translation_term_version),
+            },
+            "translation_profile": {
+                "translation_profile_id": self._normalize_optional_text(translation_profile_id),
+                "translation_profile_version": self._normalize_optional_text(translation_profile_version),
             },
             "resources": resource_snapshot,
             "debug_full_text_enabled": debug_full_text_enabled,
@@ -785,11 +801,15 @@ class DocumentJobService:
             job_id=job.id,
             mode=job.mode,
             document_language=job.document_language,
+            template_version_id=None,
             term_rule_set_id=term_rule_set_id,
             term_rule_set_version=None if use_latest_term_assets else term_rule_set_version,
             translation_term_set_id=translation_term_set_id,
             translation_term_version=None if use_latest_term_assets else translation_term_version,
+            translation_profile_id=None,
+            translation_profile_version=None,
         )
+        resource_snapshot = self._preserve_retry_template_and_profile(job.request_snapshot, resource_snapshot)
         snapshot["term_assets"] = {
             "use_latest_term_assets": use_latest_term_assets,
             "term_rule_set_id": self._normalize_optional_text(term_rule_set_id),
@@ -806,22 +826,38 @@ class DocumentJobService:
         job_id: str,
         mode: DocumentJobMode,
         document_language: str,
+        template_version_id: str | None,
         term_rule_set_id: str | None,
         term_rule_set_version: str | None,
         translation_term_set_id: str | None,
         translation_term_version: str | None,
+        translation_profile_id: str | None,
+        translation_profile_version: str | None,
     ) -> dict | None:
         if self.job_resource_snapshot_service is None:
             return None
         has_explicit_selection = any(
             self._normalize_optional_text(value)
-            for value in (term_rule_set_id, term_rule_set_version, translation_term_set_id, translation_term_version)
+            for value in (
+                template_version_id,
+                term_rule_set_id,
+                term_rule_set_version,
+                translation_term_set_id,
+                translation_term_version,
+                translation_profile_id,
+                translation_profile_version,
+            )
         )
+        template_id, template_version = self._split_template_version_id(template_version_id)
         options = ConversionOptions(
+            template_id=template_id,
+            template_version=template_version,
             term_rule_set_id=self._normalize_optional_text(term_rule_set_id),
             term_rule_set_version=self._normalize_optional_text(term_rule_set_version),
             translation_term_set_id=self._normalize_optional_text(translation_term_set_id),
             translation_term_version=self._normalize_optional_text(translation_term_version),
+            translation_profile_id=self._normalize_optional_text(translation_profile_id),
+            translation_profile_version=self._normalize_optional_text(translation_profile_version),
             translation_mode="en2zh" if mode == "en2zh_pdf_to_word" else "direct",
             document_language=document_language,
         )
@@ -839,35 +875,88 @@ class DocumentJobService:
             return None
         return snapshot.model_dump(mode="json")
 
-    def _ensure_term_asset_selection_allowed(
+    def _ensure_resource_selection_allowed(
         self,
         *,
         user: AuthenticatedUser,
-        use_latest_term_assets: bool,
-        term_rule_set_id: str | None,
-        term_rule_set_version: str | None,
-        translation_term_set_id: str | None,
-        translation_term_version: str | None,
+        use_latest_term_assets: bool = False,
+        template_version_id: str | None = None,
+        term_version_id: str | None = None,
+        term_rule_set_id: str | None = None,
+        term_rule_set_version: str | None = None,
+        translation_term_set_id: str | None = None,
+        translation_term_version: str | None = None,
+        translation_profile_id: str | None = None,
+        translation_profile_version: str | None = None,
     ) -> None:
         if user.role == "admin":
             return
-        selected = [
-            name
-            for name, value in {
-                "use_latest_term_assets": use_latest_term_assets,
-                "term_rule_set_id": term_rule_set_id,
-                "term_rule_set_version": term_rule_set_version,
-                "translation_term_set_id": translation_term_set_id,
-                "translation_term_version": translation_term_version,
-            }.items()
-            if value
-        ]
+        selected: list[str] = []
+        for name, value in {
+            "use_latest_term_assets": use_latest_term_assets,
+            "template_version_id": template_version_id,
+            "term_version_id": term_version_id,
+            "term_rule_set_id": term_rule_set_id,
+            "term_rule_set_version": term_rule_set_version,
+            "translation_term_set_id": translation_term_set_id,
+            "translation_term_version": translation_term_version,
+            "translation_profile_id": translation_profile_id,
+            "translation_profile_version": translation_profile_version,
+        }.items():
+            if isinstance(value, bool):
+                if value:
+                    selected.append(name)
+                continue
+            if self._normalize_optional_text(value):
+                selected.append(name)
         if selected:
             raise ApiError(
                 status.HTTP_403_FORBIDDEN,
                 "forbidden",
-                f"operator 不能选择术语资产历史版本: {', '.join(selected)}。",
+                f"operator 不能选择任务资源版本: {', '.join(selected)}。",
             )
+
+    def _split_template_version_id(self, template_version_id: str | None) -> tuple[str | None, str | None]:
+        normalized = self._normalize_optional_text(template_version_id)
+        if normalized is None:
+            return None, None
+        template_id, separator, version = normalized.partition("@")
+        if not separator:
+            return normalized, None
+        return template_id or None, version or None
+
+    def _preserve_retry_template_and_profile(self, request_snapshot: dict, resource_snapshot: dict | None) -> dict | None:
+        if resource_snapshot is None:
+            return None
+        previous_resources = request_snapshot.get("resources")
+        if not isinstance(previous_resources, dict):
+            return resource_snapshot
+        preserved = dict(resource_snapshot)
+        if isinstance(previous_resources.get("template"), dict):
+            preserved["template"] = previous_resources["template"]
+        if isinstance(previous_resources.get("translation_profile"), dict):
+            preserved["translation_profile"] = previous_resources["translation_profile"]
+        return preserved
+
+    def _snapshot_resource_id(self, request_snapshot: dict, key: str) -> str | None:
+        resources = request_snapshot.get("resources")
+        if not isinstance(resources, dict):
+            return None
+        resource = resources.get(key)
+        if not isinstance(resource, dict):
+            return None
+        raw = resource.get("resource_id") or resource.get("set_id")
+        return raw if isinstance(raw, str) else None
+
+    def _snapshot_resource_version(self, request_snapshot: dict, key: str) -> str | None:
+        resources = request_snapshot.get("resources")
+        if not isinstance(resources, dict):
+            return None
+        resource = resources.get(key)
+        if not isinstance(resource, dict):
+            return None
+        raw = resource.get("version")
+        return raw if isinstance(raw, str) else None
 
     def _legacy_translation_term_version_id(
         self,

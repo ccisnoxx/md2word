@@ -1,0 +1,168 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - link "内部文档转换工作台" [ref=e6] [cursor=pointer]:
+        - /url: /jobs
+      - generic:
+        - generic: MVP
+    - navigation "主导航" [ref=e7]:
+      - link "任务工作台" [ref=e8] [cursor=pointer]:
+        - /url: /jobs
+      - link "术语建议" [ref=e9] [cursor=pointer]:
+        - /url: /term-proposals
+    - generic [ref=e10]:
+      - generic [ref=e11]: Operator Demo (operator)
+      - button "退出" [ref=e12] [cursor=pointer]:
+        - img [ref=e14]
+        - generic [ref=e17]: 退出
+  - main [ref=e18]:
+    - main "转换任务工作台" [ref=e19]:
+      - generic [ref=e20]:
+        - generic [ref=e21]:
+          - paragraph [ref=e22]: Document Jobs
+          - heading "转换任务工作台" [level=1] [ref=e23]
+          - paragraph [ref=e24]: 上传 PDF、跟踪队列进度并下载 Word 结果。状态和异常会在这里集中呈现，便于连续处理交付任务。
+        - generic [ref=e25]:
+          - strong [ref=e28]: 已同步
+          - button "刷新任务" [ref=e29] [cursor=pointer]:
+            - img [ref=e31]
+            - generic [ref=e33]: 刷新任务
+        - generic [ref=e34]:
+          - generic [ref=e35]: PDF
+          - generic [ref=e37]: 队列
+          - generic [ref=e39]: DOCX
+      - region "任务概览" [ref=e40]:
+        - article [ref=e41]:
+          - img [ref=e44]
+          - generic [ref=e46]:
+            - generic [ref=e47]: 全部任务
+            - strong [ref=e48]: "0"
+            - emphasis [ref=e49]: 当前筛选结果
+        - article [ref=e50]:
+          - img [ref=e53]
+          - generic [ref=e57]:
+            - generic [ref=e58]: 处理中
+            - strong [ref=e59]: "0"
+            - emphasis [ref=e60]: 等待或运行中
+        - article [ref=e61]:
+          - img [ref=e64]
+          - generic [ref=e67]:
+            - generic [ref=e68]: 已完成
+            - strong [ref=e69]: "0"
+            - emphasis [ref=e70]: 可下载交付
+        - article [ref=e71]:
+          - img [ref=e74]
+          - generic [ref=e76]:
+            - generic [ref=e77]: 需处理
+            - strong [ref=e78]: "0"
+            - emphasis [ref=e79]: 失败任务
+      - region "任务操作区" [ref=e80]:
+        - generic [ref=e82]:
+          - generic [ref=e83]:
+            - generic [ref=e84]:
+              - heading "上传 PDF 创建任务" [level=2] [ref=e85]
+              - paragraph [ref=e86]: 默认创建 PDF 直接转 Word 任务。
+            - generic:
+              - generic: 单文件
+          - generic [ref=e87]:
+            - button "拖入 PDF，或点击选择文件" [ref=e88] [cursor=pointer]:
+              - generic [ref=e89]:
+                - img [ref=e91]
+                - generic [ref=e93]: 拖入 PDF，或点击选择文件
+            - generic [ref=e94]: 最大 50 MB；后端会继续校验文件内容和页数。
+            - list
+          - generic [ref=e95]:
+            - generic [ref=e96]:
+              - generic [ref=e97]:
+                - strong [ref=e98]: 任务配置
+                - generic [ref=e99]: 使用当前默认配置创建任务。
+              - generic:
+                - generic: unknown
+            - generic [ref=e100]:
+              - generic [ref=e101]:
+                - generic [ref=e102]: 模板
+                - generic [ref=e103]: 未配置
+              - generic [ref=e104]:
+                - generic [ref=e105]: 术语规则集
+                - generic [ref=e106]: 未配置
+            - img [ref=e109]
+          - generic [ref=e111]:
+            - generic [ref=e112]: 等待选择 PDF。
+            - button "创建任务" [disabled] [ref=e113]:
+              - img [ref=e115]
+              - generic [ref=e117]: 创建任务
+        - generic [ref=e118]:
+          - generic [ref=e119]:
+            - generic [ref=e120]:
+              - paragraph [ref=e121]: 当前视图：全部状态
+              - heading "任务列表" [level=2] [ref=e122]
+              - paragraph [ref=e123]: 查看当前账号可见的 document_jobs。
+            - generic [ref=e124]:
+              - textbox "搜索任务/文件/错误" [ref=e127]
+              - generic [ref=e130] [cursor=pointer]:
+                - generic:
+                  - combobox [ref=e132]
+                  - generic [ref=e133]: 全部状态
+                - img [ref=e136]
+              - generic [ref=e139] [cursor=pointer]:
+                - generic:
+                  - combobox [ref=e141]
+                  - generic [ref=e142]: 创建时间新到旧
+                - img [ref=e145]
+              - generic [ref=e147]:
+                - switch
+                - generic [ref=e149] [cursor=pointer]: 默认
+                - generic [ref=e153] [cursor=pointer]: 含归档
+              - button "批量重试 0" [disabled] [ref=e154]:
+                - generic [ref=e155]: 批量重试 0
+              - button "批量归档 0" [disabled] [ref=e156]:
+                - generic [ref=e157]: 批量归档 0
+              - button "搜索" [ref=e158] [cursor=pointer]:
+                - img [ref=e160]
+                - generic [ref=e162]: 搜索
+              - button "刷新" [ref=e163] [cursor=pointer]:
+                - img [ref=e165]
+                - generic [ref=e167]: 刷新
+          - generic [ref=e170]:
+            - generic [ref=e171]:
+              - generic [ref=e172]:
+                - table [ref=e174]:
+                  - rowgroup [ref=e186]:
+                    - row "选择所有行 任务 ID 源 PDF 模式 状态 归档 进度 错误 更新时间 操作" [ref=e187]:
+                      - columnheader "选择所有行" [ref=e188]:
+                        - generic "选择所有行" [ref=e190]:
+                          - generic [ref=e191] [cursor=pointer]:
+                            - checkbox "选择所有行" [disabled]
+                      - columnheader "任务 ID" [ref=e193]:
+                        - generic [ref=e194]: 任务 ID
+                      - columnheader "源 PDF" [ref=e195]:
+                        - generic [ref=e196]: 源 PDF
+                      - columnheader "模式" [ref=e197]:
+                        - generic [ref=e198]: 模式
+                      - columnheader "状态" [ref=e199]:
+                        - generic [ref=e200]: 状态
+                      - columnheader "归档" [ref=e201]:
+                        - generic [ref=e202]: 归档
+                      - columnheader "进度" [ref=e203]:
+                        - generic [ref=e204]: 进度
+                      - columnheader "错误" [ref=e205]:
+                        - generic [ref=e206]: 错误
+                      - columnheader "更新时间" [ref=e207]:
+                        - generic [ref=e208]: 更新时间
+                      - columnheader "操作" [ref=e209]:
+                        - generic [ref=e210]: 操作
+                - generic [ref=e214]:
+                  - table:
+                    - rowgroup
+                  - generic [ref=e216]: 暂无任务
+              - img [ref=e220]
+            - generic [ref=e223]:
+              - button "上一页" [disabled] [ref=e224]:
+                - generic:
+                  - img
+              - list [ref=e225]:
+                - listitem "第 1 页" [ref=e226]: "1"
+              - button "下一页" [disabled] [ref=e227]:
+                - generic:
+                  - img
+              - generic [ref=e228]: 共 0 条

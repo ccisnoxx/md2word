@@ -743,6 +743,188 @@
         "title": "DocumentJobCancelResponse",
         "type": "object"
       },
+      "DocumentJobConfigDefaults": {
+        "properties": {
+          "template": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentJobConfigVersionOption"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "term_rule_set": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentJobConfigVersionOption"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "translation_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentJobConfigVersionOption"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "translation_term_set": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentJobConfigVersionOption"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "DocumentJobConfigDefaults",
+        "type": "object"
+      },
+      "DocumentJobConfigOptions": {
+        "properties": {
+          "templates": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentJobConfigVersionOption"
+            },
+            "title": "Templates",
+            "type": "array"
+          },
+          "term_rule_sets": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentJobConfigVersionOption"
+            },
+            "title": "Term Rule Sets",
+            "type": "array"
+          },
+          "translation_profiles": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentJobConfigVersionOption"
+            },
+            "title": "Translation Profiles",
+            "type": "array"
+          },
+          "translation_term_sets": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentJobConfigVersionOption"
+            },
+            "title": "Translation Term Sets",
+            "type": "array"
+          }
+        },
+        "title": "DocumentJobConfigOptions",
+        "type": "object"
+      },
+      "DocumentJobConfigReadiness": {
+        "properties": {
+          "en2zh_available": {
+            "default": false,
+            "title": "En2Zh Available",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "title": "DocumentJobConfigReadiness",
+        "type": "object"
+      },
+      "DocumentJobConfigSummaryResponse": {
+        "properties": {
+          "defaults": {
+            "$ref": "#/components/schemas/DocumentJobConfigDefaults"
+          },
+          "options": {
+            "$ref": "#/components/schemas/DocumentJobConfigOptions"
+          },
+          "readiness": {
+            "$ref": "#/components/schemas/DocumentJobConfigReadiness"
+          },
+          "resource_mode": {
+            "enum": [
+              "legacy",
+              "versioned"
+            ],
+            "title": "Resource Mode",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "resource_mode",
+          "defaults",
+          "options",
+          "readiness"
+        ],
+        "title": "DocumentJobConfigSummaryResponse",
+        "type": "object"
+      },
+      "DocumentJobConfigVersionOption": {
+        "description": "任务创建配置中一个可绑定的 published 资源版本。",
+        "properties": {
+          "is_default": {
+            "default": false,
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "resource_id": {
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "snapshot_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Hash"
+          },
+          "status": {
+            "default": "published",
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "title": "Summary",
+            "type": "object"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_id",
+          "version",
+          "label"
+        ],
+        "title": "DocumentJobConfigVersionOption",
+        "type": "object"
+      },
       "DocumentJobCreateRequest": {
         "properties": {
           "debug_full_text": {
@@ -816,6 +998,28 @@
               }
             ],
             "title": "Term Version Id"
+          },
+          "translation_profile_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translation Profile Id"
+          },
+          "translation_profile_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translation Profile Version"
           },
           "translation_term_set_id": {
             "anyOf": [
@@ -6204,6 +6408,55 @@
           }
         },
         "summary": "Create Document Job",
+        "tags": [
+          "document-jobs"
+        ]
+      }
+    },
+    "/api/v1/document-jobs/config-summary": {
+      "get": {
+        "operationId": "get_document_job_config_summary_api_v1_document_jobs_config_summary_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentJobConfigSummaryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Document Job Config Summary",
         "tags": [
           "document-jobs"
         ]

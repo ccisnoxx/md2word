@@ -24,6 +24,27 @@ export type CurrentUserResponse = {
   display_name: string | null;
 };
 
+export type HealthReadyResponse = {
+  status: string;
+  app_name: string;
+  jobs_dir: string;
+  dependency_checks: Record<string, unknown>;
+};
+
+export type HealthMetricsResponse = {
+  status: string;
+  app_name: string;
+  generated_at: string;
+  metadata_store: string;
+  artifact_storage: string;
+  worker_mode: string;
+  stage_dispatcher: string;
+  jobs: Record<string, number>;
+  stage_messages: Record<string, number>;
+  resources: Record<string, number | string | null>;
+  audit_events: Record<string, number>;
+};
+
 export type DocumentFileResponse = {
   id: string;
   tenant_id: string;
@@ -95,6 +116,8 @@ export type DocumentJobCreateRequest = {
   term_rule_set_version?: string | null;
   translation_term_set_id?: string | null;
   translation_term_version?: string | null;
+  translation_profile_id?: string | null;
+  translation_profile_version?: string | null;
   debug_full_text?: boolean;
 };
 
@@ -223,6 +246,41 @@ export type DocumentJobEventListResponse = {
 export type DocumentJobFileListResponse = {
   job_id: string;
   files: DocumentFileResponse[];
+};
+
+export type DocumentJobConfigVersionOption = {
+  resource_id: string;
+  version: string;
+  label: string;
+  status: string;
+  is_default: boolean;
+  snapshot_hash?: string | null;
+  summary: Record<string, unknown>;
+};
+
+export type DocumentJobConfigDefaults = {
+  template?: DocumentJobConfigVersionOption | null;
+  term_rule_set?: DocumentJobConfigVersionOption | null;
+  translation_term_set?: DocumentJobConfigVersionOption | null;
+  translation_profile?: DocumentJobConfigVersionOption | null;
+};
+
+export type DocumentJobConfigOptions = {
+  templates: DocumentJobConfigVersionOption[];
+  term_rule_sets: DocumentJobConfigVersionOption[];
+  translation_term_sets: DocumentJobConfigVersionOption[];
+  translation_profiles: DocumentJobConfigVersionOption[];
+};
+
+export type DocumentJobConfigSummaryResponse = {
+  role: string;
+  resource_mode: "legacy" | "versioned";
+  defaults: DocumentJobConfigDefaults;
+  options: DocumentJobConfigOptions;
+  readiness: {
+    en2zh_available: boolean;
+    warnings: string[];
+  };
 };
 
 export type DocumentJobDownloadUrlResponse = {
@@ -360,6 +418,16 @@ export type TermRuleListResponse = {
   page: number;
   page_size: number;
   total: number;
+};
+
+export type RuleSimulationRequest = {
+  text: string;
+};
+
+export type RuleSimulationResponse = {
+  original: string;
+  markdown_preview: string;
+  html_preview: string;
 };
 
 export type TermRuleProposalIntent = "create" | "update" | "disable";

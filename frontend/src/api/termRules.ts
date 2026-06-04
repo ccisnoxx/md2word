@@ -1,6 +1,12 @@
 // frontend/src/api/termRules.ts: Term rule and category API wrappers for proposal workflows.
 import { apiRequest } from "@/api/client";
-import type { TermRuleCategoryListResponse, TermRuleListResponse, TermRuleResponse } from "@/api/types";
+import type {
+  RuleSimulationRequest,
+  RuleSimulationResponse,
+  TermRuleCategoryListResponse,
+  TermRuleListResponse,
+  TermRuleResponse,
+} from "@/api/types";
 
 export type TermRuleListParams = {
   page?: number;
@@ -36,6 +42,14 @@ export const termRulesApi = {
     return apiRequest<TermRuleResponse>({
       url: `/api/v1/term-rules/${ruleId}`,
       method: "GET",
+    });
+  },
+
+  simulate(payload: RuleSimulationRequest): Promise<RuleSimulationResponse> {
+    return apiRequest<RuleSimulationResponse>({
+      url: "/api/v1/term-rules/simulate",
+      method: "POST",
+      data: payload,
     });
   },
 };

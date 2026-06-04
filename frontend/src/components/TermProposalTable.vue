@@ -13,6 +13,18 @@
       <el-table-column label="分类" min-width="140">
         <template #default="{ row }">{{ categories[row.category_id] || row.category_id }}</template>
       </el-table-column>
+      <el-table-column label="来源任务" min-width="150">
+        <template #default="{ row }">
+          <router-link
+            v-if="row.source_job_id"
+            class="job-link"
+            :to="{ name: 'job-detail', params: { jobId: row.source_job_id } }"
+          >
+            {{ row.source_job_id }}
+          </router-link>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
       <el-table-column label="创建时间" width="190">
         <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
       </el-table-column>
@@ -49,11 +61,17 @@ const proposalStatusText: Record<string, string> = {
   pending_review: "待审核",
   approved: "已通过",
   rejected: "已拒绝",
+  published: "已发布",
 };
 </script>
 
 <style scoped lang="scss">
 .proposal-table-wrap {
   overflow-x: auto;
+}
+
+.job-link {
+  color: #2563eb;
+  font-weight: 600;
 }
 </style>
