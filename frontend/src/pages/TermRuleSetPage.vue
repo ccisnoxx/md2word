@@ -1,11 +1,12 @@
-<!-- frontend/src/pages/TermRuleSetPage.vue: Term Rule Set draft summary, publish, defaults and rollback. -->
+<!-- File: frontend/src/pages/TermRuleSetPage.vue -->
+<!-- Purpose: Provide Admin Term Rule Set draft governance, diff, preflight, and publish workflows. -->
 <template>
   <main class="term-rule-set-page" aria-labelledby="term-rule-set-title">
     <section class="page-heading">
       <div>
         <p class="page-kicker">Term Rule Set</p>
         <h1 id="term-rule-set-title">术语规则集</h1>
-        <p>查看默认版本、published versions、draft 摘要和已审核待发布 proposal。</p>
+        <p>维护 draft 规则，查看 diff 和发布前校验，并管理 published versions。</p>
       </div>
       <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
     </section>
@@ -25,7 +26,7 @@
         <div class="section-header">
           <div>
             <h2 class="section-title">规则集选择</h2>
-            <p class="section-subtitle">V2.1 按现有规则集管理，不新建规则集。</p>
+            <p class="section-subtitle">按现有规则集管理，不新建规则集。</p>
           </div>
         </div>
         <el-select v-model="selectedSetId" :disabled="loading" placeholder="选择规则集" @change="loadSelectedSet">
@@ -37,7 +38,7 @@
         <div class="section-header">
           <div>
             <h2 class="section-title">Draft 摘要</h2>
-            <p class="section-subtitle">V2.1 不做完整 draft-vs-default diff。</p>
+            <p class="section-subtitle">结构化编辑只修改 draft，不刷新 runtime YAML。</p>
           </div>
           <el-tag v-if="draft?.snapshot_hash" effect="plain" class="mono">{{ draft.snapshot_hash }}</el-tag>
         </div>
@@ -46,11 +47,188 @@
           <div><dt>rule_count</dt><dd>{{ draft?.rule_count ?? "-" }}</dd></div>
           <div><dt>enabled_rule_count</dt><dd>{{ draft?.enabled_rule_count ?? "-" }}</dd></div>
         </dl>
+      </el-card>
+
+      <el-card class="card-flat" shadow="never">
+        <div class="section-header">
+          <div>
+            <h2 class="section-title">Preflight</h2>
+            <p class="section-subtitle">Blocking errors 会阻止发布。</p>
+          </div>
+          <el-tag :type="preflightStatusType" effect="plain">
+            {{ preflightStatusLabel }}
+          </el-tag>
+        </div>
+        <dl class="summary-list">
+          <div><dt>errors</dt><dd>{{ preflightReport?.summary.error_count ?? "-" }}</dd></div>
+          <div><dt>warnings</dt><dd>{{ preflightReport?.summary.warning_count ?? "-" }}</dd></div>
+          <div><dt>conflicts</dt><dd>{{ preflightReport?.summary.conflict_count ?? "-" }}</dd></div>
+        </dl>
         <RoleGate>
-          <el-button type="primary" :disabled="!selectedSetId" @click="openPublishDialog">发布 draft</el-button>
+          <el-button
+            type="primary"
+            :disabled="!selectedSetId || Boolean(preflightReport?.blocking)"
+            @click="openPublishDialog"
+          >
+            发布 draft
+          </el-button>
         </RoleGate>
       </el-card>
     </section>
+
+    <RoleGate>
+      <el-card v-if="!unavailable" class="card-flat" shadow="never">
+        <div class="section-header">
+          <div>
+            <h2 class="section-title">Draft 规则</h2>
+            <p class="section-subtitle">新增、编辑、启停和移除都只作用于 draft。</p>
+          </div>
+          <el-button type="primary" :icon="Plus" :disabled="!selectedSetId" @click="openCreateRuleDialog">
+            新增规则
+          </el-button>
+        </div>
+
+        <div class="toolbar filters" role="search">
+          <el-select v-model="draftRuleFilters.categoryId" clearable placeholder="全部分类" class="filter-select">
+            <el-option v-for="category in categories" :key="category.id" :label="category.name" :value="category.id" />
+          </el-select>
+          <el-select v-model="draftRuleFilters.enabled" placeholder="全部状态" class="filter-select">
+            <el-option label="全部状态" value="all" />
+            <el-option label="仅启用" value="enabled" />
+            <el-option label="仅停用" value="disabled" />
+          </el-select>
+          <el-input
+            v-model="draftRuleFilters.keyword"
+            clearable
+            class="keyword-input"
+            placeholder="搜索 source term"
+            @keyup.enter="searchDraftRules"
+          />
+          <el-button type="primary" :icon="Search" :loading="draftRulesLoading" @click="searchDraftRules">
+            搜索
+          </el-button>
+          <el-button @click="resetDraftRuleFilters">清除</el-button>
+        </div>
+
+        <el-table :data="draftRules" :loading="draftRulesLoading" empty-text="暂无 draft rule" class="rule-table">
+          <el-table-column prop="source_term" label="Source term" min-width="150" show-overflow-tooltip />
+          <el-table-column label="预览" min-width="150">
+            <template #default="{ row }">
+              <TermPreview :segments="row.segments" />
+            </template>
+          </el-table-column>
+          <el-table-column prop="category_name" label="分类" min-width="130" show-overflow-tooltip />
+          <el-table-column prop="apply_scope" label="Scope" width="116" />
+          <el-table-column prop="priority" label="Priority" width="94" />
+          <el-table-column label="状态" width="92">
+            <template #default="{ row }">
+              <el-tag :type="row.enabled ? 'success' : 'info'" effect="plain">
+                {{ row.enabled ? "启用" : "停用" }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="260" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" :icon="EditPen" @click="openEditRuleDialog(row)">编辑</el-button>
+              <el-button
+                link
+                type="warning"
+                :icon="Switch"
+                :loading="togglingRuleId === row.id"
+                @click="toggleRule(row)"
+              >
+                {{ row.enabled ? "停用" : "启用" }}
+              </el-button>
+              <el-button
+                link
+                type="danger"
+                :icon="Delete"
+                :loading="deletingRuleId === row.id"
+                @click="deleteRule(row)"
+              >
+                删除
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <el-pagination
+          v-if="draftRuleTotal > draftRuleFilters.pageSize"
+          v-model:current-page="draftRuleFilters.page"
+          v-model:page-size="draftRuleFilters.pageSize"
+          class="table-pagination"
+          layout="total, prev, pager, next"
+          :total="draftRuleTotal"
+          :page-sizes="[20, 50, 100]"
+          @current-change="loadDraftRules"
+          @size-change="searchDraftRules"
+        />
+      </el-card>
+    </RoleGate>
+
+    <el-card v-if="!unavailable" class="card-flat" shadow="never">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Draft diff</h2>
+          <p class="section-subtitle">默认比较当前 default published version 与 draft。</p>
+        </div>
+        <el-button :loading="diffLoading" @click="loadGovernanceReports">刷新 diff</el-button>
+      </div>
+      <div class="diff-summary">
+        <div v-for="item in diffCounters" :key="item.key" class="diff-counter">
+          <span>{{ item.label }}</span>
+          <strong>{{ item.value }}</strong>
+        </div>
+      </div>
+      <el-table :data="diffReport?.items || []" :loading="diffLoading" empty-text="暂无 draft diff">
+        <el-table-column label="类型" width="110">
+          <template #default="{ row }">
+            <el-tag :type="changeTypeTagType(row.change_type)" effect="plain">
+              {{ changeTypeLabel(row.change_type) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="source_term" label="Source term" min-width="150" show-overflow-tooltip />
+        <el-table-column label="Changed fields" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.changed_fields.join(", ") || "-" }}</template>
+        </el-table-column>
+        <el-table-column label="Before" min-width="170">
+          <template #default="{ row }">
+            <TermPreview v-if="row.before" :segments="row.before.segments" />
+            <span v-else class="muted">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="After" min-width="170">
+          <template #default="{ row }">
+            <TermPreview v-if="row.after" :segments="row.after.segments" />
+            <span v-else class="muted">-</span>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <el-card v-if="!unavailable" class="card-flat" shadow="never">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">发布前校验</h2>
+          <p class="section-subtitle">Errors 和 conflicts 会阻止发布；warnings 仅提示。</p>
+        </div>
+        <el-tag :type="preflightStatusType" effect="plain">
+          {{ preflightStatusLabel }}
+        </el-tag>
+      </div>
+      <el-table :data="preflightFindings" :loading="preflightLoading" empty-text="暂无 preflight finding">
+        <el-table-column label="级别" width="100">
+          <template #default="{ row }">
+            <el-tag :type="findingTagType(row.severity)" effect="plain">{{ row.severity }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="code" label="Code" width="210" show-overflow-tooltip />
+        <el-table-column prop="message" label="说明" min-width="260" show-overflow-tooltip />
+        <el-table-column prop="source_term" label="Source term" width="150" show-overflow-tooltip />
+        <el-table-column prop="path" label="Path" width="180" show-overflow-tooltip />
+      </el-table>
+    </el-card>
 
     <el-card v-if="!unavailable" class="card-flat" shadow="never">
       <div class="section-header">
@@ -104,7 +282,7 @@
             <el-alert
               class="yaml-warning"
               type="warning"
-              title="这是高级兜底入口。主流程应通过 proposal 审核合并 draft，保存前会由后端校验 YAML。"
+              title="这是高级兜底入口。主流程应优先使用结构化 draft rule 编辑，保存前会由后端校验 YAML。"
               :closable="false"
               show-icon
             />
@@ -117,7 +295,84 @@
       </el-card>
     </RoleGate>
 
-    <el-dialog v-model="publishDialog.visible" title="发布 Term Rule Set draft" width="540px">
+    <el-dialog v-model="ruleDialog.visible" :title="ruleDialogTitle" width="760px">
+      <el-form ref="ruleFormRef" :model="ruleForm" :rules="ruleRules" label-width="130px">
+        <el-form-item label="Source term" prop="source_term">
+          <el-input v-model="ruleForm.source_term" placeholder="例如 VIN" />
+        </el-form-item>
+        <el-form-item label="分类" prop="category_id">
+          <el-select v-model="ruleForm.category_id" filterable placeholder="选择分类">
+            <el-option v-for="category in categories" :key="category.id" :label="category.name" :value="category.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="Segments" prop="segments">
+          <TermSegmentEditor v-model="ruleForm.segments" />
+        </el-form-item>
+        <el-form-item label="预览">
+          <TermPreview :segments="ruleForm.segments" />
+        </el-form-item>
+        <div class="rule-form-grid">
+          <el-form-item label="Scope" prop="apply_scope">
+            <el-select v-model="ruleForm.apply_scope">
+              <el-option label="Both" value="both" />
+              <el-option label="Markdown" value="markdown" />
+              <el-option label="Table" value="table" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="Priority" prop="priority">
+            <el-input-number v-model="ruleForm.priority" :min="0" :max="10000" />
+          </el-form-item>
+          <el-form-item label="Case sensitive">
+            <el-switch v-model="ruleForm.case_sensitive" />
+          </el-form-item>
+          <el-form-item label="启用">
+            <el-switch v-model="ruleForm.enabled" />
+          </el-form-item>
+        </div>
+        <el-form-item label="Custom markdown">
+          <el-input v-model="ruleForm.custom_markdown" clearable />
+        </el-form-item>
+        <el-form-item label="Custom HTML">
+          <el-input v-model="ruleForm.custom_html" clearable />
+        </el-form-item>
+        <el-form-item label="Notes">
+          <el-input v-model="ruleForm.notes" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="ruleDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="savingRule" @click="saveRule">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="publishDialog.visible" title="发布 Term Rule Set draft" width="640px">
+      <el-alert
+        v-if="preflightReport?.blocking"
+        class="dialog-alert"
+        type="error"
+        title="当前 draft 存在 blocking preflight finding，不能发布。"
+        :closable="false"
+        show-icon
+      />
+      <el-alert
+        v-else-if="preflightReport && preflightReport.summary.warning_count > 0"
+        class="dialog-alert"
+        type="warning"
+        title="当前 draft 存在 warning，发布前请确认影响。"
+        :closable="false"
+        show-icon
+      />
+      <el-table
+        v-if="preflightFindings.length"
+        :data="preflightFindings"
+        size="small"
+        class="dialog-findings"
+        max-height="220"
+      >
+        <el-table-column prop="severity" label="级别" width="90" />
+        <el-table-column prop="code" label="Code" width="190" show-overflow-tooltip />
+        <el-table-column prop="message" label="说明" min-width="220" show-overflow-tooltip />
+      </el-table>
       <el-form ref="publishFormRef" :model="publishDialog.form" :rules="publishRules" label-width="100px">
         <el-form-item label="发布说明" prop="publish_reason">
           <el-input v-model="publishDialog.form.publish_reason" type="textarea" :rows="4" />
@@ -125,7 +380,14 @@
       </el-form>
       <template #footer>
         <el-button @click="publishDialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="publishing" @click="publishDraft">发布并设默认</el-button>
+        <el-button
+          type="primary"
+          :disabled="Boolean(preflightReport?.blocking)"
+          :loading="publishing"
+          @click="publishDraft"
+        >
+          发布并设默认
+        </el-button>
       </template>
     </el-dialog>
   </main>
@@ -134,24 +396,47 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from "element-plus";
-import { Refresh } from "@element-plus/icons-vue";
+import { Delete, EditPen, Plus, Refresh, Search, Switch } from "@element-plus/icons-vue";
 
 import { termProposalsApi } from "@/api/termProposals";
 import { termRulesApi } from "@/api/termRules";
 import { termRuleSetsApi } from "@/api/termRuleSets";
 import type {
   TermRuleCategoryListItemResponse,
+  TermRuleGovernanceFindingResponse,
   TermRuleProposalResponse,
+  TermRuleResponse,
+  TermRuleSegmentWriteRequest,
   TermRuleSetDetailResponse,
+  TermRuleSetDiffResponse,
   TermRuleSetDraftResponse,
   TermRuleSetListItemResponse,
+  TermRuleSetPreflightResponse,
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import RoleGate from "@/components/RoleGate.vue";
+import TermPreview from "@/components/TermPreview.vue";
 import TermProposalTable from "@/components/TermProposalTable.vue";
+import TermSegmentEditor from "@/components/TermSegmentEditor.vue";
 import { useAuthStore } from "@/stores/auth";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { formatDateTime } from "@/utils/format";
+
+type EnabledFilter = "all" | "enabled" | "disabled";
+type RuleDialogMode = "create" | "edit";
+
+type RuleFormState = {
+  source_term: string;
+  category_id: string;
+  apply_scope: string;
+  case_sensitive: boolean;
+  enabled: boolean;
+  priority: number;
+  segments: TermRuleSegmentWriteRequest[];
+  custom_html: string;
+  custom_markdown: string;
+  notes: string;
+};
 
 const auth = useAuthStore();
 const isAdmin = computed(() => auth.user?.role === "admin");
@@ -162,12 +447,39 @@ const draft = ref<TermRuleSetDraftResponse | null>(null);
 const yamlText = ref("");
 const approvedProposals = ref<TermRuleProposalResponse[]>([]);
 const categories = ref<TermRuleCategoryListItemResponse[]>([]);
+const draftRules = ref<TermRuleResponse[]>([]);
+const draftRuleTotal = ref(0);
+const diffReport = ref<TermRuleSetDiffResponse | null>(null);
+const preflightReport = ref<TermRuleSetPreflightResponse | null>(null);
 const loading = ref(false);
+const draftRulesLoading = ref(false);
+const diffLoading = ref(false);
+const preflightLoading = ref(false);
 const publishing = ref(false);
 const savingYaml = ref(false);
+const savingRule = ref(false);
+const deletingRuleId = ref("");
+const togglingRuleId = ref("");
 const unavailable = ref(false);
 const error = ref<ApiClientError | null>(null);
 const publishFormRef = ref<FormInstance>();
+const ruleFormRef = ref<FormInstance>();
+
+const draftRuleFilters = reactive({
+  page: 1,
+  pageSize: 20,
+  categoryId: "",
+  enabled: "all" as EnabledFilter,
+  keyword: "",
+});
+
+const ruleDialog = reactive({
+  visible: false,
+  mode: "create" as RuleDialogMode,
+  ruleId: "",
+});
+
+const ruleForm = reactive<RuleFormState>(createEmptyRuleForm());
 
 const publishDialog = reactive({
   visible: false,
@@ -180,10 +492,84 @@ const publishRules: FormRules = {
   publish_reason: [{ required: true, message: "请填写发布说明", trigger: "blur" }],
 };
 
+const ruleRules: FormRules = {
+  source_term: [{ required: true, message: "请填写 source term", trigger: "blur" }],
+  category_id: [{ required: true, message: "请选择分类", trigger: "change" }],
+};
+
 const categoryMap = computed(() =>
   Object.fromEntries(categories.value.map((category) => [category.id, category.name])),
 );
 
+const ruleDialogTitle = computed(() => (ruleDialog.mode === "create" ? "新增 draft rule" : "编辑 draft rule"));
+
+const preflightStatusLabel = computed(() => {
+  if (!preflightReport.value) {
+    return "未加载";
+  }
+  if (preflightReport.value.blocking) {
+    return "Blocked";
+  }
+  if (preflightReport.value.summary.warning_count > 0) {
+    return "Warnings";
+  }
+  return "Ready";
+});
+
+const preflightStatusType = computed(() => {
+  if (!preflightReport.value) {
+    return "info";
+  }
+  if (preflightReport.value.blocking) {
+    return "danger";
+  }
+  if (preflightReport.value.summary.warning_count > 0) {
+    return "warning";
+  }
+  return "success";
+});
+
+const preflightFindings = computed<TermRuleGovernanceFindingResponse[]>(() => {
+  const report = preflightReport.value;
+  if (!report) {
+    return [];
+  }
+  return [...report.errors, ...report.warnings, ...report.conflicts];
+});
+
+const diffCounters = computed(() => {
+  const summary = diffReport.value?.summary;
+  return [
+    { key: "added", label: "Added", value: summary?.added ?? 0 },
+    { key: "updated", label: "Updated", value: summary?.updated ?? 0 },
+    { key: "disabled", label: "Disabled", value: summary?.disabled ?? 0 },
+    { key: "removed", label: "Removed", value: summary?.removed ?? 0 },
+    { key: "unchanged", label: "Unchanged", value: summary?.unchanged ?? 0 },
+  ];
+});
+
+// 创建新规则表单默认值。
+function createEmptyRuleForm(): RuleFormState {
+  return {
+    source_term: "",
+    category_id: "",
+    apply_scope: "both",
+    case_sensitive: true,
+    enabled: true,
+    priority: 100,
+    segments: [{ segment_text: "", render_type: "plain" }],
+    custom_html: "",
+    custom_markdown: "",
+    notes: "",
+  };
+}
+
+// 把接口错误 raw payload 当作普通对象读取。
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+// 加载规则集、分类、当前选择下的 draft 上下文。
 async function loadAll(): Promise<void> {
   loading.value = true;
   error.value = null;
@@ -213,6 +599,7 @@ async function loadAll(): Promise<void> {
   }
 }
 
+// 切换规则集后刷新详情、draft、diff、preflight 和规则列表。
 async function loadSelectedSet(): Promise<void> {
   if (!selectedSetId.value) {
     return;
@@ -222,17 +609,259 @@ async function loadSelectedSet(): Promise<void> {
     termRuleSetsApi.getDraft(selectedSetId.value),
   ]);
   detail.value = detailResponse;
-  draft.value = draftResponse;
-  yamlText.value = draftResponse.yaml_text;
+  applyDraft(draftResponse);
+  await Promise.all([loadDraftRules(), loadGovernanceReports()]);
 }
 
-function openPublishDialog(): void {
+// 使用 draft response 同步页面上的 draft 摘要和 YAML 兜底文本。
+function applyDraft(nextDraft: TermRuleSetDraftResponse): void {
+  draft.value = nextDraft;
+  yamlText.value = nextDraft.yaml_text;
+}
+
+// 将启用状态筛选转换为后端查询参数。
+function enabledParam(): boolean | undefined {
+  if (draftRuleFilters.enabled === "enabled") {
+    return true;
+  }
+  if (draftRuleFilters.enabled === "disabled") {
+    return false;
+  }
+  return undefined;
+}
+
+// 加载当前 draft 的结构化规则列表。
+async function loadDraftRules(): Promise<void> {
+  if (!selectedSetId.value) {
+    return;
+  }
+  draftRulesLoading.value = true;
+  try {
+    const response = await termRuleSetsApi.listDraftRules(selectedSetId.value, {
+      page: draftRuleFilters.page,
+      page_size: draftRuleFilters.pageSize,
+      category_id: draftRuleFilters.categoryId || undefined,
+      enabled: enabledParam(),
+      q: draftRuleFilters.keyword.trim() || undefined,
+    });
+    draftRules.value = response.items;
+    draftRuleTotal.value = response.total;
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    draftRulesLoading.value = false;
+  }
+}
+
+// 从第一页按当前筛选重新查询 draft rules。
+function searchDraftRules(): void {
+  draftRuleFilters.page = 1;
+  void loadDraftRules();
+}
+
+// 清空 draft rule 筛选条件并重新加载。
+function resetDraftRuleFilters(): void {
+  draftRuleFilters.page = 1;
+  draftRuleFilters.categoryId = "";
+  draftRuleFilters.enabled = "all";
+  draftRuleFilters.keyword = "";
+  void loadDraftRules();
+}
+
+// 同步 diff 和 preflight 报告。
+async function loadGovernanceReports(): Promise<void> {
+  if (!selectedSetId.value) {
+    return;
+  }
+  diffLoading.value = true;
+  preflightLoading.value = true;
+  try {
+    const [diffResponse, preflightResponse] = await Promise.all([
+      termRuleSetsApi.diff(selectedSetId.value, { from: "default", to: "draft" }),
+      termRuleSetsApi.preflight(selectedSetId.value),
+    ]);
+    diffReport.value = diffResponse;
+    preflightReport.value = preflightResponse;
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    diffLoading.value = false;
+    preflightLoading.value = false;
+  }
+}
+
+// draft 写入后刷新摘要、规则列表、diff 和 preflight。
+async function refreshAfterDraftMutation(nextDraft?: TermRuleSetDraftResponse): Promise<void> {
+  if (!selectedSetId.value) {
+    return;
+  }
+  if (nextDraft) {
+    applyDraft(nextDraft);
+  } else {
+    applyDraft(await termRuleSetsApi.getDraft(selectedSetId.value));
+  }
+  await Promise.all([loadDraftRules(), loadGovernanceReports()]);
+}
+
+// 打开新增规则对话框。
+function openCreateRuleDialog(): void {
+  Object.assign(ruleForm, createEmptyRuleForm(), {
+    category_id: categories.value[0]?.id || "",
+  });
+  ruleDialog.mode = "create";
+  ruleDialog.ruleId = "";
+  ruleDialog.visible = true;
+}
+
+// 打开编辑规则对话框并填充当前规则字段。
+function openEditRuleDialog(rule: TermRuleResponse): void {
+  Object.assign(ruleForm, {
+    source_term: rule.source_term,
+    category_id: rule.category_id,
+    apply_scope: rule.apply_scope,
+    case_sensitive: rule.case_sensitive,
+    enabled: rule.enabled,
+    priority: rule.priority,
+    segments: rule.segments.map((segment) => ({
+      segment_text: segment.segment_text,
+      render_type: segment.render_type,
+    })),
+    custom_html: rule.custom_html || "",
+    custom_markdown: rule.custom_markdown || "",
+    notes: rule.notes || "",
+  });
+  ruleDialog.mode = "edit";
+  ruleDialog.ruleId = rule.id;
+  ruleDialog.visible = true;
+}
+
+// 校验 segment 内容，避免空片段提交到后端。
+function validateSegments(): boolean {
+  if (!ruleForm.segments.length || ruleForm.segments.some((segment) => !segment.segment_text.trim())) {
+    ElMessage.error("请填写完整 segments。");
+    return false;
+  }
+  return true;
+}
+
+// 组装 draft rule 写入 payload。
+function buildRulePayload() {
+  return {
+    category_id: ruleForm.category_id,
+    source_term: ruleForm.source_term.trim(),
+    apply_scope: ruleForm.apply_scope,
+    case_sensitive: ruleForm.case_sensitive,
+    enabled: ruleForm.enabled,
+    priority: ruleForm.priority,
+    segments: ruleForm.segments.map((segment) => ({
+      segment_text: segment.segment_text,
+      render_type: segment.render_type,
+    })),
+    custom_html: ruleForm.custom_html.trim() || null,
+    custom_markdown: ruleForm.custom_markdown.trim() || null,
+    notes: ruleForm.notes,
+  };
+}
+
+// 保存新增或编辑后的 draft rule。
+async function saveRule(): Promise<void> {
+  if (!selectedSetId.value || !validateSegments()) {
+    return;
+  }
+  const valid = await ruleFormRef.value?.validate().catch(() => false);
+  if (!valid) {
+    return;
+  }
+  savingRule.value = true;
+  error.value = null;
+  try {
+    const response =
+      ruleDialog.mode === "create"
+        ? await termRuleSetsApi.createDraftRule(selectedSetId.value, buildRulePayload())
+        : await termRuleSetsApi.updateDraftRule(selectedSetId.value, ruleDialog.ruleId, buildRulePayload());
+    ElMessage.success(ruleDialog.mode === "create" ? "Draft rule 已新增。" : "Draft rule 已保存。");
+    ruleDialog.visible = false;
+    await refreshAfterDraftMutation(response.draft);
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    savingRule.value = false;
+  }
+}
+
+// 快速启用或停用一条 draft rule。
+async function toggleRule(rule: TermRuleResponse): Promise<void> {
+  if (!selectedSetId.value) {
+    return;
+  }
+  togglingRuleId.value = rule.id;
+  error.value = null;
+  try {
+    const response = await termRuleSetsApi.updateDraftRule(selectedSetId.value, rule.id, {
+      enabled: !rule.enabled,
+    });
+    ElMessage.success(rule.enabled ? "Draft rule 已停用。" : "Draft rule 已启用。");
+    await refreshAfterDraftMutation(response.draft);
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    togglingRuleId.value = "";
+  }
+}
+
+// 删除一条 draft rule；只影响 draft，不做真实文件删除。
+async function deleteRule(rule: TermRuleResponse): Promise<void> {
+  if (!selectedSetId.value) {
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      "该操作只会从当前 draft 移除规则，不会删除任何文件或历史 published version。",
+      `删除 ${rule.source_term}`,
+      {
+        confirmButtonText: "删除 draft rule",
+        cancelButtonText: "取消",
+        type: "warning",
+      },
+    );
+  } catch {
+    return;
+  }
+  deletingRuleId.value = rule.id;
+  error.value = null;
+  try {
+    const response = await termRuleSetsApi.deleteDraftRule(selectedSetId.value, rule.id);
+    ElMessage.success("Draft rule 已删除。");
+    await refreshAfterDraftMutation(response.draft);
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    deletingRuleId.value = "";
+  }
+}
+
+// 刷新 preflight 后打开发布对话框。
+async function openPublishDialog(): Promise<void> {
   publishDialog.form.publish_reason = "";
+  await loadGovernanceReports();
   publishDialog.visible = true;
 }
 
+// 从 publish 错误中提取结构化 preflight report。
+function extractPreflightReport(apiError: ApiClientError): TermRuleSetPreflightResponse | null {
+  if (!isRecord(apiError.raw) || !isRecord(apiError.raw.detail)) {
+    return null;
+  }
+  const detail = apiError.raw.detail;
+  if (detail.code !== "term_rule_set_preflight_failed" || !isRecord(detail.report)) {
+    return null;
+  }
+  return detail.report as TermRuleSetPreflightResponse;
+}
+
+// 发布当前 draft；blocking preflight 会保持对话框打开并展示 report。
 async function publishDraft(): Promise<void> {
-  if (!selectedSetId.value) {
+  if (!selectedSetId.value || preflightReport.value?.blocking) {
     return;
   }
   const valid = await publishFormRef.value?.validate().catch(() => false);
@@ -250,12 +879,18 @@ async function publishDraft(): Promise<void> {
     publishDialog.visible = false;
     await loadAll();
   } catch (caught) {
-    error.value = normalizeApiError(caught);
+    const normalized = normalizeApiError(caught);
+    const report = extractPreflightReport(normalized);
+    if (report) {
+      preflightReport.value = report;
+    }
+    error.value = normalized;
   } finally {
     publishing.value = false;
   }
 }
 
+// 把指定 published version 设为默认版本。
 async function setDefault(version: string): Promise<void> {
   if (!selectedSetId.value) {
     return;
@@ -279,6 +914,7 @@ async function setDefault(version: string): Promise<void> {
   }
 }
 
+// Rollback 只切默认指针到指定 published version。
 async function rollback(version: string): Promise<void> {
   if (!selectedSetId.value) {
     return;
@@ -302,6 +938,7 @@ async function rollback(version: string): Promise<void> {
   }
 }
 
+// 保存完整 YAML draft 兜底入口。
 async function saveYamlDraft(): Promise<void> {
   if (!selectedSetId.value) {
     return;
@@ -310,9 +947,8 @@ async function saveYamlDraft(): Promise<void> {
   error.value = null;
   try {
     const response = await termRuleSetsApi.updateDraft(selectedSetId.value, { yaml_text: yamlText.value });
-    draft.value = response;
-    yamlText.value = response.yaml_text;
     ElMessage.success("YAML draft 已保存。");
+    await refreshAfterDraftMutation(response);
   } catch (caught) {
     error.value = normalizeApiError(caught);
   } finally {
@@ -320,6 +956,47 @@ async function saveYamlDraft(): Promise<void> {
   }
 }
 
+// 返回 diff change type 的中文标签。
+function changeTypeLabel(changeType: string): string {
+  const labels: Record<string, string> = {
+    added: "新增",
+    updated: "更新",
+    disabled: "停用",
+    removed: "移除",
+    unchanged: "未变",
+  };
+  return labels[changeType] || changeType;
+}
+
+// 返回 diff change type 对应的 Element Plus tag 类型。
+function changeTypeTagType(changeType: string): "success" | "warning" | "danger" | "info" | "primary" {
+  if (changeType === "added") {
+    return "success";
+  }
+  if (changeType === "updated") {
+    return "primary";
+  }
+  if (changeType === "disabled") {
+    return "warning";
+  }
+  if (changeType === "removed") {
+    return "danger";
+  }
+  return "info";
+}
+
+// 返回 preflight finding 对应的 Element Plus tag 类型。
+function findingTagType(severity: string): "success" | "warning" | "danger" | "info" | "primary" {
+  if (severity === "error" || severity === "conflict") {
+    return "danger";
+  }
+  if (severity === "warning") {
+    return "warning";
+  }
+  return "info";
+}
+
+// 空表格 select handler，保留现有 proposal table contract。
 function noop(): void {
   return;
 }
@@ -337,7 +1014,7 @@ onMounted(() => {
 
 .rule-set-grid {
   display: grid;
-  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr) minmax(260px, 340px);
   gap: 16px;
 }
 
@@ -360,8 +1037,67 @@ onMounted(() => {
 .summary-list dd {
   margin: 0;
   font-weight: 650;
+  word-break: break-word;
 }
 
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.filter-select {
+  width: 180px;
+}
+
+.keyword-input {
+  width: min(320px, 100%);
+}
+
+.rule-table {
+  width: 100%;
+}
+
+.table-pagination {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.diff-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(110px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.diff-counter {
+  min-height: 62px;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.diff-counter span {
+  display: block;
+  color: #667085;
+}
+
+.diff-counter strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 22px;
+}
+
+.rule-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 16px;
+}
+
+.dialog-alert,
+.dialog-findings,
 .yaml-warning,
 .yaml-save {
   margin-top: 12px;
@@ -371,9 +1107,22 @@ onMounted(() => {
   margin-bottom: 12px;
 }
 
-@media (max-width: 880px) {
-  .rule-set-grid {
+@media (max-width: 1120px) {
+  .rule-set-grid,
+  .diff-summary {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .filters,
+  .rule-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-select,
+  .keyword-input {
+    width: 100%;
   }
 }
 </style>

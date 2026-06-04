@@ -1,9 +1,0 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
-{"file": "app/domains/document_jobs/router.py", "reason": "Bulk routes must reuse existing document_jobs router/service boundaries"}
-{"file": ".trellis/spec/backend/index.md", "reason": "Backend pre-development checklist and quality gates"}
-{"file": "app/domains/document_jobs/schemas.py", "reason": "Bulk request and response schemas belong in the owning domain"}
-{"file": "app/domains/document_jobs/service.py", "reason": "Bulk behavior should call existing retry archive cancel service methods"}
-{"file": "frontend/src/api/types.ts", "reason": "Frontend bulk response types need to match backend contract"}
-{"file": "frontend/src/api/documentJobs.ts", "reason": "Add bulk API wrappers used by JobsPage"}
-{"file": "frontend/src/pages/JobsPage.vue", "reason": "Switch existing batch retry archive handlers to bulk API without new page scope"}
-{"file": "docs/api/document-jobs.md", "reason": "Document new document_jobs bulk endpoints"}

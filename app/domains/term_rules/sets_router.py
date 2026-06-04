@@ -1,6 +1,7 @@
-from __future__ import annotations
+# File: app/domains/term_rules/sets_router.py
+# Purpose: 提供术语规则集草稿、发布、默认版本和回滚接口。
 
-# app/domains/term_rules/sets_router.py: 提供术语规则集草稿、发布、默认版本和回滚接口。
+from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -10,6 +11,12 @@ from app.domains.audit.models import ActorContext
 from app.core.runtime import AppRuntime
 from app.domains.term_rules.models import TermRuleImportValidationFinding
 from app.domains.term_rules.schemas import (
+    TermRuleCreateRequest,
+    TermRuleDraftRuleDeleteResponse,
+    TermRuleDraftRuleMutationResponse,
+    TermRuleListResponse,
+    TermRuleResponse,
+    TermRuleSetDiffResponse,
     TermRuleSetExportManifestResponse,
     TermRuleSetExportResponse,
     TermRuleSetDetailResponse,
@@ -20,13 +27,16 @@ from app.domains.term_rules.schemas import (
     TermRuleSetImportResponse,
     TermRuleSetDraftUpdateRequest,
     TermRuleSetListResponse,
+    TermRuleSetPreflightResponse,
     TermRuleSetPublishRequest,
     TermRuleSetRollbackRequest,
     TermRuleSetVersionResponse,
+    TermRuleUpdateRequest,
 )
 from app.domains.term_rules.versioning_service import (
     TermRuleSetImportDuplicate,
     TermRuleSetImportReport,
+    TermRuleSetPreflightError,
 )
 
 
@@ -116,6 +126,14 @@ def _import_response(result) -> TermRuleSetImportResponse:
     )
 
 
+def _approved_unpublished_proposal_count(runtime: AppRuntime, term_rule_set_id: str) -> int:
+    """返回当前规则集已审核但尚未发布的 proposal 数量。"""
+
+    if runtime.term_rule_proposal_service is None:
+        return 0
+    return len(runtime.term_rule_proposal_service.list_approved_unpublished_proposals(term_rule_set_id))
+
+
 @router.get("", response_model=TermRuleSetListResponse)
 def list_term_rule_sets(
     runtime: AppRuntime = Depends(get_runtime),
@@ -149,7 +167,163 @@ def get_term_rule_set_draft(
         raise bad_request_http_exception(exc) from exc
 
 
-@router.put("/{set_id}/draft/rules", response_model=TermRuleSetDraftResponse, dependencies=[Depends(require_admin_access)])
+@router.get("/{set_id}/diff", response_model=TermRuleSetDiffResponse)
+def diff_term_rule_set_draft(
+    set_id: str,
+    from_ref: str = Query(default="default", alias="from"),
+    to_ref: str = Query(default="draft", alias="to"),
+    include_unchanged: bool = Query(default=False),
+    runtime: AppRuntime = Depends(get_runtime),
+) -> TermRuleSetDiffResponse:
+    """返回 Term Rule Set draft 相对基线版本的结构化差异。"""
+
+    try:
+        return _require_term_rule_set_version_service(runtime).build_diff(
+            set_id,
+            from_ref=from_ref,
+            to_ref=to_ref,
+            include_unchanged=include_unchanged,
+        )
+    except FileNotFoundError as exc:
+        raise not_found_http_exception(exc) from exc
+    except ValueError as exc:
+        raise bad_request_http_exception(exc) from exc
+
+
+@router.get("/{set_id}/preflight", response_model=TermRuleSetPreflightResponse)
+def preflight_term_rule_set_draft(
+    set_id: str,
+    base: str = Query(default="default"),
+    runtime: AppRuntime = Depends(get_runtime),
+) -> TermRuleSetPreflightResponse:
+    """返回 Term Rule Set draft 的发布前治理校验报告。"""
+
+    try:
+        return _require_term_rule_set_version_service(runtime).build_preflight(
+            set_id,
+            base_ref=base,
+            approved_unpublished_proposal_count=_approved_unpublished_proposal_count(runtime, set_id),
+        )
+    except FileNotFoundError as exc:
+        raise not_found_http_exception(exc) from exc
+    except ValueError as exc:
+        raise bad_request_http_exception(exc) from exc
+
+
+@router.get("/{set_id}/draft/rules", response_model=TermRuleListResponse)
+def list_term_rule_set_draft_rules(
+    set_id: str,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=200),
+    category_id: str | None = Query(default=None),
+    enabled: bool | None = Query(default=None),
+    q: str | None = Query(default=None),
+    runtime: AppRuntime = Depends(get_runtime),
+) -> TermRuleListResponse:
+    """分页查询 Term Rule Set draft 内的结构化规则。"""
+
+    try:
+        return _require_term_rule_set_version_service(runtime).list_draft_rules(
+            set_id,
+            category_id=category_id,
+            enabled=enabled,
+            q=q,
+            page=page,
+            page_size=page_size,
+        )
+    except FileNotFoundError as exc:
+        raise not_found_http_exception(exc) from exc
+    except ValueError as exc:
+        raise bad_request_http_exception(exc) from exc
+
+
+@router.get("/{set_id}/draft/rules/{rule_id}", response_model=TermRuleResponse)
+def get_term_rule_set_draft_rule(
+    set_id: str,
+    rule_id: str,
+    runtime: AppRuntime = Depends(get_runtime),
+) -> TermRuleResponse:
+    """读取 Term Rule Set draft 内的一条结构化规则。"""
+
+    try:
+        return _require_term_rule_set_version_service(runtime).get_draft_rule(set_id, rule_id)
+    except FileNotFoundError as exc:
+        raise not_found_http_exception(exc) from exc
+    except ValueError as exc:
+        raise bad_request_http_exception(exc) from exc
+
+
+@router.post(
+    "/{set_id}/draft/rules",
+    response_model=TermRuleDraftRuleMutationResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin_access)],
+)
+def create_term_rule_set_draft_rule(
+    set_id: str,
+    payload: TermRuleCreateRequest,
+    runtime: AppRuntime = Depends(get_runtime),
+) -> TermRuleDraftRuleMutationResponse:
+    """在 Term Rule Set draft 内新增一条结构化规则。"""
+
+    try:
+        return _require_term_rule_set_version_service(runtime).create_draft_rule(set_id, payload)
+    except FileNotFoundError as exc:
+        raise not_found_http_exception(exc) from exc
+    except ValueError as exc:
+        raise bad_request_http_exception(exc) from exc
+
+
+@router.patch(
+    "/{set_id}/draft/rules/{rule_id}",
+    response_model=TermRuleDraftRuleMutationResponse,
+    dependencies=[Depends(require_admin_access)],
+)
+def update_term_rule_set_draft_rule(
+    set_id: str,
+    rule_id: str,
+    payload: TermRuleUpdateRequest,
+    runtime: AppRuntime = Depends(get_runtime),
+) -> TermRuleDraftRuleMutationResponse:
+    """更新 Term Rule Set draft 内的一条结构化规则。"""
+
+    try:
+        return _require_term_rule_set_version_service(runtime).update_draft_rule(
+            set_id,
+            rule_id,
+            payload,
+        )
+    except FileNotFoundError as exc:
+        raise not_found_http_exception(exc) from exc
+    except ValueError as exc:
+        raise bad_request_http_exception(exc) from exc
+
+
+@router.delete(
+    "/{set_id}/draft/rules/{rule_id}",
+    response_model=TermRuleDraftRuleDeleteResponse,
+    dependencies=[Depends(require_admin_access)],
+)
+def delete_term_rule_set_draft_rule(
+    set_id: str,
+    rule_id: str,
+    runtime: AppRuntime = Depends(get_runtime),
+) -> TermRuleDraftRuleDeleteResponse:
+    """从 Term Rule Set draft 内移除一条结构化规则。"""
+
+    try:
+        return _require_term_rule_set_version_service(runtime).delete_draft_rule(set_id, rule_id)
+    except FileNotFoundError as exc:
+        raise not_found_http_exception(exc) from exc
+    except ValueError as exc:
+        raise bad_request_http_exception(exc) from exc
+
+
+@router.put(
+    "/{set_id}/draft/rules",
+    response_model=TermRuleSetDraftResponse,
+    dependencies=[Depends(require_admin_access)],
+)
 def update_term_rule_set_draft_rules(
     set_id: str,
     payload: TermRuleSetDraftUpdateRequest,
@@ -266,6 +440,8 @@ def publish_term_rule_set_draft(
     runtime: AppRuntime = Depends(get_runtime),
     trace_id: str = Depends(get_trace_id),
 ) -> TermRuleSetVersionResponse:
+    """发布当前 draft；发布前 blocking preflight finding 会阻止创建版本。"""
+
     request = payload
     try:
         published = _require_term_rule_set_version_service(runtime).publish_draft(
@@ -280,10 +456,18 @@ def publish_term_rule_set_draft(
             runtime.term_rule_proposal_service.mark_approved_proposals_published(
                 term_rule_set_id=set_id,
                 published_version=published.version,
-            )
+        )
         return published
     except FileNotFoundError as exc:
         raise not_found_http_exception(exc) from exc
+    except TermRuleSetPreflightError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "term_rule_set_preflight_failed",
+                "report": exc.report.model_dump(mode="json"),
+            },
+        ) from exc
     except ValueError as exc:
         raise bad_request_http_exception(exc) from exc
 

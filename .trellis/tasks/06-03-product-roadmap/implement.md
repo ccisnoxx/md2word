@@ -45,6 +45,79 @@
 - 提案验收：从任务详情创建的提案能在审核队列识别来源任务。
 - 运维验收：系统状态页只读且可解释 backend/worker/storage 状态。
 
+## Phase 1 Acceptance Closeout
+
+收口日期：2026-06-04。
+
+结论：Phase 1 “任务工作台成熟化”可以收口。六个 Phase 1 子任务均已完成并归档到 `.trellis/tasks/archive/2026-06/`：
+
+- `frontend-information-architecture`
+- `document-job-workbench-completion`
+- `document-job-files-and-results`
+- `admin-job-configuration`
+- `job-context-proposals`
+- `admin-system-status`
+
+已满足的 Phase 1 验收面：
+
+- Operator/Admin 信息架构和 Admin-only 路由边界已完成。
+- 任务列表和任务详情已覆盖筛选、搜索、排序、下载、失败重试、取消、归档和批量操作闭环。
+- 任务详情已覆盖事件、失败信息、配置快照、文件/结果区和任务上下文提案入口。
+- 上传和重试已支持 Operator 默认配置摘要、Admin 显式资源版本选择和配置快照回看。
+- Admin 系统状态页已用只读 health/metrics 信息解释 backend、worker、storage、resource 状态。
+- 所有 Phase 1 子任务均明确未运行 pdf-mineru 解析、翻译或 Word 生成主流程。
+
+不阻塞 Phase 1 收口的后续项：
+
+- `file-retention-management` 属于后续 Operations and Retention 方向，不纳入 Phase 1 完成条件。
+- `term-rule-workbench` 和 `translation-term-set-management` 属于 Phase 2 Configuration Governance，需要按治理深度继续确认完整性。
+- `translation-result-qa` 属于 Phase 3 Result QA and Traceability。
+- `audit-log-viewer`、`ops-dashboard`、`document-job-bulk-apis` 是 Phase 4 / 运维增强或跨阶段加速项，不改变 Phase 1 收口结论。
+
+## Phase 2 Archived Task Inventory
+
+盘点日期：2026-06-04。
+
+### `term-rule-workbench`
+
+性质：阶段性切片，不是完整 Phase 2 术语规则治理能力。
+
+已完成范围：
+
+- Admin-only `/settings/term-rules` 前端入口。
+- 术语规则分类概览、规则筛选、只读列表、只读详情。
+- 复用现有 `POST /api/v1/term-rules/simulate` 做文本模拟。
+- 明确不使用 raw HTML 渲染模拟结果。
+
+未覆盖的完整 Phase 2 能力：
+
+- 规则新增、编辑、启停、删除。
+- 规则导入、导出、同步文件入口。
+- Term Rule Set 版本 diff、冲突分析、发布前校验扩展。
+- 规则治理和提案审核的批量化联动。
+
+建议：保留当前任务为“检查/模拟台已完成”，另开 `term-rule-governance-crud` 或等价任务承接完整 CRUD、diff 和发布前校验。
+
+### `translation-term-set-management`
+
+性质：轻量管理能力已基本成型，但仍不是完整 Phase 2 配置治理闭环。
+
+已观察到的实现面：
+
+- Admin-only `/settings/translation-term-sets` 前端入口和页面。
+- `translationTermSetsApi` 覆盖 list/detail/draft/import/export/publish/set-default/rollback。
+- 后端 `/api/v1/translation-term-sets` 已覆盖 list/detail/draft/import/export/publish/set-default/rollback。
+- API 文档和 OpenAPI 已包含 Translation Term Set 管理接口。
+- 测试侧已有 Translation Term Set version service、API、rollback 和 job 快照相关覆盖。
+
+仍缺或未确认的完整 Phase 2 能力：
+
+- 逐条术语 CRUD 仍明确不做，CSV import 是唯一批量编辑入口。
+- 完整 diff、冲突解决、批量审核联动仍未覆盖。
+- 归档任务文档中 PRD checkbox 仍未同步为完成，`implement.md` 仍保留 planning 口径；需要做一次文档一致性修正。
+
+建议：把该任务视为“Translation Term Set 轻量管理已完成”；下一步先补齐归档文档的验收/验证记录，再决定是否另开 `translation-term-governance-diff` 承接 diff、冲突解决和审核联动。
+
 ## Recommended Trellis Tasks
 
 ### 1. `frontend-information-architecture`

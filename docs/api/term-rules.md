@@ -17,7 +17,7 @@ source_files:
   - app/domains/term_rules/schemas.py
 summary: Term-rules API 以 v2 manifest 为版本化 seed，以 live runtime store 为可变真源，并在 MySQL versioned mode 下把写入交给 Term Rule Set 发布流程。
 tags: [term-rules, api, runtime-store]
-last_reviewed: 2026-06-01
+last_reviewed: 2026-06-04
 ---
 
 ## 概述
@@ -141,6 +141,14 @@ last_reviewed: 2026-06-01
 
 `/api/v1/term-rule-proposals` 用于 V2.1 术语建议审核流。该能力需要 MySQL resource service；未启用时返回 `503`。
 
+治理边界：
+
+- Proposal 是 operator 提交的变更建议，不是直接写入入口。
+- Admin 直接治理入口是 `/api/v1/term-rule-sets/{set_id}/draft/rules` 和后续 publish/preflight 流程。
+- `approve` 只在 proposal 保存的目标规则快照仍匹配当前 draft 时合并；若 draft 已经被 Admin 直接治理或其他 proposal 改动，则返回结构化 `409`。
+- 后端不自动 rebase、不 force approve、不批量审核冲突 proposal。
+- 冲突发生时 proposal 保持 `pending_review`，draft 不被审核侧修改，`approve-and-publish` 不会执行 publish。
+
 ### `POST /api/v1/term-rule-proposals`
 
 - 用途：operator/admin 提交术语变更建议。
@@ -181,7 +189,9 @@ last_reviewed: 2026-06-01
 - 请求体字段：
   - `review_comment`：可选
 - 冲突语义：
-  - `update/disable` 的当前规则与 `target_rule_snapshot` 不一致时返回 `409`
+  - `update/disable` 的当前规则与 `target_rule_snapshot` 不一致时返回结构化 `409`
+  - `update/disable` 的目标规则已从 draft 消失时返回结构化 `409`
+  - `create` 遇到同名 `source_term` 但 segments 不一致时返回结构化 `409`
   - 冲突时 proposal 保持 `pending_review`，后端不自动 rebase
 
 ### `POST /api/v1/term-rule-proposals/{proposal_id}/approve-and-publish`
@@ -194,6 +204,7 @@ last_reviewed: 2026-06-01
 - 关键语义：
   - 仍然走 Term Rule Set draft/publish/default 流程，不直接修改 live 规则
   - 发布成功后刷新 conversion runtime YAML，并回填 `published_term_rule_set_version`
+  - approve 阶段返回结构化 `409` 时，不创建发布版本、不刷新默认版本、不回填 published 字段
 
 ### `POST /api/v1/term-rule-proposals/{proposal_id}/reject`
 
@@ -214,6 +225,52 @@ last_reviewed: 2026-06-01
 | `merged_term_rule_set_id` | approve 后合入的规则集 |
 | `merged_draft_snapshot_hash` | approve 后 draft snapshot hash |
 | `published_term_rule_set_version` | 随 Term Rule Set publish 后关联的版本号 |
+
+### `TermRuleProposalConflictResponse`
+
+`approve` 和 `approve-and-publish` 遇到人工冲突时返回 `409`，`detail` 使用稳定结构：
+
+```json
+{
+  "detail": {
+    "code": "term_rule_proposal_conflict",
+    "message": "proposal 与当前 draft 存在冲突，请重新核对后处理。",
+    "conflicts": [
+      {
+        "type": "stale_target_rule",
+        "message": "目标规则已发生变化，请重新提交 proposal。",
+        "proposal_id": "trp_xxx",
+        "target_rule_id": "rule_xxx",
+        "source_term": "VNEW",
+        "category_id": "voltage_terms",
+        "current_rule": {
+          "id": "rule_xxx",
+          "source_term": "VOLD"
+        },
+        "target_rule_snapshot": {
+          "id": "rule_xxx",
+          "source_term": "VOLD"
+        },
+        "metadata": {}
+      }
+    ]
+  }
+}
+```
+
+`conflicts[]` 字段：
+
+| 字段 | 说明 |
+|---|---|
+| `type` | `stale_target_rule` / `missing_target_rule` / `source_term_segments_conflict` |
+| `message` | 后端生成的人工处理说明 |
+| `proposal_id` | 当前 proposal ID |
+| `target_rule_id` | 相关目标规则；`missing_target_rule` 时为 proposal 保存的目标 ID |
+| `source_term` | proposal 中的 source term |
+| `category_id` | proposal 中的分类 ID |
+| `current_rule` | 当前 draft 中的规则；目标已不存在时为 `null` |
+| `target_rule_snapshot` | proposal 创建时保存的目标规则快照；create proposal 可为 `null` |
+| `metadata` | 冲突补充信息，例如 existing/proposed segments |
 
 ## 当前限制
 

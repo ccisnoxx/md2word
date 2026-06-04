@@ -4727,6 +4727,46 @@
         "title": "TermRuleDeleteResponse",
         "type": "object"
       },
+      "TermRuleDraftRuleDeleteResponse": {
+        "description": "返回 draft 规则移除结果和更新后的 draft 元数据。",
+        "properties": {
+          "draft": {
+            "$ref": "#/components/schemas/TermRuleSetDraftResponse"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "removed": {
+            "title": "Removed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "removed",
+          "draft"
+        ],
+        "title": "TermRuleDraftRuleDeleteResponse",
+        "type": "object"
+      },
+      "TermRuleDraftRuleMutationResponse": {
+        "description": "返回 draft 规则写入结果和更新后的 draft 元数据。",
+        "properties": {
+          "draft": {
+            "$ref": "#/components/schemas/TermRuleSetDraftResponse"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/TermRuleResponse"
+          }
+        },
+        "required": [
+          "rule",
+          "draft"
+        ],
+        "title": "TermRuleDraftRuleMutationResponse",
+        "type": "object"
+      },
       "TermRuleFileSyncResponse": {
         "properties": {
           "bootstrap_seed_path": {
@@ -4766,6 +4806,84 @@
           "warnings"
         ],
         "title": "TermRuleFileSyncResponse",
+        "type": "object"
+      },
+      "TermRuleGovernanceFindingResponse": {
+        "description": "描述发布前治理校验的一条错误、告警或冲突。",
+        "properties": {
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Id"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning",
+              "conflict"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "source_term": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Term"
+          }
+        },
+        "required": [
+          "severity",
+          "code",
+          "message"
+        ],
+        "title": "TermRuleGovernanceFindingResponse",
         "type": "object"
       },
       "TermRuleImportValidationFindingResponse": {
@@ -4915,6 +5033,111 @@
           }
         },
         "title": "TermRuleProposalApproveAndPublishRequest",
+        "type": "object"
+      },
+      "TermRuleProposalConflictItemResponse": {
+        "description": "描述 Term Rule Proposal 审核时发现的一条结构化冲突。",
+        "properties": {
+          "category_id": {
+            "title": "Category Id",
+            "type": "string"
+          },
+          "current_rule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TermRuleResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "proposal_id": {
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "source_term": {
+            "title": "Source Term",
+            "type": "string"
+          },
+          "target_rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Rule Id"
+          },
+          "target_rule_snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Rule Snapshot"
+          },
+          "type": {
+            "enum": [
+              "stale_target_rule",
+              "missing_target_rule",
+              "source_term_segments_conflict"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "message",
+          "proposal_id",
+          "source_term",
+          "category_id"
+        ],
+        "title": "TermRuleProposalConflictItemResponse",
+        "type": "object"
+      },
+      "TermRuleProposalConflictResponse": {
+        "description": "返回 Term Rule Proposal 审核冲突的稳定 409 响应 payload。",
+        "properties": {
+          "code": {
+            "const": "term_rule_proposal_conflict",
+            "default": "term_rule_proposal_conflict",
+            "title": "Code",
+            "type": "string"
+          },
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/TermRuleProposalConflictItemResponse"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "conflicts"
+        ],
+        "title": "TermRuleProposalConflictResponse",
         "type": "object"
       },
       "TermRuleProposalCreateRequest": {
@@ -5523,6 +5746,143 @@
         "title": "TermRuleSetDetailResponse",
         "type": "object"
       },
+      "TermRuleSetDiffItemResponse": {
+        "description": "描述一条规则在 diff 中的变化。",
+        "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TermRuleResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "before": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TermRuleResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "category_id": {
+            "title": "Category Id",
+            "type": "string"
+          },
+          "change_type": {
+            "enum": [
+              "added",
+              "updated",
+              "disabled",
+              "removed",
+              "unchanged"
+            ],
+            "title": "Change Type",
+            "type": "string"
+          },
+          "changed_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Changed Fields",
+            "type": "array"
+          },
+          "rule_id": {
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "source_term": {
+            "title": "Source Term",
+            "type": "string"
+          }
+        },
+        "required": [
+          "change_type",
+          "rule_id",
+          "source_term",
+          "category_id",
+          "changed_fields"
+        ],
+        "title": "TermRuleSetDiffItemResponse",
+        "type": "object"
+      },
+      "TermRuleSetDiffResponse": {
+        "description": "返回 Term Rule Set draft 相对基线版本的结构化差异。",
+        "properties": {
+          "base_ref": {
+            "$ref": "#/components/schemas/TermRuleSetVersionRefResponse"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TermRuleSetDiffItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/TermRuleSetDiffSummaryResponse"
+          },
+          "target_ref": {
+            "$ref": "#/components/schemas/TermRuleSetVersionRefResponse"
+          },
+          "term_rule_set_id": {
+            "title": "Term Rule Set Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "term_rule_set_id",
+          "base_ref",
+          "target_ref",
+          "summary",
+          "items"
+        ],
+        "title": "TermRuleSetDiffResponse",
+        "type": "object"
+      },
+      "TermRuleSetDiffSummaryResponse": {
+        "description": "汇总 draft 与基线版本之间的规则变化数量。",
+        "properties": {
+          "added": {
+            "title": "Added",
+            "type": "integer"
+          },
+          "disabled": {
+            "title": "Disabled",
+            "type": "integer"
+          },
+          "removed": {
+            "title": "Removed",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "unchanged": {
+            "title": "Unchanged",
+            "type": "integer"
+          },
+          "updated": {
+            "title": "Updated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "added",
+          "updated",
+          "disabled",
+          "removed",
+          "unchanged",
+          "total"
+        ],
+        "title": "TermRuleSetDiffSummaryResponse",
+        "type": "object"
+      },
       "TermRuleSetDraftResponse": {
         "properties": {
           "base_version": {
@@ -5846,6 +6206,104 @@
         "title": "TermRuleSetListResponse",
         "type": "object"
       },
+      "TermRuleSetPreflightResponse": {
+        "description": "返回 Term Rule Set draft 发布前校验结果。",
+        "properties": {
+          "base_ref": {
+            "$ref": "#/components/schemas/TermRuleSetVersionRefResponse"
+          },
+          "blocking": {
+            "title": "Blocking",
+            "type": "boolean"
+          },
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/TermRuleGovernanceFindingResponse"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
+          "diff_summary": {
+            "$ref": "#/components/schemas/TermRuleSetDiffSummaryResponse"
+          },
+          "draft_ref": {
+            "$ref": "#/components/schemas/TermRuleSetVersionRefResponse"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/TermRuleGovernanceFindingResponse"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/TermRuleSetPreflightSummaryResponse"
+          },
+          "term_rule_set_id": {
+            "title": "Term Rule Set Id",
+            "type": "string"
+          },
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/TermRuleGovernanceFindingResponse"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "term_rule_set_id",
+          "valid",
+          "blocking",
+          "base_ref",
+          "draft_ref",
+          "summary",
+          "errors",
+          "warnings",
+          "conflicts",
+          "diff_summary"
+        ],
+        "title": "TermRuleSetPreflightResponse",
+        "type": "object"
+      },
+      "TermRuleSetPreflightSummaryResponse": {
+        "description": "汇总发布前校验报告的发现数量和 draft 规模。",
+        "properties": {
+          "conflict_count": {
+            "title": "Conflict Count",
+            "type": "integer"
+          },
+          "enabled_rule_count": {
+            "title": "Enabled Rule Count",
+            "type": "integer"
+          },
+          "error_count": {
+            "title": "Error Count",
+            "type": "integer"
+          },
+          "rule_count": {
+            "title": "Rule Count",
+            "type": "integer"
+          },
+          "warning_count": {
+            "title": "Warning Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "error_count",
+          "warning_count",
+          "conflict_count",
+          "rule_count",
+          "enabled_rule_count"
+        ],
+        "title": "TermRuleSetPreflightSummaryResponse",
+        "type": "object"
+      },
       "TermRuleSetPublishRequest": {
         "properties": {
           "make_default": {
@@ -5886,6 +6344,46 @@
           "version"
         ],
         "title": "TermRuleSetRollbackRequest",
+        "type": "object"
+      },
+      "TermRuleSetVersionRefResponse": {
+        "description": "描述 diff/preflight 中解析后的规则集版本引用。",
+        "properties": {
+          "enabled_rule_count": {
+            "title": "Enabled Rule Count",
+            "type": "integer"
+          },
+          "ref": {
+            "title": "Ref",
+            "type": "string"
+          },
+          "rule_count": {
+            "title": "Rule Count",
+            "type": "integer"
+          },
+          "snapshot_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Hash"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "version",
+          "rule_count",
+          "enabled_rule_count"
+        ],
+        "title": "TermRuleSetVersionRefResponse",
         "type": "object"
       },
       "TermRuleSetVersionResponse": {
@@ -12162,6 +12660,7 @@
     },
     "/api/v1/term-rule-proposals/{proposal_id}/approve": {
       "post": {
+        "description": "审核 proposal，并在 draft 证据冲突时返回结构化 409。",
         "operationId": "approve_term_rule_proposal_api_v1_term_rule_proposals__proposal_id__approve_post",
         "parameters": [
           {
@@ -12250,6 +12749,16 @@
             },
             "description": "Successful Response"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermRuleProposalConflictResponse"
+                }
+              }
+            },
+            "description": "Term Rule Proposal 与当前 draft 存在冲突。"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -12269,6 +12778,7 @@
     },
     "/api/v1/term-rule-proposals/{proposal_id}/approve-and-publish": {
       "post": {
+        "description": "审核并发布 proposal；approve 阶段冲突时不执行发布。",
         "operationId": "approve_and_publish_term_rule_proposal_api_v1_term_rule_proposals__proposal_id__approve_and_publish_post",
         "parameters": [
           {
@@ -12356,6 +12866,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermRuleProposalConflictResponse"
+                }
+              }
+            },
+            "description": "Term Rule Proposal 与当前 draft 存在冲突。"
           },
           "422": {
             "content": {
@@ -12537,6 +13057,79 @@
         ]
       }
     },
+    "/api/v1/term-rule-sets/{set_id}/diff": {
+      "get": {
+        "description": "返回 Term Rule Set draft 相对基线版本的结构化差异。",
+        "operationId": "diff_term_rule_set_draft_api_v1_term_rule_sets__set_id__diff_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "set_id",
+            "required": true,
+            "schema": {
+              "title": "Set Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "default": "default",
+              "title": "From",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "default": "draft",
+              "title": "To",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_unchanged",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Unchanged",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermRuleSetDiffResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Diff Term Rule Set Draft",
+        "tags": [
+          "term-rule-sets"
+        ]
+      }
+    },
     "/api/v1/term-rule-sets/{set_id}/draft": {
       "get": {
         "operationId": "get_term_rule_set_draft_api_v1_term_rule_sets__set_id__draft_get",
@@ -12580,6 +13173,201 @@
       }
     },
     "/api/v1/term-rule-sets/{set_id}/draft/rules": {
+      "get": {
+        "description": "分页查询 Term Rule Set draft 内的结构化规则。",
+        "operationId": "list_term_rule_set_draft_rules_api_v1_term_rule_sets__set_id__draft_rules_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "set_id",
+            "required": true,
+            "schema": {
+              "title": "Set Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "enabled",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Enabled"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermRuleListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Term Rule Set Draft Rules",
+        "tags": [
+          "term-rule-sets"
+        ]
+      },
+      "post": {
+        "description": "在 Term Rule Set draft 内新增一条结构化规则。",
+        "operationId": "create_term_rule_set_draft_rule_api_v1_term_rule_sets__set_id__draft_rules_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "set_id",
+            "required": true,
+            "schema": {
+              "title": "Set Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TermRuleCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermRuleDraftRuleMutationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Term Rule Set Draft Rule",
+        "tags": [
+          "term-rule-sets"
+        ]
+      },
       "put": {
         "operationId": "update_term_rule_set_draft_rules_api_v1_term_rule_sets__set_id__draft_rules_put",
         "parameters": [
@@ -12658,6 +13446,232 @@
           }
         },
         "summary": "Update Term Rule Set Draft Rules",
+        "tags": [
+          "term-rule-sets"
+        ]
+      }
+    },
+    "/api/v1/term-rule-sets/{set_id}/draft/rules/{rule_id}": {
+      "delete": {
+        "description": "从 Term Rule Set draft 内移除一条结构化规则。",
+        "operationId": "delete_term_rule_set_draft_rule_api_v1_term_rule_sets__set_id__draft_rules__rule_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "set_id",
+            "required": true,
+            "schema": {
+              "title": "Set Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "title": "Rule Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermRuleDraftRuleDeleteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Term Rule Set Draft Rule",
+        "tags": [
+          "term-rule-sets"
+        ]
+      },
+      "get": {
+        "description": "读取 Term Rule Set draft 内的一条结构化规则。",
+        "operationId": "get_term_rule_set_draft_rule_api_v1_term_rule_sets__set_id__draft_rules__rule_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "set_id",
+            "required": true,
+            "schema": {
+              "title": "Set Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "title": "Rule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermRuleResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Term Rule Set Draft Rule",
+        "tags": [
+          "term-rule-sets"
+        ]
+      },
+      "patch": {
+        "description": "更新 Term Rule Set draft 内的一条结构化规则。",
+        "operationId": "update_term_rule_set_draft_rule_api_v1_term_rule_sets__set_id__draft_rules__rule_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "set_id",
+            "required": true,
+            "schema": {
+              "title": "Set Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "title": "Rule Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TermRuleUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermRuleDraftRuleMutationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Term Rule Set Draft Rule",
         "tags": [
           "term-rule-sets"
         ]
@@ -12880,8 +13894,62 @@
         ]
       }
     },
+    "/api/v1/term-rule-sets/{set_id}/preflight": {
+      "get": {
+        "description": "返回 Term Rule Set draft 的发布前治理校验报告。",
+        "operationId": "preflight_term_rule_set_draft_api_v1_term_rule_sets__set_id__preflight_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "set_id",
+            "required": true,
+            "schema": {
+              "title": "Set Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "base",
+            "required": false,
+            "schema": {
+              "default": "default",
+              "title": "Base",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermRuleSetPreflightResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preflight Term Rule Set Draft",
+        "tags": [
+          "term-rule-sets"
+        ]
+      }
+    },
     "/api/v1/term-rule-sets/{set_id}/publish": {
       "post": {
+        "description": "发布当前 draft；发布前 blocking preflight finding 会阻止创建版本。",
         "operationId": "publish_term_rule_set_draft_api_v1_term_rule_sets__set_id__publish_post",
         "parameters": [
           {
