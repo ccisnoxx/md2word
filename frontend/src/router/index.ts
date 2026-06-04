@@ -3,6 +3,7 @@ import { createRouter, createWebHistory, type RouteLocationNormalized } from "vu
 
 import { setUnauthorizedHandler } from "@/api/client";
 import AppLayout from "@/layouts/AppLayout.vue";
+import AuditLogPage from "@/pages/AuditLogPage.vue";
 import JobDetailPage from "@/pages/JobDetailPage.vue";
 import JobsPage from "@/pages/JobsPage.vue";
 import LoginPage from "@/pages/LoginPage.vue";
@@ -72,6 +73,12 @@ const router = createRouter({
         },
         { path: "term-proposals", name: "term-proposals", component: TermProposalsPage },
         { path: "system-status", name: "system-status", component: SystemStatusPage, meta: { roles: ["admin"] } },
+        {
+          path: "system-status/audit-events",
+          name: "system-status-audit-events",
+          component: AuditLogPage,
+          meta: { roles: ["admin"] },
+        },
       ],
     },
     {

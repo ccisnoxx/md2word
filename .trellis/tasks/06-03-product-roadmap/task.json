@@ -27,7 +27,8 @@
     "06-04-admin-system-status",
     "06-04-term-rule-workbench",
     "06-04-translation-term-set-management",
-    "06-04-translation-result-qa"
+    "06-04-translation-result-qa",
+    "06-04-audit-log-viewer"
   ],
   "parent": null,
   "relatedFiles": [],

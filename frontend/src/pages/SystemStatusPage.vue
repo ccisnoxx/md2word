@@ -39,7 +39,10 @@
       <article class="overview-card">
         <span>审计事件</span>
         <strong>{{ auditEventsTotal }}</strong>
-        <small>来自 `/api/v1/health/metrics`</small>
+        <small>
+          来自 `/api/v1/health/metrics`
+          <router-link class="metric-link" to="/system-status/audit-events">查看日志</router-link>
+        </small>
       </article>
     </section>
 
@@ -464,6 +467,11 @@ onMounted(() => {
   color: #667085;
   font-size: 13px;
   line-height: 1.5;
+}
+
+.metric-link {
+  display: inline-block;
+  margin-left: 8px;
 }
 
 .readiness-card {
