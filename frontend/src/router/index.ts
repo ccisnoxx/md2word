@@ -1,4 +1,5 @@
-// frontend/src/router/index.ts: Static MVP/Admin routes and auth guard.
+// File: frontend/src/router/index.ts
+// Purpose: Define static MVP/Admin routes and the auth guard.
 import { createRouter, createWebHistory, type RouteLocationNormalized } from "vue-router";
 
 import { setUnauthorizedHandler } from "@/api/client";
@@ -8,6 +9,7 @@ import FileRetentionPage from "@/pages/FileRetentionPage.vue";
 import JobDetailPage from "@/pages/JobDetailPage.vue";
 import JobsPage from "@/pages/JobsPage.vue";
 import LoginPage from "@/pages/LoginPage.vue";
+import OpsDashboardPage from "@/pages/OpsDashboardPage.vue";
 import SettingsHomePage from "@/pages/SettingsHomePage.vue";
 import SystemStatusPage from "@/pages/SystemStatusPage.vue";
 import TemplateDetailPage from "@/pages/TemplateDetailPage.vue";
@@ -74,6 +76,12 @@ const router = createRouter({
         },
         { path: "term-proposals", name: "term-proposals", component: TermProposalsPage },
         { path: "system-status", name: "system-status", component: SystemStatusPage, meta: { roles: ["admin"] } },
+        {
+          path: "system-status/ops-dashboard",
+          name: "system-status-ops-dashboard",
+          component: OpsDashboardPage,
+          meta: { roles: ["admin"] },
+        },
         {
           path: "system-status/audit-events",
           name: "system-status-audit-events",
