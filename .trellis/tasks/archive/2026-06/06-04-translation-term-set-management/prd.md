@@ -4,7 +4,7 @@
 
 补齐 Admin 侧 Translation Term Set 轻量管理入口，让管理员能围绕现有 `en2zh` 翻译术语集完成版本查看、CSV 导入/导出、draft 发布、默认版本切换和 rollback。
 
-本任务只进入规划/设计阶段时不实现代码；开始实现前必须先确认本 PRD、design 和 implement 边界。
+本任务已完成轻量管理入口和 API 合同落地。本文件于 2026-06-04 做状态一致性修正，避免 archived task 与当前实现不一致。
 
 ## Requirements
 
@@ -19,14 +19,22 @@
 
 ## Acceptance Criteria
 
-- [ ] Admin 可以从配置中心进入“翻译术语集”页面；Operator 不看到该入口且不能访问 admin-only route。
-- [ ] 页面可以列出 Translation Term Set，查看选中 set 的默认版本、draft 摘要、校验 warnings/errors 和 published versions。
-- [ ] Admin 可以把 CSV 导入 draft；重复项按 `reject` / `keep_first` 策略返回明确结果，错误不保存无效 draft。
-- [ ] Admin 可以导出当前默认或指定版本 CSV，导出结果包含 manifest 和 CSV 正文。
-- [ ] Admin 可以发布 draft、设默认版本、rollback 到已发布版本；rollback 只切默认指针，不生成新版本。
-- [ ] 后端在 MySQL resource service 不可用时返回 `503`，缺失 set/version 返回 `404`，非法状态或 CSV 返回 `400`。
-- [ ] 不新增真实删除、文件清理、术语逐行 CRUD、完整 diff/冲突解决、pdf-mineru/翻译/Word 主流程调用。
-- [ ] 最小验证通过：后端 targeted unittest 覆盖新增管理 API，前端 typecheck/build 通过或明确记录未运行原因。
+- [x] Admin 可以从配置中心进入“翻译术语集”页面；Operator 不看到该入口且不能访问 admin-only route。
+- [x] 页面可以列出 Translation Term Set，查看选中 set 的默认版本、draft 摘要、校验 warnings/errors 和 published versions。
+- [x] Admin 可以把 CSV 导入 draft；重复项按 `reject` / `keep_first` 策略返回明确结果，错误不保存无效 draft。
+- [x] Admin 可以导出当前默认或指定版本 CSV，导出结果包含 manifest 和 CSV 正文。
+- [x] Admin 可以发布 draft、设默认版本、rollback 到已发布版本；rollback 只切默认指针，不生成新版本。
+- [x] 后端在 MySQL resource service 不可用时返回 `503`，缺失 set/version 返回 `404`，非法状态或 CSV 返回 `400`。
+- [x] 不新增真实删除、文件清理、术语逐行 CRUD、完整 diff/冲突解决、pdf-mineru/翻译/Word 主流程调用。
+- [x] 最小验证通过：后端 targeted unittest 覆盖新增管理 API，前端 typecheck/build 通过或明确记录未运行原因。
+
+## Completion Notes
+
+- 前端入口、route、API wrapper 和管理页已落在 `frontend/src/pages/TranslationTermSetPage.vue`、`frontend/src/api/translationTermSets.ts`、`frontend/src/router/index.ts` 和 `frontend/src/pages/SettingsHomePage.vue`。
+- 后端 list/detail/draft/import/export/publish/set-default/rollback 已落在 `app/domains/translation/sets_router.py`，核心语义复用 `TranslationTermSetVersionService`。
+- `docs/api/translation-term-sets.md` 和 `docs/api/openapi.json` 已记录对应 API 合同。
+- `tests/test_fastapi_jobs_backend.py` 已覆盖 Translation Term Set 管理 API、CSV duplicate import/export、`503` 能力门控、rollback 默认指针，以及 rollback 不改变既有 job resource snapshot。
+- 当前仍未覆盖完整 diff、冲突解决工作台、批量审核联动和逐条 Translation Term CRUD；这些不是本 archived task 的完成条件。
 
 ## Notes
 

@@ -14,7 +14,7 @@ source_files:
   - app/domains/translation/schemas.py
 summary: Translation Term Sets API 在 MySQL resource service 下提供翻译术语 CSV 导入、导出和版本化默认集管理。
 tags: [translation, terminology, resource-versioning, api, audit]
-last_reviewed: 2026-06-02
+last_reviewed: 2026-06-04
 ---
 
 # Translation Term Sets API
@@ -31,8 +31,10 @@ last_reviewed: 2026-06-02
 - list/detail/draft/read 接口用于管理台展示；mutation 接口保持 admin-only
 - 导入默认 `dedupe=reject`，重复 `normalized_source_term` 会拒绝
 - admin 可显式使用 `dedupe=keep_first`，保留第一条并返回重复项报告
+- CSV 字段或发布前校验失败时不会保存无效 draft
 - 导出默认当前默认版本；admin 可传 `version` 导出历史版本
-- 发布 draft 后清除 draft 指针；rollback 只切默认指针，不生成新版本
+- 发布 draft 后清除 draft 指针；set-default 和 rollback 只切默认指针，不生成新版本
+- 默认指针变化只影响后续使用默认配置的新 job；已创建 job 的 `resource_snapshot` 不会被改写
 - import/export 成功后写 audit event
 
 ## API 参考
@@ -125,6 +127,12 @@ en2zh,FPGA,现场可编程门阵列,draft,false,active,5,electronics,chip,first
 
 `import_report.duplicates[]` 会列出被 `keep_first` 丢弃的重复行，包含 `row_number`、`kept_row_number`、`source_term` 和 `normalized_source_term`。
 
+失败语义：
+
+- `dedupe=reject` 发现重复 `normalized_source_term` 时返回 `400`，不会保存 draft。
+- CSV 缺少必填列、字段为空、布尔/整数/status 字段非法，或 `language_pair` 与目标 set 不匹配时返回 `400`，不会保存 draft。
+- `dedupe=keep_first` 成功时只导入第一条重复项，并通过 `import_report.duplicates[]` 告知被丢弃行，供前端展示和人工复核。
+
 ### `GET /api/v1/translation-term-sets/{set_id}/export`
 
 - 用途：导出当前默认或指定历史版本为 CSV。
@@ -171,6 +179,7 @@ manifest 作为旁路元信息返回，不写入 CSV 正文，避免破坏现有
 - 用途：把指定 published version 设为默认版本。
 - 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 成功响应为单个 `TranslationTermSetVersionResponse`。
+- 语义边界：只更新 Translation Term Set 默认指针；不修改、删除或重写任何 published version，也不改变已创建 job 的 `resource_snapshot.translation_term_set`。
 
 ### `POST /api/v1/translation-term-sets/{set_id}/rollback`
 
@@ -183,6 +192,8 @@ manifest 作为旁路元信息返回，不写入 CSV 正文，避免破坏现有
 | `version` | 要回滚到的 published version |
 
 成功响应为单个 `TranslationTermSetVersionResponse`。
+
+rollback 是运维语义更强的 set-default：它只把默认指针切回指定 published version，不生成补丁版本，不归档历史版本，不删除 CSV 或条目，也不改变已创建 job 的 `resource_snapshot.translation_term_set`。
 
 ## 常见状态
 

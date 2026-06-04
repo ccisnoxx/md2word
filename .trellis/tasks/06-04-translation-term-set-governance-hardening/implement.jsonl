@@ -1,0 +1,8 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": "frontend/src/pages/TranslationTermSetPage.vue", "reason": "Primary frontend page for CSV import/export, default switch, rollback copy, and page-level error UX."}
+{"file": "frontend/src/api/translationTermSets.ts", "reason": "Existing API wrapper to preserve while hardening page behavior."}
+{"file": "app/domains/translation/sets_router.py", "reason": "Backend HTTP error mapping and Translation Term Set API boundary."}
+{"file": "app/domains/translation/term_set_version_service.py", "reason": "Service behavior for CSV validation, duplicate handling, default pointer, and rollback semantics."}
+{"file": "docs/api/translation-term-sets.md", "reason": "API reference to keep aligned with governance hardening and error semantics."}
+{"file": ".trellis/tasks/archive/2026-06/06-04-translation-term-set-management/prd.md", "reason": "Archived task PRD needs checkbox/status consistency correction."}
+{"file": ".trellis/tasks/archive/2026-06/06-04-translation-term-set-management/implement.md", "reason": "Archived task implementation plan needs actual completion and residual-gap record."}
