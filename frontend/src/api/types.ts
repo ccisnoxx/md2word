@@ -1,4 +1,4 @@
-// frontend/src/api/types.ts: TypeScript contracts for the backend v1 schemas used by MVP pages.
+// frontend/src/api/types.ts: TypeScript contracts for backend v1 schemas used by MVP and Admin pages.
 export type AuthLoginRequest = {
   username: string;
   password: string;
@@ -126,6 +126,31 @@ export type FileUploadUrlResponse = {
 export type FileUploadResponse = {
   file: DocumentFileResponse;
 };
+
+export type FileRetentionCandidateResponse = {
+  file_id: string;
+  job_id: string | null;
+  file_type: string;
+  storage_provider: string;
+  bucket: string;
+  object_key: string;
+  size_bytes: number;
+  status: string;
+  expires_at: string;
+  reason: string;
+};
+
+export type FileRetentionPlanResponse = {
+  generated_at: string;
+  retention_days: number;
+  deletion_supported: boolean;
+  action_mode: "dry_run" | "mark_expired";
+  totals: Record<string, number>;
+  candidates: FileRetentionCandidateResponse[];
+  marked_file_ids: string[];
+};
+
+export type FileRetentionMarkExpiredResponse = FileRetentionPlanResponse;
 
 export type DocumentJobMode = "direct_pdf_to_word" | "en2zh_pdf_to_word";
 export type DocumentLanguage = "auto" | "zh" | "en";
