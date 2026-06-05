@@ -92,10 +92,12 @@ class TermRuleProposalService:
         actor: ActorContext | None = None,
         trace_id: str | None = None,
     ) -> TermRuleProposalRecord:
-        """创建 pending_review proposal，并在 update/disable 时保存目标规则快照。"""
+        """创建 pending_review proposal，并以目标规则集 draft 作为校验和快照来源。"""
 
         normalized_reason = self._normalize_required_text(reason, "reason")
-        target_rule = self._load_target_rule(intent, target_rule_id)
+        term_rule_set_id = self._normalize_optional_text(observed_term_rule_set_id) or DEFAULT_TERM_RULE_SET_ID
+        draft_store = self.term_rule_set_version_service.get_draft_store(term_rule_set_id)
+        target_rule = self._load_target_rule(intent, target_rule_id, draft_store)
         if intent == TermRuleProposalIntent.CREATE and target_rule_id is not None:
             raise ValueError("create proposal 不能绑定 target_rule_id。")
         if intent == TermRuleProposalIntent.DISABLE:
@@ -106,7 +108,7 @@ class TermRuleProposalService:
         else:
             normalized_source_term = self._normalize_required_text(source_term or "", "source_term")
             normalized_category_id = self._normalize_required_text(category_id or "", "category_id")
-            self._require_category(self.term_rule_service.repository.load(), normalized_category_id)
+            self._require_category(draft_store, normalized_category_id)
             parsed_segments = self._build_segments(segments or [])
 
         proposal = TermRuleProposalRecord(
@@ -121,8 +123,9 @@ class TermRuleProposalService:
             page_number=page_number,
             context_before=self._normalize_optional_text(context_before),
             context_after=self._normalize_optional_text(context_after),
-            observed_term_rule_set_id=self._normalize_optional_text(observed_term_rule_set_id) or DEFAULT_TERM_RULE_SET_ID,
-            observed_term_rule_version=self._normalize_optional_text(observed_term_rule_version) or self._current_default_version(),
+            observed_term_rule_set_id=term_rule_set_id,
+            observed_term_rule_version=self._normalize_optional_text(observed_term_rule_version)
+            or self._current_default_version(term_rule_set_id),
             target_rule_id=target_rule.id if target_rule is not None else None,
             target_rule_snapshot=self._rule_snapshot(target_rule) if target_rule is not None else None,
             created_by=self._normalize_required_text(created_by, "created_by"),
@@ -453,10 +456,13 @@ class TermRuleProposalService:
         self,
         intent: TermRuleProposalIntent,
         target_rule_id: str | None,
+        store: TermRulesStore,
     ) -> TermRuleRecord | None:
+        """从目标 Term Rule Set draft 读取 update/disable proposal 的目标规则。"""
+
         if intent in {TermRuleProposalIntent.UPDATE, TermRuleProposalIntent.DISABLE}:
             normalized_target = self._normalize_required_text(target_rule_id or "", "target_rule_id")
-            return self.term_rule_service.get_rule(normalized_target)
+            return self._find_rule(store, normalized_target)
         return None
 
     def _apply_to_store(self, proposal: TermRuleProposalRecord, store: TermRulesStore) -> TermRulesStore:
@@ -731,9 +737,11 @@ class TermRuleProposalService:
             reason=proposal.review_comment,
         )
 
-    def _current_default_version(self) -> str | None:
+    def _current_default_version(self, term_rule_set_id: str = DEFAULT_TERM_RULE_SET_ID) -> str | None:
+        """读取目标规则集当前默认版本；异常时保持 proposal 兼容旧的空版本语义。"""
+
         try:
-            detail = self.term_rule_set_version_service.get_set_detail(DEFAULT_TERM_RULE_SET_ID)
+            detail = self.term_rule_set_version_service.get_set_detail(term_rule_set_id)
         except (FileNotFoundError, ValueError):
             return None
         return detail.default_version

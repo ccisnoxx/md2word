@@ -540,6 +540,7 @@ import {
   type TermProposalScope,
   type TranslationTermProposalScope,
 } from "@/api/termProposals";
+import { termRuleSetsApi } from "@/api/termRuleSets";
 import { termRulesApi } from "@/api/termRules";
 import type {
   TermRuleCategoryListItemResponse,
@@ -578,6 +579,7 @@ type ProposalTab =
   | "translation-all";
 type TermQueueTab = "mine" | "review" | "all";
 type TranslationQueueTab = "translation-mine" | "translation-review" | "translation-all";
+const DEFAULT_TERM_RULE_SET_ID = "electronics-default";
 
 const proposalIntentText: Record<string, string> = {
   create: "新增",
@@ -811,10 +813,11 @@ const translationProposalRules: FormRules = {
   ],
 };
 
+// 加载 proposal 表单所需的 draft 分类和规则，避免版本化模式下引用 legacy rule/category。
 async function loadReferenceData(): Promise<void> {
   const [categoryResponse, ruleResponse] = await Promise.all([
     termRulesApi.listCategories(),
-    termRulesApi.listRules({ page_size: 200, enabled: true }),
+    termRuleSetsApi.listDraftRules(DEFAULT_TERM_RULE_SET_ID, { page_size: 200, enabled: true }),
   ]);
   categories.value = categoryResponse.items;
   rules.value = ruleResponse.items;

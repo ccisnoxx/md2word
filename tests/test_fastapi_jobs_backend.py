@@ -61,6 +61,7 @@ from app.services.renderer import DocumentIRWordRenderer
 from app.domains.resources.service import ResourceVersionService
 from app.domains.term_rules.bootstrap import TermRuleBootstrapService
 from app.domains.term_rules.import_validation import TermRuleImportValidationService
+from app.domains.term_rules.models import TermRuleCategoryRecord, TermRulesStore
 from app.domains.term_rules.proposals_service import TermRuleProposalService
 from app.domains.term_rules.service import TermRuleService
 from app.domains.term_rules.sync_files import TermRuleFileSyncService
@@ -5903,6 +5904,104 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(conflict_proposal.status.value, "pending_review")
         self.assertIn("VBULK", draft_response.json()["yaml_text"])
         self.assertNotIn("VNEW", draft_response.json()["yaml_text"])
+
+    def test_term_rule_proposal_uses_draft_categories_when_legacy_store_diverges(self):
+        """验证版本化模式下 proposal 使用 Term Rule Set draft 分类，不依赖 legacy store 同步。"""
+
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        seed_yaml = (
+            "schema_version: 2\n"
+            "categories:\n"
+            "  voltage_terms:\n"
+            "    name: 电压相关\n"
+            "    priority: 10\n"
+            "    enabled: true\n"
+            "rules:\n"
+            "  - source_term: VBASE\n"
+            "    category: voltage_terms\n"
+            "    segments:\n"
+            "      - segment_text: VBASE\n"
+            "        render_type: plain\n"
+            "    enabled: true\n"
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            seed_path = temp_root / "term_rules_seed.yaml"
+            seed_path.write_text(seed_yaml, encoding="utf-8")
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                term_rules_seed_path=str(seed_path),
+            )
+            draft_store = runtime.term_rule_set_version_service.get_draft_store(DEFAULT_TERM_RULE_SET_ID)
+            draft_category_id = draft_store.categories[0].id
+            runtime.term_rule_service.repository.save(
+                TermRulesStore(
+                    categories=[
+                        TermRuleCategoryRecord(
+                            id="legacy_only_category",
+                            code="legacy_only",
+                            name="Legacy Only",
+                        )
+                    ],
+                    rules=[],
+                )
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                categories_response = client.get("/api/v1/term-rule-categories")
+                category_id = categories_response.json()["items"][0]["id"]
+                create_response = client.post(
+                    "/api/v1/term-rule-proposals",
+                    headers=operator_headers,
+                    json={
+                        "intent": "create",
+                        "source_term": "VDRIFTFIX",
+                        "category_id": category_id,
+                        "segments": [
+                            {"segment_text": "V", "render_type": "plain"},
+                            {"segment_text": "DRIFTFIX", "render_type": "subscript"},
+                        ],
+                        "reason": "proposal should follow draft categories",
+                    },
+                )
+                proposal_id = create_response.json()["id"]
+                bulk_response = client.post(
+                    "/api/v1/term-rule-proposals/bulk-approve",
+                    headers=admin_headers,
+                    json={
+                        "proposal_ids": [proposal_id],
+                        "review_comment": "approve draft category proposal",
+                    },
+                )
+                draft_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/draft",
+                    headers=admin_headers,
+                )
+
+            approved_proposal = runtime.term_rule_proposal_service.get_proposal(proposal_id)
+
+        self.assertEqual(categories_response.status_code, 200)
+        self.assertEqual(category_id, draft_category_id)
+        self.assertNotEqual(category_id, "legacy_only_category")
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.json()["category_id"], draft_category_id)
+        self.assertEqual(bulk_response.status_code, 200)
+        self.assertEqual(bulk_response.json()["succeeded"], 1)
+        self.assertEqual(bulk_response.json()["failed"], 0)
+        self.assertEqual(approved_proposal.status.value, "approved")
+        self.assertIn("VDRIFTFIX", draft_response.json()["yaml_text"])
 
     def test_term_rule_proposal_bulk_reject_partial_success_preserves_failed_item(self):
         """验证批量 reject 支持部分成功，并且失败项不会被二次覆盖。"""
