@@ -1,7 +1,16 @@
-<!-- frontend/src/components/TranslationTermProposalTable.vue: Shared table for Translation Term Proposal queues. -->
+<!-- File: frontend/src/components/TranslationTermProposalTable.vue -->
+<!-- Purpose: Render Translation Term Proposal queues and highlight the selected proposal row. -->
 <template>
   <div class="proposal-table-wrap">
-    <el-table :data="items" :loading="loading" empty-text="暂无 Translation Term Proposal">
+    <el-table
+      ref="tableRef"
+      :data="items"
+      :loading="loading"
+      empty-text="暂无 Translation Term Proposal"
+      :row-class-name="rowClassName"
+      @selection-change="handleSelectionChange"
+    >
+      <el-table-column v-if="selectable" type="selection" width="48" :selectable="isProposalSelectable" />
       <el-table-column prop="id" label="ID" width="120" />
       <el-table-column label="动作" width="90">
         <template #default="{ row }">{{ actionText[row.changes[0]?.action] || row.changes[0]?.action || "-" }}</template>
@@ -45,17 +54,25 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from "vue";
+import type { TableInstance } from "element-plus";
+
 import type { TranslationTermProposalResponse } from "@/api/types";
 import { formatDateTime } from "@/utils/format";
 
-defineProps<{
+const props = defineProps<{
   items: TranslationTermProposalResponse[];
   loading: boolean;
+  selectedId?: string | null;
+  selectable?: boolean;
 }>();
 
-defineEmits<{
+const emit = defineEmits<{
   select: [proposal: TranslationTermProposalResponse];
+  "selection-change": [proposals: TranslationTermProposalResponse[]];
 }>();
+
+const tableRef = ref<TableInstance>();
 
 const actionText: Record<string, string> = {
   add: "新增",
@@ -69,11 +86,37 @@ const statusText: Record<string, string> = {
   rejected: "已拒绝",
   published: "已发布",
 };
+
+// 根据页面层传入的 selectedId 高亮当前 proposal，避免 table 自己维护选中状态。
+function rowClassName({ row }: { row: TranslationTermProposalResponse }): string {
+  return row.id === props.selectedId ? "is-selected-row" : "";
+}
+
+// 只允许待审核 proposal 参与批量审核，避免前端绕过后端 pending-only 语义。
+function isProposalSelectable(row: TranslationTermProposalResponse): boolean {
+  return row.status === "pending";
+}
+
+// 把 Element Plus selection 事件转发给页面层，由页面维护批量审核状态。
+function handleSelectionChange(selection: TranslationTermProposalResponse[]): void {
+  emit("selection-change", selection);
+}
+
+// 供页面在批量操作后主动清空表格勾选状态。
+function clearSelection(): void {
+  tableRef.value?.clearSelection();
+}
+
+defineExpose({ clearSelection });
 </script>
 
 <style scoped lang="scss">
 .proposal-table-wrap {
   overflow-x: auto;
+}
+
+:deep(.el-table__row.is-selected-row td) {
+  background: #ecf5ff;
 }
 
 .job-link {

@@ -1,7 +1,16 @@
-<!-- frontend/src/components/TermProposalTable.vue: Shared proposal table for mine/all/review views. -->
+<!-- File: frontend/src/components/TermProposalTable.vue -->
+<!-- Purpose: Render Term Rule proposal queues and highlight the selected proposal row. -->
 <template>
   <div class="proposal-table-wrap">
-    <el-table :data="items" :loading="loading" empty-text="暂无 proposal">
+    <el-table
+      ref="tableRef"
+      :data="items"
+      :loading="loading"
+      empty-text="暂无 proposal"
+      :row-class-name="rowClassName"
+      @selection-change="handleSelectionChange"
+    >
+      <el-table-column v-if="selectable" type="selection" width="48" :selectable="isProposalSelectable" />
       <el-table-column prop="id" label="ID" width="110" />
       <el-table-column label="类型" width="90">
         <template #default="{ row }">{{ proposalIntentText[row.intent] || row.intent }}</template>
@@ -38,18 +47,26 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from "vue";
+import type { TableInstance } from "element-plus";
+
 import type { TermRuleProposalResponse } from "@/api/types";
 import { formatDateTime } from "@/utils/format";
 
-defineProps<{
+const props = defineProps<{
   items: TermRuleProposalResponse[];
   categories: Record<string, string>;
   loading: boolean;
+  selectedId?: string | null;
+  selectable?: boolean;
 }>();
 
-defineEmits<{
+const emit = defineEmits<{
   select: [proposal: TermRuleProposalResponse];
+  "selection-change": [proposals: TermRuleProposalResponse[]];
 }>();
+
+const tableRef = ref<TableInstance>();
 
 const proposalIntentText: Record<string, string> = {
   create: "新增",
@@ -63,11 +80,37 @@ const proposalStatusText: Record<string, string> = {
   rejected: "已拒绝",
   published: "已发布",
 };
+
+// 根据页面层传入的 selectedId 高亮当前 proposal，保持 table 组件无业务状态。
+function rowClassName({ row }: { row: TermRuleProposalResponse }): string {
+  return row.id === props.selectedId ? "is-selected-row" : "";
+}
+
+// 只允许待审核 proposal 参与批量审核，避免前端批量操作绕过后端 pending-only 语义。
+function isProposalSelectable(row: TermRuleProposalResponse): boolean {
+  return row.status === "pending_review";
+}
+
+// 把 Element Plus selection 事件转发给页面层，由页面维护批量审核状态。
+function handleSelectionChange(selection: TermRuleProposalResponse[]): void {
+  emit("selection-change", selection);
+}
+
+// 供页面在批量操作后主动清空表格勾选状态。
+function clearSelection(): void {
+  tableRef.value?.clearSelection();
+}
+
+defineExpose({ clearSelection });
 </script>
 
 <style scoped lang="scss">
 .proposal-table-wrap {
   overflow-x: auto;
+}
+
+:deep(.el-table__row.is-selected-row td) {
+  background: #ecf5ff;
 }
 
 .job-link {

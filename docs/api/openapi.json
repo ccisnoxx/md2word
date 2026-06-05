@@ -5035,6 +5035,152 @@
         "title": "TermRuleProposalApproveAndPublishRequest",
         "type": "object"
       },
+      "TermRuleProposalBulkItemResponse": {
+        "description": "批量审核中单条 proposal 的成功或失败结果。",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "proposal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TermRuleProposalResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposal_id": {
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "status_code": {
+            "title": "Status Code",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "ok",
+          "status_code"
+        ],
+        "title": "TermRuleProposalBulkItemResponse",
+        "type": "object"
+      },
+      "TermRuleProposalBulkRejectRequest": {
+        "description": "批量拒绝请求，共享同一条拒绝原因。",
+        "properties": {
+          "proposal_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Proposal Ids",
+            "type": "array"
+          },
+          "review_comment": {
+            "title": "Review Comment",
+            "type": "string"
+          }
+        },
+        "required": [
+          "review_comment"
+        ],
+        "title": "TermRuleProposalBulkRejectRequest",
+        "type": "object"
+      },
+      "TermRuleProposalBulkResponse": {
+        "description": "批量审核响应；允许部分成功且不隐藏单条失败原因。",
+        "properties": {
+          "action": {
+            "enum": [
+              "approve",
+              "reject"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TermRuleProposalBulkItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "succeeded": {
+            "title": "Succeeded",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action",
+          "total",
+          "succeeded",
+          "failed"
+        ],
+        "title": "TermRuleProposalBulkResponse",
+        "type": "object"
+      },
+      "TermRuleProposalBulkReviewRequest": {
+        "description": "批量审核请求，共享同一条审核备注。",
+        "properties": {
+          "proposal_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Proposal Ids",
+            "type": "array"
+          },
+          "review_comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Comment"
+          }
+        },
+        "title": "TermRuleProposalBulkReviewRequest",
+        "type": "object"
+      },
       "TermRuleProposalConflictItemResponse": {
         "description": "描述 Term Rule Proposal 审核时发现的一条结构化冲突。",
         "properties": {
@@ -7044,6 +7190,152 @@
         "title": "TranslationTermProposalApproveAndPublishRequest",
         "type": "object"
       },
+      "TranslationTermProposalBulkItemResponse": {
+        "description": "批量审核中单条 Translation Term Proposal 的成功或失败结果。",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "proposal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TranslationTermProposalResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposal_id": {
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "status_code": {
+            "title": "Status Code",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "ok",
+          "status_code"
+        ],
+        "title": "TranslationTermProposalBulkItemResponse",
+        "type": "object"
+      },
+      "TranslationTermProposalBulkRejectRequest": {
+        "description": "批量拒绝请求，共享同一条拒绝原因。",
+        "properties": {
+          "proposal_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Proposal Ids",
+            "type": "array"
+          },
+          "review_note": {
+            "title": "Review Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "review_note"
+        ],
+        "title": "TranslationTermProposalBulkRejectRequest",
+        "type": "object"
+      },
+      "TranslationTermProposalBulkResponse": {
+        "description": "批量审核响应；允许部分成功且保留单条失败原因。",
+        "properties": {
+          "action": {
+            "enum": [
+              "approve",
+              "reject"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TranslationTermProposalBulkItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "succeeded": {
+            "title": "Succeeded",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action",
+          "total",
+          "succeeded",
+          "failed"
+        ],
+        "title": "TranslationTermProposalBulkResponse",
+        "type": "object"
+      },
+      "TranslationTermProposalBulkReviewRequest": {
+        "description": "批量审核请求，共享同一条审核备注。",
+        "properties": {
+          "proposal_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Proposal Ids",
+            "type": "array"
+          },
+          "review_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Note"
+          }
+        },
+        "title": "TranslationTermProposalBulkReviewRequest",
+        "type": "object"
+      },
       "TranslationTermProposalChangeRequest": {
         "properties": {
           "action": {
@@ -7428,6 +7720,34 @@
           }
         },
         "title": "TranslationTermProposalCompatibilitySummaryResponse",
+        "type": "object"
+      },
+      "TranslationTermProposalConflictResponse": {
+        "description": "返回 Translation Term Proposal 审核冲突的稳定 409 响应 payload。",
+        "properties": {
+          "code": {
+            "const": "translation_term_proposal_conflict",
+            "default": "translation_term_proposal_conflict",
+            "title": "Code",
+            "type": "string"
+          },
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/TranslationTermProposalCompatibilityFindingResponse"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "conflicts"
+        ],
+        "title": "TranslationTermProposalConflictResponse",
         "type": "object"
       },
       "TranslationTermProposalCreateRequest": {
@@ -12974,6 +13294,190 @@
         ]
       }
     },
+    "/api/v1/term-rule-proposals/bulk-approve": {
+      "post": {
+        "description": "批量 approve term rule proposals，逐项复用单条审核语义。",
+        "operationId": "bulk_approve_term_rule_proposals_api_v1_term_rule_proposals_bulk_approve_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TermRuleProposalBulkReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermRuleProposalBulkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bulk Approve Term Rule Proposals",
+        "tags": [
+          "term-rule-proposals"
+        ]
+      }
+    },
+    "/api/v1/term-rule-proposals/bulk-reject": {
+      "post": {
+        "description": "批量 reject term rule proposals，逐项复用单条拒绝语义。",
+        "operationId": "bulk_reject_term_rule_proposals_api_v1_term_rule_proposals_bulk_reject_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TermRuleProposalBulkRejectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermRuleProposalBulkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bulk Reject Term Rule Proposals",
+        "tags": [
+          "term-rule-proposals"
+        ]
+      }
+    },
     "/api/v1/term-rule-proposals/{proposal_id}": {
       "get": {
         "operationId": "get_term_rule_proposal_api_v1_term_rule_proposals__proposal_id__get",
@@ -15863,6 +16367,190 @@
         ]
       }
     },
+    "/api/v1/translation-term-proposals/bulk-approve": {
+      "post": {
+        "description": "批量 approve translation term proposals，逐项复用单条审核语义。",
+        "operationId": "bulk_approve_translation_term_proposals_api_v1_translation_term_proposals_bulk_approve_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranslationTermProposalBulkReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationTermProposalBulkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bulk Approve Translation Term Proposals",
+        "tags": [
+          "translation-term-proposals"
+        ]
+      }
+    },
+    "/api/v1/translation-term-proposals/bulk-reject": {
+      "post": {
+        "description": "批量 reject translation term proposals，逐项复用单条拒绝语义。",
+        "operationId": "bulk_reject_translation_term_proposals_api_v1_translation_term_proposals_bulk_reject_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranslationTermProposalBulkRejectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationTermProposalBulkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bulk Reject Translation Term Proposals",
+        "tags": [
+          "translation-term-proposals"
+        ]
+      }
+    },
     "/api/v1/translation-term-proposals/{proposal_id}": {
       "get": {
         "operationId": "get_translation_term_proposal_api_v1_translation_term_proposals__proposal_id__get",
@@ -16011,6 +16699,16 @@
             },
             "description": "Successful Response"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationTermProposalConflictResponse"
+                }
+              }
+            },
+            "description": "Translation Term Proposal 与当前 draft 存在冲突。"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -16117,6 +16815,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationTermProposalConflictResponse"
+                }
+              }
+            },
+            "description": "Translation Term Proposal 与当前 draft 存在冲突。"
           },
           "422": {
             "content": {

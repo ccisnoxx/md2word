@@ -1,6 +1,7 @@
-from __future__ import annotations
+# File: app/domains/translation/proposals_router.py
+# Purpose: 提供 Translation Term Proposal 提交、查询和审核接口。
 
-# app/domains/translation/proposals_router.py: 提供 Translation Term Proposal 提交、查询和审核接口。
+from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -11,12 +12,18 @@ from app.core.runtime import AppRuntime
 from app.domains.audit.models import ActorContext
 from app.domains.translation.models import TranslationTermProposalRecord, TranslationTermProposalStatus
 from app.domains.translation.proposals_service import (
+    TranslationTermProposalBulkReviewItem,
     TranslationTermProposalConflictError,
     TranslationTermProposalService,
 )
 from app.domains.translation.schemas import (
     TranslationTermProposalApproveAndPublishRequest,
+    TranslationTermProposalBulkItemResponse,
+    TranslationTermProposalBulkRejectRequest,
+    TranslationTermProposalBulkResponse,
+    TranslationTermProposalBulkReviewRequest,
     TranslationTermProposalChangeResponse,
+    TranslationTermProposalConflictResponse,
     TranslationTermProposalCreateRequest,
     TranslationTermProposalListResponse,
     TranslationTermProposalRejectRequest,
@@ -27,6 +34,12 @@ from app.services.auth.models import AuthenticatedUser
 
 
 router = APIRouter(prefix="/translation-term-proposals", tags=["translation-term-proposals"])
+TRANSLATION_TERM_PROPOSAL_CONFLICT_RESPONSES = {
+    status.HTTP_409_CONFLICT: {
+        "model": TranslationTermProposalConflictResponse,
+        "description": "Translation Term Proposal 与当前 draft 存在冲突。",
+    },
+}
 
 
 def _require_translation_term_proposal_service(runtime: AppRuntime) -> TranslationTermProposalService:
@@ -92,6 +105,45 @@ def _ensure_proposal_visible(proposal: TranslationTermProposalRecord, user: Auth
     raise ApiError(status.HTTP_403_FORBIDDEN, "role_forbidden", "当前角色无权限查看该 proposal。")
 
 
+def _proposal_conflict_http_exception(exc: TranslationTermProposalConflictError) -> HTTPException:
+    """把 service 层 proposal 冲突转换为稳定的结构化 409 响应。"""
+
+    detail = TranslationTermProposalConflictResponse(
+        message="proposal 与当前 draft 存在冲突，请重新核对后处理。",
+        conflicts=list(exc.conflicts),
+    ).model_dump(mode="json")
+    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+
+
+def _serialize_bulk_item(item: TranslationTermProposalBulkReviewItem) -> TranslationTermProposalBulkItemResponse:
+    """把 service 层批量审核结果映射为 API item。"""
+
+    return TranslationTermProposalBulkItemResponse(
+        proposal_id=item.proposal_id,
+        ok=item.ok,
+        status_code=item.status_code,
+        error_code=item.error_code,
+        detail=item.detail,
+        proposal=_serialize_proposal(item.proposal) if item.proposal is not None else None,
+    )
+
+
+def _build_bulk_response(
+    action: str,
+    items: list[TranslationTermProposalBulkReviewItem],
+) -> TranslationTermProposalBulkResponse:
+    """汇总批量审核成功和失败数量。"""
+
+    succeeded = sum(1 for item in items if item.ok)
+    return TranslationTermProposalBulkResponse(
+        action=action,
+        total=len(items),
+        succeeded=succeeded,
+        failed=len(items) - succeeded,
+        items=[_serialize_bulk_item(item) for item in items],
+    )
+
+
 @router.post("", response_model=TranslationTermProposalResponse, status_code=status.HTTP_201_CREATED)
 def create_translation_term_proposal(
     payload: TranslationTermProposalCreateRequest,
@@ -134,6 +186,50 @@ def list_translation_term_proposals(
     return TranslationTermProposalListResponse(items=[_serialize_proposal(item) for item in items], total=len(items))
 
 
+@router.post("/bulk-approve", response_model=TranslationTermProposalBulkResponse)
+def bulk_approve_translation_term_proposals(
+    payload: TranslationTermProposalBulkReviewRequest,
+    actor: ActorContext = Depends(require_admin_actor),
+    runtime: AppRuntime = Depends(get_runtime),
+    trace_id: str = Depends(get_trace_id),
+) -> TranslationTermProposalBulkResponse:
+    """批量 approve translation term proposals，逐项复用单条审核语义。"""
+
+    try:
+        items = _require_translation_term_proposal_service(runtime).bulk_approve_proposals(
+            payload.proposal_ids,
+            reviewed_by=actor.actor_id or "admin",
+            review_note=payload.review_note,
+            actor=actor,
+            trace_id=trace_id,
+        )
+    except ValueError as exc:
+        raise bad_request_http_exception(exc) from exc
+    return _build_bulk_response("approve", items)
+
+
+@router.post("/bulk-reject", response_model=TranslationTermProposalBulkResponse)
+def bulk_reject_translation_term_proposals(
+    payload: TranslationTermProposalBulkRejectRequest,
+    actor: ActorContext = Depends(require_admin_actor),
+    runtime: AppRuntime = Depends(get_runtime),
+    trace_id: str = Depends(get_trace_id),
+) -> TranslationTermProposalBulkResponse:
+    """批量 reject translation term proposals，逐项复用单条拒绝语义。"""
+
+    try:
+        items = _require_translation_term_proposal_service(runtime).bulk_reject_proposals(
+            payload.proposal_ids,
+            reviewed_by=actor.actor_id or "admin",
+            review_note=payload.review_note,
+            actor=actor,
+            trace_id=trace_id,
+        )
+    except ValueError as exc:
+        raise bad_request_http_exception(exc) from exc
+    return _build_bulk_response("reject", items)
+
+
 @router.get("/{proposal_id}", response_model=TranslationTermProposalResponse)
 def get_translation_term_proposal(
     proposal_id: str,
@@ -148,7 +244,11 @@ def get_translation_term_proposal(
     return _serialize_proposal(proposal)
 
 
-@router.post("/{proposal_id}/approve", response_model=TranslationTermProposalResponse)
+@router.post(
+    "/{proposal_id}/approve",
+    response_model=TranslationTermProposalResponse,
+    responses=TRANSLATION_TERM_PROPOSAL_CONFLICT_RESPONSES,
+)
 def approve_translation_term_proposal(
     proposal_id: str,
     payload: TranslationTermProposalReviewRequest | None = None,
@@ -165,10 +265,7 @@ def approve_translation_term_proposal(
             trace_id=trace_id,
         )
     except TranslationTermProposalConflictError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "translation_term_proposal_conflict", "conflicts": list(exc.conflicts)},
-        ) from exc
+        raise _proposal_conflict_http_exception(exc) from exc
     except FileNotFoundError as exc:
         raise not_found_http_exception(exc) from exc
     except ValueError as exc:
@@ -176,7 +273,11 @@ def approve_translation_term_proposal(
     return _serialize_proposal(proposal)
 
 
-@router.post("/{proposal_id}/approve-and-publish", response_model=TranslationTermProposalResponse)
+@router.post(
+    "/{proposal_id}/approve-and-publish",
+    response_model=TranslationTermProposalResponse,
+    responses=TRANSLATION_TERM_PROPOSAL_CONFLICT_RESPONSES,
+)
 def approve_and_publish_translation_term_proposal(
     proposal_id: str,
     payload: TranslationTermProposalApproveAndPublishRequest | None = None,
@@ -194,10 +295,7 @@ def approve_and_publish_translation_term_proposal(
             trace_id=trace_id,
         )
     except TranslationTermProposalConflictError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "translation_term_proposal_conflict", "conflicts": list(exc.conflicts)},
-        ) from exc
+        raise _proposal_conflict_http_exception(exc) from exc
     except FileNotFoundError as exc:
         raise not_found_http_exception(exc) from exc
     except ValueError as exc:

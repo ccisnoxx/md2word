@@ -1,0 +1,90 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - link "内部文档转换工作台" [ref=e6] [cursor=pointer]:
+        - /url: /jobs
+      - generic:
+        - generic: MVP
+    - navigation "主导航" [ref=e7]:
+      - link "任务工作台" [ref=e8] [cursor=pointer]:
+        - /url: /jobs
+      - link "配置中心" [ref=e9] [cursor=pointer]:
+        - /url: /settings
+      - link "提案审核" [ref=e10] [cursor=pointer]:
+        - /url: /term-proposals
+      - link "系统状态" [ref=e11] [cursor=pointer]:
+        - /url: /system-status
+    - generic [ref=e12]:
+      - generic [ref=e13]: Admin User (admin)
+      - button "退出" [ref=e14] [cursor=pointer]:
+        - img [ref=e16]
+        - generic [ref=e19]: 退出
+  - main [ref=e20]:
+    - main "术语建议" [ref=e21]:
+      - generic [ref=e22]:
+        - generic [ref=e23]:
+          - paragraph [ref=e24]: Term Proposal
+          - heading "术语建议" [level=1] [ref=e25]
+          - paragraph [ref=e26]: operator 提交规则或翻译术语建议，admin 审核后合并到对应 draft。
+        - button "刷新" [ref=e27] [cursor=pointer]:
+          - img [ref=e29]
+          - generic [ref=e31]: 刷新
+      - generic [ref=e32]:
+        - tablist [ref=e36]:
+          - tab "我的建议" [ref=e38]
+          - tab "新建建议" [ref=e39]
+          - tab "翻译术语新建" [selected] [ref=e40]
+          - tab "待审核队列" [ref=e41]
+          - tab "全部 proposal" [ref=e42]
+          - tab "翻译术语：我的" [ref=e43]
+          - tab "翻译术语待审核" [ref=e44]
+          - tab "翻译术语全部" [ref=e45]
+        - generic [ref=e46]:
+          - text: "* *"
+          - tabpanel "翻译术语新建" [ref=e47]:
+            - generic [ref=e50]:
+              - generic [ref=e51]:
+                - generic [ref=e52]: "* 动作"
+                - radiogroup "* 动作" [ref=e54]:
+                  - generic [ref=e55]:
+                    - radio "新增" [checked] [ref=e56]
+                    - generic [ref=e57] [cursor=pointer]: 新增
+                  - generic [ref=e58]:
+                    - radio "编辑" [ref=e59]
+                    - generic [ref=e60] [cursor=pointer]: 编辑
+                  - generic [ref=e61]:
+                    - radio "删除" [ref=e62]
+                    - generic [ref=e63] [cursor=pointer]: 删除
+              - generic [ref=e64]:
+                - generic [ref=e65]: 原文术语
+                - textbox "原文术语" [ref=e69]:
+                  - /placeholder: 例如 FPGA
+              - generic [ref=e70]:
+                - generic [ref=e71]: 目标译文
+                - textbox "目标译文" [ref=e75]:
+                  - /placeholder: 例如 现场可编程门阵列
+              - generic [ref=e76]:
+                - generic [ref=e77]: 原因说明
+                - textbox "原因说明" [ref=e80]:
+                  - /placeholder: 说明来源、问题和期望译法。
+              - generic [ref=e81]:
+                - generic [ref=e82]: 来源任务
+                - textbox "来源任务" [disabled] [ref=e86]:
+                  - /placeholder: 可选 job_id
+                  - text: job-smoke-1
+              - table [ref=e90]:
+                - rowgroup [ref=e91]:
+                  - row "来源任务 job-smoke-1 来源文件 file-smoke-1" [ref=e92]:
+                    - cell "来源任务" [ref=e93]
+                    - cell "job-smoke-1" [ref=e94]:
+                      - link "job-smoke-1" [ref=e95] [cursor=pointer]:
+                        - /url: /jobs/job-smoke-1
+                    - cell "来源文件" [ref=e96]
+                    - cell "file-smoke-1" [ref=e97]
+                  - row "Observed Set translation-terms-en2zh Observed Version v1" [ref=e98]:
+                    - cell "Observed Set" [ref=e99]
+                    - cell "translation-terms-en2zh" [ref=e100]
+                    - cell "Observed Version" [ref=e101]
+                    - cell "v1" [ref=e102]
+              - button "提交翻译术语建议" [ref=e105] [cursor=pointer]:
+                - generic [ref=e106]: 提交翻译术语建议

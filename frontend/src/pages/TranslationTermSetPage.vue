@@ -20,6 +20,23 @@
       :closable="false"
       show-icon
     />
+    <el-alert
+      v-if="proposalGovernanceContext"
+      class="context-alert governance-context-alert"
+      type="info"
+      :closable="false"
+      show-icon
+    >
+      <template #title>
+        <span>Proposal 治理上下文</span>
+      </template>
+      <div class="context-summary">
+        <el-tag effect="plain">proposal: {{ proposalGovernanceContext.proposalId }}</el-tag>
+        <el-tag effect="plain">set: {{ proposalGovernanceContext.setId || "-" }}</el-tag>
+        <el-tag effect="plain">observed: {{ proposalGovernanceContext.observedVersion || "-" }}</el-tag>
+        <el-button link type="primary" @click="returnToProposalReview">返回 proposal 审核页</el-button>
+      </div>
+    </el-alert>
 
     <el-alert
       v-if="unavailable"
@@ -215,7 +232,20 @@
         </article>
       </div>
 
-      <el-table :data="proposalCompatibility?.items || []" :loading="loading" empty-text="暂无 pending Translation Term Proposal">
+      <el-alert
+        v-if="proposalCompatibilityNotice"
+        class="context-alert"
+        type="warning"
+        :title="proposalCompatibilityNotice"
+        :closable="false"
+        show-icon
+      />
+      <el-table
+        :data="proposalCompatibility?.items || []"
+        :loading="loading"
+        empty-text="暂无 pending Translation Term Proposal"
+        :row-class-name="proposalCompatibilityRowClassName"
+      >
         <el-table-column prop="proposal_id" label="Proposal" min-width="160">
           <template #default="{ row }">
             <router-link :to="{ name: 'term-proposals', query: { tab: 'translation-review', proposal_id: row.proposal_id } }" class="mono">
@@ -353,9 +383,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from "element-plus";
 import { Refresh } from "@element-plus/icons-vue";
+import { useRoute, useRouter } from "vue-router";
 
 import { translationTermSetsApi } from "@/api/translationTermSets";
 import type {
@@ -390,6 +421,8 @@ type DiffKind = TranslationTermSetDiffEntryResponse["kind"];
 type Compatibility = TranslationTermProposalCompatibilityItemResponse["compatibility"];
 type TagType = "success" | "warning" | "info" | "danger";
 
+const route = useRoute();
+const router = useRouter();
 const auth = useAuthStore();
 const isAdmin = computed(() => auth.user?.role === "admin");
 const sets = ref<TranslationTermSetListItemResponse[]>([]);
@@ -450,6 +483,19 @@ const dedupeHints: Record<DedupeMode, string> = {
 
 const dedupeHint = computed(() => dedupeHints[importDialog.form.dedupe]);
 
+const proposalGovernanceContext = computed(() => {
+  const proposalId = queryString("proposal_id");
+  if (!proposalId) {
+    return null;
+  }
+  return {
+    proposalId,
+    setId: queryString("set_id"),
+    observedVersion: queryString("observed_version"),
+    returnTab: queryString("return_tab") || "translation-review",
+  };
+});
+
 const importReportSummary = computed(() => {
   const report = lastImportReport.value;
   if (!report) {
@@ -472,6 +518,22 @@ const validationFindings = computed<FindingRow[]>(() => {
 const visibleDiffItems = computed(() => (
   diff.value?.items.filter((item) => item.kind !== "unchanged") ?? []
 ));
+
+const targetProposalCompatibility = computed(() => {
+  const proposalId = proposalGovernanceContext.value?.proposalId;
+  if (!proposalId) {
+    return null;
+  }
+  return proposalCompatibility.value?.items.find((item) => item.proposal_id === proposalId) || null;
+});
+
+const proposalCompatibilityNotice = computed(() => {
+  const proposalId = proposalGovernanceContext.value?.proposalId;
+  if (!proposalId || loading.value || targetProposalCompatibility.value) {
+    return "";
+  }
+  return `proposal ${proposalId} 当前不在 pending compatibility 列表中；可能已审核、已发布、已拒绝，或当前 set 不匹配。`;
+});
 
 // 根据 Translation Term Set 页面语境给 Admin 提供下一步处理建议。
 const errorActionHint = computed(() => {
@@ -503,6 +565,14 @@ function setPageError(caught: unknown): void {
   error.value = normalized;
 }
 
+function queryString(key: string): string {
+  const value = route.query[key];
+  if (Array.isArray(value)) {
+    return typeof value[0] === "string" ? value[0] : "";
+  }
+  return typeof value === "string" ? value : "";
+}
+
 // 加载 set 列表和当前选中 set 的详情。
 async function loadAll(): Promise<void> {
   loading.value = true;
@@ -511,7 +581,7 @@ async function loadAll(): Promise<void> {
   try {
     const response = await translationTermSetsApi.list();
     sets.value = response.items;
-    selectedSetId.value ||= sets.value[0]?.set_id || "";
+    selectedSetId.value = queryString("set_id") || selectedSetId.value || sets.value[0]?.set_id || "";
     if (selectedSetId.value) {
       await loadSelectedSet();
     }
@@ -701,6 +771,26 @@ function findingCodes(findings: TranslationTermProposalCompatibilityFindingRespo
   return findings.length ? findings.map((item) => item.code).join(", ") : "-";
 }
 
+// 高亮从 proposal 审核页跳转而来的 compatibility 行，找不到时由页面提示说明。
+function proposalCompatibilityRowClassName({ row }: { row: TranslationTermProposalCompatibilityItemResponse }): string {
+  return row.proposal_id === proposalGovernanceContext.value?.proposalId ? "is-selected-row" : "";
+}
+
+// 返回 Translation proposal 审核页，保持 proposal_id deep-link。
+function returnToProposalReview(): void {
+  const context = proposalGovernanceContext.value;
+  if (!context) {
+    return;
+  }
+  void router.push({
+    name: "term-proposals",
+    query: {
+      tab: context.returnTab,
+      proposal_id: context.proposalId,
+    },
+  });
+}
+
 // 切换默认指针；只影响后续默认绑定，不改已有 job 快照。
 async function setDefault(version: string): Promise<void> {
   if (!selectedSetId.value) {
@@ -757,9 +847,9 @@ async function rollback(version: string): Promise<void> {
   }
 }
 
-onMounted(() => {
+watch(() => route.fullPath, () => {
   void loadAll();
-});
+}, { immediate: true });
 </script>
 
 <style scoped lang="scss">
@@ -805,6 +895,17 @@ onMounted(() => {
 
 .context-alert {
   margin-bottom: 4px;
+}
+
+.context-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.governance-context-alert {
+  border-left: 4px solid #2563eb;
 }
 
 .governance-summary-grid {
@@ -873,6 +974,10 @@ onMounted(() => {
 
 .export-text {
   margin-top: 14px;
+}
+
+:deep(.el-table__row.is-selected-row td) {
+  background: #ecf5ff;
 }
 
 @media (max-width: 1040px) {

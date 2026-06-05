@@ -386,6 +386,20 @@ class TermRuleProposalRejectRequest(BaseModel):
     review_comment: str
 
 
+class TermRuleProposalBulkReviewRequest(BaseModel):
+    """批量审核请求，共享同一条审核备注。"""
+
+    proposal_ids: list[str] = Field(default_factory=list)
+    review_comment: str | None = None
+
+
+class TermRuleProposalBulkRejectRequest(BaseModel):
+    """批量拒绝请求，共享同一条拒绝原因。"""
+
+    proposal_ids: list[str] = Field(default_factory=list)
+    review_comment: str
+
+
 class TermRuleProposalResponse(BaseModel):
     id: str
     intent: str
@@ -440,3 +454,24 @@ class TermRuleProposalConflictResponse(BaseModel):
 class TermRuleProposalListResponse(BaseModel):
     items: list[TermRuleProposalResponse]
     total: int
+
+
+class TermRuleProposalBulkItemResponse(BaseModel):
+    """批量审核中单条 proposal 的成功或失败结果。"""
+
+    proposal_id: str
+    ok: bool
+    status_code: int
+    error_code: str | None = None
+    detail: str | dict[str, Any] | None = None
+    proposal: TermRuleProposalResponse | None = None
+
+
+class TermRuleProposalBulkResponse(BaseModel):
+    """批量审核响应；允许部分成功且不隐藏单条失败原因。"""
+
+    action: Literal["approve", "reject"]
+    total: int
+    succeeded: int
+    failed: int
+    items: list[TermRuleProposalBulkItemResponse] = Field(default_factory=list)

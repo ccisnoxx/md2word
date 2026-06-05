@@ -678,6 +678,18 @@ export type TermRuleProposalApproveAndPublishRequest = {
   publish_reason?: string | null;
 };
 
+export type TermRuleProposalBulkAction = "approve" | "reject";
+
+export type TermRuleProposalBulkReviewRequest = {
+  proposal_ids: string[];
+  review_comment?: string | null;
+};
+
+export type TermRuleProposalBulkRejectRequest = {
+  proposal_ids: string[];
+  review_comment: string;
+};
+
 export type TermRuleProposalResponse = {
   id: string;
   intent: TermRuleProposalIntent;
@@ -736,6 +748,23 @@ export type TermRuleProposalConflictResponse = {
 export type TermRuleProposalListResponse = {
   items: TermRuleProposalResponse[];
   total: number;
+};
+
+export type TermRuleProposalBulkItemResponse = {
+  proposal_id: string;
+  ok: boolean;
+  status_code: number;
+  error_code: string | null;
+  detail: string | TermRuleProposalConflictResponse | Record<string, unknown> | null;
+  proposal: TermRuleProposalResponse | null;
+};
+
+export type TermRuleProposalBulkResponse = {
+  action: TermRuleProposalBulkAction;
+  total: number;
+  succeeded: number;
+  failed: number;
+  items: TermRuleProposalBulkItemResponse[];
 };
 
 export type TermRuleSetListItemResponse = {
@@ -1176,6 +1205,18 @@ export type TranslationTermProposalRejectRequest = {
   review_note: string;
 };
 
+export type TranslationTermProposalBulkAction = "approve" | "reject";
+
+export type TranslationTermProposalBulkReviewRequest = {
+  proposal_ids: string[];
+  review_note?: string | null;
+};
+
+export type TranslationTermProposalBulkRejectRequest = {
+  proposal_ids: string[];
+  review_note: string;
+};
+
 export type TranslationTermProposalChangeResponse = {
   seq: number;
   action: TranslationTermProposalAction;
@@ -1211,4 +1252,27 @@ export type TranslationTermProposalResponse = {
 export type TranslationTermProposalListResponse = {
   items: TranslationTermProposalResponse[];
   total: number;
+};
+
+export type TranslationTermProposalConflictResponse = {
+  code: "translation_term_proposal_conflict";
+  message: string;
+  conflicts: TranslationTermProposalCompatibilityFindingResponse[];
+};
+
+export type TranslationTermProposalBulkItemResponse = {
+  proposal_id: string;
+  ok: boolean;
+  status_code: number;
+  error_code: string | null;
+  detail: string | TranslationTermProposalConflictResponse | Record<string, unknown> | null;
+  proposal: TranslationTermProposalResponse | null;
+};
+
+export type TranslationTermProposalBulkResponse = {
+  action: TranslationTermProposalBulkAction;
+  total: number;
+  succeeded: number;
+  failed: number;
+  items: TranslationTermProposalBulkItemResponse[];
 };
