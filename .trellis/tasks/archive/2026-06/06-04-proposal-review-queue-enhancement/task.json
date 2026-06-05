@@ -1,0 +1,30 @@
+{
+  "id": "proposal-review-queue-enhancement",
+  "name": "proposal-review-queue-enhancement",
+  "title": "Proposal Review Queue Enhancement",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "md2word",
+  "assignee": "md2word",
+  "createdAt": "2026-06-04",
+  "completedAt": "2026-06-05",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "06-04-proposal-review-queue-shared-shell",
+    "06-04-term-rule-proposal-review-governance-linkage",
+    "06-04-translation-term-proposal-review-governance-linkage"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
