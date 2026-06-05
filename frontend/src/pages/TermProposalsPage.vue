@@ -24,10 +24,26 @@
         <li v-for="item in errorDetailItems" :key="item">{{ item }}</li>
       </ul>
     </el-alert>
+    <el-alert
+      v-if="focusNoticeVisible"
+      class="focus-notice"
+      type="info"
+      title="队列定位提示"
+      :closable="false"
+      show-icon
+    >
+      {{ focusNotice }}
+    </el-alert>
 
     <el-tabs v-model="activeTab" @tab-change="handleTabChange">
       <el-tab-pane label="我的建议" name="mine">
-        <TermProposalTable :items="proposals" :categories="categoryMap" :loading="loading" @select="selectProposal" />
+        <TermProposalTable
+          :items="proposals"
+          :categories="categoryMap"
+          :loading="loading"
+          :selected-id="selectedTermProposalId"
+          @select="selectProposal"
+        />
       </el-tab-pane>
       <el-tab-pane label="新建建议" name="new">
         <el-card class="card-flat" shadow="never">
@@ -173,7 +189,67 @@
       </el-tab-pane>
       <el-tab-pane v-if="isAdmin" label="待审核队列" name="review">
         <section class="review-grid">
-          <TermProposalTable :items="proposals" :categories="categoryMap" :loading="loading" @select="selectProposal" />
+          <div class="review-list-panel">
+            <el-card class="card-flat batch-review-card" shadow="never">
+              <div class="batch-review-header">
+                <div>
+                  <h2 class="section-title">批量审核</h2>
+                  <p class="section-subtitle">仅 pending_review proposal 可勾选；不提供批量发布。</p>
+                </div>
+                <el-tag effect="plain">{{ bulkSelectedCount }} selected</el-tag>
+              </div>
+              <el-input
+                v-model="bulkReviewComment"
+                class="review-comment"
+                type="textarea"
+                :rows="2"
+                placeholder="批量审核意见；reject 必填，approve 可选。"
+              />
+              <div class="toolbar">
+                <el-button
+                  type="success"
+                  :loading="bulkReviewing"
+                  :disabled="!bulkSelectedCount || reviewing"
+                  @click="bulkApproveProposals"
+                >
+                  批量 Approve
+                </el-button>
+                <el-button
+                  type="danger"
+                  :loading="bulkReviewing"
+                  :disabled="!bulkSelectedCount || reviewing"
+                  @click="bulkRejectProposals"
+                >
+                  批量 Reject
+                </el-button>
+              </div>
+              <el-alert
+                v-if="bulkResult"
+                class="bulk-result-alert"
+                :type="bulkResult.failed ? 'warning' : 'success'"
+                :title="bulkResultTitle"
+                :closable="true"
+                show-icon
+                @close="bulkResult = null"
+              >
+                <ul v-if="bulkFailureItems.length" class="error-detail-list">
+                  <li v-for="item in bulkFailureItems" :key="item.proposal_id">
+                    {{ formatBulkFailureItem(item) }}
+                  </li>
+                </ul>
+              </el-alert>
+            </el-card>
+            <TermProposalTable
+              ref="termReviewTableRef"
+              :items="proposals"
+              :categories="categoryMap"
+              :loading="loading"
+              :selected-id="selectedTermProposalId"
+              selectable
+              @select="selectProposal"
+              @selection-change="handleTermBulkSelectionChange"
+            />
+          </div>
           <el-card class="card-flat" shadow="never">
             <template v-if="selectedProposal">
               <div class="section-header">
@@ -193,7 +269,11 @@
                 title="当前规则与提交时快照不一致，请人工判断后再审核；页面不会自动 rebase。"
                 :closable="false"
                 show-icon
-              />
+              >
+                <el-button class="alert-action" link type="primary" @click="openGovernanceForSelectedProposal">
+                  去术语规则集治理页处理
+                </el-button>
+              </el-alert>
 
               <div class="review-panels">
                 <div>
@@ -216,6 +296,14 @@
                   </p>
                   <p><b>来源文件：</b>{{ selectedProposal.source_file_id || "-" }}</p>
                   <p><b>绑定版本：</b>{{ selectedTermRuleObservedVersionLabel }}</p>
+                  <el-button
+                    class="governance-link-button"
+                    type="primary"
+                    plain
+                    @click="openGovernanceForSelectedProposal"
+                  >
+                    打开术语规则治理上下文
+                  </el-button>
                 </div>
                 <div>
                   <h3>当前规则</h3>
@@ -266,22 +354,84 @@
         </section>
       </el-tab-pane>
       <el-tab-pane v-if="isAdmin" label="全部 proposal" name="all">
-        <TermProposalTable :items="proposals" :categories="categoryMap" :loading="loading" @select="selectProposal" />
+        <TermProposalTable
+          :items="proposals"
+          :categories="categoryMap"
+          :loading="loading"
+          :selected-id="selectedTermProposalId"
+          @select="selectProposal"
+        />
       </el-tab-pane>
       <el-tab-pane label="翻译术语：我的" name="translation-mine">
         <TranslationTermProposalTable
           :items="translationProposals"
           :loading="loading"
+          :selected-id="selectedTranslationProposalId"
           @select="selectTranslationProposal"
         />
       </el-tab-pane>
       <el-tab-pane v-if="isAdmin" label="翻译术语待审核" name="translation-review">
         <section class="review-grid">
-          <TranslationTermProposalTable
-            :items="translationProposals"
-            :loading="loading"
-            @select="selectTranslationProposal"
-          />
+          <div class="review-list-panel">
+            <el-card class="card-flat batch-review-card" shadow="never">
+              <div class="batch-review-header">
+                <div>
+                  <h2 class="section-title">批量审核</h2>
+                  <p class="section-subtitle">仅 pending translation proposal 可勾选；不提供批量发布。</p>
+                </div>
+                <el-tag effect="plain">{{ translationBulkSelectedCount }} selected</el-tag>
+              </div>
+              <el-input
+                v-model="translationBulkReviewNote"
+                class="review-comment"
+                type="textarea"
+                :rows="2"
+                placeholder="批量审核意见；reject 必填，approve 可选。"
+              />
+              <div class="toolbar">
+                <el-button
+                  type="success"
+                  :loading="bulkReviewing"
+                  :disabled="!translationBulkSelectedCount || reviewing"
+                  @click="bulkApproveTranslationProposals"
+                >
+                  批量 Approve
+                </el-button>
+                <el-button
+                  type="danger"
+                  :loading="bulkReviewing"
+                  :disabled="!translationBulkSelectedCount || reviewing"
+                  @click="bulkRejectTranslationProposals"
+                >
+                  批量 Reject
+                </el-button>
+              </div>
+              <el-alert
+                v-if="translationBulkResult"
+                class="bulk-result-alert"
+                :type="translationBulkResult.failed ? 'warning' : 'success'"
+                :title="translationBulkResultTitle"
+                :closable="true"
+                show-icon
+                @close="translationBulkResult = null"
+              >
+                <ul v-if="translationBulkFailureItems.length" class="error-detail-list">
+                  <li v-for="item in translationBulkFailureItems" :key="item.proposal_id">
+                    {{ formatTranslationBulkFailureItem(item) }}
+                  </li>
+                </ul>
+              </el-alert>
+            </el-card>
+            <TranslationTermProposalTable
+              ref="translationReviewTableRef"
+              :items="translationProposals"
+              :loading="loading"
+              :selected-id="selectedTranslationProposalId"
+              selectable
+              @select="selectTranslationProposal"
+              @selection-change="handleTranslationBulkSelectionChange"
+            />
+          </div>
           <el-card class="card-flat" shadow="never">
             <template v-if="selectedTranslationProposal">
               <div class="section-header">
@@ -311,6 +461,14 @@
                   </p>
                   <p><b>来源文件：</b>{{ selectedTranslationProposal.source_file_id || "-" }}</p>
                   <pre>{{ translationChangesText }}</pre>
+                  <el-button
+                    class="governance-link-button"
+                    type="primary"
+                    plain
+                    @click="openTranslationGovernanceForSelectedProposal"
+                  >
+                    打开翻译术语集治理上下文
+                  </el-button>
                 </div>
                 <div>
                   <h3>发布结果</h3>
@@ -362,6 +520,7 @@
         <TranslationTermProposalTable
           :items="translationProposals"
           :loading="loading"
+          :selected-id="selectedTranslationProposalId"
           @select="selectTranslationProposal"
         />
       </el-tab-pane>
@@ -373,7 +532,7 @@
 import { computed, reactive, ref, watch } from "vue";
 import { ElMessage, type FormInstance, type FormRules } from "element-plus";
 import { Refresh } from "@element-plus/icons-vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 import {
   termProposalsApi,
@@ -384,6 +543,8 @@ import {
 import { termRulesApi } from "@/api/termRules";
 import type {
   TermRuleCategoryListItemResponse,
+  TermRuleProposalBulkItemResponse,
+  TermRuleProposalBulkResponse,
   TermRuleProposalConflictItemResponse,
   TermRuleProposalConflictResponse,
   TermRuleProposalIntent,
@@ -391,6 +552,10 @@ import type {
   TermRuleResponse,
   TermRuleSegmentResponse,
   TermRuleSegmentWriteRequest,
+  TranslationTermProposalBulkItemResponse,
+  TranslationTermProposalBulkResponse,
+  TranslationTermProposalCompatibilityFindingResponse,
+  TranslationTermProposalConflictResponse,
   TranslationTermProposalAction,
   TranslationTermProposalResponse,
 } from "@/api/types";
@@ -401,6 +566,18 @@ import TermSegmentEditor from "@/components/TermSegmentEditor.vue";
 import TranslationTermProposalTable from "@/components/TranslationTermProposalTable.vue";
 import { useAuthStore } from "@/stores/auth";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
+
+type ProposalTab =
+  | "mine"
+  | "new"
+  | "review"
+  | "all"
+  | "translation-mine"
+  | "translation-new"
+  | "translation-review"
+  | "translation-all";
+type TermQueueTab = "mine" | "review" | "all";
+type TranslationQueueTab = "translation-mine" | "translation-review" | "translation-all";
 
 const proposalIntentText: Record<string, string> = {
   create: "新增",
@@ -423,26 +600,41 @@ const translationProposalStatusText: Record<string, string> = {
 };
 
 const route = useRoute();
+const router = useRouter();
 const auth = useAuthStore();
 const isAdmin = computed(() => auth.user?.role === "admin");
 const activeTab = ref(initialActiveTab());
 const loading = ref(false);
 const submitting = ref(false);
 const reviewing = ref(false);
+const bulkReviewing = ref(false);
 const error = ref<ApiClientError | null>(null);
 const categories = ref<TermRuleCategoryListItemResponse[]>([]);
 const rules = ref<TermRuleResponse[]>([]);
 const proposals = ref<TermRuleProposalResponse[]>([]);
 const translationProposals = ref<TranslationTermProposalResponse[]>([]);
+const selectedTermProposalId = ref("");
+const selectedTranslationProposalId = ref("");
 const selectedProposal = ref<TermRuleProposalResponse | null>(null);
 const selectedTranslationProposal = ref<TranslationTermProposalResponse | null>(null);
 const currentRule = ref<TermRuleResponse | null>(null);
 const reviewComment = ref("");
+const bulkReviewComment = ref("");
 const translationReviewNote = ref("");
+const translationBulkReviewNote = ref("");
+const bulkSelectedProposals = ref<TermRuleProposalResponse[]>([]);
+const bulkResult = ref<TermRuleProposalBulkResponse | null>(null);
+const translationBulkSelectedProposals = ref<TranslationTermProposalResponse[]>([]);
+const translationBulkResult = ref<TranslationTermProposalBulkResponse | null>(null);
+const focusNotice = ref("");
+const routeFocusProposalId = ref("");
+const skipNextTabChangeLoad = ref(false);
 const proposalFormRef = ref<FormInstance>();
 const translationProposalFormRef = ref<FormInstance>();
 const termRuleContextLocked = ref(false);
 const translationContextLocked = ref(false);
+const termReviewTableRef = ref<InstanceType<typeof TermProposalTable> & { clearSelection: () => void }>();
+const translationReviewTableRef = ref<InstanceType<typeof TranslationTermProposalTable> & { clearSelection: () => void }>();
 
 const proposalForm = reactive({
   intent: "create" as TermRuleProposalIntent,
@@ -509,7 +701,28 @@ const translationObservedVersionLabel = computed(() => {
   }
   return `${selectedTranslationProposal.value.observed_translation_term_set_id || "-"}@${selectedTranslationProposal.value.observed_translation_term_version || "-"}`;
 });
+const focusNoticeVisible = computed(() =>
+  Boolean(focusNotice.value) && (isTermQueueTab(activeTab.value) || isTranslationQueueTab(activeTab.value)),
+);
 const errorDetailItems = computed(() => extractErrorDetailItems(error.value?.raw));
+const bulkSelectedCount = computed(() => bulkSelectedProposals.value.length);
+const bulkFailureItems = computed(() => bulkResult.value?.items.filter((item) => !item.ok) || []);
+const bulkResultTitle = computed(() => {
+  if (!bulkResult.value) {
+    return "";
+  }
+  const actionText = bulkResult.value.action === "approve" ? "批量 Approve" : "批量 Reject";
+  return `${actionText} 完成：成功 ${bulkResult.value.succeeded}，失败 ${bulkResult.value.failed}，总计 ${bulkResult.value.total}`;
+});
+const translationBulkSelectedCount = computed(() => translationBulkSelectedProposals.value.length);
+const translationBulkFailureItems = computed(() => translationBulkResult.value?.items.filter((item) => !item.ok) || []);
+const translationBulkResultTitle = computed(() => {
+  if (!translationBulkResult.value) {
+    return "";
+  }
+  const actionText = translationBulkResult.value.action === "approve" ? "批量 Approve" : "批量 Reject";
+  return `${actionText} 完成：成功 ${translationBulkResult.value.succeeded}，失败 ${translationBulkResult.value.failed}，总计 ${translationBulkResult.value.total}`;
+});
 const snapshotConflict = computed(() => {
   if (!selectedProposal.value?.target_rule_id || !selectedProposal.value.target_rule_snapshot || !currentRule.value) {
     return false;
@@ -607,28 +820,246 @@ async function loadReferenceData(): Promise<void> {
   rules.value = ruleResponse.items;
 }
 
+// 识别所有受支持的 proposal tab，避免 query/tab 判断分散在多个分支里。
+function isProposalTab(tab: string): tab is ProposalTab {
+  return [
+    "mine",
+    "new",
+    "review",
+    "all",
+    "translation-mine",
+    "translation-new",
+    "translation-review",
+    "translation-all",
+  ].includes(tab);
+}
+
+// 区分 Term Rule form tab，避免 form context 与 queue focus 逻辑互相污染。
+function isTermFormTab(tab: string): tab is "new" {
+  return tab === "new";
+}
+
+// 区分 Translation form tab，确保 proposal_id 不会误作用于表单模式。
+function isTranslationFormTab(tab: string): tab is "translation-new" {
+  return tab === "translation-new";
+}
+
+// 区分 Term Rule queue tab，给 scope/focus/fallback 使用统一入口。
+function isTermQueueTab(tab: string): tab is TermQueueTab {
+  return tab === "mine" || tab === "review" || tab === "all";
+}
+
+// 区分 Translation queue tab，避免手写 startsWith 带来的隐式耦合。
+function isTranslationQueueTab(tab: string): tab is TranslationQueueTab {
+  return tab === "translation-mine" || tab === "translation-review" || tab === "translation-all";
+}
+
+// 只有 review 队列支持自动回退到 all 队列，其余 tab 保持用户原意不扩视野。
+function fallbackTabFor(tab: ProposalTab): ProposalTab | null {
+  if (tab === "review") {
+    return "all";
+  }
+  if (tab === "translation-review") {
+    return "translation-all";
+  }
+  return null;
+}
+
+// admin 默认进 review，operator 默认进 mine，作为 route 缺省值。
+function defaultTab(): ProposalTab {
+  return isAdmin.value ? "review" : "mine";
+}
+
+// 读取 route 中请求的 tab，并在未知值时回退到当前角色的默认 tab。
+function requestedRouteTab(): ProposalTab {
+  const tab = queryString("tab");
+  return isProposalTab(tab) ? tab : defaultTab();
+}
+
+// 统一处理代码内主动切换 tab 的场景，避免与 el-tabs 的 tab-change 重复加载。
+function setActiveTabSilently(tab: ProposalTab): void {
+  if (activeTab.value === tab) {
+    return;
+  }
+  skipNextTabChangeLoad.value = true;
+  activeTab.value = tab;
+}
+
+// 清理 Term Rule 审核详情，但保留 remembered id，便于后续 queue 恢复。
+function clearTermSelection(): void {
+  selectedProposal.value = null;
+  currentRule.value = null;
+  reviewComment.value = "";
+}
+
+// 清理 Term Rule 批量勾选状态，避免刷新或切 tab 后保留过期选择。
+function clearTermBulkSelection(): void {
+  bulkSelectedProposals.value = [];
+  termReviewTableRef.value?.clearSelection();
+}
+
+// 清理 Translation 批量勾选状态，避免刷新或切 tab 后保留过期选择。
+function clearTranslationBulkSelection(): void {
+  translationBulkSelectedProposals.value = [];
+  translationReviewTableRef.value?.clearSelection();
+}
+
+// 清理 Translation 审核详情，但保留 remembered id，便于后续 queue 恢复。
+function clearTranslationSelection(): void {
+  selectedTranslationProposal.value = null;
+  translationReviewNote.value = "";
+}
+
+// 从当前 term 列表中恢复选中项；找不到时只清空详情，不报错。
+async function restoreTermSelection(targetId: string): Promise<boolean> {
+  const proposal = proposals.value.find((item) => item.id === targetId);
+  if (!proposal) {
+    clearTermSelection();
+    return false;
+  }
+  await selectProposal(proposal);
+  return true;
+}
+
+// 从当前 translation 列表中恢复选中项；找不到时只清空详情。
+function restoreTranslationSelection(targetId: string): boolean {
+  const proposal = translationProposals.value.find((item) => item.id === targetId);
+  if (!proposal) {
+    clearTranslationSelection();
+    return false;
+  }
+  selectTranslationProposal(proposal);
+  return true;
+}
+
+// 根据当前 tab 把 Term Rule queue 映射到后端 scope。
+function termScopeForTab(tab: TermQueueTab): TermProposalScope {
+  if (tab === "review") {
+    return "pending_review";
+  }
+  if (tab === "all") {
+    return "all";
+  }
+  return "my";
+}
+
+// 根据当前 tab 把 Translation queue 映射到后端 scope。
+function translationScopeForTab(tab: TranslationQueueTab): TranslationTermProposalScope {
+  if (tab === "translation-review") {
+    return "pending";
+  }
+  if (tab === "translation-all") {
+    return "all";
+  }
+  return "my";
+}
+
+// 统一生成 deep-link 未命中时的轻量提示，避免 route/fallback 行为静默发生。
+function missingProposalNotice(targetId: string): string {
+  return `未在当前列表中定位到 proposal ${targetId}。`;
+}
+
+// 显式说明因 deep-link 不在 review 队列而回退到 all 队列，减少 admin 的困惑。
+function fallbackProposalNotice(targetId: string, tab: ProposalTab): string {
+  if (tab === "translation-review") {
+    return `目标 proposal ${targetId} 不在翻译术语待审核队列，已切换到翻译术语全部列表。`;
+  }
+  return `目标 proposal ${targetId} 不在待审核队列，已切换到全部 proposal 列表。`;
+}
+
+// 在一次加载周期里解析 term queue 的 deep-link / remembered-id / review fallback。
+async function resolveTermQueueFocus(tab: TermQueueTab): Promise<void> {
+  const targetId = routeFocusProposalId.value || selectedTermProposalId.value;
+  if (!targetId) {
+    clearTermSelection();
+    return;
+  }
+
+  if (await restoreTermSelection(targetId)) {
+    return;
+  }
+
+  const fallbackTab = routeFocusProposalId.value ? fallbackTabFor(tab) : null;
+  if (fallbackTab === "all") {
+    setActiveTabSilently(fallbackTab);
+    proposals.value = (await termProposalsApi.list({ scope: termScopeForTab(fallbackTab) })).items;
+    if (await restoreTermSelection(targetId)) {
+      focusNotice.value = fallbackProposalNotice(targetId, tab);
+      return;
+    }
+  }
+
+  if (routeFocusProposalId.value) {
+    focusNotice.value = missingProposalNotice(targetId);
+  }
+}
+
+// 在一次加载周期里解析 translation queue 的 deep-link / remembered-id / review fallback。
+async function resolveTranslationQueueFocus(tab: TranslationQueueTab): Promise<void> {
+  const targetId = routeFocusProposalId.value || selectedTranslationProposalId.value;
+  if (!targetId) {
+    clearTranslationSelection();
+    return;
+  }
+
+  if (restoreTranslationSelection(targetId)) {
+    return;
+  }
+
+  const fallbackTab = routeFocusProposalId.value ? fallbackTabFor(tab) : null;
+  if (fallbackTab === "translation-all") {
+    setActiveTabSilently(fallbackTab);
+    translationProposals.value = (await translationTermProposalsApi.list({ scope: translationScopeForTab(fallbackTab) })).items;
+    if (restoreTranslationSelection(targetId)) {
+      focusNotice.value = fallbackProposalNotice(targetId, tab);
+      return;
+    }
+  }
+
+  if (routeFocusProposalId.value) {
+    focusNotice.value = missingProposalNotice(targetId);
+  }
+}
+
+// 按当前 tab 加载 form 或 queue，并在 queue 场景里恢复 deep-link / remembered selection。
 async function loadActiveTab(): Promise<void> {
+  const currentTab = activeTab.value;
   loading.value = true;
   error.value = null;
-  selectedProposal.value = null;
-  selectedTranslationProposal.value = null;
-  currentRule.value = null;
+  focusNotice.value = "";
+  clearTermBulkSelection();
+  clearTranslationBulkSelection();
   try {
-    if (activeTab.value === "new") {
+    if (isTermFormTab(currentTab)) {
+      bulkResult.value = null;
+      translationBulkResult.value = null;
+      clearTermSelection();
+      clearTranslationSelection();
       await loadReferenceData();
       return;
     }
-    if (activeTab.value === "translation-new") {
+    if (isTranslationFormTab(currentTab)) {
+      bulkResult.value = null;
+      translationBulkResult.value = null;
+      clearTermSelection();
+      clearTranslationSelection();
       return;
     }
-    if (activeTab.value.startsWith("translation-")) {
-      const scope = translationActiveTabScope();
+    if (isTranslationQueueTab(currentTab)) {
+      bulkResult.value = null;
+      clearTermSelection();
+      const scope = translationScopeForTab(currentTab);
       translationProposals.value = (await translationTermProposalsApi.list({ scope })).items;
-    } else {
-      await loadReferenceData();
-      const scope = activeTabScope();
-      proposals.value = (await termProposalsApi.list({ scope })).items;
+      await resolveTranslationQueueFocus(currentTab);
+      return;
     }
+
+    clearTranslationSelection();
+    translationBulkResult.value = null;
+    await loadReferenceData();
+    const scope = termScopeForTab(currentTab);
+    proposals.value = (await termProposalsApi.list({ scope })).items;
+    await resolveTermQueueFocus(currentTab);
   } catch (caught) {
     error.value = normalizeApiError(caught);
   } finally {
@@ -636,34 +1067,14 @@ async function loadActiveTab(): Promise<void> {
   }
 }
 
-function activeTabScope(): TermProposalScope {
-  if (activeTab.value === "review") {
-    return "pending_review";
-  }
-  if (activeTab.value === "all") {
-    return "all";
-  }
-  return "my";
-}
-
-function translationActiveTabScope(): TranslationTermProposalScope {
-  if (activeTab.value === "translation-review") {
-    return "pending";
-  }
-  if (activeTab.value === "translation-all") {
-    return "all";
-  }
-  return "my";
-}
-
+// 只把用户手动 tab 切换当成新的本地意图，清空 route focus 并重载当前 tab。
 function handleTabChange(): void {
-  if (activeTab.value === "new") {
-    void loadReferenceData();
+  if (skipNextTabChangeLoad.value) {
+    skipNextTabChangeLoad.value = false;
     return;
   }
-  if (activeTab.value === "translation-new") {
-    return;
-  }
+  routeFocusProposalId.value = "";
+  focusNotice.value = "";
   void loadActiveTab();
 }
 
@@ -683,6 +1094,9 @@ function extractErrorDetailItems(raw: unknown): string[] {
   const detail = readRecord(body?.detail);
   if (isTermRuleProposalConflictDetail(detail)) {
     return detail.conflicts.map((item) => formatTermRuleProposalConflictItem(item));
+  }
+  if (isTranslationTermProposalConflictDetail(detail)) {
+    return detail.conflicts.map((item) => formatTranslationProposalConflictFinding(item));
   }
 
   const items: string[] = [];
@@ -709,6 +1123,14 @@ function readString(value: unknown): string | null {
 function isTermRuleProposalConflictDetail(value: Record<string, unknown> | null): value is TermRuleProposalConflictResponse {
   return (
     value?.code === "term_rule_proposal_conflict" &&
+    Array.isArray(value.conflicts)
+  );
+}
+
+// 识别 Translation Proposal 的结构化 409 响应。
+function isTranslationTermProposalConflictDetail(value: Record<string, unknown> | null): value is TranslationTermProposalConflictResponse {
+  return (
+    value?.code === "translation_term_proposal_conflict" &&
     Array.isArray(value.conflicts)
   );
 }
@@ -745,6 +1167,34 @@ function formatTermRuleProposalConflictItem(item: TermRuleProposalConflictItemRe
   return `${typeText[item.type] || item.type}: ${item.message}（${context.join("；")}；${currentRuleText}）`;
 }
 
+// 识别 Translation Proposal compatibility-style finding，兼容 detail.conflicts[] 被单独遍历。
+function isTranslationProposalConflictFinding(value: unknown): value is TranslationTermProposalCompatibilityFindingResponse {
+  const record = readRecord(value);
+  return Boolean(
+    record &&
+    readString(record.severity) &&
+    readString(record.code) &&
+    readString(record.message),
+  );
+}
+
+// 将 Translation conflict finding 压缩成一行，保留当前 draft 与 observed entry 的关键差异。
+function formatTranslationProposalConflictFinding(
+  item: TranslationTermProposalCompatibilityFindingResponse,
+  proposalId?: string,
+): string {
+  const currentEntry = readRecord(item.current_entry);
+  const observedEntry = readRecord(item.observed_entry);
+  const context = [
+    proposalId ? `proposal ${proposalId}` : "",
+    item.normalized_source_term ? `term ${item.normalized_source_term}` : "",
+    item.action ? `action ${item.action}` : "",
+  ].filter(Boolean);
+  const currentTarget = readString(currentEntry?.target_term) || "-";
+  const observedTarget = readString(observedEntry?.target_term) || "-";
+  return `${item.code}: ${item.message}（${context.join("；")}；当前译文 ${currentTarget}；证据译文 ${observedTarget}）`;
+}
+
 // 格式化后端 detail 数组项；结构化对象优先读 message，未知对象保留 JSON。
 function formatDetailItem(value: unknown): string {
   if (typeof value === "string") {
@@ -752,6 +1202,9 @@ function formatDetailItem(value: unknown): string {
   }
   if (isTermRuleProposalConflictItem(value)) {
     return formatTermRuleProposalConflictItem(value);
+  }
+  if (isTranslationProposalConflictFinding(value)) {
+    return formatTranslationProposalConflictFinding(value);
   }
   const record = readRecord(value);
   const message = readString(record?.message);
@@ -805,45 +1258,40 @@ function queryString(key: string): string {
   return typeof value === "string" ? value : "";
 }
 
-// 根据路由 query 打开指定 tab，支持从治理页面跳转到翻译术语审核流。
-function initialActiveTab(): string {
-  const tab = queryString("tab");
-  if (["new", "translation-new", "mine", "all", "translation-mine", "translation-review", "translation-all"].includes(tab)) {
-    return tab;
-  }
-  return isAdmin.value ? "review" : "mine";
+// 根据路由 query 打开指定 tab，支持从治理页面跳转到审核或新建入口。
+function initialActiveTab(): ProposalTab {
+  return requestedRouteTab();
 }
 
 // 将任务详情或治理页面传入的上下文写入当前 proposal 表单/tab。
 function applyRouteProposalContext(): void {
-  const tab = queryString("tab");
-  if (tab === "new") {
+  const tab = requestedRouteTab();
+  if (isTermFormTab(tab)) {
     resetProposalForm();
     proposalForm.source_job_id = queryString("source_job_id");
     proposalForm.source_file_id = queryString("source_file_id");
     proposalForm.observed_term_rule_set_id = queryString("observed_term_rule_set_id");
     proposalForm.observed_term_rule_version = queryString("observed_term_rule_version");
     termRuleContextLocked.value = Boolean(proposalForm.source_job_id);
-    activeTab.value = "new";
+    setActiveTabSilently("new");
     return;
   }
-  if (tab === "translation-new") {
+  if (isTranslationFormTab(tab)) {
     resetTranslationProposalForm();
     translationProposalForm.source_job_id = queryString("source_job_id");
     translationProposalForm.source_file_id = queryString("source_file_id");
     translationProposalForm.observed_translation_term_set_id = queryString("observed_translation_term_set_id");
     translationProposalForm.observed_translation_term_version = queryString("observed_translation_term_version");
     translationContextLocked.value = Boolean(translationProposalForm.source_job_id);
-    activeTab.value = "translation-new";
+    setActiveTabSilently("translation-new");
     return;
-  }
-  if (["mine", "all", "translation-mine", "translation-review", "translation-all"].includes(tab)) {
-    activeTab.value = tab;
   }
   termRuleContextLocked.value = false;
   translationContextLocked.value = false;
+  setActiveTabSilently(tab);
 }
 
+// 提交 Term Rule proposal 后切回 mine，并丢弃旧的 route focus。
 async function submitProposal(): Promise<void> {
   const valid = await proposalFormRef.value?.validate().catch(() => false);
   if (!valid) {
@@ -869,7 +1317,9 @@ async function submitProposal(): Promise<void> {
       target_rule_id: proposalForm.target_rule_id || null,
     });
     ElMessage.success("术语建议已提交。");
-    activeTab.value = "mine";
+    routeFocusProposalId.value = "";
+    selectedTermProposalId.value = "";
+    setActiveTabSilently("mine");
     resetProposalForm();
     await loadActiveTab();
   } catch (caught) {
@@ -917,6 +1367,7 @@ function handleTranslationActionChange(): void {
   }
 }
 
+// 提交 Translation proposal 后切回 mine，避免继承旧 deep-link 选中态。
 async function submitTranslationProposal(): Promise<void> {
   const valid = await translationProposalFormRef.value?.validate().catch(() => false);
   if (!valid) {
@@ -942,7 +1393,9 @@ async function submitTranslationProposal(): Promise<void> {
       ],
     });
     ElMessage.success("翻译术语建议已提交。");
-    activeTab.value = "translation-mine";
+    routeFocusProposalId.value = "";
+    selectedTranslationProposalId.value = "";
+    setActiveTabSilently("translation-mine");
     resetTranslationProposalForm();
     await loadActiveTab();
   } catch (caught) {
@@ -952,7 +1405,10 @@ async function submitTranslationProposal(): Promise<void> {
   }
 }
 
+// 选中 Term Rule proposal，并在详情侧补齐当前规则快照。
 async function selectProposal(proposal: TermRuleProposalResponse): Promise<void> {
+  routeFocusProposalId.value = "";
+  selectedTermProposalId.value = proposal.id;
   selectedProposal.value = proposal;
   reviewComment.value = proposal.review_comment || "";
   currentRule.value = null;
@@ -965,11 +1421,234 @@ async function selectProposal(proposal: TermRuleProposalResponse): Promise<void>
   }
 }
 
+// 同步 Term Rule review tab 的批量勾选结果。
+function handleTermBulkSelectionChange(selection: TermRuleProposalResponse[]): void {
+  bulkSelectedProposals.value = selection;
+}
+
+// 读取当前批量选择的 proposal IDs，避免请求使用过期 table 行对象。
+function selectedBulkProposalIds(): string[] {
+  return bulkSelectedProposals.value.map((proposal) => proposal.id);
+}
+
+// 批量响应后刷新队列，并优先定位第一条失败项供继续治理。
+async function handleBulkReviewResponse(response: TermRuleProposalBulkResponse): Promise<void> {
+  bulkResult.value = response;
+  const firstFailed = response.items.find((item) => !item.ok);
+  selectedTermProposalId.value = firstFailed?.proposal_id || "";
+  routeFocusProposalId.value = "";
+  if (!firstFailed) {
+    clearTermSelection();
+    bulkReviewComment.value = "";
+  }
+  clearTermBulkSelection();
+  if (response.failed) {
+    ElMessage.warning(`批量审核完成：成功 ${response.succeeded}，失败 ${response.failed}。`);
+  } else {
+    ElMessage.success("批量审核全部成功。");
+  }
+  await loadActiveTab();
+}
+
+// 批量 approve 当前勾选的 Term Rule proposals，不触发发布流程。
+async function bulkApproveProposals(): Promise<void> {
+  const proposalIds = selectedBulkProposalIds();
+  if (!proposalIds.length) {
+    return;
+  }
+  bulkReviewing.value = true;
+  error.value = null;
+  bulkResult.value = null;
+  try {
+    const response = await termProposalsApi.bulkApprove({
+      proposal_ids: proposalIds,
+      review_comment: bulkReviewComment.value || null,
+    });
+    await handleBulkReviewResponse(response);
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    bulkReviewing.value = false;
+  }
+}
+
+// 批量 reject 当前勾选的 Term Rule proposals，拒绝原因沿用后端必填语义。
+async function bulkRejectProposals(): Promise<void> {
+  const proposalIds = selectedBulkProposalIds();
+  if (!proposalIds.length) {
+    return;
+  }
+  if (!bulkReviewComment.value.trim()) {
+    ElMessage.warning("批量 Reject 必须填写原因。");
+    return;
+  }
+  bulkReviewing.value = true;
+  error.value = null;
+  bulkResult.value = null;
+  try {
+    const response = await termProposalsApi.bulkReject({
+      proposal_ids: proposalIds,
+      review_comment: bulkReviewComment.value,
+    });
+    await handleBulkReviewResponse(response);
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    bulkReviewing.value = false;
+  }
+}
+
+// 把 bulk 失败项压缩成一行，冲突项保留结构化冲突摘要。
+function formatBulkFailureItem(item: TermRuleProposalBulkItemResponse): string {
+  const detail = readRecord(item.detail);
+  if (isTermRuleProposalConflictDetail(detail)) {
+    return detail.conflicts.map((conflict) => formatTermRuleProposalConflictItem(conflict)).join("；");
+  }
+  return `proposal ${item.proposal_id}: ${formatDetailItem(item.detail)}`;
+}
+
+// 同步 Translation review tab 的批量勾选结果。
+function handleTranslationBulkSelectionChange(selection: TranslationTermProposalResponse[]): void {
+  translationBulkSelectedProposals.value = selection;
+}
+
+// 读取当前批量选择的 Translation proposal IDs，避免请求使用过期 table 行对象。
+function selectedTranslationBulkProposalIds(): string[] {
+  return translationBulkSelectedProposals.value.map((proposal) => proposal.id);
+}
+
+// 批量响应后刷新 Translation 队列，并优先定位第一条失败项供继续治理。
+async function handleTranslationBulkReviewResponse(response: TranslationTermProposalBulkResponse): Promise<void> {
+  translationBulkResult.value = response;
+  const firstFailed = response.items.find((item) => !item.ok);
+  selectedTranslationProposalId.value = firstFailed?.proposal_id || "";
+  routeFocusProposalId.value = "";
+  if (!firstFailed) {
+    clearTranslationSelection();
+    translationBulkReviewNote.value = "";
+  }
+  clearTranslationBulkSelection();
+  if (response.failed) {
+    ElMessage.warning(`批量审核完成：成功 ${response.succeeded}，失败 ${response.failed}。`);
+  } else {
+    ElMessage.success("批量审核全部成功。");
+  }
+  await loadActiveTab();
+}
+
+// 批量 approve 当前勾选的 Translation proposals，不触发发布流程。
+async function bulkApproveTranslationProposals(): Promise<void> {
+  const proposalIds = selectedTranslationBulkProposalIds();
+  if (!proposalIds.length) {
+    return;
+  }
+  bulkReviewing.value = true;
+  error.value = null;
+  translationBulkResult.value = null;
+  try {
+    const response = await translationTermProposalsApi.bulkApprove({
+      proposal_ids: proposalIds,
+      review_note: translationBulkReviewNote.value || null,
+    });
+    await handleTranslationBulkReviewResponse(response);
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    bulkReviewing.value = false;
+  }
+}
+
+// 批量 reject 当前勾选的 Translation proposals，拒绝原因沿用后端必填语义。
+async function bulkRejectTranslationProposals(): Promise<void> {
+  const proposalIds = selectedTranslationBulkProposalIds();
+  if (!proposalIds.length) {
+    return;
+  }
+  if (!translationBulkReviewNote.value.trim()) {
+    ElMessage.warning("批量 Reject 必须填写原因。");
+    return;
+  }
+  bulkReviewing.value = true;
+  error.value = null;
+  translationBulkResult.value = null;
+  try {
+    const response = await translationTermProposalsApi.bulkReject({
+      proposal_ids: proposalIds,
+      review_note: translationBulkReviewNote.value,
+    });
+    await handleTranslationBulkReviewResponse(response);
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    bulkReviewing.value = false;
+  }
+}
+
+// 把 Translation bulk 失败项压缩成一行，冲突项保留 compatibility-style finding 摘要。
+function formatTranslationBulkFailureItem(item: TranslationTermProposalBulkItemResponse): string {
+  const detail = readRecord(item.detail);
+  if (isTranslationTermProposalConflictDetail(detail)) {
+    return detail.conflicts.map((conflict) => formatTranslationProposalConflictFinding(conflict, item.proposal_id)).join("；");
+  }
+  return `proposal ${item.proposal_id}: ${formatDetailItem(item.detail)}`;
+}
+
+// 获取 proposal 对应的治理 set；缺省值与后端默认 Term Rule Set 保持一致。
+function governanceSetIdFor(proposal: TermRuleProposalResponse): string {
+  return proposal.observed_term_rule_set_id || proposal.merged_term_rule_set_id || "electronics-default";
+}
+
+// 从审核详情跳转到 Term Rule Set 治理页，并携带返回 proposal 页所需的上下文。
+function openGovernanceForSelectedProposal(): void {
+  if (!selectedProposal.value) {
+    return;
+  }
+  const proposal = selectedProposal.value;
+  void router.push({
+    name: "settings-term-rule-sets",
+    query: {
+      set_id: governanceSetIdFor(proposal),
+      proposal_id: proposal.id,
+      target_rule_id: proposal.target_rule_id || "",
+      source_term: proposal.source_term,
+      return_to: "term-proposals",
+      return_tab: "review",
+    },
+  });
+}
+
+// 获取 Translation proposal 对应的治理 set；缺省值与系统内置 en2zh set 保持一致。
+function translationGovernanceSetIdFor(proposal: TranslationTermProposalResponse): string {
+  return proposal.observed_translation_term_set_id || proposal.published_translation_term_set_id || "translation-terms-en2zh";
+}
+
+// 从审核详情跳转到 Translation Term Set 治理页，并携带返回 proposal 页所需的上下文。
+function openTranslationGovernanceForSelectedProposal(): void {
+  if (!selectedTranslationProposal.value) {
+    return;
+  }
+  const proposal = selectedTranslationProposal.value;
+  void router.push({
+    name: "settings-translation-term-sets",
+    query: {
+      set_id: translationGovernanceSetIdFor(proposal),
+      proposal_id: proposal.id,
+      observed_version: proposal.observed_translation_term_version || "",
+      return_to: "term-proposals",
+      return_tab: "translation-review",
+    },
+  });
+}
+
+// 选中 Translation proposal，并同步当前审核备注输入框。
 function selectTranslationProposal(proposal: TranslationTermProposalResponse): void {
+  routeFocusProposalId.value = "";
+  selectedTranslationProposalId.value = proposal.id;
   selectedTranslationProposal.value = proposal;
   translationReviewNote.value = proposal.review_note || "";
 }
 
+// 审核通过当前 Term Rule proposal，并清理已消费的 route focus。
 async function approveProposal(): Promise<void> {
   if (!selectedProposal.value) {
     return;
@@ -979,6 +1658,7 @@ async function approveProposal(): Promise<void> {
   try {
     await termProposalsApi.approve(selectedProposal.value.id, reviewComment.value);
     ElMessage.success("proposal 已合并到 Term Rule Set draft。");
+    routeFocusProposalId.value = "";
     await loadActiveTab();
   } catch (caught) {
     error.value = normalizeApiError(caught);
@@ -987,6 +1667,7 @@ async function approveProposal(): Promise<void> {
   }
 }
 
+// 审核并发布当前 Term Rule proposal，但不改变既有后端语义。
 async function approveAndPublishProposal(): Promise<void> {
   if (!selectedProposal.value) {
     return;
@@ -1000,6 +1681,7 @@ async function approveAndPublishProposal(): Promise<void> {
       publish_reason: `publish approved term rule proposal: ${sourceTerm}`,
     });
     ElMessage.success("proposal 已审核并发布为默认规则版本。");
+    routeFocusProposalId.value = "";
     await loadActiveTab();
   } catch (caught) {
     error.value = normalizeApiError(caught);
@@ -1008,6 +1690,7 @@ async function approveAndPublishProposal(): Promise<void> {
   }
 }
 
+// 拒绝当前 Term Rule proposal，并在刷新前清理 route focus。
 async function rejectProposal(): Promise<void> {
   if (!selectedProposal.value) {
     return;
@@ -1021,6 +1704,7 @@ async function rejectProposal(): Promise<void> {
   try {
     await termProposalsApi.reject(selectedProposal.value.id, reviewComment.value);
     ElMessage.success("proposal 已拒绝。");
+    routeFocusProposalId.value = "";
     await loadActiveTab();
   } catch (caught) {
     error.value = normalizeApiError(caught);
@@ -1029,6 +1713,7 @@ async function rejectProposal(): Promise<void> {
   }
 }
 
+// 审核通过当前 Translation proposal，并保持 queue 刷新行为可预期。
 async function approveTranslationProposal(): Promise<void> {
   if (!selectedTranslationProposal.value) {
     return;
@@ -1038,6 +1723,7 @@ async function approveTranslationProposal(): Promise<void> {
   try {
     await translationTermProposalsApi.approve(selectedTranslationProposal.value.id, translationReviewNote.value);
     ElMessage.success("Translation Term Proposal 已合并到 draft。");
+    routeFocusProposalId.value = "";
     await loadActiveTab();
   } catch (caught) {
     error.value = normalizeApiError(caught);
@@ -1046,6 +1732,7 @@ async function approveTranslationProposal(): Promise<void> {
   }
 }
 
+// 审核并发布当前 Translation proposal，但仍保持单条语义。
 async function approveAndPublishTranslationProposal(): Promise<void> {
   if (!selectedTranslationProposal.value) {
     return;
@@ -1058,6 +1745,7 @@ async function approveAndPublishTranslationProposal(): Promise<void> {
       release_note: `publish approved translation term proposal: ${selectedTranslationProposal.value.id}`,
     });
     ElMessage.success("Translation Term Proposal 已审核并发布为默认版本。");
+    routeFocusProposalId.value = "";
     await loadActiveTab();
   } catch (caught) {
     error.value = normalizeApiError(caught);
@@ -1066,6 +1754,7 @@ async function approveAndPublishTranslationProposal(): Promise<void> {
   }
 }
 
+// 拒绝当前 Translation proposal，并避免刷新后再次触发旧 deep-link。
 async function rejectTranslationProposal(): Promise<void> {
   if (!selectedTranslationProposal.value) {
     return;
@@ -1079,6 +1768,7 @@ async function rejectTranslationProposal(): Promise<void> {
   try {
     await translationTermProposalsApi.reject(selectedTranslationProposal.value.id, translationReviewNote.value);
     ElMessage.success("Translation Term Proposal 已拒绝。");
+    routeFocusProposalId.value = "";
     await loadActiveTab();
   } catch (caught) {
     error.value = normalizeApiError(caught);
@@ -1088,6 +1778,7 @@ async function rejectTranslationProposal(): Promise<void> {
 }
 
 watch(() => route.fullPath, () => {
+  routeFocusProposalId.value = queryString("proposal_id");
   applyRouteProposalContext();
   void loadActiveTab();
 }, { immediate: true });
@@ -1105,18 +1796,50 @@ watch(() => route.fullPath, () => {
   gap: 16px;
 }
 
+.review-list-panel {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.batch-review-card {
+  border-left: 4px solid #2563eb;
+}
+
+.batch-review-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
 .proposal-table-wrap {
   overflow-x: auto;
 }
 
 .conflict-alert,
-.review-comment {
+.review-comment,
+.bulk-result-alert {
+  margin-bottom: 12px;
+}
+
+.focus-notice {
   margin-bottom: 12px;
 }
 
 .error-detail-list {
   margin: 6px 0 0;
   padding-left: 18px;
+}
+
+.alert-action {
+  margin-top: 8px;
+}
+
+.governance-link-button {
+  margin-top: 8px;
 }
 
 .review-panels {

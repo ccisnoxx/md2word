@@ -1,9 +1,11 @@
+# File: app/domains/translation/proposals_service.py
+# Purpose: 编排翻译术语 proposal 提交、审核和合并到 draft。
+
 from __future__ import annotations
 
-# app/domains/translation/proposals_service.py: 编排翻译术语 proposal 提交、审核和合并到 draft。
-
-from dataclasses import replace
-from typing import Any
+from dataclasses import dataclass, replace
+from http import HTTPStatus
+from typing import Any, Literal
 from uuid import uuid4
 
 from app.domains.audit.models import ActorContext
@@ -17,15 +19,30 @@ from app.domains.translation.models import (
     utc_now,
 )
 from app.domains.translation.repository import TranslationTermRepositoryProtocol
+from app.domains.translation.schemas import TranslationTermProposalCompatibilityFindingResponse
 from app.domains.translation.term_set_version_service import TranslationTermSetVersionService
 
 
 class TranslationTermProposalConflictError(RuntimeError):
     """当前 draft 与 proposal 证据版本冲突，不能自动合并。"""
 
-    def __init__(self, conflicts: list[str]) -> None:
+    def __init__(self, conflicts: list[TranslationTermProposalCompatibilityFindingResponse]) -> None:
+        """保存结构化冲突，供单条和批量审核接口复用。"""
+
         self.conflicts = tuple(conflicts)
-        super().__init__("; ".join(conflicts))
+        super().__init__("; ".join(conflict.message for conflict in conflicts))
+
+
+@dataclass(frozen=True, slots=True)
+class TranslationTermProposalBulkReviewItem:
+    """描述批量审核中单条 Translation Term Proposal 的结果。"""
+
+    proposal_id: str
+    ok: bool
+    status_code: int
+    error_code: str | None = None
+    detail: str | dict[str, Any] | None = None
+    proposal: TranslationTermProposalRecord | None = None
 
 
 class TranslationTermProposalService:
@@ -153,6 +170,26 @@ class TranslationTermProposalService:
         )
         return saved
 
+    def bulk_approve_proposals(
+        self,
+        proposal_ids: list[str],
+        *,
+        reviewed_by: str,
+        review_note: str | None,
+        actor: ActorContext | None = None,
+        trace_id: str | None = None,
+    ) -> list[TranslationTermProposalBulkReviewItem]:
+        """逐条复用单条 approve 语义，返回允许部分成功的批量结果。"""
+
+        return self._bulk_review_proposals(
+            action="approve",
+            proposal_ids=proposal_ids,
+            reviewed_by=reviewed_by,
+            review_note=review_note,
+            actor=actor,
+            trace_id=trace_id,
+        )
+
     def approve_and_publish_proposal(
         self,
         proposal_id: str,
@@ -233,6 +270,152 @@ class TranslationTermProposalService:
         )
         return saved
 
+    def bulk_reject_proposals(
+        self,
+        proposal_ids: list[str],
+        *,
+        reviewed_by: str,
+        review_note: str,
+        actor: ActorContext | None = None,
+        trace_id: str | None = None,
+    ) -> list[TranslationTermProposalBulkReviewItem]:
+        """逐条复用单条 reject 语义，返回允许部分成功的批量结果。"""
+
+        return self._bulk_review_proposals(
+            action="reject",
+            proposal_ids=proposal_ids,
+            reviewed_by=reviewed_by,
+            review_note=review_note,
+            actor=actor,
+            trace_id=trace_id,
+        )
+
+    def _bulk_review_proposals(
+        self,
+        *,
+        action: Literal["approve", "reject"],
+        proposal_ids: list[str],
+        reviewed_by: str,
+        review_note: str | None,
+        actor: ActorContext | None,
+        trace_id: str | None,
+    ) -> list[TranslationTermProposalBulkReviewItem]:
+        """按请求顺序逐条执行审核动作，单条失败不阻断后续 proposal。"""
+
+        normalized_ids = self._normalize_bulk_proposal_ids(proposal_ids)
+        items: list[TranslationTermProposalBulkReviewItem] = []
+        for proposal_id in normalized_ids:
+            try:
+                if action == "approve":
+                    proposal = self.approve_proposal(
+                        proposal_id,
+                        reviewed_by=reviewed_by,
+                        review_note=review_note,
+                        actor=actor,
+                        trace_id=trace_id,
+                    )
+                else:
+                    proposal = self.reject_proposal(
+                        proposal_id,
+                        reviewed_by=reviewed_by,
+                        review_note=review_note or "",
+                        actor=actor,
+                        trace_id=trace_id,
+                    )
+            except TranslationTermProposalConflictError as exc:
+                items.append(self._build_bulk_conflict_failure(proposal_id, exc))
+                continue
+            except FileNotFoundError as exc:
+                items.append(
+                    self._build_bulk_failure(
+                        proposal_id,
+                        status_code=HTTPStatus.NOT_FOUND.value,
+                        error_code="not_found",
+                        detail=str(exc),
+                    )
+                )
+                continue
+            except ValueError as exc:
+                items.append(
+                    self._build_bulk_failure(
+                        proposal_id,
+                        status_code=HTTPStatus.BAD_REQUEST.value,
+                        error_code="invalid_request",
+                        detail=str(exc),
+                    )
+                )
+                continue
+            items.append(self._build_bulk_success(proposal))
+        return items
+
+    @staticmethod
+    def _normalize_bulk_proposal_ids(proposal_ids: list[str]) -> list[str]:
+        """校验批量请求的 proposal_id 列表，并返回去除首尾空白后的值。"""
+
+        normalized = [proposal_id.strip() for proposal_id in proposal_ids]
+        if not normalized:
+            raise ValueError("proposal_ids 不能为空。")
+        if len(normalized) > 50:
+            raise ValueError("proposal_ids 最多支持 50 个。")
+        if any(not proposal_id for proposal_id in normalized):
+            raise ValueError("proposal_ids 不能包含空值。")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("proposal_ids 不能重复。")
+        return normalized
+
+    @staticmethod
+    def _build_bulk_success(proposal: TranslationTermProposalRecord) -> TranslationTermProposalBulkReviewItem:
+        """构造批量审核中单条成功 proposal 的 service 结果。"""
+
+        return TranslationTermProposalBulkReviewItem(
+            proposal_id=proposal.id,
+            ok=True,
+            status_code=HTTPStatus.OK.value,
+            proposal=proposal,
+        )
+
+    @staticmethod
+    def _build_bulk_failure(
+        proposal_id: str,
+        *,
+        status_code: int,
+        error_code: str,
+        detail: str | dict[str, Any],
+    ) -> TranslationTermProposalBulkReviewItem:
+        """构造批量审核中单条失败 proposal 的 service 结果。"""
+
+        return TranslationTermProposalBulkReviewItem(
+            proposal_id=proposal_id,
+            ok=False,
+            status_code=status_code,
+            error_code=error_code,
+            detail=detail,
+        )
+
+    def _build_bulk_conflict_failure(
+        self,
+        proposal_id: str,
+        exc: TranslationTermProposalConflictError,
+    ) -> TranslationTermProposalBulkReviewItem:
+        """把结构化冲突保留到批量 item 的 detail 中。"""
+
+        return self._build_bulk_failure(
+            proposal_id,
+            status_code=HTTPStatus.CONFLICT.value,
+            error_code="translation_term_proposal_conflict",
+            detail=self._conflict_detail(exc),
+        )
+
+    @staticmethod
+    def _conflict_detail(exc: TranslationTermProposalConflictError) -> dict[str, Any]:
+        """构造单条和批量接口共用的结构化 conflict detail。"""
+
+        return {
+            "code": "translation_term_proposal_conflict",
+            "message": "proposal 与当前 draft 存在冲突，请重新核对后处理。",
+            "conflicts": [conflict.model_dump(mode="json") for conflict in exc.conflicts],
+        }
+
     def _resolve_term_set(
         self,
         *,
@@ -275,22 +458,71 @@ class TranslationTermProposalService:
         draft_by_key = {entry.normalized_source_term: entry for entry in draft_entries}
         observed_entries = self._entries_for_version(term_set, proposal.observed_translation_term_version)
         observed_by_key = {entry.normalized_source_term: entry for entry in observed_entries}
-        conflicts: list[str] = []
+        conflicts: list[TranslationTermProposalCompatibilityFindingResponse] = []
         for change in proposal.changes:
             key = normalize_translation_source_term(change.source_term)
             draft_entry = draft_by_key.get(key)
             observed_entry = observed_by_key.get(key)
             if change.action == "add":
                 if draft_entry is not None:
-                    conflicts.append(f"add 目标术语已存在于当前 draft: {key}")
+                    conflicts.append(
+                        self._proposal_conflict_finding(
+                            code="add_existing_term",
+                            message=f"新增术语已存在于当前 draft: {key}",
+                            normalized_source_term=key,
+                            action=change.action,
+                            current_entry=self._entry_payload(draft_entry),
+                            observed_entry=self._entry_payload(observed_entry) if observed_entry else None,
+                        )
+                    )
                 continue
             if draft_entry is None:
-                conflicts.append(f"{change.action} 目标术语不存在于当前 draft: {key}")
+                conflicts.append(
+                    self._proposal_conflict_finding(
+                        code="missing_target_term",
+                        message=f"{change.action} 目标术语不存在于当前 draft: {key}",
+                        normalized_source_term=key,
+                        action=change.action,
+                        current_entry=None,
+                        observed_entry=self._entry_payload(observed_entry) if observed_entry else None,
+                    )
+                )
                 continue
             if observed_entry is not None and self._entry_payload(draft_entry) != self._entry_payload(observed_entry):
-                conflicts.append(f"{change.action} 目标术语已被其他变更修改: {key}")
+                conflicts.append(
+                    self._proposal_conflict_finding(
+                        code="stale_target_term",
+                        message=f"{change.action} 目标术语已被其他变更修改: {key}",
+                        normalized_source_term=key,
+                        action=change.action,
+                        current_entry=self._entry_payload(draft_entry),
+                        observed_entry=self._entry_payload(observed_entry),
+                    )
+                )
         if conflicts:
             raise TranslationTermProposalConflictError(conflicts)
+
+    @staticmethod
+    def _proposal_conflict_finding(
+        *,
+        code: str,
+        message: str,
+        normalized_source_term: str | None = None,
+        action: str | None = None,
+        current_entry: dict[str, Any] | None = None,
+        observed_entry: dict[str, Any] | None = None,
+    ) -> TranslationTermProposalCompatibilityFindingResponse:
+        """创建 approve 阻断冲突的 compatibility-style finding。"""
+
+        return TranslationTermProposalCompatibilityFindingResponse(
+            severity="conflict",
+            code=code,
+            message=message,
+            normalized_source_term=normalized_source_term,
+            action=action,
+            current_entry=current_entry,
+            observed_entry=observed_entry,
+        )
 
     def _apply_changes(
         self,

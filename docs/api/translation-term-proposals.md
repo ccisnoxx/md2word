@@ -28,11 +28,12 @@ last_reviewed: 2026-06-02
 
 - 需要 `JOBS_REPOSITORY_BACKEND=mysql`，否则接口返回 `503`
 - operator 只能创建 proposal 和查看自己提交的 proposal
-- admin 可查看全部、审核、拒绝和 approve-and-publish
+- admin 可查看全部、审核、拒绝、批量审核、批量拒绝和 approve-and-publish
 - proposal 支持批量 `add`、`update`、`delete` changes
 - proposal 记录来源 `source_job_id/source_file_id` 和 observed Translation Term Set version
 - approve 时合入当前 draft；approve-and-publish 合入后发布并设为默认版本
-- 与当前 draft 冲突时返回 `409`，不做 last-write-wins
+- 与当前 draft 冲突时返回结构化 `409`，不做 last-write-wins
+- bulk approve/reject 允许 proposal 之间 partial success；单条失败不会阻断后续 proposal
 - 成功 create/approve/reject/approve-and-publish 会写 audit event
 
 ## API 参考
@@ -89,6 +90,50 @@ last_reviewed: 2026-06-02
   - `review_note`：可选审核备注
 - 冲突：返回 `409`，`detail.code=translation_term_proposal_conflict`，`detail.conflicts[]` 描述冲突原因。
 
+冲突响应字段：
+
+| 字段 | 说明 |
+|---|---|
+| `detail.code` | 固定为 `translation_term_proposal_conflict` |
+| `detail.message` | 面向审核人的冲突摘要 |
+| `detail.conflicts[]` | compatibility-style 结构化 finding |
+
+`detail.conflicts[]` 核心字段：
+
+| 字段 | 说明 |
+|---|---|
+| `severity` | 固定为 `conflict` |
+| `code` | 如 `add_existing_term`、`missing_target_term`、`stale_target_term` |
+| `message` | 单条冲突说明 |
+| `normalized_source_term` | 标准化后的原文术语 |
+| `action` | proposal change action |
+| `current_entry` | 当前 draft 中对应 entry 的 payload |
+| `observed_entry` | proposal 证据版本中的 entry payload |
+
+### `POST /api/v1/translation-term-proposals/bulk-approve`
+
+- 用途：admin 批量审核通过 proposal，并逐条把 changes 合入当前 draft。
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
+- 请求体字段：
+  - `proposal_ids`：proposal ID 数组，最多 50 条，不能为空、不能重复
+  - `review_note`：可选审核备注
+- 语义：
+  - 逐条复用单条 `approve` 语义
+  - 不做 proposal 内部 partial merge；任意 change 冲突时整条 proposal 失败
+  - 允许 proposal 之间 partial success
+  - 不触发 publish，也不替代治理页发布流程
+
+### `POST /api/v1/translation-term-proposals/bulk-reject`
+
+- 用途：admin 批量拒绝 proposal。
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
+- 请求体字段：
+  - `proposal_ids`：proposal ID 数组，最多 50 条，不能为空、不能重复
+  - `review_note`：必填拒绝原因
+- 语义：
+  - 逐条复用单条 `reject` 语义
+  - 允许 proposal 之间 partial success
+
 ### `POST /api/v1/translation-term-proposals/{proposal_id}/approve-and-publish`
 
 - 用途：admin 审核通过 proposal，发布当前 draft，并把新版本设为默认版本。
@@ -119,6 +164,27 @@ last_reviewed: 2026-06-02
 | `reviewed_by/reviewed_at/review_note` | 审核信息 |
 | `published_translation_term_set_id/version` | 发布结果 |
 | `changes[]` | 本次 proposal 的变更项 |
+
+`TranslationTermProposalBulkResponse` 核心字段：
+
+| 字段 | 说明 |
+|---|---|
+| `action` | `approve` 或 `reject` |
+| `total` | 请求 proposal 总数 |
+| `succeeded` | 成功数量 |
+| `failed` | 失败数量 |
+| `items[]` | 逐条结果，顺序与请求一致 |
+
+`items[]` 字段：
+
+| 字段 | 说明 |
+|---|---|
+| `proposal_id` | proposal ID |
+| `ok` | 单条是否成功 |
+| `status_code` | 单条语义状态码 |
+| `error_code` | 失败错误码；成功时为空 |
+| `detail` | 失败详情；conflict 时为结构化 conflict payload |
+| `proposal` | 成功时返回最新 proposal |
 
 ## 常见状态
 

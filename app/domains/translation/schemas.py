@@ -109,6 +109,20 @@ class TranslationTermProposalRejectRequest(BaseModel):
     review_note: str
 
 
+class TranslationTermProposalBulkReviewRequest(BaseModel):
+    """批量审核请求，共享同一条审核备注。"""
+
+    proposal_ids: list[str] = Field(default_factory=list)
+    review_note: str | None = None
+
+
+class TranslationTermProposalBulkRejectRequest(BaseModel):
+    """批量拒绝请求，共享同一条拒绝原因。"""
+
+    proposal_ids: list[str] = Field(default_factory=list)
+    review_note: str
+
+
 class TranslationTermProposalChangeResponse(BaseModel):
     seq: int
     action: str
@@ -144,6 +158,27 @@ class TranslationTermProposalResponse(BaseModel):
 class TranslationTermProposalListResponse(BaseModel):
     items: list[TranslationTermProposalResponse]
     total: int
+
+
+class TranslationTermProposalBulkItemResponse(BaseModel):
+    """批量审核中单条 Translation Term Proposal 的成功或失败结果。"""
+
+    proposal_id: str
+    ok: bool
+    status_code: int
+    error_code: str | None = None
+    detail: str | dict[str, Any] | None = None
+    proposal: TranslationTermProposalResponse | None = None
+
+
+class TranslationTermProposalBulkResponse(BaseModel):
+    """批量审核响应；允许部分成功且保留单条失败原因。"""
+
+    action: Literal["approve", "reject"]
+    total: int
+    succeeded: int
+    failed: int
+    items: list[TranslationTermProposalBulkItemResponse] = Field(default_factory=list)
 
 
 class TranslationTermValidationFindingResponse(BaseModel):
@@ -333,6 +368,14 @@ class TranslationTermProposalCompatibilityFindingResponse(BaseModel):
     action: str | None = None
     current_entry: dict[str, Any] | None = None
     observed_entry: dict[str, Any] | None = None
+
+
+class TranslationTermProposalConflictResponse(BaseModel):
+    """返回 Translation Term Proposal 审核冲突的稳定 409 响应 payload。"""
+
+    code: Literal["translation_term_proposal_conflict"] = "translation_term_proposal_conflict"
+    message: str
+    conflicts: list[TranslationTermProposalCompatibilityFindingResponse]
 
 
 class TranslationTermProposalCompatibilityItemResponse(BaseModel):

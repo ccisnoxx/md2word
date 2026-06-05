@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from http import HTTPStatus
 from typing import Any, Literal, NoReturn
 from uuid import uuid4
 
@@ -21,6 +23,7 @@ from app.domains.term_rules.models import (
 )
 from app.domains.term_rules.repository import TermRuleProposalRepositoryProtocol
 from app.domains.term_rules.schemas import (
+    TermRuleProposalConflictResponse,
     TermRuleProposalConflictItemResponse,
     TermRuleResponse,
     TermRuleSegmentResponse,
@@ -39,6 +42,18 @@ class TermRuleProposalConflictError(RuntimeError):
         self.conflicts = tuple(conflicts)
         message = "; ".join(conflict.message for conflict in conflicts) or "proposal 与当前 draft 存在冲突。"
         super().__init__(message)
+
+
+@dataclass(frozen=True, slots=True)
+class TermRuleProposalBulkReviewItem:
+    """描述批量审核中单条 proposal 的结果，供 router 映射为 API 响应。"""
+
+    proposal_id: str
+    ok: bool
+    status_code: int
+    error_code: str | None = None
+    detail: str | dict[str, Any] | None = None
+    proposal: TermRuleProposalRecord | None = None
 
 
 class TermRuleProposalService:
@@ -201,6 +216,26 @@ class TermRuleProposalService:
         self._record_audit(actor=actor, action="term_rule_proposal.approve", proposal=saved, trace_id=trace_id)
         return saved
 
+    def bulk_approve_proposals(
+        self,
+        proposal_ids: list[str],
+        *,
+        reviewed_by: str,
+        review_comment: str | None,
+        actor: ActorContext | None = None,
+        trace_id: str | None = None,
+    ) -> list[TermRuleProposalBulkReviewItem]:
+        """逐条复用单条 approve 语义，返回允许部分成功的批量结果。"""
+
+        return self._bulk_review_proposals(
+            action="approve",
+            proposal_ids=proposal_ids,
+            reviewed_by=reviewed_by,
+            review_comment=review_comment,
+            actor=actor,
+            trace_id=trace_id,
+        )
+
     def approve_and_publish_proposal(
         self,
         proposal_id: str,
@@ -267,6 +302,146 @@ class TermRuleProposalService:
         saved = self.repository.save_proposal(rejected)
         self._record_audit(actor=actor, action="term_rule_proposal.reject", proposal=saved, trace_id=trace_id)
         return saved
+
+    def bulk_reject_proposals(
+        self,
+        proposal_ids: list[str],
+        *,
+        reviewed_by: str,
+        review_comment: str,
+        actor: ActorContext | None = None,
+        trace_id: str | None = None,
+    ) -> list[TermRuleProposalBulkReviewItem]:
+        """逐条复用单条 reject 语义，返回允许部分成功的批量结果。"""
+
+        return self._bulk_review_proposals(
+            action="reject",
+            proposal_ids=proposal_ids,
+            reviewed_by=reviewed_by,
+            review_comment=review_comment,
+            actor=actor,
+            trace_id=trace_id,
+        )
+
+    def _bulk_review_proposals(
+        self,
+        *,
+        action: Literal["approve", "reject"],
+        proposal_ids: list[str],
+        reviewed_by: str,
+        review_comment: str | None,
+        actor: ActorContext | None,
+        trace_id: str | None,
+    ) -> list[TermRuleProposalBulkReviewItem]:
+        """按请求顺序逐条执行审核动作，单条失败不阻断后续 proposal。"""
+
+        normalized_ids = self._normalize_bulk_proposal_ids(proposal_ids)
+        items: list[TermRuleProposalBulkReviewItem] = []
+        for proposal_id in normalized_ids:
+            try:
+                if action == "approve":
+                    proposal = self.approve_proposal(
+                        proposal_id,
+                        reviewed_by=reviewed_by,
+                        review_comment=review_comment,
+                        actor=actor,
+                        trace_id=trace_id,
+                    )
+                else:
+                    proposal = self.reject_proposal(
+                        proposal_id,
+                        reviewed_by=reviewed_by,
+                        review_comment=review_comment or "",
+                        actor=actor,
+                        trace_id=trace_id,
+                    )
+            except TermRuleProposalConflictError as exc:
+                items.append(self._build_bulk_conflict_failure(proposal_id, exc))
+                continue
+            except FileNotFoundError as exc:
+                items.append(
+                    self._build_bulk_failure(
+                        proposal_id,
+                        status_code=HTTPStatus.NOT_FOUND.value,
+                        error_code="not_found",
+                        detail=str(exc),
+                    )
+                )
+                continue
+            except ValueError as exc:
+                items.append(
+                    self._build_bulk_failure(
+                        proposal_id,
+                        status_code=HTTPStatus.BAD_REQUEST.value,
+                        error_code="invalid_request",
+                        detail=str(exc),
+                    )
+                )
+                continue
+            items.append(self._build_bulk_success(proposal))
+        return items
+
+    @staticmethod
+    def _normalize_bulk_proposal_ids(proposal_ids: list[str]) -> list[str]:
+        """校验批量请求的 proposal_id 列表，并返回去除首尾空白后的值。"""
+
+        normalized = [proposal_id.strip() for proposal_id in proposal_ids]
+        if not normalized:
+            raise ValueError("proposal_ids 不能为空。")
+        if len(normalized) > 50:
+            raise ValueError("proposal_ids 最多支持 50 个。")
+        if any(not proposal_id for proposal_id in normalized):
+            raise ValueError("proposal_ids 不能包含空值。")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("proposal_ids 不能重复。")
+        return normalized
+
+    @staticmethod
+    def _build_bulk_success(proposal: TermRuleProposalRecord) -> TermRuleProposalBulkReviewItem:
+        """构造批量审核中单条成功 proposal 的 service 结果。"""
+
+        return TermRuleProposalBulkReviewItem(
+            proposal_id=proposal.id,
+            ok=True,
+            status_code=HTTPStatus.OK.value,
+            proposal=proposal,
+        )
+
+    @staticmethod
+    def _build_bulk_failure(
+        proposal_id: str,
+        *,
+        status_code: int,
+        error_code: str,
+        detail: str | dict[str, Any],
+    ) -> TermRuleProposalBulkReviewItem:
+        """构造批量审核中单条失败 proposal 的 service 结果。"""
+
+        return TermRuleProposalBulkReviewItem(
+            proposal_id=proposal_id,
+            ok=False,
+            status_code=status_code,
+            error_code=error_code,
+            detail=detail,
+        )
+
+    def _build_bulk_conflict_failure(
+        self,
+        proposal_id: str,
+        exc: TermRuleProposalConflictError,
+    ) -> TermRuleProposalBulkReviewItem:
+        """把结构化冲突保留到批量 item 的 detail 中。"""
+
+        detail = TermRuleProposalConflictResponse(
+            message="proposal 与当前 draft 存在冲突，请重新核对后处理。",
+            conflicts=list(exc.conflicts),
+        ).model_dump(mode="json")
+        return self._build_bulk_failure(
+            proposal_id,
+            status_code=HTTPStatus.CONFLICT.value,
+            error_code="term_rule_proposal_conflict",
+            detail=detail,
+        )
 
     def _require_pending(self, proposal_id: str) -> TermRuleProposalRecord:
         proposal = self.get_proposal(proposal_id)

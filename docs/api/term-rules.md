@@ -194,6 +194,31 @@ last_reviewed: 2026-06-04
   - `create` 遇到同名 `source_term` 但 segments 不一致时返回结构化 `409`
   - 冲突时 proposal 保持 `pending_review`，后端不自动 rebase
 
+### `POST /api/v1/term-rule-proposals/bulk-approve`
+
+- 用途：admin 批量审核通过 proposals。
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
+- 请求体字段：
+  - `proposal_ids`：必填数组，最多 50 条，不允许空值或重复项
+  - `review_comment`：可选，共享审核备注
+- 关键语义：
+  - 逐条复用单条 `approve` 语义，不提供 bulk `approve-and-publish`
+  - 响应整体为 `200`，单条失败写入 `items[].ok=false`
+  - 单条冲突不会阻断后续 proposal，失败项保持原状态
+  - 结构化冲突保留在 `items[].detail`，`error_code=term_rule_proposal_conflict`
+
+### `POST /api/v1/term-rule-proposals/bulk-reject`
+
+- 用途：admin 批量拒绝 proposals。
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
+- 请求体字段：
+  - `proposal_ids`：必填数组，最多 50 条，不允许空值或重复项
+  - `review_comment`：必填，共享拒绝原因
+- 关键语义：
+  - 逐条复用单条 `reject` 语义
+  - 响应整体为 `200`，单条失败写入 `items[].ok=false`
+  - 已非 `pending_review` 的 proposal 不会被二次覆盖
+
 ### `POST /api/v1/term-rule-proposals/{proposal_id}/approve-and-publish`
 
 - 用途：admin 审核通过、合并 draft、发布新的 Term Rule Set 版本并设为默认版本。
@@ -225,6 +250,21 @@ last_reviewed: 2026-06-04
 | `merged_term_rule_set_id` | approve 后合入的规则集 |
 | `merged_draft_snapshot_hash` | approve 后 draft snapshot hash |
 | `published_term_rule_set_version` | 随 Term Rule Set publish 后关联的版本号 |
+
+### `TermRuleProposalBulkResponse` 关键字段
+
+| 字段 | 说明 |
+|---|---|
+| `action` | `approve` / `reject` |
+| `total` | 请求处理的 proposal 数量 |
+| `succeeded` | 成功条数 |
+| `failed` | 失败条数 |
+| `items[].proposal_id` | 单条 proposal ID |
+| `items[].ok` | 单条是否成功 |
+| `items[].status_code` | 单条语义状态码，成功为 `200` |
+| `items[].error_code` | 单条失败错误码 |
+| `items[].detail` | 单条失败详情；冲突时为结构化 `TermRuleProposalConflictResponse` |
+| `items[].proposal` | 单条成功后的 `TermRuleProposalResponse` |
 
 ### `TermRuleProposalConflictResponse`
 

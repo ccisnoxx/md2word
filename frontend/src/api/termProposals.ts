@@ -2,18 +2,24 @@
 import { apiRequest } from "@/api/client";
 import type {
   TranslationTermProposalApproveAndPublishRequest,
+  TranslationTermProposalBulkRejectRequest,
+  TranslationTermProposalBulkResponse,
+  TranslationTermProposalBulkReviewRequest,
   TranslationTermProposalCreateRequest,
   TranslationTermProposalListResponse,
   TranslationTermProposalResponse,
   TranslationTermProposalStatus,
   TermRuleProposalApproveAndPublishRequest,
+  TermRuleProposalBulkRejectRequest,
+  TermRuleProposalBulkResponse,
+  TermRuleProposalBulkReviewRequest,
   TermRuleProposalCreateRequest,
   TermRuleProposalListResponse,
   TermRuleProposalResponse,
   TermRuleProposalStatus,
 } from "@/api/types";
 
-export type TermProposalScope = "my" | "all" | "pending_review";
+export type TermProposalScope = "my" | "all" | "pending_review" | "approved_unpublished";
 export type TranslationTermProposalScope = "my" | "all" | "pending";
 
 export type TermProposalListParams = {
@@ -73,6 +79,22 @@ export const termProposalsApi = {
       data: { review_comment: reviewComment },
     });
   },
+
+  bulkApprove(payload: TermRuleProposalBulkReviewRequest): Promise<TermRuleProposalBulkResponse> {
+    return apiRequest<TermRuleProposalBulkResponse>({
+      url: "/api/v1/term-rule-proposals/bulk-approve",
+      method: "POST",
+      data: payload,
+    });
+  },
+
+  bulkReject(payload: TermRuleProposalBulkRejectRequest): Promise<TermRuleProposalBulkResponse> {
+    return apiRequest<TermRuleProposalBulkResponse>({
+      url: "/api/v1/term-rule-proposals/bulk-reject",
+      method: "POST",
+      data: payload,
+    });
+  },
 };
 
 export const translationTermProposalsApi = {
@@ -123,6 +145,22 @@ export const translationTermProposalsApi = {
       url: `/api/v1/translation-term-proposals/${proposalId}/reject`,
       method: "POST",
       data: { review_note: reviewNote },
+    });
+  },
+
+  bulkApprove(payload: TranslationTermProposalBulkReviewRequest): Promise<TranslationTermProposalBulkResponse> {
+    return apiRequest<TranslationTermProposalBulkResponse>({
+      url: "/api/v1/translation-term-proposals/bulk-approve",
+      method: "POST",
+      data: payload,
+    });
+  },
+
+  bulkReject(payload: TranslationTermProposalBulkRejectRequest): Promise<TranslationTermProposalBulkResponse> {
+    return apiRequest<TranslationTermProposalBulkResponse>({
+      url: "/api/v1/translation-term-proposals/bulk-reject",
+      method: "POST",
+      data: payload,
     });
   },
 };

@@ -21,7 +21,23 @@
       show-icon
     />
 
-    <section v-else class="rule-set-grid">
+    <el-alert
+      v-if="governanceContextVisible && !unavailable"
+      class="governance-context-alert"
+      type="info"
+      title="Proposal 治理上下文"
+      :closable="false"
+      show-icon
+    >
+      <div class="governance-context-body">
+        <span>proposal: {{ governanceProposalId || "-" }}</span>
+        <span>source_term: {{ governanceSourceTerm || "-" }}</span>
+        <span>target_rule: {{ governanceTargetRuleId || "-" }}</span>
+        <el-button link type="primary" @click="returnToProposalReview">返回 proposal 审核页</el-button>
+      </div>
+    </el-alert>
+
+    <section v-if="!unavailable" class="rule-set-grid">
       <el-card class="card-flat" shadow="never">
         <div class="section-header">
           <div>
@@ -271,7 +287,12 @@
             <p class="section-subtitle">发布前核对本次已审核合并的来源建议。</p>
           </div>
         </div>
-        <TermProposalTable :items="approvedProposals" :categories="categoryMap" :loading="loading" @select="noop" />
+        <TermProposalTable
+          :items="approvedProposals"
+          :categories="categoryMap"
+          :loading="loading"
+          @select="openApprovedProposal"
+        />
       </el-card>
     </RoleGate>
 
@@ -394,9 +415,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from "element-plus";
 import { Delete, EditPen, Plus, Refresh, Search, Switch } from "@element-plus/icons-vue";
+import { useRoute, useRouter } from "vue-router";
 
 import { termProposalsApi } from "@/api/termProposals";
 import { termRulesApi } from "@/api/termRules";
@@ -439,6 +461,8 @@ type RuleFormState = {
 };
 
 const auth = useAuthStore();
+const route = useRoute();
+const router = useRouter();
 const isAdmin = computed(() => auth.user?.role === "admin");
 const sets = ref<TermRuleSetListItemResponse[]>([]);
 const selectedSetId = ref("");
@@ -499,6 +523,13 @@ const ruleRules: FormRules = {
 
 const categoryMap = computed(() =>
   Object.fromEntries(categories.value.map((category) => [category.id, category.name])),
+);
+const governanceProposalId = computed(() => queryString("proposal_id"));
+const governanceTargetRuleId = computed(() => queryString("target_rule_id"));
+const governanceSourceTerm = computed(() => queryString("source_term"));
+const governanceReturnTab = computed(() => queryString("return_tab") || "review");
+const governanceContextVisible = computed(() =>
+  Boolean(governanceProposalId.value || governanceTargetRuleId.value || governanceSourceTerm.value),
 );
 
 const ruleDialogTitle = computed(() => (ruleDialog.mode === "create" ? "新增 draft rule" : "编辑 draft rule"));
@@ -569,6 +600,31 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+// 从当前 route query 中读取单值字符串，供 proposal 治理上下文使用。
+function queryString(key: string): string {
+  const value = route.query[key];
+  if (Array.isArray(value)) {
+    return typeof value[0] === "string" ? value[0] : "";
+  }
+  return typeof value === "string" ? value : "";
+}
+
+// 把 proposal 页传来的上下文应用到治理页，只做定位和筛选，不隐式修改 draft。
+function applyGovernanceRouteContext(): void {
+  const requestedSetId = queryString("set_id");
+  if (requestedSetId && sets.value.some((item) => item.id === requestedSetId)) {
+    selectedSetId.value = requestedSetId;
+  } else {
+    selectedSetId.value ||= sets.value[0]?.id || "";
+  }
+
+  const sourceTerm = governanceSourceTerm.value;
+  if (sourceTerm) {
+    draftRuleFilters.keyword = sourceTerm;
+    draftRuleFilters.page = 1;
+  }
+}
+
 // 加载规则集、分类、当前选择下的 draft 上下文。
 async function loadAll(): Promise<void> {
   loading.value = true;
@@ -581,12 +637,12 @@ async function loadAll(): Promise<void> {
     ]);
     sets.value = setResponse.items;
     categories.value = categoryResponse.items;
-    selectedSetId.value ||= sets.value[0]?.id || "";
+    applyGovernanceRouteContext();
     if (selectedSetId.value) {
       await loadSelectedSet();
     }
     if (auth.user?.role === "admin") {
-      approvedProposals.value = (await termProposalsApi.list({ scope: "all", status: "approved" })).items;
+      await loadApprovedUnpublishedProposals();
     }
   } catch (caught) {
     const normalized = normalizeApiError(caught);
@@ -597,6 +653,11 @@ async function loadAll(): Promise<void> {
   } finally {
     loading.value = false;
   }
+}
+
+// 加载已 approve 但尚未随 Term Rule Set 发布的 proposal，匹配卡片文案。
+async function loadApprovedUnpublishedProposals(): Promise<void> {
+  approvedProposals.value = (await termProposalsApi.list({ scope: "approved_unpublished" })).items;
 }
 
 // 切换规则集后刷新详情、draft、diff、preflight 和规则列表。
@@ -996,14 +1057,31 @@ function findingTagType(severity: string): "success" | "warning" | "danger" | "i
   return "info";
 }
 
-// 空表格 select handler，保留现有 proposal table contract。
-function noop(): void {
-  return;
+// 从治理上下文返回 proposal 审核页，并保留 proposal_id 深链定位。
+function returnToProposalReview(): void {
+  const query: Record<string, string> = {
+    tab: governanceReturnTab.value,
+  };
+  if (governanceProposalId.value) {
+    query.proposal_id = governanceProposalId.value;
+  }
+  void router.push({ name: "term-proposals", query });
 }
 
-onMounted(() => {
+// 已 approve 待核对列表行点击后回到 proposal 全量列表，因为 approved 不在 review 队列。
+function openApprovedProposal(proposal: TermRuleProposalResponse): void {
+  void router.push({
+    name: "term-proposals",
+    query: {
+      tab: "all",
+      proposal_id: proposal.id,
+    },
+  });
+}
+
+watch(() => route.fullPath, () => {
   void loadAll();
-});
+}, { immediate: true });
 </script>
 
 <style scoped lang="scss">
@@ -1016,6 +1094,17 @@ onMounted(() => {
   display: grid;
   grid-template-columns: minmax(260px, 340px) minmax(0, 1fr) minmax(260px, 340px);
   gap: 16px;
+}
+
+.governance-context-alert {
+  margin-bottom: 4px;
+}
+
+.governance-context-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: center;
 }
 
 .summary-list {

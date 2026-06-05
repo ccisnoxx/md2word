@@ -5786,6 +5786,228 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertNotIn("term_rule_proposal.approve_and_publish", audit_actions)
         self.assertNotIn("term_rule_set.publish", audit_actions)
 
+    def test_term_rule_proposal_bulk_approve_partial_success_and_conflict(self):
+        """验证批量 approve 支持部分成功，并保留结构化冲突且不改失败 proposal。"""
+
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        seed_yaml = (
+            "schema_version: 2\n"
+            "categories:\n"
+            "  voltage_terms:\n"
+            "    name: 电压相关\n"
+            "    priority: 10\n"
+            "    enabled: true\n"
+            "rules:\n"
+            "  - source_term: VOLD\n"
+            "    category: voltage_terms\n"
+            "    segments:\n"
+            "      - segment_text: V\n"
+            "        render_type: plain\n"
+            "      - segment_text: OLD\n"
+            "        render_type: subscript\n"
+            "    enabled: true\n"
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            seed_path = temp_root / "term_rules_seed.yaml"
+            seed_path.write_text(seed_yaml, encoding="utf-8")
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                term_rules_seed_path=str(seed_path),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                category_id = client.get("/api/v1/term-rule-categories").json()["items"][0]["id"]
+                target_rule_id = client.get("/api/v1/term-rules?q=VOLD").json()["items"][0]["id"]
+                create_ok_response = client.post(
+                    "/api/v1/term-rule-proposals",
+                    headers=operator_headers,
+                    json={
+                        "intent": "create",
+                        "source_term": "VBULK",
+                        "category_id": category_id,
+                        "segments": [
+                            {"segment_text": "V", "render_type": "plain"},
+                            {"segment_text": "BULK", "render_type": "subscript"},
+                        ],
+                        "reason": "bulk approve success candidate",
+                    },
+                )
+                create_conflict_response = client.post(
+                    "/api/v1/term-rule-proposals",
+                    headers=operator_headers,
+                    json={
+                        "intent": "update",
+                        "target_rule_id": target_rule_id,
+                        "source_term": "VNEW",
+                        "category_id": category_id,
+                        "segments": [
+                            {"segment_text": "V", "render_type": "plain"},
+                            {"segment_text": "NEW", "render_type": "subscript"},
+                        ],
+                        "reason": "bulk approve stale target candidate",
+                    },
+                )
+                ok_proposal_id = create_ok_response.json()["id"]
+                conflict_proposal_id = create_conflict_response.json()["id"]
+                client.patch(
+                    f"/api/v1/term-rule-sets/electronics-default/draft/rules/{target_rule_id}",
+                    headers=admin_headers,
+                    json={"notes": "admin direct edit before bulk approve"},
+                )
+                bulk_response = client.post(
+                    "/api/v1/term-rule-proposals/bulk-approve",
+                    headers=admin_headers,
+                    json={
+                        "proposal_ids": [ok_proposal_id, conflict_proposal_id],
+                        "review_comment": "bulk approve review",
+                    },
+                )
+                draft_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/draft",
+                    headers=admin_headers,
+                )
+
+            ok_proposal = runtime.term_rule_proposal_service.get_proposal(ok_proposal_id)
+            conflict_proposal = runtime.term_rule_proposal_service.get_proposal(conflict_proposal_id)
+
+        self.assertEqual(create_ok_response.status_code, 201)
+        self.assertEqual(create_conflict_response.status_code, 201)
+        self.assertEqual(bulk_response.status_code, 200)
+        payload = bulk_response.json()
+        self.assertEqual(payload["action"], "approve")
+        self.assertEqual(payload["total"], 2)
+        self.assertEqual(payload["succeeded"], 1)
+        self.assertEqual(payload["failed"], 1)
+        self.assertTrue(payload["items"][0]["ok"])
+        self.assertEqual(payload["items"][0]["proposal"]["status"], "approved")
+        self.assertFalse(payload["items"][1]["ok"])
+        self.assertEqual(payload["items"][1]["proposal_id"], conflict_proposal_id)
+        self.assertEqual(payload["items"][1]["status_code"], 409)
+        self.assertEqual(payload["items"][1]["error_code"], "term_rule_proposal_conflict")
+        self.assertEqual(payload["items"][1]["detail"]["code"], "term_rule_proposal_conflict")
+        self.assertEqual(payload["items"][1]["detail"]["conflicts"][0]["type"], "stale_target_rule")
+        self.assertEqual(ok_proposal.status.value, "approved")
+        self.assertEqual(conflict_proposal.status.value, "pending_review")
+        self.assertIn("VBULK", draft_response.json()["yaml_text"])
+        self.assertNotIn("VNEW", draft_response.json()["yaml_text"])
+
+    def test_term_rule_proposal_bulk_reject_partial_success_preserves_failed_item(self):
+        """验证批量 reject 支持部分成功，并且失败项不会被二次覆盖。"""
+
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        seed_yaml = (
+            "schema_version: 2\n"
+            "categories:\n"
+            "  voltage_terms:\n"
+            "    name: 电压相关\n"
+            "    priority: 10\n"
+            "    enabled: true\n"
+            "rules: []\n"
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            seed_path = temp_root / "term_rules_seed.yaml"
+            seed_path.write_text(seed_yaml, encoding="utf-8")
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                term_rules_seed_path=str(seed_path),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                category_id = client.get("/api/v1/term-rule-categories").json()["items"][0]["id"]
+                create_pending_response = client.post(
+                    "/api/v1/term-rule-proposals",
+                    headers=operator_headers,
+                    json={
+                        "intent": "create",
+                        "source_term": "VREJECT",
+                        "category_id": category_id,
+                        "segments": [
+                            {"segment_text": "V", "render_type": "plain"},
+                            {"segment_text": "REJECT", "render_type": "subscript"},
+                        ],
+                        "reason": "bulk reject success candidate",
+                    },
+                )
+                create_failed_response = client.post(
+                    "/api/v1/term-rule-proposals",
+                    headers=operator_headers,
+                    json={
+                        "intent": "create",
+                        "source_term": "VALREADY",
+                        "category_id": category_id,
+                        "segments": [
+                            {"segment_text": "V", "render_type": "plain"},
+                            {"segment_text": "ALREADY", "render_type": "subscript"},
+                        ],
+                        "reason": "already rejected candidate",
+                    },
+                )
+                pending_proposal_id = create_pending_response.json()["id"]
+                failed_proposal_id = create_failed_response.json()["id"]
+                pre_reject_response = client.post(
+                    f"/api/v1/term-rule-proposals/{failed_proposal_id}/reject",
+                    headers=admin_headers,
+                    json={"review_comment": "pre rejected before bulk"},
+                )
+                bulk_response = client.post(
+                    "/api/v1/term-rule-proposals/bulk-reject",
+                    headers=admin_headers,
+                    json={
+                        "proposal_ids": [pending_proposal_id, failed_proposal_id],
+                        "review_comment": "bulk reject review",
+                    },
+                )
+
+            pending_proposal = runtime.term_rule_proposal_service.get_proposal(pending_proposal_id)
+            failed_proposal = runtime.term_rule_proposal_service.get_proposal(failed_proposal_id)
+
+        self.assertEqual(create_pending_response.status_code, 201)
+        self.assertEqual(create_failed_response.status_code, 201)
+        self.assertEqual(pre_reject_response.status_code, 200)
+        self.assertEqual(bulk_response.status_code, 200)
+        payload = bulk_response.json()
+        self.assertEqual(payload["action"], "reject")
+        self.assertEqual(payload["total"], 2)
+        self.assertEqual(payload["succeeded"], 1)
+        self.assertEqual(payload["failed"], 1)
+        self.assertTrue(payload["items"][0]["ok"])
+        self.assertEqual(payload["items"][0]["proposal"]["status"], "rejected")
+        self.assertFalse(payload["items"][1]["ok"])
+        self.assertEqual(payload["items"][1]["proposal_id"], failed_proposal_id)
+        self.assertEqual(payload["items"][1]["status_code"], 400)
+        self.assertEqual(payload["items"][1]["error_code"], "invalid_request")
+        self.assertIn("pending_review", payload["items"][1]["detail"])
+        self.assertEqual(pending_proposal.status.value, "rejected")
+        self.assertEqual(pending_proposal.review_comment, "bulk reject review")
+        self.assertEqual(failed_proposal.status.value, "rejected")
+        self.assertEqual(failed_proposal.review_comment, "pre rejected before bulk")
+
     def test_term_rule_categories_export_and_simulate_are_available(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             app = create_app(build_test_runtime(Path(temp_dir)))
@@ -7052,6 +7274,218 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIn("translation_term_proposal.reject", audit_actions)
         self.assertIn("translation_term_set.draft_update", audit_actions)
 
+    def test_translation_term_proposal_bulk_approve_partial_success_and_conflict(self):
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            terms_path = temp_root / "translation_terms.csv"
+            terms_path.write_text(
+                "language_pair,source_term,target_term,version\n"
+                "en2zh,ADC,模数转换器,v1\n"
+                "en2zh,DAC,数模转换器,v1\n",
+                encoding="utf-8",
+            )
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                translation_terms_path=str(terms_path),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                ok_create_response = client.post(
+                    "/api/v1/translation-term-proposals",
+                    headers=operator_headers,
+                    json={
+                        "language_pair": "en2zh",
+                        "observed_translation_term_version": "v1",
+                        "changes": [
+                            {
+                                "action": "add",
+                                "source_term": "FPGA",
+                                "target_term": "现场可编程门阵列",
+                            }
+                        ],
+                    },
+                )
+                conflict_create_response = client.post(
+                    "/api/v1/translation-term-proposals",
+                    headers=operator_headers,
+                    json={
+                        "language_pair": "en2zh",
+                        "observed_translation_term_version": "v1",
+                        "changes": [
+                            {
+                                "action": "update",
+                                "source_term": "ADC",
+                                "target_term": "模拟数字转换器",
+                            }
+                        ],
+                    },
+                )
+                runtime.translation_term_set_version_service.update_draft(
+                    "translation-terms-en2zh",
+                    [
+                        TranslationTermEntry(
+                            language_pair="en2zh",
+                            source_term="ADC",
+                            target_term="另一个译文",
+                            version="draft",
+                        ),
+                        TranslationTermEntry(
+                            language_pair="en2zh",
+                            source_term="DAC",
+                            target_term="数模转换器",
+                            version="draft",
+                        ),
+                    ],
+                )
+                bulk_response = client.post(
+                    "/api/v1/translation-term-proposals/bulk-approve",
+                    headers=admin_headers,
+                    json={
+                        "proposal_ids": [
+                            ok_create_response.json()["id"],
+                            conflict_create_response.json()["id"],
+                        ],
+                        "review_note": "bulk approve smoke",
+                    },
+                )
+                conflict_after_response = client.get(
+                    f"/api/v1/translation-term-proposals/{conflict_create_response.json()['id']}",
+                    headers=operator_headers,
+                )
+                draft = runtime.translation_term_set_version_service.get_draft("translation-terms-en2zh")
+
+        self.assertEqual(ok_create_response.status_code, 201)
+        self.assertEqual(conflict_create_response.status_code, 201)
+        self.assertEqual(bulk_response.status_code, 200)
+        payload = bulk_response.json()
+        self.assertEqual(payload["action"], "approve")
+        self.assertEqual(payload["total"], 2)
+        self.assertEqual(payload["succeeded"], 1)
+        self.assertEqual(payload["failed"], 1)
+        items_by_id = {item["proposal_id"]: item for item in payload["items"]}
+        ok_item = items_by_id[ok_create_response.json()["id"]]
+        conflict_item = items_by_id[conflict_create_response.json()["id"]]
+        self.assertTrue(ok_item["ok"])
+        self.assertEqual(ok_item["proposal"]["status"], "approved")
+        self.assertFalse(conflict_item["ok"])
+        self.assertEqual(conflict_item["status_code"], 409)
+        self.assertEqual(conflict_item["error_code"], "translation_term_proposal_conflict")
+        self.assertEqual(conflict_item["detail"]["code"], "translation_term_proposal_conflict")
+        self.assertEqual(conflict_item["detail"]["conflicts"][0]["code"], "stale_target_term")
+        self.assertEqual(conflict_item["detail"]["conflicts"][0]["normalized_source_term"], "adc")
+        self.assertEqual(conflict_after_response.json()["status"], "pending")
+        draft_by_source = {entry.source_term: entry for entry in draft.entries}
+        self.assertEqual(draft_by_source["FPGA"].target_term, "现场可编程门阵列")
+        self.assertEqual(draft_by_source["ADC"].target_term, "另一个译文")
+
+    def test_translation_term_proposal_bulk_reject_partial_success_preserves_failed_item(self):
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            terms_path = temp_root / "translation_terms.csv"
+            terms_path.write_text(
+                "language_pair,source_term,target_term,version\n"
+                "en2zh,ADC,模数转换器,v1\n"
+                "en2zh,DAC,数模转换器,v1\n",
+                encoding="utf-8",
+            )
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                translation_terms_path=str(terms_path),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                reject_create_response = client.post(
+                    "/api/v1/translation-term-proposals",
+                    headers=operator_headers,
+                    json={
+                        "language_pair": "en2zh",
+                        "changes": [
+                            {
+                                "action": "delete",
+                                "source_term": "DAC",
+                            }
+                        ],
+                    },
+                )
+                approved_create_response = client.post(
+                    "/api/v1/translation-term-proposals",
+                    headers=operator_headers,
+                    json={
+                        "language_pair": "en2zh",
+                        "changes": [
+                            {
+                                "action": "add",
+                                "source_term": "FPGA",
+                                "target_term": "现场可编程门阵列",
+                            }
+                        ],
+                    },
+                )
+                approve_response = client.post(
+                    f"/api/v1/translation-term-proposals/{approved_create_response.json()['id']}/approve",
+                    headers=admin_headers,
+                    json={"review_note": "prepare non-pending item"},
+                )
+                bulk_response = client.post(
+                    "/api/v1/translation-term-proposals/bulk-reject",
+                    headers=admin_headers,
+                    json={
+                        "proposal_ids": [
+                            reject_create_response.json()["id"],
+                            approved_create_response.json()["id"],
+                        ],
+                        "review_note": "bulk reject smoke",
+                    },
+                )
+                failed_after_response = client.get(
+                    f"/api/v1/translation-term-proposals/{approved_create_response.json()['id']}",
+                    headers=operator_headers,
+                )
+
+        self.assertEqual(reject_create_response.status_code, 201)
+        self.assertEqual(approved_create_response.status_code, 201)
+        self.assertEqual(approve_response.status_code, 200)
+        self.assertEqual(bulk_response.status_code, 200)
+        payload = bulk_response.json()
+        self.assertEqual(payload["action"], "reject")
+        self.assertEqual(payload["total"], 2)
+        self.assertEqual(payload["succeeded"], 1)
+        self.assertEqual(payload["failed"], 1)
+        items_by_id = {item["proposal_id"]: item for item in payload["items"]}
+        rejected_item = items_by_id[reject_create_response.json()["id"]]
+        failed_item = items_by_id[approved_create_response.json()["id"]]
+        self.assertTrue(rejected_item["ok"])
+        self.assertEqual(rejected_item["proposal"]["status"], "rejected")
+        self.assertFalse(failed_item["ok"])
+        self.assertEqual(failed_item["status_code"], 400)
+        self.assertEqual(failed_item["error_code"], "invalid_request")
+        self.assertIn("只有 pending proposal 可以审核", failed_item["detail"])
+        self.assertEqual(failed_after_response.json()["status"], "approved")
+
     def test_translation_term_proposal_approve_and_publish_sets_default_and_conflict_blocks_merge(self):
         from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
 
@@ -7156,7 +7590,8 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(stale_create_response.status_code, 201)
         self.assertEqual(conflict_response.status_code, 409)
         self.assertEqual(conflict_response.json()["detail"]["code"], "translation_term_proposal_conflict")
-        self.assertIn("已被其他变更修改", conflict_response.json()["detail"]["conflicts"][0])
+        self.assertIn("已被其他变更修改", conflict_response.json()["detail"]["conflicts"][0]["message"])
+        self.assertEqual(conflict_response.json()["detail"]["conflicts"][0]["code"], "stale_target_term")
         self.assertEqual(refreshed_conflict_response.json()["status"], "pending")
         audit_actions = [event.action for event in runtime.audit_event_repository.list_audit_events()]
         self.assertIn("translation_term_proposal.approve_and_publish", audit_actions)

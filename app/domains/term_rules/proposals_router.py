@@ -16,12 +16,17 @@ from app.domains.term_rules.models import (
     TermRuleProposalStatus,
 )
 from app.domains.term_rules.proposals_service import (
+    TermRuleProposalBulkReviewItem,
     TermRuleProposalConflictError,
     TermRuleProposalService,
 )
 from app.domains.term_rules.versioning_service import DEFAULT_TERM_RULE_SET_ID
 from app.domains.term_rules.schemas import (
     TermRuleProposalApproveAndPublishRequest,
+    TermRuleProposalBulkItemResponse,
+    TermRuleProposalBulkRejectRequest,
+    TermRuleProposalBulkResponse,
+    TermRuleProposalBulkReviewRequest,
     TermRuleProposalConflictResponse,
     TermRuleProposalCreateRequest,
     TermRuleProposalListResponse,
@@ -126,6 +131,35 @@ def _proposal_conflict_http_exception(exc: TermRuleProposalConflictError) -> HTT
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
 
+def _serialize_bulk_item(item: TermRuleProposalBulkReviewItem) -> TermRuleProposalBulkItemResponse:
+    """把 service 层批量审核结果映射为 API item。"""
+
+    return TermRuleProposalBulkItemResponse(
+        proposal_id=item.proposal_id,
+        ok=item.ok,
+        status_code=item.status_code,
+        error_code=item.error_code,
+        detail=item.detail,
+        proposal=_serialize_proposal(item.proposal) if item.proposal is not None else None,
+    )
+
+
+def _build_bulk_response(
+    action: str,
+    items: list[TermRuleProposalBulkReviewItem],
+) -> TermRuleProposalBulkResponse:
+    """汇总批量审核成功和失败数量。"""
+
+    succeeded = sum(1 for item in items if item.ok)
+    return TermRuleProposalBulkResponse(
+        action=action,
+        total=len(items),
+        succeeded=succeeded,
+        failed=len(items) - succeeded,
+        items=[_serialize_bulk_item(item) for item in items],
+    )
+
+
 @router.post("", response_model=TermRuleProposalResponse, status_code=status.HTTP_201_CREATED)
 def create_term_rule_proposal(
     payload: TermRuleProposalCreateRequest,
@@ -176,6 +210,50 @@ def list_term_rule_proposals(
         created_by = user.id if scope == "my" else None
         items = service.list_proposals(status=status_filter, created_by=created_by)
     return TermRuleProposalListResponse(items=[_serialize_proposal(item) for item in items], total=len(items))
+
+
+@router.post("/bulk-approve", response_model=TermRuleProposalBulkResponse)
+def bulk_approve_term_rule_proposals(
+    payload: TermRuleProposalBulkReviewRequest,
+    actor: ActorContext = Depends(require_admin_actor),
+    runtime: AppRuntime = Depends(get_runtime),
+    trace_id: str = Depends(get_trace_id),
+) -> TermRuleProposalBulkResponse:
+    """批量 approve term rule proposals，逐项复用单条审核语义。"""
+
+    try:
+        items = _require_proposal_service(runtime).bulk_approve_proposals(
+            payload.proposal_ids,
+            reviewed_by=actor.actor_id or "admin",
+            review_comment=payload.review_comment,
+            actor=actor,
+            trace_id=trace_id,
+        )
+    except ValueError as exc:
+        raise bad_request_http_exception(exc) from exc
+    return _build_bulk_response("approve", items)
+
+
+@router.post("/bulk-reject", response_model=TermRuleProposalBulkResponse)
+def bulk_reject_term_rule_proposals(
+    payload: TermRuleProposalBulkRejectRequest,
+    actor: ActorContext = Depends(require_admin_actor),
+    runtime: AppRuntime = Depends(get_runtime),
+    trace_id: str = Depends(get_trace_id),
+) -> TermRuleProposalBulkResponse:
+    """批量 reject term rule proposals，逐项复用单条拒绝语义。"""
+
+    try:
+        items = _require_proposal_service(runtime).bulk_reject_proposals(
+            payload.proposal_ids,
+            reviewed_by=actor.actor_id or "admin",
+            review_comment=payload.review_comment,
+            actor=actor,
+            trace_id=trace_id,
+        )
+    except ValueError as exc:
+        raise bad_request_http_exception(exc) from exc
+    return _build_bulk_response("reject", items)
 
 
 @router.get("/{proposal_id}", response_model=TermRuleProposalResponse)
