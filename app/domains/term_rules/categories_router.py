@@ -1,13 +1,13 @@
-from __future__ import annotations
+# File: app/domains/term_rules/categories_router.py
+# Purpose: 提供术语规则分类查询和管理接口。
 
-# app/domains/term_rules/categories_router.py: 提供术语规则分类查询和管理接口。
+from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status
 
 from app.api.dependencies import get_runtime
 from app.api.dependencies import require_admin_access
 from app.api.errors import bad_request_http_exception, not_found_http_exception
-from app.domains.term_rules.write_guard import ensure_legacy_term_rule_write_allowed
 from app.core.runtime import AppRuntime
 from app.domains.term_rules.schemas import (
     TermRuleCategoryCreateRequest,
@@ -16,24 +16,53 @@ from app.domains.term_rules.schemas import (
     TermRuleCategoryUpdateRequest,
     TermRuleDeleteResponse,
 )
+from app.domains.term_rules.models import TermRuleCategoryRecord
+from app.domains.term_rules.versioning_service import DEFAULT_TERM_RULE_SET_ID
+from app.domains.term_rules.write_guard import ensure_legacy_term_rule_write_allowed
 
 
 router = APIRouter(prefix="/term-rule-categories", tags=["term-rule-categories"])
 
 
+def _category_response(
+    category: TermRuleCategoryRecord,
+    rule_count: int,
+    enabled_rule_count: int,
+) -> TermRuleCategoryListItemResponse:
+    """把 category record 和计数转换为 API 响应模型。"""
+
+    return TermRuleCategoryListItemResponse(
+        id=category.id,
+        code=category.code,
+        name=category.name,
+        priority=category.priority,
+        enabled=category.enabled,
+        description=category.description,
+        rule_count=rule_count,
+        enabled_rule_count=enabled_rule_count,
+    )
+
+
+def _draft_category_items(runtime: AppRuntime) -> list[TermRuleCategoryListItemResponse] | None:
+    """版本化模式下从 default Term Rule Set draft 读取分类，避免 legacy store 与 draft 脱节。"""
+
+    if runtime.term_rule_set_version_service is None:
+        return None
+    store = runtime.term_rule_set_version_service.get_draft_store(DEFAULT_TERM_RULE_SET_ID)
+    counts: dict[str, tuple[int, int]] = {}
+    for rule in store.rules:
+        total, enabled = counts.get(rule.category_id, (0, 0))
+        counts[rule.category_id] = (total + 1, enabled + (1 if rule.enabled else 0))
+    return [
+        _category_response(category, *counts.get(category.id, (0, 0)))
+        for category in sorted(store.categories, key=lambda item: (item.priority, item.code))
+    ]
+
+
 def _serialize_category(runtime: AppRuntime, category_id: str) -> TermRuleCategoryListItemResponse:
     for category, rule_count, enabled_rule_count in runtime.term_rule_service.list_categories_with_counts():
         if category.id == category_id:
-            return TermRuleCategoryListItemResponse(
-                id=category.id,
-                code=category.code,
-                name=category.name,
-                priority=category.priority,
-                enabled=category.enabled,
-                description=category.description,
-                rule_count=rule_count,
-                enabled_rule_count=enabled_rule_count,
-            )
+            return _category_response(category, rule_count, enabled_rule_count)
     raise FileNotFoundError(f"分类不存在: {category_id}")
 
 
@@ -41,17 +70,13 @@ def _serialize_category(runtime: AppRuntime, category_id: str) -> TermRuleCatego
 def list_term_rule_categories(
     runtime: AppRuntime = Depends(get_runtime),
 ) -> TermRuleCategoryListResponse:
+    """列出可提交 proposal 的分类；版本化模式优先返回 default draft 分类。"""
+
+    draft_items = _draft_category_items(runtime)
+    if draft_items is not None:
+        return TermRuleCategoryListResponse(items=draft_items)
     items = [
-        TermRuleCategoryListItemResponse(
-            id=category.id,
-            code=category.code,
-            name=category.name,
-            priority=category.priority,
-            enabled=category.enabled,
-            description=category.description,
-            rule_count=rule_count,
-            enabled_rule_count=enabled_rule_count,
-        )
+        _category_response(category, rule_count, enabled_rule_count)
         for category, rule_count, enabled_rule_count in runtime.term_rule_service.list_categories_with_counts()
     ]
     return TermRuleCategoryListResponse(items=items)
