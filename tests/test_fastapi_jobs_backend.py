@@ -1662,7 +1662,11 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertTrue(actions_by_id["alert.delivery"]["requires_confirmation"])
         self.assertFalse(actions_by_id["alert.delivery"]["sends_notification"])
         self.assertEqual(actions_by_id["alert.delivery"]["audit_action"], "ops.alert_delivery_fake")
-        self.assertFalse(actions_by_id["file_retention.automated_cleanup_execute"]["available"])
+        self.assertTrue(actions_by_id["file_retention.automated_cleanup_execute"]["available"])
+        self.assertEqual(
+            actions_by_id["file_retention.automated_cleanup_execute"]["audit_action"],
+            "file.retention_automated_cleanup_execute",
+        )
         self.assertTrue(actions_by_id["file_retention.automated_cleanup_execute"]["deletes_data"])
         self.assertFalse(actions_by_id["legacy_job.recover_mineru_result"]["available"])
         self.assertIn("MINERU_API_TOKEN 未配置", " ".join(actions_by_id["legacy_job.recover_mineru_result"]["known_gaps"]))
@@ -2904,6 +2908,241 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIsNotNone(file_after_runner)
         self.assertEqual(file_after_runner.status, "expired")
         self.assertEqual(audit_events, [])
+
+    def test_file_retention_cleanup_run_preview_is_admin_only_and_readonly(self):
+        """验证 cleanup run preview Admin-only 且不修改 metadata 或删除对象。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            stale_file = self._seed_expired_document_file(runtime, file_id="file_retention_cleanup_preview")
+            runtime.document_file_repository.update_document_file(stale_file.id, status="expired")
+            stale_path = runtime.file_upload_service.resolve_local_object_path(stale_file.object_key)
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                audit_events_before = runtime.audit_event_repository.list_audit_events()
+                admin_response = client.post(
+                    "/api/v1/files/retention/cleanup-runs/preview",
+                    headers=admin_headers,
+                    json={"file_ids": [stale_file.id], "max_files": 50},
+                )
+                operator_response = client.post(
+                    "/api/v1/files/retention/cleanup-runs/preview",
+                    headers=operator_headers,
+                    json={"file_ids": [stale_file.id], "max_files": 50},
+                )
+                audit_events_after = runtime.audit_event_repository.list_audit_events()
+
+            file_after_preview = runtime.document_file_repository.get_document_file(stale_file.id)
+            object_still_exists = stale_path.exists()
+
+        self.assertEqual(admin_response.status_code, 200)
+        payload = admin_response.json()
+        self.assertEqual(payload["action_mode"], "cleanup_preview")
+        self.assertTrue(payload["preview_hash"].startswith("sha256:"))
+        self.assertEqual(payload["physical_delete"]["action_mode"], "delete_preview")
+        self.assertEqual(payload["physical_delete"]["totals"]["deletable"], 1)
+        self.assertFalse(payload["safety"]["scheduler_loop_executed"])
+        self.assertFalse(payload["safety"]["physical_delete_executed"])
+        self.assertTrue(payload["safety"]["physical_delete_contract_reused"])
+        self.assertFalse(payload["safety"]["audit_events_written"])
+        self.assertTrue(object_still_exists)
+        self.assertIsNotNone(file_after_preview)
+        self.assertEqual(file_after_preview.status, "expired")
+        self.assertEqual(operator_response.status_code, 403)
+        self.assertEqual(operator_response.json()["error_code"], "role_forbidden")
+        self.assertEqual(audit_events_after, audit_events_before)
+
+    def test_file_retention_cleanup_run_execute_reuses_physical_delete_contract_and_audits(self):
+        """验证 cleanup run execute 复用物理删除合同、写审计且不会执行 S3 删除。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            stale_file = self._seed_expired_document_file(runtime, file_id="file_retention_cleanup_execute")
+            runtime.document_file_repository.update_document_file(stale_file.id, status="expired")
+            stale_path = runtime.file_upload_service.resolve_local_object_path(stale_file.object_key)
+            now = utc_now()
+            s3_file = DocumentFileRecord(
+                id="file_retention_cleanup_s3",
+                tenant_id="tenant_default",
+                company_id="company_default",
+                job_id="docjob_retention",
+                file_type="generated_word",
+                storage_provider="s3",
+                bucket="test-bucket",
+                object_key="document-jobs/tenant_default/docjob_retention/generated_word/s3.docx",
+                original_filename="s3.docx",
+                mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                size_bytes=10,
+                status="expired",
+                expires_at=now - timedelta(seconds=1),
+                created_by="user_operator",
+                created_at=now - timedelta(days=2),
+                updated_at=now - timedelta(days=2),
+            )
+            runtime.document_file_repository.create_document_file(s3_file)
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                preview_response = client.post(
+                    "/api/v1/files/retention/cleanup-runs/preview",
+                    headers=admin_headers,
+                    json={"file_ids": [stale_file.id, s3_file.id], "max_files": 50},
+                )
+                preview_hash = preview_response.json()["preview_hash"]
+                execute_response = client.post(
+                    "/api/v1/files/retention/cleanup-runs/execute",
+                    headers={**admin_headers, "X-Trace-Id": "trace_cleanup_execute"},
+                    json={
+                        "file_ids": [stale_file.id, s3_file.id],
+                        "max_files": 50,
+                        "preview_hash": preview_hash,
+                        "reason": "monthly cleanup",
+                        "confirmation": "EXECUTE AUTOMATED RETENTION CLEANUP",
+                    },
+                )
+                replay_preview = client.post(
+                    "/api/v1/files/retention/cleanup-runs/preview",
+                    headers=admin_headers,
+                    json={"file_ids": [stale_file.id], "max_files": 50},
+                )
+                replay_response = client.post(
+                    "/api/v1/files/retention/cleanup-runs/execute",
+                    headers=admin_headers,
+                    json={
+                        "file_ids": [stale_file.id],
+                        "max_files": 50,
+                        "preview_hash": replay_preview.json()["preview_hash"],
+                        "reason": "idempotent replay",
+                        "confirmation": "EXECUTE AUTOMATED RETENTION CLEANUP",
+                    },
+                )
+
+            stale_after_execute = runtime.document_file_repository.get_document_file(stale_file.id)
+            s3_after_execute = runtime.document_file_repository.get_document_file(s3_file.id)
+            object_still_exists = stale_path.exists()
+            cleanup_events = [
+                event
+                for event in runtime.audit_event_repository.list_audit_events()
+                if event.action == "file.retention_automated_cleanup_execute"
+            ]
+
+        self.assertEqual(preview_response.status_code, 200)
+        self.assertEqual(execute_response.status_code, 200)
+        payload = execute_response.json()
+        self.assertEqual(payload["action_mode"], "cleanup_execute")
+        self.assertEqual(payload["physical_delete"]["totals"]["deleted"], 1)
+        self.assertEqual(payload["physical_delete"]["totals"]["skipped"], 1)
+        outcomes = {item["file_id"]: item["outcome"] for item in payload["physical_delete"]["items"]}
+        self.assertEqual(outcomes[stale_file.id], "deleted")
+        self.assertEqual(outcomes[s3_file.id], "skipped_unsupported_storage")
+        self.assertTrue(payload["safety"]["physical_delete_executed"])
+        self.assertTrue(payload["safety"]["physical_delete_contract_reused"])
+        self.assertFalse(payload["safety"]["s3_delete_executed"])
+        self.assertTrue(payload["safety"]["audit_events_written"])
+        self.assertFalse(object_still_exists)
+        self.assertIsNotNone(stale_after_execute)
+        self.assertEqual(stale_after_execute.status, "deleted")
+        self.assertIsNotNone(s3_after_execute)
+        self.assertEqual(s3_after_execute.status, "expired")
+        self.assertEqual(replay_response.status_code, 200)
+        self.assertEqual(replay_response.json()["physical_delete"]["items"][0]["outcome"], "skipped_already_deleted")
+        self.assertEqual(len(cleanup_events), 2)
+        self.assertEqual(cleanup_events[0].trace_id, "trace_cleanup_execute")
+        self.assertIn("preview_hash=sha256:", cleanup_events[0].reason)
+        self.assertIn("deleted=1", cleanup_events[0].reason)
+
+    def test_file_retention_cleanup_run_guards_hash_limits_and_registry_contract(self):
+        """验证 cleanup run 的 hash、限流、确认短语和 registry contract。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            stale_file = self._seed_expired_document_file(runtime, file_id="file_retention_cleanup_guard")
+            runtime.document_file_repository.update_document_file(stale_file.id, status="expired")
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                preview_response = client.post(
+                    "/api/v1/files/retention/cleanup-runs/preview",
+                    headers=admin_headers,
+                    json={"file_ids": [stale_file.id], "max_files": 50},
+                )
+                bad_hash_response = client.post(
+                    "/api/v1/files/retention/cleanup-runs/execute",
+                    headers=admin_headers,
+                    json={
+                        "file_ids": [stale_file.id],
+                        "max_files": 50,
+                        "preview_hash": "sha256:bad",
+                        "reason": "cleanup",
+                        "confirmation": "EXECUTE AUTOMATED RETENTION CLEANUP",
+                    },
+                )
+                bad_confirmation_response = client.post(
+                    "/api/v1/files/retention/cleanup-runs/execute",
+                    headers=admin_headers,
+                    json={
+                        "file_ids": [stale_file.id],
+                        "max_files": 50,
+                        "preview_hash": preview_response.json()["preview_hash"],
+                        "reason": "cleanup",
+                        "confirmation": "DELETE EXPIRED FILES",
+                    },
+                )
+                empty_reason_response = client.post(
+                    "/api/v1/files/retention/cleanup-runs/execute",
+                    headers=admin_headers,
+                    json={
+                        "file_ids": [stale_file.id],
+                        "max_files": 50,
+                        "preview_hash": preview_response.json()["preview_hash"],
+                        "reason": " ",
+                        "confirmation": "EXECUTE AUTOMATED RETENTION CLEANUP",
+                    },
+                )
+                too_many_for_limit_response = client.post(
+                    "/api/v1/files/retention/cleanup-runs/preview",
+                    headers=admin_headers,
+                    json={"file_ids": [stale_file.id, "file_other"], "max_files": 1},
+                )
+                registry_response = client.get("/api/v1/ops/recovery-actions", headers=admin_headers)
+
+            stale_after_checks = runtime.document_file_repository.get_document_file(stale_file.id)
+
+        self.assertEqual(preview_response.status_code, 200)
+        self.assertEqual(bad_hash_response.status_code, 409)
+        self.assertEqual(bad_hash_response.json()["error_code"], "conflict")
+        self.assertEqual(bad_confirmation_response.status_code, 400)
+        self.assertEqual(empty_reason_response.status_code, 400)
+        self.assertEqual(too_many_for_limit_response.status_code, 400)
+        self.assertIsNotNone(stale_after_checks)
+        self.assertEqual(stale_after_checks.status, "expired")
+        actions_by_id = {item["action_id"]: item for item in registry_response.json()["actions"]}
+        cleanup_action = actions_by_id["file_retention.automated_cleanup_execute"]
+        self.assertTrue(cleanup_action["available"])
+        self.assertEqual(cleanup_action["audit_action"], "file.retention_automated_cleanup_execute")
+        self.assertTrue(cleanup_action["requires_reason"])
+        self.assertTrue(cleanup_action["requires_confirmation"])
+        self.assertTrue(cleanup_action["deletes_data"])
 
     def test_file_retention_policy_crud_is_admin_only_and_audited(self):
         """验证保留策略治理接口 Admin-only，写操作记录审计且不触发物理删除。"""

@@ -8,7 +8,9 @@
 
 `/api/v1/ops/provider-cancellations` provides an Admin-only fake provider cancellation safety contract.
 
-These APIs do not execute real provider calls, real external alert delivery, scheduler loops, physical deletion, S3 deletion, MinerU recovery, pdf-mineru parsing, translation providers, or Word generation.
+File retention cleanup run execution lives under `/api/v1/files/retention/cleanup-runs/*`; the Ops recovery action registry links to it as `file_retention.automated_cleanup_execute`.
+
+Ops namespace APIs do not execute real provider calls, real external alert delivery, scheduler loops, physical deletion, S3 deletion, MinerU recovery, pdf-mineru parsing, translation providers, or Word generation. The Files cleanup run contract may execute only guarded local physical deletion through the existing file-retention safety contract.
 
 ## Recovery Actions
 
@@ -24,11 +26,13 @@ Each action includes:
 - risk flags: `mutates_metadata`, `mutates_queue`, `calls_provider`, `sends_notification`, `deletes_data`
 - audit contract: `audit_action`
 
-Candidate-only actions such as automated cleanup execution are listed with `available=false` until their execution contracts are implemented and reviewed.
+Candidate-only execution actions are listed with `available=false` until their execution contracts are implemented and reviewed.
 
 `alert.delivery` is available only for the local fake outbox contract. It does not send Slack/email/webhook notifications.
 
 `provider.cancel` is available only for the fake provider cancellation contract. It does not call MinerU or any real provider cancellation API.
+
+`file_retention.automated_cleanup_execute` is available only for the manual cleanup run execution contract under Files API. It does not start a scheduler loop or autonomous policy executor.
 
 ### `POST /api/v1/ops/recovery-actions/preview`
 
