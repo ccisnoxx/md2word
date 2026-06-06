@@ -9,12 +9,20 @@ from app.api.dependencies import get_runtime, get_trace_id, require_admin_user
 from app.core.runtime import AppRuntime
 from app.domains.audit.models import ActorContext
 from app.domains.ops.alert_delivery import OpsAlertDeliveryReport, OpsAlertDeliveryService
+from app.domains.ops.provider_cancellation import (
+    OpsProviderCancellationReport,
+    OpsProviderCancellationService,
+)
 from app.domains.ops.recovery_actions import OpsRecoveryActionService
 from app.domains.ops.schemas import (
     OpsAlertDeliveryFakeSendRequest,
     OpsAlertDeliveryPreviewRequest,
     OpsAlertDeliveryResponse,
     OpsAlertDeliverySafetyResponse,
+    OpsProviderCancellationFakeRequest,
+    OpsProviderCancellationPreviewRequest,
+    OpsProviderCancellationResponse,
+    OpsProviderCancellationSafetyResponse,
     OpsRecoveryActionPreviewRequest,
     OpsRecoveryActionPreviewResponse,
     OpsRecoveryActionRegistryResponse,
@@ -92,6 +100,56 @@ def fake_send_ops_alert_delivery(
     return _build_alert_delivery_response(report, audit_events_written=audit_written)
 
 
+@router.post("/provider-cancellations/preview", response_model=OpsProviderCancellationResponse)
+def preview_ops_provider_cancellation(
+    payload: OpsProviderCancellationPreviewRequest,
+    runtime: AppRuntime = Depends(get_runtime),
+    _user: AuthenticatedUser = Depends(require_admin_user),
+) -> OpsProviderCancellationResponse:
+    """预览精确目标的 provider fake cancellation eligibility，不调用 provider。"""
+
+    report = _build_provider_cancellation_service(runtime).preview(
+        target_type=payload.target_type,
+        target_id=payload.target_id,
+        provider=payload.provider,
+        dedupe_window_minutes=payload.dedupe_window_minutes,
+    )
+    return _build_provider_cancellation_response(report, audit_events_written=False)
+
+
+@router.post("/provider-cancellations/fake-cancel", response_model=OpsProviderCancellationResponse)
+def fake_cancel_ops_provider_cancellation(
+    payload: OpsProviderCancellationFakeRequest,
+    runtime: AppRuntime = Depends(get_runtime),
+    user: AuthenticatedUser = Depends(require_admin_user),
+    trace_id: str = Depends(get_trace_id),
+) -> OpsProviderCancellationResponse:
+    """执行 provider fake cancellation，只写审计，不调用真实 provider。"""
+
+    service = _build_provider_cancellation_service(runtime)
+    report = service.fake_cancel(
+        target_type=payload.target_type,
+        target_id=payload.target_id,
+        provider=payload.provider,
+        reason=payload.reason,
+        confirmation=payload.confirmation,
+        dedupe_window_minutes=payload.dedupe_window_minutes,
+    )
+    if report.audit_event_written:
+        runtime.audit_service.record(
+            actor=_actor_from_user(user),
+            action="ops.provider_cancellation_fake",
+            target_type="provider_operation",
+            target_id=f"{report.provider}:{report.target.target_type}:{report.target.target_id}",
+            reason=service.audit_reason(human_reason=payload.reason, report=report),
+            trace_id=trace_id,
+        )
+    return _build_provider_cancellation_response(
+        report,
+        audit_events_written=report.audit_event_written,
+    )
+
+
 def _build_recovery_action_service(runtime: AppRuntime) -> OpsRecoveryActionService:
     """按当前 runtime 构建只读 recovery action service。"""
 
@@ -113,6 +171,16 @@ def _build_alert_delivery_service(runtime: AppRuntime) -> OpsAlertDeliveryServic
     )
 
 
+def _build_provider_cancellation_service(runtime: AppRuntime) -> OpsProviderCancellationService:
+    """按当前 metadata repositories 构建 provider fake cancellation service。"""
+
+    return OpsProviderCancellationService(
+        document_job_repository=runtime.document_job_repository,
+        job_repository=runtime.job_repository,
+        audit_event_repository=runtime.audit_event_repository,
+    )
+
+
 def _build_alert_delivery_response(
     report: OpsAlertDeliveryReport,
     *,
@@ -123,6 +191,18 @@ def _build_alert_delivery_response(
     payload = report.to_dict()
     payload["safety"] = OpsAlertDeliverySafetyResponse(audit_events_written=audit_events_written)
     return OpsAlertDeliveryResponse(**payload)
+
+
+def _build_provider_cancellation_response(
+    report: OpsProviderCancellationReport,
+    *,
+    audit_events_written: bool,
+) -> OpsProviderCancellationResponse:
+    """把 provider cancellation report 映射为带安全声明的 API response。"""
+
+    payload = report.to_dict()
+    payload["safety"] = OpsProviderCancellationSafetyResponse(audit_events_written=audit_events_written)
+    return OpsProviderCancellationResponse(**payload)
 
 
 def _actor_from_user(user: AuthenticatedUser) -> ActorContext:

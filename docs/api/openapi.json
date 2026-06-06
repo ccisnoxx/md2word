@@ -5411,6 +5411,339 @@
         "title": "OpsAlertDeliverySafetyResponse",
         "type": "object"
       },
+      "OpsProviderCancellationFakeRequest": {
+        "description": "请求执行 provider fake cancellation，不调用真实 provider。",
+        "properties": {
+          "confirmation": {
+            "title": "Confirmation",
+            "type": "string"
+          },
+          "dedupe_window_minutes": {
+            "default": 60,
+            "maximum": 1440.0,
+            "minimum": 1.0,
+            "title": "Dedupe Window Minutes",
+            "type": "integer"
+          },
+          "provider": {
+            "const": "mineru",
+            "default": "mineru",
+            "title": "Provider",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_type": {
+            "enum": [
+              "document_job",
+              "legacy_job"
+            ],
+            "title": "Target Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_type",
+          "target_id",
+          "reason",
+          "confirmation"
+        ],
+        "title": "OpsProviderCancellationFakeRequest",
+        "type": "object"
+      },
+      "OpsProviderCancellationPreviewRequest": {
+        "description": "请求预览一个精确目标的 provider fake cancellation eligibility。",
+        "properties": {
+          "dedupe_window_minutes": {
+            "default": 60,
+            "maximum": 1440.0,
+            "minimum": 1.0,
+            "title": "Dedupe Window Minutes",
+            "type": "integer"
+          },
+          "provider": {
+            "const": "mineru",
+            "default": "mineru",
+            "title": "Provider",
+            "type": "string"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_type": {
+            "enum": [
+              "document_job",
+              "legacy_job"
+            ],
+            "title": "Target Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_type",
+          "target_id"
+        ],
+        "title": "OpsProviderCancellationPreviewRequest",
+        "type": "object"
+      },
+      "OpsProviderCancellationResponse": {
+        "description": "返回 provider cancellation preview 或 fake execution 结果。",
+        "properties": {
+          "action_mode": {
+            "enum": [
+              "dry_run",
+              "fake_cancel"
+            ],
+            "title": "Action Mode",
+            "type": "string"
+          },
+          "audit_event_written": {
+            "default": false,
+            "title": "Audit Event Written",
+            "type": "boolean"
+          },
+          "confirmation_phrase": {
+            "title": "Confirmation Phrase",
+            "type": "string"
+          },
+          "dedupe_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dedupe Key"
+          },
+          "dedupe_window_minutes": {
+            "title": "Dedupe Window Minutes",
+            "type": "integer"
+          },
+          "eligible": {
+            "title": "Eligible",
+            "type": "boolean"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "missing_gates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Gates",
+            "type": "array"
+          },
+          "outcome": {
+            "enum": [
+              "cancelable",
+              "fake_canceled",
+              "deduped",
+              "ineligible",
+              "failed"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "provider": {
+            "const": "mineru",
+            "title": "Provider",
+            "type": "string"
+          },
+          "provider_operation": {
+            "$ref": "#/components/schemas/OpsProviderOperationResponse"
+          },
+          "safety": {
+            "$ref": "#/components/schemas/OpsProviderCancellationSafetyResponse"
+          },
+          "target": {
+            "$ref": "#/components/schemas/OpsProviderCancellationTargetResponse"
+          }
+        },
+        "required": [
+          "generated_at",
+          "action_mode",
+          "provider",
+          "confirmation_phrase",
+          "dedupe_window_minutes",
+          "target",
+          "provider_operation",
+          "eligible",
+          "outcome",
+          "safety"
+        ],
+        "title": "OpsProviderCancellationResponse",
+        "type": "object"
+      },
+      "OpsProviderCancellationSafetyResponse": {
+        "description": "声明 provider cancellation fake contract 没有真实外部副作用。",
+        "properties": {
+          "audit_events_written": {
+            "default": false,
+            "title": "Audit Events Written",
+            "type": "boolean"
+          },
+          "cleanup_executed": {
+            "default": false,
+            "title": "Cleanup Executed",
+            "type": "boolean"
+          },
+          "conversion_workflow_executed": {
+            "default": false,
+            "title": "Conversion Workflow Executed",
+            "type": "boolean"
+          },
+          "delete_executed": {
+            "default": false,
+            "title": "Delete Executed",
+            "type": "boolean"
+          },
+          "local_job_mutated": {
+            "default": false,
+            "title": "Local Job Mutated",
+            "type": "boolean"
+          },
+          "provider_calls_executed": {
+            "default": false,
+            "title": "Provider Calls Executed",
+            "type": "boolean"
+          },
+          "queue_mutated": {
+            "default": false,
+            "title": "Queue Mutated",
+            "type": "boolean"
+          },
+          "real_provider_cancel_executed": {
+            "default": false,
+            "title": "Real Provider Cancel Executed",
+            "type": "boolean"
+          }
+        },
+        "title": "OpsProviderCancellationSafetyResponse",
+        "type": "object"
+      },
+      "OpsProviderCancellationTargetResponse": {
+        "description": "返回 provider cancellation 精确目标的安全摘要。",
+        "properties": {
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "summary": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Summary",
+            "type": "object"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_type": {
+            "enum": [
+              "document_job",
+              "legacy_job"
+            ],
+            "title": "Target Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_type",
+          "target_id",
+          "exists"
+        ],
+        "title": "OpsProviderCancellationTargetResponse",
+        "type": "object"
+      },
+      "OpsProviderOperationResponse": {
+        "description": "返回可安全展示的 provider operation 摘要。",
+        "properties": {
+          "data_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Id"
+          },
+          "operation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operation Id"
+          },
+          "operation_type": {
+            "default": "batch_extract",
+            "title": "Operation Type",
+            "type": "string"
+          },
+          "provider": {
+            "const": "mineru",
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider"
+        ],
+        "title": "OpsProviderOperationResponse",
+        "type": "object"
+      },
       "OpsRecoveryActionPreviewRequest": {
         "description": "请求预览一个动作对一个精确目标的适用性。",
         "properties": {
@@ -15233,6 +15566,126 @@
           }
         },
         "summary": "Preview Ops Alert Delivery",
+        "tags": [
+          "ops"
+        ]
+      }
+    },
+    "/api/v1/ops/provider-cancellations/fake-cancel": {
+      "post": {
+        "description": "执行 provider fake cancellation，只写审计，不调用真实 provider。",
+        "operationId": "fake_cancel_ops_provider_cancellation_api_v1_ops_provider_cancellations_fake_cancel_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpsProviderCancellationFakeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsProviderCancellationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fake Cancel Ops Provider Cancellation",
+        "tags": [
+          "ops"
+        ]
+      }
+    },
+    "/api/v1/ops/provider-cancellations/preview": {
+      "post": {
+        "description": "预览精确目标的 provider fake cancellation eligibility，不调用 provider。",
+        "operationId": "preview_ops_provider_cancellation_api_v1_ops_provider_cancellations_preview_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpsProviderCancellationPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsProviderCancellationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Ops Provider Cancellation",
         "tags": [
           "ops"
         ]
