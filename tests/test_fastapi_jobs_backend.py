@@ -1652,8 +1652,11 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertTrue(actions_by_id["document_job.retry"]["mutates_metadata"])
         self.assertTrue(actions_by_id["document_job.retry"]["mutates_queue"])
         self.assertFalse(actions_by_id["document_job.retry"]["calls_provider"])
-        self.assertFalse(actions_by_id["provider.cancel"]["available"])
-        self.assertTrue(actions_by_id["provider.cancel"]["calls_provider"])
+        self.assertTrue(actions_by_id["provider.cancel"]["available"])
+        self.assertTrue(actions_by_id["provider.cancel"]["requires_reason"])
+        self.assertTrue(actions_by_id["provider.cancel"]["requires_confirmation"])
+        self.assertFalse(actions_by_id["provider.cancel"]["calls_provider"])
+        self.assertEqual(actions_by_id["provider.cancel"]["audit_action"], "ops.provider_cancellation_fake")
         self.assertTrue(actions_by_id["alert.delivery"]["available"])
         self.assertTrue(actions_by_id["alert.delivery"]["requires_reason"])
         self.assertTrue(actions_by_id["alert.delivery"]["requires_confirmation"])
@@ -1669,9 +1672,8 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(candidate_preview_response.status_code, 200)
         candidate_preview = candidate_preview_response.json()
         self.assertFalse(candidate_preview["eligible"])
-        self.assertIn("action_not_available", candidate_preview["missing_gates"])
-        self.assertIn("execution_contract_missing", candidate_preview["missing_gates"])
-        self.assertTrue(candidate_preview["risk_flags"]["calls_provider"])
+        self.assertIn("use_dedicated_execution_endpoint", candidate_preview["missing_gates"])
+        self.assertFalse(candidate_preview["risk_flags"]["calls_provider"])
         self.assertFalse(candidate_preview["safety"]["provider_calls_executed"])
         self.assertEqual(audit_actions_after, audit_actions_before)
 
@@ -1866,6 +1868,249 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertTrue(alert_action["requires_reason"])
         self.assertTrue(alert_action["requires_confirmation"])
         self.assertFalse(alert_action["sends_notification"])
+
+    def test_ops_provider_cancellation_preview_is_admin_only_and_metadata_only(self):
+        """验证 provider cancellation preview 只读、Admin-only，且不调用 provider。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            runtime.document_job_repository.create_document_job(
+                DocumentJobRecord(
+                    id="docjob_provider_cancel_preview",
+                    tenant_id="tenant_default",
+                    company_id="company_default",
+                    created_by="user_operator",
+                    source_file_id="file_provider_cancel_preview",
+                    status="running",
+                    stage="parsing",
+                    progress=20,
+                    template_version_id="template_default",
+                    mineru_batch_id="batch_provider_cancel_preview",
+                    mineru_data_id="docjob_provider_cancel_preview",
+                )
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                audit_actions_before = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+                admin_response = client.post(
+                    "/api/v1/ops/provider-cancellations/preview",
+                    headers=admin_headers,
+                    json={
+                        "target_type": "document_job",
+                        "target_id": "docjob_provider_cancel_preview",
+                        "provider": "mineru",
+                    },
+                )
+                operator_response = client.post(
+                    "/api/v1/ops/provider-cancellations/preview",
+                    headers=operator_headers,
+                    json={
+                        "target_type": "document_job",
+                        "target_id": "docjob_provider_cancel_preview",
+                        "provider": "mineru",
+                    },
+                )
+                audit_actions_after = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+
+        self.assertEqual(admin_response.status_code, 200)
+        payload = admin_response.json()
+        self.assertEqual(payload["action_mode"], "dry_run")
+        self.assertTrue(payload["eligible"])
+        self.assertEqual(payload["outcome"], "cancelable")
+        self.assertEqual(payload["provider_operation"]["operation_id"], "batch_provider_cancel_preview")
+        self.assertEqual(payload["confirmation_phrase"], "FAKE CANCEL PROVIDER OPERATION")
+        self.assertFalse(payload["audit_event_written"])
+        self.assertFalse(payload["safety"]["real_provider_cancel_executed"])
+        self.assertFalse(payload["safety"]["provider_calls_executed"])
+        self.assertFalse(payload["safety"]["audit_events_written"])
+        self.assertEqual(operator_response.status_code, 403)
+        self.assertEqual(operator_response.json()["error_code"], "role_forbidden")
+        self.assertEqual(audit_actions_after, audit_actions_before)
+        self.assertEqual(runtime.document_job_execution_service.fake_mineru_client.query_calls, [])
+        self.assertEqual(runtime.document_job_execution_service.fake_mineru_client.calls, [])
+
+    def test_ops_provider_cancellation_fake_cancel_audits_dedupes_and_does_not_mutate_jobs(self):
+        """验证 provider fake-cancel 写审计和 dedupe，但不修改本地 job 或调用 provider。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            runtime.document_job_repository.create_document_job(
+                DocumentJobRecord(
+                    id="docjob_provider_cancel_fake",
+                    tenant_id="tenant_default",
+                    company_id="company_default",
+                    created_by="user_operator",
+                    source_file_id="file_provider_cancel_fake",
+                    status="running",
+                    stage="parsing",
+                    progress=20,
+                    template_version_id="template_default",
+                    mineru_batch_id="batch_provider_cancel_fake",
+                    mineru_data_id="docjob_provider_cancel_fake",
+                )
+            )
+            app = create_app(runtime)
+            payload = {
+                "target_type": "document_job",
+                "target_id": "docjob_provider_cancel_fake",
+                "provider": "mineru",
+                "reason": "ops provider cancellation drill",
+                "confirmation": "FAKE CANCEL PROVIDER OPERATION",
+                "dedupe_window_minutes": 60,
+            }
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                first_response = client.post(
+                    "/api/v1/ops/provider-cancellations/fake-cancel",
+                    headers={**admin_headers, "X-Trace-Id": "trace_provider_cancel_fake"},
+                    json=payload,
+                )
+                second_response = client.post(
+                    "/api/v1/ops/provider-cancellations/fake-cancel",
+                    headers=admin_headers,
+                    json=payload,
+                )
+            stored_job = runtime.document_job_repository.get_document_job("docjob_provider_cancel_fake")
+            cancel_events = [
+                event
+                for event in runtime.audit_event_repository.list_audit_events()
+                if event.action == "ops.provider_cancellation_fake"
+            ]
+
+        self.assertEqual(first_response.status_code, 200)
+        first_payload = first_response.json()
+        self.assertEqual(first_payload["outcome"], "fake_canceled")
+        self.assertTrue(first_payload["audit_event_written"])
+        self.assertFalse(first_payload["safety"]["real_provider_cancel_executed"])
+        self.assertFalse(first_payload["safety"]["provider_calls_executed"])
+        self.assertFalse(first_payload["safety"]["local_job_mutated"])
+        self.assertTrue(first_payload["safety"]["audit_events_written"])
+
+        self.assertEqual(second_response.status_code, 200)
+        second_payload = second_response.json()
+        self.assertEqual(second_payload["outcome"], "deduped")
+        self.assertFalse(second_payload["audit_event_written"])
+        self.assertFalse(second_payload["safety"]["audit_events_written"])
+
+        self.assertIsNotNone(stored_job)
+        self.assertEqual(stored_job.status, "running")
+        self.assertEqual(stored_job.stage, "parsing")
+        self.assertEqual(stored_job.mineru_batch_id, "batch_provider_cancel_fake")
+        self.assertEqual(len(cancel_events), 1)
+        self.assertEqual(cancel_events[0].trace_id, "trace_provider_cancel_fake")
+        self.assertIn("mineru:document_job:docjob_provider_cancel_fake:batch_provider_cancel_fake", cancel_events[0].reason)
+        self.assertEqual(runtime.document_job_execution_service.fake_mineru_client.query_calls, [])
+        self.assertEqual(runtime.document_job_execution_service.fake_mineru_client.calls, [])
+
+    def test_ops_provider_cancellation_gates_and_registry_contract(self):
+        """验证 provider fake-cancel gate 和 registry 合同。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            runtime.document_job_repository.create_document_job(
+                DocumentJobRecord(
+                    id="docjob_provider_cancel_missing_batch",
+                    tenant_id="tenant_default",
+                    company_id="company_default",
+                    created_by="user_operator",
+                    source_file_id="file_provider_cancel_missing_batch",
+                    status="running",
+                    stage="parsing",
+                    progress=20,
+                    template_version_id="template_default",
+                )
+            )
+            runtime.document_job_repository.create_document_job(
+                DocumentJobRecord(
+                    id="docjob_provider_cancel_succeeded",
+                    tenant_id="tenant_default",
+                    company_id="company_default",
+                    created_by="user_operator",
+                    source_file_id="file_provider_cancel_succeeded",
+                    status="succeeded",
+                    stage="completed",
+                    progress=100,
+                    template_version_id="template_default",
+                    mineru_batch_id="batch_provider_cancel_done",
+                )
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                missing_batch_preview = client.post(
+                    "/api/v1/ops/provider-cancellations/preview",
+                    headers=admin_headers,
+                    json={
+                        "target_type": "document_job",
+                        "target_id": "docjob_provider_cancel_missing_batch",
+                        "provider": "mineru",
+                    },
+                )
+                terminal_preview = client.post(
+                    "/api/v1/ops/provider-cancellations/preview",
+                    headers=admin_headers,
+                    json={
+                        "target_type": "document_job",
+                        "target_id": "docjob_provider_cancel_succeeded",
+                        "provider": "mineru",
+                    },
+                )
+                fake_ineligible = client.post(
+                    "/api/v1/ops/provider-cancellations/fake-cancel",
+                    headers=admin_headers,
+                    json={
+                        "target_type": "document_job",
+                        "target_id": "docjob_provider_cancel_missing_batch",
+                        "provider": "mineru",
+                        "reason": "ops drill",
+                        "confirmation": "FAKE CANCEL PROVIDER OPERATION",
+                    },
+                )
+                bad_confirmation = client.post(
+                    "/api/v1/ops/provider-cancellations/fake-cancel",
+                    headers=admin_headers,
+                    json={
+                        "target_type": "document_job",
+                        "target_id": "docjob_provider_cancel_missing_batch",
+                        "provider": "mineru",
+                        "reason": "ops drill",
+                        "confirmation": "CANCEL",
+                    },
+                )
+                registry_response = client.get("/api/v1/ops/recovery-actions", headers=admin_headers)
+
+        self.assertEqual(missing_batch_preview.status_code, 200)
+        missing_payload = missing_batch_preview.json()
+        self.assertFalse(missing_payload["eligible"])
+        self.assertEqual(missing_payload["outcome"], "ineligible")
+        self.assertIn("provider_operation_id_missing", missing_payload["missing_gates"])
+        self.assertEqual(terminal_preview.status_code, 200)
+        terminal_payload = terminal_preview.json()
+        self.assertIn("status_not_provider_cancelable", terminal_payload["missing_gates"])
+        self.assertEqual(fake_ineligible.status_code, 409)
+        self.assertEqual(fake_ineligible.json()["error_code"], "conflict")
+        self.assertEqual(bad_confirmation.status_code, 400)
+        actions_by_id = {item["action_id"]: item for item in registry_response.json()["actions"]}
+        provider_action = actions_by_id["provider.cancel"]
+        self.assertTrue(provider_action["available"])
+        self.assertEqual(provider_action["audit_action"], "ops.provider_cancellation_fake")
+        self.assertFalse(provider_action["calls_provider"])
+        self.assertTrue(provider_action["requires_reason"])
+        self.assertTrue(provider_action["requires_confirmation"])
 
     def test_ops_recovery_action_preview_reports_document_job_and_legacy_job_eligibility_without_execution(self):
         """验证 recovery action preview 做精确目标判断，且不触发 provider、队列或 audit 副作用。"""

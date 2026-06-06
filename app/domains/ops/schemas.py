@@ -35,6 +35,10 @@ OpsAlertDeliveryOutcome = Literal[
     "skipped_rate_limited",
     "failed",
 ]
+OpsProviderCancellationProvider = Literal["mineru"]
+OpsProviderCancellationTargetType = Literal["document_job", "legacy_job"]
+OpsProviderCancellationMode = Literal["dry_run", "fake_cancel"]
+OpsProviderCancellationOutcome = Literal["cancelable", "fake_canceled", "deduped", "ineligible", "failed"]
 
 
 class OpsRecoveryActionRiskFlagsResponse(BaseModel):
@@ -176,3 +180,70 @@ class OpsAlertDeliveryResponse(BaseModel):
     totals: dict[str, int] = Field(default_factory=dict)
     items: list[OpsAlertDeliveryItemResponse] = Field(default_factory=list)
     safety: OpsAlertDeliverySafetyResponse
+
+
+class OpsProviderCancellationPreviewRequest(BaseModel):
+    """请求预览一个精确目标的 provider fake cancellation eligibility。"""
+
+    target_type: OpsProviderCancellationTargetType
+    target_id: str
+    provider: OpsProviderCancellationProvider = "mineru"
+    dedupe_window_minutes: int = Field(default=60, ge=1, le=1440)
+
+
+class OpsProviderCancellationFakeRequest(OpsProviderCancellationPreviewRequest):
+    """请求执行 provider fake cancellation，不调用真实 provider。"""
+
+    reason: str
+    confirmation: str
+
+
+class OpsProviderCancellationTargetResponse(BaseModel):
+    """返回 provider cancellation 精确目标的安全摘要。"""
+
+    target_type: OpsProviderCancellationTargetType
+    target_id: str
+    exists: bool
+    status: str | None = None
+    stage: str | None = None
+    summary: dict[str, str | int | bool | None] = Field(default_factory=dict)
+
+
+class OpsProviderOperationResponse(BaseModel):
+    """返回可安全展示的 provider operation 摘要。"""
+
+    provider: OpsProviderCancellationProvider
+    operation_id: str | None = None
+    data_id: str | None = None
+    operation_type: str = "batch_extract"
+
+
+class OpsProviderCancellationSafetyResponse(BaseModel):
+    """声明 provider cancellation fake contract 没有真实外部副作用。"""
+
+    real_provider_cancel_executed: bool = False
+    provider_calls_executed: bool = False
+    local_job_mutated: bool = False
+    queue_mutated: bool = False
+    cleanup_executed: bool = False
+    delete_executed: bool = False
+    conversion_workflow_executed: bool = False
+    audit_events_written: bool = False
+
+
+class OpsProviderCancellationResponse(BaseModel):
+    """返回 provider cancellation preview 或 fake execution 结果。"""
+
+    generated_at: datetime
+    action_mode: OpsProviderCancellationMode
+    provider: OpsProviderCancellationProvider
+    confirmation_phrase: str
+    dedupe_window_minutes: int
+    target: OpsProviderCancellationTargetResponse
+    provider_operation: OpsProviderOperationResponse
+    eligible: bool
+    missing_gates: list[str] = Field(default_factory=list)
+    outcome: OpsProviderCancellationOutcome
+    dedupe_key: str | None = None
+    audit_event_written: bool = False
+    safety: OpsProviderCancellationSafetyResponse

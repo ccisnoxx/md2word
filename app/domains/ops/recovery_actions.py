@@ -189,21 +189,21 @@ OPS_RECOVERY_ACTIONS: tuple[OpsRecoveryActionDefinition, ...] = (
     ),
     OpsRecoveryActionDefinition(
         action_id="provider.cancel",
-        label="Provider cancellation",
+        label="Provider cancellation fake contract",
         category="provider",
         target_type="provider_operation",
-        available=False,
+        available=True,
         requires_admin=True,
         requires_reason=True,
         requires_confirmation=True,
         dry_run_supported=True,
         mutates_metadata=True,
         mutates_queue=False,
-        calls_provider=True,
+        calls_provider=False,
         sends_notification=False,
         deletes_data=False,
-        audit_action=None,
-        known_gaps=("本地 MinerUClient 尚无 cancel method。", "Provider cancellation 语义需要先核对官方文档/API。"),
+        audit_action="ops.provider_cancellation_fake",
+        known_gaps=("当前只支持 fake provider cancellation；真实 provider cancellation API/语义尚未实现。",),
         suggested_route=None,
     ),
     OpsRecoveryActionDefinition(
@@ -387,7 +387,7 @@ class OpsRecoveryActionService:
         action: OpsRecoveryActionResponse,
         target_id: str,
     ) -> OpsRecoveryActionPreviewResponse:
-        """返回候选执行动作的不可用 preview，不要求真实目标记录。"""
+        """返回候选或专用 endpoint 动作的 preview 提示，不读取真实目标记录。"""
 
         target = OpsRecoveryActionTargetPreviewResponse(
             target_type=action.target_type,
@@ -395,10 +395,14 @@ class OpsRecoveryActionService:
             exists=False,
             summary={"record_lookup_supported": False},
         )
+        missing_gates = ["use_dedicated_execution_endpoint"] if action.available else [
+            "action_not_available",
+            "execution_contract_missing",
+        ]
         return self._build_preview_response(
             action=action,
             target=target,
-            missing_gates=["action_not_available", "execution_contract_missing"],
+            missing_gates=missing_gates,
         )
 
     def _append_document_job_retry_gates(self, job: DocumentJobRecord, missing_gates: list[str]) -> None:
