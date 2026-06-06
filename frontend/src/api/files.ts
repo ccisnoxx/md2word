@@ -7,6 +7,13 @@ import type {
   FileRetentionDeletePreviewRequest,
   FileRetentionDeleteResponse,
   FileRetentionMarkExpiredResponse,
+  FileRetentionPolicyCreateRequest,
+  FileRetentionPolicyImpactPreviewRequest,
+  FileRetentionPolicyImpactResponse,
+  FileRetentionPolicyListResponse,
+  FileRetentionPolicyReasonRequest,
+  FileRetentionPolicyResponse,
+  FileRetentionPolicyUpdateRequest,
   FileRetentionPlanResponse,
   FileUploadUrlRequest,
   FileUploadUrlResponse,
@@ -59,6 +66,68 @@ export const filesApi = {
   deleteExpiredRetentionFiles(payload: FileRetentionDeleteExecuteRequest): Promise<FileRetentionDeleteResponse> {
     return apiRequest<FileRetentionDeleteResponse>({
       url: "/api/v1/files/retention/delete-expired",
+      method: "POST",
+      data: payload,
+    });
+  },
+
+  // 列出 Admin-only retention policy governance 状态。
+  listRetentionPolicies(): Promise<FileRetentionPolicyListResponse> {
+    return apiRequest<FileRetentionPolicyListResponse>({
+      url: "/api/v1/files/retention/policies",
+      method: "GET",
+    });
+  },
+
+  // 创建 draft retention policy；发布前不影响新文件。
+  createRetentionPolicy(payload: FileRetentionPolicyCreateRequest): Promise<FileRetentionPolicyResponse> {
+    return apiRequest<FileRetentionPolicyResponse>({
+      url: "/api/v1/files/retention/policies",
+      method: "POST",
+      data: payload,
+    });
+  },
+
+  // 更新 draft retention policy。
+  updateRetentionPolicy(policyId: string, payload: FileRetentionPolicyUpdateRequest): Promise<FileRetentionPolicyResponse> {
+    return apiRequest<FileRetentionPolicyResponse>({
+      url: `/api/v1/files/retention/policies/${policyId}`,
+      method: "PATCH",
+      data: payload,
+    });
+  },
+
+  // 预览 retention policy 对历史文件的影响，不回填 expires_at。
+  previewRetentionPolicyImpact(policyId: string, payload: FileRetentionPolicyImpactPreviewRequest): Promise<FileRetentionPolicyImpactResponse> {
+    return apiRequest<FileRetentionPolicyImpactResponse>({
+      url: `/api/v1/files/retention/policies/${policyId}/impact-preview`,
+      method: "POST",
+      data: payload,
+    });
+  },
+
+  // 发布 draft retention policy，使其影响后续新文件。
+  publishRetentionPolicy(policyId: string, payload: FileRetentionPolicyReasonRequest): Promise<FileRetentionPolicyResponse> {
+    return apiRequest<FileRetentionPolicyResponse>({
+      url: `/api/v1/files/retention/policies/${policyId}/publish`,
+      method: "POST",
+      data: payload,
+    });
+  },
+
+  // 把 published retention policy 设为同 scope 默认策略。
+  setDefaultRetentionPolicy(policyId: string, payload: FileRetentionPolicyReasonRequest): Promise<FileRetentionPolicyResponse> {
+    return apiRequest<FileRetentionPolicyResponse>({
+      url: `/api/v1/files/retention/policies/${policyId}/set-default`,
+      method: "POST",
+      data: payload,
+    });
+  },
+
+  // 禁用 draft 或 published retention policy。
+  disableRetentionPolicy(policyId: string, payload: FileRetentionPolicyReasonRequest): Promise<FileRetentionPolicyResponse> {
+    return apiRequest<FileRetentionPolicyResponse>({
+      url: `/api/v1/files/retention/policies/${policyId}/disable`,
       method: "POST",
       data: payload,
     });

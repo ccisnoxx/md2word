@@ -34,11 +34,13 @@ class AppRuntime:
     job_event_repository: JobEventRepositoryProtocol
     audit_event_repository: AuditEventRepositoryProtocol
     document_file_repository: DocumentFileRepositoryProtocol
+    file_retention_policy_repository: Any
     document_job_repository: DocumentJobRepositoryProtocol
     document_job_event_repository: DocumentJobEventRepositoryProtocol
     audit_service: Any
     auth_service: Any
     file_upload_service: Any
+    file_retention_policy_service: Any
     document_ir_service: Any
     translation_provider: Any
     document_ir_translation_service: Any

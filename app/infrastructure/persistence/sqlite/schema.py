@@ -74,6 +74,18 @@ SQLITE_SCHEMA_STATEMENTS: tuple[str, ...] = (
     ON document_files (created_at, file_id)
     """,
     """
+    CREATE TABLE IF NOT EXISTS file_retention_policies (
+        policy_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_file_retention_policies_created_at
+    ON file_retention_policies (created_at, policy_id)
+    """,
+    """
     CREATE TABLE IF NOT EXISTS document_jobs (
         job_id TEXT PRIMARY KEY,
         payload TEXT NOT NULL,

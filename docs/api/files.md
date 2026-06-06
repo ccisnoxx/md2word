@@ -19,7 +19,7 @@ last_reviewed: 2026-06-06
 
 Files API 挂在 `/api/v1/files` 下，当前只面向登录用户。P0 PDF -> Word 流程先通过它登记并上传 PDF，再把返回的 `file_id` 传给 `/api/v1/document-jobs`。
 
-保留期管理接口只面向 Admin，用于查看或标记过期 metadata，并在显式 dry-run 后人工执行本地过期文件物理删除。它不删除任务、文件 metadata 记录、审计记录或 `object_key`，也不触发 PDF 解析、翻译或 Word 生成流程。当前物理删除只支持 `local_file` 和 `local_object`，`s3` 会返回 unsupported 结果而不会执行真实对象存储删除。
+保留期管理接口只面向 Admin，用于管理保留策略、查看或标记过期 metadata，并在显式 dry-run 后人工执行本地过期文件物理删除。它不删除任务、文件 metadata 记录、审计记录或 `object_key`，也不触发 PDF 解析、翻译或 Word 生成流程。当前物理删除只支持 `local_file` 和 `local_object`，`s3` 会返回 unsupported 结果而不会执行真实对象存储删除。
 
 ## API 参考
 
@@ -91,6 +91,115 @@ Files API 挂在 `/api/v1/files` 下，当前只面向登录用户。P0 PDF -> W
   - `action_mode=mark_expired`
   - `marked_file_ids` 为本次从 `uploaded` 标记为 `expired` 的文件 ID。
 
+### `GET /api/v1/files/retention/policies`
+
+- 用途：列出 Admin-only `document_files` 保留策略和各 file type 的当前有效策略。
+- 认证：Bearer JWT，Admin only。
+- 行为：
+  - 不修改策略。
+  - 不修改 `document_files.expires_at`。
+  - 不执行 metadata 标记、物理删除、定时清理或 quota enforcement。
+- 响应：`FileRetentionPolicyListResponse`。
+
+关键字段：
+
+| 字段 | 说明 |
+|---|---|
+| `fallback_retention_days` | 未命中 published policy 时使用的 `oss_file_retention_days`。 |
+| `effective[]` | 每个 file type 当前解析得到的有效策略，包含 `source`、`retention_days`、`policy_id` 和 `reason`。 |
+| `items[]` | 全部 policy 历史记录；禁用策略也保留。 |
+
+### `POST /api/v1/files/retention/policies`
+
+- 用途：创建 draft 保留策略。
+- 认证：Bearer JWT，Admin only。
+- 请求体：JSON。
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `name` | 是 | 策略名称。 |
+| `scope_type` | 是 | `global` 或 `file_type`。 |
+| `file_type` | 条件必填 | `scope_type=file_type` 时必填，例如 `source_pdf`、`generated_word`。 |
+| `retention_days` | 是 | 1 到 3650。 |
+| `description` | 否 | 策略说明。 |
+
+- 行为：
+  - 只创建 `draft` policy。
+  - 不影响新文件，直到 publish。
+  - 不修改历史 `document_files.expires_at`。
+  - 成功动作写入 `file.retention_policy_create` audit event。
+- 响应：`201 Created`，返回 `FileRetentionPolicyResponse`。
+
+### `GET /api/v1/files/retention/policies/{policy_id}`
+
+- 用途：读取单个保留策略。
+- 认证：Bearer JWT，Admin only。
+- 响应：`FileRetentionPolicyResponse`，包含 `is_default`、`is_effective` 和 `matching_file_count`。
+
+### `PATCH /api/v1/files/retention/policies/{policy_id}`
+
+- 用途：更新 draft 保留策略。
+- 认证：Bearer JWT，Admin only。
+- 行为：
+  - 仅 `draft` policy 可编辑。
+  - `published` 和 `disabled` policy 会返回 conflict。
+  - 不修改历史 `document_files.expires_at`。
+  - 成功动作写入 `file.retention_policy_update` audit event。
+- 响应：`FileRetentionPolicyResponse`。
+
+### `POST /api/v1/files/retention/policies/{policy_id}/impact-preview`
+
+- 用途：dry-run 预览某个 policy 对当前 `document_files` 的影响。
+- 认证：Bearer JWT，Admin only。
+- 请求体：JSON，当前 `mode` 固定为 `candidate_policy`。
+- 行为：
+  - 不修改 policy。
+  - 不修改历史 `document_files.expires_at`。
+  - 不标记 expired。
+  - 不执行物理删除。
+  - 默认不写 audit event。
+- 响应：`FileRetentionPolicyImpactResponse`，包含匹配文件、当前 `expires_at`、投影 `projected_expires_at`、是否会过期和汇总计数。
+
+### `POST /api/v1/files/retention/policies/{policy_id}/publish`
+
+- 用途：发布 draft policy，使其影响后续新文件的 `expires_at` 计算。
+- 认证：Bearer JWT，Admin only。
+- 请求体：JSON。
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `reason` | 是 | 发布原因，不能为空，用于 audit event。 |
+
+- 行为：
+  - 仅 `draft` policy 可发布。
+  - 发布后该 policy 成为同 scope 默认策略。
+  - 同 scope 旧 published policy 保留历史，但 `is_default=false`。
+  - 不修改历史 `document_files.expires_at`。
+  - 成功动作写入 `file.retention_policy_publish` audit event。
+- 响应：`FileRetentionPolicyResponse`。
+
+### `POST /api/v1/files/retention/policies/{policy_id}/set-default`
+
+- 用途：把已发布 policy 设为同 scope 默认策略。
+- 认证：Bearer JWT，Admin only。
+- 请求体：JSON，字段同 publish：`reason` 必填。
+- 行为：
+  - 仅 `published` policy 可设为默认。
+  - 不修改历史 `document_files.expires_at`。
+  - 成功动作写入 `file.retention_policy_set_default` audit event。
+- 响应：`FileRetentionPolicyResponse`。
+
+### `POST /api/v1/files/retention/policies/{policy_id}/disable`
+
+- 用途：禁用 draft 或 published policy。
+- 认证：Bearer JWT，Admin only。
+- 请求体：JSON，字段同 publish：`reason` 必填。
+- 行为：
+  - 不删除 policy 历史记录。
+  - 不修改历史 `document_files.expires_at`。
+  - 成功动作写入 `file.retention_policy_disable` audit event。
+- 响应：`FileRetentionPolicyResponse`。
+
 ### `POST /api/v1/files/retention/delete-preview`
 
 - 用途：对人工选中的 `document_files` 执行物理删除 dry-run。
@@ -105,7 +214,7 @@ Files API 挂在 `/api/v1/files` 下，当前只面向登录用户。P0 PDF -> W
   - 不修改 metadata。
   - 不删除本地文件或对象存储对象。
   - 不写入 `file.retention_physical_delete` audit event。
-  - 仅 `status=expired` 且 `expires_at <= now` 的 `local_file` 或 `local_object` 会返回 `would_delete`。
+  - 仅 `status=expired` 且 `expires_at <= now` 的 `local_file` 或 `local_object` 会返回 `deletable`。
   - `uploaded`、未过期、已删除、缺失、无 `object_key` 或 `s3` provider 均返回对应 skip/unsupported outcome。
 - 响应：`FileRetentionDeleteResponse`，其中 `action_mode=delete_preview`，并返回每个文件的 outcome、reason、provider、object_key、size_bytes 和是否将修改 metadata。
 
@@ -124,7 +233,7 @@ Files API 挂在 `/api/v1/files` 下，当前只面向登录用户。P0 PDF -> W
 - 行为：
   - 只会删除 `status=expired`、`expires_at <= now`、provider 为 `local_file` 或 `local_object` 且路径位于受管存储目录下的对象。
   - 成功删除或本地对象已不存在时，将对应 metadata `status` 更新为 `deleted`，但保留 metadata row、`object_key`、任务、事件和审计记录。
-  - `s3` provider 当前返回 `unsupported_provider`，不会执行真实 S3 删除。
+  - `s3` provider 当前返回 `skipped_unsupported_storage`，不会执行真实 S3 删除。
   - 非 `expired`、未过期、无 `object_key`、未知文件或路径越界会返回 skip/error outcome，不会删除对象。
   - 成功动作写入 `file.retention_physical_delete` audit event，reason 会包含人工原因和汇总计数。
 - 响应：`FileRetentionDeleteResponse`，其中 `action_mode=delete_execute`。
@@ -133,7 +242,7 @@ Files API 挂在 `/api/v1/files` 下，当前只面向登录用户。P0 PDF -> W
 
 | outcome | 说明 |
 |---|---|
-| `would_delete` | 预览模式下符合物理删除条件。 |
+| `deletable` | 预览模式下符合物理删除条件。 |
 | `deleted` | 执行模式下本地对象已删除，metadata 已标记为 `deleted`。 |
 | `already_missing` | 执行模式下本地对象已不存在，metadata 已标记为 `deleted`，用于幂等收口。 |
 | `skipped_not_expired_status` | metadata 状态不是 `expired`。 |
