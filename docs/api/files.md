@@ -10,9 +10,10 @@ source_files:
   - app/domains/files/models.py
   - app/domains/files/library_search.py
   - app/domains/files/retention.py
+  - app/domains/files/cleanup_execution.py
   - app/domains/files/storage_usage.py
   - app/domains/files/service.py
-summary: Files API 提供 PDF 上传授权、本地代理上传、文件 metadata 查询、Admin-only 文件库搜索、metadata 保留期管理和受保护的过期文件物理删除。
+summary: Files API 提供 PDF 上传授权、本地代理上传、文件 metadata 查询、Admin-only 文件库搜索、metadata 保留期管理、受保护的过期文件物理删除和 cleanup run 执行合同。
 tags: [files, api, pdf, upload, retention, search]
 last_reviewed: 2026-06-06
 ---
@@ -23,7 +24,7 @@ Files API 挂在 `/api/v1/files` 下，当前只面向登录用户。P0 PDF -> W
 
 Admin 文件库搜索只返回 `document_files` 安全摘要，用于定位文件和衔接现有 selected-file 运维流程。搜索结果不暴露 `object_key`、`bucket`、checksum、etag、raw metadata、本地路径、文件内容或签名 URL。
 
-保留期管理接口只面向 Admin，用于管理保留策略、查看或标记过期 metadata，并在显式 dry-run 后人工执行本地过期文件物理删除。它不删除任务、文件 metadata 记录、审计记录或 `object_key`，也不触发 PDF 解析、翻译或 Word 生成流程。当前物理删除只支持 `local_file` 和 `local_object`，`s3` 会返回 unsupported 结果而不会执行真实对象存储删除。
+保留期管理接口只面向 Admin，用于管理保留策略、查看或标记过期 metadata，并在显式 dry-run 后人工执行本地过期文件物理删除。cleanup run 执行合同复用同一 physical-delete primitive，并额外要求 preview hash、reason 和确认短语。它不删除任务、文件 metadata 记录、审计记录或 `object_key`，也不触发 PDF 解析、翻译或 Word 生成流程。当前物理删除只支持 `local_file` 和 `local_object`，`s3` 会返回 unsupported 结果而不会执行真实对象存储删除。
 
 存储使用汇总接口只面向 Admin，只基于 `document_files` metadata 的 `size_bytes` 做容量估算和 quota readiness 展示。它不验证对象是否真实存在，不执行 mark-expired、delete-preview、delete-expired、quota enforcement 或上传阻断。
 
@@ -330,6 +331,62 @@ Admin 文件库搜索只返回 `document_files` 安全摘要，用于定位文�
   - 非 `expired`、未过期、无 `object_key`、未知文件或路径越界会返回 skip/error outcome，不会删除对象。
   - 成功动作写入 `file.retention_physical_delete` audit event，reason 会包含人工原因和汇总计数。
 - 响应：`FileRetentionDeleteResponse`，其中 `action_mode=delete_execute`。
+
+### `POST /api/v1/files/retention/cleanup-runs/preview`
+
+- 用途：对精确 `file_ids` 生成 cleanup run preview 和 `preview_hash`。
+- 认证：Bearer JWT，Admin only。
+- 请求体：JSON。
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `file_ids` | 是 | 非空文件 ID 列表，复用物理删除 file ID 校验，单次最多 50 个，不能重复。 |
+| `max_files` | 否 | 本次 cleanup run 的额外限流边界，1 到 50，默认 50。 |
+
+- 行为：
+  - 内部调用现有 `/retention/delete-preview` 同等 physical-delete preview 逻辑。
+  - 不修改 metadata。
+  - 不删除本地文件或对象存储对象。
+  - 不写 audit event。
+  - 不运行 scheduler loop。
+- 响应：`FileRetentionCleanupRunResponse`，其中：
+  - `action_mode=cleanup_preview`
+  - `preview_hash=sha256:...`
+  - `confirmation_phrase=EXECUTE AUTOMATED RETENTION CLEANUP`
+  - `physical_delete.action_mode=delete_preview`
+  - `safety.physical_delete_executed=false`
+  - `safety.scheduler_loop_executed=false`
+
+### `POST /api/v1/files/retention/cleanup-runs/execute`
+
+- 用途：执行已 preview 的精确 cleanup run。
+- 认证：Bearer JWT，Admin only。
+- 请求体：JSON。
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `file_ids` | 是 | 必须与 preview 时确认的精确文件 ID 列表一致。 |
+| `max_files` | 否 | 本次 cleanup run 的限流边界，默认 50。 |
+| `preview_hash` | 是 | 最近一次 cleanup preview 返回的 hash；执行前会重新 preview 并核对。 |
+| `reason` | 是 | 执行原因，不能为空，用于 audit event。 |
+| `confirmation` | 是 | 必须精确等于 `EXECUTE AUTOMATED RETENTION CLEANUP`。 |
+
+- 行为：
+  - 重新执行 physical-delete preview 并核对 `preview_hash`。
+  - hash 不匹配时返回 conflict，要求重新 preview。
+  - hash 匹配后调用现有 physical-delete execution primitive。
+  - 仍只支持已 expired 的 `local_file` / `local_object`。
+  - `s3` 仍返回 `skipped_unsupported_storage`，不会执行真实 S3 删除。
+  - 成功动作写入 `file.retention_automated_cleanup_execute` audit event。
+  - 不运行 scheduler loop、provider cancellation、alert delivery、pdf-mineru 解析、翻译或 Word 生成。
+- 响应：`FileRetentionCleanupRunResponse`，其中：
+  - `action_mode=cleanup_execute`
+  - `physical_delete.action_mode=delete_execute`
+  - `safety.physical_delete_executed=true`
+  - `safety.physical_delete_contract_reused=true`
+  - `safety.s3_delete_executed=false`
+
+重复对已删除目标执行时会复用 existing physical-delete 幂等语义，返回 `skipped_already_deleted` 或相关 skip outcome，而不是再次删除对象。
 
 常见 outcome：
 

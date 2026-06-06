@@ -183,6 +183,46 @@ class FileRetentionDeleteResponse(BaseModel):
     items: list[FileRetentionDeleteItemResponse] = Field(default_factory=list)
 
 
+class FileRetentionCleanupRunPreviewRequest(BaseModel):
+    """请求预览一次精确 file_ids 的 cleanup run。"""
+
+    file_ids: list[str] = Field(default_factory=list)
+    max_files: int = Field(default=50, ge=1, le=50)
+
+
+class FileRetentionCleanupRunExecuteRequest(FileRetentionCleanupRunPreviewRequest):
+    """请求执行一次已 preview 的 cleanup run。"""
+
+    preview_hash: str
+    reason: str
+    confirmation: str
+
+
+class FileRetentionCleanupRunSafetyResponse(BaseModel):
+    """声明 cleanup run 执行边界和外部副作用状态。"""
+
+    scheduler_loop_executed: bool = False
+    provider_calls_executed: bool = False
+    s3_delete_executed: bool = False
+    physical_delete_executed: bool = False
+    physical_delete_contract_reused: bool = True
+    audit_events_written: bool = False
+
+
+class FileRetentionCleanupRunResponse(BaseModel):
+    """返回 cleanup run preview 或 execute 结果。"""
+
+    run_id: str
+    generated_at: datetime
+    action_mode: Literal["cleanup_preview", "cleanup_execute"]
+    confirmation_phrase: str
+    preview_hash: str
+    requested_file_ids: list[str] = Field(default_factory=list)
+    max_files: int
+    physical_delete: FileRetentionDeleteResponse
+    safety: FileRetentionCleanupRunSafetyResponse
+
+
 class FileRetentionPolicyCreateRequest(BaseModel):
     """创建 draft document_files retention policy 的请求。"""
 

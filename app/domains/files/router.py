@@ -1,5 +1,5 @@
 # File: app/domains/files/router.py
-# Purpose: 提供 document_files 元数据、上传授权、本地代理上传、文件库搜索、保留期管理和物理删除接口。
+# Purpose: 提供 document_files 元数据、上传授权、本地代理上传、文件库搜索、保留期管理和受控清理接口。
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from app.api.dependencies import get_runtime, get_trace_id, require_admin_user, 
 from app.domains.audit.models import ActorContext
 from app.services.auth.models import AuthenticatedUser
 from app.core.errors import ApiError
+from app.domains.files.cleanup_execution import FileRetentionCleanupRunReport, FileRetentionCleanupRunService
 from app.domains.files.library_search import (
     FileLibrarySearchPage,
     FileLibrarySearchQuery,
@@ -44,6 +45,10 @@ from app.domains.files.schemas import (
     FileRetentionPolicyUpdateRequest,
     FileRetentionPlanResponse,
     FileLibrarySearchResponse,
+    FileRetentionCleanupRunExecuteRequest,
+    FileRetentionCleanupRunPreviewRequest,
+    FileRetentionCleanupRunResponse,
+    FileRetentionCleanupRunSafetyResponse,
     FileStorageUsageResponse,
     FileUploadResponse,
     FileUploadUrlRequest,
@@ -410,6 +415,49 @@ def execute_file_retention_physical_delete(
     return _build_file_retention_delete_response(report)
 
 
+@router.post("/retention/cleanup-runs/preview", response_model=FileRetentionCleanupRunResponse)
+def preview_file_retention_cleanup_run(
+    payload: FileRetentionCleanupRunPreviewRequest,
+    runtime: AppRuntime = Depends(get_runtime),
+    _user: AuthenticatedUser = Depends(require_admin_user),
+) -> FileRetentionCleanupRunResponse:
+    """预览精确 file_ids 的 cleanup run，不删除、不标记、不写审计。"""
+
+    report = _cleanup_run_service(runtime).preview(
+        file_ids=payload.file_ids,
+        max_files=payload.max_files,
+    )
+    return _build_cleanup_run_response(report, audit_events_written=False)
+
+
+@router.post("/retention/cleanup-runs/execute", response_model=FileRetentionCleanupRunResponse)
+def execute_file_retention_cleanup_run(
+    payload: FileRetentionCleanupRunExecuteRequest,
+    runtime: AppRuntime = Depends(get_runtime),
+    user: AuthenticatedUser = Depends(require_admin_user),
+    trace_id: str = Depends(get_trace_id),
+) -> FileRetentionCleanupRunResponse:
+    """执行受控 cleanup run，内部复用 existing physical-delete safety contract。"""
+
+    service = _cleanup_run_service(runtime)
+    report = service.execute(
+        file_ids=payload.file_ids,
+        max_files=payload.max_files,
+        preview_hash=payload.preview_hash,
+        reason=payload.reason,
+        confirmation=payload.confirmation,
+    )
+    runtime.audit_service.record(
+        actor=_actor_from_user(user),
+        action="file.retention_automated_cleanup_execute",
+        target_type="document_file_retention_cleanup_run",
+        target_id=report.run_id,
+        reason=service.audit_reason(human_reason=payload.reason, report=report),
+        trace_id=trace_id,
+    )
+    return _build_cleanup_run_response(report, audit_events_written=True)
+
+
 @router.put(
     "/{file_id}/content",
     response_model=FileUploadResponse,
@@ -492,6 +540,12 @@ def _storage_usage_reporter(runtime: AppRuntime) -> DocumentFileStorageUsageRepo
     )
 
 
+def _cleanup_run_service(runtime: AppRuntime) -> FileRetentionCleanupRunService:
+    """按 runtime 构建 cleanup run service，并只注入现有 file upload service。"""
+
+    return FileRetentionCleanupRunService(runtime.file_upload_service)
+
+
 def _build_file_storage_usage_response(report: FileStorageUsageReport) -> FileStorageUsageResponse:
     """把 storage usage report 映射为 API 响应。"""
 
@@ -544,6 +598,29 @@ def _build_file_retention_delete_response(report: FileRetentionDeleteReport) -> 
         confirmation_phrase=report.confirmation_phrase,
         totals=report.totals,
         items=[item.to_dict() for item in report.items],
+    )
+
+
+def _build_cleanup_run_response(
+    report: FileRetentionCleanupRunReport,
+    *,
+    audit_events_written: bool,
+) -> FileRetentionCleanupRunResponse:
+    """把 cleanup run report 映射为 API 响应。"""
+
+    return FileRetentionCleanupRunResponse(
+        run_id=report.run_id,
+        generated_at=report.generated_at,
+        action_mode=report.action_mode,
+        confirmation_phrase=report.confirmation_phrase,
+        preview_hash=report.preview_hash,
+        requested_file_ids=report.requested_file_ids,
+        max_files=report.max_files,
+        physical_delete=_build_file_retention_delete_response(report.physical_delete),
+        safety=FileRetentionCleanupRunSafetyResponse(
+            physical_delete_executed=report.action_mode == "cleanup_execute",
+            audit_events_written=audit_events_written,
+        ),
     )
 
 

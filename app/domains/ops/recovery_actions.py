@@ -227,10 +227,10 @@ OPS_RECOVERY_ACTIONS: tuple[OpsRecoveryActionDefinition, ...] = (
     ),
     OpsRecoveryActionDefinition(
         action_id="file_retention.automated_cleanup_execute",
-        label="Automated cleanup execution",
+        label="File retention cleanup run execution",
         category="automation",
         target_type="cleanup_run",
-        available=False,
+        available=True,
         requires_admin=True,
         requires_reason=True,
         requires_confirmation=True,
@@ -240,8 +240,8 @@ OPS_RECOVERY_ACTIONS: tuple[OpsRecoveryActionDefinition, ...] = (
         calls_provider=False,
         sends_notification=False,
         deletes_data=True,
-        audit_action=None,
-        known_gaps=("自动化清理的 run history、lock、signed plan、quota gate 和 rollback 证据尚未实现。",),
+        audit_action="file.retention_automated_cleanup_execute",
+        known_gaps=("当前只支持 Admin 手动 cleanup run；scheduler loop 和 autonomous policy executor 尚未实现。",),
         suggested_route="/system-status/file-retention",
     ),
 )

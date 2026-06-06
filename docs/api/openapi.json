@@ -3061,6 +3061,161 @@
         "title": "FileRetentionCandidateResponse",
         "type": "object"
       },
+      "FileRetentionCleanupRunExecuteRequest": {
+        "description": "请求执行一次已 preview 的 cleanup run。",
+        "properties": {
+          "confirmation": {
+            "title": "Confirmation",
+            "type": "string"
+          },
+          "file_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "File Ids",
+            "type": "array"
+          },
+          "max_files": {
+            "default": 50,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Max Files",
+            "type": "integer"
+          },
+          "preview_hash": {
+            "title": "Preview Hash",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "preview_hash",
+          "reason",
+          "confirmation"
+        ],
+        "title": "FileRetentionCleanupRunExecuteRequest",
+        "type": "object"
+      },
+      "FileRetentionCleanupRunPreviewRequest": {
+        "description": "请求预览一次精确 file_ids 的 cleanup run。",
+        "properties": {
+          "file_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "File Ids",
+            "type": "array"
+          },
+          "max_files": {
+            "default": 50,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Max Files",
+            "type": "integer"
+          }
+        },
+        "title": "FileRetentionCleanupRunPreviewRequest",
+        "type": "object"
+      },
+      "FileRetentionCleanupRunResponse": {
+        "description": "返回 cleanup run preview 或 execute 结果。",
+        "properties": {
+          "action_mode": {
+            "enum": [
+              "cleanup_preview",
+              "cleanup_execute"
+            ],
+            "title": "Action Mode",
+            "type": "string"
+          },
+          "confirmation_phrase": {
+            "title": "Confirmation Phrase",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "max_files": {
+            "title": "Max Files",
+            "type": "integer"
+          },
+          "physical_delete": {
+            "$ref": "#/components/schemas/FileRetentionDeleteResponse"
+          },
+          "preview_hash": {
+            "title": "Preview Hash",
+            "type": "string"
+          },
+          "requested_file_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Requested File Ids",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "safety": {
+            "$ref": "#/components/schemas/FileRetentionCleanupRunSafetyResponse"
+          }
+        },
+        "required": [
+          "run_id",
+          "generated_at",
+          "action_mode",
+          "confirmation_phrase",
+          "preview_hash",
+          "max_files",
+          "physical_delete",
+          "safety"
+        ],
+        "title": "FileRetentionCleanupRunResponse",
+        "type": "object"
+      },
+      "FileRetentionCleanupRunSafetyResponse": {
+        "description": "声明 cleanup run 执行边界和外部副作用状态。",
+        "properties": {
+          "audit_events_written": {
+            "default": false,
+            "title": "Audit Events Written",
+            "type": "boolean"
+          },
+          "physical_delete_contract_reused": {
+            "default": true,
+            "title": "Physical Delete Contract Reused",
+            "type": "boolean"
+          },
+          "physical_delete_executed": {
+            "default": false,
+            "title": "Physical Delete Executed",
+            "type": "boolean"
+          },
+          "provider_calls_executed": {
+            "default": false,
+            "title": "Provider Calls Executed",
+            "type": "boolean"
+          },
+          "s3_delete_executed": {
+            "default": false,
+            "title": "S3 Delete Executed",
+            "type": "boolean"
+          },
+          "scheduler_loop_executed": {
+            "default": false,
+            "title": "Scheduler Loop Executed",
+            "type": "boolean"
+          }
+        },
+        "title": "FileRetentionCleanupRunSafetyResponse",
+        "type": "object"
+      },
       "FileRetentionDeleteExecuteRequest": {
         "description": "请求执行 selected expired document_files 的物理删除。",
         "properties": {
@@ -13042,6 +13197,126 @@
           }
         },
         "summary": "Search File Library",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/retention/cleanup-runs/execute": {
+      "post": {
+        "description": "执行受控 cleanup run，内部复用 existing physical-delete safety contract。",
+        "operationId": "execute_file_retention_cleanup_run_api_v1_files_retention_cleanup_runs_execute_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileRetentionCleanupRunExecuteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRetentionCleanupRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Execute File Retention Cleanup Run",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/retention/cleanup-runs/preview": {
+      "post": {
+        "description": "预览精确 file_ids 的 cleanup run，不删除、不标记、不写审计。",
+        "operationId": "preview_file_retention_cleanup_run_api_v1_files_retention_cleanup_runs_preview_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileRetentionCleanupRunPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRetentionCleanupRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview File Retention Cleanup Run",
         "tags": [
           "files"
         ]
