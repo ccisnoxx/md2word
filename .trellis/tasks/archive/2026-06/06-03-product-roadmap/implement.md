@@ -100,6 +100,35 @@ Phase 2 明确未做、需要后续独立任务承接的能力：
 - Term Rule governance 的自动 rebase、批量审核和更复杂发布策略。
 - 面向外部客户的配置治理门户。
 
+## Phase 3 Acceptance Closeout
+
+收口日期：2026-06-06。
+
+结论：当前路线图中的 Phase 3 “Result QA and Traceability”切片可以收口。已归档的完成任务包括：
+
+- `translation-result-qa`
+- `translation-result-qa-gap-audit`
+- `translation-qa-visibility-hardening`
+- `translation-qa-segment-trace-hardening`
+- `translation-qa-browser-smoke`
+
+已满足的 Phase 3 验收面：
+
+- 翻译结果/质检页已落到 `TranslationResultQaPage.vue`、`/jobs/:jobId/translation-qa` 路由、`GET/PATCH /api/v1/document-jobs/{job_id}/translation-qa` 和任务详情入口。
+- 段落对照已基于 `document_ir` 展示最终文本片段，并在 `ai_debug_archive` 可用时补充源文/AI 译文；归档缺失、过期或无文本时会明确展示不可用原因。
+- 术语命中 trace 已从 `ai_call_log` 聚合为 `term_traces`，并在 QA 页面按 `segment_id` 做 segment-first 关联展示，同时保留无 `segment_id` 的全局 trace。
+- AI call log 已以 metadata-only 方式可视化，明确标注当前仅支持 call-level evidence，不伪造 segment-to-call 关联。
+- debug archive 诊断入口已通过 QA 证据文件区、源文对照可用性提示和任务详情文件/结果区承接。
+- 任务级 QA 状态、复核状态和问题归因已支持持久化、非敏感事件记录、任务详情摘要、Jobs 列表列展示和后端列表筛选。
+
+Phase 3 明确未做、但不阻塞本阶段收口的能力：
+
+- 段落级 QA 决策持久化、在线修改译文和自动评分。
+- 稳定的段落到 AI call 逐条归因；当前 artifact 没有可防守的关联键，UI 已避免误导。
+- 跨任务 QA 工作台和永久浏览器回归测试框架。
+
+所有 Phase 3 收口任务均明确未运行 pdf-mineru 解析、真实翻译 provider 或 Word 生成主流程。
+
 ## Operations and Retention Slice Closeout
 
 收口日期：2026-06-04。
