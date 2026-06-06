@@ -17,12 +17,12 @@
 
 ## Acceptance Criteria
 
-- [ ] 设计文档明确段落、术语命中、AI call trace 的目标关联模型。
-- [ ] 设计文档明确哪些能力可以复用现有 API 字段，哪些需要后端做 additive response 字段。
-- [ ] 设计文档明确 evidence unavailable 状态的产品文案和数据来源。
-- [ ] 设计文档明确不展示敏感全文、prompt、response、token 或 provider secret。
-- [ ] 实现计划拆成小步，避免同时引入浏览器 smoke 或列表筛选改造。
-- [ ] 验证计划只包含后端 targeted tests、OpenAPI 如有必要更新、前端 build 或组件级检查；不运行主流程。
+- [x] 设计文档明确段落、术语命中、AI call trace 的目标关联模型。
+- [x] 设计文档明确哪些能力可以复用现有 API 字段，哪些需要后端做 additive response 字段。
+- [x] 设计文档明确 evidence unavailable 状态的产品文案和数据来源。
+- [x] 设计文档明确不展示敏感全文、prompt、response、token 或 provider secret。
+- [x] 实现计划拆成小步，避免同时引入浏览器 smoke 或列表筛选改造。
+- [x] 验证计划只包含后端 targeted tests、OpenAPI 如有必要更新、前端 build 或组件级检查；不运行主流程。
 
 ## Non-goals
 
