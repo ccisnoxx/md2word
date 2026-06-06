@@ -150,6 +150,56 @@ Phase 3 明确未做、但不阻塞本阶段收口的能力：
 - 跨任务文件搜索或完整文件管理库。
 - 审计导出、告警和恢复动作的更完整运维闭环。
 
+## Phase 4 Acceptance Closeout
+
+收口日期：2026-06-07。
+
+结论：当前路线图中的 Phase 4 “Operations and Retention”内部运维成熟化切片可以收口。已归档的完成任务包括：
+
+- `file-retention-management`
+- `file-retention-operations-phase4-gap-audit`
+- `file-retention-physical-delete-safety-contract`
+- `file-retention-policy-crud-governance`
+- `file-retention-storage-usage-quota-readiness`
+- `file-retention-scheduled-cleanup-readonly-plan`
+- `file-retention-file-library-search-governance`
+- `audit-log-export-governance`
+- `ops-dashboard`
+- `ops-alerting-and-recovery-readiness`
+- `ops-recovery-action-governance-gap-audit`
+- `ops-recovery-action-safety-registry`
+- `phase4-operations-execution-gap-audit`
+- `ops-alert-delivery-outbox-safety-contract`
+- `ops-provider-cancellation-safety-contract`
+- `file-retention-automated-cleanup-execution-contract`
+- `phase4-operations-retention-closeout`
+
+已满足的 Phase 4 验收面：
+
+- 文件管理和保留策略已覆盖 Admin-only 文件库安全搜索、metadata retention plan/mark-expired、retention policy CRUD/governance、policy impact preview 和 API/OpenAPI 文档。
+- 物理删除、清理计划和存储统计已覆盖 selected-file physical delete safety contract、readonly cleanup report、storage usage/quota readiness，以及复用 physical-delete primitive 的 cleanup run execution contract。
+- 审计查询和导出已覆盖 Admin-only audit events 查询、CSV export、导出审计记录和无服务端导出文件交付边界。
+- Worker/队列监控和告警已覆盖 Ops dashboard/readiness、`/health/ops-alerts`、recovery action registry、active-alert preview 和 audit-backed fake alert delivery outbox。
+- 任务恢复与外部服务取消边界已覆盖 exact-target recovery action preview、risk/safety metadata、fake provider cancellation preview/fake-cancel/dedupe/audit，并明确不调用真实 provider cancellation。
+
+执行型 Ops 闭环的安全边界：
+
+- `alert.delivery` 仅支持 local fake outbox；Admin-only，exact alert codes，reason、confirmation、dedupe、compact audit，且不发送 Slack/email/webhook。
+- `provider.cancel` 仅支持 fake cancellation；Admin-only，exact job target，reason、confirmation、dedupe、compact audit，且不调用 MinerU 或修改本地 job 状态。
+- `file_retention.automated_cleanup_execute` 仅支持 Admin 手动 cleanup run；必须先 preview，execute 校验 exact `file_ids`、`max_files`、`preview_hash`、reason 和 confirmation，内部复用现有 physical-delete safety contract，S3 仍跳过。
+
+Phase 4 明确未做、但不阻塞本阶段收口的能力：
+
+- 真实 Slack/email/webhook 告警投递。
+- 真实 provider cancellation API 集成。
+- 常驻 scheduler loop、autonomous policy executor、run history、distributed lock 和 signed cleanup plan。
+- 真实 S3 删除。
+- 结构化 audit details / per-file durable compliance evidence。
+- quota enforcement 或上传阻断。
+- 新执行合同的前端操作按钮；当前后端合同、文档和 targeted tests 已足够支撑内部 Ops 收口。
+
+所有 Phase 4 执行型任务均明确未运行 pdf-mineru 解析、真实翻译 provider、Word 生成主流程、真实外部告警服务、真实 provider cancellation、真实 S3 删除或 scheduler loop。
+
 ## Phase 2 Archived Task Inventory
 
 盘点日期：2026-06-04。
