@@ -23,6 +23,18 @@ entries:
     doc_path: docs/api/health.md
     status: current
     note: "服务健康检查和 JSON metrics 入口。"
+  - entry: ops-recovery-actions
+    category: endpoint
+    source_files:
+      - app/api/v1/router.py
+      - app/domains/ops/router.py
+      - app/domains/ops/schemas.py
+      - app/domains/ops/recovery_actions.py
+      - app/api/dependencies.py
+      - docs/api/openapi.json
+    doc_path: docs/api/ops.md
+    status: current
+    note: "Admin-only 只读 recovery action registry 和 exact-target preview 合同。"
   - entry: jobs
     category: endpoint
     source_files:

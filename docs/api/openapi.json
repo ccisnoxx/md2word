@@ -5157,6 +5157,409 @@
         "title": "JobSummaryResponse",
         "type": "object"
       },
+      "OpsRecoveryActionPreviewRequest": {
+        "description": "请求预览一个动作对一个精确目标的适用性。",
+        "properties": {
+          "action_id": {
+            "title": "Action Id",
+            "type": "string"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_type": {
+            "enum": [
+              "document_job",
+              "legacy_job",
+              "provider_operation",
+              "alert",
+              "cleanup_run"
+            ],
+            "title": "Target Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action_id",
+          "target_type",
+          "target_id"
+        ],
+        "title": "OpsRecoveryActionPreviewRequest",
+        "type": "object"
+      },
+      "OpsRecoveryActionPreviewResponse": {
+        "description": "返回单个动作的只读 eligibility preview。",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/OpsRecoveryActionResponse"
+          },
+          "audit_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Action"
+          },
+          "eligible": {
+            "title": "Eligible",
+            "type": "boolean"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "missing_gates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Gates",
+            "type": "array"
+          },
+          "risk_flags": {
+            "$ref": "#/components/schemas/OpsRecoveryActionRiskFlagsResponse"
+          },
+          "safety": {
+            "$ref": "#/components/schemas/OpsRecoveryActionSafetyResponse"
+          },
+          "target": {
+            "$ref": "#/components/schemas/OpsRecoveryActionTargetPreviewResponse"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "generated_at",
+          "action",
+          "target",
+          "eligible",
+          "risk_flags",
+          "safety"
+        ],
+        "title": "OpsRecoveryActionPreviewResponse",
+        "type": "object"
+      },
+      "OpsRecoveryActionRegistryResponse": {
+        "description": "返回当前 Ops recovery action registry 和只读安全声明。",
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/OpsRecoveryActionResponse"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "safety": {
+            "$ref": "#/components/schemas/OpsRecoveryActionSafetyResponse"
+          }
+        },
+        "required": [
+          "generated_at",
+          "actions",
+          "safety"
+        ],
+        "title": "OpsRecoveryActionRegistryResponse",
+        "type": "object"
+      },
+      "OpsRecoveryActionResponse": {
+        "description": "单个恢复动作的稳定 registry 条目。",
+        "properties": {
+          "action_id": {
+            "title": "Action Id",
+            "type": "string"
+          },
+          "audit_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Action"
+          },
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "calls_provider": {
+            "title": "Calls Provider",
+            "type": "boolean"
+          },
+          "category": {
+            "enum": [
+              "recovery",
+              "cancellation",
+              "archive",
+              "cleanup",
+              "provider",
+              "notification",
+              "automation"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "deletes_data": {
+            "title": "Deletes Data",
+            "type": "boolean"
+          },
+          "dry_run_supported": {
+            "title": "Dry Run Supported",
+            "type": "boolean"
+          },
+          "known_gaps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Known Gaps",
+            "type": "array"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "mutates_metadata": {
+            "title": "Mutates Metadata",
+            "type": "boolean"
+          },
+          "mutates_queue": {
+            "title": "Mutates Queue",
+            "type": "boolean"
+          },
+          "requires_admin": {
+            "title": "Requires Admin",
+            "type": "boolean"
+          },
+          "requires_confirmation": {
+            "title": "Requires Confirmation",
+            "type": "boolean"
+          },
+          "requires_reason": {
+            "title": "Requires Reason",
+            "type": "boolean"
+          },
+          "sends_notification": {
+            "title": "Sends Notification",
+            "type": "boolean"
+          },
+          "suggested_route": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Route"
+          },
+          "target_type": {
+            "enum": [
+              "document_job",
+              "legacy_job",
+              "provider_operation",
+              "alert",
+              "cleanup_run"
+            ],
+            "title": "Target Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action_id",
+          "label",
+          "category",
+          "target_type",
+          "available",
+          "requires_admin",
+          "requires_reason",
+          "requires_confirmation",
+          "dry_run_supported",
+          "mutates_metadata",
+          "mutates_queue",
+          "calls_provider",
+          "sends_notification",
+          "deletes_data",
+          "audit_action"
+        ],
+        "title": "OpsRecoveryActionResponse",
+        "type": "object"
+      },
+      "OpsRecoveryActionRiskFlagsResponse": {
+        "description": "描述动作执行时可能触达的副作用类别，preview 本身不会执行这些副作用。",
+        "properties": {
+          "calls_provider": {
+            "title": "Calls Provider",
+            "type": "boolean"
+          },
+          "deletes_data": {
+            "title": "Deletes Data",
+            "type": "boolean"
+          },
+          "mutates_metadata": {
+            "title": "Mutates Metadata",
+            "type": "boolean"
+          },
+          "mutates_queue": {
+            "title": "Mutates Queue",
+            "type": "boolean"
+          },
+          "sends_notification": {
+            "title": "Sends Notification",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "mutates_metadata",
+          "mutates_queue",
+          "calls_provider",
+          "sends_notification",
+          "deletes_data"
+        ],
+        "title": "OpsRecoveryActionRiskFlagsResponse",
+        "type": "object"
+      },
+      "OpsRecoveryActionSafetyResponse": {
+        "description": "声明 registry/preview 响应生成过程中没有执行任何恢复或外部副作用。",
+        "properties": {
+          "audit_events_written": {
+            "default": false,
+            "title": "Audit Events Written",
+            "type": "boolean"
+          },
+          "cleanup_executed": {
+            "default": false,
+            "title": "Cleanup Executed",
+            "type": "boolean"
+          },
+          "delete_executed": {
+            "default": false,
+            "title": "Delete Executed",
+            "type": "boolean"
+          },
+          "execution_performed": {
+            "default": false,
+            "title": "Execution Performed",
+            "type": "boolean"
+          },
+          "metadata_mutated": {
+            "default": false,
+            "title": "Metadata Mutated",
+            "type": "boolean"
+          },
+          "notification_delivery_executed": {
+            "default": false,
+            "title": "Notification Delivery Executed",
+            "type": "boolean"
+          },
+          "provider_calls_executed": {
+            "default": false,
+            "title": "Provider Calls Executed",
+            "type": "boolean"
+          },
+          "queue_mutated": {
+            "default": false,
+            "title": "Queue Mutated",
+            "type": "boolean"
+          },
+          "read_only": {
+            "default": true,
+            "title": "Read Only",
+            "type": "boolean"
+          }
+        },
+        "title": "OpsRecoveryActionSafetyResponse",
+        "type": "object"
+      },
+      "OpsRecoveryActionTargetPreviewResponse": {
+        "description": "返回目标是否存在和可安全展示的目标摘要。",
+        "properties": {
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "summary": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Summary",
+            "type": "object"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_type": {
+            "enum": [
+              "document_job",
+              "legacy_job",
+              "provider_operation",
+              "alert",
+              "cleanup_run"
+            ],
+            "title": "Target Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_type",
+          "target_id",
+          "exists"
+        ],
+        "title": "OpsRecoveryActionTargetPreviewResponse",
+        "type": "object"
+      },
       "ResolvedResourceVersionResponse": {
         "properties": {
           "payload_ref": {
@@ -14458,6 +14861,116 @@
         "summary": "Receive Mineru Callback",
         "tags": [
           "mineru-callbacks"
+        ]
+      }
+    },
+    "/api/v1/ops/recovery-actions": {
+      "get": {
+        "description": "列出 Admin-only 只读 recovery action registry，不执行任何动作。",
+        "operationId": "list_ops_recovery_actions_api_v1_ops_recovery_actions_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsRecoveryActionRegistryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Ops Recovery Actions",
+        "tags": [
+          "ops"
+        ]
+      }
+    },
+    "/api/v1/ops/recovery-actions/preview": {
+      "post": {
+        "description": "预览一个恢复动作对精确目标的适用性，不调度、不通知、不删除。",
+        "operationId": "preview_ops_recovery_action_api_v1_ops_recovery_actions_preview_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpsRecoveryActionPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsRecoveryActionPreviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Ops Recovery Action",
+        "tags": [
+          "ops"
         ]
       }
     },

@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend layer entry point for router/service/test placement."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "HTTP auth, 400/403/404 semantics for preview endpoints."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Thin routers, schema-backed responses, and targeted unittest requirements."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Backend/frontend contract consistency for action registry and preview."}
+{"file": ".trellis/tasks/archive/2026-06/06-07-ops-recovery-action-governance-gap-audit/design.md", "reason": "Source recommendation and safety boundaries for this implementation."}
+{"file": ".trellis/tasks/archive/2026-06/06-06-ops-alerting-and-recovery-readiness/design.md", "reason": "Read-only Ops Dashboard/alert readiness precedent."}
+{"file": ".trellis/tasks/archive/2026-06/06-06-file-retention-scheduled-cleanup-readonly-plan/design.md", "reason": "Read-only cleanup runner non-execution precedent."}

@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Check future implementation recommendation against backend layer quality gates."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Check recovery action safety boundaries against existing HTTP error semantics."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Check that the recommendation avoids router-heavy or ad hoc dictionary contracts."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Check backend/frontend action registry contract consistency."}
+{"file": ".trellis/tasks/archive/2026-06/06-06-ops-alerting-and-recovery-readiness/design.md", "reason": "Check that planning preserves read-only alert readiness and does not imply execution."}
+{"file": ".trellis/tasks/archive/2026-06/06-06-file-retention-scheduled-cleanup-readonly-plan/design.md", "reason": "Check automated cleanup recommendations against current read-only runner safety boundary."}
+{"file": ".trellis/tasks/archive/2026-06/06-06-file-retention-operations-phase4-gap-audit/design.md", "reason": "Check consistency with Phase 4 prior gap audit and safety-contract ordering."}

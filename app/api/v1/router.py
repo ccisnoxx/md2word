@@ -1,4 +1,6 @@
-# app/api/v1/router.py: 汇总 v1 API 子路由。
+# File: app/api/v1/router.py
+# Purpose: Aggregate v1 API subrouters.
+
 from __future__ import annotations
 
 from fastapi import APIRouter
@@ -10,6 +12,7 @@ from app.domains.files.router import router as files_router
 from app.api.v1.routers.health import router as health_router
 from app.domains.jobs.router import router as jobs_router
 from app.domains.jobs.mineru_callbacks_router import router as mineru_callbacks_router
+from app.domains.ops.router import router as ops_router
 from app.domains.term_rules.categories_router import router as term_rule_categories_router
 from app.domains.term_rules.proposals_router import router as term_rule_proposals_router
 from app.domains.term_rules.sets_router import router as term_rule_sets_router
@@ -28,6 +31,7 @@ router.include_router(files_router)
 router.include_router(health_router)
 router.include_router(jobs_router)
 router.include_router(mineru_callbacks_router)
+router.include_router(ops_router)
 router.include_router(templates_router)
 router.include_router(term_rule_categories_router)
 router.include_router(term_rule_proposals_router)
