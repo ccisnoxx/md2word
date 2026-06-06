@@ -1,0 +1,7 @@
+{"file": ".trellis/tasks/06-06-file-retention-physical-delete-safety-contract/prd.md", "reason": "Task requirements and acceptance criteria."}
+{"file": ".trellis/tasks/06-06-file-retention-physical-delete-safety-contract/design.md", "reason": "API, service, UI, audit, and safety design."}
+{"file": ".trellis/tasks/06-06-file-retention-physical-delete-safety-contract/implement.md", "reason": "Execution checklist and verification plan."}
+{"file": ".trellis/tasks/archive/2026-06/06-04-file-retention-management/implement.md", "reason": "Existing retention behavior to preserve."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Check persistence/storage contract compliance."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Check layering and tests."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Check API error semantics."}

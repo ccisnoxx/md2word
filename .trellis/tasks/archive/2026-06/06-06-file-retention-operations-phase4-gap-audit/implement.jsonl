@@ -1,0 +1,12 @@
+{"file": ".trellis/tasks/archive/2026-06/06-03-product-roadmap/prd.md", "reason": "Parent roadmap requirements and Phase 4 scope."}
+{"file": ".trellis/tasks/archive/2026-06/06-03-product-roadmap/design.md", "reason": "Phase 4 product roadmap and deferred operations candidates."}
+{"file": ".trellis/tasks/archive/2026-06/06-03-product-roadmap/implement.md", "reason": "Phase 1/2/3 closeouts and Operations and Retention slice closeout."}
+{"file": ".trellis/tasks/archive/2026-06/06-03-product-roadmap/acceptance.md", "reason": "Roadmap acceptance notes that defer retention, audit export, worker monitoring, and alerting to Phase 4."}
+{"file": ".trellis/tasks/archive/2026-06/06-04-file-retention-management/prd.md", "reason": "Existing metadata-only file retention scope and non-goals."}
+{"file": ".trellis/tasks/archive/2026-06/06-04-file-retention-management/design.md", "reason": "Existing retention API/page design and explicit deferred physical deletion boundary."}
+{"file": ".trellis/tasks/archive/2026-06/06-04-file-retention-management/implement.md", "reason": "Implemented retention behavior and verification record."}
+{"file": ".trellis/tasks/archive/2026-06/06-04-audit-log-viewer/prd.md", "reason": "Existing audit query/export-current-page capability and deferred full export."}
+{"file": ".trellis/tasks/archive/2026-06/06-04-ops-dashboard/prd.md", "reason": "Existing read-only ops dashboard and excluded operational actions."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Storage metadata, object_key, retention dry-run, and persistence safety constraints."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend layering, repository boundaries, and targeted verification expectations."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "HTTP status and error-boundary conventions for future delete APIs."}

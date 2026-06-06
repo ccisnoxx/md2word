@@ -1,14 +1,15 @@
-<!-- frontend/src/pages/FileRetentionPage.vue: Admin-only metadata retention plan and expired marking page. -->
+<!-- File: frontend/src/pages/FileRetentionPage.vue -->
+<!-- Purpose: Render the Admin-only retention plan, metadata expiry, and guarded physical deletion page. -->
 <template>
   <main class="file-retention-page" aria-labelledby="file-retention-title">
     <section class="page-heading">
       <div>
         <p class="page-kicker">Storage</p>
         <h1 id="file-retention-title">文件保留计划</h1>
-        <p>查看已过保留期的 document_files，并仅将 metadata 标记为 expired。</p>
+        <p>查看已过保留期的 document_files，先标记 expired，再按 dry-run 结果手动物理删除本地文件。</p>
       </div>
       <div class="heading-actions">
-        <el-button :icon="Refresh" :loading="loading" @click="loadPlan">刷新</el-button>
+        <el-button :icon="Refresh" :loading="loading" @click="() => loadPlan()">刷新</el-button>
         <el-button
           type="warning"
           :icon="Finished"
@@ -17,6 +18,17 @@
           @click="markExpired"
         >
           标记 expired
+        </el-button>
+        <el-button :disabled="selectedFileIds.length === 0" :loading="previewing" @click="previewPhysicalDelete">
+          预览物理删除
+        </el-button>
+        <el-button
+          type="danger"
+          :disabled="!canOpenDeleteDialog"
+          :loading="deleting"
+          @click="openPhysicalDeleteDialog"
+        >
+          执行物理删除
         </el-button>
       </div>
     </section>
@@ -30,14 +42,14 @@
       :closable="false"
       show-icon
     >
-      此页面不会删除本地文件、对象存储对象、任务记录或 object_key；只更新过期文件的 metadata 状态。
+      标记 expired 仍是 metadata-only。物理删除只支持已 expired 的本地文件，必须先预览、选择文件、填写 reason 并输入确认短语；任务记录、事件、metadata 行和 object_key 会保留。
     </el-alert>
 
     <section v-loading="loading" class="summary-grid" aria-label="文件保留计划摘要">
       <article class="summary-card">
         <span>候选文件</span>
         <strong>{{ candidateCount }}</strong>
-        <small>可标记 uploaded：{{ markableCount }}</small>
+        <small>已选择：{{ selectedFileIds.length }} · 可标记 uploaded：{{ markableCount }}</small>
       </article>
       <article class="summary-card">
         <span>保留天数</span>
@@ -60,11 +72,14 @@
       <div class="section-header">
         <div>
           <h2 class="section-title">过期候选</h2>
-          <p class="section-subtitle">根据 `expires_at` 生成，`deleted` 状态文件不会进入候选。</p>
+          <p class="section-subtitle">根据 `expires_at` 生成，`deleted` 状态文件不会进入候选；物理删除只执行 selected expired local 文件。</p>
         </div>
-        <el-tag effect="plain" :type="plan?.deletion_supported ? 'danger' : 'info'">
-          deletion_supported={{ String(plan?.deletion_supported ?? false) }}
-        </el-tag>
+        <div class="toolbar">
+          <el-tag effect="plain" :type="plan?.deletion_supported ? 'danger' : 'info'">
+            deletion_supported={{ String(plan?.deletion_supported ?? false) }}
+          </el-tag>
+          <el-tag effect="plain">selected={{ selectedFileIds.length }}</el-tag>
+        </div>
       </div>
 
       <el-table
@@ -72,7 +87,10 @@
         empty-text="暂无过期候选文件"
         class="retention-table"
         table-layout="fixed"
+        row-key="file_id"
+        @selection-change="handleSelectionChange"
       >
+        <el-table-column type="selection" width="48" />
         <el-table-column prop="file_id" label="File ID" min-width="180">
           <template #default="{ row }">
             <span class="mono">{{ row.file_id }}</span>
@@ -107,16 +125,94 @@
         <el-table-column prop="reason" label="Reason" min-width="260" />
       </el-table>
     </section>
+
+    <section v-if="deleteReport" class="retention-table-section" aria-label="物理删除预览和执行结果">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">物理删除结果</h2>
+          <p class="section-subtitle">
+            {{ deleteReport.action_mode }} · generated {{ formatDateTime(deleteReport.generated_at) }} ·
+            required confirmation: <span class="mono">{{ deleteReport.confirmation_phrase }}</span>
+          </p>
+        </div>
+        <div class="toolbar">
+          <el-tag type="success" effect="plain">deletable={{ totalDeleteValue("deletable") }}</el-tag>
+          <el-tag type="danger" effect="plain">deleted={{ totalDeleteValue("deleted") }}</el-tag>
+          <el-tag type="warning" effect="plain">skipped={{ totalDeleteValue("skipped") }}</el-tag>
+          <el-tag type="danger" effect="plain">failed={{ totalDeleteValue("failed") }}</el-tag>
+        </div>
+      </div>
+
+      <el-table :data="deleteReport.items" empty-text="暂无物理删除结果" class="retention-table" table-layout="fixed">
+        <el-table-column prop="file_id" label="File ID" min-width="180">
+          <template #default="{ row }">
+            <span class="mono">{{ row.file_id }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="outcome" label="Outcome" min-width="180">
+          <template #default="{ row }">
+            <el-tag size="small" :type="outcomeTag(row.outcome)" effect="plain">{{ row.outcome }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="status_before" label="Before" width="110">
+          <template #default="{ row }">{{ row.status_before || "-" }}</template>
+        </el-table-column>
+        <el-table-column prop="status_after" label="After" width="110">
+          <template #default="{ row }">{{ row.status_after || "-" }}</template>
+        </el-table-column>
+        <el-table-column prop="storage_provider" label="Storage" min-width="130">
+          <template #default="{ row }">{{ row.storage_provider || "-" }}</template>
+        </el-table-column>
+        <el-table-column prop="deleted" label="Deleted" width="100">
+          <template #default="{ row }">{{ row.deleted ? "yes" : "no" }}</template>
+        </el-table-column>
+        <el-table-column prop="metadata_updated" label="Metadata" width="110">
+          <template #default="{ row }">{{ row.metadata_updated ? "updated" : "unchanged" }}</template>
+        </el-table-column>
+        <el-table-column prop="reason" label="Reason" min-width="280" show-overflow-tooltip />
+        <el-table-column prop="object_key" label="Object Key" min-width="320">
+          <template #default="{ row }">
+            <span class="mono object-key">{{ row.object_key || "-" }}</span>
+          </template>
+        </el-table-column>
+      </el-table>
+    </section>
+
+    <el-dialog v-model="deleteDialog.visible" title="执行物理删除" width="640px">
+      <el-alert class="delete-warning" type="error" title="不可逆操作" :closable="false" show-icon>
+        该操作会删除 selected expired local/local_object 文件内容；metadata 行、任务记录、事件和 object_key 会保留。
+      </el-alert>
+      <el-form label-position="top">
+        <el-form-item label="Selected file IDs">
+          <el-input :model-value="selectedFileIds.join('\n')" type="textarea" :rows="4" readonly class="mono" />
+        </el-form-item>
+        <el-form-item label="Reason">
+          <el-input v-model="deleteDialog.reason" type="textarea" :rows="2" placeholder="说明为什么执行本次物理删除" />
+        </el-form-item>
+        <el-form-item label="Confirmation phrase">
+          <el-input v-model="deleteDialog.confirmation" :placeholder="deleteReport?.confirmation_phrase || 'DELETE EXPIRED FILES'" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="deleteDialog.visible = false">取消</el-button>
+        <el-button type="danger" :loading="deleting" @click="executePhysicalDelete">确认物理删除</el-button>
+      </template>
+    </el-dialog>
   </main>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Finished, Refresh } from "@element-plus/icons-vue";
 
 import { filesApi } from "@/api/files";
-import type { FileRetentionPlanResponse } from "@/api/types";
+import type {
+  FileRetentionCandidateResponse,
+  FileRetentionDeleteOutcome,
+  FileRetentionDeleteResponse,
+  FileRetentionPlanResponse,
+} from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import { formatBytes, formatDateTime } from "@/utils/format";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
@@ -124,21 +220,44 @@ import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 type StatusTag = "success" | "warning" | "info" | "danger";
 
 const plan = ref<FileRetentionPlanResponse | null>(null);
+const selectedCandidates = ref<FileRetentionCandidateResponse[]>([]);
+const deleteReport = ref<FileRetentionDeleteResponse | null>(null);
 const loading = ref(false);
 const marking = ref(false);
+const previewing = ref(false);
+const deleting = ref(false);
 const error = ref<ApiClientError | null>(null);
+const deleteDialog = reactive({
+  visible: false,
+  reason: "",
+  confirmation: "",
+});
 
 const candidateCount = computed(() => plan.value?.candidates.length ?? 0);
 const markableCount = computed(() => (
   plan.value?.candidates.filter((candidate) => candidate.status === "uploaded").length ?? 0
 ));
+const selectedFileIds = computed(() => selectedCandidates.value.map((candidate) => candidate.file_id));
+const deletablePreviewCount = computed(() => (
+  deleteReport.value?.items.filter((item) => item.outcome === "deletable").length ?? 0
+));
+const canOpenDeleteDialog = computed(() => (
+  selectedFileIds.value.length > 0
+  && deleteReport.value?.action_mode === "delete_preview"
+  && selectedFileIds.value.join("\n") === deleteReport.value.requested_file_ids.join("\n")
+  && deletablePreviewCount.value > 0
+));
 
 // 读取当前 retention dry-run 计划。
-async function loadPlan(): Promise<void> {
+async function loadPlan(preserveDeleteReport = false): Promise<void> {
   loading.value = true;
   error.value = null;
   try {
     plan.value = await filesApi.getRetentionPlan();
+    selectedCandidates.value = [];
+    if (!preserveDeleteReport) {
+      deleteReport.value = null;
+    }
   } catch (caught) {
     error.value = normalizeApiError(caught);
   } finally {
@@ -170,6 +289,8 @@ async function markExpired(): Promise<void> {
   try {
     const response = await filesApi.markRetentionExpired();
     plan.value = response;
+    selectedCandidates.value = [];
+    deleteReport.value = null;
     ElMessage.success(`已标记 ${response.marked_file_ids.length} 个文件。`);
   } catch (caught) {
     error.value = normalizeApiError(caught);
@@ -178,9 +299,73 @@ async function markExpired(): Promise<void> {
   }
 }
 
+// 记录表格选择，选择变化会清空已有 dry-run 结果。
+function handleSelectionChange(rows: FileRetentionCandidateResponse[]): void {
+  selectedCandidates.value = rows;
+  deleteReport.value = null;
+}
+
+// 对当前选择的文件执行物理删除 dry-run。
+async function previewPhysicalDelete(): Promise<void> {
+  if (selectedFileIds.value.length === 0) {
+    return;
+  }
+  previewing.value = true;
+  error.value = null;
+  try {
+    const response = await filesApi.previewRetentionDelete({ file_ids: selectedFileIds.value });
+    deleteReport.value = response;
+    ElMessage.success(`已预览 ${response.items.length} 个文件，deletable=${response.totals.deletable ?? 0}。`);
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    previewing.value = false;
+  }
+}
+
+// 打开物理删除确认框，要求用户重新输入 reason 和确认短语。
+function openPhysicalDeleteDialog(): void {
+  if (!canOpenDeleteDialog.value) {
+    ElMessage.warning("请先对当前选择执行物理删除预览。");
+    return;
+  }
+  deleteDialog.reason = "";
+  deleteDialog.confirmation = "";
+  deleteDialog.visible = true;
+}
+
+// 执行 selected expired 文件物理删除，并刷新 retention plan。
+async function executePhysicalDelete(): Promise<void> {
+  if (!canOpenDeleteDialog.value || !deleteReport.value) {
+    return;
+  }
+  deleting.value = true;
+  error.value = null;
+  try {
+    const response = await filesApi.deleteExpiredRetentionFiles({
+      file_ids: deleteReport.value.requested_file_ids,
+      reason: deleteDialog.reason,
+      confirmation: deleteDialog.confirmation,
+    });
+    deleteReport.value = response;
+    deleteDialog.visible = false;
+    await loadPlan(true);
+    ElMessage.success(`物理删除完成：deleted=${response.totals.deleted ?? 0}，skipped=${response.totals.skipped ?? 0}。`);
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    deleting.value = false;
+  }
+}
+
 // 读取 totals 中的数值，缺失时展示 0。
 function totalValue(key: string): number {
   return plan.value?.totals[key] ?? 0;
+}
+
+// 读取物理删除 report totals 中的数值，缺失时展示 0。
+function totalDeleteValue(key: string): number {
+  return deleteReport.value?.totals[key] ?? 0;
 }
 
 // 将 metadata 状态映射为表格标签样式。
@@ -195,6 +380,20 @@ function statusTag(status: string): StatusTag {
     return "danger";
   }
   return "success";
+}
+
+// 将物理删除 outcome 映射为结果标签样式。
+function outcomeTag(outcome: FileRetentionDeleteOutcome): StatusTag {
+  if (outcome === "deleted" || outcome === "already_missing" || outcome === "deletable") {
+    return "success";
+  }
+  if (outcome === "failed") {
+    return "danger";
+  }
+  if (outcome === "skipped_unsupported_storage") {
+    return "warning";
+  }
+  return "info";
 }
 
 onMounted(() => {
@@ -240,6 +439,7 @@ onMounted(() => {
 .heading-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -307,6 +507,13 @@ onMounted(() => {
   gap: 16px;
 }
 
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .section-title {
   margin: 0;
   color: #111827;
@@ -330,6 +537,10 @@ onMounted(() => {
 
 .object-key {
   overflow-wrap: anywhere;
+}
+
+.delete-warning {
+  margin-bottom: 14px;
 }
 
 @media (max-width: 920px) {

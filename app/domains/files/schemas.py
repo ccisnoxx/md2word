@@ -1,6 +1,7 @@
-from __future__ import annotations
+# File: app/domains/files/schemas.py
+# Purpose: 定义文件元数据、上传授权、保留期管理和物理删除 API 的 v1 请求/响应模型。
 
-# app/domains/files/schemas.py: 定义文件元数据、上传授权和保留期管理 API 的 v1 请求/响应模型。
+from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Literal
@@ -87,3 +88,56 @@ class FileRetentionPlanResponse(BaseModel):
     totals: dict[str, int] = Field(default_factory=dict)
     candidates: list[FileRetentionCandidateResponse] = Field(default_factory=list)
     marked_file_ids: list[str] = Field(default_factory=list)
+
+
+class FileRetentionDeletePreviewRequest(BaseModel):
+    """请求预览 selected expired document_files 的物理删除结果。"""
+
+    file_ids: list[str] = Field(default_factory=list)
+
+
+class FileRetentionDeleteExecuteRequest(BaseModel):
+    """请求执行 selected expired document_files 的物理删除。"""
+
+    file_ids: list[str] = Field(default_factory=list)
+    reason: str
+    confirmation: str
+
+
+class FileRetentionDeleteItemResponse(BaseModel):
+    """返回单个文件的物理删除预览或执行结果。"""
+
+    file_id: str
+    job_id: str | None = None
+    file_type: str | None = None
+    storage_provider: str | None = None
+    status_before: str | None = None
+    status_after: str | None = None
+    object_key: str | None = None
+    size_bytes: int | None = None
+    outcome: Literal[
+        "deletable",
+        "deleted",
+        "already_missing",
+        "skipped_not_found",
+        "skipped_not_expired_status",
+        "skipped_not_expired_time",
+        "skipped_already_deleted",
+        "skipped_unsupported_storage",
+        "skipped_missing_object_key",
+        "failed",
+    ]
+    reason: str
+    deleted: bool = False
+    metadata_updated: bool = False
+
+
+class FileRetentionDeleteResponse(BaseModel):
+    """返回 selected expired document_files 物理删除预览或执行汇总。"""
+
+    generated_at: datetime
+    action_mode: Literal["delete_preview", "delete_execute"]
+    requested_file_ids: list[str] = Field(default_factory=list)
+    confirmation_phrase: str
+    totals: dict[str, int] = Field(default_factory=dict)
+    items: list[FileRetentionDeleteItemResponse] = Field(default_factory=list)

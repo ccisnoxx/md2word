@@ -153,6 +153,52 @@ export type FileRetentionPlanResponse = {
 
 export type FileRetentionMarkExpiredResponse = FileRetentionPlanResponse;
 
+export type FileRetentionDeletePreviewRequest = {
+  file_ids: string[];
+};
+
+export type FileRetentionDeleteExecuteRequest = {
+  file_ids: string[];
+  reason: string;
+  confirmation: string;
+};
+
+export type FileRetentionDeleteOutcome =
+  | "deletable"
+  | "deleted"
+  | "already_missing"
+  | "skipped_not_found"
+  | "skipped_not_expired_status"
+  | "skipped_not_expired_time"
+  | "skipped_already_deleted"
+  | "skipped_unsupported_storage"
+  | "skipped_missing_object_key"
+  | "failed";
+
+export type FileRetentionDeleteItemResponse = {
+  file_id: string;
+  job_id: string | null;
+  file_type: string | null;
+  storage_provider: string | null;
+  status_before: string | null;
+  status_after: string | null;
+  object_key: string | null;
+  size_bytes: number | null;
+  outcome: FileRetentionDeleteOutcome;
+  reason: string;
+  deleted: boolean;
+  metadata_updated: boolean;
+};
+
+export type FileRetentionDeleteResponse = {
+  generated_at: string;
+  action_mode: "delete_preview" | "delete_execute";
+  requested_file_ids: string[];
+  confirmation_phrase: string;
+  totals: Record<string, number>;
+  items: FileRetentionDeleteItemResponse[];
+};
+
 export type DocumentJobMode = "direct_pdf_to_word" | "en2zh_pdf_to_word";
 export type DocumentLanguage = "auto" | "zh" | "en";
 export type DocumentJobStatus = "pending" | "queued" | "running" | "succeeded" | "failed" | "canceled";

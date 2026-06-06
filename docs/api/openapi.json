@@ -2734,6 +2734,219 @@
         "title": "FileRetentionCandidateResponse",
         "type": "object"
       },
+      "FileRetentionDeleteExecuteRequest": {
+        "description": "请求执行 selected expired document_files 的物理删除。",
+        "properties": {
+          "confirmation": {
+            "title": "Confirmation",
+            "type": "string"
+          },
+          "file_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "File Ids",
+            "type": "array"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "confirmation"
+        ],
+        "title": "FileRetentionDeleteExecuteRequest",
+        "type": "object"
+      },
+      "FileRetentionDeleteItemResponse": {
+        "description": "返回单个文件的物理删除预览或执行结果。",
+        "properties": {
+          "deleted": {
+            "default": false,
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "file_id": {
+            "title": "File Id",
+            "type": "string"
+          },
+          "file_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Type"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "metadata_updated": {
+            "default": false,
+            "title": "Metadata Updated",
+            "type": "boolean"
+          },
+          "object_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Key"
+          },
+          "outcome": {
+            "enum": [
+              "deletable",
+              "deleted",
+              "already_missing",
+              "skipped_not_found",
+              "skipped_not_expired_status",
+              "skipped_not_expired_time",
+              "skipped_already_deleted",
+              "skipped_unsupported_storage",
+              "skipped_missing_object_key",
+              "failed"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "status_after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status After"
+          },
+          "status_before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Before"
+          },
+          "storage_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Provider"
+          }
+        },
+        "required": [
+          "file_id",
+          "outcome",
+          "reason"
+        ],
+        "title": "FileRetentionDeleteItemResponse",
+        "type": "object"
+      },
+      "FileRetentionDeletePreviewRequest": {
+        "description": "请求预览 selected expired document_files 的物理删除结果。",
+        "properties": {
+          "file_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "File Ids",
+            "type": "array"
+          }
+        },
+        "title": "FileRetentionDeletePreviewRequest",
+        "type": "object"
+      },
+      "FileRetentionDeleteResponse": {
+        "description": "返回 selected expired document_files 物理删除预览或执行汇总。",
+        "properties": {
+          "action_mode": {
+            "enum": [
+              "delete_preview",
+              "delete_execute"
+            ],
+            "title": "Action Mode",
+            "type": "string"
+          },
+          "confirmation_phrase": {
+            "title": "Confirmation Phrase",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FileRetentionDeleteItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "requested_file_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Requested File Ids",
+            "type": "array"
+          },
+          "totals": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Totals",
+            "type": "object"
+          }
+        },
+        "required": [
+          "generated_at",
+          "action_mode",
+          "confirmation_phrase"
+        ],
+        "title": "FileRetentionDeleteResponse",
+        "type": "object"
+      },
       "FileRetentionPlanResponse": {
         "description": "返回 document_files 保留期 dry-run 或 metadata 标记结果。",
         "properties": {
@@ -10225,6 +10438,126 @@
         "summary": "Update Document Job Translation Qa",
         "tags": [
           "document-jobs"
+        ]
+      }
+    },
+    "/api/v1/files/retention/delete-expired": {
+      "post": {
+        "description": "执行 selected expired 文件物理删除，并保留 metadata 追溯信息。",
+        "operationId": "execute_file_retention_physical_delete_api_v1_files_retention_delete_expired_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileRetentionDeleteExecuteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRetentionDeleteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Execute File Retention Physical Delete",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/retention/delete-preview": {
+      "post": {
+        "description": "预览 selected expired 文件物理删除结果，不修改 metadata 或二进制。",
+        "operationId": "preview_file_retention_physical_delete_api_v1_files_retention_delete_preview_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileRetentionDeletePreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRetentionDeleteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview File Retention Physical Delete",
+        "tags": [
+          "files"
         ]
       }
     },
