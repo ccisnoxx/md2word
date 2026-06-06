@@ -20,6 +20,7 @@ from app.domains.files.retention_policy import (
     RETENTION_POLICY_FILE_TYPES,
 )
 from app.domains.files.service import FileRetentionDeleteReport
+from app.domains.files.storage_usage import DocumentFileStorageUsageReporter, FileStorageUsageReport
 from app.domains.files.schemas import (
     DocumentFileResponse,
     EffectiveFileRetentionPolicyResponse,
@@ -34,6 +35,7 @@ from app.domains.files.schemas import (
     FileRetentionPolicyResponse,
     FileRetentionPolicyUpdateRequest,
     FileRetentionPlanResponse,
+    FileStorageUsageResponse,
     FileUploadResponse,
     FileUploadUrlRequest,
     FileUploadUrlResponse,
@@ -149,6 +151,17 @@ def list_file_retention_policies(
             for policy in policies
         ],
     )
+
+
+@router.get("/storage/usage", response_model=FileStorageUsageResponse)
+def get_file_storage_usage(
+    runtime: AppRuntime = Depends(get_runtime),
+    _user: AuthenticatedUser = Depends(require_admin_user),
+) -> FileStorageUsageResponse:
+    """返回 document_files storage usage metadata 估算，不执行清理或删除。"""
+
+    report = _storage_usage_reporter(runtime).build_report()
+    return _build_file_storage_usage_response(report)
 
 
 @router.post("/retention/policies", response_model=FileRetentionPolicyResponse, status_code=status.HTTP_201_CREATED)
@@ -417,6 +430,25 @@ def _retention_planner(runtime: AppRuntime) -> DocumentFileRetentionPlanner:
     )
 
 
+def _storage_usage_reporter(runtime: AppRuntime) -> DocumentFileStorageUsageReporter:
+    """按当前运行态 readiness 构建只读 storage usage reporter。"""
+
+    dependency_checks = runtime.health_service.build_dependency_checks()
+    artifact_disk_free = dependency_checks.get("artifact_disk_free_bytes")
+    return DocumentFileStorageUsageReporter(
+        runtime.document_file_repository,
+        artifact_storage=str(dependency_checks.get("artifact_storage") or runtime.settings.jobs_artifact_storage_backend),
+        artifact_root_writable=_optional_bool(dependency_checks.get("artifact_root_writable")),
+        artifact_disk_free_bytes=artifact_disk_free if isinstance(artifact_disk_free, int) else None,
+    )
+
+
+def _build_file_storage_usage_response(report: FileStorageUsageReport) -> FileStorageUsageResponse:
+    """把 storage usage report 映射为 API 响应。"""
+
+    return FileStorageUsageResponse(**report.to_dict())
+
+
 def _build_file_retention_plan_response(
     plan: DocumentFileRetentionPlan,
     *,
@@ -527,6 +559,12 @@ def _build_file_retention_policy_impact_response(
             for item in report.items
         ],
     )
+
+
+def _optional_bool(value: object) -> bool | None:
+    """只接受真实 bool readiness 值，避免把字符串误当状态。"""
+
+    return value if isinstance(value, bool) else None
 
 
 def _build_retention_policy_audit_reason(action: str, policy: FileRetentionPolicyRecord) -> str:

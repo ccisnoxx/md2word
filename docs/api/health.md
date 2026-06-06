@@ -139,7 +139,7 @@ Health API 当前有四条入口：
 | `jobs_dir_exists` | `var/jobs/` 是否存在 |
 | `jobs_dir_writable` | 运行态根目录是否可写 |
 | `artifact_root_writable` | 当前 artifact 本地根目录是否可写；`local_file` 检查 jobs 目录，`local_object` 检查对象目录 |
-| `artifact_disk_free_bytes` | 当前 artifact 本地根所在磁盘剩余字节数 |
+| `artifact_disk_free_bytes` | 当前 artifact 本地根所在磁盘剩余字节数；这是运行时 readiness 上下文，不是 `document_files` 已用空间统计。文件 metadata 使用量和可回收空间估算见 `GET /api/v1/files/storage/usage` |
 | `stage_spool_dir_exists` | stage spool 是否可用；file 模式检查 `var/stage_messages/`，database/mysql 模式表示数据库内 store 可用 |
 | `stage_spool_pending_messages` | 当前 pending 的 stage message 数量；启动 replay 会尝试恢复 |
 | `stage_spool_running_messages` | 当前 running 的 stage message 数量；启动 replay 会尝试恢复 |

@@ -241,3 +241,30 @@ class FileRetentionPolicyImpactResponse(BaseModel):
     policy: FileRetentionPolicyResponse
     totals: dict[str, int] = Field(default_factory=dict)
     items: list[FileRetentionPolicyImpactItemResponse] = Field(default_factory=list)
+
+
+class FileStorageUsageGroupResponse(BaseModel):
+    """返回一个 document_files storage usage 分组汇总。"""
+
+    key: str
+    file_count: int
+    size_bytes: int
+    expired_count: int
+    expired_size_bytes: int
+    estimated_reclaimable_count: int
+    estimated_reclaimable_size_bytes: int
+
+
+class FileStorageUsageResponse(BaseModel):
+    """返回 document_files storage usage 和 quota readiness 只读汇总。"""
+
+    generated_at: datetime
+    artifact_storage: str
+    artifact_root_writable: bool | None = None
+    artifact_disk_free_bytes: int | None = None
+    totals: dict[str, int] = Field(default_factory=dict)
+    reclaim: dict[str, int | str] = Field(default_factory=dict)
+    quota: dict[str, int | float | bool | str | None] = Field(default_factory=dict)
+    by_storage_provider: list[FileStorageUsageGroupResponse] = Field(default_factory=list)
+    by_file_type: list[FileStorageUsageGroupResponse] = Field(default_factory=list)
+    by_status: list[FileStorageUsageGroupResponse] = Field(default_factory=list)

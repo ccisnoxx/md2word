@@ -15,6 +15,7 @@ import type {
   FileRetentionPolicyResponse,
   FileRetentionPolicyUpdateRequest,
   FileRetentionPlanResponse,
+  FileStorageUsageResponse,
   FileUploadUrlRequest,
   FileUploadUrlResponse,
 } from "@/api/types";
@@ -41,6 +42,14 @@ export const filesApi = {
   getRetentionPlan(): Promise<FileRetentionPlanResponse> {
     return apiRequest<FileRetentionPlanResponse>({
       url: "/api/v1/files/retention/plan",
+      method: "GET",
+    });
+  },
+
+  // 读取 Admin-only document_files storage usage 只读汇总。
+  getStorageUsage(): Promise<FileStorageUsageResponse> {
+    return apiRequest<FileStorageUsageResponse>({
+      url: "/api/v1/files/storage/usage",
       method: "GET",
     });
   },

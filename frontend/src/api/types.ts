@@ -284,6 +284,29 @@ export type FileRetentionPolicyImpactResponse = {
   items: FileRetentionPolicyImpactItemResponse[];
 };
 
+export type FileStorageUsageGroupResponse = {
+  key: string;
+  file_count: number;
+  size_bytes: number;
+  expired_count: number;
+  expired_size_bytes: number;
+  estimated_reclaimable_count: number;
+  estimated_reclaimable_size_bytes: number;
+};
+
+export type FileStorageUsageResponse = {
+  generated_at: string;
+  artifact_storage: string;
+  artifact_root_writable: boolean | null;
+  artifact_disk_free_bytes: number | null;
+  totals: Record<string, number>;
+  reclaim: Record<string, number | string>;
+  quota: Record<string, number | string | boolean | null>;
+  by_storage_provider: FileStorageUsageGroupResponse[];
+  by_file_type: FileStorageUsageGroupResponse[];
+  by_status: FileStorageUsageGroupResponse[];
+};
+
 export type DocumentJobMode = "direct_pdf_to_word" | "en2zh_pdf_to_word";
 export type DocumentLanguage = "auto" | "zh" | "en";
 export type DocumentJobStatus = "pending" | "queued" | "running" | "succeeded" | "failed" | "canceled";

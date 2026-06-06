@@ -1,0 +1,8 @@
+{"file": ".trellis/tasks/archive/2026-06/06-06-file-retention-operations-phase4-gap-audit/design.md", "reason": "Phase 4 capability matrix and dependency order for storage quota/readiness after physical deletion safety."}
+{"file": ".trellis/tasks/archive/2026-06/06-06-file-retention-physical-delete-safety-contract/design.md", "reason": "Existing destructive-operation boundary that storage summary must not bypass or automate."}
+{"file": ".trellis/tasks/archive/2026-06/06-06-file-retention-policy-crud-governance/design.md", "reason": "Current retention policy and impact-preview boundaries to preserve while adding storage readiness."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Persistence backend contracts, document_files dry-run-first retention safety, and storage backend separation."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend layering, router/service boundaries, and targeted test expectations."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "HTTP auth and validation semantics for the future Admin-only endpoint."}
+{"file": "docs/api/files.md", "reason": "Current Files API retention contract and documentation surface to update after implementation."}
+{"file": "docs/api/health.md", "reason": "Current artifact disk-free readiness fields and boundary with future document_files usage summary."}
