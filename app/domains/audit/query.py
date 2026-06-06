@@ -1,9 +1,11 @@
 # File: app/domains/audit/query.py
-# Purpose: Filter, sort, and paginate persisted audit events for read-only UI queries.
+# Purpose: Filter, sort, paginate, and encode persisted audit events for Admin queries and exports.
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from io import StringIO
 
 from app.domains.audit.models import ActorRole, AuditEvent
 from app.domains.audit.repository import AuditEventRepositoryProtocol
@@ -37,6 +39,32 @@ class AuditEventPage:
     total: int
 
 
+@dataclass(frozen=True, slots=True)
+class AuditEventExport:
+    """保存一次受治理审计导出的 CSV 和计数信息。"""
+
+    csv_text: str
+    items: list[AuditEvent]
+    matched_count: int
+    exported_count: int
+    max_rows: int
+    truncated: bool
+    columns: list[str]
+
+
+AUDIT_EVENT_EXPORT_COLUMNS = [
+    "created_at",
+    "audit_id",
+    "actor_role",
+    "actor_id",
+    "action",
+    "target_type",
+    "target_id",
+    "reason",
+    "trace_id",
+]
+
+
 class AuditEventQueryService:
     """基于现有 repository 合同提供审计事件只读查询能力。"""
 
@@ -45,6 +73,35 @@ class AuditEventQueryService:
 
     def list_events(self, query: AuditEventQuery) -> AuditEventPage:
         """按筛选条件读取审计事件，并返回稳定排序后的分页结果。"""
+
+        events = self._filtered_sorted_events(query)
+        total = len(events)
+        start = (query.page - 1) * query.page_size
+        end = start + query.page_size
+        return AuditEventPage(
+            items=events[start:end],
+            page=query.page,
+            page_size=query.page_size,
+            total=total,
+        )
+
+    def export_events(self, query: AuditEventQuery, *, max_rows: int) -> AuditEventExport:
+        """按筛选条件生成受上限保护的 CSV 导出结果。"""
+
+        events = self._filtered_sorted_events(query)
+        exported_events = events[:max_rows]
+        return AuditEventExport(
+            csv_text=self._build_csv_text(exported_events),
+            items=exported_events,
+            matched_count=len(events),
+            exported_count=len(exported_events),
+            max_rows=max_rows,
+            truncated=len(events) > max_rows,
+            columns=list(AUDIT_EVENT_EXPORT_COLUMNS),
+        )
+
+    def _filtered_sorted_events(self, query: AuditEventQuery) -> list[AuditEvent]:
+        """复用同一套筛选和排序逻辑，避免列表与导出行为分叉。"""
 
         events = [
             event
@@ -55,15 +112,7 @@ class AuditEventQueryService:
             key=lambda event: (self._comparable_datetime(event.created_at), event.audit_id),
             reverse=query.sort == "created_at_desc",
         )
-        total = len(events)
-        start = (query.page - 1) * query.page_size
-        end = start + query.page_size
-        return AuditEventPage(
-            items=events[start:end],
-            page=query.page,
-            page_size=query.page_size,
-            total=total,
-        )
+        return events
 
     def _matches_query(self, event: AuditEvent, query: AuditEventQuery) -> bool:
         """判断单条审计事件是否满足所有查询条件。"""
@@ -119,3 +168,25 @@ class AuditEventQueryService:
         if value.tzinfo is None:
             return value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc)
+
+    def _build_csv_text(self, events: list[AuditEvent]) -> str:
+        """把审计事件编码为 CSV，交由 csv 模块处理逗号、引号和换行。"""
+
+        output = StringIO()
+        writer = csv.writer(output, lineterminator="\n")
+        writer.writerow(AUDIT_EVENT_EXPORT_COLUMNS)
+        for event in events:
+            writer.writerow(
+                [
+                    event.created_at.isoformat(),
+                    event.audit_id,
+                    event.actor_role,
+                    event.actor_id or "",
+                    event.action,
+                    event.target_type,
+                    event.target_id,
+                    event.reason or "",
+                    event.trace_id,
+                ]
+            )
+        return output.getvalue()

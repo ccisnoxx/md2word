@@ -82,6 +82,29 @@ export type AuditEventListResponse = {
   total: number;
 };
 
+export type AuditEventExportQuery = Omit<AuditEventListQuery, "page" | "page_size"> & {
+  max_rows?: number;
+};
+
+export type AuditEventExportManifest = {
+  exported_at: string;
+  requested_by: string | null;
+  actor_role: AuditActorRole;
+  sort: AuditEventSort;
+  filters: Record<string, string>;
+  matched_count: number;
+  exported_count: number;
+  max_rows: number;
+  truncated: boolean;
+  columns: string[];
+  audit_id: string;
+};
+
+export type AuditEventExportResponse = {
+  manifest: AuditEventExportManifest;
+  csv_text: string;
+};
+
 export type DocumentFileResponse = {
   id: string;
   tenant_id: string;

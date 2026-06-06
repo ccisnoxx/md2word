@@ -1,6 +1,7 @@
 # File: tests/test_fastapi_jobs_backend.py
 # Purpose: 覆盖 FastAPI jobs/files API、workflow 和 artifact 合同。
 
+import csv
 import io
 import json
 import hashlib
@@ -1294,6 +1295,123 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()["error_code"], "role_forbidden")
 
+    def test_audit_events_export_api_is_admin_only_bounded_and_audited(self):
+        """验证 Admin 可按当前筛选导出受限 CSV，且导出动作写入审计。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            base_time = utc_now()
+            runtime.audit_event_repository.append_audit_event(
+                AuditEvent(
+                    audit_id="audit_archive_old",
+                    actor_id="user_operator",
+                    actor_role="operator",
+                    action="document_job.archive",
+                    target_type="document_job",
+                    target_id="job_archive",
+                    reason="archive, \"terminal\"\njob",
+                    trace_id="trace_archive",
+                    created_at=base_time - timedelta(minutes=3),
+                )
+            )
+            runtime.audit_event_repository.append_audit_event(
+                AuditEvent(
+                    audit_id="audit_retry_mid",
+                    actor_id="user_admin",
+                    actor_role="admin",
+                    action="document_job.retry",
+                    target_type="document_job",
+                    target_id="job_retry",
+                    reason="rerun issue",
+                    trace_id="trace_retry",
+                    created_at=base_time - timedelta(minutes=2),
+                )
+            )
+            runtime.audit_event_repository.append_audit_event(
+                AuditEvent(
+                    audit_id="audit_retention_new",
+                    actor_id="user_admin",
+                    actor_role="admin",
+                    action="file.retention_mark_expired",
+                    target_type="document_file_retention",
+                    target_id="document_files",
+                    reason="marked=1 candidates=1",
+                    trace_id="trace_retention",
+                    created_at=base_time - timedelta(minutes=1),
+                )
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                response = client.get(
+                    "/api/v1/audit-events/export",
+                    headers=admin_headers,
+                    params={
+                        "target_type": "document_job",
+                        "sort": "created_at_asc",
+                        "max_rows": 1,
+                    },
+                )
+                over_cap_response = client.get(
+                    "/api/v1/audit-events/export",
+                    headers=admin_headers,
+                    params={"target_type": "document_job", "max_rows": 10001},
+                )
+            audit_events = runtime.audit_event_repository.list_audit_events()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(over_cap_response.status_code, 422)
+        payload = response.json()
+        manifest = payload["manifest"]
+        rows = list(csv.DictReader(io.StringIO(payload["csv_text"])))
+        export_events = [event for event in audit_events if event.action == "audit_events.export"]
+
+        self.assertEqual(manifest["requested_by"], "user_admin")
+        self.assertEqual(manifest["filters"], {"target_type": "document_job"})
+        self.assertEqual(manifest["matched_count"], 2)
+        self.assertEqual(manifest["exported_count"], 1)
+        self.assertEqual(manifest["max_rows"], 1)
+        self.assertEqual(manifest["truncated"], True)
+        self.assertEqual(manifest["columns"][0], "created_at")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["audit_id"], "audit_archive_old")
+        self.assertEqual(rows[0]["reason"], "archive, \"terminal\"\njob")
+        self.assertEqual(len(export_events), 1)
+        self.assertEqual(export_events[0].audit_id, manifest["audit_id"])
+        self.assertEqual(export_events[0].actor_id, "user_admin")
+        self.assertEqual(export_events[0].target_type, "audit_events")
+        self.assertIn("exported=1 matched=2", export_events[0].reason or "")
+        self.assertNotEqual(rows[0]["audit_id"], export_events[0].audit_id)
+
+    def test_audit_events_export_api_rejects_operator(self):
+        """验证 Operator 不能调用审计导出接口，且不会写导出审计事件。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                response = client.get("/api/v1/audit-events/export", headers=operator_headers)
+            export_events = [
+                event
+                for event in runtime.audit_event_repository.list_audit_events()
+                if event.action == "audit_events.export"
+            ]
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["error_code"], "role_forbidden")
+        self.assertEqual(export_events, [])
+
     def test_health_metrics_reports_default_resource_versions_in_mysql_mode(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_mysql_test_runtime(Path(temp_dir))
@@ -1816,6 +1934,44 @@ class FastAPIJobsBackendTests(TestCase):
             ],
             [],
         )
+
+    def test_file_retention_readonly_cleanup_runner_reports_without_mutation(self):
+        """验证只读 cleanup runner 生成报告但不修改 metadata 或删除对象。"""
+
+        from scripts.ops.run_file_retention_cleanup_readonly import run_readonly_cleanup_report
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+            )
+            stale_file = self._seed_expired_document_file(runtime, file_id="file_retention_runner")
+            runtime.document_file_repository.update_document_file(stale_file.id, status="expired")
+            stale_path = runtime.file_upload_service.resolve_local_object_path(stale_file.object_key)
+            output_path = Path(temp_dir) / "reports" / "retention-readonly.json"
+
+            report = run_readonly_cleanup_report(runtime, output_path=output_path)
+            report_from_disk = json.loads(output_path.read_text(encoding="utf-8"))
+            file_after_runner = runtime.document_file_repository.get_document_file(stale_file.id)
+            object_still_exists = stale_path.exists()
+            object_bytes = stale_path.read_bytes()
+            audit_events = runtime.audit_event_repository.list_audit_events()
+
+        self.assertEqual(report["mode"], "readonly_plan")
+        self.assertEqual(report["safety"]["metadata_mutated"], False)
+        self.assertEqual(report["safety"]["objects_deleted"], False)
+        self.assertEqual(report["safety"]["physical_delete_executed"], False)
+        self.assertEqual(report["retention"]["totals"]["candidate_files"], 1)
+        self.assertEqual(report["retention"]["candidates"][0]["file_id"], stale_file.id)
+        self.assertNotIn("object_key", report["retention"]["candidates"][0])
+        self.assertNotIn("bucket", report["retention"]["candidates"][0])
+        self.assertEqual(report["storage_usage"]["reclaim"]["estimated_reclaimable_files"], 1)
+        self.assertEqual(report_from_disk["run_id"], report["run_id"])
+        self.assertTrue(object_still_exists)
+        self.assertEqual(object_bytes, b"expired-file-content")
+        self.assertIsNotNone(file_after_runner)
+        self.assertEqual(file_after_runner.status, "expired")
+        self.assertEqual(audit_events, [])
 
     def test_file_retention_policy_crud_is_admin_only_and_audited(self):
         """验证保留策略治理接口 Admin-only，写操作记录审计且不触发物理删除。"""

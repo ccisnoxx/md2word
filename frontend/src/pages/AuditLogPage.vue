@@ -1,5 +1,5 @@
 <!-- File: frontend/src/pages/AuditLogPage.vue -->
-<!-- Purpose: Render the Admin-only audit event search, table, and current-page CSV export. -->
+<!-- Purpose: Render the Admin-only audit event search, table, current-page CSV export, and governed filtered export. -->
 <template>
   <main class="audit-log-page" aria-labelledby="audit-log-title">
     <section class="page-heading">
@@ -9,6 +9,9 @@
         <p>只读查询已记录的高风险成功操作。</p>
       </div>
       <div class="heading-actions">
+        <el-button :icon="Download" :disabled="total === 0" :loading="exportingAll" @click="exportFilteredCsv">
+          导出筛选结果
+        </el-button>
         <el-button :icon="Download" :disabled="events.length === 0" @click="exportCurrentPageCsv">
           导出当前页
         </el-button>
@@ -140,10 +143,11 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
+import { ElMessage } from "element-plus";
 import { Download, Refresh } from "@element-plus/icons-vue";
 
 import { auditEventsApi } from "@/api/auditEvents";
-import type { AuditActorRole, AuditEventListQuery, AuditEventResponse, AuditEventSort } from "@/api/types";
+import type { AuditActorRole, AuditEventExportQuery, AuditEventListQuery, AuditEventResponse, AuditEventSort } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { formatDateTime } from "@/utils/format";
@@ -156,6 +160,21 @@ type AuditFilters = {
   target_id: string;
   actor_id: string;
 };
+
+type AuditEventMutableQuery = {
+  actor_role?: AuditActorRole;
+  action?: string;
+  target_type?: string;
+  target_id?: string;
+  actor_id?: string;
+  q?: string;
+  created_from?: string;
+  created_to?: string;
+};
+
+type AuditEventFilterKey = "q" | "action" | "target_type" | "target_id" | "actor_id";
+
+const FILTERED_EXPORT_MAX_ROWS = 1000;
 
 const filters = reactive<AuditFilters>({
   q: "",
@@ -172,6 +191,7 @@ const total = ref(0);
 const page = ref(1);
 const pageSize = ref(50);
 const loading = ref(false);
+const exportingAll = ref(false);
 const error = ref<ApiClientError | null>(null);
 const loadedAt = ref<string | null>(null);
 
@@ -181,18 +201,16 @@ const queryParams = computed<AuditEventListQuery>(() => {
     page_size: pageSize.value,
     sort: sort.value,
   };
-  addTrimmedParam(params, "q", filters.q);
-  addTrimmedParam(params, "action", filters.action);
-  addTrimmedParam(params, "target_type", filters.target_type);
-  addTrimmedParam(params, "target_id", filters.target_id);
-  addTrimmedParam(params, "actor_id", filters.actor_id);
-  if (filters.actor_role) {
-    params.actor_role = filters.actor_role;
-  }
-  if (createdRange.value) {
-    params.created_from = createdRange.value[0].toISOString();
-    params.created_to = createdRange.value[1].toISOString();
-  }
+  applyCurrentFilters(params);
+  return params;
+});
+
+const exportQueryParams = computed<AuditEventExportQuery>(() => {
+  const params: AuditEventExportQuery = {
+    sort: sort.value,
+    max_rows: FILTERED_EXPORT_MAX_ROWS,
+  };
+  applyCurrentFilters(params);
   return params;
 });
 
@@ -238,6 +256,25 @@ function handlePageSizeChange(): void {
   void loadEvents();
 }
 
+// 导出当前筛选条件下的后端受治理 CSV，不创建服务端临时文件。
+async function exportFilteredCsv(): Promise<void> {
+  exportingAll.value = true;
+  error.value = null;
+  try {
+    const response = await auditEventsApi.exportCsv(exportQueryParams.value);
+    downloadTextFile(buildExportFilename("audit-events-filtered"), response.csv_text);
+    if (response.manifest.truncated) {
+      ElMessage.warning(`已导出前 ${response.manifest.exported_count} 条，匹配总数 ${response.manifest.matched_count} 条。`);
+    } else {
+      ElMessage.success(`已导出 ${response.manifest.exported_count} 条审计事件。`);
+    }
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    exportingAll.value = false;
+  }
+}
+
 // 导出当前已加载页，不触发后端文件生成。
 function exportCurrentPageCsv(): void {
   const header = ["created_at", "audit_id", "actor_role", "actor_id", "action", "target_type", "target_id", "reason", "trace_id"];
@@ -256,8 +293,24 @@ function exportCurrentPageCsv(): void {
   downloadTextFile(`audit-events-page-${page.value}.csv`, `${csv}\n`);
 }
 
+// 把页面当前筛选条件同步到列表查询或导出查询参数。
+function applyCurrentFilters(params: AuditEventMutableQuery): void {
+  addTrimmedParam(params, "q", filters.q);
+  addTrimmedParam(params, "action", filters.action);
+  addTrimmedParam(params, "target_type", filters.target_type);
+  addTrimmedParam(params, "target_id", filters.target_id);
+  addTrimmedParam(params, "actor_id", filters.actor_id);
+  if (filters.actor_role) {
+    params.actor_role = filters.actor_role;
+  }
+  if (createdRange.value) {
+    params.created_from = createdRange.value[0].toISOString();
+    params.created_to = createdRange.value[1].toISOString();
+  }
+}
+
 // 给可选字符串参数做统一 trim，空字符串不发送到后端。
-function addTrimmedParam(params: AuditEventListQuery, key: keyof AuditEventListQuery, value: string): void {
+function addTrimmedParam(params: AuditEventMutableQuery, key: AuditEventFilterKey, value: string): void {
   const normalized = value.trim();
   if (normalized) {
     Object.assign(params, { [key]: normalized });
@@ -278,6 +331,12 @@ function downloadTextFile(filename: string, content: string): void {
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+// 生成含时间戳的浏览器下载文件名。
+function buildExportFilename(prefix: string): string {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return `${prefix}-${timestamp}.csv`;
 }
 
 onMounted(() => {

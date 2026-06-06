@@ -1,5 +1,5 @@
 # File: app/domains/audit/schemas.py
-# Purpose: Define audit event list API schemas for the Admin audit viewer.
+# Purpose: Define audit event list and export API schemas for the Admin audit viewer.
 from __future__ import annotations
 
 from datetime import datetime
@@ -34,3 +34,26 @@ class AuditEventListResponse(BaseModel):
     page: int
     page_size: int
     total: int
+
+
+class AuditEventExportManifest(BaseModel):
+    """返回一次审计导出的治理清单。"""
+
+    exported_at: datetime
+    requested_by: str | None = None
+    actor_role: ActorRole
+    sort: AuditEventSort
+    filters: dict[str, str] = Field(default_factory=dict)
+    matched_count: int
+    exported_count: int
+    max_rows: int
+    truncated: bool
+    columns: list[str] = Field(default_factory=list)
+    audit_id: str
+
+
+class AuditEventExportResponse(BaseModel):
+    """返回审计导出 CSV 和清单，不在服务端创建临时文件。"""
+
+    manifest: AuditEventExportManifest
+    csv_text: str
