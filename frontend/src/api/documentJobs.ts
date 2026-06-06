@@ -21,12 +21,14 @@ import type {
   DocumentJobTranslationQaResponse,
   DocumentJobTranslationQaUpdateRequest,
   DocumentJobTranslationQaUpdateResponse,
+  TranslationQaStatus,
 } from "@/api/types";
 
 export type DocumentJobListParams = {
   page: number;
   page_size: number;
   status?: string;
+  translation_qa_status?: TranslationQaStatus;
   q?: string;
   sort?: DocumentJobListSort;
   include_archived?: boolean;

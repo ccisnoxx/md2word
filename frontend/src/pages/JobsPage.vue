@@ -59,6 +59,20 @@
             <el-select v-model="statusFilter" clearable placeholder="全部状态" style="width: 156px" @change="handleFilter">
               <el-option v-for="status in statuses" :key="status" :label="jobStatusText[status]" :value="status" />
             </el-select>
+            <el-select
+              v-model="qaStatusFilter"
+              clearable
+              placeholder="全部 QA"
+              style="width: 156px"
+              @change="handleFilter"
+            >
+              <el-option
+                v-for="status in qaStatuses"
+                :key="status"
+                :label="translationQaStatusText[status]"
+                :value="status"
+              />
+            </el-select>
             <el-select v-model="sortFilter" style="width: 156px" @change="handleFilter">
               <el-option v-for="option in sortOptions" :key="option.value" :label="option.label" :value="option.value" />
             </el-select>
@@ -113,7 +127,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { CircleCheck, Files, Refresh, Timer, Warning } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 
-import type { DocumentJobListSort, DocumentJobResponse, DocumentJobStatus } from "@/api/types";
+import type { DocumentJobListSort, DocumentJobResponse, DocumentJobStatus, TranslationQaStatus } from "@/api/types";
 import { documentJobsApi } from "@/api/documentJobs";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import JobTable from "@/components/JobTable.vue";
@@ -123,6 +137,7 @@ import {
   canRetryDocumentJob,
   formatDateTime,
   jobStatusText,
+  translationQaStatusText,
 } from "@/utils/format";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 
@@ -135,6 +150,7 @@ const page = ref(1);
 const pageSize = 20;
 const total = ref(0);
 const statusFilter = ref<DocumentJobStatus | "">("");
+const qaStatusFilter = ref<TranslationQaStatus | "">("");
 const searchKeyword = ref("");
 const sortFilter = ref<DocumentJobListSort>("created_at_desc");
 const includeArchived = ref(false);
@@ -142,6 +158,7 @@ const selectedJobs = ref<DocumentJobResponse[]>([]);
 const batchLoading = ref(false);
 const summary = ref<Record<string, number>>({});
 const statuses: DocumentJobStatus[] = ["pending", "queued", "running", "succeeded", "failed", "canceled"];
+const qaStatuses: TranslationQaStatus[] = ["unreviewed", "approved", "needs_fix", "blocked"];
 const sortOptions: Array<{ label: string; value: DocumentJobListSort }> = [
   { label: "创建时间新到旧", value: "created_at_desc" },
   { label: "创建时间旧到新", value: "created_at_asc" },
@@ -152,7 +169,9 @@ const sortOptions: Array<{ label: string; value: DocumentJobListSort }> = [
 const summaryEntries = computed(() => Object.entries(summary.value).filter(([, count]) => count > 0));
 const activeFilterLabel = computed(() => {
   const statusText = statusFilter.value ? statusLabel(statusFilter.value) : "全部状态";
-  return includeArchived.value ? `${statusText} · 含归档` : statusText;
+  const qaText = qaStatusFilter.value ? `QA ${translationQaStatusText[qaStatusFilter.value]}` : "全部 QA";
+  const archiveText = includeArchived.value ? "含归档" : "默认";
+  return `${statusText} · ${qaText} · ${archiveText}`;
 });
 const activeCount = computed(
   () => countByStatus("pending") + countByStatus("queued") + countByStatus("running"),
@@ -202,6 +221,7 @@ async function loadJobs(): Promise<void> {
       page: page.value,
       page_size: pageSize,
       status: statusFilter.value || undefined,
+      translation_qa_status: qaStatusFilter.value || undefined,
       q: searchKeyword.value.trim() || undefined,
       sort: sortFilter.value,
       include_archived: includeArchived.value,
@@ -254,11 +274,20 @@ function isDocumentJobSort(value: string): value is DocumentJobListSort {
   return sortOptions.some((option) => option.value === value);
 }
 
+// 校验路由中的 QA 状态筛选值，避免把非法 query 传给后端。
+function isTranslationQaStatus(value: string): value is TranslationQaStatus {
+  return qaStatuses.includes(value as TranslationQaStatus);
+}
+
 function applyRouteQueryFilters(): void {
   const nextStatus = firstQueryValue(route.query.status);
   const nextSort = firstQueryValue(route.query.sort);
+  const nextQaStatus = firstQueryValue(route.query.translation_qa_status);
   if (isDocumentJobStatus(nextStatus)) {
     statusFilter.value = nextStatus;
+  }
+  if (isTranslationQaStatus(nextQaStatus)) {
+    qaStatusFilter.value = nextQaStatus;
   }
   if (isDocumentJobSort(nextSort)) {
     sortFilter.value = nextSort;

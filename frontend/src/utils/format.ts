@@ -1,5 +1,6 @@
-// frontend/src/utils/format.ts: Shared labels and formatting helpers for job pages.
-import type { DocumentJobResponse, DocumentJobStage, DocumentJobStatus } from "@/api/types";
+// File: frontend/src/utils/format.ts
+// Purpose: 统一任务页面使用的状态文案、展示格式和操作权限判断。
+import type { DocumentJobResponse, DocumentJobStage, DocumentJobStatus, TranslationQaStatus } from "@/api/types";
 
 export const jobStatusText: Record<DocumentJobStatus, string> = {
   pending: "等待投递",
@@ -26,6 +27,27 @@ export const jobModeText: Record<string, string> = {
   direct_pdf_to_word: "PDF 直接转 Word",
   en2zh_pdf_to_word: "英文 PDF 翻译转 Word",
 };
+
+export const translationQaStatusText: Record<TranslationQaStatus, string> = {
+  unreviewed: "未复核",
+  approved: "通过",
+  needs_fix: "需修正",
+  blocked: "阻塞/无法判断",
+};
+
+// 将任务级 QA 状态映射为 Element Plus tag 类型，便于列表和详情保持一致。
+export function translationQaStatusTagType(status: TranslationQaStatus): "success" | "warning" | "danger" | "info" {
+  if (status === "approved") {
+    return "success";
+  }
+  if (status === "needs_fix") {
+    return "warning";
+  }
+  if (status === "blocked") {
+    return "danger";
+  }
+  return "info";
+}
 
 export function formatDateTime(value?: string | null): string {
   if (!value) {

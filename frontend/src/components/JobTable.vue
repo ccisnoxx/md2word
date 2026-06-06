@@ -1,4 +1,5 @@
-<!-- frontend/src/components/JobTable.vue: Paginated table for document_jobs. -->
+<!-- File: frontend/src/components/JobTable.vue -->
+<!-- Purpose: 展示 document_jobs 分页表格、批量选择和任务级操作入口。 -->
 <template>
   <div class="job-table">
     <el-table
@@ -25,6 +26,19 @@
       </el-table-column>
       <el-table-column label="状态" min-width="110">
         <template #default="{ row }"><JobStatusBadge :status="row.status" /></template>
+      </el-table-column>
+      <el-table-column label="翻译 QA" min-width="128">
+        <template #default="{ row }">
+          <el-tag
+            v-if="row.mode === 'en2zh_pdf_to_word'"
+            size="small"
+            :type="translationQaTagType(row)"
+            effect="plain"
+          >
+            {{ translationQaStatusLabel(row) }}
+          </el-tag>
+          <span v-else class="muted">-</span>
+        </template>
       </el-table-column>
       <el-table-column label="归档" min-width="150">
         <template #default="{ row }">
@@ -118,6 +132,8 @@ import {
   formatDateTime,
   getJobSourceFilename,
   jobModeText,
+  translationQaStatusTagType,
+  translationQaStatusText,
 } from "@/utils/format";
 
 defineProps<{
@@ -139,6 +155,16 @@ defineEmits<{
 
 function isBatchSelectable(row: DocumentJobResponse): boolean {
   return canRetryDocumentJob(row) || canArchiveDocumentJob(row);
+}
+
+// 表格 slot 的 row 类型较宽，统一在 helper 内按 DocumentJobResponse 读取 QA 状态。
+function translationQaStatusLabel(row: DocumentJobResponse): string {
+  return translationQaStatusText[row.translation_qa_status];
+}
+
+// 表格 slot 的 row 类型较宽，统一在 helper 内映射 QA tag 类型。
+function translationQaTagType(row: DocumentJobResponse): "success" | "warning" | "danger" | "info" {
+  return translationQaStatusTagType(row.translation_qa_status);
 }
 </script>
 

@@ -4,6 +4,10 @@
 
 Stay in planning until the user reviews this scope. Do not run `task.py start` or edit business code before approval.
 
+## Closeout Status
+
+2026-06-06 收口复核：本任务描述的第一版 Translation Result QA 已实现并通过 targeted verification。当前代码已有 `GET/PATCH /api/v1/document-jobs/{job_id}/translation-qa`、任务级 QA 字段、QA 详情页、任务详情入口、OpenAPI schema 和后端 targeted tests。Phase 3 后续不应重复实现基础 QA 页面/API，应转入 `translation-qa-visibility-hardening`、段落 trace 关联和浏览器 smoke 加固。
+
 ## Step 1: Backend contracts and service
 
 - Add QA status literals and fields to `app/domains/document_jobs/models.py`.

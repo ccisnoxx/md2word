@@ -1,4 +1,5 @@
-<!-- frontend/src/pages/JobDetailPage.vue: Detail, events, polling, download, and retry view for one job. -->
+<!-- File: frontend/src/pages/JobDetailPage.vue -->
+<!-- Purpose: 展示单个 document_job 的详情、事件、文件、下载和重试入口。 -->
 <template>
   <div class="job-detail-page">
     <div class="section-header">
@@ -40,6 +41,14 @@
 
         <el-descriptions :column="2" border>
           <el-descriptions-item label="模式">{{ jobModeText[job.mode] || job.mode }}</el-descriptions-item>
+          <el-descriptions-item v-if="job.mode === 'en2zh_pdf_to_word'" label="翻译 QA">
+            <span class="qa-summary">
+              <el-tag :type="translationQaStatusTagType(job.translation_qa_status)" effect="plain">
+                {{ translationQaStatusText[job.translation_qa_status] }}
+              </el-tag>
+              <span>{{ translationQaReviewText }}</span>
+            </span>
+          </el-descriptions-item>
           <el-descriptions-item label="文档语言">{{ job.document_language }}</el-descriptions-item>
           <el-descriptions-item label="源 PDF">{{ sourceFilename }}</el-descriptions-item>
           <el-descriptions-item label="源文件 ID">{{ job.source_file_id }}</el-descriptions-item>
@@ -55,6 +64,9 @@
           <el-descriptions-item label="完成时间">{{ formatDateTime(job.completed_at) }}</el-descriptions-item>
           <el-descriptions-item label="取消时间">{{ formatDateTime(job.canceled_at) }}</el-descriptions-item>
           <el-descriptions-item label="归档时间">{{ formatDateTime(job.archived_at) }}</el-descriptions-item>
+          <el-descriptions-item v-if="job.mode === 'en2zh_pdf_to_word' && job.translation_qa_note" label="QA 备注">
+            {{ job.translation_qa_note }}
+          </el-descriptions-item>
         </el-descriptions>
 
         <el-alert
@@ -285,7 +297,15 @@ import JobEventTimeline from "@/components/JobEventTimeline.vue";
 import JobProgress from "@/components/JobProgress.vue";
 import JobStatusBadge from "@/components/JobStatusBadge.vue";
 import { useAuthStore } from "@/stores/auth";
-import { formatBytes, formatDateTime, getJobSourceFilename, isActiveJobStatus, jobModeText } from "@/utils/format";
+import {
+  formatBytes,
+  formatDateTime,
+  getJobSourceFilename,
+  isActiveJobStatus,
+  jobModeText,
+  translationQaStatusTagType,
+  translationQaStatusText,
+} from "@/utils/format";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 
 const route = useRoute();
@@ -323,6 +343,12 @@ const retryDialog = reactive({
 const isAdmin = computed(() => auth.user?.role === "admin");
 const requestSnapshotPreview = computed(() => JSON.stringify(job.value?.request_snapshot || {}, null, 2));
 const sourceFilename = computed(() => (job.value ? getJobSourceFilename(job.value) : "-"));
+const translationQaReviewText = computed(() => {
+  if (!job.value || job.value.translation_qa_status === "unreviewed") {
+    return "尚未复核";
+  }
+  return `${job.value.translation_qa_reviewed_by || "-"} · ${formatDateTime(job.value.translation_qa_reviewed_at)}`;
+});
 const resourceSnapshot = computed(() => readResourceSnapshot(job.value?.request_snapshot.resources));
 const boundTemplate = computed(() => resourceSnapshot.value?.template || null);
 const boundTermRuleSet = computed(() => resourceSnapshot.value?.term_rule_set || null);
@@ -855,6 +881,13 @@ onBeforeUnmount(() => {
 
 .state-alert {
   margin-top: 14px;
+}
+
+.qa-summary {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
 .failure-summary {
