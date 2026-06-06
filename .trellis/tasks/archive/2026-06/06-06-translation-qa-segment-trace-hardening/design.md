@@ -19,7 +19,8 @@ The current page renders these as separate tables. That is sufficient for availa
 - Segment-first inspection:
   - Main table stays centered on final text segments.
   - Each segment row shows term hit count, source comparison availability, and a short trace affordance.
-  - Expanding or selecting a segment reveals matching term traces and related AI call summary.
+  - Expanding or selecting a segment reveals matching term traces and, only when a defensible key exists, related AI call summary.
+  - When no segment-to-call key exists, the page should clearly show AI calls as call-level evidence rather than segment-level evidence.
 
 - Evidence state clarity:
   - `source_text` and `ai_translation_text` missing because of debug archive state should show reason-level copy such as `debug archive missing` / `expired` / `unreadable` / `no text`.

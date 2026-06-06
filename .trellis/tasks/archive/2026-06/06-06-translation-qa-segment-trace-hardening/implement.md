@@ -2,7 +2,16 @@
 
 ## Status
 
-Planning only. Do not run `task.py start` or edit business code until the design boundary is reviewed.
+Implemented with frontend-only grouping. No backend API shape changed.
+
+## Completed Work
+
+- Reviewed the design boundary and tightened wording to avoid implying a fake segment-to-call relationship.
+- Kept implementation frontend-only because `term_traces.segment_id` supports segment-to-term grouping, but current `ai_calls` do not expose a defensible segment-to-call key.
+- Updated `TranslationResultQaPage.vue` to use a segment-first table.
+- Added per-segment evidence status and term trace counts.
+- Added expandable segment trace detail with matching term traces.
+- Kept AI calls visible as call-level metadata-only evidence instead of segment-level evidence.
 
 ## Proposed Steps
 
@@ -43,3 +52,13 @@ Planning only. Do not run `task.py start` or edit business code until the design
 - Do not generate Word.
 - Do not add browser smoke in this task.
 - Do not modify list filtering, task-level QA status persistence, or proposal review flows.
+
+## Verification
+
+- [x] `npm --prefix frontend run build`
+- [x] `git diff --check`
+
+Notes:
+
+- Build passed with existing Rollup pure annotation warnings from `@vueuse/core` and existing large chunk warning.
+- Backend targeted tests and OpenAPI tests were not run because no backend contract changed.

@@ -1,4 +1,5 @@
-<!-- frontend/src/pages/TranslationResultQaPage.vue: Lightweight task-level translation QA evidence and review page. -->
+<!-- File: frontend/src/pages/TranslationResultQaPage.vue -->
+<!-- Purpose: 展示任务级翻译 QA 证据、复核状态和段落 trace 关联视图。 -->
 <template>
   <main class="translation-result-qa-page" aria-labelledby="translation-qa-title">
     <section class="section-header">
@@ -134,11 +135,75 @@
             </p>
           </div>
         </div>
-        <el-table :data="qa.segments" empty-text="暂无片段证据">
+        <el-table :data="segmentTraceRows" empty-text="暂无片段证据">
+          <el-table-column type="expand" width="48">
+            <template #default="{ row }">
+              <div class="segment-trace-detail">
+                <section class="trace-card">
+                  <div class="trace-card-header">
+                    <h3>该片段术语命中</h3>
+                    <el-tag size="small" effect="plain">{{ termTraceCountText(row) }}</el-tag>
+                  </div>
+                  <el-table :data="row.termTraces" size="small" empty-text="该片段暂无术语命中">
+                    <el-table-column label="Source" min-width="140" prop="source_term" />
+                    <el-table-column label="Target" min-width="160" prop="target_term" />
+                    <el-table-column label="Version" min-width="180">
+                      <template #default="{ row: trace }">
+                        <span class="mono">{{ versionLabel(trace.translation_term_set_id, trace.translation_term_version) }}</span>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="Range" width="110">
+                      <template #default="{ row: trace }">{{ termTraceRangeText(trace) }}</template>
+                    </el-table-column>
+                    <el-table-column label="Provider trace" min-width="160">
+                      <template #default="{ row: trace }">
+                        <span class="mono">{{ trace.provider_trace_id || "-" }}</span>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </section>
+
+                <section class="trace-card">
+                  <div class="trace-card-header">
+                    <h3>AI call evidence</h3>
+                    <el-tag size="small" type="info" effect="plain">call-level only</el-tag>
+                  </div>
+                  <p class="trace-note">
+                    当前证据没有稳定的 segment-to-call 关联键；这里展示任务级 AI 调用 metadata，不推断单片段归属。
+                  </p>
+                  <el-table :data="qa.ai_calls" size="small" empty-text="暂无 AI 调用日志">
+                    <el-table-column label="Call" min-width="150">
+                      <template #default="{ row: call }">
+                        <span class="mono">{{ call.call_id || call.file_id }}</span>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="状态" width="96" prop="status" />
+                    <el-table-column label="Provider" min-width="170">
+                      <template #default="{ row: call }">{{ providerLabel(call.provider) }}</template>
+                    </el-table-column>
+                    <el-table-column label="Items" width="88" prop="item_count" />
+                    <el-table-column label="Chars" width="88" prop="char_count" />
+                  </el-table>
+                </section>
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column label="片段" min-width="180">
             <template #default="{ row }">
               <div class="mono">{{ row.id }}</div>
               <div class="muted">{{ row.block_type }} · page {{ pageLabel(row.page_index) }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="证据状态" min-width="170">
+            <template #default="{ row }">
+              <div class="evidence-tags">
+                <el-tag size="small" :type="sourceEvidenceTagType(row)" effect="plain">
+                  {{ sourceEvidenceLabel(row) }}
+                </el-tag>
+                <el-tag size="small" :type="row.termTraceCount ? 'success' : 'info'" effect="plain">
+                  {{ termTraceCountText(row) }}
+                </el-tag>
+              </div>
             </template>
           </el-table-column>
           <el-table-column label="源文" min-width="260">
@@ -175,6 +240,9 @@
               </template>
             </el-table-column>
           </el-table>
+          <p v-if="unmatchedTermTraces.length" class="trace-note">
+            另有 {{ unmatchedTermTraces.length }} 条术语 trace 没有 segment_id，已保留在全局列表中。
+          </p>
         </el-card>
 
         <el-card class="card-flat qa-panel" shadow="never">
@@ -211,6 +279,8 @@ import type {
   DocumentJobResourceSnapshot,
   DocumentJobResponse,
   DocumentJobTranslationQaResponse,
+  DocumentJobTranslationQaSegmentResponse,
+  DocumentJobTranslationQaTermTraceResponse,
   TranslationQaIssueType,
   TranslationQaStatus,
 } from "@/api/types";
@@ -260,6 +330,11 @@ const form = reactive({
   note: "",
 });
 
+type SegmentTraceRow = DocumentJobTranslationQaSegmentResponse & {
+  termTraces: DocumentJobTranslationQaTermTraceResponse[];
+  termTraceCount: number;
+};
+
 const resourceSnapshot = computed(() => readResourceSnapshot(job.value?.request_snapshot.resources));
 const boundTemplateLabel = computed(() => {
   const bound = resourceSnapshot.value?.template;
@@ -308,6 +383,32 @@ const metrics = computed(() => {
     },
   ];
 });
+const termTracesBySegment = computed(() => {
+  const grouped = new Map<string, DocumentJobTranslationQaTermTraceResponse[]>();
+  for (const trace of qa.value?.term_traces || []) {
+    if (!trace.segment_id) {
+      continue;
+    }
+    const items = grouped.get(trace.segment_id) || [];
+    items.push(trace);
+    grouped.set(trace.segment_id, items);
+  }
+  return grouped;
+});
+const segmentIds = computed(() => new Set((qa.value?.segments || []).map((segment) => segment.id)));
+const segmentTraceRows = computed<SegmentTraceRow[]>(() =>
+  (qa.value?.segments || []).map((segment) => {
+    const termTraces = termTracesBySegment.value.get(segment.id) || [];
+    return {
+      ...segment,
+      termTraces,
+      termTraceCount: termTraces.length,
+    };
+  }),
+);
+const unmatchedTermTraces = computed(() =>
+  (qa.value?.term_traces || []).filter((trace) => !trace.segment_id || !segmentIds.value.has(trace.segment_id)),
+);
 
 function readRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null ? value as Record<string, unknown> : null;
@@ -406,6 +507,32 @@ function statusCountText(value: Record<string, number>): string {
   return entries.length ? entries.map(([status, count]) => `${status}: ${count}`).join(", ") : "-";
 }
 
+// 根据单个片段是否带源文/AI 译文，显示可追踪证据状态。
+function sourceEvidenceLabel(row: SegmentTraceRow): string {
+  if (row.source_available) {
+    return "有源文对照";
+  }
+  return "无源文对照";
+}
+
+// 将片段源文对照状态映射成标签颜色，避免把 debug archive 缺失误报为错误。
+function sourceEvidenceTagType(row: SegmentTraceRow): "success" | "info" {
+  return row.source_available ? "success" : "info";
+}
+
+// 格式化单片段术语命中数量，用于表格和展开面板。
+function termTraceCountText(row: SegmentTraceRow): string {
+  return `${row.termTraceCount} 条术语命中`;
+}
+
+// 展示术语命中在文本中的原始 offset；缺失时保持明确占位。
+function termTraceRangeText(trace: DocumentJobTranslationQaTermTraceResponse): string {
+  if (trace.match_start === null || trace.match_end === null) {
+    return "-";
+  }
+  return `${trace.match_start}-${trace.match_end}`;
+}
+
 function availabilityReasonText(reason: string | null): string {
   const labels: Record<string, string> = {
     unsupported_mode: "当前任务不是 en2zh_pdf_to_word，翻译 QA 不适用。",
@@ -477,6 +604,48 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.evidence-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.segment-trace-detail {
+  display: grid;
+  gap: 14px;
+  padding: 12px 8px;
+}
+
+.trace-card {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.trace-card-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.trace-card-header h3 {
+  margin: 0;
+  color: #111827;
+  font-size: 14px;
+}
+
+.trace-note {
+  margin: 0 0 10px;
+  color: #667085;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .review-meta {
