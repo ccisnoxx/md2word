@@ -1,16 +1,24 @@
 # File: app/domains/files/router.py
-# Purpose: 提供 document_files 元数据、上传授权、本地代理上传、保留期管理和物理删除接口。
+# Purpose: 提供 document_files 元数据、上传授权、本地代理上传、文件库搜索、保留期管理和物理删除接口。
 
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Annotated
 from urllib.parse import urlsplit, urlunsplit
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Query, Request, status
 
 from app.api.dependencies import get_runtime, get_trace_id, require_admin_user, require_current_user
 from app.domains.audit.models import ActorContext
 from app.services.auth.models import AuthenticatedUser
 from app.core.errors import ApiError
+from app.domains.files.library_search import (
+    FileLibrarySearchPage,
+    FileLibrarySearchQuery,
+    FileLibrarySearchService,
+    FileLibrarySort,
+)
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.retention import DocumentFileRetentionPlan, DocumentFileRetentionPlanner
 from app.domains.files.retention_policy import (
@@ -35,6 +43,7 @@ from app.domains.files.schemas import (
     FileRetentionPolicyResponse,
     FileRetentionPolicyUpdateRequest,
     FileRetentionPlanResponse,
+    FileLibrarySearchResponse,
     FileStorageUsageResponse,
     FileUploadResponse,
     FileUploadUrlRequest,
@@ -162,6 +171,46 @@ def get_file_storage_usage(
 
     report = _storage_usage_reporter(runtime).build_report()
     return _build_file_storage_usage_response(report)
+
+
+@router.get("/library/search", response_model=FileLibrarySearchResponse)
+def search_file_library(
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=200)] = 50,
+    sort: FileLibrarySort = "created_at_desc",
+    q: str | None = None,
+    file_type: str | None = None,
+    status: str | None = None,
+    storage_provider: str | None = None,
+    job_id: str | None = None,
+    created_by: str | None = None,
+    expires_from: datetime | None = None,
+    expires_to: datetime | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+    runtime: AppRuntime = Depends(get_runtime),
+    _user: AuthenticatedUser = Depends(require_admin_user),
+) -> FileLibrarySearchResponse:
+    """只读搜索 document_files metadata，返回不含对象定位信息的安全摘要。"""
+
+    page_result = FileLibrarySearchService(runtime.document_file_repository).search(
+        FileLibrarySearchQuery(
+            page=page,
+            page_size=page_size,
+            sort=sort,
+            q=_normalize_optional_text(q),
+            file_type=_normalize_optional_text(file_type),
+            status=_normalize_optional_text(status),
+            storage_provider=_normalize_optional_text(storage_provider),
+            job_id=_normalize_optional_text(job_id),
+            created_by=_normalize_optional_text(created_by),
+            expires_from=expires_from,
+            expires_to=expires_to,
+            created_from=created_from,
+            created_to=created_to,
+        )
+    )
+    return _build_file_library_search_response(page_result)
 
 
 @router.post("/retention/policies", response_model=FileRetentionPolicyResponse, status_code=status.HTTP_201_CREATED)
@@ -449,6 +498,20 @@ def _build_file_storage_usage_response(report: FileStorageUsageReport) -> FileSt
     return FileStorageUsageResponse(**report.to_dict())
 
 
+def _build_file_library_search_response(page: FileLibrarySearchPage) -> FileLibrarySearchResponse:
+    """把文件库搜索 page 映射为不含对象定位信息的 API 响应。"""
+
+    return FileLibrarySearchResponse(
+        generated_at=page.generated_at,
+        page=page.page,
+        page_size=page.page_size,
+        total=page.total,
+        sort=page.sort,
+        filters=page.filters,
+        items=[item.to_dict() for item in page.items],
+    )
+
+
 def _build_file_retention_plan_response(
     plan: DocumentFileRetentionPlan,
     *,
@@ -565,6 +628,15 @@ def _optional_bool(value: object) -> bool | None:
     """只接受真实 bool readiness 值，避免把字符串误当状态。"""
 
     return value if isinstance(value, bool) else None
+
+
+def _normalize_optional_text(value: str | None) -> str | None:
+    """清理可选查询文本，空字符串视为未传。"""
+
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
 
 
 def _build_retention_policy_audit_reason(action: str, policy: FileRetentionPolicyRecord) -> str:

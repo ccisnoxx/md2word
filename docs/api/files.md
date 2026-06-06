@@ -8,17 +8,20 @@ source_files:
   - app/domains/files/router.py
   - app/domains/files/schemas.py
   - app/domains/files/models.py
+  - app/domains/files/library_search.py
   - app/domains/files/retention.py
   - app/domains/files/storage_usage.py
   - app/domains/files/service.py
-summary: Files API 提供 PDF 上传授权、本地代理上传、文件 metadata 查询、Admin-only metadata 保留期管理和受保护的过期文件物理删除。
-tags: [files, api, pdf, upload, retention]
+summary: Files API 提供 PDF 上传授权、本地代理上传、文件 metadata 查询、Admin-only 文件库搜索、metadata 保留期管理和受保护的过期文件物理删除。
+tags: [files, api, pdf, upload, retention, search]
 last_reviewed: 2026-06-06
 ---
 
 ## 概述
 
 Files API 挂在 `/api/v1/files` 下，当前只面向登录用户。P0 PDF -> Word 流程先通过它登记并上传 PDF，再把返回的 `file_id` 传给 `/api/v1/document-jobs`。
+
+Admin 文件库搜索只返回 `document_files` 安全摘要，用于定位文件和衔接现有 selected-file 运维流程。搜索结果不暴露 `object_key`、`bucket`、checksum、etag、raw metadata、本地路径、文件内容或签名 URL。
 
 保留期管理接口只面向 Admin，用于管理保留策略、查看或标记过期 metadata，并在显式 dry-run 后人工执行本地过期文件物理删除。它不删除任务、文件 metadata 记录、审计记录或 `object_key`，也不触发 PDF 解析、翻译或 Word 生成流程。当前物理删除只支持 `local_file` 和 `local_object`，`s3` 会返回 unsupported 结果而不会执行真实对象存储删除。
 
@@ -58,6 +61,45 @@ Files API 挂在 `/api/v1/files` 下，当前只面向登录用户。P0 PDF -> W
 
 - 用途：读取文件 metadata。
 - 响应：`DocumentFileResponse`。
+
+### `GET /api/v1/files/library/search`
+
+- 用途：Admin-only 只读搜索 `document_files` 安全摘要。
+- 认证：Bearer JWT，Admin only。
+- 查询参数：
+
+| 字段 | 说明 |
+|---|---|
+| `page` | 页码，默认 1。 |
+| `page_size` | 每页数量，默认 50，最大 200。 |
+| `sort` | `created_at_desc`、`created_at_asc`、`updated_at_desc`、`updated_at_asc`、`expires_at_desc`、`expires_at_asc`、`size_bytes_desc`、`size_bytes_asc`。 |
+| `q` | 在安全字段中搜索 file id、job id、file type、storage provider、原始文件名、mime type、status、created_by。 |
+| `file_type` | 精确筛选 file type。 |
+| `status` | 精确筛选 metadata status。 |
+| `storage_provider` | 精确筛选 storage provider。 |
+| `job_id` | 精确筛选 job id。 |
+| `created_by` | 精确筛选创建者。 |
+| `expires_from` / `expires_to` | 按 `expires_at` 范围筛选；缺失 `expires_at` 的记录不会匹配日期范围。 |
+| `created_from` / `created_to` | 按 `created_at` 范围筛选。 |
+
+- 行为：
+  - 不修改 `document_files` metadata。
+  - 不标记 expired。
+  - 不执行 delete-preview、delete-expired 或 S3 删除。
+  - 不写 audit event。
+  - 不返回 `object_key`、`bucket`、`checksum_sha256`、`etag`、`metadata`、本地路径、文件内容或签名 URL。
+- 响应：`FileLibrarySearchResponse`。
+
+关键字段：
+
+| 字段 | 说明 |
+|---|---|
+| `generated_at` | 搜索生成时间。 |
+| `total` | 当前筛选命中的 metadata 行数。 |
+| `filters` | 后端实际生效的筛选摘要。 |
+| `items[].file_id` | 文件 ID，可用于后续 selected-file dry-run 流程。 |
+| `items[].expired` | `expires_at` 是否已过期。 |
+| `items[].physical_delete_candidate` | metadata 层面是否看起来满足本地物理删除首层条件；真实结果仍必须通过 `/retention/delete-preview` 验证。 |
 
 ### `GET /api/v1/files/retention/plan`
 
