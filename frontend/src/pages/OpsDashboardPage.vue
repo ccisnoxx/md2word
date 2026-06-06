@@ -179,7 +179,15 @@ import { Refresh } from "@element-plus/icons-vue";
 
 import { documentJobsApi } from "@/api/documentJobs";
 import { healthApi } from "@/api/health";
-import type { DocumentJobResponse, DocumentJobStage, HealthMetricsResponse, HealthReadyResponse } from "@/api/types";
+import type {
+  DocumentJobResponse,
+  DocumentJobStage,
+  HealthMetricsResponse,
+  HealthOpsAlertItem,
+  HealthOpsAlertsResponse,
+  HealthOpsStatus,
+  HealthReadyResponse,
+} from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { formatBytes, formatDateTime, jobStageText } from "@/utils/format";
@@ -215,6 +223,7 @@ type OpsAlert = {
 
 const ready = ref<HealthReadyResponse | null>(null);
 const metrics = ref<HealthMetricsResponse | null>(null);
+const opsAlerts = ref<HealthOpsAlertsResponse | null>(null);
 const failedJobs = ref<DocumentJobResponse[]>([]);
 const runningJobs = ref<DocumentJobResponse[]>([]);
 const failedJobsTotal = ref(0);
@@ -246,6 +255,9 @@ const queuePressureLabel = computed(() => {
 });
 
 const opsStatus = computed<OpsStatusView>(() => {
+  if (opsAlerts.value) {
+    return opsStatusFromBackend(opsAlerts.value.status);
+  }
   if (!ready.value && !metrics.value) {
     return {
       key: "unknown",
@@ -286,6 +298,9 @@ const staleRunningGuidance = computed(() => {
 });
 
 const alertItems = computed<OpsAlert[]>(() => {
+  if (opsAlerts.value) {
+    return opsAlerts.value.alerts.map(buildBackendOpsAlert);
+  }
   const items: OpsAlert[] = [];
   if (blockers.value.length > 0) {
     items.push({
@@ -378,6 +393,8 @@ const runtimeItems = computed<DetailItem[]>(() => [
   { label: "artifact_root_writable", value: booleanLabel(booleanCheck("artifact_root_writable")) },
   { label: "artifact_disk_free", value: formatOptionalBytes(numberCheck("artifact_disk_free_bytes")) },
   { label: "stage_message_store", value: stringCheck("stage_message_store") },
+  { label: "ops_alerts_generated_at", value: formatDateTime(opsAlerts.value?.generated_at) },
+  { label: "ops_alerts_read_only", value: booleanLabel(opsAlerts.value?.safety.read_only ?? null) },
   { label: "last_refreshed", value: formatDateTime(refreshedAt.value) },
 ]);
 
@@ -395,9 +412,10 @@ async function loadDashboard(): Promise<void> {
   loading.value = true;
   error.value = null;
   try {
-    const [readyResponse, metricsResponse, failedResponse, runningResponse] = await Promise.all([
+    const [readyResponse, metricsResponse, opsAlertsResponse, failedResponse, runningResponse] = await Promise.all([
       healthApi.getReady(),
       healthApi.getMetrics(),
+      healthApi.getOpsAlerts(),
       documentJobsApi.list({
         page: 1,
         page_size: 5,
@@ -415,6 +433,7 @@ async function loadDashboard(): Promise<void> {
     ]);
     ready.value = readyResponse;
     metrics.value = metricsResponse;
+    opsAlerts.value = opsAlertsResponse;
     failedJobs.value = failedResponse.items;
     failedJobsTotal.value = failedResponse.total;
     runningJobs.value = runningResponse.items;
@@ -467,6 +486,56 @@ function booleanLabel(value: boolean | null): string {
     return "not reported";
   }
   return value ? "yes" : "no";
+}
+
+// 将后端 ops-alerts 状态映射为页面摘要状态。
+function opsStatusFromBackend(status: HealthOpsStatus): OpsStatusView {
+  if (status === "needs_attention") {
+    return {
+      key: "needs-attention",
+      label: "needs attention",
+      description: "后端只读告警合同发现需要人工关注的阻断或队列风险。",
+      tagType: "danger",
+    };
+  }
+  if (status === "watch") {
+    return {
+      key: "watch",
+      label: "watch",
+      description: "后端只读告警合同发现需要持续观察的运行信号。",
+      tagType: "warning",
+    };
+  }
+  return {
+    key: "ok",
+    label: "ok",
+    description: "后端只读告警合同未发现当前运维风险信号。",
+    tagType: "success",
+  };
+}
+
+// 将后端告警项映射为 Element Plus 可渲染的告警卡片。
+function buildBackendOpsAlert(alert: HealthOpsAlertItem): OpsAlert {
+  const route = alert.suggested_route || undefined;
+  return {
+    key: alert.code,
+    title: `${alert.title}: ${alert.count}`,
+    description: `${alert.description} 建议：${alert.suggested_action}`,
+    alertType: opsAlertType(alert.severity),
+    to: route,
+    linkText: route ? "查看建议位置" : undefined,
+  };
+}
+
+// 将后端严重级别映射为前端 alert 类型。
+function opsAlertType(severity: HealthOpsAlertItem["severity"]): AlertType {
+  if (severity === "critical") {
+    return "error";
+  }
+  if (severity === "warning") {
+    return "warning";
+  }
+  return "info";
 }
 
 // 将未知类型的 health 字段转成稳定展示文本。

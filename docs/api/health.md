@@ -8,18 +8,19 @@ source_files:
   - app/api/v1/routers/health.py
   - app/api/v1/routers/health_schemas.py
   - app/services/health_service.py
-summary: Health API 提供 liveness、readiness、运行时依赖状态检查和 JSON metrics。
+summary: Health API 提供 liveness、readiness、运行时依赖状态检查、JSON metrics 和 Admin-only 运维告警 readiness。
 tags: [health, api, ops]
-last_reviewed: 2026-05-31
+last_reviewed: 2026-06-06
 ---
 
 ## 概述
 
-Health API 当前有四条入口：
+Health API 当前有五条入口：
 
 - `GET /api/v1/health/live`：只确认进程可响应。
 - `GET /api/v1/health/ready`：返回 readiness 和运行时依赖检查。
 - `GET /api/v1/health/metrics`：返回 JSON 运维计数。
+- `GET /api/v1/health/ops-alerts`：Admin-only，只读返回运维告警 readiness 和建议入口。
 - `GET /api/v1/health`：兼容入口，当前语义等同 `/ready`。
 
 ## API 参考
@@ -126,6 +127,54 @@ Health API 当前有四条入口：
 }
 ```
 
+### `GET /api/v1/health/ops-alerts`
+
+- 用途：返回 Ops Dashboard 使用的只读运维告警 readiness 合同。
+- 鉴权：Bearer JWT，必须是 `admin` 角色。
+- 安全边界：不执行 retry、cancel、archive、replay、recover、cleanup、physical delete、provider call、notification delivery，也不默认写 audit event。
+- 响应示例：
+
+```json
+{
+  "status": "needs_attention",
+  "app_name": "md2word_file",
+  "generated_at": "2026-06-06T00:00:00+00:00",
+  "summary": {
+    "readiness_blockers": 0,
+    "readiness_warnings": 2,
+    "stage_failed_messages": 1,
+    "stage_stale_running_messages": 1,
+    "stage_replayable_messages": 2,
+    "failed_jobs": 1,
+    "running_jobs": 1,
+    "worker_mode": "in_process",
+    "stage_dispatcher": "background_tasks",
+    "stage_message_store": "file",
+    "artifact_storage": "local_file"
+  },
+  "alerts": [
+    {
+      "code": "stage_spool_failed_messages_present",
+      "severity": "critical",
+      "source": "stage_spool",
+      "title": "Failed stage messages present",
+      "description": "failed stage message 不会自动 replay，需要结合任务详情和事件流判断下一步。",
+      "count": 1,
+      "suggested_route": "/jobs?status=failed&sort=updated_at_desc",
+      "suggested_action": "查看失败任务和事件；如需 retry，使用既有任务流程手动处理。"
+    }
+  ],
+  "safety": {
+    "read_only": true,
+    "writes_performed": false,
+    "recovery_actions_executed": false,
+    "provider_calls_executed": false,
+    "notification_delivery_executed": false,
+    "audit_events_written": false
+  }
+}
+```
+
 ## 字段说明
 
 | 字段 | 说明 |
@@ -169,6 +218,10 @@ Health API 当前有四条入口：
 | `mysql_schema_bootstrap_available` | 当前实例是否实际使用 MySQL metadata store 并完成启动期 schema bootstrap |
 | `deployment_init_ready` | 当前实例是否已满足最小运行条件 |
 | `deployment_init_missing_steps` | 若未 ready，缺少哪些步骤 |
+| `status` | `/ops-alerts` 的整体状态；`needs_attention` 表示存在 critical 告警，`watch` 表示存在 warning/info 告警，`ok` 表示当前无告警 |
+| `summary` | `/ops-alerts` 的稳定摘要，汇总 readiness、stage spool 和未归档 document_jobs 状态计数 |
+| `alerts[]` | `/ops-alerts` 的告警列表；每项包含 `severity`、`source`、`code`、`count`、说明、建议路由和建议动作文本 |
+| `safety` | `/ops-alerts` 的安全声明；当前合同必须保持只读且不执行恢复、写入、provider 或通知动作 |
 
 ## 典型排障
 

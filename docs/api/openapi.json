@@ -4173,6 +4173,217 @@
         "title": "HealthMetricsResponse",
         "type": "object"
       },
+      "HealthOpsAlertItem": {
+        "description": "描述一个只读运维告警和建议入口。",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "count": {
+            "minimum": 0.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "readiness",
+              "stage_spool",
+              "jobs"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "suggested_action": {
+            "title": "Suggested Action",
+            "type": "string"
+          },
+          "suggested_route": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Route"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "source",
+          "title",
+          "description",
+          "count",
+          "suggested_action"
+        ],
+        "title": "HealthOpsAlertItem",
+        "type": "object"
+      },
+      "HealthOpsAlertSafety": {
+        "description": "声明 ops-alerts 查询没有执行写入、恢复或外部调用。",
+        "properties": {
+          "audit_events_written": {
+            "default": false,
+            "title": "Audit Events Written",
+            "type": "boolean"
+          },
+          "notification_delivery_executed": {
+            "default": false,
+            "title": "Notification Delivery Executed",
+            "type": "boolean"
+          },
+          "provider_calls_executed": {
+            "default": false,
+            "title": "Provider Calls Executed",
+            "type": "boolean"
+          },
+          "read_only": {
+            "default": true,
+            "title": "Read Only",
+            "type": "boolean"
+          },
+          "recovery_actions_executed": {
+            "default": false,
+            "title": "Recovery Actions Executed",
+            "type": "boolean"
+          },
+          "writes_performed": {
+            "default": false,
+            "title": "Writes Performed",
+            "type": "boolean"
+          }
+        },
+        "title": "HealthOpsAlertSafety",
+        "type": "object"
+      },
+      "HealthOpsAlertSummary": {
+        "description": "汇总只读运维告警判断所需的关键计数。",
+        "properties": {
+          "artifact_storage": {
+            "title": "Artifact Storage",
+            "type": "string"
+          },
+          "failed_jobs": {
+            "title": "Failed Jobs",
+            "type": "integer"
+          },
+          "readiness_blockers": {
+            "title": "Readiness Blockers",
+            "type": "integer"
+          },
+          "readiness_warnings": {
+            "title": "Readiness Warnings",
+            "type": "integer"
+          },
+          "running_jobs": {
+            "title": "Running Jobs",
+            "type": "integer"
+          },
+          "stage_dispatcher": {
+            "title": "Stage Dispatcher",
+            "type": "string"
+          },
+          "stage_failed_messages": {
+            "title": "Stage Failed Messages",
+            "type": "integer"
+          },
+          "stage_message_store": {
+            "title": "Stage Message Store",
+            "type": "string"
+          },
+          "stage_replayable_messages": {
+            "title": "Stage Replayable Messages",
+            "type": "integer"
+          },
+          "stage_stale_running_messages": {
+            "title": "Stage Stale Running Messages",
+            "type": "integer"
+          },
+          "worker_mode": {
+            "title": "Worker Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "readiness_blockers",
+          "readiness_warnings",
+          "stage_failed_messages",
+          "stage_stale_running_messages",
+          "stage_replayable_messages",
+          "failed_jobs",
+          "running_jobs",
+          "worker_mode",
+          "stage_dispatcher",
+          "stage_message_store",
+          "artifact_storage"
+        ],
+        "title": "HealthOpsAlertSummary",
+        "type": "object"
+      },
+      "HealthOpsAlertsResponse": {
+        "description": "返回 Admin-only 运维告警 readiness 合同。",
+        "properties": {
+          "alerts": {
+            "items": {
+              "$ref": "#/components/schemas/HealthOpsAlertItem"
+            },
+            "title": "Alerts",
+            "type": "array"
+          },
+          "app_name": {
+            "title": "App Name",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "safety": {
+            "$ref": "#/components/schemas/HealthOpsAlertSafety"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "watch",
+              "needs_attention"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/HealthOpsAlertSummary"
+          }
+        },
+        "required": [
+          "status",
+          "app_name",
+          "generated_at",
+          "summary"
+        ],
+        "title": "HealthOpsAlertsResponse",
+        "type": "object"
+      },
       "HealthReadyResponse": {
         "properties": {
           "app_name": {
@@ -12859,6 +13070,56 @@
           }
         },
         "summary": "Get Health Metrics",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/health/ops-alerts": {
+      "get": {
+        "description": "返回 Admin-only 只读运维告警 readiness，不执行恢复动作。",
+        "operationId": "get_health_ops_alerts_api_v1_health_ops_alerts_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthOpsAlertsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Health Ops Alerts",
         "tags": [
           "health"
         ]

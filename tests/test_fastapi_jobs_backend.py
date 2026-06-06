@@ -271,6 +271,8 @@ def build_test_runtime(
     term_rules_seed_path: str | None = None,
     translation_terms_path: str | None = None,
 ) -> AppRuntime:
+    """构建隔离测试运行时，使用 fake adapter 避免触发真实外部 provider。"""
+
     settings = Settings(
         _env_file=None,
         data_dir=str(data_dir),
@@ -417,6 +419,7 @@ def build_test_runtime(
         artifact_storage_backend=jobs_artifact_storage_backend,
         stage_dispatcher_backend="external_worker" if jobs_worker_mode == "external" else "background_tasks",
         job_repository=job_repository,
+        document_job_repository=document_job_repository,
         audit_event_repository=audit_event_repository,
         resource_version_repository=resource_version_service.repository if resource_version_service is not None else None,
         default_template_id_getter=template_read_service.get_default_template_id,
@@ -1475,6 +1478,118 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIn("stage_spool_replayable_messages_present", checks["readiness_warnings"])
         self.assertIn("stage_spool_failed_messages_present", checks["readiness_warnings"])
         self.assertIn("stage_spool_stale_running_messages_present", checks["readiness_warnings"])
+
+    def test_health_ops_alerts_is_admin_only_readonly_and_reports_recovery_readiness(self):
+        """验证 ops-alerts 只允许 Admin 读取，并只返回恢复建议不执行动作。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_worker_mode="external",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            now = utc_now()
+            runtime.document_job_repository.create_document_job(
+                DocumentJobRecord(
+                    id="docjob_ops_failed",
+                    tenant_id="tenant_default",
+                    company_id="company_default",
+                    created_by="user_operator",
+                    source_file_id="file_ops_failed",
+                    status="failed",
+                    stage="failed",
+                    progress=30,
+                    template_version_id="template_default",
+                    failed_stage="parsing",
+                    error_code="parse_failed",
+                    error_message="parse failed",
+                    updated_at=now - timedelta(minutes=2),
+                )
+            )
+            runtime.document_job_repository.create_document_job(
+                DocumentJobRecord(
+                    id="docjob_ops_running",
+                    tenant_id="tenant_default",
+                    company_id="company_default",
+                    created_by="user_operator",
+                    source_file_id="file_ops_running",
+                    status="running",
+                    stage="parsing",
+                    progress=25,
+                    template_version_id="template_default",
+                    started_at=now - timedelta(minutes=3),
+                    updated_at=now - timedelta(minutes=1),
+                )
+            )
+            runtime.stage_message_store.put_stage_message(
+                JobStageMessage(
+                    id="msg_ops_pending",
+                    job_id="docjob_ops_running",
+                    stage="submit_to_mineru",
+                    trace_id="trace_ops_pending",
+                    status="pending",
+                )
+            )
+            runtime.stage_message_store.put_stage_message(
+                JobStageMessage(
+                    id="msg_ops_running_stale",
+                    job_id="docjob_ops_running",
+                    stage="process_callback",
+                    trace_id="trace_ops_running_stale",
+                    status="running",
+                    updated_at=now - timedelta(seconds=1200),
+                    lease_expires_at=now - timedelta(seconds=1),
+                )
+            )
+            runtime.stage_message_store.put_stage_message(
+                JobStageMessage(
+                    id="msg_ops_failed",
+                    job_id="docjob_ops_failed",
+                    stage="convert_package",
+                    trace_id="trace_ops_failed",
+                    status="failed",
+                )
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                audit_actions_before = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+                admin_response = client.get("/api/v1/health/ops-alerts", headers=admin_headers)
+                operator_response = client.get("/api/v1/health/ops-alerts", headers=operator_headers)
+                audit_actions_after = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+
+        self.assertEqual(admin_response.status_code, 200)
+        payload = admin_response.json()
+        self.assertEqual(payload["status"], "needs_attention")
+        self.assertEqual(payload["summary"]["stage_failed_messages"], 1)
+        self.assertEqual(payload["summary"]["stage_stale_running_messages"], 1)
+        self.assertEqual(payload["summary"]["stage_replayable_messages"], 2)
+        self.assertEqual(payload["summary"]["failed_jobs"], 1)
+        self.assertEqual(payload["summary"]["running_jobs"], 1)
+        self.assertTrue(payload["safety"]["read_only"])
+        self.assertFalse(payload["safety"]["writes_performed"])
+        self.assertFalse(payload["safety"]["recovery_actions_executed"])
+        self.assertFalse(payload["safety"]["provider_calls_executed"])
+        self.assertFalse(payload["safety"]["notification_delivery_executed"])
+        self.assertFalse(payload["safety"]["audit_events_written"])
+
+        alerts_by_code = {item["code"]: item for item in payload["alerts"]}
+        self.assertIn("readiness_warnings_present", alerts_by_code)
+        self.assertIn("stage_spool_failed_messages_present", alerts_by_code)
+        self.assertIn("stage_spool_stale_running_messages_present", alerts_by_code)
+        self.assertIn("stage_spool_replayable_messages_present", alerts_by_code)
+        self.assertIn("document_jobs_failed_present", alerts_by_code)
+        self.assertIn("document_jobs_running_present", alerts_by_code)
+        self.assertEqual(alerts_by_code["stage_spool_failed_messages_present"]["severity"], "critical")
+        self.assertEqual(alerts_by_code["stage_spool_failed_messages_present"]["source"], "stage_spool")
+        self.assertEqual(alerts_by_code["document_jobs_failed_present"]["source"], "jobs")
+        self.assertEqual(alerts_by_code["document_jobs_running_present"]["severity"], "info")
+        self.assertEqual(operator_response.status_code, 403)
+        self.assertEqual(operator_response.json()["error_code"], "role_forbidden")
+        self.assertEqual(audit_actions_after, audit_actions_before)
 
     def test_health_ready_blocks_when_default_translation_mode_requires_missing_client(self):
         with tempfile.TemporaryDirectory() as temp_dir:
