@@ -1,5 +1,5 @@
 <!-- File: frontend/src/pages/FileRetentionPage.vue -->
-<!-- Purpose: Render the Admin-only retention plan, metadata expiry, and guarded physical deletion page. -->
+<!-- Purpose: Render the Admin-only file library search, retention plan, metadata expiry, and guarded physical deletion page. -->
 <template>
   <main class="file-retention-page" aria-labelledby="file-retention-title">
     <section class="page-heading">
@@ -9,7 +9,7 @@
         <p>查看已过保留期的 document_files，先标记 expired，再按 dry-run 结果手动物理删除本地文件。</p>
       </div>
       <div class="heading-actions">
-        <el-button :icon="Refresh" :loading="loading || storageLoading || policyLoading" @click="refreshRetentionPage">刷新</el-button>
+        <el-button :icon="Refresh" :loading="loading || storageLoading || policyLoading || libraryLoading" @click="refreshRetentionPage">刷新</el-button>
         <el-button
           type="warning"
           :icon="Finished"
@@ -44,6 +44,112 @@
     >
       标记 expired 仍是 metadata-only。物理删除只支持已 expired 的本地文件，必须先预览、选择文件、填写 reason 并输入确认短语；任务记录、事件、metadata 行和 object_key 会保留。
     </el-alert>
+
+    <section v-loading="libraryLoading" class="retention-table-section" aria-label="文件库搜索">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">文件库搜索</h2>
+          <p class="section-subtitle">只读搜索 document_files 安全摘要；不展示 object_key、bucket、checksum、etag、metadata 或本地路径。</p>
+        </div>
+        <div class="toolbar">
+          <el-tag effect="plain">total={{ librarySearch?.total ?? 0 }}</el-tag>
+          <el-tag effect="plain">generated={{ formatDateTime(librarySearch?.generated_at) }}</el-tag>
+        </div>
+      </div>
+
+      <el-form class="library-filter-form" label-position="top">
+        <el-form-item label="搜索">
+          <el-input v-model="libraryFilters.q" clearable placeholder="file id / job id / filename / type / status" @keyup.enter="applyLibrarySearch" />
+        </el-form-item>
+        <el-form-item label="Status">
+          <el-select v-model="libraryFilters.status" clearable placeholder="全部状态">
+            <el-option label="pending_upload" value="pending_upload" />
+            <el-option label="uploaded" value="uploaded" />
+            <el-option label="expired" value="expired" />
+            <el-option label="deleted" value="deleted" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="File Type">
+          <el-select v-model="libraryFilters.file_type" clearable filterable placeholder="全部类型">
+            <el-option v-for="fileType in fileTypeOptions" :key="fileType" :label="fileType" :value="fileType" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="Storage">
+          <el-select v-model="libraryFilters.storage_provider" clearable placeholder="全部存储">
+            <el-option label="local_file" value="local_file" />
+            <el-option label="local_object" value="local_object" />
+            <el-option label="s3" value="s3" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="Job ID">
+          <el-input v-model="libraryFilters.job_id" clearable placeholder="docjob_xxx" @keyup.enter="applyLibrarySearch" />
+        </el-form-item>
+        <el-form-item label="Sort">
+          <el-select v-model="librarySort">
+            <el-option label="created desc" value="created_at_desc" />
+            <el-option label="created asc" value="created_at_asc" />
+            <el-option label="updated desc" value="updated_at_desc" />
+            <el-option label="expires desc" value="expires_at_desc" />
+            <el-option label="size desc" value="size_bytes_desc" />
+            <el-option label="size asc" value="size_bytes_asc" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <div class="filter-actions">
+        <el-button @click="resetLibrarySearch">重置搜索</el-button>
+        <el-button type="primary" @click="applyLibrarySearch">搜索</el-button>
+      </div>
+
+      <el-table :data="librarySearch?.items || []" empty-text="暂无文件记录" class="retention-table" table-layout="fixed" row-key="file_id">
+        <el-table-column prop="file_id" label="File ID" min-width="190">
+          <template #default="{ row }"><span class="mono">{{ row.file_id }}</span></template>
+        </el-table-column>
+        <el-table-column prop="original_filename" label="Filename" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="job_id" label="Job" min-width="170">
+          <template #default="{ row }">
+            <router-link v-if="row.job_id" :to="`/jobs/${row.job_id}`" class="mono">
+              {{ row.job_id }}
+            </router-link>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="file_type" label="Type" min-width="150" />
+        <el-table-column prop="storage_provider" label="Storage" min-width="130" />
+        <el-table-column prop="status" label="Status" width="120">
+          <template #default="{ row }">
+            <el-tag size="small" :type="statusTag(row.status)" effect="plain">{{ row.status }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="size_bytes" label="Size" width="110">
+          <template #default="{ row }">{{ formatBytes(row.size_bytes) }}</template>
+        </el-table-column>
+        <el-table-column prop="expires_at" label="Expires" min-width="180">
+          <template #default="{ row }">{{ formatDateTime(row.expires_at) }}</template>
+        </el-table-column>
+        <el-table-column prop="created_by" label="Created By" min-width="150">
+          <template #default="{ row }"><span class="mono">{{ row.created_by || "-" }}</span></template>
+        </el-table-column>
+        <el-table-column label="Flags" min-width="190">
+          <template #default="{ row }">
+            <el-tag v-if="row.expired" size="small" type="warning" effect="plain">expired</el-tag>
+            <el-tag v-if="row.physical_delete_candidate" size="small" type="danger" effect="plain">delete candidate</el-tag>
+            <span v-if="!row.expired && !row.physical_delete_candidate">-</span>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <el-pagination
+        v-model:current-page="libraryPage"
+        v-model:page-size="libraryPageSize"
+        :total="librarySearch?.total || 0"
+        :page-sizes="[25, 50, 100, 200]"
+        layout="sizes, prev, pager, next"
+        background
+        small
+        @current-change="loadFileLibrarySearch"
+        @size-change="handleLibraryPageSizeChange"
+      />
+    </section>
 
     <section v-loading="storageLoading" class="retention-table-section" aria-label="存储使用和容量 readiness">
       <div class="section-header">
@@ -427,6 +533,9 @@ import { Finished, Refresh } from "@element-plus/icons-vue";
 
 import { filesApi } from "@/api/files";
 import type {
+  FileLibrarySearchQuery,
+  FileLibrarySearchResponse,
+  FileLibrarySort,
   FileRetentionCandidateResponse,
   FileRetentionDeleteOutcome,
   FileRetentionDeleteResponse,
@@ -443,12 +552,23 @@ import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 
 type StatusTag = "success" | "warning" | "info" | "danger";
 
+type LibraryFilters = {
+  q: string;
+  status: string;
+  file_type: string;
+  storage_provider: string;
+  job_id: string;
+};
+
+type LibraryFilterKey = "q" | "status" | "file_type" | "storage_provider" | "job_id";
+
 const plan = ref<FileRetentionPlanResponse | null>(null);
 const selectedCandidates = ref<FileRetentionCandidateResponse[]>([]);
 const deleteReport = ref<FileRetentionDeleteResponse | null>(null);
 const policyList = ref<Awaited<ReturnType<typeof filesApi.listRetentionPolicies>> | null>(null);
 const policyImpact = ref<FileRetentionPolicyImpactResponse | null>(null);
 const storageUsage = ref<FileStorageUsageResponse | null>(null);
+const librarySearch = ref<FileLibrarySearchResponse | null>(null);
 const loading = ref(false);
 const marking = ref(false);
 const previewing = ref(false);
@@ -456,7 +576,18 @@ const deleting = ref(false);
 const policyLoading = ref(false);
 const policySaving = ref(false);
 const storageLoading = ref(false);
+const libraryLoading = ref(false);
 const error = ref<ApiClientError | null>(null);
+const libraryFilters = reactive<LibraryFilters>({
+  q: "",
+  status: "",
+  file_type: "",
+  storage_provider: "",
+  job_id: "",
+});
+const librarySort = ref<FileLibrarySort>("created_at_desc");
+const libraryPage = ref(1);
+const libraryPageSize = ref(50);
 const deleteDialog = reactive({
   visible: false,
   reason: "",
@@ -505,9 +636,70 @@ const canOpenDeleteDialog = computed(() => (
 
 // 同步刷新 retention plan、policy governance 和 storage usage。
 function refreshRetentionPage(): void {
+  void loadFileLibrarySearch();
   void loadPlan();
   void loadPolicies();
   void loadStorageUsage();
+}
+
+// 按当前筛选读取只读文件库搜索结果。
+async function loadFileLibrarySearch(): Promise<void> {
+  libraryLoading.value = true;
+  error.value = null;
+  try {
+    librarySearch.value = await filesApi.searchLibrary(buildLibrarySearchQuery());
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    libraryLoading.value = false;
+  }
+}
+
+// 应用文件库筛选条件并回到第一页。
+function applyLibrarySearch(): void {
+  libraryPage.value = 1;
+  void loadFileLibrarySearch();
+}
+
+// 重置文件库筛选条件并重新读取第一页。
+function resetLibrarySearch(): void {
+  libraryFilters.q = "";
+  libraryFilters.status = "";
+  libraryFilters.file_type = "";
+  libraryFilters.storage_provider = "";
+  libraryFilters.job_id = "";
+  librarySort.value = "created_at_desc";
+  libraryPage.value = 1;
+  void loadFileLibrarySearch();
+}
+
+// 改变文件库页大小时回到第一页，避免页码越界。
+function handleLibraryPageSizeChange(): void {
+  libraryPage.value = 1;
+  void loadFileLibrarySearch();
+}
+
+// 生成后端文件库搜索 query，空字符串不发送。
+function buildLibrarySearchQuery(): FileLibrarySearchQuery {
+  const params: FileLibrarySearchQuery = {
+    page: libraryPage.value,
+    page_size: libraryPageSize.value,
+    sort: librarySort.value,
+  };
+  addLibraryTrimmedParam(params, "q", libraryFilters.q);
+  addLibraryTrimmedParam(params, "status", libraryFilters.status);
+  addLibraryTrimmedParam(params, "file_type", libraryFilters.file_type);
+  addLibraryTrimmedParam(params, "storage_provider", libraryFilters.storage_provider);
+  addLibraryTrimmedParam(params, "job_id", libraryFilters.job_id);
+  return params;
+}
+
+// 给文件库查询参数做统一 trim，空字符串不发送。
+function addLibraryTrimmedParam(params: FileLibrarySearchQuery, key: LibraryFilterKey, value: string): void {
+  const normalized = value.trim();
+  if (normalized) {
+    Object.assign(params, { [key]: normalized });
+  }
 }
 
 // 读取当前 retention dry-run 计划。
@@ -842,6 +1034,7 @@ function outcomeTag(outcome: FileRetentionDeleteOutcome): StatusTag {
 }
 
 onMounted(() => {
+  void loadFileLibrarySearch();
   void loadPlan();
   void loadPolicies();
   void loadStorageUsage();
@@ -961,6 +1154,18 @@ onMounted(() => {
   gap: 8px;
 }
 
+.library-filter-form {
+  display: grid;
+  grid-template-columns: 1.8fr repeat(5, minmax(130px, 1fr));
+  gap: 12px;
+}
+
+.filter-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .effective-policy-grid {
   display: flex;
   flex-wrap: wrap;
@@ -1023,6 +1228,10 @@ onMounted(() => {
   .storage-group-grid {
     grid-template-columns: 1fr;
   }
+
+  .library-filter-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 720px) {
@@ -1030,6 +1239,10 @@ onMounted(() => {
   .section-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .library-filter-form {
+    grid-template-columns: 1fr;
   }
 
   .heading-actions {

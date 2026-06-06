@@ -1,5 +1,5 @@
 # File: app/domains/files/schemas.py
-# Purpose: 定义文件元数据、上传授权、保留期管理和物理删除 API 的 v1 请求/响应模型。
+# Purpose: 定义文件元数据、上传授权、文件库搜索、保留期管理和物理删除 API 的 v1 请求/响应模型。
 
 from __future__ import annotations
 
@@ -42,6 +42,46 @@ class DocumentFileResponse(BaseModel):
     created_by: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class FileLibrarySearchItemResponse(BaseModel):
+    """返回文件库搜索中的安全文件摘要，不包含对象定位或 raw metadata。"""
+
+    file_id: str
+    job_id: str | None = None
+    file_type: str
+    storage_provider: str
+    original_filename: str
+    mime_type: str
+    size_bytes: int
+    status: str
+    expires_at: datetime | None = None
+    created_by: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    expired: bool
+    physical_delete_candidate: bool
+
+
+class FileLibrarySearchResponse(BaseModel):
+    """返回 Admin-only 文件库搜索分页结果。"""
+
+    generated_at: datetime
+    page: int
+    page_size: int
+    total: int
+    sort: Literal[
+        "created_at_desc",
+        "created_at_asc",
+        "updated_at_desc",
+        "updated_at_asc",
+        "expires_at_desc",
+        "expires_at_asc",
+        "size_bytes_desc",
+        "size_bytes_asc",
+    ]
+    filters: dict[str, str] = Field(default_factory=dict)
+    items: list[FileLibrarySearchItemResponse] = Field(default_factory=list)
 
 
 class FileUploadUrlResponse(BaseModel):

@@ -1,8 +1,10 @@
 // File: frontend/src/api/files.ts
-// Purpose: Provide file metadata, upload-authorization, and retention API wrappers.
+// Purpose: Provide file metadata, upload-authorization, file-library search, and retention API wrappers.
 import { apiRequest } from "@/api/client";
 import type {
   DocumentFileResponse,
+  FileLibrarySearchQuery,
+  FileLibrarySearchResponse,
   FileRetentionDeleteExecuteRequest,
   FileRetentionDeletePreviewRequest,
   FileRetentionDeleteResponse,
@@ -35,6 +37,15 @@ export const filesApi = {
     return apiRequest<DocumentFileResponse>({
       url: `/api/v1/files/${fileId}`,
       method: "GET",
+    });
+  },
+
+  // 搜索 Admin-only document_files 安全摘要，不返回 object_key/bucket/raw metadata。
+  searchLibrary(params: FileLibrarySearchQuery): Promise<FileLibrarySearchResponse> {
+    return apiRequest<FileLibrarySearchResponse>({
+      url: "/api/v1/files/library/search",
+      method: "GET",
+      params,
     });
   },
 

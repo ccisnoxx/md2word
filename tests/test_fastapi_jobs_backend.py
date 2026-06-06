@@ -1935,6 +1935,144 @@ class FastAPIJobsBackendTests(TestCase):
             [],
         )
 
+    def test_file_library_search_is_admin_only_readonly_safe_and_filterable(self):
+        """验证 Admin-only 文件库搜索只返回安全摘要，并支持筛选、排序和分页。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            now = utc_now()
+            local_expired = DocumentFileRecord(
+                id="file_library_local_expired",
+                tenant_id="tenant_default",
+                company_id="company_default",
+                job_id="docjob_library_a",
+                file_type="generated_word",
+                storage_provider="local_object",
+                bucket="private-bucket",
+                object_key="secret/local/report-final.docx",
+                original_filename="report-final.docx",
+                mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                size_bytes=900,
+                checksum_sha256="secret-checksum",
+                etag="secret-etag",
+                status="expired",
+                expires_at=now - timedelta(days=1),
+                metadata={"prompt": "secret prompt"},
+                created_by="user_operator",
+                created_at=now - timedelta(days=3),
+                updated_at=now - timedelta(days=1),
+            )
+            s3_expired = DocumentFileRecord(
+                id="file_library_s3_expired",
+                tenant_id="tenant_default",
+                company_id="company_default",
+                job_id="docjob_library_b",
+                file_type="generated_word",
+                storage_provider="s3",
+                bucket="s3-secret-bucket",
+                object_key="secret/s3/report-archive.docx",
+                original_filename="report-archive.docx",
+                mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                size_bytes=200,
+                status="expired",
+                expires_at=now - timedelta(days=1),
+                created_by="user_admin",
+                created_at=now - timedelta(days=2),
+                updated_at=now - timedelta(days=1),
+            )
+            active_source = DocumentFileRecord(
+                id="file_library_active_source",
+                tenant_id="tenant_default",
+                company_id="company_default",
+                job_id="docjob_library_c",
+                file_type="source_pdf",
+                storage_provider="local_object",
+                bucket="private-bucket",
+                object_key="secret/local/source.pdf",
+                original_filename="source.pdf",
+                mime_type="application/pdf",
+                size_bytes=100,
+                status="uploaded",
+                expires_at=now + timedelta(days=1),
+                created_by="user_operator",
+                created_at=now - timedelta(days=1),
+                updated_at=now - timedelta(days=1),
+            )
+            for record in [local_expired, s3_expired, active_source]:
+                runtime.document_file_repository.create_document_file(record)
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                first_page_response = client.get(
+                    "/api/v1/files/library/search",
+                    headers=admin_headers,
+                    params={
+                        "q": "report",
+                        "file_type": "generated_word",
+                        "status": "expired",
+                        "sort": "size_bytes_desc",
+                        "page": 1,
+                        "page_size": 1,
+                    },
+                )
+                second_page_response = client.get(
+                    "/api/v1/files/library/search",
+                    headers=admin_headers,
+                    params={
+                        "q": "report",
+                        "file_type": "generated_word",
+                        "status": "expired",
+                        "sort": "size_bytes_desc",
+                        "page": 2,
+                        "page_size": 1,
+                    },
+                )
+                operator_response = client.get("/api/v1/files/library/search", headers=operator_headers)
+            record_after_search = runtime.document_file_repository.get_document_file(local_expired.id)
+            audit_events = runtime.audit_event_repository.list_audit_events()
+
+        self.assertEqual(operator_response.status_code, 403)
+        self.assertEqual(operator_response.json()["error_code"], "role_forbidden")
+        self.assertEqual(first_page_response.status_code, 200)
+        first_payload = first_page_response.json()
+        second_payload = second_page_response.json()
+        serialized_payload = json.dumps(first_payload, ensure_ascii=False)
+        first_item = first_payload["items"][0]
+
+        self.assertEqual(first_payload["total"], 2)
+        self.assertEqual(first_payload["page"], 1)
+        self.assertEqual(first_payload["page_size"], 1)
+        self.assertEqual(first_payload["filters"]["q"], "report")
+        self.assertEqual(first_payload["filters"]["status"], "expired")
+        self.assertEqual(first_item["file_id"], local_expired.id)
+        self.assertEqual(first_item["original_filename"], "report-final.docx")
+        self.assertEqual(first_item["size_bytes"], 900)
+        self.assertEqual(first_item["expired"], True)
+        self.assertEqual(first_item["physical_delete_candidate"], True)
+        self.assertEqual(second_payload["items"][0]["file_id"], s3_expired.id)
+        self.assertEqual(second_payload["items"][0]["physical_delete_candidate"], False)
+        self.assertNotIn("object_key", first_item)
+        self.assertNotIn("bucket", first_item)
+        self.assertNotIn("checksum_sha256", first_item)
+        self.assertNotIn("etag", first_item)
+        self.assertNotIn("metadata", first_item)
+        self.assertNotIn("secret/local/report-final.docx", serialized_payload)
+        self.assertNotIn("secret-checksum", serialized_payload)
+        self.assertNotIn("secret-etag", serialized_payload)
+        self.assertNotIn("secret prompt", serialized_payload)
+        self.assertIsNotNone(record_after_search)
+        self.assertEqual(record_after_search.status, "expired")
+        self.assertEqual(
+            [event for event in audit_events if event.action.startswith("file.library")],
+            [],
+        )
+
     def test_file_retention_readonly_cleanup_runner_reports_without_mutation(self):
         """验证只读 cleanup runner 生成报告但不修改 metadata 或删除对象。"""
 

@@ -127,6 +127,59 @@ export type DocumentFileResponse = {
   updated_at: string;
 };
 
+export type FileLibrarySort =
+  | "created_at_desc"
+  | "created_at_asc"
+  | "updated_at_desc"
+  | "updated_at_asc"
+  | "expires_at_desc"
+  | "expires_at_asc"
+  | "size_bytes_desc"
+  | "size_bytes_asc";
+
+export type FileLibrarySearchQuery = {
+  page: number;
+  page_size: number;
+  sort?: FileLibrarySort;
+  q?: string;
+  file_type?: string;
+  status?: string;
+  storage_provider?: string;
+  job_id?: string;
+  created_by?: string;
+  expires_from?: string;
+  expires_to?: string;
+  created_from?: string;
+  created_to?: string;
+};
+
+export type FileLibrarySearchItemResponse = {
+  file_id: string;
+  job_id: string | null;
+  file_type: string;
+  storage_provider: string;
+  original_filename: string;
+  mime_type: string;
+  size_bytes: number;
+  status: string;
+  expires_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  expired: boolean;
+  physical_delete_candidate: boolean;
+};
+
+export type FileLibrarySearchResponse = {
+  generated_at: string;
+  page: number;
+  page_size: number;
+  total: number;
+  sort: FileLibrarySort;
+  filters: Record<string, string>;
+  items: FileLibrarySearchItemResponse[];
+};
+
 export type FileUploadUrlRequest = {
   filename: string;
   mime_type: string;
