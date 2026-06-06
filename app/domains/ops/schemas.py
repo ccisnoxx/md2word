@@ -25,6 +25,16 @@ OpsRecoveryActionTargetType = Literal[
     "alert",
     "cleanup_run",
 ]
+OpsAlertDeliveryChannel = Literal["local_outbox"]
+OpsAlertDeliveryMode = Literal["dry_run", "fake_send"]
+OpsAlertDeliveryOutcome = Literal[
+    "deliverable",
+    "fake_delivered",
+    "deduped",
+    "skipped_not_active",
+    "skipped_rate_limited",
+    "failed",
+]
 
 
 class OpsRecoveryActionRiskFlagsResponse(BaseModel):
@@ -112,3 +122,57 @@ class OpsRecoveryActionPreviewResponse(BaseModel):
     risk_flags: OpsRecoveryActionRiskFlagsResponse
     audit_action: str | None = None
     safety: OpsRecoveryActionSafetyResponse
+
+
+class OpsAlertDeliveryPreviewRequest(BaseModel):
+    """请求预览精确 Ops alert codes 的 fake outbox delivery。"""
+
+    alert_codes: list[str] = Field(default_factory=list)
+    channel: OpsAlertDeliveryChannel = "local_outbox"
+    dedupe_window_minutes: int = Field(default=60, ge=1, le=1440)
+
+
+class OpsAlertDeliveryFakeSendRequest(OpsAlertDeliveryPreviewRequest):
+    """请求执行本地 fake outbox delivery，不发送外部通知。"""
+
+    reason: str
+    confirmation: str
+
+
+class OpsAlertDeliverySafetyResponse(BaseModel):
+    """声明 alert delivery 合同没有触发任何真实外部副作用。"""
+
+    external_delivery_executed: bool = False
+    provider_calls_executed: bool = False
+    cleanup_executed: bool = False
+    delete_executed: bool = False
+    conversion_workflow_executed: bool = False
+    audit_events_written: bool = False
+
+
+class OpsAlertDeliveryItemResponse(BaseModel):
+    """返回单个 alert code 的 delivery preview 或 fake-send 结果。"""
+
+    alert_code: str
+    severity: str | None = None
+    source: str | None = None
+    title: str | None = None
+    outcome: OpsAlertDeliveryOutcome
+    dedupe_key: str | None = None
+    reason: str
+    audit_event_written: bool = False
+
+
+class OpsAlertDeliveryResponse(BaseModel):
+    """返回 Ops alert fake delivery outbox 的批量结果。"""
+
+    generated_at: datetime
+    action_mode: OpsAlertDeliveryMode
+    channel: OpsAlertDeliveryChannel
+    confirmation_phrase: str
+    dedupe_window_minutes: int
+    requested_alert_codes: list[str] = Field(default_factory=list)
+    delivery_id: str
+    totals: dict[str, int] = Field(default_factory=dict)
+    items: list[OpsAlertDeliveryItemResponse] = Field(default_factory=list)
+    safety: OpsAlertDeliverySafetyResponse

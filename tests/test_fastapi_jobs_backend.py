@@ -1654,8 +1654,11 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertFalse(actions_by_id["document_job.retry"]["calls_provider"])
         self.assertFalse(actions_by_id["provider.cancel"]["available"])
         self.assertTrue(actions_by_id["provider.cancel"]["calls_provider"])
-        self.assertFalse(actions_by_id["alert.delivery"]["available"])
-        self.assertTrue(actions_by_id["alert.delivery"]["sends_notification"])
+        self.assertTrue(actions_by_id["alert.delivery"]["available"])
+        self.assertTrue(actions_by_id["alert.delivery"]["requires_reason"])
+        self.assertTrue(actions_by_id["alert.delivery"]["requires_confirmation"])
+        self.assertFalse(actions_by_id["alert.delivery"]["sends_notification"])
+        self.assertEqual(actions_by_id["alert.delivery"]["audit_action"], "ops.alert_delivery_fake")
         self.assertFalse(actions_by_id["file_retention.automated_cleanup_execute"]["available"])
         self.assertTrue(actions_by_id["file_retention.automated_cleanup_execute"]["deletes_data"])
         self.assertFalse(actions_by_id["legacy_job.recover_mineru_result"]["available"])
@@ -1671,6 +1674,198 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertTrue(candidate_preview["risk_flags"]["calls_provider"])
         self.assertFalse(candidate_preview["safety"]["provider_calls_executed"])
         self.assertEqual(audit_actions_after, audit_actions_before)
+
+    def test_ops_alert_delivery_preview_is_admin_only_and_readonly(self):
+        """验证 Ops alert delivery preview 只允许 Admin 且不写审计或外发通知。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            runtime.stage_message_store.put_stage_message(
+                JobStageMessage(
+                    id="msg_alert_delivery_preview_failed",
+                    job_id="docjob_alert_delivery",
+                    stage="convert_package",
+                    trace_id="trace_alert_delivery_preview",
+                    status="failed",
+                )
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                audit_actions_before = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+                admin_response = client.post(
+                    "/api/v1/ops/alert-deliveries/preview",
+                    headers=admin_headers,
+                    json={
+                        "alert_codes": ["stage_spool_failed_messages_present"],
+                        "channel": "local_outbox",
+                        "dedupe_window_minutes": 60,
+                    },
+                )
+                operator_response = client.post(
+                    "/api/v1/ops/alert-deliveries/preview",
+                    headers=operator_headers,
+                    json={
+                        "alert_codes": ["stage_spool_failed_messages_present"],
+                        "channel": "local_outbox",
+                    },
+                )
+                audit_actions_after = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+
+        self.assertEqual(admin_response.status_code, 200)
+        payload = admin_response.json()
+        self.assertEqual(payload["action_mode"], "dry_run")
+        self.assertEqual(payload["confirmation_phrase"], "SEND FAKE OPS ALERTS")
+        self.assertEqual(payload["totals"]["deliverable"], 1)
+        self.assertEqual(payload["items"][0]["outcome"], "deliverable")
+        self.assertFalse(payload["items"][0]["audit_event_written"])
+        self.assertFalse(payload["safety"]["external_delivery_executed"])
+        self.assertFalse(payload["safety"]["audit_events_written"])
+        self.assertEqual(operator_response.status_code, 403)
+        self.assertEqual(operator_response.json()["error_code"], "role_forbidden")
+        self.assertEqual(audit_actions_after, audit_actions_before)
+
+    def test_ops_alert_delivery_fake_send_audits_and_dedupes_without_external_delivery(self):
+        """验证 fake alert delivery 写一次审计，dedupe 窗口内重复请求不重复写。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            runtime.stage_message_store.put_stage_message(
+                JobStageMessage(
+                    id="msg_alert_delivery_fake_failed",
+                    job_id="docjob_alert_delivery",
+                    stage="convert_package",
+                    trace_id="trace_alert_delivery_fake",
+                    status="failed",
+                )
+            )
+            app = create_app(runtime)
+            payload = {
+                "alert_codes": ["stage_spool_failed_messages_present"],
+                "channel": "local_outbox",
+                "reason": "ops drill",
+                "confirmation": "SEND FAKE OPS ALERTS",
+                "dedupe_window_minutes": 60,
+            }
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                first_response = client.post(
+                    "/api/v1/ops/alert-deliveries/fake-send",
+                    headers={**admin_headers, "X-Trace-Id": "trace_alert_delivery_fake"},
+                    json=payload,
+                )
+                second_response = client.post(
+                    "/api/v1/ops/alert-deliveries/fake-send",
+                    headers=admin_headers,
+                    json=payload,
+                )
+            delivery_events = [
+                event
+                for event in runtime.audit_event_repository.list_audit_events()
+                if event.action == "ops.alert_delivery_fake"
+            ]
+
+        self.assertEqual(first_response.status_code, 200)
+        first_payload = first_response.json()
+        self.assertEqual(first_payload["action_mode"], "fake_send")
+        self.assertEqual(first_payload["totals"]["fake_delivered"], 1)
+        self.assertEqual(first_payload["totals"]["audit_events_written"], 1)
+        self.assertEqual(first_payload["items"][0]["outcome"], "fake_delivered")
+        self.assertTrue(first_payload["items"][0]["audit_event_written"])
+        self.assertFalse(first_payload["safety"]["external_delivery_executed"])
+        self.assertFalse(first_payload["safety"]["provider_calls_executed"])
+        self.assertTrue(first_payload["safety"]["audit_events_written"])
+
+        self.assertEqual(second_response.status_code, 200)
+        second_payload = second_response.json()
+        self.assertEqual(second_payload["totals"]["deduped"], 1)
+        self.assertEqual(second_payload["totals"]["audit_events_written"], 0)
+        self.assertEqual(second_payload["items"][0]["outcome"], "deduped")
+        self.assertFalse(second_payload["items"][0]["audit_event_written"])
+        self.assertFalse(second_payload["safety"]["audit_events_written"])
+
+        self.assertEqual(len(delivery_events), 1)
+        self.assertEqual(delivery_events[0].trace_id, "trace_alert_delivery_fake")
+        self.assertIn("stage_spool_failed_messages_present:local_outbox", delivery_events[0].reason)
+        self.assertIn("fake_delivered=1", delivery_events[0].reason)
+
+    def test_ops_alert_delivery_rejects_invalid_targets_and_updates_action_registry(self):
+        """验证 alert delivery 拒绝非精确目标，并暴露 fake outbox registry 合同。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                empty_response = client.post(
+                    "/api/v1/ops/alert-deliveries/fake-send",
+                    headers=admin_headers,
+                    json={
+                        "alert_codes": [],
+                        "reason": "ops drill",
+                        "confirmation": "SEND FAKE OPS ALERTS",
+                    },
+                )
+                duplicate_response = client.post(
+                    "/api/v1/ops/alert-deliveries/fake-send",
+                    headers=admin_headers,
+                    json={
+                        "alert_codes": ["readiness_warnings_present", "readiness_warnings_present"],
+                        "reason": "ops drill",
+                        "confirmation": "SEND FAKE OPS ALERTS",
+                    },
+                )
+                too_many_response = client.post(
+                    "/api/v1/ops/alert-deliveries/fake-send",
+                    headers=admin_headers,
+                    json={
+                        "alert_codes": [f"alert_{index}" for index in range(11)],
+                        "reason": "ops drill",
+                        "confirmation": "SEND FAKE OPS ALERTS",
+                    },
+                )
+                inactive_response = client.post(
+                    "/api/v1/ops/alert-deliveries/preview",
+                    headers=admin_headers,
+                    json={"alert_codes": ["stage_spool_failed_messages_present"]},
+                )
+                bad_confirmation_response = client.post(
+                    "/api/v1/ops/alert-deliveries/fake-send",
+                    headers=admin_headers,
+                    json={
+                        "alert_codes": ["stage_spool_failed_messages_present"],
+                        "reason": "ops drill",
+                        "confirmation": "SEND",
+                    },
+                )
+                registry_response = client.get("/api/v1/ops/recovery-actions", headers=admin_headers)
+
+        self.assertEqual(empty_response.status_code, 400)
+        self.assertEqual(duplicate_response.status_code, 400)
+        self.assertEqual(too_many_response.status_code, 400)
+        self.assertEqual(inactive_response.status_code, 409)
+        self.assertEqual(inactive_response.json()["error_code"], "conflict")
+        self.assertEqual(bad_confirmation_response.status_code, 400)
+        actions_by_id = {item["action_id"]: item for item in registry_response.json()["actions"]}
+        alert_action = actions_by_id["alert.delivery"]
+        self.assertTrue(alert_action["available"])
+        self.assertEqual(alert_action["audit_action"], "ops.alert_delivery_fake")
+        self.assertTrue(alert_action["requires_reason"])
+        self.assertTrue(alert_action["requires_confirmation"])
+        self.assertFalse(alert_action["sends_notification"])
 
     def test_ops_recovery_action_preview_reports_document_job_and_legacy_job_eligibility_without_execution(self):
         """验证 recovery action preview 做精确目标判断，且不触发 provider、队列或 audit 副作用。"""
