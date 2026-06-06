@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-# app/domains/document_jobs/service.py: 创建、投递、查询 document_jobs 并记录任务事件。
+# File: app/domains/document_jobs/service.py
+# Purpose: 创建、投递、查询 document_jobs 并记录任务事件。
 
 import json
 from collections import Counter
@@ -218,6 +219,7 @@ class DocumentJobService:
         page: int,
         page_size: int,
         status_filter: str | None,
+        translation_qa_status: str | None = None,
         q: str | None = None,
         sort: str = "created_at_desc",
         include_archived: bool = False,
@@ -228,6 +230,8 @@ class DocumentJobService:
 
         if status_filter is not None and status_filter not in get_args(DocumentJobStatus):
             raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "status 查询参数非法。")
+        if translation_qa_status is not None and translation_qa_status not in get_args(DocumentJobTranslationQaStatus):
+            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "translation_qa_status 查询参数非法。")
         if sort not in DOCUMENT_JOB_LIST_SORTS:
             raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "sort 查询参数非法。")
         if created_from is not None and created_to is not None and created_from > created_to:
@@ -243,6 +247,7 @@ class DocumentJobService:
             job
             for job in visible_jobs
             if (status_filter is None or job.status == status_filter)
+            and self._matches_translation_qa_status(job, translation_qa_status)
             and self._matches_document_job_query(job, normalized_q)
             and self._matches_created_range(job, created_from=created_from, created_to=created_to)
         ]
@@ -1146,6 +1151,17 @@ class DocumentJobService:
             return True
         needle = q.casefold()
         return any(needle in value.casefold() for value in self._document_job_search_values(job))
+
+    def _matches_translation_qa_status(
+        self,
+        job: DocumentJobRecord,
+        translation_qa_status: str | None,
+    ) -> bool:
+        """按任务级翻译 QA 状态筛选；direct 任务不参与 QA 工作台筛选。"""
+
+        if translation_qa_status is None:
+            return True
+        return job.mode == "en2zh_pdf_to_word" and job.translation_qa_status == translation_qa_status
 
     def _document_job_search_values(self, job: DocumentJobRecord) -> list[str]:
         source_file = job.request_snapshot.get("source_file")

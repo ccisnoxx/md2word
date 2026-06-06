@@ -9191,6 +9191,22 @@
           },
           {
             "in": "query",
+            "name": "translation_qa_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Translation Qa Status"
+            }
+          },
+          {
+            "in": "query",
             "name": "q",
             "required": false,
             "schema": {
@@ -12913,6 +12929,7 @@
     },
     "/api/v1/term-rule-categories": {
       "get": {
+        "description": "列出可提交 proposal 的分类；版本化模式优先返回 default draft 分类。",
         "operationId": "list_term_rule_categories_api_v1_term_rule_categories_get",
         "responses": {
           "200": {

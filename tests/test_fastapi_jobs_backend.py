@@ -2043,7 +2043,11 @@ class FastAPIJobsBackendTests(TestCase):
                 beta_job_id = client.post(
                     "/api/v1/document-jobs",
                     headers=headers,
-                    json={"source_file_id": beta_source["id"]},
+                    json={
+                        "source_file_id": beta_source["id"],
+                        "mode": "en2zh_pdf_to_word",
+                        "document_language": "en",
+                    },
                 ).json()["job_id"]
                 archived_job_id = client.post(
                     "/api/v1/document-jobs",
@@ -2062,6 +2066,9 @@ class FastAPIJobsBackendTests(TestCase):
                 )
                 runtime.document_job_repository.update_document_job(
                     beta_job_id,
+                    translation_qa_status="approved",
+                    translation_qa_reviewed_by="user_operator",
+                    translation_qa_reviewed_at=middle_time,
                     created_at=middle_time,
                     updated_at=middle_time,
                 )
@@ -2100,10 +2107,25 @@ class FastAPIJobsBackendTests(TestCase):
                         "created_to": (middle_time + timedelta(hours=1)).isoformat(),
                     },
                 )
+                qa_status_response = client.get(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    params={"translation_qa_status": "approved"},
+                )
+                qa_unreviewed_response = client.get(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    params={"translation_qa_status": "unreviewed"},
+                )
                 invalid_sort_response = client.get(
                     "/api/v1/document-jobs",
                     headers=headers,
                     params={"sort": "status_desc"},
+                )
+                invalid_qa_status_response = client.get(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    params={"translation_qa_status": "ready"},
                 )
 
         self.assertEqual(archive_response.status_code, 200)
@@ -2121,9 +2143,16 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual([item["id"] for item in error_search_response.json()["items"]], [alpha_job_id])
         self.assertEqual(range_response.status_code, 200)
         self.assertEqual([item["id"] for item in range_response.json()["items"]], [beta_job_id])
+        self.assertEqual(qa_status_response.status_code, 200)
+        self.assertEqual([item["id"] for item in qa_status_response.json()["items"]], [beta_job_id])
+        self.assertEqual(qa_unreviewed_response.status_code, 200)
+        self.assertEqual(qa_unreviewed_response.json()["items"], [])
         self.assertEqual(invalid_sort_response.status_code, 400)
         self.assertEqual(invalid_sort_response.json()["error_code"], "invalid_request")
         self.assertIn("sort", invalid_sort_response.json()["detail"])
+        self.assertEqual(invalid_qa_status_response.status_code, 400)
+        self.assertEqual(invalid_qa_status_response.json()["error_code"], "invalid_request")
+        self.assertIn("translation_qa_status", invalid_qa_status_response.json()["detail"])
 
     def test_document_job_create_en2zh_binds_default_term_version(self):
         with tempfile.TemporaryDirectory() as temp_dir:

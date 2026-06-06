@@ -12,7 +12,7 @@ source_files:
   - app/domains/document_jobs/execution.py
 summary: Document Jobs API 提供 P0 PDF -> Word 任务创建、查询、事件、重试、取消、归档和下载入口。
 tags: [document-jobs, api, pdf, word]
-last_reviewed: 2026-06-03
+last_reviewed: 2026-06-06
 ---
 
 ## 概述
@@ -27,6 +27,8 @@ PUT /api/v1/files/{file_id}/content
 POST /api/v1/document-jobs
 GET /api/v1/document-jobs/{job_id}
 GET /api/v1/document-jobs/{job_id}/events
+GET /api/v1/document-jobs/{job_id}/translation-qa
+PATCH /api/v1/document-jobs/{job_id}/translation-qa
 GET /api/v1/document-jobs/config-summary
 POST /api/v1/document-jobs/bulk-retry
 POST /api/v1/document-jobs/bulk-archive
@@ -53,6 +55,17 @@ GET /api/v1/document-jobs/{job_id}/download?token=...
 - `error_message`
 
 前端和联调脚本应优先用这三个字段定位上传、解析、IR、渲染或对象存储问题。
+
+### `translation_qa_status`
+
+| 值 | 含义 |
+|---|---|
+| `unreviewed` | 未复核。 |
+| `approved` | 已通过。 |
+| `needs_fix` | 需要修正或跟进。 |
+| `blocked` | 阻塞或无法判断。 |
+
+该状态只用于 `en2zh_pdf_to_word` 翻译 QA。列表筛选传 `translation_qa_status` 时，后端只返回 `en2zh_pdf_to_word` 且状态匹配的任务，避免把 direct 任务的默认值误当成翻译 QA 待办。
 
 ## API 参考
 
@@ -95,7 +108,20 @@ GET /api/v1/document-jobs/{job_id}/download?token=...
 ### `GET /api/v1/document-jobs`
 
 - 用途：分页查询任务列表。
-- 查询参数：`page`、`page_size`、`status`。
+- 查询参数：
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `page` | `1` | 从 `1` 开始。 |
+| `page_size` | `20` | 当前限制 `1-100`。 |
+| `status` | 无 | 按任务状态过滤。 |
+| `translation_qa_status` | 无 | 按翻译 QA 状态过滤；仅匹配 `en2zh_pdf_to_word` 任务。 |
+| `q` | 无 | 按任务 ID、源文件 ID、源文件名、错误码或错误信息搜索。 |
+| `sort` | `created_at_desc` | `created_at_desc` / `created_at_asc` / `updated_at_desc` / `updated_at_asc`。 |
+| `include_archived` | `false` | 是否包含已归档任务。 |
+| `created_from` | 无 | 按创建时间下界过滤，ISO datetime。 |
+| `created_to` | 无 | 按创建时间上界过滤，ISO datetime。 |
+
 - 响应：`items`、分页信息和 `summary`。
 
 ### `GET /api/v1/document-jobs/{job_id}`
@@ -107,6 +133,40 @@ GET /api/v1/document-jobs/{job_id}/download?token=...
 
 - 用途：读取任务事件。
 - 响应：事件列表，包含 `stage`、`level`、`event_type`、`message`、`payload`、`duration_ms` 和 `trace_id`。
+
+### `GET /api/v1/document-jobs/{job_id}/translation-qa`
+
+- 用途：读取翻译结果 QA 证据摘要和任务级复核状态。
+- 支持范围：仅 `en2zh_pdf_to_word` 任务具备翻译 QA 证据；其他模式返回 `available=false` 和 `availability_reason=unsupported_mode`。
+- 查询参数：
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `limit` | `200` | 返回最终文本片段数量，限制 `1-500`。 |
+
+- 响应包含：
+  - `qa`：任务级复核状态、问题归因、备注、复核人和复核时间。
+  - `artifacts`：`document_ir`、`ai_call_log`、`ai_debug_archive` 文件 ID 摘要。
+  - `summary`：最终片段数、返回片段数、quality flags、AI call 数、术语 trace 数和源文对照可用性。
+  - `segments`：从 `document_ir` 读取的最终文本片段；只有 debug archive 存在且未过期时才带源文/AI 译文对照。
+  - `term_traces`：从 `ai_call_log` 读取的脱敏术语命中摘要。
+  - `ai_calls`：metadata-only AI 调用摘要，不包含完整 prompt、response、正文或密钥。
+- 证据读取只消费已登记文件，不触发 PDF 解析、翻译 provider 调用或 Word 生成。
+
+### `PATCH /api/v1/document-jobs/{job_id}/translation-qa`
+
+- 用途：保存任务级翻译 QA 复核结论。
+- 支持范围：仅 `en2zh_pdf_to_word` 任务；其他模式返回 `409 conflict`。
+- 请求体：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `status` | 是 | `unreviewed` / `approved` / `needs_fix` / `blocked`。 |
+| `issue_type` | 否 | `translation` / `terminology` / `layout` / `source_quality` / `artifact_missing` / `other`。 |
+| `note` | 否 | 备注，最多 1000 字符。 |
+
+- 返回：`job_id`、最新 `qa` 和最新 `job`。
+- 事件：成功保存会写入 `translation_qa_updated` 任务事件，payload 只包含状态、问题归因、复核人和备注长度，不写入全文正文、prompt、response 或密钥。
 
 ### `POST /api/v1/document-jobs/{job_id}/retry`
 
