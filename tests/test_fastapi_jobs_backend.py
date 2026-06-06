@@ -1591,6 +1591,245 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(operator_response.json()["error_code"], "role_forbidden")
         self.assertEqual(audit_actions_after, audit_actions_before)
 
+    def test_ops_recovery_action_registry_is_admin_only_readonly_and_lists_safety_flags(self):
+        """验证 recovery action registry 只允许 Admin 读取，并暴露候选动作安全边界。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                audit_actions_before = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+                admin_response = client.get("/api/v1/ops/recovery-actions", headers=admin_headers)
+                operator_response = client.get("/api/v1/ops/recovery-actions", headers=operator_headers)
+                candidate_preview_response = client.post(
+                    "/api/v1/ops/recovery-actions/preview",
+                    headers=admin_headers,
+                    json={
+                        "action_id": "provider.cancel",
+                        "target_type": "provider_operation",
+                        "target_id": "provider_batch_001",
+                    },
+                )
+                audit_actions_after = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+
+        self.assertEqual(admin_response.status_code, 200)
+        payload = admin_response.json()
+        self.assertTrue(payload["safety"]["read_only"])
+        self.assertFalse(payload["safety"]["execution_performed"])
+        self.assertFalse(payload["safety"]["metadata_mutated"])
+        self.assertFalse(payload["safety"]["queue_mutated"])
+        self.assertFalse(payload["safety"]["provider_calls_executed"])
+        self.assertFalse(payload["safety"]["notification_delivery_executed"])
+        self.assertFalse(payload["safety"]["cleanup_executed"])
+        self.assertFalse(payload["safety"]["delete_executed"])
+        self.assertFalse(payload["safety"]["audit_events_written"])
+
+        actions_by_id = {item["action_id"]: item for item in payload["actions"]}
+        self.assertEqual(
+            set(actions_by_id),
+            {
+                "document_job.retry",
+                "document_job.cancel",
+                "document_job.archive",
+                "legacy_job.retry",
+                "legacy_job.cancel",
+                "legacy_job.recover_mineru_result",
+                "legacy_job.cleanup_local_files",
+                "provider.cancel",
+                "alert.delivery",
+                "file_retention.automated_cleanup_execute",
+            },
+        )
+        self.assertTrue(actions_by_id["document_job.retry"]["available"])
+        self.assertTrue(actions_by_id["document_job.retry"]["requires_admin"])
+        self.assertTrue(actions_by_id["document_job.retry"]["requires_reason"])
+        self.assertTrue(actions_by_id["document_job.retry"]["mutates_metadata"])
+        self.assertTrue(actions_by_id["document_job.retry"]["mutates_queue"])
+        self.assertFalse(actions_by_id["document_job.retry"]["calls_provider"])
+        self.assertFalse(actions_by_id["provider.cancel"]["available"])
+        self.assertTrue(actions_by_id["provider.cancel"]["calls_provider"])
+        self.assertFalse(actions_by_id["alert.delivery"]["available"])
+        self.assertTrue(actions_by_id["alert.delivery"]["sends_notification"])
+        self.assertFalse(actions_by_id["file_retention.automated_cleanup_execute"]["available"])
+        self.assertTrue(actions_by_id["file_retention.automated_cleanup_execute"]["deletes_data"])
+        self.assertFalse(actions_by_id["legacy_job.recover_mineru_result"]["available"])
+        self.assertIn("MINERU_API_TOKEN 未配置", " ".join(actions_by_id["legacy_job.recover_mineru_result"]["known_gaps"]))
+
+        self.assertEqual(operator_response.status_code, 403)
+        self.assertEqual(operator_response.json()["error_code"], "role_forbidden")
+        self.assertEqual(candidate_preview_response.status_code, 200)
+        candidate_preview = candidate_preview_response.json()
+        self.assertFalse(candidate_preview["eligible"])
+        self.assertIn("action_not_available", candidate_preview["missing_gates"])
+        self.assertIn("execution_contract_missing", candidate_preview["missing_gates"])
+        self.assertTrue(candidate_preview["risk_flags"]["calls_provider"])
+        self.assertFalse(candidate_preview["safety"]["provider_calls_executed"])
+        self.assertEqual(audit_actions_after, audit_actions_before)
+
+    def test_ops_recovery_action_preview_reports_document_job_and_legacy_job_eligibility_without_execution(self):
+        """验证 recovery action preview 做精确目标判断，且不触发 provider、队列或 audit 副作用。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                mineru_api_token="token-123",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            now = utc_now()
+            failed_job = runtime.document_job_repository.create_document_job(
+                DocumentJobRecord(
+                    id="docjob_ops_preview_failed",
+                    tenant_id="tenant_default",
+                    company_id="company_default",
+                    created_by="user_operator",
+                    source_file_id="file_ops_preview_failed",
+                    status="failed",
+                    stage="failed",
+                    progress=40,
+                    template_version_id="template_default",
+                    failed_stage="parsing",
+                    error_code="parse_failed",
+                    error_message="parse failed",
+                    updated_at=now - timedelta(minutes=2),
+                )
+            )
+            terminal_job = runtime.document_job_repository.create_document_job(
+                DocumentJobRecord(
+                    id="docjob_ops_preview_succeeded",
+                    tenant_id="tenant_default",
+                    company_id="company_default",
+                    created_by="user_operator",
+                    source_file_id="file_ops_preview_succeeded",
+                    status="succeeded",
+                    stage="completed",
+                    progress=100,
+                    template_version_id="template_default",
+                    completed_at=now - timedelta(minutes=1),
+                    updated_at=now - timedelta(minutes=1),
+                )
+            )
+            legacy_job = JobRecord(
+                id="legacy_ops_preview_mineru",
+                source_filename="source.pdf",
+                status="parsing",
+                progress=25,
+                source_kind="source_pdf",
+                lifecycle_status="uploaded",
+                execution_status="parsing",
+                source_pdf_context=SourcePdfJobContext(
+                    batch_id="batch_ops_preview_001",
+                    data_id="legacy_ops_preview_mineru",
+                    callback_seed="secret-seed-not-for-preview",
+                    upstream_status="submitted",
+                ),
+            )
+            runtime.job_repository.create_job(legacy_job)
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                audit_actions_before = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+                retry_preview_response = client.post(
+                    "/api/v1/ops/recovery-actions/preview",
+                    headers=admin_headers,
+                    json={
+                        "action_id": "document_job.retry",
+                        "target_type": "document_job",
+                        "target_id": failed_job.id,
+                    },
+                )
+                cancel_preview_response = client.post(
+                    "/api/v1/ops/recovery-actions/preview",
+                    headers=admin_headers,
+                    json={
+                        "action_id": "document_job.cancel",
+                        "target_type": "document_job",
+                        "target_id": terminal_job.id,
+                    },
+                )
+                mineru_preview_response = client.post(
+                    "/api/v1/ops/recovery-actions/preview",
+                    headers=admin_headers,
+                    json={
+                        "action_id": "legacy_job.recover_mineru_result",
+                        "target_type": "legacy_job",
+                        "target_id": legacy_job.id,
+                    },
+                )
+                missing_preview_response = client.post(
+                    "/api/v1/ops/recovery-actions/preview",
+                    headers=admin_headers,
+                    json={
+                        "action_id": "document_job.retry",
+                        "target_type": "document_job",
+                        "target_id": "docjob_missing",
+                    },
+                )
+                mismatch_response = client.post(
+                    "/api/v1/ops/recovery-actions/preview",
+                    headers=admin_headers,
+                    json={
+                        "action_id": "document_job.retry",
+                        "target_type": "legacy_job",
+                        "target_id": legacy_job.id,
+                    },
+                )
+                audit_actions_after = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+                mineru_query_calls = list(runtime.stage_service.fake_mineru_client.query_calls)
+                failed_job_after = runtime.document_job_repository.get_document_job(failed_job.id)
+                terminal_job_after = runtime.document_job_repository.get_document_job(terminal_job.id)
+                legacy_job_after = runtime.job_repository.get_job(legacy_job.id)
+
+        self.assertEqual(retry_preview_response.status_code, 200)
+        retry_preview = retry_preview_response.json()
+        self.assertTrue(retry_preview["eligible"])
+        self.assertEqual(retry_preview["missing_gates"], [])
+        self.assertEqual(retry_preview["target"]["status"], "failed")
+        self.assertEqual(retry_preview["target"]["stage"], "failed")
+        self.assertTrue(retry_preview["risk_flags"]["mutates_metadata"])
+        self.assertTrue(retry_preview["risk_flags"]["mutates_queue"])
+        self.assertFalse(retry_preview["safety"]["execution_performed"])
+        self.assertFalse(retry_preview["safety"]["metadata_mutated"])
+        self.assertFalse(retry_preview["safety"]["queue_mutated"])
+
+        self.assertEqual(cancel_preview_response.status_code, 200)
+        cancel_preview = cancel_preview_response.json()
+        self.assertFalse(cancel_preview["eligible"])
+        self.assertIn("status_not_cancelable", cancel_preview["missing_gates"])
+        self.assertEqual(cancel_preview["target"]["status"], "succeeded")
+
+        self.assertEqual(mineru_preview_response.status_code, 200)
+        mineru_preview = mineru_preview_response.json()
+        self.assertTrue(mineru_preview["eligible"])
+        self.assertTrue(mineru_preview["risk_flags"]["calls_provider"])
+        self.assertFalse(mineru_preview["safety"]["provider_calls_executed"])
+        self.assertTrue(mineru_preview["target"]["summary"]["has_mineru_batch_id"])
+        self.assertNotIn("batch_ops_preview_001", json.dumps(mineru_preview["target"], ensure_ascii=False))
+        self.assertNotIn("secret-seed-not-for-preview", json.dumps(mineru_preview["target"], ensure_ascii=False))
+
+        self.assertEqual(missing_preview_response.status_code, 200)
+        missing_preview = missing_preview_response.json()
+        self.assertFalse(missing_preview["eligible"])
+        self.assertIn("target_not_found", missing_preview["missing_gates"])
+        self.assertFalse(missing_preview["target"]["exists"])
+        self.assertEqual(mismatch_response.status_code, 400)
+        self.assertEqual(mismatch_response.json()["error_code"], "invalid_request")
+        self.assertEqual(mineru_query_calls, [])
+        self.assertEqual(audit_actions_after, audit_actions_before)
+        self.assertIsNotNone(failed_job_after)
+        self.assertIsNotNone(terminal_job_after)
+        self.assertIsNotNone(legacy_job_after)
+        self.assertEqual(failed_job_after.status, "failed")
+        self.assertEqual(terminal_job_after.status, "succeeded")
+        self.assertEqual(legacy_job_after.projected_status(), "parsing")
+
     def test_health_ready_blocks_when_default_translation_mode_requires_missing_client(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(Path(temp_dir), default_translation_mode="en2zh")

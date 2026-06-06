@@ -93,6 +93,94 @@ export type HealthOpsAlertsResponse = {
   safety: HealthOpsAlertSafety;
 };
 
+export type OpsRecoveryActionCategory =
+  | "recovery"
+  | "cancellation"
+  | "archive"
+  | "cleanup"
+  | "provider"
+  | "notification"
+  | "automation";
+export type OpsRecoveryActionTargetType =
+  | "document_job"
+  | "legacy_job"
+  | "provider_operation"
+  | "alert"
+  | "cleanup_run";
+
+export type OpsRecoveryActionRiskFlagsResponse = {
+  mutates_metadata: boolean;
+  mutates_queue: boolean;
+  calls_provider: boolean;
+  sends_notification: boolean;
+  deletes_data: boolean;
+};
+
+export type OpsRecoveryActionResponse = {
+  action_id: string;
+  label: string;
+  category: OpsRecoveryActionCategory;
+  target_type: OpsRecoveryActionTargetType;
+  available: boolean;
+  requires_admin: boolean;
+  requires_reason: boolean;
+  requires_confirmation: boolean;
+  dry_run_supported: boolean;
+  mutates_metadata: boolean;
+  mutates_queue: boolean;
+  calls_provider: boolean;
+  sends_notification: boolean;
+  deletes_data: boolean;
+  audit_action: string | null;
+  known_gaps: string[];
+  suggested_route: string | null;
+};
+
+export type OpsRecoveryActionSafetyResponse = {
+  read_only: boolean;
+  execution_performed: boolean;
+  metadata_mutated: boolean;
+  queue_mutated: boolean;
+  provider_calls_executed: boolean;
+  notification_delivery_executed: boolean;
+  cleanup_executed: boolean;
+  delete_executed: boolean;
+  audit_events_written: boolean;
+};
+
+export type OpsRecoveryActionRegistryResponse = {
+  generated_at: string;
+  actions: OpsRecoveryActionResponse[];
+  safety: OpsRecoveryActionSafetyResponse;
+};
+
+export type OpsRecoveryActionPreviewRequest = {
+  action_id: string;
+  target_type: OpsRecoveryActionTargetType;
+  target_id: string;
+};
+
+export type OpsRecoveryActionTargetPreviewResponse = {
+  target_type: OpsRecoveryActionTargetType;
+  target_id: string;
+  exists: boolean;
+  status: string | null;
+  stage: string | null;
+  summary: Record<string, string | number | boolean | null>;
+};
+
+export type OpsRecoveryActionPreviewResponse = {
+  generated_at: string;
+  action: OpsRecoveryActionResponse;
+  target: OpsRecoveryActionTargetPreviewResponse;
+  eligible: boolean;
+  missing_gates: string[];
+  warnings: string[];
+  risk_flags: OpsRecoveryActionRiskFlagsResponse;
+  audit_action: string | null;
+  safety: OpsRecoveryActionSafetyResponse;
+};
+
 export type AuditActorRole = "admin" | "operator" | "jobs" | "anonymous";
 export type AuditEventSort = "created_at_desc" | "created_at_asc";
 

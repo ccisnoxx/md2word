@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend task placement, router/service boundary, and verification checklist for future action-governance implementation."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "HTTP boundary behavior, auth errors, and status-code conventions for recovery action previews."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Thin routers, schema-backed responses, and targeted unittest expectations for backend action contracts."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer contract guidance for backend action registry and future Ops Dashboard consumption."}
+{"file": ".trellis/tasks/archive/2026-06/06-06-ops-alerting-and-recovery-readiness/design.md", "reason": "Current read-only ops alert boundary and explicit non-execution constraints."}
+{"file": ".trellis/tasks/archive/2026-06/06-06-file-retention-scheduled-cleanup-readonly-plan/design.md", "reason": "Current read-only cleanup runner boundary and scheduler safety precedent."}
+{"file": ".trellis/tasks/archive/2026-06/06-06-file-retention-operations-phase4-gap-audit/design.md", "reason": "Phase 4 dependency ordering and prior safety-contract decision matrix."}

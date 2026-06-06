@@ -17,7 +17,7 @@
     <ApiErrorAlert :error="error" />
 
     <el-alert type="info" title="read-only" :closable="false" show-icon>
-      此页面只调用 health 和 document-jobs 读取接口，不提供重试、取消、归档、恢复 MinerU 结果、cleanup 或真实删除操作。
+      此页面只调用 health、document-jobs 和 recovery action registry 读取接口，不提供重试、取消、归档、恢复 MinerU 结果、cleanup 或真实删除操作。
     </el-alert>
 
     <section v-loading="loading" class="summary-grid" aria-label="运维摘要">
@@ -61,6 +61,50 @@
         <div class="alert-description">{{ item.description }}</div>
         <router-link v-if="item.to" :to="item.to">{{ item.linkText }}</router-link>
       </el-alert>
+    </section>
+
+    <section class="action-safety-panel" aria-label="恢复动作安全注册表">
+      <el-card class="card-flat dashboard-panel" shadow="never">
+        <div class="section-header">
+          <div>
+            <h2 class="section-title">Recovery Action Safety Registry</h2>
+            <p class="section-subtitle">Admin-only 只读动作目录；这里只展示 gate、risk 和 gap，不提供执行控件。</p>
+          </div>
+          <el-tag type="info" effect="plain">{{ recoveryActionSummary }}</el-tag>
+        </div>
+        <el-table :data="recoveryActions" empty-text="暂无 recovery action registry" table-layout="fixed" class="action-table">
+          <el-table-column label="Action" min-width="230">
+            <template #default="{ row }">
+              <div class="action-title">
+                <span class="mono">{{ row.action_id }}</span>
+                <small>{{ row.label }}</small>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="Target" min-width="130">
+            <template #default="{ row }">{{ row.target_type }}</template>
+          </el-table-column>
+          <el-table-column label="Gates" min-width="220">
+            <template #default="{ row }">{{ recoveryActionGateSummary(row) }}</template>
+          </el-table-column>
+          <el-table-column label="Risk" min-width="240" show-overflow-tooltip>
+            <template #default="{ row }">{{ recoveryActionRiskSummary(row) }}</template>
+          </el-table-column>
+          <el-table-column label="Status" width="150">
+            <template #default="{ row }">
+              <el-tag :type="recoveryActionAvailabilityTag(row).type" effect="plain">
+                {{ recoveryActionAvailabilityTag(row).label }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="Gap / Route" min-width="280" show-overflow-tooltip>
+            <template #default="{ row }">
+              <router-link v-if="row.suggested_route" :to="row.suggested_route">{{ recoveryActionGapSummary(row) }}</router-link>
+              <span v-else>{{ recoveryActionGapSummary(row) }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-card>
     </section>
 
     <section class="dashboard-panels" aria-label="worker 和系统详情">
@@ -179,6 +223,7 @@ import { Refresh } from "@element-plus/icons-vue";
 
 import { documentJobsApi } from "@/api/documentJobs";
 import { healthApi } from "@/api/health";
+import { opsRecoveryActionsApi } from "@/api/opsRecoveryActions";
 import type {
   DocumentJobResponse,
   DocumentJobStage,
@@ -187,6 +232,7 @@ import type {
   HealthOpsAlertsResponse,
   HealthOpsStatus,
   HealthReadyResponse,
+  OpsRecoveryActionResponse,
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
@@ -224,6 +270,9 @@ type OpsAlert = {
 const ready = ref<HealthReadyResponse | null>(null);
 const metrics = ref<HealthMetricsResponse | null>(null);
 const opsAlerts = ref<HealthOpsAlertsResponse | null>(null);
+const recoveryActions = ref<OpsRecoveryActionResponse[]>([]);
+const recoveryActionsGeneratedAt = ref<string | null>(null);
+const recoveryActionsReadOnly = ref<boolean | null>(null);
 const failedJobs = ref<DocumentJobResponse[]>([]);
 const runningJobs = ref<DocumentJobResponse[]>([]);
 const failedJobsTotal = ref(0);
@@ -252,6 +301,12 @@ const queuePressureLabel = computed(() => {
     return "clear";
   }
   return `${total} messages`;
+});
+
+const recoveryActionSummary = computed(() => {
+  const available = recoveryActions.value.filter((item) => item.available).length;
+  const unavailable = recoveryActions.value.length - available;
+  return `${available} available · ${unavailable} candidate`;
 });
 
 const opsStatus = computed<OpsStatusView>(() => {
@@ -395,6 +450,8 @@ const runtimeItems = computed<DetailItem[]>(() => [
   { label: "stage_message_store", value: stringCheck("stage_message_store") },
   { label: "ops_alerts_generated_at", value: formatDateTime(opsAlerts.value?.generated_at) },
   { label: "ops_alerts_read_only", value: booleanLabel(opsAlerts.value?.safety.read_only ?? null) },
+  { label: "recovery_actions_generated_at", value: formatDateTime(recoveryActionsGeneratedAt.value) },
+  { label: "recovery_actions_read_only", value: booleanLabel(recoveryActionsReadOnly.value) },
   { label: "last_refreshed", value: formatDateTime(refreshedAt.value) },
 ]);
 
@@ -412,10 +469,18 @@ async function loadDashboard(): Promise<void> {
   loading.value = true;
   error.value = null;
   try {
-    const [readyResponse, metricsResponse, opsAlertsResponse, failedResponse, runningResponse] = await Promise.all([
+    const [
+      readyResponse,
+      metricsResponse,
+      opsAlertsResponse,
+      recoveryActionsResponse,
+      failedResponse,
+      runningResponse,
+    ] = await Promise.all([
       healthApi.getReady(),
       healthApi.getMetrics(),
       healthApi.getOpsAlerts(),
+      opsRecoveryActionsApi.list(),
       documentJobsApi.list({
         page: 1,
         page_size: 5,
@@ -434,6 +499,9 @@ async function loadDashboard(): Promise<void> {
     ready.value = readyResponse;
     metrics.value = metricsResponse;
     opsAlerts.value = opsAlertsResponse;
+    recoveryActions.value = recoveryActionsResponse.actions;
+    recoveryActionsGeneratedAt.value = recoveryActionsResponse.generated_at;
+    recoveryActionsReadOnly.value = recoveryActionsResponse.safety.read_only;
     failedJobs.value = failedResponse.items;
     failedJobsTotal.value = failedResponse.total;
     runningJobs.value = runningResponse.items;
@@ -486,6 +554,45 @@ function booleanLabel(value: boolean | null): string {
     return "not reported";
   }
   return value ? "yes" : "no";
+}
+
+// 汇总 action 执行 gate，供只读 registry 表格展示。
+function recoveryActionGateSummary(action: OpsRecoveryActionResponse): string {
+  const gates = [
+    action.requires_admin ? "admin" : null,
+    action.requires_reason ? "reason" : null,
+    action.requires_confirmation ? "confirmation" : null,
+    action.dry_run_supported ? "dry-run" : null,
+  ].filter((item): item is string => item !== null);
+  return gates.length > 0 ? gates.join(" / ") : "none";
+}
+
+// 汇总 action 风险 flags，不代表本页面实际执行这些副作用。
+function recoveryActionRiskSummary(action: OpsRecoveryActionResponse): string {
+  const risks = [
+    action.mutates_metadata ? "metadata" : null,
+    action.mutates_queue ? "queue" : null,
+    action.calls_provider ? "provider" : null,
+    action.sends_notification ? "notification" : null,
+    action.deletes_data ? "delete" : null,
+  ].filter((item): item is string => item !== null);
+  return risks.length > 0 ? risks.join(" / ") : "none";
+}
+
+// 返回 action 可用性标签，候选执行动作必须显示为 unavailable。
+function recoveryActionAvailabilityTag(action: OpsRecoveryActionResponse): { label: string; type: TagType } {
+  if (action.available) {
+    return { label: "available", type: "success" };
+  }
+  return { label: "candidate", type: "warning" };
+}
+
+// 展示第一条 gap 或建议路由，避免在表格中展开长列表。
+function recoveryActionGapSummary(action: OpsRecoveryActionResponse): string {
+  if (action.known_gaps.length > 0) {
+    return action.known_gaps[0];
+  }
+  return action.suggested_route || "no known gap";
 }
 
 // 将后端 ops-alerts 状态映射为页面摘要状态。
@@ -645,6 +752,7 @@ onMounted(() => {
 }
 
 .summary-grid,
+.action-safety-panel,
 .dashboard-panels,
 .job-panels {
   display: grid;
@@ -792,6 +900,19 @@ onMounted(() => {
 
 .job-table {
   width: 100%;
+}
+
+.action-table {
+  width: 100%;
+}
+
+.action-title {
+  display: grid;
+  gap: 3px;
+}
+
+.action-title small {
+  color: #667085;
 }
 
 .reference-grid {
