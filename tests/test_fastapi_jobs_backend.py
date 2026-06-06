@@ -1630,6 +1630,193 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(len(retention_events), 1)
         self.assertEqual(retention_events[0].trace_id, "trace_retention_mark")
 
+    def test_file_storage_usage_is_admin_only_readonly_and_reports_reclaim_estimates(self):
+        """验证 storage usage 只读汇总 metadata，并按物理删除前置条件估算可回收空间。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            now = utc_now()
+            reclaimable_file = DocumentFileRecord(
+                id="file_storage_usage_reclaimable",
+                tenant_id="tenant_default",
+                company_id="company_default",
+                job_id="docjob_storage_usage",
+                file_type="generated_word",
+                storage_provider="local_object",
+                bucket="local-object",
+                object_key="document-jobs/tenant_default/docjob_storage_usage/generated_word/reclaimable.docx",
+                original_filename="reclaimable.docx",
+                mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                size_bytes=100,
+                status="expired",
+                expires_at=now - timedelta(days=1),
+                created_at=now - timedelta(days=3),
+                updated_at=now - timedelta(days=1),
+            )
+            unsupported_s3_file = DocumentFileRecord(
+                id="file_storage_usage_s3",
+                tenant_id="tenant_default",
+                company_id="company_default",
+                job_id="docjob_storage_usage",
+                file_type="source_pdf",
+                storage_provider="s3",
+                bucket="bucket",
+                object_key="document-files/source.pdf",
+                original_filename="source.pdf",
+                mime_type="application/pdf",
+                size_bytes=200,
+                status="expired",
+                expires_at=now - timedelta(days=1),
+                created_at=now - timedelta(days=3),
+                updated_at=now - timedelta(days=1),
+            )
+            missing_key_file = DocumentFileRecord(
+                id="file_storage_usage_missing_key",
+                tenant_id="tenant_default",
+                company_id="company_default",
+                job_id="docjob_storage_usage",
+                file_type="generated_word",
+                storage_provider="local_object",
+                bucket="local-object",
+                object_key="",
+                original_filename="missing-key.docx",
+                mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                size_bytes=300,
+                status="expired",
+                expires_at=now - timedelta(days=1),
+                created_at=now - timedelta(days=3),
+                updated_at=now - timedelta(days=1),
+            )
+            uploaded_expired_file = DocumentFileRecord(
+                id="file_storage_usage_uploaded_expired",
+                tenant_id="tenant_default",
+                company_id="company_default",
+                job_id="docjob_storage_usage",
+                file_type="image_asset",
+                storage_provider="local_object",
+                bucket="local-object",
+                object_key="document-jobs/tenant_default/docjob_storage_usage/image_asset/uploaded.png",
+                original_filename="uploaded.png",
+                mime_type="image/png",
+                size_bytes=400,
+                status="uploaded",
+                expires_at=now - timedelta(days=1),
+                created_at=now - timedelta(days=3),
+                updated_at=now - timedelta(days=1),
+            )
+            active_file = DocumentFileRecord(
+                id="file_storage_usage_active",
+                tenant_id="tenant_default",
+                company_id="company_default",
+                job_id="docjob_storage_usage",
+                file_type="source_pdf",
+                storage_provider="local_object",
+                bucket="local-object",
+                object_key="document-files/active.pdf",
+                original_filename="active.pdf",
+                mime_type="application/pdf",
+                size_bytes=500,
+                status="uploaded",
+                expires_at=now + timedelta(days=1),
+                created_at=now - timedelta(days=1),
+                updated_at=now - timedelta(days=1),
+            )
+            deleted_file = DocumentFileRecord(
+                id="file_storage_usage_deleted",
+                tenant_id="tenant_default",
+                company_id="company_default",
+                job_id="docjob_storage_usage",
+                file_type="generated_word",
+                storage_provider="local_object",
+                bucket="local-object",
+                object_key="document-jobs/tenant_default/docjob_storage_usage/generated_word/deleted.docx",
+                original_filename="deleted.docx",
+                mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                size_bytes=600,
+                status="deleted",
+                expires_at=now - timedelta(days=1),
+                created_at=now - timedelta(days=3),
+                updated_at=now - timedelta(days=1),
+            )
+            for record in [
+                reclaimable_file,
+                unsupported_s3_file,
+                missing_key_file,
+                uploaded_expired_file,
+                active_file,
+                deleted_file,
+            ]:
+                runtime.document_file_repository.create_document_file(record)
+            reclaimable_path = runtime.file_upload_service.resolve_local_object_path(reclaimable_file.object_key)
+            reclaimable_path.parent.mkdir(parents=True, exist_ok=True)
+            reclaimable_path.write_bytes(b"still-present")
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                admin_response = client.get("/api/v1/files/storage/usage", headers=admin_headers)
+                operator_response = client.get("/api/v1/files/storage/usage", headers=operator_headers)
+
+            record_after_usage = runtime.document_file_repository.get_document_file(reclaimable_file.id)
+            audit_events = runtime.audit_event_repository.list_audit_events()
+            object_still_exists = reclaimable_path.exists()
+
+        self.assertEqual(operator_response.status_code, 403)
+        self.assertEqual(operator_response.json()["error_code"], "role_forbidden")
+        self.assertEqual(admin_response.status_code, 200)
+        payload = admin_response.json()
+        self.assertEqual(payload["artifact_storage"], "local_object")
+        self.assertTrue(payload["artifact_root_writable"])
+        self.assertIsInstance(payload["artifact_disk_free_bytes"], int)
+        self.assertEqual(payload["totals"]["files_seen"], 6)
+        self.assertEqual(payload["totals"]["active_files"], 5)
+        self.assertEqual(payload["totals"]["expired_files"], 4)
+        self.assertEqual(payload["totals"]["deleted_files"], 1)
+        self.assertEqual(payload["totals"]["total_size_bytes"], 2100)
+        self.assertEqual(payload["totals"]["active_size_bytes"], 1500)
+        self.assertEqual(payload["totals"]["expired_size_bytes"], 1000)
+        self.assertEqual(payload["totals"]["deleted_metadata_size_bytes"], 600)
+        self.assertEqual(payload["reclaim"]["estimated_reclaimable_files"], 1)
+        self.assertEqual(payload["reclaim"]["estimated_reclaimable_size_bytes"], 100)
+        self.assertEqual(payload["reclaim"]["unsupported_storage_files"], 1)
+        self.assertEqual(payload["reclaim"]["unsupported_storage_size_bytes"], 200)
+        self.assertEqual(payload["reclaim"]["blocked_missing_object_key_files"], 1)
+        self.assertEqual(payload["reclaim"]["blocked_missing_object_key_size_bytes"], 300)
+        self.assertEqual(payload["reclaim"]["blocked_not_expired_status_files"], 1)
+        self.assertEqual(payload["reclaim"]["blocked_not_expired_status_size_bytes"], 400)
+        self.assertEqual(payload["reclaim"]["deleted_metadata_files"], 1)
+        self.assertEqual(payload["reclaim"]["estimation_basis"], "metadata_only")
+        self.assertEqual(payload["quota"]["configured"], False)
+        self.assertEqual(payload["quota"]["status"], "not_configured")
+        self.assertEqual(payload["quota"]["used_size_bytes"], 1500)
+        groups_by_provider = {group["key"]: group for group in payload["by_storage_provider"]}
+        self.assertEqual(groups_by_provider["local_object"]["file_count"], 5)
+        self.assertEqual(groups_by_provider["local_object"]["estimated_reclaimable_size_bytes"], 100)
+        self.assertEqual(groups_by_provider["s3"]["expired_size_bytes"], 200)
+        groups_by_file_type = {group["key"]: group for group in payload["by_file_type"]}
+        self.assertEqual(groups_by_file_type["generated_word"]["file_count"], 3)
+        self.assertEqual(groups_by_file_type["source_pdf"]["size_bytes"], 700)
+        groups_by_status = {group["key"]: group for group in payload["by_status"]}
+        self.assertEqual(groups_by_status["expired"]["estimated_reclaimable_count"], 1)
+        self.assertEqual(groups_by_status["uploaded"]["expired_size_bytes"], 400)
+        self.assertTrue(object_still_exists)
+        self.assertIsNotNone(record_after_usage)
+        self.assertEqual(record_after_usage.status, "expired")
+        self.assertEqual(
+            [
+                event
+                for event in audit_events
+                if event.action.startswith("file.storage") or event.action == "file.storage_usage"
+            ],
+            [],
+        )
+
     def test_file_retention_policy_crud_is_admin_only_and_audited(self):
         """验证保留策略治理接口 Admin-only，写操作记录审计且不触发物理删除。"""
 

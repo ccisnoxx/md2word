@@ -3525,6 +3525,157 @@
         "title": "FileRetentionPolicyUpdateRequest",
         "type": "object"
       },
+      "FileStorageUsageGroupResponse": {
+        "description": "返回一个 document_files storage usage 分组汇总。",
+        "properties": {
+          "estimated_reclaimable_count": {
+            "title": "Estimated Reclaimable Count",
+            "type": "integer"
+          },
+          "estimated_reclaimable_size_bytes": {
+            "title": "Estimated Reclaimable Size Bytes",
+            "type": "integer"
+          },
+          "expired_count": {
+            "title": "Expired Count",
+            "type": "integer"
+          },
+          "expired_size_bytes": {
+            "title": "Expired Size Bytes",
+            "type": "integer"
+          },
+          "file_count": {
+            "title": "File Count",
+            "type": "integer"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "file_count",
+          "size_bytes",
+          "expired_count",
+          "expired_size_bytes",
+          "estimated_reclaimable_count",
+          "estimated_reclaimable_size_bytes"
+        ],
+        "title": "FileStorageUsageGroupResponse",
+        "type": "object"
+      },
+      "FileStorageUsageResponse": {
+        "description": "返回 document_files storage usage 和 quota readiness 只读汇总。",
+        "properties": {
+          "artifact_disk_free_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Disk Free Bytes"
+          },
+          "artifact_root_writable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Root Writable"
+          },
+          "artifact_storage": {
+            "title": "Artifact Storage",
+            "type": "string"
+          },
+          "by_file_type": {
+            "items": {
+              "$ref": "#/components/schemas/FileStorageUsageGroupResponse"
+            },
+            "title": "By File Type",
+            "type": "array"
+          },
+          "by_status": {
+            "items": {
+              "$ref": "#/components/schemas/FileStorageUsageGroupResponse"
+            },
+            "title": "By Status",
+            "type": "array"
+          },
+          "by_storage_provider": {
+            "items": {
+              "$ref": "#/components/schemas/FileStorageUsageGroupResponse"
+            },
+            "title": "By Storage Provider",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "quota": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Quota",
+            "type": "object"
+          },
+          "reclaim": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "title": "Reclaim",
+            "type": "object"
+          },
+          "totals": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Totals",
+            "type": "object"
+          }
+        },
+        "required": [
+          "generated_at",
+          "artifact_storage"
+        ],
+        "title": "FileStorageUsageResponse",
+        "type": "object"
+      },
       "FileUploadResponse": {
         "description": "返回代理上传完成后的文件元数据。",
         "properties": {
@@ -11689,6 +11840,56 @@
           }
         },
         "summary": "Set Default File Retention Policy",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/storage/usage": {
+      "get": {
+        "description": "返回 document_files storage usage metadata 估算，不执行清理或删除。",
+        "operationId": "get_file_storage_usage_api_v1_files_storage_usage_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileStorageUsageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get File Storage Usage",
         "tags": [
           "files"
         ]

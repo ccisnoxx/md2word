@@ -9,6 +9,7 @@ source_files:
   - app/domains/files/schemas.py
   - app/domains/files/models.py
   - app/domains/files/retention.py
+  - app/domains/files/storage_usage.py
   - app/domains/files/service.py
 summary: Files API 提供 PDF 上传授权、本地代理上传、文件 metadata 查询、Admin-only metadata 保留期管理和受保护的过期文件物理删除。
 tags: [files, api, pdf, upload, retention]
@@ -20,6 +21,8 @@ last_reviewed: 2026-06-06
 Files API 挂在 `/api/v1/files` 下，当前只面向登录用户。P0 PDF -> Word 流程先通过它登记并上传 PDF，再把返回的 `file_id` 传给 `/api/v1/document-jobs`。
 
 保留期管理接口只面向 Admin，用于管理保留策略、查看或标记过期 metadata，并在显式 dry-run 后人工执行本地过期文件物理删除。它不删除任务、文件 metadata 记录、审计记录或 `object_key`，也不触发 PDF 解析、翻译或 Word 生成流程。当前物理删除只支持 `local_file` 和 `local_object`，`s3` 会返回 unsupported 结果而不会执行真实对象存储删除。
+
+存储使用汇总接口只面向 Admin，只基于 `document_files` metadata 的 `size_bytes` 做容量估算和 quota readiness 展示。它不验证对象是否真实存在，不执行 mark-expired、delete-preview、delete-expired、quota enforcement 或上传阻断。
 
 ## API 参考
 
@@ -108,6 +111,54 @@ Files API 挂在 `/api/v1/files` 下，当前只面向登录用户。P0 PDF -> W
 | `fallback_retention_days` | 未命中 published policy 时使用的 `oss_file_retention_days`。 |
 | `effective[]` | 每个 file type 当前解析得到的有效策略，包含 `source`、`retention_days`、`policy_id` 和 `reason`。 |
 | `items[]` | 全部 policy 历史记录；禁用策略也保留。 |
+
+### `GET /api/v1/files/storage/usage`
+
+- 用途：读取 `document_files` storage usage 和 quota readiness 的只读汇总。
+- 认证：Bearer JWT，Admin only。
+- 行为：
+  - 基于 `DocumentFileRecord.size_bytes` 估算文件占用。
+  - 按 storage provider、file type、status 聚合文件数和 bytes。
+  - 估算已 expired 且满足本地物理删除首层条件的可回收空间。
+  - 返回 artifact storage readiness 上下文，例如 `artifact_storage`、`artifact_root_writable`、`artifact_disk_free_bytes`。
+  - 不修改 `document_files` metadata。
+  - 不标记 expired。
+  - 不执行物理删除或 S3 删除。
+  - 不阻断上传或执行 quota enforcement。
+  - 默认不写 audit event。
+- 响应：`FileStorageUsageResponse`。
+
+关键字段：
+
+| 字段 | 说明 |
+|---|---|
+| `generated_at` | 汇总生成时间。 |
+| `artifact_storage` | 当前 artifact storage backend。 |
+| `artifact_root_writable` | 当前 artifact 本地根是否可写；来自 health readiness 语义。 |
+| `artifact_disk_free_bytes` | 当前 artifact 本地根所在磁盘剩余字节数；对象存储 provider 下仍只代表本地运行时根。 |
+| `totals.files_seen` | 扫描到的 `document_files` metadata 行数。 |
+| `totals.active_size_bytes` | 非 `deleted` metadata 的估算总 bytes。 |
+| `totals.expired_size_bytes` | 已过 `expires_at` 且非 `deleted` metadata 的估算 bytes。 |
+| `reclaim.estimated_reclaimable_size_bytes` | `status=expired`、已过期、provider 为 `local_file` 或 `local_object` 且有 `object_key` 的 metadata 估算 bytes。实际是否可删除仍需 `/retention/delete-preview` 验证。 |
+| `reclaim.unsupported_storage_size_bytes` | 已过期且 `status=expired`，但 provider 暂不支持物理删除，例如 `s3`。 |
+| `reclaim.blocked_missing_object_key_size_bytes` | 已过期且 `status=expired`，但本地 provider 缺少 `object_key`。 |
+| `reclaim.blocked_not_expired_status_size_bytes` | 已过 `expires_at` 但状态仍不是 `expired`，通常需要先经过 mark-expired 或正常上传状态收口。 |
+| `quota.status` | Advisory-only quota 状态；当前第一版未配置时为 `not_configured`，不影响上传。 |
+| `by_storage_provider[]` | 按 provider 汇总。 |
+| `by_file_type[]` | 按 file type 汇总。 |
+| `by_status[]` | 按 metadata status 汇总。 |
+
+分组字段：
+
+| 字段 | 说明 |
+|---|---|
+| `key` | provider、file type 或 status 值。 |
+| `file_count` | 分组内 metadata 行数。 |
+| `size_bytes` | 分组内 `size_bytes` 总和。 |
+| `expired_count` | 分组内已过 `expires_at` 且非 `deleted` 的行数。 |
+| `expired_size_bytes` | 分组内已过 `expires_at` 且非 `deleted` 的估算 bytes。 |
+| `estimated_reclaimable_count` | 分组内满足 metadata-estimated reclaim 条件的行数。 |
+| `estimated_reclaimable_size_bytes` | 分组内满足 metadata-estimated reclaim 条件的估算 bytes。 |
 
 ### `POST /api/v1/files/retention/policies`
 

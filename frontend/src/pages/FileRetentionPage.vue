@@ -9,7 +9,7 @@
         <p>查看已过保留期的 document_files，先标记 expired，再按 dry-run 结果手动物理删除本地文件。</p>
       </div>
       <div class="heading-actions">
-        <el-button :icon="Refresh" :loading="loading" @click="() => loadPlan()">刷新</el-button>
+        <el-button :icon="Refresh" :loading="loading || storageLoading || policyLoading" @click="refreshRetentionPage">刷新</el-button>
         <el-button
           type="warning"
           :icon="Finished"
@@ -44,6 +44,92 @@
     >
       标记 expired 仍是 metadata-only。物理删除只支持已 expired 的本地文件，必须先预览、选择文件、填写 reason 并输入确认短语；任务记录、事件、metadata 行和 object_key 会保留。
     </el-alert>
+
+    <section v-loading="storageLoading" class="retention-table-section" aria-label="存储使用和容量 readiness">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">存储使用与容量 readiness</h2>
+          <p class="section-subtitle">只基于 document_files metadata 估算；不验证对象存在性，不自动选择文件，不执行删除。</p>
+        </div>
+        <div class="toolbar">
+          <el-tag effect="plain">basis={{ storageUsage?.reclaim.estimation_basis || "metadata_only" }}</el-tag>
+          <el-tag effect="plain" :type="storageQuotaStatusTag(storageQuotaStatus)">quota={{ storageQuotaStatus }}</el-tag>
+          <el-tag effect="plain">generated={{ formatDateTime(storageUsage?.generated_at) }}</el-tag>
+        </div>
+      </div>
+
+      <div class="summary-grid">
+        <article class="summary-card">
+          <span>Active Used</span>
+          <strong>{{ formatBytes(storageTotalValue("active_size_bytes")) }}</strong>
+          <small>active files: {{ storageTotalValue("active_files") }} / seen: {{ storageTotalValue("files_seen") }}</small>
+        </article>
+        <article class="summary-card">
+          <span>Expired Estimate</span>
+          <strong>{{ formatBytes(storageTotalValue("expired_size_bytes")) }}</strong>
+          <small>expired files: {{ storageTotalValue("expired_files") }}</small>
+        </article>
+        <article class="summary-card">
+          <span>Reclaim Estimate</span>
+          <strong>{{ formatBytes(storageReclaimValue("estimated_reclaimable_size_bytes")) }}</strong>
+          <small>estimated files: {{ storageReclaimValue("estimated_reclaimable_files") }} · 仍需 delete-preview 验证</small>
+        </article>
+        <article class="summary-card">
+          <span>Disk Free</span>
+          <strong>{{ formatBytes(storageUsage?.artifact_disk_free_bytes ?? null) }}</strong>
+          <small>{{ storageUsage?.artifact_storage || "-" }} · writable={{ String(storageUsage?.artifact_root_writable ?? "-") }}</small>
+        </article>
+      </div>
+
+      <div class="storage-group-grid">
+        <article class="storage-group-card" aria-label="按 storage provider 汇总">
+          <h3>By Provider</h3>
+          <el-table :data="storageUsage?.by_storage_provider || []" empty-text="暂无 provider 汇总" table-layout="fixed">
+            <el-table-column prop="key" label="Provider" min-width="130" />
+            <el-table-column prop="file_count" label="Files" width="80" />
+            <el-table-column prop="size_bytes" label="Size" min-width="110">
+              <template #default="{ row }">{{ formatBytes(row.size_bytes) }}</template>
+            </el-table-column>
+            <el-table-column prop="expired_size_bytes" label="Expired" min-width="110">
+              <template #default="{ row }">{{ formatBytes(row.expired_size_bytes) }}</template>
+            </el-table-column>
+            <el-table-column prop="estimated_reclaimable_size_bytes" label="Reclaim" min-width="110">
+              <template #default="{ row }">{{ formatBytes(row.estimated_reclaimable_size_bytes) }}</template>
+            </el-table-column>
+          </el-table>
+        </article>
+
+        <article class="storage-group-card" aria-label="按 file type 汇总">
+          <h3>By File Type</h3>
+          <el-table :data="storageUsage?.by_file_type || []" empty-text="暂无 file type 汇总" table-layout="fixed">
+            <el-table-column prop="key" label="Type" min-width="150" />
+            <el-table-column prop="file_count" label="Files" width="80" />
+            <el-table-column prop="size_bytes" label="Size" min-width="110">
+              <template #default="{ row }">{{ formatBytes(row.size_bytes) }}</template>
+            </el-table-column>
+            <el-table-column prop="expired_count" label="Expired" width="90" />
+            <el-table-column prop="estimated_reclaimable_count" label="Reclaim" width="90" />
+          </el-table>
+        </article>
+
+        <article class="storage-group-card" aria-label="按 status 汇总">
+          <h3>By Status</h3>
+          <el-table :data="storageUsage?.by_status || []" empty-text="暂无 status 汇总" table-layout="fixed">
+            <el-table-column prop="key" label="Status" min-width="120" />
+            <el-table-column prop="file_count" label="Files" width="80" />
+            <el-table-column prop="size_bytes" label="Size" min-width="110">
+              <template #default="{ row }">{{ formatBytes(row.size_bytes) }}</template>
+            </el-table-column>
+            <el-table-column prop="expired_size_bytes" label="Expired" min-width="110">
+              <template #default="{ row }">{{ formatBytes(row.expired_size_bytes) }}</template>
+            </el-table-column>
+            <el-table-column prop="estimated_reclaimable_size_bytes" label="Reclaim" min-width="110">
+              <template #default="{ row }">{{ formatBytes(row.estimated_reclaimable_size_bytes) }}</template>
+            </el-table-column>
+          </el-table>
+        </article>
+      </div>
+    </section>
 
     <section v-loading="loading" class="summary-grid" aria-label="文件保留计划摘要">
       <article class="summary-card">
@@ -349,6 +435,7 @@ import type {
   FileRetentionPolicyResponse,
   FileRetentionPolicyScopeType,
   FileRetentionPlanResponse,
+  FileStorageUsageResponse,
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import { formatBytes, formatDateTime } from "@/utils/format";
@@ -361,12 +448,14 @@ const selectedCandidates = ref<FileRetentionCandidateResponse[]>([]);
 const deleteReport = ref<FileRetentionDeleteResponse | null>(null);
 const policyList = ref<Awaited<ReturnType<typeof filesApi.listRetentionPolicies>> | null>(null);
 const policyImpact = ref<FileRetentionPolicyImpactResponse | null>(null);
+const storageUsage = ref<FileStorageUsageResponse | null>(null);
 const loading = ref(false);
 const marking = ref(false);
 const previewing = ref(false);
 const deleting = ref(false);
 const policyLoading = ref(false);
 const policySaving = ref(false);
+const storageLoading = ref(false);
 const error = ref<ApiClientError | null>(null);
 const deleteDialog = reactive({
   visible: false,
@@ -402,6 +491,7 @@ const candidateCount = computed(() => plan.value?.candidates.length ?? 0);
 const markableCount = computed(() => (
   plan.value?.candidates.filter((candidate) => candidate.status === "uploaded").length ?? 0
 ));
+const storageQuotaStatus = computed(() => String(storageUsage.value?.quota.status ?? "not_configured"));
 const selectedFileIds = computed(() => selectedCandidates.value.map((candidate) => candidate.file_id));
 const deletablePreviewCount = computed(() => (
   deleteReport.value?.items.filter((item) => item.outcome === "deletable").length ?? 0
@@ -412,6 +502,13 @@ const canOpenDeleteDialog = computed(() => (
   && selectedFileIds.value.join("\n") === deleteReport.value.requested_file_ids.join("\n")
   && deletablePreviewCount.value > 0
 ));
+
+// 同步刷新 retention plan、policy governance 和 storage usage。
+function refreshRetentionPage(): void {
+  void loadPlan();
+  void loadPolicies();
+  void loadStorageUsage();
+}
 
 // 读取当前 retention dry-run 计划。
 async function loadPlan(preserveDeleteReport = false): Promise<void> {
@@ -427,6 +524,19 @@ async function loadPlan(preserveDeleteReport = false): Promise<void> {
     error.value = normalizeApiError(caught);
   } finally {
     loading.value = false;
+  }
+}
+
+// 读取 document_files storage usage 只读估算。
+async function loadStorageUsage(): Promise<void> {
+  storageLoading.value = true;
+  error.value = null;
+  try {
+    storageUsage.value = await filesApi.getStorageUsage();
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    storageLoading.value = false;
   }
 }
 
@@ -664,6 +774,17 @@ function totalDeleteValue(key: string): number {
   return deleteReport.value?.totals[key] ?? 0;
 }
 
+// 读取 storage usage totals 中的数值，缺失时展示 0。
+function storageTotalValue(key: string): number {
+  return storageUsage.value?.totals[key] ?? 0;
+}
+
+// 读取 storage usage reclaim 中的数字字段，非数字字段按 0 处理。
+function storageReclaimValue(key: string): number {
+  const value = storageUsage.value?.reclaim[key];
+  return typeof value === "number" ? value : 0;
+}
+
 // 将 metadata 状态映射为表格标签样式。
 function statusTag(status: string): StatusTag {
   if (status === "uploaded") {
@@ -692,6 +813,20 @@ function policyStatusTag(status: string): StatusTag {
   return "info";
 }
 
+// 将 advisory quota 状态映射为标签样式。
+function storageQuotaStatusTag(status: string): StatusTag {
+  if (status === "exceeded") {
+    return "danger";
+  }
+  if (status === "warning") {
+    return "warning";
+  }
+  if (status === "ok") {
+    return "success";
+  }
+  return "info";
+}
+
 // 将物理删除 outcome 映射为结果标签样式。
 function outcomeTag(outcome: FileRetentionDeleteOutcome): StatusTag {
   if (outcome === "deleted" || outcome === "already_missing" || outcome === "deletable") {
@@ -709,6 +844,7 @@ function outcomeTag(outcome: FileRetentionDeleteOutcome): StatusTag {
 onMounted(() => {
   void loadPlan();
   void loadPolicies();
+  void loadStorageUsage();
 });
 </script>
 
@@ -832,6 +968,24 @@ onMounted(() => {
   margin-top: 4px;
 }
 
+.storage-group-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.storage-group-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.storage-group-card h3 {
+  margin: 0;
+  color: #111827;
+  font-size: 14px;
+}
+
 .section-title {
   margin: 0;
   color: #111827;
@@ -864,6 +1018,10 @@ onMounted(() => {
 @media (max-width: 920px) {
   .summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .storage-group-grid {
+    grid-template-columns: 1fr;
   }
 }
 
