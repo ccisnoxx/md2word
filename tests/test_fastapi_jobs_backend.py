@@ -1618,6 +1618,374 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(len(retention_events), 1)
         self.assertEqual(retention_events[0].trace_id, "trace_retention_mark")
 
+    def test_file_retention_physical_delete_preview_is_admin_only_and_does_not_mutate(self):
+        """验证物理删除预览只读，且只有 Admin 可访问。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            stale_file = self._seed_expired_document_file(runtime, file_id="file_retention_delete_preview")
+            runtime.document_file_repository.update_document_file(stale_file.id, status="expired")
+            stale_path = runtime.file_upload_service.resolve_local_object_path(stale_file.object_key)
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                admin_response = client.post(
+                    "/api/v1/files/retention/delete-preview",
+                    headers=admin_headers,
+                    json={"file_ids": [stale_file.id]},
+                )
+                operator_response = client.post(
+                    "/api/v1/files/retention/delete-preview",
+                    headers=operator_headers,
+                    json={"file_ids": [stale_file.id]},
+                )
+
+            file_after_preview = runtime.document_file_repository.get_document_file(stale_file.id)
+            audit_events = runtime.audit_event_repository.list_audit_events()
+            object_still_exists = stale_path.exists()
+
+        self.assertEqual(admin_response.status_code, 200)
+        payload = admin_response.json()
+        self.assertEqual(payload["action_mode"], "delete_preview")
+        self.assertEqual(payload["confirmation_phrase"], "DELETE EXPIRED FILES")
+        self.assertEqual(payload["items"][0]["outcome"], "deletable")
+        self.assertFalse(payload["items"][0]["deleted"])
+        self.assertFalse(payload["items"][0]["metadata_updated"])
+        self.assertTrue(object_still_exists)
+        self.assertIsNotNone(file_after_preview)
+        self.assertEqual(file_after_preview.status, "expired")
+        self.assertEqual(
+            [
+                event
+                for event in audit_events
+                if event.action == "file.retention_physical_delete"
+            ],
+            [],
+        )
+        self.assertEqual(operator_response.status_code, 403)
+        self.assertEqual(operator_response.json()["error_code"], "role_forbidden")
+
+    def test_file_retention_physical_delete_requires_reason_and_confirmation(self):
+        """验证执行物理删除必须带 reason 和确认短语。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            stale_file = self._seed_expired_document_file(runtime, file_id="file_retention_delete_guard")
+            runtime.document_file_repository.update_document_file(stale_file.id, status="expired")
+            stale_path = runtime.file_upload_service.resolve_local_object_path(stale_file.object_key)
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                bad_confirmation_response = client.post(
+                    "/api/v1/files/retention/delete-expired",
+                    headers=admin_headers,
+                    json={
+                        "file_ids": [stale_file.id],
+                        "reason": "manual cleanup",
+                        "confirmation": "DELETE",
+                    },
+                )
+                padded_confirmation_response = client.post(
+                    "/api/v1/files/retention/delete-expired",
+                    headers=admin_headers,
+                    json={
+                        "file_ids": [stale_file.id],
+                        "reason": "manual cleanup",
+                        "confirmation": " DELETE EXPIRED FILES ",
+                    },
+                )
+                empty_reason_response = client.post(
+                    "/api/v1/files/retention/delete-expired",
+                    headers=admin_headers,
+                    json={
+                        "file_ids": [stale_file.id],
+                        "reason": "  ",
+                        "confirmation": "DELETE EXPIRED FILES",
+                    },
+                )
+
+            file_after_checks = runtime.document_file_repository.get_document_file(stale_file.id)
+            object_still_exists = stale_path.exists()
+
+        self.assertEqual(bad_confirmation_response.status_code, 400)
+        self.assertEqual(bad_confirmation_response.json()["error_code"], "invalid_request")
+        self.assertEqual(padded_confirmation_response.status_code, 400)
+        self.assertEqual(padded_confirmation_response.json()["error_code"], "invalid_request")
+        self.assertEqual(empty_reason_response.status_code, 400)
+        self.assertEqual(empty_reason_response.json()["error_code"], "invalid_request")
+        self.assertTrue(object_still_exists)
+        self.assertIsNotNone(file_after_checks)
+        self.assertEqual(file_after_checks.status, "expired")
+
+    def test_file_retention_physical_delete_rejects_invalid_file_ids(self):
+        """验证物理删除执行拒绝空列表、空白项、重复项和过大批次。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                responses = [
+                    client.post(
+                        "/api/v1/files/retention/delete-expired",
+                        headers=admin_headers,
+                        json={
+                            "file_ids": file_ids,
+                            "reason": "manual cleanup",
+                            "confirmation": "DELETE EXPIRED FILES",
+                        },
+                    )
+                    for file_ids in (
+                        [],
+                        ["file_a", " "],
+                        ["file_a", "file_a"],
+                        [f"file_{index}" for index in range(51)],
+                    )
+                ]
+
+        self.assertEqual([response.status_code for response in responses], [400, 400, 400, 400])
+        self.assertEqual([response.json()["error_code"] for response in responses], ["invalid_request"] * 4)
+
+    def test_file_retention_physical_delete_removes_expired_local_object_and_marks_deleted(self):
+        """验证 eligible expired 本地对象会被删除，metadata 行保留并标记 deleted。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            stale_file = self._seed_expired_document_file(runtime, file_id="file_retention_delete_local")
+            runtime.document_file_repository.update_document_file(stale_file.id, status="expired")
+            stale_path = runtime.file_upload_service.resolve_local_object_path(stale_file.object_key)
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                response = client.post(
+                    "/api/v1/files/retention/delete-expired",
+                    headers={**admin_headers, "X-Trace-Id": "trace_retention_delete"},
+                    json={
+                        "file_ids": [stale_file.id],
+                        "reason": "manual cleanup",
+                        "confirmation": "DELETE EXPIRED FILES",
+                    },
+                )
+
+            file_after_delete = runtime.document_file_repository.get_document_file(stale_file.id)
+            audit_events = runtime.audit_event_repository.list_audit_events()
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["action_mode"], "delete_execute")
+        self.assertEqual(payload["totals"]["deleted"], 1)
+        self.assertEqual(payload["totals"]["metadata_updated"], 1)
+        self.assertEqual(payload["items"][0]["outcome"], "deleted")
+        self.assertTrue(payload["items"][0]["deleted"])
+        self.assertTrue(payload["items"][0]["metadata_updated"])
+        self.assertFalse(stale_path.exists())
+        self.assertIsNotNone(file_after_delete)
+        self.assertEqual(file_after_delete.status, "deleted")
+        self.assertEqual(file_after_delete.object_key, stale_file.object_key)
+        retention_events = [
+            event
+            for event in audit_events
+            if event.action == "file.retention_physical_delete"
+        ]
+        self.assertEqual(len(retention_events), 1)
+        self.assertEqual(retention_events[0].trace_id, "trace_retention_delete")
+        self.assertIn("deleted=1", retention_events[0].reason)
+
+    def test_file_retention_physical_delete_treats_missing_local_object_as_idempotent(self):
+        """验证 eligible expired 文件内容已缺失时仍可幂等标记 metadata deleted。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            stale_file = self._seed_expired_document_file(runtime, file_id="file_retention_delete_missing")
+            runtime.document_file_repository.update_document_file(stale_file.id, status="expired")
+            stale_path = runtime.file_upload_service.resolve_local_object_path(stale_file.object_key)
+            stale_path.unlink()
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                response = client.post(
+                    "/api/v1/files/retention/delete-expired",
+                    headers=admin_headers,
+                    json={
+                        "file_ids": [stale_file.id],
+                        "reason": "manual cleanup",
+                        "confirmation": "DELETE EXPIRED FILES",
+                    },
+                )
+
+            file_after_delete = runtime.document_file_repository.get_document_file(stale_file.id)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["totals"]["already_missing"], 1)
+        self.assertEqual(payload["items"][0]["outcome"], "already_missing")
+        self.assertFalse(payload["items"][0]["deleted"])
+        self.assertTrue(payload["items"][0]["metadata_updated"])
+        self.assertIsNotNone(file_after_delete)
+        self.assertEqual(file_after_delete.status, "deleted")
+
+    def test_file_retention_physical_delete_skips_missing_object_key(self):
+        """验证缺少 object_key 的本地文件不会进入物理删除执行路径。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            stale_file = self._seed_expired_document_file(runtime, file_id="file_retention_delete_no_key")
+            runtime.document_file_repository.update_document_file(
+                stale_file.id,
+                status="expired",
+                object_key="",
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                response = client.post(
+                    "/api/v1/files/retention/delete-expired",
+                    headers=admin_headers,
+                    json={
+                        "file_ids": [stale_file.id],
+                        "reason": "manual cleanup",
+                        "confirmation": "DELETE EXPIRED FILES",
+                    },
+                )
+
+            file_after_delete = runtime.document_file_repository.get_document_file(stale_file.id)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["totals"]["skipped"], 1)
+        self.assertEqual(payload["items"][0]["outcome"], "skipped_missing_object_key")
+        self.assertFalse(payload["items"][0]["metadata_updated"])
+        self.assertIsNotNone(file_after_delete)
+        self.assertEqual(file_after_delete.status, "expired")
+
+    def test_file_retention_physical_delete_skips_s3_without_mutating_metadata(self):
+        """验证第一版不支持 S3 物理删除，且不会修改 S3 metadata。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            now = utc_now()
+            s3_file = DocumentFileRecord(
+                id="file_retention_delete_s3",
+                tenant_id="tenant_default",
+                company_id="company_default",
+                job_id="docjob_retention",
+                file_type="generated_word",
+                storage_provider="s3",
+                bucket="test-bucket",
+                object_key="document-jobs/tenant_default/docjob_retention/generated_word/s3.docx",
+                original_filename="s3.docx",
+                mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                size_bytes=10,
+                status="expired",
+                expires_at=now - timedelta(seconds=1),
+                created_by="user_operator",
+                created_at=now - timedelta(days=2),
+                updated_at=now - timedelta(days=2),
+            )
+            runtime.document_file_repository.create_document_file(s3_file)
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                response = client.post(
+                    "/api/v1/files/retention/delete-expired",
+                    headers=admin_headers,
+                    json={
+                        "file_ids": [s3_file.id],
+                        "reason": "manual cleanup",
+                        "confirmation": "DELETE EXPIRED FILES",
+                    },
+                )
+
+            file_after_delete = runtime.document_file_repository.get_document_file(s3_file.id)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["totals"]["skipped"], 1)
+        self.assertEqual(payload["items"][0]["outcome"], "skipped_unsupported_storage")
+        self.assertFalse(payload["items"][0]["metadata_updated"])
+        self.assertIsNotNone(file_after_delete)
+        self.assertEqual(file_after_delete.status, "expired")
+
+    def test_file_retention_physical_delete_skips_uploaded_without_deleting(self):
+        """验证 uploaded 过期候选必须先 mark-expired，不能直接物理删除。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            uploaded_file = self._seed_expired_document_file(runtime, file_id="file_retention_delete_uploaded")
+            uploaded_path = runtime.file_upload_service.resolve_local_object_path(uploaded_file.object_key)
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                response = client.post(
+                    "/api/v1/files/retention/delete-expired",
+                    headers=admin_headers,
+                    json={
+                        "file_ids": [uploaded_file.id],
+                        "reason": "manual cleanup",
+                        "confirmation": "DELETE EXPIRED FILES",
+                    },
+                )
+
+            file_after_delete = runtime.document_file_repository.get_document_file(uploaded_file.id)
+            object_still_exists = uploaded_path.exists()
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["totals"]["skipped"], 1)
+        self.assertEqual(payload["items"][0]["outcome"], "skipped_not_expired_status")
+        self.assertTrue(object_still_exists)
+        self.assertIsNotNone(file_after_delete)
+        self.assertEqual(file_after_delete.status, "uploaded")
+
     def test_file_authorized_content_upload_validates_pdf_and_writes_object(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(

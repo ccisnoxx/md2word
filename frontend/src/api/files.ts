@@ -1,7 +1,11 @@
-// frontend/src/api/files.ts: File metadata, upload-authorization, and retention API wrappers.
+// File: frontend/src/api/files.ts
+// Purpose: Provide file metadata, upload-authorization, and retention API wrappers.
 import { apiRequest } from "@/api/client";
 import type {
   DocumentFileResponse,
+  FileRetentionDeleteExecuteRequest,
+  FileRetentionDeletePreviewRequest,
+  FileRetentionDeleteResponse,
   FileRetentionMarkExpiredResponse,
   FileRetentionPlanResponse,
   FileUploadUrlRequest,
@@ -39,6 +43,24 @@ export const filesApi = {
     return apiRequest<FileRetentionMarkExpiredResponse>({
       url: "/api/v1/files/retention/mark-expired",
       method: "POST",
+    });
+  },
+
+  // 预览 selected expired 文件物理删除结果，不修改 metadata 或二进制。
+  previewRetentionDelete(payload: FileRetentionDeletePreviewRequest): Promise<FileRetentionDeleteResponse> {
+    return apiRequest<FileRetentionDeleteResponse>({
+      url: "/api/v1/files/retention/delete-preview",
+      method: "POST",
+      data: payload,
+    });
+  },
+
+  // 执行 selected expired 文件物理删除，后端仍保留 metadata 追溯信息。
+  deleteExpiredRetentionFiles(payload: FileRetentionDeleteExecuteRequest): Promise<FileRetentionDeleteResponse> {
+    return apiRequest<FileRetentionDeleteResponse>({
+      url: "/api/v1/files/retention/delete-expired",
+      method: "POST",
+      data: payload,
     });
   },
 };

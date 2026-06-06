@@ -1,11 +1,12 @@
-from __future__ import annotations
+# File: app/domains/files/service.py
+# Purpose: 处理文件元数据登记、上传授权、代理写入和保留期物理删除。
 
-# app/domains/files/service.py: 处理文件元数据登记、上传授权和后端代理写入。
+from __future__ import annotations
 
 import hashlib
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 from uuid import uuid4
@@ -20,6 +21,10 @@ from app.domains.files.repository import DocumentFileRepositoryProtocol
 from app.domains.files.validation import validate_pdf_metadata, validate_pdf_upload
 from app.domains.jobs.models import utc_now
 
+RETENTION_DELETE_BATCH_LIMIT = 50
+RETENTION_DELETE_CONFIRMATION_PHRASE = "DELETE EXPIRED FILES"
+RETENTION_DELETE_SUPPORTED_LOCAL_PROVIDERS = {"local_file", "local_object"}
+
 
 @dataclass(frozen=True, slots=True)
 class FileUploadAuthorization:
@@ -30,6 +35,54 @@ class FileUploadAuthorization:
     method: Literal["PUT"]
     headers: dict[str, str]
     expires_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class FileRetentionDeleteItem:
+    """单个 document_file 物理删除预览或执行结果。"""
+
+    file_id: str
+    job_id: str | None
+    file_type: str | None
+    storage_provider: str | None
+    status_before: str | None
+    status_after: str | None
+    object_key: str | None
+    size_bytes: int | None
+    outcome: str
+    reason: str
+    deleted: bool = False
+    metadata_updated: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        """转换为 API schema 可直接校验的 dict。"""
+
+        return {
+            "file_id": self.file_id,
+            "job_id": self.job_id,
+            "file_type": self.file_type,
+            "storage_provider": self.storage_provider,
+            "status_before": self.status_before,
+            "status_after": self.status_after,
+            "object_key": self.object_key,
+            "size_bytes": self.size_bytes,
+            "outcome": self.outcome,
+            "reason": self.reason,
+            "deleted": self.deleted,
+            "metadata_updated": self.metadata_updated,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class FileRetentionDeleteReport:
+    """selected document_files 物理删除预览或执行汇总。"""
+
+    generated_at: datetime
+    action_mode: Literal["delete_preview", "delete_execute"]
+    requested_file_ids: list[str]
+    confirmation_phrase: str
+    totals: dict[str, int]
+    items: list[FileRetentionDeleteItem]
 
 
 class FileUploadService:
@@ -179,6 +232,59 @@ class FileUploadService:
             ExpiresIn=expires_seconds,
         )
 
+    def preview_retention_physical_delete(
+        self,
+        file_ids: list[str],
+        *,
+        now: datetime | None = None,
+    ) -> FileRetentionDeleteReport:
+        """预览 selected expired 文件的物理删除结果，不修改 metadata 或二进制。"""
+
+        generated_at = self._normalize_datetime(now or utc_now())
+        requested_file_ids = self._validate_retention_delete_file_ids(file_ids)
+        items = [
+            self._preview_retention_delete_item(file_id, now=generated_at)
+            for file_id in requested_file_ids
+        ]
+        return self._build_retention_delete_report(
+            generated_at=generated_at,
+            action_mode="delete_preview",
+            requested_file_ids=requested_file_ids,
+            items=items,
+        )
+
+    def execute_retention_physical_delete(
+        self,
+        file_ids: list[str],
+        *,
+        reason: str,
+        confirmation: str,
+        now: datetime | None = None,
+    ) -> FileRetentionDeleteReport:
+        """执行 selected expired 文件的物理删除，并把成功项 metadata 标记为 deleted。"""
+
+        normalized_reason = reason.strip()
+        if not normalized_reason:
+            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "reason 不能为空。")
+        if confirmation != RETENTION_DELETE_CONFIRMATION_PHRASE:
+            raise ApiError(
+                status.HTTP_400_BAD_REQUEST,
+                "invalid_request",
+                f"confirmation 必须为 {RETENTION_DELETE_CONFIRMATION_PHRASE}。",
+            )
+        generated_at = self._normalize_datetime(now or utc_now())
+        requested_file_ids = self._validate_retention_delete_file_ids(file_ids)
+        items = [
+            self._execute_retention_delete_item(file_id, now=generated_at)
+            for file_id in requested_file_ids
+        ]
+        return self._build_retention_delete_report(
+            generated_at=generated_at,
+            action_mode="delete_execute",
+            requested_file_ids=requested_file_ids,
+            items=items,
+        )
+
     def register_generated_content(
         self,
         *,
@@ -233,6 +339,203 @@ class FileUploadService:
         stored = record.model_copy(update={"etag": etag, "updated_at": utc_now()})
         self.repository.create_document_file(stored)
         return stored
+
+    def _validate_retention_delete_file_ids(self, file_ids: list[str]) -> list[str]:
+        """校验物理删除批量 file_id，避免空值、重复和过大批次。"""
+
+        if not file_ids:
+            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "file_ids 不能为空。")
+        if len(file_ids) > RETENTION_DELETE_BATCH_LIMIT:
+            raise ApiError(
+                status.HTTP_400_BAD_REQUEST,
+                "invalid_request",
+                f"单次最多允许处理 {RETENTION_DELETE_BATCH_LIMIT} 个文件。",
+            )
+        normalized = [file_id.strip() for file_id in file_ids]
+        if any(not file_id for file_id in normalized):
+            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "file_ids 不能包含空白项。")
+        if len(set(normalized)) != len(normalized):
+            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "file_ids 不能包含重复项。")
+        return normalized
+
+    def _preview_retention_delete_item(self, file_id: str, *, now: datetime) -> FileRetentionDeleteItem:
+        """构建单个文件的物理删除预览结果。"""
+
+        record = self.repository.get_document_file(file_id)
+        if record is None:
+            return FileRetentionDeleteItem(
+                file_id=file_id,
+                job_id=None,
+                file_type=None,
+                storage_provider=None,
+                status_before=None,
+                status_after=None,
+                object_key=None,
+                size_bytes=None,
+                outcome="skipped_not_found",
+                reason="文件 metadata 不存在。",
+            )
+        eligibility = self._retention_delete_eligibility(record, now=now)
+        return self._build_retention_delete_item(
+            record,
+            outcome=eligibility[0],
+            reason=eligibility[1],
+            status_after=record.status,
+        )
+
+    def _execute_retention_delete_item(self, file_id: str, *, now: datetime) -> FileRetentionDeleteItem:
+        """执行单个文件删除；不符合条件的文件只返回 skip outcome。"""
+
+        record = self.repository.get_document_file(file_id)
+        if record is None:
+            return FileRetentionDeleteItem(
+                file_id=file_id,
+                job_id=None,
+                file_type=None,
+                storage_provider=None,
+                status_before=None,
+                status_after=None,
+                object_key=None,
+                size_bytes=None,
+                outcome="skipped_not_found",
+                reason="文件 metadata 不存在。",
+            )
+        outcome, reason = self._retention_delete_eligibility(record, now=now)
+        if outcome != "deletable":
+            return self._build_retention_delete_item(
+                record,
+                outcome=outcome,
+                reason=reason,
+                status_after=record.status,
+            )
+        return self._delete_retention_local_object(record, now=now)
+
+    def _retention_delete_eligibility(self, record: DocumentFileRecord, *, now: datetime) -> tuple[str, str]:
+        """判断文件是否满足第一版物理删除条件。"""
+
+        if record.status == "deleted":
+            return "skipped_already_deleted", "文件 metadata 已是 deleted。"
+        if record.status != "expired":
+            return "skipped_not_expired_status", "文件必须先标记为 expired。"
+        if record.expires_at is None:
+            return "skipped_not_expired_time", "文件缺少 expires_at，不能物理删除。"
+        expires_at = self._normalize_datetime(record.expires_at)
+        if expires_at > now:
+            return "skipped_not_expired_time", "文件尚未超过 expires_at。"
+        if record.storage_provider not in RETENTION_DELETE_SUPPORTED_LOCAL_PROVIDERS:
+            return "skipped_unsupported_storage", f"暂不支持物理删除 storage_provider={record.storage_provider}。"
+        if not record.object_key.strip():
+            return "skipped_missing_object_key", "文件缺少 object_key，不能物理删除。"
+        return "deletable", "eligible_expired_file"
+
+    def _delete_retention_local_object(self, record: DocumentFileRecord, *, now: datetime) -> FileRetentionDeleteItem:
+        """删除本地 document_file 二进制，并在成功或已缺失时保留 metadata 但标记 deleted。"""
+
+        try:
+            object_path = self._resolve_retention_local_path(record)
+            if object_path.exists():
+                object_path.unlink()
+                outcome = "deleted"
+                reason = "本地文件已删除。"
+                deleted = True
+            else:
+                outcome = "already_missing"
+                reason = "本地文件已不存在，按幂等清理处理。"
+                deleted = False
+            updated = self.repository.update_document_file(
+                record.id,
+                status="deleted",
+                updated_at=now,
+            )
+        except OSError as exc:
+            return self._build_retention_delete_item(
+                record,
+                outcome="failed",
+                reason=f"本地文件删除失败: {exc.__class__.__name__}",
+                status_after=record.status,
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            return self._build_retention_delete_item(
+                record,
+                outcome="failed",
+                reason=f"metadata 更新或路径解析失败: {exc.__class__.__name__}",
+                status_after=record.status,
+            )
+        return self._build_retention_delete_item(
+            record,
+            outcome=outcome,
+            reason=reason,
+            status_after=updated.status,
+            deleted=deleted,
+            metadata_updated=True,
+        )
+
+    def _build_retention_delete_item(
+        self,
+        record: DocumentFileRecord,
+        *,
+        outcome: str,
+        reason: str,
+        status_after: str,
+        deleted: bool = False,
+        metadata_updated: bool = False,
+    ) -> FileRetentionDeleteItem:
+        """把 document_file metadata 和 outcome 组合为稳定删除结果项。"""
+
+        return FileRetentionDeleteItem(
+            file_id=record.id,
+            job_id=record.job_id,
+            file_type=record.file_type,
+            storage_provider=record.storage_provider,
+            status_before=record.status,
+            status_after=status_after,
+            object_key=record.object_key,
+            size_bytes=record.size_bytes,
+            outcome=outcome,
+            reason=reason,
+            deleted=deleted,
+            metadata_updated=metadata_updated,
+        )
+
+    def _build_retention_delete_report(
+        self,
+        *,
+        generated_at: datetime,
+        action_mode: Literal["delete_preview", "delete_execute"],
+        requested_file_ids: list[str],
+        items: list[FileRetentionDeleteItem],
+    ) -> FileRetentionDeleteReport:
+        """汇总删除预览或执行结果，供 API 和审计复用。"""
+
+        totals = {
+            "requested": len(requested_file_ids),
+            "deletable": sum(1 for item in items if item.outcome == "deletable"),
+            "deleted": sum(1 for item in items if item.outcome == "deleted"),
+            "already_missing": sum(1 for item in items if item.outcome == "already_missing"),
+            "skipped": sum(1 for item in items if item.outcome.startswith("skipped_")),
+            "failed": sum(1 for item in items if item.outcome == "failed"),
+            "metadata_updated": sum(1 for item in items if item.metadata_updated),
+        }
+        return FileRetentionDeleteReport(
+            generated_at=generated_at,
+            action_mode=action_mode,
+            requested_file_ids=requested_file_ids,
+            confirmation_phrase=RETENTION_DELETE_CONFIRMATION_PHRASE,
+            totals=totals,
+            items=items,
+        )
+
+    def _resolve_retention_local_path(self, record: DocumentFileRecord) -> Path:
+        """按文件记录自身的 storage_provider 解析本地路径，避免运行时配置切换导致删错根目录。"""
+
+        if record.storage_provider == "local_object":
+            root = self.settings.jobs_artifact_object_store_dir.resolve()
+        else:
+            root = (self.settings.data_path / "document_file_objects").resolve()
+        candidate = (root / record.object_key).resolve()
+        if candidate != root and root not in candidate.parents:
+            raise ValueError(f"object_key 越界: {record.object_key}")
+        return candidate
 
     def _ensure_visible(self, record: DocumentFileRecord, user: AuthenticatedUser) -> None:
         if user.role == "admin":
@@ -339,6 +642,13 @@ class FileUploadService:
         if self.settings.jobs_artifact_s3_secret_access_key:
             kwargs["aws_secret_access_key"] = self.settings.jobs_artifact_s3_secret_access_key
         return boto3.client("s3", **kwargs)
+
+    def _normalize_datetime(self, value: datetime) -> datetime:
+        """把 naive datetime 视为 UTC，避免和 aware datetime 比较时报错。"""
+
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
 
 
 def _safe_object_filename(filename: str) -> str:

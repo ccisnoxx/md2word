@@ -58,6 +58,12 @@ for both local-object and S3 object storage. Retention planning is dry-run first
 through `ArtifactRetentionPlanner`; do not delete object artifacts without
 reviewing the generated candidates.
 
+`document_files` physical retention deletion is also dry-run first. Destructive
+execution must preserve metadata rows, `object_key`, job rows, job events, and
+audit records; supported providers must be explicit in the task design. Do not
+add S3 physical deletion by analogy with local deletion without a provider-
+specific safety contract and tests.
+
 ---
 
 ## Query Patterns

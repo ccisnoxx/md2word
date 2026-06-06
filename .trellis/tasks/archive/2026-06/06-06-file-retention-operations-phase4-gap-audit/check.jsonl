@@ -1,0 +1,8 @@
+{"file": ".trellis/tasks/06-06-file-retention-operations-phase4-gap-audit/prd.md", "reason": "Task requirements and acceptance criteria for review."}
+{"file": ".trellis/tasks/06-06-file-retention-operations-phase4-gap-audit/design.md", "reason": "Gap audit, decision matrix, and safety-contract proposal."}
+{"file": ".trellis/tasks/06-06-file-retention-operations-phase4-gap-audit/implement.md", "reason": "Review gate and proposed next implementation plan."}
+{"file": ".trellis/tasks/archive/2026-06/06-04-file-retention-management/implement.md", "reason": "Existing metadata-only retention closeout and residual non-goals."}
+{"file": ".trellis/tasks/archive/2026-06/06-04-audit-log-viewer/prd.md", "reason": "Audit viewer current-page export boundary."}
+{"file": ".trellis/tasks/archive/2026-06/06-04-ops-dashboard/prd.md", "reason": "Read-only ops dashboard boundary and excluded cleanup actions."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Check storage and retention safety constraints."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Check backend layering and verification constraints for proposed next task."}
