@@ -12,6 +12,7 @@ from app.domains.document_jobs.repository import (
     DocumentJobRepositoryProtocol,
 )
 from app.domains.files.repository import DocumentFileRepositoryProtocol
+from app.domains.files.retention_policy import FileRetentionPolicyRepositoryProtocol
 from app.domains.jobs.repository import (
     JobEventRepositoryProtocol,
     JobFileRepositoryProtocol,
@@ -30,6 +31,7 @@ from app.infrastructure.persistence.file import (
     FileJobFileRepository,
     FileJobSnapshotRepository,
     FilePersistenceBackend,
+    FileRetentionPolicyRepository,
     FileStageMessageStore,
 )
 from app.infrastructure.persistence.mysql import (
@@ -43,6 +45,7 @@ from app.infrastructure.persistence.mysql import (
     MysqlJobSnapshotRepository,
     MysqlPersistenceBackend,
     MysqlPersistenceConfig,
+    MysqlRetentionPolicyRepository,
     MysqlResourceVersionRepository,
     MysqlStageMessageStore,
     MysqlTermRuleAssetRepository,
@@ -58,6 +61,7 @@ from app.infrastructure.persistence.sqlite import (
     SqliteJobFileRepository,
     SqliteJobSnapshotRepository,
     SqlitePersistenceBackend,
+    SqliteRetentionPolicyRepository,
     SqliteStageMessageStore,
 )
 
@@ -72,6 +76,7 @@ class PersistenceAdapters:
     job_event_repository: JobEventRepositoryProtocol
     audit_event_repository: AuditEventRepositoryProtocol
     document_file_repository: DocumentFileRepositoryProtocol
+    file_retention_policy_repository: FileRetentionPolicyRepositoryProtocol
     document_job_repository: DocumentJobRepositoryProtocol
     document_job_event_repository: DocumentJobEventRepositoryProtocol
     stage_message_store: StageMessageStoreProtocol
@@ -92,6 +97,7 @@ def build_file_persistence_adapters(data_dir: Path) -> PersistenceAdapters:
         job_event_repository=FileJobEventRepository(backend),
         audit_event_repository=FileAuditEventRepository(backend),
         document_file_repository=FileDocumentFileRepository(backend),
+        file_retention_policy_repository=FileRetentionPolicyRepository(backend),
         document_job_repository=FileDocumentJobRepository(backend),
         document_job_event_repository=FileDocumentJobEventRepository(backend),
         stage_message_store=FileStageMessageStore(backend),
@@ -113,6 +119,7 @@ def build_sqlite_persistence_adapters(database_path: Path) -> PersistenceAdapter
         job_event_repository=SqliteJobEventRepository(backend),
         audit_event_repository=SqliteAuditEventRepository(backend),
         document_file_repository=SqliteDocumentFileRepository(backend),
+        file_retention_policy_repository=SqliteRetentionPolicyRepository(backend),
         document_job_repository=SqliteDocumentJobRepository(backend),
         document_job_event_repository=SqliteDocumentJobEventRepository(backend),
         stage_message_store=SqliteStageMessageStore(backend),
@@ -138,6 +145,7 @@ def build_mysql_persistence_adapters(
         job_event_repository=MysqlJobEventRepository(backend),
         audit_event_repository=MysqlAuditEventRepository(backend),
         document_file_repository=MysqlDocumentFileRepository(backend),
+        file_retention_policy_repository=MysqlRetentionPolicyRepository(backend),
         document_job_repository=MysqlDocumentJobRepository(backend),
         document_job_event_repository=MysqlDocumentJobEventRepository(backend),
         stage_message_store=MysqlStageMessageStore(backend),

@@ -29,7 +29,7 @@ from app.domains.document_jobs.execution import (
     EagerDocumentJobTaskQueue,
 )
 from app.domains.document_jobs.service import DocumentJobService
-from app.domains.files import FileUploadService
+from app.domains.files import FileRetentionPolicyService, FileUploadService
 from app.services.document_ir import MinerUToDocumentIRService
 from app.domains.jobs.artifact_storage import LocalArtifactStorageAdapter
 from app.domains.jobs.artifacts import JobArtifactService
@@ -113,12 +113,22 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
     job_event_repository = persistence_adapters.job_event_repository
     audit_event_repository = persistence_adapters.audit_event_repository
     document_file_repository = persistence_adapters.document_file_repository
+    file_retention_policy_repository = persistence_adapters.file_retention_policy_repository
     document_job_repository = persistence_adapters.document_job_repository
     document_job_event_repository = persistence_adapters.document_job_event_repository
     stage_message_store = persistence_adapters.stage_message_store
     audit_service = AuditService(audit_event_repository)
     auth_service = AuthService(resolved_settings)
-    file_upload_service = FileUploadService(resolved_settings, document_file_repository)
+    file_retention_policy_service = FileRetentionPolicyService(
+        resolved_settings,
+        file_retention_policy_repository,
+        document_file_repository,
+    )
+    file_upload_service = FileUploadService(
+        resolved_settings,
+        document_file_repository,
+        retention_days_resolver=file_retention_policy_service.resolve_retention_days,
+    )
     document_ir_service = MinerUToDocumentIRService()
     translation_provider = build_translation_provider(resolved_settings)
     document_ir_translation_service = DocumentIRTranslationService(translation_provider)
@@ -304,11 +314,13 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         job_event_repository=job_event_repository,
         audit_event_repository=audit_event_repository,
         document_file_repository=document_file_repository,
+        file_retention_policy_repository=file_retention_policy_repository,
         document_job_repository=document_job_repository,
         document_job_event_repository=document_job_event_repository,
         audit_service=audit_service,
         auth_service=auth_service,
         file_upload_service=file_upload_service,
+        file_retention_policy_service=file_retention_policy_service,
         document_ir_service=document_ir_service,
         translation_provider=translation_provider,
         document_ir_translation_service=document_ir_translation_service,

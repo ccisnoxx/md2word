@@ -44,7 +44,7 @@ from app.services.auth import AuthService, hash_password
 from app.domains.document_jobs.execution import DocumentJobExecutionService, EagerDocumentJobTaskQueue
 from app.domains.document_jobs.service import DocumentJobService
 from app.services.document_ir import MinerUToDocumentIRService
-from app.domains.files import FileUploadService
+from app.domains.files import FileRetentionPolicyService, FileUploadService
 from app.domains.files.models import DocumentFileRecord
 from app.services.health_service import HealthService
 from app.domains.jobs.artifact_integrity import ArtifactFingerprintMismatch
@@ -332,12 +332,22 @@ def build_test_runtime(
     job_event_repository = persistence_adapters.job_event_repository
     audit_event_repository = persistence_adapters.audit_event_repository
     document_file_repository = persistence_adapters.document_file_repository
+    file_retention_policy_repository = persistence_adapters.file_retention_policy_repository
     document_job_repository = persistence_adapters.document_job_repository
     document_job_event_repository = persistence_adapters.document_job_event_repository
     stage_message_store = persistence_adapters.stage_message_store
     audit_service = AuditService(audit_event_repository)
     auth_service = AuthService(settings)
-    file_upload_service = FileUploadService(settings, document_file_repository)
+    file_retention_policy_service = FileRetentionPolicyService(
+        settings,
+        file_retention_policy_repository,
+        document_file_repository,
+    )
+    file_upload_service = FileUploadService(
+        settings,
+        document_file_repository,
+        retention_days_resolver=file_retention_policy_service.resolve_retention_days,
+    )
     document_ir_service = MinerUToDocumentIRService()
     translation_provider = build_translation_provider(settings)
     document_ir_translation_service = DocumentIRTranslationService(translation_provider)
@@ -536,11 +546,13 @@ def build_test_runtime(
         job_event_repository=job_event_repository,
         audit_event_repository=audit_event_repository,
         document_file_repository=document_file_repository,
+        file_retention_policy_repository=file_retention_policy_repository,
         document_job_repository=document_job_repository,
         document_job_event_repository=document_job_event_repository,
         audit_service=audit_service,
         auth_service=auth_service,
         file_upload_service=file_upload_service,
+        file_retention_policy_service=file_retention_policy_service,
         document_ir_service=document_ir_service,
         translation_provider=translation_provider,
         document_ir_translation_service=document_ir_translation_service,
@@ -1617,6 +1629,223 @@ class FastAPIJobsBackendTests(TestCase):
         ]
         self.assertEqual(len(retention_events), 1)
         self.assertEqual(retention_events[0].trace_id, "trace_retention_mark")
+
+    def test_file_retention_policy_crud_is_admin_only_and_audited(self):
+        """验证保留策略治理接口 Admin-only，写操作记录审计且不触发物理删除。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                operator_response = client.get("/api/v1/files/retention/policies", headers=operator_headers)
+                create_response = client.post(
+                    "/api/v1/files/retention/policies",
+                    headers={**admin_headers, "X-Trace-Id": "trace_retention_policy_create"},
+                    json={
+                        "name": "Generated Word short retention",
+                        "scope_type": "file_type",
+                        "file_type": "generated_word",
+                        "retention_days": 14,
+                        "description": "test policy",
+                    },
+                )
+                policy_id = create_response.json()["policy_id"]
+                update_response = client.patch(
+                    f"/api/v1/files/retention/policies/{policy_id}",
+                    headers={**admin_headers, "X-Trace-Id": "trace_retention_policy_update"},
+                    json={"retention_days": 10},
+                )
+                publish_response = client.post(
+                    f"/api/v1/files/retention/policies/{policy_id}/publish",
+                    headers={**admin_headers, "X-Trace-Id": "trace_retention_policy_publish"},
+                    json={"reason": "policy governance test"},
+                )
+                disable_response = client.post(
+                    f"/api/v1/files/retention/policies/{policy_id}/disable",
+                    headers={**admin_headers, "X-Trace-Id": "trace_retention_policy_disable"},
+                    json={"reason": "rollback policy governance test"},
+                )
+
+            audit_events = runtime.audit_event_repository.list_audit_events()
+
+        self.assertEqual(operator_response.status_code, 403)
+        self.assertEqual(operator_response.json()["error_code"], "role_forbidden")
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.json()["status"], "draft")
+        self.assertFalse(create_response.json()["is_default"])
+        self.assertEqual(update_response.status_code, 200)
+        self.assertEqual(update_response.json()["retention_days"], 10)
+        self.assertEqual(publish_response.status_code, 200)
+        self.assertEqual(publish_response.json()["status"], "published")
+        self.assertTrue(publish_response.json()["is_default"])
+        self.assertEqual(disable_response.status_code, 200)
+        self.assertEqual(disable_response.json()["status"], "disabled")
+        self.assertFalse(disable_response.json()["is_default"])
+        retention_policy_events = [
+            event
+            for event in audit_events
+            if event.action.startswith("file.retention_policy_")
+        ]
+        self.assertEqual(
+            [event.action for event in retention_policy_events],
+            [
+                "file.retention_policy_create",
+                "file.retention_policy_update",
+                "file.retention_policy_publish",
+                "file.retention_policy_disable",
+            ],
+        )
+        self.assertEqual(retention_policy_events[2].trace_id, "trace_retention_policy_publish")
+        self.assertIn("retention_days=10", retention_policy_events[2].reason)
+
+    def test_file_retention_policy_impact_preview_and_default_selection_do_not_backfill(self):
+        """验证 impact preview 和默认策略切换不回填历史 document_files。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            stale_file = self._seed_expired_document_file(runtime, file_id="file_retention_policy_impact")
+            original_expires_at = stale_file.expires_at
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                first_create_response = client.post(
+                    "/api/v1/files/retention/policies",
+                    headers=admin_headers,
+                    json={
+                        "name": "Generated Word one day",
+                        "scope_type": "file_type",
+                        "file_type": "generated_word",
+                        "retention_days": 1,
+                    },
+                )
+                first_policy_id = first_create_response.json()["policy_id"]
+                preview_response = client.post(
+                    f"/api/v1/files/retention/policies/{first_policy_id}/impact-preview",
+                    headers=admin_headers,
+                    json={"mode": "candidate_policy"},
+                )
+                first_publish_response = client.post(
+                    f"/api/v1/files/retention/policies/{first_policy_id}/publish",
+                    headers=admin_headers,
+                    json={"reason": "short generated word retention"},
+                )
+                second_create_response = client.post(
+                    "/api/v1/files/retention/policies",
+                    headers=admin_headers,
+                    json={
+                        "name": "Generated Word thirty days",
+                        "scope_type": "file_type",
+                        "file_type": "generated_word",
+                        "retention_days": 30,
+                    },
+                )
+                second_policy_id = second_create_response.json()["policy_id"]
+                second_publish_response = client.post(
+                    f"/api/v1/files/retention/policies/{second_policy_id}/publish",
+                    headers=admin_headers,
+                    json={"reason": "longer generated word retention"},
+                )
+                set_default_response = client.post(
+                    f"/api/v1/files/retention/policies/{first_policy_id}/set-default",
+                    headers=admin_headers,
+                    json={"reason": "restore short generated word retention"},
+                )
+                first_detail_response = client.get(
+                    f"/api/v1/files/retention/policies/{first_policy_id}",
+                    headers=admin_headers,
+                )
+                second_detail_response = client.get(
+                    f"/api/v1/files/retention/policies/{second_policy_id}",
+                    headers=admin_headers,
+                )
+
+            file_after_policy_actions = runtime.document_file_repository.get_document_file(stale_file.id)
+
+        self.assertEqual(preview_response.status_code, 200)
+        preview_payload = preview_response.json()
+        self.assertEqual(preview_payload["totals"]["matching_files"], 1)
+        self.assertEqual(preview_payload["totals"]["would_be_expired"], 1)
+        self.assertTrue(preview_payload["items"][0]["would_change_expires_at"])
+        self.assertEqual(first_publish_response.status_code, 200)
+        self.assertTrue(first_publish_response.json()["is_default"])
+        self.assertEqual(second_publish_response.status_code, 200)
+        self.assertTrue(second_publish_response.json()["is_default"])
+        self.assertEqual(set_default_response.status_code, 200)
+        self.assertTrue(set_default_response.json()["is_default"])
+        self.assertTrue(first_detail_response.json()["is_default"])
+        self.assertFalse(second_detail_response.json()["is_default"])
+        self.assertIsNotNone(file_after_policy_actions)
+        self.assertEqual(file_after_policy_actions.expires_at, original_expires_at)
+        self.assertEqual(file_after_policy_actions.status, "uploaded")
+
+    def test_file_retention_policy_applies_to_new_uploads_and_preserves_fallback(self):
+        """验证 published policy 只影响后续新文件，未命中的 file_type 继续使用 settings fallback。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                create_response = client.post(
+                    "/api/v1/files/retention/policies",
+                    headers=admin_headers,
+                    json={
+                        "name": "Source PDF seven days",
+                        "scope_type": "file_type",
+                        "file_type": "source_pdf",
+                        "retention_days": 7,
+                    },
+                )
+                policy_id = create_response.json()["policy_id"]
+                publish_response = client.post(
+                    f"/api/v1/files/retention/policies/{policy_id}/publish",
+                    headers=admin_headers,
+                    json={"reason": "source pdf retention policy"},
+                )
+                list_response = client.get("/api/v1/files/retention/policies", headers=admin_headers)
+                upload_response = client.post(
+                    "/api/v1/files/upload-url",
+                    headers=operator_headers,
+                    json={
+                        "filename": "policy.pdf",
+                        "mime_type": "application/pdf",
+                        "size_bytes": len(make_pdf_bytes()),
+                    },
+                )
+
+            uploaded_file_id = upload_response.json()["file_id"]
+            uploaded_file = runtime.document_file_repository.get_document_file(uploaded_file_id)
+
+        self.assertEqual(publish_response.status_code, 200)
+        self.assertEqual(upload_response.status_code, 201)
+        self.assertIsNotNone(uploaded_file)
+        self.assertEqual((uploaded_file.expires_at - uploaded_file.created_at).days, 7)
+        effective_by_type = {item["file_type"]: item for item in list_response.json()["effective"]}
+        self.assertEqual(effective_by_type["source_pdf"]["source"], "published_policy")
+        self.assertEqual(effective_by_type["source_pdf"]["retention_days"], 7)
+        self.assertEqual(effective_by_type["generated_word"]["source"], "settings_fallback")
+        self.assertEqual(effective_by_type["generated_word"]["retention_days"], 90)
 
     def test_file_retention_physical_delete_preview_is_admin_only_and_does_not_mutate(self):
         """验证物理删除预览只读，且只有 Admin 可访问。"""

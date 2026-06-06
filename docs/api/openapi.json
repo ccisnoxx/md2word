@@ -2668,6 +2668,71 @@
         "title": "DocumentJobTranslationQaUpdateResponse",
         "type": "object"
       },
+      "EffectiveFileRetentionPolicyResponse": {
+        "description": "返回某个 file_type 的有效 retention policy 摘要。",
+        "properties": {
+          "file_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Type"
+          },
+          "policy_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Id"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "retention_days": {
+            "title": "Retention Days",
+            "type": "integer"
+          },
+          "scope_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "global",
+                  "file_type"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Type"
+          },
+          "source": {
+            "enum": [
+              "published_policy",
+              "settings_fallback"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "retention_days",
+          "source",
+          "reason"
+        ],
+        "title": "EffectiveFileRetentionPolicyResponse",
+        "type": "object"
+      },
       "FileRetentionCandidateResponse": {
         "description": "返回一条过期 document_file 候选；仅用于计划展示，不代表会被物理删除。",
         "properties": {
@@ -3000,6 +3065,464 @@
           "action_mode"
         ],
         "title": "FileRetentionPlanResponse",
+        "type": "object"
+      },
+      "FileRetentionPolicyCreateRequest": {
+        "description": "创建 draft document_files retention policy 的请求。",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "file_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Type"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "retention_days": {
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Retention Days",
+            "type": "integer"
+          },
+          "scope_type": {
+            "enum": [
+              "global",
+              "file_type"
+            ],
+            "title": "Scope Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "scope_type",
+          "retention_days"
+        ],
+        "title": "FileRetentionPolicyCreateRequest",
+        "type": "object"
+      },
+      "FileRetentionPolicyImpactItemResponse": {
+        "description": "返回单个 document_file 在候选 retention policy 下的影响。",
+        "properties": {
+          "current_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Expires At"
+          },
+          "currently_expired": {
+            "title": "Currently Expired",
+            "type": "boolean"
+          },
+          "file_id": {
+            "title": "File Id",
+            "type": "string"
+          },
+          "file_type": {
+            "title": "File Type",
+            "type": "string"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "projected_expires_at": {
+            "format": "date-time",
+            "title": "Projected Expires At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "storage_provider": {
+            "title": "Storage Provider",
+            "type": "string"
+          },
+          "would_be_expired": {
+            "title": "Would Be Expired",
+            "type": "boolean"
+          },
+          "would_change_expires_at": {
+            "title": "Would Change Expires At",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "file_id",
+          "file_type",
+          "status",
+          "storage_provider",
+          "projected_expires_at",
+          "currently_expired",
+          "would_be_expired",
+          "would_change_expires_at"
+        ],
+        "title": "FileRetentionPolicyImpactItemResponse",
+        "type": "object"
+      },
+      "FileRetentionPolicyImpactPreviewRequest": {
+        "description": "请求预览 retention policy 对现有 document_files 的影响。",
+        "properties": {
+          "mode": {
+            "const": "candidate_policy",
+            "default": "candidate_policy",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "title": "FileRetentionPolicyImpactPreviewRequest",
+        "type": "object"
+      },
+      "FileRetentionPolicyImpactResponse": {
+        "description": "返回 retention policy impact dry-run 结果。",
+        "properties": {
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FileRetentionPolicyImpactItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/FileRetentionPolicyResponse"
+          },
+          "totals": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Totals",
+            "type": "object"
+          }
+        },
+        "required": [
+          "generated_at",
+          "policy"
+        ],
+        "title": "FileRetentionPolicyImpactResponse",
+        "type": "object"
+      },
+      "FileRetentionPolicyListResponse": {
+        "description": "返回 retention policies 列表和 settings fallback 摘要。",
+        "properties": {
+          "effective": {
+            "items": {
+              "$ref": "#/components/schemas/EffectiveFileRetentionPolicyResponse"
+            },
+            "title": "Effective",
+            "type": "array"
+          },
+          "fallback_retention_days": {
+            "title": "Fallback Retention Days",
+            "type": "integer"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FileRetentionPolicyResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "generated_at",
+          "fallback_retention_days"
+        ],
+        "title": "FileRetentionPolicyListResponse",
+        "type": "object"
+      },
+      "FileRetentionPolicyReasonRequest": {
+        "description": "发布、设为默认或禁用 retention policy 的请求。",
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "FileRetentionPolicyReasonRequest",
+        "type": "object"
+      },
+      "FileRetentionPolicyResponse": {
+        "description": "返回单个 document_files retention policy。",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "disabled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled At"
+          },
+          "disabled_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled By"
+          },
+          "effective_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Reason"
+          },
+          "file_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Type"
+          },
+          "is_default": {
+            "default": false,
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "is_effective": {
+            "default": false,
+            "title": "Is Effective",
+            "type": "boolean"
+          },
+          "matching_file_count": {
+            "default": 0,
+            "title": "Matching File Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "policy_id": {
+            "title": "Policy Id",
+            "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "published_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published By"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "retention_days": {
+            "title": "Retention Days",
+            "type": "integer"
+          },
+          "scope_type": {
+            "enum": [
+              "global",
+              "file_type"
+            ],
+            "title": "Scope Type",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "published",
+              "disabled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "policy_id",
+          "name",
+          "status",
+          "scope_type",
+          "retention_days",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "FileRetentionPolicyResponse",
+        "type": "object"
+      },
+      "FileRetentionPolicyUpdateRequest": {
+        "description": "更新 draft document_files retention policy 的请求。",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "file_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Type"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "retention_days": {
+            "anyOf": [
+              {
+                "maximum": 3650.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retention Days"
+          },
+          "scope_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "global",
+                  "file_type"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Type"
+          }
+        },
+        "title": "FileRetentionPolicyUpdateRequest",
         "type": "object"
       },
       "FileUploadResponse": {
@@ -10656,6 +11179,516 @@
           }
         },
         "summary": "Get File Retention Plan",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/retention/policies": {
+      "get": {
+        "description": "列出 Admin-only document_files retention policies，不修改任何记录。",
+        "operationId": "list_file_retention_policies_api_v1_files_retention_policies_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRetentionPolicyListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List File Retention Policies",
+        "tags": [
+          "files"
+        ]
+      },
+      "post": {
+        "description": "创建 draft retention policy；发布前不影响新文件或历史文件。",
+        "operationId": "create_file_retention_policy_api_v1_files_retention_policies_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileRetentionPolicyCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRetentionPolicyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create File Retention Policy",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/retention/policies/{policy_id}": {
+      "get": {
+        "description": "读取单个 retention policy。",
+        "operationId": "get_file_retention_policy_api_v1_files_retention_policies__policy_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "title": "Policy Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRetentionPolicyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get File Retention Policy",
+        "tags": [
+          "files"
+        ]
+      },
+      "patch": {
+        "description": "更新 draft retention policy；published/disabled policy 不允许直接编辑。",
+        "operationId": "update_file_retention_policy_api_v1_files_retention_policies__policy_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "title": "Policy Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileRetentionPolicyUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRetentionPolicyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update File Retention Policy",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/retention/policies/{policy_id}/disable": {
+      "post": {
+        "description": "禁用 draft 或 published retention policy；不删除策略历史。",
+        "operationId": "disable_file_retention_policy_api_v1_files_retention_policies__policy_id__disable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "title": "Policy Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileRetentionPolicyReasonRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRetentionPolicyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Disable File Retention Policy",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/retention/policies/{policy_id}/impact-preview": {
+      "post": {
+        "description": "预览 retention policy 对历史 document_files 的影响，不修改文件 metadata。",
+        "operationId": "preview_file_retention_policy_impact_api_v1_files_retention_policies__policy_id__impact_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "title": "Policy Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileRetentionPolicyImpactPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRetentionPolicyImpactResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview File Retention Policy Impact",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/retention/policies/{policy_id}/publish": {
+      "post": {
+        "description": "发布 draft retention policy，使其影响后续新文件 expires_at 计算。",
+        "operationId": "publish_file_retention_policy_api_v1_files_retention_policies__policy_id__publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "title": "Policy Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileRetentionPolicyReasonRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRetentionPolicyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish File Retention Policy",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/retention/policies/{policy_id}/set-default": {
+      "post": {
+        "description": "把已发布 retention policy 设为同 scope 默认策略。",
+        "operationId": "set_default_file_retention_policy_api_v1_files_retention_policies__policy_id__set_default_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "title": "Policy Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileRetentionPolicyReasonRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRetentionPolicyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Default File Retention Policy",
         "tags": [
           "files"
         ]

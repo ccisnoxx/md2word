@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 from uuid import uuid4
 
 from fastapi import status
@@ -88,9 +88,15 @@ class FileRetentionDeleteReport:
 class FileUploadService:
     """管理 document_files 元数据和上传写入，不把二进制放入 metadata store。"""
 
-    def __init__(self, settings: Settings, repository: DocumentFileRepositoryProtocol) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        repository: DocumentFileRepositoryProtocol,
+        retention_days_resolver: Callable[[str], int] | None = None,
+    ) -> None:
         self.settings = settings
         self.repository = repository
+        self.retention_days_resolver = retention_days_resolver or (lambda _file_type: settings.oss_file_retention_days)
 
     def create_upload_authorization(
         self,
@@ -117,7 +123,7 @@ class FileUploadService:
             raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "S3 bucket 未配置。")
         object_key = self._object_key_for(user.tenant_id, file_id, filename, provider)
         now = utc_now()
-        expires_at = now + timedelta(days=self.settings.oss_file_retention_days)
+        expires_at = now + timedelta(days=self.retention_days_resolver("source_pdf"))
         record = DocumentFileRecord(
             id=file_id,
             tenant_id=user.tenant_id,
@@ -329,7 +335,7 @@ class FileUploadService:
             size_bytes=len(content),
             checksum_sha256=checksum_sha256,
             status="uploaded",
-            expires_at=expires_at or now + timedelta(days=self.settings.oss_file_retention_days),
+            expires_at=expires_at or now + timedelta(days=self.retention_days_resolver(file_type)),
             metadata=metadata or {},
             created_by=created_by,
             created_at=now,

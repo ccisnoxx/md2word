@@ -199,6 +199,91 @@ export type FileRetentionDeleteResponse = {
   items: FileRetentionDeleteItemResponse[];
 };
 
+export type FileRetentionPolicyScopeType = "global" | "file_type";
+export type FileRetentionPolicyStatus = "draft" | "published" | "disabled";
+
+export type FileRetentionPolicyCreateRequest = {
+  name: string;
+  scope_type: FileRetentionPolicyScopeType;
+  file_type?: string | null;
+  retention_days: number;
+  description?: string | null;
+};
+
+export type FileRetentionPolicyUpdateRequest = {
+  name?: string | null;
+  scope_type?: FileRetentionPolicyScopeType | null;
+  file_type?: string | null;
+  retention_days?: number | null;
+  description?: string | null;
+};
+
+export type FileRetentionPolicyReasonRequest = {
+  reason: string;
+};
+
+export type EffectiveFileRetentionPolicyResponse = {
+  retention_days: number;
+  source: "published_policy" | "settings_fallback";
+  policy_id: string | null;
+  scope_type: FileRetentionPolicyScopeType | null;
+  file_type: string | null;
+  reason: string;
+};
+
+export type FileRetentionPolicyResponse = {
+  policy_id: string;
+  name: string;
+  status: FileRetentionPolicyStatus;
+  scope_type: FileRetentionPolicyScopeType;
+  file_type: string | null;
+  retention_days: number;
+  description: string | null;
+  is_default: boolean;
+  is_effective: boolean;
+  effective_reason: string | null;
+  matching_file_count: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  published_by: string | null;
+  published_at: string | null;
+  disabled_by: string | null;
+  disabled_at: string | null;
+  reason: string | null;
+};
+
+export type FileRetentionPolicyListResponse = {
+  generated_at: string;
+  fallback_retention_days: number;
+  effective: EffectiveFileRetentionPolicyResponse[];
+  items: FileRetentionPolicyResponse[];
+};
+
+export type FileRetentionPolicyImpactPreviewRequest = {
+  mode: "candidate_policy";
+};
+
+export type FileRetentionPolicyImpactItemResponse = {
+  file_id: string;
+  job_id: string | null;
+  file_type: string;
+  status: string;
+  storage_provider: string;
+  current_expires_at: string | null;
+  projected_expires_at: string;
+  currently_expired: boolean;
+  would_be_expired: boolean;
+  would_change_expires_at: boolean;
+};
+
+export type FileRetentionPolicyImpactResponse = {
+  generated_at: string;
+  policy: FileRetentionPolicyResponse;
+  totals: Record<string, number>;
+  items: FileRetentionPolicyImpactItemResponse[];
+};
+
 export type DocumentJobMode = "direct_pdf_to_word" | "en2zh_pdf_to_word";
 export type DocumentLanguage = "auto" | "zh" | "en";
 export type DocumentJobStatus = "pending" | "queued" | "running" | "succeeded" | "failed" | "canceled";

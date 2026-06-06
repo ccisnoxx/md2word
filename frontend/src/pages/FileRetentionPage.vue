@@ -68,6 +68,107 @@
       </article>
     </section>
 
+    <section class="retention-table-section" aria-label="保留策略治理">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">保留策略</h2>
+          <p class="section-subtitle">策略发布后只影响后续新文件的 expires_at；历史文件只提供 impact preview，不自动回填。</p>
+        </div>
+        <div class="toolbar">
+          <el-tag effect="plain">fallback={{ policyList?.fallback_retention_days ?? "-" }} days</el-tag>
+          <el-button :loading="policyLoading" @click="loadPolicies">刷新策略</el-button>
+          <el-button type="primary" @click="openCreatePolicyDialog">新增 draft</el-button>
+        </div>
+      </div>
+
+      <el-table
+        v-loading="policyLoading"
+        :data="policyList?.items || []"
+        empty-text="暂无保留策略"
+        class="retention-table"
+        table-layout="fixed"
+        row-key="policy_id"
+      >
+        <el-table-column prop="name" label="Name" min-width="210" />
+        <el-table-column prop="scope_type" label="Scope" min-width="150">
+          <template #default="{ row }">
+            <span>{{ row.scope_type }}</span>
+            <span v-if="row.file_type" class="mono">:{{ row.file_type }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="retention_days" label="Days" width="90" />
+        <el-table-column prop="status" label="Status" width="120">
+          <template #default="{ row }">
+            <el-tag size="small" :type="policyStatusTag(row.status)" effect="plain">{{ row.status }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="is_default" label="Default" width="110">
+          <template #default="{ row }">{{ row.is_default ? "yes" : "no" }}</template>
+        </el-table-column>
+        <el-table-column prop="matching_file_count" label="Matches" width="110" />
+        <el-table-column prop="updated_at" label="Updated" min-width="180">
+          <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
+        </el-table-column>
+        <el-table-column label="Actions" min-width="340" fixed="right">
+          <template #default="{ row }">
+            <el-button size="small" :disabled="row.status !== 'draft'" @click="openEditPolicyDialog(row)">编辑</el-button>
+            <el-button size="small" @click="previewPolicyImpact(row)">影响预览</el-button>
+            <el-button size="small" type="success" :disabled="row.status !== 'draft'" @click="publishPolicy(row)">发布</el-button>
+            <el-button size="small" :disabled="row.status !== 'published' || row.is_default" @click="setDefaultPolicy(row)">设默认</el-button>
+            <el-button size="small" type="warning" :disabled="row.status === 'disabled'" @click="disablePolicy(row)">禁用</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div v-if="policyList?.effective.length" class="effective-policy-grid">
+        <el-tag
+          v-for="item in policyList.effective"
+          :key="item.file_type || item.reason"
+          effect="plain"
+          :type="item.source === 'published_policy' ? 'success' : 'info'"
+        >
+          {{ item.file_type }}={{ item.retention_days }}d · {{ item.source }}
+        </el-tag>
+      </div>
+    </section>
+
+    <section v-if="policyImpact" class="retention-table-section" aria-label="保留策略影响预览">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">策略影响预览</h2>
+          <p class="section-subtitle">
+            {{ policyImpact.policy.name }} · generated {{ formatDateTime(policyImpact.generated_at) }} ·
+            不修改历史 expires_at。
+          </p>
+        </div>
+        <div class="toolbar">
+          <el-tag type="info" effect="plain">matching={{ policyImpact.totals.matching_files ?? 0 }}</el-tag>
+          <el-tag type="warning" effect="plain">would_expire={{ policyImpact.totals.would_be_expired ?? 0 }}</el-tag>
+          <el-tag type="danger" effect="plain">would_change={{ policyImpact.totals.would_change_expires_at ?? 0 }}</el-tag>
+        </div>
+      </div>
+
+      <el-table :data="policyImpact.items" empty-text="暂无影响预览" class="retention-table" table-layout="fixed">
+        <el-table-column prop="file_id" label="File ID" min-width="180">
+          <template #default="{ row }"><span class="mono">{{ row.file_id }}</span></template>
+        </el-table-column>
+        <el-table-column prop="file_type" label="Type" min-width="140" />
+        <el-table-column prop="status" label="Status" width="110" />
+        <el-table-column prop="current_expires_at" label="Current Expires" min-width="180">
+          <template #default="{ row }">{{ formatDateTime(row.current_expires_at) }}</template>
+        </el-table-column>
+        <el-table-column prop="projected_expires_at" label="Projected Expires" min-width="180">
+          <template #default="{ row }">{{ formatDateTime(row.projected_expires_at) }}</template>
+        </el-table-column>
+        <el-table-column prop="would_be_expired" label="Would Expire" width="120">
+          <template #default="{ row }">{{ row.would_be_expired ? "yes" : "no" }}</template>
+        </el-table-column>
+        <el-table-column prop="would_change_expires_at" label="Would Change" width="130">
+          <template #default="{ row }">{{ row.would_change_expires_at ? "yes" : "no" }}</template>
+        </el-table-column>
+      </el-table>
+    </section>
+
     <section class="retention-table-section" aria-label="过期候选文件">
       <div class="section-header">
         <div>
@@ -198,6 +299,38 @@
         <el-button type="danger" :loading="deleting" @click="executePhysicalDelete">确认物理删除</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="policyDialog.visible" :title="policyDialog.policyId ? '编辑保留策略' : '新增保留策略 draft'" width="640px">
+      <el-alert class="delete-warning" type="info" title="不会回填历史文件" :closable="false" show-icon>
+        创建或编辑 draft 不影响新文件；发布后只影响后续新文件 expires_at，历史文件需要单独 dry-run backfill 任务。
+      </el-alert>
+      <el-form label-position="top">
+        <el-form-item label="Name">
+          <el-input v-model="policyDialog.form.name" placeholder="例如 Generated Word 30 days" />
+        </el-form-item>
+        <el-form-item label="Scope">
+          <el-select v-model="policyDialog.form.scope_type">
+            <el-option label="global" value="global" />
+            <el-option label="file_type" value="file_type" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="policyDialog.form.scope_type === 'file_type'" label="File Type">
+          <el-select v-model="policyDialog.form.file_type" filterable>
+            <el-option v-for="fileType in fileTypeOptions" :key="fileType" :label="fileType" :value="fileType" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="Retention Days">
+          <el-input-number v-model="policyDialog.form.retention_days" :min="1" :max="3650" />
+        </el-form-item>
+        <el-form-item label="Description">
+          <el-input v-model="policyDialog.form.description" type="textarea" :rows="2" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="policyDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="policySaving" @click="savePolicy">保存 draft</el-button>
+      </template>
+    </el-dialog>
   </main>
 </template>
 
@@ -211,6 +344,10 @@ import type {
   FileRetentionCandidateResponse,
   FileRetentionDeleteOutcome,
   FileRetentionDeleteResponse,
+  FileRetentionPolicyCreateRequest,
+  FileRetentionPolicyImpactResponse,
+  FileRetentionPolicyResponse,
+  FileRetentionPolicyScopeType,
   FileRetentionPlanResponse,
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
@@ -222,16 +359,44 @@ type StatusTag = "success" | "warning" | "info" | "danger";
 const plan = ref<FileRetentionPlanResponse | null>(null);
 const selectedCandidates = ref<FileRetentionCandidateResponse[]>([]);
 const deleteReport = ref<FileRetentionDeleteResponse | null>(null);
+const policyList = ref<Awaited<ReturnType<typeof filesApi.listRetentionPolicies>> | null>(null);
+const policyImpact = ref<FileRetentionPolicyImpactResponse | null>(null);
 const loading = ref(false);
 const marking = ref(false);
 const previewing = ref(false);
 const deleting = ref(false);
+const policyLoading = ref(false);
+const policySaving = ref(false);
 const error = ref<ApiClientError | null>(null);
 const deleteDialog = reactive({
   visible: false,
   reason: "",
   confirmation: "",
 });
+const policyDialog = reactive({
+  visible: false,
+  policyId: "",
+  form: {
+    name: "",
+    scope_type: "file_type" as FileRetentionPolicyScopeType,
+    file_type: "generated_word",
+    retention_days: 30,
+    description: "",
+  },
+});
+
+const fileTypeOptions = [
+  "source_pdf",
+  "mineru_raw_result",
+  "document_ir",
+  "image_asset",
+  "generated_word",
+  "ai_call_log",
+  "ai_debug_archive",
+  "template_docx",
+  "template_config",
+  "term_file",
+];
 
 const candidateCount = computed(() => plan.value?.candidates.length ?? 0);
 const markableCount = computed(() => (
@@ -262,6 +427,19 @@ async function loadPlan(preserveDeleteReport = false): Promise<void> {
     error.value = normalizeApiError(caught);
   } finally {
     loading.value = false;
+  }
+}
+
+// 读取 retention policy governance 列表。
+async function loadPolicies(): Promise<void> {
+  policyLoading.value = true;
+  error.value = null;
+  try {
+    policyList.value = await filesApi.listRetentionPolicies();
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    policyLoading.value = false;
   }
 }
 
@@ -334,6 +512,124 @@ function openPhysicalDeleteDialog(): void {
   deleteDialog.visible = true;
 }
 
+// 打开新增策略 dialog，默认创建 file_type draft。
+function openCreatePolicyDialog(): void {
+  policyDialog.policyId = "";
+  policyDialog.form.name = "";
+  policyDialog.form.scope_type = "file_type";
+  policyDialog.form.file_type = "generated_word";
+  policyDialog.form.retention_days = 30;
+  policyDialog.form.description = "";
+  policyDialog.visible = true;
+}
+
+// 打开 draft 策略编辑 dialog。
+function openEditPolicyDialog(policy: FileRetentionPolicyResponse): void {
+  policyDialog.policyId = policy.policy_id;
+  policyDialog.form.name = policy.name;
+  policyDialog.form.scope_type = policy.scope_type;
+  policyDialog.form.file_type = policy.file_type || "generated_word";
+  policyDialog.form.retention_days = policy.retention_days;
+  policyDialog.form.description = policy.description || "";
+  policyDialog.visible = true;
+}
+
+// 保存 draft 策略；发布动作单独要求 reason。
+async function savePolicy(): Promise<void> {
+  const payload: FileRetentionPolicyCreateRequest = {
+    name: policyDialog.form.name,
+    scope_type: policyDialog.form.scope_type,
+    file_type: policyDialog.form.scope_type === "file_type" ? policyDialog.form.file_type : null,
+    retention_days: policyDialog.form.retention_days,
+    description: policyDialog.form.description || null,
+  };
+  policySaving.value = true;
+  error.value = null;
+  try {
+    if (policyDialog.policyId) {
+      await filesApi.updateRetentionPolicy(policyDialog.policyId, payload);
+    } else {
+      await filesApi.createRetentionPolicy(payload);
+    }
+    policyDialog.visible = false;
+    await loadPolicies();
+    ElMessage.success("保留策略 draft 已保存。");
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    policySaving.value = false;
+  }
+}
+
+// 预览策略对历史文件的 expires_at 影响，不执行回填。
+async function previewPolicyImpact(policy: FileRetentionPolicyResponse): Promise<void> {
+  policyLoading.value = true;
+  error.value = null;
+  try {
+    policyImpact.value = await filesApi.previewRetentionPolicyImpact(policy.policy_id, { mode: "candidate_policy" });
+    ElMessage.success(`已预览 ${policyImpact.value.items.length} 个匹配文件。`);
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    policyLoading.value = false;
+  }
+}
+
+// 发布 draft policy，发布后只影响后续新文件。
+async function publishPolicy(policy: FileRetentionPolicyResponse): Promise<void> {
+  await runPolicyReasonAction(policy, "发布策略", "发布后只影响后续新文件 expires_at，不回填历史文件。", "publish");
+}
+
+// 设置同 scope 默认 policy。
+async function setDefaultPolicy(policy: FileRetentionPolicyResponse): Promise<void> {
+  await runPolicyReasonAction(policy, "设为默认策略", "该操作只切换同 scope 默认策略，不回填历史文件。", "set-default");
+}
+
+// 禁用 policy，保留历史记录。
+async function disablePolicy(policy: FileRetentionPolicyResponse): Promise<void> {
+  await runPolicyReasonAction(policy, "禁用策略", "禁用后该策略不再影响后续新文件，历史记录仍保留。", "disable");
+}
+
+// 对需要 reason 的策略治理动作执行确认和 API 调用。
+async function runPolicyReasonAction(
+  policy: FileRetentionPolicyResponse,
+  title: string,
+  message: string,
+  action: "publish" | "set-default" | "disable",
+): Promise<void> {
+  let reason = "";
+  try {
+    const result = await ElMessageBox.prompt(message, title, {
+      confirmButtonText: title,
+      cancelButtonText: "取消",
+      inputPlaceholder: "填写审计 reason",
+      inputValidator: (value) => Boolean(value?.trim()) || "reason 不能为空",
+      type: "warning",
+    });
+    reason = result.value;
+  } catch {
+    return;
+  }
+
+  policySaving.value = true;
+  error.value = null;
+  try {
+    if (action === "publish") {
+      await filesApi.publishRetentionPolicy(policy.policy_id, { reason });
+    } else if (action === "set-default") {
+      await filesApi.setDefaultRetentionPolicy(policy.policy_id, { reason });
+    } else {
+      await filesApi.disableRetentionPolicy(policy.policy_id, { reason });
+    }
+    await loadPolicies();
+    ElMessage.success("保留策略治理动作已完成。");
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    policySaving.value = false;
+  }
+}
+
 // 执行 selected expired 文件物理删除，并刷新 retention plan。
 async function executePhysicalDelete(): Promise<void> {
   if (!canOpenDeleteDialog.value || !deleteReport.value) {
@@ -382,6 +678,20 @@ function statusTag(status: string): StatusTag {
   return "success";
 }
 
+// 将 policy 状态映射为标签样式。
+function policyStatusTag(status: string): StatusTag {
+  if (status === "draft") {
+    return "warning";
+  }
+  if (status === "published") {
+    return "success";
+  }
+  if (status === "disabled") {
+    return "info";
+  }
+  return "info";
+}
+
 // 将物理删除 outcome 映射为结果标签样式。
 function outcomeTag(outcome: FileRetentionDeleteOutcome): StatusTag {
   if (outcome === "deleted" || outcome === "already_missing" || outcome === "deletable") {
@@ -398,6 +708,7 @@ function outcomeTag(outcome: FileRetentionDeleteOutcome): StatusTag {
 
 onMounted(() => {
   void loadPlan();
+  void loadPolicies();
 });
 </script>
 
@@ -512,6 +823,13 @@ onMounted(() => {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.effective-policy-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
 }
 
 .section-title {

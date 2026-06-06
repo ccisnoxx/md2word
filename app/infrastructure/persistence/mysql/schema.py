@@ -259,6 +259,15 @@ MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
     """
+    CREATE TABLE IF NOT EXISTS file_retention_policies (
+        policy_id VARCHAR(128) PRIMARY KEY,
+        payload LONGTEXT NOT NULL,
+        created_at VARCHAR(40) NOT NULL,
+        updated_at VARCHAR(40) NOT NULL,
+        KEY idx_file_retention_policies_created_at (created_at, policy_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
     CREATE TABLE IF NOT EXISTS document_jobs (
         job_id VARCHAR(128) PRIMARY KEY,
         payload LONGTEXT NOT NULL,

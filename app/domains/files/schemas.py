@@ -141,3 +141,103 @@ class FileRetentionDeleteResponse(BaseModel):
     confirmation_phrase: str
     totals: dict[str, int] = Field(default_factory=dict)
     items: list[FileRetentionDeleteItemResponse] = Field(default_factory=list)
+
+
+class FileRetentionPolicyCreateRequest(BaseModel):
+    """创建 draft document_files retention policy 的请求。"""
+
+    name: str
+    scope_type: Literal["global", "file_type"]
+    file_type: str | None = None
+    retention_days: int = Field(ge=1, le=3650)
+    description: str | None = None
+
+
+class FileRetentionPolicyUpdateRequest(BaseModel):
+    """更新 draft document_files retention policy 的请求。"""
+
+    name: str | None = None
+    scope_type: Literal["global", "file_type"] | None = None
+    file_type: str | None = None
+    retention_days: int | None = Field(default=None, ge=1, le=3650)
+    description: str | None = None
+
+
+class FileRetentionPolicyReasonRequest(BaseModel):
+    """发布、设为默认或禁用 retention policy 的请求。"""
+
+    reason: str
+
+
+class FileRetentionPolicyImpactPreviewRequest(BaseModel):
+    """请求预览 retention policy 对现有 document_files 的影响。"""
+
+    mode: Literal["candidate_policy"] = "candidate_policy"
+
+
+class EffectiveFileRetentionPolicyResponse(BaseModel):
+    """返回某个 file_type 的有效 retention policy 摘要。"""
+
+    retention_days: int
+    source: Literal["published_policy", "settings_fallback"]
+    policy_id: str | None = None
+    scope_type: Literal["global", "file_type"] | None = None
+    file_type: str | None = None
+    reason: str
+
+
+class FileRetentionPolicyResponse(BaseModel):
+    """返回单个 document_files retention policy。"""
+
+    policy_id: str
+    name: str
+    status: Literal["draft", "published", "disabled"]
+    scope_type: Literal["global", "file_type"]
+    file_type: str | None = None
+    retention_days: int
+    description: str | None = None
+    is_default: bool = False
+    is_effective: bool = False
+    effective_reason: str | None = None
+    matching_file_count: int = 0
+    created_by: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    published_by: str | None = None
+    published_at: datetime | None = None
+    disabled_by: str | None = None
+    disabled_at: datetime | None = None
+    reason: str | None = None
+
+
+class FileRetentionPolicyListResponse(BaseModel):
+    """返回 retention policies 列表和 settings fallback 摘要。"""
+
+    generated_at: datetime
+    fallback_retention_days: int
+    effective: list[EffectiveFileRetentionPolicyResponse] = Field(default_factory=list)
+    items: list[FileRetentionPolicyResponse] = Field(default_factory=list)
+
+
+class FileRetentionPolicyImpactItemResponse(BaseModel):
+    """返回单个 document_file 在候选 retention policy 下的影响。"""
+
+    file_id: str
+    job_id: str | None = None
+    file_type: str
+    status: str
+    storage_provider: str
+    current_expires_at: datetime | None = None
+    projected_expires_at: datetime
+    currently_expired: bool
+    would_be_expired: bool
+    would_change_expires_at: bool
+
+
+class FileRetentionPolicyImpactResponse(BaseModel):
+    """返回 retention policy impact dry-run 结果。"""
+
+    generated_at: datetime
+    policy: FileRetentionPolicyResponse
+    totals: dict[str, int] = Field(default_factory=dict)
+    items: list[FileRetentionPolicyImpactItemResponse] = Field(default_factory=list)
