@@ -5157,6 +5157,260 @@
         "title": "JobSummaryResponse",
         "type": "object"
       },
+      "OpsAlertDeliveryFakeSendRequest": {
+        "description": "请求执行本地 fake outbox delivery，不发送外部通知。",
+        "properties": {
+          "alert_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Alert Codes",
+            "type": "array"
+          },
+          "channel": {
+            "const": "local_outbox",
+            "default": "local_outbox",
+            "title": "Channel",
+            "type": "string"
+          },
+          "confirmation": {
+            "title": "Confirmation",
+            "type": "string"
+          },
+          "dedupe_window_minutes": {
+            "default": 60,
+            "maximum": 1440.0,
+            "minimum": 1.0,
+            "title": "Dedupe Window Minutes",
+            "type": "integer"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "confirmation"
+        ],
+        "title": "OpsAlertDeliveryFakeSendRequest",
+        "type": "object"
+      },
+      "OpsAlertDeliveryItemResponse": {
+        "description": "返回单个 alert code 的 delivery preview 或 fake-send 结果。",
+        "properties": {
+          "alert_code": {
+            "title": "Alert Code",
+            "type": "string"
+          },
+          "audit_event_written": {
+            "default": false,
+            "title": "Audit Event Written",
+            "type": "boolean"
+          },
+          "dedupe_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dedupe Key"
+          },
+          "outcome": {
+            "enum": [
+              "deliverable",
+              "fake_delivered",
+              "deduped",
+              "skipped_not_active",
+              "skipped_rate_limited",
+              "failed"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "severity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Severity"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "alert_code",
+          "outcome",
+          "reason"
+        ],
+        "title": "OpsAlertDeliveryItemResponse",
+        "type": "object"
+      },
+      "OpsAlertDeliveryPreviewRequest": {
+        "description": "请求预览精确 Ops alert codes 的 fake outbox delivery。",
+        "properties": {
+          "alert_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Alert Codes",
+            "type": "array"
+          },
+          "channel": {
+            "const": "local_outbox",
+            "default": "local_outbox",
+            "title": "Channel",
+            "type": "string"
+          },
+          "dedupe_window_minutes": {
+            "default": 60,
+            "maximum": 1440.0,
+            "minimum": 1.0,
+            "title": "Dedupe Window Minutes",
+            "type": "integer"
+          }
+        },
+        "title": "OpsAlertDeliveryPreviewRequest",
+        "type": "object"
+      },
+      "OpsAlertDeliveryResponse": {
+        "description": "返回 Ops alert fake delivery outbox 的批量结果。",
+        "properties": {
+          "action_mode": {
+            "enum": [
+              "dry_run",
+              "fake_send"
+            ],
+            "title": "Action Mode",
+            "type": "string"
+          },
+          "channel": {
+            "const": "local_outbox",
+            "title": "Channel",
+            "type": "string"
+          },
+          "confirmation_phrase": {
+            "title": "Confirmation Phrase",
+            "type": "string"
+          },
+          "dedupe_window_minutes": {
+            "title": "Dedupe Window Minutes",
+            "type": "integer"
+          },
+          "delivery_id": {
+            "title": "Delivery Id",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OpsAlertDeliveryItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "requested_alert_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Requested Alert Codes",
+            "type": "array"
+          },
+          "safety": {
+            "$ref": "#/components/schemas/OpsAlertDeliverySafetyResponse"
+          },
+          "totals": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Totals",
+            "type": "object"
+          }
+        },
+        "required": [
+          "generated_at",
+          "action_mode",
+          "channel",
+          "confirmation_phrase",
+          "dedupe_window_minutes",
+          "delivery_id",
+          "safety"
+        ],
+        "title": "OpsAlertDeliveryResponse",
+        "type": "object"
+      },
+      "OpsAlertDeliverySafetyResponse": {
+        "description": "声明 alert delivery 合同没有触发任何真实外部副作用。",
+        "properties": {
+          "audit_events_written": {
+            "default": false,
+            "title": "Audit Events Written",
+            "type": "boolean"
+          },
+          "cleanup_executed": {
+            "default": false,
+            "title": "Cleanup Executed",
+            "type": "boolean"
+          },
+          "conversion_workflow_executed": {
+            "default": false,
+            "title": "Conversion Workflow Executed",
+            "type": "boolean"
+          },
+          "delete_executed": {
+            "default": false,
+            "title": "Delete Executed",
+            "type": "boolean"
+          },
+          "external_delivery_executed": {
+            "default": false,
+            "title": "External Delivery Executed",
+            "type": "boolean"
+          },
+          "provider_calls_executed": {
+            "default": false,
+            "title": "Provider Calls Executed",
+            "type": "boolean"
+          }
+        },
+        "title": "OpsAlertDeliverySafetyResponse",
+        "type": "object"
+      },
       "OpsRecoveryActionPreviewRequest": {
         "description": "请求预览一个动作对一个精确目标的适用性。",
         "properties": {
@@ -14861,6 +15115,126 @@
         "summary": "Receive Mineru Callback",
         "tags": [
           "mineru-callbacks"
+        ]
+      }
+    },
+    "/api/v1/ops/alert-deliveries/fake-send": {
+      "post": {
+        "description": "执行本地 fake outbox delivery，只写 compact audit，不发送外部通知。",
+        "operationId": "fake_send_ops_alert_delivery_api_v1_ops_alert_deliveries_fake_send_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpsAlertDeliveryFakeSendRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsAlertDeliveryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fake Send Ops Alert Delivery",
+        "tags": [
+          "ops"
+        ]
+      }
+    },
+    "/api/v1/ops/alert-deliveries/preview": {
+      "post": {
+        "description": "预览精确 Ops alert codes 的 fake outbox delivery，不写审计或外发通知。",
+        "operationId": "preview_ops_alert_delivery_api_v1_ops_alert_deliveries_preview_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpsAlertDeliveryPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsAlertDeliveryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Ops Alert Delivery",
+        "tags": [
+          "ops"
         ]
       }
     },
