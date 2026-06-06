@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/06-06-file-retention-scheduled-cleanup-readonly-plan/prd.md", "reason": "Review runner requirements and non-goals."}
+{"file": ".trellis/tasks/06-06-file-retention-scheduled-cleanup-readonly-plan/design.md", "reason": "Review runner safety and report contract."}
+{"file": ".trellis/tasks/06-06-file-retention-scheduled-cleanup-readonly-plan/implement.md", "reason": "Review implementation checklist and verification."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Check storage/retention dry-run boundaries."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Check test and layering quality."}

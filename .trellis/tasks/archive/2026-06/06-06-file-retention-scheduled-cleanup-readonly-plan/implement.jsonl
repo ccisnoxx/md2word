@@ -1,0 +1,6 @@
+{"file": ".trellis/tasks/archive/2026-06/06-06-file-retention-physical-delete-safety-contract/design.md", "reason": "Preserve dry-run and destructive-operation boundaries."}
+{"file": ".trellis/tasks/archive/2026-06/06-06-file-retention-storage-usage-quota-readiness/design.md", "reason": "Reuse storage usage metadata-estimated report semantics."}
+{"file": ".trellis/tasks/archive/2026-06/06-06-file-retention-policy-crud-governance/design.md", "reason": "Avoid mutating policy or historical expires_at semantics."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Respect repository boundaries and dry-run-first storage behavior."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Follow service/script/test conventions."}
+{"file": "docs/api/files.md", "reason": "Current retention/storage API contract."}
