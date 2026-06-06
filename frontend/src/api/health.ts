@@ -1,6 +1,7 @@
-// frontend/src/api/health.ts: Read-only health API wrappers for the admin system status page.
+// File: frontend/src/api/health.ts
+// Purpose: Wrap read-only health and operations alert readiness APIs.
 import { apiRequest } from "@/api/client";
-import type { HealthMetricsResponse, HealthReadyResponse } from "@/api/types";
+import type { HealthMetricsResponse, HealthOpsAlertsResponse, HealthReadyResponse } from "@/api/types";
 
 export const healthApi = {
   getReady(): Promise<HealthReadyResponse> {
@@ -13,6 +14,14 @@ export const healthApi = {
   getMetrics(): Promise<HealthMetricsResponse> {
     return apiRequest<HealthMetricsResponse>({
       url: "/api/v1/health/metrics",
+      method: "GET",
+    });
+  },
+
+  // 读取后端只读运维告警 readiness。
+  getOpsAlerts(): Promise<HealthOpsAlertsResponse> {
+    return apiRequest<HealthOpsAlertsResponse>({
+      url: "/api/v1/health/ops-alerts",
       method: "GET",
     });
   },

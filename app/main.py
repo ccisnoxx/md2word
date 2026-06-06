@@ -1,6 +1,7 @@
-from __future__ import annotations
+# File: app/main.py
+# Purpose: Assemble the FastAPI app and the current single-process runtime dependencies.
 
-# app/main.py: 组装 FastAPI 应用和当前单进程运行时依赖。
+from __future__ import annotations
 
 import asyncio
 import logging
@@ -104,6 +105,8 @@ def _build_document_job_task_queue(
 
 
 def build_runtime(settings: Settings | None = None) -> AppRuntime:
+    """构建当前进程共享运行时，并注入 API、任务、文件和只读观测服务依赖。"""
+
     resolved_settings = settings or Settings()
     configure_logging(resolved_settings.app_env, resolved_settings.log_format)
     persistence_adapters = build_persistence_adapters(resolved_settings)
@@ -281,6 +284,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         artifact_storage_backend=artifact_storage_backend,
         stage_dispatcher_backend=stage_dispatcher_backend,
         job_repository=job_repository,
+        document_job_repository=document_job_repository,
         audit_event_repository=audit_event_repository,
         resource_version_repository=resource_version_service.repository if resource_version_service is not None else None,
         default_template_id_getter=template_read_service.get_default_template_id,

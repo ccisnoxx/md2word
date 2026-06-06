@@ -46,6 +46,53 @@ export type HealthMetricsResponse = {
   audit_events: Record<string, number>;
 };
 
+export type HealthOpsStatus = "ok" | "watch" | "needs_attention";
+export type HealthOpsAlertSeverity = "info" | "warning" | "critical";
+export type HealthOpsAlertSource = "readiness" | "stage_spool" | "jobs";
+
+export type HealthOpsAlertSummary = {
+  readiness_blockers: number;
+  readiness_warnings: number;
+  stage_failed_messages: number;
+  stage_stale_running_messages: number;
+  stage_replayable_messages: number;
+  failed_jobs: number;
+  running_jobs: number;
+  worker_mode: string;
+  stage_dispatcher: string;
+  stage_message_store: string;
+  artifact_storage: string;
+};
+
+export type HealthOpsAlertItem = {
+  code: string;
+  severity: HealthOpsAlertSeverity;
+  source: HealthOpsAlertSource;
+  title: string;
+  description: string;
+  count: number;
+  suggested_route: string | null;
+  suggested_action: string;
+};
+
+export type HealthOpsAlertSafety = {
+  read_only: boolean;
+  writes_performed: boolean;
+  recovery_actions_executed: boolean;
+  provider_calls_executed: boolean;
+  notification_delivery_executed: boolean;
+  audit_events_written: boolean;
+};
+
+export type HealthOpsAlertsResponse = {
+  status: HealthOpsStatus;
+  app_name: string;
+  generated_at: string;
+  summary: HealthOpsAlertSummary;
+  alerts: HealthOpsAlertItem[];
+  safety: HealthOpsAlertSafety;
+};
+
 export type AuditActorRole = "admin" | "operator" | "jobs" | "anonymous";
 export type AuditEventSort = "created_at_desc" | "created_at_asc";
 
