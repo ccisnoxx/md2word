@@ -136,7 +136,7 @@
         "type": "object"
       },
       "AuditEventResponse": {
-        "description": "返回单条审计事件的只读元数据。",
+        "description": "返回单条审计事件的只读元数据和可选结构化证据。",
         "properties": {
           "action": {
             "title": "Action",
@@ -171,6 +171,20 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
           },
           "reason": {
             "anyOf": [
@@ -2995,6 +3009,304 @@
         "title": "FileLibrarySearchResponse",
         "type": "object"
       },
+      "FileQuotaPolicyConfigResponse": {
+        "description": "返回归一化后的 staged quota policy 配置摘要。",
+        "properties": {
+          "block_threshold_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block Threshold Bytes"
+          },
+          "block_threshold_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block Threshold Ratio"
+          },
+          "config_errors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Config Errors",
+            "type": "array"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "quota_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quota Bytes"
+          },
+          "status": {
+            "enum": [
+              "disabled",
+              "not_configured",
+              "invalid",
+              "dry_run",
+              "ready"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "upload_max_bytes": {
+            "title": "Upload Max Bytes",
+            "type": "integer"
+          },
+          "warning_threshold_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning Threshold Bytes"
+          },
+          "warning_threshold_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning Threshold Ratio"
+          }
+        },
+        "required": [
+          "enabled",
+          "dry_run",
+          "configured",
+          "upload_max_bytes",
+          "status"
+        ],
+        "title": "FileQuotaPolicyConfigResponse",
+        "type": "object"
+      },
+      "FileQuotaPolicyDryRunRequest": {
+        "description": "请求预演拟上传文件在 staged quota policy 下的结果。",
+        "properties": {
+          "file_type": {
+            "default": "source_pdf",
+            "title": "File Type",
+            "type": "string"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "size_bytes": {
+            "minimum": 0.0,
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "size_bytes"
+        ],
+        "title": "FileQuotaPolicyDryRunRequest",
+        "type": "object"
+      },
+      "FileQuotaPolicyDryRunResponse": {
+        "description": "返回 quota policy dry-run 结果，不代表真实上传授权被阻断。",
+        "properties": {
+          "action_mode": {
+            "const": "quota_policy_dry_run",
+            "title": "Action Mode",
+            "type": "string"
+          },
+          "file_type": {
+            "title": "File Type",
+            "type": "string"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/FileQuotaPolicyConfigResponse"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "safety": {
+            "$ref": "#/components/schemas/FileQuotaPolicySafetyResponse"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/FileQuotaPolicyUsageResponse"
+          },
+          "would_block": {
+            "title": "Would Block",
+            "type": "boolean"
+          },
+          "would_warn": {
+            "title": "Would Warn",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "generated_at",
+          "action_mode",
+          "file_type",
+          "policy",
+          "usage",
+          "would_warn",
+          "would_block",
+          "safety"
+        ],
+        "title": "FileQuotaPolicyDryRunResponse",
+        "type": "object"
+      },
+      "FileQuotaPolicySafetyResponse": {
+        "description": "声明 quota dry-run 没有执行上传、阻断、审计或外部副作用。",
+        "properties": {
+          "audit_events_written": {
+            "default": false,
+            "title": "Audit Events Written",
+            "type": "boolean"
+          },
+          "conversion_workflow_executed": {
+            "default": false,
+            "title": "Conversion Workflow Executed",
+            "type": "boolean"
+          },
+          "delete_executed": {
+            "default": false,
+            "title": "Delete Executed",
+            "type": "boolean"
+          },
+          "metadata_mutated": {
+            "default": false,
+            "title": "Metadata Mutated",
+            "type": "boolean"
+          },
+          "provider_calls_executed": {
+            "default": false,
+            "title": "Provider Calls Executed",
+            "type": "boolean"
+          },
+          "read_only": {
+            "default": true,
+            "title": "Read Only",
+            "type": "boolean"
+          },
+          "upload_authorization_created": {
+            "default": false,
+            "title": "Upload Authorization Created",
+            "type": "boolean"
+          },
+          "upload_blocking_executed": {
+            "default": false,
+            "title": "Upload Blocking Executed",
+            "type": "boolean"
+          },
+          "upload_content_written": {
+            "default": false,
+            "title": "Upload Content Written",
+            "type": "boolean"
+          }
+        },
+        "title": "FileQuotaPolicySafetyResponse",
+        "type": "object"
+      },
+      "FileQuotaPolicyUsageResponse": {
+        "description": "返回当前和 projected quota 使用量。",
+        "properties": {
+          "current_usage_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Usage Ratio"
+          },
+          "current_used_size_bytes": {
+            "title": "Current Used Size Bytes",
+            "type": "integer"
+          },
+          "projected_usage_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projected Usage Ratio"
+          },
+          "projected_used_size_bytes": {
+            "title": "Projected Used Size Bytes",
+            "type": "integer"
+          },
+          "proposed_upload_size_bytes": {
+            "title": "Proposed Upload Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "current_used_size_bytes",
+          "proposed_upload_size_bytes",
+          "projected_used_size_bytes"
+        ],
+        "title": "FileQuotaPolicyUsageResponse",
+        "type": "object"
+      },
       "FileRetentionCandidateResponse": {
         "description": "返回一条过期 document_file 候选；仅用于计划展示，不代表会被物理删除。",
         "properties": {
@@ -3061,6 +3373,64 @@
         "title": "FileRetentionCandidateResponse",
         "type": "object"
       },
+      "FileRetentionCleanupLockSummaryResponse": {
+        "description": "返回手动 scheduler dry-run 持有过的 cleanup lock 摘要。",
+        "properties": {
+          "acquired_at": {
+            "format": "date-time",
+            "title": "Acquired At",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "fencing_token": {
+            "title": "Fencing Token",
+            "type": "integer"
+          },
+          "lock_name": {
+            "title": "Lock Name",
+            "type": "string"
+          },
+          "owner_id": {
+            "title": "Owner Id",
+            "type": "string"
+          },
+          "released": {
+            "title": "Released",
+            "type": "boolean"
+          },
+          "released_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Released At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lock_name",
+          "owner_id",
+          "fencing_token",
+          "status",
+          "acquired_at",
+          "expires_at",
+          "released"
+        ],
+        "title": "FileRetentionCleanupLockSummaryResponse",
+        "type": "object"
+      },
       "FileRetentionCleanupRunExecuteRequest": {
         "description": "请求执行一次已 preview 的 cleanup run。",
         "properties": {
@@ -3082,6 +3452,28 @@
             "title": "Max Files",
             "type": "integer"
           },
+          "plan_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "plan_signature": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Signature"
+          },
           "preview_hash": {
             "title": "Preview Hash",
             "type": "string"
@@ -3089,6 +3481,17 @@
           "reason": {
             "title": "Reason",
             "type": "string"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
           }
         },
         "required": [
@@ -3097,6 +3500,180 @@
           "confirmation"
         ],
         "title": "FileRetentionCleanupRunExecuteRequest",
+        "type": "object"
+      },
+      "FileRetentionCleanupRunHistoryListResponse": {
+        "description": "返回 cleanup run history 分页列表。",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FileRetentionCleanupRunHistoryResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page",
+          "page_size",
+          "total"
+        ],
+        "title": "FileRetentionCleanupRunHistoryListResponse",
+        "type": "object"
+      },
+      "FileRetentionCleanupRunHistoryResponse": {
+        "description": "返回 cleanup run durable history 摘要。",
+        "properties": {
+          "action_mode": {
+            "enum": [
+              "cleanup_preview",
+              "cleanup_execute",
+              "scheduler_dry_run"
+            ],
+            "title": "Action Mode",
+            "type": "string"
+          },
+          "cleanup_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FileRetentionSignedCleanupPlanResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executed At"
+          },
+          "lock": {
+            "additionalProperties": true,
+            "title": "Lock",
+            "type": "object"
+          },
+          "max_files": {
+            "title": "Max Files",
+            "type": "integer"
+          },
+          "preview_hash": {
+            "title": "Preview Hash",
+            "type": "string"
+          },
+          "readonly_report": {
+            "additionalProperties": true,
+            "title": "Readonly Report",
+            "type": "object"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "requested_file_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Requested File Ids",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "safety": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Safety",
+            "type": "object"
+          },
+          "status": {
+            "enum": [
+              "previewed",
+              "executed",
+              "failed",
+              "dry_run"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "totals": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Totals",
+            "type": "object"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "status",
+          "action_mode",
+          "preview_hash",
+          "max_files",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "FileRetentionCleanupRunHistoryResponse",
         "type": "object"
       },
       "FileRetentionCleanupRunPreviewRequest": {
@@ -3130,6 +3707,16 @@
             ],
             "title": "Action Mode",
             "type": "string"
+          },
+          "cleanup_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FileRetentionSignedCleanupPlanResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "confirmation_phrase": {
             "title": "Confirmation Phrase",
@@ -3187,6 +3774,11 @@
             "title": "Audit Events Written",
             "type": "boolean"
           },
+          "history_recorded": {
+            "default": false,
+            "title": "History Recorded",
+            "type": "boolean"
+          },
           "physical_delete_contract_reused": {
             "default": true,
             "title": "Physical Delete Contract Reused",
@@ -3211,9 +3803,86 @@
             "default": false,
             "title": "Scheduler Loop Executed",
             "type": "boolean"
+          },
+          "signed_plan_created": {
+            "default": false,
+            "title": "Signed Plan Created",
+            "type": "boolean"
+          },
+          "signed_plan_verified": {
+            "default": false,
+            "title": "Signed Plan Verified",
+            "type": "boolean"
           }
         },
         "title": "FileRetentionCleanupRunSafetyResponse",
+        "type": "object"
+      },
+      "FileRetentionCleanupSchedulerDryRunRequest": {
+        "description": "请求手动运行 scheduler dry-run；只生成计划和 lock/history 证据。",
+        "properties": {
+          "lock_ttl_seconds": {
+            "default": 60,
+            "maximum": 900.0,
+            "minimum": 1.0,
+            "title": "Lock Ttl Seconds",
+            "type": "integer"
+          },
+          "owner_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
+          }
+        },
+        "title": "FileRetentionCleanupSchedulerDryRunRequest",
+        "type": "object"
+      },
+      "FileRetentionCleanupSchedulerDryRunResponse": {
+        "description": "返回手动 scheduler dry-run 的只读报告、lock 和 safety evidence。",
+        "properties": {
+          "action_mode": {
+            "const": "scheduler_dry_run",
+            "title": "Action Mode",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "lock": {
+            "$ref": "#/components/schemas/FileRetentionCleanupLockSummaryResponse"
+          },
+          "readonly_report": {
+            "additionalProperties": true,
+            "title": "Readonly Report",
+            "type": "object"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "safety": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Safety",
+            "type": "object"
+          }
+        },
+        "required": [
+          "run_id",
+          "generated_at",
+          "action_mode",
+          "lock"
+        ],
+        "title": "FileRetentionCleanupSchedulerDryRunResponse",
         "type": "object"
       },
       "FileRetentionDeleteExecuteRequest": {
@@ -3311,6 +3980,16 @@
           "reason": {
             "title": "Reason",
             "type": "string"
+          },
+          "s3_delete_contract": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FileRetentionS3DeleteContractResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "size_bytes": {
             "anyOf": [
@@ -3942,6 +4621,139 @@
         "title": "FileRetentionPolicyUpdateRequest",
         "type": "object"
       },
+      "FileRetentionS3DeleteContractResponse": {
+        "description": "返回 S3 fake deletion safety contract，不代表真实删除授权。",
+        "properties": {
+          "adapter_mode": {
+            "const": "fake",
+            "title": "Adapter Mode",
+            "type": "string"
+          },
+          "bucket": {
+            "title": "Bucket",
+            "type": "string"
+          },
+          "contract_version": {
+            "const": "s3-delete-fake-v1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "expected_outcome": {
+            "const": "fake_skipped",
+            "title": "Expected Outcome",
+            "type": "string"
+          },
+          "missing_target_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Target Fields",
+            "type": "array"
+          },
+          "object_key": {
+            "title": "Object Key",
+            "type": "string"
+          },
+          "safety": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Safety",
+            "type": "object"
+          },
+          "target_exact": {
+            "title": "Target Exact",
+            "type": "boolean"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          }
+        },
+        "required": [
+          "contract_version",
+          "adapter_mode",
+          "bucket",
+          "object_key",
+          "target_exact",
+          "expected_outcome"
+        ],
+        "title": "FileRetentionS3DeleteContractResponse",
+        "type": "object"
+      },
+      "FileRetentionSignedCleanupPlanResponse": {
+        "description": "返回 cleanup run signed plan 摘要，不包含对象路径或 secret。",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "max_files": {
+            "title": "Max Files",
+            "type": "integer"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "preview_hash": {
+            "title": "Preview Hash",
+            "type": "string"
+          },
+          "requested_file_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Requested File Ids",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "safety": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Safety",
+            "type": "object"
+          },
+          "signature": {
+            "title": "Signature",
+            "type": "string"
+          },
+          "signature_algorithm": {
+            "const": "hmac-sha256",
+            "title": "Signature Algorithm",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_id",
+          "run_id",
+          "preview_hash",
+          "max_files",
+          "created_at",
+          "expires_at",
+          "signature",
+          "signature_algorithm"
+        ],
+        "title": "FileRetentionSignedCleanupPlanResponse",
+        "type": "object"
+      },
       "FileStorageUsageGroupResponse": {
         "description": "返回一个 document_files storage usage 分组汇总。",
         "properties": {
@@ -4107,7 +4919,7 @@
         "type": "object"
       },
       "FileUploadUrlRequest": {
-        "description": "创建 source_pdf 上传授权的请求。",
+        "description": "创建 source_pdf 上传授权的请求，可携带 Admin-only quota override。",
         "properties": {
           "checksum_sha256": {
             "anyOf": [
@@ -4145,6 +4957,28 @@
             "default": "application/pdf",
             "title": "Mime Type",
             "type": "string"
+          },
+          "quota_override_confirmation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quota Override Confirmation"
+          },
+          "quota_override_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quota Override Reason"
           },
           "size_bytes": {
             "title": "Size Bytes",
@@ -5312,6 +6146,7 @@
         "title": "JobSummaryResponse",
         "type": "object"
       },
+      "JsonValue": {},
       "OpsAlertDeliveryFakeSendRequest": {
         "description": "请求执行本地 fake outbox delivery，不发送外部通知。",
         "properties": {
@@ -5564,6 +6399,231 @@
           }
         },
         "title": "OpsAlertDeliverySafetyResponse",
+        "type": "object"
+      },
+      "OpsAlertDestinationDryRunRequest": {
+        "description": "请求对 staged alert destinations 做只读配置 dry-run。",
+        "properties": {
+          "alert_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Alert Codes",
+            "type": "array"
+          },
+          "destination_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Destination Ids",
+            "type": "array"
+          }
+        },
+        "title": "OpsAlertDestinationDryRunRequest",
+        "type": "object"
+      },
+      "OpsAlertDestinationDryRunResponse": {
+        "description": "返回 alert destination configuration dry-run 汇总。",
+        "properties": {
+          "action_mode": {
+            "const": "config_dry_run",
+            "title": "Action Mode",
+            "type": "string"
+          },
+          "config_errors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Config Errors",
+            "type": "array"
+          },
+          "configured_count": {
+            "title": "Configured Count",
+            "type": "integer"
+          },
+          "destinations": {
+            "items": {
+              "$ref": "#/components/schemas/OpsAlertDestinationItemResponse"
+            },
+            "title": "Destinations",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "requested_alert_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Requested Alert Codes",
+            "type": "array"
+          },
+          "requested_destination_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Requested Destination Ids",
+            "type": "array"
+          },
+          "safety": {
+            "$ref": "#/components/schemas/OpsAlertDestinationSafetyResponse"
+          },
+          "selected_count": {
+            "title": "Selected Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "generated_at",
+          "action_mode",
+          "configured_count",
+          "selected_count",
+          "safety"
+        ],
+        "title": "OpsAlertDestinationDryRunResponse",
+        "type": "object"
+      },
+      "OpsAlertDestinationItemResponse": {
+        "description": "返回单个 alert destination 的配置 dry-run 结果。",
+        "properties": {
+          "allowlist": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowlist",
+            "type": "array"
+          },
+          "blocked_alert_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blocked Alert Codes",
+            "type": "array"
+          },
+          "channel": {
+            "enum": [
+              "slack",
+              "email",
+              "webhook"
+            ],
+            "title": "Channel",
+            "type": "string"
+          },
+          "dedupe_window_minutes": {
+            "title": "Dedupe Window Minutes",
+            "type": "integer"
+          },
+          "destination_id": {
+            "title": "Destination Id",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "matched_alert_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Matched Alert Codes",
+            "type": "array"
+          },
+          "missing_gates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Gates",
+            "type": "array"
+          },
+          "rate_limit_per_hour": {
+            "title": "Rate Limit Per Hour",
+            "type": "integer"
+          },
+          "secret_ref": {
+            "title": "Secret Ref",
+            "type": "string"
+          },
+          "secret_ref_present": {
+            "title": "Secret Ref Present",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "config_valid",
+              "dry_run_passed",
+              "disabled",
+              "missing_config",
+              "blocked"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "target_label": {
+            "title": "Target Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "destination_id",
+          "channel",
+          "enabled",
+          "secret_ref",
+          "secret_ref_present",
+          "target_label",
+          "rate_limit_per_hour",
+          "dedupe_window_minutes",
+          "status"
+        ],
+        "title": "OpsAlertDestinationItemResponse",
+        "type": "object"
+      },
+      "OpsAlertDestinationSafetyResponse": {
+        "description": "声明 alert destination dry-run 不触发通知或泄露 secret。",
+        "properties": {
+          "audit_events_written": {
+            "default": false,
+            "title": "Audit Events Written",
+            "type": "boolean"
+          },
+          "cleanup_executed": {
+            "default": false,
+            "title": "Cleanup Executed",
+            "type": "boolean"
+          },
+          "conversion_workflow_executed": {
+            "default": false,
+            "title": "Conversion Workflow Executed",
+            "type": "boolean"
+          },
+          "delete_executed": {
+            "default": false,
+            "title": "Delete Executed",
+            "type": "boolean"
+          },
+          "external_delivery_executed": {
+            "default": false,
+            "title": "External Delivery Executed",
+            "type": "boolean"
+          },
+          "provider_calls_executed": {
+            "default": false,
+            "title": "Provider Calls Executed",
+            "type": "boolean"
+          },
+          "read_only": {
+            "default": true,
+            "title": "Read Only",
+            "type": "boolean"
+          },
+          "secret_values_exposed": {
+            "default": false,
+            "title": "Secret Values Exposed",
+            "type": "boolean"
+          }
+        },
+        "title": "OpsAlertDestinationSafetyResponse",
         "type": "object"
       },
       "OpsProviderCancellationFakeRequest": {
@@ -13202,6 +14262,66 @@
         ]
       }
     },
+    "/api/v1/files/quota-policy/dry-run": {
+      "post": {
+        "description": "预演拟上传文件的 quota policy 结果，不创建上传授权、不阻断上传。",
+        "operationId": "dry_run_file_quota_policy_api_v1_files_quota_policy_dry_run_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileQuotaPolicyDryRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileQuotaPolicyDryRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dry Run File Quota Policy",
+        "tags": [
+          "files"
+        ]
+      }
+    },
     "/api/v1/files/retention/cleanup-runs/execute": {
       "post": {
         "description": "执行受控 cleanup run，内部复用 existing physical-delete safety contract。",
@@ -13262,6 +14382,138 @@
         ]
       }
     },
+    "/api/v1/files/retention/cleanup-runs/history": {
+      "get": {
+        "description": "列出 cleanup run durable history，不执行任何清理动作。",
+        "operationId": "list_file_retention_cleanup_run_history_api_v1_files_retention_cleanup_runs_history_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRetentionCleanupRunHistoryListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List File Retention Cleanup Run History",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/retention/cleanup-runs/history/{run_id}": {
+      "get": {
+        "description": "读取单条 cleanup run durable history，不返回对象路径或文件内容。",
+        "operationId": "get_file_retention_cleanup_run_history_api_v1_files_retention_cleanup_runs_history__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRetentionCleanupRunHistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get File Retention Cleanup Run History",
+        "tags": [
+          "files"
+        ]
+      }
+    },
     "/api/v1/files/retention/cleanup-runs/preview": {
       "post": {
         "description": "预览精确 file_ids 的 cleanup run，不删除、不标记、不写审计。",
@@ -13317,6 +14569,66 @@
           }
         },
         "summary": "Preview File Retention Cleanup Run",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/retention/cleanup-runs/scheduler-dry-run": {
+      "post": {
+        "description": "手动运行 scheduler dry-run；只获取 lock、生成只读报告、释放 lock 并记录 history。",
+        "operationId": "run_file_retention_cleanup_scheduler_dry_run_api_v1_files_retention_cleanup_runs_scheduler_dry_run_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileRetentionCleanupSchedulerDryRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRetentionCleanupSchedulerDryRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run File Retention Cleanup Scheduler Dry Run",
         "tags": [
           "files"
         ]
@@ -14104,6 +15416,7 @@
     },
     "/api/v1/files/upload-url": {
       "post": {
+        "description": "创建上传授权；ready quota policy 超额时阻断，Admin override 可放行。",
         "operationId": "create_upload_url_api_v1_files_upload_url_post",
         "parameters": [
           {
@@ -15841,6 +17154,66 @@
           }
         },
         "summary": "Preview Ops Alert Delivery",
+        "tags": [
+          "ops"
+        ]
+      }
+    },
+    "/api/v1/ops/alert-destinations/dry-run": {
+      "post": {
+        "description": "只读 dry-run staged alert destination 配置，不发送通知或暴露 secret。",
+        "operationId": "dry_run_ops_alert_destinations_api_v1_ops_alert_destinations_dry_run_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpsAlertDestinationDryRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsAlertDestinationDryRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dry Run Ops Alert Destinations",
         "tags": [
           "ops"
         ]

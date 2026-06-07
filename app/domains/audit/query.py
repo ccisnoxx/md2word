@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from io import StringIO
@@ -61,6 +62,7 @@ AUDIT_EVENT_EXPORT_COLUMNS = [
     "target_type",
     "target_id",
     "reason",
+    "details_json",
     "trace_id",
 ]
 
@@ -150,6 +152,7 @@ class AuditEventQueryService:
             event.target_type,
             event.target_id,
             event.reason,
+            self._details_json(event),
             event.trace_id,
         ]
         return "\n".join(value for value in values if value is not None).lower()
@@ -186,7 +189,15 @@ class AuditEventQueryService:
                     event.target_type,
                     event.target_id,
                     event.reason or "",
+                    self._details_json(event) or "",
                     event.trace_id,
                 ]
             )
         return output.getvalue()
+
+    def _details_json(self, event: AuditEvent) -> str | None:
+        """把结构化 details 编码为稳定紧凑 JSON，缺失时返回 None。"""
+
+        if event.details is None:
+            return None
+        return json.dumps(event.details, ensure_ascii=False, sort_keys=True, separators=(",", ":"))

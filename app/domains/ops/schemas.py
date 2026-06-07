@@ -1,5 +1,5 @@
 # File: app/domains/ops/schemas.py
-# Purpose: Define Admin-only read-only recovery action registry and preview API contracts.
+# Purpose: Define Admin-only read-only recovery, alert destination, and fake execution API contracts.
 
 from __future__ import annotations
 
@@ -34,6 +34,15 @@ OpsAlertDeliveryOutcome = Literal[
     "skipped_not_active",
     "skipped_rate_limited",
     "failed",
+]
+OpsAlertDestinationChannel = Literal["slack", "email", "webhook"]
+OpsAlertDestinationMode = Literal["config_dry_run"]
+OpsAlertDestinationStatus = Literal[
+    "config_valid",
+    "dry_run_passed",
+    "disabled",
+    "missing_config",
+    "blocked",
 ]
 OpsProviderCancellationProvider = Literal["mineru"]
 OpsProviderCancellationTargetType = Literal["document_job", "legacy_job"]
@@ -180,6 +189,58 @@ class OpsAlertDeliveryResponse(BaseModel):
     totals: dict[str, int] = Field(default_factory=dict)
     items: list[OpsAlertDeliveryItemResponse] = Field(default_factory=list)
     safety: OpsAlertDeliverySafetyResponse
+
+
+class OpsAlertDestinationDryRunRequest(BaseModel):
+    """请求对 staged alert destinations 做只读配置 dry-run。"""
+
+    alert_codes: list[str] = Field(default_factory=list)
+    destination_ids: list[str] = Field(default_factory=list)
+
+
+class OpsAlertDestinationSafetyResponse(BaseModel):
+    """声明 alert destination dry-run 不触发通知或泄露 secret。"""
+
+    read_only: bool = True
+    external_delivery_executed: bool = False
+    provider_calls_executed: bool = False
+    cleanup_executed: bool = False
+    delete_executed: bool = False
+    conversion_workflow_executed: bool = False
+    audit_events_written: bool = False
+    secret_values_exposed: bool = False
+
+
+class OpsAlertDestinationItemResponse(BaseModel):
+    """返回单个 alert destination 的配置 dry-run 结果。"""
+
+    destination_id: str
+    channel: OpsAlertDestinationChannel
+    enabled: bool
+    secret_ref: str
+    secret_ref_present: bool
+    target_label: str
+    allowlist: list[str] = Field(default_factory=list)
+    rate_limit_per_hour: int
+    dedupe_window_minutes: int
+    status: OpsAlertDestinationStatus
+    missing_gates: list[str] = Field(default_factory=list)
+    matched_alert_codes: list[str] = Field(default_factory=list)
+    blocked_alert_codes: list[str] = Field(default_factory=list)
+
+
+class OpsAlertDestinationDryRunResponse(BaseModel):
+    """返回 alert destination configuration dry-run 汇总。"""
+
+    generated_at: datetime
+    action_mode: OpsAlertDestinationMode
+    requested_alert_codes: list[str] = Field(default_factory=list)
+    requested_destination_ids: list[str] = Field(default_factory=list)
+    configured_count: int
+    selected_count: int
+    config_errors: list[str] = Field(default_factory=list)
+    destinations: list[OpsAlertDestinationItemResponse] = Field(default_factory=list)
+    safety: OpsAlertDestinationSafetyResponse
 
 
 class OpsProviderCancellationPreviewRequest(BaseModel):

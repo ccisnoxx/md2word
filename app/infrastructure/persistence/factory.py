@@ -1,6 +1,7 @@
-from __future__ import annotations
+# File: app/infrastructure/persistence/factory.py
+# Purpose: 按 metadata backend 组合显式端口 adapter。
 
-# app/infrastructure/persistence/factory.py: 按 metadata backend 组合显式端口 adapter。
+from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +13,8 @@ from app.domains.document_jobs.repository import (
     DocumentJobRepositoryProtocol,
 )
 from app.domains.files.repository import DocumentFileRepositoryProtocol
+from app.domains.files.cleanup_lock import FileRetentionCleanupLockRepositoryProtocol
+from app.domains.files.cleanup_history import FileRetentionCleanupRunHistoryRepositoryProtocol
 from app.domains.files.retention_policy import FileRetentionPolicyRepositoryProtocol
 from app.domains.jobs.repository import (
     JobEventRepositoryProtocol,
@@ -31,6 +34,8 @@ from app.infrastructure.persistence.file import (
     FileJobFileRepository,
     FileJobSnapshotRepository,
     FilePersistenceBackend,
+    FileRetentionCleanupLockRepository,
+    FileRetentionCleanupRunHistoryRepository,
     FileRetentionPolicyRepository,
     FileStageMessageStore,
 )
@@ -45,6 +50,8 @@ from app.infrastructure.persistence.mysql import (
     MysqlJobSnapshotRepository,
     MysqlPersistenceBackend,
     MysqlPersistenceConfig,
+    MysqlRetentionCleanupLockRepository,
+    MysqlRetentionCleanupRunHistoryRepository,
     MysqlRetentionPolicyRepository,
     MysqlResourceVersionRepository,
     MysqlStageMessageStore,
@@ -61,6 +68,8 @@ from app.infrastructure.persistence.sqlite import (
     SqliteJobFileRepository,
     SqliteJobSnapshotRepository,
     SqlitePersistenceBackend,
+    SqliteRetentionCleanupLockRepository,
+    SqliteRetentionCleanupRunHistoryRepository,
     SqliteRetentionPolicyRepository,
     SqliteStageMessageStore,
 )
@@ -77,6 +86,8 @@ class PersistenceAdapters:
     audit_event_repository: AuditEventRepositoryProtocol
     document_file_repository: DocumentFileRepositoryProtocol
     file_retention_policy_repository: FileRetentionPolicyRepositoryProtocol
+    file_retention_cleanup_lock_repository: FileRetentionCleanupLockRepositoryProtocol
+    file_retention_cleanup_run_history_repository: FileRetentionCleanupRunHistoryRepositoryProtocol
     document_job_repository: DocumentJobRepositoryProtocol
     document_job_event_repository: DocumentJobEventRepositoryProtocol
     stage_message_store: StageMessageStoreProtocol
@@ -98,6 +109,8 @@ def build_file_persistence_adapters(data_dir: Path) -> PersistenceAdapters:
         audit_event_repository=FileAuditEventRepository(backend),
         document_file_repository=FileDocumentFileRepository(backend),
         file_retention_policy_repository=FileRetentionPolicyRepository(backend),
+        file_retention_cleanup_lock_repository=FileRetentionCleanupLockRepository(backend),
+        file_retention_cleanup_run_history_repository=FileRetentionCleanupRunHistoryRepository(backend),
         document_job_repository=FileDocumentJobRepository(backend),
         document_job_event_repository=FileDocumentJobEventRepository(backend),
         stage_message_store=FileStageMessageStore(backend),
@@ -120,6 +133,8 @@ def build_sqlite_persistence_adapters(database_path: Path) -> PersistenceAdapter
         audit_event_repository=SqliteAuditEventRepository(backend),
         document_file_repository=SqliteDocumentFileRepository(backend),
         file_retention_policy_repository=SqliteRetentionPolicyRepository(backend),
+        file_retention_cleanup_lock_repository=SqliteRetentionCleanupLockRepository(backend),
+        file_retention_cleanup_run_history_repository=SqliteRetentionCleanupRunHistoryRepository(backend),
         document_job_repository=SqliteDocumentJobRepository(backend),
         document_job_event_repository=SqliteDocumentJobEventRepository(backend),
         stage_message_store=SqliteStageMessageStore(backend),
@@ -146,6 +161,8 @@ def build_mysql_persistence_adapters(
         audit_event_repository=MysqlAuditEventRepository(backend),
         document_file_repository=MysqlDocumentFileRepository(backend),
         file_retention_policy_repository=MysqlRetentionPolicyRepository(backend),
+        file_retention_cleanup_lock_repository=MysqlRetentionCleanupLockRepository(backend),
+        file_retention_cleanup_run_history_repository=MysqlRetentionCleanupRunHistoryRepository(backend),
         document_job_repository=MysqlDocumentJobRepository(backend),
         document_job_event_repository=MysqlDocumentJobEventRepository(backend),
         stage_message_store=MysqlStageMessageStore(backend),

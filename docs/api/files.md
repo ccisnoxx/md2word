@@ -8,14 +8,18 @@ source_files:
   - app/domains/files/router.py
   - app/domains/files/schemas.py
   - app/domains/files/models.py
+  - app/domains/files/cleanup_lock.py
   - app/domains/files/library_search.py
   - app/domains/files/retention.py
   - app/domains/files/cleanup_execution.py
+  - app/domains/files/cleanup_history.py
+  - app/domains/files/scheduled_cleanup.py
+  - app/domains/files/quota_policy.py
   - app/domains/files/storage_usage.py
   - app/domains/files/service.py
-summary: Files API 提供 PDF 上传授权、本地代理上传、文件 metadata 查询、Admin-only 文件库搜索、metadata 保留期管理、受保护的过期文件物理删除和 cleanup run 执行合同。
-tags: [files, api, pdf, upload, retention, search]
-last_reviewed: 2026-06-06
+summary: Files API 提供 PDF 上传授权、本地代理上传、文件 metadata 查询、Admin-only 文件库搜索、metadata 保留期管理、quota policy dry-run、受保护的过期文件物理删除、signed cleanup run 执行合同、手动 scheduler dry-run 和 durable run history。
+tags: [files, api, pdf, upload, retention, search, quota]
+last_reviewed: 2026-06-07
 ---
 
 ## 概述
@@ -24,9 +28,9 @@ Files API 挂在 `/api/v1/files` 下，当前只面向登录用户。P0 PDF -> W
 
 Admin 文件库搜索只返回 `document_files` 安全摘要，用于定位文件和衔接现有 selected-file 运维流程。搜索结果不暴露 `object_key`、`bucket`、checksum、etag、raw metadata、本地路径、文件内容或签名 URL。
 
-保留期管理接口只面向 Admin，用于管理保留策略、查看或标记过期 metadata，并在显式 dry-run 后人工执行本地过期文件物理删除。cleanup run 执行合同复用同一 physical-delete primitive，并额外要求 preview hash、reason 和确认短语。它不删除任务、文件 metadata 记录、审计记录或 `object_key`，也不触发 PDF 解析、翻译或 Word 生成流程。当前物理删除只支持 `local_file` 和 `local_object`，`s3` 会返回 unsupported 结果而不会执行真实对象存储删除。
+保留期管理接口只面向 Admin，用于管理保留策略、查看或标记过期 metadata，并在显式 dry-run 后人工执行本地过期文件物理删除。cleanup run 执行合同复用同一 physical-delete primitive，并额外要求 preview hash、signed cleanup plan、reason 和确认短语。preview/execute 会写入 durable run history，只保存 `run_id`、signed plan、状态、摘要计数、safety flags 和人工 reason，不保存本地路径、文件内容、bucket 或 raw metadata。手动 scheduler dry-run 只获取 cleanup lock、生成 readonly report、释放 lock 并写入 `dry_run` history；它不会启动 scheduler loop，不会生成可执行 signed cleanup plan，也不能作为删除授权。它不删除任务、文件 metadata 记录、审计记录或 `object_key`，也不触发 PDF 解析、翻译或 Word 生成流程。当前物理删除只支持 `local_file` 和 `local_object`，`s3` 会返回 unsupported 结果而不会执行真实对象存储删除。
 
-存储使用汇总接口只面向 Admin，只基于 `document_files` metadata 的 `size_bytes` 做容量估算和 quota readiness 展示。它不验证对象是否真实存在，不执行 mark-expired、delete-preview、delete-expired、quota enforcement 或上传阻断。
+存储使用汇总接口只面向 Admin，只基于 `document_files` metadata 的 `size_bytes` 做容量估算和 quota readiness 展示。quota policy dry-run 同样只读，用于预演拟上传文件在 staged policy 下是否会 warning/block。真实上传授权会在 `FILES_QUOTA_POLICY_ENABLED=true`、`FILES_QUOTA_POLICY_DRY_RUN=false`、配置有效且 projected usage 达到 block 阈值时执行阻断；Admin 可通过显式 override reason 和确认短语放行。quota enforcement 不验证对象是否真实存在，不上传文件内容，不执行 mark-expired、delete-preview、delete-expired、provider 调用或转换流程。
 
 ## API 参考
 
@@ -43,8 +47,15 @@ Admin 文件库搜索只返回 `document_files` 安全摘要，用于定位文�
 | `file_type` | 否 | 当前默认 `source_pdf`。 |
 | `checksum_sha256` | 否 | `sha256:<hex>`。 |
 | `job_id` | 否 | 可选关联任务。 |
+| `quota_override_reason` | 否 | Admin-only quota override 原因；仅在 ready policy 触发 block 时生效。 |
+| `quota_override_confirmation` | 否 | Admin-only quota override 确认短语，必须为 `OVERRIDE FILE QUOTA POLICY`。 |
 
 - 响应：`201 Created`，包含 `file_id`、`upload_url`、`method=PUT`、`headers`、`expires_at`、`object_key`、`max_bytes` 和 `file`。
+- quota 行为：
+  - 默认配置下 quota policy disabled 或 dry-run，不影响上传授权。
+  - 当 policy 状态为 `ready` 且 projected usage 达到 block 阈值时，返回 `409 conflict`，不创建 `document_files`，写入 `file.quota_policy_block` audit event。
+  - Admin 携带有效 `quota_override_reason` 和 `quota_override_confirmation` 时可放行，写入 `file.quota_policy_override` audit event，然后继续写入 `file.upload_authorize`。
+  - Operator 携带 override 字段不会放行。
 - 成功动作写入 `file.upload_authorize` audit event。
 
 ### `PUT /api/v1/files/{file_id}/content`
@@ -203,6 +214,54 @@ Admin 文件库搜索只返回 `document_files` 安全摘要，用于定位文�
 | `estimated_reclaimable_count` | 分组内满足 metadata-estimated reclaim 条件的行数。 |
 | `estimated_reclaimable_size_bytes` | 分组内满足 metadata-estimated reclaim 条件的估算 bytes。 |
 
+### `POST /api/v1/files/quota-policy/dry-run`
+
+- 用途：预演一个拟上传文件在 staged quota policy 下的 warning/block 结果。
+- 认证：Bearer JWT，Admin only。
+- 请求体：JSON。
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `size_bytes` | 是 | 拟上传文件大小，必须大于等于 0。 |
+| `file_type` | 否 | 默认 `source_pdf`；当前只作为 dry-run 上下文返回，不改变真实上传行为。 |
+| `filename` | 否 | 可选展示上下文，不读取本地文件。 |
+
+- 配置来源：
+  - `FILES_QUOTA_POLICY_ENABLED`
+  - `FILES_QUOTA_POLICY_DRY_RUN`
+  - `FILES_QUOTA_BYTES`
+  - `FILES_QUOTA_WARNING_THRESHOLD_RATIO`
+  - `FILES_QUOTA_BLOCK_THRESHOLD_RATIO`
+- 行为：
+  - 基于当前非 `deleted` 的 `document_files.size_bytes` 计算 `current_used_size_bytes`。
+  - 使用请求的 `size_bytes` 计算 projected usage。
+  - 返回 `would_warn`、`would_block` 和 reasons。
+  - 如果 `size_bytes` 超过现有 `JOBS_UPLOAD_MAX_BYTES`，`would_block=true` 并返回 `upload_size_exceeds_max_bytes`；这只是 dry-run 报告，真实上传仍走现有上传校验。
+  - 不创建 `document_files`。
+  - 不生成 upload URL。
+  - 不写 audit event。
+  - 不执行真实 quota enforcement；真实阻断只发生在 `/upload-url` 且 policy status 为 `ready` 时。
+  - 不上传文件内容。
+  - 不调用 S3、provider、告警服务、parser、翻译或 Word 生成流程。
+- 响应：`FileQuotaPolicyDryRunResponse`。
+
+关键字段：
+
+| 字段 | 说明 |
+|---|---|
+| `policy.status` | `disabled`、`not_configured`、`invalid`、`dry_run` 或 `ready`。 |
+| `policy.configured` | 是否配置了正数 quota bytes。 |
+| `policy.upload_max_bytes` | 当前既有上传大小上限。 |
+| `usage.current_used_size_bytes` | 当前非 deleted metadata bytes。 |
+| `usage.projected_used_size_bytes` | 当前使用量加上拟上传大小。 |
+| `would_warn` | projected usage 是否达到 warning 阈值。 |
+| `would_block` | projected usage 是否达到 block 阈值，或拟上传大小是否超过既有上传上限。 |
+| `reasons[]` | 触发原因，例如 `quota_policy_disabled`、`quota_not_configured`、`projected_usage_reaches_block_threshold`。 |
+| `safety.upload_authorization_created` | 始终为 `false`。 |
+| `safety.upload_blocking_executed` | 始终为 `false`。 |
+| `safety.metadata_mutated` | 始终为 `false`。 |
+| `safety.audit_events_written` | 始终为 `false`。 |
+
 ### `POST /api/v1/files/retention/policies`
 
 - 用途：创建 draft 保留策略。
@@ -310,6 +369,7 @@ Admin 文件库搜索只返回 `document_files` 安全摘要，用于定位文�
   - 不写入 `file.retention_physical_delete` audit event。
   - 仅 `status=expired` 且 `expires_at <= now` 的 `local_file` 或 `local_object` 会返回 `deletable`。
   - `uploaded`、未过期、已删除、缺失、无 `object_key` 或 `s3` provider 均返回对应 skip/unsupported outcome。
+  - `s3` provider 会返回 `s3_delete_contract` fake adapter evidence，包含 exact bucket/key/version 目标摘要和 `real_s3_delete_executed=false`。
 - 响应：`FileRetentionDeleteResponse`，其中 `action_mode=delete_preview`，并返回每个文件的 outcome、reason、provider、object_key、size_bytes 和是否将修改 metadata。
 
 ### `POST /api/v1/files/retention/delete-expired`
@@ -327,10 +387,25 @@ Admin 文件库搜索只返回 `document_files` 安全摘要，用于定位文�
 - 行为：
   - 只会删除 `status=expired`、`expires_at <= now`、provider 为 `local_file` 或 `local_object` 且路径位于受管存储目录下的对象。
   - 成功删除或本地对象已不存在时，将对应 metadata `status` 更新为 `deleted`，但保留 metadata row、`object_key`、任务、事件和审计记录。
-  - `s3` provider 当前返回 `skipped_unsupported_storage`，不会执行真实 S3 删除。
+  - `s3` provider 当前返回 `skipped_unsupported_storage`，并携带 `s3_delete_contract` fake adapter evidence；不会执行真实 S3 删除，也不会把 S3 metadata 标记为 `deleted`。
   - 非 `expired`、未过期、无 `object_key`、未知文件或路径越界会返回 skip/error outcome，不会删除对象。
   - 成功动作写入 `file.retention_physical_delete` audit event，reason 会包含人工原因和汇总计数。
 - 响应：`FileRetentionDeleteResponse`，其中 `action_mode=delete_execute`。
+
+`items[].s3_delete_contract` 仅在 `storage_provider=s3` 时返回，当前版本为 fake contract：
+
+| 字段 | 说明 |
+|---|---|
+| `contract_version` | 当前为 `s3-delete-fake-v1`。 |
+| `adapter_mode` | 当前固定为 `fake`，不代表真实 provider adapter 已启用。 |
+| `bucket` / `object_key` / `version_id` | 来自 `document_files` metadata 的目标摘要；`version_id` 只读取 `metadata.s3_version_id`，缺失时为 `null`。 |
+| `target_exact` | bucket 和 object_key 均非空时为 `true`。 |
+| `missing_target_fields[]` | exact target 缺失字段。 |
+| `expected_outcome` | 当前固定为 `fake_skipped`。 |
+| `safety.real_s3_delete_executed` | 始终为 `false`。 |
+| `safety.fake_s3_delete_executed` | 表示 fake adapter contract 已生成。 |
+| `safety.metadata_mutated` | S3 skip item 始终为 `false`。 |
+| `safety.requires_future_real_adapter` | 始终为 `true`，真实删除需未来单独任务批准。 |
 
 ### `POST /api/v1/files/retention/cleanup-runs/preview`
 
@@ -350,11 +425,17 @@ Admin 文件库搜索只返回 `document_files` 安全摘要，用于定位文�
   - 不写 audit event。
   - 不运行 scheduler loop。
 - 响应：`FileRetentionCleanupRunResponse`，其中：
+  - `run_id=cleanup_run_...`，并同步创建 durable history 记录
   - `action_mode=cleanup_preview`
   - `preview_hash=sha256:...`
+  - `cleanup_plan.plan_id=cleanup_plan_...`
+  - `cleanup_plan.signature_algorithm=hmac-sha256`
+  - `cleanup_plan.expires_at` 为短期执行窗口，到期后必须重新 preview
   - `confirmation_phrase=EXECUTE AUTOMATED RETENTION CLEANUP`
   - `physical_delete.action_mode=delete_preview`
   - `safety.physical_delete_executed=false`
+  - `safety.history_recorded=true`
+  - `safety.signed_plan_created=true`
   - `safety.scheduler_loop_executed=false`
 
 ### `POST /api/v1/files/retention/cleanup-runs/execute`
@@ -367,16 +448,24 @@ Admin 文件库搜索只返回 `document_files` 安全摘要，用于定位文�
 |---|---|---|
 | `file_ids` | 是 | 必须与 preview 时确认的精确文件 ID 列表一致。 |
 | `max_files` | 否 | 本次 cleanup run 的限流边界，默认 50。 |
+| `run_id` | 否 | preview 返回的 durable run ID；携带 signed plan 时必填。传入不存在的 `run_id` 会记录 failed history 并返回 conflict。 |
 | `preview_hash` | 是 | 最近一次 cleanup preview 返回的 hash；执行前会重新 preview 并核对。 |
+| `plan_id` | 否 | preview 返回的 `cleanup_plan.plan_id`；推荐传入。 |
+| `plan_signature` | 否 | preview 返回的 `cleanup_plan.signature`；推荐传入。 |
 | `reason` | 是 | 执行原因，不能为空，用于 audit event。 |
 | `confirmation` | 是 | 必须精确等于 `EXECUTE AUTOMATED RETENTION CLEANUP`。 |
 
 - 行为：
   - 重新执行 physical-delete preview 并核对 `preview_hash`。
+  - 传入 preview `run_id` 时，成功执行会更新同一条 durable history 为 `executed`。
+  - 传入未知 `run_id` 时，不执行物理删除、不写成功审计，记录 `failed` history 后返回 conflict。
+  - 传入 `plan_id` 或 `plan_signature` 时，二者必须同时提供，且必须绑定同一 `run_id`。
+  - signed plan 校验会在 physical-delete execution 之前完成；plan id、signature、file_ids、max_files、preview_hash 或过期时间不匹配时，不执行物理删除并记录 failed history。
+  - 未传 `plan_id` / `plan_signature` 的旧客户端仍可按现有 `run_id + preview_hash` 合同执行；响应仍会返回 history 中保存的 `cleanup_plan`。
   - hash 不匹配时返回 conflict，要求重新 preview。
   - hash 匹配后调用现有 physical-delete execution primitive。
   - 仍只支持已 expired 的 `local_file` / `local_object`。
-  - `s3` 仍返回 `skipped_unsupported_storage`，不会执行真实 S3 删除。
+  - `s3` 仍返回 `skipped_unsupported_storage`，并通过 `physical_delete.items[].s3_delete_contract` 返回 fake adapter evidence；不会执行真实 S3 删除。
   - 成功动作写入 `file.retention_automated_cleanup_execute` audit event。
   - 不运行 scheduler loop、provider cancellation、alert delivery、pdf-mineru 解析、翻译或 Word 生成。
 - 响应：`FileRetentionCleanupRunResponse`，其中：
@@ -384,9 +473,96 @@ Admin 文件库搜索只返回 `document_files` 安全摘要，用于定位文�
   - `physical_delete.action_mode=delete_execute`
   - `safety.physical_delete_executed=true`
   - `safety.physical_delete_contract_reused=true`
+  - `safety.history_recorded=true`
+  - `safety.signed_plan_created=true`
+  - `safety.signed_plan_verified=true`，仅当 execute 请求携带并通过 plan 校验时为 true
   - `safety.s3_delete_executed=false`
 
 重复对已删除目标执行时会复用 existing physical-delete 幂等语义，返回 `skipped_already_deleted` 或相关 skip outcome，而不是再次删除对象。
+
+### `POST /api/v1/files/retention/cleanup-runs/scheduler-dry-run`
+
+- 用途：手动运行一次 scheduler dry-run，生成 readonly cleanup report、cleanup lock evidence 和 durable history。
+- 认证：Bearer JWT，Admin only。
+- 请求体：JSON。
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `owner_id` | 否 | cleanup lock owner。缺省为当前 admin 的 `manual:{user.id}`。 |
+| `lock_ttl_seconds` | 否 | cleanup lock TTL，1 到 900 秒，默认 60 秒。 |
+
+- 行为：
+  - 先尝试 acquire `file_retention_cleanup` lock。
+  - 已存在未过期 active lock 时返回 `409 conflict`，不生成 report，不写 history。
+  - lock 成功后调用 readonly cleanup runner，组合 retention plan 和 storage usage。
+  - 返回前释放本次 lock，并把 released evidence 写入 history。
+  - 写入 `status=dry_run`、`action_mode=scheduler_dry_run` 的 durable history。
+  - history 中保存 `readonly_report`、`lock`、`preview_hash`、candidate `file_id` 列表、totals 和 safety flags。
+  - 不生成 signed cleanup plan；该报告不能作为 cleanup execute 或物理删除授权。
+  - 不修改 `document_files` metadata。
+  - 不执行 mark-expired、delete-preview、delete-expired、真实 S3 删除、provider cancellation、alert delivery 或 scheduler loop。
+  - 不写 audit event。
+  - 不触发 pdf-mineru 解析、翻译或 Word 生成。
+- 响应：`FileRetentionCleanupSchedulerDryRunResponse`，其中：
+  - `action_mode=scheduler_dry_run`
+  - `readonly_report.mode=readonly_plan`
+  - `lock.status=released`
+  - `lock.released=true`
+  - `safety.scheduler_loop_executed=false`
+  - `safety.scheduler_manual_dry_run_executed=true`
+  - `safety.metadata_mutated=false`
+  - `safety.objects_deleted=false`
+  - `safety.physical_delete_executed=false`
+  - `safety.provider_calls_executed=false`
+  - `safety.s3_delete_executed=false`
+  - `safety.cleanup_lock_acquired=true`
+  - `safety.cleanup_lock_released=true`
+
+### `GET /api/v1/files/retention/cleanup-runs/history`
+
+- 用途：分页列出 cleanup run durable history。
+- 认证：Bearer JWT，Admin only。
+- 查询参数：
+
+| 字段 | 说明 |
+|---|---|
+| `page` | 页码，默认 1。 |
+| `page_size` | 每页数量，默认 50，最大 100。 |
+
+- 行为：
+  - 只读查询，不执行 cleanup run。
+  - 不启动 scheduler loop。
+  - 不调用 provider cancellation、alert delivery、S3 delete 或主转换流程。
+  - 不写 audit event。
+  - 不返回本地路径、文件内容、bucket、`object_key` 或 raw metadata。
+- 响应：`FileRetentionCleanupRunHistoryListResponse`，按 `updated_at` 倒序返回。
+
+关键字段：
+
+| 字段 | 说明 |
+|---|---|
+| `items[].run_id` | cleanup run ID。 |
+| `items[].status` | `previewed`、`executed`、`failed` 或 `dry_run`。 |
+| `items[].action_mode` | `cleanup_preview`、`cleanup_execute` 或 `scheduler_dry_run`。 |
+| `items[].preview_hash` | preview safety hash。 |
+| `items[].cleanup_plan` | signed cleanup plan 摘要，包含 plan id、过期时间、签名算法和签名；不包含 secret。 |
+| `items[].readonly_report` | scheduler dry-run 的 readonly report；preview/execute history 通常为空。 |
+| `items[].lock` | scheduler dry-run 的 cleanup lock evidence；preview/execute history 通常为空。 |
+| `items[].requested_file_ids` | 本次请求的文件 ID 列表；不包含对象路径。 |
+| `items[].totals` | physical-delete preview/execute 汇总计数。 |
+| `items[].safety` | 本次 history 记录保存的 safety flags。 |
+| `items[].reason` | execute 人工原因；preview 通常为空。 |
+| `items[].error_code` / `items[].error_message` | execute 前置校验失败时的失败摘要。 |
+
+### `GET /api/v1/files/retention/cleanup-runs/history/{run_id}`
+
+- 用途：读取单条 cleanup run durable history。
+- 认证：Bearer JWT，Admin only。
+- 行为：
+  - 只读查询，不执行清理动作。
+  - 未找到时返回 `404 not_found`。
+  - 响应不包含本地路径、文件内容、bucket、`object_key` 或 raw metadata。
+- 响应：`FileRetentionCleanupRunHistoryResponse`。
 
 常见 outcome：
 

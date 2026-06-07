@@ -24,6 +24,37 @@ from app.domains.jobs.models import utc_now
 RETENTION_DELETE_BATCH_LIMIT = 50
 RETENTION_DELETE_CONFIRMATION_PHRASE = "DELETE EXPIRED FILES"
 RETENTION_DELETE_SUPPORTED_LOCAL_PROVIDERS = {"local_file", "local_object"}
+S3_DELETE_FAKE_CONTRACT_VERSION = "s3-delete-fake-v1"
+
+
+@dataclass(frozen=True, slots=True)
+class FileRetentionS3DeleteContract:
+    """描述 S3 删除 fake adapter 的精确目标和安全边界，不代表真实删除授权。"""
+
+    contract_version: str
+    adapter_mode: Literal["fake"]
+    bucket: str
+    object_key: str
+    version_id: str | None
+    target_exact: bool
+    missing_target_fields: list[str]
+    expected_outcome: Literal["fake_skipped"]
+    safety: dict[str, bool]
+
+    def to_dict(self) -> dict[str, Any]:
+        """转换为 API 响应和 cleanup hash 可复用的稳定字典。"""
+
+        return {
+            "contract_version": self.contract_version,
+            "adapter_mode": self.adapter_mode,
+            "bucket": self.bucket,
+            "object_key": self.object_key,
+            "version_id": self.version_id,
+            "target_exact": self.target_exact,
+            "missing_target_fields": self.missing_target_fields,
+            "expected_outcome": self.expected_outcome,
+            "safety": self.safety,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +84,7 @@ class FileRetentionDeleteItem:
     reason: str
     deleted: bool = False
     metadata_updated: bool = False
+    s3_delete_contract: FileRetentionS3DeleteContract | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """转换为 API schema 可直接校验的 dict。"""
@@ -70,6 +102,7 @@ class FileRetentionDeleteItem:
             "reason": self.reason,
             "deleted": self.deleted,
             "metadata_updated": self.metadata_updated,
+            "s3_delete_contract": self.s3_delete_contract.to_dict() if self.s3_delete_contract is not None else None,
         }
 
 
@@ -501,6 +534,39 @@ class FileUploadService:
             reason=reason,
             deleted=deleted,
             metadata_updated=metadata_updated,
+            s3_delete_contract=self._build_s3_delete_contract(record),
+        )
+
+    def _build_s3_delete_contract(self, record: DocumentFileRecord) -> FileRetentionS3DeleteContract | None:
+        """为 S3 文件生成 fake deletion safety contract，不读取 secret 或调用 S3。"""
+
+        if record.storage_provider != "s3":
+            return None
+        bucket = record.bucket.strip()
+        object_key = record.object_key.strip()
+        missing_target_fields = []
+        if not bucket:
+            missing_target_fields.append("bucket")
+        if not object_key:
+            missing_target_fields.append("object_key")
+        version_id = record.metadata.get("s3_version_id")
+        normalized_version_id = version_id.strip() if isinstance(version_id, str) and version_id.strip() else None
+        return FileRetentionS3DeleteContract(
+            contract_version=S3_DELETE_FAKE_CONTRACT_VERSION,
+            adapter_mode="fake",
+            bucket=bucket,
+            object_key=object_key,
+            version_id=normalized_version_id,
+            target_exact=not missing_target_fields,
+            missing_target_fields=missing_target_fields,
+            expected_outcome="fake_skipped",
+            safety={
+                "real_s3_delete_executed": False,
+                "fake_s3_delete_executed": True,
+                "metadata_mutated": False,
+                "audit_events_written": False,
+                "requires_future_real_adapter": True,
+            },
         )
 
     def _build_retention_delete_report(

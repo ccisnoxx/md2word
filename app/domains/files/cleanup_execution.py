@@ -66,6 +66,7 @@ class FileRetentionCleanupRunService:
         preview_hash: str,
         reason: str,
         confirmation: str,
+        run_id: str | None = None,
     ) -> FileRetentionCleanupRunReport:
         """验证 preview hash 后复用 existing physical-delete execution。"""
 
@@ -97,6 +98,7 @@ class FileRetentionCleanupRunService:
             physical_delete=physical_execute,
             max_files=max_files,
             preview_hash=expected_hash,
+            run_id=run_id,
         )
 
     def audit_reason(self, *, human_reason: str, report: FileRetentionCleanupRunReport) -> str:
@@ -128,11 +130,12 @@ class FileRetentionCleanupRunService:
         physical_delete: FileRetentionDeleteReport,
         max_files: int,
         preview_hash: str | None = None,
+        run_id: str | None = None,
     ) -> FileRetentionCleanupRunReport:
         """把 physical-delete report 包装为 cleanup run report。"""
 
         return FileRetentionCleanupRunReport(
-            run_id=f"cleanup_run_{uuid4().hex[:12]}",
+            run_id=run_id or f"cleanup_run_{uuid4().hex[:12]}",
             generated_at=physical_delete.generated_at,
             action_mode=action_mode,
             confirmation_phrase=CLEANUP_RUN_CONFIRMATION_PHRASE,
@@ -156,6 +159,9 @@ class FileRetentionCleanupRunService:
                     "object_key": item.object_key,
                     "size_bytes": item.size_bytes,
                     "outcome": item.outcome,
+                    "s3_delete_contract": item.s3_delete_contract.to_dict()
+                    if item.s3_delete_contract is not None
+                    else None,
                 }
                 for item in report.items
             ],

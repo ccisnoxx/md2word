@@ -1,6 +1,7 @@
-from __future__ import annotations
+# File: app/core/config.py
+# Purpose: 定义 FastAPI 后端运行配置、集成开关和路径派生规则。
 
-# app/core/config.py: 定义 FastAPI 后端运行配置和路径派生规则。
+from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal
@@ -11,6 +12,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
+    """集中定义环境变量驱动的运行配置和派生路径。"""
+
     model_config = SettingsConfigDict(
         env_file=str(REPO_ROOT / ".env"),
         env_file_encoding="utf-8",
@@ -62,6 +65,12 @@ class Settings(BaseSettings):
     jobs_access_token: str = ""
     jobs_ops_access_mode: Literal["jobs", "admin"] = "admin"
     admin_token: str = ""
+    ops_alert_destinations_json: str = "[]"
+    files_quota_policy_enabled: bool = False
+    files_quota_policy_dry_run: bool = True
+    files_quota_bytes: int = 0
+    files_quota_warning_threshold_ratio: float = 0.8
+    files_quota_block_threshold_ratio: float = 1.0
     auth_jwt_secret_key: str = ""
     auth_jwt_algorithm: Literal["HS256"] = "HS256"
     auth_access_token_expire_minutes: int = 120

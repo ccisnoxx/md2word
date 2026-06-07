@@ -1,0 +1,32 @@
+{
+  "id": "phase5-evidence-backfill-provider-cancellation-hardening",
+  "name": "phase5-evidence-backfill-provider-cancellation-hardening",
+  "title": "Phase 5 evidence backfill provider cancellation hardening",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "md2word",
+  "assignee": "md2word",
+  "createdAt": "2026-06-07",
+  "completedAt": "2026-06-07",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "app/domains/ops/provider_cancellation.py",
+    "app/domains/ops/router.py",
+    "app/domains/ops/schemas.py",
+    "tests/test_fastapi_jobs_backend.py",
+    "docs/api/ops.md"
+  ],
+  "notes": "",
+  "meta": {}
+}

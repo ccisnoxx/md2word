@@ -70,13 +70,22 @@ entries:
       - app/domains/files/router.py
       - app/domains/files/schemas.py
       - app/domains/files/models.py
+      - app/domains/files/cleanup_execution.py
+      - app/domains/files/cleanup_history.py
+      - app/domains/files/cleanup_lock.py
+      - app/domains/files/library_search.py
+      - app/domains/files/quota_policy.py
+      - app/domains/files/retention.py
+      - app/domains/files/retention_policy.py
+      - app/domains/files/scheduled_cleanup.py
       - app/domains/files/service.py
+      - app/domains/files/storage_usage.py
       - app/domains/audit/models.py
       - app/domains/audit/service.py
       - docs/api/openapi.json
     doc_path: docs/api/files.md
     status: current
-    note: "PDF 文件上传授权、本地代理上传和文件 metadata 查询入口。"
+    note: "PDF 文件上传授权、本地代理上传、文件 metadata 查询、Admin 文件库搜索、retention/quota dry-run 与 ready policy 上传阻断、受控物理删除、signed cleanup run、手动 scheduler dry-run 和 durable history 入口。"
   - entry: document-jobs
     category: endpoint
     source_files:

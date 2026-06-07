@@ -1,6 +1,7 @@
-from __future__ import annotations
+# File: app/infrastructure/persistence/sqlite/schema.py
+# Purpose: 定义 sqlite metadata backend 的 schema bootstrap SQL。
 
-# app/infrastructure/persistence/sqlite/schema.py: sqlite metadata backend 的 schema bootstrap。
+from __future__ import annotations
 
 import sqlite3
 
@@ -84,6 +85,34 @@ SQLITE_SCHEMA_STATEMENTS: tuple[str, ...] = (
     """
     CREATE INDEX IF NOT EXISTS idx_file_retention_policies_created_at
     ON file_retention_policies (created_at, policy_id)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS file_retention_cleanup_runs (
+        run_id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_file_retention_cleanup_runs_updated_at
+    ON file_retention_cleanup_runs (updated_at, run_id)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS file_retention_cleanup_locks (
+        lock_name TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        owner_id TEXT NOT NULL,
+        fencing_token INTEGER NOT NULL,
+        expires_at TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_file_retention_cleanup_locks_status_expires
+    ON file_retention_cleanup_locks (status, expires_at)
     """,
     """
     CREATE TABLE IF NOT EXISTS document_jobs (
