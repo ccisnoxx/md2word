@@ -14,6 +14,10 @@ from app.core.errors import ApiError
 from app.domains.audit.models import AuditEvent
 from app.domains.audit.repository import AuditEventRepositoryProtocol
 from app.domains.jobs.models import utc_now
+from app.domains.ops.alert_delivery_contract import (
+    OpsAlertDeliveryAdapterResult,
+    build_fake_alert_delivery_adapter_result,
+)
 from app.domains.ops.schemas import (
     OpsAlertDeliveryChannel,
     OpsAlertDeliveryMode,
@@ -37,8 +41,9 @@ class OpsAlertDeliveryItem:
     dedupe_key: str | None
     reason: str
     audit_event_written: bool = False
+    adapter_result: OpsAlertDeliveryAdapterResult | None = None
 
-    def to_dict(self) -> dict[str, str | bool | None]:
+    def to_dict(self) -> dict[str, object]:
         """转换为 API response 可校验的字典。"""
 
         return {
@@ -50,6 +55,7 @@ class OpsAlertDeliveryItem:
             "dedupe_key": self.dedupe_key,
             "reason": self.reason,
             "audit_event_written": self.audit_event_written,
+            "adapter_result": self.adapter_result.to_dict() if self.adapter_result else None,
         }
 
 
@@ -283,15 +289,22 @@ class OpsAlertDeliveryService:
     ) -> OpsAlertDeliveryItem:
         """把 health alert 映射为 delivery item。"""
 
+        dedupe_key = self._dedupe_key(alert.code, channel)
         return OpsAlertDeliveryItem(
             alert_code=alert.code,
             severity=alert.severity,
             source=alert.source,
             title=alert.title,
             outcome=outcome,
-            dedupe_key=self._dedupe_key(alert.code, channel),
+            dedupe_key=dedupe_key,
             reason=reason,
             audit_event_written=audit_event_written,
+            adapter_result=build_fake_alert_delivery_adapter_result(
+                alert_code=alert.code,
+                channel=channel,
+                dedupe_key=dedupe_key,
+                outcome=outcome,
+            ),
         )
 
     def _build_report(

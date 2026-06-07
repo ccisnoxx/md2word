@@ -8,33 +8,76 @@ from fastapi import APIRouter, Depends
 from app.api.dependencies import get_runtime, get_trace_id, require_admin_user
 from app.core.runtime import AppRuntime
 from app.domains.audit.models import ActorContext, AuditDetails
+from app.domains.ops.alert_delivery_contract import (
+    OpsAlertDeliveryAdapterContractReport,
+    OpsAlertDeliveryAdapterContractService,
+)
 from app.domains.ops.alert_destinations import OpsAlertDestinationDryRunReport, OpsAlertDestinationDryRunService
 from app.domains.ops.alert_delivery import OpsAlertDeliveryReport, OpsAlertDeliveryService
+from app.domains.ops.integration_control import OpsIntegrationControlPlaneReport, OpsIntegrationControlPlaneService
 from app.domains.ops.provider_cancellation import (
     OpsProviderCancellationReport,
     OpsProviderCancellationService,
 )
+from app.domains.ops.provider_cancellation_semantics import (
+    OpsProviderCancellationSemanticsReport,
+    OpsProviderCancellationSemanticsService,
+)
+from app.domains.ops.real_alert_delivery import (
+    EnvironmentSecretResolver,
+    OpsRealAlertDeliveryReport,
+    OpsRealAlertDeliveryService,
+    REAL_ALERT_DELIVERY_AUDIT_ACTION,
+    SlackWebhookAlertDeliveryProvider,
+)
 from app.domains.ops.recovery_actions import OpsRecoveryActionService
+from app.domains.ops.s3_delete_contract import (
+    OpsS3DeleteAdapterContractReport,
+    OpsS3DeleteAdapterContractService,
+)
 from app.domains.ops.schemas import (
     OpsAlertDestinationDryRunRequest,
     OpsAlertDestinationDryRunResponse,
     OpsAlertDestinationSafetyResponse,
+    OpsAlertDeliveryAdapterContractResponse,
+    OpsAlertDeliveryAdapterContractSafetyResponse,
     OpsAlertDeliveryFakeSendRequest,
     OpsAlertDeliveryPreviewRequest,
+    OpsAlertDeliveryRealPreviewRequest,
+    OpsAlertDeliveryRealSendRequest,
     OpsAlertDeliveryResponse,
     OpsAlertDeliverySafetyResponse,
+    OpsIntegrationControlPlaneResponse,
+    OpsIntegrationControlPlaneSafetyResponse,
     OpsProviderCancellationFakeRequest,
     OpsProviderCancellationPreviewRequest,
     OpsProviderCancellationResponse,
     OpsProviderCancellationSafetyResponse,
+    OpsProviderCancellationSemanticsResponse,
+    OpsProviderCancellationSemanticsSafetyResponse,
+    OpsProviderCancellationSemanticsSourceResponse,
     OpsRecoveryActionPreviewRequest,
     OpsRecoveryActionPreviewResponse,
     OpsRecoveryActionRegistryResponse,
+    OpsS3DeleteAdapterContractResponse,
+    OpsS3DeleteAdapterContractSafetyResponse,
+    OpsS3DeleteLocalStackProfileResponse,
 )
 from app.services.auth.models import AuthenticatedUser
 
 
 router = APIRouter(prefix="/ops", tags=["ops"])
+
+
+@router.get("/integration-capabilities", response_model=OpsIntegrationControlPlaneResponse)
+def get_ops_integration_capabilities(
+    runtime: AppRuntime = Depends(get_runtime),
+    _user: AuthenticatedUser = Depends(require_admin_user),
+) -> OpsIntegrationControlPlaneResponse:
+    """读取真实集成控制面状态，不调用外部 provider 或执行任何动作。"""
+
+    report = OpsIntegrationControlPlaneService(runtime.settings).build_report()
+    return _build_integration_control_plane_response(report)
 
 
 @router.get("/recovery-actions", response_model=OpsRecoveryActionRegistryResponse)
@@ -89,6 +132,78 @@ def preview_ops_alert_delivery(
     return _build_alert_delivery_response(report, audit_events_written=False)
 
 
+@router.get("/alert-deliveries/adapter-contract", response_model=OpsAlertDeliveryAdapterContractResponse)
+def get_ops_alert_delivery_adapter_contract(
+    runtime: AppRuntime = Depends(get_runtime),
+    _user: AuthenticatedUser = Depends(require_admin_user),
+) -> OpsAlertDeliveryAdapterContractResponse:
+    """读取真实 alert delivery adapter 合同和 fake parity，不发送通知。"""
+
+    report = _build_alert_delivery_adapter_contract_service(runtime).build_report()
+    return _build_alert_delivery_adapter_contract_response(report)
+
+
+@router.post("/alert-deliveries/real-send/preview", response_model=OpsAlertDeliveryResponse)
+def preview_ops_real_alert_delivery(
+    payload: OpsAlertDeliveryRealPreviewRequest,
+    runtime: AppRuntime = Depends(get_runtime),
+    _user: AuthenticatedUser = Depends(require_admin_user),
+) -> OpsAlertDeliveryResponse:
+    """预览 Phase 7 Slack webhook pilot gates，不解析 secret 或发送通知。"""
+
+    report = _build_real_alert_delivery_service(runtime).preview(
+        alert_codes=payload.alert_codes,
+        destination_ids=payload.destination_ids,
+        dedupe_window_minutes=payload.dedupe_window_minutes,
+    )
+    return _build_alert_delivery_response(report, audit_events_written=False)
+
+
+@router.get("/s3-deletions/adapter-contract", response_model=OpsS3DeleteAdapterContractResponse)
+def get_ops_s3_delete_adapter_contract(
+    runtime: AppRuntime = Depends(get_runtime),
+    _user: AuthenticatedUser = Depends(require_admin_user),
+) -> OpsS3DeleteAdapterContractResponse:
+    """读取 S3 delete LocalStack/fake parity 合同，不调用 S3 或执行删除。"""
+
+    report = _build_s3_delete_adapter_contract_service(runtime).build_report()
+    return _build_s3_delete_adapter_contract_response(report)
+
+
+@router.post("/alert-deliveries/real-send", response_model=OpsAlertDeliveryResponse)
+def real_send_ops_alert_delivery(
+    payload: OpsAlertDeliveryRealSendRequest,
+    runtime: AppRuntime = Depends(get_runtime),
+    user: AuthenticatedUser = Depends(require_admin_user),
+    trace_id: str = Depends(get_trace_id),
+) -> OpsAlertDeliveryResponse:
+    """执行 Phase 7 Slack webhook pilot；所有 gate 通过后才调用 provider。"""
+
+    service = _build_real_alert_delivery_service(runtime)
+    report = service.real_send(
+        alert_codes=payload.alert_codes,
+        destination_ids=payload.destination_ids,
+        reason=payload.reason,
+        confirmation=payload.confirmation,
+        dedupe_window_minutes=payload.dedupe_window_minutes,
+    )
+    audit_written = report.totals.get("audit_events_written", 0) > 0
+    if audit_written:
+        runtime.audit_service.record(
+            actor=_actor_from_user(user),
+            action=REAL_ALERT_DELIVERY_AUDIT_ACTION,
+            target_type="ops_alert_delivery",
+            target_id=report.delivery_id,
+            reason=service.audit_reason(human_reason=payload.reason, report=report),
+            details=_build_real_alert_delivery_audit_details(
+                report,
+                audit_events_written=audit_written,
+            ),
+            trace_id=trace_id,
+        )
+    return _build_alert_delivery_response(report, audit_events_written=audit_written)
+
+
 @router.post("/alert-deliveries/fake-send", response_model=OpsAlertDeliveryResponse)
 def fake_send_ops_alert_delivery(
     payload: OpsAlertDeliveryFakeSendRequest,
@@ -138,6 +253,17 @@ def preview_ops_provider_cancellation(
         dedupe_window_minutes=payload.dedupe_window_minutes,
     )
     return _build_provider_cancellation_response(report, audit_events_written=False)
+
+
+@router.get("/provider-cancellations/semantics-verification", response_model=OpsProviderCancellationSemanticsResponse)
+def get_ops_provider_cancellation_semantics_verification(
+    _runtime: AppRuntime = Depends(get_runtime),
+    _user: AuthenticatedUser = Depends(require_admin_user),
+) -> OpsProviderCancellationSemanticsResponse:
+    """读取 MinerU provider cancellation 语义核查结论，不调用 provider。"""
+
+    report = OpsProviderCancellationSemanticsService().build_report()
+    return _build_provider_cancellation_semantics_response(report)
 
 
 @router.post("/provider-cancellations/fake-cancel", response_model=OpsProviderCancellationResponse)
@@ -208,6 +334,36 @@ def _build_alert_delivery_service(runtime: AppRuntime) -> OpsAlertDeliveryServic
     )
 
 
+def _build_real_alert_delivery_service(runtime: AppRuntime) -> OpsRealAlertDeliveryService:
+    """按当前 runtime 构建 Phase 7 Slack webhook pilot service。"""
+
+    ops_alerts = runtime.health_service.build_ops_alerts_response()
+    provider = runtime.alert_delivery_provider or SlackWebhookAlertDeliveryProvider()
+    secret_resolver = runtime.secret_resolver or EnvironmentSecretResolver()
+    return OpsRealAlertDeliveryService(
+        settings=runtime.settings,
+        destinations_json=runtime.settings.ops_alert_destinations_json,
+        current_alerts=ops_alerts.alerts,
+        audit_event_repository=runtime.audit_event_repository,
+        provider=provider,
+        secret_resolver=secret_resolver,
+    )
+
+
+def _build_alert_delivery_adapter_contract_service(runtime: AppRuntime) -> OpsAlertDeliveryAdapterContractService:
+    """按当前 settings 构建只读 alert delivery adapter contract service。"""
+
+    return OpsAlertDeliveryAdapterContractService(
+        destinations_json=runtime.settings.ops_alert_destinations_json,
+    )
+
+
+def _build_s3_delete_adapter_contract_service(runtime: AppRuntime) -> OpsS3DeleteAdapterContractService:
+    """按当前 settings 构建只读 S3 delete adapter contract service。"""
+
+    return OpsS3DeleteAdapterContractService(runtime.settings)
+
+
 def _build_provider_cancellation_service(runtime: AppRuntime) -> OpsProviderCancellationService:
     """按当前 metadata repositories 构建 provider fake cancellation service。"""
 
@@ -216,6 +372,16 @@ def _build_provider_cancellation_service(runtime: AppRuntime) -> OpsProviderCanc
         job_repository=runtime.job_repository,
         audit_event_repository=runtime.audit_event_repository,
     )
+
+
+def _build_integration_control_plane_response(
+    report: OpsIntegrationControlPlaneReport,
+) -> OpsIntegrationControlPlaneResponse:
+    """把 integration control plane report 映射为带安全声明的 API response。"""
+
+    payload = report.to_dict()
+    payload["safety"] = OpsIntegrationControlPlaneSafetyResponse(**payload["safety"])
+    return OpsIntegrationControlPlaneResponse(**payload)
 
 
 def _build_alert_destination_response(
@@ -229,15 +395,46 @@ def _build_alert_destination_response(
 
 
 def _build_alert_delivery_response(
-    report: OpsAlertDeliveryReport,
+    report: OpsAlertDeliveryReport | OpsRealAlertDeliveryReport,
     *,
     audit_events_written: bool,
 ) -> OpsAlertDeliveryResponse:
     """把 alert delivery report 映射为带安全声明的 API response。"""
 
     payload = report.to_dict()
-    payload["safety"] = OpsAlertDeliverySafetyResponse(audit_events_written=audit_events_written)
+    adapter_results = [
+        item.get("adapter_result") or {}
+        for item in payload.get("items", [])
+        if isinstance(item, dict)
+    ]
+    payload["safety"] = OpsAlertDeliverySafetyResponse(
+        audit_events_written=audit_events_written,
+        provider_calls_executed=any(bool(item.get("provider_calls_executed")) for item in adapter_results),
+        external_delivery_executed=any(bool(item.get("external_delivery_executed")) for item in adapter_results),
+        secret_values_exposed=any(bool(item.get("secret_values_exposed")) for item in adapter_results),
+    )
     return OpsAlertDeliveryResponse(**payload)
+
+
+def _build_alert_delivery_adapter_contract_response(
+    report: OpsAlertDeliveryAdapterContractReport,
+) -> OpsAlertDeliveryAdapterContractResponse:
+    """把 alert delivery adapter contract report 映射为 API response。"""
+
+    payload = report.to_dict()
+    payload["safety"] = OpsAlertDeliveryAdapterContractSafetyResponse(**payload["safety"])
+    return OpsAlertDeliveryAdapterContractResponse(**payload)
+
+
+def _build_s3_delete_adapter_contract_response(
+    report: OpsS3DeleteAdapterContractReport,
+) -> OpsS3DeleteAdapterContractResponse:
+    """把 S3 delete adapter contract report 映射为 API response。"""
+
+    payload = report.to_dict()
+    payload["localstack_profile"] = OpsS3DeleteLocalStackProfileResponse(**payload["localstack_profile"])
+    payload["safety"] = OpsS3DeleteAdapterContractSafetyResponse(**payload["safety"])
+    return OpsS3DeleteAdapterContractResponse(**payload)
 
 
 def _build_provider_cancellation_response(
@@ -250,6 +447,20 @@ def _build_provider_cancellation_response(
     payload = report.to_dict()
     payload["safety"] = OpsProviderCancellationSafetyResponse(audit_events_written=audit_events_written)
     return OpsProviderCancellationResponse(**payload)
+
+
+def _build_provider_cancellation_semantics_response(
+    report: OpsProviderCancellationSemanticsReport,
+) -> OpsProviderCancellationSemanticsResponse:
+    """把 provider cancellation 语义核查报告映射为 API response。"""
+
+    payload = report.to_dict()
+    payload["sources"] = [
+        OpsProviderCancellationSemanticsSourceResponse(**source)
+        for source in payload["sources"]
+    ]
+    payload["safety"] = OpsProviderCancellationSemanticsSafetyResponse(**payload["safety"])
+    return OpsProviderCancellationSemanticsResponse(**payload)
 
 
 def _build_alert_delivery_audit_details(
@@ -275,6 +486,7 @@ def _build_alert_delivery_audit_details(
                 "outcome": item.outcome,
                 "dedupe_key": item.dedupe_key,
                 "audit_event_written": item.audit_event_written,
+                "adapter_result": item.adapter_result.to_dict() if item.adapter_result else None,
             }
             for item in report.items
         ],
@@ -285,6 +497,43 @@ def _build_alert_delivery_audit_details(
             "delete_executed": False,
             "conversion_workflow_executed": False,
             "audit_events_written": audit_events_written,
+        },
+    }
+
+
+def _build_real_alert_delivery_audit_details(
+    report: OpsRealAlertDeliveryReport,
+    *,
+    audit_events_written: bool,
+) -> AuditDetails:
+    """生成 Phase 7 real alert delivery 的结构化审计证据，不包含 secret 或 Slack 响应正文。"""
+
+    item = report.items[0]
+    adapter_result = item.adapter_result.to_dict()
+    return {
+        "delivery_id": report.delivery_id,
+        "action_mode": report.action_mode,
+        "channel": report.channel,
+        "destination_id": item.destination_id,
+        "target_label": item.target_label,
+        "alert_code": item.alert_code,
+        "outcome": item.outcome,
+        "dedupe_key": item.dedupe_key,
+        "idempotency_key": item.idempotency_key,
+        "dedupe_window_minutes": report.dedupe_window_minutes,
+        "missing_gates": list(item.missing_gates),
+        "gate_snapshot": dict(report.gate_snapshot),
+        "adapter_result": adapter_result,
+        "rollback": dict(report.rollback),
+        "safety": {
+            "external_delivery_executed": bool(adapter_result["external_delivery_executed"]),
+            "provider_calls_executed": bool(adapter_result["provider_calls_executed"]),
+            "cleanup_executed": False,
+            "delete_executed": False,
+            "conversion_workflow_executed": False,
+            "audit_events_written": audit_events_written,
+            "secret_values_exposed": False,
+            "payload_persisted": False,
         },
     }
 

@@ -3009,6 +3009,206 @@
         "title": "FileLibrarySearchResponse",
         "type": "object"
       },
+      "FileQuotaPolicyAuditReplayItemResponse": {
+        "description": "返回 quota enforcement 审计事件的安全重放摘要。",
+        "properties": {
+          "action": {
+            "enum": [
+              "file.quota_policy_block",
+              "file.quota_policy_override"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "actor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Id"
+          },
+          "actor_role": {
+            "title": "Actor Role",
+            "type": "string"
+          },
+          "audit_id": {
+            "title": "Audit Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_used_size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Used Size Bytes"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          },
+          "file_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Type"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "override_applied": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Applied"
+          },
+          "policy_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Status"
+          },
+          "projected_used_size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projected Used Size Bytes"
+          },
+          "proposed_upload_size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed Upload Size Bytes"
+          },
+          "quota_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quota Bytes"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_type": {
+            "title": "Target Type",
+            "type": "string"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          },
+          "would_block": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Would Block"
+          }
+        },
+        "required": [
+          "audit_id",
+          "action",
+          "target_type",
+          "target_id",
+          "actor_role",
+          "trace_id",
+          "created_at"
+        ],
+        "title": "FileQuotaPolicyAuditReplayItemResponse",
+        "type": "object"
+      },
       "FileQuotaPolicyConfigResponse": {
         "description": "返回归一化后的 staged quota policy 配置摘要。",
         "properties": {
@@ -3207,6 +3407,206 @@
           "safety"
         ],
         "title": "FileQuotaPolicyDryRunResponse",
+        "type": "object"
+      },
+      "FileQuotaPolicyOpsSafetyResponse": {
+        "description": "声明 quota ops summary 没有执行阻断、rollback、清理或外部副作用。",
+        "properties": {
+          "audit_events_written": {
+            "default": false,
+            "title": "Audit Events Written",
+            "type": "boolean"
+          },
+          "cleanup_executed": {
+            "default": false,
+            "title": "Cleanup Executed",
+            "type": "boolean"
+          },
+          "conversion_workflow_executed": {
+            "default": false,
+            "title": "Conversion Workflow Executed",
+            "type": "boolean"
+          },
+          "delete_executed": {
+            "default": false,
+            "title": "Delete Executed",
+            "type": "boolean"
+          },
+          "metadata_mutated": {
+            "default": false,
+            "title": "Metadata Mutated",
+            "type": "boolean"
+          },
+          "provider_calls_executed": {
+            "default": false,
+            "title": "Provider Calls Executed",
+            "type": "boolean"
+          },
+          "read_only": {
+            "default": true,
+            "title": "Read Only",
+            "type": "boolean"
+          },
+          "scheduler_loop_executed": {
+            "default": false,
+            "title": "Scheduler Loop Executed",
+            "type": "boolean"
+          },
+          "upload_authorization_created": {
+            "default": false,
+            "title": "Upload Authorization Created",
+            "type": "boolean"
+          },
+          "upload_blocking_executed": {
+            "default": false,
+            "title": "Upload Blocking Executed",
+            "type": "boolean"
+          },
+          "upload_content_written": {
+            "default": false,
+            "title": "Upload Content Written",
+            "type": "boolean"
+          }
+        },
+        "title": "FileQuotaPolicyOpsSafetyResponse",
+        "type": "object"
+      },
+      "FileQuotaPolicyOpsSummaryResponse": {
+        "description": "返回 Admin-only quota enforcement 运维摘要、rollback 和 audit replay。",
+        "properties": {
+          "action_mode": {
+            "const": "quota_policy_ops_summary",
+            "title": "Action Mode",
+            "type": "string"
+          },
+          "audit_replay": {
+            "items": {
+              "$ref": "#/components/schemas/FileQuotaPolicyAuditReplayItemResponse"
+            },
+            "title": "Audit Replay",
+            "type": "array"
+          },
+          "audit_replay_limit": {
+            "title": "Audit Replay Limit",
+            "type": "integer"
+          },
+          "audit_replay_total": {
+            "title": "Audit Replay Total",
+            "type": "integer"
+          },
+          "audit_replay_truncated": {
+            "title": "Audit Replay Truncated",
+            "type": "boolean"
+          },
+          "current_usage_would_block": {
+            "title": "Current Usage Would Block",
+            "type": "boolean"
+          },
+          "current_usage_would_warn": {
+            "title": "Current Usage Would Warn",
+            "type": "boolean"
+          },
+          "enforcement_ready": {
+            "title": "Enforcement Ready",
+            "type": "boolean"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "kill_switch_enabled": {
+            "title": "Kill Switch Enabled",
+            "type": "boolean"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/FileQuotaPolicyConfigResponse"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "rollback_options": {
+            "items": {
+              "$ref": "#/components/schemas/FileQuotaPolicyRollbackOptionResponse"
+            },
+            "title": "Rollback Options",
+            "type": "array"
+          },
+          "safety": {
+            "$ref": "#/components/schemas/FileQuotaPolicyOpsSafetyResponse"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/FileQuotaPolicyUsageResponse"
+          }
+        },
+        "required": [
+          "generated_at",
+          "action_mode",
+          "policy",
+          "usage",
+          "enforcement_ready",
+          "current_usage_would_warn",
+          "current_usage_would_block",
+          "kill_switch_enabled",
+          "audit_replay_total",
+          "audit_replay_limit",
+          "audit_replay_truncated",
+          "safety"
+        ],
+        "title": "FileQuotaPolicyOpsSummaryResponse",
+        "type": "object"
+      },
+      "FileQuotaPolicyRollbackOptionResponse": {
+        "description": "返回一个只读 rollback 开关建议，不代表后端已执行配置变更。",
+        "properties": {
+          "current_value": {
+            "title": "Current Value",
+            "type": "string"
+          },
+          "currently_effective": {
+            "title": "Currently Effective",
+            "type": "boolean"
+          },
+          "effect": {
+            "title": "Effect",
+            "type": "string"
+          },
+          "env_var": {
+            "title": "Env Var",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "option_id": {
+            "title": "Option Id",
+            "type": "string"
+          },
+          "requires_restart": {
+            "title": "Requires Restart",
+            "type": "boolean"
+          },
+          "target_value": {
+            "title": "Target Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "option_id",
+          "label",
+          "env_var",
+          "target_value",
+          "current_value",
+          "currently_effective",
+          "effect",
+          "requires_restart"
+        ],
+        "title": "FileQuotaPolicyRollbackOptionResponse",
         "type": "object"
       },
       "FileQuotaPolicySafetyResponse": {
@@ -6147,6 +6547,291 @@
         "type": "object"
       },
       "JsonValue": {},
+      "OpsAlertDeliveryAdapterContractResponse": {
+        "description": "返回真实 alert delivery adapter 合同和 fake parity 证据。",
+        "properties": {
+          "action_mode": {
+            "const": "adapter_contract",
+            "title": "Action Mode",
+            "type": "string"
+          },
+          "blocking_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blocking Reasons",
+            "type": "array"
+          },
+          "contract_version": {
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "destination_channels": {
+            "items": {
+              "enum": [
+                "slack",
+                "email",
+                "webhook"
+              ],
+              "type": "string"
+            },
+            "title": "Destination Channels",
+            "type": "array"
+          },
+          "destination_count": {
+            "title": "Destination Count",
+            "type": "integer"
+          },
+          "fake_adapter_id": {
+            "title": "Fake Adapter Id",
+            "type": "string"
+          },
+          "fake_adapter_mode": {
+            "const": "fake",
+            "title": "Fake Adapter Mode",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "parity_checks": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Parity Checks",
+            "type": "object"
+          },
+          "real_channels": {
+            "items": {
+              "enum": [
+                "slack",
+                "email",
+                "webhook"
+              ],
+              "type": "string"
+            },
+            "title": "Real Channels",
+            "type": "array"
+          },
+          "required_audit_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Audit Fields",
+            "type": "array"
+          },
+          "required_request_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Request Fields",
+            "type": "array"
+          },
+          "required_result_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Result Fields",
+            "type": "array"
+          },
+          "required_safety_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Safety Fields",
+            "type": "array"
+          },
+          "safety": {
+            "$ref": "#/components/schemas/OpsAlertDeliveryAdapterContractSafetyResponse"
+          }
+        },
+        "required": [
+          "generated_at",
+          "action_mode",
+          "contract_version",
+          "fake_adapter_id",
+          "fake_adapter_mode",
+          "destination_count",
+          "safety"
+        ],
+        "title": "OpsAlertDeliveryAdapterContractResponse",
+        "type": "object"
+      },
+      "OpsAlertDeliveryAdapterContractSafetyResponse": {
+        "description": "声明 adapter contract 报告只读且不会触发真实通知或 secret 暴露。",
+        "properties": {
+          "audit_events_written": {
+            "default": false,
+            "title": "Audit Events Written",
+            "type": "boolean"
+          },
+          "cleanup_executed": {
+            "default": false,
+            "title": "Cleanup Executed",
+            "type": "boolean"
+          },
+          "conversion_workflow_executed": {
+            "default": false,
+            "title": "Conversion Workflow Executed",
+            "type": "boolean"
+          },
+          "delete_executed": {
+            "default": false,
+            "title": "Delete Executed",
+            "type": "boolean"
+          },
+          "external_delivery_executed": {
+            "default": false,
+            "title": "External Delivery Executed",
+            "type": "boolean"
+          },
+          "provider_calls_executed": {
+            "default": false,
+            "title": "Provider Calls Executed",
+            "type": "boolean"
+          },
+          "read_only": {
+            "default": true,
+            "title": "Read Only",
+            "type": "boolean"
+          },
+          "secret_values_exposed": {
+            "default": false,
+            "title": "Secret Values Exposed",
+            "type": "boolean"
+          }
+        },
+        "title": "OpsAlertDeliveryAdapterContractSafetyResponse",
+        "type": "object"
+      },
+      "OpsAlertDeliveryAdapterResultResponse": {
+        "description": "返回 fake alert delivery adapter 与未来 real adapter 同形的结果证据。",
+        "properties": {
+          "adapter_id": {
+            "title": "Adapter Id",
+            "type": "string"
+          },
+          "adapter_mode": {
+            "enum": [
+              "fake",
+              "real"
+            ],
+            "title": "Adapter Mode",
+            "type": "string"
+          },
+          "alert_code": {
+            "title": "Alert Code",
+            "type": "string"
+          },
+          "channel": {
+            "enum": [
+              "local_outbox",
+              "slack"
+            ],
+            "title": "Channel",
+            "type": "string"
+          },
+          "contract_version": {
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "dedupe_key": {
+            "title": "Dedupe Key",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "external_delivery_executed": {
+            "default": false,
+            "title": "External Delivery Executed",
+            "type": "boolean"
+          },
+          "idempotency_key": {
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "operation_id": {
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "deliverable",
+              "fake_delivered",
+              "sent",
+              "deduped",
+              "blocked",
+              "rate_limited",
+              "skipped_not_active",
+              "skipped_rate_limited",
+              "failed",
+              "timed_out"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload_persisted": {
+            "default": false,
+            "title": "Payload Persisted",
+            "type": "boolean"
+          },
+          "provider_calls_executed": {
+            "default": false,
+            "title": "Provider Calls Executed",
+            "type": "boolean"
+          },
+          "provider_request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Request Id"
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "secret_values_exposed": {
+            "default": false,
+            "title": "Secret Values Exposed",
+            "type": "boolean"
+          },
+          "timeout_seconds": {
+            "title": "Timeout Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "contract_version",
+          "adapter_id",
+          "adapter_mode",
+          "channel",
+          "alert_code",
+          "operation_id",
+          "idempotency_key",
+          "dedupe_key",
+          "timeout_seconds",
+          "outcome"
+        ],
+        "title": "OpsAlertDeliveryAdapterResultResponse",
+        "type": "object"
+      },
       "OpsAlertDeliveryFakeSendRequest": {
         "description": "请求执行本地 fake outbox delivery，不发送外部通知。",
         "properties": {
@@ -6158,8 +6843,11 @@
             "type": "array"
           },
           "channel": {
-            "const": "local_outbox",
             "default": "local_outbox",
+            "enum": [
+              "local_outbox",
+              "slack"
+            ],
             "title": "Channel",
             "type": "string"
           },
@@ -6189,6 +6877,16 @@
       "OpsAlertDeliveryItemResponse": {
         "description": "返回单个 alert code 的 delivery preview 或 fake-send 结果。",
         "properties": {
+          "adapter_result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OpsAlertDeliveryAdapterResultResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "alert_code": {
             "title": "Alert Code",
             "type": "string"
@@ -6209,14 +6907,47 @@
             ],
             "title": "Dedupe Key"
           },
+          "destination_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Id"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
+          },
+          "missing_gates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Gates",
+            "type": "array"
+          },
           "outcome": {
             "enum": [
               "deliverable",
               "fake_delivered",
+              "sent",
               "deduped",
+              "blocked",
+              "rate_limited",
               "skipped_not_active",
               "skipped_rate_limited",
-              "failed"
+              "failed",
+              "timed_out"
             ],
             "title": "Outcome",
             "type": "string"
@@ -6246,6 +6977,17 @@
               }
             ],
             "title": "Source"
+          },
+          "target_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Label"
           },
           "title": {
             "anyOf": [
@@ -6278,8 +7020,11 @@
             "type": "array"
           },
           "channel": {
-            "const": "local_outbox",
             "default": "local_outbox",
+            "enum": [
+              "local_outbox",
+              "slack"
+            ],
             "title": "Channel",
             "type": "string"
           },
@@ -6294,19 +7039,92 @@
         "title": "OpsAlertDeliveryPreviewRequest",
         "type": "object"
       },
+      "OpsAlertDeliveryRealPreviewRequest": {
+        "description": "请求预览 Phase 7 Slack webhook pilot gates，不解析 secret 或外发。",
+        "properties": {
+          "alert_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Alert Codes",
+            "type": "array"
+          },
+          "dedupe_window_minutes": {
+            "default": 60,
+            "maximum": 1440.0,
+            "minimum": 1.0,
+            "title": "Dedupe Window Minutes",
+            "type": "integer"
+          },
+          "destination_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Destination Ids",
+            "type": "array"
+          }
+        },
+        "title": "OpsAlertDeliveryRealPreviewRequest",
+        "type": "object"
+      },
+      "OpsAlertDeliveryRealSendRequest": {
+        "description": "请求执行 Phase 7 Slack webhook pilot real-send。",
+        "properties": {
+          "alert_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Alert Codes",
+            "type": "array"
+          },
+          "confirmation": {
+            "title": "Confirmation",
+            "type": "string"
+          },
+          "dedupe_window_minutes": {
+            "default": 60,
+            "maximum": 1440.0,
+            "minimum": 1.0,
+            "title": "Dedupe Window Minutes",
+            "type": "integer"
+          },
+          "destination_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Destination Ids",
+            "type": "array"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "confirmation"
+        ],
+        "title": "OpsAlertDeliveryRealSendRequest",
+        "type": "object"
+      },
       "OpsAlertDeliveryResponse": {
         "description": "返回 Ops alert fake delivery outbox 的批量结果。",
         "properties": {
           "action_mode": {
             "enum": [
               "dry_run",
-              "fake_send"
+              "fake_send",
+              "real_send_preview",
+              "real_send"
             ],
             "title": "Action Mode",
             "type": "string"
           },
           "channel": {
-            "const": "local_outbox",
+            "enum": [
+              "local_outbox",
+              "slack"
+            ],
             "title": "Channel",
             "type": "string"
           },
@@ -6321,6 +7139,32 @@
           "delivery_id": {
             "title": "Delivery Id",
             "type": "string"
+          },
+          "gate_snapshot": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Gate Snapshot",
+            "type": "object"
           },
           "generated_at": {
             "format": "date-time",
@@ -6340,6 +7184,33 @@
             },
             "title": "Requested Alert Codes",
             "type": "array"
+          },
+          "requested_destination_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Requested Destination Ids",
+            "type": "array"
+          },
+          "rollback": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Rollback",
+            "type": "object"
           },
           "safety": {
             "$ref": "#/components/schemas/OpsAlertDeliverySafetyResponse"
@@ -6395,6 +7266,11 @@
           "provider_calls_executed": {
             "default": false,
             "title": "Provider Calls Executed",
+            "type": "boolean"
+          },
+          "secret_values_exposed": {
+            "default": false,
+            "title": "Secret Values Exposed",
             "type": "boolean"
           }
         },
@@ -6626,6 +7502,214 @@
         "title": "OpsAlertDestinationSafetyResponse",
         "type": "object"
       },
+      "OpsIntegrationCapabilityResponse": {
+        "description": "返回单个真实集成能力的 enable、gate 和 readiness 状态。",
+        "properties": {
+          "blocking_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blocking Reasons",
+            "type": "array"
+          },
+          "capability_id": {
+            "enum": [
+              "alert_delivery",
+              "provider_cancellation",
+              "s3_deletion",
+              "cleanup_scheduler_execute",
+              "quota_enforcement"
+            ],
+            "title": "Capability Id",
+            "type": "string"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "dry_run_only": {
+            "title": "Dry Run Only",
+            "type": "boolean"
+          },
+          "kill_switch_active": {
+            "title": "Kill Switch Active",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "real_execution_enabled": {
+            "title": "Real Execution Enabled",
+            "type": "boolean"
+          },
+          "required_gates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Gates",
+            "type": "array"
+          },
+          "safe_config": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Safe Config",
+            "type": "object"
+          },
+          "status": {
+            "enum": [
+              "blocked",
+              "dry_run_only",
+              "ready"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capability_id",
+          "label",
+          "category",
+          "status",
+          "real_execution_enabled",
+          "dry_run_only",
+          "kill_switch_active",
+          "configured",
+          "ready"
+        ],
+        "title": "OpsIntegrationCapabilityResponse",
+        "type": "object"
+      },
+      "OpsIntegrationControlPlaneResponse": {
+        "description": "返回真实集成控制面的只读状态汇总。",
+        "properties": {
+          "action_mode": {
+            "const": "read_only",
+            "title": "Action Mode",
+            "type": "string"
+          },
+          "capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/OpsIntegrationCapabilityResponse"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "overall_status": {
+            "enum": [
+              "blocked",
+              "partial",
+              "ready"
+            ],
+            "title": "Overall Status",
+            "type": "string"
+          },
+          "safety": {
+            "$ref": "#/components/schemas/OpsIntegrationControlPlaneSafetyResponse"
+          }
+        },
+        "required": [
+          "generated_at",
+          "action_mode",
+          "overall_status",
+          "capabilities",
+          "safety"
+        ],
+        "title": "OpsIntegrationControlPlaneResponse",
+        "type": "object"
+      },
+      "OpsIntegrationControlPlaneSafetyResponse": {
+        "description": "声明 integration control plane 只读检查没有触发真实副作用。",
+        "properties": {
+          "audit_events_written": {
+            "default": false,
+            "title": "Audit Events Written",
+            "type": "boolean"
+          },
+          "cleanup_executed": {
+            "default": false,
+            "title": "Cleanup Executed",
+            "type": "boolean"
+          },
+          "cleanup_scheduler_executed": {
+            "default": false,
+            "title": "Cleanup Scheduler Executed",
+            "type": "boolean"
+          },
+          "conversion_workflow_executed": {
+            "default": false,
+            "title": "Conversion Workflow Executed",
+            "type": "boolean"
+          },
+          "delete_executed": {
+            "default": false,
+            "title": "Delete Executed",
+            "type": "boolean"
+          },
+          "external_delivery_executed": {
+            "default": false,
+            "title": "External Delivery Executed",
+            "type": "boolean"
+          },
+          "provider_calls_executed": {
+            "default": false,
+            "title": "Provider Calls Executed",
+            "type": "boolean"
+          },
+          "quota_enforcement_executed": {
+            "default": false,
+            "title": "Quota Enforcement Executed",
+            "type": "boolean"
+          },
+          "read_only": {
+            "default": true,
+            "title": "Read Only",
+            "type": "boolean"
+          },
+          "s3_delete_executed": {
+            "default": false,
+            "title": "S3 Delete Executed",
+            "type": "boolean"
+          },
+          "secret_values_exposed": {
+            "default": false,
+            "title": "Secret Values Exposed",
+            "type": "boolean"
+          }
+        },
+        "title": "OpsIntegrationControlPlaneSafetyResponse",
+        "type": "object"
+      },
       "OpsProviderCancellationFakeRequest": {
         "description": "请求执行 provider fake cancellation，不调用真实 provider。",
         "properties": {
@@ -6845,6 +7929,191 @@
           }
         },
         "title": "OpsProviderCancellationSafetyResponse",
+        "type": "object"
+      },
+      "OpsProviderCancellationSemanticsResponse": {
+        "description": "返回 MinerU provider cancellation 语义核查结论和阻断理由。",
+        "properties": {
+          "action_mode": {
+            "const": "semantics_verification",
+            "title": "Action Mode",
+            "type": "string"
+          },
+          "blocking_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blocking Reasons",
+            "type": "array"
+          },
+          "checked_on": {
+            "title": "Checked On",
+            "type": "string"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "documented_task_statuses": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Documented Task Statuses",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "provider": {
+            "const": "mineru",
+            "title": "Provider",
+            "type": "string"
+          },
+          "public_docs_support_real_cancel": {
+            "title": "Public Docs Support Real Cancel",
+            "type": "boolean"
+          },
+          "real_provider_cancel_allowed": {
+            "title": "Real Provider Cancel Allowed",
+            "type": "boolean"
+          },
+          "recommended_next_steps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recommended Next Steps",
+            "type": "array"
+          },
+          "safety": {
+            "$ref": "#/components/schemas/OpsProviderCancellationSemanticsSafetyResponse"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/OpsProviderCancellationSemanticsSourceResponse"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "supported_provider_operations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Provider Operations",
+            "type": "array"
+          },
+          "unsupported_operations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unsupported Operations",
+            "type": "array"
+          },
+          "verification_status": {
+            "title": "Verification Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "generated_at",
+          "action_mode",
+          "provider",
+          "verification_status",
+          "checked_on",
+          "decision",
+          "public_docs_support_real_cancel",
+          "real_provider_cancel_allowed",
+          "safety"
+        ],
+        "title": "OpsProviderCancellationSemanticsResponse",
+        "type": "object"
+      },
+      "OpsProviderCancellationSemanticsSafetyResponse": {
+        "description": "声明 provider cancellation 语义核查不触发 provider 或本地副作用。",
+        "properties": {
+          "audit_events_written": {
+            "default": false,
+            "title": "Audit Events Written",
+            "type": "boolean"
+          },
+          "cleanup_executed": {
+            "default": false,
+            "title": "Cleanup Executed",
+            "type": "boolean"
+          },
+          "conversion_workflow_executed": {
+            "default": false,
+            "title": "Conversion Workflow Executed",
+            "type": "boolean"
+          },
+          "delete_executed": {
+            "default": false,
+            "title": "Delete Executed",
+            "type": "boolean"
+          },
+          "local_job_mutated": {
+            "default": false,
+            "title": "Local Job Mutated",
+            "type": "boolean"
+          },
+          "provider_calls_executed": {
+            "default": false,
+            "title": "Provider Calls Executed",
+            "type": "boolean"
+          },
+          "queue_mutated": {
+            "default": false,
+            "title": "Queue Mutated",
+            "type": "boolean"
+          },
+          "read_only": {
+            "default": true,
+            "title": "Read Only",
+            "type": "boolean"
+          },
+          "real_provider_cancel_executed": {
+            "default": false,
+            "title": "Real Provider Cancel Executed",
+            "type": "boolean"
+          },
+          "secret_values_exposed": {
+            "default": false,
+            "title": "Secret Values Exposed",
+            "type": "boolean"
+          }
+        },
+        "title": "OpsProviderCancellationSemanticsSafetyResponse",
+        "type": "object"
+      },
+      "OpsProviderCancellationSemanticsSourceResponse": {
+        "description": "返回 provider cancellation 语义核查的公开来源摘要。",
+        "properties": {
+          "finding": {
+            "title": "Finding",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "source_type": {
+            "const": "primary_docs",
+            "title": "Source Type",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "url",
+          "source_type",
+          "finding"
+        ],
+        "title": "OpsProviderCancellationSemanticsSourceResponse",
         "type": "object"
       },
       "OpsProviderCancellationTargetResponse": {
@@ -7360,6 +8629,229 @@
           "exists"
         ],
         "title": "OpsRecoveryActionTargetPreviewResponse",
+        "type": "object"
+      },
+      "OpsS3DeleteAdapterContractResponse": {
+        "description": "返回 S3 delete adapter 合同、LocalStack profile 和 fake parity 证据。",
+        "properties": {
+          "action_mode": {
+            "const": "adapter_contract",
+            "title": "Action Mode",
+            "type": "string"
+          },
+          "blocking_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blocking Reasons",
+            "type": "array"
+          },
+          "contract_version": {
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "fake_adapter_id": {
+            "title": "Fake Adapter Id",
+            "type": "string"
+          },
+          "fake_adapter_mode": {
+            "const": "fake",
+            "title": "Fake Adapter Mode",
+            "type": "string"
+          },
+          "fake_file_retention_contract_version": {
+            "title": "Fake File Retention Contract Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "localstack_profile": {
+            "$ref": "#/components/schemas/OpsS3DeleteLocalStackProfileResponse"
+          },
+          "parity_checks": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Parity Checks",
+            "type": "object"
+          },
+          "required_audit_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Audit Fields",
+            "type": "array"
+          },
+          "required_request_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Request Fields",
+            "type": "array"
+          },
+          "required_result_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Result Fields",
+            "type": "array"
+          },
+          "required_safety_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Safety Fields",
+            "type": "array"
+          },
+          "safety": {
+            "$ref": "#/components/schemas/OpsS3DeleteAdapterContractSafetyResponse"
+          },
+          "storage_config_summary": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "title": "Storage Config Summary",
+            "type": "object"
+          }
+        },
+        "required": [
+          "generated_at",
+          "action_mode",
+          "contract_version",
+          "fake_adapter_id",
+          "fake_adapter_mode",
+          "fake_file_retention_contract_version",
+          "localstack_profile",
+          "safety"
+        ],
+        "title": "OpsS3DeleteAdapterContractResponse",
+        "type": "object"
+      },
+      "OpsS3DeleteAdapterContractSafetyResponse": {
+        "description": "声明 S3 delete adapter contract 报告只读且没有触发删除或外部调用。",
+        "properties": {
+          "audit_events_written": {
+            "default": false,
+            "title": "Audit Events Written",
+            "type": "boolean"
+          },
+          "cleanup_executed": {
+            "default": false,
+            "title": "Cleanup Executed",
+            "type": "boolean"
+          },
+          "conversion_workflow_executed": {
+            "default": false,
+            "title": "Conversion Workflow Executed",
+            "type": "boolean"
+          },
+          "delete_executed": {
+            "default": false,
+            "title": "Delete Executed",
+            "type": "boolean"
+          },
+          "localstack_calls_executed": {
+            "default": false,
+            "title": "Localstack Calls Executed",
+            "type": "boolean"
+          },
+          "metadata_mutated": {
+            "default": false,
+            "title": "Metadata Mutated",
+            "type": "boolean"
+          },
+          "provider_calls_executed": {
+            "default": false,
+            "title": "Provider Calls Executed",
+            "type": "boolean"
+          },
+          "read_only": {
+            "default": true,
+            "title": "Read Only",
+            "type": "boolean"
+          },
+          "real_s3_delete_executed": {
+            "default": false,
+            "title": "Real S3 Delete Executed",
+            "type": "boolean"
+          },
+          "scheduler_loop_executed": {
+            "default": false,
+            "title": "Scheduler Loop Executed",
+            "type": "boolean"
+          },
+          "secret_values_exposed": {
+            "default": false,
+            "title": "Secret Values Exposed",
+            "type": "boolean"
+          }
+        },
+        "title": "OpsS3DeleteAdapterContractSafetyResponse",
+        "type": "object"
+      },
+      "OpsS3DeleteLocalStackProfileResponse": {
+        "description": "返回未来 LocalStack S3 delete 合同测试需要保持的 harness 语义。",
+        "properties": {
+          "endpoint_required": {
+            "title": "Endpoint Required",
+            "type": "boolean"
+          },
+          "etag_precondition_supported": {
+            "title": "Etag Precondition Supported",
+            "type": "boolean"
+          },
+          "exact_bucket_key_required": {
+            "title": "Exact Bucket Key Required",
+            "type": "boolean"
+          },
+          "harness": {
+            "const": "localstack",
+            "title": "Harness",
+            "type": "string"
+          },
+          "provider_payload_persisted": {
+            "title": "Provider Payload Persisted",
+            "type": "boolean"
+          },
+          "runtime_executed": {
+            "title": "Runtime Executed",
+            "type": "boolean"
+          },
+          "secrets_required_for_contract_report": {
+            "title": "Secrets Required For Contract Report",
+            "type": "boolean"
+          },
+          "version_id_supported": {
+            "title": "Version Id Supported",
+            "type": "boolean"
+          },
+          "versioned_bucket_required": {
+            "title": "Versioned Bucket Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "harness",
+          "endpoint_required",
+          "versioned_bucket_required",
+          "exact_bucket_key_required",
+          "version_id_supported",
+          "etag_precondition_supported",
+          "runtime_executed",
+          "provider_payload_persisted",
+          "secrets_required_for_contract_report"
+        ],
+        "title": "OpsS3DeleteLocalStackProfileResponse",
         "type": "object"
       },
       "ResolvedResourceVersionResponse": {
@@ -14322,6 +15814,68 @@
         ]
       }
     },
+    "/api/v1/files/quota-policy/ops-summary": {
+      "get": {
+        "description": "返回 quota enforcement 只读运维摘要、rollback 选项和 audit replay。",
+        "operationId": "get_file_quota_policy_ops_summary_api_v1_files_quota_policy_ops_summary_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "replay_limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Replay Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileQuotaPolicyOpsSummaryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get File Quota Policy Ops Summary",
+        "tags": [
+          "files"
+        ]
+      }
+    },
     "/api/v1/files/retention/cleanup-runs/execute": {
       "post": {
         "description": "执行受控 cleanup run，内部复用 existing physical-delete safety contract。",
@@ -17039,6 +18593,56 @@
         ]
       }
     },
+    "/api/v1/ops/alert-deliveries/adapter-contract": {
+      "get": {
+        "description": "读取真实 alert delivery adapter 合同和 fake parity，不发送通知。",
+        "operationId": "get_ops_alert_delivery_adapter_contract_api_v1_ops_alert_deliveries_adapter_contract_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsAlertDeliveryAdapterContractResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ops Alert Delivery Adapter Contract",
+        "tags": [
+          "ops"
+        ]
+      }
+    },
     "/api/v1/ops/alert-deliveries/fake-send": {
       "post": {
         "description": "执行本地 fake outbox delivery，只写 compact audit，不发送外部通知。",
@@ -17159,6 +18763,126 @@
         ]
       }
     },
+    "/api/v1/ops/alert-deliveries/real-send": {
+      "post": {
+        "description": "执行 Phase 7 Slack webhook pilot；所有 gate 通过后才调用 provider。",
+        "operationId": "real_send_ops_alert_delivery_api_v1_ops_alert_deliveries_real_send_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpsAlertDeliveryRealSendRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsAlertDeliveryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Real Send Ops Alert Delivery",
+        "tags": [
+          "ops"
+        ]
+      }
+    },
+    "/api/v1/ops/alert-deliveries/real-send/preview": {
+      "post": {
+        "description": "预览 Phase 7 Slack webhook pilot gates，不解析 secret 或发送通知。",
+        "operationId": "preview_ops_real_alert_delivery_api_v1_ops_alert_deliveries_real_send_preview_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpsAlertDeliveryRealPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsAlertDeliveryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Ops Real Alert Delivery",
+        "tags": [
+          "ops"
+        ]
+      }
+    },
     "/api/v1/ops/alert-destinations/dry-run": {
       "post": {
         "description": "只读 dry-run staged alert destination 配置，不发送通知或暴露 secret。",
@@ -17214,6 +18938,56 @@
           }
         },
         "summary": "Dry Run Ops Alert Destinations",
+        "tags": [
+          "ops"
+        ]
+      }
+    },
+    "/api/v1/ops/integration-capabilities": {
+      "get": {
+        "description": "读取真实集成控制面状态，不调用外部 provider 或执行任何动作。",
+        "operationId": "get_ops_integration_capabilities_api_v1_ops_integration_capabilities_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsIntegrationControlPlaneResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ops Integration Capabilities",
         "tags": [
           "ops"
         ]
@@ -17339,6 +19113,56 @@
         ]
       }
     },
+    "/api/v1/ops/provider-cancellations/semantics-verification": {
+      "get": {
+        "description": "读取 MinerU provider cancellation 语义核查结论，不调用 provider。",
+        "operationId": "get_ops_provider_cancellation_semantics_verification_api_v1_ops_provider_cancellations_semantics_verification_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsProviderCancellationSemanticsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ops Provider Cancellation Semantics Verification",
+        "tags": [
+          "ops"
+        ]
+      }
+    },
     "/api/v1/ops/recovery-actions": {
       "get": {
         "description": "列出 Admin-only 只读 recovery action registry，不执行任何动作。",
@@ -17444,6 +19268,56 @@
           }
         },
         "summary": "Preview Ops Recovery Action",
+        "tags": [
+          "ops"
+        ]
+      }
+    },
+    "/api/v1/ops/s3-deletions/adapter-contract": {
+      "get": {
+        "description": "读取 S3 delete LocalStack/fake parity 合同，不调用 S3 或执行删除。",
+        "operationId": "get_ops_s3_delete_adapter_contract_api_v1_ops_s3_deletions_adapter_contract_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsS3DeleteAdapterContractResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ops S3 Delete Adapter Contract",
         "tags": [
           "ops"
         ]

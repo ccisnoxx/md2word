@@ -59,6 +59,7 @@ from app.domains.jobs.object_artifact_storage import ObjectArtifactStorageAdapte
 from app.domains.jobs.resource_snapshots import JobResourceSnapshotService
 from app.domains.jobs.query import JobQueryService
 from app.domains.jobs.stage import JobStageService
+from app.domains.ops.real_alert_delivery import RealAlertDeliveryProviderResult
 from app.services.renderer import DocumentIRWordRenderer
 from app.domains.resources.service import ResourceVersionService
 from app.domains.term_rules.bootstrap import TermRuleBootstrapService
@@ -239,6 +240,48 @@ class FakeDocumentJobTranslationProvider:
         )
 
 
+class FakeAlertDeliveryProvider:
+    """记录 Phase 7 alert delivery provider 调用，避免测试触发真实 Slack webhook。"""
+
+    def __init__(self, *, outcome: str = "sent") -> None:
+        self.outcome = outcome
+        self.calls = []
+
+    def send(self, attempt):
+        """返回脱敏 provider 结果，并保留调用摘要供测试断言。"""
+
+        self.calls.append(
+            {
+                "destination_id": attempt.destination_id,
+                "alert_code": attempt.alert_code,
+                "webhook_url": attempt.webhook_url,
+                "idempotency_key": attempt.idempotency_key,
+            }
+        )
+        return RealAlertDeliveryProviderResult(
+            outcome=self.outcome,
+            provider_request_id="fake-slack-request-001",
+            error_code=None if self.outcome == "sent" else "fake_failure",
+            retryable=self.outcome != "sent",
+            provider_calls_executed=True,
+            external_delivery_executed=self.outcome == "sent",
+        )
+
+
+class FakeSecretResolver:
+    """按测试提供的映射返回 secret value，并记录解析次数。"""
+
+    def __init__(self, values: dict[str, str] | None = None) -> None:
+        self.values = values or {}
+        self.calls = []
+
+    def resolve_secret(self, secret_ref: str) -> str | None:
+        """记录 secret ref 查询；不把 secret value 写到外部输出。"""
+
+        self.calls.append(secret_ref)
+        return self.values.get(secret_ref)
+
+
 def build_test_runtime(
     data_dir: Path,
     *,
@@ -256,7 +299,25 @@ def build_test_runtime(
     jobs_access_token: str = "",
     jobs_ops_access_mode: str = "admin",
     admin_token: str = "",
+    jobs_artifact_s3_bucket: str = "",
+    jobs_artifact_s3_endpoint_url: str = "",
+    jobs_artifact_s3_region: str = "us-east-1",
+    jobs_artifact_s3_access_key_id: str = "",
+    jobs_artifact_s3_secret_access_key: str = "",
+    jobs_artifact_s3_key_prefix: str = "",
     ops_alert_destinations_json: str = "[]",
+    integration_alert_delivery_enabled: bool = False,
+    integration_alert_delivery_dry_run: bool = True,
+    integration_alert_delivery_kill_switch: bool = False,
+    integration_provider_cancellation_enabled: bool = False,
+    integration_provider_cancellation_dry_run: bool = True,
+    integration_provider_cancellation_kill_switch: bool = False,
+    integration_s3_deletion_enabled: bool = False,
+    integration_s3_deletion_dry_run: bool = True,
+    integration_s3_deletion_kill_switch: bool = False,
+    integration_cleanup_scheduler_execute_enabled: bool = False,
+    integration_cleanup_scheduler_execute_dry_run: bool = True,
+    integration_cleanup_scheduler_execute_kill_switch: bool = False,
     auth_jwt_secret_key: str = "",
     auth_access_token_expire_minutes: int = 120,
     auth_internal_users_file: str = "",
@@ -277,6 +338,8 @@ def build_test_runtime(
     templates_manifest_path: str | None = None,
     term_rules_seed_path: str | None = None,
     translation_terms_path: str | None = None,
+    alert_delivery_provider: Any | None = None,
+    secret_resolver: Any | None = None,
 ) -> AppRuntime:
     """构建隔离测试运行时，使用 fake adapter 避免触发真实外部 provider。"""
 
@@ -299,7 +362,25 @@ def build_test_runtime(
         jobs_access_token=jobs_access_token,
         jobs_ops_access_mode=jobs_ops_access_mode,
         admin_token=admin_token,
+        jobs_artifact_s3_bucket=jobs_artifact_s3_bucket,
+        jobs_artifact_s3_endpoint_url=jobs_artifact_s3_endpoint_url,
+        jobs_artifact_s3_region=jobs_artifact_s3_region,
+        jobs_artifact_s3_access_key_id=jobs_artifact_s3_access_key_id,
+        jobs_artifact_s3_secret_access_key=jobs_artifact_s3_secret_access_key,
+        jobs_artifact_s3_key_prefix=jobs_artifact_s3_key_prefix,
         ops_alert_destinations_json=ops_alert_destinations_json,
+        integration_alert_delivery_enabled=integration_alert_delivery_enabled,
+        integration_alert_delivery_dry_run=integration_alert_delivery_dry_run,
+        integration_alert_delivery_kill_switch=integration_alert_delivery_kill_switch,
+        integration_provider_cancellation_enabled=integration_provider_cancellation_enabled,
+        integration_provider_cancellation_dry_run=integration_provider_cancellation_dry_run,
+        integration_provider_cancellation_kill_switch=integration_provider_cancellation_kill_switch,
+        integration_s3_deletion_enabled=integration_s3_deletion_enabled,
+        integration_s3_deletion_dry_run=integration_s3_deletion_dry_run,
+        integration_s3_deletion_kill_switch=integration_s3_deletion_kill_switch,
+        integration_cleanup_scheduler_execute_enabled=integration_cleanup_scheduler_execute_enabled,
+        integration_cleanup_scheduler_execute_dry_run=integration_cleanup_scheduler_execute_dry_run,
+        integration_cleanup_scheduler_execute_kill_switch=integration_cleanup_scheduler_execute_kill_switch,
         auth_jwt_secret_key=auth_jwt_secret_key,
         auth_access_token_expire_minutes=auth_access_token_expire_minutes,
         auth_internal_users_file=auth_internal_users_file,
@@ -603,6 +684,8 @@ def build_test_runtime(
         stage_service=stage_service,
         stage_dispatcher=stage_dispatcher,
         stage_message_store=stage_message_store,
+        alert_delivery_provider=alert_delivery_provider,
+        secret_resolver=secret_resolver,
     )
 
 
@@ -1771,6 +1854,87 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(operator_response.json()["error_code"], "role_forbidden")
         self.assertEqual(audit_actions_after, audit_actions_before)
 
+    def test_ops_alert_delivery_adapter_contract_is_admin_only_readonly_and_blocks_real_send(self):
+        """验证 alert delivery adapter contract 只读，并且真实发送能力仍保持 blocked。"""
+
+        destination_config = [
+            {
+                "destination_id": "ops-webhook-primary",
+                "channel": "webhook",
+                "enabled": True,
+                "secret_ref": "OPS_WEBHOOK_SECRET",
+                "secret_value": "should-not-leak",
+                "target_label": "ops-webhook",
+                "allowlist": ["stage_spool_failed_messages_present"],
+            }
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                ops_alert_destinations_json=json.dumps(destination_config),
+                integration_alert_delivery_enabled=True,
+                integration_alert_delivery_dry_run=False,
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                audit_actions_before = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+                admin_response = client.get(
+                    "/api/v1/ops/alert-deliveries/adapter-contract",
+                    headers=admin_headers,
+                )
+                operator_response = client.get(
+                    "/api/v1/ops/alert-deliveries/adapter-contract",
+                    headers=operator_headers,
+                )
+                capabilities_response = client.get(
+                    "/api/v1/ops/integration-capabilities",
+                    headers=admin_headers,
+                )
+                audit_actions_after = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+
+        self.assertEqual(operator_response.status_code, 403)
+        self.assertEqual(operator_response.json()["error_code"], "role_forbidden")
+        self.assertEqual(admin_response.status_code, 200)
+        payload = admin_response.json()
+        self.assertEqual(payload["action_mode"], "adapter_contract")
+        self.assertEqual(payload["contract_version"], "ops-alert-delivery-adapter-v1")
+        self.assertEqual(payload["fake_adapter_id"], "local_outbox_fake")
+        self.assertEqual(payload["fake_adapter_mode"], "fake")
+        self.assertEqual(set(payload["real_channels"]), {"slack", "email", "webhook"})
+        self.assertEqual(payload["destination_count"], 1)
+        self.assertEqual(payload["destination_channels"], ["webhook"])
+        self.assertTrue(payload["parity_checks"]["fake_uses_same_contract_version"])
+        self.assertTrue(payload["parity_checks"]["fake_records_structured_audit_details"])
+        self.assertTrue(payload["parity_checks"]["fake_never_calls_provider"])
+        self.assertIn("idempotency_key", payload["required_request_fields"])
+        self.assertIn("adapter_result", payload["required_audit_fields"])
+        self.assertIn("real_send_requires_explicit_endpoint_and_confirmation", payload["blocking_reasons"])
+        self.assertTrue(payload["safety"]["read_only"])
+        self.assertFalse(payload["safety"]["provider_calls_executed"])
+        self.assertFalse(payload["safety"]["external_delivery_executed"])
+        self.assertFalse(payload["safety"]["audit_events_written"])
+        self.assertFalse(payload["safety"]["secret_values_exposed"])
+        self.assertNotIn("should-not-leak", admin_response.text)
+
+        capabilities = {
+            item["capability_id"]: item
+            for item in capabilities_response.json()["capabilities"]
+        }
+        alert_delivery = capabilities["alert_delivery"]
+        self.assertEqual(alert_delivery["status"], "blocked")
+        self.assertTrue(alert_delivery["real_execution_enabled"])
+        self.assertFalse(alert_delivery["ready"])
+        self.assertEqual(alert_delivery["safe_config"]["adapter_contract_version"], "ops-alert-delivery-adapter-v1")
+        self.assertTrue(alert_delivery["safe_config"]["fake_adapter_parity"])
+        self.assertTrue(alert_delivery["safe_config"]["real_delivery_adapter_implemented"])
+        self.assertFalse(alert_delivery["safe_config"]["pilot_destination_ready"])
+        self.assertIn("phase7_slack_pilot_destination_not_configured", alert_delivery["blocking_reasons"])
+        self.assertEqual(audit_actions_after, audit_actions_before)
+
     def test_ops_alert_delivery_fake_send_audits_and_dedupes_without_external_delivery(self):
         """验证 fake alert delivery 写一次审计，dedupe 窗口内重复请求不重复写。"""
 
@@ -1847,6 +2011,65 @@ class FastAPIJobsBackendTests(TestCase):
             delivery_events[0].details["items"][0]["alert_code"],
             "stage_spool_failed_messages_present",
         )
+
+    def test_ops_alert_delivery_fake_send_includes_adapter_contract_parity_in_audit(self):
+        """验证 fake-send response 和 audit details 都包含同版 adapter contract 证据。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            runtime.stage_message_store.put_stage_message(
+                JobStageMessage(
+                    id="msg_alert_delivery_contract_failed",
+                    job_id="docjob_alert_delivery_contract",
+                    stage="convert_package",
+                    trace_id="trace_alert_delivery_contract",
+                    status="failed",
+                )
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                response = client.post(
+                    "/api/v1/ops/alert-deliveries/fake-send",
+                    headers={**admin_headers, "X-Trace-Id": "trace_alert_delivery_contract"},
+                    json={
+                        "alert_codes": ["stage_spool_failed_messages_present"],
+                        "channel": "local_outbox",
+                        "reason": "adapter contract parity drill",
+                        "confirmation": "SEND FAKE OPS ALERTS",
+                    },
+                )
+            delivery_events = [
+                event
+                for event in runtime.audit_event_repository.list_audit_events()
+                if event.action == "ops.alert_delivery_fake"
+            ]
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        adapter_result = payload["items"][0]["adapter_result"]
+        self.assertEqual(adapter_result["contract_version"], "ops-alert-delivery-adapter-v1")
+        self.assertEqual(adapter_result["adapter_id"], "local_outbox_fake")
+        self.assertEqual(adapter_result["adapter_mode"], "fake")
+        self.assertEqual(adapter_result["channel"], "local_outbox")
+        self.assertEqual(adapter_result["alert_code"], "stage_spool_failed_messages_present")
+        self.assertEqual(adapter_result["dedupe_key"], "stage_spool_failed_messages_present:local_outbox")
+        self.assertEqual(adapter_result["idempotency_key"], "ops_alert_delivery:stage_spool_failed_messages_present:local_outbox")
+        self.assertEqual(adapter_result["timeout_seconds"], 10)
+        self.assertFalse(adapter_result["provider_calls_executed"])
+        self.assertFalse(adapter_result["external_delivery_executed"])
+        self.assertFalse(adapter_result["payload_persisted"])
+        self.assertFalse(adapter_result["secret_values_exposed"])
+
+        self.assertEqual(len(delivery_events), 1)
+        audit_item = delivery_events[0].details["items"][0]
+        self.assertEqual(audit_item["adapter_result"], adapter_result)
+        self.assertFalse(delivery_events[0].details["safety"]["provider_calls_executed"])
+        self.assertFalse(delivery_events[0].details["safety"]["external_delivery_executed"])
 
     def test_ops_alert_delivery_rejects_invalid_targets_and_updates_action_registry(self):
         """验证 alert delivery 拒绝非精确目标，并暴露 fake outbox registry 合同。"""
@@ -1990,7 +2213,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertTrue(destination["secret_ref_present"])
         self.assertEqual(destination["matched_alert_codes"], ["stage_spool_failed_messages_present"])
         self.assertEqual(destination["blocked_alert_codes"], [])
-        self.assertIn("real_delivery_not_implemented", destination["missing_gates"])
+        self.assertIn("real_delivery_requires_explicit_real_send", destination["missing_gates"])
         self.assertNotIn("should-not-leak", admin_response.text)
         self.assertEqual(operator_response.status_code, 403)
         self.assertEqual(operator_response.json()["error_code"], "role_forbidden")
@@ -2038,6 +2261,389 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertFalse(payload["safety"]["external_delivery_executed"])
         self.assertFalse(payload["safety"]["secret_values_exposed"])
         self.assertEqual(audit_actions_after, audit_actions_before)
+
+    def test_ops_real_alert_delivery_preview_is_admin_only_and_blocked_by_default(self):
+        """验证 real-send preview 默认 blocked，且不解析 secret、不调用 provider、不写 audit。"""
+
+        destination_config = [
+            {
+                "destination_id": "ops-slack-primary",
+                "channel": "slack",
+                "enabled": True,
+                "secret_ref": "OPS_SLACK_WEBHOOK_URL",
+                "target_label": "#ops-alerts-phase7-pilot",
+                "allowlist": ["stage_spool_failed_messages_present"],
+                "rate_limit_per_hour": 3,
+                "dedupe_window_minutes": 60,
+            }
+        ]
+        provider = FakeAlertDeliveryProvider()
+        secret_resolver = FakeSecretResolver({"OPS_SLACK_WEBHOOK_URL": "https://hooks.slack.test/secret-token"})
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                ops_alert_destinations_json=json.dumps(destination_config),
+                alert_delivery_provider=provider,
+                secret_resolver=secret_resolver,
+            )
+            runtime.stage_message_store.put_stage_message(
+                JobStageMessage(
+                    id="msg_real_alert_preview_failed",
+                    job_id="docjob_real_alert_preview",
+                    stage="convert_package",
+                    trace_id="trace_real_alert_preview",
+                    status="failed",
+                )
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                audit_actions_before = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+                admin_response = client.post(
+                    "/api/v1/ops/alert-deliveries/real-send/preview",
+                    headers=admin_headers,
+                    json={
+                        "alert_codes": ["stage_spool_failed_messages_present"],
+                        "destination_ids": ["ops-slack-primary"],
+                        "dedupe_window_minutes": 60,
+                    },
+                )
+                operator_response = client.post(
+                    "/api/v1/ops/alert-deliveries/real-send/preview",
+                    headers=operator_headers,
+                    json={
+                        "alert_codes": ["stage_spool_failed_messages_present"],
+                        "destination_ids": ["ops-slack-primary"],
+                    },
+                )
+                audit_actions_after = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+
+        self.assertEqual(admin_response.status_code, 200)
+        payload = admin_response.json()
+        self.assertEqual(payload["action_mode"], "real_send_preview")
+        self.assertEqual(payload["channel"], "slack")
+        self.assertEqual(payload["confirmation_phrase"], "SEND REAL OPS ALERTS")
+        self.assertEqual(payload["requested_destination_ids"], ["ops-slack-primary"])
+        self.assertEqual(payload["items"][0]["outcome"], "blocked")
+        self.assertEqual(payload["items"][0]["destination_id"], "ops-slack-primary")
+        self.assertIn("integration_alert_delivery_disabled", payload["items"][0]["missing_gates"])
+        self.assertIn("dry_run_only", payload["items"][0]["missing_gates"])
+        self.assertFalse(payload["items"][0]["audit_event_written"])
+        self.assertFalse(payload["safety"]["provider_calls_executed"])
+        self.assertFalse(payload["safety"]["external_delivery_executed"])
+        self.assertFalse(payload["safety"]["audit_events_written"])
+        self.assertFalse(payload["safety"]["secret_values_exposed"])
+        self.assertNotIn("secret-token", admin_response.text)
+        self.assertEqual(operator_response.status_code, 403)
+        self.assertEqual(operator_response.json()["error_code"], "role_forbidden")
+        self.assertEqual(provider.calls, [])
+        self.assertEqual(secret_resolver.calls, [])
+        self.assertEqual(audit_actions_after, audit_actions_before)
+
+    def test_ops_real_alert_delivery_rejects_non_pilot_targets_and_bad_confirmation(self):
+        """验证 real-send 只接受固定 pilot destination、alert code 和 confirmation。"""
+
+        destination_config = [
+            {
+                "destination_id": "ops-slack-primary",
+                "channel": "slack",
+                "enabled": True,
+                "secret_ref": "OPS_SLACK_WEBHOOK_URL",
+                "target_label": "#ops-alerts-phase7-pilot",
+                "allowlist": ["stage_spool_failed_messages_present"],
+                "rate_limit_per_hour": 3,
+                "dedupe_window_minutes": 60,
+            }
+        ]
+        provider = FakeAlertDeliveryProvider()
+        secret_resolver = FakeSecretResolver({"OPS_SLACK_WEBHOOK_URL": "https://hooks.slack.test/secret-token"})
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                ops_alert_destinations_json=json.dumps(destination_config),
+                integration_alert_delivery_enabled=True,
+                integration_alert_delivery_dry_run=False,
+                alert_delivery_provider=provider,
+                secret_resolver=secret_resolver,
+            )
+            runtime.stage_message_store.put_stage_message(
+                JobStageMessage(
+                    id="msg_real_alert_invalid_failed",
+                    job_id="docjob_real_alert_invalid",
+                    stage="convert_package",
+                    trace_id="trace_real_alert_invalid",
+                    status="failed",
+                )
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                wrong_destination_response = client.post(
+                    "/api/v1/ops/alert-deliveries/real-send/preview",
+                    headers=admin_headers,
+                    json={
+                        "alert_codes": ["stage_spool_failed_messages_present"],
+                        "destination_ids": ["ops-slack-secondary"],
+                    },
+                )
+                wrong_alert_response = client.post(
+                    "/api/v1/ops/alert-deliveries/real-send/preview",
+                    headers=admin_headers,
+                    json={
+                        "alert_codes": ["readiness_warnings_present"],
+                        "destination_ids": ["ops-slack-primary"],
+                    },
+                )
+                bad_confirmation_response = client.post(
+                    "/api/v1/ops/alert-deliveries/real-send",
+                    headers=admin_headers,
+                    json={
+                        "alert_codes": ["stage_spool_failed_messages_present"],
+                        "destination_ids": ["ops-slack-primary"],
+                        "reason": "phase7 pilot",
+                        "confirmation": "SEND",
+                    },
+                )
+
+        self.assertEqual(wrong_destination_response.status_code, 400)
+        self.assertEqual(wrong_alert_response.status_code, 400)
+        self.assertEqual(bad_confirmation_response.status_code, 400)
+        self.assertEqual(provider.calls, [])
+        self.assertEqual(secret_resolver.calls, [])
+        self.assertEqual(runtime.audit_event_repository.list_audit_events(), [])
+
+    def test_ops_real_alert_delivery_kill_switch_blocks_before_secret_and_provider(self):
+        """验证 kill switch 在解析 secret 和调用 provider 前阻断，并写入脱敏 audit。"""
+
+        destination_config = [
+            {
+                "destination_id": "ops-slack-primary",
+                "channel": "slack",
+                "enabled": True,
+                "secret_ref": "OPS_SLACK_WEBHOOK_URL",
+                "target_label": "#ops-alerts-phase7-pilot",
+                "allowlist": ["stage_spool_failed_messages_present"],
+                "rate_limit_per_hour": 3,
+                "dedupe_window_minutes": 60,
+            }
+        ]
+        provider = FakeAlertDeliveryProvider()
+        secret_resolver = FakeSecretResolver({"OPS_SLACK_WEBHOOK_URL": "https://hooks.slack.test/secret-token"})
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                ops_alert_destinations_json=json.dumps(destination_config),
+                integration_alert_delivery_enabled=True,
+                integration_alert_delivery_dry_run=False,
+                integration_alert_delivery_kill_switch=True,
+                alert_delivery_provider=provider,
+                secret_resolver=secret_resolver,
+            )
+            runtime.stage_message_store.put_stage_message(
+                JobStageMessage(
+                    id="msg_real_alert_kill_failed",
+                    job_id="docjob_real_alert_kill",
+                    stage="convert_package",
+                    trace_id="trace_real_alert_kill",
+                    status="failed",
+                )
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                response = client.post(
+                    "/api/v1/ops/alert-deliveries/real-send",
+                    headers={**admin_headers, "X-Trace-Id": "trace_real_alert_kill"},
+                    json={
+                        "alert_codes": ["stage_spool_failed_messages_present"],
+                        "destination_ids": ["ops-slack-primary"],
+                        "reason": "phase7 pilot kill switch drill",
+                        "confirmation": "SEND REAL OPS ALERTS",
+                    },
+                )
+            delivery_events = [
+                event
+                for event in runtime.audit_event_repository.list_audit_events()
+                if event.action == "ops.alert_delivery_real"
+            ]
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["items"][0]["outcome"], "blocked")
+        self.assertIn("kill_switch_active", payload["items"][0]["missing_gates"])
+        self.assertTrue(payload["items"][0]["audit_event_written"])
+        self.assertTrue(payload["safety"]["audit_events_written"])
+        self.assertFalse(payload["safety"]["provider_calls_executed"])
+        self.assertFalse(payload["safety"]["external_delivery_executed"])
+        self.assertFalse(payload["safety"]["secret_values_exposed"])
+        self.assertNotIn("secret-token", response.text)
+        self.assertEqual(provider.calls, [])
+        self.assertEqual(secret_resolver.calls, [])
+        self.assertEqual(len(delivery_events), 1)
+        self.assertEqual(delivery_events[0].trace_id, "trace_real_alert_kill")
+        self.assertEqual(delivery_events[0].details["outcome"], "blocked")
+        self.assertFalse(delivery_events[0].details["safety"]["provider_calls_executed"])
+        self.assertFalse(delivery_events[0].details["safety"]["secret_values_exposed"])
+        self.assertNotIn("secret-token", json.dumps(delivery_events[0].details, ensure_ascii=False))
+
+    def test_ops_real_alert_delivery_success_uses_injected_provider_and_dedupes(self):
+        """验证 real-send 成功路径使用注入 provider，重复请求 dedupe 且不泄露 secret。"""
+
+        destination_config = [
+            {
+                "destination_id": "ops-slack-primary",
+                "channel": "slack",
+                "enabled": True,
+                "secret_ref": "OPS_SLACK_WEBHOOK_URL",
+                "target_label": "#ops-alerts-phase7-pilot",
+                "allowlist": ["stage_spool_failed_messages_present"],
+                "rate_limit_per_hour": 3,
+                "dedupe_window_minutes": 60,
+            }
+        ]
+        provider = FakeAlertDeliveryProvider(outcome="sent")
+        secret_resolver = FakeSecretResolver({"OPS_SLACK_WEBHOOK_URL": "https://hooks.slack.test/secret-token"})
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                ops_alert_destinations_json=json.dumps(destination_config),
+                integration_alert_delivery_enabled=True,
+                integration_alert_delivery_dry_run=False,
+                alert_delivery_provider=provider,
+                secret_resolver=secret_resolver,
+            )
+            runtime.stage_message_store.put_stage_message(
+                JobStageMessage(
+                    id="msg_real_alert_success_failed",
+                    job_id="docjob_real_alert_success",
+                    stage="convert_package",
+                    trace_id="trace_real_alert_success",
+                    status="failed",
+                )
+            )
+            app = create_app(runtime)
+            payload = {
+                "alert_codes": ["stage_spool_failed_messages_present"],
+                "destination_ids": ["ops-slack-primary"],
+                "reason": "phase7 pilot success drill",
+                "confirmation": "SEND REAL OPS ALERTS",
+            }
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                first_response = client.post(
+                    "/api/v1/ops/alert-deliveries/real-send",
+                    headers={**admin_headers, "X-Trace-Id": "trace_real_alert_success"},
+                    json=payload,
+                )
+                second_response = client.post(
+                    "/api/v1/ops/alert-deliveries/real-send",
+                    headers=admin_headers,
+                    json=payload,
+                )
+            delivery_events = [
+                event
+                for event in runtime.audit_event_repository.list_audit_events()
+                if event.action == "ops.alert_delivery_real"
+            ]
+
+        self.assertEqual(first_response.status_code, 200)
+        first_payload = first_response.json()
+        self.assertEqual(first_payload["items"][0]["outcome"], "sent")
+        self.assertEqual(first_payload["items"][0]["adapter_result"]["adapter_mode"], "real")
+        self.assertTrue(first_payload["items"][0]["adapter_result"]["provider_calls_executed"])
+        self.assertTrue(first_payload["safety"]["provider_calls_executed"])
+        self.assertTrue(first_payload["safety"]["external_delivery_executed"])
+        self.assertFalse(first_payload["safety"]["secret_values_exposed"])
+        self.assertNotIn("secret-token", first_response.text)
+
+        self.assertEqual(second_response.status_code, 200)
+        second_payload = second_response.json()
+        self.assertEqual(second_payload["items"][0]["outcome"], "deduped")
+        self.assertFalse(second_payload["items"][0]["adapter_result"]["provider_calls_executed"])
+        self.assertEqual(len(provider.calls), 1)
+        self.assertEqual(provider.calls[0]["webhook_url"], "https://hooks.slack.test/secret-token")
+        self.assertEqual(secret_resolver.calls, ["OPS_SLACK_WEBHOOK_URL", "OPS_SLACK_WEBHOOK_URL"])
+        self.assertEqual(len(delivery_events), 2)
+        self.assertEqual(delivery_events[0].details["outcome"], "sent")
+        self.assertEqual(delivery_events[1].details["outcome"], "deduped")
+        self.assertNotIn("secret-token", json.dumps([event.details for event in delivery_events], ensure_ascii=False))
+
+    def test_ops_real_alert_delivery_rate_limits_failed_provider_attempts(self):
+        """验证 provider 失败尝试达到 Phase 7 rate limit 后不再调用 provider。"""
+
+        destination_config = [
+            {
+                "destination_id": "ops-slack-primary",
+                "channel": "slack",
+                "enabled": True,
+                "secret_ref": "OPS_SLACK_WEBHOOK_URL",
+                "target_label": "#ops-alerts-phase7-pilot",
+                "allowlist": ["stage_spool_failed_messages_present"],
+                "rate_limit_per_hour": 3,
+                "dedupe_window_minutes": 60,
+            }
+        ]
+        provider = FakeAlertDeliveryProvider(outcome="failed")
+        secret_resolver = FakeSecretResolver({"OPS_SLACK_WEBHOOK_URL": "https://hooks.slack.test/secret-token"})
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                ops_alert_destinations_json=json.dumps(destination_config),
+                integration_alert_delivery_enabled=True,
+                integration_alert_delivery_dry_run=False,
+                alert_delivery_provider=provider,
+                secret_resolver=secret_resolver,
+            )
+            runtime.stage_message_store.put_stage_message(
+                JobStageMessage(
+                    id="msg_real_alert_rate_failed",
+                    job_id="docjob_real_alert_rate",
+                    stage="convert_package",
+                    trace_id="trace_real_alert_rate",
+                    status="failed",
+                )
+            )
+            app = create_app(runtime)
+            payload = {
+                "alert_codes": ["stage_spool_failed_messages_present"],
+                "destination_ids": ["ops-slack-primary"],
+                "reason": "phase7 pilot rate drill",
+                "confirmation": "SEND REAL OPS ALERTS",
+            }
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                responses = [
+                    client.post("/api/v1/ops/alert-deliveries/real-send", headers=admin_headers, json=payload)
+                    for _ in range(4)
+                ]
+            delivery_events = [
+                event
+                for event in runtime.audit_event_repository.list_audit_events()
+                if event.action == "ops.alert_delivery_real"
+            ]
+
+        self.assertEqual([response.status_code for response in responses], [200, 200, 200, 200])
+        self.assertEqual(
+            [response.json()["items"][0]["outcome"] for response in responses],
+            ["failed", "failed", "failed", "rate_limited"],
+        )
+        self.assertEqual(len(provider.calls), 3)
+        self.assertFalse(responses[-1].json()["items"][0]["adapter_result"]["provider_calls_executed"])
+        self.assertFalse(responses[-1].json()["safety"]["provider_calls_executed"])
+        self.assertEqual(len(delivery_events), 4)
+        self.assertEqual(delivery_events[-1].details["outcome"], "rate_limited")
+        self.assertNotIn("secret-token", json.dumps([event.details for event in delivery_events], ensure_ascii=False))
 
     def test_ops_provider_cancellation_preview_is_admin_only_and_metadata_only(self):
         """验证 provider cancellation preview 只读、Admin-only，且不调用 provider。"""
@@ -2394,6 +3000,342 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertFalse(provider_action["calls_provider"])
         self.assertTrue(provider_action["requires_reason"])
         self.assertTrue(provider_action["requires_confirmation"])
+
+    def test_ops_provider_cancellation_semantics_verification_is_admin_only_readonly_and_blocks_real_cancel(self):
+        """验证 provider cancellation 语义核查只读，并阻断真实 provider cancellation。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                audit_actions_before = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+                admin_response = client.get(
+                    "/api/v1/ops/provider-cancellations/semantics-verification",
+                    headers=admin_headers,
+                )
+                operator_response = client.get(
+                    "/api/v1/ops/provider-cancellations/semantics-verification",
+                    headers=operator_headers,
+                )
+                audit_actions_after = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+
+        self.assertEqual(operator_response.status_code, 403)
+        self.assertEqual(operator_response.json()["error_code"], "role_forbidden")
+        self.assertEqual(admin_response.status_code, 200)
+        payload = admin_response.json()
+        self.assertEqual(payload["action_mode"], "semantics_verification")
+        self.assertEqual(payload["provider"], "mineru")
+        self.assertEqual(payload["verification_status"], "verified_blocked")
+        self.assertEqual(payload["decision"], "unsupported_by_public_docs")
+        self.assertFalse(payload["public_docs_support_real_cancel"])
+        self.assertFalse(payload["real_provider_cancel_allowed"])
+        self.assertIn("extract_task_submit", payload["supported_provider_operations"])
+        self.assertIn("running", payload["documented_task_statuses"])
+        self.assertIn("provider_cancel_endpoint_not_documented", payload["unsupported_operations"])
+        self.assertIn("provider_cancellation_unsupported_by_public_docs", payload["blocking_reasons"])
+        self.assertIn("real_provider_cancellation_adapter_not_implemented", payload["blocking_reasons"])
+        self.assertGreaterEqual(len(payload["sources"]), 2)
+        self.assertTrue(all(source["source_type"] == "primary_docs" for source in payload["sources"]))
+        self.assertIn("https://mineru.net/doc/docs/index_en/", [source["url"] for source in payload["sources"]])
+        self.assertTrue(payload["safety"]["read_only"])
+        self.assertFalse(payload["safety"]["real_provider_cancel_executed"])
+        self.assertFalse(payload["safety"]["provider_calls_executed"])
+        self.assertFalse(payload["safety"]["local_job_mutated"])
+        self.assertFalse(payload["safety"]["queue_mutated"])
+        self.assertFalse(payload["safety"]["audit_events_written"])
+        self.assertFalse(payload["safety"]["secret_values_exposed"])
+        self.assertEqual(audit_actions_after, audit_actions_before)
+        self.assertEqual(runtime.document_job_execution_service.fake_mineru_client.query_calls, [])
+        self.assertEqual(runtime.document_job_execution_service.fake_mineru_client.calls, [])
+
+    def test_ops_integration_capabilities_report_provider_cancellation_semantics_verified_but_blocked(self):
+        """验证 control plane 展示 provider cancellation 语义已核查但仍阻断真实执行。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                integration_provider_cancellation_enabled=True,
+                integration_provider_cancellation_dry_run=False,
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                response = client.get("/api/v1/ops/integration-capabilities", headers=admin_headers)
+
+        self.assertEqual(response.status_code, 200)
+        capabilities = {item["capability_id"]: item for item in response.json()["capabilities"]}
+        provider_cancellation = capabilities["provider_cancellation"]
+        self.assertEqual(provider_cancellation["status"], "blocked")
+        self.assertTrue(provider_cancellation["real_execution_enabled"])
+        self.assertFalse(provider_cancellation["dry_run_only"])
+        self.assertFalse(provider_cancellation["ready"])
+        self.assertIn(
+            "provider_cancellation_unsupported_by_public_docs",
+            provider_cancellation["blocking_reasons"],
+        )
+        self.assertNotIn(
+            "provider_cancellation_semantics_unverified",
+            provider_cancellation["blocking_reasons"],
+        )
+        self.assertEqual(provider_cancellation["safe_config"]["semantics_verification_status"], "verified_blocked")
+        self.assertEqual(provider_cancellation["safe_config"]["semantics_decision"], "unsupported_by_public_docs")
+        self.assertFalse(provider_cancellation["safe_config"]["real_provider_cancel_supported"])
+
+    def test_ops_s3_delete_adapter_contract_is_admin_only_readonly_and_keeps_real_delete_blocked(self):
+        """验证 S3 delete contract 只读、Admin-only，且 control plane 继续阻断真实删除。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="s3",
+                jobs_artifact_s3_bucket="test-bucket",
+                jobs_artifact_s3_endpoint_url="http://127.0.0.1:4566",
+                jobs_artifact_s3_access_key_id="test-access-key",
+                jobs_artifact_s3_secret_access_key="test-secret-key",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                integration_s3_deletion_enabled=True,
+                integration_s3_deletion_dry_run=False,
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                audit_actions_before = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+                admin_response = client.get("/api/v1/ops/s3-deletions/adapter-contract", headers=admin_headers)
+                operator_response = client.get("/api/v1/ops/s3-deletions/adapter-contract", headers=operator_headers)
+                control_response = client.get("/api/v1/ops/integration-capabilities", headers=admin_headers)
+                audit_actions_after = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+
+        self.assertEqual(admin_response.status_code, 200)
+        payload = admin_response.json()
+        self.assertEqual(payload["action_mode"], "adapter_contract")
+        self.assertEqual(payload["contract_version"], "ops-s3-delete-adapter-v1")
+        self.assertEqual(payload["fake_adapter_id"], "file_retention_s3_fake")
+        self.assertEqual(payload["fake_adapter_mode"], "fake")
+        self.assertEqual(payload["fake_file_retention_contract_version"], "s3-delete-fake-v1")
+        self.assertEqual(payload["localstack_profile"]["harness"], "localstack")
+        self.assertFalse(payload["localstack_profile"]["runtime_executed"])
+        self.assertTrue(payload["storage_config_summary"]["s3_endpoint_localstack_like"])
+        self.assertFalse(payload["storage_config_summary"]["secret_values_exposed"])
+        self.assertTrue(payload["parity_checks"]["fake_file_retention_contract_version_linked"])
+        self.assertTrue(payload["parity_checks"]["fake_preserves_version_id"])
+        self.assertTrue(payload["parity_checks"]["metadata_mutation_requires_provider_success"])
+        self.assertIn("real_s3_delete_adapter_not_implemented", payload["blocking_reasons"])
+        self.assertIn("localstack_contract_not_executed_in_runtime", payload["blocking_reasons"])
+        self.assertTrue(payload["safety"]["read_only"])
+        self.assertFalse(payload["safety"]["provider_calls_executed"])
+        self.assertFalse(payload["safety"]["real_s3_delete_executed"])
+        self.assertFalse(payload["safety"]["localstack_calls_executed"])
+        self.assertFalse(payload["safety"]["cleanup_executed"])
+        self.assertFalse(payload["safety"]["scheduler_loop_executed"])
+        self.assertFalse(payload["safety"]["delete_executed"])
+        self.assertFalse(payload["safety"]["metadata_mutated"])
+        self.assertFalse(payload["safety"]["audit_events_written"])
+        self.assertFalse(payload["safety"]["secret_values_exposed"])
+        self.assertEqual(operator_response.status_code, 403)
+        self.assertEqual(operator_response.json()["error_code"], "role_forbidden")
+        self.assertEqual(audit_actions_after, audit_actions_before)
+        self.assertEqual(runtime.document_job_execution_service.fake_mineru_client.query_calls, [])
+        self.assertEqual(runtime.document_job_execution_service.fake_mineru_client.calls, [])
+
+        self.assertEqual(control_response.status_code, 200)
+        capabilities = {item["capability_id"]: item for item in control_response.json()["capabilities"]}
+        s3_deletion = capabilities["s3_deletion"]
+        self.assertEqual(s3_deletion["status"], "blocked")
+        self.assertTrue(s3_deletion["real_execution_enabled"])
+        self.assertFalse(s3_deletion["dry_run_only"])
+        self.assertTrue(s3_deletion["configured"])
+        self.assertFalse(s3_deletion["ready"])
+        self.assertIn("real_s3_delete_adapter_not_implemented", s3_deletion["blocking_reasons"])
+        self.assertIn("localstack_contract_not_executed_in_runtime", s3_deletion["blocking_reasons"])
+        self.assertEqual(s3_deletion["safe_config"]["s3_delete_adapter_contract_version"], "ops-s3-delete-adapter-v1")
+        self.assertEqual(s3_deletion["safe_config"]["fake_file_retention_contract_version"], "s3-delete-fake-v1")
+        self.assertTrue(s3_deletion["safe_config"]["localstack_fake_parity_contract"])
+        self.assertFalse(s3_deletion["safe_config"]["real_s3_delete_adapter_implemented"])
+
+    def test_ops_integration_capabilities_are_admin_only_and_disabled_by_default(self):
+        """验证 integration control plane 默认全部阻断、Admin-only 且无副作用。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                audit_actions_before = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+                admin_response = client.get("/api/v1/ops/integration-capabilities", headers=admin_headers)
+                operator_response = client.get("/api/v1/ops/integration-capabilities", headers=operator_headers)
+                audit_actions_after = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+
+        self.assertEqual(admin_response.status_code, 200)
+        payload = admin_response.json()
+        self.assertEqual(payload["action_mode"], "read_only")
+        self.assertEqual(payload["overall_status"], "blocked")
+        capabilities = {item["capability_id"]: item for item in payload["capabilities"]}
+        self.assertEqual(
+            set(capabilities),
+            {
+                "alert_delivery",
+                "provider_cancellation",
+                "s3_deletion",
+                "cleanup_scheduler_execute",
+                "quota_enforcement",
+            },
+        )
+        for capability in capabilities.values():
+            self.assertEqual(capability["status"], "blocked")
+            self.assertFalse(capability["real_execution_enabled"])
+            self.assertTrue(capability["dry_run_only"])
+            self.assertFalse(capability["ready"])
+        self.assertIn("integration_alert_delivery_disabled", capabilities["alert_delivery"]["blocking_reasons"])
+        self.assertFalse(capabilities["alert_delivery"]["safe_config"]["pilot_destination_ready"])
+        self.assertIn(
+            "real_provider_cancellation_adapter_not_implemented",
+            capabilities["provider_cancellation"]["blocking_reasons"],
+        )
+        self.assertIn("real_s3_delete_adapter_not_implemented", capabilities["s3_deletion"]["blocking_reasons"])
+        self.assertIn(
+            "cleanup_scheduler_execute_loop_not_implemented",
+            capabilities["cleanup_scheduler_execute"]["blocking_reasons"],
+        )
+        self.assertIn("files_quota_policy_disabled", capabilities["quota_enforcement"]["blocking_reasons"])
+        self.assertTrue(payload["safety"]["read_only"])
+        self.assertFalse(payload["safety"]["provider_calls_executed"])
+        self.assertFalse(payload["safety"]["external_delivery_executed"])
+        self.assertFalse(payload["safety"]["s3_delete_executed"])
+        self.assertFalse(payload["safety"]["cleanup_scheduler_executed"])
+        self.assertFalse(payload["safety"]["quota_enforcement_executed"])
+        self.assertFalse(payload["safety"]["secret_values_exposed"])
+        self.assertEqual(operator_response.status_code, 403)
+        self.assertEqual(operator_response.json()["error_code"], "role_forbidden")
+        self.assertEqual(audit_actions_after, audit_actions_before)
+        self.assertEqual(runtime.document_job_execution_service.fake_mineru_client.query_calls, [])
+        self.assertEqual(runtime.document_job_execution_service.fake_mineru_client.calls, [])
+
+    def test_ops_integration_capabilities_report_enabled_quota_without_external_side_effects(self):
+        """验证 control plane 可报告 ready quota，同时其他真实外部能力仍保持 blocked。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                files_quota_policy_enabled=True,
+                files_quota_policy_dry_run=False,
+                files_quota_bytes=2_000,
+                integration_alert_delivery_enabled=True,
+                integration_alert_delivery_dry_run=False,
+                ops_alert_destinations_json=json.dumps(
+                    [
+                        {
+                            "destination_id": "ops-slack-primary",
+                            "channel": "slack",
+                            "enabled": True,
+                            "secret_ref": "OPS_SLACK_WEBHOOK_URL",
+                            "target_label": "#ops",
+                        }
+                    ]
+                ),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                response = client.get("/api/v1/ops/integration-capabilities", headers=admin_headers)
+            audit_actions = [
+                event.action
+                for event in runtime.audit_event_repository.list_audit_events()
+                if event.action.startswith("ops.integration") or event.action.startswith("file.quota")
+            ]
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["overall_status"], "partial")
+        capabilities = {item["capability_id"]: item for item in payload["capabilities"]}
+        quota = capabilities["quota_enforcement"]
+        self.assertEqual(quota["status"], "ready")
+        self.assertTrue(quota["ready"])
+        self.assertTrue(quota["real_execution_enabled"])
+        self.assertFalse(quota["dry_run_only"])
+        self.assertEqual(quota["blocking_reasons"], [])
+        self.assertEqual(quota["safe_config"]["quota_bytes"], 2_000)
+        alert_delivery = capabilities["alert_delivery"]
+        self.assertEqual(alert_delivery["status"], "blocked")
+        self.assertTrue(alert_delivery["real_execution_enabled"])
+        self.assertTrue(alert_delivery["safe_config"]["real_delivery_adapter_implemented"])
+        self.assertFalse(alert_delivery["safe_config"]["pilot_destination_ready"])
+        self.assertIn("phase7_slack_pilot_target_label_mismatch", alert_delivery["blocking_reasons"])
+        self.assertIn("phase7_slack_pilot_alert_not_allowlisted", alert_delivery["blocking_reasons"])
+        self.assertFalse(payload["safety"]["external_delivery_executed"])
+        self.assertFalse(payload["safety"]["provider_calls_executed"])
+        self.assertFalse(payload["safety"]["quota_enforcement_executed"])
+        self.assertFalse(payload["safety"]["audit_events_written"])
+        self.assertEqual(audit_actions, [])
+        self.assertEqual(runtime.document_job_execution_service.fake_mineru_client.query_calls, [])
+        self.assertEqual(runtime.document_job_execution_service.fake_mineru_client.calls, [])
+
+    def test_ops_integration_capabilities_report_phase7_slack_pilot_ready_without_side_effects(self):
+        """验证 control plane 可报告 Phase 7 Slack pilot ready，但不解析 secret 或调用 provider。"""
+
+        destination_config = [
+            {
+                "destination_id": "ops-slack-primary",
+                "channel": "slack",
+                "enabled": True,
+                "secret_ref": "OPS_SLACK_WEBHOOK_URL",
+                "target_label": "#ops-alerts-phase7-pilot",
+                "allowlist": ["stage_spool_failed_messages_present"],
+                "rate_limit_per_hour": 3,
+                "dedupe_window_minutes": 60,
+            }
+        ]
+        provider = FakeAlertDeliveryProvider()
+        secret_resolver = FakeSecretResolver({"OPS_SLACK_WEBHOOK_URL": "https://hooks.slack.test/secret-token"})
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                ops_alert_destinations_json=json.dumps(destination_config),
+                integration_alert_delivery_enabled=True,
+                integration_alert_delivery_dry_run=False,
+                alert_delivery_provider=provider,
+                secret_resolver=secret_resolver,
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                response = client.get("/api/v1/ops/integration-capabilities", headers=admin_headers)
+
+        self.assertEqual(response.status_code, 200)
+        capabilities = {item["capability_id"]: item for item in response.json()["capabilities"]}
+        alert_delivery = capabilities["alert_delivery"]
+        self.assertEqual(alert_delivery["status"], "ready")
+        self.assertTrue(alert_delivery["ready"])
+        self.assertTrue(alert_delivery["real_execution_enabled"])
+        self.assertFalse(alert_delivery["dry_run_only"])
+        self.assertEqual(alert_delivery["blocking_reasons"], [])
+        self.assertTrue(alert_delivery["safe_config"]["real_delivery_adapter_implemented"])
+        self.assertTrue(alert_delivery["safe_config"]["pilot_destination_ready"])
+        self.assertEqual(alert_delivery["safe_config"]["pilot_secret_ref"], "OPS_SLACK_WEBHOOK_URL")
+        self.assertFalse(response.json()["safety"]["external_delivery_executed"])
+        self.assertFalse(response.json()["safety"]["provider_calls_executed"])
+        self.assertFalse(response.json()["safety"]["audit_events_written"])
+        self.assertNotIn("secret-token", response.text)
+        self.assertEqual(provider.calls, [])
+        self.assertEqual(secret_resolver.calls, [])
 
     def test_ops_recovery_action_preview_reports_document_job_and_legacy_job_eligibility_without_execution(self):
         """验证 recovery action preview 做精确目标判断，且不触发 provider、队列或 audit 副作用。"""
@@ -3344,6 +4286,208 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertTrue(quota_events[0].details["override"]["allowed"])
         self.assertTrue(quota_events[0].details["override"]["applied"])
         self.assertFalse(quota_events[0].details["safety"]["upload_blocking_executed"])
+
+    def test_file_quota_policy_ops_summary_is_admin_only_readonly_and_reports_rollback(self):
+        """验证 quota ops summary 只允许 Admin 读取，并返回回滚开关和只读安全合同。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_internal_users_json=build_auth_users_json(),
+                auth_jwt_secret_key="test-secret",
+                jobs_upload_max_bytes=5_000,
+                files_quota_policy_enabled=True,
+                files_quota_policy_dry_run=False,
+                files_quota_bytes=2_000,
+            )
+            runtime.document_file_repository.create_document_file(
+                DocumentFileRecord(
+                    id="file_quota_ops_existing",
+                    tenant_id="tenant_default",
+                    company_id="company_default",
+                    job_id="docjob_quota_ops",
+                    file_type="source_pdf",
+                    storage_provider="local_object",
+                    bucket="local-object",
+                    object_key="document-files/quota/ops-existing.pdf",
+                    original_filename="existing.pdf",
+                    mime_type="application/pdf",
+                    size_bytes=1_500,
+                    status="uploaded",
+                    expires_at=utc_now() + timedelta(days=1),
+                )
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                files_before = runtime.document_file_repository.list_document_files()
+                audit_events_before = runtime.audit_event_repository.list_audit_events()
+                admin_response = client.get(
+                    "/api/v1/files/quota-policy/ops-summary",
+                    headers=admin_headers,
+                )
+                operator_response = client.get(
+                    "/api/v1/files/quota-policy/ops-summary",
+                    headers=operator_headers,
+                )
+                files_after = runtime.document_file_repository.list_document_files()
+                audit_events_after = runtime.audit_event_repository.list_audit_events()
+
+        self.assertEqual(operator_response.status_code, 403)
+        self.assertEqual(operator_response.json()["error_code"], "role_forbidden")
+        self.assertEqual(admin_response.status_code, 200)
+        payload = admin_response.json()
+        self.assertEqual(payload["action_mode"], "quota_policy_ops_summary")
+        self.assertEqual(payload["policy"]["status"], "ready")
+        self.assertTrue(payload["enforcement_ready"])
+        self.assertFalse(payload["kill_switch_enabled"])
+        self.assertEqual(payload["usage"]["current_used_size_bytes"], 1_500)
+        self.assertEqual(payload["usage"]["proposed_upload_size_bytes"], 0)
+        self.assertEqual(payload["usage"]["projected_used_size_bytes"], 1_500)
+        self.assertFalse(payload["current_usage_would_block"])
+        rollback_by_id = {option["option_id"]: option for option in payload["rollback_options"]}
+        self.assertEqual(rollback_by_id["enable_kill_switch"]["env_var"], "FILES_QUOTA_POLICY_KILL_SWITCH")
+        self.assertEqual(rollback_by_id["enable_kill_switch"]["target_value"], "true")
+        self.assertFalse(rollback_by_id["enable_kill_switch"]["currently_effective"])
+        self.assertEqual(rollback_by_id["force_dry_run"]["env_var"], "FILES_QUOTA_POLICY_DRY_RUN")
+        self.assertEqual(rollback_by_id["disable_policy"]["env_var"], "FILES_QUOTA_POLICY_ENABLED")
+        self.assertTrue(payload["safety"]["read_only"])
+        self.assertFalse(payload["safety"]["upload_authorization_created"])
+        self.assertFalse(payload["safety"]["upload_blocking_executed"])
+        self.assertFalse(payload["safety"]["metadata_mutated"])
+        self.assertFalse(payload["safety"]["audit_events_written"])
+        self.assertFalse(payload["safety"]["provider_calls_executed"])
+        self.assertFalse(payload["safety"]["delete_executed"])
+        self.assertFalse(payload["safety"]["cleanup_executed"])
+        self.assertFalse(payload["safety"]["scheduler_loop_executed"])
+        self.assertFalse(payload["safety"]["conversion_workflow_executed"])
+        self.assertEqual([record.model_dump() for record in files_before], [record.model_dump() for record in files_after])
+        self.assertEqual(audit_events_before, audit_events_after)
+
+    def test_file_quota_policy_ops_summary_replays_block_and_override_audits(self):
+        """验证 quota ops summary 能重放最近 quota block/override 审计细节。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_internal_users_json=build_auth_users_json(),
+                auth_jwt_secret_key="test-secret",
+            )
+            base_time = utc_now()
+            runtime.audit_event_repository.append_audit_event(
+                AuditEvent(
+                    audit_id="audit_quota_block_old",
+                    actor_id="user_operator",
+                    actor_role="operator",
+                    action="file.quota_policy_block",
+                    target_type="file_quota_policy",
+                    target_id="document_files",
+                    reason="outcome=blocked actor_role=operator",
+                    details={
+                        "outcome": "blocked",
+                        "file_type": "source_pdf",
+                        "filename": "blocked.pdf",
+                        "policy": {"status": "ready", "quota_bytes": 2_000},
+                        "usage": {
+                            "current_used_size_bytes": 1_500,
+                            "proposed_upload_size_bytes": 700,
+                            "projected_used_size_bytes": 2_200,
+                        },
+                        "would_block": True,
+                        "reasons": ["projected_usage_reaches_block_threshold", "quota_policy_enforced_block"],
+                        "override": {"applied": False},
+                    },
+                    trace_id="trace_quota_block_replay",
+                    created_at=base_time - timedelta(minutes=2),
+                )
+            )
+            runtime.audit_event_repository.append_audit_event(
+                AuditEvent(
+                    audit_id="audit_quota_override_new",
+                    actor_id="user_admin",
+                    actor_role="admin",
+                    action="file.quota_policy_override",
+                    target_type="file_quota_policy",
+                    target_id="document_files",
+                    reason="outcome=overridden actor_role=admin",
+                    details={
+                        "outcome": "overridden",
+                        "file_type": "source_pdf",
+                        "filename": "override.pdf",
+                        "policy": {"status": "ready", "quota_bytes": 2_000},
+                        "usage": {
+                            "current_used_size_bytes": 1_500,
+                            "proposed_upload_size_bytes": 700,
+                            "projected_used_size_bytes": 2_200,
+                        },
+                        "would_block": True,
+                        "reasons": ["quota_policy_admin_override_applied"],
+                        "override": {"applied": True},
+                    },
+                    trace_id="trace_quota_override_replay",
+                    created_at=base_time - timedelta(minutes=1),
+                )
+            )
+            runtime.audit_event_repository.append_audit_event(
+                AuditEvent(
+                    audit_id="audit_unrelated",
+                    actor_id="user_admin",
+                    actor_role="admin",
+                    action="file.retention_mark_expired",
+                    target_type="document_file_retention",
+                    target_id="document_files",
+                    reason="marked=1",
+                    trace_id="trace_unrelated",
+                    created_at=base_time,
+                )
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                audit_events_before = runtime.audit_event_repository.list_audit_events()
+                response = client.get(
+                    "/api/v1/files/quota-policy/ops-summary",
+                    headers=admin_headers,
+                    params={"replay_limit": 2},
+                )
+                truncated_response = client.get(
+                    "/api/v1/files/quota-policy/ops-summary",
+                    headers=admin_headers,
+                    params={"replay_limit": 1},
+                )
+                audit_events_after = runtime.audit_event_repository.list_audit_events()
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["audit_replay_total"], 2)
+        self.assertEqual(payload["audit_replay_limit"], 2)
+        self.assertFalse(payload["audit_replay_truncated"])
+        self.assertEqual([item["audit_id"] for item in payload["audit_replay"]], ["audit_quota_override_new", "audit_quota_block_old"])
+        override_item = payload["audit_replay"][0]
+        block_item = payload["audit_replay"][1]
+        self.assertEqual(override_item["outcome"], "overridden")
+        self.assertEqual(override_item["trace_id"], "trace_quota_override_replay")
+        self.assertTrue(override_item["would_block"])
+        self.assertTrue(override_item["override_applied"])
+        self.assertEqual(override_item["projected_used_size_bytes"], 2_200)
+        self.assertEqual(override_item["quota_bytes"], 2_000)
+        self.assertEqual(override_item["policy_status"], "ready")
+        self.assertEqual(override_item["details"]["usage"]["projected_used_size_bytes"], 2_200)
+        self.assertEqual(block_item["outcome"], "blocked")
+        self.assertEqual(block_item["trace_id"], "trace_quota_block_replay")
+        self.assertFalse(block_item["override_applied"])
+        self.assertIn("quota_policy_enforced_block", block_item["reasons"])
+        self.assertEqual(truncated_response.status_code, 200)
+        truncated_payload = truncated_response.json()
+        self.assertEqual(truncated_payload["audit_replay_total"], 2)
+        self.assertEqual(truncated_payload["audit_replay_limit"], 1)
+        self.assertTrue(truncated_payload["audit_replay_truncated"])
+        self.assertEqual([item["audit_id"] for item in truncated_payload["audit_replay"]], ["audit_quota_override_new"])
+        self.assertEqual(audit_events_before, audit_events_after)
 
     def test_file_library_search_is_admin_only_readonly_safe_and_filterable(self):
         """验证 Admin-only 文件库搜索只返回安全摘要，并支持筛选、排序和分页。"""
@@ -4699,6 +5843,77 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertFalse(payload["items"][0]["metadata_updated"])
         self.assertIsNotNone(file_after_delete)
         self.assertEqual(file_after_delete.status, "expired")
+
+    def test_file_retention_s3_fake_delete_preview_matches_ops_s3_adapter_contract(self):
+        """验证 retention S3 fake preview 与 Ops S3 adapter contract 版本和安全语义一致。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            now = utc_now()
+            s3_file = DocumentFileRecord(
+                id="file_retention_delete_s3_parity",
+                tenant_id="tenant_default",
+                company_id="company_default",
+                job_id="docjob_retention",
+                file_type="generated_word",
+                storage_provider="s3",
+                bucket="test-bucket",
+                object_key="document-jobs/tenant_default/docjob_retention/generated_word/parity.docx",
+                original_filename="parity.docx",
+                mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                size_bytes=10,
+                status="expired",
+                expires_at=now - timedelta(seconds=1),
+                metadata={"s3_version_id": "version-parity-001"},
+                created_by="user_operator",
+                created_at=now - timedelta(days=2),
+                updated_at=now - timedelta(days=2),
+            )
+            runtime.document_file_repository.create_document_file(s3_file)
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                audit_actions_before = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+                contract_response = client.get("/api/v1/ops/s3-deletions/adapter-contract", headers=admin_headers)
+                preview_response = client.post(
+                    "/api/v1/files/retention/delete-preview",
+                    headers=admin_headers,
+                    json={"file_ids": [s3_file.id]},
+                )
+                audit_actions_after = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+
+            file_after_preview = runtime.document_file_repository.get_document_file(s3_file.id)
+
+        self.assertEqual(contract_response.status_code, 200)
+        self.assertEqual(preview_response.status_code, 200)
+        contract_payload = contract_response.json()
+        preview_item = preview_response.json()["items"][0]
+        fake_contract = preview_item["s3_delete_contract"]
+        self.assertEqual(fake_contract["contract_version"], contract_payload["fake_file_retention_contract_version"])
+        self.assertEqual(fake_contract["adapter_mode"], contract_payload["fake_adapter_mode"])
+        self.assertEqual(fake_contract["bucket"], "test-bucket")
+        self.assertEqual(fake_contract["object_key"], "document-jobs/tenant_default/docjob_retention/generated_word/parity.docx")
+        self.assertEqual(fake_contract["version_id"], "version-parity-001")
+        self.assertTrue(fake_contract["target_exact"])
+        self.assertEqual(fake_contract["expected_outcome"], "fake_skipped")
+        self.assertTrue(fake_contract["safety"]["fake_s3_delete_executed"])
+        self.assertFalse(fake_contract["safety"]["real_s3_delete_executed"])
+        self.assertFalse(fake_contract["safety"]["metadata_mutated"])
+        self.assertFalse(fake_contract["safety"]["audit_events_written"])
+        self.assertTrue(contract_payload["parity_checks"]["fake_uses_exact_bucket_key"])
+        self.assertTrue(contract_payload["parity_checks"]["fake_preserves_version_id"])
+        self.assertTrue(contract_payload["parity_checks"]["fake_never_calls_s3"])
+        self.assertFalse(contract_payload["safety"]["real_s3_delete_executed"])
+        self.assertFalse(contract_payload["safety"]["metadata_mutated"])
+        self.assertEqual(audit_actions_after, audit_actions_before)
+        self.assertIsNotNone(file_after_preview)
+        self.assertEqual(file_after_preview.status, "expired")
 
     def test_file_retention_physical_delete_skips_uploaded_without_deleting(self):
         """验证 uploaded 过期候选必须先 mark-expired，不能直接物理删除。"""

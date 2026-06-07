@@ -30,7 +30,7 @@ Admin 文件库搜索只返回 `document_files` 安全摘要，用于定位文�
 
 保留期管理接口只面向 Admin，用于管理保留策略、查看或标记过期 metadata，并在显式 dry-run 后人工执行本地过期文件物理删除。cleanup run 执行合同复用同一 physical-delete primitive，并额外要求 preview hash、signed cleanup plan、reason 和确认短语。preview/execute 会写入 durable run history，只保存 `run_id`、signed plan、状态、摘要计数、safety flags 和人工 reason，不保存本地路径、文件内容、bucket 或 raw metadata。手动 scheduler dry-run 只获取 cleanup lock、生成 readonly report、释放 lock 并写入 `dry_run` history；它不会启动 scheduler loop，不会生成可执行 signed cleanup plan，也不能作为删除授权。它不删除任务、文件 metadata 记录、审计记录或 `object_key`，也不触发 PDF 解析、翻译或 Word 生成流程。当前物理删除只支持 `local_file` 和 `local_object`，`s3` 会返回 unsupported 结果而不会执行真实对象存储删除。
 
-存储使用汇总接口只面向 Admin，只基于 `document_files` metadata 的 `size_bytes` 做容量估算和 quota readiness 展示。quota policy dry-run 同样只读，用于预演拟上传文件在 staged policy 下是否会 warning/block。真实上传授权会在 `FILES_QUOTA_POLICY_ENABLED=true`、`FILES_QUOTA_POLICY_DRY_RUN=false`、配置有效且 projected usage 达到 block 阈值时执行阻断；Admin 可通过显式 override reason 和确认短语放行。quota enforcement 不验证对象是否真实存在，不上传文件内容，不执行 mark-expired、delete-preview、delete-expired、provider 调用或转换流程。
+存储使用汇总接口只面向 Admin，只基于 `document_files` metadata 的 `size_bytes` 做容量估算和 quota readiness 展示。quota policy dry-run 同样只读，用于预演拟上传文件在 staged policy 下是否会 warning/block。quota ops summary 只读展示真实阻断 readiness、rollback 配置建议和最近 block/override audit replay。真实上传授权会在 `FILES_QUOTA_POLICY_ENABLED=true`、`FILES_QUOTA_POLICY_DRY_RUN=false`、kill switch 关闭、配置有效且 projected usage 达到 block 阈值时执行阻断；Admin 可通过显式 override reason 和确认短语放行。quota enforcement 不验证对象是否真实存在，不上传文件内容，不执行 mark-expired、delete-preview、delete-expired、provider 调用或转换流程。
 
 ## API 参考
 
@@ -261,6 +261,54 @@ Admin 文件库搜索只返回 `document_files` 安全摘要，用于定位文�
 | `safety.upload_blocking_executed` | 始终为 `false`。 |
 | `safety.metadata_mutated` | 始终为 `false`。 |
 | `safety.audit_events_written` | 始终为 `false`。 |
+
+### `GET /api/v1/files/quota-policy/ops-summary`
+
+- 用途：读取 Admin-only quota enforcement 运维摘要、rollback 选项和 audit replay。
+- 认证：Bearer JWT，Admin only。
+- 查询参数：
+
+| 字段 | 说明 |
+|---|---|
+| `replay_limit` | 返回最近 quota enforcement 审计事件数量，默认 20，范围 1-100。 |
+
+- 行为：
+  - 读取当前 quota policy 配置、当前 metadata 使用量和 kill switch 状态。
+  - `enforcement_ready=true` 仅表示当前配置允许真实上传阻断执行；它不代表本次读取执行了阻断。
+  - `current_usage_would_block` 使用 proposed size 0 评估当前 metadata 使用量是否已经达到 block 条件。
+  - `rollback_options[]` 只返回配置开关建议，不写配置、不重启服务、不改变运行时 settings。
+  - `audit_replay[]` 只从已有 `file.quota_policy_block` / `file.quota_policy_override` audit events 中提取安全摘要。
+  - 不创建 `document_files`。
+  - 不生成 upload URL。
+  - 不执行真实 quota enforcement。
+  - 不写 audit event。
+  - 不调用 provider、S3、清理、scheduler、parser、翻译或 Word 生成流程。
+- 响应：`FileQuotaPolicyOpsSummaryResponse`。
+
+关键字段：
+
+| 字段 | 说明 |
+|---|---|
+| `policy` | 与 dry-run 相同的归一化 policy 配置摘要。 |
+| `usage` | 当前非 `deleted` metadata bytes，`proposed_upload_size_bytes=0`。 |
+| `enforcement_ready` | policy status 为 `ready` 且 `FILES_QUOTA_POLICY_KILL_SWITCH=false` 时为 `true`。 |
+| `kill_switch_enabled` | 当前 `FILES_QUOTA_POLICY_KILL_SWITCH` 状态。 |
+| `rollback_options[].env_var` | 建议调整的环境变量，例如 `FILES_QUOTA_POLICY_KILL_SWITCH`、`FILES_QUOTA_POLICY_DRY_RUN`、`FILES_QUOTA_POLICY_ENABLED`。 |
+| `rollback_options[].target_value` | 建议的回滚目标值。 |
+| `rollback_options[].currently_effective` | 当前配置是否已经等于该 rollback 建议效果。 |
+| `audit_replay_total` | 当前命中的 quota block/override 审计事件总数。 |
+| `audit_replay_truncated` | 是否因 `replay_limit` 截断。 |
+| `audit_replay[].outcome` | 从 details 或 action 推断的 `blocked` / `overridden`。 |
+| `audit_replay[].projected_used_size_bytes` | 审计 details 中的 projected usage，旧事件缺失时为 `null`。 |
+| `audit_replay[].override_applied` | 审计 details 中的 override 是否实际应用。 |
+| `safety.read_only` | 始终为 `true`。 |
+| `safety.upload_authorization_created` | 始终为 `false`。 |
+| `safety.upload_blocking_executed` | 始终为 `false`。 |
+| `safety.metadata_mutated` | 始终为 `false`。 |
+| `safety.audit_events_written` | 始终为 `false`。 |
+| `safety.cleanup_executed` | 始终为 `false`。 |
+| `safety.scheduler_loop_executed` | 始终为 `false`。 |
+| `safety.conversion_workflow_executed` | 始终为 `false`。 |
 
 ### `POST /api/v1/files/retention/policies`
 

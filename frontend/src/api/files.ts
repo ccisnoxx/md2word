@@ -7,6 +7,7 @@ import type {
   FileLibrarySearchResponse,
   FileQuotaPolicyDryRunRequest,
   FileQuotaPolicyDryRunResponse,
+  FileQuotaPolicyOpsSummaryResponse,
   FileRetentionCleanupRunExecuteRequest,
   FileRetentionCleanupRunHistoryListResponse,
   FileRetentionCleanupRunHistoryResponse,
@@ -80,6 +81,15 @@ export const filesApi = {
       url: "/api/v1/files/quota-policy/dry-run",
       method: "POST",
       data: payload,
+    });
+  },
+
+  // 读取 Admin-only quota enforcement 运维摘要、rollback 选项和 audit replay。
+  getQuotaPolicyOpsSummary(params: { replay_limit?: number } = {}): Promise<FileQuotaPolicyOpsSummaryResponse> {
+    return apiRequest<FileQuotaPolicyOpsSummaryResponse>({
+      url: "/api/v1/files/quota-policy/ops-summary",
+      method: "GET",
+      params,
     });
   },
 

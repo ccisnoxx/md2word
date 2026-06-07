@@ -1,0 +1,6 @@
+{"file": "AGENTS.md", "reason": "Project Trellis instructions and repository-level operating constraints."}
+{"file": ".trellis/workflow.md", "reason": "Trellis phase rules; this task must remain in planning until reviewed."}
+{"file": ".codestable/attention.md", "reason": "Project-specific runtime and testing constraints relevant to avoiding unintended workflows."}
+{"file": ".trellis/tasks/archive/2026-06/06-08-phase6-closeout-acceptance/acceptance.md", "reason": "Accepted Phase 6 closeout decision and deferred real-execution scope."}
+{"file": ".codestable/roadmap/real-integration-readiness/real-integration-readiness-roadmap.md", "reason": "Roadmap source for Phase 6 foundations and Phase 7 controlled rollout candidates."}
+{"file": ".codestable/roadmap/real-integration-readiness/real-integration-readiness-items.yaml", "reason": "Dependency and status source for alert delivery, S3 delete, scheduler execute, and provider cancellation items."}

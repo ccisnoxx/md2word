@@ -1,86 +1,87 @@
 roadmap: real-integration-readiness
 created: 2026-06-07
+last_reviewed: 2026-06-08
 
 items:
   - slug: integration-control-plane
     description: 为真实外部动作增加独立 feature flags、readiness gate、kill switch 和 registry/status 暴露
     depends_on: []
-    status: planned
+    status: done
     feature: null
-    minimal_loop: false
-    notes: 所有后续真实执行 feature 的前置
+    minimal_loop: true
+    notes: "完成证据：.trellis/tasks/archive/2026-06/06-07-phase6-integration-control-plane/；Phase 6 foundation 最小闭环，真实外部/破坏性执行仍默认 blocked。"
 
   - slug: real-alert-delivery-adapter-contract
     description: 固定 alert delivery provider protocol、delivery result、history/audit details 和 fake-provider parity 测试
     depends_on: [integration-control-plane]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: null
+    notes: "完成证据：.trellis/tasks/archive/2026-06/06-07-phase6-real-alert-delivery-adapter-contract/；只接受 contract 和 fake-send parity，live Slack/email/webhook send 不属于 Phase 6。"
 
   - slug: slack-webhook-delivery-pilot
     description: 在单一 Slack/webhook destination 上启用 exact alert_codes 的真实发送 pilot
     depends_on: [real-alert-delivery-adapter-contract]
-    status: planned
+    status: dropped
     feature: null
-    minimal_loop: true
-    notes: 最小闭环；完成后能证明真实外部 delivery、dedupe、audit details 和 UI 可见状态
+    minimal_loop: false
+    notes: "从 Phase 6 移到 Phase 7 / controlled rollout；能力未放弃，但需要另起真实外部上线任务并获得 test destination、secret-ref、allowlist、rate limit、confirmation 和 rollback 批准。"
 
   - slug: provider-cancellation-semantics-verification
     description: 验证 MinerU/provider cancellation primary API、状态机、超时、幂等和失败语义，形成是否可实现的决定输入
     depends_on: [integration-control-plane]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: 如果 provider 不支持 cancel，后续 real adapter 条目应 drop
+    notes: "完成证据：.trellis/tasks/archive/2026-06/06-07-phase6-provider-cancellation-semantics-verification/；验收决定为 unsupported_by_public_docs，真实 provider cancellation 继续 blocked。"
 
   - slug: real-provider-cancellation-adapter
     description: 在 API 语义已验证后实现精确 provider operation 的真实 cancellation adapter、endpoint、audit 和 UI gating
     depends_on: [provider-cancellation-semantics-verification]
-    status: planned
+    status: dropped
     feature: null
     minimal_loop: false
-    notes: null
+    notes: "从 Phase 6 移出并保持 blocked；只有 primary provider evidence 变化或私有 provider 合同被批准后，才能作为后续 controlled rollout 候选重新建项。"
 
   - slug: s3-delete-localstack-contract
     description: 用 LocalStack 或等价 fake provider 固定 real S3 delete adapter contract、version/etag/idempotency 和 cleanup preview hash
     depends_on: [integration-control-plane]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: null
+    notes: "完成证据：.trellis/tasks/archive/2026-06/06-07-phase6-s3-delete-localstack-contract/；只接受 fake/LocalStack parity contract、exact-target metadata 和 blocked status，真实 S3 delete 不属于 Phase 6。"
 
   - slug: real-s3-delete-guarded-execution
     description: 在 exact target、signed plan、audit details 和 release gate 下启用真实 S3 object delete
     depends_on: [s3-delete-localstack-contract]
-    status: planned
+    status: dropped
     feature: null
     minimal_loop: false
-    notes: null
+    notes: "从 Phase 6 移到 Phase 7 / controlled rollout；这是破坏性执行，必须另起明确批准的真实删除上线任务。"
 
   - slug: cleanup-scheduler-controlled-execute
     description: 把 manual scheduler dry-run 推进到 disabled-by-default 自动 execute loop，复用 lock/history/signed plan/delete contract
     depends_on: [real-s3-delete-guarded-execution]
-    status: planned
+    status: dropped
     feature: null
     minimal_loop: false
-    notes: null
+    notes: "从 Phase 6 移到 Phase 7+ / controlled rollout；必须排在 guarded real S3 delete 之后，不能成为第一个真实破坏性执行入口。"
 
   - slug: quota-enforcement-ops-hardening
     description: 为 quota block/admin override 增加 Admin UI、audit details 展示、配置 readiness、runbook 和 rollback 验证
     depends_on: [integration-control-plane]
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: 后端阻断和 Admin override 已有基础实现，本条聚焦运维硬化
+    notes: "完成证据：.trellis/tasks/archive/2026-06/06-07-phase6-quota-enforcement-ops-hardening/；current ready-state upload blocking 和 Admin override 已接受为内部 enforcement，本条完成 ops hardening、rollback visibility 和 audit replay。"
 
   - slug: real-integration-audit-replay
     description: 统一真实 delivery/cancel/delete/scheduler/quota 的 audit details 查询、导出、UI 展示和 compliance replay
     depends_on: [real-alert-delivery-adapter-contract, s3-delete-localstack-contract, quota-enforcement-ops-hardening]
-    status: planned
+    status: dropped
     feature: null
     minimal_loop: false
-    notes: null
+    notes: "从 Phase 6 移到后续 controlled rollout/release evidence 阶段；真实 execution pilot 选定后再按实际能力建项。"
 
   - slug: phase6-release-gate-runbook
     description: 把真实集成 smoke、fake/local parity、OpenAPI、frontend build、rollback 和 kill-switch 检查纳入 release gate/runbook
@@ -90,7 +91,7 @@ items:
       - real-s3-delete-guarded-execution
       - cleanup-scheduler-controlled-execute
       - real-integration-audit-replay
-    status: planned
+    status: dropped
     feature: null
     minimal_loop: false
-    notes: null
+    notes: "Phase 6 closeout 已用 focused tests、OpenAPI currentness、frontend build 和 git diff --check 验收 foundation；真实上线 release gate/runbook 移到 Phase 7 / controlled rollout。"

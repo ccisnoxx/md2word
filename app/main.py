@@ -41,6 +41,7 @@ from app.domains.jobs.object_artifact_storage import ObjectArtifactStorageAdapte
 from app.domains.jobs.resource_snapshots import JobResourceSnapshotService
 from app.domains.jobs.query import JobQueryService
 from app.domains.jobs.stage import JobStageService
+from app.domains.ops.real_alert_delivery import EnvironmentSecretResolver, SlackWebhookAlertDeliveryProvider
 from app.services.renderer import DocumentIRWordRenderer
 from app.domains.resources.service import ResourceVersionService
 from app.domains.term_rules.bootstrap import TermRuleBootstrapService
@@ -312,6 +313,8 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         resource_snapshot_service=job_resource_snapshot_service,
     )
     query_service = JobQueryService(job_repository, job_file_repository, job_event_repository)
+    alert_delivery_provider = SlackWebhookAlertDeliveryProvider()
+    secret_resolver = EnvironmentSecretResolver()
     return AppRuntime(
         settings=resolved_settings,
         persistence_adapters=persistence_adapters,
@@ -358,6 +361,8 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         stage_service=stage_service,
         stage_dispatcher=stage_dispatcher,
         stage_message_store=stage_message_store,
+        alert_delivery_provider=alert_delivery_provider,
+        secret_resolver=secret_resolver,
     )
 
 

@@ -1,5 +1,5 @@
 // File: frontend/src/api/types.ts
-// Purpose: Define TypeScript contracts for backend v1 schemas, including quota override requests.
+// Purpose: Define TypeScript contracts for backend v1 schemas, including Ops rollout requests.
 export type AuthLoginRequest = {
   username: string;
   password: string;
@@ -93,15 +93,19 @@ export type HealthOpsAlertsResponse = {
   safety: HealthOpsAlertSafety;
 };
 
-export type OpsAlertDeliveryChannel = "local_outbox";
-export type OpsAlertDeliveryMode = "dry_run" | "fake_send";
+export type OpsAlertDeliveryChannel = "local_outbox" | "slack";
+export type OpsAlertDeliveryMode = "dry_run" | "fake_send" | "real_send_preview" | "real_send";
 export type OpsAlertDeliveryOutcome =
   | "deliverable"
   | "fake_delivered"
+  | "sent"
   | "deduped"
+  | "blocked"
+  | "rate_limited"
   | "skipped_not_active"
   | "skipped_rate_limited"
-  | "failed";
+  | "failed"
+  | "timed_out";
 
 export type OpsAlertDeliveryPreviewRequest = {
   alert_codes: string[];
@@ -114,6 +118,17 @@ export type OpsAlertDeliveryFakeSendRequest = OpsAlertDeliveryPreviewRequest & {
   confirmation: string;
 };
 
+export type OpsAlertDeliveryRealPreviewRequest = {
+  alert_codes: string[];
+  destination_ids: string[];
+  dedupe_window_minutes?: number;
+};
+
+export type OpsAlertDeliveryRealSendRequest = OpsAlertDeliveryRealPreviewRequest & {
+  reason: string;
+  confirmation: string;
+};
+
 export type OpsAlertDeliverySafetyResponse = {
   external_delivery_executed: boolean;
   provider_calls_executed: boolean;
@@ -121,17 +136,116 @@ export type OpsAlertDeliverySafetyResponse = {
   delete_executed: boolean;
   conversion_workflow_executed: boolean;
   audit_events_written: boolean;
+  secret_values_exposed: boolean;
+};
+
+export type OpsAlertDeliveryAdapterResultResponse = {
+  contract_version: string;
+  adapter_id: string;
+  adapter_mode: "fake" | "real";
+  channel: OpsAlertDeliveryChannel;
+  alert_code: string;
+  operation_id: string;
+  idempotency_key: string;
+  dedupe_key: string;
+  timeout_seconds: number;
+  outcome: OpsAlertDeliveryOutcome;
+  provider_request_id: string | null;
+  error_code: string | null;
+  retryable: boolean;
+  provider_calls_executed: boolean;
+  external_delivery_executed: boolean;
+  payload_persisted: boolean;
+  secret_values_exposed: boolean;
+};
+
+export type OpsAlertDeliveryAdapterContractSafetyResponse = {
+  read_only: boolean;
+  provider_calls_executed: boolean;
+  external_delivery_executed: boolean;
+  audit_events_written: boolean;
+  cleanup_executed: boolean;
+  delete_executed: boolean;
+  conversion_workflow_executed: boolean;
+  secret_values_exposed: boolean;
+};
+
+export type OpsAlertDeliveryAdapterContractResponse = {
+  generated_at: string;
+  action_mode: "adapter_contract";
+  contract_version: string;
+  fake_adapter_id: string;
+  fake_adapter_mode: "fake";
+  real_channels: OpsAlertDestinationChannel[];
+  required_request_fields: string[];
+  required_result_fields: string[];
+  required_audit_fields: string[];
+  required_safety_fields: string[];
+  parity_checks: Record<string, boolean>;
+  destination_count: number;
+  destination_channels: OpsAlertDestinationChannel[];
+  blocking_reasons: string[];
+  safety: OpsAlertDeliveryAdapterContractSafetyResponse;
+};
+
+export type OpsS3DeleteLocalStackProfileResponse = {
+  harness: "localstack";
+  endpoint_required: boolean;
+  versioned_bucket_required: boolean;
+  exact_bucket_key_required: boolean;
+  version_id_supported: boolean;
+  etag_precondition_supported: boolean;
+  runtime_executed: boolean;
+  provider_payload_persisted: boolean;
+  secrets_required_for_contract_report: boolean;
+};
+
+export type OpsS3DeleteAdapterContractSafetyResponse = {
+  read_only: boolean;
+  provider_calls_executed: boolean;
+  real_s3_delete_executed: boolean;
+  localstack_calls_executed: boolean;
+  cleanup_executed: boolean;
+  scheduler_loop_executed: boolean;
+  delete_executed: boolean;
+  metadata_mutated: boolean;
+  audit_events_written: boolean;
+  conversion_workflow_executed: boolean;
+  secret_values_exposed: boolean;
+};
+
+export type OpsS3DeleteAdapterContractResponse = {
+  generated_at: string;
+  action_mode: "adapter_contract";
+  contract_version: string;
+  fake_adapter_id: string;
+  fake_adapter_mode: "fake";
+  fake_file_retention_contract_version: string;
+  localstack_profile: OpsS3DeleteLocalStackProfileResponse;
+  storage_config_summary: Record<string, string | boolean>;
+  required_request_fields: string[];
+  required_result_fields: string[];
+  required_audit_fields: string[];
+  required_safety_fields: string[];
+  parity_checks: Record<string, boolean>;
+  blocking_reasons: string[];
+  safety: OpsS3DeleteAdapterContractSafetyResponse;
 };
 
 export type OpsAlertDeliveryItemResponse = {
   alert_code: string;
+  destination_id: string | null;
+  target_label: string | null;
   severity: string | null;
   source: string | null;
   title: string | null;
   outcome: OpsAlertDeliveryOutcome;
   dedupe_key: string | null;
+  idempotency_key: string | null;
+  missing_gates: string[];
   reason: string;
   audit_event_written: boolean;
+  adapter_result: OpsAlertDeliveryAdapterResultResponse | null;
 };
 
 export type OpsAlertDeliveryResponse = {
@@ -141,8 +255,11 @@ export type OpsAlertDeliveryResponse = {
   confirmation_phrase: string;
   dedupe_window_minutes: number;
   requested_alert_codes: string[];
+  requested_destination_ids: string[];
   delivery_id: string;
   totals: Record<string, number>;
+  gate_snapshot: Record<string, string | number | boolean | string[] | null>;
+  rollback: Record<string, string | number | boolean | null>;
   items: OpsAlertDeliveryItemResponse[];
   safety: OpsAlertDeliverySafetyResponse;
 };
@@ -212,6 +329,44 @@ export type OpsProviderCancellationFakeRequest = OpsProviderCancellationPreviewR
   confirmation: string;
 };
 
+export type OpsProviderCancellationSemanticsSourceResponse = {
+  label: string;
+  url: string;
+  source_type: "primary_docs";
+  finding: string;
+};
+
+export type OpsProviderCancellationSemanticsSafetyResponse = {
+  read_only: boolean;
+  real_provider_cancel_executed: boolean;
+  provider_calls_executed: boolean;
+  local_job_mutated: boolean;
+  queue_mutated: boolean;
+  cleanup_executed: boolean;
+  delete_executed: boolean;
+  conversion_workflow_executed: boolean;
+  audit_events_written: boolean;
+  secret_values_exposed: boolean;
+};
+
+export type OpsProviderCancellationSemanticsResponse = {
+  generated_at: string;
+  action_mode: "semantics_verification";
+  provider: OpsProviderCancellationProvider;
+  verification_status: string;
+  checked_on: string;
+  decision: string;
+  public_docs_support_real_cancel: boolean;
+  real_provider_cancel_allowed: boolean;
+  supported_provider_operations: string[];
+  documented_task_statuses: string[];
+  unsupported_operations: string[];
+  blocking_reasons: string[];
+  recommended_next_steps: string[];
+  sources: OpsProviderCancellationSemanticsSourceResponse[];
+  safety: OpsProviderCancellationSemanticsSafetyResponse;
+};
+
 export type OpsProviderCancellationTargetResponse = {
   target_type: OpsProviderCancellationTargetType;
   target_id: string;
@@ -276,6 +431,52 @@ export type OpsRecoveryActionRiskFlagsResponse = {
   calls_provider: boolean;
   sends_notification: boolean;
   deletes_data: boolean;
+};
+
+export type OpsIntegrationCapabilityId =
+  | "alert_delivery"
+  | "provider_cancellation"
+  | "s3_deletion"
+  | "cleanup_scheduler_execute"
+  | "quota_enforcement";
+export type OpsIntegrationCapabilityStatus = "blocked" | "dry_run_only" | "ready";
+export type OpsIntegrationOverallStatus = "blocked" | "partial" | "ready";
+
+export type OpsIntegrationCapabilityResponse = {
+  capability_id: OpsIntegrationCapabilityId;
+  label: string;
+  category: string;
+  status: OpsIntegrationCapabilityStatus;
+  real_execution_enabled: boolean;
+  dry_run_only: boolean;
+  kill_switch_active: boolean;
+  configured: boolean;
+  ready: boolean;
+  blocking_reasons: string[];
+  required_gates: string[];
+  safe_config: Record<string, string | number | boolean | null>;
+};
+
+export type OpsIntegrationControlPlaneSafetyResponse = {
+  read_only: boolean;
+  provider_calls_executed: boolean;
+  external_delivery_executed: boolean;
+  s3_delete_executed: boolean;
+  cleanup_scheduler_executed: boolean;
+  quota_enforcement_executed: boolean;
+  cleanup_executed: boolean;
+  delete_executed: boolean;
+  conversion_workflow_executed: boolean;
+  audit_events_written: boolean;
+  secret_values_exposed: boolean;
+};
+
+export type OpsIntegrationControlPlaneResponse = {
+  generated_at: string;
+  action_mode: "read_only";
+  overall_status: OpsIntegrationOverallStatus;
+  capabilities: OpsIntegrationCapabilityResponse[];
+  safety: OpsIntegrationControlPlaneSafetyResponse;
 };
 
 export type OpsRecoveryActionResponse = {
@@ -863,6 +1064,73 @@ export type FileQuotaPolicyDryRunResponse = {
   would_block: boolean;
   reasons: string[];
   safety: FileQuotaPolicySafetyResponse;
+};
+
+export type FileQuotaPolicyOpsSafetyResponse = {
+  read_only: boolean;
+  upload_authorization_created: boolean;
+  upload_content_written: boolean;
+  upload_blocking_executed: boolean;
+  metadata_mutated: boolean;
+  audit_events_written: boolean;
+  provider_calls_executed: boolean;
+  delete_executed: boolean;
+  cleanup_executed: boolean;
+  scheduler_loop_executed: boolean;
+  conversion_workflow_executed: boolean;
+};
+
+export type FileQuotaPolicyRollbackOptionResponse = {
+  option_id: string;
+  label: string;
+  env_var: string;
+  target_value: string;
+  current_value: string;
+  currently_effective: boolean;
+  effect: string;
+  requires_restart: boolean;
+};
+
+export type FileQuotaPolicyAuditReplayItemResponse = {
+  audit_id: string;
+  action: "file.quota_policy_block" | "file.quota_policy_override";
+  target_type: string;
+  target_id: string;
+  actor_role: string;
+  actor_id: string | null;
+  reason: string | null;
+  trace_id: string;
+  created_at: string;
+  outcome: string | null;
+  file_type: string | null;
+  filename: string | null;
+  would_block: boolean | null;
+  override_applied: boolean | null;
+  current_used_size_bytes: number | null;
+  proposed_upload_size_bytes: number | null;
+  projected_used_size_bytes: number | null;
+  quota_bytes: number | null;
+  policy_status: string | null;
+  reasons: string[];
+  details: Record<string, unknown> | null;
+};
+
+export type FileQuotaPolicyOpsSummaryResponse = {
+  generated_at: string;
+  action_mode: "quota_policy_ops_summary";
+  policy: FileQuotaPolicyConfigResponse;
+  usage: FileQuotaPolicyUsageResponse;
+  enforcement_ready: boolean;
+  current_usage_would_warn: boolean;
+  current_usage_would_block: boolean;
+  kill_switch_enabled: boolean;
+  reasons: string[];
+  rollback_options: FileQuotaPolicyRollbackOptionResponse[];
+  audit_replay: FileQuotaPolicyAuditReplayItemResponse[];
+  audit_replay_total: number;
+  audit_replay_limit: number;
+  audit_replay_truncated: boolean;
+  safety: FileQuotaPolicyOpsSafetyResponse;
 };
 
 export type DocumentJobMode = "direct_pdf_to_word" | "en2zh_pdf_to_word";
