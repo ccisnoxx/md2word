@@ -1,9 +1,9 @@
 ---
 doc_type: roadmap
 slug: real-integration-readiness
-status: active
+status: completed
 created: 2026-06-07
-last_reviewed: 2026-06-07
+last_reviewed: 2026-06-08
 tags: [phase6, operations, real-integration, alerts, provider-cancellation, s3, scheduler, quota]
 related_requirements: [fastapi-backend-productization]
 related_architecture: [backend-fastapi-service, conversion-flow]
@@ -15,23 +15,26 @@ related_architecture: [backend-fastapi-service, conversion-flow]
 
 Phase 5 已把 Ops 高风险动作推进到 fake、dry-run、preview、signed plan、cleanup lock、structured audit details、quota preflight 和前端可视化控制。系统现在能证明目标选择、确认短语、dedupe、audit details、run history 和 dry-run history 的基础合同。
 
-Phase 6 的目标不是一次性打开所有真实外部动作，而是把真实 Slack/email/webhook delivery、真实 provider cancellation、真实 S3 delete、autonomous cleanup scheduler 和 quota enforcement 运维化拆成一组可独立验收的受控子 feature。每个真实动作都必须先有 disabled-by-default 开关、secret-ref 边界、fake/local parity、timeout/error/idempotency 合同、结构化审计和 rollback/runbook，才能进入真实执行。
+Phase 6 的目标不是一次性打开所有真实外部动作，而是把真实集成上线前的 readiness foundations 落地：控制面、readiness gate、kill switch、安全配置摘要、fake/local parity、timeout/error/idempotency 合同、结构化审计证据和 quota 运维硬化。
+
+2026-06-08 closeout 决定：Phase 6 收口为 `real integration readiness foundations completed`。真实 Slack/webhook pilot、真实 S3 deletion、cleanup scheduler execute 不继续留在 Phase 6，转入 Phase 7 / 后续 controlled rollout 阶段；真实 provider cancellation 继续被 `unsupported_by_public_docs` 阻断，除非 provider 支持证据变化或有私有 provider 合同被批准。
 
 ## 2. 范围与明确不做
 
 ### 本 roadmap 覆盖
 
-- 真实集成控制面：按能力分开的 feature flag、kill switch、readiness gate 和 release gate。
-- 真实 Ops alert delivery：从 staged destination config 到 Slack/webhook/email adapter 的受控发送。
-- 真实 provider cancellation：先验证 MinerU/provider cancellation API 语义，再实现精确目标的真实取消 adapter。
-- 真实 S3 delete：从 fake contract / LocalStack parity 到受控真实对象删除。
-- Cleanup scheduler execution：从 manual scheduler dry-run 推进到 disabled-by-default 的自动执行。
+- 真实集成控制面：按能力分开的 feature flag、kill switch、readiness gate 和 blocked status。
+- 真实 Ops alert delivery foundation：固定 provider contract、fake-send parity、timeout/error/idempotency/audit evidence；不执行 live send。
+- Provider cancellation foundation：验证 MinerU/provider cancellation API 语义并记录 unsupported decision；不实现真实取消 adapter。
+- S3 delete foundation：固定 fake/LocalStack parity contract、exact target metadata、version/etag/idempotency 和 blocked status；不执行真实删除。
+- Cleanup scheduler execute foundation：保持 dry-run/history/lock/signed plan 基础，明确 execute 仍被 blocked。
 - Quota enforcement 运维硬化：当前后端阻断/override 能力后的 UI、审计展示、配置检查和回滚口径。
-- 结构化审计、delivery/delete/cancel history、runbook 和 release verification。
+- API docs、OpenAPI、Ops UI 和 focused tests 作为 readiness foundation release evidence。
 
 ### 明确不做
 
 - 不在 roadmap 本身执行任何真实外部调用、删除、scheduler loop 或 provider cancellation。
+- 不把真实 Slack/webhook pilot、真实 S3 deletion 或 cleanup scheduler execute 继续作为 Phase 6 范围；这些是 Phase 7 / 后续 controlled rollout 候选。
 - 不把所有真实集成放进一个总开关；每类能力必须独立 enable、独立回滚。
 - 不把 secret value 写进 settings JSON、API response、audit reason、audit details、history 或前端状态。
 - 不做 bulk provider cancellation、delete-all cleanup、all-alert implicit delivery；所有执行都必须精确目标。
@@ -410,87 +413,107 @@ previewed -> failed
 1. **integration-control-plane** — 为真实外部动作增加独立 feature flags、readiness gate、kill switch 和 registry/status 暴露。
    - 所属模块：integration-control-plane
    - 依赖：无
-   - 状态：planned
-   - 对应 feature：未启动
-   - 备注：所有后续真实执行 feature 的前置。
+   - 状态：done
+   - 对应 evidence：`.trellis/tasks/archive/2026-06/06-07-phase6-integration-control-plane/`
+   - 备注：Phase 6 foundation 最小闭环；Admin-only read-only capability status 已落地，真实外部/破坏性执行仍默认 blocked。
 
 2. **real-alert-delivery-adapter-contract** — 固定 alert delivery provider protocol、delivery result、history/audit details 和 fake-provider parity 测试。
    - 所属模块：alert-delivery-providers、audit-runbook-release
    - 依赖：`integration-control-plane`
-   - 状态：planned
-   - 对应 feature：未启动
+   - 状态：done
+   - 对应 evidence：`.trellis/tasks/archive/2026-06/06-07-phase6-real-alert-delivery-adapter-contract/`
+   - 备注：只接受 adapter contract 和 fake-send parity；live Slack/email/webhook send 不属于 Phase 6。
 
 3. **slack-webhook-delivery-pilot** — 在单一 Slack/webhook destination 上启用 exact alert_codes 的真实发送 pilot。
    - 所属模块：alert-delivery-providers
    - 依赖：`real-alert-delivery-adapter-contract`
-   - 状态：planned
-   - 对应 feature：未启动
-   - 备注：最小闭环；完成后能端到端展示一个真实 Ops alert 被发送、审计、dedupe 和回放。
+   - 状态：dropped
+   - 对应 evidence：未启动
+   - 备注：从 Phase 6 移到 Phase 7 / controlled rollout；能力未放弃，但必须另起真实外部上线任务并获得测试 destination、secret-ref、allowlist、rate limit、confirmation 和 rollback 批准。
 
 4. **provider-cancellation-semantics-verification** — 验证 MinerU/provider cancellation primary API、状态机、超时、幂等和失败语义，形成是否可实现的决定输入。
    - 所属模块：provider-cancellation-adapters
    - 依赖：`integration-control-plane`
-   - 状态：planned
-   - 对应 feature：未启动
-   - 备注：如果 provider 不支持 cancel，后续 real adapter 条目应 drop，不得硬做。
+   - 状态：done
+   - 对应 evidence：`.trellis/tasks/archive/2026-06/06-07-phase6-provider-cancellation-semantics-verification/`
+   - 备注：验收决定为 `unsupported_by_public_docs`；真实 provider cancellation 继续 blocked。
 
 5. **real-provider-cancellation-adapter** — 在 API 语义已验证后实现精确 provider operation 的真实 cancellation adapter、endpoint、audit 和 UI gating。
    - 所属模块：provider-cancellation-adapters、audit-runbook-release
    - 依赖：`provider-cancellation-semantics-verification`
-   - 状态：planned
-   - 对应 feature：未启动
+   - 状态：dropped
+   - 对应 evidence：未启动
+   - 备注：从 Phase 6 移出并保持 blocked；只有 primary provider evidence 变化或私有 provider 合同被批准后，才能作为后续 controlled rollout 候选重新建项。
 
 6. **s3-delete-localstack-contract** — 用 LocalStack 或等价 fake provider 固定 real S3 delete adapter contract、version/etag/idempotency 和 cleanup preview hash。
    - 所属模块：cloud-object-delete-adapters
    - 依赖：`integration-control-plane`
-   - 状态：planned
-   - 对应 feature：未启动
+   - 状态：done
+   - 对应 evidence：`.trellis/tasks/archive/2026-06/06-07-phase6-s3-delete-localstack-contract/`
+   - 备注：只接受 fake/LocalStack parity contract、exact-target metadata 和 blocked status；真实 S3 delete 不属于 Phase 6。
 
 7. **real-s3-delete-guarded-execution** — 在 exact target、signed plan、audit details 和 release gate 下启用真实 S3 object delete。
    - 所属模块：cloud-object-delete-adapters、cleanup-scheduler-execution
    - 依赖：`s3-delete-localstack-contract`
-   - 状态：planned
-   - 对应 feature：未启动
+   - 状态：dropped
+   - 对应 evidence：未启动
+   - 备注：从 Phase 6 移到 Phase 7 / controlled rollout；这是破坏性执行，必须另起明确批准的真实删除上线任务。
 
 8. **cleanup-scheduler-controlled-execute** — 把 manual scheduler dry-run 推进到 disabled-by-default 自动 execute loop，复用 lock/history/signed plan/delete contract。
    - 所属模块：cleanup-scheduler-execution
    - 依赖：`real-s3-delete-guarded-execution`
-   - 状态：planned
-   - 对应 feature：未启动
+   - 状态：dropped
+   - 对应 evidence：未启动
+   - 备注：从 Phase 6 移到 Phase 7+ / controlled rollout；必须排在 guarded real S3 delete 之后，不能成为第一个真实破坏性执行入口。
 
 9. **quota-enforcement-ops-hardening** — 为 quota block/admin override 增加 Admin UI、audit details 展示、配置 readiness、runbook 和 rollback 验证。
    - 所属模块：quota-enforcement-operations、audit-runbook-release
    - 依赖：`integration-control-plane`
-   - 状态：planned
-   - 对应 feature：未启动
+   - 状态：done
+   - 对应 evidence：`.trellis/tasks/archive/2026-06/06-07-phase6-quota-enforcement-ops-hardening/`
+   - 备注：current ready-state upload blocking 和 Admin override 已接受为内部 enforcement；Phase 6 完成的是 ops hardening、rollback visibility 和 audit replay。
 
 10. **real-integration-audit-replay** — 统一真实 delivery/cancel/delete/scheduler/quota 的 audit details 查询、导出、UI 展示和 compliance replay。
     - 所属模块：audit-runbook-release
     - 依赖：`real-alert-delivery-adapter-contract`、`s3-delete-localstack-contract`、`quota-enforcement-ops-hardening`
-    - 状态：planned
-    - 对应 feature：未启动
+    - 状态：dropped
+    - 对应 evidence：未启动
+    - 备注：从 Phase 6 移到后续 controlled rollout/release evidence 阶段；真实 execution pilot 选定后再按实际能力建项。
 
 11. **phase6-release-gate-runbook** — 把真实集成 smoke、fake/local parity、OpenAPI、frontend build、rollback 和 kill-switch 检查纳入 release gate/runbook。
     - 所属模块：audit-runbook-release、integration-control-plane
     - 依赖：`slack-webhook-delivery-pilot`、`real-provider-cancellation-adapter`、`real-s3-delete-guarded-execution`、`cleanup-scheduler-controlled-execute`、`real-integration-audit-replay`
-    - 状态：planned
-    - 对应 feature：未启动
+    - 状态：dropped
+    - 对应 evidence：未启动
+    - 备注：Phase 6 closeout 已用 focused tests、OpenAPI currentness、frontend build 和 `git diff --check` 验收 foundation；真实上线 release gate/runbook 移到 Phase 7 / controlled rollout。
 
-**最小闭环**：第 3 条 `slack-webhook-delivery-pilot` 做完后，系统能在一个 exact alert code + exact destination 上完成真实外部 delivery，同时保留 gate snapshot、dedupe、audit details、delivery result 和 UI 可见状态。
+**最小闭环**：`integration-control-plane` 是 Phase 6 foundation 最小闭环。真实 Slack/webhook delivery 不再作为 Phase 6 最小闭环；它是 Phase 7 / controlled rollout 候选。
 
-## 6. 排期思路
+## 6. 排期结果
 
-先做 `integration-control-plane`，因为所有真实动作都需要独立开关、kill switch 和 readiness gate。随后选择告警 delivery 做最小闭环：它不会删除对象、不会改变 job 状态，风险低于 provider cancellation、S3 delete 和 scheduler execute，但足以验证 secret-ref、adapter、timeout/error、dedupe、audit 和 UI 的真实外部调用链路。
+Phase 6 实际完成顺序为：
 
-Provider cancellation 必须先做语义验证；本仓库当前只能证明 fake cancellation 和 adapter hardening，不能假设 MinerU 支持取消。S3 deletion 先走 LocalStack/fake parity，再进入真实删除。Scheduler execute 必须排在 real S3 delete 之后，否则自动化无法正确处理 S3 文件。Quota enforcement 已有后端阻断/override 基础，Phase 6 只补运维 UI、审计展示和回滚门禁。
+1. `integration-control-plane`
+2. `quota-enforcement-ops-hardening`
+3. `real-alert-delivery-adapter-contract`
+4. `provider-cancellation-semantics-verification`
+5. `s3-delete-localstack-contract`
+
+Phase 6 closeout 决定不再继续推进真实执行。后续阶段建议顺序：
+
+1. 如果要选择最低风险真实外部调用，先开 Phase 7 `slack-webhook-delivery-pilot`，但必须先批准真实测试 destination、secret-ref、allowlist、rate limit、confirmation phrase 和 rollback。
+2. `real-s3-delete-guarded-execution` 单独作为破坏性 controlled rollout，不与 Slack/webhook pilot 合并。
+3. `cleanup-scheduler-controlled-execute` 必须排在 guarded real S3 delete 之后，并保持 disabled-by-default。
+4. `real-provider-cancellation-adapter` 只有在 provider 支持证据变化或私有合同被批准后才重新进入计划。
 
 ## 7. 观察项
 
-- Phase 5 acceptance closeout 中记录的 deferred work 已部分变化：provider cancellation adapter hardening 和 quota enforcement 后端阻断已完成，后续验收文档如需保持历史准确性不应改写旧结论，但新的 Phase 6 feature design 需要读取当前代码而不是旧 closeout。
-- `backend-fastapi-service` architecture 的 last_reviewed 是 2026-06-03，尚未描述 Phase 5 Ops contracts、quota enforcement、cleanup run history/lock/signed plan 等现状；后续 Phase 6 子 feature acceptance 时应回写 architecture。
-- 真实 provider cancellation 的可行性仍未知；如果 primary provider 文档或 API 不支持取消，应把 `real-provider-cancellation-adapter` 标记 dropped，并保留 fake/local audit 合同。
-- 当前 release check 偏后端主链路与 OpenAPI，不覆盖外部 Slack/webhook、LocalStack/S3、scheduler loop 或 secret-ref resolution；`phase6-release-gate-runbook` 需要补齐。
+- Phase 6 已从“打开真实执行”收窄为“真实集成 readiness foundations completed”。旧的 Phase 6 子项中仍涉及真实执行的部分已经在本 roadmap 标记 `dropped`，语义是移出 Phase 6，不代表能力永久放弃。
+- `backend-fastapi-service` architecture 的 last_reviewed 是 2026-06-03，尚未描述 Phase 5/6 Ops contracts、quota enforcement、cleanup run history/lock/signed plan、integration control plane、alert delivery contract、provider semantics report 和 S3 delete contract 等现状；后续应由 acceptance/architecture 流程回写。
+- 真实 provider cancellation 当前被 `unsupported_by_public_docs` 阻断；不要把 fake cancellation hardening 解读为真实 provider cancellation readiness。
+- 当前 release check 偏后端主链路与 OpenAPI，不覆盖真实 Slack/webhook、真实 S3、scheduler execute 或 secret-ref resolution；这些检查属于 Phase 7 / controlled rollout。
 
 ## 8. 变更日志
 
 - 2026-06-07：创建 Phase 6 real integration readiness roadmap；拆分控制面、真实告警投递、真实 provider cancellation、真实 S3 delete、scheduler execute、quota 运维硬化和审计/runbook release gate。
+- 2026-06-08：按 Trellis Phase 6 closeout 更新 roadmap 状态；Phase 6 收口为 readiness foundations completed，真实 Slack/webhook pilot、真实 S3 delete、cleanup scheduler execute 和真实上线 release gate 移到 Phase 7 / controlled rollout。

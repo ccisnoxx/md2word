@@ -192,13 +192,13 @@ Additional per-capability constraints:
 | phase5-evidence-backfill-audit-details-ui | Low | Current dirty worktree | Backfilled Trellis evidence for existing Audit Log details UI. | Completed: `.trellis/tasks/archive/2026-06/06-07-phase5-evidence-backfill-audit-details-ui/`. |
 | phase5-evidence-backfill-provider-cancellation-hardening | Low | Current dirty worktree | Backfilled Trellis evidence for existing fake adapter hardening. | Completed: `.trellis/tasks/archive/2026-06/06-07-phase5-evidence-backfill-provider-cancellation-hardening/`. |
 | phase5-evidence-backfill-quota-enforcement | Medium | Current dirty worktree | Backfilled Trellis evidence for quota ready upload blocking and Admin override. | Completed: `.trellis/tasks/archive/2026-06/06-07-phase5-evidence-backfill-quota-enforcement/`. |
-| integration-control-plane | Low | Phase 5 evidence backfilled | Shared capability flags, kill switches, readiness summaries, and safe status exposure. | All real capabilities report disabled/blocked by default and no provider calls are possible. |
-| quota-enforcement-ops-hardening | Medium | Phase 5 quota evidence, integration-control-plane | UI consistency, readiness display, rollback/runbook, audit replay for quota block/override. | Admin can see quota enforcement state and rollback steps without changing upload behavior unexpectedly. |
-| real-alert-delivery-adapter-contract | Medium | integration-control-plane | Provider protocol, fake-provider parity, history/audit schema, timeout/error/idempotency contract. | Tests prove adapter contract without live Slack/email/webhook calls. |
+| integration-control-plane | Low | Phase 5 evidence backfilled | Implemented shared capability flags, kill switches, readiness summaries, and safe status exposure. | Completed: `.trellis/tasks/archive/2026-06/06-07-phase6-integration-control-plane/`; all real external/destructive capabilities report disabled or blocked by default and no provider calls are possible. |
+| quota-enforcement-ops-hardening | Medium | Phase 5 quota evidence, integration-control-plane | UI consistency, readiness display, rollback/runbook, audit replay for quota block/override. | Completed: `.trellis/tasks/archive/2026-06/06-07-phase6-quota-enforcement-ops-hardening/`; Admin can see quota enforcement state, rollback switches, read-only safety flags, and block/override audit replay without changing upload behavior. |
+| real-alert-delivery-adapter-contract | Medium | integration-control-plane | Provider protocol, fake-provider parity, history/audit schema, timeout/error/idempotency contract. | Completed: `.trellis/tasks/archive/2026-06/06-07-phase6-real-alert-delivery-adapter-contract/`; tests prove adapter contract and fake parity without live Slack/email/webhook calls. |
 | slack-webhook-delivery-pilot | Medium-High | real-alert-delivery-adapter-contract | One exact Slack or webhook destination, disabled by default, explicit confirmation. | Real send only possible with explicit enablement and user-approved external service setup. |
-| provider-cancellation-semantics-verification | Medium | integration-control-plane | Read primary provider docs/API semantics and decide whether real cancel is supported. | Written decision says supported, unsupported, or blocked; no real cancellation occurs. |
+| provider-cancellation-semantics-verification | Medium | integration-control-plane | Read primary provider docs/API semantics and decide whether real cancel is supported. | Completed: `.trellis/tasks/archive/2026-06/06-07-phase6-provider-cancellation-semantics-verification/`; written decision is `unsupported_by_public_docs`, no real cancellation occurs. |
 | real-provider-cancellation-adapter | High | provider-cancellation-semantics-verification | Real adapter and UI/API gate if provider supports cancellation. | Exact target cancellation is audited/idempotent and never auto-mutates local jobs. |
-| s3-delete-localstack-contract | Medium | integration-control-plane | LocalStack or equivalent fake-provider contract for exact S3 delete. | Contract proves version/etag/idempotency/metadata rules without real S3 deletion. |
+| s3-delete-localstack-contract | Medium | integration-control-plane | LocalStack or equivalent fake-provider contract for exact S3 delete. | Completed: `.trellis/tasks/archive/2026-06/06-07-phase6-s3-delete-localstack-contract/`; contract proves version/etag/idempotency/metadata rules without real S3 deletion, LocalStack execution, metadata mutation, cleanup execute, or scheduler execute. |
 | real-s3-delete-guarded-execution | High | s3-delete-localstack-contract | Real S3 delete behind exact target, signed plan, audit/history, and kill switch. | Real delete only executes under explicit enablement and verified release gate. |
 | cleanup-scheduler-controlled-execute | High | real-s3-delete-guarded-execution | Disabled-by-default scheduler execute loop using lock/history/signed plan. | Scheduler cannot execute unless all gates pass; dry-run remains default. |
 | real-integration-audit-replay | Medium | Audit UI evidence, adapter contracts | Unified audit details schema, replay/export, UI review of real integration evidence. | Compliance evidence can be replayed without exposing secrets. |
@@ -206,14 +206,12 @@ Additional per-capability constraints:
 
 ## Recommended First Implementation Order
 
-1. Implement `integration-control-plane` with all real capabilities disabled by default.
-2. Harden `quota-enforcement-ops-hardening` because upload blocking already exists and should get observability and rollback first.
-3. Implement `real-alert-delivery-adapter-contract` without live external sending.
-4. Decide between `slack-webhook-delivery-pilot` and `provider-cancellation-semantics-verification`:
-   - Choose alert pilot first for the smallest real external integration loop if the user approves a test destination and secret-ref setup.
-   - Choose provider semantics verification first if cancellation risk is blocking operations decisions.
-5. Run `s3-delete-localstack-contract` before any real S3 deletion.
-6. Defer `real-s3-delete-guarded-execution` and `cleanup-scheduler-controlled-execute` until exact-target delete safety, signed plan behavior, and rollback are proven.
+1. `quota-enforcement-ops-hardening` is completed; upload blocking now has Admin-visible readiness, rollback guidance, read-only safety flags, and audit replay.
+2. `real-alert-delivery-adapter-contract` is completed; fake alert delivery now emits same-version adapter evidence and contract report while real sending remains blocked.
+3. `provider-cancellation-semantics-verification` is completed; current public MinerU docs do not expose a provider-side cancellation contract, so real provider cancellation remains blocked.
+4. `s3-delete-localstack-contract` is completed; Ops now exposes the S3 delete adapter contract, LocalStack profile, and file-retention fake parity while real S3 delete remains blocked.
+5. Choose `slack-webhook-delivery-pilot` only after the user approves a test destination and secret-ref setup, or proceed to `real-s3-delete-guarded-execution` only after accepting the destructive-risk gates.
+6. Defer `cleanup-scheduler-controlled-execute` until exact-target real S3 delete safety, signed plan behavior, and rollback are proven.
 7. Build `real-integration-audit-replay` and `phase6-release-gate-runbook` once the first real integration contract is stable, then extend them per capability.
 
 ## Open Questions For Review

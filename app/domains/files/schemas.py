@@ -512,3 +512,78 @@ class FileQuotaPolicyDryRunResponse(BaseModel):
     would_block: bool
     reasons: list[str] = Field(default_factory=list)
     safety: FileQuotaPolicySafetyResponse
+
+
+class FileQuotaPolicyOpsSafetyResponse(BaseModel):
+    """声明 quota ops summary 没有执行阻断、rollback、清理或外部副作用。"""
+
+    read_only: bool = True
+    upload_authorization_created: bool = False
+    upload_content_written: bool = False
+    upload_blocking_executed: bool = False
+    metadata_mutated: bool = False
+    audit_events_written: bool = False
+    provider_calls_executed: bool = False
+    delete_executed: bool = False
+    cleanup_executed: bool = False
+    scheduler_loop_executed: bool = False
+    conversion_workflow_executed: bool = False
+
+
+class FileQuotaPolicyRollbackOptionResponse(BaseModel):
+    """返回一个只读 rollback 开关建议，不代表后端已执行配置变更。"""
+
+    option_id: str
+    label: str
+    env_var: str
+    target_value: str
+    current_value: str
+    currently_effective: bool
+    effect: str
+    requires_restart: bool
+
+
+class FileQuotaPolicyAuditReplayItemResponse(BaseModel):
+    """返回 quota enforcement 审计事件的安全重放摘要。"""
+
+    audit_id: str
+    action: Literal["file.quota_policy_block", "file.quota_policy_override"]
+    target_type: str
+    target_id: str
+    actor_role: str
+    actor_id: str | None = None
+    reason: str | None = None
+    trace_id: str
+    created_at: datetime
+    outcome: str | None = None
+    file_type: str | None = None
+    filename: str | None = None
+    would_block: bool | None = None
+    override_applied: bool | None = None
+    current_used_size_bytes: int | None = None
+    proposed_upload_size_bytes: int | None = None
+    projected_used_size_bytes: int | None = None
+    quota_bytes: int | None = None
+    policy_status: str | None = None
+    reasons: list[str] = Field(default_factory=list)
+    details: dict[str, Any] | None = None
+
+
+class FileQuotaPolicyOpsSummaryResponse(BaseModel):
+    """返回 Admin-only quota enforcement 运维摘要、rollback 和 audit replay。"""
+
+    generated_at: datetime
+    action_mode: Literal["quota_policy_ops_summary"]
+    policy: FileQuotaPolicyConfigResponse
+    usage: FileQuotaPolicyUsageResponse
+    enforcement_ready: bool
+    current_usage_would_warn: bool
+    current_usage_would_block: bool
+    kill_switch_enabled: bool
+    reasons: list[str] = Field(default_factory=list)
+    rollback_options: list[FileQuotaPolicyRollbackOptionResponse] = Field(default_factory=list)
+    audit_replay: list[FileQuotaPolicyAuditReplayItemResponse] = Field(default_factory=list)
+    audit_replay_total: int
+    audit_replay_limit: int
+    audit_replay_truncated: bool
+    safety: FileQuotaPolicyOpsSafetyResponse

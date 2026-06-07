@@ -41,17 +41,25 @@ Planning/design only. No product implementation is included in this task.
    - Purpose: reconcile Phase 5 closeout drift by accepting current ready upload blocking and Admin override behavior.
    - Verification target: quota upload blocking, override, dry-run non-enforcement, API docs/OpenAPI consistency, and UI wording audit.
 
-4. `integration-control-plane`
+4. `integration-control-plane` - completed in `.trellis/tasks/archive/2026-06/06-07-phase6-integration-control-plane/`
    - Purpose: create shared disabled-by-default readiness/kill-switch control for all real integrations.
    - Verification target: all capabilities blocked by default; no provider/delete/scheduler side effect reachable.
 
-5. `quota-enforcement-ops-hardening`
+5. `quota-enforcement-ops-hardening` - completed in `.trellis/tasks/archive/2026-06/06-07-phase6-quota-enforcement-ops-hardening/`
    - Purpose: make existing quota enforcement production-operable before introducing new real integrations.
-   - Verification target: Admin-visible state, rollback path, audit replay, and no change to existing upload authorization behavior except documented config states.
+   - Verification target: Admin-visible state, rollback path, audit replay, read-only safety flags, and no change to existing upload authorization behavior except documented config states.
 
-6. `real-alert-delivery-adapter-contract`
+6. `real-alert-delivery-adapter-contract` - completed in `.trellis/tasks/archive/2026-06/06-07-phase6-real-alert-delivery-adapter-contract/`
    - Purpose: define real alert provider adapter contract without calling live external services.
-   - Verification target: fake/local parity, timeout/error/idempotency/dedupe/audit details tests.
+   - Verification target: fake/local parity, timeout/error/idempotency/dedupe/audit details tests, with real delivery still blocked.
+
+7. `provider-cancellation-semantics-verification` - completed in `.trellis/tasks/archive/2026-06/06-07-phase6-provider-cancellation-semantics-verification/`
+   - Purpose: verify whether current public MinerU docs support provider-side cancellation.
+   - Verification target: Admin-visible read-only decision, source evidence, control-plane blocked status, and no provider calls or local mutation.
+
+8. `s3-delete-localstack-contract` - completed in `.trellis/tasks/archive/2026-06/06-07-phase6-s3-delete-localstack-contract/`
+   - Purpose: define S3 delete adapter contract and LocalStack/fake parity before any real delete work.
+   - Verification target: Admin-only read-only Ops contract, linked file-retention fake contract version, control-plane blocked status, frontend visibility, OpenAPI/docs, and proof that no S3/LocalStack delete, cleanup execute, scheduler execute, metadata mutation, provider call, or audit write occurs.
 
 ## Verification For This Planning Task
 
@@ -62,5 +70,5 @@ Planning/design only. No product implementation is included in this task.
 
 - The dirty worktree includes Phase 5 product changes that this task did not modify. Future implementation tasks must isolate their diffs carefully.
 - Quota upload blocking is already present in current code. Until Phase 5 evidence is backfilled, release documentation and current behavior remain partially inconsistent.
-- Provider cancellation real feasibility is unknown until primary provider semantics are verified.
+- Provider cancellation real feasibility is currently blocked: public MinerU docs checked in `provider-cancellation-semantics-verification` do not expose a real cancellation contract.
 - Real S3 deletion and scheduler execute carry destructive risk and must stay behind future explicit approval gates.

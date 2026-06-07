@@ -9,7 +9,7 @@
         <p>查看已过保留期的 document_files，先标记 expired，再按 dry-run 结果手动物理删除本地文件。</p>
       </div>
       <div class="heading-actions">
-        <el-button :icon="Refresh" :loading="loading || storageLoading || policyLoading || libraryLoading || quotaPolicyLoading || cleanupHistoryLoading || schedulerDryRunLoading" @click="refreshRetentionPage">刷新</el-button>
+        <el-button :icon="Refresh" :loading="loading || storageLoading || policyLoading || libraryLoading || quotaPolicyLoading || quotaOpsLoading || cleanupHistoryLoading || schedulerDryRunLoading" @click="refreshRetentionPage">刷新</el-button>
         <el-button
           type="warning"
           :icon="Finished"
@@ -276,6 +276,124 @@
           <el-tag v-for="reason in quotaPolicyReport.reasons" :key="reason" effect="plain">
             {{ reason }}
           </el-tag>
+        </div>
+
+        <div v-loading="quotaOpsLoading" class="quota-ops-panel" aria-label="quota enforcement ops summary">
+          <div class="section-header">
+            <div>
+              <h3 class="section-title">Quota Enforcement Ops</h3>
+              <p class="section-subtitle">只读展示真实阻断 readiness、rollback 开关建议和最近 quota enforcement audit replay。</p>
+            </div>
+            <div class="toolbar">
+              <el-tag v-if="quotaOpsSummary" effect="plain" :type="quotaOpsReadinessTag(quotaOpsSummary.enforcement_ready)">
+                enforcement_ready={{ String(quotaOpsSummary.enforcement_ready) }}
+              </el-tag>
+              <el-tag v-if="quotaOpsSummary" effect="plain" :type="quotaOpsSummary.kill_switch_enabled ? 'warning' : 'success'">
+                kill_switch={{ String(quotaOpsSummary.kill_switch_enabled) }}
+              </el-tag>
+              <el-tag v-if="quotaOpsSummary" effect="plain">
+                replay={{ quotaOpsSummary.audit_replay.length }}/{{ quotaOpsSummary.audit_replay_total }}
+              </el-tag>
+              <el-button :loading="quotaOpsLoading" @click="loadQuotaPolicyOpsSummary">刷新 ops</el-button>
+            </div>
+          </div>
+
+          <div v-if="quotaOpsSummary" class="quota-result-grid">
+            <article class="quota-result-card">
+              <span>Current Used</span>
+              <strong>{{ formatBytes(quotaOpsSummary.usage.current_used_size_bytes) }}</strong>
+              <small>{{ formatRatio(quotaOpsSummary.usage.current_usage_ratio) }} of quota</small>
+            </article>
+            <article class="quota-result-card">
+              <span>Policy</span>
+              <strong>{{ quotaOpsSummary.policy.status }}</strong>
+              <small>generated={{ formatDateTime(quotaOpsSummary.generated_at) }}</small>
+            </article>
+            <article class="quota-result-card">
+              <span>Current Block</span>
+              <strong>{{ String(quotaOpsSummary.current_usage_would_block) }}</strong>
+              <small>warn={{ String(quotaOpsSummary.current_usage_would_warn) }}</small>
+            </article>
+            <article class="quota-result-card">
+              <span>Replay Limit</span>
+              <strong>{{ quotaOpsSummary.audit_replay_limit }}</strong>
+              <small>truncated={{ String(quotaOpsSummary.audit_replay_truncated) }}</small>
+            </article>
+          </div>
+
+          <div v-if="quotaOpsSummary?.reasons.length" class="quota-reason-list">
+            <el-tag v-for="reason in quotaOpsSummary.reasons" :key="reason" effect="plain">
+              {{ reason }}
+            </el-tag>
+          </div>
+
+          <div v-if="quotaOpsSummary" class="safety-grid" aria-label="quota ops safety flags">
+            <el-tag
+              v-for="item in quotaOpsSafetyEntries"
+              :key="item.label"
+              :type="item.type"
+              effect="plain"
+            >
+              {{ item.label }}={{ String(item.value) }}
+            </el-tag>
+          </div>
+
+          <div v-if="quotaOpsSummary" class="quota-ops-subsection">
+            <h4 class="subsection-title">Rollback Options</h4>
+            <el-table :data="quotaOpsSummary.rollback_options" empty-text="暂无 rollback 选项" table-layout="fixed">
+              <el-table-column prop="option_id" label="Option" min-width="170" />
+              <el-table-column prop="env_var" label="Env Var" min-width="230">
+                <template #default="{ row }"><span class="mono">{{ row.env_var }}</span></template>
+              </el-table-column>
+              <el-table-column prop="target_value" label="Target" width="100">
+                <template #default="{ row }"><span class="mono">{{ row.target_value }}</span></template>
+              </el-table-column>
+              <el-table-column prop="current_value" label="Current" width="110">
+                <template #default="{ row }"><span class="mono">{{ row.current_value }}</span></template>
+              </el-table-column>
+              <el-table-column prop="currently_effective" label="Effective" width="110">
+                <template #default="{ row }">
+                  <el-tag :type="row.currently_effective ? 'success' : 'info'" size="small" effect="plain">
+                    {{ String(row.currently_effective) }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="effect" label="Effect" min-width="260" show-overflow-tooltip />
+            </el-table>
+          </div>
+
+          <div v-if="quotaOpsSummary" class="quota-ops-subsection">
+            <h4 class="subsection-title">Audit Replay</h4>
+            <el-table :data="quotaOpsSummary.audit_replay" empty-text="暂无 quota enforcement 审计事件" table-layout="fixed">
+              <el-table-column prop="created_at" label="Created" min-width="170">
+                <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
+              </el-table-column>
+              <el-table-column prop="action" label="Action" min-width="210">
+                <template #default="{ row }"><span class="mono">{{ row.action }}</span></template>
+              </el-table-column>
+              <el-table-column prop="outcome" label="Outcome" width="120">
+                <template #default="{ row }">
+                  <el-tag :type="quotaAuditOutcomeTag(row.outcome)" size="small" effect="plain">{{ row.outcome || "-" }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="trace_id" label="Trace" min-width="180">
+                <template #default="{ row }"><span class="mono">{{ row.trace_id }}</span></template>
+              </el-table-column>
+              <el-table-column label="Usage" min-width="190">
+                <template #default="{ row }">
+                  {{ formatBytes(row.projected_used_size_bytes) }} / {{ formatBytes(row.quota_bytes) }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="override_applied" label="Override" width="110">
+                <template #default="{ row }">
+                  <el-tag :type="row.override_applied ? 'warning' : 'info'" size="small" effect="plain">
+                    {{ String(row.override_applied ?? false) }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="reason" label="Reason" min-width="260" show-overflow-tooltip />
+            </el-table>
+          </div>
         </div>
       </div>
 
@@ -927,6 +1045,7 @@ import type {
   FileLibrarySearchResponse,
   FileLibrarySort,
   FileQuotaPolicyDryRunResponse,
+  FileQuotaPolicyOpsSummaryResponse,
   FileRetentionCandidateResponse,
   FileRetentionCleanupRunHistoryListResponse,
   FileRetentionCleanupRunHistoryResponse,
@@ -969,6 +1088,7 @@ const policyList = ref<Awaited<ReturnType<typeof filesApi.listRetentionPolicies>
 const policyImpact = ref<FileRetentionPolicyImpactResponse | null>(null);
 const storageUsage = ref<FileStorageUsageResponse | null>(null);
 const quotaPolicyReport = ref<FileQuotaPolicyDryRunResponse | null>(null);
+const quotaOpsSummary = ref<FileQuotaPolicyOpsSummaryResponse | null>(null);
 const librarySearch = ref<FileLibrarySearchResponse | null>(null);
 const cleanupRunHistory = ref<FileRetentionCleanupRunHistoryListResponse | null>(null);
 const selectedCleanupRunHistory = ref<FileRetentionCleanupRunHistoryResponse | null>(null);
@@ -983,6 +1103,7 @@ const policyLoading = ref(false);
 const policySaving = ref(false);
 const storageLoading = ref(false);
 const quotaPolicyLoading = ref(false);
+const quotaOpsLoading = ref(false);
 const libraryLoading = ref(false);
 const cleanupHistoryLoading = ref(false);
 const error = ref<ApiClientError | null>(null);
@@ -1159,13 +1280,33 @@ const quotaPolicySafetyEntries = computed(() => {
     { label: "conversion_workflow_executed", value: safety.conversion_workflow_executed, type: safety.conversion_workflow_executed ? "danger" : "success" },
   ] satisfies Array<{ label: string; value: boolean; type: StatusTag }>;
 });
+const quotaOpsSafetyEntries = computed(() => {
+  if (!quotaOpsSummary.value) {
+    return [];
+  }
+  const safety = quotaOpsSummary.value.safety;
+  return [
+    { label: "read_only", value: safety.read_only, type: safety.read_only ? "success" : "danger" },
+    { label: "upload_authorization_created", value: safety.upload_authorization_created, type: safety.upload_authorization_created ? "danger" : "success" },
+    { label: "upload_content_written", value: safety.upload_content_written, type: safety.upload_content_written ? "danger" : "success" },
+    { label: "upload_blocking_executed", value: safety.upload_blocking_executed, type: safety.upload_blocking_executed ? "danger" : "success" },
+    { label: "metadata_mutated", value: safety.metadata_mutated, type: safety.metadata_mutated ? "danger" : "success" },
+    { label: "audit_events_written", value: safety.audit_events_written, type: safety.audit_events_written ? "warning" : "info" },
+    { label: "provider_calls_executed", value: safety.provider_calls_executed, type: safety.provider_calls_executed ? "danger" : "success" },
+    { label: "delete_executed", value: safety.delete_executed, type: safety.delete_executed ? "danger" : "success" },
+    { label: "cleanup_executed", value: safety.cleanup_executed, type: safety.cleanup_executed ? "danger" : "success" },
+    { label: "scheduler_loop_executed", value: safety.scheduler_loop_executed, type: safety.scheduler_loop_executed ? "danger" : "success" },
+    { label: "conversion_workflow_executed", value: safety.conversion_workflow_executed, type: safety.conversion_workflow_executed ? "danger" : "success" },
+  ] satisfies Array<{ label: string; value: boolean; type: StatusTag }>;
+});
 
-// 同步刷新 retention plan、policy governance 和 storage usage。
+// 同步刷新 retention plan、policy governance、storage usage 和 quota ops summary。
 function refreshRetentionPage(): void {
   void loadFileLibrarySearch();
   void loadPlan();
   void loadPolicies();
   void loadStorageUsage();
+  void loadQuotaPolicyOpsSummary();
   void loadCleanupRunHistory();
 }
 
@@ -1277,6 +1418,19 @@ async function runQuotaPolicyDryRun(): Promise<void> {
     error.value = normalizeApiError(caught);
   } finally {
     quotaPolicyLoading.value = false;
+  }
+}
+
+// 读取 quota enforcement ops summary；只显示 rollback 和 audit replay，不执行回滚。
+async function loadQuotaPolicyOpsSummary(): Promise<void> {
+  quotaOpsLoading.value = true;
+  error.value = null;
+  try {
+    quotaOpsSummary.value = await filesApi.getQuotaPolicyOpsSummary({ replay_limit: 20 });
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    quotaOpsLoading.value = false;
   }
 }
 
@@ -1743,6 +1897,25 @@ function quotaPolicyStatusTag(status: string): StatusTag {
   return "info";
 }
 
+// 将 quota enforcement readiness 映射为运维状态标签。
+function quotaOpsReadinessTag(enforcementReady: boolean): StatusTag {
+  return enforcementReady ? "success" : "warning";
+}
+
+// 将 quota audit replay outcome 映射为结果标签样式。
+function quotaAuditOutcomeTag(outcome: string | null): StatusTag {
+  if (outcome === "blocked") {
+    return "danger";
+  }
+  if (outcome === "overridden") {
+    return "warning";
+  }
+  if (outcome === "allowed") {
+    return "success";
+  }
+  return "info";
+}
+
 // 将 cleanup run history 状态映射为标签样式。
 function cleanupHistoryStatusTag(status: FileRetentionCleanupRunHistoryStatus): StatusTag {
   if (status === "executed") {
@@ -1787,6 +1960,7 @@ onMounted(() => {
   void loadPlan();
   void loadPolicies();
   void loadStorageUsage();
+  void loadQuotaPolicyOpsSummary();
   void loadCleanupRunHistory();
 });
 </script>
@@ -1979,6 +2153,19 @@ onMounted(() => {
   gap: 8px;
 }
 
+.quota-ops-panel {
+  display: grid;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #d9e2ec;
+}
+
+.quota-ops-subsection {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
 .scheduler-dry-run-section {
   background: #fbfdff;
 }
@@ -2058,6 +2245,12 @@ onMounted(() => {
   margin: 6px 0 0;
   color: #667085;
   font-size: 13px;
+}
+
+.subsection-title {
+  margin: 0;
+  color: #111827;
+  font-size: 14px;
 }
 
 .retention-table {

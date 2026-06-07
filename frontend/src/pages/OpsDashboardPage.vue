@@ -63,22 +63,136 @@
       </el-alert>
     </section>
 
+    <section class="integration-control-panel" aria-label="真实集成控制面">
+      <el-card class="card-flat dashboard-panel" shadow="never">
+        <div class="section-header">
+          <div>
+            <h2 class="section-title">Integration Control Plane</h2>
+            <p class="section-subtitle">真实外部/破坏性能力默认 blocked；此处只展示 gate，不提供执行控件。</p>
+          </div>
+          <div class="toolbar">
+            <el-tag :type="integrationOverallStatusTag" effect="plain">
+              {{ integrationCapabilities?.overall_status || "not reported" }}
+            </el-tag>
+            <el-tag effect="plain">ready={{ readyIntegrationCapabilityCount }}</el-tag>
+            <el-tag type="warning" effect="plain">blocked={{ blockedIntegrationCapabilityCount }}</el-tag>
+          </div>
+        </div>
+
+        <el-alert class="delivery-warning" type="warning" title="real integrations disabled by default" :closable="false" show-icon>
+          Control plane 只读取 settings 和安全摘要；不会发送通知、调用 provider、执行 S3 delete、运行 scheduler、执行 quota enforcement 或写 audit。
+        </el-alert>
+
+        <el-table
+          :data="integrationCapabilityRows"
+          empty-text="暂无 integration capability 状态"
+          table-layout="fixed"
+          class="integration-capability-table"
+        >
+          <el-table-column label="Capability" min-width="230">
+            <template #default="{ row }">
+              <div class="action-title">
+                <span class="mono">{{ row.capability_id }}</span>
+                <small>{{ row.label }}</small>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="category" label="Category" min-width="150" />
+          <el-table-column prop="status" label="Status" min-width="130">
+            <template #default="{ row }">
+              <el-tag size="small" :type="integrationCapabilityStatusTag(row.status)" effect="plain">{{ row.status }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="Flags" min-width="230">
+            <template #default="{ row }">
+              <span class="mono">
+                enabled={{ booleanLabel(row.real_execution_enabled) }} /
+                dry_run={{ booleanLabel(row.dry_run_only) }} /
+                kill={{ booleanLabel(row.kill_switch_active) }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column label="Blocking Reasons" min-width="360" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.blocking_reasons.join(" / ") || "none" }}</template>
+          </el-table-column>
+        </el-table>
+
+        <el-descriptions v-if="integrationSafetyItems.length" class="delivery-safety" :column="5" border size="small">
+          <el-descriptions-item v-for="item in integrationSafetyItems" :key="item.label" :label="item.label">
+            <span class="mono">{{ item.value }}</span>
+          </el-descriptions-item>
+        </el-descriptions>
+      </el-card>
+    </section>
+
     <section class="alert-delivery-panel" aria-label="告警 fake outbox 投递">
       <el-card class="card-flat dashboard-panel" shadow="never">
         <div class="section-header">
           <div>
-            <h2 class="section-title">Alert Delivery Fake Outbox</h2>
-            <p class="section-subtitle">只记录 local outbox fake delivery audit，不发送 Slack、email 或 webhook。</p>
+            <h2 class="section-title">Alert Delivery</h2>
+            <p class="section-subtitle">Fake outbox 保持本地 audit；Phase 7 pilot 只允许固定 Slack webhook target。</p>
           </div>
           <div class="toolbar">
             <el-tag effect="plain">active={{ activeOpsAlerts.length }}</el-tag>
             <el-tag effect="plain" type="info">selected={{ selectedActiveAlertCodes.length }}</el-tag>
+            <el-tag v-if="alertDeliveryContract" effect="plain" type="warning">
+              contract={{ alertDeliveryContract.contract_version }}
+            </el-tag>
           </div>
         </div>
 
         <el-alert class="delivery-warning" type="warning" title="fake delivery only" :closable="false" show-icon>
           Fake-send 会写入 <span class="mono">ops.alert_delivery_fake</span> audit；后端 safety metadata 会保持 external delivery 为 false。
         </el-alert>
+
+        <section v-if="alertDeliveryContract" class="adapter-contract-panel" aria-label="alert delivery adapter contract">
+          <div class="section-header">
+            <div>
+              <h3 class="section-title">Adapter Contract</h3>
+              <p class="section-subtitle">
+                {{ alertDeliveryContract.fake_adapter_id }} · {{ alertDeliveryContract.fake_adapter_mode }} ·
+                generated {{ formatDateTime(alertDeliveryContract.generated_at) }}
+              </p>
+            </div>
+            <div class="toolbar">
+              <el-tag effect="plain">destinations={{ alertDeliveryContract.destination_count }}</el-tag>
+              <el-tag effect="plain" type="info">channels={{ alertDeliveryContract.real_channels.join(",") }}</el-tag>
+              <el-tag effect="plain" type="warning">real_send=gated</el-tag>
+            </div>
+          </div>
+
+          <el-descriptions class="delivery-safety" :column="3" border size="small">
+            <el-descriptions-item v-for="item in alertDeliveryContractSafetyItems" :key="item.label" :label="item.label">
+              <span class="mono">{{ item.value }}</span>
+            </el-descriptions-item>
+          </el-descriptions>
+
+          <div class="contract-grid">
+            <article class="contract-card">
+              <h4>Parity Checks</h4>
+              <el-tag
+                v-for="item in alertDeliveryContractParityItems"
+                :key="item.label"
+                :type="item.value === 'true' ? 'success' : 'danger'"
+                effect="plain"
+              >
+                {{ item.label }}={{ item.value }}
+              </el-tag>
+            </article>
+            <article class="contract-card">
+              <h4>Required Audit Fields</h4>
+              <el-tag v-for="field in alertDeliveryContract.required_audit_fields" :key="field" effect="plain">
+                {{ field }}
+              </el-tag>
+            </article>
+            <article class="contract-card">
+              <h4>Blocking Reasons</h4>
+              <el-tag v-for="reason in alertDeliveryContract.blocking_reasons" :key="reason" type="warning" effect="plain">
+                {{ reason }}
+              </el-tag>
+            </article>
+          </div>
+        </section>
 
         <div class="alert-delivery-layout">
           <div class="alert-delivery-list">
@@ -162,7 +276,83 @@
           </aside>
         </div>
 
-        <section v-if="alertDeliveryReport" class="alert-delivery-result" aria-label="告警 fake outbox 结果">
+        <section class="adapter-contract-panel" aria-label="Phase 7 Slack webhook pilot">
+          <div class="section-header">
+            <div>
+              <h3 class="section-title">Phase 7 Slack Pilot</h3>
+              <p class="section-subtitle">
+                {{ REAL_ALERT_DELIVERY_DESTINATION_ID }} · {{ REAL_ALERT_DELIVERY_ALERT_CODE }} ·
+                {{ REAL_ALERT_DELIVERY_TARGET_LABEL }}
+              </p>
+            </div>
+            <div class="toolbar">
+              <el-tag :type="realAlertDeliveryPilotActive ? 'success' : 'warning'" effect="plain">
+                alert_active={{ booleanLabel(realAlertDeliveryPilotActive) }}
+              </el-tag>
+              <el-tag :type="integrationCapabilityStatusTag(alertDeliveryCapability?.status || 'blocked')" effect="plain">
+                gate={{ alertDeliveryCapability?.status || "blocked" }}
+              </el-tag>
+              <el-tag :type="alertDeliveryCapability?.kill_switch_active ? 'danger' : 'info'" effect="plain">
+                kill={{ booleanLabel(alertDeliveryCapability?.kill_switch_active ?? null) }}
+              </el-tag>
+            </div>
+          </div>
+
+          <el-alert class="delivery-warning" type="warning" title="controlled real-send" :closable="false" show-icon>
+            Real-send 必须匹配固定 confirmation phrase；preview 不解析 secret、不调用 provider。
+          </el-alert>
+
+          <el-descriptions class="delivery-safety" :column="4" border size="small">
+            <el-descriptions-item v-for="item in realAlertDeliveryPilotItems" :key="item.label" :label="item.label">
+              <span class="mono">{{ item.value }}</span>
+            </el-descriptions-item>
+          </el-descriptions>
+
+          <div class="contract-grid">
+            <article class="contract-card">
+              <h4>Control Gates</h4>
+              <el-tag
+                v-for="reason in alertDeliveryCapability?.blocking_reasons || []"
+                :key="reason"
+                type="warning"
+                effect="plain"
+              >
+                {{ reason }}
+              </el-tag>
+              <el-tag v-if="(alertDeliveryCapability?.blocking_reasons || []).length === 0" type="success" effect="plain">
+                ready
+              </el-tag>
+            </article>
+            <article class="contract-card">
+              <h4>Rollback</h4>
+              <el-tag v-for="item in realAlertDeliveryRollbackItems" :key="item.label" effect="plain">
+                {{ item.label }}={{ item.value }}
+              </el-tag>
+            </article>
+          </div>
+
+          <div class="delivery-actions">
+            <el-button
+              :icon="View"
+              :disabled="!canPreviewRealAlertDelivery"
+              :loading="alertDeliveryLoading"
+              @click="previewRealAlertDelivery"
+            >
+              Preview real-send gates
+            </el-button>
+            <el-button
+              type="danger"
+              :icon="Bell"
+              :disabled="!canOpenRealAlertDeliveryDialog"
+              :loading="alertDeliveryLoading"
+              @click="openRealAlertDeliveryDialog"
+            >
+              Real-send
+            </el-button>
+          </div>
+        </section>
+
+        <section v-if="alertDeliveryReport" class="alert-delivery-result" aria-label="告警投递结果">
           <div class="section-header">
             <div>
               <h3 class="section-title">Delivery Result</h3>
@@ -174,7 +364,10 @@
             <div class="toolbar">
               <el-tag effect="plain">requested={{ alertDeliveryTotal("requested") }}</el-tag>
               <el-tag effect="plain" type="success">fake={{ alertDeliveryTotal("fake_delivered") }}</el-tag>
+              <el-tag effect="plain" type="success">sent={{ alertDeliveryTotal("sent") }}</el-tag>
               <el-tag effect="plain" type="warning">deduped={{ alertDeliveryTotal("deduped") }}</el-tag>
+              <el-tag effect="plain" type="warning">blocked={{ alertDeliveryTotal("blocked") }}</el-tag>
+              <el-tag effect="plain" type="warning">rate={{ alertDeliveryTotal("rate_limited") }}</el-tag>
               <el-tag effect="plain" type="danger">failed={{ alertDeliveryTotal("failed") }}</el-tag>
             </div>
           </div>
@@ -189,6 +382,9 @@
             <el-table-column prop="alert_code" label="Alert Code" min-width="230">
               <template #default="{ row }"><span class="mono">{{ row.alert_code }}</span></template>
             </el-table-column>
+            <el-table-column prop="destination_id" label="Destination" min-width="180">
+              <template #default="{ row }"><span class="mono">{{ row.destination_id || "-" }}</span></template>
+            </el-table-column>
             <el-table-column prop="outcome" label="Outcome" min-width="150">
               <template #default="{ row }">
                 <el-tag size="small" :type="alertDeliveryOutcomeTag(row.outcome)" effect="plain">{{ row.outcome }}</el-tag>
@@ -200,9 +396,84 @@
             <el-table-column prop="dedupe_key" label="Dedupe Key" min-width="240">
               <template #default="{ row }"><span class="mono">{{ row.dedupe_key || "-" }}</span></template>
             </el-table-column>
+            <el-table-column label="Adapter" min-width="220">
+              <template #default="{ row }">
+                <span class="mono">{{ adapterResultLabel(row.adapter_result) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="Missing Gates" min-width="260" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.missing_gates?.join(" / ") || "none" }}</template>
+            </el-table-column>
             <el-table-column prop="reason" label="Reason" min-width="280" show-overflow-tooltip />
           </el-table>
         </section>
+      </el-card>
+    </section>
+
+    <section v-if="s3DeleteContract" class="s3-delete-contract-panel" aria-label="S3 delete LocalStack fake parity contract">
+      <el-card class="card-flat dashboard-panel" shadow="never">
+        <div class="section-header">
+          <div>
+            <h2 class="section-title">S3 Delete Adapter Contract</h2>
+            <p class="section-subtitle">
+              {{ s3DeleteContract.fake_adapter_id }} · {{ s3DeleteContract.fake_adapter_mode }} ·
+              generated {{ formatDateTime(s3DeleteContract.generated_at) }}
+            </p>
+          </div>
+          <div class="toolbar">
+            <el-tag effect="plain">contract={{ s3DeleteContract.contract_version }}</el-tag>
+            <el-tag effect="plain" type="warning">retention_fake={{ s3DeleteContract.fake_file_retention_contract_version }}</el-tag>
+            <el-tag effect="plain" type="danger">real_delete=false</el-tag>
+          </div>
+        </div>
+
+        <el-alert class="delivery-warning" type="warning" title="contract only" :closable="false" show-icon>
+          LocalStack profile 和 file-retention fake contract 只用于 parity evidence；此页面不会执行真实 S3 delete、LocalStack delete、cleanup execute 或 scheduler execute。
+        </el-alert>
+
+        <el-descriptions class="delivery-safety" :column="4" border size="small">
+          <el-descriptions-item v-for="item in s3DeleteContractSafetyItems" :key="item.label" :label="item.label">
+            <span class="mono">{{ item.value }}</span>
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <div class="contract-grid">
+          <article class="contract-card">
+            <h4>LocalStack Profile</h4>
+            <el-tag v-for="item in s3DeleteLocalStackItems" :key="item.label" effect="plain">
+              {{ item.label }}={{ item.value }}
+            </el-tag>
+          </article>
+          <article class="contract-card">
+            <h4>Storage Summary</h4>
+            <el-tag v-for="item in s3DeleteStorageItems" :key="item.label" effect="plain">
+              {{ item.label }}={{ item.value }}
+            </el-tag>
+          </article>
+          <article class="contract-card">
+            <h4>Parity Checks</h4>
+            <el-tag
+              v-for="item in s3DeleteContractParityItems"
+              :key="item.label"
+              :type="item.value === 'true' ? 'success' : 'danger'"
+              effect="plain"
+            >
+              {{ item.label }}={{ item.value }}
+            </el-tag>
+          </article>
+          <article class="contract-card">
+            <h4>Required Audit Fields</h4>
+            <el-tag v-for="field in s3DeleteContract.required_audit_fields" :key="field" effect="plain">
+              {{ field }}
+            </el-tag>
+          </article>
+          <article class="contract-card">
+            <h4>Blocking Reasons</h4>
+            <el-tag v-for="reason in s3DeleteContract.blocking_reasons" :key="reason" type="warning" effect="plain">
+              {{ reason }}
+            </el-tag>
+          </article>
+        </div>
       </el-card>
     </section>
 
@@ -340,6 +611,9 @@
           <div class="toolbar">
             <el-tag effect="plain">{{ providerCancellationForm.targetType }}</el-tag>
             <el-tag effect="plain" type="info">provider={{ providerCancellationForm.provider }}</el-tag>
+            <el-tag v-if="providerCancellationSemantics" effect="plain" type="danger">
+              {{ providerCancellationSemantics.decision }}
+            </el-tag>
           </div>
         </div>
 
@@ -347,6 +621,59 @@
           Fake-cancel 只会在目标 eligible 且未 dedupe 时写入
           <span class="mono">ops.provider_cancellation_fake</span> audit；不会取消 MinerU 任务、不会修改 document job 或 queue。
         </el-alert>
+
+        <section
+          v-if="providerCancellationSemantics"
+          class="provider-semantics-panel"
+          aria-label="Provider cancellation semantics verification"
+        >
+          <div class="section-header">
+            <div>
+              <h3 class="section-title">Semantics Verification</h3>
+              <p class="section-subtitle">
+                {{ providerCancellationSemantics.verification_status }} · checked {{ providerCancellationSemantics.checked_on }} ·
+                generated {{ formatDateTime(providerCancellationSemantics.generated_at) }}
+              </p>
+            </div>
+            <div class="toolbar">
+              <el-tag effect="plain" type="info">sources={{ providerCancellationSemantics.sources.length }}</el-tag>
+              <el-tag effect="plain" :type="providerCancellationSemantics.real_provider_cancel_allowed ? 'success' : 'danger'">
+                real_cancel={{ booleanLabel(providerCancellationSemantics.real_provider_cancel_allowed) }}
+              </el-tag>
+              <el-tag effect="plain" :type="providerCancellationSemantics.public_docs_support_real_cancel ? 'success' : 'danger'">
+                docs_support={{ booleanLabel(providerCancellationSemantics.public_docs_support_real_cancel) }}
+              </el-tag>
+            </div>
+          </div>
+
+          <el-descriptions class="delivery-safety" :column="4" border size="small">
+            <el-descriptions-item v-for="item in providerCancellationSemanticsSafetyItems" :key="item.label" :label="item.label">
+              <span class="mono">{{ item.value }}</span>
+            </el-descriptions-item>
+          </el-descriptions>
+
+          <div class="provider-gates">
+            <span>Blocking reasons</span>
+            <el-tag
+              v-for="reason in providerCancellationSemantics.blocking_reasons"
+              :key="reason"
+              type="warning"
+              effect="plain"
+            >
+              {{ reason }}
+            </el-tag>
+          </div>
+
+          <el-table :data="providerCancellationSemantics.sources" empty-text="暂无语义核查来源" table-layout="fixed">
+            <el-table-column prop="label" label="Source" min-width="180" />
+            <el-table-column prop="url" label="URL" min-width="260">
+              <template #default="{ row }">
+                <a :href="row.url" target="_blank" rel="noreferrer" class="mono">{{ row.url }}</a>
+              </template>
+            </el-table-column>
+            <el-table-column prop="finding" label="Finding" min-width="360" show-overflow-tooltip />
+          </el-table>
+        </section>
 
         <div class="provider-cancellation-layout">
           <el-form class="provider-cancellation-form" label-position="top">
@@ -685,6 +1012,43 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="realAlertDeliveryDialog.visible" title="Phase 7 Slack real-send" width="720px">
+      <el-alert class="delivery-warning" type="error" title="controlled external delivery" :closable="false" show-icon>
+        后端只允许固定 destination 和 alert code；secret value 不会显示在页面或 audit details 中。
+      </el-alert>
+      <el-form label-position="top">
+        <el-form-item label="Destination">
+          <el-input :model-value="REAL_ALERT_DELIVERY_DESTINATION_ID" readonly class="mono" />
+        </el-form-item>
+        <el-form-item label="Alert code">
+          <el-input :model-value="REAL_ALERT_DELIVERY_ALERT_CODE" readonly class="mono" />
+        </el-form-item>
+        <el-form-item label="Reason">
+          <el-input
+            v-model="realAlertDeliveryDialog.reason"
+            type="textarea"
+            :rows="2"
+            placeholder="说明为什么执行 Phase 7 Slack webhook pilot"
+          />
+        </el-form-item>
+        <el-form-item label="Confirmation phrase">
+          <el-input v-model="realAlertDeliveryDialog.confirmation" :placeholder="REAL_ALERT_DELIVERY_CONFIRMATION_PHRASE" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="realAlertDeliveryDialog.visible = false">取消</el-button>
+        <el-button
+          type="danger"
+          :icon="Bell"
+          :disabled="!canRealSendAlertDelivery"
+          :loading="alertDeliveryLoading"
+          @click="realSendAlertDelivery"
+        >
+          确认 real-send
+        </el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="providerCancellationDialog.visible" title="Fake-cancel provider operation" width="720px">
       <el-alert class="delivery-warning" type="warning" title="fake provider cancellation only" :closable="false" show-icon>
         该操作只会调用 fake-cancel 合同并写入 audit；不会调用 MinerU cancellation，也不会修改本地任务或队列。
@@ -732,8 +1096,10 @@ import { documentJobsApi } from "@/api/documentJobs";
 import { healthApi } from "@/api/health";
 import { opsAlertDestinationsApi } from "@/api/opsAlertDestinations";
 import { opsAlertDeliveriesApi } from "@/api/opsAlertDeliveries";
+import { opsIntegrationCapabilitiesApi } from "@/api/opsIntegrationCapabilities";
 import { opsProviderCancellationsApi } from "@/api/opsProviderCancellations";
 import { opsRecoveryActionsApi } from "@/api/opsRecoveryActions";
+import { opsS3DeletionsApi } from "@/api/opsS3Deletions";
 import type {
   DocumentJobResponse,
   DocumentJobStage,
@@ -744,14 +1110,20 @@ import type {
   HealthReadyResponse,
   OpsAlertDestinationDryRunResponse,
   OpsAlertDestinationStatus,
+  OpsAlertDeliveryAdapterContractResponse,
+  OpsAlertDeliveryAdapterResultResponse,
   OpsAlertDeliveryOutcome,
   OpsAlertDeliveryResponse,
+  OpsIntegrationCapabilityStatus,
+  OpsIntegrationControlPlaneResponse,
   OpsProviderCancellationOutcome,
   OpsProviderCancellationPreviewRequest,
   OpsProviderCancellationProvider,
   OpsProviderCancellationResponse,
+  OpsProviderCancellationSemanticsResponse,
   OpsProviderCancellationTargetType,
   OpsRecoveryActionResponse,
+  OpsS3DeleteAdapterContractResponse,
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
@@ -786,9 +1158,19 @@ type OpsAlert = {
   linkText?: string;
 };
 
+const REAL_ALERT_DELIVERY_DESTINATION_ID = "ops-slack-primary";
+const REAL_ALERT_DELIVERY_SECRET_REF = "OPS_SLACK_WEBHOOK_URL";
+const REAL_ALERT_DELIVERY_TARGET_LABEL = "#ops-alerts-phase7-pilot";
+const REAL_ALERT_DELIVERY_ALERT_CODE = "stage_spool_failed_messages_present";
+const REAL_ALERT_DELIVERY_CONFIRMATION_PHRASE = "SEND REAL OPS ALERTS";
+const REAL_ALERT_DELIVERY_DEDUPE_WINDOW_MINUTES = 60;
+const REAL_ALERT_DELIVERY_RATE_LIMIT_PER_HOUR = 3;
+const REAL_ALERT_DELIVERY_TIMEOUT_SECONDS = 10;
+
 const ready = ref<HealthReadyResponse | null>(null);
 const metrics = ref<HealthMetricsResponse | null>(null);
 const opsAlerts = ref<HealthOpsAlertsResponse | null>(null);
+const integrationCapabilities = ref<OpsIntegrationControlPlaneResponse | null>(null);
 const recoveryActions = ref<OpsRecoveryActionResponse[]>([]);
 const recoveryActionsGeneratedAt = ref<string | null>(null);
 const recoveryActionsReadOnly = ref<boolean | null>(null);
@@ -802,8 +1184,14 @@ const refreshedAt = ref<string | null>(null);
 const selectedAlertDeliveryCodes = ref<string[]>([]);
 const alertDeliveryDedupeWindow = ref(60);
 const alertDeliveryLoading = ref(false);
+const alertDeliveryContract = ref<OpsAlertDeliveryAdapterContractResponse | null>(null);
 const alertDeliveryReport = ref<OpsAlertDeliveryResponse | null>(null);
 const alertDeliveryDialog = ref({
+  visible: false,
+  reason: "",
+  confirmation: "",
+});
+const realAlertDeliveryDialog = ref({
   visible: false,
   reason: "",
   confirmation: "",
@@ -811,6 +1199,7 @@ const alertDeliveryDialog = ref({
 const alertDestinationIdsInput = ref("");
 const alertDestinationLoading = ref(false);
 const alertDestinationReport = ref<OpsAlertDestinationDryRunResponse | null>(null);
+const s3DeleteContract = ref<OpsS3DeleteAdapterContractResponse | null>(null);
 const providerCancellationForm = ref<{
   targetType: OpsProviderCancellationTargetType;
   targetId: string;
@@ -823,6 +1212,7 @@ const providerCancellationForm = ref<{
   dedupeWindowMinutes: 60,
 });
 const providerCancellationLoading = ref(false);
+const providerCancellationSemantics = ref<OpsProviderCancellationSemanticsResponse | null>(null);
 const providerCancellationReport = ref<OpsProviderCancellationResponse | null>(null);
 const providerCancellationDialog = ref({
   visible: false,
@@ -845,10 +1235,30 @@ const staleRunningCount = computed(() => numberCheck("stage_spool_running_stale_
 const replayableCount = computed(() => numberCheck("stage_spool_replayable_messages") ?? 0);
 const activeOpsAlerts = computed(() => opsAlerts.value?.alerts ?? []);
 const activeOpsAlertCodes = computed(() => activeOpsAlerts.value.map((alert) => alert.code));
+const integrationCapabilityRows = computed(() => integrationCapabilities.value?.capabilities ?? []);
+const readyIntegrationCapabilityCount = computed(() => (
+  integrationCapabilityRows.value.filter((capability) => capability.ready).length
+));
+const blockedIntegrationCapabilityCount = computed(() => (
+  integrationCapabilityRows.value.filter((capability) => capability.status === "blocked").length
+));
+const integrationOverallStatusTag = computed<TagType>(() => {
+  if (integrationCapabilities.value?.overall_status === "ready") {
+    return "success";
+  }
+  if (integrationCapabilities.value?.overall_status === "partial") {
+    return "warning";
+  }
+  return "danger";
+});
 const selectedActiveAlertCodes = computed(() => {
   const activeCodes = new Set(activeOpsAlertCodes.value);
   return selectedAlertDeliveryCodes.value.filter((code) => activeCodes.has(code));
 });
+const alertDeliveryCapability = computed(() => (
+  integrationCapabilityRows.value.find((capability) => capability.capability_id === "alert_delivery") || null
+));
+const realAlertDeliveryPilotActive = computed(() => activeOpsAlertCodes.value.includes(REAL_ALERT_DELIVERY_ALERT_CODE));
 const allActiveAlertsSelected = computed(() => (
   activeOpsAlerts.value.length > 0 && selectedActiveAlertCodes.value.length === activeOpsAlerts.value.length
 ));
@@ -867,6 +1277,17 @@ const canFakeSendAlertDelivery = computed(() => (
   && alertDeliveryDialog.value.reason.trim().length > 0
   && alertDeliveryDialog.value.confirmation === alertDeliveryConfirmationPhrase.value
 ));
+const canPreviewRealAlertDelivery = computed(() => (
+  realAlertDeliveryPilotActive.value && !alertDeliveryLoading.value
+));
+const canOpenRealAlertDeliveryDialog = computed(() => (
+  realAlertDeliveryPilotActive.value && !alertDeliveryLoading.value
+));
+const canRealSendAlertDelivery = computed(() => (
+  canOpenRealAlertDeliveryDialog.value
+  && realAlertDeliveryDialog.value.reason.trim().length > 0
+  && realAlertDeliveryDialog.value.confirmation === REAL_ALERT_DELIVERY_CONFIRMATION_PHRASE
+));
 const alertDeliverySafetyItems = computed<DetailItem[]>(() => {
   const safety = alertDeliveryReport.value?.safety;
   return [
@@ -876,8 +1297,96 @@ const alertDeliverySafetyItems = computed<DetailItem[]>(() => {
     { label: "delete", value: booleanLabel(safety?.delete_executed ?? null) },
     { label: "conversion_workflow", value: booleanLabel(safety?.conversion_workflow_executed ?? null) },
     { label: "audit_events", value: booleanLabel(safety?.audit_events_written ?? null) },
+    { label: "secret_values", value: booleanLabel(safety?.secret_values_exposed ?? null) },
   ];
 });
+const realAlertDeliveryPilotItems = computed<DetailItem[]>(() => [
+  { label: "destination_id", value: REAL_ALERT_DELIVERY_DESTINATION_ID },
+  { label: "secret_ref", value: REAL_ALERT_DELIVERY_SECRET_REF },
+  { label: "target_label", value: REAL_ALERT_DELIVERY_TARGET_LABEL },
+  { label: "alert_code", value: REAL_ALERT_DELIVERY_ALERT_CODE },
+  { label: "confirmation", value: REAL_ALERT_DELIVERY_CONFIRMATION_PHRASE },
+  { label: "dedupe_minutes", value: String(REAL_ALERT_DELIVERY_DEDUPE_WINDOW_MINUTES) },
+  { label: "rate_limit_hour", value: String(REAL_ALERT_DELIVERY_RATE_LIMIT_PER_HOUR) },
+  { label: "timeout_seconds", value: String(REAL_ALERT_DELIVERY_TIMEOUT_SECONDS) },
+]);
+const realAlertDeliveryRollbackItems = computed<DetailItem[]>(() => {
+  const rollback = alertDeliveryReport.value?.rollback;
+  if (rollback && Object.keys(rollback).length > 0) {
+    return recordDetailItems(rollback);
+  }
+  return [
+    { label: "disable_flag", value: "INTEGRATION_ALERT_DELIVERY_ENABLED=false" },
+    { label: "enable_kill_switch", value: "INTEGRATION_ALERT_DELIVERY_KILL_SWITCH=true" },
+    { label: "restore_dry_run", value: "INTEGRATION_ALERT_DELIVERY_DRY_RUN=true" },
+    { label: "disable_destination", value: REAL_ALERT_DELIVERY_DESTINATION_ID },
+    { label: "remove_or_rotate_secret_ref", value: REAL_ALERT_DELIVERY_SECRET_REF },
+  ];
+});
+const alertDeliveryContractSafetyItems = computed<DetailItem[]>(() => {
+  const safety = alertDeliveryContract.value?.safety;
+  return [
+    { label: "read_only", value: booleanLabel(safety?.read_only ?? null) },
+    { label: "provider_calls", value: booleanLabel(safety?.provider_calls_executed ?? null) },
+    { label: "external_delivery", value: booleanLabel(safety?.external_delivery_executed ?? null) },
+    { label: "audit_events", value: booleanLabel(safety?.audit_events_written ?? null) },
+    { label: "cleanup", value: booleanLabel(safety?.cleanup_executed ?? null) },
+    { label: "delete", value: booleanLabel(safety?.delete_executed ?? null) },
+    { label: "conversion_workflow", value: booleanLabel(safety?.conversion_workflow_executed ?? null) },
+    { label: "secret_values", value: booleanLabel(safety?.secret_values_exposed ?? null) },
+  ];
+});
+const alertDeliveryContractParityItems = computed<DetailItem[]>(() => (
+  Object.entries(alertDeliveryContract.value?.parity_checks ?? {}).map(([label, value]) => ({
+    label,
+    value: String(value),
+  }))
+));
+const s3DeleteContractSafetyItems = computed<DetailItem[]>(() => {
+  const safety = s3DeleteContract.value?.safety;
+  return [
+    { label: "read_only", value: booleanLabel(safety?.read_only ?? null) },
+    { label: "provider_calls", value: booleanLabel(safety?.provider_calls_executed ?? null) },
+    { label: "real_s3_delete", value: booleanLabel(safety?.real_s3_delete_executed ?? null) },
+    { label: "localstack_calls", value: booleanLabel(safety?.localstack_calls_executed ?? null) },
+    { label: "cleanup", value: booleanLabel(safety?.cleanup_executed ?? null) },
+    { label: "scheduler_loop", value: booleanLabel(safety?.scheduler_loop_executed ?? null) },
+    { label: "delete", value: booleanLabel(safety?.delete_executed ?? null) },
+    { label: "metadata_mutated", value: booleanLabel(safety?.metadata_mutated ?? null) },
+    { label: "audit_events", value: booleanLabel(safety?.audit_events_written ?? null) },
+    { label: "conversion_workflow", value: booleanLabel(safety?.conversion_workflow_executed ?? null) },
+    { label: "secret_values", value: booleanLabel(safety?.secret_values_exposed ?? null) },
+  ];
+});
+const s3DeleteLocalStackItems = computed<DetailItem[]>(() => {
+  const profile = s3DeleteContract.value?.localstack_profile;
+  if (!profile) {
+    return [];
+  }
+  return [
+    { label: "harness", value: profile.harness },
+    { label: "endpoint_required", value: booleanLabel(profile.endpoint_required) },
+    { label: "versioned_bucket_required", value: booleanLabel(profile.versioned_bucket_required) },
+    { label: "exact_bucket_key_required", value: booleanLabel(profile.exact_bucket_key_required) },
+    { label: "version_id_supported", value: booleanLabel(profile.version_id_supported) },
+    { label: "etag_precondition_supported", value: booleanLabel(profile.etag_precondition_supported) },
+    { label: "runtime_executed", value: booleanLabel(profile.runtime_executed) },
+    { label: "provider_payload_persisted", value: booleanLabel(profile.provider_payload_persisted) },
+    { label: "secrets_required", value: booleanLabel(profile.secrets_required_for_contract_report) },
+  ];
+});
+const s3DeleteStorageItems = computed<DetailItem[]>(() => (
+  Object.entries(s3DeleteContract.value?.storage_config_summary ?? {}).map(([label, value]) => ({
+    label,
+    value: displayValue(value),
+  }))
+));
+const s3DeleteContractParityItems = computed<DetailItem[]>(() => (
+  Object.entries(s3DeleteContract.value?.parity_checks ?? {}).map(([label, value]) => ({
+    label,
+    value: String(value),
+  }))
+));
 const parsedAlertDestinationIds = computed(() => parseAlertDestinationIds(alertDestinationIdsInput.value));
 const alertDestinationSafetyItems = computed<DetailItem[]>(() => {
   const safety = alertDestinationReport.value?.safety;
@@ -890,6 +1399,37 @@ const alertDestinationSafetyItems = computed<DetailItem[]>(() => {
     { label: "conversion_workflow", value: booleanLabel(safety?.conversion_workflow_executed ?? null) },
     { label: "audit_events", value: booleanLabel(safety?.audit_events_written ?? null) },
     { label: "secret_values_exposed", value: booleanLabel(safety?.secret_values_exposed ?? null) },
+  ];
+});
+const providerCancellationSemanticsSafetyItems = computed<DetailItem[]>(() => {
+  const safety = providerCancellationSemantics.value?.safety;
+  return [
+    { label: "read_only", value: booleanLabel(safety?.read_only ?? null) },
+    { label: "real_cancel", value: booleanLabel(safety?.real_provider_cancel_executed ?? null) },
+    { label: "provider_calls", value: booleanLabel(safety?.provider_calls_executed ?? null) },
+    { label: "local_job_mutated", value: booleanLabel(safety?.local_job_mutated ?? null) },
+    { label: "queue_mutated", value: booleanLabel(safety?.queue_mutated ?? null) },
+    { label: "cleanup", value: booleanLabel(safety?.cleanup_executed ?? null) },
+    { label: "delete", value: booleanLabel(safety?.delete_executed ?? null) },
+    { label: "conversion_workflow", value: booleanLabel(safety?.conversion_workflow_executed ?? null) },
+    { label: "audit_events", value: booleanLabel(safety?.audit_events_written ?? null) },
+    { label: "secret_values", value: booleanLabel(safety?.secret_values_exposed ?? null) },
+  ];
+});
+const integrationSafetyItems = computed<DetailItem[]>(() => {
+  const safety = integrationCapabilities.value?.safety;
+  if (!safety) {
+    return [];
+  }
+  return [
+    { label: "read_only", value: booleanLabel(safety.read_only) },
+    { label: "provider_calls", value: booleanLabel(safety.provider_calls_executed) },
+    { label: "external_delivery", value: booleanLabel(safety.external_delivery_executed) },
+    { label: "s3_delete", value: booleanLabel(safety.s3_delete_executed) },
+    { label: "scheduler", value: booleanLabel(safety.cleanup_scheduler_executed) },
+    { label: "quota_enforcement", value: booleanLabel(safety.quota_enforcement_executed) },
+    { label: "audit_events", value: booleanLabel(safety.audit_events_written) },
+    { label: "secret_values", value: booleanLabel(safety.secret_values_exposed) },
   ];
 });
 const providerCancellationTargetId = computed(() => providerCancellationForm.value.targetId.trim());
@@ -1147,14 +1687,22 @@ async function loadDashboard(): Promise<void> {
       readyResponse,
       metricsResponse,
       opsAlertsResponse,
+      integrationCapabilitiesResponse,
       recoveryActionsResponse,
+      alertDeliveryContractResponse,
+      s3DeleteContractResponse,
+      providerCancellationSemanticsResponse,
       failedResponse,
       runningResponse,
     ] = await Promise.all([
       healthApi.getReady(),
       healthApi.getMetrics(),
       healthApi.getOpsAlerts(),
+      opsIntegrationCapabilitiesApi.get(),
       opsRecoveryActionsApi.list(),
+      opsAlertDeliveriesApi.getAdapterContract(),
+      opsS3DeletionsApi.getAdapterContract(),
+      opsProviderCancellationsApi.getSemanticsVerification(),
       documentJobsApi.list({
         page: 1,
         page_size: 5,
@@ -1173,6 +1721,10 @@ async function loadDashboard(): Promise<void> {
     ready.value = readyResponse;
     metrics.value = metricsResponse;
     opsAlerts.value = opsAlertsResponse;
+    integrationCapabilities.value = integrationCapabilitiesResponse;
+    alertDeliveryContract.value = alertDeliveryContractResponse;
+    s3DeleteContract.value = s3DeleteContractResponse;
+    providerCancellationSemantics.value = providerCancellationSemanticsResponse;
     pruneAlertDeliverySelection(opsAlertsResponse.alerts.map((alert) => alert.code));
     recoveryActions.value = recoveryActionsResponse.actions;
     recoveryActionsGeneratedAt.value = recoveryActionsResponse.generated_at;
@@ -1268,20 +1820,83 @@ async function fakeSendAlertDelivery(): Promise<void> {
   }
 }
 
+// 构建 Phase 7 Slack webhook pilot 请求，固定 exact destination 和 alert code。
+function buildRealAlertDeliveryPayload(): { alert_codes: string[]; destination_ids: string[]; dedupe_window_minutes: number } {
+  return {
+    alert_codes: [REAL_ALERT_DELIVERY_ALERT_CODE],
+    destination_ids: [REAL_ALERT_DELIVERY_DESTINATION_ID],
+    dedupe_window_minutes: REAL_ALERT_DELIVERY_DEDUPE_WINDOW_MINUTES,
+  };
+}
+
+// 预览 Phase 7 real-send gates；后端不会解析 secret 或调用 provider。
+async function previewRealAlertDelivery(): Promise<void> {
+  if (!canPreviewRealAlertDelivery.value) {
+    return;
+  }
+  alertDeliveryLoading.value = true;
+  error.value = null;
+  try {
+    alertDeliveryReport.value = await opsAlertDeliveriesApi.previewRealSend(buildRealAlertDeliveryPayload());
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    alertDeliveryLoading.value = false;
+  }
+}
+
+// 打开 Phase 7 real-send 确认对话框，并清空上一次输入。
+function openRealAlertDeliveryDialog(): void {
+  realAlertDeliveryDialog.value = {
+    visible: true,
+    reason: "",
+    confirmation: "",
+  };
+}
+
+// 调用 Phase 7 real-send endpoint；真实 provider 调用仍由后端 gates 严格控制。
+async function realSendAlertDelivery(): Promise<void> {
+  if (!canRealSendAlertDelivery.value) {
+    return;
+  }
+  alertDeliveryLoading.value = true;
+  error.value = null;
+  try {
+    alertDeliveryReport.value = await opsAlertDeliveriesApi.realSend({
+      ...buildRealAlertDeliveryPayload(),
+      reason: realAlertDeliveryDialog.value.reason,
+      confirmation: realAlertDeliveryDialog.value.confirmation,
+    });
+    realAlertDeliveryDialog.value.visible = false;
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    alertDeliveryLoading.value = false;
+  }
+}
+
 // 读取 alert delivery totals，缺失字段按 0 展示。
 function alertDeliveryTotal(key: string): number {
   return alertDeliveryReport.value?.totals[key] ?? 0;
 }
 
+// 展示 fake adapter contract 版本和执行模式。
+function adapterResultLabel(adapterResult: OpsAlertDeliveryAdapterResultResponse | null): string {
+  if (!adapterResult) {
+    return "-";
+  }
+  return `${adapterResult.contract_version}/${adapterResult.adapter_mode}`;
+}
+
 // 将 fake delivery outcome 映射为 Element Plus 标签样式。
 function alertDeliveryOutcomeTag(outcome: OpsAlertDeliveryOutcome): TagType {
-  if (outcome === "fake_delivered" || outcome === "deliverable") {
+  if (outcome === "fake_delivered" || outcome === "deliverable" || outcome === "sent") {
     return "success";
   }
-  if (outcome === "deduped" || outcome.startsWith("skipped_")) {
+  if (outcome === "deduped" || outcome === "blocked" || outcome === "rate_limited" || outcome.startsWith("skipped_")) {
     return "warning";
   }
-  if (outcome === "failed") {
+  if (outcome === "failed" || outcome === "timed_out") {
     return "danger";
   }
   return "info";
@@ -1324,6 +1939,17 @@ function alertDestinationStatusTag(status: OpsAlertDestinationStatus): TagType {
     return "danger";
   }
   return "info";
+}
+
+// 将 integration capability status 映射为 Element Plus 标签样式。
+function integrationCapabilityStatusTag(status: OpsIntegrationCapabilityStatus): TagType {
+  if (status === "ready") {
+    return "success";
+  }
+  if (status === "dry_run_only") {
+    return "warning";
+  }
+  return "danger";
 }
 
 // 构建 provider cancellation 请求 payload，统一固定 mineru provider 和 exact target。
@@ -1653,7 +2279,9 @@ onMounted(() => {
 }
 
 .summary-grid,
+.integration-control-panel,
 .alert-delivery-panel,
+.s3-delete-contract-panel,
 .alert-destination-panel,
 .provider-cancellation-panel,
 .action-safety-panel,
@@ -1766,8 +2394,44 @@ onMounted(() => {
 
 .alert-delivery-list,
 .alert-delivery-controls,
+.adapter-contract-panel,
 .alert-delivery-result {
   min-width: 0;
+}
+
+.adapter-contract-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  background: #fbfdff;
+}
+
+.contract-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.contract-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.contract-card h4 {
+  flex-basis: 100%;
+  margin: 0;
+  color: #111827;
+  font-size: 13px;
 }
 
 .delivery-selection-bar {
@@ -1854,7 +2518,8 @@ onMounted(() => {
 }
 
 .delivery-alert-table,
-.delivery-result-table {
+.delivery-result-table,
+.integration-capability-table {
   width: 100%;
 }
 
@@ -1887,6 +2552,16 @@ onMounted(() => {
   margin-top: 16px;
   padding-top: 14px;
   border-top: 1px solid #d9e2ec;
+}
+
+.provider-semantics-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  background: #fbfdff;
 }
 
 .provider-result-grid {
@@ -2020,6 +2695,7 @@ onMounted(() => {
   .alert-delivery-layout,
   .alert-destination-layout,
   .alert-destination-form,
+  .contract-grid,
   .provider-cancellation-layout,
   .provider-cancellation-form,
   .provider-result-grid,

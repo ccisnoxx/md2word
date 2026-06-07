@@ -1,0 +1,28 @@
+{
+  "id": "phase7-controlled-real-integration-rollout-planning",
+  "name": "phase7-controlled-real-integration-rollout-planning",
+  "title": "Phase 7 controlled real integration rollout planning",
+  "description": "Plan Phase 7 controlled rollout for real integration capabilities without executing external or destructive actions.",
+  "status": "planning",
+  "dev_type": null,
+  "scope": "planning",
+  "package": null,
+  "priority": "P2",
+  "creator": "md2word",
+  "assignee": "md2word",
+  "createdAt": "2026-06-08",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "06-08-phase7-slack-webhook-delivery-pilot"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

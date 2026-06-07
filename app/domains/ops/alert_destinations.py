@@ -283,7 +283,7 @@ class OpsAlertDestinationDryRunService:
             missing_gates.append("alert_code_not_allowlisted")
         if not requested_alert_codes:
             missing_gates.append("alert_codes_not_requested")
-        missing_gates.append("real_delivery_not_implemented")
+        missing_gates.append("real_delivery_requires_explicit_real_send")
 
         return OpsAlertDestinationDryRunItem(
             destination_id=config.destination_id,

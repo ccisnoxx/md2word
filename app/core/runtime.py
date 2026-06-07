@@ -75,3 +75,5 @@ class AppRuntime:
     stage_service: Any
     stage_dispatcher: StageDispatcherProtocol
     stage_message_store: StageMessageStoreProtocol
+    alert_delivery_provider: Any | None = None
+    secret_resolver: Any | None = None

@@ -5,9 +5,18 @@ import type {
   OpsProviderCancellationFakeRequest,
   OpsProviderCancellationPreviewRequest,
   OpsProviderCancellationResponse,
+  OpsProviderCancellationSemanticsResponse,
 } from "@/api/types";
 
 export const opsProviderCancellationsApi = {
+  // 读取 MinerU provider cancellation 语义核查结论，不调用 provider。
+  getSemanticsVerification(): Promise<OpsProviderCancellationSemanticsResponse> {
+    return apiRequest<OpsProviderCancellationSemanticsResponse>({
+      url: "/api/v1/ops/provider-cancellations/semantics-verification",
+      method: "GET",
+    });
+  },
+
   // 预览精确 provider cancellation 目标，不调用 MinerU 或写审计。
   preview(payload: OpsProviderCancellationPreviewRequest): Promise<OpsProviderCancellationResponse> {
     return apiRequest<OpsProviderCancellationResponse>({

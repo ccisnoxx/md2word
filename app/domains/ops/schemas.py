@@ -1,5 +1,5 @@
 # File: app/domains/ops/schemas.py
-# Purpose: Define Admin-only read-only recovery, alert destination, and fake execution API contracts.
+# Purpose: Define Admin-only read-only recovery, integration, alert, provider, and S3 API contracts.
 
 from __future__ import annotations
 
@@ -25,15 +25,19 @@ OpsRecoveryActionTargetType = Literal[
     "alert",
     "cleanup_run",
 ]
-OpsAlertDeliveryChannel = Literal["local_outbox"]
-OpsAlertDeliveryMode = Literal["dry_run", "fake_send"]
+OpsAlertDeliveryChannel = Literal["local_outbox", "slack"]
+OpsAlertDeliveryMode = Literal["dry_run", "fake_send", "real_send_preview", "real_send"]
 OpsAlertDeliveryOutcome = Literal[
     "deliverable",
     "fake_delivered",
+    "sent",
     "deduped",
+    "blocked",
+    "rate_limited",
     "skipped_not_active",
     "skipped_rate_limited",
     "failed",
+    "timed_out",
 ]
 OpsAlertDestinationChannel = Literal["slack", "email", "webhook"]
 OpsAlertDestinationMode = Literal["config_dry_run"]
@@ -48,6 +52,15 @@ OpsProviderCancellationProvider = Literal["mineru"]
 OpsProviderCancellationTargetType = Literal["document_job", "legacy_job"]
 OpsProviderCancellationMode = Literal["dry_run", "fake_cancel"]
 OpsProviderCancellationOutcome = Literal["cancelable", "fake_canceled", "deduped", "ineligible", "failed"]
+OpsIntegrationCapabilityId = Literal[
+    "alert_delivery",
+    "provider_cancellation",
+    "s3_deletion",
+    "cleanup_scheduler_execute",
+    "quota_enforcement",
+]
+OpsIntegrationCapabilityStatus = Literal["blocked", "dry_run_only", "ready"]
+OpsIntegrationOverallStatus = Literal["blocked", "partial", "ready"]
 
 
 class OpsRecoveryActionRiskFlagsResponse(BaseModel):
@@ -58,6 +71,49 @@ class OpsRecoveryActionRiskFlagsResponse(BaseModel):
     calls_provider: bool
     sends_notification: bool
     deletes_data: bool
+
+
+class OpsIntegrationCapabilityResponse(BaseModel):
+    """返回单个真实集成能力的 enable、gate 和 readiness 状态。"""
+
+    capability_id: OpsIntegrationCapabilityId
+    label: str
+    category: str
+    status: OpsIntegrationCapabilityStatus
+    real_execution_enabled: bool
+    dry_run_only: bool
+    kill_switch_active: bool
+    configured: bool
+    ready: bool
+    blocking_reasons: list[str] = Field(default_factory=list)
+    required_gates: list[str] = Field(default_factory=list)
+    safe_config: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+
+
+class OpsIntegrationControlPlaneSafetyResponse(BaseModel):
+    """声明 integration control plane 只读检查没有触发真实副作用。"""
+
+    read_only: bool = True
+    provider_calls_executed: bool = False
+    external_delivery_executed: bool = False
+    s3_delete_executed: bool = False
+    cleanup_scheduler_executed: bool = False
+    quota_enforcement_executed: bool = False
+    cleanup_executed: bool = False
+    delete_executed: bool = False
+    conversion_workflow_executed: bool = False
+    audit_events_written: bool = False
+    secret_values_exposed: bool = False
+
+
+class OpsIntegrationControlPlaneResponse(BaseModel):
+    """返回真实集成控制面的只读状态汇总。"""
+
+    generated_at: datetime
+    action_mode: Literal["read_only"]
+    overall_status: OpsIntegrationOverallStatus
+    capabilities: list[OpsIntegrationCapabilityResponse]
+    safety: OpsIntegrationControlPlaneSafetyResponse
 
 
 class OpsRecoveryActionResponse(BaseModel):
@@ -152,6 +208,21 @@ class OpsAlertDeliveryFakeSendRequest(OpsAlertDeliveryPreviewRequest):
     confirmation: str
 
 
+class OpsAlertDeliveryRealPreviewRequest(BaseModel):
+    """请求预览 Phase 7 Slack webhook pilot gates，不解析 secret 或外发。"""
+
+    alert_codes: list[str] = Field(default_factory=list)
+    destination_ids: list[str] = Field(default_factory=list)
+    dedupe_window_minutes: int = Field(default=60, ge=1, le=1440)
+
+
+class OpsAlertDeliveryRealSendRequest(OpsAlertDeliveryRealPreviewRequest):
+    """请求执行 Phase 7 Slack webhook pilot real-send。"""
+
+    reason: str
+    confirmation: str
+
+
 class OpsAlertDeliverySafetyResponse(BaseModel):
     """声明 alert delivery 合同没有触发任何真实外部副作用。"""
 
@@ -161,19 +232,130 @@ class OpsAlertDeliverySafetyResponse(BaseModel):
     delete_executed: bool = False
     conversion_workflow_executed: bool = False
     audit_events_written: bool = False
+    secret_values_exposed: bool = False
+
+
+class OpsAlertDeliveryAdapterResultResponse(BaseModel):
+    """返回 fake alert delivery adapter 与未来 real adapter 同形的结果证据。"""
+
+    contract_version: str
+    adapter_id: str
+    adapter_mode: Literal["fake", "real"]
+    channel: OpsAlertDeliveryChannel
+    alert_code: str
+    operation_id: str
+    idempotency_key: str
+    dedupe_key: str
+    timeout_seconds: int
+    outcome: OpsAlertDeliveryOutcome
+    provider_request_id: str | None = None
+    error_code: str | None = None
+    retryable: bool = False
+    provider_calls_executed: bool = False
+    external_delivery_executed: bool = False
+    payload_persisted: bool = False
+    secret_values_exposed: bool = False
+
+
+class OpsAlertDeliveryAdapterContractSafetyResponse(BaseModel):
+    """声明 adapter contract 报告只读且不会触发真实通知或 secret 暴露。"""
+
+    read_only: bool = True
+    provider_calls_executed: bool = False
+    external_delivery_executed: bool = False
+    audit_events_written: bool = False
+    cleanup_executed: bool = False
+    delete_executed: bool = False
+    conversion_workflow_executed: bool = False
+    secret_values_exposed: bool = False
+
+
+class OpsAlertDeliveryAdapterContractResponse(BaseModel):
+    """返回真实 alert delivery adapter 合同和 fake parity 证据。"""
+
+    generated_at: datetime
+    action_mode: Literal["adapter_contract"]
+    contract_version: str
+    fake_adapter_id: str
+    fake_adapter_mode: Literal["fake"]
+    real_channels: list[OpsAlertDestinationChannel] = Field(default_factory=list)
+    required_request_fields: list[str] = Field(default_factory=list)
+    required_result_fields: list[str] = Field(default_factory=list)
+    required_audit_fields: list[str] = Field(default_factory=list)
+    required_safety_fields: list[str] = Field(default_factory=list)
+    parity_checks: dict[str, bool] = Field(default_factory=dict)
+    destination_count: int
+    destination_channels: list[OpsAlertDestinationChannel] = Field(default_factory=list)
+    blocking_reasons: list[str] = Field(default_factory=list)
+    safety: OpsAlertDeliveryAdapterContractSafetyResponse
+
+
+class OpsS3DeleteLocalStackProfileResponse(BaseModel):
+    """返回未来 LocalStack S3 delete 合同测试需要保持的 harness 语义。"""
+
+    harness: Literal["localstack"]
+    endpoint_required: bool
+    versioned_bucket_required: bool
+    exact_bucket_key_required: bool
+    version_id_supported: bool
+    etag_precondition_supported: bool
+    runtime_executed: bool
+    provider_payload_persisted: bool
+    secrets_required_for_contract_report: bool
+
+
+class OpsS3DeleteAdapterContractSafetyResponse(BaseModel):
+    """声明 S3 delete adapter contract 报告只读且没有触发删除或外部调用。"""
+
+    read_only: bool = True
+    provider_calls_executed: bool = False
+    real_s3_delete_executed: bool = False
+    localstack_calls_executed: bool = False
+    cleanup_executed: bool = False
+    scheduler_loop_executed: bool = False
+    delete_executed: bool = False
+    metadata_mutated: bool = False
+    audit_events_written: bool = False
+    conversion_workflow_executed: bool = False
+    secret_values_exposed: bool = False
+
+
+class OpsS3DeleteAdapterContractResponse(BaseModel):
+    """返回 S3 delete adapter 合同、LocalStack profile 和 fake parity 证据。"""
+
+    generated_at: datetime
+    action_mode: Literal["adapter_contract"]
+    contract_version: str
+    fake_adapter_id: str
+    fake_adapter_mode: Literal["fake"]
+    fake_file_retention_contract_version: str
+    localstack_profile: OpsS3DeleteLocalStackProfileResponse
+    storage_config_summary: dict[str, str | bool] = Field(default_factory=dict)
+    required_request_fields: list[str] = Field(default_factory=list)
+    required_result_fields: list[str] = Field(default_factory=list)
+    required_audit_fields: list[str] = Field(default_factory=list)
+    required_safety_fields: list[str] = Field(default_factory=list)
+    parity_checks: dict[str, bool] = Field(default_factory=dict)
+    blocking_reasons: list[str] = Field(default_factory=list)
+    safety: OpsS3DeleteAdapterContractSafetyResponse
 
 
 class OpsAlertDeliveryItemResponse(BaseModel):
     """返回单个 alert code 的 delivery preview 或 fake-send 结果。"""
 
     alert_code: str
+    destination_id: str | None = None
+    target_label: str | None = None
     severity: str | None = None
     source: str | None = None
     title: str | None = None
     outcome: OpsAlertDeliveryOutcome
     dedupe_key: str | None = None
+    idempotency_key: str | None = None
+    missing_gates: list[str] = Field(default_factory=list)
     reason: str
     audit_event_written: bool = False
+    adapter_result: OpsAlertDeliveryAdapterResultResponse | None = None
 
 
 class OpsAlertDeliveryResponse(BaseModel):
@@ -185,8 +367,11 @@ class OpsAlertDeliveryResponse(BaseModel):
     confirmation_phrase: str
     dedupe_window_minutes: int
     requested_alert_codes: list[str] = Field(default_factory=list)
+    requested_destination_ids: list[str] = Field(default_factory=list)
     delivery_id: str
     totals: dict[str, int] = Field(default_factory=dict)
+    gate_snapshot: dict[str, str | int | bool | list[str] | None] = Field(default_factory=dict)
+    rollback: dict[str, str | int | bool | None] = Field(default_factory=dict)
     items: list[OpsAlertDeliveryItemResponse] = Field(default_factory=list)
     safety: OpsAlertDeliverySafetyResponse
 
@@ -257,6 +442,50 @@ class OpsProviderCancellationFakeRequest(OpsProviderCancellationPreviewRequest):
 
     reason: str
     confirmation: str
+
+
+class OpsProviderCancellationSemanticsSourceResponse(BaseModel):
+    """返回 provider cancellation 语义核查的公开来源摘要。"""
+
+    label: str
+    url: str
+    source_type: Literal["primary_docs"]
+    finding: str
+
+
+class OpsProviderCancellationSemanticsSafetyResponse(BaseModel):
+    """声明 provider cancellation 语义核查不触发 provider 或本地副作用。"""
+
+    read_only: bool = True
+    real_provider_cancel_executed: bool = False
+    provider_calls_executed: bool = False
+    local_job_mutated: bool = False
+    queue_mutated: bool = False
+    cleanup_executed: bool = False
+    delete_executed: bool = False
+    conversion_workflow_executed: bool = False
+    audit_events_written: bool = False
+    secret_values_exposed: bool = False
+
+
+class OpsProviderCancellationSemanticsResponse(BaseModel):
+    """返回 MinerU provider cancellation 语义核查结论和阻断理由。"""
+
+    generated_at: datetime
+    action_mode: Literal["semantics_verification"]
+    provider: OpsProviderCancellationProvider
+    verification_status: str
+    checked_on: str
+    decision: str
+    public_docs_support_real_cancel: bool
+    real_provider_cancel_allowed: bool
+    supported_provider_operations: list[str] = Field(default_factory=list)
+    documented_task_statuses: list[str] = Field(default_factory=list)
+    unsupported_operations: list[str] = Field(default_factory=list)
+    blocking_reasons: list[str] = Field(default_factory=list)
+    recommended_next_steps: list[str] = Field(default_factory=list)
+    sources: list[OpsProviderCancellationSemanticsSourceResponse] = Field(default_factory=list)
+    safety: OpsProviderCancellationSemanticsSafetyResponse
 
 
 class OpsProviderCancellationTargetResponse(BaseModel):

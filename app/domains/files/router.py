@@ -32,9 +32,11 @@ from app.domains.files.library_search import (
 )
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.quota_policy import (
+    FileQuotaPolicyAuditReplayItem,
     FileQuotaPolicyDryRunReport,
     FileQuotaPolicyDryRunService,
     FileQuotaPolicyEnforcementDecision,
+    FileQuotaPolicyOpsSummary,
 )
 from app.domains.files.retention import DocumentFileRetentionPlan, DocumentFileRetentionPlanner
 from app.domains.files.retention_policy import (
@@ -62,8 +64,12 @@ from app.domains.files.schemas import (
     FileRetentionPlanResponse,
     FileLibrarySearchResponse,
     FileQuotaPolicyConfigResponse,
+    FileQuotaPolicyAuditReplayItemResponse,
     FileQuotaPolicyDryRunRequest,
     FileQuotaPolicyDryRunResponse,
+    FileQuotaPolicyOpsSafetyResponse,
+    FileQuotaPolicyOpsSummaryResponse,
+    FileQuotaPolicyRollbackOptionResponse,
     FileQuotaPolicySafetyResponse,
     FileQuotaPolicyUsageResponse,
     FileRetentionCleanupLockSummaryResponse,
@@ -252,6 +258,21 @@ def dry_run_file_quota_policy(
         filename=_normalize_optional_text(payload.filename),
     )
     return _build_file_quota_policy_dry_run_response(report)
+
+
+@router.get("/quota-policy/ops-summary", response_model=FileQuotaPolicyOpsSummaryResponse)
+def get_file_quota_policy_ops_summary(
+    replay_limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    runtime: AppRuntime = Depends(get_runtime),
+    _user: AuthenticatedUser = Depends(require_admin_user),
+) -> FileQuotaPolicyOpsSummaryResponse:
+    """返回 quota enforcement 只读运维摘要、rollback 选项和 audit replay。"""
+
+    summary = _quota_policy_service(runtime).ops_summary(
+        audit_events=runtime.audit_event_repository.list_audit_events(),
+        replay_limit=replay_limit,
+    )
+    return _build_file_quota_policy_ops_summary_response(summary)
 
 
 @router.get("/library/search", response_model=FileLibrarySearchResponse)
@@ -843,6 +864,36 @@ def _build_file_storage_usage_response(report: FileStorageUsageReport) -> FileSt
     return FileStorageUsageResponse(**report.to_dict())
 
 
+def _build_file_quota_policy_config_response(report: FileQuotaPolicyDryRunReport | FileQuotaPolicyOpsSummary) -> FileQuotaPolicyConfigResponse:
+    """把 quota policy 配置摘要映射为 API 响应模型。"""
+
+    return FileQuotaPolicyConfigResponse(
+        enabled=report.policy.enabled,
+        dry_run=report.policy.dry_run,
+        configured=report.policy.configured,
+        quota_bytes=report.policy.quota_bytes,
+        warning_threshold_ratio=report.policy.warning_threshold_ratio,
+        block_threshold_ratio=report.policy.block_threshold_ratio,
+        warning_threshold_bytes=report.policy.warning_threshold_bytes,
+        block_threshold_bytes=report.policy.block_threshold_bytes,
+        upload_max_bytes=report.policy.upload_max_bytes,
+        status=report.policy.status,
+        config_errors=report.policy.config_errors,
+    )
+
+
+def _build_file_quota_policy_usage_response(report: FileQuotaPolicyDryRunReport | FileQuotaPolicyOpsSummary) -> FileQuotaPolicyUsageResponse:
+    """把 quota policy usage 摘要映射为 API 响应模型。"""
+
+    return FileQuotaPolicyUsageResponse(
+        current_used_size_bytes=report.usage.current_used_size_bytes,
+        proposed_upload_size_bytes=report.usage.proposed_upload_size_bytes,
+        projected_used_size_bytes=report.usage.projected_used_size_bytes,
+        current_usage_ratio=report.usage.current_usage_ratio,
+        projected_usage_ratio=report.usage.projected_usage_ratio,
+    )
+
+
 def _build_file_quota_policy_dry_run_response(report: FileQuotaPolicyDryRunReport) -> FileQuotaPolicyDryRunResponse:
     """把 quota dry-run report 映射为稳定 API 响应。"""
 
@@ -851,26 +902,8 @@ def _build_file_quota_policy_dry_run_response(report: FileQuotaPolicyDryRunRepor
         action_mode=report.action_mode,
         file_type=report.file_type,
         filename=report.filename,
-        policy=FileQuotaPolicyConfigResponse(
-            enabled=report.policy.enabled,
-            dry_run=report.policy.dry_run,
-            configured=report.policy.configured,
-            quota_bytes=report.policy.quota_bytes,
-            warning_threshold_ratio=report.policy.warning_threshold_ratio,
-            block_threshold_ratio=report.policy.block_threshold_ratio,
-            warning_threshold_bytes=report.policy.warning_threshold_bytes,
-            block_threshold_bytes=report.policy.block_threshold_bytes,
-            upload_max_bytes=report.policy.upload_max_bytes,
-            status=report.policy.status,
-            config_errors=report.policy.config_errors,
-        ),
-        usage=FileQuotaPolicyUsageResponse(
-            current_used_size_bytes=report.usage.current_used_size_bytes,
-            proposed_upload_size_bytes=report.usage.proposed_upload_size_bytes,
-            projected_used_size_bytes=report.usage.projected_used_size_bytes,
-            current_usage_ratio=report.usage.current_usage_ratio,
-            projected_usage_ratio=report.usage.projected_usage_ratio,
-        ),
+        policy=_build_file_quota_policy_config_response(report),
+        usage=_build_file_quota_policy_usage_response(report),
         would_warn=report.would_warn,
         would_block=report.would_block,
         reasons=report.reasons,
@@ -885,6 +918,82 @@ def _build_file_quota_policy_dry_run_response(report: FileQuotaPolicyDryRunRepor
             delete_executed=report.safety.delete_executed,
             conversion_workflow_executed=report.safety.conversion_workflow_executed,
         ),
+    )
+
+
+def _build_file_quota_policy_ops_summary_response(summary: FileQuotaPolicyOpsSummary) -> FileQuotaPolicyOpsSummaryResponse:
+    """把 quota ops summary 映射为 Admin-only API 响应。"""
+
+    return FileQuotaPolicyOpsSummaryResponse(
+        generated_at=summary.generated_at,
+        action_mode=summary.action_mode,
+        policy=_build_file_quota_policy_config_response(summary),
+        usage=_build_file_quota_policy_usage_response(summary),
+        enforcement_ready=summary.enforcement_ready,
+        current_usage_would_warn=summary.current_usage_would_warn,
+        current_usage_would_block=summary.current_usage_would_block,
+        kill_switch_enabled=summary.kill_switch_enabled,
+        reasons=summary.reasons,
+        rollback_options=[
+            FileQuotaPolicyRollbackOptionResponse(
+                option_id=option.option_id,
+                label=option.label,
+                env_var=option.env_var,
+                target_value=option.target_value,
+                current_value=option.current_value,
+                currently_effective=option.currently_effective,
+                effect=option.effect,
+                requires_restart=option.requires_restart,
+            )
+            for option in summary.rollback_options
+        ],
+        audit_replay=[_build_file_quota_policy_audit_replay_item_response(item) for item in summary.audit_replay],
+        audit_replay_total=summary.audit_replay_total,
+        audit_replay_limit=summary.audit_replay_limit,
+        audit_replay_truncated=summary.audit_replay_truncated,
+        safety=FileQuotaPolicyOpsSafetyResponse(
+            read_only=summary.safety.read_only,
+            upload_authorization_created=summary.safety.upload_authorization_created,
+            upload_content_written=summary.safety.upload_content_written,
+            upload_blocking_executed=summary.safety.upload_blocking_executed,
+            metadata_mutated=summary.safety.metadata_mutated,
+            audit_events_written=summary.safety.audit_events_written,
+            provider_calls_executed=summary.safety.provider_calls_executed,
+            delete_executed=summary.safety.delete_executed,
+            cleanup_executed=summary.safety.cleanup_executed,
+            scheduler_loop_executed=summary.safety.scheduler_loop_executed,
+            conversion_workflow_executed=summary.safety.conversion_workflow_executed,
+        ),
+    )
+
+
+def _build_file_quota_policy_audit_replay_item_response(
+    item: FileQuotaPolicyAuditReplayItem,
+) -> FileQuotaPolicyAuditReplayItemResponse:
+    """把单条 quota audit replay 摘要映射为 API 响应。"""
+
+    return FileQuotaPolicyAuditReplayItemResponse(
+        audit_id=item.audit_id,
+        action=item.action,
+        target_type=item.target_type,
+        target_id=item.target_id,
+        actor_role=item.actor_role,
+        actor_id=item.actor_id,
+        reason=item.reason,
+        trace_id=item.trace_id,
+        created_at=item.created_at,
+        outcome=item.outcome,
+        file_type=item.file_type,
+        filename=item.filename,
+        would_block=item.would_block,
+        override_applied=item.override_applied,
+        current_used_size_bytes=item.current_used_size_bytes,
+        proposed_upload_size_bytes=item.proposed_upload_size_bytes,
+        projected_used_size_bytes=item.projected_used_size_bytes,
+        quota_bytes=item.quota_bytes,
+        policy_status=item.policy_status,
+        reasons=item.reasons,
+        details=item.details,
     )
 
 

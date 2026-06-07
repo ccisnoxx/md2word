@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend endpoint and tests must follow domain router/service boundaries."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "New Ops control plane belongs in app/domains/ops."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Use targeted unittest and avoid side effects."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Admin-only route and config-gated capability status semantics."}
