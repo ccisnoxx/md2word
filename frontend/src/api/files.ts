@@ -5,6 +5,15 @@ import type {
   DocumentFileResponse,
   FileLibrarySearchQuery,
   FileLibrarySearchResponse,
+  FileQuotaPolicyDryRunRequest,
+  FileQuotaPolicyDryRunResponse,
+  FileRetentionCleanupRunExecuteRequest,
+  FileRetentionCleanupRunHistoryListResponse,
+  FileRetentionCleanupRunHistoryResponse,
+  FileRetentionCleanupRunPreviewRequest,
+  FileRetentionCleanupRunResponse,
+  FileRetentionCleanupSchedulerDryRunRequest,
+  FileRetentionCleanupSchedulerDryRunResponse,
   FileRetentionDeleteExecuteRequest,
   FileRetentionDeletePreviewRequest,
   FileRetentionDeleteResponse,
@@ -65,6 +74,15 @@ export const filesApi = {
     });
   },
 
+  // 预演 staged quota policy 对拟上传文件的 warning/block 结果，不创建上传授权。
+  dryRunQuotaPolicy(payload: FileQuotaPolicyDryRunRequest): Promise<FileQuotaPolicyDryRunResponse> {
+    return apiRequest<FileQuotaPolicyDryRunResponse>({
+      url: "/api/v1/files/quota-policy/dry-run",
+      method: "POST",
+      data: payload,
+    });
+  },
+
   // 将当前过期候选标记为 expired，不执行物理删除。
   markRetentionExpired(): Promise<FileRetentionMarkExpiredResponse> {
     return apiRequest<FileRetentionMarkExpiredResponse>({
@@ -88,6 +106,52 @@ export const filesApi = {
       url: "/api/v1/files/retention/delete-expired",
       method: "POST",
       data: payload,
+    });
+  },
+
+  // 预览一次 manual cleanup run，不修改 metadata、不删除文件、不写审计。
+  previewRetentionCleanupRun(payload: FileRetentionCleanupRunPreviewRequest): Promise<FileRetentionCleanupRunResponse> {
+    return apiRequest<FileRetentionCleanupRunResponse>({
+      url: "/api/v1/files/retention/cleanup-runs/preview",
+      method: "POST",
+      data: payload,
+    });
+  },
+
+  // 执行带 preview_hash 的 manual cleanup run，后端复用 selected-file physical-delete 安全合同。
+  executeRetentionCleanupRun(payload: FileRetentionCleanupRunExecuteRequest): Promise<FileRetentionCleanupRunResponse> {
+    return apiRequest<FileRetentionCleanupRunResponse>({
+      url: "/api/v1/files/retention/cleanup-runs/execute",
+      method: "POST",
+      data: payload,
+    });
+  },
+
+  // 手动运行 scheduler dry-run，只生成 readonly report、lock evidence 和 history。
+  runRetentionCleanupSchedulerDryRun(
+    payload: FileRetentionCleanupSchedulerDryRunRequest,
+  ): Promise<FileRetentionCleanupSchedulerDryRunResponse> {
+    return apiRequest<FileRetentionCleanupSchedulerDryRunResponse>({
+      url: "/api/v1/files/retention/cleanup-runs/scheduler-dry-run",
+      method: "POST",
+      data: payload,
+    });
+  },
+
+  // 读取 cleanup run durable history 分页列表，不触发清理。
+  listRetentionCleanupRunHistory(params: { page: number; page_size: number }): Promise<FileRetentionCleanupRunHistoryListResponse> {
+    return apiRequest<FileRetentionCleanupRunHistoryListResponse>({
+      url: "/api/v1/files/retention/cleanup-runs/history",
+      method: "GET",
+      params,
+    });
+  },
+
+  // 读取单条 cleanup run durable history，不返回对象路径或文件内容。
+  getRetentionCleanupRunHistory(runId: string): Promise<FileRetentionCleanupRunHistoryResponse> {
+    return apiRequest<FileRetentionCleanupRunHistoryResponse>({
+      url: `/api/v1/files/retention/cleanup-runs/history/${runId}`,
+      method: "GET",
     });
   },
 

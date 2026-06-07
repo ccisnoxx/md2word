@@ -1,10 +1,11 @@
 # File: app/domains/ops/provider_cancellation.py
-# Purpose: Provide Admin-only fake provider cancellation preview and audit-backed execution logic.
+# Purpose: Provide Admin-only fake provider cancellation preview, adapter hardening, and audit logic.
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Literal
 
 from fastapi import status
 
@@ -24,7 +25,75 @@ from app.domains.ops.schemas import (
 
 PROVIDER_CANCELLATION_CONFIRMATION_PHRASE = "FAKE CANCEL PROVIDER OPERATION"
 PROVIDER_CANCELLATION_AUDIT_ACTION = "ops.provider_cancellation_fake"
+PROVIDER_CANCELLATION_FAKE_ADAPTER_VERSION = "provider-cancel-fake-v1"
+PROVIDER_CANCELLATION_FAKE_TIMEOUT_SECONDS = 0
 TERMINAL_LEGACY_JOB_STATUSES = {"completed", "failed", "canceled"}
+
+
+@dataclass(frozen=True, slots=True)
+class OpsProviderCancellationAdapterResult:
+    """描述 fake provider cancellation adapter 的幂等、超时和错误语义。"""
+
+    contract_version: str
+    adapter_mode: Literal["fake"]
+    idempotency_key: str
+    timeout_seconds: int
+    timed_out: bool
+    outcome: Literal["fake_canceled", "deduped"]
+    safety: dict[str, bool]
+    error_code: str | None = None
+    error_message: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        """转换为 audit details 可安全写入的 JSON-safe 字典。"""
+
+        return {
+            "contract_version": self.contract_version,
+            "adapter_mode": self.adapter_mode,
+            "idempotency_key": self.idempotency_key,
+            "timeout_seconds": self.timeout_seconds,
+            "timed_out": self.timed_out,
+            "outcome": self.outcome,
+            "error_code": self.error_code,
+            "error_message": self.error_message,
+            "safety": dict(self.safety),
+        }
+
+
+class OpsProviderCancellationFakeAdapter:
+    """封装 provider cancellation fake adapter 合同，固定不触发外部 provider 调用。"""
+
+    def cancel(
+        self,
+        *,
+        idempotency_key: str,
+        duplicate: bool,
+    ) -> OpsProviderCancellationAdapterResult:
+        """返回 fake cancellation adapter 结果，保留幂等、超时和错误字段。"""
+
+        return OpsProviderCancellationAdapterResult(
+            contract_version=PROVIDER_CANCELLATION_FAKE_ADAPTER_VERSION,
+            adapter_mode="fake",
+            idempotency_key=idempotency_key,
+            timeout_seconds=PROVIDER_CANCELLATION_FAKE_TIMEOUT_SECONDS,
+            timed_out=False,
+            outcome="deduped" if duplicate else "fake_canceled",
+            safety=self._build_safety(),
+        )
+
+    def _build_safety(self) -> dict[str, bool]:
+        """生成 fake adapter 的安全声明，明确真实 provider 未被调用。"""
+
+        return {
+            "fake_adapter_executed": True,
+            "real_provider_cancel_executed": False,
+            "provider_calls_executed": False,
+            "local_job_mutated": False,
+            "queue_mutated": False,
+            "timeout_checked": True,
+            "idempotency_key_checked": True,
+            "error_recorded": False,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +156,7 @@ class OpsProviderCancellationReport:
     outcome: str
     dedupe_key: str | None
     audit_event_written: bool
+    provider_adapter: OpsProviderCancellationAdapterResult | None
 
     def to_dict(self) -> dict[str, object]:
         """转换为 router response 的基础字典。"""
@@ -117,9 +187,12 @@ class OpsProviderCancellationService:
         job_repository: JobSnapshotRepositoryProtocol,
         audit_event_repository: AuditEventRepositoryProtocol,
     ) -> None:
+        """保存 repository 依赖并绑定当前 fake provider adapter。"""
+
         self.document_job_repository = document_job_repository
         self.job_repository = job_repository
         self.audit_event_repository = audit_event_repository
+        self.provider_cancellation_adapter = OpsProviderCancellationFakeAdapter()
 
     def preview(
         self,
@@ -148,6 +221,7 @@ class OpsProviderCancellationService:
             missing_gates=missing_gates,
             outcome="cancelable" if eligible else "ineligible",
             audit_event_written=False,
+            provider_adapter=None,
         )
 
     def fake_cancel(
@@ -188,7 +262,11 @@ class OpsProviderCancellationService:
             generated_at=generated_at,
             dedupe_window_minutes=dedupe_window_minutes,
         )
-        audit_event_written = dedupe_key not in recent_dedupe_keys
+        adapter_result = self.provider_cancellation_adapter.cancel(
+            idempotency_key=dedupe_key,
+            duplicate=dedupe_key in recent_dedupe_keys,
+        )
+        audit_event_written = adapter_result.outcome == "fake_canceled"
         return self._build_report(
             generated_at=generated_at,
             action_mode="fake_cancel",
@@ -199,6 +277,7 @@ class OpsProviderCancellationService:
             missing_gates=[],
             outcome="fake_canceled" if audit_event_written else "deduped",
             audit_event_written=audit_event_written,
+            provider_adapter=adapter_result,
         )
 
     def audit_reason(self, *, human_reason: str, report: OpsProviderCancellationReport) -> str:
@@ -340,6 +419,7 @@ class OpsProviderCancellationService:
         missing_gates: list[str],
         outcome: str,
         audit_event_written: bool,
+        provider_adapter: OpsProviderCancellationAdapterResult | None,
     ) -> OpsProviderCancellationReport:
         """组装 provider cancellation 统一响应对象。"""
 
@@ -357,6 +437,7 @@ class OpsProviderCancellationService:
             outcome=outcome,
             dedupe_key=self._dedupe_key(target=target, operation=provider_operation) if eligible else None,
             audit_event_written=audit_event_written,
+            provider_adapter=provider_adapter,
         )
 
     def _recent_dedupe_keys(
@@ -365,7 +446,7 @@ class OpsProviderCancellationService:
         generated_at: datetime,
         dedupe_window_minutes: int,
     ) -> set[str]:
-        """从近期 audit event reason 中提取 provider cancellation dedupe key。"""
+        """从近期 audit details 或 compact reason 中提取 provider cancellation dedupe key。"""
 
         since = generated_at - timedelta(minutes=dedupe_window_minutes)
         keys: set[str] = set()
@@ -378,12 +459,30 @@ class OpsProviderCancellationService:
         return keys
 
     def _extract_dedupe_key(self, event: AuditEvent) -> str | None:
-        """从 compact audit reason 解析 dedupe_key 字段。"""
+        """优先从结构化 details 读取 dedupe key，兼容旧 compact reason。"""
+
+        details_key = self._extract_dedupe_key_from_details(event)
+        if details_key:
+            return details_key
 
         reason = event.reason or ""
         for part in reason.split():
             if part.startswith("dedupe_key="):
                 return part.removeprefix("dedupe_key=") or None
+        return None
+
+    def _extract_dedupe_key_from_details(self, event: AuditEvent) -> str | None:
+        """从 audit details 的直接字段或 fake adapter 证据中读取幂等 key。"""
+
+        details = event.details or {}
+        direct_key = details.get("dedupe_key")
+        if isinstance(direct_key, str) and direct_key:
+            return direct_key
+        provider_adapter = details.get("provider_adapter")
+        if isinstance(provider_adapter, dict):
+            adapter_key = provider_adapter.get("idempotency_key")
+            if isinstance(adapter_key, str) and adapter_key:
+                return adapter_key
         return None
 
     def _dedupe_key(

@@ -1,6 +1,7 @@
-from __future__ import annotations
+# File: app/core/runtime.py
+# Purpose: 保存 FastAPI 进程内共享的应用服务和边界端口。
 
-# app/core/runtime.py: 保存 FastAPI 进程内共享的应用服务和边界端口。
+from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -27,6 +28,8 @@ if TYPE_CHECKING:
 
 @dataclass(slots=True)
 class AppRuntime:
+    """集中保存当前 FastAPI 进程的共享服务、repository 和外部边界端口。"""
+
     settings: Settings
     persistence_adapters: PersistenceAdapters
     job_repository: JobSnapshotRepositoryProtocol
@@ -35,6 +38,8 @@ class AppRuntime:
     audit_event_repository: AuditEventRepositoryProtocol
     document_file_repository: DocumentFileRepositoryProtocol
     file_retention_policy_repository: Any
+    file_retention_cleanup_lock_repository: Any
+    file_retention_cleanup_run_history_repository: Any
     document_job_repository: DocumentJobRepositoryProtocol
     document_job_event_repository: DocumentJobEventRepositoryProtocol
     audit_service: Any

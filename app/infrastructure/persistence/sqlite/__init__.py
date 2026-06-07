@@ -1,10 +1,12 @@
-from __future__ import annotations
-
 # File: app/infrastructure/persistence/sqlite/__init__.py
 # Purpose: 导出 sqlite metadata backend 的端口 adapter。
 
+from __future__ import annotations
+
 from app.infrastructure.persistence.sqlite.audit import SqliteAuditEventRepository
 from app.infrastructure.persistence.sqlite.backend import SqlitePersistenceBackend
+from app.infrastructure.persistence.sqlite.cleanup_locks import SqliteRetentionCleanupLockRepository
+from app.infrastructure.persistence.sqlite.cleanup_runs import SqliteRetentionCleanupRunHistoryRepository
 from app.infrastructure.persistence.sqlite.document_jobs import (
     SqliteDocumentJobEventRepository,
     SqliteDocumentJobRepository,
@@ -23,6 +25,8 @@ __all__ = [
     "SqliteJobFileRepository",
     "SqliteJobSnapshotRepository",
     "SqlitePersistenceBackend",
+    "SqliteRetentionCleanupLockRepository",
+    "SqliteRetentionCleanupRunHistoryRepository",
     "SqliteRetentionPolicyRepository",
     "SqliteStageMessageStore",
 ]

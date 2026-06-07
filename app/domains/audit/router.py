@@ -101,6 +101,16 @@ def export_audit_events(
         query,
         max_rows=max_rows,
     )
+    filter_summary = _build_export_filter_summary(
+        actor_role=actor_role,
+        action=action,
+        target_type=target_type,
+        target_id=target_id,
+        actor_id=actor_id,
+        q=q,
+        created_from=created_from,
+        created_to=created_to,
+    )
     audit_event = runtime.audit_service.record(
         actor=ActorContext(actor_id=user.id, actor_role="admin", source="jwt"),
         action="audit_events.export",
@@ -111,6 +121,15 @@ def export_audit_events(
             f"exported={export.exported_count} matched={export.matched_count} "
             f"truncated={str(export.truncated).lower()} max_rows={max_rows}"
         ),
+        details={
+            "matched_count": export.matched_count,
+            "exported_count": export.exported_count,
+            "max_rows": export.max_rows,
+            "truncated": export.truncated,
+            "sort": sort,
+            "filters": filter_summary,
+            "columns": export.columns,
+        },
     )
     return AuditEventExportResponse(
         manifest=AuditEventExportManifest(
@@ -118,16 +137,7 @@ def export_audit_events(
             requested_by=user.id,
             actor_role="admin",
             sort=sort,
-            filters=_build_export_filter_summary(
-                actor_role=actor_role,
-                action=action,
-                target_type=target_type,
-                target_id=target_id,
-                actor_id=actor_id,
-                q=q,
-                created_from=created_from,
-                created_to=created_to,
-            ),
+            filters=filter_summary,
             matched_count=export.matched_count,
             exported_count=export.exported_count,
             max_rows=export.max_rows,

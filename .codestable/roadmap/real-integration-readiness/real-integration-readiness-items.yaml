@@ -1,0 +1,96 @@
+roadmap: real-integration-readiness
+created: 2026-06-07
+
+items:
+  - slug: integration-control-plane
+    description: 为真实外部动作增加独立 feature flags、readiness gate、kill switch 和 registry/status 暴露
+    depends_on: []
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 所有后续真实执行 feature 的前置
+
+  - slug: real-alert-delivery-adapter-contract
+    description: 固定 alert delivery provider protocol、delivery result、history/audit details 和 fake-provider parity 测试
+    depends_on: [integration-control-plane]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: slack-webhook-delivery-pilot
+    description: 在单一 Slack/webhook destination 上启用 exact alert_codes 的真实发送 pilot
+    depends_on: [real-alert-delivery-adapter-contract]
+    status: planned
+    feature: null
+    minimal_loop: true
+    notes: 最小闭环；完成后能证明真实外部 delivery、dedupe、audit details 和 UI 可见状态
+
+  - slug: provider-cancellation-semantics-verification
+    description: 验证 MinerU/provider cancellation primary API、状态机、超时、幂等和失败语义，形成是否可实现的决定输入
+    depends_on: [integration-control-plane]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 如果 provider 不支持 cancel，后续 real adapter 条目应 drop
+
+  - slug: real-provider-cancellation-adapter
+    description: 在 API 语义已验证后实现精确 provider operation 的真实 cancellation adapter、endpoint、audit 和 UI gating
+    depends_on: [provider-cancellation-semantics-verification]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: s3-delete-localstack-contract
+    description: 用 LocalStack 或等价 fake provider 固定 real S3 delete adapter contract、version/etag/idempotency 和 cleanup preview hash
+    depends_on: [integration-control-plane]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: real-s3-delete-guarded-execution
+    description: 在 exact target、signed plan、audit details 和 release gate 下启用真实 S3 object delete
+    depends_on: [s3-delete-localstack-contract]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: cleanup-scheduler-controlled-execute
+    description: 把 manual scheduler dry-run 推进到 disabled-by-default 自动 execute loop，复用 lock/history/signed plan/delete contract
+    depends_on: [real-s3-delete-guarded-execution]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: quota-enforcement-ops-hardening
+    description: 为 quota block/admin override 增加 Admin UI、audit details 展示、配置 readiness、runbook 和 rollback 验证
+    depends_on: [integration-control-plane]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 后端阻断和 Admin override 已有基础实现，本条聚焦运维硬化
+
+  - slug: real-integration-audit-replay
+    description: 统一真实 delivery/cancel/delete/scheduler/quota 的 audit details 查询、导出、UI 展示和 compliance replay
+    depends_on: [real-alert-delivery-adapter-contract, s3-delete-localstack-contract, quota-enforcement-ops-hardening]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: phase6-release-gate-runbook
+    description: 把真实集成 smoke、fake/local parity、OpenAPI、frontend build、rollback 和 kill-switch 检查纳入 release gate/runbook
+    depends_on:
+      - slack-webhook-delivery-pilot
+      - real-provider-cancellation-adapter
+      - real-s3-delete-guarded-execution
+      - cleanup-scheduler-controlled-execute
+      - real-integration-audit-replay
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null

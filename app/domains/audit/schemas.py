@@ -7,14 +7,14 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.domains.audit.models import ActorRole
+from app.domains.audit.models import ActorRole, AuditDetails
 
 
 AuditEventSort = Literal["created_at_desc", "created_at_asc"]
 
 
 class AuditEventResponse(BaseModel):
-    """返回单条审计事件的只读元数据。"""
+    """返回单条审计事件的只读元数据和可选结构化证据。"""
 
     audit_id: str
     actor_id: str | None = None
@@ -23,6 +23,7 @@ class AuditEventResponse(BaseModel):
     target_type: str
     target_id: str
     reason: str | None = None
+    details: AuditDetails | None = None
     trace_id: str
     created_at: datetime
 

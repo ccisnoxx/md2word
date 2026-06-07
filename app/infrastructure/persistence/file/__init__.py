@@ -1,10 +1,12 @@
-from __future__ import annotations
-
 # File: app/infrastructure/persistence/file/__init__.py
 # Purpose: 导出 file metadata backend 的端口 adapter。
 
+from __future__ import annotations
+
 from app.infrastructure.persistence.file.audit import FileAuditEventRepository
 from app.infrastructure.persistence.file.backend import FilePersistenceBackend
+from app.infrastructure.persistence.file.cleanup_locks import FileRetentionCleanupLockRepository
+from app.infrastructure.persistence.file.cleanup_runs import FileRetentionCleanupRunHistoryRepository
 from app.infrastructure.persistence.file.document_jobs import (
     FileDocumentJobEventRepository,
     FileDocumentJobRepository,
@@ -23,6 +25,8 @@ __all__ = [
     "FileJobFileRepository",
     "FileJobSnapshotRepository",
     "FilePersistenceBackend",
+    "FileRetentionCleanupLockRepository",
+    "FileRetentionCleanupRunHistoryRepository",
     "FileRetentionPolicyRepository",
     "FileStageMessageStore",
 ]

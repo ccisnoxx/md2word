@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Check quota enforcement evidence against backend quality gates."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Check targeted tests and no unrelated behavior changes."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Check conflict response behavior for upload blocking."}

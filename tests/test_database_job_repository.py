@@ -1,6 +1,6 @@
+# File: tests/test_database_job_repository.py
+# Purpose: 校验 file/sqlite/MySQL metadata adapter 的协议行为一致。
 from __future__ import annotations
-
-# tests/test_database_job_repository.py: 校验 file/sqlite/MySQL metadata adapter 的协议行为一致。
 
 from datetime import timedelta
 from pathlib import Path
@@ -24,6 +24,8 @@ from app.domains.jobs.models import (
 )
 from app.domains.audit.models import AuditEvent
 from app.core.config import Settings
+from app.domains.files.cleanup_history import FileRetentionCleanupRunHistoryRecord, FileRetentionSignedCleanupPlan
+from app.domains.files.cleanup_lock import FileRetentionCleanupLockConflict, FileRetentionCleanupLockService
 from app.domains.files.models import DocumentFileRecord
 from app.domains.translation.models import (
     TranslationTermEntry,
@@ -67,6 +69,8 @@ class _FakeMysqlDatabase:
         self.job_events: list[dict[str, Any]] = []
         self.audit_events: list[dict[str, Any]] = []
         self.document_files: dict[str, dict[str, Any]] = {}
+        self.file_retention_cleanup_locks: dict[str, dict[str, Any]] = {}
+        self.file_retention_cleanup_runs: dict[str, dict[str, Any]] = {}
         self.document_jobs: dict[str, dict[str, Any]] = {}
         self.job_files: dict[tuple[str, str], dict[str, Any]] = {}
         self.stage_messages: dict[str, dict[str, Any]] = {}
@@ -139,6 +143,8 @@ class _FakeMysqlCursor:
                 "translation_term_match_traces",
                 "audit_events",
                 "document_files",
+                "file_retention_cleanup_locks",
+                "file_retention_cleanup_runs",
                 "document_jobs",
             ):
                 if f" {table} " in normalized:
@@ -226,6 +232,48 @@ class _FakeMysqlCursor:
                     key=lambda item: (item["created_at"], item["file_id"]),
                 )
             ]
+            return
+        if normalized.startswith("insert into file_retention_cleanup_runs"):
+            run_id, status, payload, created_at, updated_at = params
+            self.database.file_retention_cleanup_runs[run_id] = {
+                "run_id": run_id,
+                "status": status,
+                "payload": payload,
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+            self._rows = []
+            return
+        if normalized.startswith("select payload from file_retention_cleanup_runs where run_id"):
+            row = self.database.file_retention_cleanup_runs.get(params[0])
+            self._rows = [{"payload": row["payload"]}] if row is not None else []
+            return
+        if normalized.startswith("select payload from file_retention_cleanup_runs order by"):
+            self._rows = [
+                {"payload": row["payload"]}
+                for row in sorted(
+                    self.database.file_retention_cleanup_runs.values(),
+                    key=lambda item: (item["updated_at"], item["run_id"]),
+                    reverse=True,
+                )
+            ]
+            return
+        if normalized.startswith("insert into file_retention_cleanup_locks"):
+            lock_name, status, owner_id, fencing_token, expires_at, payload, updated_at = params
+            self.database.file_retention_cleanup_locks[lock_name] = {
+                "lock_name": lock_name,
+                "status": status,
+                "owner_id": owner_id,
+                "fencing_token": fencing_token,
+                "expires_at": expires_at,
+                "payload": payload,
+                "updated_at": updated_at,
+            }
+            self._rows = []
+            return
+        if normalized.startswith("select payload from file_retention_cleanup_locks where lock_name"):
+            row = self.database.file_retention_cleanup_locks.get(params[0])
+            self._rows = [{"payload": row["payload"]}] if row is not None else []
             return
         if normalized.startswith("insert into document_jobs"):
             job_id, payload, created_at, updated_at = params
@@ -821,9 +869,60 @@ class PersistenceAdapterTests(TestCase):
                 "translation_term_match_traces",
                 "audit_events",
                 "document_files",
+                "file_retention_cleanup_locks",
+                "file_retention_cleanup_runs",
                 "document_jobs",
             },
         )
+
+    def test_cleanup_lock_service_enforces_fencing_and_expiry(self):
+        """验证 cleanup lock service 的 fencing token、过期接管和释放约束。"""
+
+        with TemporaryDirectory() as temp_dir:
+            adapters = build_file_persistence_adapters(Path(temp_dir) / "file")
+            service = FileRetentionCleanupLockService(adapters.file_retention_cleanup_lock_repository)
+            base_time = utc_now()
+
+            first_lock = service.acquire(owner_id="owner-1", ttl_seconds=10, now=base_time)
+            with self.assertRaises(FileRetentionCleanupLockConflict) as active_conflict:
+                service.acquire(owner_id="owner-2", ttl_seconds=10, now=base_time + timedelta(seconds=5))
+
+            second_lock = service.acquire(owner_id="owner-2", ttl_seconds=10, now=base_time + timedelta(seconds=11))
+            with self.assertRaises(FileRetentionCleanupLockConflict) as refresh_conflict:
+                service.refresh(
+                    owner_id="owner-1",
+                    fencing_token=first_lock.fencing_token,
+                    ttl_seconds=10,
+                    now=base_time + timedelta(seconds=12),
+                )
+            with self.assertRaises(FileRetentionCleanupLockConflict) as release_conflict:
+                service.release(
+                    owner_id="owner-1",
+                    fencing_token=first_lock.fencing_token,
+                    now=base_time + timedelta(seconds=12),
+                )
+            refreshed_lock = service.refresh(
+                owner_id="owner-2",
+                fencing_token=second_lock.fencing_token,
+                ttl_seconds=20,
+                now=base_time + timedelta(seconds=13),
+            )
+            released_lock = service.release(
+                owner_id="owner-2",
+                fencing_token=second_lock.fencing_token,
+                now=base_time + timedelta(seconds=14),
+            )
+            third_lock = service.acquire(owner_id="owner-3", ttl_seconds=10, now=base_time + timedelta(seconds=15))
+
+        self.assertEqual(first_lock.fencing_token, 1)
+        self.assertEqual(active_conflict.exception.code, "cleanup_lock_already_held")
+        self.assertEqual(second_lock.fencing_token, 2)
+        self.assertEqual(refresh_conflict.exception.code, "cleanup_lock_fencing_token_mismatch")
+        self.assertEqual(release_conflict.exception.code, "cleanup_lock_fencing_token_mismatch")
+        self.assertEqual(refreshed_lock.owner_id, "owner-2")
+        self.assertEqual(refreshed_lock.fencing_token, second_lock.fencing_token)
+        self.assertEqual(released_lock.status, "released")
+        self.assertEqual(third_lock.fencing_token, 3)
 
     def test_mysql_runtime_bootstraps_term_assets_and_translation_terms(self):
         from app.main import build_runtime
@@ -1300,6 +1399,8 @@ class PersistenceAdapterTests(TestCase):
         job_event_repository = adapters.job_event_repository
         audit_event_repository = adapters.audit_event_repository
         document_file_repository = adapters.document_file_repository
+        cleanup_lock_repository = adapters.file_retention_cleanup_lock_repository
+        cleanup_run_history_repository = adapters.file_retention_cleanup_run_history_repository
         document_job_repository = adapters.document_job_repository
         document_job_event_repository = adapters.document_job_event_repository
         stage_message_store = adapters.stage_message_store
@@ -1361,12 +1462,14 @@ class PersistenceAdapterTests(TestCase):
                 target_type="job",
                 target_id=job.id,
                 reason="contract",
+                details={"workflow": "retry", "attempt": 1},
                 trace_id="trace_audit",
             )
         )
         audit_events = audit_event_repository.list_audit_events()
         self.assertEqual([event.action for event in audit_events], ["job.retry"])
         self.assertEqual(audit_events[0].reason, "contract")
+        self.assertEqual(audit_events[0].details, {"workflow": "retry", "attempt": 1})
 
         document_file = DocumentFileRecord(
             id="file_contract",
@@ -1396,6 +1499,102 @@ class PersistenceAdapterTests(TestCase):
         self.assertEqual(
             [record.id for record in document_file_repository.list_document_files()],
             ["file_contract"],
+        )
+
+        cleanup_lock_service = FileRetentionCleanupLockService(cleanup_lock_repository)
+        cleanup_lock_base_time = utc_now()
+        cleanup_lock = cleanup_lock_service.acquire(
+            owner_id="contract-owner",
+            ttl_seconds=60,
+            now=cleanup_lock_base_time,
+            metadata={"source": "contract"},
+        )
+        refreshed_cleanup_lock = cleanup_lock_service.refresh(
+            owner_id="contract-owner",
+            fencing_token=cleanup_lock.fencing_token,
+            ttl_seconds=90,
+            now=cleanup_lock_base_time + timedelta(seconds=5),
+        )
+        released_cleanup_lock = cleanup_lock_service.release(
+            owner_id="contract-owner",
+            fencing_token=cleanup_lock.fencing_token,
+            now=cleanup_lock_base_time + timedelta(seconds=10),
+        )
+        cleanup_lock_status = cleanup_lock_service.get_status(now=cleanup_lock_base_time + timedelta(seconds=11))
+        self.assertEqual(cleanup_lock.fencing_token, 1)
+        self.assertEqual(refreshed_cleanup_lock.owner_id, "contract-owner")
+        self.assertEqual(released_cleanup_lock.status, "released")
+        self.assertEqual(cleanup_lock_status.effective_status, "released")
+
+        cleanup_plan = FileRetentionSignedCleanupPlan(
+            plan_id="cleanup_plan_contract",
+            run_id="cleanup_run_contract",
+            preview_hash="sha256:preview",
+            requested_file_ids=[document_file.id],
+            max_files=50,
+            created_at=utc_now(),
+            expires_at=utc_now() + timedelta(minutes=30),
+            signature="hmac-sha256:contract",
+            signature_algorithm="hmac-sha256",
+            safety={
+                "scheduler_loop_executed": False,
+                "provider_calls_executed": False,
+                "s3_delete_executed": False,
+                "physical_delete_executed": False,
+                "physical_delete_contract_reused": True,
+                "signed_plan_created": True,
+            },
+        )
+        cleanup_run = FileRetentionCleanupRunHistoryRecord(
+            run_id="cleanup_run_contract",
+            status="previewed",
+            action_mode="cleanup_preview",
+            preview_hash="sha256:preview",
+            requested_file_ids=[document_file.id],
+            max_files=50,
+            totals={"requested": 1, "deletable": 1},
+            safety={
+                "scheduler_loop_executed": False,
+                "provider_calls_executed": False,
+                "s3_delete_executed": False,
+                "physical_delete_executed": False,
+                "physical_delete_contract_reused": True,
+                "audit_events_written": False,
+                "history_recorded": True,
+                "signed_plan_created": True,
+                "signed_plan_verified": False,
+            },
+            cleanup_plan=cleanup_plan,
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        cleanup_run_history_repository.save_run(cleanup_run)
+        self.assertEqual(
+            cleanup_run_history_repository.get_run("cleanup_run_contract").preview_hash,
+            "sha256:preview",
+        )
+        self.assertEqual(
+            cleanup_run_history_repository.get_run("cleanup_run_contract").cleanup_plan.plan_id,
+            "cleanup_plan_contract",
+        )
+        executed_cleanup_run = cleanup_run.model_copy(
+            update={
+                "status": "executed",
+                "action_mode": "cleanup_execute",
+                "reason": "contract execute",
+                "totals": {"requested": 1, "deleted": 1},
+                "updated_at": utc_now(),
+                "executed_at": utc_now(),
+            }
+        )
+        cleanup_run_history_repository.save_run(executed_cleanup_run)
+        self.assertEqual(
+            cleanup_run_history_repository.get_run("cleanup_run_contract").status,
+            "executed",
+        )
+        self.assertEqual(
+            [record.run_id for record in cleanup_run_history_repository.list_runs()],
+            ["cleanup_run_contract"],
         )
 
         document_job = DocumentJobRecord(

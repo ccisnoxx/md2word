@@ -1,5 +1,5 @@
 # File: app/domains/files/router.py
-# Purpose: 提供 document_files 元数据、上传授权、本地代理上传、文件库搜索、保留期管理和受控清理接口。
+# Purpose: 提供 document_files 元数据、上传授权、quota enforcement、保留期管理和受控清理接口。
 
 from __future__ import annotations
 
@@ -10,10 +10,20 @@ from urllib.parse import urlsplit, urlunsplit
 from fastapi import APIRouter, Depends, Query, Request, status
 
 from app.api.dependencies import get_runtime, get_trace_id, require_admin_user, require_current_user
-from app.domains.audit.models import ActorContext
+from app.domains.audit.models import ActorContext, AuditDetails
 from app.services.auth.models import AuthenticatedUser
 from app.core.errors import ApiError
 from app.domains.files.cleanup_execution import FileRetentionCleanupRunReport, FileRetentionCleanupRunService
+from app.domains.files.cleanup_history import (
+    FileRetentionCleanupPlanValidationError,
+    FileRetentionCleanupRunHistoryRecord,
+    FileRetentionCleanupRunHistoryService,
+)
+from app.domains.files.cleanup_lock import (
+    FileRetentionCleanupLockConflict,
+    FileRetentionCleanupLockRecord,
+    FileRetentionCleanupLockService,
+)
 from app.domains.files.library_search import (
     FileLibrarySearchPage,
     FileLibrarySearchQuery,
@@ -21,6 +31,11 @@ from app.domains.files.library_search import (
     FileLibrarySort,
 )
 from app.domains.files.models import DocumentFileRecord
+from app.domains.files.quota_policy import (
+    FileQuotaPolicyDryRunReport,
+    FileQuotaPolicyDryRunService,
+    FileQuotaPolicyEnforcementDecision,
+)
 from app.domains.files.retention import DocumentFileRetentionPlan, DocumentFileRetentionPlanner
 from app.domains.files.retention_policy import (
     EffectiveFileRetentionPolicy,
@@ -30,6 +45,7 @@ from app.domains.files.retention_policy import (
 )
 from app.domains.files.service import FileRetentionDeleteReport
 from app.domains.files.storage_usage import DocumentFileStorageUsageReporter, FileStorageUsageReport
+from app.domains.files.validation import validate_pdf_metadata
 from app.domains.files.schemas import (
     DocumentFileResponse,
     EffectiveFileRetentionPolicyResponse,
@@ -45,15 +61,27 @@ from app.domains.files.schemas import (
     FileRetentionPolicyUpdateRequest,
     FileRetentionPlanResponse,
     FileLibrarySearchResponse,
+    FileQuotaPolicyConfigResponse,
+    FileQuotaPolicyDryRunRequest,
+    FileQuotaPolicyDryRunResponse,
+    FileQuotaPolicySafetyResponse,
+    FileQuotaPolicyUsageResponse,
+    FileRetentionCleanupLockSummaryResponse,
     FileRetentionCleanupRunExecuteRequest,
+    FileRetentionCleanupRunHistoryListResponse,
+    FileRetentionCleanupRunHistoryResponse,
     FileRetentionCleanupRunPreviewRequest,
     FileRetentionCleanupRunResponse,
     FileRetentionCleanupRunSafetyResponse,
+    FileRetentionCleanupSchedulerDryRunRequest,
+    FileRetentionCleanupSchedulerDryRunResponse,
+    FileRetentionSignedCleanupPlanResponse,
     FileStorageUsageResponse,
     FileUploadResponse,
     FileUploadUrlRequest,
     FileUploadUrlResponse,
 )
+from app.domains.files.scheduled_cleanup import FileRetentionCleanupReadonlyReport, FileRetentionReadonlyCleanupRunner
 from app.core.runtime import AppRuntime
 
 
@@ -68,6 +96,38 @@ def create_upload_url(
     user: AuthenticatedUser = Depends(require_current_user),
     trace_id: str = Depends(get_trace_id),
 ) -> FileUploadUrlResponse:
+    """创建上传授权；ready quota policy 超额时阻断，Admin override 可放行。"""
+
+    validate_pdf_metadata(
+        filename=payload.filename,
+        content_type=payload.mime_type,
+        size_bytes=payload.size_bytes,
+        max_bytes=runtime.settings.jobs_upload_max_bytes,
+    )
+    quota_decision = _quota_policy_service(runtime).evaluate_upload_authorization(
+        size_bytes=payload.size_bytes,
+        file_type=payload.file_type,
+        filename=payload.filename,
+        actor_role=user.role,
+        override_reason=payload.quota_override_reason,
+        override_confirmation=payload.quota_override_confirmation,
+    )
+    if quota_decision.audit_action and quota_decision.audit_reason:
+        runtime.audit_service.record(
+            actor=_actor_from_user(user),
+            action=quota_decision.audit_action,
+            target_type="file_quota_policy",
+            target_id="document_files",
+            reason=quota_decision.audit_reason,
+            details=_build_file_quota_policy_enforcement_audit_details(quota_decision),
+            trace_id=trace_id,
+        )
+    if quota_decision.blocked:
+        raise ApiError(
+            status.HTTP_409_CONFLICT,
+            "conflict",
+            quota_decision.message or "文件上传授权被 quota policy 阻断。",
+        )
     authorization = runtime.file_upload_service.create_upload_authorization(
         user=user,
         filename=payload.filename,
@@ -176,6 +236,22 @@ def get_file_storage_usage(
 
     report = _storage_usage_reporter(runtime).build_report()
     return _build_file_storage_usage_response(report)
+
+
+@router.post("/quota-policy/dry-run", response_model=FileQuotaPolicyDryRunResponse)
+def dry_run_file_quota_policy(
+    payload: FileQuotaPolicyDryRunRequest,
+    runtime: AppRuntime = Depends(get_runtime),
+    _user: AuthenticatedUser = Depends(require_admin_user),
+) -> FileQuotaPolicyDryRunResponse:
+    """预演拟上传文件的 quota policy 结果，不创建上传授权、不阻断上传。"""
+
+    report = _quota_policy_service(runtime).dry_run(
+        size_bytes=payload.size_bytes,
+        file_type=payload.file_type.strip() or "source_pdf",
+        filename=_normalize_optional_text(payload.filename),
+    )
+    return _build_file_quota_policy_dry_run_response(report)
 
 
 @router.get("/library/search", response_model=FileLibrarySearchResponse)
@@ -427,7 +503,17 @@ def preview_file_retention_cleanup_run(
         file_ids=payload.file_ids,
         max_files=payload.max_files,
     )
-    return _build_cleanup_run_response(report, audit_events_written=False)
+    history_record = _cleanup_run_history_service(runtime).record_preview(
+        report,
+        signing_secret=_cleanup_plan_signing_secret(runtime),
+    )
+    return _build_cleanup_run_response(
+        report,
+        audit_events_written=False,
+        history_recorded=True,
+        signed_plan_verified=False,
+        cleanup_plan=history_record.cleanup_plan,
+    )
 
 
 @router.post("/retention/cleanup-runs/execute", response_model=FileRetentionCleanupRunResponse)
@@ -440,13 +526,65 @@ def execute_file_retention_cleanup_run(
     """执行受控 cleanup run，内部复用 existing physical-delete safety contract。"""
 
     service = _cleanup_run_service(runtime)
-    report = service.execute(
-        file_ids=payload.file_ids,
-        max_files=payload.max_files,
-        preview_hash=payload.preview_hash,
-        reason=payload.reason,
-        confirmation=payload.confirmation,
-    )
+    history_service = _cleanup_run_history_service(runtime)
+    if (payload.plan_id or payload.plan_signature) and not payload.run_id:
+        message = "plan_id/plan_signature 需要同时携带 run_id。"
+        raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", message)
+    if payload.run_id and history_service.get_run(payload.run_id) is None:
+        message = "cleanup run history 不存在，请重新 preview 后再执行。"
+        history_service.record_failed_execute(
+            run_id=payload.run_id,
+            file_ids=payload.file_ids,
+            max_files=payload.max_files,
+            preview_hash=payload.preview_hash,
+            reason=payload.reason,
+            error_code="cleanup_run_preview_not_found",
+            error_message=message,
+        )
+        raise ApiError(status.HTTP_409_CONFLICT, "conflict", message)
+    signed_plan_verified = False
+    if payload.run_id:
+        try:
+            signed_plan_verified = history_service.validate_execute_plan(
+                run_id=payload.run_id,
+                file_ids=payload.file_ids,
+                max_files=payload.max_files,
+                preview_hash=payload.preview_hash,
+                plan_id=payload.plan_id,
+                plan_signature=payload.plan_signature,
+            ) is not None
+        except FileRetentionCleanupPlanValidationError as exc:
+            history_service.record_failed_execute(
+                run_id=payload.run_id,
+                file_ids=payload.file_ids,
+                max_files=payload.max_files,
+                preview_hash=payload.preview_hash,
+                reason=payload.reason,
+                error_code=exc.error_code,
+                error_message=exc.message,
+            )
+            raise ApiError(exc.status_code, exc.error_code if exc.status_code == 400 else "conflict", exc.message) from exc
+    try:
+        report = service.execute(
+            file_ids=payload.file_ids,
+            max_files=payload.max_files,
+            preview_hash=payload.preview_hash,
+            reason=payload.reason,
+            confirmation=payload.confirmation,
+            run_id=payload.run_id,
+        )
+    except ApiError as exc:
+        if payload.run_id:
+            history_service.record_failed_execute(
+                run_id=payload.run_id,
+                file_ids=payload.file_ids,
+                max_files=payload.max_files,
+                preview_hash=payload.preview_hash,
+                reason=payload.reason,
+                error_code=exc.code,
+                error_message=exc.message,
+            )
+        raise
     runtime.audit_service.record(
         actor=_actor_from_user(user),
         action="file.retention_automated_cleanup_execute",
@@ -455,7 +593,97 @@ def execute_file_retention_cleanup_run(
         reason=service.audit_reason(human_reason=payload.reason, report=report),
         trace_id=trace_id,
     )
-    return _build_cleanup_run_response(report, audit_events_written=True)
+    history_record = history_service.record_execute(
+        report,
+        reason=payload.reason,
+        audit_events_written=True,
+        signing_secret=_cleanup_plan_signing_secret(runtime),
+        signed_plan_verified=signed_plan_verified,
+    )
+    return _build_cleanup_run_response(
+        report,
+        audit_events_written=True,
+        history_recorded=True,
+        signed_plan_verified=signed_plan_verified,
+        cleanup_plan=history_record.cleanup_plan,
+    )
+
+
+@router.post("/retention/cleanup-runs/scheduler-dry-run", response_model=FileRetentionCleanupSchedulerDryRunResponse)
+def run_file_retention_cleanup_scheduler_dry_run(
+    payload: FileRetentionCleanupSchedulerDryRunRequest,
+    runtime: AppRuntime = Depends(get_runtime),
+    user: AuthenticatedUser = Depends(require_admin_user),
+    trace_id: str = Depends(get_trace_id),
+) -> FileRetentionCleanupSchedulerDryRunResponse:
+    """手动运行 scheduler dry-run；只获取 lock、生成只读报告、释放 lock 并记录 history。"""
+
+    lock_service = _cleanup_lock_service(runtime)
+    owner_id = _scheduler_dry_run_owner(payload.owner_id, user)
+    try:
+        lock = lock_service.acquire(
+            owner_id=owner_id,
+            ttl_seconds=payload.lock_ttl_seconds,
+            metadata={
+                "trigger": "manual_scheduler_dry_run",
+                "trace_id": trace_id,
+            },
+        )
+    except FileRetentionCleanupLockConflict as exc:
+        raise ApiError(status.HTTP_409_CONFLICT, "conflict", exc.message) from exc
+
+    lock_released = False
+    try:
+        report = _readonly_cleanup_runner(runtime).build_report()
+        released_lock = lock_service.release(
+            owner_id=lock.owner_id,
+            fencing_token=lock.fencing_token,
+            now=report.generated_at,
+        )
+        lock_released = True
+        history_record = _cleanup_run_history_service(runtime).record_scheduler_dry_run(
+            report,
+            lock=released_lock,
+            lock_released=lock_released,
+        )
+        return _build_cleanup_scheduler_dry_run_response(report, history_record)
+    except FileRetentionCleanupLockConflict as exc:
+        raise ApiError(status.HTTP_409_CONFLICT, "conflict", exc.message) from exc
+    finally:
+        if not lock_released:
+            _release_cleanup_lock_quietly(lock_service, lock)
+
+
+@router.get("/retention/cleanup-runs/history", response_model=FileRetentionCleanupRunHistoryListResponse)
+def list_file_retention_cleanup_run_history(
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 50,
+    runtime: AppRuntime = Depends(get_runtime),
+    _user: AuthenticatedUser = Depends(require_admin_user),
+) -> FileRetentionCleanupRunHistoryListResponse:
+    """列出 cleanup run durable history，不执行任何清理动作。"""
+
+    items, total = _cleanup_run_history_service(runtime).list_runs(page=page, page_size=page_size)
+    return FileRetentionCleanupRunHistoryListResponse(
+        page=page,
+        page_size=page_size,
+        total=total,
+        items=[_build_cleanup_run_history_response(item) for item in items],
+    )
+
+
+@router.get("/retention/cleanup-runs/history/{run_id}", response_model=FileRetentionCleanupRunHistoryResponse)
+def get_file_retention_cleanup_run_history(
+    run_id: str,
+    runtime: AppRuntime = Depends(get_runtime),
+    _user: AuthenticatedUser = Depends(require_admin_user),
+) -> FileRetentionCleanupRunHistoryResponse:
+    """读取单条 cleanup run durable history，不返回对象路径或文件内容。"""
+
+    record = _cleanup_run_history_service(runtime).get_run(run_id)
+    if record is None:
+        raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"cleanup run history 不存在: {run_id}")
+    return _build_cleanup_run_history_response(record)
 
 
 @router.put(
@@ -537,7 +765,15 @@ def _storage_usage_reporter(runtime: AppRuntime) -> DocumentFileStorageUsageRepo
         artifact_storage=str(dependency_checks.get("artifact_storage") or runtime.settings.jobs_artifact_storage_backend),
         artifact_root_writable=_optional_bool(dependency_checks.get("artifact_root_writable")),
         artifact_disk_free_bytes=artifact_disk_free if isinstance(artifact_disk_free, int) else None,
+        quota_bytes=runtime.settings.files_quota_bytes if runtime.settings.files_quota_bytes > 0 else None,
+        warning_threshold_ratio=runtime.settings.files_quota_warning_threshold_ratio,
     )
+
+
+def _quota_policy_service(runtime: AppRuntime) -> FileQuotaPolicyDryRunService:
+    """按 runtime 构建 quota policy dry-run 和 enforcement service。"""
+
+    return FileQuotaPolicyDryRunService(runtime.settings, runtime.document_file_repository)
 
 
 def _cleanup_run_service(runtime: AppRuntime) -> FileRetentionCleanupRunService:
@@ -546,10 +782,163 @@ def _cleanup_run_service(runtime: AppRuntime) -> FileRetentionCleanupRunService:
     return FileRetentionCleanupRunService(runtime.file_upload_service)
 
 
+def _cleanup_run_history_service(runtime: AppRuntime) -> FileRetentionCleanupRunHistoryService:
+    """按 runtime 构建 cleanup run history service。"""
+
+    return FileRetentionCleanupRunHistoryService(runtime.file_retention_cleanup_run_history_repository)
+
+
+def _cleanup_lock_service(runtime: AppRuntime) -> FileRetentionCleanupLockService:
+    """按 runtime 构建 cleanup lock service。"""
+
+    return FileRetentionCleanupLockService(runtime.file_retention_cleanup_lock_repository)
+
+
+def _readonly_cleanup_runner(runtime: AppRuntime) -> FileRetentionReadonlyCleanupRunner:
+    """按 runtime 构建无副作用的 cleanup scheduler dry-run runner。"""
+
+    return FileRetentionReadonlyCleanupRunner(
+        _retention_planner(runtime),
+        _storage_usage_reporter(runtime),
+    )
+
+
+def _scheduler_dry_run_owner(owner_id: str | None, user: AuthenticatedUser) -> str:
+    """规范手动 scheduler dry-run 的 lock owner，缺省绑定当前 admin user。"""
+
+    if owner_id is None:
+        return f"manual:{user.id}"
+    normalized_owner = owner_id.strip()
+    return normalized_owner or f"manual:{user.id}"
+
+
+def _release_cleanup_lock_quietly(
+    lock_service: FileRetentionCleanupLockService,
+    lock: FileRetentionCleanupLockRecord,
+) -> None:
+    """异常路径尽力释放 cleanup lock，释放失败时保留原始异常语义。"""
+
+    try:
+        lock_service.release(owner_id=lock.owner_id, fencing_token=lock.fencing_token)
+    except FileRetentionCleanupLockConflict:
+        return
+
+
+def _cleanup_plan_signing_secret(runtime: AppRuntime) -> str:
+    """读取 cleanup plan 签名 secret；缺失时拒绝生成弱签名。"""
+
+    secret = runtime.settings.auth_jwt_secret_key.strip()
+    if not secret:
+        raise ApiError(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "cleanup_plan_signing_not_configured",
+            "AUTH_JWT_SECRET_KEY 未配置，无法生成 cleanup run signed plan。",
+        )
+    return secret
+
+
 def _build_file_storage_usage_response(report: FileStorageUsageReport) -> FileStorageUsageResponse:
     """把 storage usage report 映射为 API 响应。"""
 
     return FileStorageUsageResponse(**report.to_dict())
+
+
+def _build_file_quota_policy_dry_run_response(report: FileQuotaPolicyDryRunReport) -> FileQuotaPolicyDryRunResponse:
+    """把 quota dry-run report 映射为稳定 API 响应。"""
+
+    return FileQuotaPolicyDryRunResponse(
+        generated_at=report.generated_at,
+        action_mode=report.action_mode,
+        file_type=report.file_type,
+        filename=report.filename,
+        policy=FileQuotaPolicyConfigResponse(
+            enabled=report.policy.enabled,
+            dry_run=report.policy.dry_run,
+            configured=report.policy.configured,
+            quota_bytes=report.policy.quota_bytes,
+            warning_threshold_ratio=report.policy.warning_threshold_ratio,
+            block_threshold_ratio=report.policy.block_threshold_ratio,
+            warning_threshold_bytes=report.policy.warning_threshold_bytes,
+            block_threshold_bytes=report.policy.block_threshold_bytes,
+            upload_max_bytes=report.policy.upload_max_bytes,
+            status=report.policy.status,
+            config_errors=report.policy.config_errors,
+        ),
+        usage=FileQuotaPolicyUsageResponse(
+            current_used_size_bytes=report.usage.current_used_size_bytes,
+            proposed_upload_size_bytes=report.usage.proposed_upload_size_bytes,
+            projected_used_size_bytes=report.usage.projected_used_size_bytes,
+            current_usage_ratio=report.usage.current_usage_ratio,
+            projected_usage_ratio=report.usage.projected_usage_ratio,
+        ),
+        would_warn=report.would_warn,
+        would_block=report.would_block,
+        reasons=report.reasons,
+        safety=FileQuotaPolicySafetyResponse(
+            read_only=report.safety.read_only,
+            upload_authorization_created=report.safety.upload_authorization_created,
+            upload_content_written=report.safety.upload_content_written,
+            upload_blocking_executed=report.safety.upload_blocking_executed,
+            metadata_mutated=report.safety.metadata_mutated,
+            audit_events_written=report.safety.audit_events_written,
+            provider_calls_executed=report.safety.provider_calls_executed,
+            delete_executed=report.safety.delete_executed,
+            conversion_workflow_executed=report.safety.conversion_workflow_executed,
+        ),
+    )
+
+
+def _build_file_quota_policy_enforcement_audit_details(
+    decision: FileQuotaPolicyEnforcementDecision,
+) -> AuditDetails:
+    """生成 quota 阻断或 override 的结构化审计证据，不包含对象定位或文件内容。"""
+
+    report = decision.report
+    return {
+        "generated_at": report.generated_at.isoformat(),
+        "action_mode": "quota_policy_enforcement",
+        "outcome": decision.audit_outcome(),
+        "file_type": report.file_type,
+        "filename": report.filename,
+        "policy": {
+            "enabled": report.policy.enabled,
+            "dry_run": report.policy.dry_run,
+            "configured": report.policy.configured,
+            "quota_bytes": report.policy.quota_bytes,
+            "warning_threshold_ratio": report.policy.warning_threshold_ratio,
+            "block_threshold_ratio": report.policy.block_threshold_ratio,
+            "warning_threshold_bytes": report.policy.warning_threshold_bytes,
+            "block_threshold_bytes": report.policy.block_threshold_bytes,
+            "status": report.policy.status,
+            "config_errors": list(report.policy.config_errors),
+        },
+        "usage": {
+            "current_used_size_bytes": report.usage.current_used_size_bytes,
+            "proposed_upload_size_bytes": report.usage.proposed_upload_size_bytes,
+            "projected_used_size_bytes": report.usage.projected_used_size_bytes,
+            "current_usage_ratio": report.usage.current_usage_ratio,
+            "projected_usage_ratio": report.usage.projected_usage_ratio,
+        },
+        "would_warn": report.would_warn,
+        "would_block": report.would_block,
+        "reasons": list(decision.reasons),
+        "override": {
+            "requested": decision.override_requested,
+            "allowed": decision.override_allowed,
+            "applied": decision.override_applied,
+            "actor_role": decision.actor_role,
+        },
+        "safety": {
+            "upload_blocking_executed": decision.blocked,
+            "upload_authorization_created_by_quota_policy": False,
+            "metadata_mutated_by_quota_policy": False,
+            "upload_content_written": False,
+            "audit_events_written": True,
+            "provider_calls_executed": False,
+            "delete_executed": False,
+            "conversion_workflow_executed": False,
+        },
+    }
 
 
 def _build_file_library_search_response(page: FileLibrarySearchPage) -> FileLibrarySearchResponse:
@@ -605,6 +994,9 @@ def _build_cleanup_run_response(
     report: FileRetentionCleanupRunReport,
     *,
     audit_events_written: bool,
+    history_recorded: bool,
+    signed_plan_verified: bool,
+    cleanup_plan: object | None,
 ) -> FileRetentionCleanupRunResponse:
     """把 cleanup run report 映射为 API 响应。"""
 
@@ -617,11 +1009,49 @@ def _build_cleanup_run_response(
         requested_file_ids=report.requested_file_ids,
         max_files=report.max_files,
         physical_delete=_build_file_retention_delete_response(report.physical_delete),
+        cleanup_plan=_build_signed_cleanup_plan_response(cleanup_plan),
         safety=FileRetentionCleanupRunSafetyResponse(
             physical_delete_executed=report.action_mode == "cleanup_execute",
             audit_events_written=audit_events_written,
+            history_recorded=history_recorded,
+            signed_plan_created=cleanup_plan is not None,
+            signed_plan_verified=signed_plan_verified,
         ),
     )
+
+
+def _build_cleanup_run_history_response(
+    record: FileRetentionCleanupRunHistoryRecord,
+) -> FileRetentionCleanupRunHistoryResponse:
+    """把 cleanup run history record 映射为 API 响应。"""
+
+    return FileRetentionCleanupRunHistoryResponse(**record.model_dump(mode="python"))
+
+
+def _build_cleanup_scheduler_dry_run_response(
+    report: FileRetentionCleanupReadonlyReport,
+    history_record: FileRetentionCleanupRunHistoryRecord,
+) -> FileRetentionCleanupSchedulerDryRunResponse:
+    """把手动 scheduler dry-run history 映射为 API 响应。"""
+
+    return FileRetentionCleanupSchedulerDryRunResponse(
+        run_id=report.run_id,
+        generated_at=report.generated_at,
+        action_mode="scheduler_dry_run",
+        readonly_report=history_record.readonly_report,
+        lock=FileRetentionCleanupLockSummaryResponse(**history_record.lock),
+        safety=history_record.safety,
+    )
+
+
+def _build_signed_cleanup_plan_response(cleanup_plan: object | None) -> FileRetentionSignedCleanupPlanResponse | None:
+    """把 signed cleanup plan 模型映射为 API 响应。"""
+
+    if cleanup_plan is None:
+        return None
+    if hasattr(cleanup_plan, "model_dump"):
+        return FileRetentionSignedCleanupPlanResponse(**cleanup_plan.model_dump(mode="python"))
+    return FileRetentionSignedCleanupPlanResponse.model_validate(cleanup_plan)
 
 
 def _build_retention_delete_audit_reason(reason: str, report: FileRetentionDeleteReport) -> str:

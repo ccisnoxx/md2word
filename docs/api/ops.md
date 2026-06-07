@@ -6,6 +6,8 @@
 
 `/api/v1/ops/alert-deliveries` provides an Admin-only fake alert delivery outbox safety contract.
 
+`/api/v1/ops/alert-destinations` provides an Admin-only alert destination configuration dry-run contract.
+
 `/api/v1/ops/provider-cancellations` provides an Admin-only fake provider cancellation safety contract.
 
 File retention cleanup run execution lives under `/api/v1/files/retention/cleanup-runs/*`; the Ops recovery action registry links to it as `file_retention.automated_cleanup_execute`.
@@ -149,6 +151,90 @@ Safety metadata always reports:
 ```
 
 The API never returns or stores webhook URLs, credentials, provider secrets, local paths, file bytes, prompt text, or full health payloads.
+
+## Alert Destination Config Dry Run
+
+### Configuration
+
+Alert destination dry-run reads `OPS_ALERT_DESTINATIONS_JSON`.
+
+Default:
+
+```json
+[]
+```
+
+Configured value is a JSON array:
+
+```json
+[
+  {
+    "destination_id": "ops-slack-primary",
+    "channel": "slack",
+    "enabled": false,
+    "secret_ref": "OPS_SLACK_WEBHOOK_URL",
+    "target_label": "#ops-alerts",
+    "allowlist": ["stage_spool_failed_messages_present"],
+    "rate_limit_per_hour": 30,
+    "dedupe_window_minutes": 60
+  }
+]
+```
+
+Supported `channel` values:
+
+- `slack`
+- `email`
+- `webhook`
+
+`secret_ref` is a secret reference name only. The API does not read or return secret values.
+
+### `POST /api/v1/ops/alert-destinations/dry-run`
+
+Admin-only read-only dry-run for staged alert destination config.
+
+Request:
+
+```json
+{
+  "alert_codes": ["stage_spool_failed_messages_present"],
+  "destination_ids": ["ops-slack-primary"]
+}
+```
+
+Rules:
+
+- `alert_codes` is optional; when present, every code must be exact, active in `GET /api/v1/health/ops-alerts`, unique, non-blank, and capped at 10.
+- `destination_ids` is optional; omitted means all configured destinations.
+- Empty destination config is valid and returns zero destinations.
+- Invalid destination config is reported in `config_errors` and does not trigger external side effects.
+- Empty destination `allowlist` blocks all requested alert codes.
+- Real external delivery is still not implemented even when a destination has `enabled=true`.
+
+Response includes:
+
+- `configured_count`
+- `selected_count`
+- `config_errors`
+- per-destination `status`, `missing_gates`, `matched_alert_codes`, and `blocked_alert_codes`
+- safety metadata
+
+Safety metadata always reports:
+
+```json
+{
+  "read_only": true,
+  "external_delivery_executed": false,
+  "provider_calls_executed": false,
+  "cleanup_executed": false,
+  "delete_executed": false,
+  "conversion_workflow_executed": false,
+  "audit_events_written": false,
+  "secret_values_exposed": false
+}
+```
+
+This contract is integration readiness only. It does not send Slack/email/webhook alerts and does not create delivery history.
 
 ## Provider Cancellation Fake Contract
 

@@ -1,5 +1,5 @@
 # File: tests/test_fastapi_jobs_backend.py
-# Purpose: 覆盖 FastAPI jobs/files API、workflow 和 artifact 合同。
+# Purpose: 覆盖 FastAPI jobs/files API、ops governance、workflow 和 artifact 合同。
 
 import csv
 import io
@@ -46,6 +46,7 @@ from app.domains.document_jobs.execution import DocumentJobExecutionService, Eag
 from app.domains.document_jobs.service import DocumentJobService
 from app.services.document_ir import MinerUToDocumentIRService
 from app.domains.files import FileRetentionPolicyService, FileUploadService
+from app.domains.files.cleanup_lock import FileRetentionCleanupLockService
 from app.domains.files.models import DocumentFileRecord
 from app.services.health_service import HealthService
 from app.domains.jobs.artifact_integrity import ArtifactFingerprintMismatch
@@ -255,11 +256,17 @@ def build_test_runtime(
     jobs_access_token: str = "",
     jobs_ops_access_mode: str = "admin",
     admin_token: str = "",
+    ops_alert_destinations_json: str = "[]",
     auth_jwt_secret_key: str = "",
     auth_access_token_expire_minutes: int = 120,
     auth_internal_users_file: str = "",
     auth_internal_users_json: str = "",
     jobs_upload_max_bytes: int = 52_428_800,
+    files_quota_policy_enabled: bool = False,
+    files_quota_policy_dry_run: bool = True,
+    files_quota_bytes: int = 0,
+    files_quota_warning_threshold_ratio: float = 0.8,
+    files_quota_block_threshold_ratio: float = 1.0,
     pdf_upload_max_pages: int = 200,
     p0_document_job_timeout_seconds: int = 1200,
     p0_document_job_max_retries: int = 2,
@@ -292,11 +299,17 @@ def build_test_runtime(
         jobs_access_token=jobs_access_token,
         jobs_ops_access_mode=jobs_ops_access_mode,
         admin_token=admin_token,
+        ops_alert_destinations_json=ops_alert_destinations_json,
         auth_jwt_secret_key=auth_jwt_secret_key,
         auth_access_token_expire_minutes=auth_access_token_expire_minutes,
         auth_internal_users_file=auth_internal_users_file,
         auth_internal_users_json=auth_internal_users_json,
         jobs_upload_max_bytes=jobs_upload_max_bytes,
+        files_quota_policy_enabled=files_quota_policy_enabled,
+        files_quota_policy_dry_run=files_quota_policy_dry_run,
+        files_quota_bytes=files_quota_bytes,
+        files_quota_warning_threshold_ratio=files_quota_warning_threshold_ratio,
+        files_quota_block_threshold_ratio=files_quota_block_threshold_ratio,
         pdf_upload_max_pages=pdf_upload_max_pages,
         p0_document_job_timeout_seconds=p0_document_job_timeout_seconds,
         p0_document_job_max_retries=p0_document_job_max_retries,
@@ -336,6 +349,8 @@ def build_test_runtime(
     audit_event_repository = persistence_adapters.audit_event_repository
     document_file_repository = persistence_adapters.document_file_repository
     file_retention_policy_repository = persistence_adapters.file_retention_policy_repository
+    file_retention_cleanup_lock_repository = persistence_adapters.file_retention_cleanup_lock_repository
+    file_retention_cleanup_run_history_repository = persistence_adapters.file_retention_cleanup_run_history_repository
     document_job_repository = persistence_adapters.document_job_repository
     document_job_event_repository = persistence_adapters.document_job_event_repository
     stage_message_store = persistence_adapters.stage_message_store
@@ -551,6 +566,8 @@ def build_test_runtime(
         audit_event_repository=audit_event_repository,
         document_file_repository=document_file_repository,
         file_retention_policy_repository=file_retention_policy_repository,
+        file_retention_cleanup_lock_repository=file_retention_cleanup_lock_repository,
+        file_retention_cleanup_run_history_repository=file_retention_cleanup_run_history_repository,
         document_job_repository=document_job_repository,
         document_job_event_repository=document_job_event_repository,
         audit_service=audit_service,
@@ -1222,6 +1239,10 @@ class FastAPIJobsBackendTests(TestCase):
                     target_type="document_job",
                     target_id="job_retry",
                     reason="rerun issue",
+                    details={
+                        "workflow": "manual_retry",
+                        "evidence": {"source": "audit-details-search"},
+                    },
                     trace_id="trace_retry",
                     created_at=base_time - timedelta(minutes=2),
                 )
@@ -1261,7 +1282,7 @@ class FastAPIJobsBackendTests(TestCase):
                         "actor_id": "user_admin",
                         "action": "document_job.retry",
                         "target_id": "job_retry",
-                        "q": "rerun",
+                        "q": "audit-details-search",
                         "created_from": (base_time - timedelta(minutes=2, seconds=30)).isoformat(),
                         "created_to": (base_time - timedelta(minutes=1, seconds=30)).isoformat(),
                     },
@@ -1279,6 +1300,8 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(filter_payload["total"], 1)
         self.assertEqual(filter_payload["items"][0]["audit_id"], "audit_retry_mid")
         self.assertEqual(filter_payload["items"][0]["reason"], "rerun issue")
+        self.assertEqual(filter_payload["items"][0]["details"]["workflow"], "manual_retry")
+        self.assertEqual(filter_payload["items"][0]["details"]["evidence"]["source"], "audit-details-search")
 
     def test_audit_events_api_rejects_operator(self):
         """验证 Operator 不能访问 Admin-only 审计事件查询接口。"""
@@ -1317,6 +1340,10 @@ class FastAPIJobsBackendTests(TestCase):
                     target_type="document_job",
                     target_id="job_archive",
                     reason="archive, \"terminal\"\njob",
+                    details={
+                        "operation": "archive",
+                        "counts": {"files": 0, "events": 1},
+                    },
                     trace_id="trace_archive",
                     created_at=base_time - timedelta(minutes=3),
                 )
@@ -1381,14 +1408,22 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(manifest["max_rows"], 1)
         self.assertEqual(manifest["truncated"], True)
         self.assertEqual(manifest["columns"][0], "created_at")
+        self.assertIn("details_json", manifest["columns"])
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["audit_id"], "audit_archive_old")
         self.assertEqual(rows[0]["reason"], "archive, \"terminal\"\njob")
+        self.assertEqual(
+            rows[0]["details_json"],
+            '{"counts":{"events":1,"files":0},"operation":"archive"}',
+        )
         self.assertEqual(len(export_events), 1)
         self.assertEqual(export_events[0].audit_id, manifest["audit_id"])
         self.assertEqual(export_events[0].actor_id, "user_admin")
         self.assertEqual(export_events[0].target_type, "audit_events")
         self.assertIn("exported=1 matched=2", export_events[0].reason or "")
+        self.assertEqual(export_events[0].details["matched_count"], 2)
+        self.assertEqual(export_events[0].details["exported_count"], 1)
+        self.assertEqual(export_events[0].details["filters"], {"target_type": "document_job"})
         self.assertNotEqual(rows[0]["audit_id"], export_events[0].audit_id)
 
     def test_audit_events_export_api_rejects_operator(self):
@@ -1803,6 +1838,15 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(delivery_events[0].trace_id, "trace_alert_delivery_fake")
         self.assertIn("stage_spool_failed_messages_present:local_outbox", delivery_events[0].reason)
         self.assertIn("fake_delivered=1", delivery_events[0].reason)
+        self.assertIsNotNone(delivery_events[0].details)
+        self.assertEqual(delivery_events[0].details["delivery_id"], first_payload["delivery_id"])
+        self.assertEqual(delivery_events[0].details["channel"], "local_outbox")
+        self.assertEqual(delivery_events[0].details["totals"]["fake_delivered"], 1)
+        self.assertFalse(delivery_events[0].details["safety"]["external_delivery_executed"])
+        self.assertEqual(
+            delivery_events[0].details["items"][0]["alert_code"],
+            "stage_spool_failed_messages_present",
+        )
 
     def test_ops_alert_delivery_rejects_invalid_targets_and_updates_action_registry(self):
         """验证 alert delivery 拒绝非精确目标，并暴露 fake outbox registry 合同。"""
@@ -1872,6 +1916,128 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertTrue(alert_action["requires_reason"])
         self.assertTrue(alert_action["requires_confirmation"])
         self.assertFalse(alert_action["sends_notification"])
+
+    def test_ops_alert_destination_dry_run_is_admin_only_readonly_and_masks_secrets(self):
+        """验证 alert destination dry-run 只读、Admin-only，并且不返回 secret value。"""
+
+        destination_config = [
+            {
+                "destination_id": "ops-slack-primary",
+                "channel": "slack",
+                "enabled": True,
+                "secret_ref": "OPS_SLACK_WEBHOOK_URL",
+                "secret_value": "should-not-leak",
+                "target_label": "#ops-alerts",
+                "allowlist": ["stage_spool_failed_messages_present"],
+                "rate_limit_per_hour": 30,
+                "dedupe_window_minutes": 60,
+            }
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                ops_alert_destinations_json=json.dumps(destination_config),
+            )
+            runtime.stage_message_store.put_stage_message(
+                JobStageMessage(
+                    id="msg_alert_destination_dry_run_failed",
+                    job_id="docjob_alert_destination",
+                    stage="convert_package",
+                    trace_id="trace_alert_destination",
+                    status="failed",
+                )
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                audit_actions_before = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+                admin_response = client.post(
+                    "/api/v1/ops/alert-destinations/dry-run",
+                    headers=admin_headers,
+                    json={
+                        "alert_codes": ["stage_spool_failed_messages_present"],
+                        "destination_ids": ["ops-slack-primary"],
+                    },
+                )
+                operator_response = client.post(
+                    "/api/v1/ops/alert-destinations/dry-run",
+                    headers=operator_headers,
+                    json={
+                        "alert_codes": ["stage_spool_failed_messages_present"],
+                        "destination_ids": ["ops-slack-primary"],
+                    },
+                )
+                audit_actions_after = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+
+        self.assertEqual(admin_response.status_code, 200)
+        payload = admin_response.json()
+        self.assertEqual(payload["action_mode"], "config_dry_run")
+        self.assertEqual(payload["configured_count"], 1)
+        self.assertEqual(payload["selected_count"], 1)
+        self.assertEqual(payload["config_errors"], [])
+        self.assertFalse(payload["safety"]["external_delivery_executed"])
+        self.assertFalse(payload["safety"]["provider_calls_executed"])
+        self.assertFalse(payload["safety"]["audit_events_written"])
+        self.assertFalse(payload["safety"]["secret_values_exposed"])
+        destination = payload["destinations"][0]
+        self.assertEqual(destination["destination_id"], "ops-slack-primary")
+        self.assertEqual(destination["channel"], "slack")
+        self.assertEqual(destination["status"], "dry_run_passed")
+        self.assertEqual(destination["secret_ref"], "OPS_SLACK_WEBHOOK_URL")
+        self.assertTrue(destination["secret_ref_present"])
+        self.assertEqual(destination["matched_alert_codes"], ["stage_spool_failed_messages_present"])
+        self.assertEqual(destination["blocked_alert_codes"], [])
+        self.assertIn("real_delivery_not_implemented", destination["missing_gates"])
+        self.assertNotIn("should-not-leak", admin_response.text)
+        self.assertEqual(operator_response.status_code, 403)
+        self.assertEqual(operator_response.json()["error_code"], "role_forbidden")
+        self.assertEqual(audit_actions_after, audit_actions_before)
+
+    def test_ops_alert_destination_dry_run_reports_invalid_config_without_side_effects(self):
+        """验证 alert destination invalid config 作为 dry-run error 返回且无副作用。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                ops_alert_destinations_json=json.dumps(
+                    [
+                        {
+                            "destination_id": "bad-destination",
+                            "channel": "sms",
+                            "enabled": "yes",
+                            "allowlist": "not-a-list",
+                        }
+                    ]
+                ),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                audit_actions_before = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+                response = client.post(
+                    "/api/v1/ops/alert-destinations/dry-run",
+                    headers=admin_headers,
+                    json={},
+                )
+                audit_actions_after = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["configured_count"], 0)
+        self.assertEqual(payload["selected_count"], 0)
+        self.assertEqual(payload["destinations"], [])
+        self.assertGreaterEqual(len(payload["config_errors"]), 3)
+        self.assertTrue(any("channel" in error for error in payload["config_errors"]))
+        self.assertTrue(any("enabled" in error for error in payload["config_errors"]))
+        self.assertTrue(any("allowlist" in error for error in payload["config_errors"]))
+        self.assertFalse(payload["safety"]["external_delivery_executed"])
+        self.assertFalse(payload["safety"]["secret_values_exposed"])
+        self.assertEqual(audit_actions_after, audit_actions_before)
 
     def test_ops_provider_cancellation_preview_is_admin_only_and_metadata_only(self):
         """验证 provider cancellation preview 只读、Admin-only，且不调用 provider。"""
@@ -2013,8 +2179,121 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(len(cancel_events), 1)
         self.assertEqual(cancel_events[0].trace_id, "trace_provider_cancel_fake")
         self.assertIn("mineru:document_job:docjob_provider_cancel_fake:batch_provider_cancel_fake", cancel_events[0].reason)
+        self.assertIsNotNone(cancel_events[0].details)
+        self.assertEqual(cancel_events[0].details["provider"], "mineru")
+        self.assertEqual(cancel_events[0].details["target"]["target_id"], "docjob_provider_cancel_fake")
+        self.assertEqual(cancel_events[0].details["provider_operation"]["operation_id"], "batch_provider_cancel_fake")
+        provider_adapter = cancel_events[0].details["provider_adapter"]
+        self.assertEqual(provider_adapter["contract_version"], "provider-cancel-fake-v1")
+        self.assertEqual(provider_adapter["adapter_mode"], "fake")
+        self.assertEqual(
+            provider_adapter["idempotency_key"],
+            "mineru:document_job:docjob_provider_cancel_fake:batch_provider_cancel_fake",
+        )
+        self.assertEqual(provider_adapter["timeout_seconds"], 0)
+        self.assertFalse(provider_adapter["timed_out"])
+        self.assertEqual(provider_adapter["outcome"], "fake_canceled")
+        self.assertIsNone(provider_adapter["error_code"])
+        self.assertIsNone(provider_adapter["error_message"])
+        self.assertTrue(provider_adapter["safety"]["fake_adapter_executed"])
+        self.assertTrue(provider_adapter["safety"]["timeout_checked"])
+        self.assertTrue(provider_adapter["safety"]["idempotency_key_checked"])
+        self.assertFalse(provider_adapter["safety"]["real_provider_cancel_executed"])
+        self.assertFalse(provider_adapter["safety"]["provider_calls_executed"])
+        self.assertFalse(cancel_events[0].details["safety"]["real_provider_cancel_executed"])
         self.assertEqual(runtime.document_job_execution_service.fake_mineru_client.query_calls, [])
         self.assertEqual(runtime.document_job_execution_service.fake_mineru_client.calls, [])
+
+    def test_ops_provider_cancellation_dedupes_from_structured_adapter_details(self):
+        """验证 provider fake-cancel dedupe 优先使用结构化 adapter 幂等 key。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            runtime.document_job_repository.create_document_job(
+                DocumentJobRecord(
+                    id="docjob_provider_cancel_details_dedupe",
+                    tenant_id="tenant_default",
+                    company_id="company_default",
+                    created_by="user_operator",
+                    source_file_id="file_provider_cancel_details_dedupe",
+                    status="running",
+                    stage="parsing",
+                    progress=20,
+                    template_version_id="template_default",
+                    mineru_batch_id="batch_provider_cancel_details_dedupe",
+                    mineru_data_id="docjob_provider_cancel_details_dedupe",
+                )
+            )
+            runtime.audit_event_repository.append_audit_event(
+                AuditEvent(
+                    audit_id="audit_provider_cancel_details_dedupe",
+                    actor_id="admin",
+                    actor_role="admin",
+                    action="ops.provider_cancellation_fake",
+                    target_type="provider_operation",
+                    target_id="mineru:document_job:docjob_provider_cancel_details_dedupe",
+                    reason="reason=seeded_provider_cancel outcome=fake_canceled",
+                    details={
+                        "provider_adapter": {
+                            "contract_version": "provider-cancel-fake-v1",
+                            "adapter_mode": "fake",
+                            "idempotency_key": (
+                                "mineru:document_job:"
+                                "docjob_provider_cancel_details_dedupe:"
+                                "batch_provider_cancel_details_dedupe"
+                            ),
+                            "timeout_seconds": 0,
+                            "timed_out": False,
+                            "outcome": "fake_canceled",
+                            "error_code": None,
+                            "error_message": None,
+                            "safety": {
+                                "fake_adapter_executed": True,
+                                "real_provider_cancel_executed": False,
+                                "provider_calls_executed": False,
+                                "local_job_mutated": False,
+                                "queue_mutated": False,
+                                "timeout_checked": True,
+                                "idempotency_key_checked": True,
+                                "error_recorded": False,
+                            },
+                        }
+                    },
+                    trace_id="trace_seed_provider_cancel_details_dedupe",
+                    created_at=utc_now(),
+                )
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                response = client.post(
+                    "/api/v1/ops/provider-cancellations/fake-cancel",
+                    headers=admin_headers,
+                    json={
+                        "target_type": "document_job",
+                        "target_id": "docjob_provider_cancel_details_dedupe",
+                        "provider": "mineru",
+                        "reason": "ops provider cancellation drill",
+                        "confirmation": "FAKE CANCEL PROVIDER OPERATION",
+                        "dedupe_window_minutes": 60,
+                    },
+                )
+            cancel_events = [
+                event
+                for event in runtime.audit_event_repository.list_audit_events()
+                if event.action == "ops.provider_cancellation_fake"
+            ]
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["outcome"], "deduped")
+        self.assertFalse(payload["audit_event_written"])
+        self.assertFalse(payload["safety"]["audit_events_written"])
+        self.assertEqual(len(cancel_events), 1)
 
     def test_ops_provider_cancellation_gates_and_registry_contract(self):
         """验证 provider fake-cancel gate 和 registry 合同。"""
@@ -2733,6 +3012,339 @@ class FastAPIJobsBackendTests(TestCase):
             [],
         )
 
+    def test_file_quota_policy_dry_run_reports_would_block_without_side_effects(self):
+        """验证 quota policy dry-run 只报告 would_block，不创建上传授权或写审计。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_internal_users_json=build_auth_users_json(),
+                auth_jwt_secret_key="test-secret",
+                jobs_upload_max_bytes=5_000,
+                files_quota_policy_enabled=True,
+                files_quota_policy_dry_run=True,
+                files_quota_bytes=2_000,
+                files_quota_warning_threshold_ratio=0.8,
+                files_quota_block_threshold_ratio=1.0,
+            )
+            active_file = DocumentFileRecord(
+                id="file_quota_active",
+                tenant_id="tenant_default",
+                company_id="company_default",
+                job_id="docjob_quota",
+                file_type="source_pdf",
+                storage_provider="local_object",
+                bucket="local-object",
+                object_key="document-files/quota/active.pdf",
+                original_filename="active.pdf",
+                mime_type="application/pdf",
+                size_bytes=1_500,
+                status="uploaded",
+                expires_at=utc_now() + timedelta(days=1),
+            )
+            deleted_file = DocumentFileRecord(
+                id="file_quota_deleted",
+                tenant_id="tenant_default",
+                company_id="company_default",
+                job_id="docjob_quota",
+                file_type="generated_word",
+                storage_provider="local_object",
+                bucket="local-object",
+                object_key="document-files/quota/deleted.docx",
+                original_filename="deleted.docx",
+                mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                size_bytes=10_000,
+                status="deleted",
+                expires_at=utc_now() - timedelta(days=1),
+            )
+            runtime.document_file_repository.create_document_file(active_file)
+            runtime.document_file_repository.create_document_file(deleted_file)
+            before_file_ids = [
+                record.id
+                for record in runtime.document_file_repository.list_document_files()
+            ]
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                response = client.post(
+                    "/api/v1/files/quota-policy/dry-run",
+                    headers=admin_headers,
+                    json={
+                        "filename": "large.pdf",
+                        "file_type": "source_pdf",
+                        "size_bytes": 700,
+                    },
+                )
+
+            after_file_ids = [
+                record.id
+                for record in runtime.document_file_repository.list_document_files()
+            ]
+            after_audit_actions = [
+                event.action
+                for event in runtime.audit_event_repository.list_audit_events()
+            ]
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["action_mode"], "quota_policy_dry_run")
+        self.assertEqual(payload["file_type"], "source_pdf")
+        self.assertEqual(payload["filename"], "large.pdf")
+        self.assertEqual(payload["policy"]["status"], "dry_run")
+        self.assertEqual(payload["policy"]["quota_bytes"], 2_000)
+        self.assertEqual(payload["policy"]["upload_max_bytes"], 5_000)
+        self.assertEqual(payload["usage"]["current_used_size_bytes"], 1_500)
+        self.assertEqual(payload["usage"]["proposed_upload_size_bytes"], 700)
+        self.assertEqual(payload["usage"]["projected_used_size_bytes"], 2_200)
+        self.assertTrue(payload["would_warn"])
+        self.assertTrue(payload["would_block"])
+        self.assertIn("projected_usage_reaches_warning_threshold", payload["reasons"])
+        self.assertIn("projected_usage_reaches_block_threshold", payload["reasons"])
+        self.assertIn("quota_policy_dry_run_only", payload["reasons"])
+        self.assertTrue(payload["safety"]["read_only"])
+        self.assertFalse(payload["safety"]["upload_authorization_created"])
+        self.assertFalse(payload["safety"]["upload_blocking_executed"])
+        self.assertFalse(payload["safety"]["metadata_mutated"])
+        self.assertFalse(payload["safety"]["audit_events_written"])
+        self.assertEqual(before_file_ids, after_file_ids)
+        self.assertEqual(
+            [
+                action
+                for action in after_audit_actions
+                if action.startswith("file.quota") or action == "file.upload_authorize"
+            ],
+            [],
+        )
+
+    def test_file_quota_policy_dry_run_is_admin_only_and_upload_url_unchanged(self):
+        """验证 quota dry-run 只允许 Admin，且 staged would_block 不改变真实上传授权。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_internal_users_json=build_auth_users_json(),
+                auth_jwt_secret_key="test-secret",
+                jobs_upload_max_bytes=5_000,
+                files_quota_policy_enabled=True,
+                files_quota_policy_dry_run=True,
+                files_quota_bytes=2_000,
+            )
+            runtime.document_file_repository.create_document_file(
+                DocumentFileRecord(
+                    id="file_quota_existing",
+                    tenant_id="tenant_default",
+                    company_id="company_default",
+                    job_id="docjob_quota",
+                    file_type="source_pdf",
+                    storage_provider="local_object",
+                    bucket="local-object",
+                    object_key="document-files/quota/existing.pdf",
+                    original_filename="existing.pdf",
+                    mime_type="application/pdf",
+                    size_bytes=1_500,
+                    status="uploaded",
+                    expires_at=utc_now() + timedelta(days=1),
+                )
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                admin_dry_run = client.post(
+                    "/api/v1/files/quota-policy/dry-run",
+                    headers=admin_headers,
+                    json={"filename": "still-authorized.pdf", "size_bytes": 700},
+                )
+                operator_dry_run = client.post(
+                    "/api/v1/files/quota-policy/dry-run",
+                    headers=operator_headers,
+                    json={"filename": "still-authorized.pdf", "size_bytes": 700},
+                )
+                upload_response = client.post(
+                    "/api/v1/files/upload-url",
+                    headers=operator_headers,
+                    json={
+                        "filename": "still-authorized.pdf",
+                        "mime_type": "application/pdf",
+                        "size_bytes": 700,
+                    },
+                )
+
+            audit_actions = [
+                event.action
+                for event in runtime.audit_event_repository.list_audit_events()
+            ]
+
+        self.assertEqual(admin_dry_run.status_code, 200)
+        self.assertTrue(admin_dry_run.json()["would_block"])
+        self.assertEqual(operator_dry_run.status_code, 403)
+        self.assertEqual(operator_dry_run.json()["error_code"], "role_forbidden")
+        self.assertEqual(upload_response.status_code, 201)
+        self.assertEqual(upload_response.json()["file"]["status"], "pending_upload")
+        self.assertEqual(upload_response.json()["file"]["size_bytes"], 700)
+        self.assertEqual(audit_actions.count("file.upload_authorize"), 1)
+        self.assertNotIn("file.quota_policy_dry_run", audit_actions)
+
+    def test_file_quota_policy_ready_blocks_upload_authorization_and_audits(self):
+        """验证 ready quota policy 超额时阻断上传授权并写结构化审计。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_internal_users_json=build_auth_users_json(),
+                auth_jwt_secret_key="test-secret",
+                jobs_upload_max_bytes=5_000,
+                files_quota_policy_enabled=True,
+                files_quota_policy_dry_run=False,
+                files_quota_bytes=2_000,
+            )
+            runtime.document_file_repository.create_document_file(
+                DocumentFileRecord(
+                    id="file_quota_enforce_existing",
+                    tenant_id="tenant_default",
+                    company_id="company_default",
+                    job_id="docjob_quota",
+                    file_type="source_pdf",
+                    storage_provider="local_object",
+                    bucket="local-object",
+                    object_key="document-files/quota/enforce-existing.pdf",
+                    original_filename="existing.pdf",
+                    mime_type="application/pdf",
+                    size_bytes=1_500,
+                    status="uploaded",
+                    expires_at=utc_now() + timedelta(days=1),
+                )
+            )
+            before_file_ids = [
+                record.id
+                for record in runtime.document_file_repository.list_document_files()
+            ]
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                response = client.post(
+                    "/api/v1/files/upload-url",
+                    headers={**operator_headers, "X-Trace-Id": "trace_quota_block"},
+                    json={
+                        "filename": "blocked.pdf",
+                        "mime_type": "application/pdf",
+                        "size_bytes": 700,
+                    },
+                )
+
+            after_file_ids = [
+                record.id
+                for record in runtime.document_file_repository.list_document_files()
+            ]
+            quota_events = [
+                event
+                for event in runtime.audit_event_repository.list_audit_events()
+                if event.action == "file.quota_policy_block"
+            ]
+            upload_events = [
+                event
+                for event in runtime.audit_event_repository.list_audit_events()
+                if event.action == "file.upload_authorize"
+            ]
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error_code"], "conflict")
+        self.assertIn("quota policy", response.json()["detail"])
+        self.assertEqual(before_file_ids, after_file_ids)
+        self.assertEqual(upload_events, [])
+        self.assertEqual(len(quota_events), 1)
+        self.assertEqual(quota_events[0].trace_id, "trace_quota_block")
+        self.assertIn("outcome=blocked", quota_events[0].reason)
+        self.assertIsNotNone(quota_events[0].details)
+        self.assertEqual(quota_events[0].details["outcome"], "blocked")
+        self.assertEqual(quota_events[0].details["policy"]["status"], "ready")
+        self.assertEqual(quota_events[0].details["usage"]["current_used_size_bytes"], 1_500)
+        self.assertEqual(quota_events[0].details["usage"]["projected_used_size_bytes"], 2_200)
+        self.assertTrue(quota_events[0].details["would_block"])
+        self.assertTrue(quota_events[0].details["safety"]["upload_blocking_executed"])
+        self.assertFalse(quota_events[0].details["safety"]["upload_authorization_created_by_quota_policy"])
+
+    def test_file_quota_policy_admin_override_allows_upload_and_audits(self):
+        """验证 Admin override 可放行 quota block，并写 override 与 upload 授权审计。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_internal_users_json=build_auth_users_json(),
+                auth_jwt_secret_key="test-secret",
+                jobs_upload_max_bytes=5_000,
+                files_quota_policy_enabled=True,
+                files_quota_policy_dry_run=False,
+                files_quota_bytes=2_000,
+            )
+            runtime.document_file_repository.create_document_file(
+                DocumentFileRecord(
+                    id="file_quota_override_existing",
+                    tenant_id="tenant_default",
+                    company_id="company_default",
+                    job_id="docjob_quota",
+                    file_type="source_pdf",
+                    storage_provider="local_object",
+                    bucket="local-object",
+                    object_key="document-files/quota/override-existing.pdf",
+                    original_filename="existing.pdf",
+                    mime_type="application/pdf",
+                    size_bytes=1_500,
+                    status="uploaded",
+                    expires_at=utc_now() + timedelta(days=1),
+                )
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                response = client.post(
+                    "/api/v1/files/upload-url",
+                    headers={**admin_headers, "X-Trace-Id": "trace_quota_override"},
+                    json={
+                        "filename": "override.pdf",
+                        "mime_type": "application/pdf",
+                        "size_bytes": 700,
+                        "quota_override_reason": "temporary customer migration",
+                        "quota_override_confirmation": "OVERRIDE FILE QUOTA POLICY",
+                    },
+                )
+
+            quota_events = [
+                event
+                for event in runtime.audit_event_repository.list_audit_events()
+                if event.action == "file.quota_policy_override"
+            ]
+            upload_events = [
+                event
+                for event in runtime.audit_event_repository.list_audit_events()
+                if event.action == "file.upload_authorize"
+            ]
+            stored_files = runtime.document_file_repository.list_document_files()
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        self.assertEqual(payload["file"]["status"], "pending_upload")
+        self.assertEqual(payload["file"]["size_bytes"], 700)
+        self.assertEqual(len(stored_files), 2)
+        self.assertEqual(len(quota_events), 1)
+        self.assertEqual(len(upload_events), 1)
+        self.assertEqual(quota_events[0].trace_id, "trace_quota_override")
+        self.assertIn("outcome=overridden", quota_events[0].reason)
+        self.assertIsNotNone(quota_events[0].details)
+        self.assertEqual(quota_events[0].details["outcome"], "overridden")
+        self.assertTrue(quota_events[0].details["override"]["requested"])
+        self.assertTrue(quota_events[0].details["override"]["allowed"])
+        self.assertTrue(quota_events[0].details["override"]["applied"])
+        self.assertFalse(quota_events[0].details["safety"]["upload_blocking_executed"])
+
     def test_file_library_search_is_admin_only_readonly_safe_and_filterable(self):
         """验证 Admin-only 文件库搜索只返回安全摘要，并支持筛选、排序和分页。"""
 
@@ -2909,6 +3521,143 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(file_after_runner.status, "expired")
         self.assertEqual(audit_events, [])
 
+    def test_cleanup_scheduler_dry_run_manual_runner_records_history_and_releases_lock(self):
+        """验证手动 scheduler dry-run 只读生成报告、释放 lock 并写入 durable history。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            stale_file = self._seed_expired_document_file(runtime, file_id="file_scheduler_dry_run")
+            runtime.document_file_repository.update_document_file(stale_file.id, status="expired")
+            stale_path = runtime.file_upload_service.resolve_local_object_path(stale_file.object_key)
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                audit_events_before = list(runtime.audit_event_repository.list_audit_events())
+                operator_response = client.post(
+                    "/api/v1/files/retention/cleanup-runs/scheduler-dry-run",
+                    headers=operator_headers,
+                    json={},
+                )
+                admin_response = client.post(
+                    "/api/v1/files/retention/cleanup-runs/scheduler-dry-run",
+                    headers={**admin_headers, "X-Trace-Id": "trace_scheduler_dry_run"},
+                    json={"owner_id": "manual-test-owner", "lock_ttl_seconds": 60},
+                )
+                payload = admin_response.json()
+                history_response = client.get(
+                    f"/api/v1/files/retention/cleanup-runs/history/{payload['run_id']}",
+                    headers=admin_headers,
+                )
+                history_list_response = client.get(
+                    "/api/v1/files/retention/cleanup-runs/history",
+                    headers=admin_headers,
+                )
+                audit_events_after = runtime.audit_event_repository.list_audit_events()
+
+            file_after_dry_run = runtime.document_file_repository.get_document_file(stale_file.id)
+            object_still_exists = stale_path.exists()
+            object_bytes = stale_path.read_bytes()
+            lock_status = FileRetentionCleanupLockService(
+                runtime.file_retention_cleanup_lock_repository,
+            ).get_status()
+
+        self.assertEqual(operator_response.status_code, 403)
+        self.assertEqual(operator_response.json()["error_code"], "role_forbidden")
+        self.assertEqual(admin_response.status_code, 200)
+        self.assertEqual(payload["action_mode"], "scheduler_dry_run")
+        self.assertEqual(payload["readonly_report"]["mode"], "readonly_plan")
+        self.assertEqual(payload["readonly_report"]["retention"]["totals"]["candidate_files"], 1)
+        candidate_payload = payload["readonly_report"]["retention"]["candidates"][0]
+        self.assertEqual(candidate_payload["file_id"], stale_file.id)
+        self.assertNotIn("object_key", candidate_payload)
+        self.assertNotIn("bucket", candidate_payload)
+        self.assertFalse(payload["safety"]["scheduler_loop_executed"])
+        self.assertTrue(payload["safety"]["scheduler_manual_dry_run_executed"])
+        self.assertFalse(payload["safety"]["metadata_mutated"])
+        self.assertFalse(payload["safety"]["objects_deleted"])
+        self.assertFalse(payload["safety"]["physical_delete_executed"])
+        self.assertFalse(payload["safety"]["provider_calls_executed"])
+        self.assertFalse(payload["safety"]["s3_delete_executed"])
+        self.assertTrue(payload["safety"]["cleanup_lock_acquired"])
+        self.assertTrue(payload["safety"]["cleanup_lock_released"])
+        self.assertEqual(payload["lock"]["owner_id"], "manual-test-owner")
+        self.assertEqual(payload["lock"]["status"], "released")
+        self.assertTrue(payload["lock"]["released"])
+        self.assertEqual(history_response.status_code, 200)
+        history_payload = history_response.json()
+        self.assertEqual(history_payload["status"], "dry_run")
+        self.assertEqual(history_payload["action_mode"], "scheduler_dry_run")
+        self.assertTrue(history_payload["preview_hash"].startswith("sha256:"))
+        self.assertEqual(history_payload["requested_file_ids"], [stale_file.id])
+        self.assertEqual(history_payload["readonly_report"]["run_id"], payload["run_id"])
+        self.assertEqual(history_payload["lock"]["owner_id"], "manual-test-owner")
+        self.assertEqual(history_payload["lock"]["status"], "released")
+        self.assertTrue(history_payload["lock"]["released"])
+        self.assertEqual(history_list_response.status_code, 200)
+        self.assertEqual(history_list_response.json()["total"], 1)
+        self.assertNotIn(stale_file.object_key, json.dumps(payload, ensure_ascii=False))
+        self.assertNotIn(stale_file.bucket, json.dumps(payload, ensure_ascii=False))
+        self.assertIsNotNone(file_after_dry_run)
+        self.assertEqual(file_after_dry_run.status, "expired")
+        self.assertTrue(object_still_exists)
+        self.assertEqual(object_bytes, b"expired-file-content")
+        self.assertEqual(lock_status.effective_status, "released")
+        self.assertEqual(audit_events_after, audit_events_before)
+
+    def test_cleanup_scheduler_dry_run_manual_runner_rejects_active_lock(self):
+        """验证已有 active cleanup lock 时手动 scheduler dry-run 返回 409 且不写 history。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            stale_file = self._seed_expired_document_file(runtime, file_id="file_scheduler_dry_run_lock")
+            runtime.document_file_repository.update_document_file(stale_file.id, status="expired")
+            stale_path = runtime.file_upload_service.resolve_local_object_path(stale_file.object_key)
+            lock_service = FileRetentionCleanupLockService(runtime.file_retention_cleanup_lock_repository)
+            lock_service.acquire(owner_id="existing-owner", ttl_seconds=60)
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                audit_events_before = list(runtime.audit_event_repository.list_audit_events())
+                response = client.post(
+                    "/api/v1/files/retention/cleanup-runs/scheduler-dry-run",
+                    headers=admin_headers,
+                    json={"owner_id": "second-owner", "lock_ttl_seconds": 60},
+                )
+                history_response = client.get(
+                    "/api/v1/files/retention/cleanup-runs/history",
+                    headers=admin_headers,
+                )
+                audit_events_after = runtime.audit_event_repository.list_audit_events()
+
+            file_after_conflict = runtime.document_file_repository.get_document_file(stale_file.id)
+            object_still_exists = stale_path.exists()
+            lock_status = lock_service.get_status()
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error_code"], "conflict")
+        self.assertIn("cleanup lock 已被 existing-owner 持有", json.dumps(response.json(), ensure_ascii=False))
+        self.assertEqual(history_response.status_code, 200)
+        self.assertEqual(history_response.json()["total"], 0)
+        self.assertEqual(lock_status.effective_status, "active")
+        self.assertEqual(lock_status.owner_id, "existing-owner")
+        self.assertIsNotNone(file_after_conflict)
+        self.assertEqual(file_after_conflict.status, "expired")
+        self.assertTrue(object_still_exists)
+        self.assertEqual(audit_events_after, audit_events_before)
+
     def test_file_retention_cleanup_run_preview_is_admin_only_and_readonly(self):
         """验证 cleanup run preview Admin-only 且不修改 metadata 或删除对象。"""
 
@@ -2988,6 +3737,7 @@ class FastAPIJobsBackendTests(TestCase):
                 size_bytes=10,
                 status="expired",
                 expires_at=now - timedelta(seconds=1),
+                metadata={"s3_version_id": "version-cleanup-001"},
                 created_by="user_operator",
                 created_at=now - timedelta(days=2),
                 updated_at=now - timedelta(days=2),
@@ -3043,12 +3793,29 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(preview_response.status_code, 200)
         self.assertEqual(execute_response.status_code, 200)
         payload = execute_response.json()
+        preview_payload = preview_response.json()
         self.assertEqual(payload["action_mode"], "cleanup_execute")
         self.assertEqual(payload["physical_delete"]["totals"]["deleted"], 1)
         self.assertEqual(payload["physical_delete"]["totals"]["skipped"], 1)
         outcomes = {item["file_id"]: item["outcome"] for item in payload["physical_delete"]["items"]}
         self.assertEqual(outcomes[stale_file.id], "deleted")
         self.assertEqual(outcomes[s3_file.id], "skipped_unsupported_storage")
+        preview_s3_item = next(
+            item
+            for item in preview_payload["physical_delete"]["items"]
+            if item["file_id"] == s3_file.id
+        )
+        execute_s3_item = next(
+            item
+            for item in payload["physical_delete"]["items"]
+            if item["file_id"] == s3_file.id
+        )
+        self.assertEqual(preview_s3_item["s3_delete_contract"]["adapter_mode"], "fake")
+        self.assertEqual(execute_s3_item["s3_delete_contract"]["bucket"], "test-bucket")
+        self.assertEqual(execute_s3_item["s3_delete_contract"]["version_id"], "version-cleanup-001")
+        self.assertTrue(execute_s3_item["s3_delete_contract"]["target_exact"])
+        self.assertFalse(execute_s3_item["s3_delete_contract"]["safety"]["real_s3_delete_executed"])
+        self.assertTrue(execute_s3_item["s3_delete_contract"]["safety"]["fake_s3_delete_executed"])
         self.assertTrue(payload["safety"]["physical_delete_executed"])
         self.assertTrue(payload["safety"]["physical_delete_contract_reused"])
         self.assertFalse(payload["safety"]["s3_delete_executed"])
@@ -3064,6 +3831,225 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(cleanup_events[0].trace_id, "trace_cleanup_execute")
         self.assertIn("preview_hash=sha256:", cleanup_events[0].reason)
         self.assertIn("deleted=1", cleanup_events[0].reason)
+
+    def test_cleanup_run_preview_and_execute_records_history(self):
+        """验证 cleanup run preview/execute 会落 durable history 并沿用同一 run_id。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            stale_file = self._seed_expired_document_file(runtime, file_id="file_cleanup_history_execute")
+            runtime.document_file_repository.update_document_file(stale_file.id, status="expired")
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                preview_response = client.post(
+                    "/api/v1/files/retention/cleanup-runs/preview",
+                    headers=admin_headers,
+                    json={"file_ids": [stale_file.id], "max_files": 50},
+                )
+                preview_payload = preview_response.json()
+                preview_history_response = client.get(
+                    f"/api/v1/files/retention/cleanup-runs/history/{preview_payload['run_id']}",
+                    headers=admin_headers,
+                )
+                execute_response = client.post(
+                    "/api/v1/files/retention/cleanup-runs/execute",
+                    headers=admin_headers,
+                    json={
+                        "run_id": preview_payload["run_id"],
+                        "file_ids": [stale_file.id],
+                        "max_files": 50,
+                        "preview_hash": preview_payload["preview_hash"],
+                        "plan_id": preview_payload["cleanup_plan"]["plan_id"],
+                        "plan_signature": preview_payload["cleanup_plan"]["signature"],
+                        "reason": "history execute",
+                        "confirmation": "EXECUTE AUTOMATED RETENTION CLEANUP",
+                    },
+                )
+                execute_payload = execute_response.json()
+                executed_history_response = client.get(
+                    f"/api/v1/files/retention/cleanup-runs/history/{preview_payload['run_id']}",
+                    headers=admin_headers,
+                )
+                history_list_response = client.get(
+                    "/api/v1/files/retention/cleanup-runs/history",
+                    headers=admin_headers,
+                )
+
+        self.assertEqual(preview_response.status_code, 200)
+        self.assertEqual(preview_history_response.status_code, 200)
+        preview_history = preview_history_response.json()
+        self.assertEqual(preview_history["status"], "previewed")
+        self.assertEqual(preview_history["action_mode"], "cleanup_preview")
+        self.assertEqual(preview_history["run_id"], preview_payload["run_id"])
+        self.assertEqual(preview_history["requested_file_ids"], [stale_file.id])
+        self.assertEqual(preview_payload["cleanup_plan"]["run_id"], preview_payload["run_id"])
+        self.assertEqual(preview_payload["cleanup_plan"]["requested_file_ids"], [stale_file.id])
+        self.assertEqual(preview_payload["cleanup_plan"]["signature_algorithm"], "hmac-sha256")
+        self.assertEqual(preview_history["cleanup_plan"]["plan_id"], preview_payload["cleanup_plan"]["plan_id"])
+        self.assertEqual(preview_history["safety"]["history_recorded"], True)
+        self.assertTrue(preview_history["safety"]["signed_plan_created"])
+        self.assertFalse(preview_history["safety"]["physical_delete_executed"])
+        self.assertNotIn("object_key", json.dumps(preview_history, ensure_ascii=False))
+        self.assertEqual(execute_response.status_code, 200)
+        self.assertEqual(execute_payload["run_id"], preview_payload["run_id"])
+        self.assertTrue(execute_payload["safety"]["history_recorded"])
+        self.assertTrue(execute_payload["safety"]["signed_plan_verified"])
+        self.assertEqual(execute_payload["cleanup_plan"]["plan_id"], preview_payload["cleanup_plan"]["plan_id"])
+        executed_history = executed_history_response.json()
+        self.assertEqual(executed_history["status"], "executed")
+        self.assertEqual(executed_history["action_mode"], "cleanup_execute")
+        self.assertEqual(executed_history["reason"], "history execute")
+        self.assertEqual(executed_history["totals"]["deleted"], 1)
+        self.assertTrue(executed_history["safety"]["physical_delete_executed"])
+        self.assertTrue(executed_history["safety"]["audit_events_written"])
+        self.assertTrue(executed_history["safety"]["signed_plan_verified"])
+        self.assertIsNotNone(executed_history["executed_at"])
+        self.assertEqual(history_list_response.status_code, 200)
+        self.assertEqual(history_list_response.json()["total"], 1)
+        self.assertEqual(history_list_response.json()["items"][0]["run_id"], preview_payload["run_id"])
+
+    def test_cleanup_run_signed_plan_blocks_tampering(self):
+        """验证 signed cleanup plan 篡改会在物理删除前被阻断并记录 failed history。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            stale_file = self._seed_expired_document_file(runtime, file_id="file_cleanup_plan_tamper")
+            runtime.document_file_repository.update_document_file(stale_file.id, status="expired")
+            stale_path = runtime.file_upload_service.resolve_local_object_path(stale_file.object_key)
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                preview_response = client.post(
+                    "/api/v1/files/retention/cleanup-runs/preview",
+                    headers=admin_headers,
+                    json={"file_ids": [stale_file.id], "max_files": 50},
+                )
+                preview_payload = preview_response.json()
+                audit_events_before_execute = list(runtime.audit_event_repository.list_audit_events())
+                tampered_signature_response = client.post(
+                    "/api/v1/files/retention/cleanup-runs/execute",
+                    headers=admin_headers,
+                    json={
+                        "run_id": preview_payload["run_id"],
+                        "file_ids": [stale_file.id],
+                        "max_files": 50,
+                        "preview_hash": preview_payload["preview_hash"],
+                        "plan_id": preview_payload["cleanup_plan"]["plan_id"],
+                        "plan_signature": "hmac-sha256:tampered",
+                        "reason": "tamper plan",
+                        "confirmation": "EXECUTE AUTOMATED RETENTION CLEANUP",
+                    },
+                )
+                failed_history_response = client.get(
+                    f"/api/v1/files/retention/cleanup-runs/history/{preview_payload['run_id']}",
+                    headers=admin_headers,
+                )
+                audit_events_after_execute = runtime.audit_event_repository.list_audit_events()
+
+            file_after_execute = runtime.document_file_repository.get_document_file(stale_file.id)
+            object_still_exists = stale_path.exists()
+
+        self.assertEqual(preview_response.status_code, 200)
+        self.assertIsNotNone(preview_payload["cleanup_plan"])
+        self.assertEqual(tampered_signature_response.status_code, 409)
+        self.assertEqual(tampered_signature_response.json()["error_code"], "conflict")
+        failed_history = failed_history_response.json()
+        self.assertEqual(failed_history["status"], "failed")
+        self.assertEqual(failed_history["error_code"], "cleanup_run_plan_signature_mismatch")
+        self.assertEqual(failed_history["cleanup_plan"]["plan_id"], preview_payload["cleanup_plan"]["plan_id"])
+        self.assertFalse(failed_history["safety"]["physical_delete_executed"])
+        self.assertTrue(failed_history["safety"]["signed_plan_created"])
+        self.assertFalse(failed_history["safety"]["signed_plan_verified"])
+        self.assertTrue(object_still_exists)
+        self.assertIsNotNone(file_after_execute)
+        self.assertEqual(file_after_execute.status, "expired")
+        self.assertEqual(audit_events_after_execute, audit_events_before_execute)
+
+    def test_cleanup_run_history_is_admin_only_and_not_destructive(self):
+        """验证 cleanup run history API Admin-only 且读取历史不会删除或写审计。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            stale_file = self._seed_expired_document_file(runtime, file_id="file_cleanup_history_readonly")
+            runtime.document_file_repository.update_document_file(stale_file.id, status="expired")
+            stale_path = runtime.file_upload_service.resolve_local_object_path(stale_file.object_key)
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                preview_response = client.post(
+                    "/api/v1/files/retention/cleanup-runs/preview",
+                    headers=admin_headers,
+                    json={"file_ids": [stale_file.id], "max_files": 50},
+                )
+                audit_events_before_read = list(runtime.audit_event_repository.list_audit_events())
+                operator_list_response = client.get(
+                    "/api/v1/files/retention/cleanup-runs/history",
+                    headers=operator_headers,
+                )
+                admin_list_response = client.get(
+                    "/api/v1/files/retention/cleanup-runs/history",
+                    headers=admin_headers,
+                )
+                missing_detail_response = client.get(
+                    "/api/v1/files/retention/cleanup-runs/history/cleanup_run_missing",
+                    headers=admin_headers,
+                )
+                unknown_run_execute_response = client.post(
+                    "/api/v1/files/retention/cleanup-runs/execute",
+                    headers=admin_headers,
+                    json={
+                        "run_id": "cleanup_run_unknown",
+                        "file_ids": [stale_file.id],
+                        "max_files": 50,
+                        "preview_hash": preview_response.json()["preview_hash"],
+                        "reason": "unknown run guard",
+                        "confirmation": "EXECUTE AUTOMATED RETENTION CLEANUP",
+                    },
+                )
+                failed_history_response = client.get(
+                    "/api/v1/files/retention/cleanup-runs/history/cleanup_run_unknown",
+                    headers=admin_headers,
+                )
+                audit_events_after_read = runtime.audit_event_repository.list_audit_events()
+
+            file_after_history_reads = runtime.document_file_repository.get_document_file(stale_file.id)
+            object_still_exists = stale_path.exists()
+
+        self.assertEqual(operator_list_response.status_code, 403)
+        self.assertEqual(operator_list_response.json()["error_code"], "role_forbidden")
+        self.assertEqual(admin_list_response.status_code, 200)
+        self.assertEqual(admin_list_response.json()["total"], 1)
+        self.assertEqual(missing_detail_response.status_code, 404)
+        self.assertEqual(unknown_run_execute_response.status_code, 409)
+        failed_history = failed_history_response.json()
+        self.assertEqual(failed_history["status"], "failed")
+        self.assertEqual(failed_history["error_code"], "cleanup_run_preview_not_found")
+        self.assertFalse(failed_history["safety"]["physical_delete_executed"])
+        self.assertTrue(failed_history["safety"]["history_recorded"])
+        self.assertTrue(object_still_exists)
+        self.assertIsNotNone(file_after_history_reads)
+        self.assertEqual(file_after_history_reads.status, "expired")
+        self.assertEqual(audit_events_after_read, audit_events_before_read)
 
     def test_file_retention_cleanup_run_guards_hash_limits_and_registry_contract(self):
         """验证 cleanup run 的 hash、限流、确认短语和 registry contract。"""
@@ -3639,7 +4625,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(file_after_delete.status, "expired")
 
     def test_file_retention_physical_delete_skips_s3_without_mutating_metadata(self):
-        """验证第一版不支持 S3 物理删除，且不会修改 S3 metadata。"""
+        """验证 S3 fake delete contract 不执行真实删除，且不会修改 S3 metadata。"""
 
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(
@@ -3663,6 +4649,7 @@ class FastAPIJobsBackendTests(TestCase):
                 size_bytes=10,
                 status="expired",
                 expires_at=now - timedelta(seconds=1),
+                metadata={"s3_version_id": "version-delete-001"},
                 created_by="user_operator",
                 created_at=now - timedelta(days=2),
                 updated_at=now - timedelta(days=2),
@@ -3672,6 +4659,11 @@ class FastAPIJobsBackendTests(TestCase):
 
             with TestClient(app) as client:
                 admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                preview_response = client.post(
+                    "/api/v1/files/retention/delete-preview",
+                    headers=admin_headers,
+                    json={"file_ids": [s3_file.id]},
+                )
                 response = client.post(
                     "/api/v1/files/retention/delete-expired",
                     headers=admin_headers,
@@ -3684,10 +4676,26 @@ class FastAPIJobsBackendTests(TestCase):
 
             file_after_delete = runtime.document_file_repository.get_document_file(s3_file.id)
 
+        self.assertEqual(preview_response.status_code, 200)
+        preview_payload = preview_response.json()
+        self.assertEqual(preview_payload["items"][0]["outcome"], "skipped_unsupported_storage")
+        self.assertEqual(preview_payload["items"][0]["s3_delete_contract"]["adapter_mode"], "fake")
+        self.assertEqual(preview_payload["items"][0]["s3_delete_contract"]["expected_outcome"], "fake_skipped")
+        self.assertFalse(preview_payload["items"][0]["s3_delete_contract"]["safety"]["real_s3_delete_executed"])
+        self.assertTrue(preview_payload["items"][0]["s3_delete_contract"]["safety"]["fake_s3_delete_executed"])
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["totals"]["skipped"], 1)
         self.assertEqual(payload["items"][0]["outcome"], "skipped_unsupported_storage")
+        self.assertEqual(payload["items"][0]["s3_delete_contract"]["contract_version"], "s3-delete-fake-v1")
+        self.assertEqual(payload["items"][0]["s3_delete_contract"]["bucket"], "test-bucket")
+        self.assertEqual(
+            payload["items"][0]["s3_delete_contract"]["object_key"],
+            "document-jobs/tenant_default/docjob_retention/generated_word/s3.docx",
+        )
+        self.assertEqual(payload["items"][0]["s3_delete_contract"]["version_id"], "version-delete-001")
+        self.assertTrue(payload["items"][0]["s3_delete_contract"]["target_exact"])
+        self.assertEqual(payload["items"][0]["s3_delete_contract"]["missing_target_fields"], [])
         self.assertFalse(payload["items"][0]["metadata_updated"])
         self.assertIsNotNone(file_after_delete)
         self.assertEqual(file_after_delete.status, "expired")

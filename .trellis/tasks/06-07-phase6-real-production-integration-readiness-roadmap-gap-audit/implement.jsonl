@@ -1,0 +1,7 @@
+{"file": "AGENTS.md", "reason": "Project-level Trellis workflow and repository instructions for planning-only work."}
+{"file": ".trellis/workflow.md", "reason": "Task lifecycle and planning/design gate requirements."}
+{"file": ".trellis/tasks/archive/2026-06/06-07-phase5-production-ops-acceptance-closeout/acceptance.md", "reason": "Phase 5 accepted scope and deferred production-integration boundaries."}
+{"file": ".trellis/tasks/archive/2026-06/06-07-phase5-release-readiness-and-commit-prep/acceptance.md", "reason": "Release-readiness review-separately inventory and dirty worktree classification."}
+{"file": ".codestable/features/2026-06-07-quota-enforcement-design/quota-enforcement-design-ff-note.md", "reason": "Untracked quota enforcement behavior note that must be reconciled with Phase 5 evidence."}
+{"file": ".codestable/roadmap/real-integration-readiness/real-integration-readiness-roadmap.md", "reason": "CodeStable seed roadmap for Phase 6 real integration readiness."}
+{"file": ".codestable/roadmap/real-integration-readiness/real-integration-readiness-items.yaml", "reason": "Phase 6 dependency item list used as roadmap input."}

@@ -1,5 +1,5 @@
 // File: frontend/src/api/types.ts
-// Purpose: Define TypeScript contracts for backend v1 schemas used by MVP and Admin pages.
+// Purpose: Define TypeScript contracts for backend v1 schemas, including quota override requests.
 export type AuthLoginRequest = {
   username: string;
   password: string;
@@ -93,6 +93,168 @@ export type HealthOpsAlertsResponse = {
   safety: HealthOpsAlertSafety;
 };
 
+export type OpsAlertDeliveryChannel = "local_outbox";
+export type OpsAlertDeliveryMode = "dry_run" | "fake_send";
+export type OpsAlertDeliveryOutcome =
+  | "deliverable"
+  | "fake_delivered"
+  | "deduped"
+  | "skipped_not_active"
+  | "skipped_rate_limited"
+  | "failed";
+
+export type OpsAlertDeliveryPreviewRequest = {
+  alert_codes: string[];
+  channel?: OpsAlertDeliveryChannel;
+  dedupe_window_minutes?: number;
+};
+
+export type OpsAlertDeliveryFakeSendRequest = OpsAlertDeliveryPreviewRequest & {
+  reason: string;
+  confirmation: string;
+};
+
+export type OpsAlertDeliverySafetyResponse = {
+  external_delivery_executed: boolean;
+  provider_calls_executed: boolean;
+  cleanup_executed: boolean;
+  delete_executed: boolean;
+  conversion_workflow_executed: boolean;
+  audit_events_written: boolean;
+};
+
+export type OpsAlertDeliveryItemResponse = {
+  alert_code: string;
+  severity: string | null;
+  source: string | null;
+  title: string | null;
+  outcome: OpsAlertDeliveryOutcome;
+  dedupe_key: string | null;
+  reason: string;
+  audit_event_written: boolean;
+};
+
+export type OpsAlertDeliveryResponse = {
+  generated_at: string;
+  action_mode: OpsAlertDeliveryMode;
+  channel: OpsAlertDeliveryChannel;
+  confirmation_phrase: string;
+  dedupe_window_minutes: number;
+  requested_alert_codes: string[];
+  delivery_id: string;
+  totals: Record<string, number>;
+  items: OpsAlertDeliveryItemResponse[];
+  safety: OpsAlertDeliverySafetyResponse;
+};
+
+export type OpsAlertDestinationChannel = "slack" | "email" | "webhook";
+export type OpsAlertDestinationMode = "config_dry_run";
+export type OpsAlertDestinationStatus = "config_valid" | "dry_run_passed" | "disabled" | "missing_config" | "blocked";
+
+export type OpsAlertDestinationDryRunRequest = {
+  alert_codes?: string[];
+  destination_ids?: string[];
+};
+
+export type OpsAlertDestinationSafetyResponse = {
+  read_only: boolean;
+  external_delivery_executed: boolean;
+  provider_calls_executed: boolean;
+  cleanup_executed: boolean;
+  delete_executed: boolean;
+  conversion_workflow_executed: boolean;
+  audit_events_written: boolean;
+  secret_values_exposed: boolean;
+};
+
+export type OpsAlertDestinationItemResponse = {
+  destination_id: string;
+  channel: OpsAlertDestinationChannel;
+  enabled: boolean;
+  secret_ref: string;
+  secret_ref_present: boolean;
+  target_label: string;
+  allowlist: string[];
+  rate_limit_per_hour: number;
+  dedupe_window_minutes: number;
+  status: OpsAlertDestinationStatus;
+  missing_gates: string[];
+  matched_alert_codes: string[];
+  blocked_alert_codes: string[];
+};
+
+export type OpsAlertDestinationDryRunResponse = {
+  generated_at: string;
+  action_mode: OpsAlertDestinationMode;
+  requested_alert_codes: string[];
+  requested_destination_ids: string[];
+  configured_count: number;
+  selected_count: number;
+  config_errors: string[];
+  destinations: OpsAlertDestinationItemResponse[];
+  safety: OpsAlertDestinationSafetyResponse;
+};
+
+export type OpsProviderCancellationProvider = "mineru";
+export type OpsProviderCancellationTargetType = "document_job" | "legacy_job";
+export type OpsProviderCancellationMode = "dry_run" | "fake_cancel";
+export type OpsProviderCancellationOutcome = "cancelable" | "fake_canceled" | "deduped" | "ineligible" | "failed";
+
+export type OpsProviderCancellationPreviewRequest = {
+  target_type: OpsProviderCancellationTargetType;
+  target_id: string;
+  provider?: OpsProviderCancellationProvider;
+  dedupe_window_minutes?: number;
+};
+
+export type OpsProviderCancellationFakeRequest = OpsProviderCancellationPreviewRequest & {
+  reason: string;
+  confirmation: string;
+};
+
+export type OpsProviderCancellationTargetResponse = {
+  target_type: OpsProviderCancellationTargetType;
+  target_id: string;
+  exists: boolean;
+  status: string | null;
+  stage: string | null;
+  summary: Record<string, string | number | boolean | null>;
+};
+
+export type OpsProviderOperationResponse = {
+  provider: OpsProviderCancellationProvider;
+  operation_id: string | null;
+  data_id: string | null;
+  operation_type: string;
+};
+
+export type OpsProviderCancellationSafetyResponse = {
+  real_provider_cancel_executed: boolean;
+  provider_calls_executed: boolean;
+  local_job_mutated: boolean;
+  queue_mutated: boolean;
+  cleanup_executed: boolean;
+  delete_executed: boolean;
+  conversion_workflow_executed: boolean;
+  audit_events_written: boolean;
+};
+
+export type OpsProviderCancellationResponse = {
+  generated_at: string;
+  action_mode: OpsProviderCancellationMode;
+  provider: OpsProviderCancellationProvider;
+  confirmation_phrase: string;
+  dedupe_window_minutes: number;
+  target: OpsProviderCancellationTargetResponse;
+  provider_operation: OpsProviderOperationResponse;
+  eligible: boolean;
+  missing_gates: string[];
+  outcome: OpsProviderCancellationOutcome;
+  dedupe_key: string | null;
+  audit_event_written: boolean;
+  safety: OpsProviderCancellationSafetyResponse;
+};
+
 export type OpsRecoveryActionCategory =
   | "recovery"
   | "cancellation"
@@ -183,6 +345,14 @@ export type OpsRecoveryActionPreviewResponse = {
 
 export type AuditActorRole = "admin" | "operator" | "jobs" | "anonymous";
 export type AuditEventSort = "created_at_desc" | "created_at_asc";
+export type AuditDetailsValue =
+  | string
+  | number
+  | boolean
+  | null
+  | AuditDetailsValue[]
+  | { [key: string]: AuditDetailsValue };
+export type AuditDetails = Record<string, AuditDetailsValue>;
 
 export type AuditEventListQuery = {
   page: number;
@@ -206,6 +376,7 @@ export type AuditEventResponse = {
   target_type: string;
   target_id: string;
   reason: string | null;
+  details: AuditDetails | null;
   trace_id: string;
   created_at: string;
 };
@@ -322,6 +493,8 @@ export type FileUploadUrlRequest = {
   file_type?: "source_pdf";
   checksum_sha256?: string | null;
   job_id?: string | null;
+  quota_override_reason?: string | null;
+  quota_override_confirmation?: string | null;
 };
 
 export type FileUploadUrlResponse = {
@@ -386,6 +559,18 @@ export type FileRetentionDeleteOutcome =
   | "skipped_missing_object_key"
   | "failed";
 
+export type FileRetentionS3DeleteContractResponse = {
+  contract_version: "s3-delete-fake-v1";
+  adapter_mode: "fake";
+  bucket: string;
+  object_key: string;
+  version_id: string | null;
+  target_exact: boolean;
+  missing_target_fields: string[];
+  expected_outcome: "fake_skipped";
+  safety: Record<string, boolean>;
+};
+
 export type FileRetentionDeleteItemResponse = {
   file_id: string;
   job_id: string | null;
@@ -399,6 +584,7 @@ export type FileRetentionDeleteItemResponse = {
   reason: string;
   deleted: boolean;
   metadata_updated: boolean;
+  s3_delete_contract: FileRetentionS3DeleteContractResponse | null;
 };
 
 export type FileRetentionDeleteResponse = {
@@ -408,6 +594,112 @@ export type FileRetentionDeleteResponse = {
   confirmation_phrase: string;
   totals: Record<string, number>;
   items: FileRetentionDeleteItemResponse[];
+};
+
+export type FileRetentionCleanupRunPreviewRequest = {
+  file_ids: string[];
+  max_files?: number;
+};
+
+export type FileRetentionCleanupRunExecuteRequest = FileRetentionCleanupRunPreviewRequest & {
+  run_id?: string | null;
+  preview_hash: string;
+  plan_id?: string | null;
+  plan_signature?: string | null;
+  reason: string;
+  confirmation: string;
+};
+
+export type FileRetentionCleanupSchedulerDryRunRequest = {
+  owner_id?: string | null;
+  lock_ttl_seconds?: number;
+};
+
+export type FileRetentionSignedCleanupPlanResponse = {
+  plan_id: string;
+  run_id: string;
+  preview_hash: string;
+  requested_file_ids: string[];
+  max_files: number;
+  created_at: string;
+  expires_at: string;
+  signature: string;
+  signature_algorithm: "hmac-sha256";
+  safety: Record<string, boolean>;
+};
+
+export type FileRetentionCleanupRunSafetyResponse = {
+  scheduler_loop_executed: boolean;
+  provider_calls_executed: boolean;
+  s3_delete_executed: boolean;
+  physical_delete_executed: boolean;
+  physical_delete_contract_reused: boolean;
+  audit_events_written: boolean;
+  history_recorded: boolean;
+  signed_plan_created: boolean;
+  signed_plan_verified: boolean;
+};
+
+export type FileRetentionCleanupRunResponse = {
+  run_id: string;
+  generated_at: string;
+  action_mode: "cleanup_preview" | "cleanup_execute";
+  confirmation_phrase: string;
+  preview_hash: string;
+  requested_file_ids: string[];
+  max_files: number;
+  physical_delete: FileRetentionDeleteResponse;
+  cleanup_plan: FileRetentionSignedCleanupPlanResponse | null;
+  safety: FileRetentionCleanupRunSafetyResponse;
+};
+
+export type FileRetentionCleanupLockSummaryResponse = {
+  lock_name: string;
+  owner_id: string;
+  fencing_token: number;
+  status: string;
+  acquired_at: string;
+  expires_at: string;
+  released_at: string | null;
+  released: boolean;
+};
+
+export type FileRetentionCleanupSchedulerDryRunResponse = {
+  run_id: string;
+  generated_at: string;
+  action_mode: "scheduler_dry_run";
+  readonly_report: Record<string, unknown>;
+  lock: FileRetentionCleanupLockSummaryResponse;
+  safety: Record<string, boolean>;
+};
+
+export type FileRetentionCleanupRunHistoryStatus = "previewed" | "executed" | "failed" | "dry_run";
+
+export type FileRetentionCleanupRunHistoryResponse = {
+  run_id: string;
+  status: FileRetentionCleanupRunHistoryStatus;
+  action_mode: "cleanup_preview" | "cleanup_execute" | "scheduler_dry_run";
+  preview_hash: string;
+  requested_file_ids: string[];
+  max_files: number;
+  reason: string | null;
+  totals: Record<string, number>;
+  safety: Record<string, boolean>;
+  cleanup_plan: FileRetentionSignedCleanupPlanResponse | null;
+  readonly_report: Record<string, unknown>;
+  lock: Record<string, unknown>;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+  executed_at: string | null;
+};
+
+export type FileRetentionCleanupRunHistoryListResponse = {
+  page: number;
+  page_size: number;
+  total: number;
+  items: FileRetentionCleanupRunHistoryResponse[];
 };
 
 export type FileRetentionPolicyScopeType = "global" | "file_type";
@@ -516,6 +808,61 @@ export type FileStorageUsageResponse = {
   by_storage_provider: FileStorageUsageGroupResponse[];
   by_file_type: FileStorageUsageGroupResponse[];
   by_status: FileStorageUsageGroupResponse[];
+};
+
+export type FileQuotaPolicyStatus = "disabled" | "not_configured" | "invalid" | "dry_run" | "ready";
+
+export type FileQuotaPolicyDryRunRequest = {
+  size_bytes: number;
+  file_type?: string;
+  filename?: string | null;
+};
+
+export type FileQuotaPolicyConfigResponse = {
+  enabled: boolean;
+  dry_run: boolean;
+  configured: boolean;
+  quota_bytes: number | null;
+  warning_threshold_ratio: number | null;
+  block_threshold_ratio: number | null;
+  warning_threshold_bytes: number | null;
+  block_threshold_bytes: number | null;
+  upload_max_bytes: number;
+  status: FileQuotaPolicyStatus;
+  config_errors: string[];
+};
+
+export type FileQuotaPolicyUsageResponse = {
+  current_used_size_bytes: number;
+  proposed_upload_size_bytes: number;
+  projected_used_size_bytes: number;
+  current_usage_ratio: number | null;
+  projected_usage_ratio: number | null;
+};
+
+export type FileQuotaPolicySafetyResponse = {
+  read_only: boolean;
+  upload_authorization_created: boolean;
+  upload_content_written: boolean;
+  upload_blocking_executed: boolean;
+  metadata_mutated: boolean;
+  audit_events_written: boolean;
+  provider_calls_executed: boolean;
+  delete_executed: boolean;
+  conversion_workflow_executed: boolean;
+};
+
+export type FileQuotaPolicyDryRunResponse = {
+  generated_at: string;
+  action_mode: "quota_policy_dry_run";
+  file_type: string;
+  filename: string | null;
+  policy: FileQuotaPolicyConfigResponse;
+  usage: FileQuotaPolicyUsageResponse;
+  would_warn: boolean;
+  would_block: boolean;
+  reasons: string[];
+  safety: FileQuotaPolicySafetyResponse;
 };
 
 export type DocumentJobMode = "direct_pdf_to_word" | "en2zh_pdf_to_word";

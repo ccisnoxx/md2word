@@ -1,5 +1,5 @@
 <!-- File: frontend/src/pages/AuditLogPage.vue -->
-<!-- Purpose: Render the Admin-only audit event search, table, current-page CSV export, and governed filtered export. -->
+<!-- Purpose: Render the Admin-only audit event search, structured details display, current-page CSV export, and governed filtered export. -->
 <template>
   <main class="audit-log-page" aria-labelledby="audit-log-title">
     <section class="page-heading">
@@ -27,7 +27,7 @@
           <el-input
             v-model="filters.q"
             clearable
-            placeholder="audit id / action / target / actor / trace"
+            placeholder="audit id / action / target / actor / trace / details"
             @keyup.enter="applyFilters"
           />
         </el-form-item>
@@ -126,6 +126,21 @@
         <el-table-column prop="reason" label="Reason" min-width="260" show-overflow-tooltip>
           <template #default="{ row }">{{ row.reason || "-" }}</template>
         </el-table-column>
+        <el-table-column label="Details" min-width="140">
+          <template #default="{ row }">
+            <el-button
+              v-if="hasAuditDetails(row)"
+              :icon="View"
+              size="small"
+              type="primary"
+              plain
+              @click="openDetailsDrawer(row)"
+            >
+              查看 {{ auditDetailsKeyCount(row.details) }}
+            </el-button>
+            <span v-else class="muted">-</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="trace_id" label="Trace" min-width="180">
           <template #default="{ row }">
             <span class="mono">{{ row.trace_id }}</span>
@@ -138,16 +153,64 @@
         </el-table-column>
       </el-table>
     </section>
+
+    <el-drawer v-model="detailsDrawer.visible" title="结构化审计详情" size="min(680px, 100vw)">
+      <section v-if="detailsDrawer.event" class="details-drawer-content" aria-label="结构化审计详情">
+        <el-descriptions :column="1" border size="small">
+          <el-descriptions-item label="audit_id">
+            <span class="mono">{{ detailsDrawer.event.audit_id }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="action">
+            <span class="mono">{{ detailsDrawer.event.action }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="target">
+            <span class="mono">{{ detailsDrawer.event.target_type }}:{{ detailsDrawer.event.target_id }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="created_at">
+            {{ formatDateTime(detailsDrawer.event.created_at) }}
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <section class="details-section" aria-label="审计详情顶层字段">
+          <h2 class="details-section-title">Top-level fields</h2>
+          <el-table :data="selectedDetailEntries" table-layout="fixed" empty-text="暂无 details 字段">
+            <el-table-column prop="key" label="Key" min-width="180">
+              <template #default="{ row }">
+                <span class="mono">{{ row.key }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="Value" min-width="320">
+              <template #default="{ row }">
+                <pre class="details-value mono">{{ row.value }}</pre>
+              </template>
+            </el-table-column>
+          </el-table>
+        </section>
+
+        <section class="details-section" aria-label="审计详情 JSON">
+          <h2 class="details-section-title">JSON</h2>
+          <pre class="details-json mono">{{ selectedDetailsJson }}</pre>
+        </section>
+      </section>
+    </el-drawer>
   </main>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
-import { Download, Refresh } from "@element-plus/icons-vue";
+import { Download, Refresh, View } from "@element-plus/icons-vue";
 
 import { auditEventsApi } from "@/api/auditEvents";
-import type { AuditActorRole, AuditEventExportQuery, AuditEventListQuery, AuditEventResponse, AuditEventSort } from "@/api/types";
+import type {
+  AuditActorRole,
+  AuditDetails,
+  AuditDetailsValue,
+  AuditEventExportQuery,
+  AuditEventListQuery,
+  AuditEventResponse,
+  AuditEventSort,
+} from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { formatDateTime } from "@/utils/format";
@@ -174,6 +237,16 @@ type AuditEventMutableQuery = {
 
 type AuditEventFilterKey = "q" | "action" | "target_type" | "target_id" | "actor_id";
 
+type AuditDetailEntry = {
+  key: string;
+  value: string;
+};
+
+type AuditDetailsDrawerState = {
+  visible: boolean;
+  event: AuditEventResponse | null;
+};
+
 const FILTERED_EXPORT_MAX_ROWS = 1000;
 
 const filters = reactive<AuditFilters>({
@@ -194,6 +267,10 @@ const loading = ref(false);
 const exportingAll = ref(false);
 const error = ref<ApiClientError | null>(null);
 const loadedAt = ref<string | null>(null);
+const detailsDrawer = reactive<AuditDetailsDrawerState>({
+  visible: false,
+  event: null,
+});
 
 const queryParams = computed<AuditEventListQuery>(() => {
   const params: AuditEventListQuery = {
@@ -212,6 +289,24 @@ const exportQueryParams = computed<AuditEventExportQuery>(() => {
   };
   applyCurrentFilters(params);
   return params;
+});
+
+const selectedDetailEntries = computed<AuditDetailEntry[]>(() => {
+  const details = detailsDrawer.event?.details;
+  if (!details) {
+    return [];
+  }
+  return Object.entries(details).map(([key, value]) => ({
+    key,
+    value: formatAuditDetailsValue(value),
+  }));
+});
+
+const selectedDetailsJson = computed(() => {
+  if (!detailsDrawer.event?.details) {
+    return "-";
+  }
+  return stringifyStableJson(detailsDrawer.event.details, 2);
 });
 
 // 读取当前筛选条件下的审计事件页。
@@ -275,9 +370,20 @@ async function exportFilteredCsv(): Promise<void> {
   }
 }
 
-// 导出当前已加载页，不触发后端文件生成。
+// 导出当前已加载页，不触发后端文件生成，并保留结构化 details JSON 列。
 function exportCurrentPageCsv(): void {
-  const header = ["created_at", "audit_id", "actor_role", "actor_id", "action", "target_type", "target_id", "reason", "trace_id"];
+  const header = [
+    "created_at",
+    "audit_id",
+    "actor_role",
+    "actor_id",
+    "action",
+    "target_type",
+    "target_id",
+    "reason",
+    "details_json",
+    "trace_id",
+  ];
   const rows = events.value.map((event) => [
     event.created_at,
     event.audit_id,
@@ -287,10 +393,74 @@ function exportCurrentPageCsv(): void {
     event.target_type,
     event.target_id,
     event.reason || "",
+    stringifyAuditDetailsForCsv(event.details),
     event.trace_id,
   ]);
   const csv = [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
   downloadTextFile(`audit-events-page-${page.value}.csv`, `${csv}\n`);
+}
+
+// 打开单条审计事件的结构化 details 抽屉。
+function openDetailsDrawer(event: AuditEventResponse): void {
+  detailsDrawer.event = event;
+  detailsDrawer.visible = true;
+}
+
+// 判断审计事件是否带有可展示的结构化 details。
+function hasAuditDetails(event: AuditEventResponse): boolean {
+  return auditDetailsKeyCount(event.details) > 0;
+}
+
+// 统计 details 顶层字段数量，用于表格入口展示。
+function auditDetailsKeyCount(details: AuditDetails | null): number {
+  if (!details) {
+    return 0;
+  }
+  return Object.keys(details).length;
+}
+
+// 把 details 值格式化为抽屉中可读的短文本或 JSON 片段。
+function formatAuditDetailsValue(value: AuditDetailsValue): string {
+  if (isAuditDetailsRecord(value) || Array.isArray(value)) {
+    return stringifyStableJson(value, 2);
+  }
+  if (value === null) {
+    return "null";
+  }
+  return String(value);
+}
+
+// 把 details 编码为当前页 CSV 使用的稳定紧凑 JSON。
+function stringifyAuditDetailsForCsv(details: AuditDetails | null): string {
+  if (!details) {
+    return "";
+  }
+  return stringifyStableJson(details);
+}
+
+// 用排序后的对象键生成稳定 JSON，和后端 details_json 的确定性保持一致。
+function stringifyStableJson(value: AuditDetailsValue, space?: number): string {
+  return JSON.stringify(sortAuditDetailsValue(value), null, space) ?? "";
+}
+
+// 递归排序 details 对象键，保留数组顺序和原始 JSON 标量。
+function sortAuditDetailsValue(value: AuditDetailsValue): AuditDetailsValue {
+  if (Array.isArray(value)) {
+    return value.map((item) => sortAuditDetailsValue(item));
+  }
+  if (isAuditDetailsRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, sortAuditDetailsValue(item)]),
+    );
+  }
+  return value;
+}
+
+// 判断 details 值是否是普通 JSON 对象。
+function isAuditDetailsRecord(value: AuditDetailsValue): value is Record<string, AuditDetailsValue> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 // 把页面当前筛选条件同步到列表查询或导出查询参数。
@@ -454,9 +624,51 @@ onMounted(() => {
   white-space: nowrap;
 }
 
+.details-drawer-content {
+  display: grid;
+  gap: 18px;
+}
+
+.details-section {
+  display: grid;
+  gap: 10px;
+}
+
+.details-section-title {
+  margin: 0;
+  color: #111827;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.details-value,
+.details-json {
+  margin: 0;
+  overflow: auto;
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #111827;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.details-value {
+  max-height: 180px;
+  padding: 8px;
+}
+
+.details-json {
+  max-height: 420px;
+  padding: 12px;
+}
+
 @media (prefers-color-scheme: dark) {
   .page-heading h1,
-  .section-title {
+  .section-title,
+  .details-section-title {
     color: #f8fafc;
   }
 
@@ -464,6 +676,13 @@ onMounted(() => {
   .audit-table-section {
     border-color: rgba(148, 163, 184, 0.22);
     background: rgba(15, 23, 42, 0.86);
+  }
+
+  .details-value,
+  .details-json {
+    border-color: rgba(148, 163, 184, 0.26);
+    background: rgba(15, 23, 42, 0.92);
+    color: #e5e7eb;
   }
 }
 

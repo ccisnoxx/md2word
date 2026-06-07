@@ -1,6 +1,7 @@
-from __future__ import annotations
+# File: app/infrastructure/persistence/mysql/schema.py
+# Purpose: 定义 MySQL metadata backend 的 schema bootstrap SQL。
 
-# app/infrastructure/persistence/mysql/schema.py: MySQL metadata backend 的 schema bootstrap。
+from __future__ import annotations
 
 from typing import Any
 
@@ -265,6 +266,28 @@ MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
         created_at VARCHAR(40) NOT NULL,
         updated_at VARCHAR(40) NOT NULL,
         KEY idx_file_retention_policies_created_at (created_at, policy_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS file_retention_cleanup_runs (
+        run_id VARCHAR(128) PRIMARY KEY,
+        status VARCHAR(32) NOT NULL,
+        payload LONGTEXT NOT NULL,
+        created_at VARCHAR(40) NOT NULL,
+        updated_at VARCHAR(40) NOT NULL,
+        KEY idx_file_retention_cleanup_runs_updated_at (updated_at, run_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS file_retention_cleanup_locks (
+        lock_name VARCHAR(128) PRIMARY KEY,
+        status VARCHAR(32) NOT NULL,
+        owner_id VARCHAR(255) NOT NULL,
+        fencing_token BIGINT NOT NULL,
+        expires_at VARCHAR(40) NOT NULL,
+        payload LONGTEXT NOT NULL,
+        updated_at VARCHAR(40) NOT NULL,
+        KEY idx_file_retention_cleanup_locks_status_expires (status, expires_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
     """

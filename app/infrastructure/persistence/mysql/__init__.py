@@ -1,7 +1,7 @@
-from __future__ import annotations
-
 # File: app/infrastructure/persistence/mysql/__init__.py
 # Purpose: 导出 MySQL metadata backend 的端口 adapter。
+
+from __future__ import annotations
 
 from app.infrastructure.persistence.mysql.audit import MysqlAuditEventRepository
 from app.infrastructure.persistence.mysql.backend import (
@@ -9,6 +9,8 @@ from app.infrastructure.persistence.mysql.backend import (
     MysqlPersistenceBackend,
     MysqlPersistenceConfig,
 )
+from app.infrastructure.persistence.mysql.cleanup_locks import MysqlRetentionCleanupLockRepository
+from app.infrastructure.persistence.mysql.cleanup_runs import MysqlRetentionCleanupRunHistoryRepository
 from app.infrastructure.persistence.mysql.document_jobs import (
     MysqlDocumentJobEventRepository,
     MysqlDocumentJobRepository,
@@ -32,6 +34,8 @@ __all__ = [
     "MysqlJobSnapshotRepository",
     "MysqlPersistenceBackend",
     "MysqlPersistenceConfig",
+    "MysqlRetentionCleanupLockRepository",
+    "MysqlRetentionCleanupRunHistoryRepository",
     "MysqlRetentionPolicyRepository",
     "MysqlResourceVersionRepository",
     "MysqlStageMessageStore",

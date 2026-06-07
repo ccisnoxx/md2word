@@ -1,0 +1,214 @@
+# =========================================================
+# Codex 扩展版编程配置模板
+# 适合：大仓库分析、复杂重构、长链路排查、长会话编程
+# =========================================================
+
+# =========================================================
+# 1. 核心编程配置
+# =========================================================
+
+model_provider = "OpenAI"
+
+# 主模型：优先强编码模型；如果你的 provider 不支持 gpt-5.5，就回退到 gpt-5.4
+model = "gpt-5.5"
+
+# 复核模型：质量优先时建议不要太弱
+# 如果你更在意成本，可改成 "gpt-5.4" 或轻量模型
+review_model = "gpt-5.5"
+
+# 常驻推荐 high；只有特别难的问题再临时切 xhigh。
+# xhigh 不适合作为日常默认值，容易增加本地准备和推理等待时间。
+model_reasoning_effort = "xhigh"
+
+# Plan 模式单独控制推理强度，避免日常对话为了规划阶段一直使用 xhigh。
+plan_mode_reasoning_effort = "high"
+
+# 让模型保留简短 reasoning 摘要，方便调试，不至于太啰嗦。
+# model_reasoning_summary = "concise"
+
+# 代码项目里建议保留中等输出密度，既不会太水，也不至于压缩过度。
+# model_verbosity = "medium"
+
+# 限制工具输出写入上下文的 token 量，避免一次超长日志/文件输出拖慢后续 turn。
+# tool_output_token_limit = 30000
+
+# 没有 AGENTS.md 时，按顺序尝试这些常见项目规则文件。
+# project_doc_fallback_filenames = ["CLAUDE.md", "GEMINI.md", ".cursorrules"]
+
+# 保留务实人格，适合编程协作。
+personality = "pragmatic"
+
+# 审批与沙箱：日常开发最均衡的组合
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
+# =========================================================
+# 2. 搜索与联网策略
+# =========================================================
+
+# 编程默认推荐 cached：
+# - 查本地代码为主
+# - 需要联网查资料时有基础能力
+# - 不像 live 那样每次都偏向追最新网页
+web_search = "cached"
+# 可选值： "cached" / "live" / "disabled"
+
+
+notify = [
+    "/Users/sc/.codex/computer-use/Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient",
+    "turn-ended",
+]
+service_tier = "default"
+
+[sandbox_workspace_write]
+# 对编程场景，建议保留 true：
+# - 安装依赖
+# - 查官方文档
+# - 拉取远程资源
+# - 调用需要联网的开发工具
+network_access = true
+
+# =========================================================
+# 3. Model Provider
+# =========================================================
+
+[model_providers.OpenAI]
+name = "OpenAI"
+
+# 强烈建议优先官方地址
+# base_url = "https://api.962850.xyz/v1"
+
+# 如果你确认第三方网关完全可信，再手动切换
+# base_url = "https://www.codexapis.com/v1"
+# experimental_bearer_token = "sk-cKTkXa1jeZuhRrxryBtQ4DDE7yHrEMXjIrtoefFARdDi7w70"
+wire_api = "responses"
+supports_websockets = false
+requires_openai_auth = true
+
+[imagegen]
+provider = "OpenAI"
+model = "gpt-image-2"
+out_path = "/Users/sc/Pictures/gpt_img"
+base_url = "https://api.962850.xyz/v1"
+api_key_env = "IMAGEGEN_API_KEY"
+
+# =========================================================
+# 4. Features 扩展开关
+# =========================================================
+
+[features]
+
+# 编程场景建议保留
+# hooks 对代码项目很有用，比如校验、格式化、规则检查。
+hooks = true
+
+# 多 agent 对复杂代码任务依然有价值，默认保留。
+multi_agent = true
+
+# 请求压缩对长 prompt / 长代码上下文通常有收益，默认保留。
+enable_request_compression = true
+# 打开 Codex 的 fast 相关能力开关,允许客户端在支持的场景下使用更快的执行/推理通道,不等于“每次请求自动走 fast tier”
+fast_mode = true
+
+# goals 会引入额外状态管理；你这台机器上更适合按需开启。
+goals = false
+
+# plugins 会带来额外初始化与远程同步开销，长期默认关闭。
+plugins = true
+js_repl = false
+
+[memories]
+# 这两个键才是当前 Codex 真正控制 memories 的主开关。
+use_memories = false
+generate_memories = false
+
+[marketplaces.openai-bundled]
+last_updated = "2026-06-06T02:46:14Z"
+source_type = "local"
+source = "/Users/sc/.codex/.tmp/bundled-marketplaces/openai-bundled"
+
+[marketplaces.openai-primary-runtime]
+last_updated = "2026-06-02T08:36:40Z"
+source_type = "local"
+source = "/Users/sc/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime"
+
+# =========================================================
+# 6. Projects 信任策略
+# =========================================================
+# 推荐原则：
+# - 新项目先设为 untrusted
+# - 常驻开发、你明确了解的项目再升 trusted
+# - 项目级 trust_level 比“全局想当然信任”更重要
+
+[projects."/Users/sc/PycharmProjects/md2word"]
+trust_level = "trusted"
+
+[projects."/Users/sc/Documents/Codex/2026-06-02/users-sc-bak-vps-txt-wg"]
+trust_level = "trusted"
+
+[projects."/Users/sc/PycharmProjects/PythonProject/md2word_main"]
+trust_level = "trusted"
+
+[projects."/Users/sc/Documents/Codex/2026-06-04/files-mentioned-by-the-user-txt"]
+trust_level = "trusted"
+
+[projects."/Users/sc/Documents/Codex/2026-06-05/pve-pve-ros-ip-172-16"]
+trust_level = "trusted"
+
+[projects."/Users/sc/Documents/Codex/2026-06-05/pve-pve-ros-ip-172-16-2"]
+trust_level = "trusted"
+
+
+# 你可以继续按这个模式添加：
+# [projects."/absolute/path/to/repo"]
+# trust_level = "trusted"
+
+# =========================================================
+# 7. Plugins 精简启用策略
+# =========================================================
+# 原则：只开你真会用的
+# 对“偏编程”场景，不必把文档/表格/演示全常开
+
+# 文档类：只有你经常生成 Word / Docs 时再开
+[plugins."documents@openai-primary-runtime"]
+enabled = true
+
+# 表格类：只有你经常处理 Excel / CSV / 报表时再开
+[plugins."spreadsheets@openai-primary-runtime"]
+enabled = true
+
+# 演示类：只有你经常做 PPT / Slides 时再开
+[plugins."presentations@openai-primary-runtime"]
+enabled = true
+
+[plugins."slack@openai-curated"]
+enabled = true
+
+[plugins."computer-use@openai-bundled"]
+enabled = true
+
+[plugins."browser@openai-bundled"]
+enabled = true
+
+[plugins."chrome@openai-bundled"]
+enabled = true
+
+[tui]
+# resume/fork 会话列表更紧凑，长会话多时更好扫。
+session_picker_view = "dense"
+
+# 长会话终端 resize 时少回放历史行，降低 TUI 卡顿概率。
+terminal_resize_reflow_max_rows = 3000
+
+[tui.model_availability_nux]
+"gpt-5.5" = 3
+
+[hooks.state]
+
+[hooks.state."/Users/sc/PycharmProjects/chip-replace-python/datasheet_extractor/.codex/hooks.json:user_prompt_submit:0:0"]
+trusted_hash = "sha256:2e7f66e3a5449c7d12c4c9376e836fc2d655d08db5177ece2d74b4012fd5f5b0"
+
+[desktop]
+show-context-window-usage = true
+composerEnterBehavior = "cmdIfMultiline"
+ambient-suggestions-enabled = false

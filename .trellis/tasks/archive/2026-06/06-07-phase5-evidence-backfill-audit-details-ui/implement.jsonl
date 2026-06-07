@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend audit API/export verification follows project backend quality gates."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Targeted unittest and frontend build verification expectations."}

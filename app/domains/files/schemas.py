@@ -1,5 +1,5 @@
 # File: app/domains/files/schemas.py
-# Purpose: 定义文件元数据、上传授权、文件库搜索、保留期管理和物理删除 API 的 v1 请求/响应模型。
+# Purpose: 定义文件元数据、上传授权、文件库搜索、保留期管理、quota enforcement 和清理 API 模型。
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 
 class FileUploadUrlRequest(BaseModel):
-    """创建 source_pdf 上传授权的请求。"""
+    """创建 source_pdf 上传授权的请求，可携带 Admin-only quota override。"""
 
     filename: str
     mime_type: str = "application/pdf"
@@ -18,6 +18,8 @@ class FileUploadUrlRequest(BaseModel):
     file_type: Literal["source_pdf"] = "source_pdf"
     checksum_sha256: str | None = None
     job_id: str | None = None
+    quota_override_reason: str | None = None
+    quota_override_confirmation: str | None = None
 
 
 class DocumentFileResponse(BaseModel):
@@ -144,6 +146,20 @@ class FileRetentionDeleteExecuteRequest(BaseModel):
     confirmation: str
 
 
+class FileRetentionS3DeleteContractResponse(BaseModel):
+    """返回 S3 fake deletion safety contract，不代表真实删除授权。"""
+
+    contract_version: Literal["s3-delete-fake-v1"]
+    adapter_mode: Literal["fake"]
+    bucket: str
+    object_key: str
+    version_id: str | None = None
+    target_exact: bool
+    missing_target_fields: list[str] = Field(default_factory=list)
+    expected_outcome: Literal["fake_skipped"]
+    safety: dict[str, bool] = Field(default_factory=dict)
+
+
 class FileRetentionDeleteItemResponse(BaseModel):
     """返回单个文件的物理删除预览或执行结果。"""
 
@@ -170,6 +186,7 @@ class FileRetentionDeleteItemResponse(BaseModel):
     reason: str
     deleted: bool = False
     metadata_updated: bool = False
+    s3_delete_contract: FileRetentionS3DeleteContractResponse | None = None
 
 
 class FileRetentionDeleteResponse(BaseModel):
@@ -193,9 +210,34 @@ class FileRetentionCleanupRunPreviewRequest(BaseModel):
 class FileRetentionCleanupRunExecuteRequest(FileRetentionCleanupRunPreviewRequest):
     """请求执行一次已 preview 的 cleanup run。"""
 
+    run_id: str | None = None
     preview_hash: str
+    plan_id: str | None = None
+    plan_signature: str | None = None
     reason: str
     confirmation: str
+
+
+class FileRetentionCleanupSchedulerDryRunRequest(BaseModel):
+    """请求手动运行 scheduler dry-run；只生成计划和 lock/history 证据。"""
+
+    owner_id: str | None = None
+    lock_ttl_seconds: int = Field(default=60, ge=1, le=900)
+
+
+class FileRetentionSignedCleanupPlanResponse(BaseModel):
+    """返回 cleanup run signed plan 摘要，不包含对象路径或 secret。"""
+
+    plan_id: str
+    run_id: str
+    preview_hash: str
+    requested_file_ids: list[str] = Field(default_factory=list)
+    max_files: int
+    created_at: datetime
+    expires_at: datetime
+    signature: str
+    signature_algorithm: Literal["hmac-sha256"]
+    safety: dict[str, bool] = Field(default_factory=dict)
 
 
 class FileRetentionCleanupRunSafetyResponse(BaseModel):
@@ -207,6 +249,9 @@ class FileRetentionCleanupRunSafetyResponse(BaseModel):
     physical_delete_executed: bool = False
     physical_delete_contract_reused: bool = True
     audit_events_written: bool = False
+    history_recorded: bool = False
+    signed_plan_created: bool = False
+    signed_plan_verified: bool = False
 
 
 class FileRetentionCleanupRunResponse(BaseModel):
@@ -220,7 +265,63 @@ class FileRetentionCleanupRunResponse(BaseModel):
     requested_file_ids: list[str] = Field(default_factory=list)
     max_files: int
     physical_delete: FileRetentionDeleteResponse
+    cleanup_plan: FileRetentionSignedCleanupPlanResponse | None = None
     safety: FileRetentionCleanupRunSafetyResponse
+
+
+class FileRetentionCleanupLockSummaryResponse(BaseModel):
+    """返回手动 scheduler dry-run 持有过的 cleanup lock 摘要。"""
+
+    lock_name: str
+    owner_id: str
+    fencing_token: int
+    status: str
+    acquired_at: datetime
+    expires_at: datetime
+    released_at: datetime | None = None
+    released: bool
+
+
+class FileRetentionCleanupSchedulerDryRunResponse(BaseModel):
+    """返回手动 scheduler dry-run 的只读报告、lock 和 safety evidence。"""
+
+    run_id: str
+    generated_at: datetime
+    action_mode: Literal["scheduler_dry_run"]
+    readonly_report: dict[str, Any] = Field(default_factory=dict)
+    lock: FileRetentionCleanupLockSummaryResponse
+    safety: dict[str, bool] = Field(default_factory=dict)
+
+
+class FileRetentionCleanupRunHistoryResponse(BaseModel):
+    """返回 cleanup run durable history 摘要。"""
+
+    run_id: str
+    status: Literal["previewed", "executed", "failed", "dry_run"]
+    action_mode: Literal["cleanup_preview", "cleanup_execute", "scheduler_dry_run"]
+    preview_hash: str
+    requested_file_ids: list[str] = Field(default_factory=list)
+    max_files: int
+    reason: str | None = None
+    totals: dict[str, int] = Field(default_factory=dict)
+    safety: dict[str, bool] = Field(default_factory=dict)
+    cleanup_plan: FileRetentionSignedCleanupPlanResponse | None = None
+    readonly_report: dict[str, Any] = Field(default_factory=dict)
+    lock: dict[str, Any] = Field(default_factory=dict)
+    error_code: str | None = None
+    error_message: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    executed_at: datetime | None = None
+
+
+class FileRetentionCleanupRunHistoryListResponse(BaseModel):
+    """返回 cleanup run history 分页列表。"""
+
+    page: int
+    page_size: int
+    total: int
+    items: list[FileRetentionCleanupRunHistoryResponse] = Field(default_factory=list)
 
 
 class FileRetentionPolicyCreateRequest(BaseModel):
@@ -348,3 +449,66 @@ class FileStorageUsageResponse(BaseModel):
     by_storage_provider: list[FileStorageUsageGroupResponse] = Field(default_factory=list)
     by_file_type: list[FileStorageUsageGroupResponse] = Field(default_factory=list)
     by_status: list[FileStorageUsageGroupResponse] = Field(default_factory=list)
+
+
+class FileQuotaPolicyDryRunRequest(BaseModel):
+    """请求预演拟上传文件在 staged quota policy 下的结果。"""
+
+    size_bytes: int = Field(ge=0)
+    file_type: str = "source_pdf"
+    filename: str | None = None
+
+
+class FileQuotaPolicyConfigResponse(BaseModel):
+    """返回归一化后的 staged quota policy 配置摘要。"""
+
+    enabled: bool
+    dry_run: bool
+    configured: bool
+    quota_bytes: int | None = None
+    warning_threshold_ratio: float | None = None
+    block_threshold_ratio: float | None = None
+    warning_threshold_bytes: int | None = None
+    block_threshold_bytes: int | None = None
+    upload_max_bytes: int
+    status: Literal["disabled", "not_configured", "invalid", "dry_run", "ready"]
+    config_errors: list[str] = Field(default_factory=list)
+
+
+class FileQuotaPolicyUsageResponse(BaseModel):
+    """返回当前和 projected quota 使用量。"""
+
+    current_used_size_bytes: int
+    proposed_upload_size_bytes: int
+    projected_used_size_bytes: int
+    current_usage_ratio: float | None = None
+    projected_usage_ratio: float | None = None
+
+
+class FileQuotaPolicySafetyResponse(BaseModel):
+    """声明 quota dry-run 没有执行上传、阻断、审计或外部副作用。"""
+
+    read_only: bool = True
+    upload_authorization_created: bool = False
+    upload_content_written: bool = False
+    upload_blocking_executed: bool = False
+    metadata_mutated: bool = False
+    audit_events_written: bool = False
+    provider_calls_executed: bool = False
+    delete_executed: bool = False
+    conversion_workflow_executed: bool = False
+
+
+class FileQuotaPolicyDryRunResponse(BaseModel):
+    """返回 quota policy dry-run 结果，不代表真实上传授权被阻断。"""
+
+    generated_at: datetime
+    action_mode: Literal["quota_policy_dry_run"]
+    file_type: str
+    filename: str | None = None
+    policy: FileQuotaPolicyConfigResponse
+    usage: FileQuotaPolicyUsageResponse
+    would_warn: bool
+    would_block: bool
+    reasons: list[str] = Field(default_factory=list)
+    safety: FileQuotaPolicySafetyResponse
