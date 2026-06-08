@@ -95,3 +95,49 @@ items:
     feature: null
     minimal_loop: false
     notes: "Phase 6 closeout 已用 focused tests、OpenAPI currentness、frontend build 和 git diff --check 验收 foundation；真实上线 release gate/runbook 移到 Phase 7 / controlled rollout。"
+
+phase7_status:
+  last_reviewed: 2026-06-08
+  parent_task: ".trellis/tasks/06-08-phase7-controlled-real-integration-rollout-planning/"
+  live_or_destructive_execution_authorized: false
+  tasks:
+    - slug: phase7-slack-webhook-delivery-pilot
+      status: accepted_no_live
+      evidence: ".trellis/tasks/06-08-phase7-slack-webhook-delivery-pilot/acceptance.md"
+      notes: "实现已完成且标记 ready-for-live-smoke-approval；未批准 live send。"
+    - slug: phase7-slack-webhook-live-smoke-preflight
+      status: accepted_no_live
+      evidence: ".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-preflight/acceptance-preflight.md"
+      notes: "preflight 完成；不发送 webhook，不读取 secret value。"
+    - slug: phase7-slack-webhook-live-smoke-approval
+      status: prepared_blocked
+      evidence: ".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-approval/acceptance-blocked.md"
+      notes: "approval gate 已准备；当前请求不构成 exactly one live send 批准。"
+    - slug: phase7-slack-webhook-live-smoke-execution
+      status: prepared_blocked
+      evidence: ".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-execution/acceptance-blocked.md"
+      notes: "execution task 已准备；等待单独明确批准 exactly one live send。"
+    - slug: phase7-slack-webhook-live-smoke-closeout
+      status: prepared_blocked
+      evidence: ".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-closeout/acceptance-blocked.md"
+      notes: "closeout 已准备；等待真实 live smoke evidence。"
+    - slug: phase7-real-s3-delete-guarded-rollout-planning
+      status: planning_scaffold_target_blocked
+      evidence: ".trellis/tasks/06-08-phase7-real-s3-delete-guarded-rollout-planning/acceptance-planning.md"
+      notes: "破坏性 rollout planning scaffold 已准备；bucket/key/version/sentinel/signed plan 缺失，不能执行。"
+    - slug: phase7-real-s3-delete-guarded-execution
+      status: prepared_blocked
+      evidence: ".trellis/tasks/06-08-phase7-real-s3-delete-guarded-execution/acceptance-blocked.md"
+      notes: "execution task 已准备；等待 planning acceptance 和显式破坏性批准。"
+    - slug: phase7-cleanup-scheduler-controlled-execute-planning
+      status: dependency_blocked
+      evidence: ".trellis/tasks/06-08-phase7-cleanup-scheduler-controlled-execute-planning/acceptance-blocked.md"
+      notes: "必须依赖 accepted real S3 delete evidence；当前 blocked。"
+    - slug: phase7-provider-cancellation-evidence-watch
+      status: evidence_blocked
+      evidence: ".trellis/tasks/06-08-phase7-provider-cancellation-evidence-watch/acceptance-blocked.md"
+      notes: "provider cancellation 继续 blocked，除非 provider evidence 或私有合同变化。"
+    - slug: phase7-controlled-rollout-status-sync
+      status: prepared
+      evidence: ".trellis/tasks/06-08-phase7-controlled-rollout-status-sync/acceptance-status-sync.md"
+      notes: "仅状态同步；不授权真实外部或破坏性执行。"

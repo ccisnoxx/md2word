@@ -513,7 +513,27 @@ Phase 6 closeout 决定不再继续推进真实执行。后续阶段建议顺序
 - 真实 provider cancellation 当前被 `unsupported_by_public_docs` 阻断；不要把 fake cancellation hardening 解读为真实 provider cancellation readiness。
 - 当前 release check 偏后端主链路与 OpenAPI，不覆盖真实 Slack/webhook、真实 S3、scheduler execute 或 secret-ref resolution；这些检查属于 Phase 7 / controlled rollout。
 
-## 8. 变更日志
+## 8. Phase 7 controlled rollout status
+
+2026-06-08 状态快照：
+
+| Task | Status | Execution Permission |
+| --- | --- | --- |
+| `phase7-slack-webhook-delivery-pilot` | no-live implementation accepted | No live send approved |
+| `phase7-slack-webhook-live-smoke-preflight` | accepted; not archived | Preflight only |
+| `phase7-slack-webhook-live-smoke-approval` | prepared; blocked | Approval discussion only |
+| `phase7-slack-webhook-live-smoke-execution` | prepared; blocked | Requires separate explicit approval for exactly one send |
+| `phase7-slack-webhook-live-smoke-closeout` | prepared; blocked | Requires accepted live smoke evidence |
+| `phase7-real-s3-delete-guarded-rollout-planning` | planning scaffold prepared; target blocked | Planning only; exact target values missing |
+| `phase7-real-s3-delete-guarded-execution` | prepared; blocked | Requires destructive rollout planning acceptance and explicit approval |
+| `phase7-cleanup-scheduler-controlled-execute-planning` | prepared; blocked | Requires accepted real S3 delete evidence |
+| `phase7-provider-cancellation-evidence-watch` | prepared; blocked | Requires provider evidence change or private provider contract |
+| `phase7-controlled-rollout-status-sync` | prepared | Documentation/status only |
+
+Phase 7 当前没有任何 task 授权真实 Slack/webhook 发送、真实 provider cancellation、真实 S3 delete、LocalStack delete、cleanup scheduler execute 或转换主流程。
+
+## 9. 变更日志
 
 - 2026-06-07：创建 Phase 6 real integration readiness roadmap；拆分控制面、真实告警投递、真实 provider cancellation、真实 S3 delete、scheduler execute、quota 运维硬化和审计/runbook release gate。
 - 2026-06-08：按 Trellis Phase 6 closeout 更新 roadmap 状态；Phase 6 收口为 readiness foundations completed，真实 Slack/webhook pilot、真实 S3 delete、cleanup scheduler execute 和真实上线 release gate 移到 Phase 7 / controlled rollout。
+- 2026-06-08：创建 Phase 7 controlled rollout task queue；Slack live-smoke approval/execution/closeout、S3 destructive rollout、scheduler execute 和 provider cancellation 均保持 blocked，未执行真实外部或破坏性动作。

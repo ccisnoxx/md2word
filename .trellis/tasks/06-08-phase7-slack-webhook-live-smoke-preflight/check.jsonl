@@ -1,0 +1,6 @@
+{"file":"AGENTS.md","reason":"Check that preflight did not violate project safety, secret, or git-operation rules."}
+{"file":".trellis/workflow.md","reason":"Check Trellis artifacts and validation expectations."}
+{"file":".trellis/tasks/06-08-phase7-controlled-real-integration-rollout-planning/design.md","reason":"Check Phase 7 dependency ordering remains intact."}
+{"file":".trellis/tasks/06-08-phase7-slack-webhook-delivery-pilot/acceptance.md","reason":"Check fixed pilot target and no-live-send acceptance are preserved."}
+{"file":".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-preflight/prd.md","reason":"Check preflight acceptance criteria."}
+{"file":".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-preflight/design.md","reason":"Check preflight hard stops and rollback gate."}
