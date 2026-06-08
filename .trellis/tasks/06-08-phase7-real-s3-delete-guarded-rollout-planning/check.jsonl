@@ -1,0 +1,4 @@
+{"file":"AGENTS.md","reason":"Check no destructive action or git operation occurred."}
+{"file":".trellis/tasks/06-08-phase7-real-s3-delete-guarded-rollout-planning/prd.md","reason":"Check exact-target requirements."}
+{"file":".trellis/tasks/06-08-phase7-real-s3-delete-guarded-rollout-planning/design.md","reason":"Check blockers, rollback, and result contract."}
+{"file":".trellis/tasks/archive/2026-06/06-07-phase6-s3-delete-localstack-contract/implement.md","reason":"Check dependency on Phase 6 S3 foundation evidence."}

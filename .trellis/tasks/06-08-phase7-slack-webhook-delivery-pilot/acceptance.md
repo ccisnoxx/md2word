@@ -2,7 +2,7 @@
 
 ## Decision
 
-Accepted as `implementation completed with no live send`.
+Accepted as `implementation completed with no live send` and marked `ready-for-live-smoke-approval`.
 
 Not accepted as live external delivery. The live Slack/webhook smoke remains deferred and requires a separate explicit approval before any real send attempt.
 
@@ -27,6 +27,16 @@ Not accepted as live external delivery. The live Slack/webhook smoke remains def
 - Integration control plane reports the Phase 7 Slack pilot readiness from safe config only.
 - Ops Dashboard exposes a gated Phase 7 Slack Pilot panel with fixed target, gate state, confirmation phrase, and rollback details.
 - API docs, manifest, and OpenAPI snapshot are updated.
+- Dirty worktree classification is recorded in `worktree-classification.md`.
+
+## Worktree Classification Closeout
+
+- Current worktree classification was completed after implementation acceptance.
+- Observed current `git status --short` and `git status --porcelain=v1 -uall` were clean before adding the classification record.
+- The previously dirty Phase 6 and Phase 7 files appear in latest observed commit `35acbb1`.
+- The classification record separates the committed range into Phase 6 readiness foundations, Phase 7 controlled rollout planning, Phase 7 Slack webhook pilot, and mixed files requiring hunk-level separation if future commit surgery is requested.
+- The only dirty item introduced by this closeout is the new Trellis evidence file `worktree-classification.md`.
+- No staging, commit, push, branch switch, revert, destructive cleanup, or external send was performed during classification.
 
 ## Not Accepted / Deferred
 
@@ -60,6 +70,7 @@ Not accepted as live external delivery. The live Slack/webhook smoke remains def
 - PASS: Trellis task validation:
   - `implement.jsonl`: 7 entries
   - `check.jsonl`: 6 entries
+- PASS: dirty worktree classification completed with no live send and no git staging/commit.
 
 Observed non-blocking frontend build warnings:
 
@@ -72,6 +83,8 @@ Observed non-blocking frontend build warnings:
 This closeout did not run real Slack/webhook delivery, email delivery, generic webhook delivery, provider cancellation, S3 deletion, LocalStack deletion, cleanup scheduler execute, conversion main flow, MinerU parsing/recovery, translation provider calls, Word generation, git staging, commit, push, branch switch, revert, destructive cleanup, or task archive.
 
 ## Live Smoke Gate
+
+Current readiness marker: `ready-for-live-smoke-approval`.
 
 Future live smoke must be a separate approved step or task. Minimum preconditions:
 
@@ -88,4 +101,4 @@ Future live smoke must be a separate approved step or task. Minimum precondition
 - Live Slack behavior remains unverified because no live send was executed.
 - The real smoke path depends on runtime secret/config state outside this repository.
 - The chosen alert code must be active before a live smoke can be meaningful.
-- The worktree remains dirty with prior Phase 6 and Phase 7 changes; this acceptance did not stage, commit, archive, or separate those diffs.
+- Current dirty state is limited to Trellis closeout evidence unless new changes are introduced later; this acceptance did not stage, commit, archive, or separate prior committed diffs.

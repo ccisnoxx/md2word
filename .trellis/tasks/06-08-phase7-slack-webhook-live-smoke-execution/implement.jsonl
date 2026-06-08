@@ -1,0 +1,4 @@
+{"file":"AGENTS.md","reason":"Safety, secret, and git-operation constraints."}
+{"file":".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-approval/acceptance-blocked.md","reason":"Current blocked approval state."}
+{"file":".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-preflight/acceptance-preflight.md","reason":"Preflight values and hard stops."}
+{"file":".trellis/tasks/06-08-phase7-slack-webhook-delivery-pilot/acceptance.md","reason":"Implemented no-live pilot acceptance."}

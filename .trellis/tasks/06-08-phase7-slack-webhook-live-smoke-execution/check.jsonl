@@ -1,0 +1,4 @@
+{"file":"AGENTS.md","reason":"Check no live send or secret exposure occurred."}
+{"file":".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-execution/prd.md","reason":"Check execution preconditions and one-attempt rule."}
+{"file":".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-execution/design.md","reason":"Check execution remains blocked."}
+{"file":".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-approval/acceptance-blocked.md","reason":"Check approval is not accepted."}

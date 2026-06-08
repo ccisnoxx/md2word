@@ -1,0 +1,4 @@
+{"file":"AGENTS.md","reason":"Provider mutation and truthfulness constraints."}
+{"file":".trellis/tasks/06-08-phase7-controlled-real-integration-rollout-planning/design.md","reason":"Phase 7 decision that provider cancellation remains blocked unless evidence changes."}
+{"file":".trellis/tasks/archive/2026-06/06-07-phase6-provider-cancellation-semantics-verification/implement.md","reason":"Phase 6 unsupported_by_public_docs evidence."}
+{"file":".codestable/roadmap/real-integration-readiness/real-integration-readiness-roadmap.md","reason":"Provider cancellation roadmap blocker."}

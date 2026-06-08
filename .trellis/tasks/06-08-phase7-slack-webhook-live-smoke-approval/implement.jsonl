@@ -1,0 +1,4 @@
+{"file":"AGENTS.md","reason":"Project safety, secret-handling, and git-operation rules."}
+{"file":".trellis/workflow.md","reason":"Trellis task and acceptance workflow."}
+{"file":".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-preflight/acceptance-preflight.md","reason":"Preflight acceptance and fixed live-smoke target."}
+{"file":".trellis/tasks/06-08-phase7-controlled-real-integration-rollout-planning/phase7-task-status.md","reason":"Phase 7 queue and blocked task ordering."}

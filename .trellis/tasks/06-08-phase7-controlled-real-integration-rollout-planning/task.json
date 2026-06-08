@@ -19,7 +19,16 @@
   "pr_url": null,
   "subtasks": [],
   "children": [
-    "06-08-phase7-slack-webhook-delivery-pilot"
+    "06-08-phase7-slack-webhook-delivery-pilot",
+    "06-08-phase7-slack-webhook-live-smoke-preflight",
+    "06-08-phase7-slack-webhook-live-smoke-approval",
+    "06-08-phase7-slack-webhook-live-smoke-execution",
+    "06-08-phase7-slack-webhook-live-smoke-closeout",
+    "06-08-phase7-real-s3-delete-guarded-rollout-planning",
+    "06-08-phase7-real-s3-delete-guarded-execution",
+    "06-08-phase7-cleanup-scheduler-controlled-execute-planning",
+    "06-08-phase7-provider-cancellation-evidence-watch",
+    "06-08-phase7-controlled-rollout-status-sync"
   ],
   "parent": null,
   "relatedFiles": [],
