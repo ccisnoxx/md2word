@@ -20,6 +20,10 @@
       </div>
     </el-header>
 
+    <div class="breadcrumb-shell">
+      <AppBreadcrumb />
+    </div>
+
     <el-main class="app-main">
       <router-view />
     </el-main>
@@ -31,6 +35,7 @@ import { computed } from "vue";
 import { SwitchButton } from "@element-plus/icons-vue";
 import { useRouter } from "vue-router";
 
+import AppBreadcrumb from "@/components/AppBreadcrumb.vue";
 import { useAuthStore } from "@/stores/auth";
 
 const auth = useAuthStore();
@@ -44,6 +49,7 @@ type NavItem = {
 const navItems = computed<NavItem[]>(() => {
   const isAdmin = auth.user?.role === "admin";
   const items: NavItem[] = [{ label: "任务工作台", to: "/jobs" }];
+  items.push({ label: "翻译 QA", to: "/translation-qa" });
   if (isAdmin) {
     items.push({ label: "配置中心", to: "/settings" });
   }
@@ -126,6 +132,12 @@ function handleLogout(): void {
   padding: 20px 24px 36px;
 }
 
+.breadcrumb-shell {
+  width: min(1280px, 100%);
+  margin: 0 auto;
+  padding: 12px 24px 0;
+}
+
 @media (prefers-color-scheme: dark) {
   .app-layout {
     background: #050711;
@@ -171,6 +183,10 @@ function handleLogout(): void {
 
   .app-main {
     padding: 16px;
+  }
+
+  .breadcrumb-shell {
+    padding: 10px 16px 0;
   }
 }
 </style>

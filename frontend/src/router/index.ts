@@ -18,6 +18,7 @@ import TermRuleWorkbenchPage from "@/pages/TermRuleWorkbenchPage.vue";
 import TermRuleSetPage from "@/pages/TermRuleSetPage.vue";
 import TermProposalsPage from "@/pages/TermProposalsPage.vue";
 import TranslationProfilesPage from "@/pages/TranslationProfilesPage.vue";
+import TranslationQaQueuePage from "@/pages/TranslationQaQueuePage.vue";
 import TranslationResultQaPage from "@/pages/TranslationResultQaPage.vue";
 import TranslationTermSetPage from "@/pages/TranslationTermSetPage.vue";
 import { pinia } from "@/stores";
@@ -41,6 +42,7 @@ const router = createRouter({
         { path: "jobs", name: "jobs", component: JobsPage },
         { path: "jobs/:jobId", name: "job-detail", component: JobDetailPage, props: true },
         { path: "jobs/:jobId/translation-qa", name: "job-translation-qa", component: TranslationResultQaPage, props: true },
+        { path: "translation-qa", name: "translation-qa", component: TranslationQaQueuePage },
         { path: "settings", name: "settings", component: SettingsHomePage, meta: { roles: ["admin"] } },
         { path: "settings/templates", name: "settings-templates", component: TemplateListPage, meta: { roles: ["admin"] } },
         {
