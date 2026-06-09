@@ -8,8 +8,10 @@
         <p class="section-subtitle mono">{{ jobId }}</p>
       </div>
       <div class="toolbar">
-        <el-button :icon="ArrowLeft" @click="$router.push({ name: 'job-detail', params: { jobId } })">
-          返回任务
+        <el-button v-if="fromTranslationQaQueue" @click="openQaQueue">返回 QA 队列</el-button>
+        <el-button @click="openJobDetail">任务详情</el-button>
+        <el-button :disabled="!job || job.mode !== 'en2zh_pdf_to_word'" @click="openTranslationTermProposal">
+          提交翻译术语建议
         </el-button>
         <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
       </div>
@@ -272,8 +274,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
-import { ArrowLeft, Refresh } from "@element-plus/icons-vue";
-import { useRoute } from "vue-router";
+import { Refresh } from "@element-plus/icons-vue";
+import { useRoute, useRouter } from "vue-router";
 
 import type {
   DocumentJobResourceSnapshot,
@@ -291,6 +293,7 @@ import { formatDateTime, jobModeText } from "@/utils/format";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 
 const route = useRoute();
+const router = useRouter();
 const jobId = computed(() => String(route.params.jobId || ""));
 const job = ref<DocumentJobResponse | null>(null);
 const qa = ref<DocumentJobTranslationQaResponse | null>(null);
@@ -347,6 +350,22 @@ const boundTermRuleSetLabel = computed(() => {
 const boundTranslationTermSetLabel = computed(() => {
   const bound = resourceSnapshot.value?.translation_term_set;
   return bound ? `${bound.set_id}@${bound.version}` : snapshotTermAssetLabel("translation_term_set_id", "translation_term_version");
+});
+const observedTranslationTermSetId = computed(() => {
+  const bound = resourceSnapshot.value?.translation_term_set;
+  if (bound?.set_id) {
+    return bound.set_id;
+  }
+  const assets = readRecord(job.value?.request_snapshot.term_assets);
+  return readString(assets?.translation_term_set_id);
+});
+const observedTranslationTermVersion = computed(() => {
+  const bound = resourceSnapshot.value?.translation_term_set;
+  if (bound?.version) {
+    return bound.version;
+  }
+  const assets = readRecord(job.value?.request_snapshot.term_assets);
+  return readString(assets?.translation_term_version) || job.value?.term_version_id || null;
 });
 const boundTranslationProfileLabel = computed(() => {
   const bound = resourceSnapshot.value?.translation_profile;
@@ -409,6 +428,17 @@ const segmentTraceRows = computed<SegmentTraceRow[]>(() =>
 const unmatchedTermTraces = computed(() =>
   (qa.value?.term_traces || []).filter((trace) => !trace.segment_id || !segmentIds.value.has(trace.segment_id)),
 );
+const fromTranslationQaQueue = computed(() => route.query.from === "translation-qa");
+const qaQueueReturnQuery = computed(() => {
+  const query: Record<string, string> = {};
+  for (const key of ["translation_qa_status", "status", "sort", "include_archived", "q", "page"]) {
+    const value = route.query[key];
+    if (typeof value === "string" && value.trim()) {
+      query[key] = value;
+    }
+  }
+  return query;
+});
 
 function readRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null ? value as Record<string, unknown> : null;
@@ -437,6 +467,34 @@ function syncForm(nextQa: DocumentJobTranslationQaResponse): void {
   form.status = nextQa.qa.status;
   form.issue_type = nextQa.qa.issue_type;
   form.note = nextQa.qa.note || "";
+}
+
+function appendQueryValue(query: Record<string, string>, key: string, value?: string | null): void {
+  if (value) {
+    query[key] = value;
+  }
+}
+
+function openQaQueue(): void {
+  void router.push({ name: "translation-qa", query: qaQueueReturnQuery.value });
+}
+
+function openJobDetail(): void {
+  void router.push({ name: "job-detail", params: { jobId: jobId.value } });
+}
+
+function openTranslationTermProposal(): void {
+  if (!job.value || job.value.mode !== "en2zh_pdf_to_word") {
+    return;
+  }
+  const query: Record<string, string> = {
+    tab: "translation-new",
+    source_job_id: job.value.id,
+    source_file_id: job.value.source_file_id,
+  };
+  appendQueryValue(query, "observed_translation_term_set_id", observedTranslationTermSetId.value);
+  appendQueryValue(query, "observed_translation_term_version", observedTranslationTermVersion.value);
+  void router.push({ name: "term-proposals", query });
 }
 
 async function loadAll(): Promise<void> {
