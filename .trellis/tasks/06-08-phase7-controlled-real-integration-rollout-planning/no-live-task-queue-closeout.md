@@ -12,8 +12,8 @@ This closeout does not approve live Slack/webhook delivery, provider cancellatio
 | --- | --- | --- |
 | `phase7-slack-webhook-delivery-pilot` | `in_progress`; no-live implementation accepted | Ready for separate live-smoke approval; no live send approved |
 | `phase7-slack-webhook-live-smoke-preflight` | `in_progress`; preflight accepted | No-live preflight complete; approval still separate |
-| `phase7-slack-webhook-live-smoke-approval` | `planning`; prepared | Blocked; no exactly-one-send approval granted |
-| `phase7-slack-webhook-live-smoke-execution` | `planning`; prepared | Blocked; requires separate approval |
+| `phase7-slack-webhook-live-smoke-approval` | originally `planning`; prepared | Superseded on 2026-06-09 by accepted approval; no send executed |
+| `phase7-slack-webhook-live-smoke-execution` | originally `planning`; later entered execution | Approval accepted on 2026-06-09; runtime gate blocked before provider call; no send executed |
 | `phase7-slack-webhook-live-smoke-closeout` | `planning`; prepared | Blocked; requires accepted live-smoke evidence |
 | `phase7-real-s3-delete-guarded-rollout-planning` | `planning`; scaffold prepared | Target blocked; exact bucket/key/version/sentinel missing |
 | `phase7-real-s3-delete-guarded-execution` | `planning`; prepared | Blocked; requires planning acceptance and destructive approval |
@@ -114,7 +114,7 @@ Suggested commit body:
 ```text
 Document the Phase 7 controlled rollout queue after the no-live Slack pilot.
 
-- record Slack live-smoke approval/execution/closeout gates as blocked
+- record Slack live-smoke approval/execution/closeout gates; post-closeout approval is accepted and execution is now runtime-gate-blocked before provider call
 - add S3 guarded rollout planning scaffold and keep destructive execution blocked
 - keep cleanup scheduler execute dependent on accepted real S3 delete evidence
 - keep provider cancellation blocked on provider evidence changes
@@ -131,10 +131,13 @@ This closeout did not run live Slack/webhook delivery, provider cancellation, S3
 
 ## Next Gate
 
-The next execution-related step remains blocked unless the user explicitly approves exactly one live Slack send with:
+Post-closeout update on 2026-06-09: the user explicitly approved `phase7-slack-webhook-live-smoke-approval`. The next execution-related step is now `phase7-slack-webhook-live-smoke-execution`, with runtime gate verification required before provider call.
+
+The approved contract is:
 
 - destination id: `ops-slack-primary`
 - alert code: `stage_spool_failed_messages_present`
 - confirmation phrase: `SEND REAL OPS ALERTS`
+- at most one live send attempt
 - rollback口径
 - no secret value disclosure

@@ -97,9 +97,13 @@ items:
     notes: "Phase 6 closeout 已用 focused tests、OpenAPI currentness、frontend build 和 git diff --check 验收 foundation；真实上线 release gate/runbook 移到 Phase 7 / controlled rollout。"
 
 phase7_status:
-  last_reviewed: 2026-06-08
+  last_reviewed: 2026-06-09
   parent_task: ".trellis/tasks/06-08-phase7-controlled-real-integration-rollout-planning/"
-  live_or_destructive_execution_authorized: false
+  closeout_status: deferred_blocked_closeout_completed
+  closeout_evidence: ".trellis/tasks/06-08-phase7-controlled-real-integration-rollout-planning/deferred-blocked-closeout.md"
+  live_or_destructive_execution_authorized: true
+  authorized_scope: "slack_webhook_one_attempt_only"
+  live_or_destructive_execution_performed: false
   tasks:
     - slug: phase7-slack-webhook-delivery-pilot
       status: accepted_no_live
@@ -110,13 +114,13 @@ phase7_status:
       evidence: ".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-preflight/acceptance-preflight.md"
       notes: "preflight 完成；不发送 webhook，不读取 secret value。"
     - slug: phase7-slack-webhook-live-smoke-approval
-      status: prepared_blocked
-      evidence: ".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-approval/acceptance-blocked.md"
-      notes: "approval gate 已准备；当前请求不构成 exactly one live send 批准。"
+      status: approved_not_executed
+      evidence: ".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-approval/acceptance-approved.md"
+      notes: "2026-06-09 已接受 exactly one future live-smoke approval；尚未执行发送。"
     - slug: phase7-slack-webhook-live-smoke-execution
-      status: prepared_blocked
-      evidence: ".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-execution/acceptance-blocked.md"
-      notes: "execution task 已准备；等待单独明确批准 exactly one live send。"
+      status: deferred_by_operator_no_send
+      evidence: ".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-execution/runtime-gate-verification.md"
+      notes: "execution 已进入但 provider call 前阻断；hostdzire code 已更新并 rebuild/restart，preview endpoint 从 404 变为 authenticated-route 401；operator 决定暂时不用 Slack webhook delivery，secret injection/authenticated preview/live send 均 deferred，未消耗 exactly-one attempt。"
     - slug: phase7-slack-webhook-live-smoke-closeout
       status: prepared_blocked
       evidence: ".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-closeout/acceptance-blocked.md"

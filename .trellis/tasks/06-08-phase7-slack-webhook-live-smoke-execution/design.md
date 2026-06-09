@@ -2,7 +2,7 @@
 
 ## Decision
 
-Keep execution blocked until explicit approval exists. The only executable form is the product real-send endpoint with all gates passing and exactly one send attempt.
+Approval exists as of 2026-06-09, but execution has not run. The only executable form is the product real-send endpoint with all gates passing and exactly one send attempt.
 
 ## Execution Preconditions
 
@@ -14,6 +14,8 @@ Keep execution blocked until explicit approval exists. The only executable form 
 - `INTEGRATION_ALERT_DELIVERY_DRY_RUN=false`.
 - `INTEGRATION_ALERT_DELIVERY_KILL_SWITCH=false`.
 - `stage_spool_failed_messages_present` is active.
+
+If any precondition fails at execution time, the attempt must remain blocked before provider call.
 
 ## Execution Constraints
 

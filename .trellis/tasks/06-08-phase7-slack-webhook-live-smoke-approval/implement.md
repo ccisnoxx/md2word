@@ -10,7 +10,9 @@ Approval gate only. No live send is allowed.
 - [x] Record fixed target values.
 - [x] Record that current task-list implementation request is not live-send approval.
 - [x] Record approval hard stops.
-- [x] Record execution remains blocked.
+- [x] Record execution remained blocked before explicit approval.
+- [x] Record 2026-06-09 approval for exactly one future live-smoke attempt.
+- [x] Keep execution as a separate task; no send from this approval task.
 
 ## Validation
 
