@@ -99,64 +99,65 @@ items:
 phase7_status:
   last_reviewed: 2026-06-09
   parent_task: ".trellis/tasks/06-08-phase7-controlled-real-integration-rollout-planning/"
-  closeout_status: deferred_blocked_closeout_completed
+  closeout_status: program_closed_safety_boundary_completed_real_rollout_deferred
   closeout_evidence: ".trellis/tasks/06-08-phase7-controlled-real-integration-rollout-planning/deferred-blocked-closeout.md"
+  reconciliation_evidence: ".trellis/tasks/06-08-phase7-controlled-real-integration-rollout-planning/program-closeout-reconciliation.md"
   live_or_destructive_execution_authorized: false
   authorized_scope: null
   historical_live_smoke_approval:
-    status: accepted_not_consumed
+    status: archived_accepted_not_consumed_not_reusable_without_renewed_approval
     scope: "slack_webhook_one_attempt_only"
-    evidence: ".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-approval/acceptance-approved.md"
+    evidence: ".trellis/tasks/archive/2026-06/06-08-phase7-slack-webhook-live-smoke-approval/acceptance-approved.md"
     reusable_without_renewed_approval: false
   live_or_destructive_execution_performed: false
   current_fact: "Slack webhook live send deferred by operator; real S3 delete, cleanup scheduler execute, and provider cancellation remain blocked."
   tasks:
     - slug: phase7-slack-webhook-delivery-pilot
-      status: accepted_no_live
-      evidence: ".trellis/tasks/06-08-phase7-slack-webhook-delivery-pilot/acceptance.md"
-      notes: "实现已完成且标记 ready-for-live-smoke-approval；未批准 live send。"
+      status: archived_accepted_no_live
+      evidence: ".trellis/tasks/archive/2026-06/06-08-phase7-slack-webhook-delivery-pilot/acceptance.md"
+      notes: "实现已完成且标记 ready-for-live-smoke-approval；operator 后续 deferred Slack webhook delivery，未来 live rollout 需要新任务和重新批准。"
     - slug: phase7-slack-webhook-live-smoke-preflight
-      status: accepted_no_live
-      evidence: ".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-preflight/acceptance-preflight.md"
-      notes: "preflight 完成；不发送 webhook，不读取 secret value。"
+      status: archived_accepted_no_live_preflight
+      evidence: ".trellis/tasks/archive/2026-06/06-08-phase7-slack-webhook-live-smoke-preflight/acceptance-preflight.md"
+      notes: "preflight 完成；不发送 webhook，不读取 secret value；operator deferral 后不作为可继续执行入口。"
     - slug: phase7-slack-webhook-live-smoke-approval
-      status: approved_not_executed
-      evidence: ".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-approval/acceptance-approved.md"
-      notes: "2026-06-09 已接受 exactly one future live-smoke approval；尚未执行发送。"
+      status: archived_historical_approval_superseded_by_deferral
+      evidence: ".trellis/tasks/archive/2026-06/06-08-phase7-slack-webhook-live-smoke-approval/acceptance-approved.md"
+      notes: "2026-06-09 已接受 exactly one future live-smoke approval；未执行发送，未消耗 attempt；operator deferral 后不能自动复用。"
     - slug: phase7-slack-webhook-live-smoke-execution
-      status: deferred_by_operator_no_send
-      evidence: ".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-execution/runtime-gate-verification.md"
+      status: archived_deferred_by_operator_no_send
+      evidence: ".trellis/tasks/archive/2026-06/06-08-phase7-slack-webhook-live-smoke-execution/runtime-gate-verification.md"
       notes: "execution 已进入但 provider call 前阻断；hostdzire code 已更新并 rebuild/restart，preview endpoint 从 404 变为 authenticated-route 401；operator 决定暂时不用 Slack webhook delivery，secret injection/authenticated preview/live send 均 deferred，未消耗 exactly-one attempt。"
     - slug: phase7-slack-webhook-live-smoke-closeout
-      status: prepared_blocked
-      evidence: ".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-closeout/acceptance-blocked.md"
-      notes: "closeout 已准备；等待真实 live smoke evidence。"
+      status: archived_blocked_no_live_evidence
+      evidence: ".trellis/tasks/archive/2026-06/06-08-phase7-slack-webhook-live-smoke-closeout/acceptance-blocked.md"
+      notes: "closeout 已准备但无真实 live smoke evidence；future Slack rollout 需要 fresh closeout。"
     - slug: phase7-real-s3-delete-guarded-rollout-planning
-      status: planning_scaffold_target_blocked
+      status: retained_blocked_target_missing
       evidence: ".trellis/tasks/06-08-phase7-real-s3-delete-guarded-rollout-planning/acceptance-planning.md"
       notes: "破坏性 rollout planning scaffold 已准备；bucket/key/version/sentinel/signed plan 缺失，不能执行。"
     - slug: phase7-real-s3-delete-guarded-execution
-      status: prepared_blocked
+      status: retained_blocked_destructive_approval_required
       evidence: ".trellis/tasks/06-08-phase7-real-s3-delete-guarded-execution/acceptance-blocked.md"
       notes: "execution task 已准备；等待 planning acceptance 和显式破坏性批准。"
     - slug: phase7-cleanup-scheduler-controlled-execute-planning
-      status: dependency_blocked
+      status: retained_dependency_blocked
       evidence: ".trellis/tasks/06-08-phase7-cleanup-scheduler-controlled-execute-planning/acceptance-blocked.md"
       notes: "必须依赖 accepted real S3 delete evidence；当前 blocked。"
     - slug: phase7-provider-cancellation-evidence-watch
-      status: evidence_blocked
+      status: retained_evidence_blocked
       evidence: ".trellis/tasks/06-08-phase7-provider-cancellation-evidence-watch/acceptance-blocked.md"
       notes: "provider cancellation 继续 blocked，除非 provider evidence 或私有合同变化。"
     - slug: phase7-controlled-rollout-status-sync
-      status: prepared
-      evidence: ".trellis/tasks/06-08-phase7-controlled-rollout-status-sync/acceptance-status-sync.md"
-      notes: "仅状态同步；不授权真实外部或破坏性执行。"
+      status: archived_status_sync_completed
+      evidence: ".trellis/tasks/archive/2026-06/06-08-phase7-controlled-rollout-status-sync/acceptance-status-sync.md"
+      notes: "仅状态同步；不授权真实外部或破坏性执行；被 program closeout reconciliation supersede。"
 
 phase8_status:
   last_reviewed: 2026-06-09
-  task: ".trellis/tasks/06-09-phase8-post-rollout-architecture-status-backfill/"
-  status: accepted_backfill_completed
-  acceptance_evidence: ".trellis/tasks/06-09-phase8-post-rollout-architecture-status-backfill/acceptance.md"
+  task: ".trellis/tasks/archive/2026-06/06-09-phase8-post-rollout-architecture-status-backfill/"
+  status: archived_accepted_backfill_completed
+  acceptance_evidence: ".trellis/tasks/archive/2026-06/06-09-phase8-post-rollout-architecture-status-backfill/acceptance.md"
   scope: "architecture_and_status_backfill_only"
   live_or_destructive_execution_authorized: false
   live_or_destructive_execution_performed: false
@@ -171,3 +172,27 @@ phase8_status:
     cleanup_scheduler_controlled_execute: "blocked_requires_accepted_real_s3_delete_evidence"
     real_provider_cancellation_adapter: "blocked_until_provider_evidence_changes"
   notes: "Phase 8 records Phase 7 deferred/blocked as current fact; it does not reopen live Slack send, provider cancellation, S3/LocalStack delete, scheduler execute, deployment, secret injection, or conversion workflows."
+
+program_closeout:
+  last_reviewed: 2026-06-09
+  status: safety_boundary_completed_real_rollout_deferred
+  evidence: ".trellis/tasks/06-08-phase7-controlled-real-integration-rollout-planning/program-closeout-reconciliation.md"
+  recommendation: stop_by_default
+  active_live_or_destructive_authorization: false
+  live_or_destructive_execution_performed: false
+  archived_tasks:
+    - ".trellis/tasks/archive/2026-06/06-07-phase6-real-production-integration-readiness-roadmap-gap-audit/"
+    - ".trellis/tasks/archive/2026-06/06-09-phase8-post-rollout-architecture-status-backfill/"
+    - ".trellis/tasks/archive/2026-06/06-08-phase7-slack-webhook-delivery-pilot/"
+    - ".trellis/tasks/archive/2026-06/06-08-phase7-slack-webhook-live-smoke-preflight/"
+    - ".trellis/tasks/archive/2026-06/06-08-phase7-slack-webhook-live-smoke-approval/"
+    - ".trellis/tasks/archive/2026-06/06-08-phase7-slack-webhook-live-smoke-execution/"
+    - ".trellis/tasks/archive/2026-06/06-08-phase7-slack-webhook-live-smoke-closeout/"
+    - ".trellis/tasks/archive/2026-06/06-08-phase7-controlled-rollout-status-sync/"
+  retained_blocked_tasks:
+    - ".trellis/tasks/06-08-phase7-controlled-real-integration-rollout-planning/"
+    - ".trellis/tasks/06-08-phase7-real-s3-delete-guarded-rollout-planning/"
+    - ".trellis/tasks/06-08-phase7-real-s3-delete-guarded-execution/"
+    - ".trellis/tasks/06-08-phase7-cleanup-scheduler-controlled-execute-planning/"
+    - ".trellis/tasks/06-08-phase7-provider-cancellation-evidence-watch/"
+  reopen_guidance: "Future rollout must be reopened explicitly as one controlled lane with fresh approval, current runtime evidence, and no automatic reuse of the historical Slack approval."

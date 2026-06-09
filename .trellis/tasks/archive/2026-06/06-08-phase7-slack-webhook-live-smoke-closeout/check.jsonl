@@ -1,0 +1,4 @@
+{"file":"AGENTS.md","reason":"Check closeout does not fabricate unobserved execution evidence."}
+{"file":".trellis/tasks/archive/2026-06/06-08-phase7-slack-webhook-live-smoke-closeout/prd.md","reason":"Check closeout acceptance criteria."}
+{"file":".trellis/tasks/archive/2026-06/06-08-phase7-slack-webhook-live-smoke-closeout/design.md","reason":"Check evidence requirements."}
+{"file":".trellis/tasks/archive/2026-06/06-08-phase7-slack-webhook-live-smoke-execution/acceptance-blocked.md","reason":"Check execution remains blocked."}

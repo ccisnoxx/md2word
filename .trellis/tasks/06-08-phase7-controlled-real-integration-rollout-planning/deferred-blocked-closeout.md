@@ -29,7 +29,9 @@ No live external delivery or destructive execution was performed in this closeou
 | `phase7-controlled-rollout-status-sync` | `planning` | Documentation/status sync only |
 | `phase7-controlled-real-integration-rollout-planning` | `planning` | Parent planning task remains the queue container |
 
-Semantic status is recorded in `phase7-task-status.md` and `.codestable/roadmap/real-integration-readiness/real-integration-readiness-items.yaml`. Trellis `task.json` statuses remain planning/in_progress because these tasks are not archived in this closeout.
+Semantic status is recorded in `phase7-task-status.md` and `.codestable/roadmap/real-integration-readiness/real-integration-readiness-items.yaml`.
+
+Post-Phase 8 reconciliation is recorded in `program-closeout-reconciliation.md`. That reconciliation archives completed or superseded no-live Slack/status-sync tasks and retains only the S3, cleanup scheduler, provider-cancellation blocker tasks plus the Phase 7 parent queue container.
 
 ## Online Deployment Record Review
 
