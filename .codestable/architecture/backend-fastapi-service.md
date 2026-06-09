@@ -1,11 +1,11 @@
 ---
 doc_type: architecture
 slug: backend-fastapi-service
-scope: 当前仓库的 FastAPI 后端表面，覆盖 files、document_jobs、legacy jobs、templates、term-rules、translation-profiles、health、后台 stage、artifact 合同和本地运维动作
-summary: 当前仓库已经收口为“FastAPI 后端 + app/conversion 转换核心 + document_jobs PDF -> Word 主链路”的结构；后端业务模块采用 `app/domains/` domain-first 布局，通过 files 上传授权、document_jobs Worker、DocumentIR v2、renderer metadata、BackgroundTasks、metadata adapters、Job Resource Snapshot、最小 actor/audit 基线和 operations readiness / metrics 承载 P0 PDF -> Word 与 legacy jobs 能力
+scope: 当前仓库的 FastAPI 后端表面，覆盖 files、document_jobs、legacy jobs、templates、term-rules、translation-profiles、ops、health、后台 stage、artifact 合同、本地运维动作和受控真实集成状态
+summary: 当前仓库已经收口为“FastAPI 后端 + app/conversion 转换核心 + document_jobs PDF -> Word 主链路”的结构；后端业务模块采用 `app/domains/` domain-first 布局，通过 files 上传授权、document_jobs Worker、DocumentIR v2、renderer metadata、BackgroundTasks、metadata adapters、Job Resource Snapshot、最小 actor/audit 基线、operations readiness / metrics 和 `/ops` integration control plane 承载 P0 PDF -> Word、legacy jobs 与真实集成 controlled rollout 状态
 status: current
-last_reviewed: 2026-06-03
-tags: [architecture, backend, fastapi, jobs, document-jobs, files, templates, term-rules, translation, operations]
+last_reviewed: 2026-06-09
+tags: [architecture, backend, fastapi, jobs, document-jobs, files, templates, term-rules, translation, operations, ops, integration-control, controlled-rollout, quota, cleanup]
 depends_on: [architecture-index, conversion-flow]
 implements: [fastapi-backend-productization]
 ---
@@ -30,12 +30,16 @@ implements: [fastapi-backend-productization]
 - 提供 resource versioning 内部 service；当前 Template Profile、Term Rule Set 与 Translation Profile 已复用发布状态机与默认指针
 - 在 MySQL resource mode 下创建 job 时绑定不可变资源快照，后台 stage 只消费创建时的 Template Version、Term Rule Version、`en2zh` Translation Profile Version 和非敏感 MinerU 配置
 - 通过 `ActorContext` 和 `AuditEvent` 记录高风险资源动作、job ops 和 artifact download 的成功审计，不引入 SSO、用户表或多租户模型
-- 通过 `health/ready`、`health/metrics`、release check 和 MySQL metadata shadow copy / validate 脚本提供单实例生产化运维基线
+- 通过 `/api/v1/ops` 暴露真实集成能力控制面、safe config、preview、fake parity、Slack webhook real-send gate、S3 delete contract、provider cancellation blocked status 和 cleanup scheduler execute blocked status
+- 通过文件 quota preflight、retention policy、mark-expired、local physical delete preview/execute、cleanup run signed plan、cleanup history、cleanup lock 和 scheduler dry-run 支撑文件保留期运维
+- 通过 `health/ready`、`health/metrics`、release check、MySQL metadata shadow copy / validate 脚本和 Phase 7 controlled rollout 状态记录提供单实例生产化运维基线
 
 ## 2. 物理结构
 
 - `app/main.py`
-  - 创建 FastAPI app，挂载 CORS、中间件、router 和 runtime。
+  - 创建 FastAPI app，挂载 CORS、中间件、router 和 runtime；组合 artifact storage、metadata adapters、audit service、real alert delivery provider 和 secret resolver。
+- `app/core/config.py`、`app/core/runtime.py`
+  - `Settings` 保存真实集成、quota、cleanup scheduler、S3 artifact adapter 和 feature flag；`AppRuntime` 挂载 cleanup history/lock repository、alert delivery provider 和 secret resolver。
 - `app/api/dependencies.py`
   - 提供 runtime、trace 和访问控制依赖；`require_admin_actor()`、`require_jobs_actor()`、`require_job_ops_actor()` 在保留旧 403 / 503 语义的同时返回 `ActorContext`。
 - `app/api/v1/routers/health.py`
@@ -58,7 +62,9 @@ implements: [fastapi-backend-productization]
 - `app/domains/document_jobs/`
   - document job models、schemas、service、execution queue、router、repository ports，以及 DocumentIR / generated Word artifact metadata 诊断摘要。
 - `app/domains/files/`
-  - 文件上传授权、PDF 校验、文件 metadata、retention planning、router 和 repository port。
+  - 文件上传授权、PDF 校验、文件 metadata、quota policy、retention planning、retention policy、local physical delete preview/execute、cleanup execution、cleanup history、cleanup lock、scheduler dry-run、router 和 repository port。
+- `app/domains/ops/`
+  - `/api/v1/ops` router、真实集成 capability control plane、recovery action registry/preview、alert destination dry-run、fake alert delivery、Phase 7 Slack webhook real-send gate、provider cancellation semantics/blocking report、S3 delete adapter contract 和 schema。
 - `app/domains/resources/`
   - `ResourceVersionService` 和 resource version models/ports。
 - `app/domains/audit/`
@@ -199,6 +205,60 @@ flowchart TD
 
 `ActorContext` 只从现有 token 边界派生：admin token 得到 `admin`，jobs token 得到 `jobs`，open 下载得到 `anonymous`。`X-Actor-Id` 只在已认证 token 场景作为操作者标签；open 下载始终写 `actor_id=null`。审计只记录已通过权限且业务动作成功的事件，失败路径继续通过 HTTP status、JobEvent 或 stage failure 表达。当前审计动作覆盖 Template Version publish / set-default / disable、Term Rule Set publish / set-default / rollback、Translation Profile publish / set-default / rollback、job retry / cancel / cleanup-local-files，以及 artifact download。
 
+### Operations control plane and controlled rollout status
+
+```mermaid
+flowchart TD
+    A["GET /api/v1/ops/integration-capabilities"] --> B["OpsIntegrationControlPlaneService"]
+    B --> C["Settings feature flags + safe config"]
+    C --> D["capability status: ready / dry_run_only / blocked"]
+    E["POST /api/v1/ops/alert-deliveries/real-send/preview"] --> F["OpsRealAlertDeliveryService.preview()"]
+    F --> G["validate exact alert + destination + gates"]
+    G --> H["no secret resolution / no provider call / no audit"]
+    I["POST /api/v1/ops/alert-deliveries/real-send"] --> J["reason + confirmation + exact target gates"]
+    J --> K{"missing gates?"}
+    K -->|yes| L["blocked report + audit; provider_calls_executed=false"]
+    K -->|no| M["resolve OPS_SLACK_WEBHOOK_URL"]
+    M --> N["dedupe + rate limit"]
+    N --> O["SlackWebhookAlertDeliveryProvider.send()"]
+    O --> P["audit details without secret or response body"]
+```
+
+`/api/v1/ops` 是真实集成 controlled rollout 的后端控制面，不替代具体业务 API。`OpsIntegrationControlPlaneService` 只读取 `Settings` 的非敏感摘要和 code-level support，报告 `alert_delivery`、`provider_cancellation`、`s3_deletion`、`cleanup_scheduler_execute`、`quota_enforcement` 五类 capability 的 status、blocking reasons、required gates 和 safe config；该读取路径不解析 secret、不调用 provider、不删除对象。
+
+Phase 7 当前事实：
+
+- Slack webhook delivery pilot 的代码已存在，固定 destination 为 `ops-slack-primary`，secret ref 名称为 `OPS_SLACK_WEBHOOK_URL`，允许 alert code 为 `stage_spool_failed_messages_present`，confirmation phrase 为 `SEND REAL OPS ALERTS`，rate limit 为每小时 3 次，dedupe window 为 60 分钟。
+- `real-send/preview` 只验证 exact target、destination allowlist、feature flags、dry-run、kill switch 等 gate，不解析 secret value、不调用 Slack provider、不写 audit。
+- `real-send` 在 reason、confirmation、active alert、destination、feature flags、dedupe、rate limit 和 secret resolution 全部通过后才调用 `SlackWebhookAlertDeliveryProvider`；失败、timeout 和 blocked response 不保存 provider response body 或 webhook URL。
+- Phase 7 live smoke 已由 operator deferred；hostdzire code 已更新并 rebuild/restart，但 `OPS_SLACK_WEBHOOK_URL` 未注入 active runtime env，secret injection、authenticated preview 和 live send 均未继续执行。当前没有任何真实 Slack/webhook 发送。
+- Provider cancellation capability 继续 blocked：semantics decision 为 `unsupported_by_public_docs`，real provider cancellation adapter 未实现。
+- S3 deletion capability 继续 blocked：已有 fake/localstack contract 和 exact-target report，但 real S3 delete adapter 未实现，真实 S3 delete 被规划为单独破坏性 controlled rollout。
+- Cleanup scheduler execute 继续 blocked：manual scheduler dry-run、history 和 lock 基础存在，但 autonomous execute loop 未实现，并且必须依赖 accepted real S3 delete evidence。
+
+### File quota, retention cleanup, and scheduler dry-run
+
+```mermaid
+flowchart TD
+    A["POST /api/v1/files/upload-url"] --> B["FileQuotaPolicyDryRunService"]
+    B --> C{"quota blocks?"}
+    C -->|yes| D["file.quota_policy_block audit + no upload authorization"]
+    C -->|override| E["confirmation phrase + file.quota_policy_override audit"]
+    C -->|no| F["create document_file upload authorization"]
+    G["POST /api/v1/files/retention/delete-preview"] --> H["preview selected expired file_ids"]
+    I["POST /api/v1/files/retention/cleanup-runs/preview"] --> J["signed cleanup plan + history preview"]
+    J --> K["plan hash includes selected ids + delete contract summary"]
+    L["POST /api/v1/files/retention/cleanup-runs/execute"] --> M["validate signed plan + confirmation + max_files"]
+    M --> N["reuse retention physical delete safety contract"]
+    O["POST /api/v1/files/retention/scheduler/dry-run"] --> P["cleanup lock + dry-run history + no delete"]
+```
+
+File quota enforcement 已接入 upload authorization preflight；`FILES_QUOTA_POLICY_ENABLED`、`FILES_QUOTA_POLICY_DRY_RUN` 和 kill switch 决定是否真实阻断。阻断与 admin override 会写 `file.quota_policy_block` / `file.quota_policy_override` audit details；quota dry-run 和 ops-summary 仍是只读。
+
+File retention 现在分三层：retention plan / mark-expired 修改 metadata、selected expired local physical delete preview/execute、cleanup run signed plan + history。`/retention/delete-expired` 只支持 `local_file` 和 `local_object`，要求 exact file ids、expired status、过期时间、reason 和 `DELETE EXPIRED FILES` confirmation；成功或 already-missing 会把 metadata 标记为 `deleted` 并写审计。S3 记录只生成 `s3-delete-fake-v1` exact-target contract，`real_s3_delete_executed=false`。
+
+Cleanup run execute 复用已有 local physical delete safety contract，要求 signed plan、preview hash、`EXECUTE AUTOMATED RETENTION CLEANUP` confirmation 和批量上限；scheduler endpoint 目前是 dry-run，使用 cleanup lock/fencing token 和 history 记录只读计划，不执行 cleanup loop。
+
 ### PDF 在线提交前半程
 
 ```mermaid
@@ -237,6 +297,7 @@ flowchart TD
 - `POST /api/v1/files/upload-url`
   - 登录用户获取 PDF 上传授权；请求包含 `filename`、`mime_type`、`size_bytes`、可选 `checksum_sha256`。
   - 返回 `file_id`、`upload_url`、`method=PUT`、`headers`、`expires_at`、`object_key` 和文件 metadata；成功写 `file.upload_authorize` audit event。
+  - quota policy 开启且非 dry-run 时会在创建上传授权前评估 metadata 使用量；阻断写 `file.quota_policy_block` audit event，admin 使用 `OVERRIDE FILE QUOTA POLICY` 可写 `file.quota_policy_override` audit event 后继续。
 - `PUT /api/v1/files/{file_id}/content`
   - 本地代理上传 PDF 内容；会校验大小、内容类型、PDF 头和授权状态；成功写 `file.upload_content` audit event。
 - `GET /api/v1/files/{file_id}`
@@ -264,6 +325,31 @@ Document jobs 当前登记的 layout 诊断 metadata：
 - layout flags 只保存 block id 与风险类型，例如 wide table、caption binding、table continuation；不保存凭证、客户文件全文或完整解析文本。
 
 Document jobs 当前 generated Word 还会经过 renderer editable semantic pass：DocumentIR heading/list/formula/table annotation 使用现有 block 字段生成命名标题样式、`w:numPr` 列表编号、上下标 rich text、caption-before-table 和 TableNote 顺序语义。该能力只改变 DOCX 内容质量，不改变 `/api/v1/files`、`/api/v1/document-jobs` 请求/响应合同。
+
+Files retention、quota 和 cleanup 控制端点：
+
+- `GET /api/v1/files/retention/plan`
+  - 只读生成过期候选，不修改 metadata、不删除二进制。
+- `POST /api/v1/files/retention/mark-expired`
+  - admin-only，把符合 retention 条件的文件 metadata 标记为 `expired`。
+- `GET` / `POST` / `PATCH` / `impact-preview` / `publish` / `set-default` / `disable` under `/api/v1/files/retention/policies`
+  - 管理 retention policy draft/published/default/disabled 状态。
+- `POST /api/v1/files/retention/delete-preview`
+  - 预览 selected file ids 的 local physical delete eligibility；不修改 metadata、不删除文件。
+- `POST /api/v1/files/retention/delete-expired`
+  - admin-only，要求 reason 和 `DELETE EXPIRED FILES` confirmation；只对 `expired` 且过期时间已到的 `local_file` / `local_object` 删除本地二进制或按 already-missing 幂等处理，并标记 metadata `deleted`，成功路径写 `file.retention_physical_delete` audit event。
+- `POST /api/v1/files/retention/cleanup-runs/preview`
+  - 生成 cleanup run preview、preview hash 和 signed plan；不修改 metadata、不删除、不写 audit。
+- `POST /api/v1/files/retention/cleanup-runs/execute`
+  - admin-only，校验 signed plan、preview hash、max files、reason 和 `EXECUTE AUTOMATED RETENTION CLEANUP` confirmation 后复用 selected-file physical delete contract，并记录 cleanup history / audit。
+- `POST /api/v1/files/retention/cleanup-runs/scheduler-dry-run`
+  - 使用 cleanup lock 和 history 记录 scheduler dry-run；不执行 cleanup execute loop。
+- `GET /api/v1/files/retention/cleanup-runs/history` / `GET /api/v1/files/retention/cleanup-runs/history/{run_id}`
+  - 只读查询 cleanup run history。
+- `POST /api/v1/files/quota-policy/dry-run`
+  - 只读评估拟上传文件是否触发 quota warning/block。
+- `GET /api/v1/files/quota-policy/ops-summary`
+  - 只读返回 quota readiness、rollback options 和 audit replay 摘要。
 
 ### 4.1 jobs
 
@@ -384,7 +470,36 @@ Document jobs 当前 generated Word 还会经过 renderer editable semantic pass
 - `POST /api/v1/translation-profiles/{profile_id}/rollback`
   - admin-only，只把默认指针切回指定 published Translation Profile Version，不修改历史 payload；成功后写 `translation_profile.rollback` audit event。
 
-### 4.6 health
+### 4.6 ops
+
+- `GET /api/v1/ops/integration-capabilities`
+  - admin-only，返回真实集成 capability readiness、安全配置摘要、blocking reasons 和无副作用 safety 声明；不读取 secret、不调用 provider、不删除对象。
+- `GET /api/v1/ops/recovery-actions`
+  - 返回可用 recovery action registry。
+- `POST /api/v1/ops/recovery-actions/preview`
+  - 预览指定 recovery action 的安全合同，不执行真实动作。
+- `POST /api/v1/ops/alert-destinations/dry-run`
+  - 校验 alert destination 配置、allowlist、rate、dedupe 和 secret ref 名称；不解析 secret value、不发送消息。
+- `POST /api/v1/ops/alert-deliveries/preview`
+  - 对 fake/local alert delivery contract 做 dry-run，不触发真实外部发送。
+- `GET /api/v1/ops/alert-deliveries/adapter-contract`
+  - 返回 alert delivery adapter contract 和 fake parity 摘要。
+- `POST /api/v1/ops/alert-deliveries/fake-send`
+  - 通过 fake provider 验证 adapter parity、history/audit details 和 response contract。
+- `POST /api/v1/ops/alert-deliveries/real-send/preview`
+  - Phase 7 Slack webhook pilot preview；只允许 `ops-slack-primary` + `stage_spool_failed_messages_present`，不解析 `OPS_SLACK_WEBHOOK_URL`、不调用 provider、不写 audit。
+- `POST /api/v1/ops/alert-deliveries/real-send`
+  - Phase 7 Slack webhook pilot gated execution；要求 reason、`SEND REAL OPS ALERTS` confirmation、active alert、destination allowlist、feature flags、dedupe、rate limit 和 secret resolution 全部通过后才调用 Slack webhook provider。当前 Phase 7 operator deferred，未执行 live send。
+- `POST /api/v1/ops/provider-cancellations/fake-cancel`
+  - fake provider cancellation parity；真实 provider cancellation 仍 blocked。
+- `POST /api/v1/ops/provider-cancellations/preview`
+  - 预览 provider cancellation fake/blocked 语义，不执行真实 provider cancellation。
+- `GET /api/v1/ops/provider-cancellations/semantics-verification`
+  - 返回 provider cancellation 语义验证结论；当前 decision 为 `unsupported_by_public_docs`。
+- `GET /api/v1/ops/s3-deletions/adapter-contract`
+  - 返回 S3 delete contract / localstack harness / safety summary；真实 S3 delete adapter 未实现且 blocked。
+
+### 4.7 health
 
 - `GET /api/v1/health/live`
   - 只确认进程可响应。
@@ -419,7 +534,8 @@ Document jobs 当前 generated Word 还会经过 renderer editable semantic pass
 - `storage_backend=object` 时，`object_key` 只作为服务端内部定位字段，不替代 `download_url`。
 - 本地文件下载会在返回文件前校验 logical path、存在性和已有 fingerprint：logical path 越界或不匹配返回 400，本地文件缺失返回 404，fingerprint 不匹配返回 409。
 - object adapter 的本地 fallback 下载同样校验 fingerprint；redirect 模式只保证登记 fingerprint 和服务端本地 fallback 口径，不在 redirect 前读取远端对象内容。
-- retention 当前只提供 dry-run 候选，输出 `storage_backend`、logical `path`、`object_key`、`size_bytes` 和 `sha256`，不删除 artifact。
+- legacy jobs artifact retention 仍只提供 dry-run 候选，输出 `storage_backend`、logical `path`、`object_key`、`size_bytes` 和 `sha256`，不删除 job artifact。
+- `document_files` retention 已支持 mark-expired、selected expired local physical delete preview/execute、cleanup run signed plan/history 和 scheduler dry-run；真实 S3 delete 仍只生成 fake exact-target contract，不执行云对象删除。
 - `parsed_result_package` 是受支持的中间 artifact，默认交付物仍是 `result_docx`。
 
 ## 6. 翻译能力
@@ -471,6 +587,8 @@ Document jobs 当前 generated Word 还会经过 renderer editable semantic pass
   - `translation_available`
 - `configured_repository_backend/effective_repository_backend/stage_message_store` 可为 `file`、`database` 或 `mysql`；`mysql` 时 stage spool 位于 MySQL 表，不要求 `var/stage_messages` 目录存在。
 - `health/metrics` 返回 JSON counters：job status counts、stage message status counts、resource version counts 和 audit event count；调用方需要自行接入外部监控或告警系统。
+- 真实集成控制面的 runtime flags 位于 `Settings`：`integration_alert_delivery_*`、`integration_provider_cancellation_*`、`integration_s3_deletion_*`、`integration_cleanup_scheduler_execute_*` 和 `files_quota_policy_*`。这些 flags 独立控制每类能力的 enabled、dry-run 和 kill switch；没有总开关会一次打开所有真实外部/破坏性动作。
+- `EnvironmentSecretResolver` 只按 secret ref 从环境变量读取 secret value；`OPS_SLACK_WEBHOOK_URL` 不进入 settings response、safe config、audit reason、audit details 或 history。
 - 发布前本地基线入口是 `scripts/ops/check_release.py`，当前聚合 OpenAPI snapshot check、health/metrics smoke、metadata migration smoke、job workflow、MySQL fake smoke 和 logging tests。
 - audit events 独立于 JobEvent：file backend 写 `var/audit_events.jsonl`，sqlite / MySQL backend 写 `audit_events` 表；当前不暴露审计查询 HTTP API。
 - callback 安全边界：
@@ -487,7 +605,13 @@ Document jobs 当前 generated Word 还会经过 renderer editable semantic pass
 - resource versioning 当前是内部 service，不新增通用 HTTP router；Template Profile、Term Rule Set 与 Translation Profile 已接入各自的管理和版本发布 API，jobs 通过 `JobResourceSnapshotService` 在 MySQL resource mode 下消费 published 版本。
 - file -> MySQL 历史 metadata 空目标 shadow copy / validate baseline 已由运维脚本覆盖，release check 使用 fake MySQL smoke；真实外部 MySQL 服务 smoke 和 Alembic / SQLAlchemy 迁移体系仍未完成。
 - artifact fingerprint 不强制 backfill 旧记录；旧记录缺少 `size_bytes` / `sha256` 时仍允许读取和按旧存在性规则下载。
-- artifact retention 仍停在 dry-run，不执行真实删除；`cleanup-local-files` 成功会写 audit event，但真实删除、删除审计和恢复策略仍未完成。
+- legacy jobs artifact retention 仍停在 dry-run，不删除 job artifact；`cleanup-local-files` 只清理未登记运行态目录并写 audit event。
+- `document_files` retention 已有 selected expired local physical delete preview/execute、cleanup run signed plan/history 和 scheduler dry-run；真实云对象删除仍 blocked，S3 只输出 `s3-delete-fake-v1` contract。
+- `/api/v1/ops` 已提供 integration capability status、alert delivery fake/real pilot gate、provider cancellation semantics、S3 delete contract 和 recovery action preview；它是控制面和证据面，不等价于授权真实执行。
+- Phase 7 Slack webhook pilot 代码已实现，但 live smoke 由 operator deferred；`OPS_SLACK_WEBHOOK_URL` 未注入 active runtime env，没有执行真实 Slack/webhook send。
+- Provider cancellation 继续 blocked，原因是 `unsupported_by_public_docs` 且 real provider cancellation adapter 未实现。
+- Real S3 delete 继续 blocked，必须单独作为破坏性 controlled rollout；Phase 7 没有执行真实 S3 delete 或 LocalStack delete。
+- Cleanup scheduler execute 继续 blocked，必须依赖 accepted real S3 delete evidence；当前 scheduler 只有 dry-run/history/lock，不执行 autonomous cleanup loop。
 - 当前没有独立 worker / queue、多实例 heartbeat、lease 或抢占锁。
 - `retry/cancel/cleanup-local-files` 默认要求 `X-Admin-Token`；`JOBS_OPS_ACCESS_MODE=jobs` 时可复用 jobs token，并在 audit event 中记录 `actor_role=jobs`。
 - 当前权限基线只表达 `admin`、`jobs`、`anonymous` 三类 actor，不做 SSO、用户表、多租户、资源所有者校验或审计查询 UI。
@@ -502,9 +626,12 @@ Document jobs 当前 generated Word 还会经过 renderer editable semantic pass
 - [ARCHITECTURE.md](/Users/sc/PycharmProjects/md2word/.codestable/architecture/ARCHITECTURE.md)
 - [conversion-flow.md](/Users/sc/PycharmProjects/md2word/.codestable/architecture/conversion-flow.md)
 - [fastapi-backend-roadmap.md](/Users/sc/PycharmProjects/md2word/.codestable/roadmap/fastapi-backend/fastapi-backend-roadmap.md)
+- [real-integration-readiness-roadmap.md](/Users/sc/PycharmProjects/md2word/.codestable/roadmap/real-integration-readiness/real-integration-readiness-roadmap.md)
+- [deferred-blocked-closeout.md](/Users/sc/PycharmProjects/md2word/.trellis/tasks/06-08-phase7-controlled-real-integration-rollout-planning/deferred-blocked-closeout.md)
 
 ## 10. 变更日志
 
+- 2026-06-09：Phase 8 post-rollout backfill；补入 `/api/v1/ops` integration control plane、Phase 7 Slack webhook deferred 状态、provider cancellation / real S3 delete / cleanup scheduler execute blocked 状态，以及 file quota、local physical delete、cleanup run history/lock/signed plan 和 scheduler dry-run 当前合同。
 - 2026-06-03：补入 `word-renderer-editable-output-pass`；`document_jobs -> DocumentIR -> generated Word` 主链路已写入 heading named style、真实 list numbering、formula rich text、caption-before-table 和 TableNote 语义，HTTP API 合同不变。
 - 2026-06-03：补入 `document_jobs` DocumentIR / generated Word layout 诊断 metadata；`document_ir` artifact 暴露 `quality_flags`，generated Word artifact 和 rendering/uploading 事件暴露 `layout_quality_flags`。
 - 2026-06-03：补入 P0 `/api/v1/files`、`/api/v1/document-jobs` 主链路合同、DocumentIR v2 / renderer metadata 交付现状，并补齐 legacy `recover-mineru-result` API 边界。

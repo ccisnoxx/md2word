@@ -1,11 +1,11 @@
 ---
 doc_type: architecture
 slug: architecture-index
-scope: 当前仓库的整体实现地图，覆盖 FastAPI 后端表面、conversion library，以及 MinerU 结构化结果到 DOCX 的本地转换链路与可选英文转中文翻译链路
-summary: 当前系统已收口为“FastAPI 后端 + app/conversion 转换核心 + document_jobs PDF -> Word 主链路”的结构；后端业务代码采用 `app/domains/` domain-first 布局，`app/main.py` 是组合根，MySQL resource mode 下 legacy jobs 创建会绑定不可变资源快照，P0 document_jobs 通过 files 上传授权、Worker、MinerU、DocumentIR v2 和 Word renderer 生成可下载 DOCX，operations readiness / metrics / release check 已形成单实例生产化基线
+scope: 当前仓库的整体实现地图，覆盖 FastAPI 后端表面、conversion library、受控真实集成控制面，以及 MinerU 结构化结果到 DOCX 的本地转换链路与可选英文转中文翻译链路
+summary: 当前系统已收口为“FastAPI 后端 + app/conversion 转换核心 + document_jobs PDF -> Word 主链路”的结构；后端业务代码采用 `app/domains/` domain-first 布局，`app/main.py` 是组合根，MySQL resource mode 下 legacy jobs 创建会绑定不可变资源快照，P0 document_jobs 通过 files 上传授权、Worker、MinerU、DocumentIR v2 和 Word renderer 生成可下载 DOCX，operations readiness / metrics / release check 与 `/api/v1/ops` integration control plane 已形成单实例生产化和 controlled rollout 基线
 status: current
-last_reviewed: 2026-06-03
-tags: [architecture, mineru, docx, backend, fastapi, translation, operations, document-jobs]
+last_reviewed: 2026-06-09
+tags: [architecture, mineru, docx, backend, fastapi, translation, operations, document-jobs, ops, controlled-rollout]
 depends_on: []
 implements: [fastapi-backend-productization]
 ---
@@ -18,7 +18,7 @@ implements: [fastapi-backend-productization]
 
 - **FastAPI 后端**
   - 面向前端、脚本调用方和本地服务化联调
-  - 当前提供 `files`、`document-jobs`、legacy `jobs`、`mineru-callbacks`、`templates`、`term-rule-sets`、`term-rules`、`term-rule-categories`、`translation-profiles`、`health` 等 HTTP 接口
+  - 当前提供 `files`、`document-jobs`、legacy `jobs`、`mineru-callbacks`、`templates`、`term-rule-sets`、`term-rules`、`term-rule-categories`、`translation-profiles`、`ops`、`health` 等 HTTP 接口
 - **app/conversion 转换核心**
   - 面向后端任务编排，接收 MinerU 输出目录或 zip，生成 DOCX、可选翻译请求 JSON 和可选 segment trace JSON
 
@@ -56,6 +56,8 @@ MinerU 结构化结果 -> 页面修补 -> 可选英文转中文翻译 -> 模板/
   - 写入 `JobRecord.resource_snapshot` 的不可变任务资源摘要；MySQL resource mode 下 job 创建时绑定 Template Version、Term Rule Version、`en2zh` Translation Profile Version、非敏感 MinerU 请求配置和创建时 source artifact alias。后台 stage 只按 snapshot materialize 运行时资源，不重新读取当前默认指针；旧 job 和 file/sqlite legacy job 允许为空。
 - **Operations readiness / Metrics JSON**
   - FastAPI 后端的单实例生产化观测基线；`/health/ready` 报告 metadata store、artifact storage、stage spool、artifact root 可写性、磁盘余量、默认资源版本和 MySQL schema bootstrap 状态，`/health/metrics` 返回 JSON counters，不接 Prometheus，也不暴露 secret、payload、客户文件名或新增本地绝对私密路径。
+- **Ops Integration Control Plane**
+  - `/api/v1/ops` 下的真实集成控制面；当前报告 alert delivery、provider cancellation、S3 deletion、cleanup scheduler execute 和 quota enforcement 的 readiness、blocking reasons、safe config 与 adapter contract。控制面默认不解析 secret、不调用 provider、不删除对象；Phase 7 Slack webhook live send 已由 operator deferred，真实 S3 delete / scheduler execute / provider cancellation 仍 blocked。
 - **Segment Trace / translation_trace**
   - `en2zh` job 级 JSON artifact，记录 segment 原文、发送给模型的文本、AI 初译、最终渲染文本、模型、prompt 版本和可选默认 Translation Profile 快照。
 - **parsed**
@@ -87,6 +89,7 @@ MinerU 结构化结果 -> 页面修补 -> 可选英文转中文翻译 -> 模板/
   - `/api/v1/term-rule-categories`
   - `/api/v1/term-rules`
   - `/api/v1/translation-profiles`
+  - `/api/v1/ops`
 - 当前支持：
   - 上传 MinerU 输出 zip
   - 通过 `/api/v1/files` 上传原始 PDF，并通过 `/api/v1/document-jobs` 创建 P0 PDF -> Word 任务
@@ -105,6 +108,7 @@ MinerU 结构化结果 -> 页面修补 -> 可选英文转中文翻译 -> 模板/
   - 本地运维动作：`retry`、`cancel`、`cleanup-local-files`
   - 最小权限与审计基线：template / term-rule-set / translation-profile 发布、设默认、回滚、禁用，job retry / cancel / cleanup-local-files，以及 artifact download 成功返回前写入 audit event
   - Operations readiness 基线：`health/live`、`health/ready` 和 `health/metrics` 覆盖运行态依赖、JSON counters、默认资源版本、audit event 总数、artifact storage 状态和 MySQL schema bootstrap 标识
+  - Ops integration control plane：`/api/v1/ops` 暴露真实集成 capability status、alert delivery fake/real pilot gate、provider cancellation semantics blocked status、S3 delete contract 和 recovery action preview；Phase 7 Slack webhook live send 已 deferred，真实 S3 delete / cleanup scheduler execute / provider cancellation 仍 blocked
 
 ### 3.2 Conversion library
 
@@ -148,7 +152,7 @@ MinerU 结构化结果 -> 页面修补 -> 可选英文转中文翻译 -> 模板/
 - `app/`
   - FastAPI 后端表面，详见 [backend-fastapi-service.md](/Users/sc/PycharmProjects/md2word/.codestable/architecture/backend-fastapi-service.md)。
 - `app/domains/`
-  - 业务 domain 入口。`audit`、`resources`、`templates`、`term_rules`、`translation`、`document_jobs`、`jobs` 和 `files` 分别拥有自己的 models、schemas、routers、services 和 repository ports。
+  - 业务 domain 入口。`audit`、`resources`、`templates`、`term_rules`、`translation`、`document_jobs`、`jobs`、`files` 和 `ops` 分别拥有自己的 models、schemas、routers、services 和 repository ports。
 - `app/infrastructure/persistence/`
   - file / sqlite / mysql 三类 metadata backend 的具体 adapter 与 schema bootstrap，按 backend 和 domain responsibility 拆分。
 - `app/domains/resources/service.py`
@@ -169,6 +173,10 @@ MinerU 结构化结果 -> 页面修补 -> 可选英文转中文翻译 -> 模板/
   - job 本地目录布局；snapshot term-rule materialization 使用 `var/jobs/{job_id}/resources/runtime_subscripts_dictionary.yaml`。
 - `app/domains/translation/router.py`、`app/domains/translation/schemas.py`
   - Translation Profile HTTP 管理入口与 v1 请求 / 响应模型。
+- `app/domains/files/*cleanup*`、`app/domains/files/quota_policy.py`、`app/domains/files/service.py`
+  - 文件 quota、retention policy、selected local physical delete、cleanup run preview/execute、cleanup history、cleanup lock 和 scheduler dry-run。
+- `app/domains/ops/`
+  - 真实集成控制面、alert delivery fake/real pilot gate、provider cancellation semantics、S3 delete contract 和 recovery action preview。
 - `resources/`
   - 默认模板、页面布局 YAML、术语上下标 YAML、模板 manifest seed、term-rule v2 seed 和翻译 prompt。
 - `var/config/`
@@ -273,6 +281,9 @@ generated Word 当前还包含 renderer editable semantic pass：DocumentIR head
 - Translation Profile 已接入资源版本底座：MySQL backend 下 `TranslationProfileVersionService` 为 `electronics-en2zh` 写入 `resource_type=translation_profile` 的 draft / published payload 和 snapshot hash；payload 只保存模型、目标语言、领域、prompt 版本和分批阈值，不保存 API key、secret header 或完整 prompt 文本。MySQL resource mode 下 `en2zh` job 创建时绑定指定或默认 published Translation Profile；旧 job / file/sqlite legacy job 仍按 settings / `.env` 兼容路径执行。
 - Job Resource Snapshot 已接入 jobs 主链：MySQL resource mode 下 job 创建时解析指定或默认 published Template Version、Term Rule Version，以及 `en2zh` Translation Profile Version；缺少默认 template 或 term-rule 返回 409，指定不存在返回 404，指定非 published 返回 400。stage replay 按 snapshot 的 `resource_type/resource_id/version` 读取 exact record 并校验 `snapshot_hash`，允许创建后版本被 disabled / superseded，但 payload 缺失或 hash 不匹配会让 stage 失败。file/sqlite backend 不传 versioned 参数时保持 legacy 成功路径，显式传 `template_version`、`term_rule_set_id/version` 或 `translation_profile_id/version` 时返回 503。
 - Permission and Audit Baseline 已接入高风险动作：`require_admin_actor()`、`require_jobs_actor()`、`require_job_ops_actor()` 在保留旧 token 状态码语义的同时返回 `ActorContext`；`AuditService` 在业务动作成功后写 `AuditEvent`。审计覆盖 template publish / set-default / disable、term-rule-set publish / set-default / rollback、translation-profile publish / set-default / rollback、job retry / cancel / cleanup-local-files 和 artifact download。open 下载始终是 `actor_role=anonymous` 且 `actor_id=null`，不接受匿名请求用 `X-Actor-Id` 自报身份。
+- Files quota enforcement 以 `FILES_QUOTA_POLICY_*` settings 为 gate，在 `/files/upload-url` 前根据 `document_files` metadata 计算 projected usage；阻断和 admin override 写 audit，dry-run / ops-summary 不创建上传授权。
+- `document_files` retention 当前保存 policy、expired/deleted metadata status、cleanup run preview/execute history、signed plan 和 cleanup lock/fencing token；selected local physical delete 只支持 `local_file` / `local_object`，S3 只生成 fake exact-target delete contract。
+- Ops integration control plane 以 `INTEGRATION_ALERT_DELIVERY_*`、`INTEGRATION_PROVIDER_CANCELLATION_*`、`INTEGRATION_S3_DELETION_*`、`INTEGRATION_CLEANUP_SCHEDULER_EXECUTE_*` 等 settings 作为独立 gate；safe config 只返回 secret ref 名称和非敏感摘要，不返回 secret value。
 - 配置级运行态文件当前包括：
   - `config/term_rules_store.json`
   - `config/runtime_subscripts_dictionary.yaml`
@@ -305,7 +316,11 @@ generated Word 当前还包含 renderer editable semantic pass：DocumentIR head
 - 资源版本底座当前仍不暴露通用 HTTP router；Template Profile、Term Rule Set 与 Translation Profile 已实现各自的管理 / 发布 API 和默认指针，jobs 在 MySQL resource mode 下通过 `JobResourceSnapshotService` 消费这些 published 版本。
 - audit event 当前没有 HTTP 查询 API 或 UI；测试和运维脚本可通过 repository 端口读取 file/sqlite/MySQL audit events。
 - artifact fingerprint 只对新登记产物强制写入；旧 `JobFile` 记录缺少 `size_bytes` / `sha256` 时保持兼容，不在当前能力内强制 backfill。
-- artifact retention 当前只有 local + object dry-run 计划，不执行真实删除；cleanup-local-files 会写 audit event，但真实删除、删除审计和恢复策略仍留给后续运维 feature。
+- legacy jobs artifact retention 当前只有 local + object dry-run 计划；`cleanup-local-files` 会写 audit event，但不删除已登记 job artifact。
+- `document_files` retention 已支持 selected expired local physical delete preview/execute、cleanup run signed plan/history、cleanup lock 和 scheduler dry-run；真实 S3 delete 仍 blocked，只输出 fake exact-target contract。
+- `/api/v1/ops` 当前是 controlled rollout status/gate/control surface，不代表真实执行已经完成；Phase 7 Slack webhook live send 已由 operator deferred，`OPS_SLACK_WEBHOOK_URL` 未注入 active runtime env，没有执行真实 Slack/webhook send。
+- Provider cancellation 继续 blocked，原因是 provider public evidence 不支持真实 cancellation 语义且 real adapter 未实现。
+- Real S3 delete 是单独破坏性 controlled rollout，当前未执行真实 S3 delete 或 LocalStack delete；cleanup scheduler execute 必须依赖 accepted real S3 delete evidence，当前只有 dry-run/history/lock。
 - legacy jobs 已有 callback 丢失后的主动 `recover-mineru-result` 查询恢复；当前仍没有独立 worker / queue、多实例 lease 或 heartbeat。
 - templates 当前支持目录可见、详情、下载、默认模板切换、模板 CRUD / replace，以及 MySQL-backed Template Version draft/publish/set-default/disable；暂不做可视化模板编辑器。
 - term-rules legacy API 当前支持分类 / 规则 CRUD、导入、导出、模拟和 sync-files；MySQL versioned mode 下 legacy 写入口不再直改 runtime，必须通过 Term Rule Set draft / publish 流程发布到 live runtime。
@@ -324,9 +339,11 @@ generated Word 当前还包含 renderer editable semantic pass：DocumentIR head
 - [fastapi-backend-roadmap.md](/Users/sc/PycharmProjects/md2word/.codestable/roadmap/fastapi-backend/fastapi-backend-roadmap.md)
 - [fastapi-backend-acceptance.md](/Users/sc/PycharmProjects/md2word/.codestable/roadmap/fastapi-backend/fastapi-backend-acceptance.md)
 - [pdf-to-word-delivery-hardening-roadmap.md](/Users/sc/PycharmProjects/md2word/.codestable/roadmap/pdf-to-word-delivery-hardening/pdf-to-word-delivery-hardening-roadmap.md)
+- [real-integration-readiness-roadmap.md](/Users/sc/PycharmProjects/md2word/.codestable/roadmap/real-integration-readiness/real-integration-readiness-roadmap.md)
 
 ## 10. 变更日志
 
+- 2026-06-09：Phase 8 post-rollout backfill；总入口补入 `/api/v1/ops` integration control plane、files quota/retention/cleanup current state、Phase 7 Slack webhook deferred 状态，以及 provider cancellation / real S3 delete / cleanup scheduler execute blocked 状态。
 - 2026-06-03：补入 `word-renderer-editable-output-pass` 实现现状；DocumentIR renderer generated Word 已接入 heading named style、真实 list numbering、formula/table note rich text normalization、caption-before-table 和 TableNote 顺序语义，P0 正式质量仍受样本规模和人工复验约束。
 - 2026-06-03：补入 `document-ir-layout-risk-pass` 实现现状；DocumentIR v2 可记录 orientation、column_hint、wide table、caption/footnote binding 和 table continuation flags，document_jobs generated Word metadata 暴露 `layout_quality_flags`，renderer layout plan 优先消费 `column_hint`。
 - 2026-06-03：更新 Golden Sample live regression 现状；`gs-003/004/006/008` 主链路 4/4 succeeded、DOCX 4/4 openable，但人工质量 0/4 P0 pass，主要缺口为 `pipeline-parity-gap`。

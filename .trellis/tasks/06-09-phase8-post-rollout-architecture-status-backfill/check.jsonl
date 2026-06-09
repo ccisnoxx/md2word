@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/06-09-phase8-post-rollout-architecture-status-backfill/acceptance.md", "reason": "Phase 8 backfill acceptance and verification record once complete."}
+{"file": ".codestable/architecture/backend-fastapi-service.md", "reason": "Confirm architecture backfill matches current implementation facts and Phase 7 closeout status."}
+{"file": ".codestable/architecture/ARCHITECTURE.md", "reason": "Confirm index-level summary and external surface are current."}
+{"file": ".codestable/roadmap/real-integration-readiness/real-integration-readiness-roadmap.md", "reason": "Confirm roadmap status is consistent with Phase 7 deferred/blocked closeout."}
+{"file": ".codestable/roadmap/real-integration-readiness/real-integration-readiness-items.yaml", "reason": "Confirm YAML status is parseable and consistent with the roadmap."}

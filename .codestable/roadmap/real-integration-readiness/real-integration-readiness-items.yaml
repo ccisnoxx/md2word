@@ -1,6 +1,6 @@
 roadmap: real-integration-readiness
 created: 2026-06-07
-last_reviewed: 2026-06-08
+last_reviewed: 2026-06-09
 
 items:
   - slug: integration-control-plane
@@ -101,9 +101,15 @@ phase7_status:
   parent_task: ".trellis/tasks/06-08-phase7-controlled-real-integration-rollout-planning/"
   closeout_status: deferred_blocked_closeout_completed
   closeout_evidence: ".trellis/tasks/06-08-phase7-controlled-real-integration-rollout-planning/deferred-blocked-closeout.md"
-  live_or_destructive_execution_authorized: true
-  authorized_scope: "slack_webhook_one_attempt_only"
+  live_or_destructive_execution_authorized: false
+  authorized_scope: null
+  historical_live_smoke_approval:
+    status: accepted_not_consumed
+    scope: "slack_webhook_one_attempt_only"
+    evidence: ".trellis/tasks/06-08-phase7-slack-webhook-live-smoke-approval/acceptance-approved.md"
+    reusable_without_renewed_approval: false
   live_or_destructive_execution_performed: false
+  current_fact: "Slack webhook live send deferred by operator; real S3 delete, cleanup scheduler execute, and provider cancellation remain blocked."
   tasks:
     - slug: phase7-slack-webhook-delivery-pilot
       status: accepted_no_live
@@ -145,3 +151,23 @@ phase7_status:
       status: prepared
       evidence: ".trellis/tasks/06-08-phase7-controlled-rollout-status-sync/acceptance-status-sync.md"
       notes: "仅状态同步；不授权真实外部或破坏性执行。"
+
+phase8_status:
+  last_reviewed: 2026-06-09
+  task: ".trellis/tasks/06-09-phase8-post-rollout-architecture-status-backfill/"
+  status: accepted_backfill_completed
+  acceptance_evidence: ".trellis/tasks/06-09-phase8-post-rollout-architecture-status-backfill/acceptance.md"
+  scope: "architecture_and_status_backfill_only"
+  live_or_destructive_execution_authorized: false
+  live_or_destructive_execution_performed: false
+  targets:
+    - ".codestable/architecture/backend-fastapi-service.md"
+    - ".codestable/architecture/ARCHITECTURE.md"
+    - ".codestable/roadmap/real-integration-readiness/real-integration-readiness-roadmap.md"
+    - ".codestable/roadmap/real-integration-readiness/real-integration-readiness-items.yaml"
+  current_facts:
+    slack_webhook_delivery: "deferred_by_operator_no_send"
+    real_s3_delete_guarded_execution: "blocked_destructive_rollout_required"
+    cleanup_scheduler_controlled_execute: "blocked_requires_accepted_real_s3_delete_evidence"
+    real_provider_cancellation_adapter: "blocked_until_provider_evidence_changes"
+  notes: "Phase 8 records Phase 7 deferred/blocked as current fact; it does not reopen live Slack send, provider cancellation, S3/LocalStack delete, scheduler execute, deployment, secret injection, or conversion workflows."
