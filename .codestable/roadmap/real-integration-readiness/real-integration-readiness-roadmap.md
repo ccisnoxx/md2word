@@ -3,7 +3,7 @@ doc_type: roadmap
 slug: real-integration-readiness
 status: completed
 created: 2026-06-07
-last_reviewed: 2026-06-08
+last_reviewed: 2026-06-09
 tags: [phase6, operations, real-integration, alerts, provider-cancellation, s3, scheduler, quota]
 related_requirements: [fastapi-backend-productization]
 related_architecture: [backend-fastapi-service, conversion-flow]
@@ -509,7 +509,7 @@ Phase 6 closeout 决定不再继续推进真实执行。后续阶段建议顺序
 ## 7. 观察项
 
 - Phase 6 已从“打开真实执行”收窄为“真实集成 readiness foundations completed”。旧的 Phase 6 子项中仍涉及真实执行的部分已经在本 roadmap 标记 `dropped`，语义是移出 Phase 6，不代表能力永久放弃。
-- `backend-fastapi-service` architecture 的 last_reviewed 是 2026-06-03，尚未描述 Phase 5/6 Ops contracts、quota enforcement、cleanup run history/lock/signed plan、integration control plane、alert delivery contract、provider semantics report 和 S3 delete contract 等现状；后续应由 acceptance/architecture 流程回写。
+- `backend-fastapi-service` architecture 已在 Phase 8 post-rollout backfill 中更新为 2026-06-09 现状，覆盖 Phase 5/6/7 Ops contracts、quota enforcement、cleanup run history/lock/signed plan、integration control plane、alert delivery contract、provider semantics report、S3 delete contract 和 Phase 7 deferred/blocked 状态。
 - 真实 provider cancellation 当前被 `unsupported_by_public_docs` 阻断；不要把 fake cancellation hardening 解读为真实 provider cancellation readiness。
 - 当前 release check 偏后端主链路与 OpenAPI，不覆盖真实 Slack/webhook、真实 S3、scheduler execute 或 secret-ref resolution；这些检查属于 Phase 7 / controlled rollout。
 
@@ -530,11 +530,21 @@ Phase 6 closeout 决定不再继续推进真实执行。后续阶段建议顺序
 | `phase7-provider-cancellation-evidence-watch` | prepared; blocked | Requires provider evidence change or private provider contract |
 | `phase7-controlled-rollout-status-sync` | prepared | Documentation/status only |
 
-Phase 7 当前曾接受 Slack webhook exactly-one live-smoke approval；execution 已进入但 runtime gate 在 provider call 前阻断，因此尚未执行发送。线上 hostdzire runtime 的 API/MySQL/Redis 可用，代码已更新并 rebuild/restart，Phase 7 preview endpoint 已上线但需要认证；`OPS_SLACK_WEBHOOK_URL` 仍未注入 active runtime env。随后 operator 决定暂时不用 Slack webhook delivery，因此 secret injection、authenticated preview 和 live send 均 deferred。没有任何 task 已执行真实 Slack/webhook 发送、真实 provider cancellation、真实 S3 delete、LocalStack delete、cleanup scheduler execute 或转换主流程。
+Phase 7 当前曾接受 Slack webhook exactly-one live-smoke approval；execution 已进入但 runtime gate 在 provider call 前阻断，因此尚未执行发送。线上 hostdzire runtime 的 API/MySQL/Redis 可用，代码已更新并 rebuild/restart，Phase 7 preview endpoint 已上线但需要认证；`OPS_SLACK_WEBHOOK_URL` 仍未注入 active runtime env。随后 operator 决定暂时不用 Slack webhook delivery，因此 secret injection、authenticated preview 和 live send 均 deferred。没有任何 task 已执行真实 Slack/webhook 发送、真实 provider cancellation、真实 S3 delete、LocalStack delete、cleanup scheduler execute 或转换主流程。当前没有 active live/destructive execution authorization；历史 exactly-one Slack approval 未被消耗，不能在 deferred 状态下自动复用。
 
 Phase 7 deferred/blocked closeout 已完成，证据为 `.trellis/tasks/06-08-phase7-controlled-real-integration-rollout-planning/deferred-blocked-closeout.md`。Phase 7 不作为 live rollout 完成；当前状态是 Slack deferred，S3/scheduler/provider cancellation blocked。
 
-## 9. 变更日志
+## 9. Phase 8 post-rollout architecture/status backfill
+
+2026-06-09 状态快照：
+
+- Scope：architecture/status-only backfill，不执行 runtime/deploy/secret/live send/delete/scheduler/conversion。
+- Primary architecture target：`.codestable/architecture/backend-fastapi-service.md` 已回写 `/api/v1/ops`、real alert delivery gate、provider cancellation blocked、S3 delete blocked、cleanup scheduler blocked、files quota/retention/cleanup history/lock/signed plan 和 Phase 7 deferred facts。
+- Architecture index：`.codestable/architecture/ARCHITECTURE.md` 已同步 `/api/v1/ops` external surface 和 controlled rollout boundary。
+- Roadmap status：Phase 7 当前事实是 Slack webhook deferred by operator，real S3 delete/scheduler execute/provider cancellation blocked，没有 active live/destructive authorization。
+- Machine-readable status：`.codestable/roadmap/real-integration-readiness/real-integration-readiness-items.yaml` 记录 Phase 8 backfill status，并把 Phase 7 deferred/blocked 作为当前状态。
+
+## 10. 变更日志
 
 - 2026-06-07：创建 Phase 6 real integration readiness roadmap；拆分控制面、真实告警投递、真实 provider cancellation、真实 S3 delete、scheduler execute、quota 运维硬化和审计/runbook release gate。
 - 2026-06-08：按 Trellis Phase 6 closeout 更新 roadmap 状态；Phase 6 收口为 readiness foundations completed，真实 Slack/webhook pilot、真实 S3 delete、cleanup scheduler execute 和真实上线 release gate 移到 Phase 7 / controlled rollout。
@@ -544,3 +554,4 @@ Phase 7 deferred/blocked closeout 已完成，证据为 `.trellis/tasks/06-08-ph
 - 2026-06-09：更新 hostdzire copied deployment 并 rebuild/restart `md2word-p0-api-1` 与 `md2word-p0-worker-1`；preview endpoint 从 `404` 变为 authenticated-route `401`，但 `OPS_SLACK_WEBHOOK_URL` 仍未注入 active runtime env；继续在 provider call 前阻断。
 - 2026-06-09：operator 决定暂时不用 Slack webhook delivery；`phase7-slack-webhook-live-smoke-execution` 标记为 deferred by operator，secret injection、authenticated preview 和 live send 不再是下一步动作。
 - 2026-06-09：完成 Phase 7 deferred/blocked closeout；复核 task 状态、线上部署记录、dirty worktree 分类和验证记录，产出 commit-prep 摘要；未执行任何 live/destructive 动作。
+- 2026-06-09：开始 Phase 8 post-rollout architecture/status backfill；回写 backend architecture、architecture index 和 real-integration roadmap/items，把 Phase 7 deferred/blocked 作为当前事实。

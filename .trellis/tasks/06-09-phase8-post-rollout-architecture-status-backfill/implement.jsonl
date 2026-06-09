@@ -1,0 +1,7 @@
+{"file": ".codestable/attention.md", "reason": "Project-wide current operational notes and CodeStable constraints."}
+{"file": ".codestable/reference/shared-conventions.md", "reason": "CodeStable documentation conventions for roadmap and architecture updates."}
+{"file": ".codestable/architecture/backend-fastapi-service.md", "reason": "Primary architecture document being backfilled for current backend ops/control-plane facts."}
+{"file": ".codestable/architecture/ARCHITECTURE.md", "reason": "Architecture index that must reflect the current external surface and backend status."}
+{"file": ".codestable/roadmap/real-integration-readiness/real-integration-readiness-roadmap.md", "reason": "Human-readable roadmap/status record for real integration readiness and Phase 7 deferred/blocked facts."}
+{"file": ".codestable/roadmap/real-integration-readiness/real-integration-readiness-items.yaml", "reason": "Machine-readable roadmap item/status record."}
+{"file": ".trellis/tasks/06-08-phase7-controlled-real-integration-rollout-planning/deferred-blocked-closeout.md", "reason": "Phase 7 closeout evidence that becomes the current fact source for Phase 8 backfill."}
