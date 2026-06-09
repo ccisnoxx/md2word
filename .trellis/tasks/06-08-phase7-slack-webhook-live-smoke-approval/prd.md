@@ -4,7 +4,9 @@
 
 Capture a future explicit operator approval for exactly one Phase 7 Slack webhook live-smoke attempt.
 
-This task is an approval gate only. The current request to start remaining tasks is not live-send approval.
+This task is an approval gate only. The 2026-06-09 user message approving `phase7-slack-webhook-live-smoke-approval` is accepted as approval for exactly one future live-smoke execution under the fixed target below.
+
+This approval does not execute the live send by itself.
 
 ## Requirements
 
@@ -28,12 +30,13 @@ This task is an approval gate only. The current request to start remaining tasks
 
 ## Acceptance Criteria
 
-- [x] Approval task exists and is explicitly blocked.
-- [x] The current request is recorded as not approving live send.
+- [x] Approval task exists.
+- [x] The earlier task-list implementation request is recorded as not approving live send.
 - [x] Required approval wording and fixed target values are documented.
-- [x] Live execution remains blocked until a future explicit approval.
+- [x] 2026-06-09 approval is recorded for exactly one future live-smoke attempt.
+- [x] Live execution still requires a separate execution step and runtime gate checks.
 
 ## Notes
 
-- Do not start this task as execution work until the user explicitly approves exactly one live send.
+- Do not run execution from this approval task.
 - Do not stage, commit, push, archive, or send Slack/webhook traffic in this approval task.

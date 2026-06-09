@@ -3,7 +3,7 @@
   "name": "phase7-slack-webhook-live-smoke-execution",
   "title": "Phase 7 Slack webhook live smoke execution",
   "description": "Blocked execution task for exactly one future approved Slack webhook live-smoke attempt.",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "ops-alert-delivery",
   "package": null,

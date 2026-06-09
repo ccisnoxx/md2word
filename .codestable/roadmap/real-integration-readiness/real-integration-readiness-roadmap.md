@@ -515,25 +515,32 @@ Phase 6 closeout 决定不再继续推进真实执行。后续阶段建议顺序
 
 ## 8. Phase 7 controlled rollout status
 
-2026-06-08 状态快照：
+2026-06-09 状态快照：
 
 | Task | Status | Execution Permission |
 | --- | --- | --- |
 | `phase7-slack-webhook-delivery-pilot` | no-live implementation accepted | No live send approved |
 | `phase7-slack-webhook-live-smoke-preflight` | accepted; not archived | Preflight only |
-| `phase7-slack-webhook-live-smoke-approval` | prepared; blocked | Approval discussion only |
-| `phase7-slack-webhook-live-smoke-execution` | prepared; blocked | Requires separate explicit approval for exactly one send |
-| `phase7-slack-webhook-live-smoke-closeout` | prepared; blocked | Requires accepted live smoke evidence |
+| `phase7-slack-webhook-live-smoke-approval` | accepted; no send executed | Approval accepted for exactly one future attempt |
+| `phase7-slack-webhook-live-smoke-execution` | deferred by operator; no send executed | Reopen only after renewed approval, configured secret ref, successful preview, and exactly one send attempt |
+| `phase7-slack-webhook-live-smoke-closeout` | prepared; blocked | Requires accepted live smoke evidence; not active while Slack webhook is deferred |
 | `phase7-real-s3-delete-guarded-rollout-planning` | planning scaffold prepared; target blocked | Planning only; exact target values missing |
 | `phase7-real-s3-delete-guarded-execution` | prepared; blocked | Requires destructive rollout planning acceptance and explicit approval |
 | `phase7-cleanup-scheduler-controlled-execute-planning` | prepared; blocked | Requires accepted real S3 delete evidence |
 | `phase7-provider-cancellation-evidence-watch` | prepared; blocked | Requires provider evidence change or private provider contract |
 | `phase7-controlled-rollout-status-sync` | prepared | Documentation/status only |
 
-Phase 7 当前没有任何 task 授权真实 Slack/webhook 发送、真实 provider cancellation、真实 S3 delete、LocalStack delete、cleanup scheduler execute 或转换主流程。
+Phase 7 当前曾接受 Slack webhook exactly-one live-smoke approval；execution 已进入但 runtime gate 在 provider call 前阻断，因此尚未执行发送。线上 hostdzire runtime 的 API/MySQL/Redis 可用，代码已更新并 rebuild/restart，Phase 7 preview endpoint 已上线但需要认证；`OPS_SLACK_WEBHOOK_URL` 仍未注入 active runtime env。随后 operator 决定暂时不用 Slack webhook delivery，因此 secret injection、authenticated preview 和 live send 均 deferred。没有任何 task 已执行真实 Slack/webhook 发送、真实 provider cancellation、真实 S3 delete、LocalStack delete、cleanup scheduler execute 或转换主流程。
+
+Phase 7 deferred/blocked closeout 已完成，证据为 `.trellis/tasks/06-08-phase7-controlled-real-integration-rollout-planning/deferred-blocked-closeout.md`。Phase 7 不作为 live rollout 完成；当前状态是 Slack deferred，S3/scheduler/provider cancellation blocked。
 
 ## 9. 变更日志
 
 - 2026-06-07：创建 Phase 6 real integration readiness roadmap；拆分控制面、真实告警投递、真实 provider cancellation、真实 S3 delete、scheduler execute、quota 运维硬化和审计/runbook release gate。
 - 2026-06-08：按 Trellis Phase 6 closeout 更新 roadmap 状态；Phase 6 收口为 readiness foundations completed，真实 Slack/webhook pilot、真实 S3 delete、cleanup scheduler execute 和真实上线 release gate 移到 Phase 7 / controlled rollout。
 - 2026-06-08：创建 Phase 7 controlled rollout task queue；Slack live-smoke approval/execution/closeout、S3 destructive rollout、scheduler execute 和 provider cancellation 均保持 blocked，未执行真实外部或破坏性动作。
+- 2026-06-09：接受 `phase7-slack-webhook-live-smoke-approval`，范围限定为 `ops-slack-primary` + `stage_spool_failed_messages_present` + `SEND REAL OPS ALERTS` + exactly one future attempt；尚未执行 live send。
+- 2026-06-09：进入 `phase7-slack-webhook-live-smoke-execution` 并执行 runtime gate verification；本地 runtime 因 API 未运行、MySQL host `mysql` 不可达、`OPS_SLACK_WEBHOOK_URL` 未配置而阻断；线上 hostdzire runtime 虽健康但代码旧、preview endpoint 为 `404` 且 secret-ref 未注入；全程在 provider call 前阻断，未消耗 exactly-one live-smoke attempt。
+- 2026-06-09：更新 hostdzire copied deployment 并 rebuild/restart `md2word-p0-api-1` 与 `md2word-p0-worker-1`；preview endpoint 从 `404` 变为 authenticated-route `401`，但 `OPS_SLACK_WEBHOOK_URL` 仍未注入 active runtime env；继续在 provider call 前阻断。
+- 2026-06-09：operator 决定暂时不用 Slack webhook delivery；`phase7-slack-webhook-live-smoke-execution` 标记为 deferred by operator，secret injection、authenticated preview 和 live send 不再是下一步动作。
+- 2026-06-09：完成 Phase 7 deferred/blocked closeout；复核 task 状态、线上部署记录、dirty worktree 分类和验证记录，产出 commit-prep 摘要；未执行任何 live/destructive 动作。
