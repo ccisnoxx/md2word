@@ -1,0 +1,4 @@
+{"file":"AGENTS.md","reason":"Check no live send, no secret exposure, and no git operation occurred."}
+{"file":".trellis/workflow.md","reason":"Check Trellis artifact completeness."}
+{"file":".trellis/tasks/archive/2026-06/06-08-phase7-slack-webhook-live-smoke-approval/prd.md","reason":"Check approval requirements."}
+{"file":".trellis/tasks/archive/2026-06/06-08-phase7-slack-webhook-live-smoke-approval/design.md","reason":"Check hard stops and handoff contract."}

@@ -21,6 +21,18 @@
   "children": [],
   "parent": "06-08-phase7-controlled-real-integration-rollout-planning",
   "relatedFiles": [],
-  "notes": "",
-  "meta": {}
+  "notes": "Retained as blocked/deferred destructive rollout planning. Exact bucket/key/version/sentinel/signed plan are missing; no delete execution is authorized.",
+  "meta": {
+    "phase": 7,
+    "semantic_status": "blocked_target_missing",
+    "retained_after_program_closeout": true,
+    "live_or_destructive_execution_authorized": false,
+    "live_or_destructive_execution_performed": false,
+    "unblock_requires": [
+      "exact_bucket_key_version_or_null",
+      "sentinel_object_evidence",
+      "signed_cleanup_plan",
+      "explicit_destructive_rollout_approval"
+    ]
+  }
 }

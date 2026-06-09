@@ -21,6 +21,17 @@
   "children": [],
   "parent": "06-08-phase7-controlled-real-integration-rollout-planning",
   "relatedFiles": [],
-  "notes": "",
-  "meta": {}
+  "notes": "Retained as blocked/deferred destructive execution candidate. Requires accepted planning and explicit destructive approval before any S3 action.",
+  "meta": {
+    "phase": 7,
+    "semantic_status": "blocked_destructive_approval_required",
+    "retained_after_program_closeout": true,
+    "live_or_destructive_execution_authorized": false,
+    "live_or_destructive_execution_performed": false,
+    "unblock_requires": [
+      "accepted_real_s3_delete_rollout_planning",
+      "explicit_destructive_execution_approval",
+      "kill_switch_and_rollback_ready"
+    ]
+  }
 }

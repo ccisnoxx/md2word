@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Verify this task remains in planning until reviewed and explicitly started."}
+{"file": ".trellis/tasks/archive/2026-06/06-08-phase7-slack-webhook-delivery-pilot/prd.md", "reason": "Check fixed pilot parameters, requirements, and acceptance criteria."}
+{"file": ".trellis/tasks/archive/2026-06/06-08-phase7-slack-webhook-delivery-pilot/design.md", "reason": "Check API shape, gate order, adapter boundary, audit/history, frontend, and rollback design."}
+{"file": ".trellis/tasks/archive/2026-06/06-08-phase7-slack-webhook-delivery-pilot/implement.md", "reason": "Check implementation checklist, validation plan, live-send gate, and rollback checklist."}
+{"file": ".trellis/tasks/archive/2026-06/06-07-phase6-real-alert-delivery-adapter-contract/design.md", "reason": "Check compatibility with the accepted Phase 6 adapter contract."}
+{"file": ".trellis/tasks/archive/2026-06/06-08-phase6-closeout-acceptance/acceptance.md", "reason": "Check that this task does not bypass Phase 6 controlled-rollout constraints."}

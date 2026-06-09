@@ -1,4 +1,4 @@
 {"file":"AGENTS.md","reason":"Check no forbidden execution or git operation occurred."}
-{"file":".trellis/tasks/06-08-phase7-controlled-rollout-status-sync/prd.md","reason":"Check sync requirements."}
+{"file":".trellis/tasks/archive/2026-06/06-08-phase7-controlled-rollout-status-sync/prd.md","reason":"Check sync requirements."}
 {"file":".trellis/tasks/06-08-phase7-controlled-real-integration-rollout-planning/phase7-task-status.md","reason":"Check Phase 7 queue representation."}
 {"file":".codestable/roadmap/real-integration-readiness/real-integration-readiness-items.yaml","reason":"Check machine-readable status snapshot remains parseable."}

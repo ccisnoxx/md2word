@@ -21,6 +21,16 @@
   "children": [],
   "parent": "06-08-phase7-controlled-real-integration-rollout-planning",
   "relatedFiles": [],
-  "notes": "",
-  "meta": {}
+  "notes": "Retained as blocked/deferred evidence watch. Real provider cancellation remains blocked until provider evidence or a private contract changes.",
+  "meta": {
+    "phase": 7,
+    "semantic_status": "blocked_until_provider_evidence_changes",
+    "retained_after_program_closeout": true,
+    "live_or_destructive_execution_authorized": false,
+    "live_or_destructive_execution_performed": false,
+    "unblock_requires": [
+      "primary_provider_cancellation_evidence_change",
+      "or_approved_private_provider_contract"
+    ]
+  }
 }
