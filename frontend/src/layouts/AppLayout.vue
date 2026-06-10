@@ -4,7 +4,7 @@
     <el-header class="app-header">
       <div class="brand">
         <router-link class="brand-link" to="/jobs">内部文档转换工作台</router-link>
-        <el-tag size="small" effect="plain">MVP</el-tag>
+        <el-tag size="small" effect="plain">内部门户</el-tag>
       </div>
       <nav class="main-nav" aria-label="主导航">
         <router-link v-for="item in navItems" :key="item.to" :to="item.to">

@@ -104,7 +104,14 @@ GET /api/v1/document-jobs/{job_id}/download?token=...
   - `resource_mode`：`legacy` / `versioned`
   - `defaults`：默认 Template、Term Rule Set、Translation Term Set、Translation Profile 摘要
   - `options`：Admin 可选 published 版本；Operator 返回空列表
-  - `readiness`：`en2zh_available` 和非阻塞 warning
+  - `readiness`：创建任务前的只读配置状态
+    - `en2zh_available`：默认翻译术语集和翻译配置是否可用。
+    - `p0_document_jobs_required`：当前环境是否要求 P0 document_jobs 自动执行链路通过门禁。
+    - `p0_document_jobs_ready`：P0 document_jobs 自动执行链路是否通过门禁。
+    - `document_jobs_worker_backend`：`disabled` / `celery` / `eager`。
+    - `document_jobs_automatic_execution_enabled`：当前 worker backend 是否会自动执行任务。
+    - `blockers`：P0 门禁阻断项，上传页应在 required 且 not ready 时阻止创建任务。
+    - `warnings`：非阻塞 warning。
 - 语义：只读聚合接口，不修改默认指针、不导入导出术语、不触发任务处理。
 
 ### `GET /api/v1/document-jobs`

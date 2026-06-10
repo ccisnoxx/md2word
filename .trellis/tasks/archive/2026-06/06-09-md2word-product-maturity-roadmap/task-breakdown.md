@@ -4,7 +4,7 @@
 
 - `06-09-md2word-product-maturity-roadmap`
 - Purpose: 产品成熟度路线图、PRD、页面清单、API / 数据模型清单和子任务边界。
-- Status: planning only.
+- Status: completed as the current internal-portal baseline on 2026-06-10.
 
 ## Candidate Child Tasks
 
@@ -13,8 +13,8 @@ Confirmed priority order:
 1. `document-job-workbench-closure`
 2. `translation-qa-review-loop`
 3. `config-governance-ux-consolidation`
-4. `file-library-retention-ux-split`
-5. `product-navigation-and-role-model` as a cross-cutting follow-up if not absorbed by earlier phases.
+4. `file-library-retention-ux-split` completed as final packaging tabs in `FileRetentionPage`.
+5. `product-navigation-and-role-model` absorbed by breadcrumb/navigation work in completed child tasks and final packaging.
 
 ### 1. `document-job-workbench-closure`
 
@@ -72,11 +72,13 @@ Acceptance:
 
 Goal: 拆解当前过重的文件保留页。
 
+Status: completed in final internal-portal packaging.
+
 Scope:
 
-- `文件库` 视图：只读搜索、定位文件、跳转任务。
-- `容量与策略` 视图：storage usage、quota dry-run、quota ops summary、retention policies。
-- `清理执行` 视图：mark-expired、delete-preview、delete-expired、cleanup run、history。
+- `文件库` tab：只读搜索、定位文件、跳转任务。
+- `容量与策略` tab：storage usage、quota dry-run、quota ops summary、retention policies。
+- `清理执行` tab：mark-expired、delete-preview、delete-expired、cleanup run、history。
 - 保留 preview、reason、confirmation phrase、audit 的安全链路。
 
 Acceptance:

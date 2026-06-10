@@ -10,6 +10,7 @@ PDF 到 Word 转换与内部工作台项目。当前 P0 发布主链路是：
 ## 发布与联调入口
 
 - 后端运行手册：[docs/runbooks/backend.md](docs/runbooks/backend.md)
+- 正式内部门户说明：[docs/runbooks/internal-portal.md](docs/runbooks/internal-portal.md)
 - P0 内部联调步骤：[docs/testing/pdf-to-word-p0-integration-guide.md](docs/testing/pdf-to-word-p0-integration-guide.md)
 - Golden Sample 状态：[docs/testing/pdf-to-word-golden-sample-acceptance-report.md](docs/testing/pdf-to-word-golden-sample-acceptance-report.md)
 - API 清单：[docs/api/manifest.yaml](docs/api/manifest.yaml)

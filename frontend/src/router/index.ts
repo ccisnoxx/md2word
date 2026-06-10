@@ -1,5 +1,5 @@
 // File: frontend/src/router/index.ts
-// Purpose: Define static MVP/Admin routes and the auth guard.
+// Purpose: Define static internal portal/Admin routes and the auth guard.
 import { createRouter, createWebHistory, type RouteLocationNormalized } from "vue-router";
 
 import { setUnauthorizedHandler } from "@/api/client";

@@ -1,124 +1,58 @@
-// frontend/src/api/configSummary.ts: Aggregate configuration-release todo counts for settings home.
+// frontend/src/api/configSummary.ts: Config workbench aggregate API wrapper.
 import { apiRequest } from "@/api/client";
 
-export type ConfigTodoSummaryResponse = {
-  pendingReviewProposals: number | null;
-  approvedProposals: number | null;
-  templateDraftVersions: number;
-  unverifiedTemplateDraftVersions: number;
-  translationDraftProfiles: number | null;
-  translationProfilesUnavailable: boolean;
+export type ConfigWorkbenchStatus = "ready" | "warning" | "blocked" | "unavailable";
+export type ConfigWorkbenchSeverity = "info" | "warning" | "critical";
+export type ConfigWorkbenchGroupId =
+  | "runtime_readiness"
+  | "templates"
+  | "term_rule_sets"
+  | "translation_profiles"
+  | "translation_term_sets";
+
+export type ConfigWorkbenchFinding = {
+  code: string;
+  severity: ConfigWorkbenchSeverity;
+  message: string;
+  route: string | null;
+  target_id: string | null;
 };
 
-type TemplateListResponse = {
-  items: Array<{ id: string }>;
+export type ConfigWorkbenchGroup = {
+  id: ConfigWorkbenchGroupId;
+  label: string;
+  status: ConfigWorkbenchStatus;
+  route: string;
+  default_label: string | null;
+  draft_count: number | null;
+  pending_count: number | null;
+  warning_count: number;
+  blocker_count: number;
+  findings: ConfigWorkbenchFinding[];
 };
 
-type TemplateVersionListResponse = {
-  items: Array<{
-    status: string;
-    verification_job_id: string | null;
-    verification_note: string | null;
-  }>;
+export type ConfigWorkbenchReleaseGate = {
+  p0_document_jobs_required: boolean;
+  p0_document_jobs_ready: boolean;
+  blockers: string[];
+  warnings: string[];
 };
 
-type ProposalListResponse = {
-  total: number;
+export type ConfigWorkbenchSummaryResponse = {
+  generated_at: string;
+  overall_status: ConfigWorkbenchStatus;
+  release_gate: ConfigWorkbenchReleaseGate;
+  groups: ConfigWorkbenchGroup[];
 };
 
-type TranslationProfileListResponse = {
-  items: Array<{ id: string }>;
-};
-
-type TranslationProfileDraftResponse = {
-  snapshot_hash: string | null;
-};
-
-type Role = "admin" | "operator" | string | undefined;
-
-async function countTemplateDrafts(): Promise<Pick<ConfigTodoSummaryResponse, "templateDraftVersions" | "unverifiedTemplateDraftVersions">> {
-  const templates = await apiRequest<TemplateListResponse>({
-    url: "/api/v1/templates",
-    method: "GET",
-  });
-  const versionLists = await Promise.all(
-    templates.items.map((template) =>
-      apiRequest<TemplateVersionListResponse>({
-        url: `/api/v1/templates/${template.id}/versions`,
-        method: "GET",
-      }),
-    ),
-  );
-  const drafts = versionLists.flatMap((versionList) => versionList.items).filter((version) => version.status === "draft");
-  return {
-    templateDraftVersions: drafts.length,
-    unverifiedTemplateDraftVersions: drafts.filter(
-      (version) => !version.verification_job_id || !version.verification_note,
-    ).length,
-  };
-}
-
-async function countAdminProposals(): Promise<Pick<ConfigTodoSummaryResponse, "pendingReviewProposals" | "approvedProposals">> {
-  const [pending, approved] = await Promise.all([
-    apiRequest<ProposalListResponse>({
-      url: "/api/v1/term-rule-proposals",
-      method: "GET",
-      params: { scope: "pending_review" },
-    }),
-    apiRequest<ProposalListResponse>({
-      url: "/api/v1/term-rule-proposals",
-      method: "GET",
-      params: { scope: "all", status: "approved" },
-    }),
-  ]);
-  return {
-    pendingReviewProposals: pending.total,
-    approvedProposals: approved.total,
-  };
-}
-
-async function countTranslationDrafts(): Promise<Pick<ConfigTodoSummaryResponse, "translationDraftProfiles" | "translationProfilesUnavailable">> {
-  try {
-    const profiles = await apiRequest<TranslationProfileListResponse>({
-      url: "/api/v1/translation-profiles",
-      method: "GET",
-    });
-    const drafts = await Promise.all(
-      profiles.items.map((profile) =>
-        apiRequest<TranslationProfileDraftResponse>({
-          url: `/api/v1/translation-profiles/${profile.id}/draft`,
-          method: "GET",
-        }),
-      ),
-    );
-    return {
-      translationDraftProfiles: drafts.filter((draft) => Boolean(draft.snapshot_hash)).length,
-      translationProfilesUnavailable: false,
-    };
-  } catch (caught) {
-    if (typeof caught === "object" && caught !== null && "status" in caught && caught.status === 503) {
-      return {
-        translationDraftProfiles: null,
-        translationProfilesUnavailable: true,
-      };
-    }
-    throw caught;
-  }
-}
+export type ConfigTodoSummaryResponse = ConfigWorkbenchSummaryResponse;
 
 export const configSummaryApi = {
-  async get(role: Role): Promise<ConfigTodoSummaryResponse> {
-    const [templates, translation, proposals] = await Promise.all([
-      countTemplateDrafts(),
-      countTranslationDrafts(),
-      role === "admin"
-        ? countAdminProposals()
-        : Promise.resolve({ pendingReviewProposals: null, approvedProposals: null }),
-    ]);
-    return {
-      ...templates,
-      ...translation,
-      ...proposals,
-    };
+  get(): Promise<ConfigWorkbenchSummaryResponse> {
+    return apiRequest<ConfigWorkbenchSummaryResponse>({
+      url: "/api/v1/config-workbench/summary",
+      method: "GET",
+    });
   },
 };
+

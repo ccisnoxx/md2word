@@ -286,6 +286,7 @@ def build_test_runtime(
     data_dir: Path,
     *,
     repository_factory: Callable[[Path], PersistenceAdapters] | None = None,
+    app_env: str = "dev",
     jobs_repository_backend: str = "file",
     jobs_artifact_storage_backend: str = "local_file",
     jobs_worker_mode: str = "in_process",
@@ -333,6 +334,9 @@ def build_test_runtime(
     p0_document_job_max_retries: int = 2,
     default_translation_mode: str = "direct",
     document_jobs_worker_backend: str = "disabled",
+    document_jobs_celery_broker_url: str = "redis://127.0.0.1:6379/0",
+    document_jobs_celery_result_backend: str = "",
+    document_jobs_celery_queue: str = "document-jobs",
     translation_debug_archive_enabled: bool = False,
     translation_debug_archive_retention_days: int = 1,
     templates_manifest_path: str | None = None,
@@ -347,6 +351,7 @@ def build_test_runtime(
         _env_file=None,
         data_dir=str(data_dir),
         app_name="md2word_file_test",
+        app_env=app_env,
         jobs_repository_backend=jobs_repository_backend,
         jobs_artifact_storage_backend=jobs_artifact_storage_backend,
         jobs_worker_mode=jobs_worker_mode,
@@ -396,6 +401,9 @@ def build_test_runtime(
         p0_document_job_max_retries=p0_document_job_max_retries,
         default_translation_mode=default_translation_mode,
         document_jobs_worker_backend=document_jobs_worker_backend,
+        document_jobs_celery_broker_url=document_jobs_celery_broker_url,
+        document_jobs_celery_result_backend=document_jobs_celery_result_backend,
+        document_jobs_celery_queue=document_jobs_celery_queue,
         translation_debug_archive_enabled=translation_debug_archive_enabled,
         translation_debug_archive_retention_days=translation_debug_archive_retention_days,
         **({"templates_manifest_path": templates_manifest_path} if templates_manifest_path else {}),
@@ -1228,6 +1236,8 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(payload["dependency_checks"]["configured_repository_backend"], "file")
         self.assertEqual(payload["dependency_checks"]["effective_repository_backend"], "file")
         self.assertEqual(payload["dependency_checks"]["worker_mode"], "in_process")
+        self.assertEqual(payload["dependency_checks"]["document_jobs_worker_backend"], "disabled")
+        self.assertEqual(payload["dependency_checks"]["document_jobs_celery_queue"], "document-jobs")
         self.assertEqual(payload["dependency_checks"]["stage_dispatcher"], "background_tasks")
         self.assertEqual(payload["dependency_checks"]["stage_message_store"], "file")
         self.assertEqual(payload["dependency_checks"]["artifact_storage"], "local_file")
@@ -1254,14 +1264,141 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertFalse(payload["dependency_checks"]["mineru_callback_url_configured"])
         self.assertFalse(payload["dependency_checks"]["mineru_uid_configured"])
         self.assertFalse(payload["dependency_checks"]["pdf_submission_available"])
+        self.assertFalse(payload["dependency_checks"]["p0_document_jobs_required"])
+        self.assertTrue(payload["dependency_checks"]["p0_document_jobs_ready"])
+        self.assertFalse(payload["dependency_checks"]["document_jobs_automatic_execution_enabled"])
+        self.assertEqual(payload["dependency_checks"]["p0_document_jobs_blockers"], [])
+        self.assertIn("document_jobs_worker_backend_disabled", payload["dependency_checks"]["p0_document_jobs_warnings"])
+        self.assertEqual(payload["dependency_checks"]["document_jobs_running_stale_count"], 0)
+        self.assertEqual(payload["dependency_checks"]["document_jobs_timed_out_count"], 0)
+        self.assertEqual(payload["dependency_checks"]["document_jobs_running_oldest_age_seconds"], 0)
         self.assertTrue(payload["dependency_checks"]["deployment_init_ready"])
         self.assertEqual(payload["dependency_checks"]["readiness_blockers"], [])
         self.assertIn("mineru_api_token_missing", payload["dependency_checks"]["readiness_warnings"])
+        self.assertIn("document_jobs_worker_backend_disabled", payload["dependency_checks"]["readiness_warnings"])
         self.assertIn("translation_unavailable", payload["dependency_checks"]["readiness_warnings"])
         self.assertIsNone(payload["dependency_checks"]["default_template_version"])
         self.assertIsNone(payload["dependency_checks"]["default_term_rule_version"])
         self.assertIsNone(payload["dependency_checks"]["default_translation_profile_version"])
         self.assertFalse(payload["dependency_checks"]["mysql_schema_bootstrap_available"])
+
+    def test_health_ready_blocks_p0_document_jobs_in_production_when_required_config_missing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir), app_env="prod")
+            checks = runtime.health_service.build_dependency_checks()
+
+        self.assertTrue(checks["p0_document_jobs_required"])
+        self.assertFalse(checks["p0_document_jobs_ready"])
+        self.assertFalse(checks["document_jobs_automatic_execution_enabled"])
+        self.assertFalse(checks["deployment_init_ready"])
+        self.assertIn("document_jobs_worker_backend_disabled", checks["p0_document_jobs_blockers"])
+        self.assertIn("auth_jwt_secret_key_missing", checks["p0_document_jobs_blockers"])
+        self.assertIn("auth_internal_users_source_missing", checks["p0_document_jobs_blockers"])
+        self.assertIn("mineru_api_token_missing", checks["p0_document_jobs_blockers"])
+        self.assertIn("mineru_callback_url_missing", checks["p0_document_jobs_blockers"])
+        self.assertIn("document_jobs_worker_backend_disabled", checks["readiness_blockers"])
+
+    def test_health_ready_allows_p0_document_jobs_when_production_config_is_complete(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                app_env="prod",
+                document_jobs_worker_backend="celery",
+                document_jobs_celery_broker_url="redis://redis:6379/0",
+                document_jobs_celery_queue="document-jobs",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                mineru_api_token="token-123",
+                mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
+                mineru_uid="mineru-user-1",
+            )
+            checks = runtime.health_service.build_dependency_checks()
+
+        self.assertTrue(checks["p0_document_jobs_required"])
+        self.assertTrue(checks["p0_document_jobs_ready"])
+        self.assertTrue(checks["document_jobs_automatic_execution_enabled"])
+        self.assertEqual(checks["p0_document_jobs_blockers"], [])
+        self.assertTrue(checks["deployment_init_ready"])
+        self.assertNotIn("document_jobs_worker_backend_disabled", checks["readiness_blockers"])
+        self.assertNotIn("auth_jwt_secret_key_missing", checks["readiness_blockers"])
+
+    def test_config_workbench_summary_is_admin_only_and_reports_file_mode_unavailable_groups(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_response = client.get("/api/v1/config-workbench/summary", headers=operator_headers)
+                admin_response = client.get("/api/v1/config-workbench/summary", headers=admin_headers)
+
+        self.assertEqual(operator_response.status_code, 403)
+        self.assertEqual(admin_response.status_code, 200)
+        payload = admin_response.json()
+        groups = {item["id"]: item for item in payload["groups"]}
+        self.assertEqual(payload["release_gate"]["p0_document_jobs_required"], False)
+        self.assertEqual(payload["release_gate"]["p0_document_jobs_ready"], True)
+        self.assertEqual(groups["runtime_readiness"]["route"], "/system-status")
+        self.assertEqual(groups["term_rule_sets"]["status"], "unavailable")
+        self.assertEqual(groups["translation_profiles"]["status"], "unavailable")
+        self.assertEqual(groups["translation_term_sets"]["status"], "unavailable")
+        self.assertNotIn("test-jwt-secret", json.dumps(payload, ensure_ascii=False))
+        self.assertNotIn("admin-pass", json.dumps(payload, ensure_ascii=False))
+
+    def test_config_workbench_summary_reports_p0_blockers_in_production(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                app_env="prod",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                response = client.get("/api/v1/config-workbench/summary", headers=admin_headers)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        blockers = payload["release_gate"]["blockers"]
+        groups = {item["id"]: item for item in payload["groups"]}
+        self.assertEqual(payload["overall_status"], "blocked")
+        self.assertTrue(payload["release_gate"]["p0_document_jobs_required"])
+        self.assertFalse(payload["release_gate"]["p0_document_jobs_ready"])
+        self.assertIn("document_jobs_worker_backend_disabled", blockers)
+        self.assertIn("mineru_api_token_missing", blockers)
+        self.assertIn("mineru_callback_url_missing", blockers)
+        self.assertEqual(groups["runtime_readiness"]["status"], "blocked")
+        self.assertNotIn("test-jwt-secret", json.dumps(payload, ensure_ascii=False))
+
+    def test_config_workbench_summary_reports_versioned_mysql_configuration_groups(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            publish_default_job_resources(runtime, include_translation=True)
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                response = client.get("/api/v1/config-workbench/summary", headers=admin_headers)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        groups = {item["id"]: item for item in payload["groups"]}
+        self.assertNotEqual(groups["term_rule_sets"]["status"], "unavailable")
+        self.assertNotEqual(groups["translation_profiles"]["status"], "unavailable")
+        self.assertNotEqual(groups["translation_term_sets"]["status"], "unavailable")
+        self.assertEqual(groups["templates"]["default_label"], "default@1")
+        self.assertEqual(groups["term_rule_sets"]["default_label"], "electronics-default@1")
+        self.assertEqual(groups["translation_profiles"]["default_label"], "electronics-en2zh@1")
+        self.assertTrue(groups["translation_term_sets"]["default_label"].startswith("translation-terms-en2zh@"))
+        self.assertNotIn("test-jwt-secret", json.dumps(payload, ensure_ascii=False))
 
     def test_health_metrics_reports_runtime_counters(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1640,6 +1777,22 @@ class FastAPIJobsBackendTests(TestCase):
                     updated_at=now - timedelta(minutes=1),
                 )
             )
+            runtime.document_job_repository.create_document_job(
+                DocumentJobRecord(
+                    id="docjob_ops_timed_out",
+                    tenant_id="tenant_default",
+                    company_id="company_default",
+                    created_by="user_operator",
+                    source_file_id="file_ops_timed_out",
+                    status="running",
+                    stage="parsing",
+                    progress=10,
+                    template_version_id="template_default",
+                    started_at=now - timedelta(minutes=20),
+                    timeout_at=now - timedelta(seconds=1),
+                    updated_at=now - timedelta(minutes=20),
+                )
+            )
             runtime.stage_message_store.put_stage_message(
                 JobStageMessage(
                     id="msg_ops_pending",
@@ -1686,7 +1839,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(payload["summary"]["stage_stale_running_messages"], 1)
         self.assertEqual(payload["summary"]["stage_replayable_messages"], 2)
         self.assertEqual(payload["summary"]["failed_jobs"], 1)
-        self.assertEqual(payload["summary"]["running_jobs"], 1)
+        self.assertEqual(payload["summary"]["running_jobs"], 2)
         self.assertTrue(payload["safety"]["read_only"])
         self.assertFalse(payload["safety"]["writes_performed"])
         self.assertFalse(payload["safety"]["recovery_actions_executed"])
@@ -1700,10 +1853,14 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIn("stage_spool_stale_running_messages_present", alerts_by_code)
         self.assertIn("stage_spool_replayable_messages_present", alerts_by_code)
         self.assertIn("document_jobs_failed_present", alerts_by_code)
+        self.assertIn("document_jobs_timed_out_present", alerts_by_code)
+        self.assertIn("document_jobs_stale_running_present", alerts_by_code)
         self.assertIn("document_jobs_running_present", alerts_by_code)
         self.assertEqual(alerts_by_code["stage_spool_failed_messages_present"]["severity"], "critical")
         self.assertEqual(alerts_by_code["stage_spool_failed_messages_present"]["source"], "stage_spool")
         self.assertEqual(alerts_by_code["document_jobs_failed_present"]["source"], "jobs")
+        self.assertEqual(alerts_by_code["document_jobs_timed_out_present"]["severity"], "critical")
+        self.assertEqual(alerts_by_code["document_jobs_stale_running_present"]["severity"], "warning")
         self.assertEqual(alerts_by_code["document_jobs_running_present"]["severity"], "info")
         self.assertEqual(operator_response.status_code, 403)
         self.assertEqual(operator_response.json()["error_code"], "role_forbidden")
@@ -6168,6 +6325,12 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(operator_payload["defaults"]["translation_profile"]["label"], "electronics-en2zh@1")
         self.assertEqual(operator_payload["options"]["templates"], [])
         self.assertTrue(operator_payload["readiness"]["en2zh_available"])
+        self.assertFalse(operator_payload["readiness"]["p0_document_jobs_required"])
+        self.assertTrue(operator_payload["readiness"]["p0_document_jobs_ready"])
+        self.assertEqual(operator_payload["readiness"]["document_jobs_worker_backend"], "disabled")
+        self.assertFalse(operator_payload["readiness"]["document_jobs_automatic_execution_enabled"])
+        self.assertEqual(operator_payload["readiness"]["blockers"], [])
+        self.assertIn("document_jobs_worker_backend_disabled", operator_payload["readiness"]["warnings"])
         self.assertEqual(admin_response.status_code, 200)
         admin_payload = admin_response.json()
         self.assertEqual(admin_payload["role"], "admin")
@@ -11568,6 +11731,274 @@ class FastAPIJobsBackendTests(TestCase):
                 response = client.get("/api/v1/translation-term-sets")
 
         self.assertEqual(response.status_code, 503)
+
+    def test_translation_term_set_draft_changes_api_edits_draft_and_publishes(self):
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            terms_path = temp_root / "translation_terms.csv"
+            terms_path.write_text(
+                "language_pair,source_term,target_term,version\n"
+                "en2zh,ADC,模数转换器,v1\n"
+                "en2zh,DAC,数模转换器,v1\n",
+                encoding="utf-8",
+            )
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                translation_terms_path=str(terms_path),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                draft_response = client.get(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/draft",
+                    headers=admin_headers,
+                )
+                operator_response = client.post(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/draft/changes",
+                    headers=operator_headers,
+                    json={
+                        "expected_snapshot_hash": draft_response.json()["snapshot_hash"],
+                        "changes": [
+                            {
+                                "action": "add",
+                                "source_term": "FPGA",
+                                "target_term": "现场可编程门阵列",
+                            }
+                        ],
+                    },
+                )
+                changes_response = client.post(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/draft/changes",
+                    headers=admin_headers,
+                    json={
+                        "expected_snapshot_hash": draft_response.json()["snapshot_hash"],
+                        "reason": "row CRUD smoke",
+                        "changes": [
+                            {
+                                "action": "add",
+                                "source_term": "FPGA",
+                                "target_term": "现场可编程门阵列",
+                                "priority": 5,
+                                "domain": "electronics",
+                            },
+                            {
+                                "action": "add",
+                                "source_term": "TMP",
+                                "target_term": "临时术语",
+                            },
+                            {
+                                "action": "update",
+                                "source_term": "TMP",
+                                "status": "disabled",
+                                "note": "disabled from row CRUD",
+                            },
+                            {
+                                "action": "update",
+                                "source_term": "ADC",
+                                "target_term": "模拟数字转换器",
+                                "note": "admin correction",
+                            },
+                            {
+                                "action": "delete",
+                                "source_term": "DAC",
+                            },
+                        ],
+                    },
+                )
+                diff_response = client.get(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/diff",
+                    headers=admin_headers,
+                )
+                preflight_response = client.get(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/preflight",
+                    headers=admin_headers,
+                )
+                publish_response = client.post(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/publish",
+                    headers=admin_headers,
+                    json={"make_default": False, "release_note": "publish row CRUD draft"},
+                )
+                export_response = client.get(
+                    f"/api/v1/translation-term-sets/translation-terms-en2zh/export?version={publish_response.json()['version']}",
+                    headers=admin_headers,
+                )
+
+        self.assertEqual(operator_response.status_code, 403)
+        self.assertEqual(changes_response.status_code, 200)
+        changed_payload = changes_response.json()
+        self.assertEqual(changed_payload["term_count"], 3)
+        entries_by_key = {entry["normalized_source_term"]: entry for entry in changed_payload["entries"]}
+        self.assertEqual(entries_by_key["adc"]["target_term"], "模拟数字转换器")
+        self.assertEqual(entries_by_key["adc"]["source_term"], "ADC")
+        self.assertEqual(entries_by_key["fpga"]["priority"], 5)
+        self.assertEqual(entries_by_key["tmp"]["status"], "disabled")
+        self.assertNotIn("dac", entries_by_key)
+        self.assertEqual(diff_response.status_code, 200)
+        self.assertEqual(diff_response.json()["summary"]["added"], 2)
+        self.assertEqual(diff_response.json()["summary"]["changed"], 1)
+        self.assertEqual(diff_response.json()["summary"]["removed"], 1)
+        self.assertEqual(preflight_response.status_code, 200)
+        self.assertFalse(preflight_response.json()["publish_blocked"])
+        self.assertEqual(publish_response.status_code, 200)
+        self.assertFalse(publish_response.json()["is_default"])
+        self.assertEqual(export_response.status_code, 200)
+        self.assertIn("FPGA", export_response.json()["csv_text"])
+        self.assertIn("disabled", export_response.json()["csv_text"])
+        self.assertNotIn("DAC", export_response.json()["csv_text"])
+        audit_actions = [event.action for event in runtime.audit_event_repository.list_audit_events()]
+        self.assertIn("translation_term_set.draft_change", audit_actions)
+        self.assertIn("translation_term_set.publish", audit_actions)
+
+    def test_translation_term_set_draft_changes_api_preserves_error_boundaries(self):
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            terms_path = temp_root / "translation_terms.csv"
+            terms_path.write_text(
+                "language_pair,source_term,target_term,version\n"
+                "en2zh,ADC,模数转换器,v1\n",
+                encoding="utf-8",
+            )
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                translation_terms_path=str(terms_path),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                draft_response = client.get(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/draft",
+                    headers=admin_headers,
+                )
+                snapshot_hash = draft_response.json()["snapshot_hash"]
+                stale_response = client.post(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/draft/changes",
+                    headers=admin_headers,
+                    json={
+                        "expected_snapshot_hash": "sha256:stale",
+                        "changes": [
+                            {
+                                "action": "add",
+                                "source_term": "FPGA",
+                                "target_term": "现场可编程门阵列",
+                            }
+                        ],
+                    },
+                )
+                duplicate_response = client.post(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/draft/changes",
+                    headers=admin_headers,
+                    json={
+                        "expected_snapshot_hash": snapshot_hash,
+                        "changes": [
+                            {
+                                "action": "add",
+                                "source_term": " adc ",
+                                "target_term": "重复项",
+                            }
+                        ],
+                    },
+                )
+                missing_update_response = client.post(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/draft/changes",
+                    headers=admin_headers,
+                    json={
+                        "expected_snapshot_hash": snapshot_hash,
+                        "changes": [
+                            {
+                                "action": "update",
+                                "source_term": "FPGA",
+                                "target_term": "现场可编程门阵列",
+                            }
+                        ],
+                    },
+                )
+                invalid_status_response = client.post(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/draft/changes",
+                    headers=admin_headers,
+                    json={
+                        "expected_snapshot_hash": snapshot_hash,
+                        "changes": [
+                            {
+                                "action": "update",
+                                "source_term": "ADC",
+                                "status": "paused",
+                            }
+                        ],
+                    },
+                )
+                empty_target_response = client.post(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/draft/changes",
+                    headers=admin_headers,
+                    json={
+                        "expected_snapshot_hash": snapshot_hash,
+                        "changes": [
+                            {
+                                "action": "add",
+                                "source_term": "FPGA",
+                                "target_term": " ",
+                            }
+                        ],
+                    },
+                )
+                draft_after_errors = client.get(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/draft",
+                    headers=admin_headers,
+                )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            unavailable_runtime = build_test_runtime(
+                Path(temp_dir),
+                admin_token="secret-admin",
+            )
+            unavailable_app = create_app(unavailable_runtime)
+            with TestClient(unavailable_app) as client:
+                unavailable_response = client.post(
+                    "/api/v1/translation-term-sets/translation-terms-en2zh/draft/changes",
+                    headers={"X-Admin-Token": "secret-admin"},
+                    json={
+                        "expected_snapshot_hash": snapshot_hash,
+                        "changes": [
+                            {
+                                "action": "add",
+                                "source_term": "FPGA",
+                                "target_term": "现场可编程门阵列",
+                            }
+                        ],
+                    },
+                )
+
+        self.assertEqual(stale_response.status_code, 409)
+        self.assertEqual(stale_response.json()["detail"]["code"], "draft_snapshot_conflict")
+        self.assertEqual(duplicate_response.status_code, 400)
+        self.assertEqual(missing_update_response.status_code, 400)
+        self.assertEqual(invalid_status_response.status_code, 400)
+        self.assertEqual(empty_target_response.status_code, 400)
+        self.assertEqual(unavailable_response.status_code, 503)
+        self.assertEqual(draft_after_errors.json()["snapshot_hash"], snapshot_hash)
+        self.assertEqual([entry["source_term"] for entry in draft_after_errors.json()["entries"]], ["ADC"])
 
     def test_translation_term_set_diff_and_preflight_reports_draft_changes(self):
         """验证 Admin 可读取 default-vs-draft diff 和发布前预检摘要。"""

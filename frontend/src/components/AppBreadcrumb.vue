@@ -124,7 +124,7 @@ const items = computed<BreadcrumbItem[]>(() => {
     case "system-status-file-retention":
       return [
         { label: "系统状态", to: "/system-status" },
-        { label: "文件保留" },
+        { label: "文件管理与清理" },
       ];
     default:
       return [];

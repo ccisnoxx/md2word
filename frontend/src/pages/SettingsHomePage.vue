@@ -1,11 +1,11 @@
-<!-- frontend/src/pages/SettingsHomePage.vue: Configuration center landing page for V2.1 resources. -->
+<!-- frontend/src/pages/SettingsHomePage.vue: Configuration workbench landing page and release gate. -->
 <template>
   <main class="settings-page" aria-labelledby="settings-title">
     <section class="page-heading">
       <div>
-        <p class="page-kicker">Config Management</p>
-        <h1 id="settings-title">配置中心</h1>
-        <p>按术语、模板和翻译治理链路进入配置资源，并查看发布待办。</p>
+        <p class="page-kicker">Config Workbench</p>
+        <h1 id="settings-title">配置工作台</h1>
+        <p>统一查看生产运行门禁、默认配置版本、draft 和待处理治理事项。</p>
       </div>
       <RoleGate>
         <el-tag type="warning" effect="plain">admin 操作已启用</el-tag>
@@ -14,118 +14,169 @@
 
     <ConfigTodoSummary :summary="summary" :loading="loading" :error="error" @refresh="loadSummary" />
 
-    <section class="settings-groups" aria-label="配置治理入口">
-      <article v-for="group in groups" :key="group.title" class="settings-group">
+    <section v-if="summary" class="settings-groups" aria-label="配置治理状态">
+      <article v-for="group in summary.groups" :key="group.id" class="settings-group">
         <header class="settings-group-header">
           <span class="settings-group-icon" aria-hidden="true">
-            <el-icon><component :is="group.icon" /></el-icon>
+            <el-icon><component :is="groupIcon(group.id)" /></el-icon>
           </span>
-          <span>
-            <strong>{{ group.title }}</strong>
-            <small>{{ group.description }}</small>
+          <span class="settings-group-copy">
+            <strong>{{ group.label }}</strong>
+            <small>{{ groupSubtitle(group) }}</small>
           </span>
+          <el-tag :type="statusTagType(group.status)" effect="plain">
+            {{ statusLabel(group.status) }}
+          </el-tag>
         </header>
-        <div class="settings-link-list">
-          <router-link v-for="entry in group.entries" :key="entry.to" class="settings-link" :to="entry.to">
-            <span class="settings-link-icon" aria-hidden="true">
-              <el-icon><component :is="entry.icon" /></el-icon>
-            </span>
-            <span class="settings-link-copy">
-              <strong>{{ entry.title }}</strong>
-              <small>{{ entry.description }}</small>
-            </span>
-            <el-tag v-if="entry.badge" size="small" effect="plain">{{ entry.badge }}</el-tag>
-          </router-link>
+
+        <div class="group-metrics">
+          <dl>
+            <div>
+              <dt>默认版本</dt>
+              <dd>{{ group.default_label || "-" }}</dd>
+            </div>
+            <div>
+              <dt>Draft</dt>
+              <dd>{{ group.draft_count ?? "-" }}</dd>
+            </div>
+            <div>
+              <dt>Pending</dt>
+              <dd>{{ group.pending_count ?? "-" }}</dd>
+            </div>
+            <div>
+              <dt>阻断 / 告警</dt>
+              <dd>{{ group.blocker_count }} / {{ group.warning_count }}</dd>
+            </div>
+          </dl>
         </div>
+
+        <div class="finding-stack">
+          <router-link
+            v-for="finding in visibleFindings(group)"
+            :key="finding.code + finding.target_id"
+            class="finding-item"
+            :to="finding.route || group.route"
+          >
+            <el-tag size="small" :type="severityTagType(finding.severity)" effect="plain">
+              {{ finding.severity }}
+            </el-tag>
+            <span>{{ finding.message }}</span>
+          </router-link>
+          <div v-if="group.findings.length > 3" class="finding-more">
+            还有 {{ group.findings.length - 3 }} 条事项，请进入详情页查看。
+          </div>
+          <div v-if="group.findings.length === 0" class="finding-empty">暂无阻断或告警。</div>
+        </div>
+
+        <router-link class="settings-link" :to="group.route">
+          <span>进入{{ group.label }}</span>
+        </router-link>
       </article>
     </section>
+
+    <el-empty v-else-if="!loading && !error" description="暂无配置工作台数据" :image-size="90" />
   </main>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { Collection, DocumentChecked, Files, Search, Tickets } from "@element-plus/icons-vue";
+import {
+  Collection,
+  Cpu,
+  DocumentChecked,
+  Files,
+  Tickets,
+} from "@element-plus/icons-vue";
 
-import { configSummaryApi, type ConfigTodoSummaryResponse } from "@/api/configSummary";
+import {
+  configSummaryApi,
+  type ConfigWorkbenchFinding,
+  type ConfigWorkbenchGroup,
+  type ConfigWorkbenchGroupId,
+  type ConfigWorkbenchSeverity,
+  type ConfigWorkbenchStatus,
+  type ConfigWorkbenchSummaryResponse,
+} from "@/api/configSummary";
 import ConfigTodoSummary from "@/components/ConfigTodoSummary.vue";
 import RoleGate from "@/components/RoleGate.vue";
-import { useAuthStore } from "@/stores/auth";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 
-const auth = useAuthStore();
-const summary = ref<ConfigTodoSummaryResponse | null>(null);
+const summary = ref<ConfigWorkbenchSummaryResponse | null>(null);
 const loading = ref(false);
 const error = ref<ApiClientError | null>(null);
 
-const groups = [
-  {
-    title: "术语工作台",
-    description: "区分当前 live 检查与 draft 发布治理，避免绕过版本流程。",
-    icon: Collection,
-    entries: [
-      {
-        title: "草稿与发布",
-        description: "编辑 draft 规则，查看 diff / preflight，并发布术语规则集。",
-        to: "/settings/term-rule-sets",
-        icon: Collection,
-        badge: "draft",
-      },
-      {
-        title: "当前生效规则",
-        description: "只读查看 live runtime store，并模拟术语渲染命中。",
-        to: "/settings/term-rules",
-        icon: Search,
-        badge: "live",
-      },
-    ],
-  },
-  {
-    title: "模板与版式",
-    description: "管理模板文件版本、验证证据和默认模板指针。",
-    icon: Files,
-    entries: [
-      {
-        title: "模板配置",
-        description: "查看模板版本、创建验证任务，并执行发布 / 设默认。",
-        to: "/settings/templates",
-        icon: Files,
-        badge: "verified",
-      },
-    ],
-  },
-  {
-    title: "翻译治理",
-    description: "维护翻译 profile 与翻译术语集，不承载 prompt 正文或 secret 编辑。",
-    icon: DocumentChecked,
-    entries: [
-      {
-        title: "翻译配置",
-        description: "管理基础字段 draft、发布、设默认和 rollback。",
-        to: "/settings/translation-profiles",
-        icon: DocumentChecked,
-        badge: "profile",
-      },
-      {
-        title: "翻译术语集",
-        description: "通过 CSV draft import/export 管理术语版本和发布。",
-        to: "/settings/translation-term-sets",
-        icon: Tickets,
-        badge: "csv",
-      },
-    ],
-  },
-];
+const iconMap = {
+  runtime_readiness: Cpu,
+  templates: Files,
+  term_rule_sets: Collection,
+  translation_profiles: DocumentChecked,
+  translation_term_sets: Tickets,
+} satisfies Record<ConfigWorkbenchGroupId, unknown>;
 
 async function loadSummary(): Promise<void> {
   loading.value = true;
   error.value = null;
   try {
-    summary.value = await configSummaryApi.get(auth.user?.role);
+    summary.value = await configSummaryApi.get();
   } catch (caught) {
     error.value = normalizeApiError(caught);
   } finally {
     loading.value = false;
   }
+}
+
+function groupIcon(groupId: ConfigWorkbenchGroupId): unknown {
+  return iconMap[groupId];
+}
+
+function visibleFindings(group: ConfigWorkbenchGroup): ConfigWorkbenchFinding[] {
+  return group.findings.slice(0, 3);
+}
+
+function groupSubtitle(group: ConfigWorkbenchGroup): string {
+  if (group.status === "ready") {
+    return "已满足当前配置门禁。";
+  }
+  if (group.status === "unavailable") {
+    return "当前部署未启用对应版本治理能力。";
+  }
+  if (group.blocker_count > 0) {
+    return "存在需要先处理的阻断项。";
+  }
+  return "存在发布前建议处理的事项。";
+}
+
+function statusLabel(status: ConfigWorkbenchStatus): string {
+  const labels: Record<ConfigWorkbenchStatus, string> = {
+    ready: "Ready",
+    warning: "Warning",
+    blocked: "Blocked",
+    unavailable: "Unavailable",
+  };
+  return labels[status];
+}
+
+function statusTagType(status: ConfigWorkbenchStatus): "success" | "warning" | "danger" | "info" {
+  if (status === "ready") {
+    return "success";
+  }
+  if (status === "blocked") {
+    return "danger";
+  }
+  if (status === "warning") {
+    return "warning";
+  }
+  return "info";
+}
+
+function severityTagType(severity: ConfigWorkbenchSeverity): "success" | "warning" | "danger" | "info" {
+  if (severity === "critical") {
+    return "danger";
+  }
+  if (severity === "warning") {
+    return "warning";
+  }
+  return "info";
 }
 
 onMounted(() => {
@@ -170,7 +221,7 @@ onMounted(() => {
 
 .settings-groups {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
 
@@ -187,85 +238,149 @@ onMounted(() => {
 
 .settings-group-header {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-columns: 42px minmax(0, 1fr) auto;
   gap: 12px;
   align-items: flex-start;
   color: #111827;
 }
 
-.settings-group-icon,
-.settings-link-icon {
+.settings-group-icon {
   display: grid;
   place-items: center;
   width: 42px;
   height: 42px;
   border-radius: 8px;
-  background: #eff6ff;
-  color: #2563eb;
+  background: #eef2ff;
+  color: #4f46e5;
   font-size: 20px;
 }
 
-.settings-group-header strong,
-.settings-group-header small,
-.settings-link-copy strong,
-.settings-link-copy small {
+.settings-group-copy strong,
+.settings-group-copy small {
   display: block;
 }
 
-.settings-group-header strong {
+.settings-group-copy strong {
   margin-bottom: 8px;
   font-size: 16px;
 }
 
-.settings-group-header small,
-.settings-link-copy small {
+.settings-group-copy small {
   color: #667085;
   font-size: 13px;
   line-height: 1.5;
 }
 
-.settings-link-list {
+.group-metrics dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.group-metrics div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.group-metrics dt {
+  color: #667085;
+  font-size: 12px;
+}
+
+.group-metrics dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #111827;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.finding-stack {
   display: grid;
   gap: 8px;
 }
 
-.settings-link {
+.finding-item {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
-  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
   align-items: center;
-  min-height: 82px;
-  padding: 12px;
+  min-height: 42px;
+  padding: 10px;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  background: #f8fafc;
+  background: #fff;
   color: #111827;
 }
 
-.settings-link:hover {
+.finding-item:hover {
   border-color: #93c5fd;
   color: #111827;
 }
 
-.settings-link-icon {
-  width: 34px;
-  height: 34px;
+.finding-more,
+.finding-empty {
+  color: #667085;
+  font-size: 13px;
+}
+
+.settings-link {
+  display: inline-flex;
+  justify-content: center;
+  min-height: 38px;
+  padding: 9px 12px;
+  border: 1px solid #bfdbfe;
   border-radius: 8px;
-  font-size: 17px;
-}
-
-.settings-link-copy strong {
-  margin-bottom: 4px;
+  background: #eff6ff;
+  color: #1d4ed8;
   font-size: 14px;
+  font-weight: 700;
 }
 
-@media (max-width: 820px) {
-  .page-heading {
+.settings-link:hover {
+  border-color: #60a5fa;
+  color: #1d4ed8;
+}
+
+@media (max-width: 1040px) {
+  .settings-groups {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .page-heading,
+  .settings-group-header {
     align-items: flex-start;
+  }
+
+  .page-heading {
     flex-direction: column;
   }
 
-  .settings-groups {
+  .settings-group-header {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+
+  .settings-group-header .el-tag {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .group-metrics dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .group-metrics dl {
     grid-template-columns: 1fr;
   }
 }

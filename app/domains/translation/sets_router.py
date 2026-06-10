@@ -14,6 +14,7 @@ from app.domains.translation.schemas import (
     TranslationTermSetDiffResponse,
     TranslationTermSetExportManifestResponse,
     TranslationTermSetExportResponse,
+    TranslationTermSetDraftChangesApplyRequest,
     TranslationTermSetDraftResponse,
     TranslationTermSetImportDuplicateResponse,
     TranslationTermSetImportReportResponse,
@@ -28,7 +29,10 @@ from app.domains.translation.schemas import (
     TranslationTermValidationFindingResponse,
     TranslationTermValidationReportResponse,
 )
-from app.domains.translation.term_set_version_service import TranslationTermSetVersionService
+from app.domains.translation.term_set_version_service import (
+    TranslationTermSetDraftSnapshotConflictError,
+    TranslationTermSetVersionService,
+)
 
 
 router = APIRouter(prefix="/translation-term-sets", tags=["translation-term-sets"])
@@ -84,6 +88,18 @@ def _import_report_response(report) -> TranslationTermSetImportReportResponse:
     )
 
 
+def _draft_snapshot_conflict_http_exception(exc: TranslationTermSetDraftSnapshotConflictError) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "draft_snapshot_conflict",
+            "message": str(exc),
+            "expected_snapshot_hash": exc.expected_snapshot_hash,
+            "actual_snapshot_hash": exc.actual_snapshot_hash,
+        },
+    )
+
+
 @router.get("", response_model=TranslationTermSetListResponse)
 def list_translation_term_sets(
     runtime: AppRuntime = Depends(get_runtime),
@@ -111,6 +127,31 @@ def get_translation_term_set_draft(
 ) -> TranslationTermSetDraftResponse:
     try:
         return _require_translation_term_set_version_service(runtime).get_draft_response(set_id)
+    except FileNotFoundError as exc:
+        raise not_found_http_exception(exc) from exc
+    except ValueError as exc:
+        raise bad_request_http_exception(exc) from exc
+
+
+@router.post("/{set_id}/draft/changes", response_model=TranslationTermSetDraftResponse)
+def apply_translation_term_set_draft_changes(
+    set_id: str,
+    payload: TranslationTermSetDraftChangesApplyRequest,
+    actor: ActorContext = Depends(require_admin_actor),
+    runtime: AppRuntime = Depends(get_runtime),
+    trace_id: str = Depends(get_trace_id),
+) -> TranslationTermSetDraftResponse:
+    try:
+        return _require_translation_term_set_version_service(runtime).apply_draft_changes_response(
+            set_id,
+            expected_snapshot_hash=payload.expected_snapshot_hash,
+            changes=payload.changes,
+            reason=payload.reason,
+            actor=actor,
+            trace_id=trace_id,
+        )
+    except TranslationTermSetDraftSnapshotConflictError as exc:
+        raise _draft_snapshot_conflict_http_exception(exc) from exc
     except FileNotFoundError as exc:
         raise not_found_http_exception(exc) from exc
     except ValueError as exc:

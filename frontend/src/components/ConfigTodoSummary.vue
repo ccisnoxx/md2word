@@ -1,25 +1,57 @@
-<!-- frontend/src/components/ConfigTodoSummary.vue: Render configuration-release todo counters. -->
+<!-- frontend/src/components/ConfigTodoSummary.vue: Render config workbench release-gate summary. -->
 <template>
-  <el-card class="config-todo card-flat" shadow="never">
+  <el-card class="config-summary card-flat" shadow="never">
     <div class="section-header">
       <div>
-        <h2 class="section-title">配置发布待办</h2>
-        <p class="section-subtitle">只统计模板、术语工作台和翻译配置发布相关事项。</p>
+        <h2 class="section-title">运行门禁总览</h2>
+        <p class="section-subtitle">聚合 P0 document_jobs、模板、术语和翻译配置状态。</p>
       </div>
-      <el-button :icon="Refresh" :loading="loading" @click="$emit('refresh')">刷新</el-button>
+      <div class="summary-actions">
+        <el-tag v-if="summary" :type="statusTagType(summary.overall_status)" effect="plain">
+          {{ statusLabel(summary.overall_status) }}
+        </el-tag>
+        <el-button :icon="Refresh" :loading="loading" @click="$emit('refresh')">刷新</el-button>
+      </div>
     </div>
 
     <ApiErrorAlert :error="error" />
 
-    <el-skeleton v-if="loading" :rows="2" animated />
-    <el-empty v-else-if="items.length === 0" description="暂无配置发布待办" :image-size="80" />
-    <div v-else class="todo-grid">
-      <article v-for="item in items" :key="item.key" class="todo-item">
-        <span class="todo-label">{{ item.label }}</span>
-        <strong>{{ item.value }}</strong>
-        <small>{{ item.helper }}</small>
-      </article>
-    </div>
+    <el-skeleton v-if="loading" :rows="3" animated />
+    <el-empty v-else-if="!summary" description="暂无配置工作台总览" :image-size="80" />
+    <template v-else>
+      <div class="metric-grid">
+        <article v-for="item in metrics" :key="item.key" class="metric-item">
+          <span>{{ item.label }}</span>
+          <strong>{{ item.value }}</strong>
+          <small>{{ item.helper }}</small>
+        </article>
+      </div>
+
+      <el-alert
+        v-if="summary.release_gate.blockers.length"
+        class="gate-alert"
+        type="error"
+        title="P0 document_jobs 门禁阻断"
+        :closable="false"
+        show-icon
+      >
+        <ul class="finding-list">
+          <li v-for="item in summary.release_gate.blockers" :key="item">{{ item }}</li>
+        </ul>
+      </el-alert>
+      <el-alert
+        v-else-if="summary.release_gate.warnings.length"
+        class="gate-alert"
+        type="warning"
+        title="P0 document_jobs 门禁告警"
+        :closable="false"
+        show-icon
+      >
+        <ul class="finding-list">
+          <li v-for="item in summary.release_gate.warnings" :key="item">{{ item }}</li>
+        </ul>
+      </el-alert>
+    </template>
   </el-card>
 </template>
 
@@ -27,9 +59,10 @@
 import { computed } from "vue";
 import { Refresh } from "@element-plus/icons-vue";
 
-import type { ConfigTodoSummaryResponse } from "@/api/configSummary";
+import type { ConfigWorkbenchStatus, ConfigTodoSummaryResponse } from "@/api/configSummary";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import type { ApiClientError } from "@/utils/errors";
+import { formatDateTime } from "@/utils/format";
 
 const props = defineProps<{
   summary: ConfigTodoSummaryResponse | null;
@@ -41,57 +74,90 @@ defineEmits<{
   refresh: [];
 }>();
 
-const items = computed(() => {
+const metrics = computed(() => {
   const summary = props.summary;
   if (!summary) {
     return [];
   }
-
-  const nextItems: Array<{ key: string; label: string; value: string | number; helper: string }> = [];
-  if (summary.pendingReviewProposals !== null) {
-    nextItems.push({
-      key: "pending-proposals",
-      label: "待审核术语建议",
-      value: summary.pendingReviewProposals,
-      helper: "术语工作台审核队列",
-    });
-  }
-  if (summary.approvedProposals !== null) {
-    nextItems.push({
-      key: "approved-proposals",
-      label: "已通过待发布建议",
-      value: summary.approvedProposals,
-      helper: "需随术语规则集发布",
-    });
-  }
-  nextItems.push({
-    key: "template-drafts",
-    label: "模板 draft 版本",
-    value: summary.templateDraftVersions,
-    helper: `${summary.unverifiedTemplateDraftVersions} 个缺少验证证据`,
-  });
-  nextItems.push({
-    key: "translation-drafts",
-    label: "翻译配置 draft",
-    value: summary.translationProfilesUnavailable ? "不可用" : summary.translationDraftProfiles ?? 0,
-    helper: summary.translationProfilesUnavailable ? "当前部署未启用 MySQL resource service" : "存在未发布草稿",
-  });
-  return nextItems.filter((item) => item.value === "不可用" || Number(item.value) > 0);
+  const blockedGroups = summary.groups.filter((group) => group.status === "blocked").length;
+  const warningGroups = summary.groups.filter((group) => group.status === "warning").length;
+  const unavailableGroups = summary.groups.filter((group) => group.status === "unavailable").length;
+  return [
+    {
+      key: "p0-gate",
+      label: "P0 document_jobs",
+      value: summary.release_gate.p0_document_jobs_ready ? "Ready" : "Blocked",
+      helper: summary.release_gate.p0_document_jobs_required ? "生产门禁已启用" : "当前环境非强制",
+    },
+    {
+      key: "blocked",
+      label: "阻断配置组",
+      value: blockedGroups,
+      helper: "需要先处理再发布",
+    },
+    {
+      key: "warning",
+      label: "告警配置组",
+      value: warningGroups,
+      helper: "存在待审核、draft 或 warning",
+    },
+    {
+      key: "unavailable",
+      label: "不可用配置组",
+      value: unavailableGroups,
+      helper: "通常表示未启用 MySQL resource service",
+    },
+    {
+      key: "updated",
+      label: "更新时间",
+      value: formatDateTime(summary.generated_at),
+      helper: "后端聚合生成时间",
+    },
+  ];
 });
+
+function statusLabel(status: ConfigWorkbenchStatus): string {
+  const labels: Record<ConfigWorkbenchStatus, string> = {
+    ready: "Ready",
+    warning: "Warning",
+    blocked: "Blocked",
+    unavailable: "Unavailable",
+  };
+  return labels[status];
+}
+
+function statusTagType(status: ConfigWorkbenchStatus): "success" | "warning" | "danger" | "info" {
+  if (status === "ready") {
+    return "success";
+  }
+  if (status === "blocked") {
+    return "danger";
+  }
+  if (status === "warning") {
+    return "warning";
+  }
+  return "info";
+}
 </script>
 
 <style scoped lang="scss">
-.config-todo {
+.config-summary {
   border: 1px solid #d9e2ec;
 }
 
-.todo-grid {
+.summary-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.metric-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
 }
 
-.todo-item {
+.metric-item {
   display: grid;
   gap: 6px;
   min-height: 104px;
@@ -101,31 +167,48 @@ const items = computed(() => {
   background: #fff;
 }
 
-.todo-label {
+.metric-item span {
   color: #475467;
   font-size: 13px;
 }
 
-.todo-item strong {
+.metric-item strong {
+  overflow-wrap: anywhere;
   color: #111827;
-  font-size: 28px;
-  line-height: 1;
+  font-size: 22px;
+  line-height: 1.15;
 }
 
-.todo-item small {
+.metric-item small {
   color: #667085;
   font-size: 12px;
 }
 
-@media (max-width: 960px) {
-  .todo-grid {
+.gate-alert {
+  margin-top: 12px;
+}
+
+.finding-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+@media (max-width: 1120px) {
+  .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 640px) {
-  .todo-grid {
+  .section-header,
+  .summary-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .metric-grid {
     grid-template-columns: 1fr;
   }
 }
 </style>
+

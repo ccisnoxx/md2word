@@ -1486,6 +1486,11 @@ export type DocumentJobConfigSummaryResponse = {
   options: DocumentJobConfigOptions;
   readiness: {
     en2zh_available: boolean;
+    p0_document_jobs_required: boolean;
+    p0_document_jobs_ready: boolean;
+    document_jobs_worker_backend: string;
+    document_jobs_automatic_execution_enabled: boolean;
+    blockers: string[];
     warnings: string[];
   };
 };
@@ -2103,6 +2108,24 @@ export type TranslationTermSetDraftResponse = {
   snapshot_hash: string;
   validation: TranslationTermValidationReportResponse;
   entries: TranslationTermEntryResponse[];
+};
+
+export type TranslationTermSetDraftChangeRequest = {
+  action: string;
+  source_term: string;
+  target_term?: string | null;
+  case_sensitive?: boolean | null;
+  status?: string | null;
+  priority?: number | null;
+  domain?: string | null;
+  category?: string | null;
+  note?: string | null;
+};
+
+export type TranslationTermSetDraftChangesApplyRequest = {
+  expected_snapshot_hash: string;
+  reason?: string | null;
+  changes: TranslationTermSetDraftChangeRequest[];
 };
 
 export type TranslationTermSetDiffSummaryResponse = {

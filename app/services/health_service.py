@@ -32,6 +32,8 @@ from app.domains.resources.repository import ResourceVersionRepositoryProtocol
 DEFAULT_TERM_RULE_SET_ID = "electronics-default"
 DEFAULT_TRANSLATION_PROFILE_ID = "electronics-en2zh"
 RESOURCE_TYPES = ("template", "term_rule_set", "translation_profile")
+NON_PRODUCTION_ENVS = {"dev", "local", "test"}
+DOCUMENT_JOB_STALE_SECONDS = 600
 
 
 READINESS_REQUIRED_CHECKS = (
@@ -52,6 +54,8 @@ READINESS_NON_BLOCKING_CHECKS = (
     "stage_spool_failed_messages",
     "stage_spool_running_stale_messages",
     "stage_spool_needs_attention",
+    "p0_document_jobs_ready",
+    "document_jobs_automatic_execution_enabled",
 )
 
 
@@ -118,6 +122,8 @@ class HealthService:
         resource_labels = self._build_default_resource_labels()
         mineru_callback_url_configured = bool(self.settings.mineru_callback_url)
         mineru_uid_configured = bool(self.settings.mineru_uid)
+        p0_document_jobs = self._build_p0_document_jobs_readiness()
+        document_job_observation = self._build_document_job_observation()
 
         checks: dict[str, Any] = {
             "readiness_required_checks": list(READINESS_REQUIRED_CHECKS),
@@ -125,6 +131,8 @@ class HealthService:
             "configured_repository_backend": self.settings.jobs_repository_backend,
             "effective_repository_backend": self.effective_repository_backend,
             "worker_mode": self.settings.jobs_worker_mode,
+            "document_jobs_worker_backend": self.settings.document_jobs_worker_backend,
+            "document_jobs_celery_queue": self.settings.document_jobs_celery_queue,
             "stage_dispatcher": self.stage_dispatcher_backend,
             "stage_message_store": self.stage_message_store_backend,
             "artifact_storage": self.artifact_storage_backend,
@@ -154,6 +162,14 @@ class HealthService:
             "mineru_uid_configured": mineru_uid_configured,
             "pdf_submission_available": pdf_submission_available,
             "public_deployment_mode": self.settings.public_deployment_mode,
+            "p0_document_jobs_required": p0_document_jobs["required"],
+            "p0_document_jobs_ready": p0_document_jobs["ready"],
+            "document_jobs_automatic_execution_enabled": p0_document_jobs["automatic_execution_enabled"],
+            "p0_document_jobs_blockers": p0_document_jobs["blockers"],
+            "p0_document_jobs_warnings": p0_document_jobs["warnings"],
+            "document_jobs_running_stale_count": document_job_observation["stale_count"],
+            "document_jobs_timed_out_count": document_job_observation["timed_out_count"],
+            "document_jobs_running_oldest_age_seconds": document_job_observation["oldest_age_seconds"],
             "openai_api_key_configured": bool(self.settings.openai_api_key),
             "openai_base_url_configured": bool(self.settings.openai_base_url),
             "openai_model": self.settings.openai_model,
@@ -186,6 +202,7 @@ class HealthService:
             blockers.append("default_translation_unavailable")
         if mineru_callback_url_configured and not mineru_uid_configured:
             blockers.append("mineru_uid_missing")
+        blockers.extend(p0_document_jobs["blockers"])
 
         warnings: list[str] = []
         if not checks["pdf_submission_available"]:
@@ -201,7 +218,14 @@ class HealthService:
             warnings.append("stage_spool_failed_messages_present")
         if running_observation["stale_count"] > 0:
             warnings.append("stage_spool_stale_running_messages_present")
+        warnings.extend(p0_document_jobs["warnings"])
+        if document_job_observation["stale_count"] > 0:
+            warnings.append("document_jobs_stale_running_present")
+        if document_job_observation["timed_out_count"] > 0:
+            warnings.append("document_jobs_timed_out_present")
 
+        blockers = list(dict.fromkeys(blockers))
+        warnings = list(dict.fromkeys(warnings))
         checks["deployment_init_ready"] = not blockers
         checks["deployment_init_missing_steps"] = blockers
         checks["readiness_blockers"] = blockers
@@ -214,6 +238,91 @@ class HealthService:
             elif not checks["translation_prompt_exists"]:
                 checks["translation_unavailable_reason"] = "translation_en2zh prompt 文件缺失"
         return checks
+
+    def _build_p0_document_jobs_readiness(self) -> dict[str, Any]:
+        """判断 P0 document_jobs 自动执行链路是否满足当前环境的发布门禁。"""
+
+        required = self._p0_document_jobs_required()
+        worker_backend = self.settings.document_jobs_worker_backend
+        automatic_execution_enabled = worker_backend in {"celery", "eager"}
+        blockers: list[str] = []
+        warnings: list[str] = []
+
+        if worker_backend == "disabled":
+            if required:
+                blockers.append("document_jobs_worker_backend_disabled")
+            else:
+                warnings.append("document_jobs_worker_backend_disabled")
+        elif worker_backend == "celery":
+            if not self.settings.document_jobs_celery_broker_url.strip():
+                blockers.append("document_jobs_celery_broker_url_missing")
+            if not self.settings.document_jobs_celery_queue.strip():
+                blockers.append("document_jobs_celery_queue_missing")
+        elif worker_backend == "eager" and required:
+            warnings.append("document_jobs_worker_backend_eager_in_production")
+
+        if required:
+            if not self.settings.auth_jwt_secret_key.strip():
+                blockers.append("auth_jwt_secret_key_missing")
+            if not self._auth_users_source_configured():
+                blockers.append("auth_internal_users_source_missing")
+            if not self.settings.mineru_api_token.strip():
+                blockers.append("mineru_api_token_missing")
+            if not self.settings.mineru_callback_url.strip():
+                blockers.append("mineru_callback_url_missing")
+            if self.settings.mineru_callback_url.strip() and not self.settings.mineru_uid.strip():
+                blockers.append("mineru_uid_missing")
+
+        return {
+            "required": required,
+            "ready": not blockers,
+            "automatic_execution_enabled": automatic_execution_enabled,
+            "blockers": blockers,
+            "warnings": warnings,
+        }
+
+    def _p0_document_jobs_required(self) -> bool:
+        return (
+            self.settings.app_env.strip().lower() not in NON_PRODUCTION_ENVS
+            or self.settings.public_deployment_mode == "single_tenant_public"
+        )
+
+    def _auth_users_source_configured(self) -> bool:
+        users_file = self.settings.auth_internal_users_file_path
+        if users_file is not None:
+            try:
+                return users_file.exists() and bool(users_file.read_text(encoding="utf-8").strip())
+            except OSError:
+                return False
+        return bool(self.settings.auth_internal_users_json.strip())
+
+    def _build_document_job_observation(self) -> dict[str, int]:
+        """汇总 document_jobs 运行中停滞和超时信号，不修改任务状态。"""
+
+        now = utc_now()
+        stale_count = 0
+        timed_out_count = 0
+        oldest_age_seconds = 0
+        if self.document_job_repository is None:
+            return {
+                "stale_count": stale_count,
+                "timed_out_count": timed_out_count,
+                "oldest_age_seconds": oldest_age_seconds,
+            }
+        for job in self.document_job_repository.list_document_jobs():
+            if job.archived_at is not None or job.status not in {"pending", "queued", "running"}:
+                continue
+            age_seconds = max(0, int((now - job.updated_at).total_seconds()))
+            oldest_age_seconds = max(oldest_age_seconds, age_seconds)
+            if age_seconds >= DOCUMENT_JOB_STALE_SECONDS:
+                stale_count += 1
+            if job.timeout_at is not None and job.timeout_at <= now:
+                timed_out_count += 1
+        return {
+            "stale_count": stale_count,
+            "timed_out_count": timed_out_count,
+            "oldest_age_seconds": oldest_age_seconds,
+        }
 
     def build_ops_alerts_response(self) -> HealthOpsAlertsResponse:
         """生成 Admin-only 只读运维告警 readiness 响应。"""
@@ -293,6 +402,9 @@ class HealthService:
         stage_replayable_count = self._int_check(checks, "stage_spool_replayable_messages")
         failed_jobs = document_job_counts.get("failed", 0)
         running_jobs = document_job_counts.get("running", 0)
+        p0_blockers = self._string_list_check(checks, "p0_document_jobs_blockers")
+        document_jobs_stale_count = self._int_check(checks, "document_jobs_running_stale_count")
+        document_jobs_timed_out_count = self._int_check(checks, "document_jobs_timed_out_count")
 
         if blockers:
             alerts.append(
@@ -305,6 +417,19 @@ class HealthService:
                     count=len(blockers),
                     suggested_route="/system-status",
                     suggested_action="查看系统状态中的 blockers，并按部署修复流程处理缺失依赖。",
+                )
+            )
+        if p0_blockers:
+            alerts.append(
+                HealthOpsAlertItem(
+                    code="p0_document_jobs_not_ready",
+                    severity="critical",
+                    source="readiness",
+                    title="P0 document jobs execution is not ready",
+                    description="、".join(p0_blockers),
+                    count=len(p0_blockers),
+                    suggested_route="/system-status",
+                    suggested_action="修复 document_jobs worker、认证、MinerU 或 callback 配置后再开放上传创建任务。",
                 )
             )
         if warnings:
@@ -370,6 +495,32 @@ class HealthService:
                     count=failed_jobs,
                     suggested_route="/jobs?status=failed&sort=updated_at_desc",
                     suggested_action="如需重试，使用既有任务页面流程手动执行。",
+                )
+            )
+        if document_jobs_timed_out_count > 0:
+            alerts.append(
+                HealthOpsAlertItem(
+                    code="document_jobs_timed_out_present",
+                    severity="critical",
+                    source="jobs",
+                    title="Timed out document jobs present",
+                    description="存在已超过 timeout_at 的未终态 document job，当前接口只报告风险不执行恢复。",
+                    count=document_jobs_timed_out_count,
+                    suggested_route="/jobs?status=running&sort=updated_at_desc",
+                    suggested_action="查看任务详情和事件流，必要时使用任务页面的重试、取消或克隆流程。",
+                )
+            )
+        if document_jobs_stale_count > 0:
+            alerts.append(
+                HealthOpsAlertItem(
+                    code="document_jobs_stale_running_present",
+                    severity="warning",
+                    source="jobs",
+                    title="Stale document jobs present",
+                    description="存在长时间未更新的未终态 document job，可能来自 worker 停摆、callback 缺失或 provider 慢响应。",
+                    count=document_jobs_stale_count,
+                    suggested_route="/jobs?status=running&sort=updated_at_desc",
+                    suggested_action="查看任务详情、worker 进程和 MinerU callback 配置；本接口不会重投递任务。",
                 )
             )
         if running_jobs > 0:

@@ -96,7 +96,7 @@
             <p class="section-subtitle">artifact storage、本地可写性和剩余空间。</p>
           </div>
           <div class="toolbar">
-            <router-link to="/system-status/file-retention">文件保留计划</router-link>
+            <router-link to="/system-status/file-retention">文件管理与清理</router-link>
           </div>
         </div>
         <el-descriptions :column="1" border size="small">
@@ -249,6 +249,11 @@ const backendItems = computed<DetailItem[]>(() => [
 
 const workerItems = computed<DetailItem[]>(() => [
   { label: "worker_mode", value: metrics.value?.worker_mode || stringCheck("worker_mode") },
+  { label: "document_jobs_worker_backend", value: stringCheck("document_jobs_worker_backend") },
+  { label: "document_jobs_celery_queue", value: stringCheck("document_jobs_celery_queue") },
+  { label: "document_jobs_auto_execution", value: booleanLabel(booleanCheck("document_jobs_automatic_execution_enabled")) },
+  { label: "p0_document_jobs_required", value: booleanLabel(booleanCheck("p0_document_jobs_required")) },
+  { label: "p0_document_jobs_ready", value: booleanLabel(booleanCheck("p0_document_jobs_ready")) },
   { label: "stage_dispatcher", value: metrics.value?.stage_dispatcher || stringCheck("stage_dispatcher") },
   { label: "stage_message_store", value: stringCheck("stage_message_store") },
   { label: "stage_spool_available", value: booleanLabel(booleanCheck("stage_spool_dir_exists")) },
@@ -280,6 +285,9 @@ const stageMetricItems = computed<MetricItem[]>(() => [
   { label: "stale running", value: numberCheck("stage_spool_running_stale_messages") ?? 0 },
   { label: "replayable", value: numberCheck("stage_spool_replayable_messages") ?? 0 },
   { label: "oldest running age", value: secondsLabel(numberCheck("stage_spool_oldest_running_age_seconds")) },
+  { label: "document jobs stale", value: numberCheck("document_jobs_running_stale_count") ?? 0 },
+  { label: "document jobs timed out", value: numberCheck("document_jobs_timed_out_count") ?? 0 },
+  { label: "document jobs oldest age", value: secondsLabel(numberCheck("document_jobs_running_oldest_age_seconds")) },
 ]);
 
 const resourceItems = computed<DetailItem[]>(() => [

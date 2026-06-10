@@ -728,6 +728,213 @@
         "title": "Body_retry_job_api_v1_jobs__job_id__retry_post",
         "type": "object"
       },
+      "ConfigWorkbenchFinding": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "route": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Route"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "target_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "message"
+        ],
+        "title": "ConfigWorkbenchFinding",
+        "type": "object"
+      },
+      "ConfigWorkbenchGroup": {
+        "properties": {
+          "blocker_count": {
+            "default": 0,
+            "title": "Blocker Count",
+            "type": "integer"
+          },
+          "default_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Label"
+          },
+          "draft_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Count"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigWorkbenchFinding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "id": {
+            "enum": [
+              "runtime_readiness",
+              "templates",
+              "term_rule_sets",
+              "translation_profiles",
+              "translation_term_sets"
+            ],
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "pending_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Count"
+          },
+          "route": {
+            "title": "Route",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "warning",
+              "blocked",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "warning_count": {
+            "default": 0,
+            "title": "Warning Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "status",
+          "route"
+        ],
+        "title": "ConfigWorkbenchGroup",
+        "type": "object"
+      },
+      "ConfigWorkbenchReleaseGate": {
+        "properties": {
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "p0_document_jobs_ready": {
+            "default": true,
+            "title": "P0 Document Jobs Ready",
+            "type": "boolean"
+          },
+          "p0_document_jobs_required": {
+            "default": false,
+            "title": "P0 Document Jobs Required",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "title": "ConfigWorkbenchReleaseGate",
+        "type": "object"
+      },
+      "ConfigWorkbenchSummaryResponse": {
+        "properties": {
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigWorkbenchGroup"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "overall_status": {
+            "enum": [
+              "ready",
+              "warning",
+              "blocked",
+              "unavailable"
+            ],
+            "title": "Overall Status",
+            "type": "string"
+          },
+          "release_gate": {
+            "$ref": "#/components/schemas/ConfigWorkbenchReleaseGate"
+          }
+        },
+        "required": [
+          "generated_at",
+          "overall_status",
+          "release_gate"
+        ],
+        "title": "ConfigWorkbenchSummaryResponse",
+        "type": "object"
+      },
       "CurrentUserResponse": {
         "properties": {
           "company_id": {
@@ -1435,9 +1642,36 @@
       },
       "DocumentJobConfigReadiness": {
         "properties": {
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "document_jobs_automatic_execution_enabled": {
+            "default": false,
+            "title": "Document Jobs Automatic Execution Enabled",
+            "type": "boolean"
+          },
+          "document_jobs_worker_backend": {
+            "default": "disabled",
+            "title": "Document Jobs Worker Backend",
+            "type": "string"
+          },
           "en2zh_available": {
             "default": false,
             "title": "En2Zh Available",
+            "type": "boolean"
+          },
+          "p0_document_jobs_ready": {
+            "default": true,
+            "title": "P0 Document Jobs Ready",
+            "type": "boolean"
+          },
+          "p0_document_jobs_required": {
+            "default": false,
+            "title": "P0 Document Jobs Required",
             "type": "boolean"
           },
           "warnings": {
@@ -13505,6 +13739,135 @@
         "title": "TranslationTermSetDiffSummaryResponse",
         "type": "object"
       },
+      "TranslationTermSetDraftChangeRequest": {
+        "description": "单条 Translation Term Set draft 术语变更请求。",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "case_sensitive": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Sensitive"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "source_term": {
+            "title": "Source Term",
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "target_term": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Term"
+          }
+        },
+        "required": [
+          "action",
+          "source_term"
+        ],
+        "title": "TranslationTermSetDraftChangeRequest",
+        "type": "object"
+      },
+      "TranslationTermSetDraftChangesApplyRequest": {
+        "description": "基于 snapshot hash 的 Translation Term Set draft 行级变更请求。",
+        "properties": {
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/TranslationTermSetDraftChangeRequest"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "expected_snapshot_hash": {
+            "title": "Expected Snapshot Hash",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "expected_snapshot_hash"
+        ],
+        "title": "TranslationTermSetDraftChangesApplyRequest",
+        "type": "object"
+      },
       "TranslationTermSetDraftResponse": {
         "properties": {
           "base_version": {
@@ -14656,6 +15019,87 @@
         "summary": "Get Current User",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/config-workbench/summary": {
+      "get": {
+        "operationId": "get_config_workbench_summary_api_v1_config_workbench_summary_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigWorkbenchSummaryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Config Workbench Summary",
+        "tags": [
+          "config-workbench"
         ]
       }
     },
@@ -24981,6 +25425,106 @@
           }
         },
         "summary": "Get Translation Term Set Draft",
+        "tags": [
+          "translation-term-sets"
+        ]
+      }
+    },
+    "/api/v1/translation-term-sets/{set_id}/draft/changes": {
+      "post": {
+        "operationId": "apply_translation_term_set_draft_changes_api_v1_translation_term_sets__set_id__draft_changes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "set_id",
+            "required": true,
+            "schema": {
+              "title": "Set Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranslationTermSetDraftChangesApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationTermSetDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Translation Term Set Draft Changes",
         "tags": [
           "translation-term-sets"
         ]
