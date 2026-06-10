@@ -90,9 +90,12 @@ docker compose --env-file .env -f docker/prod/docker-compose.yml up -d
 ```bash
 curl -sS http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}/api/v1/health/live
 curl -sS http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}/api/v1/health/ready
+/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_release.py --runtime-url http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}
 docker compose --env-file .env -f docker/prod/docker-compose.yml ps
 docker compose --env-file .env -f docker/prod/docker-compose.yml logs -f api worker
 ```
+
+`check_release.py --runtime-url` 会读取 `/api/v1/health/ready`，同时检查 `deployment_init_ready` 和 `p0_document_jobs_ready`。公开或生产环境出现 `p0_document_jobs_blockers` 时，不应开放上传入口；常见阻断项是 document_jobs worker backend 未启用、Celery broker/queue 缺失、内部账号未配置、MinerU token/callback/uid 缺失。
 
 停止：
 

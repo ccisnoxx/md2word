@@ -307,17 +307,47 @@
       <div class="section-header">
         <div>
           <h2 class="section-title">Draft entries</h2>
-          <p class="section-subtitle">本阶段只读展示，不提供逐行编辑。</p>
+          <p class="section-subtitle">逐行维护当前 draft；发布后才会影响后续新任务的默认术语版本。</p>
         </div>
+        <RoleGate>
+          <el-button type="primary" :icon="Plus" :disabled="!selectedSetId" @click="openAddTermDialog">新增术语</el-button>
+        </RoleGate>
       </div>
       <el-table :data="draft?.entries || []" :loading="loading" empty-text="暂无 draft entries">
         <el-table-column prop="source_term" label="source_term" min-width="180" show-overflow-tooltip />
         <el-table-column prop="target_term" label="target_term" min-width="180" show-overflow-tooltip />
         <el-table-column prop="normalized_source_term" label="normalized" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="status" label="status" width="100" />
+        <el-table-column prop="status" label="status" width="110">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 'active' ? 'success' : 'info'" effect="plain">{{ row.status }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="case_sensitive" label="case" width="90">
+          <template #default="{ row }">{{ row.case_sensitive ? "sensitive" : "ignore" }}</template>
+        </el-table-column>
         <el-table-column prop="priority" label="priority" width="90" />
         <el-table-column prop="domain" label="domain" width="140" show-overflow-tooltip />
         <el-table-column prop="category" label="category" width="140" show-overflow-tooltip />
+        <el-table-column prop="note" label="note" min-width="160" show-overflow-tooltip />
+        <el-table-column v-if="isAdmin" label="admin 操作" width="240" fixed="right">
+          <template #default="{ row }">
+            <RoleGate>
+              <div class="table-actions">
+                <el-button link type="primary" :icon="Edit" @click="openEditTermDialog(row)">编辑</el-button>
+                <el-button
+                  link
+                  type="warning"
+                  :icon="CircleClose"
+                  :disabled="row.status === 'disabled'"
+                  @click="disableDraftEntry(row)"
+                >
+                  禁用
+                </el-button>
+                <el-button link type="danger" :icon="Delete" @click="deleteDraftEntry(row)">删除</el-button>
+              </div>
+            </RoleGate>
+          </template>
+        </el-table-column>
       </el-table>
     </el-card>
 
@@ -348,6 +378,54 @@
       <template #footer>
         <el-button @click="importDialog.visible = false">取消</el-button>
         <el-button type="primary" :loading="importing" @click="importCsv">导入到 draft</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="entryDialog.visible" :title="entryDialogTitle" width="720px">
+      <el-form ref="entryFormRef" :model="entryDialog.form" :rules="entryRules" label-width="120px">
+        <div class="entry-form-grid">
+          <el-form-item label="source_term" prop="source_term">
+            <el-input
+              v-model="entryDialog.form.source_term"
+              class="mono"
+              :readonly="entryDialog.mode === 'edit'"
+              :disabled="entryDialog.mode === 'edit'"
+            />
+          </el-form-item>
+          <el-form-item label="target_term" prop="target_term">
+            <el-input v-model="entryDialog.form.target_term" class="mono" />
+          </el-form-item>
+          <el-form-item label="case_sensitive">
+            <el-switch v-model="entryDialog.form.case_sensitive" />
+          </el-form-item>
+          <el-form-item label="status" prop="status">
+            <el-segmented v-model="entryDialog.form.status" :options="termStatusOptions" />
+          </el-form-item>
+          <el-form-item label="priority">
+            <el-input-number v-model="entryDialog.form.priority" :min="-1000" :max="1000" controls-position="right" />
+          </el-form-item>
+          <el-form-item label="domain">
+            <el-input v-model="entryDialog.form.domain" />
+          </el-form-item>
+          <el-form-item label="category">
+            <el-input v-model="entryDialog.form.category" />
+          </el-form-item>
+          <el-form-item label="note">
+            <el-input v-model="entryDialog.form.note" type="textarea" :rows="3" />
+          </el-form-item>
+        </div>
+      </el-form>
+      <el-alert
+        v-if="draft?.snapshot_hash"
+        class="dialog-alert"
+        type="info"
+        :title="`基于当前 draft snapshot: ${draft.snapshot_hash}`"
+        :closable="false"
+        show-icon
+      />
+      <template #footer>
+        <el-button @click="entryDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="entrySaving" @click="submitDraftEntry">保存到 draft</el-button>
       </template>
     </el-dialog>
 
@@ -385,14 +463,16 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from "element-plus";
-import { Refresh } from "@element-plus/icons-vue";
+import { CircleClose, Delete, Edit, Plus, Refresh } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 
 import { translationTermSetsApi } from "@/api/translationTermSets";
 import type {
+  TranslationTermEntryResponse,
   TranslationTermProposalCompatibilityFindingResponse,
   TranslationTermProposalCompatibilityItemResponse,
   TranslationTermProposalCompatibilityResponse,
+  TranslationTermSetDraftChangeRequest,
   TranslationTermSetDetailResponse,
   TranslationTermSetDiffEntryPayload,
   TranslationTermSetDiffEntryResponse,
@@ -420,6 +500,8 @@ type DedupeMode = "reject" | "keep_first";
 type DiffKind = TranslationTermSetDiffEntryResponse["kind"];
 type Compatibility = TranslationTermProposalCompatibilityItemResponse["compatibility"];
 type TagType = "success" | "warning" | "info" | "danger";
+type EntryDialogMode = "add" | "edit";
+type TermStatus = "active" | "disabled";
 
 const route = useRoute();
 const router = useRouter();
@@ -436,14 +518,21 @@ const loading = ref(false);
 const unavailable = ref(false);
 const importing = ref(false);
 const publishing = ref(false);
+const entrySaving = ref(false);
 const error = ref<ApiClientError | null>(null);
 const lastImportReport = ref<TranslationTermSetImportReportResponse | null>(null);
 const importFormRef = ref<FormInstance>();
 const publishFormRef = ref<FormInstance>();
+const entryFormRef = ref<FormInstance>();
 
 const dedupeOptions = [
   { label: "reject", value: "reject" },
   { label: "keep_first", value: "keep_first" },
+];
+
+const termStatusOptions = [
+  { label: "active", value: "active" },
+  { label: "disabled", value: "disabled" },
 ];
 
 const importDialog = reactive({
@@ -462,6 +551,21 @@ const publishDialog = reactive({
   },
 });
 
+const entryDialog = reactive({
+  visible: false,
+  mode: "add" as EntryDialogMode,
+  form: {
+    source_term: "",
+    target_term: "",
+    case_sensitive: false,
+    status: "active" as TermStatus,
+    priority: 0,
+    domain: "",
+    category: "",
+    note: "",
+  },
+});
+
 const exportDialog = reactive({
   visible: false,
   manifest: null as TranslationTermSetExportManifestResponse | null,
@@ -476,12 +580,19 @@ const publishRules: FormRules = {
   release_note: [{ required: true, message: "请填写发布说明", trigger: "blur" }],
 };
 
+const entryRules: FormRules = {
+  source_term: [{ required: true, message: "请填写 source_term", trigger: "blur" }],
+  target_term: [{ required: true, message: "请填写 target_term", trigger: "blur" }],
+  status: [{ required: true, message: "请选择 status", trigger: "change" }],
+};
+
 const dedupeHints: Record<DedupeMode, string> = {
   reject: "默认策略。只要 CSV 存在重复 normalized_source_term，后端会拒绝导入，draft 不会保存。",
   keep_first: "治理导入策略。保留第一条重复术语，丢弃后续重复行，并在导入报告中列出被丢弃的行。",
 };
 
 const dedupeHint = computed(() => dedupeHints[importDialog.form.dedupe]);
+const entryDialogTitle = computed(() => (entryDialog.mode === "add" ? "新增 draft 术语" : "编辑 draft 术语"));
 
 const proposalGovernanceContext = computed(() => {
   const proposalId = queryString("proposal_id");
@@ -547,8 +658,14 @@ const errorActionHint = computed(() => {
   if (currentError.status === 404) {
     return "目标 set 或 version 不存在。请刷新术语集列表后确认版本仍可用。";
   }
+  if (currentError.status === 409 && currentError.code === "draft_snapshot_conflict") {
+    return "draft 已被其他修改更新，本页面已刷新当前 set。请重新确认后再保存。";
+  }
   if (currentError.status === 400 && /CSV|重复|dedupe|language_pair|字段/.test(currentError.message)) {
     return "CSV 未导入，draft 未保存。请按错误信息修正 CSV，或在确认可丢弃重复行后改用 keep_first。";
+  }
+  if (currentError.status === 400 && /draft|术语|source_term|target_term|changes|新增|目标|状态/.test(currentError.message)) {
+    return "draft 行级修改未保存。请按错误信息修正表单后重试。";
   }
   if (currentError.status === 400) {
     return "操作未执行。请确认目标版本是 published 状态，且请求参数符合当前 API 合同。";
@@ -661,6 +778,161 @@ async function importCsv(): Promise<void> {
     setPageError(caught);
   } finally {
     importing.value = false;
+  }
+}
+
+function optionalText(value: string): string | null {
+  const normalized = value.trim();
+  return normalized || null;
+}
+
+function resetEntryForm(): void {
+  entryDialog.form.source_term = "";
+  entryDialog.form.target_term = "";
+  entryDialog.form.case_sensitive = false;
+  entryDialog.form.status = "active";
+  entryDialog.form.priority = 0;
+  entryDialog.form.domain = "";
+  entryDialog.form.category = "";
+  entryDialog.form.note = "";
+}
+
+function openAddTermDialog(): void {
+  resetEntryForm();
+  entryDialog.mode = "add";
+  entryDialog.visible = true;
+}
+
+function openEditTermDialog(row: TranslationTermEntryResponse): void {
+  entryDialog.mode = "edit";
+  entryDialog.form.source_term = row.source_term;
+  entryDialog.form.target_term = row.target_term;
+  entryDialog.form.case_sensitive = row.case_sensitive;
+  entryDialog.form.status = row.status === "disabled" ? "disabled" : "active";
+  entryDialog.form.priority = row.priority;
+  entryDialog.form.domain = row.domain || "";
+  entryDialog.form.category = row.category || "";
+  entryDialog.form.note = row.note || "";
+  entryDialog.visible = true;
+}
+
+async function applyDraftEntryChanges(changes: TranslationTermSetDraftChangeRequest[], reason: string): Promise<void> {
+  if (!selectedSetId.value || !draft.value?.snapshot_hash) {
+    return;
+  }
+  await translationTermSetsApi.applyDraftChanges(selectedSetId.value, {
+    expected_snapshot_hash: draft.value.snapshot_hash,
+    reason,
+    changes,
+  });
+  await loadSelectedSet();
+}
+
+async function handleDraftChangeError(caught: unknown): Promise<void> {
+  const normalized = normalizeApiError(caught);
+  if (normalized.status === 503) {
+    unavailable.value = true;
+  }
+  error.value = normalized;
+  if (normalized.status === 409 && normalized.code === "draft_snapshot_conflict") {
+    ElMessage.warning("draft 已被其他修改更新，已刷新当前 set。");
+    try {
+      await loadSelectedSet();
+    } catch (refreshError) {
+      setPageError(refreshError);
+    }
+  }
+}
+
+async function submitDraftEntry(): Promise<void> {
+  const valid = await entryFormRef.value?.validate().catch(() => false);
+  if (!valid) {
+    return;
+  }
+  entrySaving.value = true;
+  error.value = null;
+  const change: TranslationTermSetDraftChangeRequest = {
+    action: entryDialog.mode === "add" ? "add" : "update",
+    source_term: entryDialog.form.source_term,
+    target_term: entryDialog.form.target_term,
+    case_sensitive: entryDialog.form.case_sensitive,
+    status: entryDialog.form.status,
+    priority: entryDialog.form.priority,
+    domain: optionalText(entryDialog.form.domain),
+    category: optionalText(entryDialog.form.category),
+    note: entryDialog.form.note.trim(),
+  };
+  try {
+    await applyDraftEntryChanges([change], `${change.action} ${change.source_term}`);
+    ElMessage.success("draft 术语已保存。");
+    entryDialog.visible = false;
+  } catch (caught) {
+    await handleDraftChangeError(caught);
+  } finally {
+    entrySaving.value = false;
+  }
+}
+
+async function disableDraftEntry(row: TranslationTermEntryResponse): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      `将 ${row.source_term} 标记为 disabled。术语仍保留在 draft 中，但发布后不参与匹配。`,
+      "禁用 draft 术语",
+      {
+        confirmButtonText: "禁用",
+        cancelButtonText: "取消",
+        type: "warning",
+      },
+    );
+  } catch {
+    return;
+  }
+  error.value = null;
+  try {
+    await applyDraftEntryChanges(
+      [
+        {
+          action: "update",
+          source_term: row.source_term,
+          status: "disabled",
+        },
+      ],
+      `disable ${row.source_term}`,
+    );
+    ElMessage.success("draft 术语已禁用。");
+  } catch (caught) {
+    await handleDraftChangeError(caught);
+  }
+}
+
+async function deleteDraftEntry(row: TranslationTermEntryResponse): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      `从当前 draft 移除 ${row.source_term}。此操作不会删除任何 published history，只有发布 draft 后才会影响后续新任务。`,
+      "删除 draft 术语",
+      {
+        confirmButtonText: "删除",
+        cancelButtonText: "取消",
+        type: "warning",
+      },
+    );
+  } catch {
+    return;
+  }
+  error.value = null;
+  try {
+    await applyDraftEntryChanges(
+      [
+        {
+          action: "delete",
+          source_term: row.source_term,
+        },
+      ],
+      `delete ${row.source_term}`,
+    );
+    ElMessage.success("draft 术语已删除。");
+  } catch (caught) {
+    await handleDraftChangeError(caught);
   }
 }
 
@@ -948,6 +1220,13 @@ watch(() => route.fullPath, () => {
   gap: 4px;
 }
 
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
 .diff-payload {
   max-height: 140px;
   margin: 0;
@@ -976,6 +1255,16 @@ watch(() => route.fullPath, () => {
   margin-top: 14px;
 }
 
+.entry-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 16px;
+}
+
+.entry-form-grid :deep(.el-form-item:nth-child(8)) {
+  grid-column: 1 / -1;
+}
+
 :deep(.el-table__row.is-selected-row td) {
   background: #ecf5ff;
 }
@@ -987,6 +1276,12 @@ watch(() => route.fullPath, () => {
 
   .governance-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .entry-form-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

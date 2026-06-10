@@ -31,6 +31,7 @@ from app.domains.translation.schemas import (
     TranslationTermSetDiffEntryResponse,
     TranslationTermSetDiffResponse,
     TranslationTermSetDiffSummaryResponse,
+    TranslationTermSetDraftChangeRequest,
     TranslationTermSetDetailResponse,
     TranslationTermSetDraftResponse,
     TranslationTermSetListItemResponse,
@@ -150,6 +151,32 @@ class TranslationTermSetExportResult:
     exported_by: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class TranslationTermDraftChange:
+    """Translation Term Set draft 行级变更；保留字段是否显式传入。"""
+
+    seq: int
+    action: str
+    source_term: str
+    provided_fields: frozenset[str]
+    target_term: str | None = None
+    case_sensitive: bool | None = None
+    status: str | None = None
+    priority: int | None = None
+    domain: str | None = None
+    category: str | None = None
+    note: str | None = None
+
+
+class TranslationTermSetDraftSnapshotConflictError(RuntimeError):
+    """客户端基于过期 draft snapshot 提交了行级变更。"""
+
+    def __init__(self, *, expected_snapshot_hash: str, actual_snapshot_hash: str) -> None:
+        self.expected_snapshot_hash = expected_snapshot_hash
+        self.actual_snapshot_hash = actual_snapshot_hash
+        super().__init__("Translation Term Set draft 已被其他修改更新，请刷新后重试。")
+
+
 class TranslationTermSetVersionService:
     """管理单 language_pair Translation Term Set 的 draft/published/archived 版本。"""
 
@@ -203,16 +230,7 @@ class TranslationTermSetVersionService:
         """返回当前 draft 条目和发布前校验结果；没有 draft 时复制默认版本生成。"""
 
         draft = self.get_draft(set_id)
-        return TranslationTermSetDraftResponse(
-            set_id=draft.set_id,
-            language_pair=draft.language_pair,
-            version=draft.version,
-            base_version=draft.base_version,
-            term_count=len(draft.entries),
-            snapshot_hash=draft.snapshot_hash,
-            validation=self._validation_api_response(draft.validation),
-            entries=[self._entry_api_response(entry) for entry in draft.entries],
-        )
+        return self._draft_api_response(draft)
 
     def get_diff_response(
         self,
@@ -357,6 +375,66 @@ class TranslationTermSetVersionService:
             trace_id=trace_id,
         )
         return draft
+
+    def apply_draft_changes(
+        self,
+        set_id: str,
+        *,
+        expected_snapshot_hash: str,
+        changes: list[TranslationTermSetDraftChangeRequest],
+        reason: str | None = None,
+        actor: ActorContext | None = None,
+        trace_id: str | None = None,
+    ) -> TranslationTermDraft:
+        """按行级 add/update/delete 应用 draft 变更，并用 snapshot hash 防止覆盖。"""
+
+        expected_hash = expected_snapshot_hash.strip()
+        if not expected_hash:
+            raise ValueError("expected_snapshot_hash 不能为空。")
+        parsed_changes = self._build_draft_changes(changes)
+        current_draft = self.get_draft(set_id)
+        if current_draft.snapshot_hash != expected_hash:
+            raise TranslationTermSetDraftSnapshotConflictError(
+                expected_snapshot_hash=expected_hash,
+                actual_snapshot_hash=current_draft.snapshot_hash,
+            )
+        updated_entries = self._apply_draft_changes(
+            list(current_draft.entries),
+            parsed_changes,
+            language_pair=current_draft.language_pair,
+        )
+        draft = self.update_draft(set_id, updated_entries, actor=None, trace_id=None)
+        self._record_audit(
+            actor=actor,
+            action="translation_term_set.draft_change",
+            target_id=f"{set_id}@{DRAFT_VERSION}",
+            trace_id=trace_id,
+            reason=reason or self._draft_change_summary(parsed_changes),
+        )
+        return draft
+
+    def apply_draft_changes_response(
+        self,
+        set_id: str,
+        *,
+        expected_snapshot_hash: str,
+        changes: list[TranslationTermSetDraftChangeRequest],
+        reason: str | None = None,
+        actor: ActorContext | None = None,
+        trace_id: str | None = None,
+    ) -> TranslationTermSetDraftResponse:
+        """应用行级变更并返回 API draft 模型。"""
+
+        return self._draft_api_response(
+            self.apply_draft_changes(
+                set_id,
+                expected_snapshot_hash=expected_snapshot_hash,
+                changes=changes,
+                reason=reason,
+                actor=actor,
+                trace_id=trace_id,
+            )
+        )
 
     def import_csv_text(
         self,
@@ -821,6 +899,106 @@ class TranslationTermSetVersionService:
                 )
             )
         return TranslationTermValidationReport(errors=tuple(errors), warnings=tuple(warnings))
+
+    def _build_draft_changes(
+        self,
+        changes: list[TranslationTermSetDraftChangeRequest],
+    ) -> list[TranslationTermDraftChange]:
+        """把 draft 行级请求解析成独立变更形态，保留显式清空字段。"""
+
+        if not changes:
+            raise ValueError("changes 必须是非空数组。")
+        parsed: list[TranslationTermDraftChange] = []
+        for index, change in enumerate(changes, start=1):
+            action = self._normalize_required_text(change.action, "action")
+            if action not in {"add", "update", "delete"}:
+                raise ValueError(f"不支持的 Translation Term Set draft action: {action}")
+            source_term = self._normalize_required_text(change.source_term, "source_term")
+            status = self._normalize_optional_text(change.status)
+            if status is not None and status not in {"active", "disabled"}:
+                raise ValueError(f"不支持的翻译术语状态: {status}")
+            provided_fields = self._provided_fields(change)
+            parsed.append(
+                TranslationTermDraftChange(
+                    seq=index,
+                    action=action,
+                    source_term=source_term,
+                    provided_fields=provided_fields,
+                    target_term=self._normalize_optional_change_text(change.target_term),
+                    case_sensitive=change.case_sensitive,
+                    status=status,
+                    priority=change.priority,
+                    domain=self._normalize_optional_text(change.domain) if "domain" in provided_fields else None,
+                    category=self._normalize_optional_text(change.category) if "category" in provided_fields else None,
+                    note=self._normalize_optional_change_text(change.note) if "note" in provided_fields else None,
+                )
+            )
+        return parsed
+
+    def _apply_draft_changes(
+        self,
+        entries: list[TranslationTermEntry],
+        changes: list[TranslationTermDraftChange],
+        *,
+        language_pair: str,
+    ) -> list[TranslationTermEntry]:
+        by_key = {entry.normalized_source_term: entry for entry in entries}
+        ordered_keys = [entry.normalized_source_term for entry in entries]
+        for change in changes:
+            key = normalize_translation_source_term(change.source_term)
+            if change.action == "add":
+                if key in by_key:
+                    raise ValueError(f"新增术语已存在: {key}")
+                by_key[key] = TranslationTermEntry(
+                    language_pair=language_pair,
+                    source_term=change.source_term,
+                    target_term=self._normalize_required_text(change.target_term or "", "target_term"),
+                    version=DRAFT_VERSION,
+                    case_sensitive=bool(change.case_sensitive) if change.case_sensitive is not None else False,
+                    status=change.status or "active",
+                    priority=int(change.priority or 0),
+                    domain=change.domain,
+                    category=change.category,
+                    note=change.note or "",
+                )
+                ordered_keys.append(key)
+                continue
+            target = by_key.get(key)
+            if target is None:
+                raise ValueError(f"{change.action} 目标术语不存在: {key}")
+            if change.action == "update":
+                updates: dict[str, Any] = {"updated_at": utc_now()}
+                if "target_term" in change.provided_fields:
+                    updates["target_term"] = change.target_term or ""
+                if "case_sensitive" in change.provided_fields:
+                    updates["case_sensitive"] = bool(change.case_sensitive)
+                if "status" in change.provided_fields:
+                    updates["status"] = change.status
+                if "priority" in change.provided_fields:
+                    updates["priority"] = change.priority if change.priority is not None else 0
+                if "domain" in change.provided_fields:
+                    updates["domain"] = change.domain
+                if "category" in change.provided_fields:
+                    updates["category"] = change.category
+                if "note" in change.provided_fields:
+                    updates["note"] = change.note or ""
+                by_key[key] = replace(
+                    target,
+                    **updates,
+                )
+            elif change.action == "delete":
+                by_key.pop(key, None)
+                ordered_keys = [item for item in ordered_keys if item != key]
+        return [by_key[key] for key in ordered_keys if key in by_key]
+
+    @staticmethod
+    def _draft_change_summary(changes: list[TranslationTermDraftChange]) -> str:
+        counts = {
+            "add": len([change for change in changes if change.action == "add"]),
+            "update": len([change for change in changes if change.action == "update"]),
+            "delete": len([change for change in changes if change.action == "delete"]),
+        }
+        return f"add={counts['add']}; update={counts['update']}; delete={counts['delete']}"
 
     def _parse_csv_text(
         self,
@@ -1301,6 +1479,33 @@ class TranslationTermSetVersionService:
         return "Translation Term Set 校验失败: " + "; ".join(error.message for error in report.errors)
 
     @staticmethod
+    def _normalize_required_text(value: str | None, field_name: str) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise ValueError(f"{field_name} 不能为空")
+        return normalized
+
+    @staticmethod
+    def _normalize_optional_text(value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
+    @staticmethod
+    def _normalize_optional_change_text(value: str | None) -> str | None:
+        if value is None:
+            return None
+        return str(value).strip()
+
+    @staticmethod
+    def _provided_fields(change: TranslationTermSetDraftChangeRequest) -> frozenset[str]:
+        fields = getattr(change, "model_fields_set", None)
+        if fields is None:
+            fields = getattr(change, "__fields_set__", set())
+        return frozenset(str(field) for field in fields)
+
+    @staticmethod
     def _validate_csv_headers(fieldnames: list[str] | None) -> None:
         required = {"language_pair", "source_term", "target_term", "version"}
         actual = set(fieldnames or [])
@@ -1372,6 +1577,18 @@ class TranslationTermSetVersionService:
             target_id=target_id,
             trace_id=trace_id or "",
             reason=reason,
+        )
+
+    def _draft_api_response(self, draft: TranslationTermDraft) -> TranslationTermSetDraftResponse:
+        return TranslationTermSetDraftResponse(
+            set_id=draft.set_id,
+            language_pair=draft.language_pair,
+            version=draft.version,
+            base_version=draft.base_version,
+            term_count=len(draft.entries),
+            snapshot_hash=draft.snapshot_hash,
+            validation=self._validation_api_response(draft.validation),
+            entries=[self._entry_api_response(entry) for entry in draft.entries],
         )
 
     @staticmethod

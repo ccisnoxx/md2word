@@ -107,12 +107,36 @@ access 日志字段约定：
 - `stage_spool_oldest_running_age_seconds`
 - `stage_spool_needs_attention`
 - `stage_spool_observation_status`
+- `document_jobs_worker_backend`
+- `document_jobs_celery_queue`
+- `p0_document_jobs_required`
+- `p0_document_jobs_ready`
+- `document_jobs_automatic_execution_enabled`
+- `p0_document_jobs_blockers`
+- `p0_document_jobs_warnings`
+- `document_jobs_running_stale_count`
+- `document_jobs_timed_out_count`
+- `document_jobs_running_oldest_age_seconds`
 - `default_template_version`
 - `default_term_rule_version`
 - `default_translation_profile_version`
 - `mysql_schema_bootstrap_available`
 - `deployment_init_ready`
 - `deployment_init_missing_steps`
+
+### P0 document jobs 门禁
+
+`APP_ENV` 不属于 `dev` / `local` / `test`，或 `PUBLIC_DEPLOYMENT_MODE=single_tenant_public` 时，`p0_document_jobs_required=true`。
+
+此时 `/health/ready` 会把 document_jobs 自动执行链路纳入 `deployment_init_ready`：
+
+- `DOCUMENT_JOBS_WORKER_BACKEND` 不能是 `disabled`。
+- `DOCUMENT_JOBS_WORKER_BACKEND=celery` 时必须配置 broker URL 和 queue。
+- `AUTH_JWT_SECRET_KEY` 和内部账号来源不能为空。
+- `MINERU_API_TOKEN`、`MINERU_CALLBACK_URL` 必须配置；callback URL 存在时 `MINERU_UID` 也必须配置。
+
+开发态如果仍使用 `DOCUMENT_JOBS_WORKER_BACKEND=disabled`，会出现在 `p0_document_jobs_warnings` / `readiness_warnings`，但不会阻断 `deployment_init_ready`。
+`document_jobs_running_stale_count`、`document_jobs_timed_out_count` 只做只读观察，不会重投递、取消或恢复任务。
 
 ## `/health/metrics` 应怎么看
 
@@ -133,7 +157,7 @@ metrics 适合被脚本轮询或人工排障读取；如果后续接 Prometheus 
 当前支持两种 worker 形态：
 
 - `JOBS_WORKER_MODE=in_process`：默认模式，API 进程通过 `BackgroundTasks` 同进程推进 stage。
-- `JOBS_WORKER_MODE=external`：API 只写入 stage message，`scripts/dev/run_stage_worker.py` 独立轮询并消费。
+- `JOBS_WORKER_MODE=external`：API 只写入 stage message，`run_worker.py` 独立轮询并消费。
 
 stage message 的持久化语义：
 
@@ -160,7 +184,7 @@ worker 仍按单 worker 进程设计，不把它们当成多 worker 抢占锁；
 
 如果 `stage_spool_pending_messages > 0` 或 `stage_spool_running_messages > 0`，说明有后台消息还没完成，重启应用会 replay。
 如果 `stage_spool_failed_messages > 0`，说明有失败消息留存在 spool 中；它不会被启动 replay 自动恢复，需要通过 job 详情、events 和 retry 决定下一步。
-如果 `stage_spool_running_stale_messages > 0`，说明存在已经超过 lease 的 `running` message；`in_process` 模式通常可以先重启服务触发 replay，`external` 模式应先确认 `scripts/dev/run_stage_worker.py` 进程是否存活，再结合 job events 判断是否需要 retry。
+如果 `stage_spool_running_stale_messages > 0`，说明存在已经超过 lease 的 `running` message；`in_process` 模式通常可以先重启服务触发 replay，`external` 模式应先确认 `run_worker.py` 进程是否存活，再结合 job events 判断是否需要 retry。
 `stage_spool_observation_status=ok` 表示没有遗留消息，`replayable` 表示有 pending/running 消息可恢复，`needs_attention` 表示存在 failed 或 stale running 消息。
 
 如果 `effective_repository_backend=database`，说明 jobs snapshot、events、files 和 stage messages 已经切到 sqlite metadata store；如果是 `mysql`，说明这些 metadata 已切到 MySQL metadata store。artifact 二进制看 `artifact_storage`：`local_file` 表示仍读写 job 本地目录，`local_object` 表示登记时会 shadow upload 到本地对象目录并优先从 `object_key` 下载，`s3` 表示 artifact 登记时会上传到 S3-compatible bucket，下载时返回临时重定向或对象流。
@@ -201,13 +225,12 @@ worker 仍按单 worker 进程设计，不把它们当成多 worker 抢占锁；
 优先看：
 
 - `PUBLIC_DEPLOYMENT_MODE`
-- `MINERU_UID`
+- `MINERU_CALLBACK_TOKEN`
 - `MINERU_RESULT_HOST_ALLOWLIST`
 - access 日志里的 `POST /api/v1/mineru-callbacks/result -> 4xx`
 
 常见原因：
 
-- `checksum` 不匹配
-- `MINERU_UID` 配错或未配置
+- 公开模式缺 token 或 token 不匹配
 - `full_zip_url` 不是 `https`
 - `full_zip_url` host 不在 allowlist

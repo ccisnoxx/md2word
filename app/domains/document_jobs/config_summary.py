@@ -43,6 +43,7 @@ def build_document_job_config_summary(
         if is_admin
         else DocumentJobConfigOptions()
     )
+    dependency_checks = runtime.health_service.build_dependency_checks()
     return DocumentJobConfigSummaryResponse(
         role=user.role,
         resource_mode="versioned" if runtime.resource_version_service is not None else "legacy",
@@ -50,9 +51,24 @@ def build_document_job_config_summary(
         options=options,
         readiness=DocumentJobConfigReadiness(
             en2zh_available=defaults.translation_term_set is not None and defaults.translation_profile is not None,
-            warnings=sorted(set(warnings)),
+            p0_document_jobs_required=bool(dependency_checks.get("p0_document_jobs_required")),
+            p0_document_jobs_ready=bool(dependency_checks.get("p0_document_jobs_ready", True)),
+            document_jobs_worker_backend=str(dependency_checks.get("document_jobs_worker_backend") or "disabled"),
+            document_jobs_automatic_execution_enabled=bool(
+                dependency_checks.get("document_jobs_automatic_execution_enabled")
+            ),
+            blockers=_string_list(dependency_checks.get("p0_document_jobs_blockers")),
+            warnings=sorted(set([*warnings, *_string_list(dependency_checks.get("p0_document_jobs_warnings"))])),
         ),
     )
+
+
+def _string_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str) and item.strip()]
+    if isinstance(value, str) and value.strip():
+        return [value]
+    return []
 
 
 def _default_template(runtime: AppRuntime, warnings: list[str]) -> DocumentJobConfigVersionOption | None:

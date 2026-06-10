@@ -303,6 +303,28 @@ class TranslationTermSetDraftResponse(BaseModel):
     entries: list[TranslationTermEntryResponse]
 
 
+class TranslationTermSetDraftChangeRequest(BaseModel):
+    """单条 Translation Term Set draft 术语变更请求。"""
+
+    action: str
+    source_term: str
+    target_term: str | None = None
+    case_sensitive: bool | None = None
+    status: str | None = None
+    priority: int | None = None
+    domain: str | None = None
+    category: str | None = None
+    note: str | None = None
+
+
+class TranslationTermSetDraftChangesApplyRequest(BaseModel):
+    """基于 snapshot hash 的 Translation Term Set draft 行级变更请求。"""
+
+    expected_snapshot_hash: str
+    reason: str | None = Field(default=None, max_length=500)
+    changes: list[TranslationTermSetDraftChangeRequest] = Field(default_factory=list)
+
+
 class TranslationTermSetDiffSummaryResponse(BaseModel):
     """Translation Term Set 版本 diff 的聚合计数。"""
 

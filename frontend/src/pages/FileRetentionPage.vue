@@ -1,61 +1,22 @@
 <!-- File: frontend/src/pages/FileRetentionPage.vue -->
-<!-- Purpose: Render the Admin-only file library search, retention plan, quota dry-run, metadata expiry, physical deletion, cleanup-run controls, and cleanup history page. -->
+<!-- Purpose: Render the Admin-only file library, capacity policy, and cleanup execution workspace. -->
 <template>
   <main class="file-retention-page" aria-labelledby="file-retention-title">
     <section class="page-heading">
       <div>
-        <p class="page-kicker">Storage</p>
-        <h1 id="file-retention-title">文件保留计划</h1>
-        <p>查看已过保留期的 document_files，先标记 expired，再按 dry-run 结果手动物理删除本地文件。</p>
+        <p class="page-kicker">Files</p>
+        <h1 id="file-retention-title">文件管理与清理</h1>
+        <p>面向内部 admin 的文件库、容量策略和受控清理工作区；系统状态页只保留只读概览。</p>
       </div>
       <div class="heading-actions">
         <el-button :icon="Refresh" :loading="loading || storageLoading || policyLoading || libraryLoading || quotaPolicyLoading || quotaOpsLoading || cleanupHistoryLoading || schedulerDryRunLoading" @click="refreshRetentionPage">刷新</el-button>
-        <el-button
-          type="warning"
-          :icon="Finished"
-          :disabled="markableCount === 0"
-          :loading="marking"
-          @click="markExpired"
-        >
-          标记 expired
-        </el-button>
-        <el-button :disabled="selectedFileIds.length === 0" :loading="previewing" @click="previewPhysicalDelete">
-          预览物理删除
-        </el-button>
-        <el-button
-          type="danger"
-          :disabled="!canOpenDeleteDialog"
-          :loading="deleting"
-          @click="openPhysicalDeleteDialog"
-        >
-          执行物理删除
-        </el-button>
-        <el-button :disabled="selectedFileIds.length === 0" :loading="cleanupPreviewing" @click="previewCleanupRun">
-          预览 cleanup run
-        </el-button>
-        <el-button
-          type="danger"
-          :disabled="!canOpenCleanupRunDialog"
-          :loading="cleanupExecuting"
-          @click="openCleanupRunDialog"
-        >
-          执行 cleanup run
-        </el-button>
       </div>
     </section>
 
     <ApiErrorAlert :error="error" />
 
-    <el-alert
-      class="retention-notice"
-      type="warning"
-      title="metadata-only"
-      :closable="false"
-      show-icon
-    >
-      标记 expired 仍是 metadata-only。物理删除和 manual cleanup run 都必须先预览、选择精确文件、填写 reason 并输入确认短语；scheduler dry-run 只生成只读计划和 lock/history 证据。所有这些操作都不会调用 provider，也不会执行 S3 delete。
-    </el-alert>
-
+    <el-tabs v-model="activeFileManagementTab" class="file-management-tabs">
+      <el-tab-pane label="文件库" name="library">
     <section v-loading="libraryLoading" class="retention-table-section" aria-label="文件库搜索">
       <div class="section-header">
         <div>
@@ -162,6 +123,8 @@
       />
     </section>
 
+      </el-tab-pane>
+      <el-tab-pane label="容量与策略" name="capacity">
     <section v-loading="storageLoading" class="retention-table-section" aria-label="存储使用和容量 readiness">
       <div class="section-header">
         <div>
@@ -447,7 +410,7 @@
       </div>
     </section>
 
-    <section v-loading="loading" class="summary-grid" aria-label="文件保留计划摘要">
+    <section v-loading="loading" class="summary-grid" aria-label="文件清理计划摘要">
       <article class="summary-card">
         <span>候选文件</span>
         <strong>{{ candidateCount }}</strong>
@@ -571,6 +534,18 @@
       </el-table>
     </section>
 
+      </el-tab-pane>
+      <el-tab-pane label="清理执行" name="cleanup">
+    <el-alert
+      class="retention-notice"
+      type="warning"
+      title="受控清理"
+      :closable="false"
+      show-icon
+    >
+      标记 expired 仍是 metadata-only。物理删除和 manual cleanup run 都必须先预览、选择精确文件、填写 reason 并输入确认短语；scheduler dry-run 只生成只读计划和 lock/history 证据。所有这些操作都不会调用 provider，也不会执行 S3 delete。
+    </el-alert>
+
     <section class="retention-table-section" aria-label="过期候选文件">
       <div class="section-header">
         <div>
@@ -582,6 +557,37 @@
             deletion_supported={{ String(plan?.deletion_supported ?? false) }}
           </el-tag>
           <el-tag effect="plain">selected={{ selectedFileIds.length }}</el-tag>
+          <el-button
+            type="warning"
+            :icon="Finished"
+            :disabled="markableCount === 0"
+            :loading="marking"
+            @click="markExpired"
+          >
+            标记 expired
+          </el-button>
+          <el-button :disabled="selectedFileIds.length === 0" :loading="previewing" @click="previewPhysicalDelete">
+            预览物理删除
+          </el-button>
+          <el-button
+            type="danger"
+            :disabled="!canOpenDeleteDialog"
+            :loading="deleting"
+            @click="openPhysicalDeleteDialog"
+          >
+            执行物理删除
+          </el-button>
+          <el-button :disabled="selectedFileIds.length === 0" :loading="cleanupPreviewing" @click="previewCleanupRun">
+            预览 cleanup run
+          </el-button>
+          <el-button
+            type="danger"
+            :disabled="!canOpenCleanupRunDialog"
+            :loading="cleanupExecuting"
+            @click="openCleanupRunDialog"
+          >
+            执行 cleanup run
+          </el-button>
         </div>
       </div>
 
@@ -950,6 +956,9 @@
       </div>
     </section>
 
+      </el-tab-pane>
+    </el-tabs>
+
     <el-dialog v-model="deleteDialog.visible" title="执行物理删除" width="640px">
       <el-alert class="delete-warning" type="error" title="不可逆操作" :closable="false" show-icon>
         该操作会删除 selected expired local/local_object 文件内容；metadata 行、任务记录、事件和 object_key 会保留。
@@ -1092,6 +1101,7 @@ const quotaOpsSummary = ref<FileQuotaPolicyOpsSummaryResponse | null>(null);
 const librarySearch = ref<FileLibrarySearchResponse | null>(null);
 const cleanupRunHistory = ref<FileRetentionCleanupRunHistoryListResponse | null>(null);
 const selectedCleanupRunHistory = ref<FileRetentionCleanupRunHistoryResponse | null>(null);
+const activeFileManagementTab = ref("library");
 const loading = ref(false);
 const marking = ref(false);
 const previewing = ref(false);
@@ -2009,6 +2019,19 @@ onMounted(() => {
 
 .retention-notice {
   margin-bottom: 0;
+}
+
+.file-management-tabs {
+  min-width: 0;
+}
+
+.file-management-tabs :deep(.el-tabs__content) {
+  overflow: visible;
+}
+
+.file-management-tabs :deep(.el-tab-pane) {
+  display: grid;
+  gap: 18px;
 }
 
 .summary-grid {

@@ -113,6 +113,7 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from "element-plus";
 import { Refresh } from "@element-plus/icons-vue";
+import { useRoute } from "vue-router";
 
 import { translationProfilesApi } from "@/api/translationProfiles";
 import type {
@@ -127,6 +128,7 @@ import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { formatDateTime } from "@/utils/format";
 
 const auth = useAuthStore();
+const route = useRoute();
 const isAdmin = computed(() => auth.user?.role === "admin");
 const profiles = ref<TranslationProfileListItemResponse[]>([]);
 const selectedProfileId = ref("");
@@ -163,7 +165,12 @@ async function loadAll(): Promise<void> {
   try {
     const response = await translationProfilesApi.list();
     profiles.value = response.items;
-    selectedProfileId.value ||= profiles.value[0]?.id || "";
+    const requestedProfileId = queryString("profile_id");
+    if (requestedProfileId && profiles.value.some((profile) => profile.id === requestedProfileId)) {
+      selectedProfileId.value = requestedProfileId;
+    } else {
+      selectedProfileId.value ||= profiles.value[0]?.id || "";
+    }
     if (selectedProfileId.value) {
       await loadSelectedProfile();
     }
@@ -176,6 +183,14 @@ async function loadAll(): Promise<void> {
   } finally {
     loading.value = false;
   }
+}
+
+function queryString(key: string): string {
+  const value = route.query[key];
+  if (Array.isArray(value)) {
+    return typeof value[0] === "string" ? value[0] : "";
+  }
+  return typeof value === "string" ? value : "";
 }
 
 async function selectProfile(profile: TranslationProfileListItemResponse): Promise<void> {

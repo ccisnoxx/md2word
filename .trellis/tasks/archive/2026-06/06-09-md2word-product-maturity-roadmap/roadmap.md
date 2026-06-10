@@ -12,7 +12,7 @@ md2word 当前已经具备内部工作台雏形：
 - 任务详情：`/jobs/:jobId` 支持状态、阶段、失败信息、文件、事件流、请求快照、重试配置策略、术语建议入口。
 - 翻译 QA：`/jobs/:jobId/translation-qa` 支持任务级复核状态、片段证据、术语 trace 和 AI call 摘要。
 - 配置中心：模板、术语规则集、术语规则检查、翻译配置、翻译术语集已形成 admin 工作区。
-- 运维与文件：系统状态、运维看板、审计日志、文件保留计划已有页面。
+- 运维与文件：系统状态、运维看板、审计日志、文件管理与清理页面已有，文件页已收敛为 `文件库`、`容量与策略`、`清理执行` 三个 tabs。
 
 因此后续重点不是“从零补齐页面”，而是把已有能力收口成清晰的内部产品体验。
 
@@ -24,7 +24,7 @@ md2word 当前已经具备内部工作台雏形：
 - Rerun semantics: 近期支持 `clone/rerun as new job`，但不混入 `retry`；原任务保留，新任务记录来源任务和新配置。
 - Translation QA scope: 近期只做证据复核 + 术语 / 问题反馈，不做在线编辑译文或人工改稿后再生成 Word。
 - Terminology UX: 逻辑上合并为“术语工作台”，实现上保留两个子视图 / tabs：`当前生效规则` 和 `草稿与发布`。
-- File management UX: 近期拆分现有 `/system-status/file-retention`，至少形成 `文件库`、`容量与策略`、`清理执行` 三个子页面或明确 tabs。
+- File management UX: `/system-status/file-retention` 已形成 `文件库`、`容量与策略`、`清理执行` 三个 tabs。
 - Job action availability: `DocumentJobResponse` 增加 `available_actions`，每个 action 带 `enabled` 和 `disabled_reason`；前端可保留轻量兜底，但展示以服务端为准。
 - Translation QA queue API: 先复用 `GET /api/v1/document-jobs` 的 `translation_qa_status` 筛选新增 `/translation-qa` 前端视图；等统计、性能或字段不足被验证后再补专用 summary API。
 - File deletion boundary: 近期不做按任务删除文件 / 删除任务相关所有文件；真实文件删除继续走文件库、retention policy、preview、confirmation 和 audit。
@@ -39,7 +39,7 @@ md2word 当前已经具备内部工作台雏形：
 
 - 推荐核心用户先锁定内部角色：文档交付 operator、配置 admin、翻译 QA reviewer、技术运营 admin。
 - 近期核心场景应是“上传 PDF -> 追踪任务 -> 处理失败 -> 下载交付 -> QA / 术语反馈 -> 配置治理”。
-- MVP 之后优先补齐任务交付体验和 QA / 配置闭环，暂不做外部客户自助门户。
+- 早期版本之后优先补齐任务交付体验和 QA / 配置闭环，暂不做外部客户自助门户。
 - 不建议近期做复杂在线 Word 编辑、公开账号体系、计费、多租户客户控制台。
 
 ### Frontend Lead
@@ -82,8 +82,8 @@ Confirmed priority order:
 1. `document-job-workbench-closure`
 2. `translation-qa-review-loop`
 3. `config-governance-ux-consolidation`
-4. `file-library-retention-ux-split`
-5. `product-navigation-and-role-model` as a cross-cutting follow-up if not absorbed by earlier phases.
+4. `file-library-retention-ux-split` completed as final internal-portal packaging.
+5. `product-navigation-and-role-model` absorbed by breadcrumb/navigation work and final packaging.
 
 ### Phase 1: Document Job Workbench Closure
 
@@ -159,9 +159,11 @@ Acceptance:
 
 Goal: 把现有文件保留与运维页面拆成更容易操作的管理区。
 
+Status: completed in the formal internal portal packaging.
+
 Frontend:
 
-- 将当前 `/system-status/file-retention` 拆成三个子页面或明确 tabs：
+- 当前 `/system-status/file-retention` 已拆成三个明确 tabs：
   - `文件库`：只读搜索、定位文件、跳转任务。
   - `容量与策略`：storage usage、quota dry-run、quota ops summary、retention policies。
   - `清理执行`：mark-expired、delete-preview、delete-expired、cleanup run、history。
@@ -210,7 +212,7 @@ Only after internal workflow is stable:
 | `/system-status` | existing | 保持只读 overview。 |
 | `/system-status/ops-dashboard` | existing | 保持 admin 运维入口。 |
 | `/system-status/audit-events` | existing | 保持。 |
-| `/system-status/file-retention` | existing but overloaded | Phase 4 拆分为 `文件库` / `容量与策略` / `清理执行` 子页面或 tabs。 |
+| `/system-status/file-retention` | existing split into tabs | 已拆为 `文件库` / `容量与策略` / `清理执行` tabs，危险动作集中在清理执行视图。 |
 
 ## API And Data Model Inventory
 

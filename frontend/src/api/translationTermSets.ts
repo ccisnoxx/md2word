@@ -5,6 +5,7 @@ import type {
   TranslationTermProposalCompatibilityResponse,
   TranslationTermSetDetailResponse,
   TranslationTermSetDiffResponse,
+  TranslationTermSetDraftChangesApplyRequest,
   TranslationTermSetDraftResponse,
   TranslationTermSetExportResponse,
   TranslationTermSetImportRequest,
@@ -38,6 +39,15 @@ export const translationTermSetsApi = {
     return apiRequest<TranslationTermSetDraftResponse>({
       url: `/api/v1/translation-term-sets/${setId}/draft`,
       method: "GET",
+    });
+  },
+
+  // 基于 snapshot hash 对当前 draft 应用行级 add/update/delete。
+  applyDraftChanges(setId: string, payload: TranslationTermSetDraftChangesApplyRequest): Promise<TranslationTermSetDraftResponse> {
+    return apiRequest<TranslationTermSetDraftResponse>({
+      url: `/api/v1/translation-term-sets/${setId}/draft/changes`,
+      method: "POST",
+      data: payload,
     });
   },
 

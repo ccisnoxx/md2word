@@ -7,8 +7,6 @@
 # 1. 核心编程配置
 # =========================================================
 
-model_provider = "OpenAI"
-
 # 主模型：优先强编码模型；如果你的 provider 不支持 gpt-5.5，就回退到 gpt-5.4
 model = "gpt-5.5"
 
@@ -21,7 +19,7 @@ review_model = "gpt-5.5"
 model_reasoning_effort = "xhigh"
 
 # Plan 模式单独控制推理强度，避免日常对话为了规划阶段一直使用 xhigh。
-plan_mode_reasoning_effort = "high"
+plan_mode_reasoning_effort = "xhigh"
 
 # 让模型保留简短 reasoning 摘要，方便调试，不至于太啰嗦。
 # model_reasoning_summary = "concise"
@@ -41,6 +39,7 @@ personality = "pragmatic"
 # 审批与沙箱：日常开发最均衡的组合
 approval_policy = "on-request"
 sandbox_mode = "workspace-write"
+approvals_reviewer = "auto_review"
 
 # =========================================================
 # 2. 搜索与联网策略
@@ -54,10 +53,7 @@ web_search = "cached"
 # 可选值： "cached" / "live" / "disabled"
 
 
-notify = [
-    "/Users/sc/.codex/computer-use/Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient",
-    "turn-ended",
-]
+
 service_tier = "default"
 
 [sandbox_workspace_write]
@@ -71,19 +67,6 @@ network_access = true
 # =========================================================
 # 3. Model Provider
 # =========================================================
-
-[model_providers.OpenAI]
-name = "OpenAI"
-
-# 强烈建议优先官方地址
-# base_url = "https://api.962850.xyz/v1"
-
-# 如果你确认第三方网关完全可信，再手动切换
-# base_url = "https://www.codexapis.com/v1"
-# experimental_bearer_token = "sk-cKTkXa1jeZuhRrxryBtQ4DDE7yHrEMXjIrtoefFARdDi7w70"
-wire_api = "responses"
-supports_websockets = false
-requires_openai_auth = true
 
 [imagegen]
 provider = "OpenAI"
@@ -111,11 +94,11 @@ enable_request_compression = true
 fast_mode = true
 
 # goals 会引入额外状态管理；你这台机器上更适合按需开启。
-goals = false
+goals = true
 
 # plugins 会带来额外初始化与远程同步开销，长期默认关闭。
 plugins = true
-js_repl = false
+js_repl = true
 
 [memories]
 # 这两个键才是当前 Codex 真正控制 memories 的主开关。

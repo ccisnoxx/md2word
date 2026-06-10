@@ -33,7 +33,7 @@
       <span class="mode-label">任务模式</span>
       <el-radio-group v-model="mode" size="small">
         <el-radio-button label="direct_pdf_to_word">直接转 Word</el-radio-button>
-        <el-radio-button label="en2zh_pdf_to_word">英译中实验</el-radio-button>
+        <el-radio-button label="en2zh_pdf_to_word">英译中</el-radio-button>
       </el-radio-group>
     </div>
 
@@ -60,6 +60,18 @@
         show-icon
         :title="configWarnings.join('；')"
       />
+      <el-alert
+        v-if="p0ExecutionBlocked"
+        class="config-warning"
+        type="error"
+        title="P0 执行链路未就绪"
+        :closable="false"
+        show-icon
+      >
+        <ul class="config-blocker-list">
+          <li v-for="blocker in p0ReadinessMessages" :key="blocker">{{ blocker }}</li>
+        </ul>
+      </el-alert>
 
       <div v-if="isAdmin" class="admin-config">
         <el-divider />
@@ -114,7 +126,7 @@
 
     <div class="upload-footer">
       <div class="muted">{{ statusText }}</div>
-      <el-button type="primary" :icon="Upload" :loading="submitting" :disabled="!selectedFile" @click="submit">
+      <el-button type="primary" :icon="Upload" :loading="submitting" :disabled="createDisabled" @click="submit">
         创建任务
       </el-button>
     </div>
@@ -161,6 +173,15 @@ const enableEn2zh = import.meta.env.VITE_ENABLE_EN2ZH === "true";
 const maxUploadMb = computed(() => Math.round(getMaxUploadBytes() / 1024 / 1024));
 const isAdmin = computed(() => auth.user?.role === "admin");
 const configWarnings = computed(() => configSummary.value?.readiness.warnings || []);
+const p0ReadinessBlockers = computed(() => configSummary.value?.readiness.blockers || []);
+const p0ExecutionBlocked = computed(() => Boolean(
+  configSummary.value?.readiness.p0_document_jobs_required
+  && !configSummary.value?.readiness.p0_document_jobs_ready,
+));
+const p0ReadinessMessages = computed(() => (
+  p0ReadinessBlockers.value.length > 0 ? p0ReadinessBlockers.value : ["p0_document_jobs_not_ready"]
+));
+const createDisabled = computed(() => !selectedFile.value || configLoading.value || p0ExecutionBlocked.value);
 const defaultConfigItems = computed(() => {
   const defaults = configSummary.value?.defaults;
   const items = [
@@ -228,11 +249,11 @@ function handleFileRemove(): void {
 }
 
 function handleExceed(): void {
-  ElMessage.warning("MVP 只支持单文件上传。");
+  ElMessage.warning("当前仅支持单文件上传。");
 }
 
 async function submit(): Promise<void> {
-  if (!selectedFile.value || submitting.value) {
+  if (!selectedFile.value || submitting.value || configLoading.value || p0ExecutionBlocked.value) {
     return;
   }
 
@@ -381,6 +402,11 @@ onMounted(() => {
 
 .config-warning {
   margin-top: 0;
+}
+
+.config-blocker-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
 }
 
 .admin-config :deep(.el-divider--horizontal) {

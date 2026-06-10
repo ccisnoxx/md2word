@@ -284,6 +284,11 @@ class DocumentJobConfigOptions(BaseModel):
 
 class DocumentJobConfigReadiness(BaseModel):
     en2zh_available: bool = False
+    p0_document_jobs_required: bool = False
+    p0_document_jobs_ready: bool = True
+    document_jobs_worker_backend: str = "disabled"
+    document_jobs_automatic_execution_enabled: bool = False
+    blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
 

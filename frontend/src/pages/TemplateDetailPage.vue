@@ -145,7 +145,7 @@
       </el-upload>
       <el-radio-group v-model="validationDialog.mode" class="form-gap">
         <el-radio-button label="direct_pdf_to_word">直接转 Word</el-radio-button>
-        <el-radio-button label="en2zh_pdf_to_word">英译中实验</el-radio-button>
+        <el-radio-button label="en2zh_pdf_to_word">英译中</el-radio-button>
       </el-radio-group>
       <template #footer>
         <el-button @click="validationDialog.visible = false">取消</el-button>

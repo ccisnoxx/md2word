@@ -37,6 +37,7 @@ last_reviewed: 2026-06-04
 - 默认指针变化只影响后续使用默认配置的新 job；已创建 job 的 `resource_snapshot` 不会被改写
 - import/export 成功后写 audit event
 - diff、preflight 和 proposal compatibility 是 Admin-only read-only 治理接口，不发布、不修改 draft、不改变 proposal 状态
+- draft 行级变更是 Admin-only mutation，只修改 `draft`；仍需发布后才会影响后续默认绑定的新 job
 
 ## API 参考
 
@@ -86,6 +87,42 @@ last_reviewed: 2026-06-04
 | `snapshot_hash` | draft snapshot hash |
 | `validation` | 发布前校验结果 |
 | `entries[]` | draft 术语条目，只读展示 |
+
+### `POST /api/v1/translation-term-sets/{set_id}/draft/changes`
+
+- 用途：对当前 Translation Term Set draft 应用行级 `add`、`update` 或 `delete` 变更。
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
+- 行为：
+  - 只修改当前 draft，不修改任何 published version。
+  - 需要携带 `expected_snapshot_hash`；若服务端当前 draft hash 已变化，返回 `409`，draft 不会保存。
+  - `delete` 只从 draft 中移除术语，不做历史版本物理删除。
+  - 禁用术语使用 `update` + `status=disabled`，不会从 draft 删除。
+  - 更新后可继续通过 `diff`、`preflight` 和 `publish` 进入现有治理流程。
+
+请求体字段：
+
+| 字段 | 说明 |
+|---|---|
+| `expected_snapshot_hash` | 客户端读取 draft 时拿到的 `snapshot_hash`，用于并发保护。 |
+| `reason` | 可选操作原因，写入 audit。 |
+| `changes[]` | 非空变更数组。 |
+| `changes[].action` | `add`、`update` 或 `delete`。 |
+| `changes[].source_term` | 术语唯一键来源；`update` 不支持重命名，重命名需 `delete + add`。 |
+| `changes[].target_term` | `add` 必填；`update` 传入时覆盖，不传则保持原值。 |
+| `changes[].case_sensitive` | 可选大小写敏感开关。 |
+| `changes[].status` | 可选，`active` 或 `disabled`。 |
+| `changes[].priority` | 可选优先级。 |
+| `changes[].domain` / `category` / `note` | 可选维护元数据。 |
+
+成功响应复用 `TranslationTermSetDraftResponse`，返回更新后的 draft。
+
+失败语义：
+
+- 非 admin 返回 `403`。
+- set 不存在返回 `404`。
+- 非 MySQL resource service 返回 `503`。
+- `expected_snapshot_hash` 过期返回 `409`，响应 `detail.code=draft_snapshot_conflict`，并带有 `expected_snapshot_hash` 和 `actual_snapshot_hash`。
+- 重复新增、更新/删除不存在术语、空 `source_term`、空 `target_term` 或非法 `status` 返回 `400`，draft 不保存。
 
 ### `GET /api/v1/translation-term-sets/{set_id}/diff`
 

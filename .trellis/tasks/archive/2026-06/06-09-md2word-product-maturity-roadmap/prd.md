@@ -22,7 +22,7 @@
 - 前端已有 `/jobs`、`/jobs/:jobId`、`/jobs/:jobId/translation-qa`，覆盖任务工作台、详情和翻译 QA 证据页。
 - 前端已有配置中心：模板配置、术语规则集、术语规则检查、翻译配置、翻译术语集、术语 proposal 审核。
 - 术语规则存在两层语义：`term-rules` 是 live / legacy 检查与模拟入口，`term-rule-sets` 是 versioned draft / publish / default / rollback 入口。
-- 文件与运维已有能力：文件库搜索、文件保留计划、quota dry-run、清理预览 / 执行、清理历史、系统状态、审计日志、运维看板。
+- 文件与运维已有能力：文件库搜索、文件管理与清理、quota dry-run、清理预览 / 执行、清理历史、系统状态、审计日志、运维看板。
 - 当前产品成熟度主要缺口不是“完全没有页面或接口”，而是信息架构、任务闭环优先级、页面复杂度拆分、操作路径一致性和少量后端补洞。
 - 已确认的 UX 缺口：例如 `/settings/templates` 只有刷新和进入详情，没有返回配置中心 `/settings` 的明确入口；详情页局部有“返回列表”，但项目缺少统一 breadcrumb / 返回上级模式。
 

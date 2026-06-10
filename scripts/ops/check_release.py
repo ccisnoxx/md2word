@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import urllib.error
+import urllib.request
+import json
+from argparse import ArgumentParser
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
@@ -50,6 +54,7 @@ def check_release(
     openapi_output_path: Path | None = None,
     *,
     unittest_targets: Sequence[str] = DEFAULT_UNITTEST_TARGETS,
+    runtime_url: str | None = None,
 ) -> ReleaseCheckReport:
     items: list[ReleaseCheckItem] = []
 
@@ -89,7 +94,80 @@ def check_release(
             )
         )
 
+    if runtime_url:
+        items.append(check_runtime_readiness(runtime_url))
+
     return ReleaseCheckReport(items=tuple(items))
+
+
+def check_runtime_readiness(runtime_url: str) -> ReleaseCheckItem:
+    ready_url = _build_ready_url(runtime_url)
+    try:
+        with urllib.request.urlopen(ready_url, timeout=5) as response:
+            status_code = response.status
+            body = response.read().decode("utf-8")
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return ReleaseCheckItem(
+            name="runtime-readiness",
+            ok=False,
+            summary=f"Runtime readiness request failed: {ready_url}",
+            details=str(exc),
+        )
+
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError as exc:
+        return ReleaseCheckItem(
+            name="runtime-readiness",
+            ok=False,
+            summary=f"Runtime readiness returned invalid JSON: HTTP {status_code}",
+            details=str(exc),
+        )
+
+    checks = payload.get("dependency_checks")
+    if not isinstance(checks, dict):
+        return ReleaseCheckItem(
+            name="runtime-readiness",
+            ok=False,
+            summary="Runtime readiness response is missing dependency_checks",
+            details=body,
+        )
+
+    blockers = _string_list(checks.get("readiness_blockers"))
+    p0_blockers = _string_list(checks.get("p0_document_jobs_blockers"))
+    deployment_ready = checks.get("deployment_init_ready") is True
+    p0_ready = checks.get("p0_document_jobs_ready") is True
+    ok = deployment_ready and p0_ready
+    details = {
+        "url": ready_url,
+        "deployment_init_ready": deployment_ready,
+        "p0_document_jobs_ready": p0_ready,
+        "readiness_blockers": blockers,
+        "p0_document_jobs_blockers": p0_blockers,
+    }
+    return ReleaseCheckItem(
+        name="runtime-readiness",
+        ok=ok,
+        summary="Runtime readiness passed" if ok else "Runtime readiness failed",
+        details=json.dumps(details, ensure_ascii=False, indent=2),
+    )
+
+
+def _build_ready_url(runtime_url: str) -> str:
+    base = runtime_url.rstrip("/")
+    if base.endswith("/api/v1/health/ready"):
+        return base
+    if base.endswith("/api/v1"):
+        return f"{base}/health/ready"
+    return f"{base}/api/v1/health/ready"
+
+
+def _string_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str) and item.strip()]
+    if isinstance(value, str) and value.strip():
+        return [value]
+    return []
 
 
 def format_release_report(report: ReleaseCheckReport) -> str:
@@ -107,7 +185,14 @@ def format_release_report(report: ReleaseCheckReport) -> str:
 
 
 def main() -> None:
-    report = check_release()
+    parser = ArgumentParser(description="Run md2word release checks.")
+    parser.add_argument(
+        "--runtime-url",
+        default="",
+        help="Optional running API base URL. When set, /api/v1/health/ready must pass deployment and P0 gates.",
+    )
+    args = parser.parse_args()
+    report = check_release(runtime_url=args.runtime_url or None)
     print(format_release_report(report))
     raise SystemExit(0 if report.ok else 1)
 

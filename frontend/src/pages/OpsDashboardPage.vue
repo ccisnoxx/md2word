@@ -37,6 +37,12 @@
       </article>
 
       <article class="summary-card">
+        <span>P0 jobs</span>
+        <strong>{{ p0DocumentJobsLabel }}</strong>
+        <small>backend: {{ documentJobsWorkerBackend }} · required {{ booleanLabel(p0DocumentJobsRequired) }}</small>
+      </article>
+
+      <article class="summary-card">
         <span>Stage queue</span>
         <strong>{{ queuePressureLabel }}</strong>
         <small>failed {{ stageFailedCount }} · stale {{ staleRunningCount }} · replayable {{ replayableCount }}</small>
@@ -978,7 +984,7 @@
     <section class="reference-grid" aria-label="运维相关入口">
       <router-link to="/system-status">系统状态</router-link>
       <router-link to="/system-status/audit-events">审计日志</router-link>
-      <router-link to="/system-status/file-retention">文件保留计划</router-link>
+      <router-link to="/system-status/file-retention">文件管理与清理</router-link>
       <router-link :to="failedJobsRoute">失败任务筛选</router-link>
       <router-link :to="runningJobsRoute">运行中任务筛选</router-link>
     </section>
@@ -1227,6 +1233,15 @@ const checks = computed<Record<string, unknown>>(() => ready.value?.dependency_c
 const blockers = computed(() => stringListCheck("readiness_blockers"));
 const warnings = computed(() => stringListCheck("readiness_warnings"));
 const workerMode = computed(() => metrics.value?.worker_mode || stringCheck("worker_mode"));
+const documentJobsWorkerBackend = computed(() => stringCheck("document_jobs_worker_backend"));
+const p0DocumentJobsRequired = computed(() => booleanCheck("p0_document_jobs_required"));
+const p0DocumentJobsReady = computed(() => booleanCheck("p0_document_jobs_ready"));
+const p0DocumentJobsLabel = computed(() => {
+  if (p0DocumentJobsReady.value === null) {
+    return "not reported";
+  }
+  return p0DocumentJobsReady.value ? "ready" : "blocked";
+});
 const stageDispatcher = computed(() => metrics.value?.stage_dispatcher || stringCheck("stage_dispatcher"));
 const stageFailedCount = computed(() => stageCount("failed"));
 const stageRunningCount = computed(() => stageCount("running"));
@@ -1658,6 +1673,12 @@ const runtimeItems = computed<DetailItem[]>(() => [
   { label: "app_name", value: ready.value?.app_name || metrics.value?.app_name || "not reported" },
   { label: "metadata_store", value: metrics.value?.metadata_store || stringCheck("effective_repository_backend") },
   { label: "configured_repository", value: stringCheck("configured_repository_backend") },
+  { label: "document_jobs_worker_backend", value: documentJobsWorkerBackend.value },
+  { label: "document_jobs_auto_execution", value: booleanLabel(booleanCheck("document_jobs_automatic_execution_enabled")) },
+  { label: "p0_document_jobs_required", value: booleanLabel(p0DocumentJobsRequired.value) },
+  { label: "p0_document_jobs_ready", value: booleanLabel(p0DocumentJobsReady.value) },
+  { label: "document_jobs_stale", value: String(numberCheck("document_jobs_running_stale_count") ?? 0) },
+  { label: "document_jobs_timed_out", value: String(numberCheck("document_jobs_timed_out_count") ?? 0) },
   { label: "artifact_storage", value: metrics.value?.artifact_storage || stringCheck("artifact_storage") },
   { label: "artifact_root_writable", value: booleanLabel(booleanCheck("artifact_root_writable")) },
   { label: "artifact_disk_free", value: formatOptionalBytes(numberCheck("artifact_disk_free_bytes")) },
