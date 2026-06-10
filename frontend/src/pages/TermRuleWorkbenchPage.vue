@@ -5,10 +5,12 @@
       <div>
         <p class="page-kicker">Term Rule Workbench</p>
         <h1 id="term-rule-workbench-title">术语规则检查</h1>
-        <p>只读查看当前术语规则，并用模拟接口检查文本渲染结果。</p>
+        <p>只读查看当前 live runtime store，并用模拟接口检查文本渲染结果。</p>
       </div>
       <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
     </section>
+
+    <TerminologyWorkbenchNav active="live-rules" />
 
     <ApiErrorAlert :error="error" />
 
@@ -188,6 +190,7 @@ import type {
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import TermPreview from "@/components/TermPreview.vue";
+import TerminologyWorkbenchNav from "@/components/TerminologyWorkbenchNav.vue";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 
 type EnabledFilter = "all" | "enabled" | "disabled";

@@ -4,7 +4,7 @@
     <div class="section-header">
       <div>
         <h2 class="section-title">配置发布待办</h2>
-        <p class="section-subtitle">只统计模板、术语规则和翻译配置发布相关事项。</p>
+        <p class="section-subtitle">只统计模板、术语工作台和翻译配置发布相关事项。</p>
       </div>
       <el-button :icon="Refresh" :loading="loading" @click="$emit('refresh')">刷新</el-button>
     </div>
@@ -53,7 +53,7 @@ const items = computed(() => {
       key: "pending-proposals",
       label: "待审核术语建议",
       value: summary.pendingReviewProposals,
-      helper: "admin 审核队列",
+      helper: "术语工作台审核队列",
     });
   }
   if (summary.approvedProposals !== null) {
@@ -61,7 +61,7 @@ const items = computed(() => {
       key: "approved-proposals",
       label: "已通过待发布建议",
       value: summary.approvedProposals,
-      helper: "需随规则集发布",
+      helper: "需随术语规则集发布",
     });
   }
   nextItems.push({

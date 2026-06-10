@@ -6,10 +6,12 @@
       <div>
         <p class="page-kicker">Term Rule Set</p>
         <h1 id="term-rule-set-title">术语规则集</h1>
-        <p>维护 draft 规则，查看 diff 和发布前校验，并管理 published versions。</p>
+        <p>维护 draft 规则，查看 diff 和发布前校验；发布或切默认后才影响后续默认版本。</p>
       </div>
       <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
     </section>
+
+    <TerminologyWorkbenchNav active="draft-publish" />
 
     <ApiErrorAlert :error="error" />
 
@@ -440,6 +442,7 @@ import RoleGate from "@/components/RoleGate.vue";
 import TermPreview from "@/components/TermPreview.vue";
 import TermProposalTable from "@/components/TermProposalTable.vue";
 import TermSegmentEditor from "@/components/TermSegmentEditor.vue";
+import TerminologyWorkbenchNav from "@/components/TerminologyWorkbenchNav.vue";
 import { useAuthStore } from "@/stores/auth";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { formatDateTime } from "@/utils/format";

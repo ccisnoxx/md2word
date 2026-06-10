@@ -33,6 +33,20 @@ const translationQaReturnQuery = computed(() => {
   }
   return query;
 });
+const terminologyGovernanceQuery = computed(() => {
+  const query: Record<string, string> = {};
+  for (const key of ["proposal_id", "source_term", "target_rule_id", "return_tab", "set_id"]) {
+    const value = route.query[key];
+    if (typeof value === "string" && value.trim()) {
+      query[key] = value;
+    }
+  }
+  return query;
+});
+const terminologyWorkbenchRoute = computed<RouteLocationRaw>(() => ({
+  path: "/settings/term-rule-sets",
+  query: terminologyGovernanceQuery.value,
+}));
 
 const items = computed<BreadcrumbItem[]>(() => {
   switch (route.name) {
@@ -74,12 +88,14 @@ const items = computed<BreadcrumbItem[]>(() => {
     case "settings-term-rule-sets":
       return [
         { label: "配置中心", to: "/settings" },
-        { label: "术语规则集" },
+        { label: "术语工作台", to: terminologyWorkbenchRoute.value },
+        { label: "草稿与发布" },
       ];
     case "settings-term-rules":
       return [
         { label: "配置中心", to: "/settings" },
-        { label: "术语规则检查" },
+        { label: "术语工作台", to: terminologyWorkbenchRoute.value },
+        { label: "当前生效规则" },
       ];
     case "settings-translation-profiles":
       return [
