@@ -21,7 +21,8 @@
 
 ### 路径与目录约定
 
-- 部署文档里的 `md2word-api.962850.xyz` 与现场 hostdzire nginx `server_name` 曾出现不一致；真实环境联调或更新公开入口文档前先核对现场配置。
+- 线上公开入口是 `md2word.962850.xyz`；`md2word-api.962850.xyz` 是早期错误域名，不再作为入口使用。现场 hostdzire nginx 站点文件名可能仍保留历史名称，但 `server_name` 和 MinerU callback URL 应使用 `md2word.962850.xyz`。
+- 本机启用 `mosdns` + `sing-box` fakeip 分流时，`md2word.962850.xyz` 可能解析成 `28.0.*`，这是代理接管国外域名的预期行为；线上入口排查用公共 DNS 或 `curl --resolve md2word.962850.xyz:443:154.21.86.86 ...` 验证。
 - Word 排版质量问题先在 `/Users/sc/PycharmProjects/PythonProject/md2word_main` 作为 layout lab 用 Golden Sample 本地调试；`md2word` 只迁移可由 DocumentIR 驱动的稳定策略到 `app/services/renderer`，验收看 `document_jobs` generated Word OOXML（详见 `.codestable/compound/2026-06-03-decision-md2word-main-layout-lab-to-document-ir-renderer-parity.md`）。
 
 ### 环境变量与凭证

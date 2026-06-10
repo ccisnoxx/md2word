@@ -32,6 +32,21 @@
     </div>
 
     <ApiErrorAlert :error="error" />
+    <el-alert
+      v-if="lastDownloadLink"
+      class="page-section download-link-alert"
+      type="success"
+      :closable="true"
+      show-icon
+      :title="lastDownloadLink.label"
+      @close="lastDownloadLink = null"
+    >
+      <div class="download-link-notice">
+        <span>有效期至 {{ formatDateTime(lastDownloadLink.expiresAt) }}</span>
+        <a :href="lastDownloadLink.url" target="_blank" rel="noopener">打开下载链接</a>
+        <el-button text size="small" @click="copyLastDownloadLink">复制链接</el-button>
+      </div>
+    </el-alert>
 
     <el-skeleton v-if="loading && !job" :rows="8" animated />
 
@@ -168,7 +183,7 @@
                 <h2 class="section-title">文件和结果</h2>
                 <p class="section-subtitle">任务绑定文件与生成产物。</p>
               </div>
-              <el-button :icon="Refresh" :loading="filesLoading" @click="loadFiles">刷新文件</el-button>
+              <el-button :icon="Refresh" :loading="filesLoading" @click="loadFiles()">刷新文件</el-button>
             </div>
             <el-table v-loading="filesLoading" :data="files" empty-text="暂无已登记文件" class="job-file-table">
               <el-table-column label="角色" width="128">
@@ -233,7 +248,7 @@
                     :value="stage"
                   />
                 </el-select>
-                <el-button :icon="Refresh" :loading="eventsLoading" @click="loadEvents">刷新事件</el-button>
+                <el-button :icon="Refresh" :loading="eventsLoading" @click="loadEvents()">刷新事件</el-button>
               </div>
             </div>
             <JobEventTimeline :events="filteredEvents" />
@@ -439,6 +454,7 @@ import {
   translationQaStatusText,
 } from "@/utils/format";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
+import { copyDownloadLink, openDownloadLink, type DownloadLinkNotice } from "@/utils/download";
 
 const route = useRoute();
 const router = useRouter();
@@ -466,6 +482,7 @@ const error = ref<ApiClientError | null>(null);
 const configError = ref<ApiClientError | null>(null);
 const configLoading = ref(false);
 const configSummary = ref<DocumentJobConfigSummaryResponse | null>(null);
+const lastDownloadLink = ref<DownloadLinkNotice | null>(null);
 let pollTimer: number | undefined;
 
 type RetryStrategy = "keep_original" | "use_latest_term_assets" | "select_term_assets";
@@ -693,46 +710,69 @@ function parseDate(value?: string | null): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-async function loadJob(): Promise<void> {
+async function loadJob(targetJobId = jobId.value): Promise<void> {
   loading.value = true;
   error.value = null;
   try {
-    job.value = await documentJobsApi.get(jobId.value);
+    const response = await documentJobsApi.get(targetJobId);
+    if (targetJobId === jobId.value) {
+      job.value = response;
+    }
   } catch (caught) {
-    error.value = normalizeApiError(caught);
+    if (targetJobId === jobId.value) {
+      error.value = normalizeApiError(caught);
+    }
   } finally {
-    loading.value = false;
+    if (targetJobId === jobId.value) {
+      loading.value = false;
+    }
   }
 }
 
-async function loadEvents(): Promise<void> {
+async function loadEvents(targetJobId = jobId.value): Promise<void> {
   eventsLoading.value = true;
   try {
-    const response = await documentJobsApi.listEvents(jobId.value);
-    events.value = response.items;
+    const response = await documentJobsApi.listEvents(targetJobId);
+    if (targetJobId === jobId.value) {
+      events.value = response.items;
+    }
   } catch (caught) {
-    error.value = normalizeApiError(caught);
+    if (targetJobId === jobId.value) {
+      error.value = normalizeApiError(caught);
+    }
   } finally {
-    eventsLoading.value = false;
+    if (targetJobId === jobId.value) {
+      eventsLoading.value = false;
+    }
   }
 }
 
-async function loadFiles(): Promise<void> {
+async function loadFiles(targetJobId = jobId.value): Promise<void> {
   filesLoading.value = true;
   try {
-    const response = await documentJobsApi.listFiles(jobId.value);
-    files.value = response.files;
+    const response = await documentJobsApi.listFiles(targetJobId);
+    if (targetJobId === jobId.value) {
+      files.value = response.files;
+    }
   } catch (caught) {
-    error.value = normalizeApiError(caught);
+    if (targetJobId === jobId.value) {
+      error.value = normalizeApiError(caught);
+    }
   } finally {
-    filesLoading.value = false;
+    if (targetJobId === jobId.value) {
+      filesLoading.value = false;
+    }
   }
 }
 
 async function loadAll(): Promise<void> {
-  await loadJob();
+  const targetJobId = jobId.value;
+  await loadJob(targetJobId);
+  if (targetJobId !== jobId.value) {
+    return;
+  }
   if (job.value) {
-    await Promise.all([loadEvents(), loadFiles()]);
+    await Promise.all([loadEvents(targetJobId), loadFiles(targetJobId)]);
   } else {
     events.value = [];
     files.value = [];
@@ -825,8 +865,18 @@ async function handleDownload(target: DocumentJobResponse): Promise<void> {
   error.value = null;
   try {
     const response = await documentJobsApi.createDownloadUrl(target.id);
-    window.open(response.download_url, "_blank", "noopener");
-    ElMessage.success(`下载链接已生成，有效期至 ${formatDateTime(response.expires_at)}。`);
+    lastDownloadLink.value = {
+      label: `任务 ${target.id} 的下载链接已生成`,
+      url: response.download_url,
+      expiresAt: response.expires_at,
+      fileName: response.file.original_filename,
+    };
+    const opened = openDownloadLink(response.download_url);
+    if (opened) {
+      ElMessage.success(`下载链接已生成，有效期至 ${formatDateTime(response.expires_at)}。`);
+    } else {
+      ElMessage.warning("浏览器可能拦截了新窗口，页面已显示下载链接。");
+    }
   } catch (caught) {
     error.value = normalizeApiError(caught);
   } finally {
@@ -842,13 +892,35 @@ async function handleFileDownload(file: DocumentFileResponse): Promise<void> {
   error.value = null;
   try {
     const response = await documentJobsApi.createDownloadUrl(job.value.id, file.id);
-    window.open(response.download_url, "_blank", "noopener");
-    ElMessage.success(`下载链接已生成，有效期至 ${formatDateTime(response.expires_at)}。`);
+    lastDownloadLink.value = {
+      label: `${file.original_filename} 的下载链接已生成`,
+      url: response.download_url,
+      expiresAt: response.expires_at,
+      fileName: response.file.original_filename,
+    };
+    const opened = openDownloadLink(response.download_url);
+    if (opened) {
+      ElMessage.success(`下载链接已生成，有效期至 ${formatDateTime(response.expires_at)}。`);
+    } else {
+      ElMessage.warning("浏览器可能拦截了新窗口，页面已显示下载链接。");
+    }
   } catch (caught) {
     error.value = normalizeApiError(caught);
   } finally {
     downloadingFileId.value = null;
   }
+}
+
+async function copyLastDownloadLink(): Promise<void> {
+  if (!lastDownloadLink.value) {
+    return;
+  }
+  const copied = await copyDownloadLink(lastDownloadLink.value.url);
+  if (copied) {
+    ElMessage.success("下载链接已复制。");
+    return;
+  }
+  ElMessage.warning("当前浏览器不支持自动复制。");
 }
 
 function handleRetry(target: DocumentJobResponse): void {
@@ -1015,7 +1087,7 @@ function buildClonePayload(): DocumentJobCloneRequest {
     return payload;
   }
   if (selectedCloneTemplateOption.value) {
-    payload.template_version_id = selectedCloneTemplateOption.value.label;
+    payload.template_version_id = configVersionId(selectedCloneTemplateOption.value);
   }
   if (selectedCloneTermRuleOption.value) {
     payload.term_rule_set_id = selectedCloneTermRuleOption.value.resource_id;
@@ -1069,8 +1141,27 @@ function findConfigOption(
   return options.find((option) => option.label === label) || null;
 }
 
+function configVersionId(option: DocumentJobConfigVersionOption): string {
+  return `${option.resource_id}@${option.version}`;
+}
+
 function handleVisibilityChange(): void {
   syncPolling();
+}
+
+function resetPageStateForRouteChange(): void {
+  stopPolling();
+  job.value = null;
+  events.value = [];
+  files.value = [];
+  error.value = null;
+  configError.value = null;
+  lastDownloadLink.value = null;
+  retryDialogVisible.value = false;
+  cloneDialogVisible.value = false;
+  eventLevelFilter.value = "";
+  eventStageFilter.value = "";
+  activeTab.value = "overview";
 }
 
 // 文件区只做展示映射；文件归属、过期和下载权限以后端校验为准。
@@ -1131,6 +1222,18 @@ function fileAvailabilityText(file: DocumentFileResponse): string {
 
 watch(() => job.value?.status, syncPolling);
 
+watch(jobId, async (nextJobId, previousJobId) => {
+  if (!nextJobId || nextJobId === previousJobId) {
+    return;
+  }
+  resetPageStateForRouteChange();
+  await loadAll();
+  syncPolling();
+  if (route.query.retry === "1" && job.value?.status === "failed") {
+    openRetryDialog(job.value);
+  }
+});
+
 onMounted(async () => {
   document.addEventListener("visibilitychange", handleVisibilityChange);
   await loadAll();
@@ -1157,6 +1260,28 @@ onBeforeUnmount(() => {
 
 .state-alert {
   margin-top: 14px;
+}
+
+.download-link-alert {
+  margin-top: 0;
+}
+
+.download-link-notice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.download-link-notice span {
+  color: #667085;
+  font-size: 13px;
+}
+
+.download-link-notice a {
+  color: #2563eb;
+  font-weight: 700;
+  text-decoration: none;
 }
 
 .qa-summary {

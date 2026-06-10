@@ -4,11 +4,12 @@ from __future__ import annotations
 # Purpose: 聚合配置工作台只读总览，避免前端直接拼多个治理接口。
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote
 
 from app.core.runtime import AppRuntime
 from app.domains.config_workbench.schemas import (
+    ConfigWorkbenchDetailStatus,
     ConfigWorkbenchFinding,
     ConfigWorkbenchGroup,
     ConfigWorkbenchGroupId,
@@ -22,17 +23,22 @@ from app.domains.term_rules.models import TermRuleProposalStatus
 
 
 DRAFT_VERSION = "draft"
+ConfigWorkbenchSummaryMode = Literal["overview", "full"]
 
 
-def build_config_workbench_summary(runtime: AppRuntime) -> ConfigWorkbenchSummaryResponse:
+def build_config_workbench_summary(
+    runtime: AppRuntime,
+    *,
+    mode: ConfigWorkbenchSummaryMode = "full",
+) -> ConfigWorkbenchSummaryResponse:
     checks = _build_dependency_checks(runtime)
     release_gate = _build_release_gate(checks)
     groups = [
         _build_runtime_readiness_group(checks),
         _build_templates_group(runtime),
-        _build_term_rule_sets_group(runtime),
+        _build_term_rule_sets_group(runtime, include_deep=mode == "full"),
         _build_translation_profiles_group(runtime),
-        _build_translation_term_sets_group(runtime),
+        _build_translation_term_sets_group(runtime, include_deep=mode == "full"),
     ]
     return ConfigWorkbenchSummaryResponse(
         generated_at=datetime.now(timezone.utc),
@@ -40,6 +46,26 @@ def build_config_workbench_summary(runtime: AppRuntime) -> ConfigWorkbenchSummar
         release_gate=release_gate,
         groups=groups,
     )
+
+
+def build_config_workbench_group(
+    runtime: AppRuntime,
+    group_id: ConfigWorkbenchGroupId,
+    *,
+    mode: ConfigWorkbenchSummaryMode = "full",
+) -> ConfigWorkbenchGroup:
+    checks = _build_dependency_checks(runtime)
+    if group_id == "runtime_readiness":
+        return _build_runtime_readiness_group(checks)
+    if group_id == "templates":
+        return _build_templates_group(runtime)
+    if group_id == "term_rule_sets":
+        return _build_term_rule_sets_group(runtime, include_deep=mode == "full")
+    if group_id == "translation_profiles":
+        return _build_translation_profiles_group(runtime)
+    if group_id == "translation_term_sets":
+        return _build_translation_term_sets_group(runtime, include_deep=mode == "full")
+    raise ValueError(f"unsupported config workbench group: {group_id}")
 
 
 def _build_dependency_checks(runtime: AppRuntime) -> dict[str, Any]:
@@ -68,6 +94,24 @@ def _build_release_gate(checks: dict[str, Any]) -> ConfigWorkbenchReleaseGate:
         p0_document_jobs_ready=ready,
         blockers=blockers,
         warnings=warnings,
+        blocker_findings=[
+            _finding(
+                code=f"p0.{code}",
+                severity="critical",
+                message=_readiness_code_message(code),
+                route="/system-status",
+            )
+            for code in blockers
+        ],
+        warning_findings=[
+            _finding(
+                code=f"p0.{code}",
+                severity="warning",
+                message=_readiness_code_message(code),
+                route="/system-status",
+            )
+            for code in warnings
+        ],
     )
 
 
@@ -78,7 +122,7 @@ def _build_runtime_readiness_group(checks: dict[str, Any]) -> ConfigWorkbenchGro
             _finding(
                 code=f"runtime.{code}",
                 severity="critical",
-                message=f"运行 readiness 阻断：{code}",
+                message=f"运行就绪检查阻断：{_readiness_code_message(code)}",
                 route="/system-status",
             )
         )
@@ -87,15 +131,23 @@ def _build_runtime_readiness_group(checks: dict[str, Any]) -> ConfigWorkbenchGro
             _finding(
                 code=f"runtime.{code}",
                 severity="warning",
-                message=f"运行 readiness 告警：{code}",
+                message=f"运行就绪检查告警：{_readiness_code_message(code)}",
                 route="/system-status",
             )
         )
     default_label = ", ".join(
         item
         for item in [
-            f"repo={checks.get('effective_repository_backend')}" if checks.get("effective_repository_backend") else "",
-            f"worker={checks.get('document_jobs_worker_backend')}" if checks.get("document_jobs_worker_backend") else "",
+            (
+                f"元数据存储={checks.get('effective_repository_backend')}"
+                if checks.get("effective_repository_backend")
+                else ""
+            ),
+            (
+                f"任务执行器={checks.get('document_jobs_worker_backend')}"
+                if checks.get("document_jobs_worker_backend")
+                else ""
+            ),
         ]
         if item
     )
@@ -161,7 +213,7 @@ def _build_templates_group(runtime: AppRuntime) -> ConfigWorkbenchGroup:
                     _finding(
                         code="templates.draft_versions_present",
                         severity="warning",
-                        message=f"{template.id} 存在 {len(drafts)} 个 draft 版本。",
+                        message=f"{template.id} 存在 {len(drafts)} 个草稿版本。",
                         route=_template_route(template.id),
                         target_id=template.id,
                     )
@@ -171,7 +223,7 @@ def _build_templates_group(runtime: AppRuntime) -> ConfigWorkbenchGroup:
                     _finding(
                         code="templates.unverified_draft_versions",
                         severity="warning",
-                        message=f"{template.id} 有 {len(unverified)} 个 draft 缺少验证证据。",
+                        message=f"{template.id} 有 {len(unverified)} 个草稿缺少验证证据。",
                         route=_template_route(template.id),
                         target_id=template.id,
                     )
@@ -196,7 +248,7 @@ def _build_templates_group(runtime: AppRuntime) -> ConfigWorkbenchGroup:
     )
 
 
-def _build_term_rule_sets_group(runtime: AppRuntime) -> ConfigWorkbenchGroup:
+def _build_term_rule_sets_group(runtime: AppRuntime, *, include_deep: bool = True) -> ConfigWorkbenchGroup:
     route = "/settings/term-rule-sets"
     service = getattr(runtime, "term_rule_set_version_service", None)
     if service is None:
@@ -208,7 +260,7 @@ def _build_term_rule_sets_group(runtime: AppRuntime) -> ConfigWorkbenchGroup:
                 _finding(
                     code="term_rule_sets.unavailable",
                     severity="info",
-                    message="当前部署未启用 MySQL resource service，Term Rule Set 版本治理不可用。",
+                    message="当前部署未启用 MySQL 资源版本服务，术语规则集版本治理不可用。",
                     route=route,
                 )
             ],
@@ -226,7 +278,7 @@ def _build_term_rule_sets_group(runtime: AppRuntime) -> ConfigWorkbenchGroup:
                 _finding(
                     code="term_rule_sets.empty",
                     severity="critical",
-                    message="没有可用的 Term Rule Set。",
+                    message="没有可用的术语规则集。",
                     route=route,
                 )
             )
@@ -273,6 +325,8 @@ def _build_term_rule_sets_group(runtime: AppRuntime) -> ConfigWorkbenchGroup:
 
             if _resource_record(runtime, "term_rule_set", item.id, DRAFT_VERSION) is None:
                 continue
+            if not include_deep:
+                continue
             preflight = service.build_preflight(
                 item.id,
                 approved_unpublished_proposal_count=approved_unpublished_count,
@@ -289,7 +343,7 @@ def _build_term_rule_sets_group(runtime: AppRuntime) -> ConfigWorkbenchGroup:
                     _finding(
                         code="term_rule_sets.draft_changes_present",
                         severity="warning",
-                        message=f"{item.id} 存在 {changed_total} 条 draft 变更。",
+                        message=f"{item.id} 存在 {changed_total} 条草稿变更。",
                         route=item_route,
                         target_id=item.id,
                     )
@@ -300,8 +354,8 @@ def _build_term_rule_sets_group(runtime: AppRuntime) -> ConfigWorkbenchGroup:
                         code="term_rule_sets.preflight_blocking",
                         severity="critical",
                         message=(
-                            f"{item.id} preflight 阻断："
-                            f"errors={preflight.summary.error_count}, conflicts={preflight.summary.conflict_count}。"
+                            f"{item.id} 发布前检查阻断："
+                            f"错误 {preflight.summary.error_count} 条，冲突 {preflight.summary.conflict_count} 条。"
                         ),
                         route=item_route,
                         target_id=item.id,
@@ -312,7 +366,7 @@ def _build_term_rule_sets_group(runtime: AppRuntime) -> ConfigWorkbenchGroup:
                     _finding(
                         code="term_rule_sets.preflight_warnings",
                         severity="warning",
-                        message=f"{item.id} preflight 有 {preflight.summary.warning_count} 条 warning。",
+                        message=f"{item.id} 发布前检查有 {preflight.summary.warning_count} 条告警。",
                         route=item_route,
                         target_id=item.id,
                     )
@@ -322,7 +376,7 @@ def _build_term_rule_sets_group(runtime: AppRuntime) -> ConfigWorkbenchGroup:
             _finding(
                 code="term_rule_sets.read_failed",
                 severity="critical",
-                message="Term Rule Set 治理数据读取失败。",
+                message="术语规则集治理数据读取失败。",
                 route=route,
             )
         )
@@ -335,6 +389,7 @@ def _build_term_rule_sets_group(runtime: AppRuntime) -> ConfigWorkbenchGroup:
         default_label=default_label,
         draft_count=draft_count,
         pending_count=pending_count,
+        detail_status="complete" if include_deep else "deferred",
     )
 
 
@@ -350,7 +405,7 @@ def _build_translation_profiles_group(runtime: AppRuntime) -> ConfigWorkbenchGro
                 _finding(
                     code="translation_profiles.unavailable",
                     severity="info",
-                    message="当前部署未启用 MySQL resource service，Translation Profile 版本治理不可用。",
+                    message="当前部署未启用 MySQL 资源版本服务，翻译配置版本治理不可用。",
                     route=route,
                 )
             ],
@@ -367,7 +422,7 @@ def _build_translation_profiles_group(runtime: AppRuntime) -> ConfigWorkbenchGro
                 _finding(
                     code="translation_profiles.empty",
                     severity="warning",
-                    message="没有可用的 Translation Profile。",
+                    message="没有可用的翻译配置。",
                     route=route,
                 )
             )
@@ -381,7 +436,7 @@ def _build_translation_profiles_group(runtime: AppRuntime) -> ConfigWorkbenchGro
                     _finding(
                         code="translation_profiles.default_missing",
                         severity="warning",
-                        message=f"{profile.id} 缺少默认发布版本，将使用 settings fallback。",
+                        message=f"{profile.id} 缺少默认发布版本，将使用运行环境配置兜底。",
                         route=profile_route,
                         target_id=profile.id,
                     )
@@ -397,7 +452,7 @@ def _build_translation_profiles_group(runtime: AppRuntime) -> ConfigWorkbenchGro
                     _finding(
                         code="translation_profiles.draft_changes_present",
                         severity="warning",
-                        message=f"{profile.id} 存在未发布 draft。",
+                        message=f"{profile.id} 存在未发布草稿。",
                         route=profile_route,
                         target_id=profile.id,
                     )
@@ -407,7 +462,7 @@ def _build_translation_profiles_group(runtime: AppRuntime) -> ConfigWorkbenchGro
             _finding(
                 code="translation_profiles.read_failed",
                 severity="critical",
-                message="Translation Profile 治理数据读取失败。",
+                message="翻译配置治理数据读取失败。",
                 route=route,
             )
         )
@@ -422,7 +477,7 @@ def _build_translation_profiles_group(runtime: AppRuntime) -> ConfigWorkbenchGro
     )
 
 
-def _build_translation_term_sets_group(runtime: AppRuntime) -> ConfigWorkbenchGroup:
+def _build_translation_term_sets_group(runtime: AppRuntime, *, include_deep: bool = True) -> ConfigWorkbenchGroup:
     route = "/settings/translation-term-sets"
     service = getattr(runtime, "translation_term_set_version_service", None)
     if service is None:
@@ -434,7 +489,7 @@ def _build_translation_term_sets_group(runtime: AppRuntime) -> ConfigWorkbenchGr
                 _finding(
                     code="translation_term_sets.unavailable",
                     severity="info",
-                    message="当前部署未启用 MySQL resource service，Translation Term Set 版本治理不可用。",
+                    message="当前部署未启用 MySQL 资源版本服务，翻译术语集版本治理不可用。",
                     route=route,
                 )
             ],
@@ -452,7 +507,7 @@ def _build_translation_term_sets_group(runtime: AppRuntime) -> ConfigWorkbenchGr
                 _finding(
                     code="translation_term_sets.empty",
                     severity="warning",
-                    message="没有可用的 Translation Term Set。",
+                    message="没有可用的翻译术语集。",
                     route=route,
                 )
             )
@@ -470,6 +525,8 @@ def _build_translation_term_sets_group(runtime: AppRuntime) -> ConfigWorkbenchGr
                         target_id=item.set_id,
                     )
                 )
+            if not include_deep:
+                continue
 
             preflight = service.get_preflight_response(item.set_id)
             changed_total = preflight.diff_summary.added + preflight.diff_summary.removed + preflight.diff_summary.changed
@@ -479,7 +536,7 @@ def _build_translation_term_sets_group(runtime: AppRuntime) -> ConfigWorkbenchGr
                     _finding(
                         code="translation_term_sets.draft_changes_present",
                         severity="warning",
-                        message=f"{item.set_id} 存在 {changed_total} 条 draft 变更。",
+                        message=f"{item.set_id} 存在 {changed_total} 条草稿变更。",
                         route=item_route,
                         target_id=item.set_id,
                     )
@@ -489,7 +546,7 @@ def _build_translation_term_sets_group(runtime: AppRuntime) -> ConfigWorkbenchGr
                     _finding(
                         code="translation_term_sets.preflight_blocking",
                         severity="critical",
-                        message=f"{item.set_id} preflight 阻断发布：{len(preflight.blocking_reasons)} 条原因。",
+                        message=f"{item.set_id} 发布前检查阻断发布：{len(preflight.blocking_reasons)} 条原因。",
                         route=item_route,
                         target_id=item.set_id,
                     )
@@ -499,7 +556,7 @@ def _build_translation_term_sets_group(runtime: AppRuntime) -> ConfigWorkbenchGr
                     _finding(
                         code="translation_term_sets.preflight_warnings",
                         severity="warning",
-                        message=f"{item.set_id} preflight 有 {len(preflight.validation.warnings)} 条 warning。",
+                        message=f"{item.set_id} 发布前检查有 {len(preflight.validation.warnings)} 条告警。",
                         route=item_route,
                         target_id=item.set_id,
                     )
@@ -512,7 +569,7 @@ def _build_translation_term_sets_group(runtime: AppRuntime) -> ConfigWorkbenchGr
                     _finding(
                         code="translation_term_sets.proposal_conflicts",
                         severity="warning",
-                        message=f"{item.set_id} 有 {compatibility.summary.conflict} 条 pending proposal 存在冲突。",
+                        message=f"{item.set_id} 有 {compatibility.summary.conflict} 条待审核建议存在冲突。",
                         route=item_route,
                         target_id=item.set_id,
                     )
@@ -522,7 +579,7 @@ def _build_translation_term_sets_group(runtime: AppRuntime) -> ConfigWorkbenchGr
                     _finding(
                         code="translation_term_sets.proposal_warnings",
                         severity="warning",
-                        message=f"{item.set_id} 有 {compatibility.summary.warning} 条 pending proposal 需要确认。",
+                        message=f"{item.set_id} 有 {compatibility.summary.warning} 条待审核建议需要确认。",
                         route=item_route,
                         target_id=item.set_id,
                     )
@@ -532,7 +589,7 @@ def _build_translation_term_sets_group(runtime: AppRuntime) -> ConfigWorkbenchGr
             _finding(
                 code="translation_term_sets.read_failed",
                 severity="critical",
-                message="Translation Term Set 治理数据读取失败。",
+                message="翻译术语集治理数据读取失败。",
                 route=route,
             )
         )
@@ -545,6 +602,7 @@ def _build_translation_term_sets_group(runtime: AppRuntime) -> ConfigWorkbenchGr
         default_label=default_label,
         draft_count=draft_count,
         pending_count=pending_count,
+        detail_status="complete" if include_deep else "deferred",
     )
 
 
@@ -585,6 +643,7 @@ def _group(
     draft_count: int | None = None,
     pending_count: int | None = None,
     unavailable: bool = False,
+    detail_status: ConfigWorkbenchDetailStatus = "complete",
 ) -> ConfigWorkbenchGroup:
     blocker_count = sum(1 for item in findings if item.severity == "critical")
     warning_count = sum(1 for item in findings if item.severity == "warning")
@@ -600,6 +659,7 @@ def _group(
         id=group_id,
         label=label,
         status=status,
+        detail_status="failed" if any(item.code.endswith(".read_failed") for item in findings) else detail_status,
         route=route,
         default_label=default_label,
         draft_count=draft_count,
@@ -658,3 +718,34 @@ def _unique_strings(values: Any) -> list[str]:
         return []
     return list(dict.fromkeys(str(item) for item in values if str(item).strip()))
 
+
+READINESS_CODE_MESSAGES: dict[str, str] = {
+    "auth_internal_users_source_missing": "内部账号来源未配置。",
+    "auth_jwt_secret_key_missing": "认证签名密钥未配置。",
+    "data_dir_not_writable": "数据目录不可写。",
+    "default_template_missing": "默认模板文件缺失。",
+    "default_translation_unavailable": "默认翻译模式依赖不可用。",
+    "document_jobs_celery_broker_url_missing": "文档任务 Celery broker 未配置。",
+    "document_jobs_celery_queue_missing": "文档任务 Celery 队列未配置。",
+    "document_jobs_stale_running_present": "存在长时间未更新的文档任务。",
+    "document_jobs_timed_out_present": "存在已超时的文档任务。",
+    "document_jobs_worker_backend_disabled": "文档任务执行器被禁用。",
+    "document_jobs_worker_backend_eager_in_production": "生产门禁下仍使用 eager 文档任务执行器。",
+    "health_service_unavailable": "健康检查服务不可用。",
+    "layout_config_missing": "版式配置文件缺失。",
+    "mineru_api_token_missing": "MinerU API token 未配置。",
+    "mineru_callback_url_missing": "MinerU callback URL 未配置。",
+    "mineru_uid_missing": "MinerU UID 未配置。",
+    "p0_document_jobs_not_ready": "P0 文档任务执行链路未就绪。",
+    "stage_spool_dir_missing": "阶段消息目录缺失。",
+    "stage_spool_failed_messages_present": "存在失败的阶段消息。",
+    "stage_spool_replayable_messages_present": "存在可继续处理的阶段消息。",
+    "stage_spool_stale_running_messages_present": "存在过期运行中的阶段消息。",
+    "subscript_config_missing": "下标配置文件缺失。",
+    "tmp_dir_missing": "临时目录缺失。",
+    "translation_unavailable": "翻译能力不可用。",
+}
+
+
+def _readiness_code_message(code: str) -> str:
+    return READINESS_CODE_MESSAGES.get(code, f"未识别的就绪检查项：{code}。")

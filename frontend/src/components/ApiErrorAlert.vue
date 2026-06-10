@@ -3,9 +3,9 @@
   <el-alert v-if="error" class="api-error" type="error" :closable="false" show-icon>
     <template #title>{{ error.message }}</template>
     <div v-if="error.code || error.status || error.traceId" class="api-error-meta">
-      <span v-if="error.status">HTTP {{ error.status }}</span>
-      <span v-if="error.code">error_code={{ error.code }}</span>
-      <span v-if="error.traceId">trace_id={{ error.traceId }}</span>
+      <span v-if="error.status">状态码 {{ error.status }}</span>
+      <span v-if="error.code">错误码 {{ error.code }}</span>
+      <span v-if="error.traceId">追踪 ID {{ error.traceId }}</span>
     </div>
     <div v-if="operatorHint" class="api-error-hint">{{ operatorHint }}</div>
   </el-alert>
@@ -35,7 +35,7 @@ const operatorHint = computed(() => {
     return "当前任务或资源状态不允许该操作，请刷新后按后端返回原因处理。";
   }
   if (error.status === 503) {
-    return "后端服务或依赖暂不可用，请稍后重试；若持续发生，请带 trace_id 联系技术运营。";
+    return "后端服务或依赖暂不可用，请稍后重试；若持续发生，请带追踪 ID 联系技术运营。";
   }
   if (error.code === "timeout") {
     return "请求超时，任务可能仍在后端继续处理，请刷新列表或详情页确认最新状态。";

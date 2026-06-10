@@ -6,7 +6,7 @@
       <div>
         <p class="page-kicker">Operations</p>
         <h1 id="ops-dashboard-title">运维看板</h1>
-        <p>只读汇总 worker、队列、readiness、存储和任务风险；恢复动作仍需在既有任务页面或外部流程中处理。</p>
+        <p>汇总 worker、队列、readiness、存储和任务风险；任务恢复先做 registry preview，再复用既有任务动作处理。</p>
       </div>
       <div class="heading-actions">
         <el-tag :type="opsStatus.tagType" effect="plain">{{ opsStatus.label }}</el-tag>
@@ -16,8 +16,8 @@
 
     <ApiErrorAlert :error="error" />
 
-    <el-alert type="info" title="read-only" :closable="false" show-icon>
-      此页面只调用 health、document-jobs 和 recovery action registry 读取接口，不提供重试、取消、归档、恢复 MinerU 结果、cleanup 或真实删除操作。
+    <el-alert type="info" title="safe operations" :closable="false" show-icon>
+      此页面不会恢复 MinerU 结果、cleanup、真实 provider cancellation 或真实删除；文档任务重试、取消、归档只复用 document-jobs 既有受控端点。
     </el-alert>
 
     <section v-loading="loading" class="summary-grid" aria-label="运维摘要">
@@ -842,7 +842,7 @@
         <div class="section-header">
           <div>
             <h2 class="section-title">Recovery Action Safety Registry</h2>
-            <p class="section-subtitle">Admin-only 只读动作目录；这里只展示 gate、risk 和 gap，不提供执行控件。</p>
+            <p class="section-subtitle">Admin-only 动作目录；文档任务动作先 preview eligibility，再交给既有 document-jobs 端点执行。</p>
           </div>
           <el-tag type="info" effect="plain">{{ recoveryActionSummary }}</el-tag>
         </div>
@@ -951,6 +951,33 @@
           <el-table-column label="Error" min-width="280" show-overflow-tooltip>
             <template #default="{ row }">{{ jobErrorSummary(row) }}</template>
           </el-table-column>
+          <el-table-column label="Recovery" min-width="260" fixed="right">
+            <template #default="{ row }">
+              <div class="job-recovery-actions">
+                <el-button
+                  size="small"
+                  type="warning"
+                  :icon="RefreshRight"
+                  :loading="isPreviewingJobAction(row.id, 'retry') || isExecutingJobAction(row.id, 'retry')"
+                  :disabled="!canRetryDocumentJob(row)"
+                  :title="documentJobActionDisabledReason(row, 'retry')"
+                  @click="previewJobRecoveryAction(row, 'retry')"
+                >
+                  重试预览
+                </el-button>
+                <el-button
+                  size="small"
+                  :icon="FolderChecked"
+                  :loading="isPreviewingJobAction(row.id, 'archive') || isExecutingJobAction(row.id, 'archive')"
+                  :disabled="!canArchiveDocumentJob(row)"
+                  :title="documentJobActionDisabledReason(row, 'archive')"
+                  @click="previewJobRecoveryAction(row, 'archive')"
+                >
+                  归档预览
+                </el-button>
+              </div>
+            </template>
+          </el-table-column>
         </el-table>
       </el-card>
 
@@ -977,7 +1004,86 @@
           <el-table-column label="Updated" min-width="170">
             <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
           </el-table-column>
+          <el-table-column label="Recovery" min-width="180" fixed="right">
+            <template #default="{ row }">
+              <el-button
+                size="small"
+                type="danger"
+                :icon="CircleClose"
+                :loading="isPreviewingJobAction(row.id, 'cancel') || isExecutingJobAction(row.id, 'cancel')"
+                :disabled="!canCancelDocumentJob(row)"
+                :title="documentJobActionDisabledReason(row, 'cancel')"
+                @click="previewJobRecoveryAction(row, 'cancel')"
+              >
+                取消预览
+              </el-button>
+            </template>
+          </el-table-column>
         </el-table>
+      </el-card>
+    </section>
+
+    <section v-if="jobRecoveryPreview" class="job-recovery-preview" aria-label="任务恢复预览">
+      <el-card class="card-flat dashboard-panel" shadow="never">
+        <div class="section-header">
+          <div>
+            <h2 class="section-title">任务恢复预览</h2>
+            <p class="section-subtitle">
+              {{ jobRecoveryPreview.action.label }} ·
+              <router-link :to="`/jobs/${jobRecoveryPreview.target.target_id}`" class="mono">
+                {{ jobRecoveryPreview.target.target_id }}
+              </router-link>
+            </p>
+          </div>
+          <div class="toolbar">
+            <el-tag :type="jobRecoveryPreview.eligible ? 'success' : 'warning'" effect="plain">
+              eligible={{ String(jobRecoveryPreview.eligible) }}
+            </el-tag>
+            <el-tag effect="plain">status={{ jobRecoveryPreview.target.status || "-" }}</el-tag>
+            <el-tag effect="plain">stage={{ jobRecoveryPreview.target.stage || "-" }}</el-tag>
+          </div>
+        </div>
+
+        <el-alert
+          v-if="jobRecoveryPreview.missing_gates.length"
+          class="delivery-warning"
+          type="warning"
+          title="缺少执行 gate"
+          :closable="false"
+          show-icon
+        >
+          {{ jobRecoveryPreview.missing_gates.join(" / ") }}
+        </el-alert>
+        <el-alert
+          v-else-if="jobRecoveryPreview.warnings.length"
+          class="delivery-warning"
+          type="warning"
+          title="执行前提醒"
+          :closable="false"
+          show-icon
+        >
+          {{ jobRecoveryPreview.warnings.join(" / ") }}
+        </el-alert>
+
+        <div class="recovery-preview-grid">
+          <article v-for="item in jobRecoveryRiskItems" :key="item.label" class="recovery-preview-card">
+            <span>{{ item.label }}</span>
+            <strong>{{ booleanLabel(item.value) }}</strong>
+          </article>
+        </div>
+
+        <div class="recovery-preview-actions">
+          <router-link :to="`/jobs/${jobRecoveryPreview.target.target_id}`">打开任务详情</router-link>
+          <el-button
+            :type="selectedJobRecoveryAction === 'cancel' ? 'danger' : selectedJobRecoveryAction === 'retry' ? 'warning' : 'primary'"
+            :icon="selectedJobRecoveryAction === 'cancel' ? CircleClose : selectedJobRecoveryAction === 'retry' ? RefreshRight : FolderChecked"
+            :disabled="!canExecutePreviewedJobRecovery"
+            :loading="jobRecoveryExecuting"
+            @click="executePreviewedJobRecovery"
+          >
+            执行{{ jobRecoveryActionLabel(selectedJobRecoveryAction) }}
+          </el-button>
+        </div>
       </el-card>
     </section>
 
@@ -1096,7 +1202,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { Bell, CircleClose, Refresh, View } from "@element-plus/icons-vue";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { Bell, CircleClose, FolderChecked, Refresh, RefreshRight, View } from "@element-plus/icons-vue";
 
 import { documentJobsApi } from "@/api/documentJobs";
 import { healthApi } from "@/api/health";
@@ -1128,12 +1235,21 @@ import type {
   OpsProviderCancellationResponse,
   OpsProviderCancellationSemanticsResponse,
   OpsProviderCancellationTargetType,
+  OpsRecoveryActionPreviewResponse,
   OpsRecoveryActionResponse,
   OpsS3DeleteAdapterContractResponse,
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
-import { formatBytes, formatDateTime, jobStageText } from "@/utils/format";
+import {
+  canArchiveDocumentJob,
+  canCancelDocumentJob,
+  canRetryDocumentJob,
+  documentJobActionDisabledReason,
+  formatBytes,
+  formatDateTime,
+  jobStageText,
+} from "@/utils/format";
 
 type AlertType = "success" | "warning" | "info" | "error";
 type TagType = "success" | "warning" | "danger" | "info";
@@ -1147,6 +1263,8 @@ type MetricItem = {
   label: string;
   value: number | string;
 };
+
+type OpsJobRecoveryAction = "retry" | "cancel" | "archive";
 
 type OpsStatusView = {
   key: "ok" | "watch" | "needs-attention" | "unknown";
@@ -1180,6 +1298,10 @@ const integrationCapabilities = ref<OpsIntegrationControlPlaneResponse | null>(n
 const recoveryActions = ref<OpsRecoveryActionResponse[]>([]);
 const recoveryActionsGeneratedAt = ref<string | null>(null);
 const recoveryActionsReadOnly = ref<boolean | null>(null);
+const jobRecoveryPreview = ref<OpsRecoveryActionPreviewResponse | null>(null);
+const selectedJobRecoveryAction = ref<OpsJobRecoveryAction | null>(null);
+const jobRecoveryPreviewLoadingKey = ref("");
+const jobRecoveryExecuting = ref(false);
 const failedJobs = ref<DocumentJobResponse[]>([]);
 const runningJobs = ref<DocumentJobResponse[]>([]);
 const failedJobsTotal = ref(0);
@@ -1537,6 +1659,30 @@ const recoveryActionSummary = computed(() => {
   const unavailable = recoveryActions.value.length - available;
   return `${available} available · ${unavailable} candidate`;
 });
+const jobRecoveryRiskItems = computed(() => {
+  const risk = jobRecoveryPreview.value?.risk_flags;
+  if (!risk) {
+    return [];
+  }
+  return [
+    { label: "metadata", value: risk.mutates_metadata },
+    { label: "queue", value: risk.mutates_queue },
+    { label: "provider", value: risk.calls_provider },
+    { label: "notification", value: risk.sends_notification },
+    { label: "delete", value: risk.deletes_data },
+  ];
+});
+const canExecutePreviewedJobRecovery = computed(() => {
+  const preview = jobRecoveryPreview.value;
+  if (!preview || !selectedJobRecoveryAction.value || jobRecoveryExecuting.value) {
+    return false;
+  }
+  return preview.eligible
+    && preview.target.exists
+    && !preview.risk_flags.calls_provider
+    && !preview.risk_flags.sends_notification
+    && !preview.risk_flags.deletes_data;
+});
 
 const opsStatus = computed<OpsStatusView>(() => {
   if (opsAlerts.value) {
@@ -1759,6 +1905,95 @@ async function loadDashboard(): Promise<void> {
     error.value = normalizeApiError(caught);
   } finally {
     loading.value = false;
+  }
+}
+
+function jobRecoveryActionId(action: OpsJobRecoveryAction): string {
+  return `document_job.${action}`;
+}
+
+function jobRecoveryActionLabel(action: OpsJobRecoveryAction | null): string {
+  if (action === "retry") {
+    return "重试";
+  }
+  if (action === "cancel") {
+    return "取消";
+  }
+  if (action === "archive") {
+    return "归档";
+  }
+  return "任务动作";
+}
+
+function jobRecoveryActionKey(jobId: string, action: OpsJobRecoveryAction): string {
+  return `${jobId}:${action}`;
+}
+
+function isPreviewingJobAction(jobId: string, action: OpsJobRecoveryAction): boolean {
+  return jobRecoveryPreviewLoadingKey.value === jobRecoveryActionKey(jobId, action);
+}
+
+function isExecutingJobAction(jobId: string, action: OpsJobRecoveryAction): boolean {
+  return jobRecoveryExecuting.value
+    && selectedJobRecoveryAction.value === action
+    && jobRecoveryPreview.value?.target.target_id === jobId;
+}
+
+async function previewJobRecoveryAction(job: DocumentJobResponse, action: OpsJobRecoveryAction): Promise<void> {
+  jobRecoveryPreviewLoadingKey.value = jobRecoveryActionKey(job.id, action);
+  error.value = null;
+  try {
+    selectedJobRecoveryAction.value = action;
+    jobRecoveryPreview.value = await opsRecoveryActionsApi.preview({
+      action_id: jobRecoveryActionId(action),
+      target_type: "document_job",
+      target_id: job.id,
+    });
+    if (!jobRecoveryPreview.value.eligible) {
+      ElMessage.warning(`当前任务不可${jobRecoveryActionLabel(action)}。`);
+    }
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    jobRecoveryPreviewLoadingKey.value = "";
+  }
+}
+
+async function executePreviewedJobRecovery(): Promise<void> {
+  const preview = jobRecoveryPreview.value;
+  const action = selectedJobRecoveryAction.value;
+  if (!preview || !action || !canExecutePreviewedJobRecovery.value) {
+    return;
+  }
+  const jobId = preview.target.target_id;
+  try {
+    await ElMessageBox.confirm(
+      `将对任务 ${jobId} 执行${jobRecoveryActionLabel(action)}。该操作复用 document-jobs 既有端点，不会调用 provider 或删除文件。`,
+      `确认${jobRecoveryActionLabel(action)}`,
+      { type: action === "cancel" ? "warning" : "info" },
+    );
+  } catch {
+    return;
+  }
+
+  jobRecoveryExecuting.value = true;
+  error.value = null;
+  try {
+    if (action === "retry") {
+      await documentJobsApi.retry(jobId, { reason: "ops dashboard recovery preview" });
+    } else if (action === "cancel") {
+      await documentJobsApi.cancel(jobId);
+    } else {
+      await documentJobsApi.archive(jobId);
+    }
+    ElMessage.success(`任务已${jobRecoveryActionLabel(action)}。`);
+    jobRecoveryPreview.value = null;
+    selectedJobRecoveryAction.value = null;
+    await loadDashboard();
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    jobRecoveryExecuting.value = false;
   }
 }
 
@@ -2307,7 +2542,8 @@ onMounted(() => {
 .provider-cancellation-panel,
 .action-safety-panel,
 .dashboard-panels,
-.job-panels {
+.job-panels,
+.job-recovery-preview {
   display: grid;
   gap: 14px;
 }
@@ -2668,6 +2904,51 @@ onMounted(() => {
   width: 100%;
 }
 
+.job-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.recovery-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.recovery-preview-card {
+  display: grid;
+  gap: 4px;
+  min-height: 78px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.recovery-preview-card span,
+.recovery-preview-card strong {
+  display: block;
+}
+
+.recovery-preview-card span {
+  color: #667085;
+  font-size: 12px;
+}
+
+.recovery-preview-card strong {
+  color: #111827;
+  font-size: 16px;
+}
+
+.recovery-preview-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
 .action-table {
   width: 100%;
 }
@@ -2694,7 +2975,8 @@ onMounted(() => {
 @media (max-width: 1100px) {
   .summary-grid,
   .dashboard-panels,
-  .job-panels {
+  .job-panels,
+  .recovery-preview-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -2721,7 +3003,8 @@ onMounted(() => {
   .provider-cancellation-form,
   .provider-result-grid,
   .dashboard-panels,
-  .job-panels {
+  .job-panels,
+  .recovery-preview-grid {
     grid-template-columns: 1fr;
   }
 }

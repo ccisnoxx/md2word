@@ -6,17 +6,17 @@
       ref="tableRef"
       :data="items"
       :loading="loading"
-      empty-text="暂无 proposal"
+      empty-text="暂无建议"
       :row-class-name="rowClassName"
       @selection-change="handleSelectionChange"
     >
       <el-table-column v-if="selectable" type="selection" width="48" :selectable="isProposalSelectable" />
       <el-table-column prop="id" label="ID" width="110" />
       <el-table-column label="类型" width="90">
-        <template #default="{ row }">{{ proposalIntentText[row.intent] || row.intent }}</template>
+        <template #default="{ row }">{{ proposalIntentText(row.intent) }}</template>
       </el-table-column>
       <el-table-column label="状态" width="110">
-        <template #default="{ row }">{{ proposalStatusText[row.status] || row.status }}</template>
+        <template #default="{ row }">{{ proposalStatusText(row.status) }}</template>
       </el-table-column>
       <el-table-column prop="source_term" label="术语" min-width="130" />
       <el-table-column label="分类" min-width="140">
@@ -51,6 +51,7 @@ import { ref } from "vue";
 import type { TableInstance } from "element-plus";
 
 import type { TermRuleProposalResponse } from "@/api/types";
+import { proposalIntentText, proposalStatusText } from "@/utils/displayText";
 import { formatDateTime } from "@/utils/format";
 
 const props = defineProps<{
@@ -67,19 +68,6 @@ const emit = defineEmits<{
 }>();
 
 const tableRef = ref<TableInstance>();
-
-const proposalIntentText: Record<string, string> = {
-  create: "新增",
-  update: "编辑",
-  disable: "禁用",
-};
-
-const proposalStatusText: Record<string, string> = {
-  pending_review: "待审核",
-  approved: "已通过",
-  rejected: "已拒绝",
-  published: "已发布",
-};
 
 // 根据页面层传入的 selectedId 高亮当前 proposal，保持 table 组件无业务状态。
 function rowClassName({ row }: { row: TermRuleProposalResponse }): string {

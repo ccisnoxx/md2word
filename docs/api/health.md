@@ -157,11 +157,11 @@ Health API 当前有五条入口：
       "code": "stage_spool_failed_messages_present",
       "severity": "critical",
       "source": "stage_spool",
-      "title": "Failed stage messages present",
-      "description": "failed stage message 不会自动 replay，需要结合任务详情和事件流判断下一步。",
+      "title": "存在失败的阶段消息",
+      "description": "失败的阶段消息不会自动重放，需要结合任务详情和事件流判断下一步。",
       "count": 1,
       "suggested_route": "/jobs?status=failed&sort=updated_at_desc",
-      "suggested_action": "查看失败任务和事件；如需 retry，使用既有任务流程手动处理。"
+      "suggested_action": "查看失败任务和事件；如需重试，使用既有任务流程手动处理。"
     }
   ],
   "safety": {

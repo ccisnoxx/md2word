@@ -3,16 +3,62 @@
   <main class="settings-page" aria-labelledby="settings-title">
     <section class="page-heading">
       <div>
-        <p class="page-kicker">Config Workbench</p>
+        <p class="page-kicker">配置中心</p>
         <h1 id="settings-title">配置工作台</h1>
-        <p>统一查看生产运行门禁、默认配置版本、draft 和待处理治理事项。</p>
+        <p>统一查看生产运行门禁、默认配置版本、草稿和待处理治理事项。</p>
       </div>
       <RoleGate>
-        <el-tag type="warning" effect="plain">admin 操作已启用</el-tag>
+        <el-tag type="warning" effect="plain">管理员操作已启用</el-tag>
       </RoleGate>
     </section>
 
-    <ConfigTodoSummary :summary="summary" :loading="loading" :error="error" @refresh="loadSummary" />
+    <ConfigTodoSummary :summary="summary" :loading="initialLoading" :error="error" @refresh="refreshSummary" />
+    <div v-if="summary && refreshing" class="refresh-note">正在后台更新配置总览，当前页面保留上次结果。</div>
+
+    <section v-if="summary" class="release-gate-workspace" aria-label="发布门禁处理队列">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">发布门禁处理队列</h2>
+          <p class="section-subtitle">把 P0 document_jobs 门禁、阻断项和告警项收敛到可处理入口。</p>
+        </div>
+        <div class="gate-tags">
+          <el-tag :type="summary.release_gate.p0_document_jobs_ready ? 'success' : 'danger'" effect="plain">
+            p0={{ summary.release_gate.p0_document_jobs_ready ? "ready" : "blocked" }}
+          </el-tag>
+          <el-tag effect="plain">blockers={{ summary.release_gate.blockers.length }}</el-tag>
+          <el-tag effect="plain">warnings={{ summary.release_gate.warnings.length }}</el-tag>
+        </div>
+      </div>
+
+      <div class="gate-status-grid">
+        <article>
+          <span>P0 document_jobs</span>
+          <strong>{{ summary.release_gate.p0_document_jobs_ready ? "就绪" : "阻断" }}</strong>
+          <small>{{ summary.release_gate.p0_document_jobs_required ? "当前环境强制门禁" : "当前环境观察门禁" }}</small>
+        </article>
+        <article>
+          <span>阻断项</span>
+          <strong>{{ summary.release_gate.blockers.length }}</strong>
+          <small>需要先处理再发布</small>
+        </article>
+        <article>
+          <span>告警项</span>
+          <strong>{{ summary.release_gate.warnings.length }}</strong>
+          <small>建议发布前确认</small>
+        </article>
+      </div>
+
+      <div v-if="releaseGateItems.length" class="gate-action-list">
+        <router-link v-for="item in releaseGateItems" :key="item.key" class="gate-action-item" :to="item.route">
+          <el-tag size="small" :type="severityTagType(item.severity)" effect="plain">
+            {{ configWorkbenchSeverityText(item.severity) }}
+          </el-tag>
+          <span>{{ item.message }}</span>
+          <small>{{ item.routeLabel }}</small>
+        </router-link>
+      </div>
+      <div v-else class="gate-empty">当前发布门禁没有待处理项。</div>
+    </section>
 
     <section v-if="summary" class="settings-groups" aria-label="配置治理状态">
       <article v-for="group in summary.groups" :key="group.id" class="settings-group">
@@ -24,9 +70,14 @@
             <strong>{{ group.label }}</strong>
             <small>{{ groupSubtitle(group) }}</small>
           </span>
-          <el-tag :type="statusTagType(group.status)" effect="plain">
-            {{ statusLabel(group.status) }}
-          </el-tag>
+          <span class="group-tags">
+            <el-tag :type="statusTagType(group.status)" effect="plain">
+              {{ configWorkbenchStatusText(group.status) }}
+            </el-tag>
+            <el-tag v-if="group.detail_status !== 'complete'" type="info" effect="plain">
+              {{ detailLabel(group) }}
+            </el-tag>
+          </span>
         </header>
 
         <div class="group-metrics">
@@ -36,11 +87,11 @@
               <dd>{{ group.default_label || "-" }}</dd>
             </div>
             <div>
-              <dt>Draft</dt>
+              <dt>草稿</dt>
               <dd>{{ group.draft_count ?? "-" }}</dd>
             </div>
             <div>
-              <dt>Pending</dt>
+              <dt>待处理</dt>
               <dd>{{ group.pending_count ?? "-" }}</dd>
             </div>
             <div>
@@ -58,10 +109,12 @@
             :to="finding.route || group.route"
           >
             <el-tag size="small" :type="severityTagType(finding.severity)" effect="plain">
-              {{ finding.severity }}
+              {{ configWorkbenchSeverityText(finding.severity) }}
             </el-tag>
             <span>{{ finding.message }}</span>
           </router-link>
+          <div v-if="groupLoading[group.id]" class="finding-more">正在加载深度检查结果。</div>
+          <div v-if="groupErrors[group.id]" class="finding-error">{{ groupErrors[group.id] }}</div>
           <div v-if="group.findings.length > 3" class="finding-more">
             还有 {{ group.findings.length - 3 }} 条事项，请进入详情页查看。
           </div>
@@ -79,7 +132,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import {
   Collection,
   Cpu,
@@ -93,17 +146,59 @@ import {
   type ConfigWorkbenchFinding,
   type ConfigWorkbenchGroup,
   type ConfigWorkbenchGroupId,
-  type ConfigWorkbenchSeverity,
   type ConfigWorkbenchStatus,
   type ConfigWorkbenchSummaryResponse,
 } from "@/api/configSummary";
 import ConfigTodoSummary from "@/components/ConfigTodoSummary.vue";
 import RoleGate from "@/components/RoleGate.vue";
+import {
+  configWorkbenchDetailStatusText,
+  configWorkbenchSeverityText,
+  configWorkbenchStatusText,
+  readinessCodeText,
+} from "@/utils/displayText";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 
+const CACHE_TTL_MS = 60_000;
+
+type ReleaseGateItem = {
+  key: string;
+  severity: "critical" | "warning";
+  message: string;
+  route: string;
+  routeLabel: string;
+};
+
+let summaryCache: { value: ConfigWorkbenchSummaryResponse; loadedAt: number } | null = null;
+
 const summary = ref<ConfigWorkbenchSummaryResponse | null>(null);
-const loading = ref(false);
+const initialLoading = ref(false);
+const refreshing = ref(false);
 const error = ref<ApiClientError | null>(null);
+const groupLoading = reactive<Record<ConfigWorkbenchGroupId, boolean>>({
+  runtime_readiness: false,
+  templates: false,
+  term_rule_sets: false,
+  translation_profiles: false,
+  translation_term_sets: false,
+});
+const groupErrors = reactive<Record<ConfigWorkbenchGroupId, string>>({
+  runtime_readiness: "",
+  templates: "",
+  term_rule_sets: "",
+  translation_profiles: "",
+  translation_term_sets: "",
+});
+const loading = computed(() => initialLoading.value || refreshing.value);
+const releaseGateItems = computed<ReleaseGateItem[]>(() => {
+  if (!summary.value) {
+    return [];
+  }
+  return [
+    ...releaseGateFindingItems("critical", summary.value.release_gate.blockers, summary.value.release_gate.blocker_findings),
+    ...releaseGateFindingItems("warning", summary.value.release_gate.warnings, summary.value.release_gate.warning_findings),
+  ];
+});
 
 const iconMap = {
   runtime_readiness: Cpu,
@@ -113,15 +208,37 @@ const iconMap = {
   translation_term_sets: Tickets,
 } satisfies Record<ConfigWorkbenchGroupId, unknown>;
 
-async function loadSummary(): Promise<void> {
-  loading.value = true;
+async function loadSummary(force = false): Promise<void> {
+  const cached = summaryCache;
+  if (!force && cached && Date.now() - cached.loadedAt < CACHE_TTL_MS) {
+    summary.value = cached.value;
+    void fetchSummary({ background: true });
+    return;
+  }
+  await fetchSummary({ background: Boolean(summary.value) });
+}
+
+async function refreshSummary(): Promise<void> {
+  await loadSummary(true);
+}
+
+async function fetchSummary({ background }: { background: boolean }): Promise<void> {
+  if (background) {
+    refreshing.value = true;
+  } else {
+    initialLoading.value = true;
+  }
   error.value = null;
   try {
-    summary.value = await configSummaryApi.get();
+    const response = await configSummaryApi.get("overview");
+    summary.value = withDerivedOverallStatus(response);
+    summaryCache = { value: summary.value, loadedAt: Date.now() };
+    void loadDeferredGroupDetails(response.groups);
   } catch (caught) {
     error.value = normalizeApiError(caught);
   } finally {
-    loading.value = false;
+    initialLoading.value = false;
+    refreshing.value = false;
   }
 }
 
@@ -146,14 +263,11 @@ function groupSubtitle(group: ConfigWorkbenchGroup): string {
   return "存在发布前建议处理的事项。";
 }
 
-function statusLabel(status: ConfigWorkbenchStatus): string {
-  const labels: Record<ConfigWorkbenchStatus, string> = {
-    ready: "Ready",
-    warning: "Warning",
-    blocked: "Blocked",
-    unavailable: "Unavailable",
-  };
-  return labels[status];
+function detailLabel(group: ConfigWorkbenchGroup): string {
+  if (groupLoading[group.id]) {
+    return "深度检查加载中";
+  }
+  return configWorkbenchDetailStatusText(group.detail_status);
 }
 
 function statusTagType(status: ConfigWorkbenchStatus): "success" | "warning" | "danger" | "info" {
@@ -169,7 +283,7 @@ function statusTagType(status: ConfigWorkbenchStatus): "success" | "warning" | "
   return "info";
 }
 
-function severityTagType(severity: ConfigWorkbenchSeverity): "success" | "warning" | "danger" | "info" {
+function severityTagType(severity: string): "success" | "warning" | "danger" | "info" {
   if (severity === "critical") {
     return "danger";
   }
@@ -177,6 +291,112 @@ function severityTagType(severity: ConfigWorkbenchSeverity): "success" | "warnin
     return "warning";
   }
   return "info";
+}
+
+function releaseGateFindingItems(
+  severity: "critical" | "warning",
+  codes: string[],
+  findings: ConfigWorkbenchFinding[],
+): ReleaseGateItem[] {
+  if (findings.length) {
+    return findings.map((finding, index) => {
+      const route = finding.route || releaseGateRouteForCode(finding.code);
+      return {
+        key: `${severity}:${finding.code}:${finding.target_id || index}`,
+        severity,
+        message: finding.message,
+        route,
+        routeLabel: releaseGateRouteLabel(route),
+      };
+    });
+  }
+  return codes.map((code) => {
+    const route = releaseGateRouteForCode(code);
+    return {
+      key: `${severity}:${code}`,
+      severity,
+      message: readinessCodeText(code),
+      route,
+      routeLabel: releaseGateRouteLabel(route),
+    };
+  });
+}
+
+function releaseGateRouteForCode(code: string): string {
+  if (code.startsWith("document_jobs") || code === "p0_document_jobs_not_ready") {
+    return "/system-status/ops-dashboard";
+  }
+  if (code.includes("template") || code.includes("layout") || code.includes("subscript")) {
+    return "/settings/templates";
+  }
+  if (code.includes("term")) {
+    return "/settings/term-rule-sets";
+  }
+  if (code.includes("translation")) {
+    return "/settings/translation-profiles";
+  }
+  return "/system-status";
+}
+
+function releaseGateRouteLabel(route: string): string {
+  const labels: Record<string, string> = {
+    "/system-status/ops-dashboard": "运维看板",
+    "/system-status": "系统状态",
+    "/settings/templates": "模板配置",
+    "/settings/term-rule-sets": "术语规则",
+    "/settings/translation-profiles": "翻译配置",
+  };
+  return labels[route] || "配置详情";
+}
+
+async function loadDeferredGroupDetails(groups: ConfigWorkbenchGroup[]): Promise<void> {
+  await Promise.allSettled(
+    groups
+      .filter((group) => group.detail_status === "deferred")
+      .map((group) => loadGroupDetail(group.id)),
+  );
+}
+
+async function loadGroupDetail(groupId: ConfigWorkbenchGroupId): Promise<void> {
+  groupLoading[groupId] = true;
+  groupErrors[groupId] = "";
+  try {
+    const group = await configSummaryApi.getGroup(groupId, "full");
+    if (!summary.value) {
+      return;
+    }
+    summary.value = withDerivedOverallStatus({
+      ...summary.value,
+      groups: summary.value.groups.map((item) => item.id === group.id ? group : item),
+    });
+    summaryCache = { value: summary.value, loadedAt: Date.now() };
+  } catch (caught) {
+    const normalized = normalizeApiError(caught);
+    groupErrors[groupId] = normalized.message || "深度检查加载失败。";
+  } finally {
+    groupLoading[groupId] = false;
+  }
+}
+
+function withDerivedOverallStatus(response: ConfigWorkbenchSummaryResponse): ConfigWorkbenchSummaryResponse {
+  return {
+    ...response,
+    overall_status: deriveOverallStatus(response.groups, response.release_gate.blockers, response.release_gate.warnings),
+  };
+}
+
+function deriveOverallStatus(
+  groups: ConfigWorkbenchGroup[],
+  blockers: string[],
+  warnings: string[],
+): ConfigWorkbenchStatus {
+  if (blockers.length || groups.some((group) => group.status === "blocked")) {
+    return "blocked";
+  }
+  if (warnings.length || groups.some((group) => group.status === "warning" || group.status === "unavailable")) {
+    return "warning";
+  }
+  return "ready";
 }
 
 onMounted(() => {
@@ -225,6 +445,118 @@ onMounted(() => {
   gap: 16px;
 }
 
+.refresh-note {
+  color: #667085;
+  font-size: 13px;
+}
+
+.release-gate-workspace {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.section-title {
+  margin: 0;
+  color: #111827;
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+.section-subtitle {
+  margin: 6px 0 0;
+  color: #667085;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.gate-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.gate-status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.gate-status-grid article {
+  display: grid;
+  gap: 5px;
+  min-height: 92px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.gate-status-grid span,
+.gate-status-grid strong,
+.gate-status-grid small {
+  display: block;
+}
+
+.gate-status-grid span {
+  color: #667085;
+  font-size: 12px;
+}
+
+.gate-status-grid strong {
+  color: #111827;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.gate-status-grid small {
+  color: #667085;
+  font-size: 12px;
+}
+
+.gate-action-list {
+  display: grid;
+  gap: 8px;
+}
+
+.gate-action-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 44px;
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  color: #111827;
+}
+
+.gate-action-item:hover {
+  border-color: #93c5fd;
+  color: #111827;
+}
+
+.gate-action-item span {
+  overflow-wrap: anywhere;
+}
+
+.gate-action-item small,
+.gate-empty {
+  color: #667085;
+  font-size: 13px;
+}
+
 .settings-group {
   display: grid;
   align-content: start;
@@ -242,6 +574,13 @@ onMounted(() => {
   gap: 12px;
   align-items: flex-start;
   color: #111827;
+}
+
+.group-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 .settings-group-icon {
@@ -326,9 +665,14 @@ onMounted(() => {
 }
 
 .finding-more,
-.finding-empty {
+.finding-empty,
+.finding-error {
   color: #667085;
   font-size: 13px;
+}
+
+.finding-error {
+  color: #b42318;
 }
 
 .settings-link {
@@ -357,25 +701,43 @@ onMounted(() => {
 
 @media (max-width: 720px) {
   .page-heading,
+  .section-header,
   .settings-group-header {
     align-items: flex-start;
   }
 
-  .page-heading {
+  .page-heading,
+  .section-header {
     flex-direction: column;
+  }
+
+  .gate-tags {
+    justify-content: flex-start;
   }
 
   .settings-group-header {
     grid-template-columns: 42px minmax(0, 1fr);
   }
 
-  .settings-group-header .el-tag {
+  .settings-group-header .group-tags {
     grid-column: 1 / -1;
     justify-self: start;
   }
 
   .group-metrics dl {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .gate-status-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .gate-action-item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .gate-action-item small {
+    grid-column: 2;
   }
 }
 

@@ -6,17 +6,17 @@
       ref="tableRef"
       :data="items"
       :loading="loading"
-      empty-text="暂无 Translation Term Proposal"
+      empty-text="暂无翻译术语建议"
       :row-class-name="rowClassName"
       @selection-change="handleSelectionChange"
     >
       <el-table-column v-if="selectable" type="selection" width="48" :selectable="isProposalSelectable" />
       <el-table-column prop="id" label="ID" width="120" />
       <el-table-column label="动作" width="90">
-        <template #default="{ row }">{{ actionText[row.changes[0]?.action] || row.changes[0]?.action || "-" }}</template>
+        <template #default="{ row }">{{ translationProposalAction(row.changes[0]?.action) }}</template>
       </el-table-column>
       <el-table-column label="状态" width="110">
-        <template #default="{ row }">{{ statusText[row.status] || row.status }}</template>
+        <template #default="{ row }">{{ proposalStatusText(row.status) }}</template>
       </el-table-column>
       <el-table-column label="原文术语" min-width="140">
         <template #default="{ row }">{{ row.changes[0]?.source_term || "-" }}</template>
@@ -58,6 +58,7 @@ import { ref } from "vue";
 import type { TableInstance } from "element-plus";
 
 import type { TranslationTermProposalResponse } from "@/api/types";
+import { proposalStatusText, translationProposalActionText } from "@/utils/displayText";
 import { formatDateTime } from "@/utils/format";
 
 const props = defineProps<{
@@ -74,18 +75,9 @@ const emit = defineEmits<{
 
 const tableRef = ref<TableInstance>();
 
-const actionText: Record<string, string> = {
-  add: "新增",
-  update: "编辑",
-  delete: "删除",
-};
-
-const statusText: Record<string, string> = {
-  pending: "待审核",
-  approved: "已通过",
-  rejected: "已拒绝",
-  published: "已发布",
-};
+function translationProposalAction(action: string | undefined): string {
+  return action ? translationProposalActionText(action) : "-";
+}
 
 // 根据页面层传入的 selectedId 高亮当前 proposal，避免 table 自己维护选中状态。
 function rowClassName({ row }: { row: TranslationTermProposalResponse }): string {

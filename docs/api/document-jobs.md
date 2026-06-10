@@ -39,6 +39,25 @@ GET /api/v1/document-jobs/{job_id}/download-url
 GET /api/v1/document-jobs/{job_id}/download?token=...
 ```
 
+## 错误响应
+
+Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `detail` 字段：
+
+```json
+{
+  "detail": "错误说明",
+  "error_code": "conflict",
+  "error": {
+    "code": "conflict",
+    "message": "错误说明",
+    "status_code": 409,
+    "trace_id": "trace_123"
+  }
+}
+```
+
+前端应优先读取 `error.code` / `error.message` / `error.trace_id`，兼容旧调用方时可继续读取 `detail` 和顶层 `error_code`。
+
 ## 枚举
 
 ### `mode`

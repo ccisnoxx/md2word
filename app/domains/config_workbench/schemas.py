@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 ConfigWorkbenchStatus = Literal["ready", "warning", "blocked", "unavailable"]
 ConfigWorkbenchSeverity = Literal["info", "warning", "critical"]
+ConfigWorkbenchDetailStatus = Literal["complete", "deferred", "failed"]
 ConfigWorkbenchGroupId = Literal[
     "runtime_readiness",
     "templates",
@@ -32,6 +33,7 @@ class ConfigWorkbenchGroup(BaseModel):
     id: ConfigWorkbenchGroupId
     label: str
     status: ConfigWorkbenchStatus
+    detail_status: ConfigWorkbenchDetailStatus = "complete"
     route: str
     default_label: str | None = None
     draft_count: int | None = None
@@ -46,6 +48,8 @@ class ConfigWorkbenchReleaseGate(BaseModel):
     p0_document_jobs_ready: bool = True
     blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    blocker_findings: list[ConfigWorkbenchFinding] = Field(default_factory=list)
+    warning_findings: list[ConfigWorkbenchFinding] = Field(default_factory=list)
 
 
 class ConfigWorkbenchSummaryResponse(BaseModel):
@@ -53,4 +57,3 @@ class ConfigWorkbenchSummaryResponse(BaseModel):
     overall_status: ConfigWorkbenchStatus
     release_gate: ConfigWorkbenchReleaseGate
     groups: list[ConfigWorkbenchGroup] = Field(default_factory=list)
-

@@ -15,6 +15,21 @@
 
     <ApiErrorAlert :error="error" />
 
+    <section class="file-workspace-nav" aria-label="文件管理工作区导航">
+      <button
+        v-for="item in fileWorkspaceTabs"
+        :key="item.key"
+        class="file-workspace-tab"
+        :class="{ 'is-active': activeFileManagementTab === item.key }"
+        type="button"
+        @click="selectFileManagementTab(item.key)"
+      >
+        <span>{{ item.label }}</span>
+        <strong>{{ item.value }}</strong>
+        <small>{{ item.helper }}</small>
+      </button>
+    </section>
+
     <el-tabs v-model="activeFileManagementTab" class="file-management-tabs">
       <el-tab-pane label="文件库" name="library">
     <section v-loading="libraryLoading" class="retention-table-section" aria-label="文件库搜索">
@@ -1044,7 +1059,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Finished, Refresh } from "@element-plus/icons-vue";
 
@@ -1087,6 +1103,11 @@ type LibraryFilters = {
 };
 
 type LibraryFilterKey = "q" | "status" | "file_type" | "storage_provider" | "job_id";
+type FileManagementTab = "library" | "capacity" | "cleanup";
+
+const validFileManagementTabs = ["library", "capacity", "cleanup"] as const;
+const route = useRoute();
+const router = useRouter();
 
 const plan = ref<FileRetentionPlanResponse | null>(null);
 const selectedCandidates = ref<FileRetentionCandidateResponse[]>([]);
@@ -1101,7 +1122,7 @@ const quotaOpsSummary = ref<FileQuotaPolicyOpsSummaryResponse | null>(null);
 const librarySearch = ref<FileLibrarySearchResponse | null>(null);
 const cleanupRunHistory = ref<FileRetentionCleanupRunHistoryListResponse | null>(null);
 const selectedCleanupRunHistory = ref<FileRetentionCleanupRunHistoryResponse | null>(null);
-const activeFileManagementTab = ref("library");
+const activeFileManagementTab = ref<FileManagementTab>(readFileManagementTab(route.query.tab));
 const loading = ref(false);
 const marking = ref(false);
 const previewing = ref(false);
@@ -1309,6 +1330,26 @@ const quotaOpsSafetyEntries = computed(() => {
     { label: "conversion_workflow_executed", value: safety.conversion_workflow_executed, type: safety.conversion_workflow_executed ? "danger" : "success" },
   ] satisfies Array<{ label: string; value: boolean; type: StatusTag }>;
 });
+const fileWorkspaceTabs = computed<Array<{ key: FileManagementTab; label: string; value: string; helper: string }>>(() => [
+  {
+    key: "library",
+    label: "文件库",
+    value: String(librarySearch.value?.total ?? "-"),
+    helper: "按文件、任务和状态检索",
+  },
+  {
+    key: "capacity",
+    label: "容量与策略",
+    value: storageQuotaStatus.value,
+    helper: `active ${formatBytes(storageTotalValue("active_size_bytes"))} · reclaim ${formatBytes(storageReclaimValue("estimated_reclaimable_size_bytes"))}`,
+  },
+  {
+    key: "cleanup",
+    label: "清理执行",
+    value: String(candidateCount.value),
+    helper: `selected ${selectedFileIds.value.length} · history ${cleanupRunHistory.value?.total ?? 0}`,
+  },
+]);
 
 // 同步刷新 retention plan、policy governance、storage usage 和 quota ops summary。
 function refreshRetentionPage(): void {
@@ -1318,6 +1359,25 @@ function refreshRetentionPage(): void {
   void loadStorageUsage();
   void loadQuotaPolicyOpsSummary();
   void loadCleanupRunHistory();
+}
+
+function selectFileManagementTab(tab: FileManagementTab): void {
+  activeFileManagementTab.value = tab;
+}
+
+function readFileManagementTab(value: unknown): FileManagementTab {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return typeof raw === "string" && validFileManagementTabs.includes(raw as FileManagementTab)
+    ? raw as FileManagementTab
+    : "library";
+}
+
+function currentRouteFileManagementTab(): string | null {
+  const raw = route.query.tab;
+  if (Array.isArray(raw)) {
+    return raw[0] || null;
+  }
+  return typeof raw === "string" ? raw : null;
 }
 
 // 按当前筛选读取只读文件库搜索结果。
@@ -1973,6 +2033,28 @@ onMounted(() => {
   void loadQuotaPolicyOpsSummary();
   void loadCleanupRunHistory();
 });
+
+watch(
+  () => route.query.tab,
+  (tab) => {
+    const nextTab = readFileManagementTab(tab);
+    if (activeFileManagementTab.value !== nextTab) {
+      activeFileManagementTab.value = nextTab;
+    }
+  },
+);
+
+watch(activeFileManagementTab, (tab) => {
+  if (currentRouteFileManagementTab() === tab) {
+    return;
+  }
+  void router.replace({
+    query: {
+      ...route.query,
+      tab,
+    },
+  });
+});
 </script>
 
 <style scoped lang="scss">
@@ -2019,6 +2101,56 @@ onMounted(() => {
 
 .retention-notice {
   margin-bottom: 0;
+}
+
+.file-workspace-nav {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.file-workspace-tab {
+  display: grid;
+  gap: 5px;
+  min-height: 100px;
+  padding: 13px;
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  background: #fff;
+  color: #111827;
+  text-align: left;
+  cursor: pointer;
+}
+
+.file-workspace-tab:hover,
+.file-workspace-tab.is-active {
+  border-color: #2563eb;
+  background: #f8fafc;
+}
+
+.file-workspace-tab span,
+.file-workspace-tab strong,
+.file-workspace-tab small {
+  display: block;
+}
+
+.file-workspace-tab span {
+  color: #667085;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.file-workspace-tab strong {
+  overflow-wrap: anywhere;
+  color: #111827;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.file-workspace-tab small {
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .file-management-tabs {
@@ -2294,7 +2426,8 @@ onMounted(() => {
 }
 
 @media (max-width: 920px) {
-  .summary-grid {
+  .summary-grid,
+  .file-workspace-nav {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -2335,7 +2468,8 @@ onMounted(() => {
     flex-direction: column;
   }
 
-  .summary-grid {
+  .summary-grid,
+  .file-workspace-nav {
     grid-template-columns: 1fr;
   }
 }

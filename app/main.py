@@ -59,6 +59,8 @@ from app.domains.translation.provider import build_translation_provider
 from app.domains.translation.term_set_version_service import TranslationTermSetVersionService
 from app.domains.translation.term_version_service import TermVersionService
 
+NON_PRODUCTION_ENVS = {"dev", "local", "test"}
+
 
 def _build_artifact_storage(settings: Settings, artifact_service: JobArtifactService):
     """按配置选择 artifact storage adapter；默认仍保持 local file backend。"""
@@ -105,10 +107,25 @@ def _build_document_job_task_queue(
     return None
 
 
+def _validate_runtime_guardrails(settings: Settings) -> None:
+    """阻止近生产环境以 open jobs 访问模式启动。"""
+
+    production_like = (
+        settings.app_env.strip().lower() not in NON_PRODUCTION_ENVS
+        or settings.public_deployment_mode == "single_tenant_public"
+    )
+    if production_like and settings.jobs_access_mode == "open":
+        raise RuntimeError(
+            "JOBS_ACCESS_MODE=open 不允许用于生产或 single_tenant_public 部署；"
+            "请改用 JOBS_ACCESS_MODE=token 或 admin，并配置对应 token。"
+        )
+
+
 def build_runtime(settings: Settings | None = None) -> AppRuntime:
     """构建当前进程共享运行时，并注入 API、任务、文件和只读观测服务依赖。"""
 
     resolved_settings = settings or Settings()
+    _validate_runtime_guardrails(resolved_settings)
     configure_logging(resolved_settings.app_env, resolved_settings.log_format)
     persistence_adapters = build_persistence_adapters(resolved_settings)
     repository_backend = persistence_adapters.backend_name
