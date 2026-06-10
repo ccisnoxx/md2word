@@ -40,7 +40,8 @@ files 上传授权 -> document_jobs 创建任务 -> Worker 调用 MinerU/Documen
 | 页面 | 受众 | 用途 |
 | --- | --- | --- |
 | `/login` | 全员 | 内部账号登录，获取 JWT。 |
-| `/jobs` | operator/admin | 上传 PDF、筛选任务、批量处理、下载、重试、取消、归档、clone/rerun。 |
+| `/jobs` | operator/admin | 筛选任务、批量处理、下载、重试、取消、归档、clone/rerun。 |
+| `/jobs/new` | operator/admin | 上传 PDF 并创建转换任务。 |
 | `/jobs/:jobId` | operator/admin | 查看任务详情、文件、事件、失败信息、配置快照和可用操作。 |
 | `/translation-qa` | operator/admin | 翻译 QA 队列，筛选未复核或有问题的英译中任务。 |
 | `/jobs/:jobId/translation-qa` | operator/admin | 单任务翻译证据复核和术语建议跳转。 |
