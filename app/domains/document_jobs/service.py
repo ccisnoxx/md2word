@@ -25,6 +25,7 @@ from app.domains.document_jobs.models import (
     DocumentJobTranslationQaStatus,
 )
 from app.domains.document_jobs.schemas import (
+    DocumentJobAvailableActionResponse,
     DocumentJobTranslationQaAiCallResponse,
     DocumentJobTranslationQaArtifactsResponse,
     DocumentJobTranslationQaResponse,
@@ -266,6 +267,23 @@ class DocumentJobService:
 
         job = self.get_job(job_id, user=user)
         return self._list_files_for_job(job)
+
+    def build_available_actions(
+        self,
+        job: DocumentJobRecord,
+        *,
+        user: AuthenticatedUser,
+    ) -> dict[str, DocumentJobAvailableActionResponse]:
+        """返回前端展示用的动作可用性投影；真正执行仍由各 endpoint 校验。"""
+
+        return {
+            "download": self._available_action(self._download_disabled_reason(job)),
+            "retry": self._available_action(self._retry_disabled_reason(job)),
+            "cancel": self._available_action(self._cancel_disabled_reason(job)),
+            "archive": self._available_action(self._archive_disabled_reason(job)),
+            "unarchive": self._available_action(self._unarchive_disabled_reason(job)),
+            "clone": self._available_action(self._clone_disabled_reason(job, user=user)),
+        }
 
     def get_translation_qa(
         self,
@@ -520,6 +538,107 @@ class DocumentJobService:
             ) from exc
         return self.job_repository.get_document_job(job.id) or retried
 
+    def clone_job(
+        self,
+        job_id: str,
+        *,
+        user: AuthenticatedUser,
+        reason: str | None,
+        config_strategy: str,
+        document_language: str | None = None,
+        template_version_id: str | None = None,
+        term_version_id: str | None = None,
+        term_rule_set_id: str | None = None,
+        term_rule_set_version: str | None = None,
+        translation_term_set_id: str | None = None,
+        translation_term_version: str | None = None,
+        translation_profile_id: str | None = None,
+        translation_profile_version: str | None = None,
+        debug_full_text: bool | None = None,
+        trace_id: str | None = None,
+    ) -> DocumentJobRecord:
+        """把源任务复制为一个新 document_job；不修改源任务，也不复用 retry 语义。"""
+
+        source_job = self.get_job(job_id, user=user)
+        source_file = self._get_source_file_for_clone(source_job)
+        explicit_values = {
+            "template_version_id": template_version_id,
+            "term_version_id": term_version_id,
+            "term_rule_set_id": term_rule_set_id,
+            "term_rule_set_version": term_rule_set_version,
+            "translation_term_set_id": translation_term_set_id,
+            "translation_term_version": translation_term_version,
+            "translation_profile_id": translation_profile_id,
+            "translation_profile_version": translation_profile_version,
+        }
+        if config_strategy != "select_published_versions" and any(
+            self._normalize_optional_text(value) for value in explicit_values.values()
+        ):
+            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "只有 select_published_versions 支持显式资源版本。")
+        if config_strategy == "select_published_versions":
+            self._ensure_resource_selection_allowed(user=user, **explicit_values)
+        elif config_strategy not in {"keep_source_snapshot", "use_current_defaults"}:
+            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "config_strategy 非法。")
+
+        now = utc_now()
+        new_job_id = f"docjob_{uuid4().hex[:12]}"
+        normalized_document_language = document_language or source_job.document_language
+        clone_config = self._resolve_clone_config(
+            source_job,
+            source_file,
+            new_job_id=new_job_id,
+            config_strategy=config_strategy,
+            document_language=normalized_document_language,
+            template_version_id=template_version_id,
+            term_version_id=term_version_id,
+            term_rule_set_id=term_rule_set_id,
+            term_rule_set_version=term_rule_set_version,
+            translation_term_set_id=translation_term_set_id,
+            translation_term_version=translation_term_version,
+            translation_profile_id=translation_profile_id,
+            translation_profile_version=translation_profile_version,
+            debug_full_text=debug_full_text,
+            reason=reason,
+        )
+        cloned = DocumentJobRecord(
+            id=new_job_id,
+            tenant_id=source_job.tenant_id,
+            company_id=source_job.company_id,
+            created_by=user.id,
+            source_file_id=source_file.id,
+            source_job_id=source_job.id,
+            mode=source_job.mode,
+            document_language=normalized_document_language,
+            status="pending",
+            stage="uploaded",
+            progress=0,
+            template_version_id=clone_config["template_version_id"],
+            term_version_id=clone_config["term_version_id"],
+            debug_full_text_enabled=clone_config["debug_full_text_enabled"],
+            timeout_at=now + timedelta(seconds=self.settings.p0_document_job_timeout_seconds),
+            request_snapshot=clone_config["request_snapshot"],
+            created_at=now,
+            updated_at=now,
+        )
+        self.job_repository.create_document_job(cloned)
+        self.record_event(
+            cloned,
+            event_type="job_cloned",
+            stage="uploaded",
+            level="info",
+            message="文档任务已重新发起为新任务。",
+            payload={
+                "source_job_id": source_job.id,
+                "source_file_id": source_file.id,
+                "config_strategy": config_strategy,
+                "reason": self._normalize_optional_text(reason),
+            },
+            trace_id=trace_id,
+        )
+        if self.task_queue is None:
+            return cloned
+        return self._enqueue_created_job(cloned, trace_id=trace_id)
+
     def archive_job(
         self,
         job_id: str,
@@ -551,6 +670,36 @@ class DocumentJobService:
             trace_id=trace_id,
         )
         return archived
+
+    def unarchive_job(
+        self,
+        job_id: str,
+        *,
+        user: AuthenticatedUser,
+        trace_id: str | None,
+    ) -> DocumentJobRecord:
+        """恢复误归档 document_job；只更新归档元数据，不触碰文件或状态。"""
+
+        job = self.get_job(job_id, user=user)
+        if job.archived_at is None:
+            return job
+        now = utc_now()
+        restored = self.job_repository.update_document_job(
+            job.id,
+            archived_at=None,
+            archived_by=None,
+            updated_at=now,
+        )
+        self.record_event(
+            restored,
+            event_type="job_unarchived",
+            stage=restored.stage,
+            level="info",
+            message="文档任务已取消归档并恢复到默认列表。",
+            payload={"restored_by": user.id, "status": restored.status},
+            trace_id=trace_id,
+        )
+        return restored
 
     def cancel_job(
         self,
@@ -703,16 +852,9 @@ class DocumentJobService:
         return failed
 
     def _ensure_retry_allowed(self, job: DocumentJobRecord) -> None:
-        if job.status != "failed":
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "只有 failed 文档任务允许重试。")
-        if job.retry_count >= self.settings.p0_document_job_max_retries:
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文档任务重试次数已达上限。")
-        if not self._is_retryable_failure(job):
-            raise ApiError(
-                status.HTTP_409_CONFLICT,
-                "conflict",
-                f"该失败不可重试: {job.error_code or 'unknown'}",
-            )
+        reason = self._retry_disabled_reason(job)
+        if reason is not None:
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", reason)
 
     def _is_retryable_failure(self, job: DocumentJobRecord) -> bool:
         if job.error_code in {"document_job_invalid_input"}:
@@ -1085,6 +1227,20 @@ class DocumentJobService:
             raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "operator 只能使用自己上传的源文件。")
         return source_file
 
+    def _get_source_file_for_clone(self, job: DocumentJobRecord) -> DocumentFileRecord:
+        source_file = self.file_repository.get_document_file(job.source_file_id)
+        if source_file is None:
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "源任务的 source_pdf 文件不存在，不能重新发起。")
+        if source_file.file_type != "source_pdf":
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "源任务文件不是 source_pdf，不能重新发起。")
+        if source_file.status != "uploaded":
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "源 PDF 尚不可用，不能重新发起。")
+        if source_file.tenant_id != job.tenant_id or source_file.company_id != job.company_id:
+            raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "源 PDF 与任务租户不匹配。")
+        if source_file.expires_at is not None and source_file.expires_at <= utc_now():
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "源 PDF 已过期，不能重新发起。")
+        return source_file
+
     def _get_completed_result_file(self, job: DocumentJobRecord) -> DocumentFileRecord:
         if job.status != "succeeded" or job.stage != "completed" or job.result_file_id is None:
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文档任务尚未成功完成，生成 Word 不可下载。")
@@ -1200,6 +1356,58 @@ class DocumentJobService:
             return job.updated_at, job.id
         return job.created_at, job.id
 
+    def _available_action(self, disabled_reason: str | None) -> DocumentJobAvailableActionResponse:
+        return DocumentJobAvailableActionResponse(
+            enabled=disabled_reason is None,
+            disabled_reason=disabled_reason,
+        )
+
+    def _download_disabled_reason(self, job: DocumentJobRecord) -> str | None:
+        if job.status != "succeeded":
+            return "只有 succeeded 文档任务允许下载结果。"
+        if job.result_file_id is None:
+            return "任务结果文件尚未登记，不能下载。"
+        return None
+
+    def _retry_disabled_reason(self, job: DocumentJobRecord) -> str | None:
+        if job.archived_at is not None:
+            return "已归档文档任务不允许重试。"
+        if job.status != "failed":
+            return "只有 failed 文档任务允许重试。"
+        if job.retry_count >= self.settings.p0_document_job_max_retries:
+            return "文档任务重试次数已达上限。"
+        if not self._is_retryable_failure(job):
+            return f"该失败不可重试: {job.error_code or 'unknown'}"
+        return None
+
+    def _cancel_disabled_reason(self, job: DocumentJobRecord) -> str | None:
+        if job.archived_at is not None:
+            return "已归档文档任务不允许取消。"
+        if job.status not in CANCELABLE_DOCUMENT_JOB_STATUSES:
+            return "只有 pending、queued、running 任务允许取消。"
+        return None
+
+    def _archive_disabled_reason(self, job: DocumentJobRecord) -> str | None:
+        if job.archived_at is not None:
+            return "任务已归档。"
+        if job.status not in ARCHIVABLE_DOCUMENT_JOB_STATUSES:
+            return "只有 succeeded、failed、canceled 终态任务允许归档。"
+        return None
+
+    def _unarchive_disabled_reason(self, job: DocumentJobRecord) -> str | None:
+        if job.archived_at is None:
+            return "任务未归档。"
+        return None
+
+    def _clone_disabled_reason(self, job: DocumentJobRecord, *, user: AuthenticatedUser) -> str | None:
+        if not self._is_visible(job, user):
+            return "无权限访问该文档任务。"
+        try:
+            self._get_source_file_for_clone(job)
+        except ApiError as exc:
+            return exc.message
+        return None
+
     def _build_request_snapshot(
         self,
         source_file: DocumentFileRecord,
@@ -1243,6 +1451,128 @@ class DocumentJobService:
             "resources": resource_snapshot,
             "debug_full_text_enabled": debug_full_text_enabled,
         }
+
+    def _resolve_clone_config(
+        self,
+        source_job: DocumentJobRecord,
+        source_file: DocumentFileRecord,
+        *,
+        new_job_id: str,
+        config_strategy: str,
+        document_language: str,
+        template_version_id: str | None,
+        term_version_id: str | None,
+        term_rule_set_id: str | None,
+        term_rule_set_version: str | None,
+        translation_term_set_id: str | None,
+        translation_term_version: str | None,
+        translation_profile_id: str | None,
+        translation_profile_version: str | None,
+        debug_full_text: bool | None,
+        reason: str | None,
+    ) -> dict[str, Any]:
+        if config_strategy == "keep_source_snapshot":
+            source_assets = self._read_snapshot_record(source_job.request_snapshot, "term_assets")
+            source_profile = self._read_snapshot_record(source_job.request_snapshot, "translation_profile")
+            resolved_debug = self._resolve_debug_full_text_enabled(
+                source_job.mode,
+                source_job.debug_full_text_enabled if debug_full_text is None else debug_full_text,
+            )
+            request_snapshot = self._build_request_snapshot(
+                source_file,
+                mode=source_job.mode,
+                document_language=document_language,
+                template_version_id=source_job.template_version_id,
+                term_version_id=source_job.term_version_id,
+                debug_full_text_enabled=resolved_debug,
+                term_rule_set_id=self._read_snapshot_string(source_assets, "term_rule_set_id"),
+                term_rule_set_version=self._read_snapshot_string(source_assets, "term_rule_set_version"),
+                translation_term_set_id=self._read_snapshot_string(source_assets, "translation_term_set_id"),
+                translation_term_version=self._read_snapshot_string(source_assets, "translation_term_version"),
+                translation_profile_id=self._read_snapshot_string(source_profile, "translation_profile_id"),
+                translation_profile_version=self._read_snapshot_string(source_profile, "translation_profile_version"),
+                resource_snapshot=self._read_snapshot_record(source_job.request_snapshot, "resources"),
+            )
+            request_snapshot["clone"] = self._build_clone_snapshot(source_job, config_strategy, reason)
+            return {
+                "template_version_id": source_job.template_version_id,
+                "term_version_id": source_job.term_version_id,
+                "debug_full_text_enabled": resolved_debug,
+                "request_snapshot": request_snapshot,
+            }
+
+        selected_template_version_id = template_version_id if config_strategy == "select_published_versions" else None
+        selected_term_version_id = term_version_id if config_strategy == "select_published_versions" else None
+        selected_term_rule_set_id = term_rule_set_id if config_strategy == "select_published_versions" else None
+        selected_term_rule_set_version = term_rule_set_version if config_strategy == "select_published_versions" else None
+        selected_translation_term_set_id = translation_term_set_id if config_strategy == "select_published_versions" else None
+        selected_translation_term_version = translation_term_version if config_strategy == "select_published_versions" else None
+        selected_translation_profile_id = translation_profile_id if config_strategy == "select_published_versions" else None
+        selected_translation_profile_version = translation_profile_version if config_strategy == "select_published_versions" else None
+        resolved_template_version_id = self._resolve_template_version_id(selected_template_version_id)
+        resolved_term_version_id = self._resolve_term_version_id(
+            source_job.mode,
+            self._legacy_translation_term_version_id(
+                source_job.mode,
+                selected_term_version_id,
+                selected_translation_term_version,
+            ),
+        )
+        resolved_debug = self._resolve_debug_full_text_enabled(source_job.mode, bool(debug_full_text))
+        request_snapshot = self._build_request_snapshot(
+            source_file,
+            mode=source_job.mode,
+            document_language=document_language,
+            template_version_id=resolved_template_version_id,
+            term_version_id=resolved_term_version_id,
+            debug_full_text_enabled=resolved_debug,
+            term_rule_set_id=selected_term_rule_set_id,
+            term_rule_set_version=selected_term_rule_set_version,
+            translation_term_set_id=selected_translation_term_set_id,
+            translation_term_version=selected_translation_term_version,
+            translation_profile_id=selected_translation_profile_id,
+            translation_profile_version=selected_translation_profile_version,
+            resource_snapshot=self._build_resource_snapshot(
+                job_id=new_job_id,
+                mode=source_job.mode,
+                document_language=document_language,
+                template_version_id=resolved_template_version_id if self._normalize_optional_text(selected_template_version_id) else None,
+                term_rule_set_id=selected_term_rule_set_id,
+                term_rule_set_version=selected_term_rule_set_version,
+                translation_term_set_id=selected_translation_term_set_id,
+                translation_term_version=selected_translation_term_version,
+                translation_profile_id=selected_translation_profile_id,
+                translation_profile_version=selected_translation_profile_version,
+            ),
+        )
+        request_snapshot["clone"] = self._build_clone_snapshot(source_job, config_strategy, reason)
+        return {
+            "template_version_id": resolved_template_version_id,
+            "term_version_id": resolved_term_version_id,
+            "debug_full_text_enabled": resolved_debug,
+            "request_snapshot": request_snapshot,
+        }
+
+    def _build_clone_snapshot(self, source_job: DocumentJobRecord, config_strategy: str, reason: str | None) -> dict[str, Any]:
+        return {
+            "source_job_id": source_job.id,
+            "config_strategy": config_strategy,
+            "reason": self._normalize_optional_text(reason),
+            "source_status": source_job.status,
+            "source_stage": source_job.stage,
+            "source_template_version_id": source_job.template_version_id,
+            "source_term_version_id": source_job.term_version_id,
+        }
+
+    def _read_snapshot_record(self, snapshot: dict, key: str) -> dict[str, Any] | None:
+        value = snapshot.get(key)
+        return value if isinstance(value, dict) else None
+
+    def _read_snapshot_string(self, snapshot: dict[str, Any] | None, key: str) -> str | None:
+        if snapshot is None:
+            return None
+        value = snapshot.get(key)
+        return value if isinstance(value, str) else None
 
     def _build_retry_request_snapshot(
         self,

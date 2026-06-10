@@ -10,9 +10,9 @@ source_files:
   - app/domains/document_jobs/models.py
   - app/domains/document_jobs/service.py
   - app/domains/document_jobs/execution.py
-summary: Document Jobs API 提供 P0 PDF -> Word 任务创建、查询、事件、重试、取消、归档和下载入口。
+summary: Document Jobs API 提供 P0 PDF -> Word 任务创建、查询、事件、重试、clone、取消、归档和下载入口。
 tags: [document-jobs, api, pdf, word]
-last_reviewed: 2026-06-06
+last_reviewed: 2026-06-09
 ---
 
 ## 概述
@@ -31,8 +31,10 @@ GET /api/v1/document-jobs/{job_id}/translation-qa
 PATCH /api/v1/document-jobs/{job_id}/translation-qa
 GET /api/v1/document-jobs/config-summary
 POST /api/v1/document-jobs/bulk-retry
+POST /api/v1/document-jobs/{job_id}/clone
 POST /api/v1/document-jobs/bulk-archive
 POST /api/v1/document-jobs/bulk-cancel
+POST /api/v1/document-jobs/{job_id}/unarchive
 GET /api/v1/document-jobs/{job_id}/download-url
 GET /api/v1/document-jobs/{job_id}/download?token=...
 ```
@@ -127,7 +129,13 @@ GET /api/v1/document-jobs/{job_id}/download?token=...
 ### `GET /api/v1/document-jobs/{job_id}`
 
 - 用途：读取任务详情。
-- 响应：`DocumentJobResponse`，包括状态、阶段、进度、中间产物 file id、失败诊断字段、retry count 和 request snapshot。
+- 响应：`DocumentJobResponse`，包括状态、阶段、进度、中间产物 file id、失败诊断字段、retry count、`source_job_id`、request snapshot 和 `available_actions`。
+- `available_actions` 是服务端对当前用户和任务状态的操作可用性判断，键包括 `download`、`retry`、`cancel`、`archive`、`unarchive`、`clone`。每个 action 返回：
+
+| 字段 | 说明 |
+|---|---|
+| `enabled` | 当前用户能否执行该动作。 |
+| `disabled_reason` | 禁用原因；`enabled=true` 时为 `null`。 |
 
 ### `GET /api/v1/document-jobs/{job_id}/events`
 
@@ -174,6 +182,27 @@ GET /api/v1/document-jobs/{job_id}/download?token=...
 - 请求体可包含 `reason`、`use_latest_term_assets` 和术语资产选择字段。
 - 成功动作写入 `document_job.retry` audit event。
 - 权限：Operator 只能提交原因并沿用原配置；Admin 可选择使用最新默认术语资产或指定 published 术语资产。Retry 当前不重新绑定模板或翻译配置。
+- 边界：Retry 只用于失败任务原地重试，不创建新任务，不等同于 clone。
+
+### `POST /api/v1/document-jobs/{job_id}/clone`
+
+- 用途：基于已有任务源 PDF 创建一个新的 document job，语义是 “rerun as new job”。
+- 行为：不会修改源任务，不增加源任务 `retry_count`，不会把源文件归属改到新任务；新任务的 `source_job_id` 指向源任务。
+- 请求体：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `reason` | 否 | 操作原因。 |
+| `config_strategy` | 否 | `keep_source_snapshot` / `use_current_defaults` / `select_published_versions`，默认 `keep_source_snapshot`。 |
+| `document_language` | 否 | 覆盖新任务文档语言；未传则沿用源任务。 |
+| `template_version_id` | 否 | 仅 `select_published_versions` 下可传，Admin-only。 |
+| `term_rule_set_id` / `term_rule_set_version` | 否 | 仅 `select_published_versions` 下可传，Admin-only。 |
+| `translation_term_set_id` / `translation_term_version` | 否 | 仅 `select_published_versions` 下可传，Admin-only。 |
+| `translation_profile_id` / `translation_profile_version` | 否 | 仅 `select_published_versions` 下可传，Admin-only。 |
+| `debug_full_text` | 否 | 覆盖新任务 debug 全文开关。 |
+
+- 成功：`201 Created`，返回 `source_job_id`、新 `job_id` 和完整新 `job`，并写入 `job_cloned` 任务事件和 `document_job.clone` audit event。
+- 失败：源 PDF 不存在、不可见、过期或不是 uploaded source PDF 时返回 404/403/409；Operator 传显式资源版本返回 403。
 
 ### `POST /api/v1/document-jobs/bulk-retry`
 
@@ -211,6 +240,13 @@ GET /api/v1/document-jobs/{job_id}/download?token=...
 
 - 用途：归档任务。
 - 成功动作写入 `document_job.archive` audit event。
+- 边界：归档不是删除，不删除源文件、结果文件、debug/log 文件或事件。
+
+### `POST /api/v1/document-jobs/{job_id}/unarchive`
+
+- 用途：取消归档，让任务重新出现在默认列表中。
+- 行为：清空 `archived_at` / `archived_by`，保留所有文件和事件；未归档任务调用该接口是幂等 no-op。
+- 成功动作写入 `document_job.unarchive` audit event，并写入 `job_unarchived` 任务事件。
 
 ### `POST /api/v1/document-jobs/bulk-archive`
 

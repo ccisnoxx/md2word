@@ -36,6 +36,8 @@ DocumentJobTranslationQaIssueType = Literal[
 DocumentJobEventType = Literal[
     "job_created",
     "job_archived",
+    "job_unarchived",
+    "job_cloned",
     "job_canceled",
     "stage_started",
     "stage_succeeded",
@@ -67,6 +69,7 @@ class DocumentJobRecord(BaseModel):
     company_id: str
     created_by: str
     source_file_id: str
+    source_job_id: str | None = None
     mode: DocumentJobMode = "direct_pdf_to_word"
     document_language: Literal["auto", "zh", "en"] = "auto"
     status: DocumentJobStatus = "pending"

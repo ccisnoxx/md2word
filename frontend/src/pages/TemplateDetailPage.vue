@@ -8,7 +8,6 @@
         <p>{{ template?.description || "查看模板详情、版本和验证证据。" }}</p>
       </div>
       <div class="toolbar">
-        <el-button @click="$router.push('/settings/templates')">返回列表</el-button>
         <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
       </div>
     </section>

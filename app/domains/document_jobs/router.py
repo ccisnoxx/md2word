@@ -27,6 +27,8 @@ from app.domains.document_jobs.schemas import (
     DocumentJobBulkJobIdsRequest,
     DocumentJobBulkResponse,
     DocumentJobBulkRetryRequest,
+    DocumentJobCloneRequest,
+    DocumentJobCloneResponse,
     DocumentJobCancelResponse,
     DocumentJobCreateRequest,
     DocumentJobCreateResponse,
@@ -39,6 +41,7 @@ from app.domains.document_jobs.schemas import (
     DocumentJobResponse,
     DocumentJobRetryRequest,
     DocumentJobRetryResponse,
+    DocumentJobUnarchiveResponse,
     DocumentJobTranslationQaResponse,
     DocumentJobTranslationQaStateResponse,
     DocumentJobTranslationQaUpdateRequest,
@@ -86,7 +89,7 @@ def create_document_job(
         status=job.status,
         stage=job.stage,
         progress=job.progress,
-        job=_build_document_job_response(job),
+        job=_build_document_job_response(runtime, user, job),
     )
 
 
@@ -117,7 +120,7 @@ def list_document_jobs(
         created_to=created_to,
     )
     return DocumentJobListResponse(
-        items=[_build_document_job_response(job) for job in jobs],
+        items=[_build_document_job_response(runtime, user, job) for job in jobs],
         page=page,
         page_size=page_size,
         total=total,
@@ -168,7 +171,7 @@ def bulk_retry_document_jobs(
             reason=payload.reason,
             trace_id=trace_id,
         )
-        items.append(_build_document_job_bulk_success(job))
+        items.append(_build_document_job_bulk_success(runtime, user, job))
     return _build_document_job_bulk_response("retry", items)
 
 
@@ -196,7 +199,7 @@ def bulk_archive_document_jobs(
             target_id=job.id,
             trace_id=trace_id,
         )
-        items.append(_build_document_job_bulk_success(job))
+        items.append(_build_document_job_bulk_success(runtime, user, job))
     return _build_document_job_bulk_response("archive", items)
 
 
@@ -224,7 +227,7 @@ def bulk_cancel_document_jobs(
             target_id=job.id,
             trace_id=trace_id,
         )
-        items.append(_build_document_job_bulk_success(job))
+        items.append(_build_document_job_bulk_success(runtime, user, job))
     return _build_document_job_bulk_response("cancel", items)
 
 
@@ -234,7 +237,7 @@ def get_document_job(
     runtime: AppRuntime = Depends(get_runtime),
     user: AuthenticatedUser = Depends(require_current_user),
 ) -> DocumentJobResponse:
-    return _build_document_job_response(runtime.document_job_service.get_job(job_id, user=user))
+    return _build_document_job_response(runtime, user, runtime.document_job_service.get_job(job_id, user=user))
 
 
 @router.get("/{job_id}/events", response_model=DocumentJobEventListResponse)
@@ -292,7 +295,7 @@ def update_document_job_translation_qa(
     return DocumentJobTranslationQaUpdateResponse(
         job_id=job.id,
         qa=_build_translation_qa_state_response(job),
-        job=_build_document_job_response(job),
+        job=_build_document_job_response(runtime, user, job),
     )
 
 
@@ -330,7 +333,55 @@ def retry_document_job(
         stage=job.stage,
         progress=job.progress,
         retry_count=job.retry_count,
-        job=_build_document_job_response(job),
+        job=_build_document_job_response(runtime, user, job),
+    )
+
+
+@router.post("/{job_id}/clone", response_model=DocumentJobCloneResponse, status_code=status.HTTP_201_CREATED)
+def clone_document_job(
+    job_id: str,
+    payload: DocumentJobCloneRequest | None = None,
+    runtime: AppRuntime = Depends(get_runtime),
+    user: AuthenticatedUser = Depends(require_current_user),
+    trace_id: str = Depends(get_trace_id),
+) -> DocumentJobCloneResponse:
+    request_payload = payload or DocumentJobCloneRequest()
+    job = runtime.document_job_service.clone_job(
+        job_id,
+        user=user,
+        reason=request_payload.reason,
+        config_strategy=request_payload.config_strategy,
+        document_language=request_payload.document_language,
+        template_version_id=request_payload.template_version_id,
+        term_version_id=request_payload.term_version_id,
+        term_rule_set_id=request_payload.term_rule_set_id,
+        term_rule_set_version=request_payload.term_rule_set_version,
+        translation_term_set_id=request_payload.translation_term_set_id,
+        translation_term_version=request_payload.translation_term_version,
+        translation_profile_id=request_payload.translation_profile_id,
+        translation_profile_version=request_payload.translation_profile_version,
+        debug_full_text=request_payload.debug_full_text,
+        trace_id=trace_id,
+    )
+    runtime.audit_service.record(
+        actor=_actor_from_user(user),
+        action="document_job.clone",
+        target_type="document_job",
+        target_id=job.id,
+        reason=request_payload.reason,
+        details={
+            "source_job_id": job_id,
+            "config_strategy": request_payload.config_strategy,
+        },
+        trace_id=trace_id,
+    )
+    return DocumentJobCloneResponse(
+        source_job_id=job_id,
+        job_id=job.id,
+        status=job.status,
+        stage=job.stage,
+        progress=job.progress,
+        job=_build_document_job_response(runtime, user, job),
     )
 
 
@@ -354,7 +405,7 @@ def cancel_document_job(
         status=job.status,
         stage=job.stage,
         canceled_at=job.canceled_at,
-        job=_build_document_job_response(job),
+        job=_build_document_job_response(runtime, user, job),
     )
 
 
@@ -376,7 +427,30 @@ def archive_document_job(
     return DocumentJobArchiveResponse(
         job_id=job.id,
         archived_at=job.archived_at,
-        job=_build_document_job_response(job),
+        job=_build_document_job_response(runtime, user, job),
+    )
+
+
+@router.post("/{job_id}/unarchive", response_model=DocumentJobUnarchiveResponse)
+def unarchive_document_job(
+    job_id: str,
+    runtime: AppRuntime = Depends(get_runtime),
+    user: AuthenticatedUser = Depends(require_current_user),
+    trace_id: str = Depends(get_trace_id),
+) -> DocumentJobUnarchiveResponse:
+    restored_at = utc_now()
+    job = runtime.document_job_service.unarchive_job(job_id, user=user, trace_id=trace_id)
+    runtime.audit_service.record(
+        actor=_actor_from_user(user),
+        action="document_job.unarchive",
+        target_type="document_job",
+        target_id=job.id,
+        trace_id=trace_id,
+    )
+    return DocumentJobUnarchiveResponse(
+        job_id=job.id,
+        restored_at=restored_at,
+        job=_build_document_job_response(runtime, user, job),
     )
 
 
@@ -446,8 +520,15 @@ def download_document_job_result(
     )
 
 
-def _build_document_job_response(job: DocumentJobRecord) -> DocumentJobResponse:
-    return DocumentJobResponse(**job.model_dump(mode="python"))
+def _build_document_job_response(
+    runtime: AppRuntime,
+    user: AuthenticatedUser,
+    job: DocumentJobRecord,
+) -> DocumentJobResponse:
+    return DocumentJobResponse(
+        **job.model_dump(mode="python"),
+        available_actions=runtime.document_job_service.build_available_actions(job, user=user),
+    )
 
 
 def _build_document_job_event_response(event: DocumentJobEventRecord) -> DocumentJobEventResponse:
@@ -487,14 +568,18 @@ def _validate_document_job_bulk_ids(job_ids: list[str]) -> list[str]:
     return normalized
 
 
-def _build_document_job_bulk_success(job: DocumentJobRecord) -> DocumentJobBulkItemResponse:
+def _build_document_job_bulk_success(
+    runtime: AppRuntime,
+    user: AuthenticatedUser,
+    job: DocumentJobRecord,
+) -> DocumentJobBulkItemResponse:
     """构造批量操作中单个成功任务的响应项。"""
 
     return DocumentJobBulkItemResponse(
         job_id=job.id,
         ok=True,
         status_code=status.HTTP_200_OK,
-        job=_build_document_job_response(job),
+        job=_build_document_job_response(runtime, user, job),
     )
 
 

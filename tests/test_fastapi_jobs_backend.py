@@ -6488,6 +6488,233 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(invalid_qa_status_response.json()["error_code"], "invalid_request")
         self.assertIn("translation_qa_status", invalid_qa_status_response.json()["detail"])
 
+    def test_document_job_response_includes_server_action_availability(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers, filename="actions-source.pdf")
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+                list_response = client.get("/api/v1/document-jobs", headers=headers)
+                runtime.document_job_repository.update_document_job(
+                    job_id,
+                    status="failed",
+                    stage="failed",
+                    failed_stage="parsing",
+                    error_code="document_job_invalid_input",
+                    error_message="bad input",
+                )
+                failed_detail_response = client.get(f"/api/v1/document-jobs/{job_id}", headers=headers)
+                archive_response = client.delete(f"/api/v1/document-jobs/{job_id}", headers=headers)
+                archived_detail_response = client.get(f"/api/v1/document-jobs/{job_id}", headers=headers)
+
+        self.assertEqual(create_response.status_code, 201)
+        pending_actions = list_response.json()["items"][0]["available_actions"]
+        self.assertEqual(set(pending_actions), {"download", "retry", "cancel", "archive", "unarchive", "clone"})
+        self.assertTrue(pending_actions["cancel"]["enabled"])
+        self.assertTrue(pending_actions["clone"]["enabled"])
+        self.assertFalse(pending_actions["download"]["enabled"])
+        self.assertIn("succeeded", pending_actions["download"]["disabled_reason"])
+        failed_actions = failed_detail_response.json()["available_actions"]
+        self.assertTrue(failed_actions["archive"]["enabled"])
+        self.assertFalse(failed_actions["retry"]["enabled"])
+        self.assertIn("不可重试", failed_actions["retry"]["disabled_reason"])
+        self.assertEqual(archive_response.status_code, 200)
+        archived_actions = archived_detail_response.json()["available_actions"]
+        self.assertTrue(archived_actions["unarchive"]["enabled"])
+        self.assertFalse(archived_actions["archive"]["enabled"])
+        self.assertFalse(archived_actions["retry"]["enabled"])
+        self.assertIn("已归档", archived_actions["retry"]["disabled_reason"])
+
+    def test_document_job_unarchive_restores_default_list_and_writes_audit(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers, filename="unarchive-source.pdf")
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+                archive_response = client.delete(f"/api/v1/document-jobs/{job_id}", headers=headers)
+                hidden_list_response = client.get("/api/v1/document-jobs", headers=headers)
+                unarchive_response = client.post(
+                    f"/api/v1/document-jobs/{job_id}/unarchive",
+                    headers={**headers, "X-Trace-Id": "trace_docjob_unarchive"},
+                )
+                restored_list_response = client.get("/api/v1/document-jobs", headers=headers)
+                events_response = client.get(f"/api/v1/document-jobs/{job_id}/events", headers=headers)
+
+            stored_job = runtime.document_job_repository.get_document_job(job_id)
+            audit_events = runtime.audit_event_repository.list_audit_events()
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(archive_response.status_code, 200)
+        self.assertEqual(hidden_list_response.json()["total"], 0)
+        self.assertEqual(unarchive_response.status_code, 200)
+        payload = unarchive_response.json()
+        self.assertEqual(payload["job_id"], job_id)
+        self.assertIsNotNone(payload["restored_at"])
+        self.assertIsNone(payload["job"]["archived_at"])
+        self.assertIsNone(payload["job"]["archived_by"])
+        self.assertFalse(payload["job"]["available_actions"]["unarchive"]["enabled"])
+        self.assertEqual(restored_list_response.json()["total"], 1)
+        self.assertIsNotNone(stored_job)
+        self.assertIsNone(stored_job.archived_at)
+        self.assertIsNone(stored_job.archived_by)
+        event_types = [event["event_type"] for event in events_response.json()["items"]]
+        self.assertIn("job_unarchived", event_types)
+        unarchive_audit_events = [event for event in audit_events if event.action == "document_job.unarchive"]
+        self.assertEqual(len(unarchive_audit_events), 1)
+        self.assertEqual(unarchive_audit_events[0].target_id, job_id)
+
+    def test_document_job_clone_creates_new_job_without_mutating_source(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers, filename="clone-source.pdf")
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                source_job_id = create_response.json()["job_id"]
+                clone_response = client.post(
+                    f"/api/v1/document-jobs/{source_job_id}/clone",
+                    headers={**headers, "X-Trace-Id": "trace_docjob_clone"},
+                    json={"reason": "rerun as new job"},
+                )
+                cloned_job_id = clone_response.json()["job_id"]
+                cloned_files_response = client.get(f"/api/v1/document-jobs/{cloned_job_id}/files", headers=headers)
+                source_detail_response = client.get(f"/api/v1/document-jobs/{source_job_id}", headers=headers)
+                cloned_events_response = client.get(f"/api/v1/document-jobs/{cloned_job_id}/events", headers=headers)
+
+            source_job = runtime.document_job_repository.get_document_job(source_job_id)
+            cloned_job = runtime.document_job_repository.get_document_job(cloned_job_id)
+            source_file_after = runtime.document_file_repository.get_document_file(source_file["id"])
+            audit_events = runtime.audit_event_repository.list_audit_events()
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(clone_response.status_code, 201)
+        clone_payload = clone_response.json()
+        self.assertEqual(clone_payload["source_job_id"], source_job_id)
+        self.assertNotEqual(clone_payload["job_id"], source_job_id)
+        self.assertEqual(clone_payload["status"], "pending")
+        self.assertEqual(clone_payload["job"]["source_job_id"], source_job_id)
+        self.assertEqual(clone_payload["job"]["source_file_id"], source_file["id"])
+        self.assertEqual(clone_payload["job"]["request_snapshot"]["clone"]["source_job_id"], source_job_id)
+        self.assertEqual(clone_payload["job"]["request_snapshot"]["clone"]["config_strategy"], "keep_source_snapshot")
+        self.assertIsNotNone(source_job)
+        self.assertEqual(source_job.retry_count, 0)
+        self.assertIsNone(source_job.source_job_id)
+        self.assertIsNotNone(cloned_job)
+        self.assertEqual(cloned_job.source_job_id, source_job_id)
+        self.assertEqual(cloned_job.source_file_id, source_job.source_file_id)
+        self.assertIsNotNone(source_file_after)
+        self.assertEqual(source_file_after.job_id, source_job_id)
+        self.assertEqual([file["id"] for file in cloned_files_response.json()["files"]], [source_file["id"]])
+        self.assertIsNone(source_detail_response.json()["source_job_id"])
+        self.assertIn("job_cloned", [event["event_type"] for event in cloned_events_response.json()["items"]])
+        clone_audit_events = [event for event in audit_events if event.action == "document_job.clone"]
+        self.assertEqual(len(clone_audit_events), 1)
+        self.assertEqual(clone_audit_events[0].target_id, cloned_job_id)
+        self.assertEqual(clone_audit_events[0].reason, "rerun as new job")
+        self.assertEqual(clone_audit_events[0].details["source_job_id"], source_job_id)
+        self.assertEqual(runtime.document_job_execution_service.fake_mineru_client.calls, [])
+
+    def test_document_job_clone_rejects_expired_source_and_reports_disabled_reason(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers, filename="clone-expired.pdf")
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+                runtime.document_file_repository.update_document_file(
+                    source_file["id"],
+                    expires_at=utc_now() - timedelta(seconds=1),
+                )
+                detail_response = client.get(f"/api/v1/document-jobs/{job_id}", headers=headers)
+                clone_response = client.post(f"/api/v1/document-jobs/{job_id}/clone", headers=headers, json={})
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(detail_response.status_code, 200)
+        clone_action = detail_response.json()["available_actions"]["clone"]
+        self.assertFalse(clone_action["enabled"])
+        self.assertIn("过期", clone_action["disabled_reason"])
+        self.assertEqual(clone_response.status_code, 409)
+        self.assertEqual(clone_response.json()["error_code"], "conflict")
+        self.assertIn("过期", clone_response.json()["detail"])
+
+    def test_document_job_clone_explicit_resource_selection_requires_admin(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers, filename="clone-operator-explicit.pdf")
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+                clone_response = client.post(
+                    f"/api/v1/document-jobs/{job_id}/clone",
+                    headers=headers,
+                    json={
+                        "config_strategy": "select_published_versions",
+                        "template_version_id": "default@1",
+                    },
+                )
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(clone_response.status_code, 403)
+        self.assertIn("operator 不能选择任务资源版本", clone_response.json()["detail"])
+
     def test_document_job_create_en2zh_binds_default_term_version(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(

@@ -72,6 +72,7 @@
               text
               type="primary"
               :disabled="!canDownloadDocumentJob(row)"
+              :title="documentJobActionDisabledReason(row, 'download')"
               @click="$emit('download', row)"
             >
               下载
@@ -81,6 +82,7 @@
               text
               type="warning"
               :disabled="!canRetryDocumentJob(row)"
+              :title="documentJobActionDisabledReason(row, 'retry')"
               @click="$emit('retry', row)"
             >
               重试
@@ -88,8 +90,18 @@
             <el-button
               size="small"
               text
+              :disabled="!canCloneDocumentJob(row)"
+              :title="documentJobActionDisabledReason(row, 'clone')"
+              @click="$emit('clone', row)"
+            >
+              重新发起
+            </el-button>
+            <el-button
+              size="small"
+              text
               type="danger"
               :disabled="!canCancelDocumentJob(row)"
+              :title="documentJobActionDisabledReason(row, 'cancel')"
               @click="$emit('cancel', row)"
             >
               取消
@@ -98,9 +110,19 @@
               size="small"
               text
               :disabled="!canArchiveDocumentJob(row)"
+              :title="documentJobActionDisabledReason(row, 'archive')"
               @click="$emit('archive', row)"
             >
               归档
+            </el-button>
+            <el-button
+              size="small"
+              text
+              :disabled="!canUnarchiveDocumentJob(row)"
+              :title="documentJobActionDisabledReason(row, 'unarchive')"
+              @click="$emit('unarchive', row)"
+            >
+              取消归档
             </el-button>
           </div>
         </template>
@@ -127,8 +149,11 @@ import JobStatusBadge from "@/components/JobStatusBadge.vue";
 import {
   canArchiveDocumentJob,
   canCancelDocumentJob,
+  canCloneDocumentJob,
   canDownloadDocumentJob,
   canRetryDocumentJob,
+  canUnarchiveDocumentJob,
+  documentJobActionDisabledReason,
   formatDateTime,
   getJobSourceFilename,
   jobModeText,
@@ -149,12 +174,14 @@ defineEmits<{
   "selection-change": [jobs: DocumentJobResponse[]];
   download: [job: DocumentJobResponse];
   retry: [job: DocumentJobResponse];
+  clone: [job: DocumentJobResponse];
   cancel: [job: DocumentJobResponse];
   archive: [job: DocumentJobResponse];
+  unarchive: [job: DocumentJobResponse];
 }>();
 
 function isBatchSelectable(row: DocumentJobResponse): boolean {
-  return canRetryDocumentJob(row) || canArchiveDocumentJob(row);
+  return canRetryDocumentJob(row) || canArchiveDocumentJob(row) || canCancelDocumentJob(row);
 }
 
 // 表格 slot 的 row 类型较宽，统一在 helper 内按 DocumentJobResponse 读取 QA 状态。

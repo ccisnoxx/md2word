@@ -6,6 +6,8 @@ Accepted as `destructive rollout planning scaffold prepared; execution not appro
 
 Not accepted as executable planning because exact bucket/key/version/sentinel values are still missing.
 
+2026-06-09 online sentinel preflight remains blocked: the active online health endpoint reports `artifact_storage=local_object`, so uploading the local sentinel candidate through the product upload path would not create an S3 object. See `online-sentinel-preflight-gap-audit.md`.
+
 ## Blocked Inputs
 
 - bucket
