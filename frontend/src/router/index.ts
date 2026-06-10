@@ -6,6 +6,7 @@ import { setUnauthorizedHandler } from "@/api/client";
 import AppLayout from "@/layouts/AppLayout.vue";
 import AuditLogPage from "@/pages/AuditLogPage.vue";
 import FileRetentionPage from "@/pages/FileRetentionPage.vue";
+import JobCreatePage from "@/pages/JobCreatePage.vue";
 import JobDetailPage from "@/pages/JobDetailPage.vue";
 import JobsPage from "@/pages/JobsPage.vue";
 import LoginPage from "@/pages/LoginPage.vue";
@@ -40,6 +41,7 @@ const router = createRouter({
       children: [
         { path: "", redirect: "/jobs" },
         { path: "jobs", name: "jobs", component: JobsPage },
+        { path: "jobs/new", name: "job-create", component: JobCreatePage },
         { path: "jobs/:jobId", name: "job-detail", component: JobDetailPage, props: true },
         { path: "jobs/:jobId/translation-qa", name: "job-translation-qa", component: TranslationResultQaPage, props: true },
         { path: "translation-qa", name: "translation-qa", component: TranslationQaQueuePage },

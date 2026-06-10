@@ -326,6 +326,43 @@ onMounted(() => {
 <style scoped lang="scss">
 .upload-card {
   border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+}
+
+.upload-card :deep(.el-card__body) {
+  padding: 20px;
+}
+
+.upload-card :deep(.el-upload-dragger) {
+  border-color: #d9e2ec;
+  border-radius: 8px;
+  background: #f8fafc;
+  transition:
+    border-color 180ms ease-out,
+    box-shadow 180ms ease-out,
+    background-color 180ms ease-out;
+}
+
+.upload-card :deep(.el-upload-dragger:hover) {
+  border-color: #93c5fd;
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.12);
+}
+
+.upload-card :deep(.el-icon--upload) {
+  color: #2563eb;
+}
+
+.upload-card :deep(.el-button),
+.upload-card :deep(.el-select__wrapper),
+.upload-card :deep(.el-input__wrapper) {
+  border-radius: 8px;
+}
+
+.upload-card :deep(.el-button--primary) {
+  border-color: #2563eb;
+  background: #2563eb;
 }
 
 .mode-row {
@@ -435,6 +472,37 @@ onMounted(() => {
   .config-summary-grid,
   .admin-config-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .upload-card {
+    border-color: rgba(148, 163, 184, 0.2);
+    background: rgba(10, 16, 32, 0.9);
+    box-shadow: 0 16px 42px rgba(0, 0, 0, 0.26);
+  }
+
+  .config-panel,
+  .upload-card :deep(.el-upload-dragger) {
+    border-color: rgba(148, 163, 184, 0.2);
+    background: rgba(15, 23, 42, 0.66);
+  }
+
+  .config-summary-item {
+    border-color: rgba(148, 163, 184, 0.16);
+    background: rgba(15, 23, 42, 0.72);
+  }
+
+  .config-panel-header strong,
+  .config-summary-item b {
+    color: #f8fafc;
+  }
+
+  .config-panel-header small,
+  .config-summary-item span,
+  .admin-config label span,
+  .mode-label {
+    color: #aab6ca;
   }
 }
 </style>

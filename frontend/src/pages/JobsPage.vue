@@ -1,26 +1,20 @@
 <!-- File: frontend/src/pages/JobsPage.vue -->
-<!-- Purpose: Render the document job workbench with upload, filtering, and batch actions. -->
+<!-- Purpose: Render the document job list workbench with filtering and batch actions. -->
 <template>
   <main class="jobs-page" aria-labelledby="jobs-title">
     <section class="jobs-hero">
       <div class="hero-copy">
         <p class="hero-eyebrow">Document Jobs</p>
-        <h1 id="jobs-title">转换任务工作台</h1>
-        <p>上传 PDF、跟踪队列进度并下载 Word 结果。状态和异常会在这里集中呈现，便于连续处理交付任务。</p>
+        <h1 id="jobs-title">任务列表</h1>
+        <p>集中查看 PDF 转 Word 任务状态、失败原因和交付结果。上传创建任务已独立为更宽松的创建流程。</p>
       </div>
       <div class="hero-actions">
         <div class="live-pill" :class="{ 'is-loading': loading }">
           <span aria-hidden="true"></span>
           <strong>{{ loading ? "同步中" : "已同步" }}</strong>
         </div>
+        <el-button type="primary" :icon="Plus" @click="goCreateJob">创建任务</el-button>
         <el-button class="hero-refresh" :icon="Refresh" :loading="loading" @click="loadJobs">刷新任务</el-button>
-      </div>
-      <div class="hero-flow" aria-hidden="true">
-        <span>PDF</span>
-        <i></i>
-        <span>队列</span>
-        <i></i>
-        <span>DOCX</span>
       </div>
     </section>
 
@@ -37,103 +31,115 @@
       </article>
     </section>
 
-    <section class="jobs-workspace" aria-label="任务操作区">
-      <PdfUploadPanel class="upload-panel" @created="handleCreated" />
-
-      <section class="jobs-list-panel">
-        <div class="section-header table-header">
-          <div>
-            <p class="table-kicker">当前视图：{{ activeFilterLabel }}</p>
-            <h2 class="section-title">任务列表</h2>
-            <p class="section-subtitle">查看当前账号可见的 document_jobs。</p>
-          </div>
-          <div class="toolbar">
-            <el-input
-              v-model="searchKeyword"
-              clearable
-              placeholder="搜索任务/文件/错误"
-              style="width: 210px"
-              @clear="handleFilter"
-              @keyup.enter="handleFilter"
-            />
-            <el-select v-model="statusFilter" clearable placeholder="全部状态" style="width: 156px" @change="handleFilter">
-              <el-option v-for="status in statuses" :key="status" :label="jobStatusText[status]" :value="status" />
-            </el-select>
-            <el-select
-              v-model="qaStatusFilter"
-              clearable
-              placeholder="全部 QA"
-              style="width: 156px"
-              @change="handleFilter"
-            >
-              <el-option
-                v-for="status in qaStatuses"
-                :key="status"
-                :label="translationQaStatusText[status]"
-                :value="status"
-              />
-            </el-select>
-            <el-select v-model="sortFilter" style="width: 156px" @change="handleFilter">
-              <el-option v-for="option in sortOptions" :key="option.value" :label="option.label" :value="option.value" />
-            </el-select>
-            <el-date-picker
-              v-model="createdRange"
-              type="datetimerange"
-              start-placeholder="创建开始"
-              end-placeholder="创建结束"
-              value-format="YYYY-MM-DDTHH:mm:ssZ"
-              style="width: 318px"
-              @change="handleFilter"
-            />
-            <el-switch
-              v-model="includeArchived"
-              active-text="含归档"
-              inactive-text="默认"
-              @change="handleFilter"
-            />
-            <el-button @click="applyQuickFilter('active')">处理中</el-button>
-            <el-button @click="applyQuickFilter('failed')">失败</el-button>
-            <el-button @click="applyQuickFilter('archived')">归档</el-button>
-            <el-button :disabled="!selectedRetryableJobs.length" :loading="batchLoading" @click="handleBatchRetry">
-              批量重试 {{ selectedRetryableJobs.length }}
-            </el-button>
-            <el-button :disabled="!selectedCancelableJobs.length" :loading="batchLoading" @click="handleBatchCancel">
-              批量取消 {{ selectedCancelableJobs.length }}
-            </el-button>
-            <el-button :disabled="!selectedArchivableJobs.length" :loading="batchLoading" @click="handleBatchArchive">
-              批量归档 {{ selectedArchivableJobs.length }}
-            </el-button>
-            <el-button :icon="Refresh" :loading="loading" @click="handleFilter">搜索</el-button>
-            <el-button :icon="Refresh" :loading="loading" @click="loadJobs">刷新</el-button>
-          </div>
+    <section class="jobs-list-panel" aria-label="任务列表">
+      <div class="section-header table-header">
+        <div>
+          <p class="table-kicker">当前视图：{{ activeFilterLabel }}</p>
+          <h2 class="section-title">转换任务</h2>
+          <p class="section-subtitle">查看当前账号可见的 document_jobs。</p>
         </div>
-
-        <ApiErrorAlert :error="error" />
-
-        <div v-if="summaryEntries.length" class="summary-row" aria-label="状态汇总">
-          <el-tag v-for="[status, count] in summaryEntries" :key="status" effect="plain">
-            {{ statusLabel(status) }}: {{ count }}
-          </el-tag>
-        </div>
-
-        <el-card class="jobs-table-card card-flat" shadow="never">
-          <JobTable
-            :jobs="jobs"
-            :loading="loading"
-            :page="page"
-            :page-size="pageSize"
-            :total="total"
-            @page-change="handlePageChange"
-            @selection-change="handleSelectionChange"
-            @download="handleDownload"
-            @retry="handleRetry"
-            @clone="handleClone"
-            @cancel="handleCancel"
-            @archive="handleArchive"
-            @unarchive="handleUnarchive"
+        <div class="toolbar primary-toolbar">
+          <el-input
+            v-model="searchKeyword"
+            class="search-input"
+            clearable
+            placeholder="搜索任务/文件/错误"
+            :prefix-icon="Search"
+            @clear="handleFilter"
+            @keyup.enter="handleFilter"
           />
-        </el-card>
-      </section>
+          <el-select v-model="statusFilter" clearable placeholder="全部状态" class="filter-select" @change="handleFilter">
+            <el-option v-for="status in statuses" :key="status" :label="jobStatusText[status]" :value="status" />
+          </el-select>
+          <el-select v-model="qaStatusFilter" clearable placeholder="全部 QA" class="filter-select" @change="handleFilter">
+            <el-option
+              v-for="status in qaStatuses"
+              :key="status"
+              :label="translationQaStatusText[status]"
+              :value="status"
+            />
+          </el-select>
+          <el-popover placement="bottom-end" :width="430" trigger="click">
+            <template #reference>
+              <el-button :icon="Filter">
+                更多筛选
+                <span v-if="advancedFilterCount" class="filter-count">{{ advancedFilterCount }}</span>
+              </el-button>
+            </template>
+            <div class="advanced-filter-panel">
+              <label>
+                <span>排序</span>
+                <el-select v-model="sortFilter" @change="handleFilter">
+                  <el-option v-for="option in sortOptions" :key="option.value" :label="option.label" :value="option.value" />
+                </el-select>
+              </label>
+              <label>
+                <span>创建时间</span>
+                <el-date-picker
+                  v-model="createdRange"
+                  type="datetimerange"
+                  start-placeholder="创建开始"
+                  end-placeholder="创建结束"
+                  value-format="YYYY-MM-DDTHH:mm:ssZ"
+                  @change="handleFilter"
+                />
+              </label>
+              <div class="advanced-filter-footer">
+                <el-switch v-model="includeArchived" active-text="含归档" inactive-text="默认" @change="handleFilter" />
+                <el-button text @click="resetAdvancedFilters">清空高级筛选</el-button>
+              </div>
+            </div>
+          </el-popover>
+          <el-button :icon="Refresh" :loading="loading" @click="handleFilter">搜索</el-button>
+        </div>
+      </div>
+
+      <div class="quick-filter-row" aria-label="快捷筛选">
+        <el-button @click="applyQuickFilter('active')">运行中</el-button>
+        <el-button @click="applyQuickFilter('failed')">失败</el-button>
+        <el-button @click="applyQuickFilter('archived')">归档</el-button>
+      </div>
+
+      <div v-if="selectedJobs.length" class="selection-bar" aria-label="批量操作">
+        <span>已选 {{ selectedJobs.length }} 个任务</span>
+        <div class="selection-actions">
+          <el-button :disabled="!selectedRetryableJobs.length" :loading="batchLoading" @click="handleBatchRetry">
+            批量重试 {{ selectedRetryableJobs.length }}
+          </el-button>
+          <el-button :disabled="!selectedCancelableJobs.length" :loading="batchLoading" @click="handleBatchCancel">
+            批量取消 {{ selectedCancelableJobs.length }}
+          </el-button>
+          <el-button :disabled="!selectedArchivableJobs.length" :loading="batchLoading" @click="handleBatchArchive">
+            批量归档 {{ selectedArchivableJobs.length }}
+          </el-button>
+        </div>
+      </div>
+
+      <ApiErrorAlert :error="error" />
+
+      <div v-if="summaryEntries.length" class="summary-row" aria-label="状态汇总">
+        <el-tag v-for="[status, count] in summaryEntries" :key="status" effect="plain">
+          {{ statusLabel(status) }}: {{ count }}
+        </el-tag>
+      </div>
+
+      <el-card class="jobs-table-card card-flat" shadow="never">
+        <JobTable
+          :jobs="jobs"
+          :loading="loading"
+          :page="page"
+          :page-size="pageSize"
+          :total="total"
+          @page-change="handlePageChange"
+          @selection-change="handleSelectionChange"
+          @download="handleDownload"
+          @retry="handleRetry"
+          @clone="handleClone"
+          @cancel="handleCancel"
+          @archive="handleArchive"
+          @unarchive="handleUnarchive"
+        />
+      </el-card>
     </section>
   </main>
 </template>
@@ -141,14 +147,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { CircleCheck, Files, Refresh, Timer, Warning } from "@element-plus/icons-vue";
+import { CircleCheck, Files, Filter, Plus, Refresh, Search, Timer, Warning } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 
 import type { DocumentJobListSort, DocumentJobResponse, DocumentJobStatus, TranslationQaStatus } from "@/api/types";
 import { documentJobsApi } from "@/api/documentJobs";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import JobTable from "@/components/JobTable.vue";
-import PdfUploadPanel from "@/components/PdfUploadPanel.vue";
 import {
   canArchiveDocumentJob,
   canCancelDocumentJob,
@@ -186,6 +191,19 @@ const sortOptions: Array<{ label: string; value: DocumentJobListSort }> = [
 ];
 
 const summaryEntries = computed(() => Object.entries(summary.value).filter(([, count]) => count > 0));
+const advancedFilterCount = computed(() => {
+  let count = 0;
+  if (sortFilter.value !== "created_at_desc") {
+    count += 1;
+  }
+  if (includeArchived.value) {
+    count += 1;
+  }
+  if (createdRange.value) {
+    count += 1;
+  }
+  return count;
+});
 const activeFilterLabel = computed(() => {
   const statusText = statusFilter.value ? statusLabel(statusFilter.value) : "全部状态";
   const qaText = qaStatusFilter.value ? `QA ${translationQaStatusText[qaStatusFilter.value]}` : "全部 QA";
@@ -270,6 +288,10 @@ function handleFilter(): void {
   void loadJobs();
 }
 
+function goCreateJob(): void {
+  void router.push("/jobs/new");
+}
+
 function handleSelectionChange(selection: DocumentJobResponse[]): void {
   selectedJobs.value = selection;
 }
@@ -336,8 +358,11 @@ function applyQuickFilter(kind: "active" | "failed" | "archived"): void {
   handleFilter();
 }
 
-function handleCreated(jobId: string): void {
-  void router.push(`/jobs/${jobId}`);
+function resetAdvancedFilters(): void {
+  sortFilter.value = "created_at_desc";
+  includeArchived.value = false;
+  createdRange.value = null;
+  handleFilter();
 }
 
 async function handleDownload(job: DocumentJobResponse): Promise<void> {
@@ -556,74 +581,36 @@ onMounted(() => {
 
 <style scoped lang="scss">
 .jobs-page {
-  --jobs-bg: #eef4ff;
-  --jobs-bg-soft: #f8fbff;
-  --jobs-surface: rgba(255, 255, 255, 0.78);
+  --jobs-bg: #f5f7fb;
+  --jobs-surface: #ffffff;
   --jobs-surface-solid: #ffffff;
-  --jobs-surface-muted: rgba(241, 245, 249, 0.82);
-  --jobs-border: rgba(79, 70, 229, 0.14);
-  --jobs-border-strong: rgba(15, 23, 42, 0.12);
+  --jobs-surface-muted: #f8fafc;
+  --jobs-border: #d9e2ec;
   --jobs-text: #111827;
-  --jobs-muted: #5f6b82;
+  --jobs-muted: #667085;
   --jobs-faint: #8190a8;
-  --jobs-primary: #4f46e5;
-  --jobs-cyan: #0891b2;
-  --jobs-green: #0f9f75;
+  --jobs-primary: #2563eb;
+  --jobs-green: #0f766e;
   --jobs-amber: #b7791f;
   --jobs-danger: #b42318;
-  --jobs-shadow: 0 22px 70px rgba(49, 46, 129, 0.14);
-  --jobs-shadow-soft: 0 14px 36px rgba(15, 23, 42, 0.08);
+  --jobs-shadow-soft: 0 8px 22px rgba(15, 23, 42, 0.06);
 
   position: relative;
   min-height: calc(100vh - 114px);
   margin: -20px -24px -36px;
   padding: 28px 24px 42px;
-  overflow: hidden;
+  overflow: visible;
   color: var(--jobs-text);
-  background:
-    linear-gradient(135deg, rgba(79, 70, 229, 0.11), rgba(8, 145, 178, 0.09) 38%, transparent 72%),
-    linear-gradient(160deg, var(--jobs-bg), var(--jobs-bg-soft));
+  background: var(--jobs-bg);
   color-scheme: light;
-}
-
-.jobs-page::before,
-.jobs-page::after {
-  position: absolute;
-  z-index: 0;
-  content: "";
-  pointer-events: none;
-}
-
-.jobs-page::before {
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(79, 70, 229, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(8, 145, 178, 0.08) 1px, transparent 1px);
-  background-size: 46px 46px;
-  mask-image: linear-gradient(130deg, #000 0%, transparent 76%);
-  opacity: 0.52;
-}
-
-.jobs-page::after {
-  top: -180px;
-  right: -140px;
-  width: min(56vw, 680px);
-  height: min(56vw, 680px);
-  background:
-    linear-gradient(135deg, rgba(79, 70, 229, 0.18), rgba(15, 159, 117, 0.08)),
-    linear-gradient(45deg, transparent 0 44%, rgba(255, 255, 255, 0.36) 44% 48%, transparent 48% 100%);
-  clip-path: polygon(16% 0, 100% 8%, 88% 72%, 42% 100%, 0 50%);
-  filter: blur(1px);
-  opacity: 0.82;
-  animation: panel-enter 520ms ease-out both;
 }
 
 .jobs-hero,
 .metric-grid,
-.jobs-workspace {
+.jobs-list-panel {
   position: relative;
   z-index: 1;
-  width: min(1220px, 100%);
+  width: min(1440px, 100%);
   margin-right: auto;
   margin-left: auto;
 }
@@ -633,19 +620,16 @@ onMounted(() => {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 18px 28px;
   align-items: start;
-  min-height: 190px;
-  padding: 28px;
+  min-height: auto;
+  padding: 22px;
   border: 1px solid var(--jobs-border);
   border-radius: 8px;
   background: var(--jobs-surface);
-  box-shadow: var(--jobs-shadow);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  animation: fade-up 360ms ease-out both;
+  box-shadow: var(--jobs-shadow-soft);
 }
 
 .hero-copy {
-  max-width: 720px;
+  max-width: 820px;
 }
 
 .hero-eyebrow,
@@ -657,24 +641,26 @@ onMounted(() => {
 }
 
 .hero-copy h1 {
-  margin: 0 0 14px;
+  margin: 0 0 8px;
   color: var(--jobs-text);
-  font-size: clamp(34px, 4vw, 54px);
+  font-size: 32px;
   font-weight: 780;
-  line-height: 1.08;
+  line-height: 1.18;
 }
 
 .hero-copy p:last-child {
-  max-width: 640px;
+  max-width: 760px;
   margin: 0;
   color: var(--jobs-muted);
-  font-size: 16px;
-  line-height: 1.75;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .hero-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
 }
 
@@ -684,9 +670,9 @@ onMounted(() => {
   gap: 8px;
   min-height: 38px;
   padding: 0 12px;
-  border: 1px solid rgba(15, 159, 117, 0.22);
+  border: 1px solid rgba(15, 118, 110, 0.22);
   border-radius: 8px;
-  background: rgba(15, 159, 117, 0.08);
+  background: rgba(15, 118, 110, 0.08);
   color: var(--jobs-green);
   font-size: 13px;
 }
@@ -696,7 +682,7 @@ onMounted(() => {
   height: 8px;
   border-radius: 999px;
   background: currentColor;
-  box-shadow: 0 0 0 4px rgba(15, 159, 117, 0.12);
+  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12);
 }
 
 .live-pill.is-loading span {
@@ -711,47 +697,6 @@ onMounted(() => {
   color: var(--jobs-text);
 }
 
-.hero-flow {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: auto minmax(50px, 1fr) auto minmax(50px, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  max-width: 540px;
-  margin-top: 16px;
-}
-
-.hero-flow span {
-  display: inline-grid;
-  min-width: 76px;
-  height: 40px;
-  place-items: center;
-  border: 1px solid var(--jobs-border);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.66);
-  color: var(--jobs-text);
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.hero-flow i {
-  position: relative;
-  height: 2px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: rgba(79, 70, 229, 0.16);
-}
-
-.hero-flow i::after {
-  position: absolute;
-  inset: 0;
-  content: "";
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--jobs-primary), var(--jobs-green));
-  transform: translateX(-100%);
-  animation: line-fill 620ms ease-out 180ms both;
-}
-
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -764,27 +709,12 @@ onMounted(() => {
   grid-template-columns: 44px minmax(0, 1fr);
   gap: 12px;
   align-items: center;
-  min-height: 112px;
-  padding: 18px;
+  min-height: 92px;
+  padding: 14px;
   border: 1px solid var(--jobs-border);
   border-radius: 8px;
   background: var(--jobs-surface);
   box-shadow: var(--jobs-shadow-soft);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  animation: fade-up 360ms ease-out both;
-}
-
-.metric-card:nth-child(2) {
-  animation-delay: 40ms;
-}
-
-.metric-card:nth-child(3) {
-  animation-delay: 80ms;
-}
-
-.metric-card:nth-child(4) {
-  animation-delay: 120ms;
 }
 
 .metric-icon {
@@ -793,7 +723,7 @@ onMounted(() => {
   height: 44px;
   place-items: center;
   border-radius: 8px;
-  background: rgba(79, 70, 229, 0.1);
+  background: rgba(37, 99, 235, 0.1);
   color: var(--jobs-primary);
   font-size: 20px;
 }
@@ -820,7 +750,7 @@ onMounted(() => {
 }
 
 .metric-green .metric-icon {
-  background: rgba(15, 159, 117, 0.11);
+  background: rgba(15, 118, 110, 0.11);
   color: var(--jobs-green);
 }
 
@@ -831,36 +761,21 @@ onMounted(() => {
 
 .metric-indigo .metric-icon {
   background: rgba(8, 145, 178, 0.11);
-  color: var(--jobs-cyan);
+  color: #0891b2;
 }
 
-.jobs-workspace {
-  display: grid;
-  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
-  gap: 16px;
-  align-items: start;
+.jobs-list-panel {
   margin-top: 16px;
-}
-
-.upload-panel,
-.jobs-list-panel {
-  min-width: 0;
-}
-
-.jobs-list-panel {
   padding: 18px;
   border: 1px solid var(--jobs-border);
   border-radius: 8px;
   background: var(--jobs-surface);
   box-shadow: var(--jobs-shadow-soft);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  animation: fade-up 360ms ease-out 80ms both;
 }
 
 .table-header {
   align-items: flex-start;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .section-title {
@@ -872,6 +787,59 @@ onMounted(() => {
   color: var(--jobs-muted);
 }
 
+.primary-toolbar {
+  justify-content: flex-end;
+  max-width: 760px;
+}
+
+.search-input {
+  width: min(320px, 100%);
+}
+
+.filter-select {
+  width: 150px;
+}
+
+.filter-count {
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  place-items: center;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: var(--jobs-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.advanced-filter-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.advanced-filter-panel label {
+  display: grid;
+  gap: 6px;
+}
+
+.advanced-filter-panel label > span {
+  color: #667085;
+  font-size: 12px;
+}
+
+.advanced-filter-panel :deep(.el-date-editor) {
+  width: 100%;
+}
+
+.advanced-filter-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.quick-filter-row,
 .summary-row {
   display: flex;
   flex-wrap: wrap;
@@ -879,63 +847,36 @@ onMounted(() => {
   margin-bottom: 12px;
 }
 
+.selection-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 14px;
+}
+
+.selection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .jobs-table-card {
   overflow: hidden;
   border: 1px solid var(--jobs-border);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.66);
-}
-
-.jobs-page :deep(.upload-card) {
-  height: 100%;
-  border: 1px solid var(--jobs-border);
-  border-radius: 8px;
   background: var(--jobs-surface);
-  box-shadow: var(--jobs-shadow-soft);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  animation: fade-up 360ms ease-out 40ms both;
 }
 
-.jobs-page :deep(.upload-card .el-card__body),
 .jobs-table-card :deep(.el-card__body) {
-  padding: 20px;
-}
-
-.jobs-page :deep(.upload-card .section-title) {
-  color: var(--jobs-text);
-}
-
-.jobs-page :deep(.upload-card .section-subtitle),
-.jobs-page :deep(.upload-footer .muted),
-.jobs-page :deep(.mode-label) {
-  color: var(--jobs-muted);
-}
-
-.jobs-page :deep(.el-upload-dragger) {
-  border-color: var(--jobs-border);
-  border-radius: 8px;
-  background:
-    linear-gradient(135deg, rgba(79, 70, 229, 0.08), rgba(15, 159, 117, 0.06)),
-    var(--jobs-surface-muted);
-  transition:
-    border-color 180ms ease-out,
-    box-shadow 180ms ease-out,
-    background-color 180ms ease-out;
-}
-
-.jobs-page :deep(.el-upload-dragger:hover) {
-  border-color: rgba(79, 70, 229, 0.44);
-  box-shadow: 0 12px 28px rgba(79, 70, 229, 0.12);
-}
-
-.jobs-page :deep(.el-upload__text),
-.jobs-page :deep(.el-upload__tip) {
-  color: var(--jobs-muted);
-}
-
-.jobs-page :deep(.el-icon--upload) {
-  color: var(--jobs-primary);
+  padding: 0;
 }
 
 .jobs-page :deep(.el-button) {
@@ -943,9 +884,9 @@ onMounted(() => {
 }
 
 .jobs-page :deep(.el-button--primary) {
-  border: 0;
-  background: linear-gradient(135deg, var(--jobs-primary), var(--jobs-green));
-  box-shadow: 0 14px 28px rgba(15, 159, 117, 0.18);
+  border: 1px solid var(--jobs-primary);
+  background: var(--jobs-primary);
+  box-shadow: none;
 }
 
 .jobs-page :deep(.el-select__wrapper),
@@ -964,15 +905,15 @@ onMounted(() => {
 .jobs-page :deep(.el-tag) {
   border-color: var(--jobs-border);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.62);
+  background: rgba(255, 255, 255, 0.72);
 }
 
 .jobs-table-card :deep(.el-table) {
   --el-table-bg-color: transparent;
   --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: rgba(241, 245, 249, 0.74);
-  --el-table-row-hover-bg-color: rgba(79, 70, 229, 0.08);
-  --el-table-border-color: rgba(79, 70, 229, 0.12);
+  --el-table-header-bg-color: #f8fafc;
+  --el-table-row-hover-bg-color: #eff6ff;
+  --el-table-border-color: #e4e7ec;
   --el-table-text-color: var(--jobs-text);
   --el-table-header-text-color: var(--jobs-muted);
 
@@ -980,7 +921,9 @@ onMounted(() => {
   background: transparent;
 }
 
-.jobs-table-card :deep(.el-table__inner-wrapper::before) {
+.jobs-table-card :deep(.el-table__inner-wrapper::before),
+.jobs-table-card :deep(.el-table__fixed-right::before),
+.jobs-table-card :deep(.el-table__fixed::before) {
   background: var(--jobs-border);
 }
 
@@ -991,11 +934,6 @@ onMounted(() => {
 .jobs-table-card :deep(.el-table td.el-table__cell),
 .jobs-table-card :deep(.el-table th.el-table__cell) {
   border-bottom-color: var(--jobs-border);
-}
-
-.jobs-table-card :deep(.el-table__fixed-right::before),
-.jobs-table-card :deep(.el-table__fixed::before) {
-  background: var(--jobs-border);
 }
 
 .jobs-table-card :deep(.mono) {
@@ -1023,78 +961,33 @@ onMounted(() => {
   color: #ffffff;
 }
 
-@keyframes fade-up {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes line-fill {
-  to {
-    transform: translateX(0);
-  }
-}
-
-@keyframes panel-enter {
-  from {
-    opacity: 0;
-    transform: translate3d(22px, -16px, 0) rotate(2deg);
-  }
-
-  to {
-    opacity: 0.82;
-    transform: translate3d(0, 0, 0) rotate(0deg);
-  }
-}
-
 @media (prefers-color-scheme: dark) {
   .jobs-page {
     --jobs-bg: #050711;
-    --jobs-bg-soft: #0b1020;
-    --jobs-surface: rgba(10, 16, 32, 0.74);
+    --jobs-surface: rgba(10, 16, 32, 0.9);
     --jobs-surface-solid: rgba(15, 23, 42, 0.92);
     --jobs-surface-muted: rgba(15, 23, 42, 0.66);
-    --jobs-border: rgba(148, 163, 184, 0.18);
-    --jobs-border-strong: rgba(148, 163, 184, 0.24);
+    --jobs-border: rgba(148, 163, 184, 0.2);
     --jobs-text: #f8fafc;
     --jobs-muted: #aab6ca;
     --jobs-faint: #8391aa;
-    --jobs-primary: #818cf8;
-    --jobs-cyan: #22d3ee;
+    --jobs-primary: #60a5fa;
     --jobs-green: #34d399;
     --jobs-amber: #f5c451;
     --jobs-danger: #fb7185;
-    --jobs-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
-    --jobs-shadow-soft: 0 16px 42px rgba(0, 0, 0, 0.26);
 
-    background:
-      linear-gradient(135deg, rgba(129, 140, 248, 0.17), rgba(34, 211, 238, 0.09) 36%, transparent 74%),
-      linear-gradient(160deg, var(--jobs-bg), var(--jobs-bg-soft));
+    background: var(--jobs-bg);
     color-scheme: dark;
   }
 
-  .jobs-page::before {
-    background-image:
-      linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
-    opacity: 0.4;
+  .selection-bar {
+    border-color: rgba(96, 165, 250, 0.28);
+    background: rgba(37, 99, 235, 0.16);
+    color: #bfdbfe;
   }
 
-  .hero-flow span,
-  .jobs-table-card {
-    background: rgba(15, 23, 42, 0.64);
-  }
-
-  .jobs-page :deep(.el-upload-dragger) {
-    background:
-      linear-gradient(135deg, rgba(129, 140, 248, 0.1), rgba(52, 211, 153, 0.06)),
-      rgba(15, 23, 42, 0.58);
+  .advanced-filter-panel label > span {
+    color: #aab6ca;
   }
 
   .jobs-page :deep(.el-tag) {
@@ -1103,23 +996,19 @@ onMounted(() => {
 
   .jobs-table-card :deep(.el-table) {
     --el-table-header-bg-color: rgba(15, 23, 42, 0.72);
-    --el-table-row-hover-bg-color: rgba(129, 140, 248, 0.12);
-  }
-}
-
-@media (max-width: 1500px) {
-  .jobs-workspace {
-    grid-template-columns: 1fr;
-  }
-
-  .jobs-list-panel {
-    grid-column: auto;
+    --el-table-row-hover-bg-color: rgba(96, 165, 250, 0.12);
   }
 }
 
 @media (max-width: 1080px) {
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .primary-toolbar {
+    justify-content: flex-start;
+    width: 100%;
+    max-width: none;
   }
 }
 
@@ -1131,32 +1020,13 @@ onMounted(() => {
 
   .jobs-hero {
     grid-template-columns: 1fr;
-    padding: 20px;
   }
 
   .hero-actions {
-    flex-wrap: wrap;
+    justify-content: flex-start;
   }
 
-  .hero-flow {
-    grid-template-columns: 1fr;
-    gap: 8px;
-    max-width: none;
-  }
-
-  .hero-flow i {
-    width: 2px;
-    height: 22px;
-    justify-self: center;
-  }
-
-  .hero-flow i::after {
-    transform: translateY(-100%);
-    animation-name: line-fill-y;
-  }
-
-  .metric-grid,
-  .jobs-workspace {
+  .metric-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1165,14 +1035,19 @@ onMounted(() => {
     flex-direction: column;
   }
 
-  .toolbar {
+  .toolbar,
+  .search-input,
+  .filter-select {
     width: 100%;
   }
-}
 
-@keyframes line-fill-y {
-  to {
-    transform: translateY(0);
+  .selection-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .selection-actions {
+    justify-content: flex-start;
   }
 }
 
@@ -1185,24 +1060,9 @@ onMounted(() => {
   .metric-card {
     min-height: 96px;
   }
-
-  .jobs-page :deep(.upload-card .el-card__body),
-  .jobs-table-card :deep(.el-card__body) {
-    padding: 16px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .jobs-page::after,
-  .jobs-hero,
-  .jobs-list-panel,
-  .metric-card,
-  .jobs-page :deep(.upload-card),
-  .hero-flow i::after {
-    animation: none;
-  }
-
-  .jobs-page :deep(.el-upload-dragger),
   .jobs-page :deep(.el-button) {
     transition: none;
   }

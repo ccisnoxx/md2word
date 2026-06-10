@@ -52,6 +52,11 @@ const items = computed<BreadcrumbItem[]>(() => {
   switch (route.name) {
     case "jobs":
       return [{ label: "任务工作台" }];
+    case "job-create":
+      return [
+        { label: "任务工作台", to: "/jobs" },
+        { label: "创建任务" },
+      ];
     case "translation-qa":
       return [{ label: "翻译 QA" }];
     case "job-detail":
