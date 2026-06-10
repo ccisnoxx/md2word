@@ -1,0 +1,30 @@
+{
+  "id": "md2word-product-maturity-roadmap",
+  "name": "md2word-product-maturity-roadmap",
+  "title": "md2word 产品成熟度路线图规划",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "md2word",
+  "assignee": "md2word",
+  "createdAt": "2026-06-09",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "06-09-document-job-workbench-closure",
+    "06-09-translation-qa-review-loop",
+    "06-10-config-governance-ux-consolidation"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

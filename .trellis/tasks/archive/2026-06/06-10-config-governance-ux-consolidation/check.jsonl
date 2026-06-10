@@ -1,0 +1,7 @@
+{"file": ".trellis/tasks/06-09-md2word-product-maturity-roadmap/roadmap.md", "reason": "Check implementation against parent roadmap scope and explicit non-goals."}
+{"file": ".trellis/tasks/06-09-md2word-product-maturity-roadmap/task-breakdown.md", "reason": "Check child-task boundary and priority order."}
+{"file": "docs/api/term-rule-sets.md", "reason": "Check Term Rule Set draft/publish and preflight boundaries."}
+{"file": "docs/api/term-rules.md", "reason": "Check live rule page remains read-only and avoids legacy writes."}
+{"file": "docs/api/translation-term-sets.md", "reason": "Check Translation Term Set CSV governance and read-only preflight boundaries."}
+{"file": "docs/api/translation-profiles.md", "reason": "Check profile UX keeps prompt/secret boundary intact."}
+{"file": "docs/api/templates.md", "reason": "Check template publish evidence and default/disable boundaries."}
