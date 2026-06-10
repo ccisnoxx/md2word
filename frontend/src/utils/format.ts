@@ -1,6 +1,12 @@
 // File: frontend/src/utils/format.ts
 // Purpose: 统一任务页面使用的状态文案、展示格式和操作权限判断。
-import type { DocumentJobResponse, DocumentJobStage, DocumentJobStatus, TranslationQaStatus } from "@/api/types";
+import type {
+  DocumentJobActionId,
+  DocumentJobResponse,
+  DocumentJobStage,
+  DocumentJobStatus,
+  TranslationQaStatus,
+} from "@/api/types";
 
 export const jobStatusText: Record<DocumentJobStatus, string> = {
   pending: "等待投递",
@@ -98,20 +104,63 @@ export function isArchivedDocumentJob(job: DocumentJobResponse): boolean {
   return Boolean(job.archived_at);
 }
 
+function fallbackDocumentJobActionEnabled(job: DocumentJobResponse, action: DocumentJobActionId): boolean {
+  if (action === "download") {
+    return job.status === "succeeded";
+  }
+  if (action === "retry") {
+    return job.status === "failed" && !isArchivedDocumentJob(job);
+  }
+  if (action === "archive") {
+    return isArchivableJobStatus(job.status) && !isArchivedDocumentJob(job);
+  }
+  if (action === "cancel") {
+    return isCancelableJobStatus(job.status) && !isArchivedDocumentJob(job);
+  }
+  if (action === "unarchive") {
+    return isArchivedDocumentJob(job);
+  }
+  return Boolean(job.source_file_id);
+}
+
+export function isDocumentJobActionEnabled(job: DocumentJobResponse, action: DocumentJobActionId): boolean {
+  const serverAction = job.available_actions?.[action];
+  if (serverAction) {
+    return serverAction.enabled;
+  }
+  return fallbackDocumentJobActionEnabled(job, action);
+}
+
+export function documentJobActionDisabledReason(job: DocumentJobResponse, action: DocumentJobActionId): string {
+  const serverAction = job.available_actions?.[action];
+  if (serverAction?.disabled_reason) {
+    return serverAction.disabled_reason;
+  }
+  return isDocumentJobActionEnabled(job, action) ? "" : "当前任务状态不允许该操作。";
+}
+
 export function canDownloadDocumentJob(job: DocumentJobResponse): boolean {
-  return job.status === "succeeded";
+  return isDocumentJobActionEnabled(job, "download");
 }
 
 export function canRetryDocumentJob(job: DocumentJobResponse): boolean {
-  return job.status === "failed" && !isArchivedDocumentJob(job);
+  return isDocumentJobActionEnabled(job, "retry");
 }
 
 export function canArchiveDocumentJob(job: DocumentJobResponse): boolean {
-  return isArchivableJobStatus(job.status) && !isArchivedDocumentJob(job);
+  return isDocumentJobActionEnabled(job, "archive");
 }
 
 export function canCancelDocumentJob(job: DocumentJobResponse): boolean {
-  return isCancelableJobStatus(job.status) && !isArchivedDocumentJob(job);
+  return isDocumentJobActionEnabled(job, "cancel");
+}
+
+export function canUnarchiveDocumentJob(job: DocumentJobResponse): boolean {
+  return isDocumentJobActionEnabled(job, "unarchive");
+}
+
+export function canCloneDocumentJob(job: DocumentJobResponse): boolean {
+  return isDocumentJobActionEnabled(job, "clone");
 }
 
 export function getJobSourceFilename(job: DocumentJobResponse): string {

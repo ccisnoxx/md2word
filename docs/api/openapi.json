@@ -932,6 +932,30 @@
         "title": "DocumentJobArchiveResponse",
         "type": "object"
       },
+      "DocumentJobAvailableActionResponse": {
+        "properties": {
+          "disabled_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled Reason"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "DocumentJobAvailableActionResponse",
+        "type": "object"
+      },
       "DocumentJobBulkItemResponse": {
         "description": "批量操作中单个任务的成功或失败结果。",
         "properties": {
@@ -1148,6 +1172,185 @@
           "job"
         ],
         "title": "DocumentJobCancelResponse",
+        "type": "object"
+      },
+      "DocumentJobCloneRequest": {
+        "properties": {
+          "config_strategy": {
+            "default": "keep_source_snapshot",
+            "enum": [
+              "keep_source_snapshot",
+              "use_current_defaults",
+              "select_published_versions"
+            ],
+            "title": "Config Strategy",
+            "type": "string"
+          },
+          "debug_full_text": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Debug Full Text"
+          },
+          "document_language": {
+            "anyOf": [
+              {
+                "enum": [
+                  "auto",
+                  "zh",
+                  "en"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Language"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "template_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Version Id"
+          },
+          "term_rule_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Term Rule Set Id"
+          },
+          "term_rule_set_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Term Rule Set Version"
+          },
+          "term_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Term Version Id"
+          },
+          "translation_profile_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translation Profile Id"
+          },
+          "translation_profile_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translation Profile Version"
+          },
+          "translation_term_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translation Term Set Id"
+          },
+          "translation_term_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translation Term Version"
+          }
+        },
+        "title": "DocumentJobCloneRequest",
+        "type": "object"
+      },
+      "DocumentJobCloneResponse": {
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/DocumentJobResponse"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "progress": {
+            "title": "Progress",
+            "type": "integer"
+          },
+          "source_job_id": {
+            "title": "Source Job Id",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_job_id",
+          "job_id",
+          "status",
+          "stage",
+          "progress",
+          "job"
+        ],
+        "title": "DocumentJobCloneResponse",
         "type": "object"
       },
       "DocumentJobConfigDefaults": {
@@ -1720,6 +1923,13 @@
             ],
             "title": "Archived By"
           },
+          "available_actions": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/DocumentJobAvailableActionResponse"
+            },
+            "title": "Available Actions",
+            "type": "object"
+          },
           "canceled_at": {
             "anyOf": [
               {
@@ -1885,6 +2095,17 @@
           "source_file_id": {
             "title": "Source File Id",
             "type": "string"
+          },
+          "source_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Job Id"
           },
           "stage": {
             "title": "Stage",
@@ -2783,6 +3004,29 @@
           "job"
         ],
         "title": "DocumentJobTranslationQaUpdateResponse",
+        "type": "object"
+      },
+      "DocumentJobUnarchiveResponse": {
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/DocumentJobResponse"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "restored_at": {
+            "format": "date-time",
+            "title": "Restored At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "restored_at",
+          "job"
+        ],
+        "title": "DocumentJobUnarchiveResponse",
         "type": "object"
       },
       "EffectiveFileRetentionPolicyResponse": {
@@ -15047,6 +15291,81 @@
         ]
       }
     },
+    "/api/v1/document-jobs/{job_id}/clone": {
+      "post": {
+        "operationId": "clone_document_job_api_v1_document_jobs__job_id__clone_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/DocumentJobCloneRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentJobCloneResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clone Document Job",
+        "tags": [
+          "document-jobs"
+        ]
+      }
+    },
     "/api/v1/document-jobs/{job_id}/download": {
       "get": {
         "operationId": "download_document_job_result_api_v1_document_jobs__job_id__download_get",
@@ -15492,6 +15811,64 @@
           }
         },
         "summary": "Update Document Job Translation Qa",
+        "tags": [
+          "document-jobs"
+        ]
+      }
+    },
+    "/api/v1/document-jobs/{job_id}/unarchive": {
+      "post": {
+        "operationId": "unarchive_document_job_api_v1_document_jobs__job_id__unarchive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentJobUnarchiveResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unarchive Document Job",
         "tags": [
           "document-jobs"
         ]

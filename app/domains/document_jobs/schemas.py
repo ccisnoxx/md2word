@@ -26,12 +26,18 @@ class DocumentJobCreateRequest(BaseModel):
     debug_full_text: bool = False
 
 
+class DocumentJobAvailableActionResponse(BaseModel):
+    enabled: bool
+    disabled_reason: str | None = None
+
+
 class DocumentJobResponse(BaseModel):
     id: str
     tenant_id: str
     company_id: str
     created_by: str
     source_file_id: str
+    source_job_id: str | None = None
     mode: str
     document_language: str
     status: str
@@ -69,6 +75,7 @@ class DocumentJobResponse(BaseModel):
     translation_qa_reviewed_by: str | None = None
     translation_qa_reviewed_at: datetime | None = None
     request_snapshot: dict[str, Any] = Field(default_factory=dict)
+    available_actions: dict[str, DocumentJobAvailableActionResponse] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
 
@@ -92,6 +99,12 @@ class DocumentJobListResponse(BaseModel):
 class DocumentJobArchiveResponse(BaseModel):
     job_id: str
     archived_at: datetime
+    job: DocumentJobResponse
+
+
+class DocumentJobUnarchiveResponse(BaseModel):
+    job_id: str
+    restored_at: datetime
     job: DocumentJobResponse
 
 
@@ -300,12 +313,36 @@ class DocumentJobRetryRequest(BaseModel):
     translation_term_version: str | None = None
 
 
+class DocumentJobCloneRequest(BaseModel):
+    reason: str | None = None
+    config_strategy: Literal["keep_source_snapshot", "use_current_defaults", "select_published_versions"] = "keep_source_snapshot"
+    document_language: Literal["auto", "zh", "en"] | None = None
+    template_version_id: str | None = None
+    term_version_id: str | None = None
+    term_rule_set_id: str | None = None
+    term_rule_set_version: str | None = None
+    translation_term_set_id: str | None = None
+    translation_term_version: str | None = None
+    translation_profile_id: str | None = None
+    translation_profile_version: str | None = None
+    debug_full_text: bool | None = None
+
+
 class DocumentJobRetryResponse(BaseModel):
     job_id: str
     status: str
     stage: str
     progress: int
     retry_count: int
+    job: DocumentJobResponse
+
+
+class DocumentJobCloneResponse(BaseModel):
+    source_job_id: str
+    job_id: str
+    status: str
+    stage: str
+    progress: int
     job: DocumentJobResponse
 
 

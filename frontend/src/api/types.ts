@@ -1163,6 +1163,13 @@ export type DocumentJobCreateRequest = {
   debug_full_text?: boolean;
 };
 
+export type DocumentJobActionId = "download" | "retry" | "cancel" | "archive" | "unarchive" | "clone";
+
+export type DocumentJobAvailableAction = {
+  enabled: boolean;
+  disabled_reason: string | null;
+};
+
 export type DocumentJobRetryRequest = {
   reason?: string | null;
   use_latest_term_assets?: boolean;
@@ -1170,6 +1177,21 @@ export type DocumentJobRetryRequest = {
   term_rule_set_version?: string | null;
   translation_term_set_id?: string | null;
   translation_term_version?: string | null;
+};
+
+export type DocumentJobCloneRequest = {
+  reason?: string | null;
+  config_strategy?: "keep_source_snapshot" | "use_current_defaults" | "select_published_versions";
+  document_language?: DocumentLanguage | null;
+  template_version_id?: string | null;
+  term_version_id?: string | null;
+  term_rule_set_id?: string | null;
+  term_rule_set_version?: string | null;
+  translation_term_set_id?: string | null;
+  translation_term_version?: string | null;
+  translation_profile_id?: string | null;
+  translation_profile_version?: string | null;
+  debug_full_text?: boolean | null;
 };
 
 export type DocumentJobBulkAction = "retry" | "archive" | "cancel";
@@ -1213,6 +1235,7 @@ export type DocumentJobResponse = {
   company_id: string;
   created_by: string;
   source_file_id: string;
+  source_job_id: string | null;
   mode: DocumentJobMode;
   document_language: string;
   status: DocumentJobStatus;
@@ -1243,6 +1266,7 @@ export type DocumentJobResponse = {
   translation_qa_reviewed_by: string | null;
   translation_qa_reviewed_at: string | null;
   request_snapshot: Record<string, unknown>;
+  available_actions?: Partial<Record<DocumentJobActionId, DocumentJobAvailableAction>>;
   created_at: string;
   updated_at: string;
 };
@@ -1283,6 +1307,12 @@ export type DocumentJobBulkResponse = {
 export type DocumentJobArchiveResponse = {
   job_id: string;
   archived_at: string;
+  job: DocumentJobResponse;
+};
+
+export type DocumentJobUnarchiveResponse = {
+  job_id: string;
+  restored_at: string;
   job: DocumentJobResponse;
 };
 
@@ -1475,6 +1505,15 @@ export type DocumentJobRetryResponse = {
   stage: DocumentJobStage;
   progress: number;
   retry_count: number;
+  job: DocumentJobResponse;
+};
+
+export type DocumentJobCloneResponse = {
+  source_job_id: string;
+  job_id: string;
+  status: DocumentJobStatus;
+  stage: DocumentJobStage;
+  progress: number;
   job: DocumentJobResponse;
 };
 

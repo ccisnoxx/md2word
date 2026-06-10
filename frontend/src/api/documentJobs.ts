@@ -5,6 +5,8 @@ import type {
   DocumentJobBulkJobIdsRequest,
   DocumentJobBulkResponse,
   DocumentJobBulkRetryRequest,
+  DocumentJobCloneRequest,
+  DocumentJobCloneResponse,
   DocumentJobCreateRequest,
   DocumentJobCreateResponse,
   DocumentJobArchiveResponse,
@@ -18,6 +20,7 @@ import type {
   DocumentJobRetryRequest,
   DocumentJobResponse,
   DocumentJobRetryResponse,
+  DocumentJobUnarchiveResponse,
   DocumentJobTranslationQaResponse,
   DocumentJobTranslationQaUpdateRequest,
   DocumentJobTranslationQaUpdateResponse,
@@ -138,6 +141,21 @@ export const documentJobsApi = {
     return apiRequest<DocumentJobCancelResponse>({
       url: `/api/v1/document-jobs/${jobId}/cancel`,
       method: "POST",
+    });
+  },
+
+  unarchive(jobId: string): Promise<DocumentJobUnarchiveResponse> {
+    return apiRequest<DocumentJobUnarchiveResponse>({
+      url: `/api/v1/document-jobs/${jobId}/unarchive`,
+      method: "POST",
+    });
+  },
+
+  clone(jobId: string, payload?: DocumentJobCloneRequest): Promise<DocumentJobCloneResponse> {
+    return apiRequest<DocumentJobCloneResponse>({
+      url: `/api/v1/document-jobs/${jobId}/clone`,
+      method: "POST",
+      data: payload || {},
     });
   },
 

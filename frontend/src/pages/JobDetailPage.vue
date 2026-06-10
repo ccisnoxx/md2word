@@ -8,7 +8,6 @@
         <p class="section-subtitle mono">{{ jobId }}</p>
       </div>
       <div class="toolbar">
-        <el-button :icon="ArrowLeft" @click="$router.push('/jobs')">返回列表</el-button>
         <el-button v-if="job?.mode === 'en2zh_pdf_to_word'" :icon="DataAnalysis" @click="openTranslationQa">
           翻译 QA
         </el-button>
@@ -17,13 +16,17 @@
           :job="job"
           :download-loading="downloadLoading"
           :retry-loading="retryLoading"
+          :clone-loading="cloneLoading"
           :cancel-loading="cancelLoading"
           :archive-loading="archiveLoading"
+          :unarchive-loading="unarchiveLoading"
           @refresh="loadAll"
           @download="handleDownload"
           @retry="handleRetry"
+          @clone="handleClone"
           @cancel="handleCancel"
           @archive="handleArchive"
+          @unarchive="handleUnarchive"
         />
       </div>
     </div>
@@ -33,180 +36,210 @@
     <el-skeleton v-if="loading && !job" :rows="8" animated />
 
     <template v-else-if="job">
-      <el-card class="page-section card-flat" shadow="never">
-        <div class="detail-overview">
-          <JobStatusBadge :status="job.status" />
-          <JobProgress :status="job.status" :stage="job.stage" :progress="job.progress" />
-        </div>
+      <el-tabs v-model="activeTab" class="detail-tabs">
+        <el-tab-pane label="概览" name="overview">
+          <el-card class="page-section card-flat" shadow="never">
+            <div class="detail-overview">
+              <JobStatusBadge :status="job.status" />
+              <JobProgress :status="job.status" :stage="job.stage" :progress="job.progress" />
+            </div>
 
-        <el-descriptions :column="2" border>
-          <el-descriptions-item label="模式">{{ jobModeText[job.mode] || job.mode }}</el-descriptions-item>
-          <el-descriptions-item v-if="job.mode === 'en2zh_pdf_to_word'" label="翻译 QA">
-            <span class="qa-summary">
-              <el-tag :type="translationQaStatusTagType(job.translation_qa_status)" effect="plain">
-                {{ translationQaStatusText[job.translation_qa_status] }}
-              </el-tag>
-              <span>{{ translationQaReviewText }}</span>
-            </span>
-          </el-descriptions-item>
-          <el-descriptions-item label="文档语言">{{ job.document_language }}</el-descriptions-item>
-          <el-descriptions-item label="源 PDF">{{ sourceFilename }}</el-descriptions-item>
-          <el-descriptions-item label="源文件 ID">{{ job.source_file_id }}</el-descriptions-item>
-          <el-descriptions-item label="结果文件 ID">{{ job.result_file_id || "-" }}</el-descriptions-item>
-          <el-descriptions-item label="Template">{{ boundTemplateLabel }}</el-descriptions-item>
-          <el-descriptions-item label="Term Rule Set">{{ boundTermRuleSetLabel }}</el-descriptions-item>
-          <el-descriptions-item label="Translation Term Set">{{ boundTranslationTermSetLabel }}</el-descriptions-item>
-          <el-descriptions-item label="Translation Profile">{{ boundTranslationProfileLabel }}</el-descriptions-item>
-          <el-descriptions-item label="legacy term_version_id">{{ job.term_version_id || "-" }}</el-descriptions-item>
-          <el-descriptions-item label="创建时间">{{ formatDateTime(job.created_at) }}</el-descriptions-item>
-          <el-descriptions-item label="更新时间">{{ formatDateTime(job.updated_at) }}</el-descriptions-item>
-          <el-descriptions-item label="重试次数">{{ job.retry_count }}</el-descriptions-item>
-          <el-descriptions-item label="完成时间">{{ formatDateTime(job.completed_at) }}</el-descriptions-item>
-          <el-descriptions-item label="取消时间">{{ formatDateTime(job.canceled_at) }}</el-descriptions-item>
-          <el-descriptions-item label="归档时间">{{ formatDateTime(job.archived_at) }}</el-descriptions-item>
-          <el-descriptions-item v-if="job.mode === 'en2zh_pdf_to_word' && job.translation_qa_note" label="QA 备注">
-            {{ job.translation_qa_note }}
-          </el-descriptions-item>
-        </el-descriptions>
+            <el-descriptions :column="2" border>
+              <el-descriptions-item label="模式">{{ jobModeText[job.mode] || job.mode }}</el-descriptions-item>
+              <el-descriptions-item v-if="job.mode === 'en2zh_pdf_to_word'" label="翻译 QA">
+                <span class="qa-summary">
+                  <el-tag :type="translationQaStatusTagType(job.translation_qa_status)" effect="plain">
+                    {{ translationQaStatusText[job.translation_qa_status] }}
+                  </el-tag>
+                  <span>{{ translationQaReviewText }}</span>
+                </span>
+              </el-descriptions-item>
+              <el-descriptions-item label="文档语言">{{ job.document_language }}</el-descriptions-item>
+              <el-descriptions-item label="源 PDF">{{ sourceFilename }}</el-descriptions-item>
+              <el-descriptions-item label="源文件 ID">{{ job.source_file_id }}</el-descriptions-item>
+              <el-descriptions-item label="来源任务 ID">{{ job.source_job_id || "-" }}</el-descriptions-item>
+              <el-descriptions-item label="结果文件 ID">{{ job.result_file_id || "-" }}</el-descriptions-item>
+              <el-descriptions-item label="Template">{{ boundTemplateLabel }}</el-descriptions-item>
+              <el-descriptions-item label="Term Rule Set">{{ boundTermRuleSetLabel }}</el-descriptions-item>
+              <el-descriptions-item label="Translation Term Set">{{ boundTranslationTermSetLabel }}</el-descriptions-item>
+              <el-descriptions-item label="Translation Profile">{{ boundTranslationProfileLabel }}</el-descriptions-item>
+              <el-descriptions-item label="legacy term_version_id">{{ job.term_version_id || "-" }}</el-descriptions-item>
+              <el-descriptions-item label="创建时间">{{ formatDateTime(job.created_at) }}</el-descriptions-item>
+              <el-descriptions-item label="更新时间">{{ formatDateTime(job.updated_at) }}</el-descriptions-item>
+              <el-descriptions-item label="重试次数">{{ job.retry_count }}</el-descriptions-item>
+              <el-descriptions-item label="完成时间">{{ formatDateTime(job.completed_at) }}</el-descriptions-item>
+              <el-descriptions-item label="取消时间">{{ formatDateTime(job.canceled_at) }}</el-descriptions-item>
+              <el-descriptions-item label="归档时间">{{ formatDateTime(job.archived_at) }}</el-descriptions-item>
+              <el-descriptions-item label="归档人">{{ job.archived_by || "-" }}</el-descriptions-item>
+              <el-descriptions-item v-if="job.mode === 'en2zh_pdf_to_word' && job.translation_qa_note" label="QA 备注">
+                {{ job.translation_qa_note }}
+              </el-descriptions-item>
+            </el-descriptions>
 
-        <el-alert
-          v-if="runningNotice"
-          class="state-alert"
-          :type="runningNoticeType"
-          :closable="false"
-          show-icon
-          :title="runningNotice"
-        />
-        <el-alert
-          v-if="downloadHint"
-          class="state-alert"
-          type="success"
-          :closable="false"
-          show-icon
-          :title="downloadHint"
-        />
-      </el-card>
+            <el-alert
+              v-if="runningNotice"
+              class="state-alert"
+              :type="runningNoticeType"
+              :closable="false"
+              show-icon
+              :title="runningNotice"
+            />
+            <el-alert
+              v-if="downloadHint"
+              class="state-alert"
+              type="success"
+              :closable="false"
+              show-icon
+              :title="downloadHint"
+            />
+          </el-card>
+        </el-tab-pane>
 
-      <el-card v-if="job.status === 'failed'" class="page-section card-flat" shadow="never">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">失败信息</h2>
-            <p class="section-subtitle">按后端返回展示，不在前端推断可重试原因。</p>
-          </div>
-        </div>
-        <el-alert class="failure-summary" type="error" :closable="false" show-icon :title="failureSummary">
-          <p>{{ failureHelpText }}</p>
-          <p v-if="latestErrorEvent">
-            最近错误事件：{{ latestErrorEvent.message }}
-            <span v-if="latestErrorEvent.trace_id" class="mono">trace_id={{ latestErrorEvent.trace_id }}</span>
-          </p>
-        </el-alert>
-        <el-descriptions :column="1" border>
-          <el-descriptions-item label="失败阶段">{{ job.failed_stage || "-" }}</el-descriptions-item>
-          <el-descriptions-item label="错误码">{{ job.error_code || "-" }}</el-descriptions-item>
-          <el-descriptions-item label="错误信息">{{ job.error_message || "-" }}</el-descriptions-item>
-        </el-descriptions>
-      </el-card>
+        <el-tab-pane label="诊断" name="diagnostics">
+          <el-card v-if="job.status === 'failed'" class="page-section card-flat" shadow="never">
+            <div class="section-header">
+              <div>
+                <h2 class="section-title">失败信息</h2>
+                <p class="section-subtitle">按后端返回展示，不在前端推断可重试原因。</p>
+              </div>
+            </div>
+            <el-alert class="failure-summary" type="error" :closable="false" show-icon :title="failureSummary">
+              <p>{{ failureHelpText }}</p>
+              <p v-if="latestErrorEvent">
+                最近错误事件：{{ latestErrorEvent.message }}
+                <span v-if="latestErrorEvent.trace_id" class="mono">trace_id={{ latestErrorEvent.trace_id }}</span>
+              </p>
+            </el-alert>
+            <el-descriptions :column="1" border>
+              <el-descriptions-item label="失败阶段">{{ job.failed_stage || "-" }}</el-descriptions-item>
+              <el-descriptions-item label="错误码">{{ job.error_code || "-" }}</el-descriptions-item>
+              <el-descriptions-item label="错误信息">{{ job.error_message || "-" }}</el-descriptions-item>
+            </el-descriptions>
+          </el-card>
+          <el-empty v-else class="page-section" description="当前任务没有失败诊断" />
+        </el-tab-pane>
 
-      <el-card class="page-section card-flat" shadow="never">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">任务上下文建议</h2>
-            <p class="section-subtitle">从当前任务带入来源文件和绑定术语版本。</p>
-          </div>
-          <div class="toolbar">
-            <el-button type="primary" :icon="EditPen" @click="openTermRuleProposal">提交术语规则建议</el-button>
-            <el-button
-              v-if="job.mode === 'en2zh_pdf_to_word'"
-              :icon="EditPen"
-              @click="openTranslationTermProposal"
-            >
-              提交翻译术语建议
-            </el-button>
-          </div>
-        </div>
-        <el-descriptions :column="2" border>
-          <el-descriptions-item label="来源任务">{{ job.id }}</el-descriptions-item>
-          <el-descriptions-item label="来源文件">{{ job.source_file_id }}</el-descriptions-item>
-          <el-descriptions-item label="Observed Term Rule Set">{{ termRuleProposalVersionLabel }}</el-descriptions-item>
-          <el-descriptions-item v-if="job.mode === 'en2zh_pdf_to_word'" label="Observed Translation Term Set">
-            {{ translationTermProposalVersionLabel }}
-          </el-descriptions-item>
-        </el-descriptions>
-      </el-card>
+        <el-tab-pane label="上下文" name="context">
+          <el-card class="page-section card-flat" shadow="never">
+            <div class="section-header">
+              <div>
+                <h2 class="section-title">任务上下文建议</h2>
+                <p class="section-subtitle">从当前任务带入来源文件和绑定术语版本。</p>
+              </div>
+              <div class="toolbar">
+                <el-button type="primary" :icon="EditPen" @click="openTermRuleProposal">提交术语规则建议</el-button>
+                <el-button
+                  v-if="job.mode === 'en2zh_pdf_to_word'"
+                  :icon="EditPen"
+                  @click="openTranslationTermProposal"
+                >
+                  提交翻译术语建议
+                </el-button>
+              </div>
+            </div>
+            <el-descriptions :column="2" border>
+              <el-descriptions-item label="来源任务">{{ job.id }}</el-descriptions-item>
+              <el-descriptions-item label="来源文件">{{ job.source_file_id }}</el-descriptions-item>
+              <el-descriptions-item label="Observed Term Rule Set">{{ termRuleProposalVersionLabel }}</el-descriptions-item>
+              <el-descriptions-item v-if="job.mode === 'en2zh_pdf_to_word'" label="Observed Translation Term Set">
+                {{ translationTermProposalVersionLabel }}
+              </el-descriptions-item>
+            </el-descriptions>
+          </el-card>
 
-      <el-card class="page-section card-flat" shadow="never">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">文件和结果</h2>
-            <p class="section-subtitle">任务绑定文件与生成产物。</p>
-          </div>
-          <el-button :icon="Refresh" :loading="filesLoading" @click="loadFiles">刷新文件</el-button>
-        </div>
-        <el-table v-loading="filesLoading" :data="files" empty-text="暂无已登记文件" class="job-file-table">
-          <el-table-column label="角色" width="128">
-            <template #default="{ row }">
-              <el-tag size="small" :type="fileTagType(row.file_type)">{{ fileRoleText(row.file_type) }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="文件名" min-width="220">
-            <template #default="{ row }">
-              <div class="file-name">{{ row.original_filename }}</div>
-              <div class="file-meta mono">{{ row.id }}</div>
-            </template>
-          </el-table-column>
-          <el-table-column label="类型" min-width="150">
-            <template #default="{ row }">{{ fileTypeText(row.file_type) }}</template>
-          </el-table-column>
-          <el-table-column label="大小" width="110">
-            <template #default="{ row }">{{ formatBytes(row.size_bytes) }}</template>
-          </el-table-column>
-          <el-table-column label="状态" width="116">
-            <template #default="{ row }">{{ fileAvailabilityText(row) }}</template>
-          </el-table-column>
-          <el-table-column label="过期时间" min-width="170">
-            <template #default="{ row }">{{ formatDateTime(row.expires_at) }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="108" fixed="right">
-            <template #default="{ row }">
-              <el-button
-                size="small"
-                type="primary"
-                :icon="Download"
-                :disabled="!canDownloadFile(row)"
-                :loading="downloadingFileId === row.id"
-                @click="handleFileDownload(row)"
-              >
-                下载
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </el-card>
+          <el-card class="page-section card-flat" shadow="never">
+            <div class="section-header">
+              <div>
+                <h2 class="section-title">请求快照</h2>
+                <p class="section-subtitle">次级排障信息；主流程通常只需查看状态、失败信息和事件流。</p>
+              </div>
+            </div>
+            <details class="snapshot-details">
+              <summary>查看后端记录的非正文任务参数摘要</summary>
+              <pre class="snapshot">{{ requestSnapshotPreview }}</pre>
+            </details>
+          </el-card>
+        </el-tab-pane>
 
-      <el-card class="page-section card-flat" shadow="never">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">请求快照</h2>
-            <p class="section-subtitle">次级排障信息；主流程通常只需查看状态、失败信息和事件流。</p>
-          </div>
-        </div>
-        <details class="snapshot-details">
-          <summary>查看后端记录的非正文任务参数摘要</summary>
-          <pre class="snapshot">{{ requestSnapshotPreview }}</pre>
-        </details>
-      </el-card>
+        <el-tab-pane label="文件" name="files">
+          <el-card class="page-section card-flat" shadow="never">
+            <div class="section-header">
+              <div>
+                <h2 class="section-title">文件和结果</h2>
+                <p class="section-subtitle">任务绑定文件与生成产物。</p>
+              </div>
+              <el-button :icon="Refresh" :loading="filesLoading" @click="loadFiles">刷新文件</el-button>
+            </div>
+            <el-table v-loading="filesLoading" :data="files" empty-text="暂无已登记文件" class="job-file-table">
+              <el-table-column label="角色" width="128">
+                <template #default="{ row }">
+                  <el-tag size="small" :type="fileTagType(row.file_type)">{{ fileRoleText(row.file_type) }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="文件名" min-width="220">
+                <template #default="{ row }">
+                  <div class="file-name">{{ row.original_filename }}</div>
+                  <div class="file-meta mono">{{ row.id }}</div>
+                </template>
+              </el-table-column>
+              <el-table-column label="类型" min-width="150">
+                <template #default="{ row }">{{ fileTypeText(row.file_type) }}</template>
+              </el-table-column>
+              <el-table-column label="大小" width="110">
+                <template #default="{ row }">{{ formatBytes(row.size_bytes) }}</template>
+              </el-table-column>
+              <el-table-column label="状态" width="116">
+                <template #default="{ row }">{{ fileAvailabilityText(row) }}</template>
+              </el-table-column>
+              <el-table-column label="过期时间" min-width="170">
+                <template #default="{ row }">{{ formatDateTime(row.expires_at) }}</template>
+              </el-table-column>
+              <el-table-column label="操作" width="108" fixed="right">
+                <template #default="{ row }">
+                  <el-button
+                    size="small"
+                    type="primary"
+                    :icon="Download"
+                    :disabled="!canDownloadFile(row)"
+                    :loading="downloadingFileId === row.id"
+                    @click="handleFileDownload(row)"
+                  >
+                    下载
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-card>
+        </el-tab-pane>
 
-      <el-card class="page-section card-flat" shadow="never">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">事件流</h2>
-            <p class="section-subtitle">阶段事件和排障 trace 信息。</p>
-          </div>
-          <el-button :icon="Refresh" :loading="eventsLoading" @click="loadEvents">刷新事件</el-button>
-        </div>
-        <JobEventTimeline :events="events" />
-      </el-card>
+        <el-tab-pane label="事件" name="events">
+          <el-card class="page-section card-flat" shadow="never">
+            <div class="section-header">
+              <div>
+                <h2 class="section-title">事件流</h2>
+                <p class="section-subtitle">阶段事件和排障 trace 信息。</p>
+              </div>
+              <div class="toolbar">
+                <el-select v-model="eventLevelFilter" clearable placeholder="全部级别" style="width: 132px">
+                  <el-option label="info" value="info" />
+                  <el-option label="warning" value="warning" />
+                  <el-option label="error" value="error" />
+                </el-select>
+                <el-select v-model="eventStageFilter" clearable placeholder="全部阶段" style="width: 156px">
+                  <el-option
+                    v-for="stage in eventStageOptions"
+                    :key="stage"
+                    :label="jobStageText[stage]"
+                    :value="stage"
+                  />
+                </el-select>
+                <el-button :icon="Refresh" :loading="eventsLoading" @click="loadEvents">刷新事件</el-button>
+              </div>
+            </div>
+            <JobEventTimeline :events="filteredEvents" />
+          </el-card>
+        </el-tab-pane>
+      </el-tabs>
 
       <el-dialog v-model="retryDialogVisible" title="重试任务" width="640px">
         <el-form label-width="150px">
@@ -271,6 +304,102 @@
           <el-button type="warning" :loading="retryLoading" @click="submitRetryDialog">提交重试</el-button>
         </template>
       </el-dialog>
+
+      <el-dialog v-model="cloneDialogVisible" title="重新发起为新任务" width="680px">
+        <el-form label-width="150px">
+          <el-form-item label="源任务 ID">
+            <el-input :model-value="cloneDialog.job?.id || ''" disabled />
+          </el-form-item>
+          <el-form-item label="原因">
+            <el-input v-model="cloneDialog.reason" type="textarea" :rows="2" />
+          </el-form-item>
+          <el-form-item label="配置策略">
+            <el-radio-group v-model="cloneDialog.strategy">
+              <el-radio label="keep_source_snapshot">沿用源任务快照</el-radio>
+              <el-radio label="use_current_defaults">使用当前默认配置</el-radio>
+              <el-radio v-if="isAdmin" label="select_published_versions">指定 published 版本</el-radio>
+            </el-radio-group>
+          </el-form-item>
+          <template v-if="isAdmin && cloneDialog.strategy === 'select_published_versions'">
+            <el-form-item label="Template">
+              <el-select
+                v-model="cloneDialog.templateVersion"
+                clearable
+                filterable
+                :loading="configLoading"
+                placeholder="使用当前默认模板"
+              >
+                <el-option
+                  v-for="option in configSummary?.options.templates || []"
+                  :key="option.label"
+                  :label="option.label"
+                  :value="option.label"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="术语规则集">
+              <el-select
+                v-model="cloneDialog.termRuleVersion"
+                clearable
+                filterable
+                :loading="configLoading"
+                placeholder="使用当前默认术语规则集"
+              >
+                <el-option
+                  v-for="option in configSummary?.options.term_rule_sets || []"
+                  :key="option.label"
+                  :label="option.label"
+                  :value="option.label"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item v-if="cloneDialog.job?.mode === 'en2zh_pdf_to_word'" label="翻译术语集">
+              <el-select
+                v-model="cloneDialog.translationTermVersion"
+                clearable
+                filterable
+                :loading="configLoading"
+                placeholder="使用当前默认翻译术语集"
+              >
+                <el-option
+                  v-for="option in configSummary?.options.translation_term_sets || []"
+                  :key="option.label"
+                  :label="option.label"
+                  :value="option.label"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item v-if="cloneDialog.job?.mode === 'en2zh_pdf_to_word'" label="翻译配置">
+              <el-select
+                v-model="cloneDialog.translationProfileVersion"
+                clearable
+                filterable
+                :loading="configLoading"
+                placeholder="使用当前默认翻译配置"
+              >
+                <el-option
+                  v-for="option in configSummary?.options.translation_profiles || []"
+                  :key="option.label"
+                  :label="option.label"
+                  :value="option.label"
+                />
+              </el-select>
+            </el-form-item>
+          </template>
+          <el-alert
+            v-if="cloneDialog.strategy === 'keep_source_snapshot'"
+            type="info"
+            :closable="false"
+            show-icon
+            title="重新发起会创建独立新任务；源任务状态、retry_count、归档状态都不会改变。"
+          />
+          <ApiErrorAlert :error="configError" />
+        </el-form>
+        <template #footer>
+          <el-button @click="cloneDialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="cloneLoading" @click="submitCloneDialog">创建新任务</el-button>
+        </template>
+      </el-dialog>
     </template>
   </div>
 </template>
@@ -278,17 +407,19 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { ArrowLeft, DataAnalysis, Download, EditPen, Refresh } from "@element-plus/icons-vue";
+import { DataAnalysis, Download, EditPen, Refresh } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 
 import type {
   DocumentFileResponse,
+  DocumentJobCloneRequest,
   DocumentJobConfigSummaryResponse,
   DocumentJobConfigVersionOption,
-  DocumentJobResourceSnapshot,
   DocumentJobEventResponse,
+  DocumentJobResourceSnapshot,
   DocumentJobRetryRequest,
   DocumentJobResponse,
+  DocumentJobStage,
 } from "@/api/types";
 import { documentJobsApi } from "@/api/documentJobs";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
@@ -303,6 +434,7 @@ import {
   getJobSourceFilename,
   isActiveJobStatus,
   jobModeText,
+  jobStageText,
   translationQaStatusTagType,
   translationQaStatusText,
 } from "@/utils/format";
@@ -321,9 +453,15 @@ const filesLoading = ref(false);
 const downloadLoading = ref(false);
 const downloadingFileId = ref<string | null>(null);
 const retryLoading = ref(false);
+const cloneLoading = ref(false);
 const cancelLoading = ref(false);
 const archiveLoading = ref(false);
+const unarchiveLoading = ref(false);
 const retryDialogVisible = ref(false);
+const cloneDialogVisible = ref(false);
+const activeTab = ref("overview");
+const eventLevelFilter = ref<"" | "info" | "warning" | "error">("");
+const eventStageFilter = ref<DocumentJobStage | "">("");
 const error = ref<ApiClientError | null>(null);
 const configError = ref<ApiClientError | null>(null);
 const configLoading = ref(false);
@@ -331,6 +469,7 @@ const configSummary = ref<DocumentJobConfigSummaryResponse | null>(null);
 let pollTimer: number | undefined;
 
 type RetryStrategy = "keep_original" | "use_latest_term_assets" | "select_term_assets";
+type CloneConfigStrategy = NonNullable<DocumentJobCloneRequest["config_strategy"]>;
 
 const retryDialog = reactive({
   job: null as DocumentJobResponse | null,
@@ -339,6 +478,26 @@ const retryDialog = reactive({
   termRuleVersion: "",
   translationTermVersion: "",
 });
+const cloneDialog = reactive({
+  job: null as DocumentJobResponse | null,
+  reason: "frontend clone",
+  strategy: "keep_source_snapshot" as CloneConfigStrategy,
+  templateVersion: "",
+  termRuleVersion: "",
+  translationTermVersion: "",
+  translationProfileVersion: "",
+});
+const eventStageOptions: DocumentJobStage[] = [
+  "uploaded",
+  "parsing",
+  "parsed",
+  "ir_converting",
+  "rendering",
+  "uploading",
+  "completed",
+  "failed",
+  "canceled",
+];
 
 const isAdmin = computed(() => auth.user?.role === "admin");
 const requestSnapshotPreview = computed(() => JSON.stringify(job.value?.request_snapshot || {}, null, 2));
@@ -430,6 +589,29 @@ const selectedRetryTermRuleOption = computed(() =>
 );
 const selectedRetryTranslationTermOption = computed(() =>
   findConfigOption(configSummary.value?.options.translation_term_sets || [], retryDialog.translationTermVersion),
+);
+const selectedCloneTemplateOption = computed(() =>
+  findConfigOption(configSummary.value?.options.templates || [], cloneDialog.templateVersion),
+);
+const selectedCloneTermRuleOption = computed(() =>
+  findConfigOption(configSummary.value?.options.term_rule_sets || [], cloneDialog.termRuleVersion),
+);
+const selectedCloneTranslationTermOption = computed(() =>
+  findConfigOption(configSummary.value?.options.translation_term_sets || [], cloneDialog.translationTermVersion),
+);
+const selectedCloneTranslationProfileOption = computed(() =>
+  findConfigOption(configSummary.value?.options.translation_profiles || [], cloneDialog.translationProfileVersion),
+);
+const filteredEvents = computed(() =>
+  events.value.filter((event) => {
+    if (eventLevelFilter.value && event.level !== eventLevelFilter.value) {
+      return false;
+    }
+    if (eventStageFilter.value && event.stage !== eventStageFilter.value) {
+      return false;
+    }
+    return true;
+  }),
 );
 const latestErrorEvent = computed(() => [...events.value].reverse().find((event) => event.level === "error") || null);
 const failureSummary = computed(() => {
@@ -569,6 +751,20 @@ function openRetryDialog(target: DocumentJobResponse): void {
   }
 }
 
+function openCloneDialog(target: DocumentJobResponse): void {
+  cloneDialog.job = target;
+  cloneDialog.reason = "frontend clone";
+  cloneDialog.strategy = "keep_source_snapshot";
+  cloneDialog.templateVersion = "";
+  cloneDialog.termRuleVersion = "";
+  cloneDialog.translationTermVersion = "";
+  cloneDialog.translationProfileVersion = "";
+  cloneDialogVisible.value = true;
+  if (isAdmin.value && !configSummary.value) {
+    void loadConfigSummary();
+  }
+}
+
 function stopPolling(): void {
   if (pollTimer !== undefined) {
     window.clearInterval(pollTimer);
@@ -659,6 +855,10 @@ function handleRetry(target: DocumentJobResponse): void {
   openRetryDialog(target);
 }
 
+function handleClone(target: DocumentJobResponse): void {
+  openCloneDialog(target);
+}
+
 async function handleCancel(target: DocumentJobResponse): Promise<void> {
   try {
     await ElMessageBox.confirm(
@@ -723,12 +923,62 @@ async function handleArchive(target: DocumentJobResponse): Promise<void> {
   }
 }
 
+async function handleUnarchive(target: DocumentJobResponse): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      "取消归档会让任务重新出现在默认列表中，不会修改源文件、结果文件或事件记录。",
+      "取消归档",
+      {
+        confirmButtonText: "确认取消归档",
+        cancelButtonText: "返回",
+        type: "info",
+      },
+    );
+  } catch (caught) {
+    if (caught === "cancel" || caught === "close") {
+      return;
+    }
+    error.value = normalizeApiError(caught);
+    return;
+  }
+  unarchiveLoading.value = true;
+  error.value = null;
+  try {
+    const response = await documentJobsApi.unarchive(target.id);
+    job.value = response.job;
+    ElMessage.success("任务已取消归档。");
+    await loadAll();
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    unarchiveLoading.value = false;
+  }
+}
+
 async function submitRetryDialog(): Promise<void> {
   if (!retryDialog.job) {
     return;
   }
   await submitRetry(retryDialog.job, buildRetryPayload());
   retryDialogVisible.value = false;
+}
+
+async function submitCloneDialog(): Promise<void> {
+  if (!cloneDialog.job) {
+    return;
+  }
+  cloneLoading.value = true;
+  error.value = null;
+  try {
+    const response = await documentJobsApi.clone(cloneDialog.job.id, buildClonePayload());
+    cloneDialogVisible.value = false;
+    ElMessage.success("已创建新任务。");
+    await router.push({ name: "job-detail", params: { jobId: response.job_id } });
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    cloneLoading.value = false;
+  }
 }
 
 function buildRetryPayload(): DocumentJobRetryRequest {
@@ -752,6 +1002,32 @@ function buildRetryPayload(): DocumentJobRetryRequest {
   if (retryDialog.job?.mode === "en2zh_pdf_to_word" && selectedRetryTranslationTermOption.value) {
     payload.translation_term_set_id = selectedRetryTranslationTermOption.value.resource_id;
     payload.translation_term_version = selectedRetryTranslationTermOption.value.version;
+  }
+  return payload;
+}
+
+function buildClonePayload(): DocumentJobCloneRequest {
+  const payload: DocumentJobCloneRequest = {
+    reason: cloneDialog.reason || "frontend clone",
+    config_strategy: cloneDialog.strategy,
+  };
+  if (!isAdmin.value || cloneDialog.strategy !== "select_published_versions") {
+    return payload;
+  }
+  if (selectedCloneTemplateOption.value) {
+    payload.template_version_id = selectedCloneTemplateOption.value.label;
+  }
+  if (selectedCloneTermRuleOption.value) {
+    payload.term_rule_set_id = selectedCloneTermRuleOption.value.resource_id;
+    payload.term_rule_set_version = selectedCloneTermRuleOption.value.version;
+  }
+  if (cloneDialog.job?.mode === "en2zh_pdf_to_word" && selectedCloneTranslationTermOption.value) {
+    payload.translation_term_set_id = selectedCloneTranslationTermOption.value.resource_id;
+    payload.translation_term_version = selectedCloneTranslationTermOption.value.version;
+  }
+  if (cloneDialog.job?.mode === "en2zh_pdf_to_word" && selectedCloneTranslationProfileOption.value) {
+    payload.translation_profile_id = selectedCloneTranslationProfileOption.value.resource_id;
+    payload.translation_profile_version = selectedCloneTranslationProfileOption.value.version;
   }
   return payload;
 }

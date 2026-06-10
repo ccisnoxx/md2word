@@ -175,11 +175,11 @@ enabled = true
 
 # 表格类：只有你经常处理 Excel / CSV / 报表时再开
 [plugins."spreadsheets@openai-primary-runtime"]
-enabled = true
+enabled = false
 
 # 演示类：只有你经常做 PPT / Slides 时再开
 [plugins."presentations@openai-primary-runtime"]
-enabled = true
+enabled = false
 
 [plugins."slack@openai-curated"]
 enabled = true

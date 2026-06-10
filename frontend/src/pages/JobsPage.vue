@@ -76,14 +76,29 @@
             <el-select v-model="sortFilter" style="width: 156px" @change="handleFilter">
               <el-option v-for="option in sortOptions" :key="option.value" :label="option.label" :value="option.value" />
             </el-select>
+            <el-date-picker
+              v-model="createdRange"
+              type="datetimerange"
+              start-placeholder="创建开始"
+              end-placeholder="创建结束"
+              value-format="YYYY-MM-DDTHH:mm:ssZ"
+              style="width: 318px"
+              @change="handleFilter"
+            />
             <el-switch
               v-model="includeArchived"
               active-text="含归档"
               inactive-text="默认"
               @change="handleFilter"
             />
+            <el-button @click="applyQuickFilter('active')">处理中</el-button>
+            <el-button @click="applyQuickFilter('failed')">失败</el-button>
+            <el-button @click="applyQuickFilter('archived')">归档</el-button>
             <el-button :disabled="!selectedRetryableJobs.length" :loading="batchLoading" @click="handleBatchRetry">
               批量重试 {{ selectedRetryableJobs.length }}
+            </el-button>
+            <el-button :disabled="!selectedCancelableJobs.length" :loading="batchLoading" @click="handleBatchCancel">
+              批量取消 {{ selectedCancelableJobs.length }}
             </el-button>
             <el-button :disabled="!selectedArchivableJobs.length" :loading="batchLoading" @click="handleBatchArchive">
               批量归档 {{ selectedArchivableJobs.length }}
@@ -112,8 +127,10 @@
             @selection-change="handleSelectionChange"
             @download="handleDownload"
             @retry="handleRetry"
+            @clone="handleClone"
             @cancel="handleCancel"
             @archive="handleArchive"
+            @unarchive="handleUnarchive"
           />
         </el-card>
       </section>
@@ -134,6 +151,7 @@ import JobTable from "@/components/JobTable.vue";
 import PdfUploadPanel from "@/components/PdfUploadPanel.vue";
 import {
   canArchiveDocumentJob,
+  canCancelDocumentJob,
   canRetryDocumentJob,
   formatDateTime,
   jobStatusText,
@@ -154,6 +172,7 @@ const qaStatusFilter = ref<TranslationQaStatus | "">("");
 const searchKeyword = ref("");
 const sortFilter = ref<DocumentJobListSort>("created_at_desc");
 const includeArchived = ref(false);
+const createdRange = ref<[string, string] | null>(null);
 const selectedJobs = ref<DocumentJobResponse[]>([]);
 const batchLoading = ref(false);
 const summary = ref<Record<string, number>>({});
@@ -171,12 +190,14 @@ const activeFilterLabel = computed(() => {
   const statusText = statusFilter.value ? statusLabel(statusFilter.value) : "全部状态";
   const qaText = qaStatusFilter.value ? `QA ${translationQaStatusText[qaStatusFilter.value]}` : "全部 QA";
   const archiveText = includeArchived.value ? "含归档" : "默认";
-  return `${statusText} · ${qaText} · ${archiveText}`;
+  const dateText = createdRange.value ? `${createdRange.value[0]} ~ ${createdRange.value[1]}` : "不限日期";
+  return `${statusText} · ${qaText} · ${archiveText} · ${dateText}`;
 });
 const activeCount = computed(
   () => countByStatus("pending") + countByStatus("queued") + countByStatus("running"),
 );
 const selectedRetryableJobs = computed(() => selectedJobs.value.filter(canRetryDocumentJob));
+const selectedCancelableJobs = computed(() => selectedJobs.value.filter(canCancelDocumentJob));
 const selectedArchivableJobs = computed(() => selectedJobs.value.filter(canArchiveDocumentJob));
 const metrics = computed(() => [
   {
@@ -225,6 +246,8 @@ async function loadJobs(): Promise<void> {
       q: searchKeyword.value.trim() || undefined,
       sort: sortFilter.value,
       include_archived: includeArchived.value,
+      created_from: createdRange.value?.[0],
+      created_to: createdRange.value?.[1],
     });
     jobs.value = response.items;
     selectedJobs.value = [];
@@ -295,6 +318,24 @@ function applyRouteQueryFilters(): void {
   includeArchived.value = firstQueryValue(route.query.include_archived) === "true";
 }
 
+function applyQuickFilter(kind: "active" | "failed" | "archived"): void {
+  qaStatusFilter.value = "";
+  searchKeyword.value = "";
+  createdRange.value = null;
+  sortFilter.value = "updated_at_desc";
+  if (kind === "active") {
+    statusFilter.value = "running";
+    includeArchived.value = false;
+  } else if (kind === "failed") {
+    statusFilter.value = "failed";
+    includeArchived.value = false;
+  } else {
+    statusFilter.value = "";
+    includeArchived.value = true;
+  }
+  handleFilter();
+}
+
 function handleCreated(jobId: string): void {
   void router.push(`/jobs/${jobId}`);
 }
@@ -311,6 +352,28 @@ async function handleDownload(job: DocumentJobResponse): Promise<void> {
 
 async function handleRetry(job: DocumentJobResponse): Promise<void> {
   await router.push({ path: `/jobs/${job.id}`, query: { retry: "1" } });
+}
+
+async function handleClone(job: DocumentJobResponse): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      "重新发起会基于当前任务的源 PDF 创建一个新任务，不会修改原任务，也不会作为 retry 计数。",
+      "重新发起为新任务",
+      {
+        confirmButtonText: "创建新任务",
+        cancelButtonText: "返回",
+        type: "info",
+      },
+    );
+    const response = await documentJobsApi.clone(job.id, { reason: "frontend clone from jobs list" });
+    ElMessage.success("已创建新任务。");
+    await router.push(`/jobs/${response.job_id}`);
+  } catch (caught) {
+    if (caught === "cancel" || caught === "close") {
+      return;
+    }
+    error.value = normalizeApiError(caught);
+  }
 }
 
 async function handleCancel(job: DocumentJobResponse): Promise<void> {
@@ -348,6 +411,28 @@ async function handleArchive(job: DocumentJobResponse): Promise<void> {
     );
     await documentJobsApi.archive(job.id);
     ElMessage.success("任务已归档。");
+    await loadJobs();
+  } catch (caught) {
+    if (caught === "cancel" || caught === "close") {
+      return;
+    }
+    error.value = normalizeApiError(caught);
+  }
+}
+
+async function handleUnarchive(job: DocumentJobResponse): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      "取消归档会让任务重新出现在默认列表中，不会修改文件或事件记录。",
+      "取消归档",
+      {
+        confirmButtonText: "确认取消归档",
+        cancelButtonText: "返回",
+        type: "info",
+      },
+    );
+    await documentJobsApi.unarchive(job.id);
+    ElMessage.success("任务已取消归档。");
     await loadJobs();
   } catch (caught) {
     if (caught === "cancel" || caught === "close") {
@@ -409,6 +494,43 @@ async function handleBatchArchive(): Promise<void> {
       job_ids: targets.map((job) => job.id),
     });
     showBatchResult("批量归档", response.succeeded, response.failed);
+    await loadJobs();
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
+  } finally {
+    batchLoading.value = false;
+  }
+}
+
+async function handleBatchCancel(): Promise<void> {
+  const targets = selectedCancelableJobs.value;
+  if (!targets.length) {
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      `将取消 ${targets.length} 个未终态任务。取消不会删除源文件、结果文件或事件记录。`,
+      "批量取消任务",
+      {
+        confirmButtonText: "确认取消",
+        cancelButtonText: "返回",
+        type: "warning",
+      },
+    );
+  } catch (caught) {
+    if (caught === "cancel" || caught === "close") {
+      return;
+    }
+    error.value = normalizeApiError(caught);
+    return;
+  }
+  batchLoading.value = true;
+  error.value = null;
+  try {
+    const response = await documentJobsApi.bulkCancel({
+      job_ids: targets.map((job) => job.id),
+    });
+    showBatchResult("批量取消", response.succeeded, response.failed);
     await loadJobs();
   } catch (caught) {
     error.value = normalizeApiError(caught);
