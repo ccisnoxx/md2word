@@ -16,7 +16,7 @@ source_files:
   - app/core/config.py
 summary: MinerU callback API 提供 legacy jobs 和 P0 document_jobs 的 callback ingress、payload 归一化、checksum 验签和结果 URL 安全校验。
 tags: [mineru, callback, api, guards]
-last_reviewed: 2026-05-31
+last_reviewed: 2026-06-10
 ---
 
 ## 概述
@@ -51,7 +51,7 @@ legacy job 的 `process_callback` 成功处理 `done + full_zip_url` 后，后�
 提交给 MinerU 的 URL 直接使用 `MINERU_CALLBACK_URL`。按官方文档，callback 开启后提交任务时必须携带 `seed`，而 callback 请求体会回传 `checksum` 和 `content`。生产 `.env` 推荐至少配置：
 
 ```env
-MINERU_CALLBACK_URL=https://md2word-api.962850.xyz/api/v1/mineru-callbacks/result
+MINERU_CALLBACK_URL=https://md2word.962850.xyz/api/v1/mineru-callbacks/result
 MINERU_UID=...
 ```
 

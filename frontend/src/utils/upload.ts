@@ -45,7 +45,7 @@ export async function uploadFileContent(
     throw await buildFetchApiError(response);
   }
 
-  return (await response.json()) as FileUploadResponse;
+  return await parseUploadSuccess(response, authorization);
 }
 
 function shouldAttachBearerForApiUpload(uploadUrl: string): boolean {
@@ -78,5 +78,37 @@ async function buildFetchApiError(response: Response): Promise<ApiClientError> {
       traceId: traceId || undefined,
       raw: text,
     };
+  }
+}
+
+async function parseUploadSuccess(
+  response: Response,
+  authorization: FileUploadUrlResponse,
+): Promise<FileUploadResponse> {
+  const text = await response.text();
+  if (!text.trim()) {
+    if (shouldAttachBearerForApiUpload(authorization.upload_url)) {
+      throw {
+        status: response.status,
+        code: "invalid_upload_response",
+        message: "文件上传接口没有返回文件登记结果。",
+        raw: null,
+      } satisfies ApiClientError;
+    }
+    return { file: authorization.file };
+  }
+
+  try {
+    return JSON.parse(text) as FileUploadResponse;
+  } catch (caught) {
+    if (!shouldAttachBearerForApiUpload(authorization.upload_url)) {
+      return { file: authorization.file };
+    }
+    throw {
+      status: response.status,
+      code: "invalid_upload_response",
+      message: "文件上传接口返回了不可解析的响应。",
+      raw: caught,
+    } satisfies ApiClientError;
   }
 }

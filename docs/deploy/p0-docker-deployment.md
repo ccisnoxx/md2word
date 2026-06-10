@@ -5,7 +5,7 @@ component: pdf-to-word-backend
 status: current
 summary: P0 API 与 document_jobs Worker 共用镜像和根目录 .env 的 Docker Compose 部署说明。
 tags: [deploy, docker, api, worker, mysql, redis]
-last_reviewed: 2026-05-31
+last_reviewed: 2026-06-10
 ---
 
 # P0 Docker 部署说明
@@ -49,7 +49,7 @@ cp .env.example .env
 | `AUTH_JWT_SECRET_KEY` | 内部账号 JWT 签名密钥 |
 | `AUTH_INTERNAL_USERS_FILE` | 内部账号 JSON 文件路径，默认 `deploy/auth_internal_users.json` |
 | `MINERU_API_TOKEN` | MinerU 在线解析 token |
-| `MINERU_CALLBACK_URL` | MinerU 回调基础地址，例如 `https://md2word-api.962850.xyz/api/v1/mineru-callbacks/result` |
+| `MINERU_CALLBACK_URL` | MinerU 回调基础地址，例如 `https://md2word.962850.xyz/api/v1/mineru-callbacks/result` |
 | `MINERU_UID` | MinerU 官方 checksum 验签使用的用户 uid |
 | `PUBLIC_DEPLOYMENT_MODE` | 公开域名部署设为 `single_tenant_public` |
 

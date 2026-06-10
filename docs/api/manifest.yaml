@@ -23,6 +23,17 @@ entries:
     doc_path: docs/api/health.md
     status: current
     note: "服务健康检查和 JSON metrics 入口。"
+  - entry: config-workbench
+    category: endpoint
+    source_files:
+      - app/api/v1/router.py
+      - app/domains/config_workbench/router.py
+      - app/domains/config_workbench/schemas.py
+      - app/domains/config_workbench/summary.py
+      - app/services/health_service.py
+    doc_path: docs/api/config-workbench.md
+    status: current
+    note: "Admin-only 配置中心只读总览、发布门禁和按组深度检查入口。"
   - entry: ops-recovery-actions
     category: endpoint
     source_files:

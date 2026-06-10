@@ -13,7 +13,7 @@
         <el-button :disabled="!job || job.mode !== 'en2zh_pdf_to_word'" @click="openTranslationTermProposal">
           提交翻译术语建议
         </el-button>
-        <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
+        <el-button :icon="Refresh" :loading="loading" @click="loadAll()">刷新</el-button>
       </div>
     </section>
 
@@ -272,7 +272,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { Refresh } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
@@ -497,21 +497,27 @@ function openTranslationTermProposal(): void {
   void router.push({ name: "term-proposals", query });
 }
 
-async function loadAll(): Promise<void> {
+async function loadAll(targetJobId = jobId.value): Promise<void> {
   loading.value = true;
   error.value = null;
   try {
     const [jobResponse, qaResponse] = await Promise.all([
-      documentJobsApi.get(jobId.value),
-      documentJobsApi.getTranslationQa(jobId.value),
+      documentJobsApi.get(targetJobId),
+      documentJobsApi.getTranslationQa(targetJobId),
     ]);
-    job.value = jobResponse;
-    qa.value = qaResponse;
-    syncForm(qaResponse);
+    if (targetJobId === jobId.value) {
+      job.value = jobResponse;
+      qa.value = qaResponse;
+      syncForm(qaResponse);
+    }
   } catch (caught) {
-    error.value = normalizeApiError(caught);
+    if (targetJobId === jobId.value) {
+      error.value = normalizeApiError(caught);
+    }
   } finally {
-    loading.value = false;
+    if (targetJobId === jobId.value) {
+      loading.value = false;
+    }
   }
 }
 
@@ -608,6 +614,24 @@ function sourceComparisonReasonText(reason: string | null): string {
   };
   return labels[reason || ""] || "源文/AI 译文对照不可用。";
 }
+
+function resetPageStateForRouteChange(): void {
+  job.value = null;
+  qa.value = null;
+  error.value = null;
+  saving.value = false;
+  form.status = "unreviewed";
+  form.issue_type = null;
+  form.note = "";
+}
+
+watch(jobId, async (nextJobId, previousJobId) => {
+  if (!nextJobId || nextJobId === previousJobId) {
+    return;
+  }
+  resetPageStateForRouteChange();
+  await loadAll(nextJobId);
+});
 
 onMounted(() => {
   void loadAll();

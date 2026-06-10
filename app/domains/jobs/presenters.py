@@ -85,6 +85,8 @@ def build_job_detail_response(
     job: JobRecord,
     files: list[JobFile],
     events: list[JobEvent],
+    *,
+    include_sensitive_fields: bool = False,
 ) -> JobDetailResponse:
     files = runtime.artifact_service.sort_files(files)
     # 这些 mineru_* 仍作为 API 兼容投影返回，内部来源优先是 nested source_pdf_context。
@@ -101,7 +103,7 @@ def build_job_detail_response(
         resource_snapshot=build_job_resource_snapshot_response(job.resource_snapshot),
         mineru_batch_id=job.read_mineru_batch_id(),
         mineru_data_id=job.read_mineru_data_id(),
-        mineru_callback_seed=job.read_mineru_callback_seed(),
+        mineru_callback_seed=job.read_mineru_callback_seed() if include_sensitive_fields else None,
         mineru_status=job.read_mineru_status(),
         mineru_result_zip_url=job.read_mineru_result_zip_url(),
         error_code=job.error_code,

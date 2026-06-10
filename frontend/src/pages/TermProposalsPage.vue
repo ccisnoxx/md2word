@@ -4,9 +4,9 @@
   <main class="term-proposals-page" aria-labelledby="term-proposals-title">
     <section class="page-heading">
       <div>
-        <p class="page-kicker">Term Proposal</p>
+        <p class="page-kicker">术语建议</p>
         <h1 id="term-proposals-title">术语建议</h1>
-        <p>operator 提交规则或翻译术语建议，admin 审核后合并到对应 draft。</p>
+        <p>操作员提交规则或翻译术语建议，管理员审核后合并到对应草稿。</p>
       </div>
       <el-button :icon="Refresh" :loading="loading" @click="loadActiveTab">刷新</el-button>
     </section>
@@ -107,10 +107,10 @@
                   <span v-else>-</span>
                 </el-descriptions-item>
                 <el-descriptions-item label="来源文件">{{ proposalForm.source_file_id || "-" }}</el-descriptions-item>
-                <el-descriptions-item label="Observed Set">
+                <el-descriptions-item label="提交时规则集">
                   {{ proposalForm.observed_term_rule_set_id || "-" }}
                 </el-descriptions-item>
-                <el-descriptions-item label="Observed Version">
+                <el-descriptions-item label="提交时版本">
                   {{ proposalForm.observed_term_rule_version || "-" }}
                 </el-descriptions-item>
               </el-descriptions>
@@ -171,10 +171,10 @@
                   <span v-else>-</span>
                 </el-descriptions-item>
                 <el-descriptions-item label="来源文件">{{ translationProposalForm.source_file_id || "-" }}</el-descriptions-item>
-                <el-descriptions-item label="Observed Set">
+                <el-descriptions-item label="提交时术语集">
                   {{ translationProposalForm.observed_translation_term_set_id || "-" }}
                 </el-descriptions-item>
-                <el-descriptions-item label="Observed Version">
+                <el-descriptions-item label="提交时版本">
                   {{ translationProposalForm.observed_translation_term_version || "-" }}
                 </el-descriptions-item>
               </el-descriptions>
@@ -194,16 +194,16 @@
               <div class="batch-review-header">
                 <div>
                   <h2 class="section-title">批量审核</h2>
-                  <p class="section-subtitle">仅 pending_review proposal 可勾选；不提供批量发布。</p>
+                  <p class="section-subtitle">仅待审核建议可勾选；不提供批量发布。</p>
                 </div>
-                <el-tag effect="plain">{{ bulkSelectedCount }} selected</el-tag>
+                <el-tag effect="plain">已选 {{ bulkSelectedCount }}</el-tag>
               </div>
               <el-input
                 v-model="bulkReviewComment"
                 class="review-comment"
                 type="textarea"
                 :rows="2"
-                placeholder="批量审核意见；reject 必填，approve 可选。"
+                placeholder="批量审核意见；拒绝必填，通过可选。"
               />
               <div class="toolbar">
                 <el-button
@@ -212,7 +212,7 @@
                   :disabled="!bulkSelectedCount || reviewing"
                   @click="bulkApproveProposals"
                 >
-                  批量 Approve
+                  批量通过
                 </el-button>
                 <el-button
                   type="danger"
@@ -220,7 +220,7 @@
                   :disabled="!bulkSelectedCount || reviewing"
                   @click="bulkRejectProposals"
                 >
-                  批量 Reject
+                  批量拒绝
                 </el-button>
               </div>
               <el-alert
@@ -258,7 +258,7 @@
                   <p class="section-subtitle">当前规则、提交时快照和提议变更并列展示。</p>
                 </div>
                 <el-tag :type="selectedProposal.status === 'pending_review' ? 'warning' : 'info'" effect="plain">
-                  {{ proposalStatusText[selectedProposal.status] }}
+                  {{ proposalStatusText(selectedProposal.status) }}
                 </el-tag>
               </div>
 
@@ -266,7 +266,7 @@
                 v-if="snapshotConflict"
                 class="conflict-alert"
                 type="warning"
-                title="当前规则与提交时快照不一致，请人工判断后再审核；页面不会自动 rebase。"
+                title="当前规则与提交时快照不一致，请人工判断后再审核；页面不会自动重定基线。"
                 :closable="false"
                 show-icon
               >
@@ -278,7 +278,7 @@
               <div class="review-panels">
                 <div>
                   <h3>提议变更</h3>
-                  <p><b>类型：</b>{{ proposalIntentText[selectedProposal.intent] }}</p>
+                  <p><b>类型：</b>{{ proposalIntentText(selectedProposal.intent) }}</p>
                   <p><b>术语：</b>{{ selectedProposal.source_term }}</p>
                   <p><b>分类：</b>{{ categoryName(selectedProposal.category_id) }}</p>
                   <p><b>分段：</b><TermPreview :segments="selectedProposal.segments" /></p>
@@ -307,11 +307,21 @@
                 </div>
                 <div>
                   <h3>当前规则</h3>
-                  <pre>{{ currentRuleText }}</pre>
+                  <p>用于人工比对是否仍与提交时一致。</p>
+                  <el-collapse class="technical-collapse">
+                    <el-collapse-item title="查看技术字段">
+                      <pre>{{ currentRuleText }}</pre>
+                    </el-collapse-item>
+                  </el-collapse>
                 </div>
                 <div>
                   <h3>提交时快照</h3>
-                  <pre>{{ snapshotText }}</pre>
+                  <p>后端审核时会用它识别过期修改。</p>
+                  <el-collapse class="technical-collapse">
+                    <el-collapse-item title="查看技术字段">
+                      <pre>{{ snapshotText }}</pre>
+                    </el-collapse-item>
+                  </el-collapse>
                 </div>
               </div>
 
@@ -320,7 +330,7 @@
                 class="review-comment"
                 type="textarea"
                 :rows="3"
-                placeholder="审核意见；reject 必填，approve 可选。"
+                placeholder="审核意见；拒绝必填，通过可选。"
               />
               <div class="toolbar">
                 <el-button
@@ -329,7 +339,7 @@
                   :disabled="selectedProposal.status !== 'pending_review'"
                   @click="approveProposal"
                 >
-                  Approve 并合并 draft
+                  通过并合并草稿
                 </el-button>
                 <el-button
                   type="primary"
@@ -345,15 +355,15 @@
                   :disabled="selectedProposal.status !== 'pending_review'"
                   @click="rejectProposal"
                 >
-                  Reject
+                  拒绝
                 </el-button>
               </div>
             </template>
-            <el-empty v-else description="请选择一条 proposal" :image-size="90" />
+            <el-empty v-else description="请选择一条建议" :image-size="90" />
           </el-card>
         </section>
       </el-tab-pane>
-      <el-tab-pane v-if="isAdmin" label="全部 proposal" name="all">
+      <el-tab-pane v-if="isAdmin" label="全部建议" name="all">
         <TermProposalTable
           :items="proposals"
           :categories="categoryMap"
@@ -377,16 +387,16 @@
               <div class="batch-review-header">
                 <div>
                   <h2 class="section-title">批量审核</h2>
-                  <p class="section-subtitle">仅 pending translation proposal 可勾选；不提供批量发布。</p>
+                  <p class="section-subtitle">仅待审核翻译术语建议可勾选；不提供批量发布。</p>
                 </div>
-                <el-tag effect="plain">{{ translationBulkSelectedCount }} selected</el-tag>
+                <el-tag effect="plain">已选 {{ translationBulkSelectedCount }}</el-tag>
               </div>
               <el-input
                 v-model="translationBulkReviewNote"
                 class="review-comment"
                 type="textarea"
                 :rows="2"
-                placeholder="批量审核意见；reject 必填，approve 可选。"
+                placeholder="批量审核意见；拒绝必填，通过可选。"
               />
               <div class="toolbar">
                 <el-button
@@ -395,7 +405,7 @@
                   :disabled="!translationBulkSelectedCount || reviewing"
                   @click="bulkApproveTranslationProposals"
                 >
-                  批量 Approve
+                  批量通过
                 </el-button>
                 <el-button
                   type="danger"
@@ -403,7 +413,7 @@
                   :disabled="!translationBulkSelectedCount || reviewing"
                   @click="bulkRejectTranslationProposals"
                 >
-                  批量 Reject
+                  批量拒绝
                 </el-button>
               </div>
               <el-alert
@@ -440,7 +450,7 @@
                   <p class="section-subtitle">展示提交时绑定版本、提议变更和发布结果。</p>
                 </div>
                 <el-tag :type="selectedTranslationProposal.status === 'pending' ? 'warning' : 'info'" effect="plain">
-                  {{ translationProposalStatusText[selectedTranslationProposal.status] }}
+                  {{ proposalStatusText(selectedTranslationProposal.status) }}
                 </el-tag>
               </div>
 
@@ -460,7 +470,19 @@
                     <span v-else>-</span>
                   </p>
                   <p><b>来源文件：</b>{{ selectedTranslationProposal.source_file_id || "-" }}</p>
-                  <pre>{{ translationChangesText }}</pre>
+                  <ul class="change-list">
+                    <li v-for="(change, index) in selectedTranslationProposal.changes" :key="index">
+                      <b>{{ translationProposalActionText(change.action) }}</b>
+                      <span>{{ change.source_term || "-" }}</span>
+                      <span v-if="change.target_term">→ {{ change.target_term }}</span>
+                      <small v-if="change.note">{{ change.note }}</small>
+                    </li>
+                  </ul>
+                  <el-collapse class="technical-collapse">
+                    <el-collapse-item title="查看技术字段">
+                      <pre>{{ translationChangesText }}</pre>
+                    </el-collapse-item>
+                  </el-collapse>
                   <el-button
                     class="governance-link-button"
                     type="primary"
@@ -472,9 +494,9 @@
                 </div>
                 <div>
                   <h3>发布结果</h3>
-                  <p><b>published set：</b>{{ selectedTranslationProposal.published_translation_term_set_id || "-" }}</p>
-                  <p><b>published version：</b>{{ selectedTranslationProposal.published_translation_term_version || "-" }}</p>
-                  <p><b>review note：</b>{{ selectedTranslationProposal.review_note || "-" }}</p>
+                  <p><b>发布到术语集：</b>{{ selectedTranslationProposal.published_translation_term_set_id || "-" }}</p>
+                  <p><b>发布版本：</b>{{ selectedTranslationProposal.published_translation_term_version || "-" }}</p>
+                  <p><b>审核备注：</b>{{ selectedTranslationProposal.review_note || "-" }}</p>
                 </div>
               </div>
 
@@ -483,7 +505,7 @@
                 class="review-comment"
                 type="textarea"
                 :rows="3"
-                placeholder="审核意见；reject 必填，approve 可选。"
+                placeholder="审核意见；拒绝必填，通过可选。"
               />
               <div class="toolbar">
                 <el-button
@@ -492,7 +514,7 @@
                   :disabled="selectedTranslationProposal.status !== 'pending'"
                   @click="approveTranslationProposal"
                 >
-                  Approve 并合并 draft
+                  通过并合并草稿
                 </el-button>
                 <el-button
                   type="primary"
@@ -508,11 +530,11 @@
                   :disabled="selectedTranslationProposal.status !== 'pending'"
                   @click="rejectTranslationProposal"
                 >
-                  Reject
+                  拒绝
                 </el-button>
               </div>
             </template>
-            <el-empty v-else description="请选择一条 Translation Term Proposal" :image-size="90" />
+            <el-empty v-else description="请选择一条翻译术语建议" :image-size="90" />
           </el-card>
         </section>
       </el-tab-pane>
@@ -566,6 +588,7 @@ import TermProposalTable from "@/components/TermProposalTable.vue";
 import TermSegmentEditor from "@/components/TermSegmentEditor.vue";
 import TranslationTermProposalTable from "@/components/TranslationTermProposalTable.vue";
 import { useAuthStore } from "@/stores/auth";
+import { proposalIntentText, proposalStatusText, translationProposalActionText } from "@/utils/displayText";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 
 type ProposalTab =
@@ -580,26 +603,6 @@ type ProposalTab =
 type TermQueueTab = "mine" | "review" | "all";
 type TranslationQueueTab = "translation-mine" | "translation-review" | "translation-all";
 const DEFAULT_TERM_RULE_SET_ID = "electronics-default";
-
-const proposalIntentText: Record<string, string> = {
-  create: "新增",
-  update: "编辑",
-  disable: "禁用",
-};
-
-const proposalStatusText: Record<string, string> = {
-  pending_review: "待审核",
-  approved: "已通过",
-  rejected: "已拒绝",
-  published: "已发布",
-};
-
-const translationProposalStatusText: Record<string, string> = {
-  pending: "待审核",
-  approved: "已通过",
-  rejected: "已拒绝",
-  published: "已发布",
-};
 
 const route = useRoute();
 const router = useRouter();
@@ -713,7 +716,7 @@ const bulkResultTitle = computed(() => {
   if (!bulkResult.value) {
     return "";
   }
-  const actionText = bulkResult.value.action === "approve" ? "批量 Approve" : "批量 Reject";
+  const actionText = bulkResult.value.action === "approve" ? "批量通过" : "批量拒绝";
   return `${actionText} 完成：成功 ${bulkResult.value.succeeded}，失败 ${bulkResult.value.failed}，总计 ${bulkResult.value.total}`;
 });
 const translationBulkSelectedCount = computed(() => translationBulkSelectedProposals.value.length);
@@ -722,7 +725,7 @@ const translationBulkResultTitle = computed(() => {
   if (!translationBulkResult.value) {
     return "";
   }
-  const actionText = translationBulkResult.value.action === "approve" ? "批量 Approve" : "批量 Reject";
+  const actionText = translationBulkResult.value.action === "approve" ? "批量通过" : "批量拒绝";
   return `${actionText} 完成：成功 ${translationBulkResult.value.succeeded}，失败 ${translationBulkResult.value.failed}，总计 ${translationBulkResult.value.total}`;
 });
 const snapshotConflict = computed(() => {
@@ -738,7 +741,7 @@ const proposalRules: FormRules = {
     {
       validator: (_rule, value, callback) => {
         if (proposalForm.intent !== "create" && !value) {
-          callback(new Error("编辑或禁用 proposal 必须选择现有规则。"));
+          callback(new Error("编辑或禁用建议必须选择现有规则。"));
           return;
         }
         callback();
@@ -959,15 +962,15 @@ function translationScopeForTab(tab: TranslationQueueTab): TranslationTermPropos
 
 // 统一生成 deep-link 未命中时的轻量提示，避免 route/fallback 行为静默发生。
 function missingProposalNotice(targetId: string): string {
-  return `未在当前列表中定位到 proposal ${targetId}。`;
+  return `未在当前列表中定位到建议 ${targetId}。`;
 }
 
 // 显式说明因 deep-link 不在 review 队列而回退到 all 队列，减少 admin 的困惑。
 function fallbackProposalNotice(targetId: string, tab: ProposalTab): string {
   if (tab === "translation-review") {
-    return `目标 proposal ${targetId} 不在翻译术语待审核队列，已切换到翻译术语全部列表。`;
+    return `目标建议 ${targetId} 不在翻译术语待审核队列，已切换到翻译术语全部列表。`;
   }
-  return `目标 proposal ${targetId} 不在待审核队列，已切换到全部 proposal 列表。`;
+  return `目标建议 ${targetId} 不在待审核队列，已切换到全部建议列表。`;
 }
 
 // 在一次加载周期里解析 term queue 的 deep-link / remembered-id / review fallback。
@@ -1159,10 +1162,10 @@ function formatTermRuleProposalConflictItem(item: TermRuleProposalConflictItemRe
     source_term_segments_conflict: "同名术语分段冲突",
   };
   const context = [
-    `proposal ${item.proposal_id}`,
-    `target rule ${item.target_rule_id || "-"}`,
-    `source_term ${item.source_term}`,
-    `category ${categoryName(item.category_id)}`,
+    `建议 ${item.proposal_id}`,
+    `目标规则 ${item.target_rule_id || "-"}`,
+    `原文术语 ${item.source_term}`,
+    `分类 ${categoryName(item.category_id)}`,
   ];
   const currentRuleText = item.current_rule
     ? `当前规则 ${item.current_rule.source_term} (${item.current_rule.id})`
@@ -1189,9 +1192,9 @@ function formatTranslationProposalConflictFinding(
   const currentEntry = readRecord(item.current_entry);
   const observedEntry = readRecord(item.observed_entry);
   const context = [
-    proposalId ? `proposal ${proposalId}` : "",
-    item.normalized_source_term ? `term ${item.normalized_source_term}` : "",
-    item.action ? `action ${item.action}` : "",
+    proposalId ? `建议 ${proposalId}` : "",
+    item.normalized_source_term ? `术语 ${item.normalized_source_term}` : "",
+    item.action ? `动作 ${translationProposalActionText(item.action)}` : "",
   ].filter(Boolean);
   const currentTarget = readString(currentEntry?.target_term) || "-";
   const observedTarget = readString(observedEntry?.target_term) || "-";
@@ -1482,7 +1485,7 @@ async function bulkRejectProposals(): Promise<void> {
     return;
   }
   if (!bulkReviewComment.value.trim()) {
-    ElMessage.warning("批量 Reject 必须填写原因。");
+    ElMessage.warning("批量拒绝必须填写原因。");
     return;
   }
   bulkReviewing.value = true;
@@ -1507,7 +1510,7 @@ function formatBulkFailureItem(item: TermRuleProposalBulkItemResponse): string {
   if (isTermRuleProposalConflictDetail(detail)) {
     return detail.conflicts.map((conflict) => formatTermRuleProposalConflictItem(conflict)).join("；");
   }
-  return `proposal ${item.proposal_id}: ${formatDetailItem(item.detail)}`;
+  return `建议 ${item.proposal_id}: ${formatDetailItem(item.detail)}`;
 }
 
 // 同步 Translation review tab 的批量勾选结果。
@@ -1568,7 +1571,7 @@ async function bulkRejectTranslationProposals(): Promise<void> {
     return;
   }
   if (!translationBulkReviewNote.value.trim()) {
-    ElMessage.warning("批量 Reject 必须填写原因。");
+    ElMessage.warning("批量拒绝必须填写原因。");
     return;
   }
   bulkReviewing.value = true;
@@ -1593,7 +1596,7 @@ function formatTranslationBulkFailureItem(item: TranslationTermProposalBulkItemR
   if (isTranslationTermProposalConflictDetail(detail)) {
     return detail.conflicts.map((conflict) => formatTranslationProposalConflictFinding(conflict, item.proposal_id)).join("；");
   }
-  return `proposal ${item.proposal_id}: ${formatDetailItem(item.detail)}`;
+  return `建议 ${item.proposal_id}: ${formatDetailItem(item.detail)}`;
 }
 
 // 获取 proposal 对应的治理 set；缺省值与后端默认 Term Rule Set 保持一致。
@@ -1660,7 +1663,7 @@ async function approveProposal(): Promise<void> {
   error.value = null;
   try {
     await termProposalsApi.approve(selectedProposal.value.id, reviewComment.value);
-    ElMessage.success("proposal 已合并到 Term Rule Set draft。");
+    ElMessage.success("建议已合并到术语规则集草稿。");
     routeFocusProposalId.value = "";
     await loadActiveTab();
   } catch (caught) {
@@ -1681,9 +1684,9 @@ async function approveAndPublishProposal(): Promise<void> {
     const sourceTerm = selectedProposal.value.source_term;
     await termProposalsApi.approveAndPublish(selectedProposal.value.id, {
       review_comment: reviewComment.value || null,
-      publish_reason: `publish approved term rule proposal: ${sourceTerm}`,
+      publish_reason: `发布已通过的术语建议：${sourceTerm}`,
     });
-    ElMessage.success("proposal 已审核并发布为默认规则版本。");
+    ElMessage.success("建议已审核并发布为默认规则版本。");
     routeFocusProposalId.value = "";
     await loadActiveTab();
   } catch (caught) {
@@ -1699,14 +1702,14 @@ async function rejectProposal(): Promise<void> {
     return;
   }
   if (!reviewComment.value.trim()) {
-    ElMessage.warning("Reject 必须填写原因。");
+    ElMessage.warning("拒绝必须填写原因。");
     return;
   }
   reviewing.value = true;
   error.value = null;
   try {
     await termProposalsApi.reject(selectedProposal.value.id, reviewComment.value);
-    ElMessage.success("proposal 已拒绝。");
+    ElMessage.success("建议已拒绝。");
     routeFocusProposalId.value = "";
     await loadActiveTab();
   } catch (caught) {
@@ -1725,7 +1728,7 @@ async function approveTranslationProposal(): Promise<void> {
   error.value = null;
   try {
     await translationTermProposalsApi.approve(selectedTranslationProposal.value.id, translationReviewNote.value);
-    ElMessage.success("Translation Term Proposal 已合并到 draft。");
+    ElMessage.success("翻译术语建议已合并到草稿。");
     routeFocusProposalId.value = "";
     await loadActiveTab();
   } catch (caught) {
@@ -1745,9 +1748,9 @@ async function approveAndPublishTranslationProposal(): Promise<void> {
   try {
     await translationTermProposalsApi.approveAndPublish(selectedTranslationProposal.value.id, {
       review_note: translationReviewNote.value || null,
-      release_note: `publish approved translation term proposal: ${selectedTranslationProposal.value.id}`,
+      release_note: `发布已通过的翻译术语建议：${selectedTranslationProposal.value.id}`,
     });
-    ElMessage.success("Translation Term Proposal 已审核并发布为默认版本。");
+    ElMessage.success("翻译术语建议已审核并发布为默认版本。");
     routeFocusProposalId.value = "";
     await loadActiveTab();
   } catch (caught) {
@@ -1763,14 +1766,14 @@ async function rejectTranslationProposal(): Promise<void> {
     return;
   }
   if (!translationReviewNote.value.trim()) {
-    ElMessage.warning("Reject 必须填写原因。");
+    ElMessage.warning("拒绝必须填写原因。");
     return;
   }
   reviewing.value = true;
   error.value = null;
   try {
     await translationTermProposalsApi.reject(selectedTranslationProposal.value.id, translationReviewNote.value);
-    ElMessage.success("Translation Term Proposal 已拒绝。");
+    ElMessage.success("翻译术语建议已拒绝。");
     routeFocusProposalId.value = "";
     await loadActiveTab();
   } catch (caught) {

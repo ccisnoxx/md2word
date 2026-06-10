@@ -126,6 +126,23 @@ class DocumentJobExecutionService:
                 error_message=str(exc),
                 trace_id=trace_id,
             )
+        except Exception as exc:
+            current = self.job_repository.get_document_job(job_id) or job
+            failed_stage = self._failed_stage_for_current_job(current)
+            error_message = f"Worker 未预期异常: {type(exc).__name__}: {exc}"
+            self.logger.exception(
+                "[trace_id=%s job_id=%s stage=%s status=unexpected_error]",
+                trace_id,
+                job_id,
+                failed_stage,
+            )
+            return self._mark_failed(
+                current,
+                failed_stage=failed_stage,
+                error_code="document_job_unexpected_error",
+                error_message=error_message,
+                trace_id=trace_id,
+            )
 
     def mark_job_timed_out(self, job_id: str, *, trace_id: str | None = None) -> DocumentJobRecord | None:
         """供 Worker 超时保护调用，保证 Celery 超时时 MySQL/file 状态也落到 failed。"""

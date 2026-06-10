@@ -36,7 +36,7 @@ from app.infrastructure.persistence import (
     build_sqlite_persistence_adapters,
 )
 from app.infrastructure.persistence.mysql import MysqlPersistenceConfig
-from app.main import create_app
+from app.main import build_runtime, create_app
 from app.domains.term_rules.file_repository import FileTermRuleRepository
 from app.domains.audit.models import AuditEvent
 from app.domains.audit.service import AuditService
@@ -843,6 +843,16 @@ def build_callback_checksum(*, uid: str, seed: str, content: str) -> str:
     return hashlib.sha256(f"{uid}{seed}{content}".encode("utf-8")).hexdigest()
 
 
+def read_legacy_callback_seed(runtime: AppRuntime, job_id: str) -> str:
+    job = runtime.job_repository.get_job(job_id)
+    if job is None:
+        raise AssertionError(f"job not found: {job_id}")
+    seed = job.read_mineru_callback_seed()
+    if seed is None:
+        raise AssertionError(f"mineru callback seed missing: {job_id}")
+    return seed
+
+
 def write_templates_manifest(path: Path, entries: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump({"templates": entries}, allow_unicode=True, sort_keys=False), encoding="utf-8")
@@ -1322,6 +1332,28 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertNotIn("document_jobs_worker_backend_disabled", checks["readiness_blockers"])
         self.assertNotIn("auth_jwt_secret_key_missing", checks["readiness_blockers"])
 
+    def test_build_runtime_blocks_open_jobs_access_in_production_like_deployments(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings = Settings(
+                _env_file=None,
+                data_dir=temp_dir,
+                app_env="prod",
+                jobs_access_mode="open",
+            )
+            with self.assertRaisesRegex(RuntimeError, "JOBS_ACCESS_MODE=open"):
+                build_runtime(settings)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings = Settings(
+                _env_file=None,
+                data_dir=temp_dir,
+                app_env="dev",
+                public_deployment_mode="single_tenant_public",
+                jobs_access_mode="open",
+            )
+            with self.assertRaisesRegex(RuntimeError, "JOBS_ACCESS_MODE=open"):
+                build_runtime(settings)
+
     def test_config_workbench_summary_is_admin_only_and_reports_file_mode_unavailable_groups(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(
@@ -1342,6 +1374,8 @@ class FastAPIJobsBackendTests(TestCase):
         groups = {item["id"]: item for item in payload["groups"]}
         self.assertEqual(payload["release_gate"]["p0_document_jobs_required"], False)
         self.assertEqual(payload["release_gate"]["p0_document_jobs_ready"], True)
+        self.assertIn("blocker_findings", payload["release_gate"])
+        self.assertEqual(groups["runtime_readiness"]["detail_status"], "complete")
         self.assertEqual(groups["runtime_readiness"]["route"], "/system-status")
         self.assertEqual(groups["term_rule_sets"]["status"], "unavailable")
         self.assertEqual(groups["translation_profiles"]["status"], "unavailable")
@@ -1372,6 +1406,9 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIn("document_jobs_worker_backend_disabled", blockers)
         self.assertIn("mineru_api_token_missing", blockers)
         self.assertIn("mineru_callback_url_missing", blockers)
+        blocker_findings = payload["release_gate"]["blocker_findings"]
+        self.assertIn("p0.document_jobs_worker_backend_disabled", [item["code"] for item in blocker_findings])
+        self.assertTrue(any("文档任务执行器" in item["message"] for item in blocker_findings))
         self.assertEqual(groups["runtime_readiness"]["status"], "blocked")
         self.assertNotIn("test-jwt-secret", json.dumps(payload, ensure_ascii=False))
 
@@ -1396,9 +1433,60 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertNotEqual(groups["translation_term_sets"]["status"], "unavailable")
         self.assertEqual(groups["templates"]["default_label"], "default@1")
         self.assertEqual(groups["term_rule_sets"]["default_label"], "electronics-default@1")
+        self.assertEqual(groups["term_rule_sets"]["detail_status"], "complete")
         self.assertEqual(groups["translation_profiles"]["default_label"], "electronics-en2zh@1")
         self.assertTrue(groups["translation_term_sets"]["default_label"].startswith("translation-terms-en2zh@"))
+        self.assertEqual(groups["translation_term_sets"]["detail_status"], "complete")
         self.assertNotIn("test-jwt-secret", json.dumps(payload, ensure_ascii=False))
+
+    def test_config_workbench_overview_defers_deep_resource_checks(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            publish_default_job_resources(runtime, include_translation=True)
+
+            def fail_deep_check(*_args, **_kwargs):
+                raise AssertionError("overview must not call deep config workbench checks")
+
+            runtime.term_rule_set_version_service.build_preflight = fail_deep_check
+            runtime.translation_term_set_version_service.get_preflight_response = fail_deep_check
+            runtime.translation_term_set_version_service.get_proposal_compatibility_response = fail_deep_check
+
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                response = client.get("/api/v1/config-workbench/summary?mode=overview", headers=admin_headers)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        groups = {item["id"]: item for item in payload["groups"]}
+        self.assertEqual(groups["term_rule_sets"]["detail_status"], "deferred")
+        self.assertEqual(groups["translation_term_sets"]["detail_status"], "deferred")
+
+    def test_config_workbench_group_endpoint_returns_full_group_detail(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            publish_default_job_resources(runtime, include_translation=True)
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                response = client.get(
+                    "/api/v1/config-workbench/groups/translation_term_sets",
+                    headers=admin_headers,
+                )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["id"], "translation_term_sets")
+        self.assertEqual(payload["detail_status"], "complete")
+        self.assertNotEqual(payload["status"], "unavailable")
 
     def test_health_metrics_reports_runtime_counters(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -8208,6 +8296,42 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(render_failed_event.level, "error")
         self.assertEqual(render_failed_event.payload["error_code"], "render_failed")
 
+        class UnexpectedRendererError(Exception):
+            pass
+
+        class UnexpectedRenderer:
+            def render_to_bytes(self, *args, **kwargs):
+                raise UnexpectedRendererError("unexpected render boom")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            runtime.document_job_execution_service.word_renderer = UnexpectedRenderer()
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                unexpected_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                unexpected_job_id = unexpected_response.json()["job_id"]
+            unexpected_events = runtime.document_job_event_repository.list_document_job_events(unexpected_job_id)
+
+        unexpected_job = unexpected_response.json()["job"]
+        self.assertEqual(unexpected_job["status"], "failed")
+        self.assertEqual(unexpected_job["failed_stage"], "rendering")
+        self.assertEqual(unexpected_job["error_code"], "document_job_unexpected_error")
+        unexpected_event = unexpected_events[-1]
+        self.assertEqual(unexpected_event.event_type, "stage_failed")
+        self.assertEqual(unexpected_event.level, "error")
+        self.assertEqual(unexpected_event.payload["error_code"], "document_job_unexpected_error")
+
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(
                 Path(temp_dir),
@@ -13490,7 +13614,7 @@ class FastAPIJobsBackendTests(TestCase):
                 )
                 payload["checksum"] = build_callback_checksum(
                     uid="mineru-user-1",
-                    seed=detail["mineru_callback_seed"],
+                    seed=read_legacy_callback_seed(runtime, job_id),
                     content=content,
                 )
                 callback_response = client.post("/api/v1/mineru-callbacks/result", json=payload)
@@ -13569,7 +13693,7 @@ class FastAPIJobsBackendTests(TestCase):
                 )
                 payload["checksum"] = build_callback_checksum(
                     uid="mineru-user-1",
-                    seed=detail["mineru_callback_seed"],
+                    seed=read_legacy_callback_seed(runtime, job_id),
                     content=content,
                 )
                 callback_response = client.post("/api/v1/mineru-callbacks/result", json=payload)
@@ -13653,7 +13777,7 @@ class FastAPIJobsBackendTests(TestCase):
                 )
                 payload["checksum"] = build_callback_checksum(
                     uid="mineru-user-1",
-                    seed=detail["mineru_callback_seed"],
+                    seed=read_legacy_callback_seed(runtime, job_id),
                     content=content,
                 )
                 response = client.post("/api/v1/mineru-callbacks/result", json=payload)
@@ -13683,7 +13807,7 @@ class FastAPIJobsBackendTests(TestCase):
                     state="done",
                     full_zip_url="https://mineru.net/result.zip",
                 )
-                seed = detail["mineru_callback_seed"]
+                seed = read_legacy_callback_seed(runtime, job_id)
                 checksum = hashlib.sha256(f"mineru-user-1{seed}{content}".encode("utf-8")).hexdigest()
                 payload["checksum"] = checksum
 
@@ -13772,7 +13896,7 @@ class FastAPIJobsBackendTests(TestCase):
                 )
                 payload["checksum"] = build_callback_checksum(
                     uid="mineru-user-1",
-                    seed=detail["mineru_callback_seed"],
+                    seed=read_legacy_callback_seed(runtime, job_id),
                     content=content,
                 )
                 response = client.post("/api/v1/mineru-callbacks/result", json=payload)
@@ -13819,7 +13943,7 @@ class FastAPIJobsBackendTests(TestCase):
                 )
                 payload["checksum"] = build_callback_checksum(
                     uid="mineru-user-1",
-                    seed=second_detail["mineru_callback_seed"],
+                    seed=read_legacy_callback_seed(runtime, second_job_id),
                     content=content,
                 )
                 response = client.post("/api/v1/mineru-callbacks/result", json=payload)
@@ -14335,6 +14459,41 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual([event.action for event in audit_events], ["job.cleanup_local_files"])
         self.assertEqual(audit_events[0].actor_role, "jobs")
         self.assertEqual(audit_events[0].actor_id, "jobs-client")
+
+    def test_legacy_job_detail_redacts_mineru_callback_seed_unless_admin(self):
+        job = JobRecord(
+            id="job_seed_redaction",
+            source_filename="source.pdf",
+            status="parsing",
+            progress=20,
+            source_kind="source_pdf",
+            mineru_batch_id="batch_redaction",
+            mineru_data_id="job_seed_redaction",
+            mineru_callback_seed="seed_secret",
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir))
+            runtime.job_repository.create_job(job)
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                open_response = client.get(f"/api/v1/jobs/{job.id}")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_access_mode="admin",
+                admin_token="secret-admin",
+            )
+            runtime.job_repository.create_job(job)
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                admin_response = client.get(f"/api/v1/jobs/{job.id}", headers={"X-Admin-Token": "secret-admin"})
+
+        self.assertEqual(open_response.status_code, 200)
+        self.assertIsNone(open_response.json()["mineru_callback_seed"])
+        self.assertEqual(admin_response.status_code, 200)
+        self.assertEqual(admin_response.json()["mineru_callback_seed"], "seed_secret")
 
     def test_cleanup_local_files_preserves_registered_artifacts_and_removes_work_dir(self):
         with tempfile.TemporaryDirectory() as temp_dir:

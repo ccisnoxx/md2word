@@ -4,9 +4,9 @@
   <main class="system-status-page" aria-labelledby="system-status-title">
     <section class="page-heading">
       <div>
-        <p class="page-kicker">System Status</p>
+        <p class="page-kicker">系统状态</p>
         <h1 id="system-status-title">系统状态</h1>
-        <p>只读查看后端 readiness、worker、存储、队列和默认资源状态。</p>
+        <p>只读查看后端就绪检查、任务工作进程、存储、队列和默认资源状态。</p>
       </div>
       <div class="heading-actions">
         <el-tag :type="readiness.tagType" effect="plain">{{ readiness.label }}</el-tag>
@@ -28,7 +28,7 @@
       <article class="overview-card">
         <span>应用</span>
         <strong>{{ appName }}</strong>
-        <small>ready: {{ ready?.status || "not reported" }} · metrics: {{ metrics?.status || "not reported" }}</small>
+        <small>就绪接口: {{ endpointStatus(ready?.status) }} · 指标接口: {{ endpointStatus(metrics?.status) }}</small>
       </article>
 
       <article class="overview-card">
@@ -47,15 +47,15 @@
       </article>
     </section>
 
-    <section v-if="blockers.length || warnings.length" class="status-alerts" aria-label="readiness 阻断和警告">
-      <el-alert v-if="blockers.length" type="error" title="Readiness blockers" :closable="false" show-icon>
+    <section v-if="blockers.length || warnings.length" class="status-alerts" aria-label="就绪检查阻断和告警">
+      <el-alert v-if="blockers.length" type="error" title="就绪检查阻断" :closable="false" show-icon>
         <ul class="status-list">
-          <li v-for="blocker in blockers" :key="blocker">{{ blocker }}</li>
+          <li v-for="blocker in blockers" :key="blocker">{{ formatReadinessItem(blocker) }}</li>
         </ul>
       </el-alert>
-      <el-alert v-if="warnings.length" type="warning" title="Readiness warnings" :closable="false" show-icon>
+      <el-alert v-if="warnings.length" type="warning" title="就绪检查告警" :closable="false" show-icon>
         <ul class="status-list">
-          <li v-for="warning in warnings" :key="warning">{{ warning }}</li>
+          <li v-for="warning in warnings" :key="warning">{{ formatReadinessItem(warning) }}</li>
         </ul>
       </el-alert>
     </section>
@@ -64,8 +64,8 @@
       <el-card class="card-flat status-panel" shadow="never">
         <div class="section-header">
           <div>
-            <h2 class="section-title">Backend</h2>
-            <p class="section-subtitle">后端运行态和 metadata store。</p>
+            <h2 class="section-title">后端</h2>
+            <p class="section-subtitle">后端运行态和元数据存储。</p>
           </div>
         </div>
         <el-descriptions :column="1" border size="small">
@@ -78,8 +78,8 @@
       <el-card class="card-flat status-panel" shadow="never">
         <div class="section-header">
           <div>
-            <h2 class="section-title">Worker</h2>
-            <p class="section-subtitle">worker mode、stage dispatcher 和队列存储。</p>
+            <h2 class="section-title">工作进程</h2>
+            <p class="section-subtitle">任务执行模式、阶段调度器和队列存储。</p>
           </div>
         </div>
         <el-descriptions :column="1" border size="small">
@@ -92,8 +92,8 @@
       <el-card class="card-flat status-panel" shadow="never">
         <div class="section-header">
           <div>
-            <h2 class="section-title">Storage</h2>
-            <p class="section-subtitle">artifact storage、本地可写性和剩余空间。</p>
+            <h2 class="section-title">存储</h2>
+            <p class="section-subtitle">产物存储、本地可写性和剩余空间。</p>
           </div>
           <div class="toolbar">
             <router-link to="/system-status/file-retention">文件管理与清理</router-link>
@@ -111,8 +111,8 @@
       <el-card class="card-flat status-panel" shadow="never">
         <div class="section-header">
           <div>
-            <h2 class="section-title">Jobs / Queue</h2>
-            <p class="section-subtitle">任务状态和 stage message 计数。</p>
+            <h2 class="section-title">任务与队列</h2>
+            <p class="section-subtitle">任务状态和阶段消息计数。</p>
           </div>
           <div class="toolbar">
             <router-link to="/system-status/ops-dashboard">运维看板</router-link>
@@ -142,7 +142,7 @@
       <el-card class="card-flat status-panel" shadow="never">
         <div class="section-header">
           <div>
-            <h2 class="section-title">Resources</h2>
+            <h2 class="section-title">资源版本</h2>
             <p class="section-subtitle">当前默认资源版本；未上报字段会明确标记。</p>
           </div>
         </div>
@@ -163,6 +163,7 @@ import { Refresh } from "@element-plus/icons-vue";
 import { healthApi } from "@/api/health";
 import type { HealthMetricsResponse, HealthReadyResponse } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
+import { booleanText, commonValueText, healthLabelText, missingText, readinessCodeText } from "@/utils/displayText";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { formatBytes, formatDateTime, jobStatusText } from "@/utils/format";
 
@@ -192,7 +193,7 @@ const refreshedAt = ref<string | null>(null);
 const checks = computed(() => ready.value?.dependency_checks ?? {});
 const blockers = computed(() => stringListCheck("readiness_blockers"));
 const warnings = computed(() => stringListCheck("readiness_warnings"));
-const appName = computed(() => ready.value?.app_name || metrics.value?.app_name || "not reported");
+const appName = computed(() => ready.value?.app_name || metrics.value?.app_name || missingText());
 const auditEventsTotal = computed(() => metrics.value?.audit_events.total ?? 0);
 
 const readiness = computed<ReadinessView>(() => {
@@ -202,7 +203,7 @@ const readiness = computed<ReadinessView>(() => {
   if (!ready.value && !metrics.value) {
     return {
       key: "unknown",
-      label: "unknown",
+      label: "未知",
       description: "尚未取得 health 响应。",
       tagType: "info",
     };
@@ -210,7 +211,7 @@ const readiness = computed<ReadinessView>(() => {
   if (deploymentReady === false || blockers.value.length > 0) {
     return {
       key: "blocked",
-      label: "blocked",
+      label: "已阻断",
       description: "存在阻断项，默认处理链路不满足最小运行条件。",
       tagType: "danger",
     };
@@ -218,7 +219,7 @@ const readiness = computed<ReadinessView>(() => {
   if (warnings.value.length > 0 || needsAttention === true) {
     return {
       key: "degraded",
-      label: "degraded",
+      label: "有告警",
       description: "核心 readiness 可用，但存在需要关注的非阻断警告。",
       tagType: "warning",
     };
@@ -226,47 +227,47 @@ const readiness = computed<ReadinessView>(() => {
   if (deploymentReady === true) {
     return {
       key: "ready",
-      label: "ready",
+      label: "就绪",
       description: "后端报告已满足最小运行条件。",
       tagType: "success",
     };
   }
   return {
     key: "unknown",
-    label: "unknown",
+    label: "未知",
     description: "health 响应缺少 deployment readiness 结论。",
     tagType: "info",
   };
 });
 
 const backendItems = computed<DetailItem[]>(() => [
-  { label: "app_name", value: appName.value },
-  { label: "jobs_dir", value: ready.value?.jobs_dir || "not reported" },
-  { label: "metadata_store", value: metrics.value?.metadata_store || stringCheck("effective_repository_backend") },
-  { label: "configured_repository", value: stringCheck("configured_repository_backend") },
-  { label: "public_deployment_mode", value: stringCheck("public_deployment_mode") },
+  detailItem("app_name", appName.value),
+  detailItem("jobs_dir", ready.value?.jobs_dir),
+  detailItem("metadata_store", metrics.value?.metadata_store || checkValue("effective_repository_backend")),
+  detailItem("configured_repository", checkValue("configured_repository_backend")),
+  detailItem("public_deployment_mode", checkValue("public_deployment_mode")),
 ]);
 
 const workerItems = computed<DetailItem[]>(() => [
-  { label: "worker_mode", value: metrics.value?.worker_mode || stringCheck("worker_mode") },
-  { label: "document_jobs_worker_backend", value: stringCheck("document_jobs_worker_backend") },
-  { label: "document_jobs_celery_queue", value: stringCheck("document_jobs_celery_queue") },
-  { label: "document_jobs_auto_execution", value: booleanLabel(booleanCheck("document_jobs_automatic_execution_enabled")) },
-  { label: "p0_document_jobs_required", value: booleanLabel(booleanCheck("p0_document_jobs_required")) },
-  { label: "p0_document_jobs_ready", value: booleanLabel(booleanCheck("p0_document_jobs_ready")) },
-  { label: "stage_dispatcher", value: metrics.value?.stage_dispatcher || stringCheck("stage_dispatcher") },
-  { label: "stage_message_store", value: stringCheck("stage_message_store") },
-  { label: "stage_spool_available", value: booleanLabel(booleanCheck("stage_spool_dir_exists")) },
-  { label: "stage_spool_needs_attention", value: booleanLabel(booleanCheck("stage_spool_needs_attention")) },
-  { label: "stage_spool_observation", value: stringCheck("stage_spool_observation_status") },
+  detailItem("worker_mode", metrics.value?.worker_mode || checkValue("worker_mode")),
+  detailItem("document_jobs_worker_backend", checkValue("document_jobs_worker_backend")),
+  detailItem("document_jobs_celery_queue", checkValue("document_jobs_celery_queue")),
+  detailItem("document_jobs_auto_execution", booleanCheck("document_jobs_automatic_execution_enabled")),
+  detailItem("p0_document_jobs_required", booleanCheck("p0_document_jobs_required")),
+  detailItem("p0_document_jobs_ready", booleanCheck("p0_document_jobs_ready")),
+  detailItem("stage_dispatcher", metrics.value?.stage_dispatcher || checkValue("stage_dispatcher")),
+  detailItem("stage_message_store", checkValue("stage_message_store")),
+  detailItem("stage_spool_available", booleanCheck("stage_spool_dir_exists")),
+  detailItem("stage_spool_needs_attention", booleanCheck("stage_spool_needs_attention")),
+  detailItem("stage_spool_observation", checkValue("stage_spool_observation_status")),
 ]);
 
 const storageItems = computed<DetailItem[]>(() => [
-  { label: "artifact_storage", value: metrics.value?.artifact_storage || stringCheck("artifact_storage") },
-  { label: "jobs_dir_writable", value: booleanLabel(booleanCheck("jobs_dir_writable")) },
-  { label: "artifact_root_writable", value: booleanLabel(booleanCheck("artifact_root_writable")) },
-  { label: "artifact_disk_free", value: formatOptionalBytes(numberCheck("artifact_disk_free_bytes")) },
-  { label: "tmp_dir_exists", value: booleanLabel(booleanCheck("tmp_dir_exists")) },
+  detailItem("artifact_storage", metrics.value?.artifact_storage || checkValue("artifact_storage")),
+  detailItem("jobs_dir_writable", booleanCheck("jobs_dir_writable")),
+  detailItem("artifact_root_writable", booleanCheck("artifact_root_writable")),
+  detailItem("artifact_disk_free", formatOptionalBytes(numberCheck("artifact_disk_free_bytes"))),
+  detailItem("tmp_dir_exists", booleanCheck("tmp_dir_exists")),
 ]);
 
 const jobMetricItems = computed<MetricItem[]>(() => [
@@ -279,25 +280,25 @@ const jobMetricItems = computed<MetricItem[]>(() => [
 ]);
 
 const stageMetricItems = computed<MetricItem[]>(() => [
-  { label: "stage pending", value: stageCount("pending") },
-  { label: "stage running", value: stageCount("running") },
-  { label: "stage failed", value: stageCount("failed") },
-  { label: "stale running", value: numberCheck("stage_spool_running_stale_messages") ?? 0 },
-  { label: "replayable", value: numberCheck("stage_spool_replayable_messages") ?? 0 },
-  { label: "oldest running age", value: secondsLabel(numberCheck("stage_spool_oldest_running_age_seconds")) },
-  { label: "document jobs stale", value: numberCheck("document_jobs_running_stale_count") ?? 0 },
-  { label: "document jobs timed out", value: numberCheck("document_jobs_timed_out_count") ?? 0 },
-  { label: "document jobs oldest age", value: secondsLabel(numberCheck("document_jobs_running_oldest_age_seconds")) },
+  { label: healthLabelText("stage_pending"), value: stageCount("pending") },
+  { label: healthLabelText("stage_running"), value: stageCount("running") },
+  { label: healthLabelText("stage_failed"), value: stageCount("failed") },
+  { label: healthLabelText("stale_running"), value: numberCheck("stage_spool_running_stale_messages") ?? 0 },
+  { label: healthLabelText("stage_replayable"), value: numberCheck("stage_spool_replayable_messages") ?? 0 },
+  { label: healthLabelText("stage_spool_oldest_running_age_seconds"), value: secondsLabel(numberCheck("stage_spool_oldest_running_age_seconds")) },
+  { label: healthLabelText("document_jobs_stale"), value: numberCheck("document_jobs_running_stale_count") ?? 0 },
+  { label: healthLabelText("document_jobs_timed_out"), value: numberCheck("document_jobs_timed_out_count") ?? 0 },
+  { label: healthLabelText("document_jobs_oldest_age"), value: secondsLabel(numberCheck("document_jobs_running_oldest_age_seconds")) },
 ]);
 
 const resourceItems = computed<DetailItem[]>(() => [
-  { label: "default_template_version", value: resourceValue("default_template_version") },
-  { label: "default_term_rule_version", value: resourceValue("default_term_rule_version") },
-  { label: "default_translation_term_version", value: resourceValue("default_translation_term_version") },
-  { label: "default_translation_profile_version", value: resourceValue("default_translation_profile_version") },
-  { label: "template_versions", value: resourceValue("template_versions") },
-  { label: "term_rule_set_versions", value: resourceValue("term_rule_set_versions") },
-  { label: "translation_profile_versions", value: resourceValue("translation_profile_versions") },
+  detailItem("default_template_version", resourceValue("default_template_version")),
+  detailItem("default_term_rule_version", resourceValue("default_term_rule_version")),
+  detailItem("default_translation_term_version", resourceValue("default_translation_term_version")),
+  detailItem("default_translation_profile_version", resourceValue("default_translation_profile_version")),
+  detailItem("template_versions", resourceValue("template_versions")),
+  detailItem("term_rule_set_versions", resourceValue("term_rule_set_versions")),
+  detailItem("translation_profile_versions", resourceValue("translation_profile_versions")),
 ]);
 
 async function loadStatus(): Promise<void> {
@@ -317,10 +318,6 @@ async function loadStatus(): Promise<void> {
 
 function checkValue(key: string): unknown {
   return checks.value[key];
-}
-
-function stringCheck(key: string): string {
-  return displayValue(checkValue(key));
 }
 
 function stringListCheck(key: string): string[] {
@@ -344,41 +341,41 @@ function numberCheck(key: string): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function booleanLabel(value: boolean | null): string {
-  if (value === null) {
-    return "not reported";
-  }
-  return value ? "yes" : "no";
+function detailItem(key: string, value: unknown): DetailItem {
+  return {
+    label: healthLabelText(key),
+    value: displayValue(value),
+  };
 }
 
 function displayValue(value: unknown): string {
   if (value === null || value === undefined || value === "") {
-    return "not reported";
+    return missingText();
   }
   if (typeof value === "boolean") {
-    return booleanLabel(value);
+    return booleanText(value);
   }
   if (typeof value === "number") {
     return String(value);
   }
   if (typeof value === "string") {
-    return value;
+    return commonValueText(value);
   }
   return JSON.stringify(value);
 }
 
 function formatOptionalBytes(value: number | null): string {
   if (value === null) {
-    return "not reported";
+    return missingText();
   }
   return formatBytes(value);
 }
 
 function secondsLabel(value: number | null): string {
   if (value === null) {
-    return "not reported";
+    return missingText();
   }
-  return `${value}s`;
+  return `${value} 秒`;
 }
 
 function jobCount(status: string): number {
@@ -395,6 +392,14 @@ function resourceValue(key: string): string {
     return displayValue(metricValue);
   }
   return displayValue(checkValue(key));
+}
+
+function endpointStatus(status: string | undefined): string {
+  return displayValue(status);
+}
+
+function formatReadinessItem(code: string): string {
+  return readinessCodeText(code);
 }
 
 onMounted(() => {

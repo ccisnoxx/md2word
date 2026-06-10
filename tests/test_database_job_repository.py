@@ -69,6 +69,7 @@ class _FakeMysqlDatabase:
         self.job_events: list[dict[str, Any]] = []
         self.audit_events: list[dict[str, Any]] = []
         self.document_files: dict[str, dict[str, Any]] = {}
+        self.file_retention_policies: dict[str, dict[str, Any]] = {}
         self.file_retention_cleanup_locks: dict[str, dict[str, Any]] = {}
         self.file_retention_cleanup_runs: dict[str, dict[str, Any]] = {}
         self.document_jobs: dict[str, dict[str, Any]] = {}
@@ -143,6 +144,7 @@ class _FakeMysqlCursor:
                 "translation_term_match_traces",
                 "audit_events",
                 "document_files",
+                "file_retention_policies",
                 "file_retention_cleanup_locks",
                 "file_retention_cleanup_runs",
                 "document_jobs",
@@ -230,6 +232,29 @@ class _FakeMysqlCursor:
                 for row in sorted(
                     self.database.document_files.values(),
                     key=lambda item: (item["created_at"], item["file_id"]),
+                )
+            ]
+            return
+        if normalized.startswith("insert into file_retention_policies"):
+            policy_id, payload, created_at, updated_at = params
+            self.database.file_retention_policies[policy_id] = {
+                "policy_id": policy_id,
+                "payload": payload,
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+            self._rows = []
+            return
+        if normalized.startswith("select payload from file_retention_policies where policy_id"):
+            row = self.database.file_retention_policies.get(params[0])
+            self._rows = [{"payload": row["payload"]}] if row is not None else []
+            return
+        if normalized.startswith("select payload from file_retention_policies order by"):
+            self._rows = [
+                {"payload": row["payload"]}
+                for row in sorted(
+                    self.database.file_retention_policies.values(),
+                    key=lambda item: (item["created_at"], item["policy_id"]),
                 )
             ]
             return

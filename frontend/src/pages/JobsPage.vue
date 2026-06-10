@@ -116,6 +116,41 @@
       </div>
 
       <ApiErrorAlert :error="error" />
+      <el-alert
+        v-if="lastDownloadLink"
+        class="inline-result-alert"
+        type="success"
+        :closable="true"
+        show-icon
+        :title="lastDownloadLink.label"
+        @close="lastDownloadLink = null"
+      >
+        <div class="download-link-notice">
+          <span>有效期至 {{ formatDateTime(lastDownloadLink.expiresAt) }}</span>
+          <a :href="lastDownloadLink.url" target="_blank" rel="noopener">打开下载链接</a>
+          <el-button text size="small" @click="copyLastDownloadLink">复制链接</el-button>
+        </div>
+      </el-alert>
+      <el-alert
+        v-if="batchResult && batchResult.failed > 0"
+        class="inline-result-alert"
+        type="warning"
+        :closable="true"
+        show-icon
+        :title="`${batchResultLabel}存在失败项`"
+        @close="batchResult = null"
+      >
+        <div class="batch-failure-list">
+          <p>{{ batchResultLabel }}失败 {{ batchResult.failed }} 个，成功 {{ batchResult.succeeded }} 个。</p>
+          <ul>
+            <li v-for="item in failedBatchItems" :key="item.job_id">
+              <span class="mono">{{ item.job_id }}</span>
+              <span>{{ item.error_code || item.status_code }}</span>
+              <span>{{ item.detail || "后端未返回失败详情。" }}</span>
+            </li>
+          </ul>
+        </div>
+      </el-alert>
 
       <div v-if="summaryEntries.length" class="summary-row" aria-label="状态汇总">
         <el-tag v-for="[status, count] in summaryEntries" :key="status" effect="plain">
@@ -145,12 +180,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { CircleCheck, Files, Filter, Plus, Refresh, Search, Timer, Warning } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 
-import type { DocumentJobListSort, DocumentJobResponse, DocumentJobStatus, TranslationQaStatus } from "@/api/types";
+import type {
+  DocumentJobBulkResponse,
+  DocumentJobListSort,
+  DocumentJobResponse,
+  DocumentJobStatus,
+  TranslationQaStatus,
+} from "@/api/types";
 import { documentJobsApi } from "@/api/documentJobs";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import JobTable from "@/components/JobTable.vue";
@@ -163,6 +204,7 @@ import {
   translationQaStatusText,
 } from "@/utils/format";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
+import { copyDownloadLink, openDownloadLink, type DownloadLinkNotice } from "@/utils/download";
 
 const router = useRouter();
 const route = useRoute();
@@ -180,6 +222,9 @@ const includeArchived = ref(false);
 const createdRange = ref<[string, string] | null>(null);
 const selectedJobs = ref<DocumentJobResponse[]>([]);
 const batchLoading = ref(false);
+const batchResult = ref<DocumentJobBulkResponse | null>(null);
+const batchResultLabel = ref("");
+const lastDownloadLink = ref<DownloadLinkNotice | null>(null);
 const summary = ref<Record<string, number>>({});
 const statuses: DocumentJobStatus[] = ["pending", "queued", "running", "succeeded", "failed", "canceled"];
 const qaStatuses: TranslationQaStatus[] = ["unreviewed", "approved", "needs_fix", "blocked"];
@@ -217,6 +262,7 @@ const activeCount = computed(
 const selectedRetryableJobs = computed(() => selectedJobs.value.filter(canRetryDocumentJob));
 const selectedCancelableJobs = computed(() => selectedJobs.value.filter(canCancelDocumentJob));
 const selectedArchivableJobs = computed(() => selectedJobs.value.filter(canArchiveDocumentJob));
+const failedBatchItems = computed(() => batchResult.value?.items.filter((item) => !item.ok) || []);
 const metrics = computed(() => [
   {
     key: "total",
@@ -285,6 +331,7 @@ function handlePageChange(nextPage: number): void {
 
 function handleFilter(): void {
   page.value = 1;
+  batchResult.value = null;
   void loadJobs();
 }
 
@@ -328,16 +375,17 @@ function applyRouteQueryFilters(): void {
   const nextStatus = firstQueryValue(route.query.status);
   const nextSort = firstQueryValue(route.query.sort);
   const nextQaStatus = firstQueryValue(route.query.translation_qa_status);
-  if (isDocumentJobStatus(nextStatus)) {
-    statusFilter.value = nextStatus;
-  }
-  if (isTranslationQaStatus(nextQaStatus)) {
-    qaStatusFilter.value = nextQaStatus;
-  }
-  if (isDocumentJobSort(nextSort)) {
-    sortFilter.value = nextSort;
-  }
+  const nextQuery = firstQueryValue(route.query.q);
+  const nextPage = Number(firstQueryValue(route.query.page));
+  const createdFrom = firstQueryValue(route.query.created_from);
+  const createdTo = firstQueryValue(route.query.created_to);
+  statusFilter.value = isDocumentJobStatus(nextStatus) ? nextStatus : "";
+  qaStatusFilter.value = isTranslationQaStatus(nextQaStatus) ? nextQaStatus : "";
+  sortFilter.value = isDocumentJobSort(nextSort) ? nextSort : "created_at_desc";
+  searchKeyword.value = nextQuery;
+  page.value = Number.isInteger(nextPage) && nextPage > 0 ? nextPage : 1;
   includeArchived.value = firstQueryValue(route.query.include_archived) === "true";
+  createdRange.value = createdFrom && createdTo ? [createdFrom, createdTo] as [string, string] : null;
 }
 
 function applyQuickFilter(kind: "active" | "failed" | "archived"): void {
@@ -368,11 +416,33 @@ function resetAdvancedFilters(): void {
 async function handleDownload(job: DocumentJobResponse): Promise<void> {
   try {
     const response = await documentJobsApi.createDownloadUrl(job.id);
-    window.open(response.download_url, "_blank", "noopener");
-    ElMessage.success(`下载链接已生成，有效期至 ${formatDateTime(response.expires_at)}。`);
+    lastDownloadLink.value = {
+      label: `任务 ${job.id} 的下载链接已生成`,
+      url: response.download_url,
+      expiresAt: response.expires_at,
+      fileName: response.file.original_filename,
+    };
+    const opened = openDownloadLink(response.download_url);
+    if (opened) {
+      ElMessage.success(`下载链接已生成，有效期至 ${formatDateTime(response.expires_at)}。`);
+    } else {
+      ElMessage.warning("浏览器可能拦截了新窗口，页面已显示下载链接。");
+    }
   } catch (caught) {
     error.value = normalizeApiError(caught);
   }
+}
+
+async function copyLastDownloadLink(): Promise<void> {
+  if (!lastDownloadLink.value) {
+    return;
+  }
+  const copied = await copyDownloadLink(lastDownloadLink.value.url);
+  if (copied) {
+    ElMessage.success("下载链接已复制。");
+    return;
+  }
+  ElMessage.warning("当前浏览器不支持自动复制。");
 }
 
 async function handleRetry(job: DocumentJobResponse): Promise<void> {
@@ -480,7 +550,7 @@ async function handleBatchRetry(): Promise<void> {
       job_ids: targets.map((job) => job.id),
       reason: "frontend batch retry",
     });
-    showBatchResult("批量重试", response.succeeded, response.failed);
+    showBatchResult("批量重试", response);
     await loadJobs();
   } catch (caught) {
     error.value = normalizeApiError(caught);
@@ -518,7 +588,7 @@ async function handleBatchArchive(): Promise<void> {
     const response = await documentJobsApi.bulkArchive({
       job_ids: targets.map((job) => job.id),
     });
-    showBatchResult("批量归档", response.succeeded, response.failed);
+    showBatchResult("批量归档", response);
     await loadJobs();
   } catch (caught) {
     error.value = normalizeApiError(caught);
@@ -555,7 +625,7 @@ async function handleBatchCancel(): Promise<void> {
     const response = await documentJobsApi.bulkCancel({
       job_ids: targets.map((job) => job.id),
     });
-    showBatchResult("批量取消", response.succeeded, response.failed);
+    showBatchResult("批量取消", response);
     await loadJobs();
   } catch (caught) {
     error.value = normalizeApiError(caught);
@@ -564,14 +634,26 @@ async function handleBatchCancel(): Promise<void> {
   }
 }
 
-// 用后端聚合结果展示批量操作的成功和失败数量。
-function showBatchResult(label: string, succeeded: number, failed: number): void {
-  if (failed > 0) {
-    ElMessage.warning(`${label}完成：成功 ${succeeded} 个，失败 ${failed} 个。`);
+// 用后端聚合结果展示批量操作的成功、失败数量和失败明细。
+function showBatchResult(label: string, result: DocumentJobBulkResponse): void {
+  batchResultLabel.value = label;
+  batchResult.value = result.failed > 0 ? result : null;
+  if (result.failed > 0) {
+    ElMessage.warning(`${label}完成：成功 ${result.succeeded} 个，失败 ${result.failed} 个。`);
     return;
   }
-  ElMessage.success(`${label}完成：成功 ${succeeded} 个。`);
+  ElMessage.success(`${label}完成：成功 ${result.succeeded} 个。`);
 }
+
+watch(
+  () => route.query,
+  () => {
+    applyRouteQueryFilters();
+    batchResult.value = null;
+    void loadJobs();
+  },
+  { deep: true },
+);
 
 onMounted(() => {
   applyRouteQueryFilters();
@@ -868,6 +950,54 @@ onMounted(() => {
   gap: 8px;
 }
 
+.inline-result-alert {
+  margin-bottom: 12px;
+}
+
+.download-link-notice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.download-link-notice span,
+.batch-failure-list p {
+  margin: 0;
+  color: var(--jobs-muted);
+  font-size: 13px;
+}
+
+.download-link-notice a {
+  color: var(--jobs-primary);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.batch-failure-list {
+  display: grid;
+  gap: 8px;
+}
+
+.batch-failure-list ul {
+  display: grid;
+  gap: 6px;
+  max-height: 180px;
+  margin: 0;
+  padding-left: 18px;
+  overflow: auto;
+}
+
+.batch-failure-list li {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.8fr) minmax(90px, 0.4fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  color: var(--jobs-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .jobs-table-card {
   overflow: hidden;
   border: 1px solid var(--jobs-border);
@@ -1048,6 +1178,10 @@ onMounted(() => {
 
   .selection-actions {
     justify-content: flex-start;
+  }
+
+  .batch-failure-list li {
+    grid-template-columns: 1fr;
   }
 }
 

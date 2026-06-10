@@ -412,11 +412,11 @@ class HealthService:
                     code="readiness_blockers_present",
                     severity="critical",
                     source="readiness",
-                    title="Readiness blockers present",
+                    title="存在就绪检查阻断",
                     description="、".join(blockers),
                     count=len(blockers),
                     suggested_route="/system-status",
-                    suggested_action="查看系统状态中的 blockers，并按部署修复流程处理缺失依赖。",
+                    suggested_action="查看系统状态中的阻断项，并按部署修复流程处理缺失依赖。",
                 )
             )
         if p0_blockers:
@@ -425,7 +425,7 @@ class HealthService:
                     code="p0_document_jobs_not_ready",
                     severity="critical",
                     source="readiness",
-                    title="P0 document jobs execution is not ready",
+                    title="P0 文档任务执行链路未就绪",
                     description="、".join(p0_blockers),
                     count=len(p0_blockers),
                     suggested_route="/system-status",
@@ -438,11 +438,11 @@ class HealthService:
                     code="readiness_warnings_present",
                     severity="warning",
                     source="readiness",
-                    title="Readiness warnings present",
+                    title="存在就绪检查告警",
                     description="、".join(warnings),
                     count=len(warnings),
                     suggested_route="/system-status",
-                    suggested_action="查看 readiness 详情；warning 只提示风险，不在此接口触发修复动作。",
+                    suggested_action="查看就绪检查详情；告警只提示风险，不在此接口触发修复动作。",
                 )
             )
         if stage_failed_count > 0:
@@ -451,11 +451,11 @@ class HealthService:
                     code="stage_spool_failed_messages_present",
                     severity="critical",
                     source="stage_spool",
-                    title="Failed stage messages present",
-                    description="failed stage message 不会自动 replay，需要结合任务详情和事件流判断下一步。",
+                    title="存在失败的阶段消息",
+                    description="失败的阶段消息不会自动重放，需要结合任务详情和事件流判断下一步。",
                     count=stage_failed_count,
                     suggested_route="/jobs?status=failed&sort=updated_at_desc",
-                    suggested_action="查看失败任务和事件；如需 retry，使用既有任务流程手动处理。",
+                    suggested_action="查看失败任务和事件；如需重试，使用既有任务流程手动处理。",
                 )
             )
         if stage_stale_count > 0:
@@ -464,11 +464,11 @@ class HealthService:
                     code="stage_spool_stale_running_messages_present",
                     severity="critical",
                     source="stage_spool",
-                    title="Stale running stage messages present",
-                    description="running stage message 已超过 lease 观察窗口，可能来自 worker 退出或处理卡住。",
+                    title="存在过期运行中的阶段消息",
+                    description="运行中的阶段消息已超过租约观察窗口，可能来自工作进程退出或处理卡住。",
                     count=stage_stale_count,
                     suggested_route="/jobs?status=running&sort=updated_at_desc",
-                    suggested_action="先确认 worker 进程和任务事件，再按既有运维流程处理。",
+                    suggested_action="先确认工作进程和任务事件，再按既有运维流程处理。",
                 )
             )
         if stage_replayable_count > 0:
@@ -477,11 +477,11 @@ class HealthService:
                     code="stage_spool_replayable_messages_present",
                     severity="warning",
                     source="stage_spool",
-                    title="Replayable stage messages present",
-                    description="pending/running stage message 属于可观察的 replayable 信号，可能随 worker 恢复继续处理。",
+                    title="存在可继续处理的阶段消息",
+                    description="待处理或运行中的阶段消息属于可观察信号，可能随工作进程恢复继续处理。",
                     count=stage_replayable_count,
                     suggested_route="/jobs?status=running&sort=updated_at_desc",
-                    suggested_action="观察 worker 和任务事件进展；本接口不会启动 replay。",
+                    suggested_action="观察工作进程和任务事件进展；本接口不会启动重放。",
                 )
             )
         if failed_jobs > 0:
@@ -490,8 +490,8 @@ class HealthService:
                     code="document_jobs_failed_present",
                     severity="warning",
                     source="jobs",
-                    title="Failed document jobs present",
-                    description="存在失败 document job，应从任务详情查看错误阶段、事件流和文件区。",
+                    title="存在失败的文档任务",
+                    description="存在失败的文档任务，应从任务详情查看错误阶段、事件流和文件区。",
                     count=failed_jobs,
                     suggested_route="/jobs?status=failed&sort=updated_at_desc",
                     suggested_action="如需重试，使用既有任务页面流程手动执行。",
@@ -503,8 +503,8 @@ class HealthService:
                     code="document_jobs_timed_out_present",
                     severity="critical",
                     source="jobs",
-                    title="Timed out document jobs present",
-                    description="存在已超过 timeout_at 的未终态 document job，当前接口只报告风险不执行恢复。",
+                    title="存在已超时的文档任务",
+                    description="存在已超过超时时间的未终态文档任务，当前接口只报告风险不执行恢复。",
                     count=document_jobs_timed_out_count,
                     suggested_route="/jobs?status=running&sort=updated_at_desc",
                     suggested_action="查看任务详情和事件流，必要时使用任务页面的重试、取消或克隆流程。",
@@ -516,11 +516,11 @@ class HealthService:
                     code="document_jobs_stale_running_present",
                     severity="warning",
                     source="jobs",
-                    title="Stale document jobs present",
-                    description="存在长时间未更新的未终态 document job，可能来自 worker 停摆、callback 缺失或 provider 慢响应。",
+                    title="存在长时间未更新的文档任务",
+                    description="存在长时间未更新的未终态文档任务，可能来自工作进程停摆、回调缺失或服务提供方慢响应。",
                     count=document_jobs_stale_count,
                     suggested_route="/jobs?status=running&sort=updated_at_desc",
-                    suggested_action="查看任务详情、worker 进程和 MinerU callback 配置；本接口不会重投递任务。",
+                    suggested_action="查看任务详情、工作进程和 MinerU 回调配置；本接口不会重投递任务。",
                 )
             )
         if running_jobs > 0:
@@ -529,8 +529,8 @@ class HealthService:
                     code="document_jobs_running_present",
                     severity="info",
                     source="jobs",
-                    title="Running document jobs present",
-                    description="存在运行中 document job；该信号用于观察，不代表需要人工干预。",
+                    title="存在运行中的文档任务",
+                    description="存在运行中的文档任务；该信号用于观察，不代表需要人工干预。",
                     count=running_jobs,
                     suggested_route="/jobs?status=running&sort=updated_at_desc",
                     suggested_action="查看运行中任务样例和事件进展；本接口不取消或恢复任务。",

@@ -124,7 +124,14 @@ def cancel_job(
     job = runtime.lifecycle_service.cancel_job(job_id, reason=reason, trace_id=trace_id, actor=actor)
     files = runtime.artifact_service.sort_files(runtime.query_service.list_files(job_id))
     events = runtime.query_service.list_events(job_id)
-    return build_job_detail_response(runtime, request, job, files, events)
+    return build_job_detail_response(
+        runtime,
+        request,
+        job,
+        files,
+        events,
+        include_sensitive_fields=actor.actor_role == "admin",
+    )
 
 
 @router.post(

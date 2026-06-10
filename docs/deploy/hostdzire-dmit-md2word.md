@@ -5,7 +5,7 @@ component: pdf-to-word-backend
 status: current
 summary: md2word 在 dmit + WireGuard + hostdzire 结构下的实际部署记录。
 tags: [deploy, nginx, docker, wireguard, hostdzire, dmit]
-last_reviewed: 2026-05-31
+last_reviewed: 2026-06-10
 ---
 
 # md2word 线上部署记录
@@ -20,20 +20,24 @@ last_reviewed: 2026-05-31
 
 ## 本次约定
 
-- API 域名：`md2word-api.962850.xyz`
+- API 域名：`md2word.962850.xyz`
 - 部署目录：`/root/md2word`
 - Compose 文件：`/root/md2word/docker/prod/docker-compose.yml`
 - 运行环境变量：`/root/md2word/.env`
 - 内部账号 JSON：`/root/md2word/deploy/auth_internal_users.json`
 - Docker API 回源端口：`127.0.0.1:18000`
-- 宿主机 nginx 站点文件：`/etc/nginx/sites-enabled/md2word-api.962850.xyz.conf`
-- MinerU 回调基础地址：`https://md2word-api.962850.xyz/api/v1/mineru-callbacks/result`
+- 宿主机 nginx 站点文件：`/etc/nginx/sites-enabled/md2word-api.962850.xyz.conf`（历史文件名；实际 `server_name` 是 `md2word.962850.xyz`）
+- MinerU 回调基础地址：`https://md2word.962850.xyz/api/v1/mineru-callbacks/result`
+
+`md2word-api.962850.xyz` 是早期错误域名，不作为线上入口使用。当前公开入口、CORS origin 和 MinerU callback URL 都应使用 `md2word.962850.xyz`。
 
 ## 证书和入口
 
 - 复用现有 `/etc/nginx/snippets/cert-962850.xyz.conf`
 - 证书文件在 `/etc/nginx/ssl/962850.xyz/`
 - HTTP ACME 验证路径复用 `/etc/nginx/snippets/acme-challenge.conf`
+
+本机如果启用 `mosdns` + `sing-box` fakeip 分流，`md2word.962850.xyz` 可能解析成 `28.0.*`。这是本机代理接管国外域名的预期行为，不代表公网 DNS 或线上入口异常；排查公网入口时可用公共 DNS 查询或 `curl --resolve md2word.962850.xyz:443:154.21.86.86 ...` 强制验证 dmit 入口。
 
 ## 秘钥和账号
 
@@ -44,7 +48,7 @@ last_reviewed: 2026-05-31
 MinerU 公开回调当前按下面约定配置：
 
 - `PUBLIC_DEPLOYMENT_MODE=single_tenant_public`
-- `MINERU_CALLBACK_URL=https://md2word-api.962850.xyz/api/v1/mineru-callbacks/result`
+- `MINERU_CALLBACK_URL=https://md2word.962850.xyz/api/v1/mineru-callbacks/result`
 - `MINERU_UID` 写入 `.env`，按 MinerU 官方文档用于 `uid + seed + content` checksum 验签
 
 不要给 callback URL 追加自定义 token 或 query 参数；服务端提交任务时会生成随机 `seed`，收到 callback 后按官方 checksum 规则验签。

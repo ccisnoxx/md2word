@@ -69,14 +69,22 @@ def list_jobs(
     return JobListResponse(items=items, page=page, page_size=page_size, total=total, summary=summary)
 
 
-@router.get("/{job_id}", response_model=JobDetailResponse, dependencies=[Depends(require_jobs_access)])
+@router.get("/{job_id}", response_model=JobDetailResponse)
 def get_job_detail(
     job_id: str,
     request: Request,
+    actor: ActorContext = Depends(require_jobs_actor),
     runtime: AppRuntime = Depends(get_runtime),
 ) -> JobDetailResponse:
     job, files, events = runtime.query_service.get_job_detail(job_id)
-    return build_job_detail_response(runtime, request, job, files, events)
+    return build_job_detail_response(
+        runtime,
+        request,
+        job,
+        files,
+        events,
+        include_sensitive_fields=actor.actor_role == "admin",
+    )
 
 
 @router.get("/{job_id}/files", response_model=JobFileListResponse, dependencies=[Depends(require_jobs_access)])

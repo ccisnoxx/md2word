@@ -796,6 +796,16 @@
             ],
             "title": "Default Label"
           },
+          "detail_status": {
+            "default": "complete",
+            "enum": [
+              "complete",
+              "deferred",
+              "failed"
+            ],
+            "title": "Detail Status",
+            "type": "string"
+          },
           "draft_count": {
             "anyOf": [
               {
@@ -871,6 +881,13 @@
       },
       "ConfigWorkbenchReleaseGate": {
         "properties": {
+          "blocker_findings": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigWorkbenchFinding"
+            },
+            "title": "Blocker Findings",
+            "type": "array"
+          },
           "blockers": {
             "items": {
               "type": "string"
@@ -887,6 +904,13 @@
             "default": false,
             "title": "P0 Document Jobs Required",
             "type": "boolean"
+          },
+          "warning_findings": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigWorkbenchFinding"
+            },
+            "title": "Warning Findings",
+            "type": "array"
           },
           "warnings": {
             "items": {
@@ -15022,10 +15046,135 @@
         ]
       }
     },
+    "/api/v1/config-workbench/groups/{group_id}": {
+      "get": {
+        "operationId": "get_config_workbench_group_api_v1_config_workbench_groups__group_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "enum": [
+                "runtime_readiness",
+                "templates",
+                "term_rule_sets",
+                "translation_profiles",
+                "translation_term_sets"
+              ],
+              "title": "Group Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "default": "full",
+              "enum": [
+                "overview",
+                "full"
+              ],
+              "title": "Mode",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigWorkbenchGroup"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Config Workbench Group",
+        "tags": [
+          "config-workbench"
+        ]
+      }
+    },
     "/api/v1/config-workbench/summary": {
       "get": {
         "operationId": "get_config_workbench_summary_api_v1_config_workbench_summary_get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "default": "full",
+              "enum": [
+                "overview",
+                "full"
+              ],
+              "title": "Mode",
+              "type": "string"
+            }
+          },
           {
             "in": "header",
             "name": "Authorization",
@@ -18516,6 +18665,22 @@
                 }
               ],
               "title": "X-Admin-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
             }
           }
         ],

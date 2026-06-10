@@ -22,14 +22,23 @@ source_files:
   - app/domains/jobs/artifacts.py
   - app/domains/jobs/schemas.py
   - app/clients/mineru_client.py
-summary: Jobs API 提供 MinerU zip 后处理、原始 PDF 在线提交、任务查询、产物下载、本地运维动作和成功动作审计。
+summary: Jobs API 是 legacy/兼容链路，保留 MinerU zip 后处理、旧 PDF 在线提交、任务查询、产物下载和本地运维动作；门户主链路已迁移到 Files + Document Jobs API。
 tags: [jobs, api, delivery, audit]
 last_reviewed: 2026-05-31
 ---
 
 ## 概述
 
-Jobs API 统一挂在 `/api/v1/jobs` 下，是当前后端的主业务入口。它负责：
+Jobs API 统一挂在 `/api/v1/jobs` 下，当前定位是 legacy/兼容入口和运维迁移期排障入口。新门户、P0 PDF -> Word 工作台和后续功能应优先使用：
+
+```text
+POST /api/v1/files/upload-url
+PUT /api/v1/files/{file_id}/content
+POST /api/v1/document-jobs
+GET /api/v1/document-jobs/{job_id}
+```
+
+`/api/v1/jobs` 仍负责：
 
 - 上传 MinerU 输出 zip 并创建转换任务
 - 上传原始 PDF 并提交 MinerU
@@ -39,6 +48,7 @@ Jobs API 统一挂在 `/api/v1/jobs` 下，是当前后端的主业务入口。�
 - 对 artifact 下载、retry、cancel 和 cleanup 成功动作写入 audit event
 
 当前 `retry/cancel/recover-mineru-result/cleanup-local-files` 默认按 `JOBS_OPS_ACCESS_MODE=admin` 收紧，要求 `X-Admin-Token`。如需沿用普通 jobs 访问口径，可显式设置 `JOBS_OPS_ACCESS_MODE=jobs`。
+生产或 `PUBLIC_DEPLOYMENT_MODE=single_tenant_public` 环境不允许以 `JOBS_ACCESS_MODE=open` 启动；必须改用 `token` 或 `admin` 并配置对应 token。
 MinerU callback 不在这组路由下，单独见 [mineru-callbacks.md](/Users/sc/MinerU/md2word_file/docs/api/mineru-callbacks.md)。
 
 ## 普通 jobs 访问模式
@@ -197,6 +207,7 @@ MinerU callback 不在这组路由下，单独见 [mineru-callbacks.md](/Users/s
     - `mineru_status`
     - `mineru_result_zip_url`
   - 这些 `mineru_*` 字段当前仍对外返回，但内部已经被视为 `source_pdf_context` 的兼容投影
+  - `mineru_callback_seed` 是 callback checksum 敏感材料；非 admin actor 返回 `null`，只有 admin actor 可见
   - MySQL resource mode 创建的任务会带 `resource_snapshot`，包含 `template`、`term_rule_set`、`en2zh` 任务的 `translation_term_set`、可选 `translation_profile`、MinerU snapshot 和 artifact id
 
 ## Job 术语资产版本选择

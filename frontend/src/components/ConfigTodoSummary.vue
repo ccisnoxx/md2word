@@ -36,7 +36,7 @@
         show-icon
       >
         <ul class="finding-list">
-          <li v-for="item in summary.release_gate.blockers" :key="item">{{ item }}</li>
+          <li v-for="item in releaseGateBlockerItems" :key="item.code">{{ item.message }}</li>
         </ul>
       </el-alert>
       <el-alert
@@ -48,7 +48,7 @@
         show-icon
       >
         <ul class="finding-list">
-          <li v-for="item in summary.release_gate.warnings" :key="item">{{ item }}</li>
+          <li v-for="item in releaseGateWarningItems" :key="item.code">{{ item.message }}</li>
         </ul>
       </el-alert>
     </template>
@@ -61,6 +61,7 @@ import { Refresh } from "@element-plus/icons-vue";
 
 import type { ConfigWorkbenchStatus, ConfigTodoSummaryResponse } from "@/api/configSummary";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
+import { configWorkbenchStatusText, readinessCodeText } from "@/utils/displayText";
 import type { ApiClientError } from "@/utils/errors";
 import { formatDateTime } from "@/utils/format";
 
@@ -85,8 +86,8 @@ const metrics = computed(() => {
   return [
     {
       key: "p0-gate",
-      label: "P0 document_jobs",
-      value: summary.release_gate.p0_document_jobs_ready ? "Ready" : "Blocked",
+      label: "P0 文档任务",
+      value: summary.release_gate.p0_document_jobs_ready ? "就绪" : "已阻断",
       helper: summary.release_gate.p0_document_jobs_required ? "生产门禁已启用" : "当前环境非强制",
     },
     {
@@ -99,13 +100,13 @@ const metrics = computed(() => {
       key: "warning",
       label: "告警配置组",
       value: warningGroups,
-      helper: "存在待审核、draft 或 warning",
+      helper: "存在待审核、草稿或告警",
     },
     {
       key: "unavailable",
       label: "不可用配置组",
       value: unavailableGroups,
-      helper: "通常表示未启用 MySQL resource service",
+      helper: "通常表示未启用 MySQL 资源版本服务",
     },
     {
       key: "updated",
@@ -116,14 +117,26 @@ const metrics = computed(() => {
   ];
 });
 
+const releaseGateBlockerItems = computed(() => releaseGateFindings("blockers", "blocker_findings"));
+const releaseGateWarningItems = computed(() => releaseGateFindings("warnings", "warning_findings"));
+
 function statusLabel(status: ConfigWorkbenchStatus): string {
-  const labels: Record<ConfigWorkbenchStatus, string> = {
-    ready: "Ready",
-    warning: "Warning",
-    blocked: "Blocked",
-    unavailable: "Unavailable",
-  };
-  return labels[status];
+  return configWorkbenchStatusText(status);
+}
+
+function releaseGateFindings(
+  codeKey: "blockers" | "warnings",
+  findingKey: "blocker_findings" | "warning_findings",
+): { code: string; message: string }[] {
+  const summary = props.summary;
+  if (!summary) {
+    return [];
+  }
+  const findings = summary.release_gate[findingKey] || [];
+  if (findings.length) {
+    return findings.map((item) => ({ code: item.code, message: item.message }));
+  }
+  return summary.release_gate[codeKey].map((code) => ({ code, message: readinessCodeText(code) }));
 }
 
 function statusTagType(status: ConfigWorkbenchStatus): "success" | "warning" | "danger" | "info" {
@@ -211,4 +224,3 @@ function statusTagType(status: ConfigWorkbenchStatus): "success" | "warning" | "
   }
 }
 </style>
-

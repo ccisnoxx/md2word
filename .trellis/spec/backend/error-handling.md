@@ -51,11 +51,16 @@ returns.
 - For background workflows, never fail silently.
   - `JobStageService` records `error_code`, `error_message`, and `JobEvent`
     entries before returning from known failure paths.
+  - `DocumentJobExecutionService` records document job failure state and a
+    `stage_failed` event for both classified worker failures and unexpected
+    top-level exceptions.
 - Broad `except Exception` blocks are reserved for final guards or cleanup
   paths only.
   - Request middleware in `app/main.py` logs and re-raises.
   - `JobStageService` has a final guard that logs unexpected failures and
     re-raises instead of swallowing them.
+  - Worker final guards may persist failed task state before returning when the
+    caller is an async executor and a running job would otherwise be stranded.
 - For configuration-gated features, current code prefers an explicit 503 that
   names the missing capability or setting, for example `OPENAI_API_KEY`,
   `MINERU_API_TOKEN`, or `ADMIN_TOKEN`.
@@ -64,8 +69,11 @@ returns.
 
 ## API Error Responses
 
-- The API uses FastAPI's default error body shape: `{"detail": ...}`.
-- There is no project-specific top-level error envelope yet.
+- The API returns a unified error body with backward-compatible `detail`:
+  `{"detail": ..., "error_code": ..., "error": {"code": ..., "message": ..., "status_code": ..., "trace_id": ...}}`.
+- UI/API clients should prefer `error.code`, `error.message`, and
+  `error.trace_id`, while keeping `detail`/top-level `error_code` compatibility
+  for older callers.
 - Error detail strings are currently written in Chinese and usually name the
   offending field, state, artifact, or missing environment-backed setting.
 - Choose the narrowest status code that matches current behavior:
