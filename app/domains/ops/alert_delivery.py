@@ -13,7 +13,7 @@ from app.api.v1.routers.health_schemas import HealthOpsAlertItem
 from app.core.errors import ApiError
 from app.domains.audit.models import AuditEvent
 from app.domains.audit.repository import AuditEventRepositoryProtocol
-from app.domains.jobs.models import utc_now
+from app.domains.resources.models import utc_now
 from app.domains.ops.alert_delivery_contract import (
     OpsAlertDeliveryAdapterResult,
     build_fake_alert_delivery_adapter_result,

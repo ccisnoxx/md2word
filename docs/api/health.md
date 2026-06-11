@@ -236,7 +236,7 @@ Health API 当前有五条入口：
 - `translation_prompt_exists=false`
   - 说明翻译 prompt 资源缺失，`en2zh` 会被预检拒绝。
 - `mineru_api_token_configured=false`
-  - 说明 `POST /api/v1/jobs/pdf` 当前不可用，系统只能接收 MinerU 已完成的输出 zip。
+  - 说明依赖 MinerU 的 `/api/v1/document-jobs` 异步解析不可用，创建任务会被预检拒绝或停留在等待恢复状态。
 - `mineru_callback_url_missing`
   - 说明已配置 MinerU token 但未配置异步回调 URL，document_jobs 可能停在 `running/parsing` 等待重投递或人工恢复。
 - `mineru_uid_missing`

@@ -3,9 +3,12 @@ from __future__ import annotations
 # app/domains/document_jobs/execution.py: 提供 document_jobs Worker 投递端口和幂等执行骨架。
 
 import logging
+import hashlib
+import json
 import secrets
 import tempfile
 import zipfile
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Callable, Protocol
 from uuid import uuid4
@@ -13,6 +16,7 @@ from uuid import uuid4
 from app.clients.mineru_client import MinerUClient, MinerUError
 from app.core.config import Settings
 from app.domains.document_jobs.models import (
+    DocumentJobCallbackMessage,
     DocumentJobEventRecord,
     DocumentJobEventType,
     DocumentJobRecord,
@@ -23,8 +27,9 @@ from app.services.document_ir.models import DocumentIR, DocumentIRAsset
 from app.domains.files import FileUploadService
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.repository import DocumentFileRepositoryProtocol
-from app.domains.jobs.models import utc_now
+from app.domains.resources.models import utc_now
 from app.domains.document_jobs.repository import (
+    DocumentJobCallbackMessageStoreProtocol,
     DocumentJobEventRepositoryProtocol,
     DocumentJobRepositoryProtocol,
 )
@@ -44,7 +49,7 @@ from app.domains.translation.document_ir_translator import (
 class DocumentJobTaskQueueProtocol(Protocol):
     """document_jobs 后台任务投递端口；业务幂等性由 job_id 执行骨架保证。"""
 
-    def enqueue(self, job_id: str, *, trace_id: str | None) -> str | None:
+    def enqueue(self, job_id: str, *, trace_id: str | None, run_inline: bool = True) -> str | None:
         """投递一个按 job_id 执行的后台任务，返回底层队列任务 ID。"""
 
 
@@ -60,6 +65,7 @@ class DocumentJobExecutionService:
         settings: Settings,
         job_repository: DocumentJobRepositoryProtocol,
         event_repository: DocumentJobEventRepositoryProtocol,
+        callback_message_store: DocumentJobCallbackMessageStoreProtocol,
         file_repository: DocumentFileRepositoryProtocol,
         file_service: FileUploadService,
         document_ir_service: MinerUToDocumentIRService,
@@ -73,6 +79,7 @@ class DocumentJobExecutionService:
         self.settings = settings
         self.job_repository = job_repository
         self.event_repository = event_repository
+        self.callback_message_store = callback_message_store
         self.file_repository = file_repository
         self.file_service = file_service
         self.document_ir_service = document_ir_service
@@ -90,6 +97,7 @@ class DocumentJobExecutionService:
         job = self.job_repository.get_document_job(job_id)
         if job is None:
             return None
+        job = self._process_replayable_callback_messages(job, trace_id=trace_id)
         if job.status in {"succeeded", "failed", "canceled"}:
             return job
         timed_out = self._mark_timed_out_if_needed(job, trace_id=trace_id)
@@ -154,13 +162,18 @@ class DocumentJobExecutionService:
 
     def _mark_queued_from_worker(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
         now = utc_now()
-        queued = self.job_repository.update_document_job(
+        queued = self.job_repository.update_document_job_if_current(
             job.id,
+            allowed_statuses={"pending"},
+            allowed_stages={"uploaded"},
+            expected_retry_count=job.retry_count,
             status="queued",
             stage="uploaded",
             progress=max(job.progress, 5),
             updated_at=now,
         )
+        if queued is None:
+            return self.job_repository.get_document_job(job.id) or job
         self._record_event(
             queued,
             event_type="stage_started",
@@ -173,8 +186,11 @@ class DocumentJobExecutionService:
 
     def _mark_parsing_started(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
         now = utc_now()
-        running = self.job_repository.update_document_job(
+        running = self.job_repository.update_document_job_if_current(
             job.id,
+            allowed_statuses={"queued"},
+            allowed_stages={"uploaded"},
+            expected_retry_count=job.retry_count,
             status="running",
             stage="parsing",
             progress=max(job.progress, 10),
@@ -184,6 +200,8 @@ class DocumentJobExecutionService:
             failed_stage=None,
             updated_at=now,
         )
+        if running is None:
+            return self.job_repository.get_document_job(job.id) or job
         self._record_event(
             running,
             event_type="stage_started",
@@ -196,13 +214,17 @@ class DocumentJobExecutionService:
 
     def _run_mineru_parse(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
         if job.mineru_raw_result_file_id:
-            return self.job_repository.update_document_job(
+            parsed = self.job_repository.update_document_job_if_current(
                 job.id,
+                allowed_statuses={"running"},
+                allowed_stages={"parsing"},
+                expected_retry_count=job.retry_count,
                 status="running",
                 stage="parsed",
                 progress=max(job.progress, 30),
                 updated_at=utc_now(),
             )
+            return parsed or self.job_repository.get_document_job(job.id) or job
 
         source_file = self._get_uploaded_file(job.source_file_id)
         with tempfile.TemporaryDirectory(prefix="document_job_mineru_") as temp_dir:
@@ -223,14 +245,20 @@ class DocumentJobExecutionService:
                     callback=callback,
                     seed=callback_seed,
                 )
-                job = self.job_repository.update_document_job(
+                updated_job = self.job_repository.update_document_job_if_current(
                     job.id,
+                    allowed_statuses={"running"},
+                    allowed_stages={"parsing"},
+                    expected_retry_count=job.retry_count,
                     mineru_batch_id=batch_id,
                     mineru_data_id=data_id,
                     mineru_callback_seed=callback_seed,
                     progress=max(job.progress, 15),
                     updated_at=utc_now(),
                 )
+                if updated_job is None:
+                    return self.job_repository.get_document_job(job.id) or job
+                job = updated_job
                 self._record_event(
                     job,
                     event_type="stage_succeeded",
@@ -245,13 +273,18 @@ class DocumentJobExecutionService:
             state = str(result_item.get("state") or "").lower()
             full_zip_url = result_item.get("full_zip_url")
             if state not in {"done", "success", "succeeded"} or not full_zip_url:
-                waiting = self.job_repository.update_document_job(
+                waiting = self.job_repository.update_document_job_if_current(
                     job.id,
+                    allowed_statuses={"running"},
+                    allowed_stages={"parsing"},
+                    expected_retry_count=job.retry_count,
                     status="running",
                     stage="parsing",
                     progress=max(job.progress, 20),
                     updated_at=utc_now(),
                 )
+                if waiting is None:
+                    return self.job_repository.get_document_job(job.id) or job
                 self._record_event(
                     waiting,
                     event_type="stage_started",
@@ -270,6 +303,7 @@ class DocumentJobExecutionService:
                 data_id=str(data_id),
                 temp_dir=Path(temp_dir),
                 trace_id=trace_id,
+                expected_retry_count=job.retry_count,
             )
 
     def find_job_for_mineru_callback(self, payload: dict[str, Any]) -> DocumentJobRecord | None:
@@ -288,55 +322,169 @@ class DocumentJobExecutionService:
                     return job
         return None
 
-    def process_mineru_callback_for_job(
+    def enqueue_mineru_callback_for_job(
         self,
         job: DocumentJobRecord,
         payload: dict[str, Any],
         *,
         trace_id: str | None,
-    ) -> DocumentJobRecord:
-        """消费 document_job 的 MinerU callback，并在结果就绪时继续推进后续阶段。"""
+    ) -> tuple[DocumentJobRecord, DocumentJobCallbackMessage, bool, bool]:
+        """可信 MinerU callback 只落专用消息，并返回是否需要唤醒 Worker。"""
 
+        normalized_payload = self._build_callback_message_payload(job, payload)
+        message = DocumentJobCallbackMessage(
+            id=f"doccb_{uuid4().hex[:12]}",
+            job_id=job.id,
+            job_retry_count=job.retry_count,
+            dedupe_key=self._build_callback_dedupe_key(
+                job_id=job.id,
+                retry_count=job.retry_count,
+                payload=normalized_payload,
+            ),
+            payload=normalized_payload,
+            trace_id=trace_id,
+        )
+        stored_message, created = self.callback_message_store.put_or_get_callback_message(message)
+        self._record_event(
+            job,
+            event_type="mineru_callback_received",
+            stage=job.stage,
+            message="MinerU callback 已接收并通过校验。",
+            payload={
+                "message_id": stored_message.id,
+                "message_created": created,
+                "mineru_batch_id": normalized_payload.get("batch_id"),
+                "mineru_data_id": normalized_payload.get("data_id"),
+                "mineru_state": normalized_payload.get("state") or "unknown",
+            },
+            trace_id=trace_id,
+        )
+        if job.status != "running" or job.stage != "parsing":
+            if stored_message.status in {"pending", "running"}:
+                stored_message = self.callback_message_store.mark_callback_message_ignored(
+                    stored_message.id,
+                    error_code="job_state_not_accepting_callback",
+                    error_message=f"当前任务状态不消费 MinerU callback: status={job.status} stage={job.stage}",
+                    updated_at=utc_now(),
+                )
+            self._record_callback_ignored_event(job, stored_message, trace_id=trace_id)
+            return job, stored_message, created, False
+
+        self._record_event(
+            job,
+            event_type="mineru_callback_queued",
+            stage="parsing",
+            message="MinerU callback 已进入 document_jobs Worker 队列。",
+            payload={
+                "message_id": stored_message.id,
+                "message_created": created,
+                "callback_status": stored_message.status,
+            },
+            trace_id=trace_id,
+        )
+        return job, stored_message, created, stored_message.status in {"pending", "running"}
+
+    def _process_replayable_callback_messages(
+        self,
+        job: DocumentJobRecord,
+        *,
+        trace_id: str | None,
+    ) -> DocumentJobRecord:
+        latest = job
+        for message in self.callback_message_store.list_replayable_callback_messages(job.id):
+            refreshed = self.job_repository.get_document_job(job.id)
+            if refreshed is None:
+                return latest
+            latest = self._process_callback_message(refreshed, message, trace_id=message.trace_id or trace_id)
+        return latest
+
+    def _process_callback_message(
+        self,
+        job: DocumentJobRecord,
+        message: DocumentJobCallbackMessage,
+        *,
+        trace_id: str | None,
+    ) -> DocumentJobRecord:
+        now = utc_now()
+        running_message = self.callback_message_store.mark_callback_message_running(
+            message.id,
+            attempts=message.attempts + 1,
+            lease_owner="document_jobs_worker",
+            leased_at=now,
+            lease_expires_at=now + timedelta(seconds=self.settings.stage_message_lease_seconds),
+            updated_at=now,
+        )
+        if running_message is None:
+            return job
         if job.status in {"succeeded", "failed", "canceled"}:
+            ignored = self.callback_message_store.mark_callback_message_ignored(
+                running_message.id,
+                error_code="job_terminal",
+                error_message=f"任务已终态，不消费 callback: status={job.status}",
+                updated_at=utc_now(),
+            )
+            self._record_callback_ignored_event(job, ignored, trace_id=trace_id)
+            return job
+        if job.retry_count != running_message.job_retry_count:
+            ignored = self.callback_message_store.mark_callback_message_ignored(
+                running_message.id,
+                error_code="job_retry_changed",
+                error_message="任务 retry_count 已变化，旧 callback 已忽略。",
+                updated_at=utc_now(),
+            )
+            self._record_callback_ignored_event(job, ignored, trace_id=trace_id)
             return job
         if job.status != "running" or job.stage != "parsing":
-            raise ValueError(f"当前 document_job 状态不允许处理 MinerU callback: status={job.status} stage={job.stage}")
+            ignored = self.callback_message_store.mark_callback_message_ignored(
+                running_message.id,
+                error_code="job_state_not_accepting_callback",
+                error_message=f"当前任务状态不消费 MinerU callback: status={job.status} stage={job.stage}",
+                updated_at=utc_now(),
+            )
+            self._record_callback_ignored_event(job, ignored, trace_id=trace_id)
+            return job
 
+        payload = running_message.payload
         state = str(payload.get("state") or "").lower()
         batch_id = str(payload.get("batch_id") or job.mineru_batch_id or "").strip()
         data_id = str(payload.get("data_id") or job.mineru_data_id or job.id).strip()
-        if batch_id and batch_id != (job.mineru_batch_id or ""):
-            job = self.job_repository.update_document_job(job.id, mineru_batch_id=batch_id, updated_at=utc_now())
-        if data_id and data_id != (job.mineru_data_id or ""):
-            job = self.job_repository.update_document_job(job.id, mineru_data_id=data_id, updated_at=utc_now())
-
+        job = self._sync_callback_ids(job, batch_id=batch_id, data_id=data_id, trace_id=trace_id)
+        if job.status != "running" or job.stage != "parsing":
+            ignored = self.callback_message_store.mark_callback_message_ignored(
+                running_message.id,
+                error_code="job_state_not_accepting_callback",
+                error_message=f"当前任务状态不消费 MinerU callback: status={job.status} stage={job.stage}",
+                updated_at=utc_now(),
+            )
+            self._record_callback_ignored_event(job, ignored, trace_id=trace_id)
+            return job
         if state == "failed":
-            return self._mark_failed(
+            updated = self._mark_failed(
                 job,
                 failed_stage="parsing",
                 error_code="mineru_failed",
                 error_message="MinerU callback 返回 failed。",
                 trace_id=trace_id,
             )
+            self.callback_message_store.mark_callback_message_processed(running_message.id, updated_at=utc_now())
+            return updated
 
         full_zip_url = payload.get("full_zip_url")
         if state not in {"done", "success", "succeeded"} or not full_zip_url:
-            waiting = self.job_repository.update_document_job(
-                job.id,
-                status="running",
-                stage="parsing",
-                progress=max(job.progress, 20),
-                updated_at=utc_now(),
-            )
             self._record_event(
-                waiting,
-                event_type="stage_started",
+                job,
+                event_type="mineru_callback_processed",
                 stage="parsing",
-                message="MinerU callback 已接收，结果尚未就绪。",
-                payload={"mineru_batch_id": batch_id or None, "mineru_state": state or "unknown"},
+                message="MinerU callback 已消费，结果尚未就绪。",
+                payload={
+                    "message_id": running_message.id,
+                    "mineru_batch_id": batch_id or None,
+                    "mineru_state": state or "unknown",
+                },
                 trace_id=trace_id,
             )
-            return waiting
+            self.callback_message_store.mark_callback_message_processed(running_message.id, updated_at=utc_now())
+            return job
 
         with tempfile.TemporaryDirectory(prefix="document_job_mineru_callback_") as temp_dir:
             parsed = self._download_and_register_mineru_result(
@@ -347,8 +495,118 @@ class DocumentJobExecutionService:
                 data_id=data_id or job.id,
                 temp_dir=Path(temp_dir),
                 trace_id=trace_id,
+                expected_retry_count=running_message.job_retry_count,
             )
-        return self.execute_job(parsed.id, trace_id=trace_id) or parsed
+        if parsed.status != "running" or parsed.stage != "parsed":
+            ignored = self.callback_message_store.mark_callback_message_ignored(
+                running_message.id,
+                error_code="job_state_changed_before_callback_completed",
+                error_message=f"callback 结果未应用，任务当前状态: status={parsed.status} stage={parsed.stage}",
+                updated_at=utc_now(),
+            )
+            self._record_callback_ignored_event(parsed, ignored, trace_id=trace_id)
+            return parsed
+        self.callback_message_store.mark_callback_message_processed(running_message.id, updated_at=utc_now())
+        self._record_event(
+            parsed,
+            event_type="mineru_callback_processed",
+            stage="parsing",
+            message="MinerU callback 已消费，解析结果已交给后续 Worker 阶段。",
+            payload={"message_id": running_message.id, "mineru_raw_result_file_id": parsed.mineru_raw_result_file_id},
+            trace_id=trace_id,
+        )
+        return parsed
+
+    def _build_callback_message_payload(self, job: DocumentJobRecord, payload: dict[str, Any]) -> dict[str, Any]:
+        state = str(payload.get("state") or "").lower()
+        batch_id = str(payload.get("batch_id") or job.mineru_batch_id or "").strip() or None
+        data_id = str(payload.get("data_id") or job.mineru_data_id or job.id).strip() or None
+        full_zip_url = payload.get("full_zip_url")
+        content = payload.get("content")
+        content_hash = None
+        if isinstance(content, str) and content.strip():
+            content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        return {
+            "batch_id": batch_id,
+            "data_id": data_id,
+            "state": state or None,
+            "full_zip_url": str(full_zip_url) if full_zip_url is not None else None,
+            "content_hash": content_hash,
+        }
+
+    def _build_callback_dedupe_key(self, *, job_id: str, retry_count: int, payload: dict[str, Any]) -> str:
+        stable_payload = {
+            "job_id": job_id,
+            "retry_count": retry_count,
+            "batch_id": payload.get("batch_id"),
+            "data_id": payload.get("data_id"),
+            "state": payload.get("state"),
+            "full_zip_url": payload.get("full_zip_url"),
+            "content_hash": payload.get("content_hash"),
+        }
+        encoded = json.dumps(stable_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+    def _sync_callback_ids(
+        self,
+        job: DocumentJobRecord,
+        *,
+        batch_id: str,
+        data_id: str,
+        trace_id: str | None,
+    ) -> DocumentJobRecord:
+        patch: dict[str, Any] = {}
+        if batch_id and batch_id != (job.mineru_batch_id or ""):
+            patch["mineru_batch_id"] = batch_id
+        if data_id and data_id != (job.mineru_data_id or ""):
+            patch["mineru_data_id"] = data_id
+        if not patch:
+            return job
+        updated = self.job_repository.update_document_job_if_current(
+            job.id,
+            allowed_statuses={"running"},
+            allowed_stages={"parsing"},
+            expected_retry_count=job.retry_count,
+            **patch,
+            updated_at=utc_now(),
+        )
+        if updated is None:
+            latest = self.job_repository.get_document_job(job.id)
+            if latest is not None:
+                self._record_event(
+                    latest,
+                    event_type="mineru_callback_ignored",
+                    stage=latest.stage,
+                    message="MinerU callback 关联信息写入被跳过，任务状态已变化。",
+                    payload={"previous_stage": job.stage, "previous_status": job.status},
+                    trace_id=trace_id,
+                    level="warning",
+                )
+                return latest
+            return job
+        return updated
+
+    def _record_callback_ignored_event(
+        self,
+        job: DocumentJobRecord,
+        message: DocumentJobCallbackMessage,
+        *,
+        trace_id: str | None,
+    ) -> None:
+        self._record_event(
+            job,
+            event_type="mineru_callback_ignored",
+            stage=job.stage,
+            message="MinerU callback 已忽略。",
+            payload={
+                "message_id": message.id,
+                "error_code": message.error_code,
+                "error_message": message.error_message,
+                "callback_status": message.status,
+            },
+            trace_id=trace_id,
+            level="warning",
+        )
 
     def _download_and_register_mineru_result(
         self,
@@ -360,35 +618,61 @@ class DocumentJobExecutionService:
         data_id: str,
         temp_dir: Path,
         trace_id: str | None,
+        expected_retry_count: int | None = None,
     ) -> DocumentJobRecord:
         """下载 MinerU 原始结果包，登记为 document_file 并把任务推进到 parsed。"""
+
+        latest = self.job_repository.get_document_job(job.id)
+        if latest is None:
+            return job
+        if latest.status in {"succeeded", "failed", "canceled"}:
+            return latest
+        if latest.mineru_raw_result_file_id:
+            updated = self.job_repository.update_document_job_if_current(
+                latest.id,
+                allowed_statuses={"running"},
+                allowed_stages={"parsing"},
+                expected_retry_count=expected_retry_count,
+                status="running",
+                stage="parsed",
+                progress=max(latest.progress, 30),
+                updated_at=utc_now(),
+            )
+            return updated or self.job_repository.get_document_job(job.id) or latest
+        if latest.status != "running" or latest.stage != "parsing":
+            return latest
 
         raw_zip_path = temp_dir / "mineru_raw_result.zip"
         client.download_result_zip(full_zip_url, raw_zip_path)
         raw_file = self.file_service.register_generated_content(
-            tenant_id=job.tenant_id,
-            company_id=job.company_id,
-            job_id=job.id,
-            created_by=job.created_by,
+            tenant_id=latest.tenant_id,
+            company_id=latest.company_id,
+            job_id=latest.id,
+            created_by=latest.created_by,
             file_type="mineru_raw_result",
             filename="mineru_raw_result.zip",
             mime_type="application/zip",
             content=raw_zip_path.read_bytes(),
             metadata={
-                "source_file_id": job.source_file_id,
+                "source_file_id": latest.source_file_id,
                 "mineru_batch_id": batch_id,
                 "mineru_data_id": data_id,
                 "full_zip_url": full_zip_url,
             },
         )
-        parsed = self.job_repository.update_document_job(
-            job.id,
+        parsed = self.job_repository.update_document_job_if_current(
+            latest.id,
+            allowed_statuses={"running"},
+            allowed_stages={"parsing"},
+            expected_retry_count=expected_retry_count,
             status="running",
             stage="parsed",
-            progress=max(job.progress, 30),
+            progress=max(latest.progress, 30),
             mineru_raw_result_file_id=raw_file.id,
             updated_at=utc_now(),
         )
+        if parsed is None:
+            return self.job_repository.get_document_job(latest.id) or latest
         self._record_event(
             parsed,
             event_type="file_registered",
@@ -408,7 +692,7 @@ class DocumentJobExecutionService:
         self.logger.info(
             "[trace_id=%s job_id=%s stage=parsing status=parsed] mineru_raw_result_file_id=%s",
             trace_id,
-            job.id,
+            latest.id,
             raw_file.id,
         )
         return parsed
@@ -420,13 +704,18 @@ class DocumentJobExecutionService:
         trace_id: str | None,
     ) -> DocumentJobRecord:
         now = utc_now()
-        converting = self.job_repository.update_document_job(
+        converting = self.job_repository.update_document_job_if_current(
             job.id,
+            allowed_statuses={"running"},
+            allowed_stages={"parsed"},
+            expected_retry_count=job.retry_count,
             status="running",
             stage="ir_converting",
             progress=max(job.progress, 40),
             updated_at=now,
         )
+        if converting is None:
+            return self.job_repository.get_document_job(job.id) or job
         self._record_event(
             converting,
             event_type="stage_started",
@@ -439,13 +728,17 @@ class DocumentJobExecutionService:
 
     def _convert_and_save_document_ir(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
         if job.document_ir_file_id:
-            return self.job_repository.update_document_job(
+            rendering = self.job_repository.update_document_job_if_current(
                 job.id,
+                allowed_statuses={"running"},
+                allowed_stages={"ir_converting"},
+                expected_retry_count=job.retry_count,
                 status="running",
                 stage="rendering",
                 progress=max(job.progress, 60),
                 updated_at=utc_now(),
             )
+            return rendering or self.job_repository.get_document_job(job.id) or job
 
         raw_file = self._get_mineru_raw_result_file(job)
         with tempfile.TemporaryDirectory(prefix="document_job_ir_") as temp_dir:
@@ -514,8 +807,11 @@ class DocumentJobExecutionService:
                 **ir_layout_metadata,
             },
         )
-        updated = self.job_repository.update_document_job(
+        updated = self.job_repository.update_document_job_if_current(
             job.id,
+            allowed_statuses={"running"},
+            allowed_stages={"ir_converting"},
+            expected_retry_count=job.retry_count,
             status="running",
             stage="rendering",
             progress=max(job.progress, 60),
@@ -523,6 +819,8 @@ class DocumentJobExecutionService:
             image_asset_file_ids=image_file_ids,
             updated_at=utc_now(),
         )
+        if updated is None:
+            return self.job_repository.get_document_job(job.id) or job
         if image_file_ids:
             self._record_event(
                 updated,
@@ -680,14 +978,19 @@ class DocumentJobExecutionService:
             return self._mark_succeeded(job, trace_id=trace_id)
         existing_result = self._get_existing_result_file(job)
         if existing_result is not None:
-            recovered = self.job_repository.update_document_job(
+            recovered = self.job_repository.update_document_job_if_current(
                 job.id,
+                allowed_statuses={"running"},
+                allowed_stages={"rendering", "uploading"},
+                expected_retry_count=job.retry_count,
                 status="running",
                 stage="uploading",
                 progress=max(job.progress, 90),
                 result_file_id=existing_result.id,
                 updated_at=utc_now(),
             )
+            if recovered is None:
+                return self.job_repository.get_document_job(job.id) or job
             return self._mark_succeeded(recovered, trace_id=trace_id)
 
         rendering = job
@@ -712,14 +1015,19 @@ class DocumentJobExecutionService:
             config_path=template_selection.layout_config_path,
             image_loader=self._build_image_loader(rendering),
         )
-        uploading = self.job_repository.update_document_job(
+        uploading = self.job_repository.update_document_job_if_current(
             rendering.id,
+            allowed_statuses={"running"},
+            allowed_stages={"rendering"},
+            expected_retry_count=rendering.retry_count,
             status="running",
             stage="uploading",
             progress=max(rendering.progress, 85),
             template_version_id=template_selection.template_version_id,
             updated_at=utc_now(),
         )
+        if uploading is None:
+            return self.job_repository.get_document_job(rendering.id) or rendering
         self._record_event(
             uploading,
             event_type="stage_succeeded",
@@ -761,8 +1069,11 @@ class DocumentJobExecutionService:
                 **renderer_metadata,
             },
         )
-        completed = self.job_repository.update_document_job(
+        completed = self.job_repository.update_document_job_if_current(
             uploading.id,
+            allowed_statuses={"running"},
+            allowed_stages={"uploading"},
+            expected_retry_count=uploading.retry_count,
             status="succeeded",
             stage="completed",
             progress=100,
@@ -770,6 +1081,8 @@ class DocumentJobExecutionService:
             completed_at=utc_now(),
             updated_at=utc_now(),
         )
+        if completed is None:
+            return self.job_repository.get_document_job(uploading.id) or uploading
         self._record_event(
             completed,
             event_type="file_registered",
@@ -928,14 +1241,19 @@ class DocumentJobExecutionService:
         return f"{source_stem}.docx"
 
     def _mark_succeeded(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
-        completed = self.job_repository.update_document_job(
+        completed = self.job_repository.update_document_job_if_current(
             job.id,
+            allowed_statuses={"running"},
+            allowed_stages={"uploading"},
+            expected_retry_count=job.retry_count,
             status="succeeded",
             stage="completed",
             progress=100,
             completed_at=job.completed_at or utc_now(),
             updated_at=utc_now(),
         )
+        if completed is None:
+            return self.job_repository.get_document_job(job.id) or job
         self._record_event(
             completed,
             event_type="stage_succeeded",
@@ -1002,8 +1320,11 @@ class DocumentJobExecutionService:
         trace_id: str | None,
     ) -> DocumentJobRecord:
         now = utc_now()
-        failed = self.job_repository.update_document_job(
+        failed = self.job_repository.update_document_job_if_current(
             job.id,
+            allowed_statuses={"pending", "queued", "running"},
+            allowed_stages={"uploaded", "parsing", "parsed", "ir_converting", "rendering", "uploading"},
+            expected_retry_count=job.retry_count,
             status="failed",
             stage="failed",
             failed_stage=failed_stage,
@@ -1012,6 +1333,8 @@ class DocumentJobExecutionService:
             completed_at=now,
             updated_at=now,
         )
+        if failed is None:
+            return self.job_repository.get_document_job(job.id) or job
         self._record_event(
             failed,
             event_type="stage_failed",
@@ -1053,8 +1376,9 @@ class EagerDocumentJobTaskQueue:
     def __init__(self, execution_service: DocumentJobExecutionService) -> None:
         self.execution_service = execution_service
 
-    def enqueue(self, job_id: str, *, trace_id: str | None) -> str | None:
-        self.execution_service.execute_job(job_id, trace_id=trace_id)
+    def enqueue(self, job_id: str, *, trace_id: str | None, run_inline: bool = True) -> str | None:
+        if run_inline:
+            self.execution_service.execute_job(job_id, trace_id=trace_id)
         return f"eager:{job_id}"
 
 
@@ -1064,7 +1388,7 @@ class CeleryDocumentJobTaskQueue:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
-    def enqueue(self, job_id: str, *, trace_id: str | None) -> str | None:
+    def enqueue(self, job_id: str, *, trace_id: str | None, run_inline: bool = True) -> str | None:
         try:
             from celery.exceptions import CeleryError
             from kombu.exceptions import KombuError, OperationalError

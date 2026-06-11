@@ -1,14 +1,21 @@
 // frontend/src/utils/authStorage.ts: Store the JWT used by API requests.
 const TOKEN_KEY = "md2word.frontend.access_token";
+let memoryToken: string | null = null;
+
+function browserStorage(): Storage | null {
+  return typeof window === "undefined" ? null : window.localStorage;
+}
 
 export function getStoredToken(): string | null {
-  return window.localStorage.getItem(TOKEN_KEY);
+  return browserStorage()?.getItem(TOKEN_KEY) ?? memoryToken;
 }
 
 export function setStoredToken(token: string): void {
-  window.localStorage.setItem(TOKEN_KEY, token);
+  memoryToken = token;
+  browserStorage()?.setItem(TOKEN_KEY, token);
 }
 
 export function clearStoredToken(): void {
-  window.localStorage.removeItem(TOKEN_KEY);
+  memoryToken = null;
+  browserStorage()?.removeItem(TOKEN_KEY);
 }

@@ -10,7 +10,7 @@ from typing import Any, Literal
 from app.core.config import Settings
 from app.domains.audit.models import AuditDetails, AuditEvent
 from app.domains.files.repository import DocumentFileRepositoryProtocol
-from app.domains.jobs.models import utc_now
+from app.domains.resources.models import utc_now
 
 
 FileQuotaPolicyStatus = Literal["disabled", "not_configured", "invalid", "dry_run", "ready"]

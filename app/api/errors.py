@@ -131,10 +131,13 @@ def _build_error_content(
     return {
         "detail": message if detail is None else detail,
         "error_code": code,
+        "request_id": trace_id,
+        "trace_id": trace_id,
         "error": {
             "code": code,
             "message": message,
             "status_code": status_code,
+            "request_id": trace_id,
             "trace_id": trace_id,
         },
     }

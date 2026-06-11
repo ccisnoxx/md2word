@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from app.domains.files.cleanup_execution import FileRetentionCleanupRunReport
 from app.domains.files.cleanup_lock import FileRetentionCleanupLockRecord
 from app.domains.files.scheduled_cleanup import FileRetentionCleanupReadonlyReport
-from app.domains.jobs.models import utc_now
+from app.domains.resources.models import utc_now
 
 
 FileRetentionCleanupRunHistoryStatus = Literal["previewed", "executed", "failed", "dry_run"]

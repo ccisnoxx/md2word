@@ -30,14 +30,16 @@ class HealthMetricsResponse(BaseModel):
     worker_mode: str
     stage_dispatcher: str
     jobs: dict[str, int]
+    document_jobs: dict[str, int] = Field(default_factory=dict)
     stage_messages: dict[str, int]
+    document_job_callback_messages: dict[str, int] = Field(default_factory=dict)
     resources: dict[str, int | str | None]
     audit_events: dict[str, int]
 
 
 HealthOpsStatus = Literal["ok", "watch", "needs_attention"]
 HealthOpsAlertSeverity = Literal["info", "warning", "critical"]
-HealthOpsAlertSource = Literal["readiness", "stage_spool", "jobs"]
+HealthOpsAlertSource = Literal["readiness", "stage_spool", "jobs", "document_job_callbacks"]
 
 
 class HealthOpsAlertSummary(BaseModel):
@@ -48,6 +50,9 @@ class HealthOpsAlertSummary(BaseModel):
     stage_failed_messages: int
     stage_stale_running_messages: int
     stage_replayable_messages: int
+    callback_failed_messages: int
+    callback_replayable_messages: int
+    callback_oldest_replayable_age_seconds: int
     failed_jobs: int
     running_jobs: int
     worker_mode: str

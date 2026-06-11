@@ -8,6 +8,7 @@ from app.infrastructure.persistence.sqlite.backend import SqlitePersistenceBacke
 from app.infrastructure.persistence.sqlite.cleanup_locks import SqliteRetentionCleanupLockRepository
 from app.infrastructure.persistence.sqlite.cleanup_runs import SqliteRetentionCleanupRunHistoryRepository
 from app.infrastructure.persistence.sqlite.document_jobs import (
+    SqliteDocumentJobCallbackMessageStore,
     SqliteDocumentJobEventRepository,
     SqliteDocumentJobRepository,
 )
@@ -19,6 +20,7 @@ from app.infrastructure.persistence.sqlite.stage_messages import SqliteStageMess
 __all__ = [
     "SqliteAuditEventRepository",
     "SqliteDocumentFileRepository",
+    "SqliteDocumentJobCallbackMessageStore",
     "SqliteDocumentJobEventRepository",
     "SqliteDocumentJobRepository",
     "SqliteJobEventRepository",

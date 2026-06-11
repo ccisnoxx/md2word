@@ -4,6 +4,7 @@ import { apiRequest } from "@/api/client";
 import type {
   DocumentJobBulkJobIdsRequest,
   DocumentJobBulkResponse,
+  DocumentJobCallbackMessageSummaryResponse,
   DocumentJobBulkRetryRequest,
   DocumentJobCloneRequest,
   DocumentJobCloneResponse,
@@ -80,6 +81,13 @@ export const documentJobsApi = {
   listFiles(jobId: string): Promise<DocumentJobFileListResponse> {
     return apiRequest<DocumentJobFileListResponse>({
       url: `/api/v1/document-jobs/${jobId}/files`,
+      method: "GET",
+    });
+  },
+
+  getCallbackMessageSummary(jobId: string): Promise<DocumentJobCallbackMessageSummaryResponse> {
+    return apiRequest<DocumentJobCallbackMessageSummaryResponse>({
+      url: `/api/v1/document-jobs/${jobId}/callback-messages/summary`,
       method: "GET",
     });
   },

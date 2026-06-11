@@ -15,6 +15,8 @@ class AuthTokenResponse(BaseModel):
     token_type: str = "bearer"
     expires_in: int
     role: str
+    roles: list[str]
+    permissions: list[str]
     user_id: str
     username: str
     tenant_id: str
@@ -25,6 +27,8 @@ class CurrentUserResponse(BaseModel):
     id: str
     username: str
     role: str
+    roles: list[str]
+    permissions: list[str]
     tenant_id: str
     company_id: str
     display_name: str | None = None

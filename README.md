@@ -21,6 +21,8 @@ PDF 到 Word 转换与内部工作台项目。当前 P0 发布主链路是：
 ```bash
 /Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_release.py
 cd frontend && npm run build
+cd frontend && npm run test:unit
+cd frontend && npm run test:smoke
 ```
 
 前端工作台位于 `frontend/`，本地开发命令：

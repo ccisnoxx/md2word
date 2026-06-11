@@ -19,7 +19,7 @@ from app.core.errors import ApiError
 from app.domains.files.models import DocumentFileRecord, DocumentFileStorageProvider, DocumentFileType
 from app.domains.files.repository import DocumentFileRepositoryProtocol
 from app.domains.files.validation import validate_pdf_metadata, validate_pdf_upload
-from app.domains.jobs.models import utc_now
+from app.domains.resources.models import utc_now
 
 RETENTION_DELETE_BATCH_LIMIT = 50
 RETENTION_DELETE_CONFIRMATION_PHRASE = "DELETE EXPIRED FILES"

@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from app.domains.jobs.models import utc_now
+from app.domains.resources.models import utc_now
 
 
 DocumentFileType = Literal[

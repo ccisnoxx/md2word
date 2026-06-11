@@ -104,39 +104,16 @@ export function isArchivedDocumentJob(job: DocumentJobResponse): boolean {
   return Boolean(job.archived_at);
 }
 
-function fallbackDocumentJobActionEnabled(job: DocumentJobResponse, action: DocumentJobActionId): boolean {
-  if (action === "download") {
-    return job.status === "succeeded";
-  }
-  if (action === "retry") {
-    return job.status === "failed" && !isArchivedDocumentJob(job);
-  }
-  if (action === "archive") {
-    return isArchivableJobStatus(job.status) && !isArchivedDocumentJob(job);
-  }
-  if (action === "cancel") {
-    return isCancelableJobStatus(job.status) && !isArchivedDocumentJob(job);
-  }
-  if (action === "unarchive") {
-    return isArchivedDocumentJob(job);
-  }
-  return Boolean(job.source_file_id);
-}
-
 export function isDocumentJobActionEnabled(job: DocumentJobResponse, action: DocumentJobActionId): boolean {
-  const serverAction = job.available_actions?.[action];
-  if (serverAction) {
-    return serverAction.enabled;
-  }
-  return fallbackDocumentJobActionEnabled(job, action);
+  return job.available_actions[action]?.enabled === true;
 }
 
 export function documentJobActionDisabledReason(job: DocumentJobResponse, action: DocumentJobActionId): string {
-  const serverAction = job.available_actions?.[action];
+  const serverAction = job.available_actions[action];
   if (serverAction?.disabled_reason) {
     return serverAction.disabled_reason;
   }
-  return isDocumentJobActionEnabled(job, action) ? "" : "当前任务状态不允许该操作。";
+  return serverAction?.enabled ? "" : "后端未返回该操作的可用性。";
 }
 
 export function canDownloadDocumentJob(job: DocumentJobResponse): boolean {

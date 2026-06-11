@@ -12,6 +12,7 @@ from app.infrastructure.persistence.mysql.backend import (
 from app.infrastructure.persistence.mysql.cleanup_locks import MysqlRetentionCleanupLockRepository
 from app.infrastructure.persistence.mysql.cleanup_runs import MysqlRetentionCleanupRunHistoryRepository
 from app.infrastructure.persistence.mysql.document_jobs import (
+    MysqlDocumentJobCallbackMessageStore,
     MysqlDocumentJobEventRepository,
     MysqlDocumentJobRepository,
 )
@@ -27,6 +28,7 @@ __all__ = [
     "ConnectFactory",
     "MysqlAuditEventRepository",
     "MysqlDocumentFileRepository",
+    "MysqlDocumentJobCallbackMessageStore",
     "MysqlDocumentJobEventRepository",
     "MysqlDocumentJobRepository",
     "MysqlJobEventRepository",

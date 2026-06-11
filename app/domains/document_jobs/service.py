@@ -37,8 +37,9 @@ from app.domains.document_jobs.schemas import (
 from app.core.errors import ApiError
 from app.domains.files.models import DocumentFileRecord, DocumentFileType
 from app.domains.files.repository import DocumentFileRepositoryProtocol
-from app.domains.jobs.models import ConversionOptions, utc_now
+from app.domains.jobs.models import ConversionOptions
 from app.domains.jobs.resource_snapshots import JobResourceSnapshotError
+from app.domains.resources.models import utc_now
 from app.domains.document_jobs.repository import (
     DocumentJobEventRepositoryProtocol,
     DocumentJobRepositoryProtocol,
@@ -276,9 +277,10 @@ class DocumentJobService:
     ) -> dict[str, DocumentJobAvailableActionResponse]:
         """返回前端展示用的动作可用性投影；真正执行仍由各 endpoint 校验。"""
 
+        retry_disabled_reason = self._retry_disabled_reason(job)
         return {
             "download": self._available_action(self._download_disabled_reason(job)),
-            "retry": self._available_action(self._retry_disabled_reason(job)),
+            "retry": self._available_action(retry_disabled_reason, retryable=retry_disabled_reason is None),
             "cancel": self._available_action(self._cancel_disabled_reason(job)),
             "archive": self._available_action(self._archive_disabled_reason(job)),
             "unarchive": self._available_action(self._unarchive_disabled_reason(job)),
@@ -716,13 +718,23 @@ class DocumentJobService:
         if job.status not in CANCELABLE_DOCUMENT_JOB_STATUSES:
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "只有 pending、queued、running 任务允许取消。")
         now = utc_now()
-        canceled = self.job_repository.update_document_job(
+        canceled = self.job_repository.update_document_job_if_current(
             job.id,
+            allowed_statuses=CANCELABLE_DOCUMENT_JOB_STATUSES,
+            allowed_stages={"uploaded", "parsing", "parsed", "ir_converting", "rendering", "uploading"},
+            expected_retry_count=job.retry_count,
             status="canceled",
             stage="canceled",
             canceled_at=now,
             updated_at=now,
         )
+        if canceled is None:
+            latest = self.job_repository.get_document_job(job.id) or job
+            raise ApiError(
+                status.HTTP_409_CONFLICT,
+                "conflict",
+                f"任务状态已变化，无法取消: status={latest.status} stage={latest.stage}",
+            )
         self.record_event(
             canceled,
             event_type="job_canceled",
@@ -1356,10 +1368,16 @@ class DocumentJobService:
             return job.updated_at, job.id
         return job.created_at, job.id
 
-    def _available_action(self, disabled_reason: str | None) -> DocumentJobAvailableActionResponse:
+    def _available_action(
+        self,
+        disabled_reason: str | None,
+        *,
+        retryable: bool = False,
+    ) -> DocumentJobAvailableActionResponse:
         return DocumentJobAvailableActionResponse(
             enabled=disabled_reason is None,
             disabled_reason=disabled_reason,
+            retryable=retryable,
         )
 
     def _download_disabled_reason(self, job: DocumentJobRecord) -> str | None:

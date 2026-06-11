@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.domains.jobs.models import utc_now
+from app.domains.resources.models import utc_now
 
 
 DocumentJobMode = Literal["direct_pdf_to_word", "en2zh_pdf_to_word"]
@@ -48,7 +48,15 @@ DocumentJobEventType = Literal[
     "ai_call_logged",
     "debug_archive_saved",
     "translation_qa_updated",
+    "mineru_callback_received",
+    "mineru_callback_queued",
+    "mineru_callback_processed",
+    "mineru_callback_ignored",
+    "recovery_replay_queued",
+    "recovery_callback_ignored",
 ]
+DocumentJobCallbackMessageKind = Literal["mineru_result_callback"]
+DocumentJobCallbackMessageStatus = Literal["pending", "running", "processed", "failed", "ignored"]
 
 
 DOCUMENT_JOB_ALLOWED_STAGES_BY_STATUS: dict[DocumentJobStatus, set[DocumentJobStage]] = {
@@ -128,3 +136,24 @@ class DocumentJobEventRecord(BaseModel):
     duration_ms: int | None = None
     trace_id: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
+
+
+class DocumentJobCallbackMessage(BaseModel):
+    """document_jobs 专用 MinerU callback 消息；HTTP 只落消息，Worker 幂等消费。"""
+
+    id: str
+    job_id: str
+    kind: DocumentJobCallbackMessageKind = "mineru_result_callback"
+    status: DocumentJobCallbackMessageStatus = "pending"
+    job_retry_count: int = 0
+    dedupe_key: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    attempts: int = 0
+    trace_id: str | None = None
+    lease_owner: str | None = None
+    leased_at: datetime | None = None
+    lease_expires_at: datetime | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)

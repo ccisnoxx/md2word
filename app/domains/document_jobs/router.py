@@ -19,7 +19,7 @@ from app.domains.document_jobs.models import DocumentJobEventRecord, DocumentJob
 from app.core.errors import ApiError
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.schemas import DocumentFileResponse
-from app.domains.jobs.models import utc_now
+from app.domains.resources.models import utc_now
 from app.core.runtime import AppRuntime
 from app.domains.document_jobs.schemas import (
     DocumentJobArchiveResponse,
@@ -30,6 +30,7 @@ from app.domains.document_jobs.schemas import (
     DocumentJobCloneRequest,
     DocumentJobCloneResponse,
     DocumentJobCancelResponse,
+    DocumentJobCallbackMessageSummaryResponse,
     DocumentJobCreateRequest,
     DocumentJobCreateResponse,
     DocumentJobConfigSummaryResponse,
@@ -264,6 +265,19 @@ def get_document_job_files(
         job_id=job_id,
         files=[_build_document_file_response(file) for file in files],
     )
+
+
+@router.get("/{job_id}/callback-messages/summary", response_model=DocumentJobCallbackMessageSummaryResponse)
+def get_document_job_callback_message_summary(
+    job_id: str,
+    runtime: AppRuntime = Depends(get_runtime),
+    user: AuthenticatedUser = Depends(require_current_user),
+) -> DocumentJobCallbackMessageSummaryResponse:
+    """返回任务级 callback message 观测摘要，不暴露 callback payload。"""
+
+    runtime.document_job_service.get_job(job_id, user=user)
+    observation = runtime.document_job_recovery_service.build_callback_observation(job_id)
+    return DocumentJobCallbackMessageSummaryResponse(**observation.to_summary())
 
 
 @router.get("/{job_id}/translation-qa", response_model=DocumentJobTranslationQaResponse)

@@ -20,7 +20,7 @@ from app.core.config import Settings
 from app.core.errors import ApiError
 from app.domains.audit.models import AuditEvent
 from app.domains.audit.repository import AuditEventRepositoryProtocol
-from app.domains.jobs.models import utc_now
+from app.domains.resources.models import utc_now
 from app.domains.ops.alert_delivery_contract import ALERT_DELIVERY_ADAPTER_CONTRACT_VERSION
 from app.domains.ops.alert_destinations import OpsAlertDestinationDryRunService
 from app.domains.ops.schemas import OpsAlertDeliveryChannel, OpsAlertDeliveryMode

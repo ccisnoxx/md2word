@@ -9,6 +9,7 @@ from pathlib import Path
 from app.core.config import Settings
 from app.domains.audit.repository import AuditEventRepositoryProtocol
 from app.domains.document_jobs.repository import (
+    DocumentJobCallbackMessageStoreProtocol,
     DocumentJobEventRepositoryProtocol,
     DocumentJobRepositoryProtocol,
 )
@@ -28,6 +29,7 @@ from app.domains.translation.repository import TranslationTermRepositoryProtocol
 from app.infrastructure.persistence.file import (
     FileAuditEventRepository,
     FileDocumentFileRepository,
+    FileDocumentJobCallbackMessageStore,
     FileDocumentJobEventRepository,
     FileDocumentJobRepository,
     FileJobEventRepository,
@@ -43,6 +45,7 @@ from app.infrastructure.persistence.mysql import (
     ConnectFactory,
     MysqlAuditEventRepository,
     MysqlDocumentFileRepository,
+    MysqlDocumentJobCallbackMessageStore,
     MysqlDocumentJobEventRepository,
     MysqlDocumentJobRepository,
     MysqlJobEventRepository,
@@ -62,6 +65,7 @@ from app.infrastructure.persistence.mysql import (
 from app.infrastructure.persistence.sqlite import (
     SqliteAuditEventRepository,
     SqliteDocumentFileRepository,
+    SqliteDocumentJobCallbackMessageStore,
     SqliteDocumentJobEventRepository,
     SqliteDocumentJobRepository,
     SqliteJobEventRepository,
@@ -90,6 +94,7 @@ class PersistenceAdapters:
     file_retention_cleanup_run_history_repository: FileRetentionCleanupRunHistoryRepositoryProtocol
     document_job_repository: DocumentJobRepositoryProtocol
     document_job_event_repository: DocumentJobEventRepositoryProtocol
+    document_job_callback_message_store: DocumentJobCallbackMessageStoreProtocol
     stage_message_store: StageMessageStoreProtocol
     resource_version_repository: ResourceVersionRepositoryProtocol | None = None
     term_rule_proposal_repository: TermRuleProposalRepositoryProtocol | None = None
@@ -113,6 +118,7 @@ def build_file_persistence_adapters(data_dir: Path) -> PersistenceAdapters:
         file_retention_cleanup_run_history_repository=FileRetentionCleanupRunHistoryRepository(backend),
         document_job_repository=FileDocumentJobRepository(backend),
         document_job_event_repository=FileDocumentJobEventRepository(backend),
+        document_job_callback_message_store=FileDocumentJobCallbackMessageStore(backend),
         stage_message_store=FileStageMessageStore(backend),
         resource_version_repository=None,
         term_rule_proposal_repository=None,
@@ -137,6 +143,7 @@ def build_sqlite_persistence_adapters(database_path: Path) -> PersistenceAdapter
         file_retention_cleanup_run_history_repository=SqliteRetentionCleanupRunHistoryRepository(backend),
         document_job_repository=SqliteDocumentJobRepository(backend),
         document_job_event_repository=SqliteDocumentJobEventRepository(backend),
+        document_job_callback_message_store=SqliteDocumentJobCallbackMessageStore(backend),
         stage_message_store=SqliteStageMessageStore(backend),
         resource_version_repository=None,
         term_rule_proposal_repository=None,
@@ -165,6 +172,7 @@ def build_mysql_persistence_adapters(
         file_retention_cleanup_run_history_repository=MysqlRetentionCleanupRunHistoryRepository(backend),
         document_job_repository=MysqlDocumentJobRepository(backend),
         document_job_event_repository=MysqlDocumentJobEventRepository(backend),
+        document_job_callback_message_store=MysqlDocumentJobCallbackMessageStore(backend),
         stage_message_store=MysqlStageMessageStore(backend),
         resource_version_repository=MysqlResourceVersionRepository(backend),
         term_rule_proposal_repository=MysqlTermRuleProposalRepository(backend),

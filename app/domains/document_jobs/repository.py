@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from app.domains.document_jobs.models import DocumentJobEventRecord, DocumentJobRecord
+from app.domains.document_jobs.models import DocumentJobCallbackMessage, DocumentJobEventRecord, DocumentJobRecord
 
 
 class DocumentJobRepositoryProtocol(Protocol):
@@ -14,6 +14,15 @@ class DocumentJobRepositoryProtocol(Protocol):
     def get_document_job(self, job_id: str) -> DocumentJobRecord | None: ...
     def list_document_jobs(self) -> list[DocumentJobRecord]: ...
     def update_document_job(self, job_id: str, **patch: Any) -> DocumentJobRecord: ...
+    def update_document_job_if_current(
+        self,
+        job_id: str,
+        *,
+        allowed_statuses: set[str],
+        allowed_stages: set[str],
+        expected_retry_count: int | None = None,
+        **patch: Any,
+    ) -> DocumentJobRecord | None: ...
 
 
 class DocumentJobEventRepositoryProtocol(Protocol):
@@ -21,3 +30,46 @@ class DocumentJobEventRepositoryProtocol(Protocol):
 
     def append_document_job_event(self, job_id: str, event: DocumentJobEventRecord) -> None: ...
     def list_document_job_events(self, job_id: str) -> list[DocumentJobEventRecord]: ...
+
+
+class DocumentJobCallbackMessageStoreProtocol(Protocol):
+    """document_jobs MinerU callback 专用消息合同。"""
+
+    def put_or_get_callback_message(self, message: DocumentJobCallbackMessage) -> tuple[DocumentJobCallbackMessage, bool]: ...
+    def get_callback_message(self, message_id: str) -> DocumentJobCallbackMessage | None: ...
+    def list_callback_messages(
+        self,
+        job_id: str | None = None,
+        *,
+        statuses: set[str] | None = None,
+        limit: int | None = None,
+    ) -> list[DocumentJobCallbackMessage]: ...
+    def list_replayable_callback_messages(self, job_id: str | None = None) -> list[DocumentJobCallbackMessage]: ...
+    def mark_callback_message_running(
+        self,
+        message_id: str,
+        *,
+        attempts: int,
+        lease_owner: str | None,
+        leased_at: Any,
+        lease_expires_at: Any,
+        updated_at: Any,
+    ) -> DocumentJobCallbackMessage | None: ...
+    def mark_callback_message_processed(self, message_id: str, *, updated_at: Any) -> DocumentJobCallbackMessage: ...
+    def mark_callback_message_failed(
+        self,
+        message_id: str,
+        *,
+        error_code: str,
+        error_message: str,
+        updated_at: Any,
+    ) -> DocumentJobCallbackMessage: ...
+    def mark_callback_message_ignored(
+        self,
+        message_id: str,
+        *,
+        error_code: str,
+        error_message: str,
+        updated_at: Any,
+    ) -> DocumentJobCallbackMessage: ...
+    def count_callback_messages_by_status(self, job_id: str | None = None) -> dict[str, int]: ...

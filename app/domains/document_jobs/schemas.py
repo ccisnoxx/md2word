@@ -10,6 +10,8 @@ from pydantic import BaseModel, Field
 
 from app.domains.files.schemas import DocumentFileResponse
 
+DocumentJobActionId = Literal["download", "retry", "cancel", "archive", "unarchive", "clone"]
+
 
 class DocumentJobCreateRequest(BaseModel):
     source_file_id: str
@@ -29,6 +31,7 @@ class DocumentJobCreateRequest(BaseModel):
 class DocumentJobAvailableActionResponse(BaseModel):
     enabled: bool
     disabled_reason: str | None = None
+    retryable: bool = False
 
 
 class DocumentJobResponse(BaseModel):
@@ -75,7 +78,7 @@ class DocumentJobResponse(BaseModel):
     translation_qa_reviewed_by: str | None = None
     translation_qa_reviewed_at: datetime | None = None
     request_snapshot: dict[str, Any] = Field(default_factory=dict)
-    available_actions: dict[str, DocumentJobAvailableActionResponse] = Field(default_factory=dict)
+    available_actions: dict[DocumentJobActionId, DocumentJobAvailableActionResponse] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
 
@@ -142,6 +145,27 @@ class DocumentJobFileListResponse(BaseModel):
 
     job_id: str
     files: list[DocumentFileResponse]
+
+
+class DocumentJobCallbackProblemSummaryResponse(BaseModel):
+    """任务详情页展示的 callback message 问题摘要，不包含原始 payload。"""
+
+    message_id: str
+    status: str
+    error_code: str | None = None
+    error_message: str | None = None
+    attempts: int = 0
+    updated_at: datetime
+
+
+class DocumentJobCallbackMessageSummaryResponse(BaseModel):
+    """任务级 callback message 观测摘要。"""
+
+    job_id: str
+    status_counts: dict[str, int] = Field(default_factory=dict)
+    replayable_count: int = 0
+    oldest_replayable_age_seconds: int = 0
+    recent_problem_messages: list[DocumentJobCallbackProblemSummaryResponse] = Field(default_factory=list)
 
 
 class DocumentJobTranslationQaStateResponse(BaseModel):

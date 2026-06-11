@@ -10,6 +10,8 @@ export type AuthTokenResponse = {
   token_type: string;
   expires_in: number;
   role: string;
+  roles?: string[];
+  permissions?: string[];
   user_id: string;
   username: string;
   tenant_id: string;
@@ -20,6 +22,8 @@ export type CurrentUserResponse = {
   id: string;
   username: string;
   role: string;
+  roles: string[];
+  permissions: string[];
   tenant_id: string;
   company_id: string;
   display_name: string | null;
@@ -41,14 +45,16 @@ export type HealthMetricsResponse = {
   worker_mode: string;
   stage_dispatcher: string;
   jobs: Record<string, number>;
+  document_jobs: Record<string, number>;
   stage_messages: Record<string, number>;
+  document_job_callback_messages: Record<string, number>;
   resources: Record<string, number | string | null>;
   audit_events: Record<string, number>;
 };
 
 export type HealthOpsStatus = "ok" | "watch" | "needs_attention";
 export type HealthOpsAlertSeverity = "info" | "warning" | "critical";
-export type HealthOpsAlertSource = "readiness" | "stage_spool" | "jobs";
+export type HealthOpsAlertSource = "readiness" | "stage_spool" | "jobs" | "document_job_callbacks";
 
 export type HealthOpsAlertSummary = {
   readiness_blockers: number;
@@ -56,6 +62,9 @@ export type HealthOpsAlertSummary = {
   stage_failed_messages: number;
   stage_stale_running_messages: number;
   stage_replayable_messages: number;
+  callback_failed_messages: number;
+  callback_replayable_messages: number;
+  callback_oldest_replayable_age_seconds: number;
   failed_jobs: number;
   running_jobs: number;
   worker_mode: string;
@@ -313,7 +322,7 @@ export type OpsAlertDestinationDryRunResponse = {
 };
 
 export type OpsProviderCancellationProvider = "mineru";
-export type OpsProviderCancellationTargetType = "document_job" | "legacy_job";
+export type OpsProviderCancellationTargetType = "document_job";
 export type OpsProviderCancellationMode = "dry_run" | "fake_cancel";
 export type OpsProviderCancellationOutcome = "cancelable" | "fake_canceled" | "deduped" | "ineligible" | "failed";
 
@@ -420,7 +429,6 @@ export type OpsRecoveryActionCategory =
   | "automation";
 export type OpsRecoveryActionTargetType =
   | "document_job"
-  | "legacy_job"
   | "provider_operation"
   | "alert"
   | "cleanup_run";
@@ -523,6 +531,10 @@ export type OpsRecoveryActionPreviewRequest = {
   target_id: string;
 };
 
+export type OpsRecoveryActionExecuteRequest = OpsRecoveryActionPreviewRequest & {
+  reason: string;
+};
+
 export type OpsRecoveryActionTargetPreviewResponse = {
   target_type: OpsRecoveryActionTargetType;
   target_id: string;
@@ -539,6 +551,24 @@ export type OpsRecoveryActionPreviewResponse = {
   eligible: boolean;
   missing_gates: string[];
   warnings: string[];
+  risk_flags: OpsRecoveryActionRiskFlagsResponse;
+  audit_action: string | null;
+  safety: OpsRecoveryActionSafetyResponse;
+};
+
+export type OpsRecoveryActionExecuteResponse = {
+  generated_at: string;
+  action: OpsRecoveryActionResponse;
+  target: OpsRecoveryActionTargetPreviewResponse;
+  eligible: boolean;
+  missing_gates: string[];
+  warnings: string[];
+  executed: boolean;
+  queued_task_id: string | null;
+  replayable_callback_messages: number;
+  ignored_callback_messages: number;
+  recovery_events_written: number;
+  audit_events_written: number;
   risk_flags: OpsRecoveryActionRiskFlagsResponse;
   audit_action: string | null;
   safety: OpsRecoveryActionSafetyResponse;
@@ -1168,6 +1198,7 @@ export type DocumentJobActionId = "download" | "retry" | "cancel" | "archive" | 
 export type DocumentJobAvailableAction = {
   enabled: boolean;
   disabled_reason: string | null;
+  retryable: boolean;
 };
 
 export type DocumentJobRetryRequest = {
@@ -1266,7 +1297,7 @@ export type DocumentJobResponse = {
   translation_qa_reviewed_by: string | null;
   translation_qa_reviewed_at: string | null;
   request_snapshot: Record<string, unknown>;
-  available_actions?: Partial<Record<DocumentJobActionId, DocumentJobAvailableAction>>;
+  available_actions: Record<DocumentJobActionId, DocumentJobAvailableAction>;
   created_at: string;
   updated_at: string;
 };
@@ -1348,6 +1379,23 @@ export type DocumentJobEventListResponse = {
 export type DocumentJobFileListResponse = {
   job_id: string;
   files: DocumentFileResponse[];
+};
+
+export type DocumentJobCallbackProblemSummaryResponse = {
+  message_id: string;
+  status: string;
+  error_code: string | null;
+  error_message: string | null;
+  attempts: number;
+  updated_at: string;
+};
+
+export type DocumentJobCallbackMessageSummaryResponse = {
+  job_id: string;
+  status_counts: Record<string, number>;
+  replayable_count: number;
+  oldest_replayable_age_seconds: number;
+  recent_problem_messages: DocumentJobCallbackProblemSummaryResponse[];
 };
 
 export type TranslationQaStatus = "unreviewed" | "approved" | "needs_fix" | "blocked";

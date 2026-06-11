@@ -11,7 +11,6 @@ from app.domains.config_workbench.router import router as config_workbench_route
 from app.domains.document_jobs.router import router as document_jobs_router
 from app.domains.files.router import router as files_router
 from app.api.v1.routers.health import router as health_router
-from app.domains.jobs.router import router as jobs_router
 from app.domains.jobs.mineru_callbacks_router import router as mineru_callbacks_router
 from app.domains.ops.router import router as ops_router
 from app.domains.term_rules.categories_router import router as term_rule_categories_router
@@ -31,7 +30,6 @@ router.include_router(config_workbench_router)
 router.include_router(document_jobs_router)
 router.include_router(files_router)
 router.include_router(health_router)
-router.include_router(jobs_router)
 router.include_router(mineru_callbacks_router)
 router.include_router(ops_router)
 router.include_router(templates_router)
