@@ -26,8 +26,10 @@ class OpenAPIExportTests(TestCase):
         self.assertTrue(export_report.changed)
         self.assertTrue(check_report.ok)
         self.assertFalse(check_report.changed)
-        self.assertIn("/api/v1/jobs", payload["paths"])
-        self.assertIn("JobDetailResponse", payload["components"]["schemas"])
+        self.assertNotIn("/api/v1/jobs", payload["paths"])
+        self.assertNotIn("/api/v1/jobs/pdf", payload["paths"])
+        self.assertIn("/api/v1/document-jobs", payload["paths"])
+        self.assertIn("DocumentJobResponse", payload["components"]["schemas"])
 
     def test_check_openapi_export_fails_when_snapshot_is_stale(self):
         with TemporaryDirectory() as temp_dir:

@@ -111,6 +111,38 @@
         </el-tab-pane>
 
         <el-tab-pane label="诊断" name="diagnostics">
+          <el-card class="page-section card-flat" shadow="never">
+            <div class="section-header">
+              <div>
+                <h2 class="section-title">Callback 消息</h2>
+                <p class="section-subtitle">MinerU callback 的入库、重放和失败摘要；不展示 callback 原始 payload。</p>
+              </div>
+              <el-button :icon="Refresh" :loading="callbackSummaryLoading" @click="loadCallbackSummary()">刷新 Callback</el-button>
+            </div>
+            <el-descriptions :column="2" border>
+              <el-descriptions-item v-for="item in callbackSummaryItems" :key="item.label" :label="item.label">
+                <span class="mono">{{ item.value }}</span>
+              </el-descriptions-item>
+            </el-descriptions>
+            <el-table
+              v-if="callbackSummary?.recent_problem_messages.length"
+              class="page-section"
+              :data="callbackSummary.recent_problem_messages"
+              table-layout="fixed"
+            >
+              <el-table-column prop="message_id" label="Message" min-width="180">
+                <template #default="{ row }"><span class="mono">{{ row.message_id }}</span></template>
+              </el-table-column>
+              <el-table-column prop="status" label="Status" width="110" />
+              <el-table-column prop="attempts" label="Attempts" width="100" />
+              <el-table-column prop="error_code" label="Error Code" min-width="180" />
+              <el-table-column prop="error_message" label="Error Message" min-width="280" show-overflow-tooltip />
+              <el-table-column label="Updated" min-width="170">
+                <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
+              </el-table-column>
+            </el-table>
+          </el-card>
+
           <el-card v-if="job.status === 'failed'" class="page-section card-flat" shadow="never">
             <div class="section-header">
               <div>
@@ -427,6 +459,7 @@ import { useRoute, useRouter } from "vue-router";
 
 import type {
   DocumentFileResponse,
+  DocumentJobCallbackMessageSummaryResponse,
   DocumentJobCloneRequest,
   DocumentJobConfigSummaryResponse,
   DocumentJobConfigVersionOption,
@@ -463,9 +496,11 @@ const jobId = computed(() => String(route.params.jobId || ""));
 const job = ref<DocumentJobResponse | null>(null);
 const events = ref<DocumentJobEventResponse[]>([]);
 const files = ref<DocumentFileResponse[]>([]);
+const callbackSummary = ref<DocumentJobCallbackMessageSummaryResponse | null>(null);
 const loading = ref(false);
 const eventsLoading = ref(false);
 const filesLoading = ref(false);
+const callbackSummaryLoading = ref(false);
 const downloadLoading = ref(false);
 const downloadingFileId = ref<string | null>(null);
 const retryLoading = ref(false);
@@ -683,6 +718,15 @@ const downloadHint = computed(() => {
   }
   return "结果已生成。点击下载会重新获取临时链接，链接失效后再次点击下载即可。";
 });
+const callbackSummaryItems = computed(() => [
+  { label: "pending", value: String(callbackStatusCount("pending")) },
+  { label: "running", value: String(callbackStatusCount("running")) },
+  { label: "processed", value: String(callbackStatusCount("processed")) },
+  { label: "failed", value: String(callbackStatusCount("failed")) },
+  { label: "ignored", value: String(callbackStatusCount("ignored")) },
+  { label: "replayable", value: String(callbackSummary.value?.replayable_count ?? 0) },
+  { label: "oldest replayable", value: secondsLabel(callbackSummary.value?.oldest_replayable_age_seconds ?? null) },
+]);
 
 function readRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null ? value as Record<string, unknown> : null;
@@ -708,6 +752,17 @@ function parseDate(value?: string | null): Date | null {
   }
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function secondsLabel(value: number | null): string {
+  if (value === null) {
+    return "-";
+  }
+  return `${value} 秒`;
+}
+
+function callbackStatusCount(status: string): number {
+  return callbackSummary.value?.status_counts[status] ?? 0;
 }
 
 async function loadJob(targetJobId = jobId.value): Promise<void> {
@@ -765,6 +820,24 @@ async function loadFiles(targetJobId = jobId.value): Promise<void> {
   }
 }
 
+async function loadCallbackSummary(targetJobId = jobId.value): Promise<void> {
+  callbackSummaryLoading.value = true;
+  try {
+    const response = await documentJobsApi.getCallbackMessageSummary(targetJobId);
+    if (targetJobId === jobId.value) {
+      callbackSummary.value = response;
+    }
+  } catch (caught) {
+    if (targetJobId === jobId.value) {
+      error.value = normalizeApiError(caught);
+    }
+  } finally {
+    if (targetJobId === jobId.value) {
+      callbackSummaryLoading.value = false;
+    }
+  }
+}
+
 async function loadAll(): Promise<void> {
   const targetJobId = jobId.value;
   await loadJob(targetJobId);
@@ -772,10 +845,11 @@ async function loadAll(): Promise<void> {
     return;
   }
   if (job.value) {
-    await Promise.all([loadEvents(targetJobId), loadFiles(targetJobId)]);
+    await Promise.all([loadEvents(targetJobId), loadFiles(targetJobId), loadCallbackSummary(targetJobId)]);
   } else {
     events.value = [];
     files.value = [];
+    callbackSummary.value = null;
   }
 }
 
@@ -1154,6 +1228,7 @@ function resetPageStateForRouteChange(): void {
   job.value = null;
   events.value = [];
   files.value = [];
+  callbackSummary.value = null;
   error.value = null;
   configError.value = null;
   lastDownloadLink.value = null;

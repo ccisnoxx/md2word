@@ -44,20 +44,22 @@ const router = useRouter();
 type NavItem = {
   label: string;
   to: string;
+  permission?: string;
 };
 
 const navItems = computed<NavItem[]>(() => {
-  const isAdmin = auth.user?.role === "admin";
-  const items: NavItem[] = [{ label: "任务工作台", to: "/jobs" }];
-  items.push({ label: "翻译 QA", to: "/translation-qa" });
-  if (isAdmin) {
-    items.push({ label: "配置中心", to: "/settings" });
-  }
-  items.push({ label: isAdmin ? "提案审核" : "术语建议", to: "/term-proposals" });
-  if (isAdmin) {
-    items.push({ label: "系统状态", to: "/system-status" });
-  }
-  return items;
+  const items: NavItem[] = [
+    { label: "任务工作台", to: "/jobs", permission: "document_jobs:read" },
+    { label: "翻译 QA", to: "/translation-qa", permission: "translation_qa:read" },
+    { label: "配置中心", to: "/settings", permission: "settings:read" },
+    {
+      label: auth.hasPermission("term_proposals:review") ? "提案审核" : "术语建议",
+      to: "/term-proposals",
+      permission: "term_proposals:read",
+    },
+    { label: "系统状态", to: "/system-status", permission: "system:read" },
+  ];
+  return items.filter((item) => !item.permission || auth.hasPermission(item.permission));
 });
 
 function handleLogout(): void {

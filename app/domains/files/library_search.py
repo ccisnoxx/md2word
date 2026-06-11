@@ -10,7 +10,7 @@ from typing import Literal
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.repository import DocumentFileRepositoryProtocol
 from app.domains.files.service import RETENTION_DELETE_SUPPORTED_LOCAL_PROVIDERS
-from app.domains.jobs.models import utc_now
+from app.domains.resources.models import utc_now
 
 
 FileLibrarySort = Literal[

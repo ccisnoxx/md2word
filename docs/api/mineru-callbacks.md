@@ -7,39 +7,31 @@ source_files:
   - app/api/v1/router.py
   - app/domains/jobs/mineru_callbacks_router.py
   - app/api/dependencies.py
-  - app/domains/jobs/command.py
-  - app/domains/jobs/stage.py
   - app/domains/jobs/mineru_callback.py
-  - app/domains/jobs/schemas.py
   - app/domains/document_jobs/execution.py
   - app/domains/document_jobs/schemas.py
   - app/core/config.py
-summary: MinerU callback API 提供 legacy jobs 和 P0 document_jobs 的 callback ingress、payload 归一化、checksum 验签和结果 URL 安全校验。
+summary: MinerU callback API 提供 document_jobs 的 callback ingress、payload 归一化、checksum 验签和结果 URL 安全校验。
 tags: [mineru, callback, api, guards]
 last_reviewed: 2026-06-10
 ---
 
 ## 概述
 
-MinerU callback 当前单独挂在 `/api/v1/mineru-callbacks` 下，不和上传入口混在一起。当前同一个入口同时支持：
-
-- legacy `/api/v1/jobs/pdf` 链路
-- P0 `/api/v1/document-jobs` 链路
+MinerU callback 当前单独挂在 `/api/v1/mineru-callbacks` 下，不和上传入口混在一起。当前入口只服务 `/api/v1/document-jobs` 链路。
 
 这组接口只负责：
 
 - 接收 MinerU callback
 - 做 payload 归一化
 - 校验 checksum 和 `full_zip_url`
-- 匹配 legacy job 并入队 `process_callback`
-- 或匹配 document_job，保存 MinerU 原始结果后继续执行 DocumentIR / Word 生成
+- 匹配 document_job，保存 MinerU 原始结果后继续执行 DocumentIR / Word 生成
 
 callback ingress 本身不做：
 
-- 不替代 `/api/v1/jobs/pdf`
 - 不替代 `/api/v1/document-jobs`
 
-legacy job 的 `process_callback` 成功处理 `done + full_zip_url` 后，后台 workflow 会自动继续恢复 `parsed_result_package` 并推进后处理 conversion。document_job 收到 `done + full_zip_url` 后会直接保存 MinerU 原始 zip，并继续推进到 DocumentIR / Word 生成。
+document_job 收到 `done + full_zip_url` 后会直接保存 MinerU 原始 zip，并继续推进到 DocumentIR / Word 生成。
 
 ## 部署模式
 
@@ -126,32 +118,17 @@ MINERU_UID=...
 ### 响应
 
 - 状态码：`200 OK`
-- 响应体：
-  - legacy jobs：`JobDetailResponse`
-  - document_jobs：`DocumentJobResponse`
+- 响应体：`DocumentJobResponse`
 
 注意：
 
 - 这份响应主要表示 callback 已被接受并入队
-- legacy jobs 的最终结果以随后查询 `GET /api/v1/jobs/{job_id}` 为准
 - document_jobs 的最终结果以随后查询 `GET /api/v1/document-jobs/{job_id}` 为准
 - 正常自动链路下，任务可能短暂经过 `parsed`，但最终通常会继续到完成态
 
 ## 状态推进
 
 ### `done + full_zip_url`
-
-legacy jobs：
-
-- 持久化 `mineru_result_zip_url`
-- `status` 通常会继续推进到 `completed`
-- `mineru_status -> done`
-- `parsed_result_package` 会作为受支持的中间 artifact 登记，可通过 jobs 下载接口按 `parsed-result-package` alias 下载
-- 追加事件：
-  - `mineru_callback_received`
-  - `mineru_callback_processed`
-  - `parsed_result_package_recovered`
-  - `job_completed`
 
 document_jobs：
 

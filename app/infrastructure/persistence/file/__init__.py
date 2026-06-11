@@ -8,6 +8,7 @@ from app.infrastructure.persistence.file.backend import FilePersistenceBackend
 from app.infrastructure.persistence.file.cleanup_locks import FileRetentionCleanupLockRepository
 from app.infrastructure.persistence.file.cleanup_runs import FileRetentionCleanupRunHistoryRepository
 from app.infrastructure.persistence.file.document_jobs import (
+    FileDocumentJobCallbackMessageStore,
     FileDocumentJobEventRepository,
     FileDocumentJobRepository,
 )
@@ -19,6 +20,7 @@ from app.infrastructure.persistence.file.stage_messages import FileStageMessageS
 __all__ = [
     "FileAuditEventRepository",
     "FileDocumentFileRepository",
+    "FileDocumentJobCallbackMessageStore",
     "FileDocumentJobEventRepository",
     "FileDocumentJobRepository",
     "FileJobEventRepository",

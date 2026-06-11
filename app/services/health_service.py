@@ -20,8 +20,12 @@ from app.api.v1.routers.health_schemas import (
 from app.conversion.runtime import llm_client
 from app.core.config import Settings
 from app.domains.audit.repository import AuditEventRepositoryProtocol
-from app.domains.document_jobs.repository import DocumentJobRepositoryProtocol
-from app.domains.jobs.models import JobStageMessage, utc_now
+from app.domains.document_jobs.repository import (
+    DocumentJobCallbackMessageStoreProtocol,
+    DocumentJobRepositoryProtocol,
+)
+from app.domains.jobs.models import JobStageMessage
+from app.domains.resources.models import utc_now
 from app.domains.jobs.repository import (
     JobSnapshotRepositoryProtocol,
     StageMessageStoreProtocol,
@@ -56,6 +60,8 @@ READINESS_NON_BLOCKING_CHECKS = (
     "stage_spool_needs_attention",
     "p0_document_jobs_ready",
     "document_jobs_automatic_execution_enabled",
+    "document_job_callback_replayable_messages",
+    "document_job_callback_failed_messages",
 )
 
 
@@ -73,6 +79,7 @@ class HealthService:
         stage_dispatcher_backend: Literal["background_tasks", "external_worker"] = "background_tasks",
         job_repository: JobSnapshotRepositoryProtocol | None = None,
         document_job_repository: DocumentJobRepositoryProtocol | None = None,
+        document_job_callback_message_store: DocumentJobCallbackMessageStoreProtocol | None = None,
         audit_event_repository: AuditEventRepositoryProtocol | None = None,
         resource_version_repository: ResourceVersionRepositoryProtocol | None = None,
         default_template_id_getter: Callable[[], str] | None = None,
@@ -85,6 +92,7 @@ class HealthService:
         self.stage_dispatcher_backend = stage_dispatcher_backend
         self.job_repository = job_repository
         self.document_job_repository = document_job_repository
+        self.document_job_callback_message_store = document_job_callback_message_store
         self.audit_event_repository = audit_event_repository
         self.resource_version_repository = resource_version_repository
         self.default_template_id_getter = default_template_id_getter
@@ -124,6 +132,7 @@ class HealthService:
         mineru_uid_configured = bool(self.settings.mineru_uid)
         p0_document_jobs = self._build_p0_document_jobs_readiness()
         document_job_observation = self._build_document_job_observation()
+        document_job_callback_observation = self._build_document_job_callback_observation()
 
         checks: dict[str, Any] = {
             "readiness_required_checks": list(READINESS_REQUIRED_CHECKS),
@@ -170,6 +179,13 @@ class HealthService:
             "document_jobs_running_stale_count": document_job_observation["stale_count"],
             "document_jobs_timed_out_count": document_job_observation["timed_out_count"],
             "document_jobs_running_oldest_age_seconds": document_job_observation["oldest_age_seconds"],
+            "document_job_callback_pending_messages": document_job_callback_observation["status_counts"].get("pending", 0),
+            "document_job_callback_running_messages": document_job_callback_observation["status_counts"].get("running", 0),
+            "document_job_callback_processed_messages": document_job_callback_observation["status_counts"].get("processed", 0),
+            "document_job_callback_failed_messages": document_job_callback_observation["status_counts"].get("failed", 0),
+            "document_job_callback_ignored_messages": document_job_callback_observation["status_counts"].get("ignored", 0),
+            "document_job_callback_replayable_messages": document_job_callback_observation["replayable_count"],
+            "document_job_callback_oldest_replayable_age_seconds": document_job_callback_observation["oldest_replayable_age_seconds"],
             "openai_api_key_configured": bool(self.settings.openai_api_key),
             "openai_base_url_configured": bool(self.settings.openai_base_url),
             "openai_model": self.settings.openai_model,
@@ -223,6 +239,10 @@ class HealthService:
             warnings.append("document_jobs_stale_running_present")
         if document_job_observation["timed_out_count"] > 0:
             warnings.append("document_jobs_timed_out_present")
+        if document_job_callback_observation["replayable_count"] > 0:
+            warnings.append("document_job_callback_replayable_messages_present")
+        if document_job_callback_observation["status_counts"].get("failed", 0) > 0:
+            warnings.append("document_job_callback_failed_messages_present")
 
         blockers = list(dict.fromkeys(blockers))
         warnings = list(dict.fromkeys(warnings))
@@ -324,6 +344,33 @@ class HealthService:
             "oldest_age_seconds": oldest_age_seconds,
         }
 
+    def _build_document_job_callback_observation(self) -> dict[str, Any]:
+        """汇总 document_jobs callback message 状态，不读取 callback payload。"""
+
+        counts = {"pending": 0, "running": 0, "processed": 0, "failed": 0, "ignored": 0}
+        if self.document_job_callback_message_store is None:
+            return {
+                "status_counts": counts,
+                "replayable_count": 0,
+                "oldest_replayable_age_seconds": 0,
+            }
+        counts.update({
+            key: int(value)
+            for key, value in self.document_job_callback_message_store.count_callback_messages_by_status().items()
+            if key in counts
+        })
+        replayable_messages = self.document_job_callback_message_store.list_replayable_callback_messages()
+        oldest_age_seconds = 0
+        if replayable_messages:
+            now = utc_now()
+            oldest = min((message.updated_at or message.created_at) for message in replayable_messages)
+            oldest_age_seconds = max(0, int((now - oldest).total_seconds()))
+        return {
+            "status_counts": counts,
+            "replayable_count": len(replayable_messages),
+            "oldest_replayable_age_seconds": oldest_age_seconds,
+        }
+
     def build_ops_alerts_response(self) -> HealthOpsAlertsResponse:
         """生成 Admin-only 只读运维告警 readiness 响应。"""
 
@@ -342,6 +389,7 @@ class HealthService:
 
     def build_metrics_response(self) -> HealthMetricsResponse:
         stage_spool_counts = self.stage_message_store.count_stage_messages_by_status()
+        callback_observation = self._build_document_job_callback_observation()
         resource_counts = self._build_resource_version_counts()
         resource_labels = self._build_default_resource_labels()
         resources: dict[str, int | str | None] = {
@@ -361,7 +409,9 @@ class HealthService:
             worker_mode=self.settings.jobs_worker_mode,
             stage_dispatcher=self.stage_dispatcher_backend,
             jobs=self._build_job_status_counts(),
+            document_jobs=self._build_document_job_status_counts(),
             stage_messages=stage_spool_counts,
+            document_job_callback_messages=callback_observation["status_counts"],
             resources=resources,
             audit_events={"total": self._count_audit_events()},
         )
@@ -379,6 +429,12 @@ class HealthService:
             stage_failed_messages=self._int_check(checks, "stage_spool_failed_messages"),
             stage_stale_running_messages=self._int_check(checks, "stage_spool_running_stale_messages"),
             stage_replayable_messages=self._int_check(checks, "stage_spool_replayable_messages"),
+            callback_failed_messages=self._int_check(checks, "document_job_callback_failed_messages"),
+            callback_replayable_messages=self._int_check(checks, "document_job_callback_replayable_messages"),
+            callback_oldest_replayable_age_seconds=self._int_check(
+                checks,
+                "document_job_callback_oldest_replayable_age_seconds",
+            ),
             failed_jobs=document_job_counts.get("failed", 0),
             running_jobs=document_job_counts.get("running", 0),
             worker_mode=str(checks.get("worker_mode") or self.settings.jobs_worker_mode),
@@ -400,6 +456,12 @@ class HealthService:
         stage_failed_count = self._int_check(checks, "stage_spool_failed_messages")
         stage_stale_count = self._int_check(checks, "stage_spool_running_stale_messages")
         stage_replayable_count = self._int_check(checks, "stage_spool_replayable_messages")
+        callback_failed_count = self._int_check(checks, "document_job_callback_failed_messages")
+        callback_replayable_count = self._int_check(checks, "document_job_callback_replayable_messages")
+        callback_oldest_replayable_age_seconds = self._int_check(
+            checks,
+            "document_job_callback_oldest_replayable_age_seconds",
+        )
         failed_jobs = document_job_counts.get("failed", 0)
         running_jobs = document_job_counts.get("running", 0)
         p0_blockers = self._string_list_check(checks, "p0_document_jobs_blockers")
@@ -482,6 +544,45 @@ class HealthService:
                     count=stage_replayable_count,
                     suggested_route="/jobs?status=running&sort=updated_at_desc",
                     suggested_action="观察工作进程和任务事件进展；本接口不会启动重放。",
+                )
+            )
+        if callback_failed_count > 0:
+            alerts.append(
+                HealthOpsAlertItem(
+                    code="document_job_callback_failed_messages_present",
+                    severity="critical",
+                    source="document_job_callbacks",
+                    title="存在失败的 callback message",
+                    description="失败的 document_jobs callback message 需要结合任务详情和事件流判断是否可恢复。",
+                    count=callback_failed_count,
+                    suggested_route="/jobs?status=running&sort=updated_at_desc",
+                    suggested_action="查看任务详情中的 callback 摘要；必要时使用 Ops replay action 重新投递任务。",
+                )
+            )
+        if callback_replayable_count > 0:
+            alerts.append(
+                HealthOpsAlertItem(
+                    code="document_job_callback_replayable_messages_present",
+                    severity="warning",
+                    source="document_job_callbacks",
+                    title="存在可重放的 callback message",
+                    description="pending/running callback message 可随 Worker 恢复或手动 replay 继续处理。",
+                    count=callback_replayable_count,
+                    suggested_route="/system-status/ops-dashboard",
+                    suggested_action="从运维看板 preview document_job.replay_execution 后再决定是否执行。",
+                )
+            )
+        if callback_oldest_replayable_age_seconds >= DOCUMENT_JOB_STALE_SECONDS:
+            alerts.append(
+                HealthOpsAlertItem(
+                    code="document_job_callback_oldest_replayable_stale",
+                    severity="warning",
+                    source="document_job_callbacks",
+                    title="存在长时间未处理的 callback message",
+                    description="最早可重放 callback message 已超过观察窗口，可能需要人工触发 replay。",
+                    count=callback_oldest_replayable_age_seconds,
+                    suggested_route="/system-status/ops-dashboard",
+                    suggested_action="确认 Worker 状态和任务详情；必要时执行 document_job.replay_execution。",
                 )
             )
         if failed_jobs > 0:

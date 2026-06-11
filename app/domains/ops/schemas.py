@@ -20,7 +20,6 @@ OpsRecoveryActionCategory = Literal[
 ]
 OpsRecoveryActionTargetType = Literal[
     "document_job",
-    "legacy_job",
     "provider_operation",
     "alert",
     "cleanup_run",
@@ -49,7 +48,7 @@ OpsAlertDestinationStatus = Literal[
     "blocked",
 ]
 OpsProviderCancellationProvider = Literal["mineru"]
-OpsProviderCancellationTargetType = Literal["document_job", "legacy_job"]
+OpsProviderCancellationTargetType = Literal["document_job"]
 OpsProviderCancellationMode = Literal["dry_run", "fake_cancel"]
 OpsProviderCancellationOutcome = Literal["cancelable", "fake_canceled", "deduped", "ineligible", "failed"]
 OpsIntegrationCapabilityId = Literal[
@@ -168,6 +167,12 @@ class OpsRecoveryActionPreviewRequest(BaseModel):
     target_id: str
 
 
+class OpsRecoveryActionExecuteRequest(OpsRecoveryActionPreviewRequest):
+    """请求执行已纳入后端执行合同的恢复动作。"""
+
+    reason: str = Field(min_length=1, max_length=1000)
+
+
 class OpsRecoveryActionTargetPreviewResponse(BaseModel):
     """返回目标是否存在和可安全展示的目标摘要。"""
 
@@ -188,6 +193,26 @@ class OpsRecoveryActionPreviewResponse(BaseModel):
     eligible: bool
     missing_gates: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    risk_flags: OpsRecoveryActionRiskFlagsResponse
+    audit_action: str | None = None
+    safety: OpsRecoveryActionSafetyResponse
+
+
+class OpsRecoveryActionExecuteResponse(BaseModel):
+    """返回恢复动作执行结果和安全声明。"""
+
+    generated_at: datetime
+    action: OpsRecoveryActionResponse
+    target: OpsRecoveryActionTargetPreviewResponse
+    eligible: bool
+    missing_gates: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    executed: bool
+    queued_task_id: str | None = None
+    replayable_callback_messages: int = 0
+    ignored_callback_messages: int = 0
+    recovery_events_written: int = 0
+    audit_events_written: int = 0
     risk_flags: OpsRecoveryActionRiskFlagsResponse
     audit_action: str | None = None
     safety: OpsRecoveryActionSafetyResponse

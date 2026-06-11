@@ -137,6 +137,13 @@
             <strong>{{ item.value }}</strong>
           </div>
         </div>
+        <el-divider />
+        <div class="metric-table">
+          <div v-for="item in callbackMetricItems" :key="item.label" class="metric-row">
+            <span>{{ item.label }}</span>
+            <strong>{{ item.value }}</strong>
+          </div>
+        </div>
       </el-card>
 
       <el-card class="card-flat status-panel" shadow="never">
@@ -291,6 +298,18 @@ const stageMetricItems = computed<MetricItem[]>(() => [
   { label: healthLabelText("document_jobs_oldest_age"), value: secondsLabel(numberCheck("document_jobs_running_oldest_age_seconds")) },
 ]);
 
+const callbackMetricItems = computed<MetricItem[]>(() => [
+  { label: healthLabelText("document_job_callback_pending_messages"), value: callbackCount("pending") },
+  { label: healthLabelText("document_job_callback_running_messages"), value: callbackCount("running") },
+  { label: healthLabelText("document_job_callback_failed_messages"), value: callbackCount("failed") },
+  { label: healthLabelText("document_job_callback_ignored_messages"), value: callbackCount("ignored") },
+  { label: healthLabelText("document_job_callback_replayable_messages"), value: numberCheck("document_job_callback_replayable_messages") ?? 0 },
+  {
+    label: healthLabelText("document_job_callback_oldest_replayable_age_seconds"),
+    value: secondsLabel(numberCheck("document_job_callback_oldest_replayable_age_seconds")),
+  },
+]);
+
 const resourceItems = computed<DetailItem[]>(() => [
   detailItem("default_template_version", resourceValue("default_template_version")),
   detailItem("default_term_rule_version", resourceValue("default_term_rule_version")),
@@ -379,11 +398,15 @@ function secondsLabel(value: number | null): string {
 }
 
 function jobCount(status: string): number {
-  return metrics.value?.jobs[status] ?? 0;
+  return metrics.value?.document_jobs?.[status] ?? metrics.value?.jobs[status] ?? 0;
 }
 
 function stageCount(status: string): number {
   return metrics.value?.stage_messages[status] ?? 0;
+}
+
+function callbackCount(status: string): number {
+  return metrics.value?.document_job_callback_messages?.[status] ?? 0;
 }
 
 function resourceValue(key: string): string {

@@ -11,9 +11,11 @@ from app.core.config import Settings
 if TYPE_CHECKING:
     from app.domains.audit.repository import AuditEventRepositoryProtocol
     from app.domains.document_jobs.repository import (
+        DocumentJobCallbackMessageStoreProtocol,
         DocumentJobEventRepositoryProtocol,
         DocumentJobRepositoryProtocol,
     )
+    from app.domains.document_jobs.recovery import DocumentJobRecoveryService
     from app.domains.files.repository import DocumentFileRepositoryProtocol
     from app.domains.jobs.repository import (
         JobEventRepositoryProtocol,
@@ -42,6 +44,7 @@ class AppRuntime:
     file_retention_cleanup_run_history_repository: Any
     document_job_repository: DocumentJobRepositoryProtocol
     document_job_event_repository: DocumentJobEventRepositoryProtocol
+    document_job_callback_message_store: DocumentJobCallbackMessageStoreProtocol
     audit_service: Any
     auth_service: Any
     file_upload_service: Any
@@ -54,6 +57,7 @@ class AppRuntime:
     document_word_renderer: Any
     document_job_service: Any
     document_job_execution_service: Any
+    document_job_recovery_service: DocumentJobRecoveryService
     document_job_task_queue: Any | None
     health_service: Any
     template_read_service: Any

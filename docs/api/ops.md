@@ -470,7 +470,6 @@ Request:
 First version supports:
 
 - `target_type=document_job`
-- `target_type=legacy_job`
 - `provider=mineru`
 
 Preview returns:

@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.repository import DocumentFileRepositoryProtocol
-from app.domains.jobs.models import utc_now
+from app.domains.resources.models import utc_now
 
 
 STORAGE_USAGE_RECLAIM_SUPPORTED_PROVIDERS = {"local_file", "local_object"}

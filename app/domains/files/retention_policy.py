@@ -15,7 +15,7 @@ from app.core.config import Settings
 from app.core.errors import ApiError
 from app.domains.files.models import DocumentFileRecord, DocumentFileType
 from app.domains.files.repository import DocumentFileRepositoryProtocol
-from app.domains.jobs.models import utc_now
+from app.domains.resources.models import utc_now
 
 
 FileRetentionPolicyStatus = Literal["draft", "published", "disabled"]

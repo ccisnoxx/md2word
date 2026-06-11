@@ -162,6 +162,7 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 |---|---|
 | `enabled` | 当前用户能否执行该动作。 |
 | `disabled_reason` | 禁用原因；`enabled=true` 时为 `null`。 |
+| `retryable` | 仅用于 `retry` 动作，表示失败是否属于可重试失败；其他动作固定为 `false`。 |
 
 ### `GET /api/v1/document-jobs/{job_id}/events`
 

@@ -12,7 +12,7 @@ from fastapi import status
 
 from app.api.v1.routers.health_schemas import HealthOpsAlertItem
 from app.core.errors import ApiError
-from app.domains.jobs.models import utc_now
+from app.domains.resources.models import utc_now
 from app.domains.ops.alert_delivery import ALERT_DELIVERY_BATCH_LIMIT
 
 

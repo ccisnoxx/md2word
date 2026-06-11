@@ -30,6 +30,8 @@ Current file-backend storage layout:
 - `var/jobs/<job_id>/files.json` for registered artifacts
 - `var/jobs/<job_id>/events.jsonl` for append-only events
 - `var/stage_messages/<message_id>.json` for background stage spool messages
+- `var/document_job_callback_messages/<message_id>.json` for replayable
+  `document_jobs` MinerU callback messages
 - `var/config/term_rules_store.json` for live runtime term-rule truth
 - `var/config/runtime_subscripts_dictionary.yaml` for generated conversion
   compatibility YAML
@@ -39,6 +41,8 @@ Current database-backend layout:
 
 - `var/metadata.sqlite3` by default, or `JOBS_METADATA_DATABASE_PATH`
 - sqlite tables for jobs, job files, job events, and stage messages
+- sqlite tables for document jobs, document files, and
+  `document_job_callback_messages`
 - local artifact files stay under `var/jobs/<job_id>/...` unless the artifact
   storage backend is separately switched
 
@@ -105,11 +109,22 @@ Stage message states are intentionally small:
   still uses the same repository and `JobStageService` contracts; API handlers
   should only enqueue stage messages in that mode.
 
+`document_jobs` MinerU callbacks use a separate callback-message spool instead
+of the legacy `stage_messages` table. The API callback boundary validates the
+payload, stores a `DocumentJobCallbackMessage`, and wakes the document-job
+worker; the worker consumes pending/running callback messages and advances the
+job through repository-level conditional updates. Callback message states are
+`pending`, `running`, `processed`, `failed`, and `ignored`; only `pending` and
+`running` are replayable.
+
 Current dependency boundaries are protocol based:
 
 - `JobQueryService` and `JobLifecycleService` depend on repository protocols.
 - `JobStageService` receives job repository protocols and the stage message
   store so it can run against `file`, `database`, or `mysql`.
+- `DocumentJobExecutionService` receives the document-job repository, event
+  repository, and callback-message store so callback replay and job-state
+  updates stay behind protocol boundaries.
 - `app/main.py` receives a `PersistenceAdapters` bundle and passes distinct
   per-port adapters to services.
 

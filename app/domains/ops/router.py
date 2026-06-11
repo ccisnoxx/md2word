@@ -3,9 +3,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
 
 from app.api.dependencies import get_runtime, get_trace_id, require_admin_user
+from app.core.errors import ApiError
 from app.core.runtime import AppRuntime
 from app.domains.audit.models import ActorContext, AuditDetails
 from app.domains.ops.alert_delivery_contract import (
@@ -56,9 +57,12 @@ from app.domains.ops.schemas import (
     OpsProviderCancellationSemanticsResponse,
     OpsProviderCancellationSemanticsSafetyResponse,
     OpsProviderCancellationSemanticsSourceResponse,
+    OpsRecoveryActionExecuteRequest,
+    OpsRecoveryActionExecuteResponse,
     OpsRecoveryActionPreviewRequest,
     OpsRecoveryActionPreviewResponse,
     OpsRecoveryActionRegistryResponse,
+    OpsRecoveryActionSafetyResponse,
     OpsS3DeleteAdapterContractResponse,
     OpsS3DeleteAdapterContractSafetyResponse,
     OpsS3DeleteLocalStackProfileResponse,
@@ -99,6 +103,68 @@ def preview_ops_recovery_action(
     """预览一个恢复动作对精确目标的适用性，不调度、不通知、不删除。"""
 
     return _build_recovery_action_service(runtime).preview_action(payload)
+
+
+@router.post("/recovery-actions/execute", response_model=OpsRecoveryActionExecuteResponse)
+def execute_ops_recovery_action(
+    payload: OpsRecoveryActionExecuteRequest,
+    runtime: AppRuntime = Depends(get_runtime),
+    user: AuthenticatedUser = Depends(require_admin_user),
+    trace_id: str = Depends(get_trace_id),
+) -> OpsRecoveryActionExecuteResponse:
+    """执行已收口的 recovery action；MVP 仅支持 document_job.replay_execution。"""
+
+    if payload.action_id != "document_job.replay_execution" or payload.target_type != "document_job":
+        raise ApiError(status.HTTP_409_CONFLICT, "conflict", "当前 execute endpoint 仅支持 document_job.replay_execution。")
+    service = _build_recovery_action_service(runtime)
+    preview = service.preview_action(payload)
+    if not preview.eligible:
+        raise ApiError(
+            status.HTTP_409_CONFLICT,
+            "conflict",
+            f"document_job replay 不满足执行条件: {', '.join(preview.missing_gates) or 'unknown'}",
+        )
+    result = runtime.document_job_recovery_service.execute_replay(
+        payload.target_id,
+        trace_id=trace_id,
+        run_inline=False,
+    )
+    runtime.audit_service.record(
+        actor=_actor_from_user(user),
+        action=preview.audit_action or payload.action_id,
+        target_type=payload.target_type,
+        target_id=payload.target_id,
+        reason=payload.reason,
+        details=_build_recovery_action_execute_audit_details(result),
+        trace_id=trace_id,
+    )
+    return OpsRecoveryActionExecuteResponse(
+        generated_at=preview.generated_at,
+        action=preview.action,
+        target=preview.target,
+        eligible=True,
+        missing_gates=[],
+        warnings=preview.warnings,
+        executed=result.executed,
+        queued_task_id=result.queued_task_id,
+        replayable_callback_messages=result.replayable_callback_messages,
+        ignored_callback_messages=result.ignored_callback_messages,
+        recovery_events_written=result.recovery_events_written,
+        audit_events_written=1,
+        risk_flags=preview.risk_flags,
+        audit_action=preview.audit_action,
+        safety=OpsRecoveryActionSafetyResponse(
+            read_only=False,
+            execution_performed=True,
+            metadata_mutated=result.recovery_events_written > 0 or result.ignored_callback_messages > 0,
+            queue_mutated=result.queued_task_id is not None,
+            provider_calls_executed=False,
+            notification_delivery_executed=False,
+            cleanup_executed=False,
+            delete_executed=False,
+            audit_events_written=True,
+        ),
+    )
 
 
 @router.post("/alert-destinations/dry-run", response_model=OpsAlertDestinationDryRunResponse)
@@ -308,9 +374,8 @@ def _build_recovery_action_service(runtime: AppRuntime) -> OpsRecoveryActionServ
 
     return OpsRecoveryActionService(
         document_job_repository=runtime.document_job_repository,
-        job_repository=runtime.job_repository,
         document_job_max_retries=runtime.settings.p0_document_job_max_retries,
-        mineru_api_token_configured=bool(runtime.settings.mineru_api_token),
+        document_job_recovery_service=runtime.document_job_recovery_service,
     )
 
 
@@ -369,7 +434,6 @@ def _build_provider_cancellation_service(runtime: AppRuntime) -> OpsProviderCanc
 
     return OpsProviderCancellationService(
         document_job_repository=runtime.document_job_repository,
-        job_repository=runtime.job_repository,
         audit_event_repository=runtime.audit_event_repository,
     )
 
@@ -447,6 +511,32 @@ def _build_provider_cancellation_response(
     payload = report.to_dict()
     payload["safety"] = OpsProviderCancellationSafetyResponse(audit_events_written=audit_events_written)
     return OpsProviderCancellationResponse(**payload)
+
+
+def _build_recovery_action_execute_audit_details(result) -> AuditDetails:
+    """生成 document_job replay execute 的 compact audit 证据，不包含 callback payload。"""
+
+    callback_observation = result.preview.callback_observation
+    return {
+        "action_id": "document_job.replay_execution",
+        "executed": result.executed,
+        "queued_task_id": result.queued_task_id,
+        "worker_backend": result.preview.worker_backend,
+        "automatic_execution_enabled": result.preview.automatic_execution_enabled,
+        "stale_job_detected": result.preview.stale_job_detected,
+        "replayable_callback_messages": result.replayable_callback_messages,
+        "ignored_callback_messages": result.ignored_callback_messages,
+        "recovery_events_written": result.recovery_events_written,
+        "callback_status_counts": dict(callback_observation.status_counts),
+        "oldest_replayable_age_seconds": callback_observation.oldest_replayable_age_seconds,
+        "safety": {
+            "provider_calls_executed": False,
+            "notification_delivery_executed": False,
+            "cleanup_executed": False,
+            "delete_executed": False,
+            "audit_events_written": True,
+        },
+    }
 
 
 def _build_provider_cancellation_semantics_response(

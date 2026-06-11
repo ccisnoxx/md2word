@@ -10,7 +10,7 @@ from typing import Literal
 
 from app.core.config import Settings
 from app.domains.files.service import S3_DELETE_FAKE_CONTRACT_VERSION
-from app.domains.jobs.models import utc_now
+from app.domains.resources.models import utc_now
 from app.domains.ops.alert_delivery_contract import ALERT_DELIVERY_ADAPTER_CONTRACT_VERSION
 from app.domains.ops.provider_cancellation_semantics import (
     PROVIDER_CANCELLATION_SEMANTICS_DECISION,

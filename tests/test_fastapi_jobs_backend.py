@@ -40,9 +40,10 @@ from app.main import build_runtime, create_app
 from app.domains.term_rules.file_repository import FileTermRuleRepository
 from app.domains.audit.models import AuditEvent
 from app.domains.audit.service import AuditService
-from app.domains.document_jobs.models import DocumentJobRecord
+from app.domains.document_jobs.models import DocumentJobCallbackMessage, DocumentJobRecord
 from app.services.auth import AuthService, hash_password
 from app.domains.document_jobs.execution import DocumentJobExecutionService, EagerDocumentJobTaskQueue
+from app.domains.document_jobs.recovery import DocumentJobRecoveryService
 from app.domains.document_jobs.service import DocumentJobService
 from app.services.document_ir import MinerUToDocumentIRService
 from app.domains.files import FileRetentionPolicyService, FileUploadService
@@ -442,6 +443,7 @@ def build_test_runtime(
     file_retention_cleanup_run_history_repository = persistence_adapters.file_retention_cleanup_run_history_repository
     document_job_repository = persistence_adapters.document_job_repository
     document_job_event_repository = persistence_adapters.document_job_event_repository
+    document_job_callback_message_store = persistence_adapters.document_job_callback_message_store
     stage_message_store = persistence_adapters.stage_message_store
     audit_service = AuditService(audit_event_repository)
     auth_service = AuthService(settings)
@@ -488,6 +490,7 @@ def build_test_runtime(
         settings,
         document_job_repository,
         document_job_event_repository,
+        document_job_callback_message_store,
         document_file_repository,
         file_upload_service,
         document_ir_service,
@@ -503,6 +506,13 @@ def build_test_runtime(
         EagerDocumentJobTaskQueue(document_job_execution_service)
         if document_jobs_worker_backend == "eager"
         else None
+    )
+    document_job_recovery_service = DocumentJobRecoveryService(
+        settings,
+        document_job_repository,
+        document_job_event_repository,
+        document_job_callback_message_store,
+        document_job_task_queue,
     )
     document_job_service = DocumentJobService(
         settings,
@@ -524,6 +534,7 @@ def build_test_runtime(
         stage_dispatcher_backend="external_worker" if jobs_worker_mode == "external" else "background_tasks",
         job_repository=job_repository,
         document_job_repository=document_job_repository,
+        document_job_callback_message_store=document_job_callback_message_store,
         audit_event_repository=audit_event_repository,
         resource_version_repository=resource_version_service.repository if resource_version_service is not None else None,
         default_template_id_getter=template_read_service.get_default_template_id,
@@ -659,6 +670,7 @@ def build_test_runtime(
         file_retention_cleanup_run_history_repository=file_retention_cleanup_run_history_repository,
         document_job_repository=document_job_repository,
         document_job_event_repository=document_job_event_repository,
+        document_job_callback_message_store=document_job_callback_message_store,
         audit_service=audit_service,
         auth_service=auth_service,
         file_upload_service=file_upload_service,
@@ -671,6 +683,7 @@ def build_test_runtime(
         document_word_renderer=document_word_renderer,
         document_job_service=document_job_service,
         document_job_execution_service=document_job_execution_service,
+        document_job_recovery_service=document_job_recovery_service,
         document_job_task_queue=document_job_task_queue,
         health_service=health_service,
         template_read_service=template_read_service,
@@ -1190,45 +1203,33 @@ def build_auth_header(client: TestClient, username: str = "operator", password: 
 
 
 class FastAPIJobsBackendTests(TestCase):
-    def test_jobs_api_response_contract_snapshot(self):
+    def test_legacy_jobs_api_paths_are_removed(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             app = create_app(build_test_runtime(Path(temp_dir)))
             with TestClient(app) as client:
-                create_response = client.post(
-                    "/api/v1/jobs",
-                    files={"package": ("mineru-output.zip", make_zip_bytes(), "application/zip")},
-                    data={"translation_mode": "direct"},
-                )
-                self.assertEqual(create_response.status_code, 201)
-                create_payload = create_response.json()
-                job_id = create_payload["job_id"]
+                responses = [
+                    client.get("/api/v1/jobs"),
+                    client.post("/api/v1/jobs", files={"package": ("mineru-output.zip", b"zip", "application/zip")}),
+                    client.post("/api/v1/jobs/pdf", files={"file": ("source.pdf", b"%PDF", "application/pdf")}),
+                    client.get("/api/v1/jobs/job_removed"),
+                    client.get("/api/v1/jobs/job_removed/files"),
+                    client.get("/api/v1/jobs/job_removed/events"),
+                    client.get("/api/v1/jobs/job_removed/result"),
+                    client.get("/api/v1/jobs/job_removed/download/result"),
+                    client.post("/api/v1/jobs/job_removed/retry"),
+                    client.post("/api/v1/jobs/job_removed/cancel"),
+                    client.post("/api/v1/jobs/job_removed/recover-mineru-result"),
+                    client.post("/api/v1/jobs/job_removed/cleanup-local-files"),
+                ]
 
-                list_payload = client.get("/api/v1/jobs").json()
-                detail_payload = client.get(f"/api/v1/jobs/{job_id}").json()
-                files_payload = client.get(f"/api/v1/jobs/{job_id}/files").json()
-                events_payload = client.get(f"/api/v1/jobs/{job_id}/events").json()
-                result_payload = client.get(f"/api/v1/jobs/{job_id}/result").json()
-
-        self.assertEqual(list(create_payload), JOB_ACCEPTED_RESPONSE_KEYS)
-        self.assertEqual(list(list_payload), JOB_LIST_RESPONSE_KEYS)
-        self.assertEqual(list(list_payload["items"][0]), JOB_SUMMARY_RESPONSE_KEYS)
-        self.assertEqual(list(detail_payload), JOB_DETAIL_RESPONSE_KEYS)
-        self.assertEqual(list(detail_payload["files"][0]), JOB_FILE_RESPONSE_KEYS)
-        self.assertEqual(list(detail_payload["events"][0]), JOB_EVENT_RESPONSE_KEYS)
-        self.assertEqual(list(files_payload), JOB_FILE_LIST_RESPONSE_KEYS)
-        self.assertEqual(list(files_payload["files"][0]), JOB_FILE_RESPONSE_KEYS)
-        self.assertEqual(list(events_payload), JOB_EVENT_LIST_RESPONSE_KEYS)
-        self.assertEqual(list(events_payload["items"][0]), JOB_EVENT_RESPONSE_KEYS)
-        self.assertEqual(list(result_payload), JOB_FILE_RESPONSE_KEYS)
+        self.assertTrue(all(response.status_code == 404 for response in responses))
 
     def test_api_v1_schema_imports_use_final_owners_after_resource_split(self):
         from app.api.v1.routers.health_schemas import HealthReadyResponse
         from app.domains.document_jobs.schemas import DocumentJobCreateResponse
         from app.domains.document_jobs.schemas import DocumentJobRetryResponse
         from app.domains.files.schemas import DocumentFileResponse
-        from app.domains.jobs.schemas import JobDetailResponse
 
-        self.assertEqual(JobDetailResponse.__module__, "app.domains.jobs.schemas")
         self.assertEqual(DocumentFileResponse.__module__, "app.domains.files.schemas")
         self.assertEqual(DocumentJobCreateResponse.__module__, "app.domains.document_jobs.schemas")
         self.assertEqual(DocumentJobRetryResponse.__module__, "app.domains.document_jobs.schemas")
@@ -1490,13 +1491,22 @@ class FastAPIJobsBackendTests(TestCase):
 
     def test_health_metrics_reports_runtime_counters(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            runtime = build_test_runtime(Path(temp_dir))
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
             app = create_app(runtime)
             with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
                 create_response = client.post(
-                    "/api/v1/jobs",
-                    files={"package": ("mineru-output.zip", make_zip_bytes(), "application/zip")},
-                    data={"translation_mode": "direct"},
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={
+                        "source_file_id": source_file["id"],
+                        "mode": "direct_pdf_to_word",
+                    },
                 )
                 response = client.get("/api/v1/health/metrics")
 
@@ -1507,10 +1517,11 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(payload["artifact_storage"], "local_file")
         self.assertEqual(payload["worker_mode"], "in_process")
         self.assertEqual(payload["stage_dispatcher"], "background_tasks")
-        self.assertEqual(payload["jobs"], {"completed": 1})
+        self.assertEqual(payload["jobs"], {})
+        self.assertEqual(payload["document_jobs"], {"pending": 1})
         self.assertEqual(payload["stage_messages"], {"pending": 0, "running": 0, "failed": 0})
         self.assertEqual(payload["resources"]["template_versions"], 0)
-        self.assertEqual(payload["audit_events"]["total"], 0)
+        self.assertGreaterEqual(payload["audit_events"]["total"], 1)
         serialized = json.dumps(payload, ensure_ascii=False)
         self.assertNotIn("OPENAI_API_KEY", serialized)
         self.assertNotIn("ADMIN_TOKEN", serialized)
@@ -1910,6 +1921,30 @@ class FastAPIJobsBackendTests(TestCase):
                     status="failed",
                 )
             )
+            runtime.document_job_callback_message_store.put_or_get_callback_message(
+                DocumentJobCallbackMessage(
+                    id="doccb_ops_pending",
+                    job_id="docjob_ops_running",
+                    status="pending",
+                    dedupe_key="doccb_ops_pending",
+                    payload={"state": "done"},
+                    created_at=now - timedelta(seconds=900),
+                    updated_at=now - timedelta(seconds=900),
+                )
+            )
+            runtime.document_job_callback_message_store.put_or_get_callback_message(
+                DocumentJobCallbackMessage(
+                    id="doccb_ops_failed",
+                    job_id="docjob_ops_running",
+                    status="failed",
+                    dedupe_key="doccb_ops_failed",
+                    payload={"state": "done"},
+                    error_code="callback_failed",
+                    error_message="callback failed",
+                    created_at=now - timedelta(seconds=30),
+                    updated_at=now - timedelta(seconds=30),
+                )
+            )
             app = create_app(runtime)
 
             with TestClient(app) as client:
@@ -1926,6 +1961,9 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(payload["summary"]["stage_failed_messages"], 1)
         self.assertEqual(payload["summary"]["stage_stale_running_messages"], 1)
         self.assertEqual(payload["summary"]["stage_replayable_messages"], 2)
+        self.assertEqual(payload["summary"]["callback_failed_messages"], 1)
+        self.assertEqual(payload["summary"]["callback_replayable_messages"], 1)
+        self.assertGreaterEqual(payload["summary"]["callback_oldest_replayable_age_seconds"], 899)
         self.assertEqual(payload["summary"]["failed_jobs"], 1)
         self.assertEqual(payload["summary"]["running_jobs"], 2)
         self.assertTrue(payload["safety"]["read_only"])
@@ -1944,9 +1982,16 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIn("document_jobs_timed_out_present", alerts_by_code)
         self.assertIn("document_jobs_stale_running_present", alerts_by_code)
         self.assertIn("document_jobs_running_present", alerts_by_code)
+        self.assertIn("document_job_callback_failed_messages_present", alerts_by_code)
+        self.assertIn("document_job_callback_replayable_messages_present", alerts_by_code)
+        self.assertIn("document_job_callback_oldest_replayable_stale", alerts_by_code)
         self.assertEqual(alerts_by_code["stage_spool_failed_messages_present"]["severity"], "critical")
         self.assertEqual(alerts_by_code["stage_spool_failed_messages_present"]["source"], "stage_spool")
         self.assertEqual(alerts_by_code["document_jobs_failed_present"]["source"], "jobs")
+        self.assertEqual(
+            alerts_by_code["document_job_callback_failed_messages_present"]["source"],
+            "document_job_callbacks",
+        )
         self.assertEqual(alerts_by_code["document_jobs_timed_out_present"]["severity"], "critical")
         self.assertEqual(alerts_by_code["document_jobs_stale_running_present"]["severity"], "warning")
         self.assertEqual(alerts_by_code["document_jobs_running_present"]["severity"], "info")
@@ -1997,19 +2042,25 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(
             set(actions_by_id),
             {
+                "document_job.replay_execution",
                 "document_job.retry",
                 "document_job.cancel",
                 "document_job.archive",
-                "legacy_job.retry",
-                "legacy_job.cancel",
-                "legacy_job.recover_mineru_result",
-                "legacy_job.cleanup_local_files",
                 "provider.cancel",
                 "alert.delivery",
                 "file_retention.automated_cleanup_execute",
             },
         )
         self.assertTrue(actions_by_id["document_job.retry"]["available"])
+        self.assertTrue(actions_by_id["document_job.replay_execution"]["available"])
+        self.assertTrue(actions_by_id["document_job.replay_execution"]["requires_reason"])
+        self.assertTrue(actions_by_id["document_job.replay_execution"]["mutates_metadata"])
+        self.assertTrue(actions_by_id["document_job.replay_execution"]["mutates_queue"])
+        self.assertFalse(actions_by_id["document_job.replay_execution"]["calls_provider"])
+        self.assertEqual(
+            actions_by_id["document_job.replay_execution"]["audit_action"],
+            "document_job.replay_execution",
+        )
         self.assertTrue(actions_by_id["document_job.retry"]["requires_admin"])
         self.assertTrue(actions_by_id["document_job.retry"]["requires_reason"])
         self.assertTrue(actions_by_id["document_job.retry"]["mutates_metadata"])
@@ -2031,8 +2082,6 @@ class FastAPIJobsBackendTests(TestCase):
             "file.retention_automated_cleanup_execute",
         )
         self.assertTrue(actions_by_id["file_retention.automated_cleanup_execute"]["deletes_data"])
-        self.assertFalse(actions_by_id["legacy_job.recover_mineru_result"]["available"])
-        self.assertIn("MINERU_API_TOKEN 未配置", " ".join(actions_by_id["legacy_job.recover_mineru_result"]["known_gaps"]))
 
         self.assertEqual(operator_response.status_code, 403)
         self.assertEqual(operator_response.json()["error_code"], "role_forbidden")
@@ -3582,7 +3631,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(provider.calls, [])
         self.assertEqual(secret_resolver.calls, [])
 
-    def test_ops_recovery_action_preview_reports_document_job_and_legacy_job_eligibility_without_execution(self):
+    def test_ops_recovery_action_preview_reports_document_job_eligibility_without_execution(self):
         """验证 recovery action preview 做精确目标判断，且不触发 provider、队列或 audit 副作用。"""
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -3625,22 +3674,6 @@ class FastAPIJobsBackendTests(TestCase):
                     updated_at=now - timedelta(minutes=1),
                 )
             )
-            legacy_job = JobRecord(
-                id="legacy_ops_preview_mineru",
-                source_filename="source.pdf",
-                status="parsing",
-                progress=25,
-                source_kind="source_pdf",
-                lifecycle_status="uploaded",
-                execution_status="parsing",
-                source_pdf_context=SourcePdfJobContext(
-                    batch_id="batch_ops_preview_001",
-                    data_id="legacy_ops_preview_mineru",
-                    callback_seed="secret-seed-not-for-preview",
-                    upstream_status="submitted",
-                ),
-            )
-            runtime.job_repository.create_job(legacy_job)
             app = create_app(runtime)
 
             with TestClient(app) as client:
@@ -3664,15 +3697,6 @@ class FastAPIJobsBackendTests(TestCase):
                         "target_id": terminal_job.id,
                     },
                 )
-                mineru_preview_response = client.post(
-                    "/api/v1/ops/recovery-actions/preview",
-                    headers=admin_headers,
-                    json={
-                        "action_id": "legacy_job.recover_mineru_result",
-                        "target_type": "legacy_job",
-                        "target_id": legacy_job.id,
-                    },
-                )
                 missing_preview_response = client.post(
                     "/api/v1/ops/recovery-actions/preview",
                     headers=admin_headers,
@@ -3687,15 +3711,13 @@ class FastAPIJobsBackendTests(TestCase):
                     headers=admin_headers,
                     json={
                         "action_id": "document_job.retry",
-                        "target_type": "legacy_job",
-                        "target_id": legacy_job.id,
+                        "target_type": "provider_operation",
+                        "target_id": failed_job.id,
                     },
                 )
                 audit_actions_after = [event.action for event in runtime.audit_event_repository.list_audit_events()]
-                mineru_query_calls = list(runtime.stage_service.fake_mineru_client.query_calls)
                 failed_job_after = runtime.document_job_repository.get_document_job(failed_job.id)
                 terminal_job_after = runtime.document_job_repository.get_document_job(terminal_job.id)
-                legacy_job_after = runtime.job_repository.get_job(legacy_job.id)
 
         self.assertEqual(retry_preview_response.status_code, 200)
         retry_preview = retry_preview_response.json()
@@ -3715,15 +3737,6 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIn("status_not_cancelable", cancel_preview["missing_gates"])
         self.assertEqual(cancel_preview["target"]["status"], "succeeded")
 
-        self.assertEqual(mineru_preview_response.status_code, 200)
-        mineru_preview = mineru_preview_response.json()
-        self.assertTrue(mineru_preview["eligible"])
-        self.assertTrue(mineru_preview["risk_flags"]["calls_provider"])
-        self.assertFalse(mineru_preview["safety"]["provider_calls_executed"])
-        self.assertTrue(mineru_preview["target"]["summary"]["has_mineru_batch_id"])
-        self.assertNotIn("batch_ops_preview_001", json.dumps(mineru_preview["target"], ensure_ascii=False))
-        self.assertNotIn("secret-seed-not-for-preview", json.dumps(mineru_preview["target"], ensure_ascii=False))
-
         self.assertEqual(missing_preview_response.status_code, 200)
         missing_preview = missing_preview_response.json()
         self.assertFalse(missing_preview["eligible"])
@@ -3731,14 +3744,133 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertFalse(missing_preview["target"]["exists"])
         self.assertEqual(mismatch_response.status_code, 400)
         self.assertEqual(mismatch_response.json()["error_code"], "invalid_request")
-        self.assertEqual(mineru_query_calls, [])
         self.assertEqual(audit_actions_after, audit_actions_before)
         self.assertIsNotNone(failed_job_after)
         self.assertIsNotNone(terminal_job_after)
-        self.assertIsNotNone(legacy_job_after)
         self.assertEqual(failed_job_after.status, "failed")
         self.assertEqual(terminal_job_after.status, "succeeded")
-        self.assertEqual(legacy_job_after.projected_status(), "parsing")
+
+    def test_ops_recovery_action_execute_replays_document_job_without_inline_provider_work(self):
+        """验证 document_job.replay_execution 执行端只投递 Worker、写审计，不在 HTTP 内消费 callback。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                now = utc_now()
+                job = runtime.document_job_repository.create_document_job(
+                    DocumentJobRecord(
+                        id="docjob_ops_replay",
+                        tenant_id="tenant_default",
+                        company_id="company_default",
+                        created_by="user_operator",
+                        source_file_id="file_ops_replay",
+                        status="running",
+                        stage="parsing",
+                        progress=20,
+                        template_version_id="template_default",
+                        mineru_batch_id="batch_ops_replay",
+                        mineru_data_id="docjob_ops_replay",
+                        started_at=now - timedelta(minutes=2),
+                        updated_at=now - timedelta(minutes=2),
+                    )
+                )
+                runtime.document_job_callback_message_store.put_or_get_callback_message(
+                    DocumentJobCallbackMessage(
+                        id="doccb_ops_replay",
+                        job_id=job.id,
+                        status="pending",
+                        dedupe_key="doccb_ops_replay",
+                        payload={
+                            "batch_id": "batch_ops_replay",
+                            "data_id": job.id,
+                            "state": "done",
+                            "full_zip_url": "https://mineru.net/result.zip",
+                        },
+                        created_at=now - timedelta(minutes=1),
+                        updated_at=now - timedelta(minutes=1),
+                    )
+                )
+                preview_response = client.post(
+                    "/api/v1/ops/recovery-actions/preview",
+                    headers=admin_headers,
+                    json={
+                        "action_id": "document_job.replay_execution",
+                        "target_type": "document_job",
+                        "target_id": job.id,
+                    },
+                )
+                execute_response = client.post(
+                    "/api/v1/ops/recovery-actions/execute",
+                    headers={**admin_headers, "X-Trace-Id": "trace_ops_replay_execute"},
+                    json={
+                        "action_id": "document_job.replay_execution",
+                        "target_type": "document_job",
+                        "target_id": job.id,
+                        "reason": "manual replay from ops test",
+                    },
+                )
+                unsupported_response = client.post(
+                    "/api/v1/ops/recovery-actions/execute",
+                    headers=admin_headers,
+                    json={
+                        "action_id": "document_job.retry",
+                        "target_type": "document_job",
+                        "target_id": job.id,
+                        "reason": "unsupported execute",
+                    },
+                )
+                operator_response = client.post(
+                    "/api/v1/ops/recovery-actions/execute",
+                    headers=operator_headers,
+                    json={
+                        "action_id": "document_job.replay_execution",
+                        "target_type": "document_job",
+                        "target_id": job.id,
+                        "reason": "operator replay",
+                    },
+                )
+                callback_counts = runtime.document_job_callback_message_store.count_callback_messages_by_status(job.id)
+                events = runtime.document_job_event_repository.list_document_job_events(job.id)
+                audit_events = runtime.audit_event_repository.list_audit_events()
+                fake_client = runtime.document_job_execution_service.fake_mineru_client
+
+        self.assertEqual(preview_response.status_code, 200)
+        preview = preview_response.json()
+        self.assertTrue(preview["eligible"])
+        self.assertEqual(preview["target"]["summary"]["callback_replayable_messages"], 1)
+        self.assertEqual(preview["target"]["summary"]["worker_backend"], "eager")
+        self.assertFalse(preview["risk_flags"]["calls_provider"])
+        self.assertFalse(preview["safety"]["execution_performed"])
+
+        self.assertEqual(execute_response.status_code, 200)
+        execute_payload = execute_response.json()
+        self.assertTrue(execute_payload["executed"])
+        self.assertEqual(execute_payload["queued_task_id"], f"eager:{job.id}")
+        self.assertEqual(execute_payload["replayable_callback_messages"], 1)
+        self.assertEqual(execute_payload["ignored_callback_messages"], 0)
+        self.assertEqual(execute_payload["audit_events_written"], 1)
+        self.assertTrue(execute_payload["safety"]["execution_performed"])
+        self.assertTrue(execute_payload["safety"]["metadata_mutated"])
+        self.assertTrue(execute_payload["safety"]["queue_mutated"])
+        self.assertFalse(execute_payload["safety"]["provider_calls_executed"])
+        self.assertEqual(callback_counts["pending"], 1)
+        self.assertEqual(fake_client.download_calls, [])
+        self.assertIn("recovery_replay_queued", [event.event_type for event in events])
+        replay_audit_events = [event for event in audit_events if event.action == "document_job.replay_execution"]
+        self.assertEqual(len(replay_audit_events), 1)
+        self.assertEqual(replay_audit_events[0].reason, "manual replay from ops test")
+        self.assertEqual(replay_audit_events[0].details["queued_task_id"], f"eager:{job.id}")
+        self.assertEqual(unsupported_response.status_code, 409)
+        self.assertEqual(operator_response.status_code, 403)
 
     def test_health_ready_blocks_when_default_translation_mode_requires_missing_client(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -3784,6 +3916,8 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(conversion_response.status_code, 503)
         self.assertEqual(conversion_response.json()["detail"], "转换失败。")
         self.assertEqual(workflow_response.json()["error_code"], "job_state_conflict")
+        self.assertEqual(workflow_response.json()["request_id"], workflow_response.json()["error"]["request_id"])
+        self.assertEqual(workflow_response.json()["trace_id"], workflow_response.json()["error"]["trace_id"])
         self.assertEqual(conversion_response.json()["error_code"], "conversion_failed")
 
     def test_internal_auth_login_and_me_support_admin_and_operator(self):
@@ -3812,12 +3946,20 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(admin_login.status_code, 200)
         self.assertEqual(admin_login.json()["token_type"], "bearer")
         self.assertEqual(admin_login.json()["role"], "admin")
+        self.assertEqual(admin_login.json()["roles"], ["admin"])
+        self.assertIn("document_jobs:read", admin_login.json()["permissions"])
+        self.assertIn("ops:read", admin_login.json()["permissions"])
         self.assertGreater(admin_login.json()["expires_in"], 0)
         self.assertEqual(operator_login.status_code, 200)
         self.assertEqual(operator_login.json()["role"], "operator")
+        self.assertEqual(operator_login.json()["roles"], ["operator"])
+        self.assertIn("document_jobs:read", operator_login.json()["permissions"])
+        self.assertNotIn("ops:read", operator_login.json()["permissions"])
         self.assertEqual(me_response.status_code, 200)
         self.assertEqual(me_response.json()["id"], "user_admin")
         self.assertEqual(me_response.json()["role"], "admin")
+        self.assertEqual(me_response.json()["roles"], ["admin"])
+        self.assertIn("settings:read", me_response.json()["permissions"])
 
     def test_internal_auth_loads_users_from_file_to_avoid_env_dollar_escaping(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -6775,11 +6917,13 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(set(pending_actions), {"download", "retry", "cancel", "archive", "unarchive", "clone"})
         self.assertTrue(pending_actions["cancel"]["enabled"])
         self.assertTrue(pending_actions["clone"]["enabled"])
+        self.assertFalse(pending_actions["retry"]["retryable"])
         self.assertFalse(pending_actions["download"]["enabled"])
         self.assertIn("succeeded", pending_actions["download"]["disabled_reason"])
         failed_actions = failed_detail_response.json()["available_actions"]
         self.assertTrue(failed_actions["archive"]["enabled"])
         self.assertFalse(failed_actions["retry"]["enabled"])
+        self.assertFalse(failed_actions["retry"]["retryable"])
         self.assertIn("不可重试", failed_actions["retry"]["disabled_reason"])
         self.assertEqual(archive_response.status_code, 200)
         archived_actions = archived_detail_response.json()["available_actions"]
@@ -7490,7 +7634,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(too_many_response.json()["error_code"], "invalid_request")
         self.assertIn("最多支持 50", too_many_response.json()["detail"])
 
-    def test_document_job_mineru_callback_completes_pending_parse(self):
+    def test_document_job_mineru_callback_queues_before_worker_completes_parse(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(
                 Path(temp_dir),
@@ -7528,10 +7672,22 @@ class FastAPIJobsBackendTests(TestCase):
                     content=content,
                 )
                 callback_response = client.post("/api/v1/mineru-callbacks/result", json=payload)
-                detail_response = client.get(f"/api/v1/document-jobs/{job_id}", headers=headers)
+                detail_before_worker_response = client.get(f"/api/v1/document-jobs/{job_id}", headers=headers)
+                callback_summary_response = client.get(
+                    f"/api/v1/document-jobs/{job_id}/callback-messages/summary",
+                    headers=headers,
+                )
+                metrics_response = client.get("/api/v1/health/metrics")
 
-            completed_job = runtime.document_job_repository.get_document_job(job_id)
-            fake_client = runtime.document_job_execution_service.fake_mineru_client
+                queued_counts = runtime.document_job_callback_message_store.count_callback_messages_by_status()
+                replayable_messages = runtime.document_job_callback_message_store.list_replayable_callback_messages(job_id)
+                download_calls_before_worker = list(runtime.document_job_execution_service.fake_mineru_client.download_calls)
+                worker_result = runtime.document_job_execution_service.execute_job(job_id, trace_id="trace_callback_worker")
+                detail_after_worker_response = client.get(f"/api/v1/document-jobs/{job_id}", headers=headers)
+
+                completed_job = runtime.document_job_repository.get_document_job(job_id)
+                processed_counts = runtime.document_job_callback_message_store.count_callback_messages_by_status()
+                fake_client = runtime.document_job_execution_service.fake_mineru_client
 
         self.assertEqual(create_response.status_code, 201)
         self.assertEqual(create_response.json()["status"], "running")
@@ -7544,11 +7700,233 @@ class FastAPIJobsBackendTests(TestCase):
         )
         self.assertEqual(callback_response.status_code, 200)
         self.assertEqual(callback_response.json()["id"], job_id)
-        self.assertEqual(detail_response.json()["status"], "succeeded")
+        self.assertEqual(detail_before_worker_response.json()["status"], "running")
+        self.assertEqual(detail_before_worker_response.json()["stage"], "parsing")
+        self.assertEqual(callback_summary_response.status_code, 200)
+        self.assertEqual(callback_summary_response.json()["status_counts"]["pending"], 1)
+        self.assertEqual(callback_summary_response.json()["replayable_count"], 1)
+        self.assertEqual(callback_summary_response.json()["recent_problem_messages"], [])
+        self.assertEqual(metrics_response.status_code, 200)
+        self.assertEqual(metrics_response.json()["document_job_callback_messages"]["pending"], 1)
+        self.assertEqual(metrics_response.json()["document_jobs"]["running"], 1)
+        self.assertEqual(queued_counts["pending"], 1)
+        self.assertEqual(len(replayable_messages), 1)
+        self.assertEqual(download_calls_before_worker, [])
+        self.assertIsNotNone(worker_result)
+        self.assertEqual(worker_result.status, "succeeded")
+        self.assertEqual(detail_after_worker_response.json()["status"], "succeeded")
         self.assertIsNotNone(completed_job)
         self.assertEqual(completed_job.status, "succeeded")
         self.assertEqual(completed_job.stage, "completed")
+        self.assertEqual(processed_counts["processed"], 1)
         self.assertEqual(fake_client.download_calls[0]["result_url"], "https://mineru.net/result.zip")
+
+    def test_document_job_mineru_callback_dedupes_duplicate_delivery_before_worker(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+                public_deployment_mode="single_tenant_public",
+                mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
+                mineru_uid="mineru-user-1",
+            )
+            runtime.document_job_execution_service.fake_mineru_client.query_state = "running"
+            runtime.document_job_execution_service.fake_mineru_client.query_full_zip_url = None
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+                waiting_job = runtime.document_job_repository.get_document_job(job_id)
+                payload, content = build_callback_payload(
+                    batch_id=waiting_job.mineru_batch_id,
+                    data_id=job_id,
+                    state="done",
+                    full_zip_url="https://mineru.net/result.zip",
+                )
+                payload["checksum"] = build_callback_checksum(
+                    uid="mineru-user-1",
+                    seed=waiting_job.mineru_callback_seed,
+                    content=content,
+                )
+                first_callback_response = client.post("/api/v1/mineru-callbacks/result", json=payload)
+                second_callback_response = client.post("/api/v1/mineru-callbacks/result", json=payload)
+                queued_counts = runtime.document_job_callback_message_store.count_callback_messages_by_status()
+                replayable_messages = runtime.document_job_callback_message_store.list_replayable_callback_messages(job_id)
+                worker_result = runtime.document_job_execution_service.execute_job(job_id, trace_id="trace_duplicate_callback")
+                second_worker_result = runtime.document_job_execution_service.execute_job(job_id, trace_id="trace_duplicate_callback")
+                processed_counts = runtime.document_job_callback_message_store.count_callback_messages_by_status()
+                fake_client = runtime.document_job_execution_service.fake_mineru_client
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(first_callback_response.status_code, 200)
+        self.assertEqual(second_callback_response.status_code, 200)
+        self.assertEqual(queued_counts["pending"], 1)
+        self.assertEqual(len(replayable_messages), 1)
+        self.assertIsNotNone(worker_result)
+        self.assertEqual(worker_result.status, "succeeded")
+        self.assertIsNotNone(second_worker_result)
+        self.assertEqual(second_worker_result.status, "succeeded")
+        self.assertEqual(processed_counts["processed"], 1)
+        self.assertEqual(len(fake_client.download_calls), 1)
+
+    def test_document_job_worker_ignores_queued_callback_after_cancel(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+                public_deployment_mode="single_tenant_public",
+                mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
+                mineru_uid="mineru-user-1",
+            )
+            runtime.document_job_execution_service.fake_mineru_client.query_state = "running"
+            runtime.document_job_execution_service.fake_mineru_client.query_full_zip_url = None
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+                waiting_job = runtime.document_job_repository.get_document_job(job_id)
+                payload, content = build_callback_payload(
+                    batch_id=waiting_job.mineru_batch_id,
+                    data_id=job_id,
+                    state="done",
+                    full_zip_url="https://mineru.net/result.zip",
+                )
+                payload["checksum"] = build_callback_checksum(
+                    uid="mineru-user-1",
+                    seed=waiting_job.mineru_callback_seed,
+                    content=content,
+                )
+                callback_response = client.post("/api/v1/mineru-callbacks/result", json=payload)
+                cancel_response = client.post(f"/api/v1/document-jobs/{job_id}/cancel", headers=headers)
+                worker_result = runtime.document_job_execution_service.execute_job(job_id, trace_id="trace_cancel_callback")
+                ignored_counts = runtime.document_job_callback_message_store.count_callback_messages_by_status()
+                final_job = runtime.document_job_repository.get_document_job(job_id)
+                fake_client = runtime.document_job_execution_service.fake_mineru_client
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(callback_response.status_code, 200)
+        self.assertEqual(cancel_response.status_code, 200)
+        self.assertIsNotNone(worker_result)
+        self.assertEqual(worker_result.status, "canceled")
+        self.assertIsNotNone(final_job)
+        self.assertEqual(final_job.status, "canceled")
+        self.assertEqual(final_job.stage, "canceled")
+        self.assertEqual(ignored_counts["ignored"], 1)
+        self.assertEqual(fake_client.download_calls, [])
+
+    def test_document_job_failed_mineru_callback_is_queued_then_worker_marks_failed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+                public_deployment_mode="single_tenant_public",
+                mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
+                mineru_uid="mineru-user-1",
+            )
+            runtime.document_job_execution_service.fake_mineru_client.query_state = "running"
+            runtime.document_job_execution_service.fake_mineru_client.query_full_zip_url = None
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+                waiting_job = runtime.document_job_repository.get_document_job(job_id)
+                payload, content = build_callback_payload(
+                    batch_id=waiting_job.mineru_batch_id,
+                    data_id=job_id,
+                    state="failed",
+                )
+                payload["checksum"] = build_callback_checksum(
+                    uid="mineru-user-1",
+                    seed=waiting_job.mineru_callback_seed,
+                    content=content,
+                )
+                callback_response = client.post("/api/v1/mineru-callbacks/result", json=payload)
+                before_worker_job = runtime.document_job_repository.get_document_job(job_id)
+                worker_result = runtime.document_job_execution_service.execute_job(job_id, trace_id="trace_failed_callback")
+                processed_counts = runtime.document_job_callback_message_store.count_callback_messages_by_status()
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(callback_response.status_code, 200)
+        self.assertIsNotNone(before_worker_job)
+        self.assertEqual(before_worker_job.status, "running")
+        self.assertIsNotNone(worker_result)
+        self.assertEqual(worker_result.status, "failed")
+        self.assertEqual(worker_result.stage, "failed")
+        self.assertEqual(worker_result.failed_stage, "parsing")
+        self.assertEqual(worker_result.error_code, "mineru_failed")
+        self.assertEqual(processed_counts["processed"], 1)
+
+    def test_document_job_invalid_callback_checksum_leaves_no_callback_message(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+                public_deployment_mode="single_tenant_public",
+                mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
+                mineru_uid="mineru-user-1",
+            )
+            runtime.document_job_execution_service.fake_mineru_client.query_state = "running"
+            runtime.document_job_execution_service.fake_mineru_client.query_full_zip_url = None
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+                waiting_job = runtime.document_job_repository.get_document_job(job_id)
+                payload, _content = build_callback_payload(
+                    batch_id=waiting_job.mineru_batch_id,
+                    data_id=job_id,
+                    state="done",
+                    full_zip_url="https://mineru.net/result.zip",
+                )
+                payload["checksum"] = "bad-checksum"
+                callback_response = client.post("/api/v1/mineru-callbacks/result", json=payload)
+                counts = runtime.document_job_callback_message_store.count_callback_messages_by_status()
+                final_job = runtime.document_job_repository.get_document_job(job_id)
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(callback_response.status_code, 403)
+        self.assertEqual(sum(counts.values()), 0)
+        self.assertIsNotNone(final_job)
+        self.assertEqual(final_job.status, "running")
+        self.assertEqual(final_job.stage, "parsing")
 
     def test_document_job_execution_skeleton_is_idempotent_for_duplicate_delivery(self):
         with tempfile.TemporaryDirectory() as temp_dir:

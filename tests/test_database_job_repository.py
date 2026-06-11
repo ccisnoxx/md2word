@@ -12,7 +12,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from app.domains.document_jobs.models import DocumentJobEventRecord, DocumentJobRecord
+from app.domains.document_jobs.models import DocumentJobCallbackMessage, DocumentJobEventRecord, DocumentJobRecord
 from app.domains.jobs.models import (
     JobEvent,
     JobFile,
@@ -73,6 +73,7 @@ class _FakeMysqlDatabase:
         self.file_retention_cleanup_locks: dict[str, dict[str, Any]] = {}
         self.file_retention_cleanup_runs: dict[str, dict[str, Any]] = {}
         self.document_jobs: dict[str, dict[str, Any]] = {}
+        self.document_job_callback_messages: dict[str, dict[str, Any]] = {}
         self.job_files: dict[tuple[str, str], dict[str, Any]] = {}
         self.stage_messages: dict[str, dict[str, Any]] = {}
         self.resource_versions: dict[tuple[str, str, str], dict[str, Any]] = {}
@@ -115,6 +116,7 @@ class _FakeMysqlCursor:
     def __init__(self, database: _FakeMysqlDatabase) -> None:
         self.database = database
         self._rows: list[dict[str, Any]] = []
+        self.rowcount = 0
 
     def __enter__(self) -> "_FakeMysqlCursor":
         return self
@@ -124,6 +126,7 @@ class _FakeMysqlCursor:
 
     def execute(self, sql: str, params: tuple[Any, ...] = ()) -> None:
         normalized = " ".join(sql.lower().split())
+        self.rowcount = 0
         if normalized.startswith("create table"):
             for table in (
                 "jobs",
@@ -148,6 +151,7 @@ class _FakeMysqlCursor:
                 "file_retention_cleanup_locks",
                 "file_retention_cleanup_runs",
                 "document_jobs",
+                "document_job_callback_messages",
             ):
                 if f" {table} " in normalized:
                     self.database.created_tables.add(table)
@@ -322,6 +326,98 @@ class _FakeMysqlCursor:
                     key=lambda item: (item["created_at"], item["job_id"]),
                 )
             ]
+            return
+        if normalized.startswith("insert ignore into document_job_callback_messages"):
+            message_id, job_id, status, dedupe_key, payload, created_at, updated_at = params
+            existing = next(
+                (
+                    row
+                    for row in self.database.document_job_callback_messages.values()
+                    if row["dedupe_key"] == dedupe_key
+                ),
+                None,
+            )
+            if existing is None:
+                self.database.document_job_callback_messages[message_id] = {
+                    "message_id": message_id,
+                    "job_id": job_id,
+                    "status": status,
+                    "dedupe_key": dedupe_key,
+                    "payload": payload,
+                    "created_at": created_at,
+                    "updated_at": updated_at,
+                }
+                self.rowcount = 1
+            self._rows = []
+            return
+        if normalized.startswith("select payload from document_job_callback_messages where dedupe_key"):
+            dedupe_key = params[0]
+            row = next(
+                (
+                    item
+                    for item in self.database.document_job_callback_messages.values()
+                    if item["dedupe_key"] == dedupe_key
+                ),
+                None,
+            )
+            self._rows = [{"payload": row["payload"]}] if row is not None else []
+            return
+        if normalized.startswith("select payload from document_job_callback_messages where message_id"):
+            row = self.database.document_job_callback_messages.get(params[0])
+            self._rows = [{"payload": row["payload"]}] if row is not None else []
+            return
+        if normalized.startswith("select payload from document_job_callback_messages where 1 = 1"):
+            rows = list(self.database.document_job_callback_messages.values())
+            param_index = 0
+            if "and job_id" in normalized:
+                job_id = params[param_index]
+                param_index += 1
+                rows = [row for row in rows if row["job_id"] == job_id]
+            if "and status in" in normalized:
+                status_params = list(params[param_index:])
+                if " limit " in normalized and status_params:
+                    status_params = status_params[:-1]
+                statuses = set(status_params)
+                rows = [row for row in rows if row["status"] in statuses]
+            rows = sorted(rows, key=lambda item: (item["created_at"], item["message_id"]))
+            if " limit " in normalized and params:
+                rows = rows[: int(params[-1])]
+            self._rows = [{"payload": row["payload"]} for row in rows]
+            return
+        if "from document_job_callback_messages where status in" in normalized:
+            rows = [
+                row
+                for row in self.database.document_job_callback_messages.values()
+                if row["status"] in {"pending", "running"}
+            ]
+            if "and job_id" in normalized:
+                rows = [row for row in rows if row["job_id"] == params[0]]
+            self._rows = [
+                {"payload": row["payload"]}
+                for row in sorted(rows, key=lambda item: (item["created_at"], item["message_id"]))
+            ]
+            return
+        if normalized.startswith("update document_job_callback_messages"):
+            job_id, status, dedupe_key, payload, created_at, updated_at, message_id = params
+            self.database.document_job_callback_messages[message_id] = {
+                "message_id": message_id,
+                "job_id": job_id,
+                "status": status,
+                "dedupe_key": dedupe_key,
+                "payload": payload,
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+            self._rows = []
+            return
+        if normalized.startswith("select status, count(*) as count from document_job_callback_messages"):
+            counts: dict[str, int] = {}
+            rows = list(self.database.document_job_callback_messages.values())
+            if "where job_id" in normalized:
+                rows = [row for row in rows if row["job_id"] == params[0]]
+            for row in rows:
+                counts[row["status"]] = counts.get(row["status"], 0) + 1
+            self._rows = [{"status": status, "count": count} for status, count in counts.items()]
             return
         if normalized.startswith("insert into job_files"):
             job_id, file_type, payload, created_at = params
@@ -894,9 +990,11 @@ class PersistenceAdapterTests(TestCase):
                 "translation_term_match_traces",
                 "audit_events",
                 "document_files",
+                "file_retention_policies",
                 "file_retention_cleanup_locks",
                 "file_retention_cleanup_runs",
                 "document_jobs",
+                "document_job_callback_messages",
             },
         )
 
@@ -1180,6 +1278,7 @@ class PersistenceAdapterTests(TestCase):
                 )
                 job_id = create_response.json()["job_id"]
                 detail = client.get(f"/api/v1/jobs/{job_id}").json()
+                callback_seed = runtime.job_repository.get_job(job_id).read_mineru_callback_seed()
                 callback_payload, content = build_callback_payload(
                     batch_id="batch_test_001",
                     data_id=job_id,
@@ -1188,7 +1287,7 @@ class PersistenceAdapterTests(TestCase):
                 )
                 callback_payload["checksum"] = build_callback_checksum(
                     uid="mineru-user-1",
-                    seed=detail["mineru_callback_seed"],
+                    seed=callback_seed,
                     content=content,
                 )
                 callback_response = client.post("/api/v1/mineru-callbacks/result", json=callback_payload)
@@ -1234,6 +1333,7 @@ class PersistenceAdapterTests(TestCase):
                 )
                 job_id = create_response.json()["job_id"]
                 detail = client.get(f"/api/v1/jobs/{job_id}").json()
+                callback_seed = runtime.job_repository.get_job(job_id).read_mineru_callback_seed()
                 callback_payload, content = build_callback_payload(
                     batch_id="batch_test_001",
                     data_id=job_id,
@@ -1242,7 +1342,7 @@ class PersistenceAdapterTests(TestCase):
                 )
                 callback_payload["checksum"] = build_callback_checksum(
                     uid="mineru-user-1",
-                    seed=detail["mineru_callback_seed"],
+                    seed=callback_seed,
                     content=content,
                 )
                 callback_response = client.post("/api/v1/mineru-callbacks/result", json=callback_payload)
@@ -1428,6 +1528,7 @@ class PersistenceAdapterTests(TestCase):
         cleanup_run_history_repository = adapters.file_retention_cleanup_run_history_repository
         document_job_repository = adapters.document_job_repository
         document_job_event_repository = adapters.document_job_event_repository
+        document_job_callback_message_store = adapters.document_job_callback_message_store
         stage_message_store = adapters.stage_message_store
 
         job = self._build_source_pdf_job("job_contract")
@@ -1645,6 +1746,33 @@ class PersistenceAdapterTests(TestCase):
             progress=0,
         )
         self.assertEqual(updated_document_job.status, "queued")
+        running_document_job = document_job_repository.update_document_job_if_current(
+            document_job.id,
+            allowed_statuses={"queued"},
+            allowed_stages={"uploaded"},
+            expected_retry_count=0,
+            status="running",
+            stage="parsing",
+            progress=10,
+        )
+        self.assertIsNotNone(running_document_job)
+        self.assertEqual(running_document_job.stage, "parsing")
+        canceled_document_job = document_job_repository.update_document_job(
+            document_job.id,
+            status="canceled",
+            stage="canceled",
+        )
+        skipped_document_job_update = document_job_repository.update_document_job_if_current(
+            document_job.id,
+            allowed_statuses={"running"},
+            allowed_stages={"parsing"},
+            expected_retry_count=0,
+            status="succeeded",
+            stage="completed",
+        )
+        self.assertIsNone(skipped_document_job_update)
+        self.assertEqual(canceled_document_job.status, "canceled")
+        self.assertEqual(document_job_repository.get_document_job(document_job.id).status, "canceled")
         with self.assertRaises(ValidationError):
             document_job_repository.update_document_job(document_job.id, status="succeeded", stage="uploaded")
         self.assertEqual([record.id for record in document_job_repository.list_document_jobs()], [document_job.id])
@@ -1665,6 +1793,49 @@ class PersistenceAdapterTests(TestCase):
         document_job_events = document_job_event_repository.list_document_job_events(document_job.id)
         self.assertEqual([event.event_type for event in document_job_events], ["job_created"])
         self.assertEqual(document_job_events[0].trace_id, "trace_docjob")
+
+        callback_message = DocumentJobCallbackMessage(
+            id="doccb_contract",
+            job_id=document_job.id,
+            job_retry_count=0,
+            dedupe_key="dedupe_contract",
+            payload={"state": "done", "full_zip_url": "https://mineru.net/result.zip"},
+            trace_id="trace_callback",
+        )
+        stored_callback_message, callback_created = document_job_callback_message_store.put_or_get_callback_message(callback_message)
+        duplicate_callback_message, duplicate_created = document_job_callback_message_store.put_or_get_callback_message(
+            callback_message.model_copy(update={"id": "doccb_duplicate"})
+        )
+        self.assertTrue(callback_created)
+        self.assertFalse(duplicate_created)
+        self.assertEqual(duplicate_callback_message.id, stored_callback_message.id)
+        self.assertEqual(
+            [message.id for message in document_job_callback_message_store.list_callback_messages(document_job.id)],
+            ["doccb_contract"],
+        )
+        self.assertEqual(document_job_callback_message_store.count_callback_messages_by_status(document_job.id)["pending"], 1)
+        self.assertEqual(document_job_callback_message_store.count_callback_messages_by_status("docjob_missing")["pending"], 0)
+        self.assertEqual(
+            [message.id for message in document_job_callback_message_store.list_replayable_callback_messages(document_job.id)],
+            ["doccb_contract"],
+        )
+        running_callback_message = document_job_callback_message_store.mark_callback_message_running(
+            "doccb_contract",
+            attempts=1,
+            lease_owner="worker",
+            leased_at=utc_now(),
+            lease_expires_at=utc_now() + timedelta(seconds=60),
+            updated_at=utc_now(),
+        )
+        self.assertIsNotNone(running_callback_message)
+        self.assertEqual(running_callback_message.status, "running")
+        processed_callback_message = document_job_callback_message_store.mark_callback_message_processed(
+            "doccb_contract",
+            updated_at=utc_now(),
+        )
+        self.assertEqual(processed_callback_message.status, "processed")
+        self.assertEqual(document_job_callback_message_store.count_callback_messages_by_status()["processed"], 1)
+        self.assertEqual(document_job_callback_message_store.list_replayable_callback_messages(document_job.id), [])
 
         pending = JobStageMessage(
             id="msg_pending",

@@ -6,6 +6,7 @@ import { setUnauthorizedHandler } from "@/api/client";
 import AppLayout from "@/layouts/AppLayout.vue";
 import AuditLogPage from "@/pages/AuditLogPage.vue";
 import FileRetentionPage from "@/pages/FileRetentionPage.vue";
+import ForbiddenPage from "@/pages/ForbiddenPage.vue";
 import JobCreatePage from "@/pages/JobCreatePage.vue";
 import JobDetailPage from "@/pages/JobDetailPage.vue";
 import JobsPage from "@/pages/JobsPage.vue";
@@ -40,63 +41,70 @@ const router = createRouter({
       meta: { requiresAuth: true },
       children: [
         { path: "", redirect: "/jobs" },
-        { path: "jobs", name: "jobs", component: JobsPage },
-        { path: "jobs/new", name: "job-create", component: JobCreatePage },
-        { path: "jobs/:jobId", name: "job-detail", component: JobDetailPage, props: true },
-        { path: "jobs/:jobId/translation-qa", name: "job-translation-qa", component: TranslationResultQaPage, props: true },
-        { path: "translation-qa", name: "translation-qa", component: TranslationQaQueuePage },
-        { path: "settings", name: "settings", component: SettingsHomePage, meta: { roles: ["admin"] } },
-        { path: "settings/templates", name: "settings-templates", component: TemplateListPage, meta: { roles: ["admin"] } },
+        { path: "forbidden", name: "forbidden", component: ForbiddenPage },
+        { path: "jobs", name: "jobs", component: JobsPage, meta: { permissions: ["document_jobs:read"] } },
+        { path: "jobs/new", name: "job-create", component: JobCreatePage, meta: { permissions: ["document_jobs:create"] } },
+        { path: "jobs/:jobId", name: "job-detail", component: JobDetailPage, props: true, meta: { permissions: ["document_jobs:read"] } },
+        {
+          path: "jobs/:jobId/translation-qa",
+          name: "job-translation-qa",
+          component: TranslationResultQaPage,
+          props: true,
+          meta: { permissions: ["translation_qa:read"] },
+        },
+        { path: "translation-qa", name: "translation-qa", component: TranslationQaQueuePage, meta: { permissions: ["translation_qa:read"] } },
+        { path: "settings", name: "settings", component: SettingsHomePage, meta: { permissions: ["settings:read"] } },
+        { path: "settings/templates", name: "settings-templates", component: TemplateListPage, meta: { permissions: ["settings:read"] } },
         {
           path: "settings/term-rule-sets",
           name: "settings-term-rule-sets",
           component: TermRuleSetPage,
-          meta: { roles: ["admin"] },
+          meta: { permissions: ["settings:read"] },
         },
         {
           path: "settings/term-rules",
           name: "settings-term-rules",
           component: TermRuleWorkbenchPage,
-          meta: { roles: ["admin"] },
+          meta: { permissions: ["settings:read"] },
         },
         {
           path: "settings/translation-profiles",
           name: "settings-translation-profiles",
           component: TranslationProfilesPage,
-          meta: { roles: ["admin"] },
+          meta: { permissions: ["settings:read"] },
         },
         {
           path: "settings/translation-term-sets",
           name: "settings-translation-term-sets",
           component: TranslationTermSetPage,
-          meta: { roles: ["admin"] },
+          meta: { permissions: ["settings:read"] },
         },
         {
           path: "settings/templates/:templateId",
           name: "settings-template-detail",
           component: TemplateDetailPage,
           props: true,
-          meta: { roles: ["admin"] },
+          meta: { permissions: ["settings:read"] },
         },
-        { path: "term-proposals", name: "term-proposals", component: TermProposalsPage },
-        { path: "system-status", name: "system-status", component: SystemStatusPage, meta: { roles: ["admin"] } },
+        { path: "term-proposals", name: "term-proposals", component: TermProposalsPage, meta: { permissions: ["term_proposals:read"] } },
+        { path: "system-status", name: "system-status", component: SystemStatusPage, meta: { permissions: ["system:read"] } },
         {
           path: "system-status/ops-dashboard",
           name: "system-status-ops-dashboard",
           component: OpsDashboardPage,
-          meta: { roles: ["admin"] },
+          meta: { permissions: ["ops:read"] },
         },
         {
           path: "system-status/audit-events",
           name: "system-status-audit-events",
           component: AuditLogPage,
-          meta: { roles: ["admin"] },
+          meta: { permissions: ["audit:read"] },
         },
         {
           path: "system-status/file-retention",
           name: "system-status-file-retention",
           component: FileRetentionPage,
-          meta: { roles: ["admin"] },
+          meta: { permissions: ["files:retention"] },
         },
       ],
     },
@@ -128,11 +136,23 @@ function authFailureReason(caught: unknown): string {
   return "invalid_token";
 }
 
-function routeRoles(to: RouteLocationNormalized): string[] {
-  if (!Array.isArray(to.meta.roles)) {
-    return [];
+function routeMetaList(to: RouteLocationNormalized, key: "roles" | "permissions"): string[] {
+  const values: string[] = [];
+  for (const record of to.matched) {
+    const rawValue = record.meta[key];
+    if (Array.isArray(rawValue)) {
+      values.push(...rawValue.filter((value): value is string => typeof value === "string"));
+    }
   }
-  return to.meta.roles.filter((role): role is string => typeof role === "string");
+  return values;
+}
+
+function routeRoles(to: RouteLocationNormalized): string[] {
+  return routeMetaList(to, "roles");
+}
+
+function routePermissions(to: RouteLocationNormalized): string[] {
+  return routeMetaList(to, "permissions");
 }
 
 router.beforeEach(async (to) => {
@@ -166,7 +186,18 @@ router.beforeEach(async (to) => {
 
   const allowedRoles = routeRoles(to);
   if (allowedRoles.length > 0 && !allowedRoles.includes(auth.user?.role ?? "")) {
-    return "/jobs";
+    return {
+      path: "/forbidden",
+      query: { from: to.fullPath, required: allowedRoles.join(",") },
+    };
+  }
+
+  const requiredPermissions = routePermissions(to);
+  if (requiredPermissions.length > 0 && !requiredPermissions.every((permission) => auth.hasPermission(permission))) {
+    return {
+      path: "/forbidden",
+      query: { from: to.fullPath, required: requiredPermissions.join(",") },
+    };
   }
 
   return true;

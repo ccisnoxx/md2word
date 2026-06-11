@@ -17,7 +17,7 @@
     <ApiErrorAlert :error="error" />
 
     <el-alert type="info" title="safe operations" :closable="false" show-icon>
-      此页面不会恢复 MinerU 结果、cleanup、真实 provider cancellation 或真实删除；文档任务重试、取消、归档只复用 document-jobs 既有受控端点。
+      此页面不会同步恢复 MinerU 结果、cleanup、真实 provider cancellation 或真实删除；文档任务 replay 只投递 Worker 或清理终态 callback。
     </el-alert>
 
     <section v-loading="loading" class="summary-grid" aria-label="运维摘要">
@@ -46,6 +46,12 @@
         <span>Stage queue</span>
         <strong>{{ queuePressureLabel }}</strong>
         <small>failed {{ stageFailedCount }} · stale {{ staleRunningCount }} · replayable {{ replayableCount }}</small>
+      </article>
+
+      <article class="summary-card">
+        <span>Callbacks</span>
+        <strong>{{ callbackPressureLabel }}</strong>
+        <small>failed {{ callbackFailedCount }} · replayable {{ callbackReplayableCount }}</small>
       </article>
 
       <article class="summary-card">
@@ -686,13 +692,12 @@
             <el-form-item label="Target Type">
               <el-select v-model="providerCancellationForm.targetType">
                 <el-option label="document_job" value="document_job" />
-                <el-option label="legacy_job" value="legacy_job" />
               </el-select>
             </el-form-item>
             <el-form-item label="Target ID">
               <el-input
                 v-model.trim="providerCancellationForm.targetId"
-                placeholder="输入精确 document job 或 legacy job ID"
+                placeholder="输入精确 document job ID"
                 clearable
                 class="mono"
               />
@@ -886,7 +891,7 @@
         <div class="section-header">
           <div>
             <h2 class="section-title">Worker / Queue</h2>
-            <p class="section-subtitle">来自 health readiness 和 metrics 的 stage message 观察值。</p>
+            <p class="section-subtitle">来自 health readiness 和 metrics 的 stage message 与 callback message 观察值。</p>
           </div>
           <router-link to="/system-status">系统状态</router-link>
         </div>
@@ -1006,17 +1011,28 @@
           </el-table-column>
           <el-table-column label="Recovery" min-width="180" fixed="right">
             <template #default="{ row }">
-              <el-button
-                size="small"
-                type="danger"
-                :icon="CircleClose"
-                :loading="isPreviewingJobAction(row.id, 'cancel') || isExecutingJobAction(row.id, 'cancel')"
-                :disabled="!canCancelDocumentJob(row)"
-                :title="documentJobActionDisabledReason(row, 'cancel')"
-                @click="previewJobRecoveryAction(row, 'cancel')"
-              >
-                取消预览
-              </el-button>
+              <div class="job-recovery-actions">
+                <el-button
+                  size="small"
+                  type="primary"
+                  :icon="RefreshRight"
+                  :loading="isPreviewingJobAction(row.id, 'replay') || isExecutingJobAction(row.id, 'replay')"
+                  @click="previewJobRecoveryAction(row, 'replay')"
+                >
+                  Replay 预览
+                </el-button>
+                <el-button
+                  size="small"
+                  type="danger"
+                  :icon="CircleClose"
+                  :loading="isPreviewingJobAction(row.id, 'cancel') || isExecutingJobAction(row.id, 'cancel')"
+                  :disabled="!canCancelDocumentJob(row)"
+                  :title="documentJobActionDisabledReason(row, 'cancel')"
+                  @click="previewJobRecoveryAction(row, 'cancel')"
+                >
+                  取消预览
+                </el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -1066,6 +1082,10 @@
         </el-alert>
 
         <div class="recovery-preview-grid">
+          <article v-for="item in jobRecoveryTargetSummaryItems" :key="item.label" class="recovery-preview-card">
+            <span>{{ item.label }}</span>
+            <strong>{{ item.value }}</strong>
+          </article>
           <article v-for="item in jobRecoveryRiskItems" :key="item.label" class="recovery-preview-card">
             <span>{{ item.label }}</span>
             <strong>{{ booleanLabel(item.value) }}</strong>
@@ -1076,7 +1096,7 @@
           <router-link :to="`/jobs/${jobRecoveryPreview.target.target_id}`">打开任务详情</router-link>
           <el-button
             :type="selectedJobRecoveryAction === 'cancel' ? 'danger' : selectedJobRecoveryAction === 'retry' ? 'warning' : 'primary'"
-            :icon="selectedJobRecoveryAction === 'cancel' ? CircleClose : selectedJobRecoveryAction === 'retry' ? RefreshRight : FolderChecked"
+            :icon="selectedJobRecoveryAction === 'cancel' ? CircleClose : selectedJobRecoveryAction === 'archive' ? FolderChecked : RefreshRight"
             :disabled="!canExecutePreviewedJobRecovery"
             :loading="jobRecoveryExecuting"
             @click="executePreviewedJobRecovery"
@@ -1264,7 +1284,7 @@ type MetricItem = {
   value: number | string;
 };
 
-type OpsJobRecoveryAction = "retry" | "cancel" | "archive";
+type OpsJobRecoveryAction = "retry" | "cancel" | "archive" | "replay";
 
 type OpsStatusView = {
   key: "ok" | "watch" | "needs-attention" | "unknown";
@@ -1370,6 +1390,14 @@ const stageRunningCount = computed(() => stageCount("running"));
 const stagePendingCount = computed(() => stageCount("pending"));
 const staleRunningCount = computed(() => numberCheck("stage_spool_running_stale_messages") ?? 0);
 const replayableCount = computed(() => numberCheck("stage_spool_replayable_messages") ?? 0);
+const callbackPendingCount = computed(() => callbackCount("pending"));
+const callbackRunningCount = computed(() => callbackCount("running"));
+const callbackFailedCount = computed(() => callbackCount("failed"));
+const callbackReplayableCount = computed(() => (
+  numberCheck("document_job_callback_replayable_messages")
+  ?? callbackPendingCount.value + callbackRunningCount.value
+));
+const callbackOldestReplayableAge = computed(() => numberCheck("document_job_callback_oldest_replayable_age_seconds"));
 const activeOpsAlerts = computed(() => opsAlerts.value?.alerts ?? []);
 const activeOpsAlertCodes = computed(() => activeOpsAlerts.value.map((alert) => alert.code));
 const integrationCapabilityRows = computed(() => integrationCapabilities.value?.capabilities ?? []);
@@ -1654,6 +1682,16 @@ const queuePressureLabel = computed(() => {
   return `${total} messages`;
 });
 
+const callbackPressureLabel = computed(() => {
+  if (callbackReplayableCount.value > 0) {
+    return `${callbackReplayableCount.value} replayable`;
+  }
+  if (callbackFailedCount.value > 0) {
+    return `${callbackFailedCount.value} failed`;
+  }
+  return "clear";
+});
+
 const recoveryActionSummary = computed(() => {
   const available = recoveryActions.value.filter((item) => item.available).length;
   const unavailable = recoveryActions.value.length - available;
@@ -1670,6 +1708,16 @@ const jobRecoveryRiskItems = computed(() => {
     { label: "provider", value: risk.calls_provider },
     { label: "notification", value: risk.sends_notification },
     { label: "delete", value: risk.deletes_data },
+  ];
+});
+const jobRecoveryTargetSummaryItems = computed<DetailItem[]>(() => {
+  const summary = jobRecoveryPreview.value?.target.summary || {};
+  return [
+    { label: "callback replayable", value: displayValue(summary["callback_replayable_messages"]) },
+    { label: "callback failed", value: displayValue(summary["callback_failed_messages"]) },
+    { label: "oldest callback", value: secondsLabel(readNumber(summary["callback_oldest_replayable_age_seconds"])) },
+    { label: "stale job", value: booleanLabel(readBoolean(summary["stale_job_detected"])) },
+    { label: "worker backend", value: displayValue(summary["worker_backend"]) },
   ];
 });
 const canExecutePreviewedJobRecovery = computed(() => {
@@ -1704,7 +1752,14 @@ const opsStatus = computed<OpsStatusView>(() => {
       tagType: "danger",
     };
   }
-  if (warnings.value.length > 0 || replayableCount.value > 0 || failedJobsTotal.value > 0 || runningJobsTotal.value > 0) {
+  if (
+    warnings.value.length > 0
+    || replayableCount.value > 0
+    || callbackReplayableCount.value > 0
+    || callbackFailedCount.value > 0
+    || failedJobsTotal.value > 0
+    || runningJobsTotal.value > 0
+  ) {
     return {
       key: "watch",
       label: "watch",
@@ -1782,6 +1837,26 @@ const alertItems = computed<OpsAlert[]>(() => {
       linkText: "查看运行中任务",
     });
   }
+  if (callbackFailedCount.value > 0) {
+    items.push({
+      key: "callback-failed",
+      title: `Failed callback messages: ${callbackFailedCount.value}`,
+      description: "失败的 callback message 需要结合任务详情和 replay preview 判断下一步。",
+      alertType: "error",
+      to: "/system-status/ops-dashboard",
+      linkText: "查看运维看板",
+    });
+  }
+  if (callbackReplayableCount.value > 0) {
+    items.push({
+      key: "callback-replayable",
+      title: `Replayable callback messages: ${callbackReplayableCount.value}`,
+      description: "pending/running callback message 可随 Worker 恢复或手动 replay 继续处理。",
+      alertType: "warning",
+      to: "/system-status/ops-dashboard",
+      linkText: "查看运维看板",
+    });
+  }
   if (failedJobsTotal.value > 0) {
     items.push({
       key: "failed-jobs",
@@ -1813,6 +1888,11 @@ const queueMetricItems = computed<MetricItem[]>(() => [
   { label: "replayable", value: replayableCount.value },
   { label: "oldest running age", value: secondsLabel(numberCheck("stage_spool_oldest_running_age_seconds")) },
   { label: "observation", value: stringCheck("stage_spool_observation_status") },
+  { label: "callback pending", value: callbackPendingCount.value },
+  { label: "callback running", value: callbackRunningCount.value },
+  { label: "callback failed", value: callbackFailedCount.value },
+  { label: "callback replayable", value: callbackReplayableCount.value },
+  { label: "oldest callback age", value: secondsLabel(callbackOldestReplayableAge.value) },
 ]);
 
 const runtimeItems = computed<DetailItem[]>(() => [
@@ -1825,6 +1905,8 @@ const runtimeItems = computed<DetailItem[]>(() => [
   { label: "p0_document_jobs_ready", value: booleanLabel(p0DocumentJobsReady.value) },
   { label: "document_jobs_stale", value: String(numberCheck("document_jobs_running_stale_count") ?? 0) },
   { label: "document_jobs_timed_out", value: String(numberCheck("document_jobs_timed_out_count") ?? 0) },
+  { label: "callback_replayable", value: String(callbackReplayableCount.value) },
+  { label: "callback_failed", value: String(callbackFailedCount.value) },
   { label: "artifact_storage", value: metrics.value?.artifact_storage || stringCheck("artifact_storage") },
   { label: "artifact_root_writable", value: booleanLabel(booleanCheck("artifact_root_writable")) },
   { label: "artifact_disk_free", value: formatOptionalBytes(numberCheck("artifact_disk_free_bytes")) },
@@ -1909,6 +1991,9 @@ async function loadDashboard(): Promise<void> {
 }
 
 function jobRecoveryActionId(action: OpsJobRecoveryAction): string {
+  if (action === "replay") {
+    return "document_job.replay_execution";
+  }
   return `document_job.${action}`;
 }
 
@@ -1921,6 +2006,9 @@ function jobRecoveryActionLabel(action: OpsJobRecoveryAction | null): string {
   }
   if (action === "archive") {
     return "归档";
+  }
+  if (action === "replay") {
+    return "重放执行";
   }
   return "任务动作";
 }
@@ -1966,9 +2054,12 @@ async function executePreviewedJobRecovery(): Promise<void> {
     return;
   }
   const jobId = preview.target.target_id;
+  const confirmationText = action === "replay"
+    ? `将对任务 ${jobId} 执行重放。该操作只投递 Worker 或清理终态 callback，不会在本次 HTTP 请求中调用 provider。`
+    : `将对任务 ${jobId} 执行${jobRecoveryActionLabel(action)}。该操作复用 document-jobs 既有端点，不会调用 provider 或删除文件。`;
   try {
     await ElMessageBox.confirm(
-      `将对任务 ${jobId} 执行${jobRecoveryActionLabel(action)}。该操作复用 document-jobs 既有端点，不会调用 provider 或删除文件。`,
+      confirmationText,
       `确认${jobRecoveryActionLabel(action)}`,
       { type: action === "cancel" ? "warning" : "info" },
     );
@@ -1983,10 +2074,22 @@ async function executePreviewedJobRecovery(): Promise<void> {
       await documentJobsApi.retry(jobId, { reason: "ops dashboard recovery preview" });
     } else if (action === "cancel") {
       await documentJobsApi.cancel(jobId);
-    } else {
+    } else if (action === "archive") {
       await documentJobsApi.archive(jobId);
+    } else {
+      const response = await opsRecoveryActionsApi.execute({
+        action_id: jobRecoveryActionId(action),
+        target_type: "document_job",
+        target_id: jobId,
+        reason: "ops dashboard replay execution",
+      });
+      ElMessage.success(
+        `Replay 已执行：queued=${response.queued_task_id || "none"}，ignored=${response.ignored_callback_messages}。`,
+      );
     }
-    ElMessage.success(`任务已${jobRecoveryActionLabel(action)}。`);
+    if (action !== "replay") {
+      ElMessage.success(`任务已${jobRecoveryActionLabel(action)}。`);
+    }
     jobRecoveryPreview.value = null;
     selectedJobRecoveryAction.value = null;
     await loadDashboard();
@@ -2310,6 +2413,20 @@ function booleanCheck(key: string): boolean | null {
 function numberCheck(key: string): number | null {
   const value = checkValue(key);
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function readNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function readBoolean(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+function callbackCount(status: string): number {
+  return metrics.value?.document_job_callback_messages?.[status]
+    ?? numberCheck(`document_job_callback_${status}_messages`)
+    ?? 0;
 }
 
 // 将布尔值转成运维界面短标签。

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
-from app.domains.jobs.models import utc_now
+from app.domains.resources.models import utc_now
 from app.domains.ops.schemas import OpsAlertDeliveryChannel
 
 

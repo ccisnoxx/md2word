@@ -9,7 +9,7 @@ from typing import Literal
 
 from app.core.config import Settings
 from app.domains.files.service import S3_DELETE_FAKE_CONTRACT_VERSION
-from app.domains.jobs.models import utc_now
+from app.domains.resources.models import utc_now
 
 
 S3_DELETE_ADAPTER_CONTRACT_VERSION = "ops-s3-delete-adapter-v1"

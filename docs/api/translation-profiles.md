@@ -89,14 +89,14 @@ last_reviewed: 2026-06-01
 - 审计：成功后写 `translation_profile.rollback`，`target_id={profile_id}@{version}`。
 - 关键语义：rollback 只切默认指针，不修改任何历史 published payload。
 
-## Jobs 绑定边界
+## Document Jobs 绑定边界
 
-`POST /api/v1/jobs` 和 `POST /api/v1/jobs/pdf` 可在 `translation_mode=en2zh` 时传：
+`POST /api/v1/document-jobs` 可在 `mode=en2zh_pdf_to_word` 时传：
 
 - `translation_profile_id`
 - `translation_profile_version`
 
-MySQL resource mode 下，不传时绑定当前默认 published profile；显式传版本时绑定指定 published version。`translation_mode=direct` 不能传 Translation Profile。file / sqlite backend 下显式传 profile selection 会返回 `503`。
+MySQL resource mode 下，不传时绑定当前默认 published profile；显式传版本时绑定指定 published version。`mode=direct_pdf_to_word` 不能传 Translation Profile。file / sqlite backend 下显式传 profile selection 会返回 `503`。
 
 ## 常见状态
 

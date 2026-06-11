@@ -55,30 +55,10 @@ entries:
     category: endpoint
     source_files:
       - app/api/v1/router.py
-      - app/domains/jobs/router.py
-      - app/domains/jobs/ingest_router.py
-      - app/domains/jobs/query_router.py
-      - app/domains/jobs/ops_router.py
-      - app/domains/jobs/presenters.py
-      - app/api/dependencies.py
-      - app/domains/audit/models.py
-      - app/domains/audit/service.py
-      - app/domains/jobs/models.py
-      - app/domains/jobs/command.py
-      - app/domains/jobs/lifecycle.py
-      - app/domains/jobs/query.py
-      - app/domains/jobs/resource_snapshots.py
-      - app/domains/jobs/stage.py
-      - app/clients/mineru_client.py
-      - app/domains/jobs/artifact_storage.py
-      - app/domains/jobs/artifacts.py
-      - app/domains/jobs/object_artifact_storage.py
-      - app/domains/jobs/artifact_retention.py
-      - app/domains/jobs/schemas.py
       - docs/api/openapi.json
     doc_path: docs/api/jobs.md
-    status: current
-    note: "Jobs endpoint family，包括上传 MinerU zip、PDF 在线提交、主动查询恢复、查询、下载、本地运维动作和成功动作审计。"
+    status: removed
+    note: "Legacy /api/v1/jobs endpoint family 已从 v1 router 移除；新客户端使用 Files + Document Jobs。"
   - entry: files
     category: endpoint
     source_files:
@@ -124,14 +104,13 @@ entries:
       - app/api/v1/router.py
       - app/domains/jobs/mineru_callbacks_router.py
       - app/api/dependencies.py
-      - app/domains/jobs/command.py
-      - app/domains/jobs/stage.py
       - app/domains/jobs/mineru_callback.py
       - app/core/config.py
-      - app/domains/jobs/schemas.py
+      - app/domains/document_jobs/execution.py
+      - app/domains/document_jobs/schemas.py
     doc_path: docs/api/mineru-callbacks.md
     status: current
-    note: "MinerU callback ingress、鉴权、payload 归一化和结果地址安全校验。"
+    note: "Document Jobs 的 MinerU callback ingress、鉴权、payload 归一化和结果地址安全校验。"
   - entry: templates
     category: endpoint
     source_files:

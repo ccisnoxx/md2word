@@ -5,14 +5,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from fastapi import status
 
 from app.core.errors import ApiError
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.document_jobs.repository import DocumentJobRepositoryProtocol
-from app.domains.jobs.models import JobRecord, utc_now
-from app.domains.jobs.repository import JobSnapshotRepositoryProtocol
+from app.domains.resources.models import utc_now
 from app.domains.ops.schemas import (
     OpsRecoveryActionCategory,
     OpsRecoveryActionPreviewRequest,
@@ -27,7 +27,6 @@ from app.domains.ops.schemas import (
 
 
 TERMINAL_DOCUMENT_JOB_STATUSES = {"succeeded", "failed", "canceled"}
-TERMINAL_LEGACY_JOB_STATUSES = {"completed", "failed", "canceled"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +53,27 @@ class OpsRecoveryActionDefinition:
 
 
 OPS_RECOVERY_ACTIONS: tuple[OpsRecoveryActionDefinition, ...] = (
+    OpsRecoveryActionDefinition(
+        action_id="document_job.replay_execution",
+        label="Document job replay execution",
+        category="recovery",
+        target_type="document_job",
+        available=True,
+        requires_admin=True,
+        requires_reason=True,
+        requires_confirmation=False,
+        dry_run_supported=True,
+        mutates_metadata=True,
+        mutates_queue=True,
+        calls_provider=False,
+        sends_notification=False,
+        deletes_data=False,
+        audit_action="document_job.replay_execution",
+        known_gaps=(
+            "MVP 不提供数据库级 atomic claim；执行只投递 document_jobs Worker 或清理终态 callback message。",
+        ),
+        suggested_route="/system-status/ops-dashboard",
+    ),
     OpsRecoveryActionDefinition(
         action_id="document_job.retry",
         label="Document job retry",
@@ -110,82 +130,6 @@ OPS_RECOVERY_ACTIONS: tuple[OpsRecoveryActionDefinition, ...] = (
         audit_action="document_job.archive",
         known_gaps=("归档只隐藏默认列表，不删除文件或事件；本 preview 不执行。",),
         suggested_route="/jobs?sort=updated_at_desc",
-    ),
-    OpsRecoveryActionDefinition(
-        action_id="legacy_job.retry",
-        label="Legacy job retry",
-        category="recovery",
-        target_type="legacy_job",
-        available=True,
-        requires_admin=True,
-        requires_reason=True,
-        requires_confirmation=False,
-        dry_run_supported=True,
-        mutates_metadata=True,
-        mutates_queue=True,
-        calls_provider=False,
-        sends_notification=False,
-        deletes_data=False,
-        audit_action="job.retry",
-        known_gaps=("实际执行会重置 job 并投递 stage message；source_pdf 后续可能调用 MinerU。",),
-        suggested_route=None,
-    ),
-    OpsRecoveryActionDefinition(
-        action_id="legacy_job.cancel",
-        label="Legacy job cancel",
-        category="cancellation",
-        target_type="legacy_job",
-        available=True,
-        requires_admin=True,
-        requires_reason=True,
-        requires_confirmation=True,
-        dry_run_supported=True,
-        mutates_metadata=True,
-        mutates_queue=True,
-        calls_provider=False,
-        sends_notification=False,
-        deletes_data=False,
-        audit_action="job.cancel",
-        known_gaps=("实际执行会删除 replayable stage messages；本 preview 不触碰队列。",),
-        suggested_route=None,
-    ),
-    OpsRecoveryActionDefinition(
-        action_id="legacy_job.recover_mineru_result",
-        label="Legacy job recover MinerU result",
-        category="recovery",
-        target_type="legacy_job",
-        available=True,
-        requires_admin=True,
-        requires_reason=True,
-        requires_confirmation=True,
-        dry_run_supported=True,
-        mutates_metadata=True,
-        mutates_queue=True,
-        calls_provider=True,
-        sends_notification=False,
-        deletes_data=False,
-        audit_action=None,
-        known_gaps=("现有执行入口会同步查询 MinerU 且缺少 reason/audit；本 preview 只检查 metadata。",),
-        suggested_route=None,
-    ),
-    OpsRecoveryActionDefinition(
-        action_id="legacy_job.cleanup_local_files",
-        label="Legacy job cleanup local files",
-        category="cleanup",
-        target_type="legacy_job",
-        available=True,
-        requires_admin=True,
-        requires_reason=True,
-        requires_confirmation=True,
-        dry_run_supported=True,
-        mutates_metadata=False,
-        mutates_queue=False,
-        calls_provider=False,
-        sends_notification=False,
-        deletes_data=True,
-        audit_action="job.cleanup_local_files",
-        known_gaps=("现有执行入口无 dry-run 且会删除本地 work dir；本 preview 不返回本地路径。",),
-        suggested_route=None,
     ),
     OpsRecoveryActionDefinition(
         action_id="provider.cancel",
@@ -254,14 +198,12 @@ class OpsRecoveryActionService:
         self,
         *,
         document_job_repository: DocumentJobRepositoryProtocol,
-        job_repository: JobSnapshotRepositoryProtocol,
         document_job_max_retries: int,
-        mineru_api_token_configured: bool,
+        document_job_recovery_service: Any | None = None,
     ) -> None:
         self.document_job_repository = document_job_repository
-        self.job_repository = job_repository
         self.document_job_max_retries = document_job_max_retries
-        self.mineru_api_token_configured = mineru_api_token_configured
+        self.document_job_recovery_service = document_job_recovery_service
 
     def list_registry(self) -> OpsRecoveryActionRegistryResponse:
         """返回完整 registry，不读取 provider、不写审计、不修改状态。"""
@@ -285,8 +227,6 @@ class OpsRecoveryActionService:
         action_response = self._build_action_response(action)
         if action.target_type == "document_job":
             return self._preview_document_job_action(action_response, request.target_id)
-        if action.target_type == "legacy_job":
-            return self._preview_legacy_job_action(action_response, request.target_id)
         return self._preview_candidate_only_action(action_response, request.target_id)
 
     def _get_action_definition(self, action_id: str) -> OpsRecoveryActionDefinition:
@@ -302,9 +242,6 @@ class OpsRecoveryActionService:
 
         available = action.available
         known_gaps = list(action.known_gaps)
-        if action.action_id == "legacy_job.recover_mineru_result" and not self.mineru_api_token_configured:
-            available = False
-            known_gaps.append("MINERU_API_TOKEN 未配置，主动查询 MinerU 结果不可执行。")
         return OpsRecoveryActionResponse(
             action_id=action.action_id,
             label=action.label,
@@ -339,6 +276,8 @@ class OpsRecoveryActionService:
             missing_gates.append("target_not_found")
         elif job.archived_at is not None:
             missing_gates.append("target_archived")
+        elif action.action_id == "document_job.replay_execution":
+            return self._preview_document_job_replay_action(action, target_id)
         elif action.action_id == "document_job.retry":
             self._append_document_job_retry_gates(job, missing_gates)
         elif action.action_id == "document_job.cancel":
@@ -352,34 +291,36 @@ class OpsRecoveryActionService:
             missing_gates=missing_gates,
         )
 
-    def _preview_legacy_job_action(
+    def _preview_document_job_replay_action(
         self,
         action: OpsRecoveryActionResponse,
         target_id: str,
     ) -> OpsRecoveryActionPreviewResponse:
-        """读取 legacy job metadata 并计算动作 eligibility。"""
+        """通过 document_jobs recovery service 读取 replay eligibility。"""
 
-        job = self.job_repository.get_job(target_id)
-        target = self._build_legacy_job_target(action.target_type, target_id, job)
-        missing_gates: list[str] = []
-        if job is None:
-            missing_gates.append("target_not_found")
-        elif action.action_id == "legacy_job.retry" and job.projected_status() != "failed":
-            missing_gates.append("status_not_failed")
-        elif action.action_id == "legacy_job.cancel":
-            if job.projected_status() in TERMINAL_LEGACY_JOB_STATUSES:
-                missing_gates.append("status_not_cancelable")
-            if job.resolved_execution_status() == "converting":
-                missing_gates.append("converting_cannot_be_interrupted")
-        elif action.action_id == "legacy_job.recover_mineru_result":
-            self._append_legacy_mineru_recovery_gates(job, missing_gates)
-        elif action.action_id == "legacy_job.cleanup_local_files":
-            if job.resolved_lifecycle_status() != "completed" or job.resolved_execution_status() != "idle":
-                missing_gates.append("status_not_cleanup_eligible")
+        if self.document_job_recovery_service is None:
+            job = self.document_job_repository.get_document_job(target_id)
+            target = self._build_document_job_target(action.target_type, target_id, job)
+            return self._build_preview_response(
+                action=action,
+                target=target,
+                missing_gates=["recovery_service_unavailable"],
+            )
+        replay_preview = self.document_job_recovery_service.preview_replay(target_id)
+        target = self._build_document_job_target(action.target_type, target_id, replay_preview.job)
+        target.summary.update({
+            "callback_replayable_messages": replay_preview.callback_observation.replayable_count,
+            "callback_oldest_replayable_age_seconds": replay_preview.callback_observation.oldest_replayable_age_seconds,
+            "callback_failed_messages": replay_preview.callback_observation.status_counts.get("failed", 0),
+            "stale_job_detected": replay_preview.stale_job_detected,
+            "worker_backend": replay_preview.worker_backend,
+            "automatic_execution_enabled": replay_preview.automatic_execution_enabled,
+        })
         return self._build_preview_response(
             action=action,
             target=target,
-            missing_gates=missing_gates,
+            missing_gates=replay_preview.missing_gates,
+            extra_warnings=replay_preview.warnings,
         )
 
     def _preview_candidate_only_action(
@@ -415,39 +356,27 @@ class OpsRecoveryActionService:
         if job.error_code in {"document_job_invalid_input"}:
             missing_gates.append("failure_not_retryable")
 
-    def _append_legacy_mineru_recovery_gates(self, job: JobRecord, missing_gates: list[str]) -> None:
-        """为 legacy MinerU recovery 补充 provider 配置和 source_pdf metadata gate。"""
-
-        if job.source_kind != "source_pdf":
-            missing_gates.append("source_kind_not_source_pdf")
-        if not self.mineru_api_token_configured:
-            missing_gates.append("mineru_api_token_missing")
-        if job.resolved_execution_status() != "parsing":
-            missing_gates.append("execution_status_not_parsing")
-        if job.projected_status() in {"completed", "canceled"}:
-            missing_gates.append("status_terminal")
-        if not job.read_mineru_batch_id():
-            missing_gates.append("mineru_batch_id_missing")
-
     def _build_preview_response(
         self,
         *,
         action: OpsRecoveryActionResponse,
         target: OpsRecoveryActionTargetPreviewResponse,
         missing_gates: list[str],
+        extra_warnings: list[str] | None = None,
     ) -> OpsRecoveryActionPreviewResponse:
         """组装统一 preview 响应并附加只读安全声明。"""
 
         unique_missing_gates = _unique_preserve_order(missing_gates)
         if not action.available and "action_not_available" not in unique_missing_gates:
             unique_missing_gates.insert(0, "action_not_available")
+        warnings = _unique_preserve_order([*action.known_gaps, *(extra_warnings or [])])
         return OpsRecoveryActionPreviewResponse(
             generated_at=utc_now(),
             action=action,
             target=target,
             eligible=target.exists and action.available and not unique_missing_gates,
             missing_gates=unique_missing_gates,
-            warnings=action.known_gaps,
+            warnings=warnings,
             risk_flags=self._build_risk_flags(action),
             audit_action=action.audit_action,
             safety=self._build_safety(),
@@ -475,33 +404,6 @@ class OpsRecoveryActionService:
                 "created_by": job.created_by,
                 "updated_at": _format_datetime(job.updated_at),
                 "failed_stage": job.failed_stage,
-                "error_code": job.error_code,
-            },
-        )
-
-    def _build_legacy_job_target(
-        self,
-        target_type: OpsRecoveryActionTargetType,
-        target_id: str,
-        job: JobRecord | None,
-    ) -> OpsRecoveryActionTargetPreviewResponse:
-        """把 legacy job 记录映射为不含路径、object key 或 provider secret 的 preview target。"""
-
-        if job is None:
-            return OpsRecoveryActionTargetPreviewResponse(target_type=target_type, target_id=target_id, exists=False)
-        return OpsRecoveryActionTargetPreviewResponse(
-            target_type=target_type,
-            target_id=target_id,
-            exists=True,
-            status=job.projected_status(),
-            stage=job.resolved_execution_status(),
-            summary={
-                "source_kind": job.source_kind,
-                "lifecycle_status": job.resolved_lifecycle_status(),
-                "execution_status": job.resolved_execution_status(),
-                "has_mineru_batch_id": bool(job.read_mineru_batch_id()),
-                "result_ready": job.result_ready,
-                "updated_at": _format_datetime(job.updated_at),
                 "error_code": job.error_code,
             },
         )

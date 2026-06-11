@@ -43,7 +43,11 @@ export function normalizeApiErrorBody(
     readString(nestedError.message) ||
     readString(body.error) ||
     "请求失败，请稍后重试。";
-  const responseTraceId = readString(nestedError.trace_id) || readString(body.trace_id);
+  const responseTraceId =
+    readString(nestedError.request_id) ||
+    readString(nestedError.trace_id) ||
+    readString(body.request_id) ||
+    readString(body.trace_id);
 
   return {
     status,

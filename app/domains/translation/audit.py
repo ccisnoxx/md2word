@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from app.core.config import Settings
 from app.domains.document_jobs.models import DocumentJobRecord
-from app.domains.jobs.models import utc_now
+from app.domains.resources.models import utc_now
 from app.domains.translation.models import (
     TermVersionSnapshot,
     TranslationProviderRequest,

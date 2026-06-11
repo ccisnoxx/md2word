@@ -2,6 +2,8 @@
 // Purpose: Wrap Admin-only read-only operations recovery action registry APIs.
 import { apiRequest } from "@/api/client";
 import type {
+  OpsRecoveryActionExecuteRequest,
+  OpsRecoveryActionExecuteResponse,
   OpsRecoveryActionPreviewRequest,
   OpsRecoveryActionPreviewResponse,
   OpsRecoveryActionRegistryResponse,
@@ -20,6 +22,15 @@ export const opsRecoveryActionsApi = {
   preview(payload: OpsRecoveryActionPreviewRequest): Promise<OpsRecoveryActionPreviewResponse> {
     return apiRequest<OpsRecoveryActionPreviewResponse>({
       url: "/api/v1/ops/recovery-actions/preview",
+      method: "POST",
+      data: payload,
+    });
+  },
+
+  // 执行已纳入后端执行合同的 recovery action；MVP 仅支持 document_job.replay_execution。
+  execute(payload: OpsRecoveryActionExecuteRequest): Promise<OpsRecoveryActionExecuteResponse> {
+    return apiRequest<OpsRecoveryActionExecuteResponse>({
+      url: "/api/v1/ops/recovery-actions/execute",
       method: "POST",
       data: payload,
     });

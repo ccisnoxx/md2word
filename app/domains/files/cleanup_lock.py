@@ -8,7 +8,7 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, Field
 
-from app.domains.jobs.models import utc_now
+from app.domains.resources.models import utc_now
 
 
 FILE_RETENTION_CLEANUP_LOCK_NAME = "file_retention_cleanup"

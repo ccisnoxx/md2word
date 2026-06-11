@@ -13,7 +13,16 @@
           <span aria-hidden="true"></span>
           <strong>{{ loading ? "同步中" : "已同步" }}</strong>
         </div>
-        <el-button type="primary" :icon="Plus" @click="goCreateJob">创建任务</el-button>
+        <span :title="createDisabledReason">
+          <el-button
+            type="primary"
+            :icon="Plus"
+            :disabled="!canCreateJob"
+            @click="goCreateJob"
+          >
+            创建任务
+          </el-button>
+        </span>
         <el-button class="hero-refresh" :icon="Refresh" :loading="loading" @click="loadJobs">刷新任务</el-button>
       </div>
     </section>
@@ -159,6 +168,22 @@
       </div>
 
       <el-card class="jobs-table-card card-flat" shadow="never">
+        <div v-if="showEmptyState" class="empty-state" aria-live="polite">
+          <el-icon><Files /></el-icon>
+          <h3>{{ emptyStateTitle }}</h3>
+          <p>{{ emptyStateDescription }}</p>
+          <div class="empty-actions">
+            <el-button v-if="hasActiveFilters" :icon="Filter" @click="clearAllFilters">清空筛选</el-button>
+            <el-button
+              v-if="canCreateJob"
+              type="primary"
+              :icon="Plus"
+              @click="goCreateJob"
+            >
+              创建任务
+            </el-button>
+          </div>
+        </div>
         <JobTable
           :jobs="jobs"
           :loading="loading"
@@ -195,6 +220,7 @@ import type {
 import { documentJobsApi } from "@/api/documentJobs";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import JobTable from "@/components/JobTable.vue";
+import { useAuthStore } from "@/stores/auth";
 import {
   canArchiveDocumentJob,
   canCancelDocumentJob,
@@ -208,6 +234,7 @@ import { copyDownloadLink, openDownloadLink, type DownloadLinkNotice } from "@/u
 
 const router = useRouter();
 const route = useRoute();
+const auth = useAuthStore();
 const jobs = ref<DocumentJobResponse[]>([]);
 const loading = ref(false);
 const error = ref<ApiClientError | null>(null);
@@ -236,6 +263,25 @@ const sortOptions: Array<{ label: string; value: DocumentJobListSort }> = [
 ];
 
 const summaryEntries = computed(() => Object.entries(summary.value).filter(([, count]) => count > 0));
+const canCreateJob = computed(() => auth.hasPermission("document_jobs:create"));
+const createDisabledReason = computed(() => (canCreateJob.value ? "" : "当前账号没有创建 document job 的权限。"));
+const hasActiveFilters = computed(() =>
+  Boolean(
+    statusFilter.value ||
+      qaStatusFilter.value ||
+      searchKeyword.value.trim() ||
+      includeArchived.value ||
+      createdRange.value ||
+      sortFilter.value !== "created_at_desc",
+  ),
+);
+const showEmptyState = computed(() => !loading.value && !error.value && jobs.value.length === 0);
+const emptyStateTitle = computed(() => (hasActiveFilters.value ? "没有匹配的任务" : "还没有任务"));
+const emptyStateDescription = computed(() =>
+  hasActiveFilters.value
+    ? "当前筛选条件下没有 document job。清空筛选后可查看全部可见任务。"
+    : "当前账号还没有可见的 document job。可以先上传 PDF 并创建转换任务。",
+);
 const advancedFilterCount = computed(() => {
   let count = 0;
   if (sortFilter.value !== "created_at_desc") {
@@ -407,6 +453,16 @@ function applyQuickFilter(kind: "active" | "failed" | "archived"): void {
 }
 
 function resetAdvancedFilters(): void {
+  sortFilter.value = "created_at_desc";
+  includeArchived.value = false;
+  createdRange.value = null;
+  handleFilter();
+}
+
+function clearAllFilters(): void {
+  statusFilter.value = "";
+  qaStatusFilter.value = "";
+  searchKeyword.value = "";
   sortFilter.value = "created_at_desc";
   includeArchived.value = false;
   createdRange.value = null;
@@ -1007,6 +1063,47 @@ onMounted(() => {
 
 .jobs-table-card :deep(.el-card__body) {
   padding: 0;
+}
+
+.empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 36px 20px 30px;
+  border-bottom: 1px solid var(--jobs-border);
+  background: var(--jobs-surface-muted);
+  text-align: center;
+}
+
+.empty-state .el-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--jobs-primary);
+  font-size: 22px;
+}
+
+.empty-state h3 {
+  margin: 2px 0 0;
+  color: var(--jobs-text);
+  font-size: 18px;
+}
+
+.empty-state p {
+  max-width: 520px;
+  margin: 0;
+  color: var(--jobs-muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 4px;
 }
 
 .jobs-page :deep(.el-button) {

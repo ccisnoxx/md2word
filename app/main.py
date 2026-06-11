@@ -29,6 +29,7 @@ from app.domains.document_jobs.execution import (
     DocumentJobExecutionService,
     EagerDocumentJobTaskQueue,
 )
+from app.domains.document_jobs.recovery import DocumentJobRecoveryService
 from app.domains.document_jobs.service import DocumentJobService
 from app.domains.files import FileRetentionPolicyService, FileUploadService
 from app.services.document_ir import MinerUToDocumentIRService
@@ -139,6 +140,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
     file_retention_cleanup_run_history_repository = persistence_adapters.file_retention_cleanup_run_history_repository
     document_job_repository = persistence_adapters.document_job_repository
     document_job_event_repository = persistence_adapters.document_job_event_repository
+    document_job_callback_message_store = persistence_adapters.document_job_callback_message_store
     stage_message_store = persistence_adapters.stage_message_store
     audit_service = AuditService(audit_event_repository)
     auth_service = AuthService(resolved_settings)
@@ -183,6 +185,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         resolved_settings,
         document_job_repository,
         document_job_event_repository,
+        document_job_callback_message_store,
         document_file_repository,
         file_upload_service,
         document_ir_service,
@@ -193,6 +196,13 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         translation_audit_service,
     )
     document_job_task_queue = _build_document_job_task_queue(resolved_settings, document_job_execution_service)
+    document_job_recovery_service = DocumentJobRecoveryService(
+        resolved_settings,
+        document_job_repository,
+        document_job_event_repository,
+        document_job_callback_message_store,
+        document_job_task_queue,
+    )
     document_job_service = DocumentJobService(
         resolved_settings,
         document_job_repository,
@@ -305,6 +315,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         stage_dispatcher_backend=stage_dispatcher_backend,
         job_repository=job_repository,
         document_job_repository=document_job_repository,
+        document_job_callback_message_store=document_job_callback_message_store,
         audit_event_repository=audit_event_repository,
         resource_version_repository=resource_version_service.repository if resource_version_service is not None else None,
         default_template_id_getter=template_read_service.get_default_template_id,
@@ -345,6 +356,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         file_retention_cleanup_run_history_repository=file_retention_cleanup_run_history_repository,
         document_job_repository=document_job_repository,
         document_job_event_repository=document_job_event_repository,
+        document_job_callback_message_store=document_job_callback_message_store,
         audit_service=audit_service,
         auth_service=auth_service,
         file_upload_service=file_upload_service,
@@ -357,6 +369,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         document_word_renderer=document_word_renderer,
         document_job_service=document_job_service,
         document_job_execution_service=document_job_execution_service,
+        document_job_recovery_service=document_job_recovery_service,
         document_job_task_queue=document_job_task_queue,
         health_service=health_service,
         template_read_service=template_read_service,
@@ -388,12 +401,21 @@ def create_app(runtime: AppRuntime | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        replay_task = asyncio.create_task(asyncio.to_thread(app.state.runtime.stage_dispatcher.replay_pending))
+        replay_tasks = [
+            asyncio.create_task(asyncio.to_thread(app.state.runtime.stage_dispatcher.replay_pending)),
+            asyncio.create_task(
+                asyncio.to_thread(
+                    app.state.runtime.document_job_recovery_service.run_startup_recovery,
+                    trace_id="startup",
+                )
+            ),
+        ]
         try:
             yield
         finally:
-            if not replay_task.done():
-                replay_task.cancel()
+            for replay_task in replay_tasks:
+                if not replay_task.done():
+                    replay_task.cancel()
 
     app = FastAPI(title=app_runtime.settings.app_name, lifespan=lifespan)
     app.state.runtime = app_runtime

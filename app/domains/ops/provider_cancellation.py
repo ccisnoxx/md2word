@@ -14,8 +14,7 @@ from app.domains.audit.models import AuditEvent
 from app.domains.audit.repository import AuditEventRepositoryProtocol
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.document_jobs.repository import DocumentJobRepositoryProtocol
-from app.domains.jobs.models import JobRecord, utc_now
-from app.domains.jobs.repository import JobSnapshotRepositoryProtocol
+from app.domains.resources.models import utc_now
 from app.domains.ops.schemas import (
     OpsProviderCancellationMode,
     OpsProviderCancellationProvider,
@@ -27,7 +26,6 @@ PROVIDER_CANCELLATION_CONFIRMATION_PHRASE = "FAKE CANCEL PROVIDER OPERATION"
 PROVIDER_CANCELLATION_AUDIT_ACTION = "ops.provider_cancellation_fake"
 PROVIDER_CANCELLATION_FAKE_ADAPTER_VERSION = "provider-cancel-fake-v1"
 PROVIDER_CANCELLATION_FAKE_TIMEOUT_SECONDS = 0
-TERMINAL_LEGACY_JOB_STATUSES = {"completed", "failed", "canceled"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,13 +182,11 @@ class OpsProviderCancellationService:
         self,
         *,
         document_job_repository: DocumentJobRepositoryProtocol,
-        job_repository: JobSnapshotRepositoryProtocol,
         audit_event_repository: AuditEventRepositoryProtocol,
     ) -> None:
         """保存 repository 依赖并绑定当前 fake provider adapter。"""
 
         self.document_job_repository = document_job_repository
-        self.job_repository = job_repository
         self.audit_event_repository = audit_event_repository
         self.provider_cancellation_adapter = OpsProviderCancellationFakeAdapter()
 
@@ -308,7 +304,7 @@ class OpsProviderCancellationService:
             raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "target_id 不能为空。")
         if target_type == "document_job":
             return self._build_document_job_context(normalized_target_id, provider=provider)
-        return self._build_legacy_job_context(normalized_target_id, provider=provider)
+        raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", f"不支持 target_type={target_type}。")
 
     def _build_document_job_context(
         self,
@@ -340,36 +336,6 @@ class OpsProviderCancellationService:
             missing_gates.append("provider_operation_id_missing")
         return target, operation, missing_gates
 
-    def _build_legacy_job_context(
-        self,
-        target_id: str,
-        *,
-        provider: OpsProviderCancellationProvider,
-    ) -> tuple[OpsProviderCancellationTarget, OpsProviderOperation, list[str]]:
-        """读取 legacy source_pdf job provider operation 摘要并计算 gate。"""
-
-        job = self.job_repository.get_job(target_id)
-        if job is None:
-            return (
-                OpsProviderCancellationTarget(target_type="legacy_job", target_id=target_id, exists=False),
-                OpsProviderOperation(provider=provider, operation_id=None),
-                ["target_not_found"],
-            )
-        target = self._legacy_job_target(job)
-        operation = OpsProviderOperation(
-            provider=provider,
-            operation_id=job.read_mineru_batch_id(),
-            data_id=job.read_mineru_data_id(),
-        )
-        missing_gates: list[str] = []
-        if job.source_kind != "source_pdf":
-            missing_gates.append("source_kind_not_source_pdf")
-        if job.projected_status() in TERMINAL_LEGACY_JOB_STATUSES:
-            missing_gates.append("status_terminal")
-        if not job.read_mineru_batch_id():
-            missing_gates.append("provider_operation_id_missing")
-        return target, operation, missing_gates
-
     def _document_job_target(self, job: DocumentJobRecord) -> OpsProviderCancellationTarget:
         """生成 document_job 安全摘要，不暴露 callback seed。"""
 
@@ -385,25 +351,6 @@ class OpsProviderCancellationService:
                 "updated_at": job.updated_at.isoformat(),
                 "has_mineru_batch_id": bool(job.mineru_batch_id),
                 "has_mineru_data_id": bool(job.mineru_data_id),
-            },
-        )
-
-    def _legacy_job_target(self, job: JobRecord) -> OpsProviderCancellationTarget:
-        """生成 legacy job 安全摘要，不暴露路径、object key 或 callback seed。"""
-
-        return OpsProviderCancellationTarget(
-            target_type="legacy_job",
-            target_id=job.id,
-            exists=True,
-            status=job.projected_status(),
-            stage=job.resolved_execution_status(),
-            summary={
-                "source_kind": job.source_kind,
-                "lifecycle_status": job.resolved_lifecycle_status(),
-                "execution_status": job.resolved_execution_status(),
-                "has_mineru_batch_id": bool(job.read_mineru_batch_id()),
-                "has_mineru_data_id": bool(job.read_mineru_data_id()),
-                "updated_at": job.updated_at.isoformat(),
             },
         )
 

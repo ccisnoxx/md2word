@@ -299,6 +299,20 @@ MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
         KEY idx_document_jobs_created_at (created_at, job_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
+    """
+    CREATE TABLE IF NOT EXISTS document_job_callback_messages (
+        message_id VARCHAR(128) PRIMARY KEY,
+        job_id VARCHAR(128) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        dedupe_key VARCHAR(128) NOT NULL,
+        payload LONGTEXT NOT NULL,
+        created_at VARCHAR(40) NOT NULL,
+        updated_at VARCHAR(40) NOT NULL,
+        UNIQUE KEY uniq_document_job_callback_messages_dedupe_key (dedupe_key),
+        KEY idx_document_job_callback_messages_status_created_at (status, created_at, message_id),
+        KEY idx_document_job_callback_messages_job_id (job_id, status, created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
 )
 
 MYSQL_SCHEMA_MAINTENANCE_STATEMENTS: tuple[str, ...] = (

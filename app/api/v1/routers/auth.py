@@ -16,6 +16,43 @@ from app.services.auth.models import AuthenticatedUser
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+_OPERATOR_PERMISSIONS = [
+    "document_jobs:read",
+    "document_jobs:create",
+    "document_jobs:download",
+    "document_jobs:retry",
+    "document_jobs:cancel",
+    "document_jobs:archive",
+    "document_jobs:clone",
+    "translation_qa:read",
+    "translation_qa:write",
+    "term_proposals:read",
+    "term_proposals:create",
+]
+
+_ADMIN_EXTRA_PERMISSIONS = [
+    "settings:read",
+    "settings:write",
+    "system:read",
+    "ops:read",
+    "ops:write",
+    "audit:read",
+    "files:retention",
+    "term_proposals:review",
+]
+
+
+def _roles_for_user(user: AuthenticatedUser) -> list[str]:
+    return [user.role]
+
+
+def _permissions_for_user(user: AuthenticatedUser) -> list[str]:
+    permissions = list(_OPERATOR_PERMISSIONS)
+    if user.role == "admin":
+        permissions.extend(_ADMIN_EXTRA_PERMISSIONS)
+    return permissions
+
+
 @router.post("/login", response_model=AuthTokenResponse)
 def login(
     request: AuthLoginRequest,
@@ -41,6 +78,8 @@ def login(
         access_token=token.access_token,
         expires_in=token.expires_in_seconds,
         role=user.role,
+        roles=_roles_for_user(user),
+        permissions=_permissions_for_user(user),
         user_id=user.id,
         username=user.username,
         tenant_id=user.tenant_id,
@@ -54,6 +93,8 @@ def get_current_user(user: AuthenticatedUser = Depends(require_current_user)) ->
         id=user.id,
         username=user.username,
         role=user.role,
+        roles=_roles_for_user(user),
+        permissions=_permissions_for_user(user),
         tenant_id=user.tenant_id,
         company_id=user.company_id,
         display_name=user.display_name,
