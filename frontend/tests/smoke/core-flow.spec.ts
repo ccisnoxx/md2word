@@ -203,10 +203,18 @@ const translationQaUnavailableResponse = {
 type MockApiOptions = {
   configSummaryError?: boolean;
   downloadConflict?: boolean;
+  en2zhAvailable?: boolean;
   translationQaUnavailable?: boolean;
 };
 
+type DocumentJobCreatePayload = {
+  source_file_id?: string;
+  mode?: string;
+  document_language?: string;
+};
+
 type MockApiControls = {
+  createdDocumentJobPayloads: () => DocumentJobCreatePayload[];
   translationQaPatchCount: () => number;
 };
 
@@ -718,6 +726,7 @@ const fileLibrarySearch = {
 
 async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockApiControls> {
   let currentRole: MockRole = "operator";
+  const createdDocumentJobPayloads: DocumentJobCreatePayload[] = [];
   let translationQaPatchCount = 0;
 
   await page.route("**/api/v1/auth/login", async (route) => {
@@ -790,6 +799,71 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
   });
   await page.route("**/api/v1/files/quota-policy/ops-summary**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(quotaOpsSummary) });
+  });
+  await page.route("**/api/v1/files/upload-url", async (route) => {
+    const file = {
+      id: "file_upload_smoke",
+      tenant_id: "tenant_default",
+      company_id: "company_default",
+      job_id: null,
+      file_type: "source_pdf",
+      storage_provider: "local_file",
+      bucket: "local",
+      object_key: "uploads/file_upload_smoke/source.pdf",
+      original_filename: "smoke.pdf",
+      mime_type: "application/pdf",
+      size_bytes: 1024,
+      checksum_sha256: null,
+      etag: null,
+      status: "pending",
+      expires_at: "2026-06-11T00:20:00Z",
+      metadata: {},
+      created_by: "user_operator",
+      created_at: "2026-06-11T00:00:00Z",
+      updated_at: "2026-06-11T00:00:00Z",
+    };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        file_id: file.id,
+        upload_url: "/api/v1/files/file_upload_smoke/content",
+        method: "PUT",
+        headers: { "Content-Type": "application/pdf" },
+        expires_at: "2026-06-11T00:20:00Z",
+        object_key: file.object_key,
+        max_bytes: 52_428_800,
+        file,
+      }),
+    });
+  });
+  await page.route("**/api/v1/files/file_upload_smoke/content", async (route) => {
+    const file = {
+      id: "file_upload_smoke",
+      tenant_id: "tenant_default",
+      company_id: "company_default",
+      job_id: null,
+      file_type: "source_pdf",
+      storage_provider: "local_file",
+      bucket: "local",
+      object_key: "uploads/file_upload_smoke/source.pdf",
+      original_filename: "smoke.pdf",
+      mime_type: "application/pdf",
+      size_bytes: 1024,
+      checksum_sha256: null,
+      etag: null,
+      status: "uploaded",
+      expires_at: "2026-06-11T00:20:00Z",
+      metadata: {},
+      created_by: "user_operator",
+      created_at: "2026-06-11T00:00:00Z",
+      updated_at: "2026-06-11T00:00:00Z",
+    };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ file }),
+    });
   });
   await page.route("**/api/v1/files/retention/cleanup-runs/history**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(cleanupRunHistory) });
@@ -926,12 +1000,17 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        resource_mode: "repository",
+        role: currentRole,
+        resource_mode: "versioned",
         defaults: {
           template: { label: "template-default", resource_id: "template_default", version: "1" },
           term_rule_set: { label: "term-rule-default", resource_id: "term_rule_default", version: "1" },
-          translation_term_set: { label: "translation-term-default", resource_id: "translation_term_default", version: "1" },
-          translation_profile: { label: "translation-profile-default", resource_id: "translation_profile_default", version: "1" },
+          translation_term_set: options.en2zhAvailable === false
+            ? null
+            : { label: "translation-term-default", resource_id: "translation_term_default", version: "1" },
+          translation_profile: options.en2zhAvailable === false
+            ? null
+            : { label: "translation-profile-default", resource_id: "translation_profile_default", version: "1" },
         },
         options: {
           templates: [],
@@ -940,8 +1019,11 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
           translation_profiles: [],
         },
         readiness: {
+          en2zh_available: options.en2zhAvailable !== false,
           p0_document_jobs_required: true,
           p0_document_jobs_ready: true,
+          document_jobs_worker_backend: "external",
+          document_jobs_automatic_execution_enabled: true,
           blockers: [],
           warnings: [],
         },
@@ -988,10 +1070,101 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
       body: JSON.stringify(translationQaJob),
     });
   });
+  await page.route("**/api/v1/document-jobs/docjob_created_001/events", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        job_id: "docjob_created_001",
+        items: [],
+      }),
+    });
+  });
+  await page.route("**/api/v1/document-jobs/docjob_created_001/files", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        job_id: "docjob_created_001",
+        files: [],
+      }),
+    });
+  });
+  await page.route("**/api/v1/document-jobs/docjob_created_001/callback-messages/summary", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        job_id: "docjob_created_001",
+        status_counts: {},
+        replayable_count: 0,
+        oldest_replayable_age_seconds: 0,
+        recent_problem_messages: [],
+      }),
+    });
+  });
+  await page.route("**/api/v1/document-jobs/docjob_created_001", async (route) => {
+    const payload = createdDocumentJobPayloads[createdDocumentJobPayloads.length - 1];
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ...documentJob,
+        id: "docjob_created_001",
+        source_file_id: payload?.source_file_id || "file_upload_smoke",
+        mode: payload?.mode || "direct_pdf_to_word",
+        document_language: payload?.document_language || "auto",
+        status: "queued",
+        stage: "uploaded",
+        progress: 0,
+        result_file_id: null,
+        started_at: null,
+        completed_at: null,
+        request_snapshot: {
+          source_file: { original_filename: "smoke.pdf" },
+        },
+        available_actions: activeActionStates,
+        created_at: "2026-06-11T00:08:00Z",
+        updated_at: "2026-06-11T00:08:00Z",
+      }),
+    });
+  });
   await page.route("**/api/v1/document-jobs**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname !== "/api/v1/document-jobs") {
       await route.fallback();
+      return;
+    }
+    if (route.request().method() === "POST") {
+      const payload = route.request().postDataJSON() as DocumentJobCreatePayload;
+      createdDocumentJobPayloads.push(payload);
+      const job = {
+        ...documentJob,
+        id: "docjob_created_001",
+        source_file_id: payload.source_file_id || "file_upload_smoke",
+        mode: payload.mode || "direct_pdf_to_word",
+        document_language: payload.document_language || "auto",
+        status: "queued",
+        stage: "uploaded",
+        progress: 0,
+        result_file_id: null,
+        started_at: null,
+        completed_at: null,
+        available_actions: activeActionStates,
+        created_at: "2026-06-11T00:08:00Z",
+        updated_at: "2026-06-11T00:08:00Z",
+      };
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          job_id: job.id,
+          status: job.status,
+          stage: job.stage,
+          progress: job.progress,
+          job,
+        }),
+      });
       return;
     }
     const statusGroup = url.searchParams.get("status_group");
@@ -1031,6 +1204,7 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
   });
 
   return {
+    createdDocumentJobPayloads: () => createdDocumentJobPayloads,
     translationQaPatchCount: () => translationQaPatchCount,
   };
 }
@@ -1095,6 +1269,63 @@ test("operator cannot create a job when config summary is unavailable", async ({
   });
   await expect(page.getByText("已选择 smoke.pdf。")).toBeVisible();
   await expect(page.getByRole("button", { name: "创建任务" })).toBeDisabled();
+});
+
+test("operator can create an English to Chinese document job from the mode selector", async ({ page }) => {
+  const controls = await mockApi(page, { en2zhAvailable: true });
+
+  await page.goto("/login");
+  await page.getByPlaceholder("请输入用户名").fill("operator");
+  await page.getByPlaceholder("请输入密码").fill("operator-pass");
+  await page.getByRole("button", { name: "登录工作台" }).click();
+  await expect(page).toHaveURL(/\/jobs(\?|$)/);
+
+  await page.goto("/jobs/new");
+  await expect(page.getByRole("heading", { name: "创建转换任务" })).toBeVisible();
+  await expect(page.getByText("任务模式")).toBeVisible();
+  await expect(page.getByRole("radio", { name: "英译中" })).toBeEnabled();
+  await page.locator(".mode-row .el-radio-button").filter({ hasText: "英译中" }).click();
+  await page.locator("input[type='file']").setInputFiles({
+    name: "smoke.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.4\n%%EOF\n"),
+  });
+  await page.getByRole("button", { name: "创建任务" }).click();
+
+  await expect.poll(() => controls.createdDocumentJobPayloads().length).toBe(1);
+  expect(controls.createdDocumentJobPayloads()[0]).toMatchObject({
+    source_file_id: "file_upload_smoke",
+    mode: "en2zh_pdf_to_word",
+    document_language: "en",
+  });
+});
+
+test("operator sees unavailable English to Chinese mode disabled while direct mode remains creatable", async ({ page }) => {
+  const controls = await mockApi(page, { en2zhAvailable: false });
+
+  await page.goto("/login");
+  await page.getByPlaceholder("请输入用户名").fill("operator");
+  await page.getByPlaceholder("请输入密码").fill("operator-pass");
+  await page.getByRole("button", { name: "登录工作台" }).click();
+  await expect(page).toHaveURL(/\/jobs(\?|$)/);
+
+  await page.goto("/jobs/new");
+  await expect(page.getByRole("heading", { name: "创建转换任务" })).toBeVisible();
+  await expect(page.getByText("英译中需要默认翻译术语集和翻译配置发布后才能选择。")).toBeVisible();
+  await expect(page.getByRole("radio", { name: "英译中" })).toBeDisabled();
+  await page.locator("input[type='file']").setInputFiles({
+    name: "smoke.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.4\n%%EOF\n"),
+  });
+  await page.getByRole("button", { name: "创建任务" }).click();
+
+  await expect.poll(() => controls.createdDocumentJobPayloads().length).toBe(1);
+  expect(controls.createdDocumentJobPayloads()[0]).toMatchObject({
+    source_file_id: "file_upload_smoke",
+    mode: "direct_pdf_to_word",
+    document_language: "auto",
+  });
 });
 
 test("operator sees an explicit forbidden state for admin-only routes", async ({ page }) => {

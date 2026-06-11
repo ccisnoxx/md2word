@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Mode metadata should avoid scattered hardcoded behavior"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Feature touches frontend UI and backend API contract assumptions"}
