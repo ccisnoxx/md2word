@@ -1901,6 +1901,13 @@
       },
       "DocumentJobListResponse": {
         "properties": {
+          "filtered_summary": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Filtered Summary",
+            "type": "object"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/DocumentJobResponse"
@@ -1926,6 +1933,13 @@
           "total": {
             "title": "Total",
             "type": "integer"
+          },
+          "translation_qa_summary": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Translation Qa Summary",
+            "type": "object"
           }
         },
         "required": [
@@ -5644,6 +5658,7 @@
                 "type": "null"
               }
             ],
+            "description": "保留兼容字段；source_pdf 上传授权不支持预绑定任务。",
             "title": "Job Id"
           },
           "mime_type": {
@@ -14412,6 +14427,25 @@
           },
           {
             "in": "query",
+            "name": "status_group",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "enum": [
+                "active"
+              ],
+              "title": "Status Group"
+            }
+          },
+          {
+            "in": "query",
             "name": "translation_qa_status",
             "required": false,
             "schema": {
@@ -14422,6 +14456,13 @@
                 {
                   "type": "null"
                 }
+              ],
+              "enum": [
+                "unreviewed",
+                "approved",
+                "needs_fix",
+                "blocked",
+                "all"
               ],
               "title": "Translation Qa Status"
             }

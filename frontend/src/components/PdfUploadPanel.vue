@@ -11,6 +11,12 @@
 
     <ApiErrorAlert :error="error" />
 
+    <el-steps class="upload-steps" :active="activeStep" finish-status="success" process-status="process">
+      <el-step title="选择 PDF" />
+      <el-step title="上传文件" />
+      <el-step title="创建任务" />
+    </el-steps>
+
     <el-upload
       ref="uploadRef"
       drag
@@ -43,7 +49,10 @@
           <strong>任务配置</strong>
           <small>{{ isAdmin ? "默认配置，可按需指定 published 版本。" : "使用当前默认配置创建任务。" }}</small>
         </div>
-        <el-tag size="small" effect="plain">{{ configSummary?.resource_mode || "unknown" }}</el-tag>
+        <div class="config-panel-actions">
+          <el-tag size="small" effect="plain">{{ configSummary?.resource_mode || "unknown" }}</el-tag>
+          <el-button link size="small" :loading="configLoading" @click="loadConfigSummary">重新加载</el-button>
+        </div>
       </div>
       <ApiErrorAlert :error="configError" />
       <div class="config-summary-grid">
@@ -81,9 +90,9 @@
             <el-select v-model="selectedTemplateVersion" clearable filterable placeholder="使用默认模板">
               <el-option
                 v-for="option in configSummary?.options.templates || []"
-                :key="option.label"
+                :key="configOptionKey(option)"
                 :label="option.label"
-                :value="option.label"
+                :value="configOptionKey(option)"
               />
             </el-select>
           </label>
@@ -92,9 +101,9 @@
             <el-select v-model="selectedTermRuleVersion" clearable filterable placeholder="使用默认规则集">
               <el-option
                 v-for="option in configSummary?.options.term_rule_sets || []"
-                :key="option.label"
+                :key="configOptionKey(option)"
                 :label="option.label"
-                :value="option.label"
+                :value="configOptionKey(option)"
               />
             </el-select>
           </label>
@@ -103,9 +112,9 @@
             <el-select v-model="selectedTranslationTermVersion" clearable filterable placeholder="使用默认翻译术语">
               <el-option
                 v-for="option in configSummary?.options.translation_term_sets || []"
-                :key="option.label"
+                :key="configOptionKey(option)"
                 :label="option.label"
-                :value="option.label"
+                :value="configOptionKey(option)"
               />
             </el-select>
           </label>
@@ -114,9 +123,9 @@
             <el-select v-model="selectedTranslationProfileVersion" clearable filterable placeholder="使用默认翻译配置">
               <el-option
                 v-for="option in configSummary?.options.translation_profiles || []"
-                :key="option.label"
+                :key="configOptionKey(option)"
                 :label="option.label"
-                :value="option.label"
+                :value="configOptionKey(option)"
               />
             </el-select>
           </label>
@@ -140,7 +149,6 @@ import { Upload, UploadFilled } from "@element-plus/icons-vue";
 
 import type {
   DocumentJobConfigSummaryResponse,
-  DocumentJobConfigVersionOption,
   DocumentJobCreateRequest,
   DocumentJobMode,
 } from "@/api/types";
@@ -150,6 +158,8 @@ import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import { useAuthStore } from "@/stores/auth";
 import { getMaxUploadBytes, uploadFileContent, validatePdfFile } from "@/utils/upload";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
+import { readinessCodeText } from "@/utils/displayText";
+import { configOptionKey, configVersionId, findConfigOption } from "@/utils/configOptions";
 
 const emit = defineEmits<{
   created: [jobId: string];
@@ -160,6 +170,7 @@ const uploadRef = ref<UploadInstance>();
 const selectedFile = ref<File | null>(null);
 const submitting = ref(false);
 const statusText = ref("等待选择 PDF。");
+const createStep = ref<"select" | "authorize" | "upload" | "create" | "done" | "failed">("select");
 const error = ref<ApiClientError | null>(null);
 const configError = ref<ApiClientError | null>(null);
 const configLoading = ref(false);
@@ -172,16 +183,19 @@ const selectedTranslationProfileVersion = ref("");
 const enableEn2zh = import.meta.env.VITE_ENABLE_EN2ZH === "true";
 const maxUploadMb = computed(() => Math.round(getMaxUploadBytes() / 1024 / 1024));
 const isAdmin = computed(() => auth.user?.role === "admin");
-const configWarnings = computed(() => configSummary.value?.readiness.warnings || []);
+const configWarnings = computed(() => (configSummary.value?.readiness.warnings || []).map(readinessCodeText));
 const p0ReadinessBlockers = computed(() => configSummary.value?.readiness.blockers || []);
 const p0ExecutionBlocked = computed(() => Boolean(
   configSummary.value?.readiness.p0_document_jobs_required
   && !configSummary.value?.readiness.p0_document_jobs_ready,
 ));
 const p0ReadinessMessages = computed(() => (
-  p0ReadinessBlockers.value.length > 0 ? p0ReadinessBlockers.value : ["p0_document_jobs_not_ready"]
+  (p0ReadinessBlockers.value.length > 0 ? p0ReadinessBlockers.value : ["p0_document_jobs_not_ready"]).map(readinessCodeText)
 ));
-const createDisabled = computed(() => !selectedFile.value || configLoading.value || p0ExecutionBlocked.value);
+const configUnavailable = computed(() => Boolean(configError.value || !configSummary.value));
+const createDisabled = computed(() => (
+  !selectedFile.value || configLoading.value || configUnavailable.value || p0ExecutionBlocked.value
+));
 const defaultConfigItems = computed(() => {
   const defaults = configSummary.value?.defaults;
   const items = [
@@ -196,7 +210,22 @@ const defaultConfigItems = computed(() => {
   }
   return items;
 });
+const activeStep = computed(() => {
+  if (createStep.value === "authorize" || createStep.value === "upload") {
+    return 1;
+  }
+  if (createStep.value === "create") {
+    return 2;
+  }
+  if (createStep.value === "done") {
+    return 3;
+  }
+  return selectedFile.value ? 1 : 0;
+});
 
+const selectedTemplateOption = computed(() =>
+  findConfigOption(configSummary.value?.options.templates || [], selectedTemplateVersion.value),
+);
 const selectedTermRuleOption = computed(() =>
   findConfigOption(configSummary.value?.options.term_rule_sets || [], selectedTermRuleVersion.value),
 );
@@ -219,13 +248,6 @@ async function loadConfigSummary(): Promise<void> {
   }
 }
 
-function findConfigOption(
-  options: DocumentJobConfigVersionOption[],
-  label: string,
-): DocumentJobConfigVersionOption | null {
-  return options.find((option) => option.label === label) || null;
-}
-
 function handleFileChange(uploadFile: UploadFile): void {
   const rawFile = uploadFile.raw as UploadRawFile | undefined;
   if (!rawFile) {
@@ -240,11 +262,13 @@ function handleFileChange(uploadFile: UploadFile): void {
   }
   selectedFile.value = rawFile;
   error.value = null;
+  createStep.value = "select";
   statusText.value = `已选择 ${rawFile.name}。`;
 }
 
 function handleFileRemove(): void {
   selectedFile.value = null;
+  createStep.value = "select";
   statusText.value = "等待选择 PDF。";
 }
 
@@ -253,7 +277,7 @@ function handleExceed(): void {
 }
 
 async function submit(): Promise<void> {
-  if (!selectedFile.value || submitting.value || configLoading.value || p0ExecutionBlocked.value) {
+  if (!selectedFile.value || submitting.value || configLoading.value || configUnavailable.value || p0ExecutionBlocked.value) {
     return;
   }
 
@@ -261,6 +285,7 @@ async function submit(): Promise<void> {
   error.value = null;
 
   try {
+    createStep.value = "authorize";
     statusText.value = "正在获取上传授权。";
     const authorization = await filesApi.createUploadUrl({
       filename: selectedFile.value.name,
@@ -269,9 +294,11 @@ async function submit(): Promise<void> {
       file_type: "source_pdf",
     });
 
+    createStep.value = "upload";
     statusText.value = "正在上传 PDF 内容。";
     await uploadFileContent(authorization, selectedFile.value, auth.token);
 
+    createStep.value = "create";
     statusText.value = "正在创建转换任务。";
     const payload: DocumentJobCreateRequest = {
       source_file_id: authorization.file_id,
@@ -280,8 +307,8 @@ async function submit(): Promise<void> {
       debug_full_text: false,
     };
     if (isAdmin.value) {
-      if (selectedTemplateVersion.value) {
-        payload.template_version_id = selectedTemplateVersion.value;
+      if (selectedTemplateOption.value) {
+        payload.template_version_id = configVersionId(selectedTemplateOption.value);
       }
       if (selectedTermRuleOption.value) {
         payload.term_rule_set_id = selectedTermRuleOption.value.resource_id;
@@ -301,10 +328,12 @@ async function submit(): Promise<void> {
     ElMessage.success("任务已创建。");
     uploadRef.value?.clearFiles();
     selectedFile.value = null;
+    createStep.value = "done";
     statusText.value = "任务创建成功。";
     emit("created", response.job_id);
   } catch (caught) {
     error.value = normalizeApiError(caught);
+    createStep.value = "failed";
     statusText.value = "创建任务失败。";
   } finally {
     submitting.value = false;
@@ -354,6 +383,10 @@ onMounted(() => {
   color: #2563eb;
 }
 
+.upload-steps {
+  margin: 12px 0 18px;
+}
+
 .upload-card :deep(.el-button),
 .upload-card :deep(.el-select__wrapper),
 .upload-card :deep(.el-input__wrapper) {
@@ -393,6 +426,14 @@ onMounted(() => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.config-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .config-panel-header strong,

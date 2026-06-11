@@ -12,6 +12,7 @@ from fastapi import status
 from app.core.errors import ApiError
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.document_jobs.repository import DocumentJobRepositoryProtocol
+from app.domains.document_jobs.workflow import TERMINAL_DOCUMENT_JOB_STATUSES
 from app.domains.resources.models import utc_now
 from app.domains.ops.schemas import (
     OpsRecoveryActionCategory,
@@ -24,10 +25,6 @@ from app.domains.ops.schemas import (
     OpsRecoveryActionTargetPreviewResponse,
     OpsRecoveryActionTargetType,
 )
-
-
-TERMINAL_DOCUMENT_JOB_STATUSES = {"succeeded", "failed", "canceled"}
-
 
 @dataclass(frozen=True, slots=True)
 class OpsRecoveryActionDefinition:
@@ -110,7 +107,7 @@ OPS_RECOVERY_ACTIONS: tuple[OpsRecoveryActionDefinition, ...] = (
         deletes_data=False,
         audit_action="document_job.cancel",
         known_gaps=("现有取消仅更新本地 metadata，不取消 provider-side work。",),
-        suggested_route="/jobs?status=running&sort=updated_at_desc",
+        suggested_route="/jobs?status_group=active&sort=updated_at_desc",
     ),
     OpsRecoveryActionDefinition(
         action_id="document_job.archive",

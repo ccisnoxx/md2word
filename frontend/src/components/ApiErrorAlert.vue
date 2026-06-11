@@ -6,6 +6,7 @@
       <span v-if="error.status">状态码 {{ error.status }}</span>
       <span v-if="error.code">错误码 {{ error.code }}</span>
       <span v-if="error.traceId">追踪 ID {{ error.traceId }}</span>
+      <el-button class="copy-diagnostic-button" link size="small" @click="copyDiagnostic">复制诊断</el-button>
     </div>
     <div v-if="operatorHint" class="api-error-hint">{{ operatorHint }}</div>
   </el-alert>
@@ -13,11 +14,13 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { ElMessage } from "element-plus";
 
-import type { ApiClientError } from "@/utils/errors";
+import { formatApiErrorDiagnostic, type ApiClientError, type ApiErrorDiagnosticContext } from "@/utils/errors";
 
 const props = defineProps<{
   error: ApiClientError | null;
+  diagnosticContext?: ApiErrorDiagnosticContext;
 }>();
 
 const operatorHint = computed(() => {
@@ -42,6 +45,18 @@ const operatorHint = computed(() => {
   }
   return "";
 });
+
+async function copyDiagnostic(): Promise<void> {
+  if (!props.error) {
+    return;
+  }
+  if (!navigator.clipboard) {
+    ElMessage.warning("当前浏览器不支持自动复制。");
+    return;
+  }
+  await navigator.clipboard.writeText(formatApiErrorDiagnostic(props.error, props.diagnosticContext));
+  ElMessage.success("诊断信息已复制。");
+}
 </script>
 
 <style scoped lang="scss">
@@ -63,5 +78,11 @@ const operatorHint = computed(() => {
   color: #7a271a;
   font-size: 13px;
   line-height: 1.5;
+}
+
+.copy-diagnostic-button {
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
 }
 </style>

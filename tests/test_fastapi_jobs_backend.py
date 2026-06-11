@@ -4076,6 +4076,116 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(record.storage_provider, "local_object")
         self.assertEqual(record.bucket, "local-object")
 
+    def test_file_upload_rejects_prebound_job_id_for_document_job_source(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+            pdf_content = make_pdf_bytes(page_count=1)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                response = client.post(
+                    "/api/v1/files/upload-url",
+                    headers=headers,
+                    json={
+                        "filename": "source.pdf",
+                        "mime_type": "application/pdf",
+                        "size_bytes": len(pdf_content),
+                        "file_type": "source_pdf",
+                        "job_id": "job_prebound",
+                    },
+                )
+
+            records = runtime.document_file_repository.list_document_files()
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error_code"], "invalid_request")
+        self.assertEqual(records, [])
+
+    def test_file_upload_metadata_and_content_are_owner_or_admin_only(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_multi_operator_auth_users_json(),
+            )
+            app = create_app(runtime)
+            pdf_content = make_pdf_bytes(page_count=1)
+
+            with TestClient(app) as client:
+                owner_headers = build_auth_header(client)
+                other_headers = build_auth_header(client, username="operator2", password="operator2-pass")
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                response = client.post(
+                    "/api/v1/files/upload-url",
+                    headers=owner_headers,
+                    json={
+                        "filename": "owner-source.pdf",
+                        "mime_type": "application/pdf",
+                        "size_bytes": len(pdf_content),
+                        "file_type": "source_pdf",
+                    },
+                )
+                self.assertEqual(response.status_code, 201)
+                file_id = response.json()["file_id"]
+
+                other_detail_response = client.get(f"/api/v1/files/{file_id}", headers=other_headers)
+                admin_detail_response = client.get(f"/api/v1/files/{file_id}", headers=admin_headers)
+                other_upload_response = client.put(
+                    f"/api/v1/files/{file_id}/content",
+                    headers={**other_headers, "Content-Type": "application/pdf"},
+                    content=pdf_content,
+                )
+
+                owner_uploaded_response = client.put(
+                    f"/api/v1/files/{file_id}/content",
+                    headers={**owner_headers, "Content-Type": "application/pdf"},
+                    content=pdf_content,
+                )
+                other_uploaded_detail_response = client.get(f"/api/v1/files/{file_id}", headers=other_headers)
+
+                admin_authorization_response = client.post(
+                    "/api/v1/files/upload-url",
+                    headers=owner_headers,
+                    json={
+                        "filename": "admin-uploadable-source.pdf",
+                        "mime_type": "application/pdf",
+                        "size_bytes": len(pdf_content),
+                        "file_type": "source_pdf",
+                    },
+                )
+                self.assertEqual(admin_authorization_response.status_code, 201)
+                admin_upload_file_id = admin_authorization_response.json()["file_id"]
+                admin_upload_response = client.put(
+                    f"/api/v1/files/{admin_upload_file_id}/content",
+                    headers={**admin_headers, "Content-Type": "application/pdf"},
+                    content=pdf_content,
+                )
+
+            record = runtime.document_file_repository.get_document_file(file_id)
+            admin_uploaded_record = runtime.document_file_repository.get_document_file(admin_upload_file_id)
+
+        self.assertEqual(other_detail_response.status_code, 403)
+        self.assertEqual(other_detail_response.json()["error_code"], "forbidden")
+        self.assertEqual(admin_detail_response.status_code, 200)
+        self.assertEqual(other_upload_response.status_code, 403)
+        self.assertEqual(other_upload_response.json()["error_code"], "forbidden")
+        self.assertEqual(owner_uploaded_response.status_code, 201)
+        self.assertEqual(other_uploaded_detail_response.status_code, 403)
+        self.assertEqual(admin_upload_response.status_code, 201)
+        self.assertIsNotNone(record)
+        self.assertEqual(record.status, "uploaded")
+        self.assertEqual(record.created_by, "user_operator")
+        self.assertIsNotNone(admin_uploaded_record)
+        self.assertEqual(admin_uploaded_record.status, "uploaded")
+        self.assertEqual(admin_uploaded_record.created_by, "user_operator")
+
     def test_file_retention_plan_is_admin_only_and_reports_dry_run_candidates(self):
         """验证 Admin 可查看保留期计划，Operator 不能访问且接口不删除文件。"""
 
@@ -6529,6 +6639,41 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(stored_job.status, "pending")
         self.assertEqual(stored_file.job_id, job_id)
 
+    def test_document_job_create_rejects_unready_required_execution(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                app_env="production",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="disabled",
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers, filename="blocked-source.pdf")
+                response = client.post(
+                    "/api/v1/document-jobs",
+                    headers={**headers, "X-Trace-Id": "trace_docjob_not_ready"},
+                    json={
+                        "source_file_id": source_file["id"],
+                        "mode": "direct_pdf_to_word",
+                    },
+                )
+
+            stored_file = runtime.document_file_repository.get_document_file(source_file["id"])
+            stored_jobs = runtime.document_job_repository.list_document_jobs()
+
+        self.assertEqual(response.status_code, 503)
+        payload = response.json()
+        self.assertEqual(payload["error_code"], "document_jobs_not_ready")
+        self.assertEqual(payload["error"]["code"], "document_jobs_not_ready")
+        self.assertIn("document_jobs_worker_backend_disabled", payload["detail"])
+        self.assertEqual(stored_jobs, [])
+        self.assertIsNotNone(stored_file)
+        self.assertIsNone(stored_file.job_id)
+
     def test_document_job_config_summary_hides_options_for_operator_and_lists_admin_options(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_mysql_test_runtime(
@@ -6761,6 +6906,8 @@ class FastAPIJobsBackendTests(TestCase):
                 headers = build_auth_header(client)
                 alpha_source = self._upload_source_pdf(client, headers, filename="alpha-source.pdf")
                 beta_source = self._upload_source_pdf(client, headers, filename="beta-source.pdf")
+                queued_source = self._upload_source_pdf(client, headers, filename="queued-source.pdf")
+                running_source = self._upload_source_pdf(client, headers, filename="running-source.pdf")
                 archived_source = self._upload_source_pdf(client, headers, filename="archived-source.pdf")
                 alpha_job_id = client.post(
                     "/api/v1/document-jobs",
@@ -6772,6 +6919,24 @@ class FastAPIJobsBackendTests(TestCase):
                     headers=headers,
                     json={
                         "source_file_id": beta_source["id"],
+                        "mode": "en2zh_pdf_to_word",
+                        "document_language": "en",
+                    },
+                ).json()["job_id"]
+                queued_job_id = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={
+                        "source_file_id": queued_source["id"],
+                        "mode": "en2zh_pdf_to_word",
+                        "document_language": "en",
+                    },
+                ).json()["job_id"]
+                running_job_id = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={
+                        "source_file_id": running_source["id"],
                         "mode": "en2zh_pdf_to_word",
                         "document_language": "en",
                     },
@@ -6800,6 +6965,27 @@ class FastAPIJobsBackendTests(TestCase):
                     updated_at=middle_time,
                 )
                 runtime.document_job_repository.update_document_job(
+                    queued_job_id,
+                    status="queued",
+                    stage="uploaded",
+                    translation_qa_status="needs_fix",
+                    translation_qa_issue_type="terminology",
+                    translation_qa_note="Term mismatch",
+                    created_at=middle_time + timedelta(hours=2),
+                    updated_at=middle_time + timedelta(hours=2),
+                )
+                runtime.document_job_repository.update_document_job(
+                    running_job_id,
+                    status="running",
+                    stage="parsing",
+                    translation_qa_status="blocked",
+                    translation_qa_issue_type="artifact_missing",
+                    translation_qa_note="Missing IR",
+                    started_at=middle_time + timedelta(hours=4),
+                    created_at=middle_time + timedelta(hours=4),
+                    updated_at=middle_time + timedelta(hours=4),
+                )
+                runtime.document_job_repository.update_document_job(
                     archived_job_id,
                     status="failed",
                     stage="failed",
@@ -6815,6 +7001,11 @@ class FastAPIJobsBackendTests(TestCase):
                     "/api/v1/document-jobs",
                     headers=headers,
                     params={"include_archived": True, "sort": "created_at_asc"},
+                )
+                paginated_default_response = client.get(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    params={"page_size": 1},
                 )
                 filename_search_response = client.get(
                     "/api/v1/document-jobs",
@@ -6834,15 +7025,35 @@ class FastAPIJobsBackendTests(TestCase):
                         "created_to": (middle_time + timedelta(hours=1)).isoformat(),
                     },
                 )
+                active_group_response = client.get(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    params={"status_group": "active", "sort": "created_at_asc"},
+                )
                 qa_status_response = client.get(
                     "/api/v1/document-jobs",
                     headers=headers,
                     params={"translation_qa_status": "approved"},
                 )
+                qa_all_response = client.get(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    params={"translation_qa_status": "all"},
+                )
                 qa_unreviewed_response = client.get(
                     "/api/v1/document-jobs",
                     headers=headers,
                     params={"translation_qa_status": "unreviewed"},
+                )
+                status_group_conflict_response = client.get(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    params={"status": "pending", "status_group": "active"},
+                )
+                invalid_status_group_response = client.get(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    params={"status_group": "stuck"},
                 )
                 invalid_sort_response = client.get(
                     "/api/v1/document-jobs",
@@ -6857,23 +7068,66 @@ class FastAPIJobsBackendTests(TestCase):
 
         self.assertEqual(archive_response.status_code, 200)
         self.assertEqual(default_response.status_code, 200)
-        self.assertEqual(default_response.json()["total"], 2)
-        self.assertEqual(default_response.json()["summary"], {"failed": 1, "pending": 1})
+        self.assertEqual(default_response.json()["total"], 4)
+        expected_default_summary = {"failed": 1, "pending": 1, "queued": 1, "running": 1}
+        expected_qa_summary = {"unreviewed": 0, "approved": 1, "needs_fix": 1, "blocked": 1}
+        self.assertEqual(default_response.json()["summary"], expected_default_summary)
+        self.assertEqual(default_response.json()["filtered_summary"], expected_default_summary)
+        self.assertEqual(
+            default_response.json()["translation_qa_summary"],
+            expected_qa_summary,
+        )
         self.assertEqual(include_archived_response.status_code, 200)
         include_archived_payload = include_archived_response.json()
-        self.assertEqual(include_archived_payload["total"], 3)
-        self.assertEqual(include_archived_payload["summary"], {"failed": 2, "pending": 1})
-        self.assertEqual([item["id"] for item in include_archived_payload["items"]], [alpha_job_id, beta_job_id, archived_job_id])
+        self.assertEqual(include_archived_payload["total"], 5)
+        expected_include_archived_summary = {"failed": 2, "pending": 1, "queued": 1, "running": 1}
+        self.assertEqual(include_archived_payload["summary"], expected_include_archived_summary)
+        self.assertEqual(include_archived_payload["filtered_summary"], expected_include_archived_summary)
+        self.assertEqual(
+            [item["id"] for item in include_archived_payload["items"]],
+            [alpha_job_id, beta_job_id, queued_job_id, running_job_id, archived_job_id],
+        )
+        self.assertEqual(paginated_default_response.status_code, 200)
+        self.assertEqual(len(paginated_default_response.json()["items"]), 1)
+        self.assertEqual(paginated_default_response.json()["total"], 4)
+        self.assertEqual(paginated_default_response.json()["filtered_summary"], expected_default_summary)
+        self.assertEqual(paginated_default_response.json()["translation_qa_summary"], expected_qa_summary)
         self.assertEqual(filename_search_response.status_code, 200)
         self.assertEqual([item["id"] for item in filename_search_response.json()["items"]], [beta_job_id])
         self.assertEqual(error_search_response.status_code, 200)
         self.assertEqual([item["id"] for item in error_search_response.json()["items"]], [alpha_job_id])
         self.assertEqual(range_response.status_code, 200)
         self.assertEqual([item["id"] for item in range_response.json()["items"]], [beta_job_id])
+        self.assertEqual(range_response.json()["filtered_summary"], {"pending": 1})
+        self.assertEqual(active_group_response.status_code, 200)
+        self.assertEqual(
+            [item["id"] for item in active_group_response.json()["items"]],
+            [beta_job_id, queued_job_id, running_job_id],
+        )
+        self.assertEqual(active_group_response.json()["filtered_summary"], {"pending": 1, "queued": 1, "running": 1})
+        self.assertEqual(active_group_response.json()["translation_qa_summary"], expected_qa_summary)
         self.assertEqual(qa_status_response.status_code, 200)
         self.assertEqual([item["id"] for item in qa_status_response.json()["items"]], [beta_job_id])
+        self.assertEqual(qa_status_response.json()["filtered_summary"], {"pending": 1})
+        self.assertEqual(
+            qa_status_response.json()["translation_qa_summary"],
+            expected_qa_summary,
+        )
+        self.assertEqual(qa_all_response.status_code, 200)
+        self.assertEqual([item["id"] for item in qa_all_response.json()["items"]], [running_job_id, queued_job_id, beta_job_id])
+        self.assertEqual(qa_all_response.json()["total"], 3)
+        self.assertEqual(qa_all_response.json()["filtered_summary"], {"pending": 1, "queued": 1, "running": 1})
+        self.assertEqual(qa_all_response.json()["translation_qa_summary"], expected_qa_summary)
         self.assertEqual(qa_unreviewed_response.status_code, 200)
         self.assertEqual(qa_unreviewed_response.json()["items"], [])
+        self.assertEqual(qa_unreviewed_response.json()["filtered_summary"], {})
+        self.assertEqual(qa_unreviewed_response.json()["translation_qa_summary"], expected_qa_summary)
+        self.assertEqual(status_group_conflict_response.status_code, 400)
+        self.assertEqual(status_group_conflict_response.json()["error_code"], "invalid_request")
+        self.assertIn("status_group", status_group_conflict_response.json()["detail"])
+        self.assertEqual(invalid_status_group_response.status_code, 400)
+        self.assertEqual(invalid_status_group_response.json()["error_code"], "invalid_request")
+        self.assertIn("status_group", invalid_status_group_response.json()["detail"])
         self.assertEqual(invalid_sort_response.status_code, 400)
         self.assertEqual(invalid_sort_response.json()["error_code"], "invalid_request")
         self.assertIn("sort", invalid_sort_response.json()["detail"])
@@ -7643,6 +7897,7 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_internal_users_json=build_auth_users_json(),
                 document_jobs_worker_backend="eager",
                 public_deployment_mode="single_tenant_public",
+                mineru_api_token="token-123",
                 mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
                 mineru_uid="mineru-user-1",
             )
@@ -7730,6 +7985,7 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_internal_users_json=build_auth_users_json(),
                 document_jobs_worker_backend="eager",
                 public_deployment_mode="single_tenant_public",
+                mineru_api_token="token-123",
                 mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
                 mineru_uid="mineru-user-1",
             )
@@ -7788,6 +8044,7 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_internal_users_json=build_auth_users_json(),
                 document_jobs_worker_backend="eager",
                 public_deployment_mode="single_tenant_public",
+                mineru_api_token="token-123",
                 mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
                 mineru_uid="mineru-user-1",
             )
@@ -7842,6 +8099,7 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_internal_users_json=build_auth_users_json(),
                 document_jobs_worker_backend="eager",
                 public_deployment_mode="single_tenant_public",
+                mineru_api_token="token-123",
                 mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
                 mineru_uid="mineru-user-1",
             )
@@ -7893,6 +8151,7 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_internal_users_json=build_auth_users_json(),
                 document_jobs_worker_backend="eager",
                 public_deployment_mode="single_tenant_public",
+                mineru_api_token="token-123",
                 mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
                 mineru_uid="mineru-user-1",
             )

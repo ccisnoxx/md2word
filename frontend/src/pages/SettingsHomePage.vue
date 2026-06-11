@@ -158,6 +158,7 @@ import {
   readinessCodeText,
 } from "@/utils/displayText";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
+import { releaseGateRouteForCode, releaseGateRouteLabel } from "@/utils/releaseGateRoutes";
 
 const CACHE_TTL_MS = 60_000;
 
@@ -320,33 +321,6 @@ function releaseGateFindingItems(
       routeLabel: releaseGateRouteLabel(route),
     };
   });
-}
-
-function releaseGateRouteForCode(code: string): string {
-  if (code.startsWith("document_jobs") || code === "p0_document_jobs_not_ready") {
-    return "/system-status/ops-dashboard";
-  }
-  if (code.includes("template") || code.includes("layout") || code.includes("subscript")) {
-    return "/settings/templates";
-  }
-  if (code.includes("term")) {
-    return "/settings/term-rule-sets";
-  }
-  if (code.includes("translation")) {
-    return "/settings/translation-profiles";
-  }
-  return "/system-status";
-}
-
-function releaseGateRouteLabel(route: string): string {
-  const labels: Record<string, string> = {
-    "/system-status/ops-dashboard": "运维看板",
-    "/system-status": "系统状态",
-    "/settings/templates": "模板配置",
-    "/settings/term-rule-sets": "术语规则",
-    "/settings/translation-profiles": "翻译配置",
-  };
-  return labels[route] || "配置详情";
 }
 
 async function loadDeferredGroupDetails(groups: ConfigWorkbenchGroup[]): Promise<void> {

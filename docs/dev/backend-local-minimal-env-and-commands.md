@@ -74,9 +74,16 @@ TEMPLATE_STATE_PATH=data/config/template_state.json
 
 说明：
 
+- 当前公开任务主链路是 Files + Document Jobs：
+  - 上传授权：`POST /api/v1/files/upload-url`
+  - 上传内容：`PUT /api/v1/files/{file_id}/content`
+  - 创建任务：`POST /api/v1/document-jobs`
+  - 查询/下载：`GET /api/v1/document-jobs/{job_id}`、`GET /api/v1/document-jobs/{job_id}/download-url`
+  - legacy `/api/v1/jobs` endpoint family 已从 v1 router 移除，新联调不要使用。
+
 - `MINERU_API_TOKEN` 为空时：
-  - `POST /api/v1/jobs/pdf` 不可用
-  - `POST /api/v1/jobs` 仍可继续接收 MinerU 输出 zip
+  - document_jobs 自动执行链路不可完整跑通
+  - 开发环境只作为 readiness warning；生产或公开部署会成为 P0 blocker
 - `PUBLIC_DEPLOYMENT_MODE=internal`
   - 本地联调 callback 最省事，不要求 callback token
 - 若切到 `PUBLIC_DEPLOYMENT_MODE=single_tenant_public`
@@ -84,7 +91,7 @@ TEMPLATE_STATE_PATH=data/config/template_state.json
   - MinerU 回调时必须带 header 或 query token
 - `OPENAI_API_KEY` 为空时：
   - `translation_mode=direct` 仍可用
-  - `translation_mode=en2zh` 会被 health 标记为 unavailable，`POST /api/v1/jobs` 也会直接返回 `503`
+  - `translation_mode=en2zh` 会被 health 标记为 unavailable，前端创建页会显示配置或 readiness 提示
 - `LOG_FORMAT=text`
   - 默认输出便于本地阅读的文本日志
   - 容器或云日志采集环境可改为 `LOG_FORMAT=json`
@@ -191,32 +198,38 @@ stage spool 中有待 replay 或需要人工关注的消息。
 ## 最小联调命令
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/jobs" \
-  -F "package=@/path/to/mineru-output.zip" \
-  -F "translation_mode=direct"
+curl -sS -X POST "http://127.0.0.1:8000/api/v1/files/upload-url" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"filename":"source.pdf","mime_type":"application/pdf","size_bytes":12345,"file_type":"source_pdf"}'
+```
+
+拿到 `file_id` 和 `upload_url` 后，按响应里的 `upload_url` 上传 PDF 内容：
+
+```bash
+curl -X PUT "http://127.0.0.1:8000/api/v1/files/{file_id}/content" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/pdf" \
+  --data-binary "@/path/to/source.pdf"
+```
+
+创建 document job：
+
+```bash
+curl -sS -X POST "http://127.0.0.1:8000/api/v1/document-jobs" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"source_file_id":"{file_id}","mode":"direct_pdf_to_word","document_language":"auto"}'
 ```
 
 拿到 `job_id` 后：
 
 ```bash
-curl "http://127.0.0.1:8000/api/v1/jobs/{job_id}"
-curl -L "http://127.0.0.1:8000/api/v1/jobs/{job_id}/download/result" -o result.docx
-```
+curl -sS "http://127.0.0.1:8000/api/v1/document-jobs/{job_id}" \
+  -H "Authorization: Bearer ${TOKEN}"
 
-如果要验证本地运维动作，先在 `.env` 里设置 `ADMIN_TOKEN`，再带 admin header：
-
-```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/jobs/{job_id}/retry" \
-  -H "X-Admin-Token: ${ADMIN_TOKEN}" \
-  -F "reason=rerun"
-```
-
-如果要验证 PDF 在线提交前半程：
-
-```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/jobs/pdf" \
-  -F "pdf=@/path/to/source.pdf" \
-  -F "translation_mode=direct"
+curl -sS "http://127.0.0.1:8000/api/v1/document-jobs/{job_id}/download-url" \
+  -H "Authorization: Bearer ${TOKEN}"
 ```
 
 如果要本地验证 callback ingress：

@@ -607,7 +607,7 @@ class HealthService:
                     title="存在已超时的文档任务",
                     description="存在已超过超时时间的未终态文档任务，当前接口只报告风险不执行恢复。",
                     count=document_jobs_timed_out_count,
-                    suggested_route="/jobs?status=running&sort=updated_at_desc",
+                    suggested_route="/jobs?status_group=active&sort=updated_at_desc",
                     suggested_action="查看任务详情和事件流，必要时使用任务页面的重试、取消或克隆流程。",
                 )
             )
@@ -620,7 +620,7 @@ class HealthService:
                     title="存在长时间未更新的文档任务",
                     description="存在长时间未更新的未终态文档任务，可能来自工作进程停摆、回调缺失或服务提供方慢响应。",
                     count=document_jobs_stale_count,
-                    suggested_route="/jobs?status=running&sort=updated_at_desc",
+                    suggested_route="/jobs?status_group=active&sort=updated_at_desc",
                     suggested_action="查看任务详情、工作进程和 MinerU 回调配置；本接口不会重投递任务。",
                 )
             )

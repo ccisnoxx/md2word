@@ -25,14 +25,14 @@
         <small>当前页返回数量</small>
       </article>
       <article class="metric-card">
-        <span>本页未复核</span>
-        <strong>{{ countPageQaStatus("unreviewed") }}</strong>
-        <small>仅统计当前页</small>
+        <span>未复核</span>
+        <strong>{{ countQaStatus("unreviewed") }}</strong>
+        <small>除 QA 状态外的当前筛选</small>
       </article>
       <article class="metric-card">
-        <span>本页需处理</span>
-        <strong>{{ countPageQaStatus("needs_fix") + countPageQaStatus("blocked") }}</strong>
-        <small>需修正或阻塞</small>
+        <span>需处理</span>
+        <strong>{{ countQaStatus("needs_fix") + countQaStatus("blocked") }}</strong>
+        <small>除 QA 状态外的当前筛选</small>
       </article>
     </section>
 
@@ -186,13 +186,18 @@ const includeArchived = ref(false);
 
 const qaStatuses: TranslationQaStatus[] = ["unreviewed", "approved", "needs_fix", "blocked"];
 const statuses: DocumentJobStatus[] = ["pending", "queued", "running", "succeeded", "failed", "canceled"];
-const allQaFetchPageSize = 100;
 const sortOptions: Array<{ label: string; value: DocumentJobListSort }> = [
   { label: "更新时间新到旧", value: "updated_at_desc" },
   { label: "更新时间旧到新", value: "updated_at_asc" },
   { label: "创建时间新到旧", value: "created_at_desc" },
   { label: "创建时间旧到新", value: "created_at_asc" },
 ];
+const qaSummary = ref<Record<TranslationQaStatus, number>>({
+  unreviewed: 0,
+  approved: 0,
+  needs_fix: 0,
+  blocked: 0,
+});
 const qaIssueTypeText: Record<TranslationQaIssueType, string> = {
   translation: "翻译问题",
   terminology: "术语问题",
@@ -273,16 +278,10 @@ async function loadJobs(): Promise<void> {
   loading.value = true;
   error.value = null;
   try {
-    if (!qaStatusFilter.value) {
-      const response = await loadAllQaStatusJobs();
-      jobs.value = response.items;
-      total.value = response.total;
-      return;
-    }
     const response = await documentJobsApi.list({
       page: page.value,
       page_size: pageSize,
-      translation_qa_status: qaStatusFilter.value,
+      translation_qa_status: qaStatusFilter.value || "all",
       status: statusFilter.value || undefined,
       q: searchKeyword.value.trim() || undefined,
       sort: sortFilter.value,
@@ -290,66 +289,17 @@ async function loadJobs(): Promise<void> {
     });
     jobs.value = response.items;
     total.value = response.total;
+    qaSummary.value = {
+      unreviewed: response.translation_qa_summary?.unreviewed ?? 0,
+      approved: response.translation_qa_summary?.approved ?? 0,
+      needs_fix: response.translation_qa_summary?.needs_fix ?? 0,
+      blocked: response.translation_qa_summary?.blocked ?? 0,
+    };
   } catch (caught) {
     error.value = normalizeApiError(caught);
   } finally {
     loading.value = false;
   }
-}
-
-async function loadAllQaStatusJobs(): Promise<{ items: DocumentJobResponse[]; total: number }> {
-  const statusWindows = await Promise.all(qaStatuses.map((status) => loadQaStatusWindow(status)));
-  const allItems = statusWindows.flatMap((window) => window.items);
-  const sortedItems = sortQueueItems(allItems);
-  const start = (page.value - 1) * pageSize;
-  return {
-    items: sortedItems.slice(start, start + pageSize),
-    total: statusWindows.reduce((sum, window) => sum + window.total, 0),
-  };
-}
-
-async function loadQaStatusWindow(status: TranslationQaStatus): Promise<{ items: DocumentJobResponse[]; total: number }> {
-  const requiredItemCount = page.value * pageSize;
-  const pageCount = Math.ceil(requiredItemCount / allQaFetchPageSize);
-  const items: DocumentJobResponse[] = [];
-  let totalForStatus = 0;
-
-  for (let currentPage = 1; currentPage <= pageCount; currentPage += 1) {
-    const response = await documentJobsApi.list({
-      page: currentPage,
-      page_size: allQaFetchPageSize,
-      translation_qa_status: status,
-      status: statusFilter.value || undefined,
-      q: searchKeyword.value.trim() || undefined,
-      sort: sortFilter.value,
-      include_archived: includeArchived.value,
-    });
-    if (currentPage === 1) {
-      totalForStatus = response.total;
-    }
-    items.push(...response.items);
-    if (items.length >= response.total) {
-      break;
-    }
-  }
-
-  return { items, total: totalForStatus };
-}
-
-function sortQueueItems(items: DocumentJobResponse[]): DocumentJobResponse[] {
-  const direction = sortFilter.value.endsWith("_desc") ? -1 : 1;
-  return [...items].sort((left, right) => {
-    const timestampDelta = queueSortTimestamp(left) - queueSortTimestamp(right);
-    if (timestampDelta !== 0) {
-      return direction * timestampDelta;
-    }
-    return direction * left.id.localeCompare(right.id);
-  });
-}
-
-function queueSortTimestamp(job: DocumentJobResponse): number {
-  const value = sortFilter.value.startsWith("created_at") ? job.created_at : job.updated_at;
-  return Date.parse(value) || 0;
 }
 
 function handleFilter(): void {
@@ -393,8 +343,8 @@ function openJobDetail(job: DocumentJobResponse): void {
   void router.push({ name: "job-detail", params: { jobId: job.id } });
 }
 
-function countPageQaStatus(status: TranslationQaStatus): number {
-  return jobs.value.filter((job) => job.translation_qa_status === status).length;
+function countQaStatus(status: TranslationQaStatus): number {
+  return qaSummary.value[status] || 0;
 }
 
 function qaStatusLabel(job: DocumentJobResponse): string {

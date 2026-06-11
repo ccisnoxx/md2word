@@ -31,7 +31,7 @@
       </div>
     </div>
 
-    <ApiErrorAlert :error="error" />
+    <ApiErrorAlert :error="error" :diagnostic-context="jobErrorDiagnosticContext('document_jobs.detail')" />
     <el-alert
       v-if="lastDownloadLink"
       class="page-section download-link-alert"
@@ -51,6 +51,48 @@
     <el-skeleton v-if="loading && !job" :rows="8" animated />
 
     <template v-else-if="job">
+      <el-card class="page-section task-disposition-card card-flat" shadow="never">
+        <div class="section-header">
+          <div>
+            <h2 class="section-title">任务处置</h2>
+            <p class="section-subtitle">基于后端任务状态、事件、Callback 和文件记录汇总；动作可用性以后端返回为准。</p>
+          </div>
+          <el-button :icon="Refresh" :loading="loading || eventsLoading || filesLoading || callbackSummaryLoading" @click="loadAll">
+            刷新诊断
+          </el-button>
+        </div>
+        <div class="task-disposition-layout">
+          <div class="task-disposition-main">
+            <el-alert
+              class="task-disposition-alert"
+              :type="dispositionAlertType"
+              :closable="false"
+              show-icon
+              :title="dispositionTitle"
+            >
+              <p>{{ dispositionDescription }}</p>
+            </el-alert>
+            <div class="task-disposition-facts">
+              <div v-for="item in dispositionFacts" :key="item.label" class="task-disposition-fact">
+                <span>{{ item.label }}</span>
+                <strong :class="{ mono: item.mono }">{{ item.value }}</strong>
+              </div>
+            </div>
+          </div>
+          <div class="task-action-summary">
+            <h3>当前动作</h3>
+            <div class="task-action-list">
+              <div v-for="action in actionSummaries" :key="action.key" class="task-action-item">
+                <el-tag size="small" :type="action.enabled ? 'success' : 'info'" effect="plain">
+                  {{ action.label }} · {{ action.enabled ? "可用" : "不可用" }}
+                </el-tag>
+                <small v-if="action.reason">{{ action.reason }}</small>
+              </div>
+            </div>
+          </div>
+        </div>
+      </el-card>
+
       <el-tabs v-model="activeTab" class="detail-tabs">
         <el-tab-pane label="概览" name="overview">
           <el-card class="page-section card-flat" shadow="never">
@@ -119,6 +161,10 @@
               </div>
               <el-button :icon="Refresh" :loading="callbackSummaryLoading" @click="loadCallbackSummary()">刷新 Callback</el-button>
             </div>
+            <ApiErrorAlert
+              :error="callbackSummaryError"
+              :diagnostic-context="jobErrorDiagnosticContext('document_jobs.callback_summary')"
+            />
             <el-descriptions :column="2" border>
               <el-descriptions-item v-for="item in callbackSummaryItems" :key="item.label" :label="item.label">
                 <span class="mono">{{ item.value }}</span>
@@ -217,6 +263,7 @@
               </div>
               <el-button :icon="Refresh" :loading="filesLoading" @click="loadFiles()">刷新文件</el-button>
             </div>
+            <ApiErrorAlert :error="filesError" :diagnostic-context="jobErrorDiagnosticContext('document_jobs.files')" />
             <el-table v-loading="filesLoading" :data="files" empty-text="暂无已登记文件" class="job-file-table">
               <el-table-column label="角色" width="128">
                 <template #default="{ row }">
@@ -283,6 +330,7 @@
                 <el-button :icon="Refresh" :loading="eventsLoading" @click="loadEvents()">刷新事件</el-button>
               </div>
             </div>
+            <ApiErrorAlert :error="eventsError" :diagnostic-context="jobErrorDiagnosticContext('document_jobs.events')" />
             <JobEventTimeline :events="filteredEvents" />
           </el-card>
         </el-tab-pane>
@@ -314,9 +362,9 @@
               >
                 <el-option
                   v-for="option in configSummary?.options.term_rule_sets || []"
-                  :key="option.label"
+                  :key="configOptionKey(option)"
                   :label="option.label"
-                  :value="option.label"
+                  :value="configOptionKey(option)"
                 />
               </el-select>
             </el-form-item>
@@ -330,9 +378,9 @@
               >
                 <el-option
                   v-for="option in configSummary?.options.translation_term_sets || []"
-                  :key="option.label"
+                  :key="configOptionKey(option)"
                   :label="option.label"
-                  :value="option.label"
+                  :value="configOptionKey(option)"
                 />
               </el-select>
             </el-form-item>
@@ -344,7 +392,7 @@
             show-icon
             title="重试只重绑术语规则集和翻译术语集默认值；模板和翻译配置沿用原任务快照。"
           />
-          <ApiErrorAlert :error="configError" />
+          <ApiErrorAlert :error="configError" :diagnostic-context="jobErrorDiagnosticContext('document_jobs.config_summary')" />
         </el-form>
         <template #footer>
           <el-button @click="retryDialogVisible = false">取消</el-button>
@@ -378,9 +426,9 @@
               >
                 <el-option
                   v-for="option in configSummary?.options.templates || []"
-                  :key="option.label"
+                  :key="configOptionKey(option)"
                   :label="option.label"
-                  :value="option.label"
+                  :value="configOptionKey(option)"
                 />
               </el-select>
             </el-form-item>
@@ -394,9 +442,9 @@
               >
                 <el-option
                   v-for="option in configSummary?.options.term_rule_sets || []"
-                  :key="option.label"
+                  :key="configOptionKey(option)"
                   :label="option.label"
-                  :value="option.label"
+                  :value="configOptionKey(option)"
                 />
               </el-select>
             </el-form-item>
@@ -410,9 +458,9 @@
               >
                 <el-option
                   v-for="option in configSummary?.options.translation_term_sets || []"
-                  :key="option.label"
+                  :key="configOptionKey(option)"
                   :label="option.label"
-                  :value="option.label"
+                  :value="configOptionKey(option)"
                 />
               </el-select>
             </el-form-item>
@@ -426,9 +474,9 @@
               >
                 <el-option
                   v-for="option in configSummary?.options.translation_profiles || []"
-                  :key="option.label"
+                  :key="configOptionKey(option)"
                   :label="option.label"
-                  :value="option.label"
+                  :value="configOptionKey(option)"
                 />
               </el-select>
             </el-form-item>
@@ -440,7 +488,7 @@
             show-icon
             title="重新发起会创建独立新任务；源任务状态、retry_count、归档状态都不会改变。"
           />
-          <ApiErrorAlert :error="configError" />
+          <ApiErrorAlert :error="configError" :diagnostic-context="jobErrorDiagnosticContext('document_jobs.config_summary')" />
         </el-form>
         <template #footer>
           <el-button @click="cloneDialogVisible = false">取消</el-button>
@@ -459,10 +507,10 @@ import { useRoute, useRouter } from "vue-router";
 
 import type {
   DocumentFileResponse,
+  DocumentJobActionId,
   DocumentJobCallbackMessageSummaryResponse,
   DocumentJobCloneRequest,
   DocumentJobConfigSummaryResponse,
-  DocumentJobConfigVersionOption,
   DocumentJobEventResponse,
   DocumentJobResourceSnapshot,
   DocumentJobRetryRequest,
@@ -480,14 +528,18 @@ import {
   formatBytes,
   formatDateTime,
   getJobSourceFilename,
+  documentJobActionDisabledReason,
   isActiveJobStatus,
+  isDocumentJobActionEnabled,
   jobModeText,
   jobStageText,
+  jobStatusText,
   translationQaStatusTagType,
   translationQaStatusText,
 } from "@/utils/format";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { copyDownloadLink, openDownloadLink, type DownloadLinkNotice } from "@/utils/download";
+import { configOptionKey, configVersionId, findConfigOption } from "@/utils/configOptions";
 
 const route = useRoute();
 const router = useRouter();
@@ -514,11 +566,15 @@ const activeTab = ref("overview");
 const eventLevelFilter = ref<"" | "info" | "warning" | "error">("");
 const eventStageFilter = ref<DocumentJobStage | "">("");
 const error = ref<ApiClientError | null>(null);
+const eventsError = ref<ApiClientError | null>(null);
+const filesError = ref<ApiClientError | null>(null);
+const callbackSummaryError = ref<ApiClientError | null>(null);
 const configError = ref<ApiClientError | null>(null);
 const configLoading = ref(false);
 const configSummary = ref<DocumentJobConfigSummaryResponse | null>(null);
 const lastDownloadLink = ref<DownloadLinkNotice | null>(null);
 let pollTimer: number | undefined;
+let pollRefreshCount = 0;
 
 type RetryStrategy = "keep_original" | "use_latest_term_assets" | "select_term_assets";
 type CloneConfigStrategy = NonNullable<DocumentJobCloneRequest["config_strategy"]>;
@@ -676,16 +732,22 @@ const failureSummary = computed(() => {
 });
 const failureHelpText = computed(() => {
   const code = job.value?.error_code || "";
+  const retryAction = job.value?.available_actions.retry;
+  const retryEnabled = retryAction?.enabled === true;
+  const retryDisabledReason = retryAction?.disabled_reason || "后端未允许重试。";
+  const retryGuidance = retryEnabled
+    ? "当前后端允许重试，可从动作区发起。"
+    : `当前后端未开放重试：${retryDisabledReason}`;
   if (code === "document_job_invalid_input") {
     return "输入文件或任务参数不满足后端校验。请换一个 PDF 或联系管理员确认输入限制。";
   }
   if (job.value?.failed_stage === "parsing") {
-    return "PDF 解析阶段失败。可先重试；如果仍失败，请把错误码和 trace_id 交给技术运营排查 MinerU 或文件内容问题。";
+    return `PDF 解析阶段失败。${retryGuidance} 请把错误码和 trace_id 交给技术运营排查 MinerU 或文件内容问题。`;
   }
   if (job.value?.failed_stage === "uploading") {
-    return "结果保存阶段失败。通常与对象存储或文件登记有关，请重试后再联系技术运营。";
+    return `结果保存阶段失败，通常与对象存储或文件登记有关。${retryGuidance}`;
   }
-  return "可以点击重试；如果后端返回 409，说明当前失败不可重试或次数已达上限，请按返回原因处理。";
+  return retryGuidance;
 });
 const runningNotice = computed(() => {
   if (!job.value || !isActiveJobStatus(job.value.status)) {
@@ -727,6 +789,137 @@ const callbackSummaryItems = computed(() => [
   { label: "replayable", value: String(callbackSummary.value?.replayable_count ?? 0) },
   { label: "oldest replayable", value: secondsLabel(callbackSummary.value?.oldest_replayable_age_seconds ?? null) },
 ]);
+const latestTraceId = computed(() => latestErrorEvent.value?.trace_id || "-");
+const dispositionAlertType = computed<"success" | "warning" | "error" | "info">(() => {
+  if (job.value?.status === "failed") {
+    return "error";
+  }
+  if (job.value?.status === "succeeded") {
+    return "success";
+  }
+  if (job.value?.status === "canceled" || isJobStale.value) {
+    return "warning";
+  }
+  return "info";
+});
+const isJobStale = computed(() => {
+  if (!job.value || !isActiveJobStatus(job.value.status)) {
+    return false;
+  }
+  const updatedAt = parseDate(job.value.updated_at);
+  return Boolean(updatedAt && Date.now() - updatedAt.getTime() > 10 * 60 * 1000);
+});
+const dispositionTitle = computed(() => {
+  if (!job.value) {
+    return "任务状态未知";
+  }
+  if (job.value.status === "failed") {
+    return `任务失败：${job.value.error_code || "unknown_error"}`;
+  }
+  if (isJobStale.value) {
+    return "任务长时间未更新";
+  }
+  if (job.value.status === "succeeded") {
+    return "任务已完成，可获取下载链接";
+  }
+  if (job.value.status === "canceled") {
+    return "任务已取消，文件和事件记录仍保留";
+  }
+  return "任务处理中";
+});
+const dispositionDescription = computed(() => {
+  if (!job.value) {
+    return "";
+  }
+  if (job.value.status === "failed") {
+    return `${failureHelpText.value} 查看下方动作禁用原因和诊断 tab 可获得更完整事件线索。`;
+  }
+  if (isJobStale.value) {
+    return "该任务仍处于活跃状态，但更新时间已超过 10 分钟。请先刷新事件流和 Callback 摘要，必要时联系技术运营。";
+  }
+  if (job.value.status === "succeeded") {
+    return "任务结果已登记。下载按钮会生成临时链接；链接失效后可以再次获取。";
+  }
+  if (job.value.status === "canceled") {
+    return "取消不会删除源文件、结果文件或事件记录；如需复跑，请按后端返回的重新发起可用性处理。";
+  }
+  return "页面会自动轮询任务详情。若进入停滞状态，会在这里显示排障提示。";
+});
+const dispositionFacts = computed(() => {
+  if (!job.value) {
+    return [];
+  }
+  return [
+    { label: "状态", value: jobStatusText[job.value.status] || job.value.status },
+    { label: "阶段", value: jobStageText[job.value.stage] || job.value.stage },
+    { label: "进度", value: `${job.value.progress}%` },
+    { label: "最近更新", value: formatDateTime(job.value.updated_at) },
+    { label: "失败阶段", value: job.value.failed_stage || "-" },
+    { label: "错误码", value: job.value.error_code || "-", mono: true },
+    { label: "Trace", value: latestTraceId.value, mono: true },
+    { label: "Callback", value: callbackHealthText.value },
+    { label: "文件", value: fileAvailabilitySummary.value },
+  ];
+});
+const taskActionOrder: DocumentJobActionId[] = ["download", "retry", "clone", "cancel", "archive", "unarchive"];
+const actionSummaries = computed(() => {
+  if (!job.value) {
+    return [];
+  }
+  const labels: Record<DocumentJobActionId, string> = {
+    download: "下载",
+    retry: "重试",
+    clone: "重新发起",
+    cancel: "取消",
+    archive: "归档",
+    unarchive: "取消归档",
+  };
+  return taskActionOrder.map((action) => ({
+    key: action,
+    label: labels[action],
+    enabled: isDocumentJobActionEnabled(job.value as DocumentJobResponse, action),
+    reason: documentJobActionDisabledReason(job.value as DocumentJobResponse, action),
+  }));
+});
+function jobErrorDiagnosticContext(operation: string) {
+  return {
+    route: route.fullPath,
+    operation,
+    jobId: jobId.value,
+    jobStatus: job.value?.status,
+    updatedAt: job.value?.updated_at,
+  };
+}
+const callbackHealthText = computed(() => {
+  if (callbackSummaryLoading.value) {
+    return "加载中";
+  }
+  if (callbackSummaryError.value) {
+    return "加载失败";
+  }
+  if (!callbackSummary.value) {
+    return "暂无摘要";
+  }
+  const failed = callbackStatusCount("failed");
+  const replayable = callbackSummary.value.replayable_count;
+  if (failed || replayable) {
+    return `failed ${failed} · replayable ${replayable}`;
+  }
+  return `pending ${callbackStatusCount("pending")} · processed ${callbackStatusCount("processed")}`;
+});
+const fileAvailabilitySummary = computed(() => {
+  if (filesLoading.value) {
+    return "加载中";
+  }
+  if (filesError.value) {
+    return "加载失败";
+  }
+  if (!files.value.length) {
+    return "暂无登记文件";
+  }
+  const downloadableCount = files.value.filter(canDownloadFile).length;
+  return `${downloadableCount}/${files.value.length} 可下载`;
+});
 
 function readRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null ? value as Record<string, unknown> : null;
@@ -786,6 +979,7 @@ async function loadJob(targetJobId = jobId.value): Promise<void> {
 
 async function loadEvents(targetJobId = jobId.value): Promise<void> {
   eventsLoading.value = true;
+  eventsError.value = null;
   try {
     const response = await documentJobsApi.listEvents(targetJobId);
     if (targetJobId === jobId.value) {
@@ -793,7 +987,7 @@ async function loadEvents(targetJobId = jobId.value): Promise<void> {
     }
   } catch (caught) {
     if (targetJobId === jobId.value) {
-      error.value = normalizeApiError(caught);
+      eventsError.value = normalizeApiError(caught);
     }
   } finally {
     if (targetJobId === jobId.value) {
@@ -804,6 +998,7 @@ async function loadEvents(targetJobId = jobId.value): Promise<void> {
 
 async function loadFiles(targetJobId = jobId.value): Promise<void> {
   filesLoading.value = true;
+  filesError.value = null;
   try {
     const response = await documentJobsApi.listFiles(targetJobId);
     if (targetJobId === jobId.value) {
@@ -811,7 +1006,7 @@ async function loadFiles(targetJobId = jobId.value): Promise<void> {
     }
   } catch (caught) {
     if (targetJobId === jobId.value) {
-      error.value = normalizeApiError(caught);
+      filesError.value = normalizeApiError(caught);
     }
   } finally {
     if (targetJobId === jobId.value) {
@@ -822,6 +1017,7 @@ async function loadFiles(targetJobId = jobId.value): Promise<void> {
 
 async function loadCallbackSummary(targetJobId = jobId.value): Promise<void> {
   callbackSummaryLoading.value = true;
+  callbackSummaryError.value = null;
   try {
     const response = await documentJobsApi.getCallbackMessageSummary(targetJobId);
     if (targetJobId === jobId.value) {
@@ -829,7 +1025,7 @@ async function loadCallbackSummary(targetJobId = jobId.value): Promise<void> {
     }
   } catch (caught) {
     if (targetJobId === jobId.value) {
-      error.value = normalizeApiError(caught);
+      callbackSummaryError.value = normalizeApiError(caught);
     }
   } finally {
     if (targetJobId === jobId.value) {
@@ -838,19 +1034,40 @@ async function loadCallbackSummary(targetJobId = jobId.value): Promise<void> {
   }
 }
 
-async function loadAll(): Promise<void> {
+type LoadAllOptions = {
+  secondary?: "all" | "smart";
+};
+
+async function loadAll(options: LoadAllOptions = {}): Promise<void> {
   const targetJobId = jobId.value;
   await loadJob(targetJobId);
   if (targetJobId !== jobId.value) {
     return;
   }
   if (job.value) {
-    await Promise.all([loadEvents(targetJobId), loadFiles(targetJobId), loadCallbackSummary(targetJobId)]);
+    await loadEvents(targetJobId);
+    if (options.secondary === "smart" && !shouldRefreshSecondaryDuringPoll()) {
+      if (activeTab.value === "files") {
+        await loadFiles(targetJobId);
+      } else if (activeTab.value === "overview") {
+        await loadCallbackSummary(targetJobId);
+      }
+      return;
+    }
+    await Promise.all([loadFiles(targetJobId), loadCallbackSummary(targetJobId)]);
   } else {
     events.value = [];
     files.value = [];
     callbackSummary.value = null;
+    eventsError.value = null;
+    filesError.value = null;
+    callbackSummaryError.value = null;
   }
+}
+
+function shouldRefreshSecondaryDuringPoll(): boolean {
+  pollRefreshCount += 1;
+  return pollRefreshCount % 3 === 0;
 }
 
 function openRetryDialog(target: DocumentJobResponse): void {
@@ -884,6 +1101,7 @@ function stopPolling(): void {
     window.clearInterval(pollTimer);
     pollTimer = undefined;
   }
+  pollRefreshCount = 0;
 }
 
 function syncPolling(): void {
@@ -892,7 +1110,7 @@ function syncPolling(): void {
     return;
   }
   pollTimer = window.setInterval(() => {
-    void loadAll();
+    void loadAll({ secondary: "smart" });
   }, 4000);
 }
 
@@ -1208,17 +1426,6 @@ async function loadConfigSummary(): Promise<void> {
   }
 }
 
-function findConfigOption(
-  options: DocumentJobConfigVersionOption[],
-  label: string,
-): DocumentJobConfigVersionOption | null {
-  return options.find((option) => option.label === label) || null;
-}
-
-function configVersionId(option: DocumentJobConfigVersionOption): string {
-  return `${option.resource_id}@${option.version}`;
-}
-
 function handleVisibilityChange(): void {
   syncPolling();
 }
@@ -1230,6 +1437,9 @@ function resetPageStateForRouteChange(): void {
   files.value = [];
   callbackSummary.value = null;
   error.value = null;
+  eventsError.value = null;
+  filesError.value = null;
+  callbackSummaryError.value = null;
   configError.value = null;
   lastDownloadLink.value = null;
   retryDialogVisible.value = false;
@@ -1359,6 +1569,71 @@ onBeforeUnmount(() => {
   text-decoration: none;
 }
 
+.task-disposition-card {
+  margin-bottom: 12px;
+}
+
+.task-disposition-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 360px);
+  gap: 18px;
+  align-items: start;
+}
+
+.task-disposition-alert p {
+  margin: 4px 0 0;
+}
+
+.task-disposition-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.task-disposition-fact {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #d9e2ec;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.task-disposition-fact span,
+.task-action-item small {
+  display: block;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.task-disposition-fact strong {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: #1f2937;
+  font-size: 13px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-action-summary h3 {
+  margin: 0 0 10px;
+  color: #1f2937;
+  font-size: 15px;
+}
+
+.task-action-list {
+  display: grid;
+  gap: 8px;
+}
+
+.task-action-item {
+  display: grid;
+  gap: 4px;
+}
+
 .qa-summary {
   display: inline-flex;
   flex-wrap: wrap;
@@ -1415,7 +1690,12 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 760px) {
+  .task-disposition-layout,
   .detail-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .task-disposition-facts {
     grid-template-columns: 1fr;
   }
 }

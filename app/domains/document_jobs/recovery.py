@@ -25,12 +25,11 @@ from app.domains.document_jobs.repository import (
     DocumentJobEventRepositoryProtocol,
     DocumentJobRepositoryProtocol,
 )
+from app.domains.document_jobs.workflow import ACTIVE_DOCUMENT_JOB_STATUSES, TERMINAL_DOCUMENT_JOB_STATUSES
 from app.domains.resources.models import utc_now
 
 
 CALLBACK_MESSAGE_STATUSES = ("pending", "running", "processed", "failed", "ignored")
-ACTIVE_DOCUMENT_JOB_STATUSES = {"pending", "queued", "running"}
-TERMINAL_DOCUMENT_JOB_STATUSES = {"succeeded", "failed", "canceled"}
 DOCUMENT_JOB_RECOVERY_STALE_SECONDS = 600
 RECENT_PROBLEM_MESSAGE_LIMIT = 5
 

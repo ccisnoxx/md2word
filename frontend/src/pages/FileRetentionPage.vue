@@ -991,7 +991,9 @@
       </el-form>
       <template #footer>
         <el-button @click="deleteDialog.visible = false">取消</el-button>
-        <el-button type="danger" :loading="deleting" @click="executePhysicalDelete">确认物理删除</el-button>
+        <el-button type="danger" :disabled="!canSubmitPhysicalDelete" :loading="deleting" @click="executePhysicalDelete">
+          确认物理删除
+        </el-button>
       </template>
     </el-dialog>
 
@@ -1225,6 +1227,12 @@ const canOpenDeleteDialog = computed(() => (
   && deleteReport.value?.action_mode === "delete_preview"
   && fileIdsMatchCurrentSelection(deleteReport.value.requested_file_ids)
   && deletablePreviewCount.value > 0
+));
+const canSubmitPhysicalDelete = computed(() => (
+  canOpenDeleteDialog.value
+  && deleteReport.value !== null
+  && deleteDialog.reason.trim().length > 0
+  && deleteDialog.confirmation === deleteReport.value.confirmation_phrase
 ));
 const cleanupDeletablePreviewCount = computed(() => (
   cleanupRunReport.value?.physical_delete.items.filter((item) => item.outcome === "deletable").length ?? 0
@@ -1789,7 +1797,7 @@ async function runPolicyReasonAction(
 
 // 执行 selected expired 文件物理删除，并刷新 retention plan。
 async function executePhysicalDelete(): Promise<void> {
-  if (!canOpenDeleteDialog.value || !deleteReport.value) {
+  if (!canSubmitPhysicalDelete.value || !deleteReport.value) {
     return;
   }
   deleting.value = true;

@@ -1166,6 +1166,7 @@ export type FileQuotaPolicyOpsSummaryResponse = {
 export type DocumentJobMode = "direct_pdf_to_word" | "en2zh_pdf_to_word";
 export type DocumentLanguage = "auto" | "zh" | "en";
 export type DocumentJobStatus = "pending" | "queued" | "running" | "succeeded" | "failed" | "canceled";
+export type DocumentJobStatusGroup = "active";
 export type DocumentJobListSort = "created_at_desc" | "created_at_asc" | "updated_at_desc" | "updated_at_asc";
 export type DocumentJobStage =
   | "uploaded"
@@ -1316,6 +1317,8 @@ export type DocumentJobListResponse = {
   page_size: number;
   total: number;
   summary: Record<string, number>;
+  filtered_summary?: Record<string, number>;
+  translation_qa_summary?: Partial<Record<TranslationQaStatus, number>>;
 };
 
 export type DocumentJobBulkItemResponse = {
