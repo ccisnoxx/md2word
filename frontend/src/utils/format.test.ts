@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import type { DocumentJobResponse } from "@/api/types";
-import { documentJobActionDisabledReason, isDocumentJobActionEnabled } from "@/utils/format";
+import {
+  documentJobActionDisabledReason,
+  documentJobModeCreateLanguage,
+  documentJobModeOptions,
+  documentJobModeRequiresTranslationResources,
+  documentJobModeSupportsTranslationQa,
+  isDocumentJobActionEnabled,
+} from "@/utils/format";
 
 function buildJob(
   availableActions: DocumentJobResponse["available_actions"],
@@ -64,5 +71,22 @@ describe("document job action contract", () => {
     expect(documentJobActionDisabledReason(job, "download")).toBe("结果文件已过期。");
     expect(isDocumentJobActionEnabled(job, "archive")).toBe(true);
     expect(documentJobActionDisabledReason(job, "archive")).toBe("");
+  });
+});
+
+describe("document job mode metadata", () => {
+  it("defines create language and translation-resource behavior in one place", () => {
+    expect(documentJobModeOptions.map((option) => option.mode)).toEqual([
+      "direct_pdf_to_word",
+      "en2zh_pdf_to_word",
+    ]);
+
+    expect(documentJobModeCreateLanguage("direct_pdf_to_word")).toBe("auto");
+    expect(documentJobModeRequiresTranslationResources("direct_pdf_to_word")).toBe(false);
+    expect(documentJobModeSupportsTranslationQa("direct_pdf_to_word")).toBe(false);
+
+    expect(documentJobModeCreateLanguage("en2zh_pdf_to_word")).toBe("en");
+    expect(documentJobModeRequiresTranslationResources("en2zh_pdf_to_word")).toBe(true);
+    expect(documentJobModeSupportsTranslationQa("en2zh_pdf_to_word")).toBe(true);
   });
 });

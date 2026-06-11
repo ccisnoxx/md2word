@@ -35,13 +35,27 @@
       </template>
     </el-upload>
 
-    <div v-if="enableEn2zh" class="mode-row">
+    <div class="mode-row">
       <span class="mode-label">任务模式</span>
       <el-radio-group v-model="mode" size="small">
-        <el-radio-button label="direct_pdf_to_word">直接转 Word</el-radio-button>
-        <el-radio-button label="en2zh_pdf_to_word">英译中</el-radio-button>
+        <el-radio-button
+          v-for="option in selectableModeOptions"
+          :key="option.mode"
+          :label="option.mode"
+          :disabled="option.disabled"
+        >
+          {{ option.shortLabel }}
+        </el-radio-button>
       </el-radio-group>
     </div>
+    <el-alert
+      v-if="modeReadinessHint"
+      class="mode-readiness"
+      type="warning"
+      :closable="false"
+      show-icon
+      :title="modeReadinessHint"
+    />
 
     <div class="config-panel" v-loading="configLoading">
       <div class="config-panel-header">
@@ -107,7 +121,7 @@
               />
             </el-select>
           </label>
-          <label v-if="mode === 'en2zh_pdf_to_word'">
+          <label v-if="selectedModeRequiresTranslationResources">
             <span>翻译术语集</span>
             <el-select v-model="selectedTranslationTermVersion" clearable filterable placeholder="使用默认翻译术语">
               <el-option
@@ -118,7 +132,7 @@
               />
             </el-select>
           </label>
-          <label v-if="mode === 'en2zh_pdf_to_word'">
+          <label v-if="selectedModeRequiresTranslationResources">
             <span>翻译配置</span>
             <el-select v-model="selectedTranslationProfileVersion" clearable filterable placeholder="使用默认翻译配置">
               <el-option
@@ -160,6 +174,11 @@ import { getMaxUploadBytes, uploadFileContent, validatePdfFile } from "@/utils/u
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { readinessCodeText } from "@/utils/displayText";
 import { configOptionKey, configVersionId, findConfigOption } from "@/utils/configOptions";
+import {
+  documentJobModeCreateLanguage,
+  documentJobModeOptions,
+  documentJobModeRequiresTranslationResources,
+} from "@/utils/format";
 
 const emit = defineEmits<{
   created: [jobId: string];
@@ -180,10 +199,10 @@ const selectedTemplateVersion = ref("");
 const selectedTermRuleVersion = ref("");
 const selectedTranslationTermVersion = ref("");
 const selectedTranslationProfileVersion = ref("");
-const enableEn2zh = import.meta.env.VITE_ENABLE_EN2ZH === "true";
 const maxUploadMb = computed(() => Math.round(getMaxUploadBytes() / 1024 / 1024));
 const isAdmin = computed(() => auth.user?.role === "admin");
 const configWarnings = computed(() => (configSummary.value?.readiness.warnings || []).map(readinessCodeText));
+const en2zhAvailable = computed(() => configSummary.value?.readiness.en2zh_available === true);
 const p0ReadinessBlockers = computed(() => configSummary.value?.readiness.blockers || []);
 const p0ExecutionBlocked = computed(() => Boolean(
   configSummary.value?.readiness.p0_document_jobs_required
@@ -193,16 +212,30 @@ const p0ReadinessMessages = computed(() => (
   (p0ReadinessBlockers.value.length > 0 ? p0ReadinessBlockers.value : ["p0_document_jobs_not_ready"]).map(readinessCodeText)
 ));
 const configUnavailable = computed(() => Boolean(configError.value || !configSummary.value));
+const selectableModeOptions = computed(() => documentJobModeOptions.map((option) => ({
+  ...option,
+  disabled: documentJobModeRequiresTranslationResources(option.mode) && !en2zhAvailable.value,
+})));
+const selectedModeRequiresTranslationResources = computed(() => documentJobModeRequiresTranslationResources(mode.value));
+const selectedModeDisabled = computed(() =>
+  selectedModeRequiresTranslationResources.value && !en2zhAvailable.value,
+);
 const createDisabled = computed(() => (
-  !selectedFile.value || configLoading.value || configUnavailable.value || p0ExecutionBlocked.value
+  !selectedFile.value || configLoading.value || configUnavailable.value || p0ExecutionBlocked.value || selectedModeDisabled.value
 ));
+const modeReadinessHint = computed(() => {
+  if (!configSummary.value || en2zhAvailable.value) {
+    return "";
+  }
+  return "英译中需要默认翻译术语集和翻译配置发布后才能选择。";
+});
 const defaultConfigItems = computed(() => {
   const defaults = configSummary.value?.defaults;
   const items = [
     { key: "template", label: "模板", value: defaults?.template?.label || "未配置" },
     { key: "term-rule-set", label: "术语规则集", value: defaults?.term_rule_set?.label || "未配置" },
   ];
-  if (mode.value === "en2zh_pdf_to_word") {
+  if (selectedModeRequiresTranslationResources.value) {
     items.push(
       { key: "translation-term-set", label: "翻译术语集", value: defaults?.translation_term_set?.label || "未配置" },
       { key: "translation-profile", label: "翻译配置", value: defaults?.translation_profile?.label || "未配置" },
@@ -277,7 +310,14 @@ function handleExceed(): void {
 }
 
 async function submit(): Promise<void> {
-  if (!selectedFile.value || submitting.value || configLoading.value || configUnavailable.value || p0ExecutionBlocked.value) {
+  if (
+    !selectedFile.value
+    || submitting.value
+    || configLoading.value
+    || configUnavailable.value
+    || p0ExecutionBlocked.value
+    || selectedModeDisabled.value
+  ) {
     return;
   }
 
@@ -303,7 +343,7 @@ async function submit(): Promise<void> {
     const payload: DocumentJobCreateRequest = {
       source_file_id: authorization.file_id,
       mode: mode.value,
-      document_language: mode.value === "en2zh_pdf_to_word" ? "en" : "auto",
+      document_language: documentJobModeCreateLanguage(mode.value),
       debug_full_text: false,
     };
     if (isAdmin.value) {
@@ -314,11 +354,11 @@ async function submit(): Promise<void> {
         payload.term_rule_set_id = selectedTermRuleOption.value.resource_id;
         payload.term_rule_set_version = selectedTermRuleOption.value.version;
       }
-      if (mode.value === "en2zh_pdf_to_word" && selectedTranslationTermOption.value) {
+      if (selectedModeRequiresTranslationResources.value && selectedTranslationTermOption.value) {
         payload.translation_term_set_id = selectedTranslationTermOption.value.resource_id;
         payload.translation_term_version = selectedTranslationTermOption.value.version;
       }
-      if (mode.value === "en2zh_pdf_to_word" && selectedTranslationProfileOption.value) {
+      if (selectedModeRequiresTranslationResources.value && selectedTranslationProfileOption.value) {
         payload.translation_profile_id = selectedTranslationProfileOption.value.resource_id;
         payload.translation_profile_version = selectedTranslationProfileOption.value.version;
       }
@@ -341,9 +381,15 @@ async function submit(): Promise<void> {
 }
 
 watch(mode, (nextMode) => {
-  if (nextMode === "direct_pdf_to_word") {
+  if (!documentJobModeRequiresTranslationResources(nextMode)) {
     selectedTranslationTermVersion.value = "";
     selectedTranslationProfileVersion.value = "";
+  }
+});
+
+watch(selectedModeDisabled, (disabled) => {
+  if (disabled) {
+    mode.value = "direct_pdf_to_word";
   }
 });
 
@@ -409,6 +455,10 @@ onMounted(() => {
 .mode-label {
   color: #344054;
   font-size: 14px;
+}
+
+.mode-readiness {
+  margin-top: 10px;
 }
 
 .config-panel {

@@ -1,7 +1,9 @@
 // File: frontend/src/utils/format.ts
 // Purpose: 统一任务页面使用的状态文案、展示格式和操作权限判断。
 import type {
+  DocumentLanguage,
   DocumentJobActionId,
+  DocumentJobMode,
   DocumentJobResponse,
   DocumentJobStage,
   DocumentJobStatus,
@@ -29,10 +31,56 @@ export const jobStageText: Record<DocumentJobStage, string> = {
   canceled: "已取消",
 };
 
-export const jobModeText: Record<string, string> = {
-  direct_pdf_to_word: "PDF 直接转 Word",
-  en2zh_pdf_to_word: "英文 PDF 翻译转 Word",
+export type DocumentJobModeDefinition = {
+  mode: DocumentJobMode;
+  label: string;
+  shortLabel: string;
+  createDocumentLanguage: DocumentLanguage;
+  requiresTranslationResources: boolean;
+  supportsTranslationQa: boolean;
 };
+
+export const documentJobModeDefinitions: Record<DocumentJobMode, DocumentJobModeDefinition> = {
+  direct_pdf_to_word: {
+    mode: "direct_pdf_to_word",
+    label: "PDF 直接转 Word",
+    shortLabel: "直接转 Word",
+    createDocumentLanguage: "auto",
+    requiresTranslationResources: false,
+    supportsTranslationQa: false,
+  },
+  en2zh_pdf_to_word: {
+    mode: "en2zh_pdf_to_word",
+    label: "英文 PDF 翻译转 Word",
+    shortLabel: "英译中",
+    createDocumentLanguage: "en",
+    requiresTranslationResources: true,
+    supportsTranslationQa: true,
+  },
+};
+
+export const documentJobModeOrder: DocumentJobMode[] = ["direct_pdf_to_word", "en2zh_pdf_to_word"];
+
+export const documentJobModeOptions: DocumentJobModeDefinition[] = documentJobModeOrder.map(
+  (mode) => documentJobModeDefinitions[mode],
+);
+
+export const jobModeText: Record<string, string> = {
+  direct_pdf_to_word: documentJobModeDefinitions.direct_pdf_to_word.label,
+  en2zh_pdf_to_word: documentJobModeDefinitions.en2zh_pdf_to_word.label,
+};
+
+export function documentJobModeCreateLanguage(mode: DocumentJobMode): DocumentLanguage {
+  return documentJobModeDefinitions[mode].createDocumentLanguage;
+}
+
+export function documentJobModeRequiresTranslationResources(mode: DocumentJobMode): boolean {
+  return documentJobModeDefinitions[mode].requiresTranslationResources;
+}
+
+export function documentJobModeSupportsTranslationQa(mode: DocumentJobMode): boolean {
+  return documentJobModeDefinitions[mode].supportsTranslationQa;
+}
 
 export const translationQaStatusText: Record<TranslationQaStatus, string> = {
   unreviewed: "未复核",
