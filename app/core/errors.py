@@ -22,6 +22,7 @@ ApiErrorCode = Literal[
     "auth_unconfigured",
     "job_state_conflict",
     "conversion_failed",
+    "document_jobs_not_ready",
     "resource_snapshot_error",
     "internal_error",
 ]
@@ -37,4 +38,3 @@ class ApiError(Exception):
 
     def __str__(self) -> str:
         return self.message
-

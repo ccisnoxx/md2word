@@ -52,9 +52,11 @@ class OpenAPIExportTests(TestCase):
             formatted = format_release_report(report)
 
         self.assertTrue(report.ok)
-        self.assertEqual([item.name for item in report.items], ["openapi"])
+        self.assertEqual([item.name for item in report.items], ["openapi", "frontend-contract", "frontend-smoke-mock"])
         self.assertIn("Release check report", formatted)
         self.assertIn("[openapi] ok: True", formatted)
+        self.assertIn("[frontend-contract] ok: True", formatted)
+        self.assertIn("[frontend-smoke-mock] ok: True", formatted)
 
     def test_check_runtime_readiness_requires_deployment_and_p0_gates(self):
         responses = {

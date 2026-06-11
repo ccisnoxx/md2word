@@ -61,58 +61,87 @@
         <template #default="{ row }">
           <div class="action-row">
             <el-button size="small" text type="primary" @click="$router.push(`/jobs/${row.id}`)">查看</el-button>
-            <el-button
-              size="small"
-              text
-              type="primary"
-              :disabled="!canDownloadDocumentJob(row)"
-              :title="documentJobActionDisabledReason(row, 'download')"
-              @click="$emit('download', row)"
+            <el-tooltip
+              :disabled="!documentJobActionDisabledReason(row, 'download')"
+              :content="documentJobActionDisabledReason(row, 'download')"
+              placement="top"
             >
-              下载
-            </el-button>
+              <span class="action-tooltip-anchor">
+                <el-button
+                  size="small"
+                  text
+                  type="primary"
+                  :loading="isActionPending(row, 'download')"
+                  :disabled="isJobPending(row) || !canDownloadDocumentJob(row)"
+                  @click="$emit('download', row)"
+                >
+                  下载
+                </el-button>
+              </span>
+            </el-tooltip>
             <el-dropdown trigger="click" @command="handleRowCommand(row, $event)">
-              <el-button size="small" text :icon="MoreFilled">更多</el-button>
+              <el-button size="small" text :icon="MoreFilled" :disabled="isJobPending(row)">更多</el-button>
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item
                     command="retry"
-                    :disabled="!canRetryDocumentJob(row)"
-                    :title="documentJobActionDisabledReason(row, 'retry')"
+                    :disabled="isJobPending(row) || !canRetryDocumentJob(row)"
                   >
-                    重试
+                    <span class="dropdown-action-label">
+                      <span>重试</span>
+                      <small v-if="rowActionDisabledReason(row, 'retry')" class="dropdown-action-reason">
+                        {{ rowActionDisabledReason(row, 'retry') }}
+                      </small>
+                    </span>
                   </el-dropdown-item>
                   <el-dropdown-item
                     command="clone"
-                    :disabled="!canCloneDocumentJob(row)"
-                    :title="documentJobActionDisabledReason(row, 'clone')"
+                    :disabled="isJobPending(row) || !canCloneDocumentJob(row)"
                   >
-                    重新发起
+                    <span class="dropdown-action-label">
+                      <span>重新发起</span>
+                      <small v-if="rowActionDisabledReason(row, 'clone')" class="dropdown-action-reason">
+                        {{ rowActionDisabledReason(row, 'clone') }}
+                      </small>
+                    </span>
                   </el-dropdown-item>
                   <el-dropdown-item
                     command="cancel"
-                    :disabled="!canCancelDocumentJob(row)"
-                    :title="documentJobActionDisabledReason(row, 'cancel')"
+                    :disabled="isJobPending(row) || !canCancelDocumentJob(row)"
                   >
-                    取消
+                    <span class="dropdown-action-label">
+                      <span>取消</span>
+                      <small v-if="rowActionDisabledReason(row, 'cancel')" class="dropdown-action-reason">
+                        {{ rowActionDisabledReason(row, 'cancel') }}
+                      </small>
+                    </span>
                   </el-dropdown-item>
                   <el-dropdown-item
                     command="archive"
-                    :disabled="!canArchiveDocumentJob(row)"
-                    :title="documentJobActionDisabledReason(row, 'archive')"
+                    :disabled="isJobPending(row) || !canArchiveDocumentJob(row)"
                   >
-                    归档
+                    <span class="dropdown-action-label">
+                      <span>归档</span>
+                      <small v-if="rowActionDisabledReason(row, 'archive')" class="dropdown-action-reason">
+                        {{ rowActionDisabledReason(row, 'archive') }}
+                      </small>
+                    </span>
                   </el-dropdown-item>
                   <el-dropdown-item
                     command="unarchive"
-                    :disabled="!canUnarchiveDocumentJob(row)"
-                    :title="documentJobActionDisabledReason(row, 'unarchive')"
+                    :disabled="isJobPending(row) || !canUnarchiveDocumentJob(row)"
                   >
-                    取消归档
+                    <span class="dropdown-action-label">
+                      <span>取消归档</span>
+                      <small v-if="rowActionDisabledReason(row, 'unarchive')" class="dropdown-action-reason">
+                        {{ rowActionDisabledReason(row, 'unarchive') }}
+                      </small>
+                    </span>
                   </el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
+            <span v-if="pendingActionLabel(row)" class="action-pending-label">{{ pendingActionLabel(row) }}</span>
           </div>
         </template>
       </el-table-column>
@@ -134,7 +163,7 @@
 <script setup lang="ts">
 import { MoreFilled } from "@element-plus/icons-vue";
 
-import type { DocumentJobResponse } from "@/api/types";
+import type { DocumentJobActionId, DocumentJobResponse } from "@/api/types";
 import JobProgress from "@/components/JobProgress.vue";
 import JobStatusBadge from "@/components/JobStatusBadge.vue";
 import {
@@ -152,12 +181,13 @@ import {
   translationQaStatusText,
 } from "@/utils/format";
 
-defineProps<{
+const props = defineProps<{
   jobs: DocumentJobResponse[];
   loading: boolean;
   page: number;
   pageSize: number;
   total: number;
+  actionPending?: Record<string, DocumentJobActionId | undefined>;
 }>();
 
 const emit = defineEmits<{
@@ -200,6 +230,41 @@ function handleRowCommand(row: DocumentJobResponse, command: string | number | o
   } else if (command === "unarchive") {
     emit("unarchive", row);
   }
+}
+
+function pendingAction(row: DocumentJobResponse): DocumentJobActionId | undefined {
+  return props.actionPending?.[row.id];
+}
+
+function isActionPending(row: DocumentJobResponse, action: DocumentJobActionId): boolean {
+  return pendingAction(row) === action;
+}
+
+function isJobPending(row: DocumentJobResponse): boolean {
+  return Boolean(pendingAction(row));
+}
+
+function rowActionDisabledReason(row: DocumentJobResponse, action: DocumentJobActionId): string {
+  if (isJobPending(row)) {
+    return "其他操作执行中。";
+  }
+  return documentJobActionDisabledReason(row, action);
+}
+
+function pendingActionLabel(row: DocumentJobResponse): string {
+  const action = pendingAction(row);
+  if (!action) {
+    return "";
+  }
+  const labels: Record<DocumentJobActionId, string> = {
+    download: "下载中",
+    retry: "重试中",
+    cancel: "取消中",
+    archive: "归档中",
+    unarchive: "取消归档中",
+    clone: "创建中",
+  };
+  return labels[action];
 }
 </script>
 
@@ -277,8 +342,31 @@ function handleRowCommand(row: DocumentJobResponse, command: string | number | o
   white-space: nowrap;
 }
 
+.action-pending-label {
+  color: #667085;
+  font-size: 12px;
+}
+
 .action-row :deep(.el-button + .el-button) {
   margin-left: 0;
+}
+
+.action-tooltip-anchor,
+.dropdown-action-label {
+  display: inline-flex;
+}
+
+.dropdown-action-label {
+  display: grid;
+  gap: 2px;
+  min-width: 124px;
+  white-space: normal;
+}
+
+.dropdown-action-reason {
+  color: #909399;
+  font-size: 11px;
+  line-height: 1.3;
 }
 
 .pagination-row {

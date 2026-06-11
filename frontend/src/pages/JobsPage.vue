@@ -11,7 +11,8 @@
       <div class="hero-actions">
         <div class="live-pill" :class="{ 'is-loading': loading }">
           <span aria-hidden="true"></span>
-          <strong>{{ loading ? "同步中" : "已同步" }}</strong>
+          <strong>{{ syncStatusText }}</strong>
+          <small v-if="lastRefreshedAt">{{ lastRefreshedLabel }}</small>
         </div>
         <span :title="createDisabledReason">
           <el-button
@@ -23,7 +24,7 @@
             创建任务
           </el-button>
         </span>
-        <el-button class="hero-refresh" :icon="Refresh" :loading="loading" @click="loadJobs">刷新任务</el-button>
+        <el-button class="hero-refresh" :icon="Refresh" :loading="loading" @click="() => loadJobs()">刷新任务</el-button>
       </div>
     </section>
 
@@ -45,7 +46,7 @@
         <div>
           <p class="table-kicker">当前视图：{{ activeFilterLabel }}</p>
           <h2 class="section-title">转换任务</h2>
-          <p class="section-subtitle">查看当前账号可见的 document_jobs。</p>
+          <p class="section-subtitle">查看当前账号可见的 document_jobs。处理中任务会自动刷新。</p>
         </div>
         <div class="toolbar primary-toolbar">
           <el-input
@@ -57,7 +58,7 @@
             @clear="handleFilter"
             @keyup.enter="handleFilter"
           />
-          <el-select v-model="statusFilter" clearable placeholder="全部状态" class="filter-select" @change="handleFilter">
+          <el-select v-model="statusFilter" clearable placeholder="全部状态" class="filter-select" @change="handleStatusFilterChange">
             <el-option v-for="status in statuses" :key="status" :label="jobStatusText[status]" :value="status" />
           </el-select>
           <el-select v-model="qaStatusFilter" clearable placeholder="全部 QA" class="filter-select" @change="handleFilter">
@@ -104,9 +105,21 @@
       </div>
 
       <div class="quick-filter-row" aria-label="快捷筛选">
-        <el-button @click="applyQuickFilter('active')">运行中</el-button>
-        <el-button @click="applyQuickFilter('failed')">失败</el-button>
-        <el-button @click="applyQuickFilter('archived')">归档</el-button>
+        <el-button :type="statusGroupFilter === 'active' ? 'primary' : undefined" @click="applyQuickFilter('active')">处理中</el-button>
+        <el-button :type="statusFilter === 'failed' ? 'primary' : undefined" @click="applyQuickFilter('failed')">失败</el-button>
+        <el-button :type="includeArchived ? 'primary' : undefined" @click="applyQuickFilter('archived')">含归档</el-button>
+      </div>
+
+      <div v-if="activeFilterChips.length" class="active-filter-chips" aria-label="当前筛选条件">
+        <el-tag
+          v-for="chip in activeFilterChips"
+          :key="chip.key"
+          closable
+          effect="plain"
+          @close="removeFilter(chip.key)"
+        >
+          {{ chip.label }}
+        </el-tag>
       </div>
 
       <div v-if="selectedJobs.length" class="selection-bar" aria-label="批量操作">
@@ -124,7 +137,44 @@
         </div>
       </div>
 
-      <ApiErrorAlert :error="error" />
+      <ApiErrorAlert :error="error" :diagnostic-context="jobsErrorDiagnosticContext" />
+      <el-alert
+        v-if="staleVisibleJobs.length"
+        class="inline-result-alert"
+        type="warning"
+        :closable="false"
+        show-icon
+        :title="`${staleVisibleJobs.length} 个处理中任务长时间未更新`"
+      >
+        <div class="stale-job-list">
+          <RouterLink
+            v-for="job in staleVisibleJobs.slice(0, 3)"
+            :key="job.id"
+            class="mono"
+            :to="{ path: `/jobs/${job.id}`, query: returnQueryForDetail }"
+          >
+            {{ job.id }}
+          </RouterLink>
+          <span v-if="staleVisibleJobs.length > 3">等 {{ staleVisibleJobs.length }} 个任务</span>
+        </div>
+      </el-alert>
+      <el-alert
+        v-if="failedVisibleJobs.length"
+        class="inline-result-alert"
+        type="error"
+        :closable="false"
+        show-icon
+        :title="`${failedVisibleJobs.length} 个失败任务需要处理`"
+      >
+        <div class="failed-job-list">
+          <RouterLink v-for="job in failedVisibleJobs.slice(0, 3)" :key="job.id" :to="`/jobs/${job.id}`">
+            <span class="mono">{{ job.id }}</span>
+            <span>{{ job.failed_stage || job.stage }}</span>
+            <span>{{ job.error_code || "unknown_error" }}</span>
+            <span>{{ job.error_message || "进入详情查看诊断。" }}</span>
+          </RouterLink>
+        </div>
+      </el-alert>
       <el-alert
         v-if="lastDownloadLink"
         class="inline-result-alert"
@@ -162,6 +212,7 @@
       </el-alert>
 
       <div v-if="summaryEntries.length" class="summary-row" aria-label="状态汇总">
+        <span class="summary-caption">当前筛选状态汇总</span>
         <el-tag v-for="[status, count] in summaryEntries" :key="status" effect="plain">
           {{ statusLabel(status) }}: {{ count }}
         </el-tag>
@@ -190,6 +241,7 @@
           :page="page"
           :page-size="pageSize"
           :total="total"
+          :action-pending="actionPending"
           @page-change="handlePageChange"
           @selection-change="handleSelectionChange"
           @download="handleDownload"
@@ -205,16 +257,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { CircleCheck, Files, Filter, Plus, Refresh, Search, Timer, Warning } from "@element-plus/icons-vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute, useRouter, type LocationQuery } from "vue-router";
 
 import type {
+  DocumentJobActionId,
   DocumentJobBulkResponse,
   DocumentJobListSort,
   DocumentJobResponse,
   DocumentJobStatus,
+  DocumentJobStatusGroup,
   TranslationQaStatus,
 } from "@/api/types";
 import { documentJobsApi } from "@/api/documentJobs";
@@ -242,6 +296,7 @@ const page = ref(1);
 const pageSize = 20;
 const total = ref(0);
 const statusFilter = ref<DocumentJobStatus | "">("");
+const statusGroupFilter = ref<DocumentJobStatusGroup | "">("");
 const qaStatusFilter = ref<TranslationQaStatus | "">("");
 const searchKeyword = ref("");
 const sortFilter = ref<DocumentJobListSort>("created_at_desc");
@@ -252,7 +307,8 @@ const batchLoading = ref(false);
 const batchResult = ref<DocumentJobBulkResponse | null>(null);
 const batchResultLabel = ref("");
 const lastDownloadLink = ref<DownloadLinkNotice | null>(null);
-const summary = ref<Record<string, number>>({});
+const filteredSummary = ref<Record<string, number>>({});
+const actionPending = ref<Record<string, DocumentJobActionId | undefined>>({});
 const statuses: DocumentJobStatus[] = ["pending", "queued", "running", "succeeded", "failed", "canceled"];
 const qaStatuses: TranslationQaStatus[] = ["unreviewed", "approved", "needs_fix", "blocked"];
 const sortOptions: Array<{ label: string; value: DocumentJobListSort }> = [
@@ -262,12 +318,31 @@ const sortOptions: Array<{ label: string; value: DocumentJobListSort }> = [
   { label: "更新时间旧到新", value: "updated_at_asc" },
 ];
 
-const summaryEntries = computed(() => Object.entries(summary.value).filter(([, count]) => count > 0));
+type FilterChipKey = "status" | "status_group" | "translation_qa_status" | "q" | "sort" | "include_archived" | "created_range";
+type LoadJobsOptions = {
+  preserveError?: boolean;
+  background?: boolean;
+};
+
+const ACTIVE_AUTO_REFRESH_MS = 8000;
+const ACTIVE_STALE_MS = 10 * 60 * 1000;
+const activeJobStatuses: DocumentJobStatus[] = ["pending", "queued", "running"];
+const lastRefreshedAt = ref<string | null>(null);
+const backgroundRefreshing = ref(false);
+const nowMs = ref(Date.now());
+let refreshTimer: number | undefined;
+
+const jobsErrorDiagnosticContext = computed(() => ({
+  route: route.fullPath,
+  operation: "document_jobs.list",
+}));
+const summaryEntries = computed(() => Object.entries(filteredSummary.value).filter(([, count]) => count > 0));
 const canCreateJob = computed(() => auth.hasPermission("document_jobs:create"));
 const createDisabledReason = computed(() => (canCreateJob.value ? "" : "当前账号没有创建 document job 的权限。"));
 const hasActiveFilters = computed(() =>
   Boolean(
     statusFilter.value ||
+      statusGroupFilter.value ||
       qaStatusFilter.value ||
       searchKeyword.value.trim() ||
       includeArchived.value ||
@@ -296,12 +371,42 @@ const advancedFilterCount = computed(() => {
   return count;
 });
 const activeFilterLabel = computed(() => {
-  const statusText = statusFilter.value ? statusLabel(statusFilter.value) : "全部状态";
+  const statusText = statusFilter.value
+    ? statusLabel(statusFilter.value)
+    : statusGroupFilter.value === "active"
+      ? "处理中"
+      : "全部状态";
   const qaText = qaStatusFilter.value ? `QA ${translationQaStatusText[qaStatusFilter.value]}` : "全部 QA";
   const archiveText = includeArchived.value ? "含归档" : "默认";
   const dateText = createdRange.value ? `${createdRange.value[0]} ~ ${createdRange.value[1]}` : "不限日期";
   return `${statusText} · ${qaText} · ${archiveText} · ${dateText}`;
 });
+const activeFilterChips = computed<Array<{ key: FilterChipKey; label: string }>>(() => {
+  const chips: Array<{ key: FilterChipKey; label: string }> = [];
+  if (statusFilter.value) {
+    chips.push({ key: "status", label: `状态：${statusLabel(statusFilter.value)}` });
+  } else if (statusGroupFilter.value === "active") {
+    chips.push({ key: "status_group", label: "状态组：处理中" });
+  }
+  if (qaStatusFilter.value) {
+    chips.push({ key: "translation_qa_status", label: `QA：${translationQaStatusText[qaStatusFilter.value]}` });
+  }
+  if (searchKeyword.value.trim()) {
+    chips.push({ key: "q", label: `搜索：${searchKeyword.value.trim()}` });
+  }
+  if (includeArchived.value) {
+    chips.push({ key: "include_archived", label: "含归档" });
+  }
+  if (createdRange.value) {
+    chips.push({ key: "created_range", label: "创建时间已筛选" });
+  }
+  if (sortFilter.value !== "created_at_desc") {
+    const sortOption = sortOptions.find((option) => option.value === sortFilter.value);
+    chips.push({ key: "sort", label: `排序：${sortOption?.label || sortFilter.value}` });
+  }
+  return chips;
+});
+const returnQueryForDetail = computed(() => jobsRouteQuery());
 const activeCount = computed(
   () => countByStatus("pending") + countByStatus("queued") + countByStatus("running"),
 );
@@ -309,6 +414,22 @@ const selectedRetryableJobs = computed(() => selectedJobs.value.filter(canRetryD
 const selectedCancelableJobs = computed(() => selectedJobs.value.filter(canCancelDocumentJob));
 const selectedArchivableJobs = computed(() => selectedJobs.value.filter(canArchiveDocumentJob));
 const failedBatchItems = computed(() => batchResult.value?.items.filter((item) => !item.ok) || []);
+const activeVisibleJobs = computed(() => jobs.value.filter((job) => activeJobStatuses.includes(job.status)));
+const failedVisibleJobs = computed(() => jobs.value.filter((job) => job.status === "failed"));
+const staleVisibleJobs = computed(() => activeVisibleJobs.value.filter((job) => {
+  const updatedAt = new Date(job.updated_at).getTime();
+  return Number.isFinite(updatedAt) && nowMs.value - updatedAt > ACTIVE_STALE_MS;
+}));
+const syncStatusText = computed(() => {
+  if (loading.value || backgroundRefreshing.value) {
+    return "同步中";
+  }
+  if (staleVisibleJobs.value.length) {
+    return "有停滞";
+  }
+  return "已同步";
+});
+const lastRefreshedLabel = computed(() => (lastRefreshedAt.value ? `最近 ${formatDateTime(lastRefreshedAt.value)}` : ""));
 const metrics = computed(() => [
   {
     key: "total",
@@ -344,14 +465,24 @@ const metrics = computed(() => [
   },
 ]);
 
-async function loadJobs(): Promise<void> {
-  loading.value = true;
-  error.value = null;
+async function loadJobs(options: LoadJobsOptions = {}): Promise<void> {
+  if (loading.value || backgroundRefreshing.value) {
+    return;
+  }
+  if (options.background) {
+    backgroundRefreshing.value = true;
+  } else {
+    loading.value = true;
+  }
+  if (!options.preserveError) {
+    error.value = null;
+  }
   try {
     const response = await documentJobsApi.list({
       page: page.value,
       page_size: pageSize,
       status: statusFilter.value || undefined,
+      status_group: statusGroupFilter.value || undefined,
       translation_qa_status: qaStatusFilter.value || undefined,
       q: searchKeyword.value.trim() || undefined,
       sort: sortFilter.value,
@@ -362,23 +493,47 @@ async function loadJobs(): Promise<void> {
     jobs.value = response.items;
     selectedJobs.value = [];
     total.value = response.total;
-    summary.value = response.summary;
+    filteredSummary.value = response.filtered_summary ?? response.summary;
+    lastRefreshedAt.value = new Date().toISOString();
   } catch (caught) {
     error.value = normalizeApiError(caught);
   } finally {
-    loading.value = false;
+    if (options.background) {
+      backgroundRefreshing.value = false;
+    } else {
+      loading.value = false;
+    }
   }
 }
 
+function shouldAutoRefreshJobs(): boolean {
+  if (typeof document !== "undefined" && document.hidden) {
+    return false;
+  }
+  return statusGroupFilter.value === "active" || activeVisibleJobs.value.length > 0;
+}
+
+function startAutoRefresh(): void {
+  refreshTimer = window.setInterval(() => {
+    nowMs.value = Date.now();
+    if (shouldAutoRefreshJobs()) {
+      void loadJobs({ preserveError: true, background: true });
+    }
+  }, ACTIVE_AUTO_REFRESH_MS);
+}
+
 function handlePageChange(nextPage: number): void {
-  page.value = nextPage;
-  void loadJobs();
+  void syncRouteAndLoad(nextPage);
 }
 
 function handleFilter(): void {
-  page.value = 1;
   batchResult.value = null;
-  void loadJobs();
+  void syncRouteAndLoad(1);
+}
+
+function handleStatusFilterChange(): void {
+  statusGroupFilter.value = "";
+  handleFilter();
 }
 
 function goCreateJob(): void {
@@ -394,7 +549,7 @@ function statusLabel(status: string): string {
 }
 
 function countByStatus(status: DocumentJobStatus): number {
-  return summary.value[status] || 0;
+  return filteredSummary.value[status] || 0;
 }
 
 function firstQueryValue(value: unknown): string {
@@ -412,6 +567,10 @@ function isDocumentJobSort(value: string): value is DocumentJobListSort {
   return sortOptions.some((option) => option.value === value);
 }
 
+function isDocumentJobStatusGroup(value: string): value is DocumentJobStatusGroup {
+  return value === "active";
+}
+
 // 校验路由中的 QA 状态筛选值，避免把非法 query 传给后端。
 function isTranslationQaStatus(value: string): value is TranslationQaStatus {
   return qaStatuses.includes(value as TranslationQaStatus);
@@ -419,6 +578,7 @@ function isTranslationQaStatus(value: string): value is TranslationQaStatus {
 
 function applyRouteQueryFilters(): void {
   const nextStatus = firstQueryValue(route.query.status);
+  const nextStatusGroup = firstQueryValue(route.query.status_group);
   const nextSort = firstQueryValue(route.query.sort);
   const nextQaStatus = firstQueryValue(route.query.translation_qa_status);
   const nextQuery = firstQueryValue(route.query.q);
@@ -426,6 +586,7 @@ function applyRouteQueryFilters(): void {
   const createdFrom = firstQueryValue(route.query.created_from);
   const createdTo = firstQueryValue(route.query.created_to);
   statusFilter.value = isDocumentJobStatus(nextStatus) ? nextStatus : "";
+  statusGroupFilter.value = statusFilter.value ? "" : isDocumentJobStatusGroup(nextStatusGroup) ? nextStatusGroup : "";
   qaStatusFilter.value = isTranslationQaStatus(nextQaStatus) ? nextQaStatus : "";
   sortFilter.value = isDocumentJobSort(nextSort) ? nextSort : "created_at_desc";
   searchKeyword.value = nextQuery;
@@ -440,13 +601,16 @@ function applyQuickFilter(kind: "active" | "failed" | "archived"): void {
   createdRange.value = null;
   sortFilter.value = "updated_at_desc";
   if (kind === "active") {
-    statusFilter.value = "running";
+    statusFilter.value = "";
+    statusGroupFilter.value = "active";
     includeArchived.value = false;
   } else if (kind === "failed") {
+    statusGroupFilter.value = "";
     statusFilter.value = "failed";
     includeArchived.value = false;
   } else {
     statusFilter.value = "";
+    statusGroupFilter.value = "";
     includeArchived.value = true;
   }
   handleFilter();
@@ -461,6 +625,7 @@ function resetAdvancedFilters(): void {
 
 function clearAllFilters(): void {
   statusFilter.value = "";
+  statusGroupFilter.value = "";
   qaStatusFilter.value = "";
   searchKeyword.value = "";
   sortFilter.value = "created_at_desc";
@@ -469,7 +634,79 @@ function clearAllFilters(): void {
   handleFilter();
 }
 
+function jobsRouteQuery(nextPage = page.value): Record<string, string> {
+  const query: Record<string, string> = {
+    sort: sortFilter.value,
+    include_archived: includeArchived.value ? "true" : "false",
+    page: String(nextPage),
+  };
+  if (statusFilter.value) {
+    query.status = statusFilter.value;
+  } else if (statusGroupFilter.value) {
+    query.status_group = statusGroupFilter.value;
+  }
+  if (qaStatusFilter.value) {
+    query.translation_qa_status = qaStatusFilter.value;
+  }
+  if (searchKeyword.value.trim()) {
+    query.q = searchKeyword.value.trim();
+  }
+  if (createdRange.value) {
+    query.created_from = createdRange.value[0];
+    query.created_to = createdRange.value[1];
+  }
+  return query;
+}
+
+function isSameJobsRouteQuery(candidate: LocationQuery, expected: Record<string, string>): boolean {
+  const keys = [
+    "status",
+    "status_group",
+    "translation_qa_status",
+    "sort",
+    "include_archived",
+    "q",
+    "created_from",
+    "created_to",
+    "page",
+  ];
+  return keys.every((key) => firstQueryValue(candidate[key]) === (expected[key] ?? ""));
+}
+
+async function syncRouteAndLoad(nextPage: number, replace = false): Promise<void> {
+  page.value = nextPage;
+  const query = jobsRouteQuery(nextPage);
+  if (!isSameJobsRouteQuery(route.query, query)) {
+    await router[replace ? "replace" : "push"]({ name: "jobs", query });
+    return;
+  }
+  await loadJobs();
+}
+
+function removeFilter(key: FilterChipKey): void {
+  if (key === "status") {
+    statusFilter.value = "";
+  } else if (key === "status_group") {
+    statusGroupFilter.value = "";
+  } else if (key === "translation_qa_status") {
+    qaStatusFilter.value = "";
+  } else if (key === "q") {
+    searchKeyword.value = "";
+  } else if (key === "sort") {
+    sortFilter.value = "created_at_desc";
+  } else if (key === "include_archived") {
+    includeArchived.value = false;
+  } else if (key === "created_range") {
+    createdRange.value = null;
+  }
+  handleFilter();
+}
+
 async function handleDownload(job: DocumentJobResponse): Promise<void> {
+  if (isActionBusy(job.id)) {
+    return;
+  }
+  setActionPending(job.id, "download");
   try {
     const response = await documentJobsApi.createDownloadUrl(job.id);
     lastDownloadLink.value = {
@@ -485,7 +722,18 @@ async function handleDownload(job: DocumentJobResponse): Promise<void> {
       ElMessage.warning("浏览器可能拦截了新窗口，页面已显示下载链接。");
     }
   } catch (caught) {
-    error.value = normalizeApiError(caught);
+    await handleActionError(caught);
+  } finally {
+    clearActionPending(job.id);
+  }
+}
+
+async function handleActionError(caught: unknown): Promise<void> {
+  const normalized = normalizeApiError(caught);
+  error.value = normalized;
+  if (normalized.status === 403 || normalized.status === 409 || normalized.status === 503) {
+    await loadJobs({ preserveError: true });
+    error.value = normalized;
   }
 }
 
@@ -506,6 +754,9 @@ async function handleRetry(job: DocumentJobResponse): Promise<void> {
 }
 
 async function handleClone(job: DocumentJobResponse): Promise<void> {
+  if (isActionBusy(job.id)) {
+    return;
+  }
   try {
     await ElMessageBox.confirm(
       "重新发起会基于当前任务的源 PDF 创建一个新任务，不会修改原任务，也不会作为 retry 计数。",
@@ -516,6 +767,7 @@ async function handleClone(job: DocumentJobResponse): Promise<void> {
         type: "info",
       },
     );
+    setActionPending(job.id, "clone");
     const response = await documentJobsApi.clone(job.id, { reason: "frontend clone from jobs list" });
     ElMessage.success("已创建新任务。");
     await router.push(`/jobs/${response.job_id}`);
@@ -523,11 +775,16 @@ async function handleClone(job: DocumentJobResponse): Promise<void> {
     if (caught === "cancel" || caught === "close") {
       return;
     }
-    error.value = normalizeApiError(caught);
+    await handleActionError(caught);
+  } finally {
+    clearActionPending(job.id);
   }
 }
 
 async function handleCancel(job: DocumentJobResponse): Promise<void> {
+  if (isActionBusy(job.id)) {
+    return;
+  }
   try {
     await ElMessageBox.confirm(
       "取消会将任务标记为 canceled 并停止后续处理；如果任务已进入外部服务，系统不承诺强制中断该外部处理。文件和事件记录会保留。",
@@ -538,6 +795,7 @@ async function handleCancel(job: DocumentJobResponse): Promise<void> {
         type: "warning",
       },
     );
+    setActionPending(job.id, "cancel");
     await documentJobsApi.cancel(job.id);
     ElMessage.success("任务已取消。");
     await loadJobs();
@@ -545,11 +803,16 @@ async function handleCancel(job: DocumentJobResponse): Promise<void> {
     if (caught === "cancel" || caught === "close") {
       return;
     }
-    error.value = normalizeApiError(caught);
+    await handleActionError(caught);
+  } finally {
+    clearActionPending(job.id);
   }
 }
 
 async function handleArchive(job: DocumentJobResponse): Promise<void> {
+  if (isActionBusy(job.id)) {
+    return;
+  }
   try {
     await ElMessageBox.confirm(
       "归档只会把终态任务从默认列表隐藏，不会删除源文件、结果文件或事件记录。开启“含归档”后仍可查看。",
@@ -560,6 +823,7 @@ async function handleArchive(job: DocumentJobResponse): Promise<void> {
         type: "info",
       },
     );
+    setActionPending(job.id, "archive");
     await documentJobsApi.archive(job.id);
     ElMessage.success("任务已归档。");
     await loadJobs();
@@ -567,11 +831,16 @@ async function handleArchive(job: DocumentJobResponse): Promise<void> {
     if (caught === "cancel" || caught === "close") {
       return;
     }
-    error.value = normalizeApiError(caught);
+    await handleActionError(caught);
+  } finally {
+    clearActionPending(job.id);
   }
 }
 
 async function handleUnarchive(job: DocumentJobResponse): Promise<void> {
+  if (isActionBusy(job.id)) {
+    return;
+  }
   try {
     await ElMessageBox.confirm(
       "取消归档会让任务重新出现在默认列表中，不会修改文件或事件记录。",
@@ -582,6 +851,7 @@ async function handleUnarchive(job: DocumentJobResponse): Promise<void> {
         type: "info",
       },
     );
+    setActionPending(job.id, "unarchive");
     await documentJobsApi.unarchive(job.id);
     ElMessage.success("任务已取消归档。");
     await loadJobs();
@@ -589,7 +859,9 @@ async function handleUnarchive(job: DocumentJobResponse): Promise<void> {
     if (caught === "cancel" || caught === "close") {
       return;
     }
-    error.value = normalizeApiError(caught);
+    await handleActionError(caught);
+  } finally {
+    clearActionPending(job.id);
   }
 }
 
@@ -609,7 +881,7 @@ async function handleBatchRetry(): Promise<void> {
     showBatchResult("批量重试", response);
     await loadJobs();
   } catch (caught) {
-    error.value = normalizeApiError(caught);
+    await handleActionError(caught);
   } finally {
     batchLoading.value = false;
   }
@@ -647,7 +919,7 @@ async function handleBatchArchive(): Promise<void> {
     showBatchResult("批量归档", response);
     await loadJobs();
   } catch (caught) {
-    error.value = normalizeApiError(caught);
+    await handleActionError(caught);
   } finally {
     batchLoading.value = false;
   }
@@ -684,7 +956,7 @@ async function handleBatchCancel(): Promise<void> {
     showBatchResult("批量取消", response);
     await loadJobs();
   } catch (caught) {
-    error.value = normalizeApiError(caught);
+    await handleActionError(caught);
   } finally {
     batchLoading.value = false;
   }
@@ -701,6 +973,20 @@ function showBatchResult(label: string, result: DocumentJobBulkResponse): void {
   ElMessage.success(`${label}完成：成功 ${result.succeeded} 个。`);
 }
 
+function setActionPending(jobId: string, action: DocumentJobActionId): void {
+  actionPending.value = { ...actionPending.value, [jobId]: action };
+}
+
+function clearActionPending(jobId: string): void {
+  const next = { ...actionPending.value };
+  delete next[jobId];
+  actionPending.value = next;
+}
+
+function isActionBusy(jobId: string): boolean {
+  return Boolean(actionPending.value[jobId]);
+}
+
 watch(
   () => route.query,
   () => {
@@ -713,7 +999,14 @@ watch(
 
 onMounted(() => {
   applyRouteQueryFilters();
-  void loadJobs();
+  void syncRouteAndLoad(page.value, true);
+  startAutoRefresh();
+});
+
+onBeforeUnmount(() => {
+  if (refreshTimer !== undefined) {
+    window.clearInterval(refreshTimer);
+  }
 });
 </script>
 
@@ -805,6 +1098,7 @@ onMounted(() => {
 .live-pill {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   min-height: 38px;
   padding: 0 12px;
@@ -813,6 +1107,12 @@ onMounted(() => {
   background: rgba(15, 118, 110, 0.08);
   color: var(--jobs-green);
   font-size: 13px;
+}
+
+.live-pill small {
+  flex-basis: 100%;
+  color: var(--jobs-muted);
+  font-size: 11px;
 }
 
 .live-pill span {
@@ -978,11 +1278,18 @@ onMounted(() => {
 }
 
 .quick-filter-row,
+.active-filter-chips,
 .summary-row {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.summary-caption {
+  color: var(--jobs-muted);
+  font-size: 13px;
 }
 
 .selection-bar {
@@ -1027,6 +1334,26 @@ onMounted(() => {
 .download-link-notice a {
   color: var(--jobs-primary);
   font-weight: 700;
+  text-decoration: none;
+}
+
+.stale-job-list,
+.failed-job-list {
+  display: grid;
+  gap: 6px;
+}
+
+.stale-job-list {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.failed-job-list a {
+  display: grid;
+  grid-template-columns: minmax(120px, auto) minmax(72px, auto) minmax(120px, auto) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  color: inherit;
   text-decoration: none;
 }
 

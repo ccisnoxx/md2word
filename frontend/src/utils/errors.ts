@@ -9,6 +9,14 @@ export type ApiClientError = {
   raw: unknown;
 };
 
+export type ApiErrorDiagnosticContext = {
+  route?: string;
+  operation?: string;
+  jobId?: string;
+  jobStatus?: string;
+  updatedAt?: string;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -37,10 +45,10 @@ export function normalizeApiErrorBody(
 ): ApiClientError {
   const body = isRecord(data) ? data : {};
   const nestedError = isRecord(body.error) ? body.error : {};
-  const code = readString(body.error_code) || readString(nestedError.code);
+  const code = readString(nestedError.code) || readString(body.error_code);
   const message =
-    detailToMessage(body.detail) ||
     readString(nestedError.message) ||
+    detailToMessage(body.detail) ||
     readString(body.error) ||
     "请求失败，请稍后重试。";
   const responseTraceId =
@@ -88,4 +96,18 @@ export function normalizeApiError(error: unknown): ApiClientError {
 
 export function isApiClientError(error: unknown): error is ApiClientError {
   return isRecord(error) && typeof error.message === "string" && "raw" in error;
+}
+
+export function formatApiErrorDiagnostic(error: ApiClientError, context: ApiErrorDiagnosticContext = {}): string {
+  return [
+    `route=${context.route ?? "-"}`,
+    `operation=${context.operation ?? "-"}`,
+    `job_id=${context.jobId ?? "-"}`,
+    `job_status=${context.jobStatus ?? "-"}`,
+    `updated_at=${context.updatedAt ?? "-"}`,
+    `http_status=${error.status ?? "-"}`,
+    `code=${error.code ?? "-"}`,
+    `message=${error.message}`,
+    `trace_id=${error.traceId ?? "-"}`,
+  ].join("\n");
 }

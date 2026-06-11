@@ -149,6 +149,12 @@ class FileUploadService:
             size_bytes=size_bytes,
             max_bytes=self.settings.jobs_upload_max_bytes,
         )
+        if job_id is not None and job_id.strip():
+            raise ApiError(
+                status.HTTP_400_BAD_REQUEST,
+                "invalid_request",
+                "source_pdf 上传授权不支持预绑定 job_id；请上传完成后通过 document_jobs 创建任务。",
+            )
         file_id = f"file_{uuid4().hex[:12]}"
         provider = self._storage_provider()
         bucket = self._bucket_for(provider)
@@ -161,7 +167,7 @@ class FileUploadService:
             id=file_id,
             tenant_id=user.tenant_id,
             company_id=user.company_id,
-            job_id=job_id,
+            job_id=None,
             file_type="source_pdf",
             storage_provider=provider,
             bucket=bucket,
@@ -610,10 +616,13 @@ class FileUploadService:
         return candidate
 
     def _ensure_visible(self, record: DocumentFileRecord, user: AuthenticatedUser) -> None:
-        if user.role == "admin":
-            return
         if record.tenant_id != user.tenant_id or record.company_id != user.company_id:
             raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "无权限访问该文件。")
+        if user.role == "admin":
+            return
+        if record.created_by == user.id:
+            return
+        raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "无权限访问该文件。")
 
     def _storage_provider(self) -> DocumentFileStorageProvider:
         if self.settings.jobs_artifact_storage_backend == "s3":

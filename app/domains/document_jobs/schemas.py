@@ -97,6 +97,8 @@ class DocumentJobListResponse(BaseModel):
     page_size: int
     total: int
     summary: dict[str, int] = Field(default_factory=dict)
+    filtered_summary: dict[str, int] = Field(default_factory=dict)
+    translation_qa_summary: dict[str, int] = Field(default_factory=dict)
 
 
 class DocumentJobArchiveResponse(BaseModel):

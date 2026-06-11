@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, get_args
 from uuid import uuid4
@@ -34,6 +35,11 @@ from app.domains.document_jobs.schemas import (
     DocumentJobTranslationQaSummaryResponse,
     DocumentJobTranslationQaTermTraceResponse,
 )
+from app.domains.document_jobs.workflow import (
+    ARCHIVABLE_DOCUMENT_JOB_STATUSES,
+    CANCELABLE_DOCUMENT_JOB_STATUSES,
+    DOCUMENT_JOB_STATUS_GROUPS,
+)
 from app.core.errors import ApiError
 from app.domains.files.models import DocumentFileRecord, DocumentFileType
 from app.domains.files.repository import DocumentFileRepositoryProtocol
@@ -49,8 +55,6 @@ from app.services.document_ir.models import DocumentIR
 from app.services.auth.models import AuthenticatedUser
 
 
-ARCHIVABLE_DOCUMENT_JOB_STATUSES: set[DocumentJobStatus] = {"succeeded", "failed", "canceled"}
-CANCELABLE_DOCUMENT_JOB_STATUSES: set[DocumentJobStatus] = {"pending", "queued", "running"}
 DOCUMENT_JOB_LIST_SORTS = {"created_at_desc", "created_at_asc", "updated_at_desc", "updated_at_asc"}
 DOCUMENT_JOB_DOWNLOAD_FILE_TYPES: set[DocumentFileType] = {
     "source_pdf",
@@ -70,6 +74,17 @@ DOCUMENT_JOB_FILE_TYPE_ORDER = {
     "ai_call_log": 50,
     "ai_debug_archive": 60,
 }
+
+
+@dataclass(frozen=True)
+class DocumentJobListResult:
+    """document_jobs 列表查询的分页结果和面向工作台的统计投影。"""
+
+    items: list[DocumentJobRecord]
+    total: int
+    summary: dict[str, int]
+    filtered_summary: dict[str, int]
+    translation_qa_summary: dict[str, int]
 
 
 class DocumentJobService:
@@ -221,18 +236,24 @@ class DocumentJobService:
         page: int,
         page_size: int,
         status_filter: str | None,
+        status_group: str | None = None,
         translation_qa_status: str | None = None,
         q: str | None = None,
         sort: str = "created_at_desc",
         include_archived: bool = False,
         created_from: datetime | None = None,
         created_to: datetime | None = None,
-    ) -> tuple[list[DocumentJobRecord], int, dict[str, int]]:
+    ) -> DocumentJobListResult:
         """返回当前用户可见的 document_jobs 分页列表。"""
 
+        if status_filter is not None and status_group is not None:
+            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "status 与 status_group 不能同时使用。")
         if status_filter is not None and status_filter not in get_args(DocumentJobStatus):
             raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "status 查询参数非法。")
-        if translation_qa_status is not None and translation_qa_status not in get_args(DocumentJobTranslationQaStatus):
+        if status_group is not None and status_group not in DOCUMENT_JOB_STATUS_GROUPS:
+            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "status_group 查询参数非法。")
+        translation_qa_filters = set(get_args(DocumentJobTranslationQaStatus)) | {"all"}
+        if translation_qa_status is not None and translation_qa_status not in translation_qa_filters:
             raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "translation_qa_status 查询参数非法。")
         if sort not in DOCUMENT_JOB_LIST_SORTS:
             raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "sort 查询参数非法。")
@@ -245,17 +266,32 @@ class DocumentJobService:
             if self._is_visible(job, user) and (include_archived or job.archived_at is None)
         ]
         summary = dict(Counter(job.status for job in visible_jobs))
+        qa_summary_jobs = [
+            job
+            for job in visible_jobs
+            if self._matches_status_filter(job, status_filter=status_filter, status_group=status_group)
+            and self._matches_document_job_query(job, normalized_q)
+            and self._matches_created_range(job, created_from=created_from, created_to=created_to)
+            and job.mode == "en2zh_pdf_to_word"
+        ]
         filtered_jobs = [
             job
             for job in visible_jobs
-            if (status_filter is None or job.status == status_filter)
+            if self._matches_status_filter(job, status_filter=status_filter, status_group=status_group)
             and self._matches_translation_qa_status(job, translation_qa_status)
             and self._matches_document_job_query(job, normalized_q)
             and self._matches_created_range(job, created_from=created_from, created_to=created_to)
         ]
+        filtered_summary = dict(Counter(job.status for job in filtered_jobs))
         filtered_jobs.sort(key=lambda job: self._document_job_sort_key(job, sort), reverse=sort.endswith("_desc"))
         start = (page - 1) * page_size
-        return filtered_jobs[start:start + page_size], len(filtered_jobs), summary
+        return DocumentJobListResult(
+            items=filtered_jobs[start:start + page_size],
+            total=len(filtered_jobs),
+            summary=summary,
+            filtered_summary=filtered_summary,
+            translation_qa_summary=self._count_translation_qa_statuses(qa_summary_jobs),
+        )
 
     def list_events(self, job_id: str, *, user: AuthenticatedUser) -> list[DocumentJobEventRecord]:
         """先按任务权限校验，再返回事件列表。"""
@@ -1320,6 +1356,19 @@ class DocumentJobService:
         needle = q.casefold()
         return any(needle in value.casefold() for value in self._document_job_search_values(job))
 
+    def _matches_status_filter(
+        self,
+        job: DocumentJobRecord,
+        *,
+        status_filter: str | None,
+        status_group: str | None,
+    ) -> bool:
+        if status_filter is not None:
+            return job.status == status_filter
+        if status_group is not None:
+            return job.status in DOCUMENT_JOB_STATUS_GROUPS[status_group]
+        return True
+
     def _matches_translation_qa_status(
         self,
         job: DocumentJobRecord,
@@ -1329,7 +1378,13 @@ class DocumentJobService:
 
         if translation_qa_status is None:
             return True
+        if translation_qa_status == "all":
+            return job.mode == "en2zh_pdf_to_word"
         return job.mode == "en2zh_pdf_to_word" and job.translation_qa_status == translation_qa_status
+
+    def _count_translation_qa_statuses(self, jobs: list[DocumentJobRecord]) -> dict[str, int]:
+        counts = Counter(job.translation_qa_status for job in jobs)
+        return {qa_status: counts.get(qa_status, 0) for qa_status in get_args(DocumentJobTranslationQaStatus)}
 
     def _document_job_search_values(self, job: DocumentJobRecord) -> list[str]:
         source_file = job.request_snapshot.get("source_file")

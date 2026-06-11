@@ -53,6 +53,8 @@ from app.services.auth.models import AuthenticatedUser
 
 router = APIRouter(prefix="/document-jobs", tags=["document-jobs"])
 DOCUMENT_JOB_BULK_LIMIT = 50
+DOCUMENT_JOB_STATUS_GROUP_FILTER_VALUES = ("active",)
+DOCUMENT_JOB_TRANSLATION_QA_STATUS_FILTER_VALUES = ("unreviewed", "approved", "needs_fix", "blocked", "all")
 
 
 @router.post("", response_model=DocumentJobCreateResponse, status_code=status.HTTP_201_CREATED)
@@ -62,6 +64,7 @@ def create_document_job(
     user: AuthenticatedUser = Depends(require_current_user),
     trace_id: str = Depends(get_trace_id),
 ) -> DocumentJobCreateResponse:
+    _ensure_document_job_creation_ready(runtime)
     job = runtime.document_job_service.create_job(
         user=user,
         source_file_id=payload.source_file_id,
@@ -94,12 +97,42 @@ def create_document_job(
     )
 
 
+def _ensure_document_job_creation_ready(runtime: AppRuntime) -> None:
+    dependency_checks = runtime.health_service.build_dependency_checks()
+    required = bool(dependency_checks.get("p0_document_jobs_required", False))
+    ready = bool(dependency_checks.get("p0_document_jobs_ready", not required))
+    if not required or ready:
+        return
+    blockers = _read_string_list(dependency_checks.get("p0_document_jobs_blockers"))
+    if not blockers:
+        blockers = _read_string_list(dependency_checks.get("readiness_blockers"))
+    message = "P0 文档任务执行链路未就绪，暂不能创建新任务。"
+    if blockers:
+        message = f"{message} 阻断项: {', '.join(blockers)}"
+    raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "document_jobs_not_ready", message)
+
+
+def _read_string_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str) and item.strip()]
+    if isinstance(value, str) and value.strip():
+        return [value]
+    return []
+
+
 @router.get("", response_model=DocumentJobListResponse)
 def list_document_jobs(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     status_filter: str | None = Query(default=None, alias="status"),
-    translation_qa_status: str | None = Query(default=None),
+    status_group: str | None = Query(
+        default=None,
+        json_schema_extra={"enum": list(DOCUMENT_JOB_STATUS_GROUP_FILTER_VALUES)},
+    ),
+    translation_qa_status: str | None = Query(
+        default=None,
+        json_schema_extra={"enum": list(DOCUMENT_JOB_TRANSLATION_QA_STATUS_FILTER_VALUES)},
+    ),
     q: str | None = Query(default=None),
     sort: str = Query(default="created_at_desc"),
     include_archived: bool = Query(default=False),
@@ -108,11 +141,12 @@ def list_document_jobs(
     runtime: AppRuntime = Depends(get_runtime),
     user: AuthenticatedUser = Depends(require_current_user),
 ) -> DocumentJobListResponse:
-    jobs, total, summary = runtime.document_job_service.list_jobs(
+    result = runtime.document_job_service.list_jobs(
         user=user,
         page=page,
         page_size=page_size,
         status_filter=status_filter.strip() if status_filter else None,
+        status_group=status_group.strip() if status_group else None,
         translation_qa_status=translation_qa_status.strip() if translation_qa_status else None,
         q=q,
         sort=sort,
@@ -121,11 +155,13 @@ def list_document_jobs(
         created_to=created_to,
     )
     return DocumentJobListResponse(
-        items=[_build_document_job_response(runtime, user, job) for job in jobs],
+        items=[_build_document_job_response(runtime, user, job) for job in result.items],
         page=page,
         page_size=page_size,
-        total=total,
-        summary=summary,
+        total=result.total,
+        summary=result.summary,
+        filtered_summary=result.filtered_summary,
+        translation_qa_summary=result.translation_qa_summary,
     )
 
 

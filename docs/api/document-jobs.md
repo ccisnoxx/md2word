@@ -112,6 +112,7 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 
 - 响应：`201 Created`，包含 `job_id`、`status`、`stage`、`progress` 和完整 `job`。
 - 成功动作写入 `document_job.create` audit event。
+- Readiness gate：当 `p0_document_jobs_required=true` 且 `p0_document_jobs_ready=false` 时，返回 `503 document_jobs_not_ready`，不会创建 job，也不会把 source file 绑定到 job。
 - 权限：Operator 只能使用默认配置；显式传 `template_version_id`、`term_version_id`、术语资产、翻译术语资产或翻译配置选择字段会返回 `403`。Admin 可绑定 published 资源版本。
 
 ### `GET /api/v1/document-jobs/config-summary`
@@ -143,14 +144,19 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 | `page` | `1` | 从 `1` 开始。 |
 | `page_size` | `20` | 当前限制 `1-100`。 |
 | `status` | 无 | 按任务状态过滤。 |
-| `translation_qa_status` | 无 | 按翻译 QA 状态过滤；仅匹配 `en2zh_pdf_to_word` 任务。 |
+| `status_group` | 无 | 状态组过滤；OpenAPI 枚举当前仅允许 `active`，等价于 `pending` / `queued` / `running`。不能与 `status` 同时使用。 |
+| `translation_qa_status` | 无 | 按翻译 QA 状态过滤；OpenAPI 枚举允许 `unreviewed` / `approved` / `needs_fix` / `blocked` / `all`，传 `all` 时返回全部 `en2zh_pdf_to_word` QA 任务。 |
 | `q` | 无 | 按任务 ID、源文件 ID、源文件名、错误码或错误信息搜索。 |
 | `sort` | `created_at_desc` | `created_at_desc` / `created_at_asc` / `updated_at_desc` / `updated_at_asc`。 |
 | `include_archived` | `false` | 是否包含已归档任务。 |
 | `created_from` | 无 | 按创建时间下界过滤，ISO datetime。 |
 | `created_to` | 无 | 按创建时间上界过滤，ISO datetime。 |
 
-- 响应：`items`、分页信息和 `summary`。
+- 响应：`items`、分页信息、`summary`、`filtered_summary` 和 `translation_qa_summary`。
+    - `summary`：当前用户可见任务在归档过滤后的全局状态计数，保留旧语义。
+    - `filtered_summary`：应用 `status`/`status_group`、`translation_qa_status`、搜索、日期等筛选后的状态计数，不受分页影响。
+    - `translation_qa_summary`：应用非 QA 状态筛选、搜索、日期和归档过滤后的 QA 状态计数，键为 `unreviewed`、`approved`、`needs_fix`、`blocked`。
+    - 前端应兼容旧响应或局部 mock 未返回新增 summary 字段的情况，缺省按空对象处理。
 
 ### `GET /api/v1/document-jobs/{job_id}`
 

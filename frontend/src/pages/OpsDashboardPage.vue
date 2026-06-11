@@ -313,6 +313,14 @@
           <el-alert class="delivery-warning" type="warning" title="controlled real-send" :closable="false" show-icon>
             Real-send 必须匹配固定 confirmation phrase；preview 不解析 secret、不调用 provider。
           </el-alert>
+          <el-alert
+            v-if="realAlertDeliveryGateText"
+            class="delivery-warning"
+            type="info"
+            :title="realAlertDeliveryGateText"
+            :closable="false"
+            show-icon
+          />
 
           <el-descriptions class="delivery-safety" :column="4" border size="small">
             <el-descriptions-item v-for="item in realAlertDeliveryPilotItems" :key="item.label" :label="item.label">
@@ -1423,7 +1431,26 @@ const selectedActiveAlertCodes = computed(() => {
 const alertDeliveryCapability = computed(() => (
   integrationCapabilityRows.value.find((capability) => capability.capability_id === "alert_delivery") || null
 ));
+const alertDeliveryCapabilityReady = computed(() => alertDeliveryCapability.value?.ready === true);
 const realAlertDeliveryPilotActive = computed(() => activeOpsAlertCodes.value.includes(REAL_ALERT_DELIVERY_ALERT_CODE));
+const realAlertDeliveryPreviewPassed = computed(() => (
+  alertDeliveryReport.value?.action_mode === "real_send_preview"
+  && alertDeliveryReport.value.items.some((item) => item.outcome === "deliverable")
+  && alertDeliveryReport.value.items.every((item) => item.missing_gates.length === 0)
+));
+const realAlertDeliveryGateText = computed(() => {
+  if (!realAlertDeliveryPilotActive.value) {
+    return `等待活跃告警 ${REAL_ALERT_DELIVERY_ALERT_CODE} 后才能预览 real-send。`;
+  }
+  if (!alertDeliveryCapabilityReady.value) {
+    const reasons = alertDeliveryCapability.value?.blocking_reasons || [];
+    return reasons.length ? `alert_delivery capability 未就绪：${reasons.join("，")}` : "alert_delivery capability 未就绪。";
+  }
+  if (!realAlertDeliveryPreviewPassed.value) {
+    return "必须先完成一次无 missing gates 的 real-send preview，才能打开 real-send 确认。";
+  }
+  return "";
+});
 const allActiveAlertsSelected = computed(() => (
   activeOpsAlerts.value.length > 0 && selectedActiveAlertCodes.value.length === activeOpsAlerts.value.length
 ));
@@ -1443,10 +1470,10 @@ const canFakeSendAlertDelivery = computed(() => (
   && alertDeliveryDialog.value.confirmation === alertDeliveryConfirmationPhrase.value
 ));
 const canPreviewRealAlertDelivery = computed(() => (
-  realAlertDeliveryPilotActive.value && !alertDeliveryLoading.value
+  realAlertDeliveryPilotActive.value && alertDeliveryCapabilityReady.value && !alertDeliveryLoading.value
 ));
 const canOpenRealAlertDeliveryDialog = computed(() => (
-  realAlertDeliveryPilotActive.value && !alertDeliveryLoading.value
+  canPreviewRealAlertDelivery.value && realAlertDeliveryPreviewPassed.value
 ));
 const canRealSendAlertDelivery = computed(() => (
   canOpenRealAlertDeliveryDialog.value

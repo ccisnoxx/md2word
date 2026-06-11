@@ -67,12 +67,12 @@
           </div>
           <el-form label-width="96px">
             <el-form-item label="状态">
-              <el-select v-model="form.status">
+              <el-select v-model="form.status" :disabled="!qaEditable">
                 <el-option v-for="option in qaStatusOptions" :key="option" :label="qaStatusText[option]" :value="option" />
               </el-select>
             </el-form-item>
             <el-form-item label="问题归因">
-              <el-select v-model="form.issue_type" clearable placeholder="可选">
+              <el-select v-model="form.issue_type" clearable placeholder="可选" :disabled="!qaEditable">
                 <el-option
                   v-for="option in qaIssueTypeOptions"
                   :key="option"
@@ -82,10 +82,10 @@
               </el-select>
             </el-form-item>
             <el-form-item label="备注">
-              <el-input v-model="form.note" type="textarea" :rows="3" maxlength="1000" show-word-limit />
+              <el-input v-model="form.note" type="textarea" :rows="3" maxlength="1000" show-word-limit :disabled="!qaEditable" />
             </el-form-item>
             <el-form-item>
-              <el-button type="primary" :loading="saving" @click="saveQa">保存复核</el-button>
+              <el-button type="primary" :loading="saving" :disabled="!qaEditable" @click="saveQa">保存复核</el-button>
             </el-form-item>
           </el-form>
           <p class="review-meta">
@@ -429,6 +429,7 @@ const unmatchedTermTraces = computed(() =>
   (qa.value?.term_traces || []).filter((trace) => !trace.segment_id || !segmentIds.value.has(trace.segment_id)),
 );
 const fromTranslationQaQueue = computed(() => route.query.from === "translation-qa");
+const qaEditable = computed(() => Boolean(qa.value?.available && !saving.value));
 const qaQueueReturnQuery = computed(() => {
   const query: Record<string, string> = {};
   for (const key of ["translation_qa_status", "status", "sort", "include_archived", "q", "page"]) {
@@ -522,6 +523,10 @@ async function loadAll(targetJobId = jobId.value): Promise<void> {
 }
 
 async function saveQa(): Promise<void> {
+  if (!qa.value?.available) {
+    ElMessage.warning("当前任务没有可复核的 QA 证据，已保持只读。");
+    return;
+  }
   saving.value = true;
   error.value = null;
   try {

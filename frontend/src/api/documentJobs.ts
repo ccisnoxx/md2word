@@ -18,6 +18,7 @@ import type {
   DocumentJobFileListResponse,
   DocumentJobListResponse,
   DocumentJobListSort,
+  DocumentJobStatusGroup,
   DocumentJobRetryRequest,
   DocumentJobResponse,
   DocumentJobRetryResponse,
@@ -32,7 +33,8 @@ export type DocumentJobListParams = {
   page: number;
   page_size: number;
   status?: string;
-  translation_qa_status?: TranslationQaStatus;
+  status_group?: DocumentJobStatusGroup;
+  translation_qa_status?: TranslationQaStatus | "all";
   q?: string;
   sort?: DocumentJobListSort;
   include_archived?: boolean;

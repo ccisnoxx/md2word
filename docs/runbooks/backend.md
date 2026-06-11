@@ -340,6 +340,40 @@ docs/api/openapi.json
 
 如果 OpenAPI 分项失败，说明当前代码生成的 OpenAPI 与 `docs/api/openapi.json` 不一致；先确认 API 变更是否预期，再重新导出并提交快照。release check 不访问真实 MinerU、OpenAI 或公网。
 
+## 3. 创建 Document Job
+
+当前公开 P0 主链路是 Files + Document Jobs。Legacy `/api/v1/jobs` endpoint family 已从 v1 router 移除，只保留历史文档说明；新联调、前端和集成方不要再使用旧入口。
+
+```bash
+curl -sS -X POST "http://127.0.0.1:8000/api/v1/files/upload-url" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"filename":"source.pdf","mime_type":"application/pdf","size_bytes":12345,"file_type":"source_pdf"}'
+```
+
+按响应里的 `upload_url` 上传 PDF 内容后创建任务：
+
+```bash
+curl -sS -X POST "http://127.0.0.1:8000/api/v1/document-jobs" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"source_file_id":"{file_id}","mode":"direct_pdf_to_word","document_language":"auto"}'
+```
+
+查询任务和获取临时下载链接：
+
+```bash
+curl -sS "http://127.0.0.1:8000/api/v1/document-jobs/{job_id}" \
+  -H "Authorization: Bearer ${TOKEN}"
+
+curl -sS "http://127.0.0.1:8000/api/v1/document-jobs/{job_id}/download-url" \
+  -H "Authorization: Bearer ${TOKEN}"
+```
+
+## 3.1 历史 legacy jobs 入口
+
+以下旧入口已从公开 v1 API 移除，仅作为历史排查材料保留；不要用于新开发或验收。
+
 ## 3. 上传 MinerU 输出 zip
 
 ```bash

@@ -17,7 +17,7 @@ class FileUploadUrlRequest(BaseModel):
     size_bytes: int
     file_type: Literal["source_pdf"] = "source_pdf"
     checksum_sha256: str | None = None
-    job_id: str | None = None
+    job_id: str | None = Field(default=None, description="保留兼容字段；source_pdf 上传授权不支持预绑定任务。")
     quota_override_reason: str | None = None
     quota_override_confirmation: str | None = None
 
