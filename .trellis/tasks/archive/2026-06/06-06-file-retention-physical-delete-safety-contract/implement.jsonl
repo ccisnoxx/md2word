@@ -1,7 +1,0 @@
-{"file": ".trellis/tasks/archive/2026-06/06-06-file-retention-operations-phase4-gap-audit/design.md", "reason": "Approved Phase 4 gap audit and first-slice safety decision."}
-{"file": ".trellis/tasks/archive/2026-06/06-04-file-retention-management/prd.md", "reason": "Existing metadata-only retention requirements and deferred deletion boundary."}
-{"file": ".trellis/tasks/archive/2026-06/06-04-file-retention-management/design.md", "reason": "Existing retention plan/mark-expired design and route constraints."}
-{"file": ".trellis/tasks/archive/2026-06/06-04-file-retention-management/implement.md", "reason": "Existing implementation evidence and verification record."}
-{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Storage metadata, object_key, dry-run-first retention, and persistence safety constraints."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend layering, repository boundaries, and verification expectations."}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "HTTP status and error-boundary conventions for retention delete APIs."}

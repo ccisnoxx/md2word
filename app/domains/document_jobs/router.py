@@ -7,12 +7,13 @@ import hashlib
 import hmac
 from datetime import datetime
 from datetime import timedelta
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.responses import FileResponse, RedirectResponse
 
-from app.api.dependencies import get_runtime, get_trace_id, require_current_user
+from app.api.dependencies import get_runtime, get_trace_id, require_admin_user, require_current_user
 from app.domains.audit.models import ActorContext
 from app.domains.document_jobs.config_summary import build_document_job_config_summary
 from app.domains.document_jobs.models import DocumentJobEventRecord, DocumentJobRecord
@@ -34,6 +35,11 @@ from app.domains.document_jobs.schemas import (
     DocumentJobCreateRequest,
     DocumentJobCreateResponse,
     DocumentJobConfigSummaryResponse,
+    DocumentJobDeleteExecuteRequest,
+    DocumentJobDeleteExecuteResponse,
+    DocumentJobDeleteFileResponse,
+    DocumentJobDeletePreviewResponse,
+    DocumentJobDeleteSafetyResponse,
     DocumentJobDownloadUrlResponse,
     DocumentJobEventListResponse,
     DocumentJobEventResponse,
@@ -459,6 +465,48 @@ def cancel_document_job(
     )
 
 
+@router.post("/{job_id}/delete-preview", response_model=DocumentJobDeletePreviewResponse)
+def preview_delete_document_job(
+    job_id: str,
+    runtime: AppRuntime = Depends(get_runtime),
+    user: AuthenticatedUser = Depends(require_admin_user),
+) -> DocumentJobDeletePreviewResponse:
+    plan = runtime.document_job_service.preview_delete_job(job_id, user=user)
+    return _build_document_job_delete_preview_response(plan)
+
+
+@router.post("/{job_id}/delete", response_model=DocumentJobDeleteExecuteResponse)
+def delete_document_job(
+    job_id: str,
+    payload: DocumentJobDeleteExecuteRequest,
+    runtime: AppRuntime = Depends(get_runtime),
+    user: AuthenticatedUser = Depends(require_admin_user),
+    trace_id: str = Depends(get_trace_id),
+) -> DocumentJobDeleteExecuteResponse:
+    plan = runtime.document_job_service.delete_job(
+        job_id,
+        user=user,
+        reason=payload.reason,
+        confirmation=payload.confirmation,
+        preview_hash=payload.preview_hash,
+        trace_id=trace_id,
+    )
+    runtime.audit_service.record(
+        actor=_actor_from_user(user),
+        action="document_job.delete",
+        target_type="document_job",
+        target_id=plan.job.id,
+        reason=payload.reason,
+        details={
+            "preview_hash": payload.preview_hash,
+            "totals": plan.totals,
+            "safety": plan.safety,
+        },
+        trace_id=trace_id,
+    )
+    return _build_document_job_delete_execute_response(runtime, user, plan)
+
+
 @router.delete("/{job_id}", response_model=DocumentJobArchiveResponse)
 def archive_document_job(
     job_id: str,
@@ -578,6 +626,35 @@ def _build_document_job_response(
     return DocumentJobResponse(
         **job.model_dump(mode="python"),
         available_actions=runtime.document_job_service.build_available_actions(job, user=user),
+    )
+
+
+def _build_document_job_delete_preview_response(plan: Any) -> DocumentJobDeletePreviewResponse:
+    return DocumentJobDeletePreviewResponse(
+        job_id=plan.job.id,
+        action_mode="delete_preview",
+        confirmation_phrase=plan.confirmation_phrase,
+        preview_hash=plan.preview_hash,
+        totals=plan.totals,
+        files=[DocumentJobDeleteFileResponse(**item.to_response_dict()) for item in plan.files],
+        safety=DocumentJobDeleteSafetyResponse(**plan.safety),
+    )
+
+
+def _build_document_job_delete_execute_response(
+    runtime: AppRuntime,
+    user: AuthenticatedUser,
+    plan: Any,
+) -> DocumentJobDeleteExecuteResponse:
+    return DocumentJobDeleteExecuteResponse(
+        job_id=plan.job.id,
+        action_mode="delete_execute",
+        confirmation_phrase=plan.confirmation_phrase,
+        preview_hash=plan.preview_hash,
+        totals=plan.totals,
+        files=[DocumentJobDeleteFileResponse(**item.to_response_dict()) for item in plan.files],
+        safety=DocumentJobDeleteSafetyResponse(**plan.safety),
+        job=_build_document_job_response(runtime, user, plan.job),
     )
 
 

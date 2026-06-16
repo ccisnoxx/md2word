@@ -3,6 +3,7 @@ from __future__ import annotations
 # File: app/domains/document_jobs/service.py
 # Purpose: 创建、投递、查询 document_jobs 并记录任务事件。
 
+import hashlib
 import json
 from collections import Counter
 from dataclasses import dataclass
@@ -74,6 +75,7 @@ DOCUMENT_JOB_FILE_TYPE_ORDER = {
     "ai_call_log": 50,
     "ai_debug_archive": 60,
 }
+DOCUMENT_JOB_DELETE_TERMINAL_STATUSES = {"succeeded", "failed", "canceled"}
 
 
 @dataclass(frozen=True)
@@ -85,6 +87,53 @@ class DocumentJobListResult:
     summary: dict[str, int]
     filtered_summary: dict[str, int]
     translation_qa_summary: dict[str, int]
+
+
+@dataclass(frozen=True)
+class DocumentJobDeletePlanFile:
+    """任务删除计划中的单个文件决策，不暴露 object_key 或本地路径。"""
+
+    file_id: str
+    file_type: str | None
+    storage_provider: str | None
+    status_before: str | None
+    status_after: str | None
+    size_bytes: int | None
+    action: str
+    outcome: str
+    reason: str
+    deleted: bool = False
+    metadata_updated: bool = False
+    s3_delete_contract: dict[str, Any] | None = None
+
+    def to_response_dict(self) -> dict[str, Any]:
+        return {
+            "file_id": self.file_id,
+            "file_type": self.file_type,
+            "storage_provider": self.storage_provider,
+            "status_before": self.status_before,
+            "status_after": self.status_after,
+            "size_bytes": self.size_bytes,
+            "action": self.action,
+            "outcome": self.outcome,
+            "reason": self.reason,
+            "deleted": self.deleted,
+            "metadata_updated": self.metadata_updated,
+            "s3_delete_contract": self.s3_delete_contract,
+        }
+
+
+@dataclass(frozen=True)
+class DocumentJobDeletePlan:
+    """任务删除预览或执行结果；router 负责转换为 API response model。"""
+
+    job: DocumentJobRecord
+    action_mode: str
+    confirmation_phrase: str
+    preview_hash: str
+    totals: dict[str, int]
+    files: list[DocumentJobDeletePlanFile]
+    safety: dict[str, bool]
 
 
 class DocumentJobService:
@@ -263,7 +312,9 @@ class DocumentJobService:
         visible_jobs = [
             job
             for job in self.job_repository.list_document_jobs()
-            if self._is_visible(job, user) and (include_archived or job.archived_at is None)
+            if self._is_visible(job, user)
+            and job.deleted_at is None
+            and (include_archived or job.archived_at is None)
         ]
         summary = dict(Counter(job.status for job in visible_jobs))
         qa_summary_jobs = [
@@ -321,6 +372,7 @@ class DocumentJobService:
             "archive": self._available_action(self._archive_disabled_reason(job)),
             "unarchive": self._available_action(self._unarchive_disabled_reason(job)),
             "clone": self._available_action(self._clone_disabled_reason(job, user=user)),
+            "delete": self._available_action(self._delete_disabled_reason(job, user=user)),
         }
 
     def get_translation_qa(
@@ -461,6 +513,7 @@ class DocumentJobService:
         """校验任务权限和完成状态后返回生成 Word 文件。"""
 
         job = self.get_job(job_id, user=user)
+        self._ensure_job_not_deleted(job)
         return job, self._get_completed_result_file(job)
 
     def get_file_for_download(
@@ -473,6 +526,7 @@ class DocumentJobService:
         """按可见任务签发文件下载前，校验文件归属、状态、过期和类型。"""
 
         job = self.get_job(job_id, user=user)
+        self._ensure_job_not_deleted(job)
         if file_id is None:
             return job, self._get_completed_result_file(job)
         return job, self._get_downloadable_task_file(job, file_id=file_id)
@@ -488,6 +542,7 @@ class DocumentJobService:
         job = self.job_repository.get_document_job(job_id)
         if job is None:
             raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"文档任务不存在: {job_id}")
+        self._ensure_job_not_deleted(job)
         file = self._get_completed_result_file(job)
         if file.id != file_id:
             raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "下载链接与结果文件不匹配。")
@@ -504,6 +559,7 @@ class DocumentJobService:
         job = self.job_repository.get_document_job(job_id)
         if job is None:
             raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"文档任务不存在: {job_id}")
+        self._ensure_job_not_deleted(job)
         return job, self._get_downloadable_task_file(job, file_id=file_id)
 
     def retry_job(
@@ -522,6 +578,7 @@ class DocumentJobService:
         """对可重试失败任务按原 job_id 重新投递，保留既有中间产物用于幂等恢复。"""
 
         job = self.get_job(job_id, user=user)
+        self._ensure_job_not_deleted(job)
         self._ensure_resource_selection_allowed(
             user=user,
             use_latest_term_assets=use_latest_term_assets,
@@ -598,6 +655,7 @@ class DocumentJobService:
         """把源任务复制为一个新 document_job；不修改源任务，也不复用 retry 语义。"""
 
         source_job = self.get_job(job_id, user=user)
+        self._ensure_job_not_deleted(source_job)
         source_file = self._get_source_file_for_clone(source_job)
         explicit_values = {
             "template_version_id": template_version_id,
@@ -687,6 +745,7 @@ class DocumentJobService:
         """归档终态 document_job，仅隐藏列表记录，不删除文件或事件。"""
 
         job = self.get_job(job_id, user=user)
+        self._ensure_job_not_deleted(job)
         if job.archived_at is not None:
             return job
         if job.status not in ARCHIVABLE_DOCUMENT_JOB_STATUSES:
@@ -719,6 +778,7 @@ class DocumentJobService:
         """恢复误归档 document_job；只更新归档元数据，不触碰文件或状态。"""
 
         job = self.get_job(job_id, user=user)
+        self._ensure_job_not_deleted(job)
         if job.archived_at is None:
             return job
         now = utc_now()
@@ -739,6 +799,91 @@ class DocumentJobService:
         )
         return restored
 
+    def preview_delete_job(
+        self,
+        job_id: str,
+        *,
+        user: AuthenticatedUser,
+    ) -> DocumentJobDeletePlan:
+        """构建 Admin-only 任务删除计划；不修改任务、文件、事件或审计。"""
+
+        job = self.get_job(job_id, user=user)
+        self._ensure_delete_allowed(job, user=user)
+        return self._build_delete_plan(job, action_mode="delete_preview")
+
+    def delete_job(
+        self,
+        job_id: str,
+        *,
+        user: AuthenticatedUser,
+        reason: str,
+        confirmation: str,
+        preview_hash: str,
+        trace_id: str | None,
+    ) -> DocumentJobDeletePlan:
+        """按预览 hash 执行 Admin-only 任务删除，保留任务 metadata 和审计证据。"""
+
+        job = self.get_job(job_id, user=user)
+        self._ensure_delete_allowed(job, user=user)
+        normalized_reason = self._normalize_optional_text(reason)
+        if normalized_reason is None:
+            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "reason 不能为空。")
+        expected_confirmation = self._delete_confirmation_phrase(job)
+        if confirmation != expected_confirmation:
+            raise ApiError(
+                status.HTTP_400_BAD_REQUEST,
+                "invalid_request",
+                f"confirmation 必须为 {expected_confirmation}。",
+            )
+        preview = self._build_delete_plan(job, action_mode="delete_preview")
+        if preview.preview_hash != preview_hash:
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "删除预览已过期，请重新预览后再执行。")
+
+        delete_file_ids = [item.file_id for item in preview.files if item.action == "delete"]
+        executed_files = preview.files
+        if delete_file_ids:
+            if self.file_upload_service is None:
+                raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "文件清理服务不可用，无法删除任务文件。")
+            physical_delete = self.file_upload_service.execute_document_job_physical_delete(delete_file_ids)
+            physical_items = {item.file_id: item for item in physical_delete.items}
+            executed_files = [
+                self._delete_plan_file_from_physical_item(physical_items[item.file_id], action="delete")
+                if item.file_id in physical_items
+                else item
+                for item in preview.files
+            ]
+
+        now = utc_now()
+        deleted = self.job_repository.update_document_job(
+            job.id,
+            deleted_at=now,
+            deleted_by=user.id,
+            delete_reason=normalized_reason,
+            updated_at=now,
+        )
+        self.record_event(
+            deleted,
+            event_type="job_deleted",
+            stage=deleted.stage,
+            level="info",
+            message="文档任务已删除，任务 metadata、事件和审计证据已保留。",
+            payload={
+                "deleted_by": user.id,
+                "delete_reason_length": len(normalized_reason),
+                "files": self._delete_plan_totals(executed_files),
+            },
+            trace_id=trace_id,
+        )
+        return self._build_delete_plan(
+            deleted,
+            action_mode="delete_execute",
+            files=executed_files,
+            physical_delete_executed=bool(delete_file_ids),
+            metadata_mutated=True,
+            audit_events_written=True,
+            preview_hash=preview.preview_hash,
+        )
+
     def cancel_job(
         self,
         job_id: str,
@@ -749,6 +894,7 @@ class DocumentJobService:
         """把未终态 document_job 标记为 canceled，保留所有文件和事件。"""
 
         job = self.get_job(job_id, user=user)
+        self._ensure_job_not_deleted(job)
         if job.archived_at is not None:
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "已归档文档任务不允许取消。")
         if job.status not in CANCELABLE_DOCUMENT_JOB_STATUSES:
@@ -1290,6 +1436,7 @@ class DocumentJobService:
         return source_file
 
     def _get_completed_result_file(self, job: DocumentJobRecord) -> DocumentFileRecord:
+        self._ensure_job_not_deleted(job)
         if job.status != "succeeded" or job.stage != "completed" or job.result_file_id is None:
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文档任务尚未成功完成，生成 Word 不可下载。")
         file = self.file_repository.get_document_file(job.result_file_id)
@@ -1320,6 +1467,7 @@ class DocumentJobService:
         )
 
     def _get_downloadable_task_file(self, job: DocumentJobRecord, *, file_id: str) -> DocumentFileRecord:
+        self._ensure_job_not_deleted(job)
         file = self.file_repository.get_document_file(file_id)
         if file is None:
             raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"文件不存在: {file_id}")
@@ -1337,6 +1485,158 @@ class DocumentJobService:
 
     def _file_belongs_to_job(self, job: DocumentJobRecord, file: DocumentFileRecord) -> bool:
         return file.job_id == job.id or file.id == job.source_file_id
+
+    def _ensure_delete_allowed(self, job: DocumentJobRecord, *, user: AuthenticatedUser) -> None:
+        if user.role != "admin":
+            raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "只有 admin 可以删除文档任务。")
+        self._ensure_job_not_deleted(job)
+        if job.status not in DOCUMENT_JOB_DELETE_TERMINAL_STATUSES:
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "只有终态任务允许删除；处理中任务请先取消。")
+
+    def _ensure_job_not_deleted(self, job: DocumentJobRecord) -> None:
+        if job.deleted_at is not None:
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文档任务已删除。")
+
+    def _build_delete_plan(
+        self,
+        job: DocumentJobRecord,
+        *,
+        action_mode: str,
+        files: list[DocumentJobDeletePlanFile] | None = None,
+        physical_delete_executed: bool = False,
+        metadata_mutated: bool = False,
+        audit_events_written: bool = False,
+        preview_hash: str | None = None,
+    ) -> DocumentJobDeletePlan:
+        plan_files = files if files is not None else self._build_delete_plan_files(job)
+        return DocumentJobDeletePlan(
+            job=job,
+            action_mode=action_mode,
+            confirmation_phrase=self._delete_confirmation_phrase(job),
+            preview_hash=preview_hash or self._delete_preview_hash(job, plan_files),
+            totals=self._delete_plan_totals(plan_files),
+            files=plan_files,
+            safety={
+                "physical_delete_executed": physical_delete_executed,
+                "metadata_mutated": metadata_mutated,
+                "audit_events_written": audit_events_written,
+                "s3_delete_executed": False,
+                "deleted_job_metadata_retained": True,
+            },
+        )
+
+    def _build_delete_plan_files(self, job: DocumentJobRecord) -> list[DocumentJobDeletePlanFile]:
+        return [self._build_delete_plan_file(job, file) for file in self._list_files_for_job(job)]
+
+    def _build_delete_plan_file(self, job: DocumentJobRecord, file: DocumentFileRecord) -> DocumentJobDeletePlanFile:
+        keep_reason = self._delete_keep_reason(job, file)
+        if keep_reason is not None:
+            return DocumentJobDeletePlanFile(
+                file_id=file.id,
+                file_type=file.file_type,
+                storage_provider=file.storage_provider,
+                status_before=file.status,
+                status_after=file.status,
+                size_bytes=file.size_bytes,
+                action="keep",
+                outcome="kept",
+                reason=keep_reason,
+                s3_delete_contract=self._delete_s3_contract_summary(file),
+            )
+        return DocumentJobDeletePlanFile(
+            file_id=file.id,
+            file_type=file.file_type,
+            storage_provider=file.storage_provider,
+            status_before=file.status,
+            status_after=file.status,
+            size_bytes=file.size_bytes,
+            action="delete",
+            outcome="deletable",
+            reason="任务删除将清理该文件。",
+        )
+
+    def _delete_keep_reason(self, job: DocumentJobRecord, file: DocumentFileRecord) -> str | None:
+        if file.status == "deleted":
+            return "文件 metadata 已是 deleted。"
+        if self._file_is_shared_with_other_job(job, file):
+            return "文件仍被其他任务引用，已保留。"
+        if file.status == "pending_upload":
+            return "文件仍处于 pending_upload，未执行物理删除。"
+        if file.storage_provider not in {"local_file", "local_object"}:
+            return f"暂不支持物理删除 storage_provider={file.storage_provider}。"
+        if not file.object_key.strip():
+            return "文件缺少 object_key，不能物理删除。"
+        return None
+
+    def _file_is_shared_with_other_job(self, job: DocumentJobRecord, file: DocumentFileRecord) -> bool:
+        for other_job in self.job_repository.list_document_jobs():
+            if other_job.id == job.id or other_job.deleted_at is not None:
+                continue
+            if self._file_belongs_to_job(other_job, file):
+                return True
+        return False
+
+    def _delete_plan_file_from_physical_item(
+        self,
+        item: Any,
+        *,
+        action: str,
+    ) -> DocumentJobDeletePlanFile:
+        s3_contract = item.s3_delete_contract.to_dict() if item.s3_delete_contract is not None else None
+        return DocumentJobDeletePlanFile(
+            file_id=item.file_id,
+            file_type=item.file_type,
+            storage_provider=item.storage_provider,
+            status_before=item.status_before,
+            status_after=item.status_after,
+            size_bytes=item.size_bytes,
+            action=action,
+            outcome=item.outcome,
+            reason=item.reason,
+            deleted=item.deleted,
+            metadata_updated=item.metadata_updated,
+            s3_delete_contract=s3_contract,
+        )
+
+    def _delete_s3_contract_summary(self, file: DocumentFileRecord) -> dict[str, Any] | None:
+        if file.storage_provider != "s3":
+            return None
+        return {
+            "contract_version": "s3-delete-fake-v1",
+            "adapter_mode": "fake",
+            "target_exact": bool(file.bucket.strip() and file.object_key.strip()),
+            "expected_outcome": "fake_skipped",
+            "safety": {
+                "real_s3_delete_executed": False,
+                "fake_s3_delete_executed": True,
+                "metadata_mutated": False,
+                "audit_events_written": False,
+                "requires_future_real_adapter": True,
+            },
+        }
+
+    def _delete_plan_totals(self, files: list[DocumentJobDeletePlanFile]) -> dict[str, int]:
+        return {
+            "files": len(files),
+            "delete": sum(1 for item in files if item.action == "delete"),
+            "keep": sum(1 for item in files if item.action == "keep"),
+            "deleted": sum(1 for item in files if item.deleted),
+            "skipped": sum(1 for item in files if item.outcome.startswith("skipped_") or item.outcome == "kept"),
+            "failed": sum(1 for item in files if item.outcome == "failed"),
+            "metadata_updated": sum(1 for item in files if item.metadata_updated),
+        }
+
+    def _delete_preview_hash(self, job: DocumentJobRecord, files: list[DocumentJobDeletePlanFile]) -> str:
+        payload = {
+            "job_id": job.id,
+            "updated_at": job.updated_at.isoformat(),
+            "confirmation_phrase": self._delete_confirmation_phrase(job),
+            "files": [item.to_response_dict() for item in files],
+        }
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+    def _delete_confirmation_phrase(self, job: DocumentJobRecord) -> str:
+        return f"DELETE {job.id}"
 
     def _ensure_visible(self, job: DocumentJobRecord, user: AuthenticatedUser) -> None:
         if self._is_visible(job, user):
@@ -1436,6 +1736,8 @@ class DocumentJobService:
         )
 
     def _download_disabled_reason(self, job: DocumentJobRecord) -> str | None:
+        if job.deleted_at is not None:
+            return "文档任务已删除。"
         if job.status != "succeeded":
             return "只有 succeeded 文档任务允许下载结果。"
         if job.result_file_id is None:
@@ -1443,6 +1745,8 @@ class DocumentJobService:
         return None
 
     def _retry_disabled_reason(self, job: DocumentJobRecord) -> str | None:
+        if job.deleted_at is not None:
+            return "文档任务已删除。"
         if job.archived_at is not None:
             return "已归档文档任务不允许重试。"
         if job.status != "failed":
@@ -1454,6 +1758,8 @@ class DocumentJobService:
         return None
 
     def _cancel_disabled_reason(self, job: DocumentJobRecord) -> str | None:
+        if job.deleted_at is not None:
+            return "文档任务已删除。"
         if job.archived_at is not None:
             return "已归档文档任务不允许取消。"
         if job.status not in CANCELABLE_DOCUMENT_JOB_STATUSES:
@@ -1461,6 +1767,8 @@ class DocumentJobService:
         return None
 
     def _archive_disabled_reason(self, job: DocumentJobRecord) -> str | None:
+        if job.deleted_at is not None:
+            return "文档任务已删除。"
         if job.archived_at is not None:
             return "任务已归档。"
         if job.status not in ARCHIVABLE_DOCUMENT_JOB_STATUSES:
@@ -1468,17 +1776,30 @@ class DocumentJobService:
         return None
 
     def _unarchive_disabled_reason(self, job: DocumentJobRecord) -> str | None:
+        if job.deleted_at is not None:
+            return "文档任务已删除。"
         if job.archived_at is None:
             return "任务未归档。"
         return None
 
     def _clone_disabled_reason(self, job: DocumentJobRecord, *, user: AuthenticatedUser) -> str | None:
+        if job.deleted_at is not None:
+            return "文档任务已删除。"
         if not self._is_visible(job, user):
             return "无权限访问该文档任务。"
         try:
             self._get_source_file_for_clone(job)
         except ApiError as exc:
             return exc.message
+        return None
+
+    def _delete_disabled_reason(self, job: DocumentJobRecord, *, user: AuthenticatedUser) -> str | None:
+        if user.role != "admin":
+            return "只有 admin 可以删除文档任务。"
+        if job.deleted_at is not None:
+            return "文档任务已删除。"
+        if job.status not in DOCUMENT_JOB_DELETE_TERMINAL_STATUSES:
+            return "只有终态任务允许删除；处理中任务请先取消。"
         return None
 
     def _build_request_snapshot(

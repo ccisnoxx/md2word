@@ -1,7 +1,0 @@
-{"file": ".trellis/spec/backend/index.md", "reason": "Quality check entry point for backend API changes."}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify expected HTTP failures for file visibility and download availability."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify targeted unittest and API implementation conventions."}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Check backend/frontend contract alignment."}
-{"file": ".trellis/tasks/06-03-document-job-files-and-results/prd.md", "reason": "Task-specific requirements and acceptance criteria."}
-{"file": ".trellis/tasks/06-03-document-job-files-and-results/design.md", "reason": "Task-specific API/frontend design contract."}
-{"file": ".trellis/tasks/06-03-document-job-files-and-results/implement.md", "reason": "Task-specific verification plan and rollback points."}

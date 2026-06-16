@@ -1,3 +1,0 @@
-{"file": "docs/api/health.md", "reason": "Existing health API fields used by the read-only dashboard"}
-{"file": "docs/dev/runtime-observability-and-health.md", "reason": "Runtime health, worker, queue, and stage message semantics for dashboard copy"}
-{"file": ".trellis/spec/backend/index.md", "reason": "Backend quality and placement checklist if scope changes touch API code"}

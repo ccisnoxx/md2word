@@ -44,6 +44,9 @@ function buildJob(
     canceled_at: null,
     archived_at: null,
     archived_by: null,
+    deleted_at: null,
+    deleted_by: null,
+    delete_reason: null,
     translation_qa_status: "unreviewed",
     translation_qa_issue_type: null,
     translation_qa_note: null,
@@ -65,12 +68,14 @@ describe("document job action contract", () => {
       archive: { enabled: true, disabled_reason: null, retryable: false },
       unarchive: { enabled: false, disabled_reason: "任务未归档。", retryable: false },
       clone: { enabled: true, disabled_reason: null, retryable: false },
+      delete: { enabled: true, disabled_reason: null, retryable: false },
     });
 
     expect(isDocumentJobActionEnabled(job, "download")).toBe(false);
     expect(documentJobActionDisabledReason(job, "download")).toBe("结果文件已过期。");
     expect(isDocumentJobActionEnabled(job, "archive")).toBe(true);
     expect(documentJobActionDisabledReason(job, "archive")).toBe("");
+    expect(isDocumentJobActionEnabled(job, "delete")).toBe(true);
   });
 });
 

@@ -1,4 +1,0 @@
-{"file": ".trellis/spec/backend/index.md", "reason": "Confirm backend task completion criteria and verification coverage."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Check router thinness, tests, and OpenAPI snapshot behavior."}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "Check Admin-only rejection and query validation behavior."}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Check API/frontend/OpenAPI contract consistency."}

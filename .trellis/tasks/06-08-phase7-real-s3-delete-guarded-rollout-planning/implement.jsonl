@@ -1,4 +1,0 @@
-{"file":"AGENTS.md","reason":"Destructive-action and git-operation constraints."}
-{"file":".trellis/tasks/06-08-phase7-controlled-real-integration-rollout-planning/design.md","reason":"Phase 7 decision that real S3 delete is a separate destructive rollout."}
-{"file":".codestable/roadmap/real-integration-readiness/real-integration-readiness-roadmap.md","reason":"Phase 6 S3 delete foundation and deferred rollout context."}
-{"file":".trellis/tasks/archive/2026-06/06-07-phase6-s3-delete-localstack-contract/implement.md","reason":"Phase 6 fake/LocalStack parity foundation and blocked real delete state."}

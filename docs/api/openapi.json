@@ -1731,6 +1731,267 @@
         "title": "DocumentJobCreateResponse",
         "type": "object"
       },
+      "DocumentJobDeleteExecuteRequest": {
+        "properties": {
+          "confirmation": {
+            "title": "Confirmation",
+            "type": "string"
+          },
+          "preview_hash": {
+            "title": "Preview Hash",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "confirmation",
+          "preview_hash"
+        ],
+        "title": "DocumentJobDeleteExecuteRequest",
+        "type": "object"
+      },
+      "DocumentJobDeleteExecuteResponse": {
+        "properties": {
+          "action_mode": {
+            "const": "delete_execute",
+            "title": "Action Mode",
+            "type": "string"
+          },
+          "confirmation_phrase": {
+            "title": "Confirmation Phrase",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentJobDeleteFileResponse"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "job": {
+            "$ref": "#/components/schemas/DocumentJobResponse"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "preview_hash": {
+            "title": "Preview Hash",
+            "type": "string"
+          },
+          "safety": {
+            "$ref": "#/components/schemas/DocumentJobDeleteSafetyResponse"
+          },
+          "totals": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Totals",
+            "type": "object"
+          }
+        },
+        "required": [
+          "job_id",
+          "action_mode",
+          "confirmation_phrase",
+          "preview_hash",
+          "safety",
+          "job"
+        ],
+        "title": "DocumentJobDeleteExecuteResponse",
+        "type": "object"
+      },
+      "DocumentJobDeleteFileResponse": {
+        "properties": {
+          "action": {
+            "enum": [
+              "delete",
+              "keep"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "deleted": {
+            "default": false,
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "file_id": {
+            "title": "File Id",
+            "type": "string"
+          },
+          "file_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Type"
+          },
+          "metadata_updated": {
+            "default": false,
+            "title": "Metadata Updated",
+            "type": "boolean"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "s3_delete_contract": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "S3 Delete Contract"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "status_after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status After"
+          },
+          "status_before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Before"
+          },
+          "storage_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Provider"
+          }
+        },
+        "required": [
+          "file_id",
+          "action",
+          "outcome",
+          "reason"
+        ],
+        "title": "DocumentJobDeleteFileResponse",
+        "type": "object"
+      },
+      "DocumentJobDeletePreviewResponse": {
+        "properties": {
+          "action_mode": {
+            "const": "delete_preview",
+            "title": "Action Mode",
+            "type": "string"
+          },
+          "confirmation_phrase": {
+            "title": "Confirmation Phrase",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentJobDeleteFileResponse"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "preview_hash": {
+            "title": "Preview Hash",
+            "type": "string"
+          },
+          "safety": {
+            "$ref": "#/components/schemas/DocumentJobDeleteSafetyResponse"
+          },
+          "totals": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Totals",
+            "type": "object"
+          }
+        },
+        "required": [
+          "job_id",
+          "action_mode",
+          "confirmation_phrase",
+          "preview_hash",
+          "safety"
+        ],
+        "title": "DocumentJobDeletePreviewResponse",
+        "type": "object"
+      },
+      "DocumentJobDeleteSafetyResponse": {
+        "properties": {
+          "audit_events_written": {
+            "default": false,
+            "title": "Audit Events Written",
+            "type": "boolean"
+          },
+          "deleted_job_metadata_retained": {
+            "default": true,
+            "title": "Deleted Job Metadata Retained",
+            "type": "boolean"
+          },
+          "metadata_mutated": {
+            "default": false,
+            "title": "Metadata Mutated",
+            "type": "boolean"
+          },
+          "physical_delete_executed": {
+            "default": false,
+            "title": "Physical Delete Executed",
+            "type": "boolean"
+          },
+          "s3_delete_executed": {
+            "default": false,
+            "title": "S3 Delete Executed",
+            "type": "boolean"
+          }
+        },
+        "title": "DocumentJobDeleteSafetyResponse",
+        "type": "object"
+      },
       "DocumentJobDownloadUrlResponse": {
         "properties": {
           "download_url": {
@@ -1987,7 +2248,8 @@
                 "cancel",
                 "archive",
                 "unarchive",
-                "clone"
+                "clone",
+                "delete"
               ]
             },
             "title": "Available Actions",
@@ -2034,6 +2296,40 @@
             "default": false,
             "title": "Debug Full Text Enabled",
             "type": "boolean"
+          },
+          "delete_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delete Reason"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted At"
+          },
+          "deleted_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted By"
           },
           "document_ir_file_id": {
             "anyOf": [
@@ -15169,6 +15465,132 @@
           }
         },
         "summary": "Clone Document Job",
+        "tags": [
+          "document-jobs"
+        ]
+      }
+    },
+    "/api/v1/document-jobs/{job_id}/delete": {
+      "post": {
+        "operationId": "delete_document_job_api_v1_document_jobs__job_id__delete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentJobDeleteExecuteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentJobDeleteExecuteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Document Job",
+        "tags": [
+          "document-jobs"
+        ]
+      }
+    },
+    "/api/v1/document-jobs/{job_id}/delete-preview": {
+      "post": {
+        "operationId": "preview_delete_document_job_api_v1_document_jobs__job_id__delete_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentJobDeletePreviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Delete Document Job",
         "tags": [
           "document-jobs"
         ]

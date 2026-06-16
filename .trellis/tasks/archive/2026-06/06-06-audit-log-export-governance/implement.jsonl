@@ -1,5 +1,0 @@
-{"file": ".trellis/spec/backend/index.md", "reason": "Backend pre-development checklist and quality expectations for API changes."}
-{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Audit export code should stay in the audit domain, not in central routers."}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "Export API auth and validation must follow existing HTTP status patterns."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Thin router, domain service reuse, and unittest verification requirements."}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Task spans backend schemas, frontend contracts, and OpenAPI snapshot."}

@@ -1,4 +1,0 @@
-{"file":"AGENTS.md","reason":"Check no scheduler or destructive action occurred."}
-{"file":".trellis/tasks/06-08-phase7-cleanup-scheduler-controlled-execute-planning/prd.md","reason":"Check dependency and blocked criteria."}
-{"file":".trellis/tasks/06-08-phase7-cleanup-scheduler-controlled-execute-planning/design.md","reason":"Check future planning contract and hard stops."}
-{"file":".trellis/tasks/06-08-phase7-real-s3-delete-guarded-execution/acceptance-blocked.md","reason":"Check dependency is still blocked."}

@@ -1,7 +1,0 @@
-{"file": ".trellis/tasks/archive/2026-06/06-06-file-retention-operations-phase4-gap-audit/design.md", "reason": "Phase 4 decision matrix and dependency order for retention policy CRUD after physical deletion safety."}
-{"file": ".trellis/tasks/archive/2026-06/06-06-file-retention-physical-delete-safety-contract/design.md", "reason": "Existing destructive-operation boundary that policy CRUD must not bypass."}
-{"file": ".trellis/tasks/archive/2026-06/06-04-file-retention-management/design.md", "reason": "Metadata-only retention plan and mark-expired foundation to preserve."}
-{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Persistence backend contracts and dry-run-first retention safety rules."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend layering, router/service boundaries, and test expectations."}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "HTTP error semantics and exception translation conventions."}
-{"file": "docs/api/files.md", "reason": "Current Files API retention contract and documentation surface to update later."}

@@ -1,9 +1,0 @@
-{"file": ".trellis/tasks/06-03-product-roadmap/prd.md", "reason": "Parent roadmap requirements and explicit product boundaries."}
-{"file": ".trellis/tasks/06-03-product-roadmap/design.md", "reason": "Parent roadmap backend/frontend API and page inventory context."}
-{"file": ".trellis/tasks/06-03-product-roadmap/implement.md", "reason": "Parent roadmap task split and later file-retention scope."}
-{"file": ".trellis/spec/backend/index.md", "reason": "Backend pre-development checklist and quality check."}
-{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Placement rules for new domain routes and schemas."}
-{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Retention and persistence constraints, including dry-run-first artifact retention."}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "HTTP error and role-forbidden behavior conventions."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Router/service/test expectations for backend changes."}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer API/frontend contract checklist."}

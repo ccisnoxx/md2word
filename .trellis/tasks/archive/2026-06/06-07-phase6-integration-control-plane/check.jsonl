@@ -1,2 +1,0 @@
-{"file": ".trellis/spec/backend/index.md", "reason": "Check backend quality gates for the new Ops endpoint."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Check targeted test coverage and side-effect boundaries."}

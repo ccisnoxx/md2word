@@ -1,7 +1,0 @@
-{"file": ".trellis/spec/backend/index.md", "reason": "Backend pre-development checklist and quality gate for API/service work."}
-{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Placement rules for translation domain router/service/repository changes."}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "HTTP status mapping for 400/403/404/503 behavior."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Thin router, typed schema, and unittest verification conventions."}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Feature crosses backend API, frontend types, page rendering, and docs."}
-{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse existing TermRuleSet/TranslationProfile patterns instead of creating divergent management logic."}
-{"file": "docs/api/translation-term-sets.md", "reason": "Current Translation Term Set API contract and constraints."}

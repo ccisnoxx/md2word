@@ -7,6 +7,7 @@ const actionStates = {
   archive: { enabled: true, disabled_reason: null, retryable: false },
   unarchive: { enabled: false, disabled_reason: "任务未归档。", retryable: false },
   clone: { enabled: true, disabled_reason: null, retryable: false },
+  delete: { enabled: true, disabled_reason: null, retryable: false },
 };
 
 const activeActionStates = {
@@ -16,6 +17,7 @@ const activeActionStates = {
   archive: { enabled: false, disabled_reason: "只有 succeeded、failed、canceled 任务允许归档。", retryable: false },
   unarchive: { enabled: false, disabled_reason: "任务未归档。", retryable: false },
   clone: { enabled: true, disabled_reason: null, retryable: false },
+  delete: { enabled: false, disabled_reason: "只有终态任务允许删除；处理中任务请先取消。", retryable: false },
 };
 
 const documentJob = {
@@ -49,6 +51,9 @@ const documentJob = {
   canceled_at: null,
   archived_at: null,
   archived_by: null,
+  deleted_at: null,
+  deleted_by: null,
+  delete_reason: null,
   translation_qa_status: "unreviewed",
   translation_qa_issue_type: null,
   translation_qa_note: null,

@@ -20,6 +20,7 @@
           :cancel-loading="cancelLoading"
           :archive-loading="archiveLoading"
           :unarchive-loading="unarchiveLoading"
+          :delete-loading="deleteLoading"
           @refresh="loadAll"
           @download="handleDownload"
           @retry="handleRetry"
@@ -27,6 +28,7 @@
           @cancel="handleCancel"
           @archive="handleArchive"
           @unarchive="handleUnarchive"
+          @delete="handleDelete"
         />
       </div>
     </div>
@@ -560,6 +562,7 @@ const cloneLoading = ref(false);
 const cancelLoading = ref(false);
 const archiveLoading = ref(false);
 const unarchiveLoading = ref(false);
+const deleteLoading = ref(false);
 const retryDialogVisible = ref(false);
 const cloneDialogVisible = ref(false);
 const activeTab = ref("overview");
@@ -861,7 +864,7 @@ const dispositionFacts = computed(() => {
     { label: "文件", value: fileAvailabilitySummary.value },
   ];
 });
-const taskActionOrder: DocumentJobActionId[] = ["download", "retry", "clone", "cancel", "archive", "unarchive"];
+const taskActionOrder: DocumentJobActionId[] = ["download", "retry", "clone", "cancel", "archive", "unarchive", "delete"];
 const actionSummaries = computed(() => {
   if (!job.value) {
     return [];
@@ -873,6 +876,7 @@ const actionSummaries = computed(() => {
     cancel: "取消",
     archive: "归档",
     unarchive: "取消归档",
+    delete: "删除",
   };
   return taskActionOrder.map((action) => ({
     key: action,
@@ -1316,6 +1320,58 @@ async function handleUnarchive(target: DocumentJobResponse): Promise<void> {
     error.value = normalizeApiError(caught);
   } finally {
     unarchiveLoading.value = false;
+  }
+}
+
+async function handleDelete(target: DocumentJobResponse): Promise<void> {
+  deleteLoading.value = true;
+  error.value = null;
+  try {
+    const preview = await documentJobsApi.previewDelete(target.id);
+    const deleteCount = preview.totals.delete || 0;
+    const keepCount = preview.totals.keep || 0;
+    await ElMessageBox.confirm(
+      `删除任务会隐藏该任务并清理可安全删除的关联文件。将删除 ${deleteCount} 个文件，保留 ${keepCount} 个文件；任务 metadata、事件和 audit 会保留。`,
+      "删除任务",
+      {
+        confirmButtonText: "继续",
+        cancelButtonText: "返回",
+        type: "warning",
+      },
+    );
+    const reasonResult = await ElMessageBox.prompt(
+      "请输入删除原因。该原因会写入审计记录。",
+      "删除原因",
+      {
+        confirmButtonText: "继续",
+        cancelButtonText: "返回",
+        inputType: "textarea",
+        inputValidator: (value) => Boolean(value.trim()) || "删除原因不能为空。",
+      },
+    );
+    const confirmationResult = await ElMessageBox.prompt(
+      `请输入确认短语：${preview.confirmation_phrase}`,
+      "确认删除任务",
+      {
+        confirmButtonText: "确认删除",
+        cancelButtonText: "返回",
+        inputValidator: (value) => value === preview.confirmation_phrase || "确认短语不匹配。",
+      },
+    );
+    await documentJobsApi.delete(target.id, {
+      reason: reasonResult.value,
+      confirmation: confirmationResult.value,
+      preview_hash: preview.preview_hash,
+    });
+    ElMessage.success("任务已删除。");
+    await router.push({ name: "jobs" });
+  } catch (caught) {
+    if (caught === "cancel" || caught === "close") {
+      return;
+    }
+    error.value = normalizeApiError(caught);
+  } finally {
+    deleteLoading.value = false;
   }
 }
 

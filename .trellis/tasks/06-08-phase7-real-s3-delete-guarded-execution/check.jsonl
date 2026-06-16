@@ -1,4 +1,0 @@
-{"file":"AGENTS.md","reason":"Check no destructive execution occurred."}
-{"file":".trellis/tasks/06-08-phase7-real-s3-delete-guarded-execution/prd.md","reason":"Check execution preconditions."}
-{"file":".trellis/tasks/06-08-phase7-real-s3-delete-guarded-execution/design.md","reason":"Check blocked state and evidence requirements."}
-{"file":".trellis/tasks/06-08-phase7-real-s3-delete-guarded-rollout-planning/acceptance-planning.md","reason":"Check planning is not executable yet."}

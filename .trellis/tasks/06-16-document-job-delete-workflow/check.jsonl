@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Quality check should verify backend conventions and note that specs are currently sparse."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Quality check must verify API, service, persistence, frontend, docs, and tests remain consistent."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Quality check must catch duplicated delete/safety logic and second sources of truth."}

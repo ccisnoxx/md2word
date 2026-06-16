@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.domains.files.schemas import DocumentFileResponse
 
-DocumentJobActionId = Literal["download", "retry", "cancel", "archive", "unarchive", "clone"]
+DocumentJobActionId = Literal["download", "retry", "cancel", "archive", "unarchive", "clone", "delete"]
 
 
 class DocumentJobCreateRequest(BaseModel):
@@ -65,6 +65,9 @@ class DocumentJobResponse(BaseModel):
     canceled_at: datetime | None = None
     archived_at: datetime | None = None
     archived_by: str | None = None
+    deleted_at: datetime | None = None
+    deleted_by: str | None = None
+    delete_reason: str | None = None
     translation_qa_status: Literal["unreviewed", "approved", "needs_fix", "blocked"] = "unreviewed"
     translation_qa_issue_type: Literal[
         "translation",
@@ -110,6 +113,56 @@ class DocumentJobArchiveResponse(BaseModel):
 class DocumentJobUnarchiveResponse(BaseModel):
     job_id: str
     restored_at: datetime
+    job: DocumentJobResponse
+
+
+class DocumentJobDeleteExecuteRequest(BaseModel):
+    reason: str
+    confirmation: str
+    preview_hash: str
+
+
+class DocumentJobDeleteFileResponse(BaseModel):
+    file_id: str
+    file_type: str | None = None
+    storage_provider: str | None = None
+    status_before: str | None = None
+    status_after: str | None = None
+    size_bytes: int | None = None
+    action: Literal["delete", "keep"]
+    outcome: str
+    reason: str
+    deleted: bool = False
+    metadata_updated: bool = False
+    s3_delete_contract: dict[str, Any] | None = None
+
+
+class DocumentJobDeleteSafetyResponse(BaseModel):
+    physical_delete_executed: bool = False
+    metadata_mutated: bool = False
+    audit_events_written: bool = False
+    s3_delete_executed: bool = False
+    deleted_job_metadata_retained: bool = True
+
+
+class DocumentJobDeletePreviewResponse(BaseModel):
+    job_id: str
+    action_mode: Literal["delete_preview"]
+    confirmation_phrase: str
+    preview_hash: str
+    totals: dict[str, int] = Field(default_factory=dict)
+    files: list[DocumentJobDeleteFileResponse] = Field(default_factory=list)
+    safety: DocumentJobDeleteSafetyResponse
+
+
+class DocumentJobDeleteExecuteResponse(BaseModel):
+    job_id: str
+    action_mode: Literal["delete_execute"]
+    confirmation_phrase: str
+    preview_hash: str
+    totals: dict[str, int] = Field(default_factory=dict)
+    files: list[DocumentJobDeleteFileResponse] = Field(default_factory=list)
+    safety: DocumentJobDeleteSafetyResponse
     job: DocumentJobResponse
 
 

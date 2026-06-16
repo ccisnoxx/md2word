@@ -1,8 +1,0 @@
-{"file": ".trellis/spec/backend/index.md", "reason": "Backend layer entry point and required pre-development checklist."}
-{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Router, service, schema, and repository placement rules for the document_jobs domain."}
-{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Confirms no persistence shape change is needed and metadata reads should go through repositories."}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "Defines 403/404/409 behavior for job/file download validation."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Testing and thin-router conventions for backend API changes."}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "This task spans backend API contracts and frontend display/download behavior."}
-{"file": ".trellis/tasks/06-03-product-roadmap/design.md", "reason": "Parent roadmap scope and non-goals for files/results in task detail."}
-{"file": ".trellis/tasks/06-03-product-roadmap/implement.md", "reason": "Parent task decomposition and acceptance boundaries for document-job-files-and-results."}

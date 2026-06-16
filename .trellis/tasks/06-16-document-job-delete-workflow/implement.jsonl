@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend implementation must follow project backend guidelines index, even though current guideline docs are still being bootstrapped."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Task changes API, backend service, persistence, frontend types, UI, docs, and tests."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Task must reuse existing retention/physical-delete safety patterns instead of adding a parallel delete implementation."}

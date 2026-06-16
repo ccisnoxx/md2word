@@ -138,6 +138,17 @@
                       </small>
                     </span>
                   </el-dropdown-item>
+                  <el-dropdown-item
+                    command="delete"
+                    :disabled="isJobPending(row) || !canDeleteDocumentJob(row)"
+                  >
+                    <span class="dropdown-action-label">
+                      <span>删除</span>
+                      <small v-if="rowActionDisabledReason(row, 'delete')" class="dropdown-action-reason">
+                        {{ rowActionDisabledReason(row, 'delete') }}
+                      </small>
+                    </span>
+                  </el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -170,6 +181,7 @@ import {
   canArchiveDocumentJob,
   canCancelDocumentJob,
   canCloneDocumentJob,
+  canDeleteDocumentJob,
   canDownloadDocumentJob,
   canRetryDocumentJob,
   canUnarchiveDocumentJob,
@@ -199,6 +211,7 @@ const emit = defineEmits<{
   cancel: [job: DocumentJobResponse];
   archive: [job: DocumentJobResponse];
   unarchive: [job: DocumentJobResponse];
+  delete: [job: DocumentJobResponse];
 }>();
 
 function isBatchSelectable(row: DocumentJobResponse): boolean {
@@ -229,6 +242,8 @@ function handleRowCommand(row: DocumentJobResponse, command: string | number | o
     emit("archive", row);
   } else if (command === "unarchive") {
     emit("unarchive", row);
+  } else if (command === "delete") {
+    emit("delete", row);
   }
 }
 
@@ -263,6 +278,7 @@ function pendingActionLabel(row: DocumentJobResponse): string {
     archive: "归档中",
     unarchive: "取消归档中",
     clone: "创建中",
+    delete: "删除中",
   };
   return labels[action];
 }

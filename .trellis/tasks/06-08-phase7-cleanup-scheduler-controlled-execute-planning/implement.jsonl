@@ -1,4 +1,0 @@
-{"file":"AGENTS.md","reason":"Scheduler/destructive action and git-operation constraints."}
-{"file":".trellis/tasks/06-08-phase7-controlled-real-integration-rollout-planning/design.md","reason":"Phase 7 dependency that scheduler execute waits for accepted real S3 delete."}
-{"file":".trellis/tasks/06-08-phase7-real-s3-delete-guarded-execution/acceptance-blocked.md","reason":"Current S3 execution blocked state."}
-{"file":".codestable/roadmap/real-integration-readiness/real-integration-readiness-roadmap.md","reason":"Cleanup scheduler execute deferred from Phase 6 to Phase 7+."}

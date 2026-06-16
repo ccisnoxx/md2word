@@ -7168,9 +7168,11 @@ class FastAPIJobsBackendTests(TestCase):
 
         self.assertEqual(create_response.status_code, 201)
         pending_actions = list_response.json()["items"][0]["available_actions"]
-        self.assertEqual(set(pending_actions), {"download", "retry", "cancel", "archive", "unarchive", "clone"})
+        self.assertEqual(set(pending_actions), {"download", "retry", "cancel", "archive", "unarchive", "clone", "delete"})
         self.assertTrue(pending_actions["cancel"]["enabled"])
         self.assertTrue(pending_actions["clone"]["enabled"])
+        self.assertFalse(pending_actions["delete"]["enabled"])
+        self.assertIn("admin", pending_actions["delete"]["disabled_reason"])
         self.assertFalse(pending_actions["retry"]["retryable"])
         self.assertFalse(pending_actions["download"]["enabled"])
         self.assertIn("succeeded", pending_actions["download"]["disabled_reason"])
@@ -7505,6 +7507,162 @@ class FastAPIJobsBackendTests(TestCase):
         archive_audit_events = [event for event in audit_events if event.action == "document_job.archive"]
         self.assertEqual(len(archive_audit_events), 1)
         self.assertEqual(archive_audit_events[0].target_id, job_id)
+
+    def test_document_job_delete_requires_admin_preview_and_removes_owned_files(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                source_file = self._upload_source_pdf(client, operator_headers, filename="delete-source.pdf")
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=operator_headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = create_response.json()["job_id"]
+                operator_preview_response = client.post(
+                    f"/api/v1/document-jobs/{job_id}/delete-preview",
+                    headers=operator_headers,
+                )
+                preview_response = client.post(
+                    f"/api/v1/document-jobs/{job_id}/delete-preview",
+                    headers=admin_headers,
+                )
+                preview_payload = preview_response.json()
+                delete_response = client.post(
+                    f"/api/v1/document-jobs/{job_id}/delete",
+                    headers={**admin_headers, "X-Trace-Id": "trace_docjob_delete"},
+                    json={
+                        "reason": "operator requested task cleanup",
+                        "confirmation": preview_payload["confirmation_phrase"],
+                        "preview_hash": preview_payload["preview_hash"],
+                    },
+                )
+                list_response = client.get("/api/v1/document-jobs", headers=admin_headers)
+                detail_response = client.get(f"/api/v1/document-jobs/{job_id}", headers=admin_headers)
+                events_response = client.get(f"/api/v1/document-jobs/{job_id}/events", headers=admin_headers)
+                download_url_response = client.get(f"/api/v1/document-jobs/{job_id}/download-url", headers=admin_headers)
+                repeated_preview_response = client.post(
+                    f"/api/v1/document-jobs/{job_id}/delete-preview",
+                    headers=admin_headers,
+                )
+
+            stored_job = runtime.document_job_repository.get_document_job(job_id)
+            stored_files = {
+                item["file_id"]: runtime.document_file_repository.get_document_file(item["file_id"])
+                for item in preview_payload["files"]
+            }
+            audit_events = runtime.audit_event_repository.list_audit_events()
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.json()["status"], "succeeded")
+        self.assertEqual(operator_preview_response.status_code, 403)
+        self.assertEqual(preview_response.status_code, 200)
+        self.assertEqual(preview_payload["action_mode"], "delete_preview")
+        self.assertEqual(preview_payload["confirmation_phrase"], f"DELETE {job_id}")
+        self.assertEqual(preview_payload["totals"]["keep"], 0)
+        self.assertGreater(preview_payload["totals"]["delete"], 0)
+        self.assertEqual(delete_response.status_code, 200)
+        delete_payload = delete_response.json()
+        self.assertEqual(delete_payload["action_mode"], "delete_execute")
+        self.assertEqual(delete_payload["preview_hash"], preview_payload["preview_hash"])
+        self.assertTrue(delete_payload["safety"]["physical_delete_executed"])
+        self.assertTrue(delete_payload["safety"]["metadata_mutated"])
+        self.assertTrue(delete_payload["safety"]["audit_events_written"])
+        self.assertFalse(delete_payload["safety"]["s3_delete_executed"])
+        self.assertIsNotNone(delete_payload["job"]["deleted_at"])
+        self.assertEqual(delete_payload["job"]["deleted_by"], "user_admin")
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(list_response.json()["total"], 0)
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(detail_response.json()["id"], job_id)
+        self.assertIsNotNone(detail_response.json()["deleted_at"])
+        self.assertFalse(detail_response.json()["available_actions"]["delete"]["enabled"])
+        self.assertEqual(download_url_response.status_code, 409)
+        self.assertIn("已删除", download_url_response.json()["detail"])
+        self.assertEqual(repeated_preview_response.status_code, 409)
+        self.assertIn("已删除", repeated_preview_response.json()["detail"])
+        self.assertIsNotNone(stored_job)
+        self.assertIsNotNone(stored_job.deleted_at)
+        self.assertEqual(stored_job.deleted_by, "user_admin")
+        self.assertEqual(stored_job.delete_reason, "operator requested task cleanup")
+        for record in stored_files.values():
+            self.assertIsNotNone(record)
+            self.assertEqual(record.status, "deleted")
+        event_types = [event["event_type"] for event in events_response.json()["items"]]
+        self.assertIn("job_deleted", event_types)
+        delete_audit_events = [event for event in audit_events if event.action == "document_job.delete"]
+        self.assertEqual(len(delete_audit_events), 1)
+        self.assertEqual(delete_audit_events[0].target_id, job_id)
+        self.assertEqual(delete_audit_events[0].reason, "operator requested task cleanup")
+
+    def test_document_job_delete_preserves_shared_source_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                source_file = self._upload_source_pdf(client, operator_headers, filename="delete-shared-source.pdf")
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=operator_headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                source_job_id = create_response.json()["job_id"]
+                clone_response = client.post(
+                    f"/api/v1/document-jobs/{source_job_id}/clone",
+                    headers=operator_headers,
+                    json={"reason": "keep source alive"},
+                )
+                preview_response = client.post(
+                    f"/api/v1/document-jobs/{source_job_id}/delete-preview",
+                    headers=admin_headers,
+                )
+                preview_payload = preview_response.json()
+                delete_response = client.post(
+                    f"/api/v1/document-jobs/{source_job_id}/delete",
+                    headers=admin_headers,
+                    json={
+                        "reason": "remove old run after clone",
+                        "confirmation": preview_payload["confirmation_phrase"],
+                        "preview_hash": preview_payload["preview_hash"],
+                    },
+                )
+
+            source_job = runtime.document_job_repository.get_document_job(source_job_id)
+            source_file_after = runtime.document_file_repository.get_document_file(source_file["id"])
+            result_file_after = runtime.document_file_repository.get_document_file(source_job.result_file_id)
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(clone_response.status_code, 201)
+        self.assertEqual(preview_response.status_code, 200)
+        keep_items = [item for item in preview_payload["files"] if item["action"] == "keep"]
+        delete_items = [item for item in preview_payload["files"] if item["action"] == "delete"]
+        self.assertEqual([item["file_id"] for item in keep_items], [source_file["id"]])
+        self.assertIn("其他任务引用", keep_items[0]["reason"])
+        self.assertGreater(len(delete_items), 0)
+        self.assertEqual(delete_response.status_code, 200)
+        self.assertIsNotNone(source_file_after)
+        self.assertEqual(source_file_after.status, "uploaded")
+        self.assertIsNotNone(result_file_after)
+        self.assertEqual(result_file_after.status, "deleted")
 
     def test_document_job_archive_rejects_non_terminal_job(self):
         with tempfile.TemporaryDirectory() as temp_dir:

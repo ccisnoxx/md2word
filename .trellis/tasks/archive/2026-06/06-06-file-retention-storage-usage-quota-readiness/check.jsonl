@@ -1,8 +1,0 @@
-{"file": ".trellis/tasks/archive/2026-06/06-06-file-retention-storage-usage-quota-readiness/prd.md", "reason": "Review requirements, constraints, non-goals, and acceptance criteria before implementation."}
-{"file": ".trellis/tasks/archive/2026-06/06-06-file-retention-storage-usage-quota-readiness/design.md", "reason": "Review proposed API contract, aggregation semantics, quota readiness, UI scope, compatibility, and risks."}
-{"file": ".trellis/tasks/archive/2026-06/06-06-file-retention-storage-usage-quota-readiness/implement.md", "reason": "Review implementation checklist, verification plan, rollback points, and review gate."}
-{"file": ".trellis/tasks/archive/2026-06/06-06-file-retention-physical-delete-safety-contract/implement.md", "reason": "Check that future storage readiness does not weaken physical deletion dry-run/confirmation/audit boundaries."}
-{"file": ".trellis/tasks/archive/2026-06/06-06-file-retention-policy-crud-governance/implement.md", "reason": "Check that future storage readiness does not mutate policy or historical expires_at semantics."}
-{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Check backend storage and dry-run-first retention constraints."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Check layering and test plan quality."}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "Check API validation and error boundary conventions."}

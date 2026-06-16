@@ -330,6 +330,48 @@ class FileUploadService:
             items=items,
         )
 
+    def preview_document_job_physical_delete(
+        self,
+        file_ids: list[str],
+        *,
+        now: datetime | None = None,
+    ) -> FileRetentionDeleteReport:
+        """预览任务删除需要清理的 document_file，不要求文件先进入 expired。"""
+
+        generated_at = self._normalize_datetime(now or utc_now())
+        requested_file_ids = self._validate_retention_delete_file_ids(file_ids)
+        items = [
+            self._preview_document_job_delete_item(file_id, now=generated_at)
+            for file_id in requested_file_ids
+        ]
+        return self._build_retention_delete_report(
+            generated_at=generated_at,
+            action_mode="delete_preview",
+            requested_file_ids=requested_file_ids,
+            items=items,
+        )
+
+    def execute_document_job_physical_delete(
+        self,
+        file_ids: list[str],
+        *,
+        now: datetime | None = None,
+    ) -> FileRetentionDeleteReport:
+        """执行任务删除需要清理的 document_file，并把成功项 metadata 标记为 deleted。"""
+
+        generated_at = self._normalize_datetime(now or utc_now())
+        requested_file_ids = self._validate_retention_delete_file_ids(file_ids)
+        items = [
+            self._execute_document_job_delete_item(file_id, now=generated_at)
+            for file_id in requested_file_ids
+        ]
+        return self._build_retention_delete_report(
+            generated_at=generated_at,
+            action_mode="delete_execute",
+            requested_file_ids=requested_file_ids,
+            items=items,
+        )
+
     def register_generated_content(
         self,
         *,
@@ -454,6 +496,78 @@ class FileUploadService:
                 status_after=record.status,
             )
         return self._delete_retention_local_object(record, now=now)
+
+    def _preview_document_job_delete_item(self, file_id: str, *, now: datetime) -> FileRetentionDeleteItem:
+        """构建任务删除流程的单文件清理预览，不要求 retention 过期。"""
+
+        record = self.repository.get_document_file(file_id)
+        if record is None:
+            return FileRetentionDeleteItem(
+                file_id=file_id,
+                job_id=None,
+                file_type=None,
+                storage_provider=None,
+                status_before=None,
+                status_after=None,
+                object_key=None,
+                size_bytes=None,
+                outcome="skipped_not_found",
+                reason="文件 metadata 不存在。",
+            )
+        outcome, reason = self._document_job_delete_eligibility(record)
+        if outcome != "deletable":
+            return self._build_retention_delete_item(
+                record,
+                outcome=outcome,
+                reason=reason,
+                status_after=record.status,
+            )
+        return self._build_retention_delete_item(
+            record,
+            outcome="deletable",
+            reason="任务删除将清理该文件。",
+            status_after=record.status,
+        )
+
+    def _execute_document_job_delete_item(self, file_id: str, *, now: datetime) -> FileRetentionDeleteItem:
+        """执行任务删除流程的单文件清理；底层删除逻辑与 retention 删除共用。"""
+
+        record = self.repository.get_document_file(file_id)
+        if record is None:
+            return FileRetentionDeleteItem(
+                file_id=file_id,
+                job_id=None,
+                file_type=None,
+                storage_provider=None,
+                status_before=None,
+                status_after=None,
+                object_key=None,
+                size_bytes=None,
+                outcome="skipped_not_found",
+                reason="文件 metadata 不存在。",
+            )
+        outcome, reason = self._document_job_delete_eligibility(record)
+        if outcome != "deletable":
+            return self._build_retention_delete_item(
+                record,
+                outcome=outcome,
+                reason=reason,
+                status_after=record.status,
+            )
+        return self._delete_retention_local_object(record, now=now)
+
+    def _document_job_delete_eligibility(self, record: DocumentFileRecord) -> tuple[str, str]:
+        """判断任务删除流程是否可直接清理该文件，不要求 retention 过期。"""
+
+        if record.status == "deleted":
+            return "skipped_already_deleted", "文件 metadata 已是 deleted。"
+        if record.status == "pending_upload":
+            return "skipped_pending_upload", "文件仍处于 pending_upload，未执行物理删除。"
+        if record.storage_provider not in RETENTION_DELETE_SUPPORTED_LOCAL_PROVIDERS:
+            return "skipped_unsupported_storage", f"暂不支持物理删除 storage_provider={record.storage_provider}。"
+        if not record.object_key.strip():
+            return "skipped_missing_object_key", "文件缺少 object_key，不能物理删除。"
+        return "deletable", "eligible_document_job_file"
 
     def _retention_delete_eligibility(self, record: DocumentFileRecord, *, now: datetime) -> tuple[str, str]:
         """判断文件是否满足第一版物理删除条件。"""
