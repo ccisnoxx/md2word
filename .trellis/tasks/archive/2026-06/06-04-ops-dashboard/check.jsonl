@@ -1,3 +1,0 @@
-{"file": "docs/api/health.md", "reason": "Check displayed fields match current health API contract"}
-{"file": ".trellis/spec/backend/index.md", "reason": "Check no backend mutation or API contract change slipped into implementation"}
-{"file": "docs/dev/runtime-observability-and-health.md", "reason": "Check dashboard guidance matches documented worker and stage message semantics"}

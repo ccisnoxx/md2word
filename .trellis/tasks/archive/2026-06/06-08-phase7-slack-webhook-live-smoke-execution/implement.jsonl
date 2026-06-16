@@ -1,5 +1,0 @@
-{"file":"AGENTS.md","reason":"Safety, secret, and git-operation constraints."}
-{"file":".trellis/tasks/archive/2026-06/06-08-phase7-slack-webhook-live-smoke-approval/acceptance-approved.md","reason":"Accepted approval state for one future live-smoke attempt."}
-{"file":".trellis/tasks/archive/2026-06/06-08-phase7-slack-webhook-live-smoke-preflight/acceptance-preflight.md","reason":"Preflight values and hard stops."}
-{"file":".trellis/tasks/archive/2026-06/06-08-phase7-slack-webhook-delivery-pilot/acceptance.md","reason":"Implemented no-live pilot acceptance."}
-{"file":".trellis/tasks/archive/2026-06/06-08-phase7-slack-webhook-live-smoke-execution/runtime-gate-verification.md","reason":"Record runtime gate failure before provider call and preserve exactly-one attempt."}

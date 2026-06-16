@@ -13,6 +13,9 @@ import type {
   DocumentJobArchiveResponse,
   DocumentJobCancelResponse,
   DocumentJobConfigSummaryResponse,
+  DocumentJobDeleteExecuteRequest,
+  DocumentJobDeleteExecuteResponse,
+  DocumentJobDeletePreviewResponse,
   DocumentJobDownloadUrlResponse,
   DocumentJobEventListResponse,
   DocumentJobFileListResponse,
@@ -158,6 +161,21 @@ export const documentJobsApi = {
     return apiRequest<DocumentJobUnarchiveResponse>({
       url: `/api/v1/document-jobs/${jobId}/unarchive`,
       method: "POST",
+    });
+  },
+
+  previewDelete(jobId: string): Promise<DocumentJobDeletePreviewResponse> {
+    return apiRequest<DocumentJobDeletePreviewResponse>({
+      url: `/api/v1/document-jobs/${jobId}/delete-preview`,
+      method: "POST",
+    });
+  },
+
+  delete(jobId: string, payload: DocumentJobDeleteExecuteRequest): Promise<DocumentJobDeleteExecuteResponse> {
+    return apiRequest<DocumentJobDeleteExecuteResponse>({
+      url: `/api/v1/document-jobs/${jobId}/delete`,
+      method: "POST",
+      data: payload,
     });
   },
 

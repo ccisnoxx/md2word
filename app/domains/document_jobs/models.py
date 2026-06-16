@@ -37,6 +37,7 @@ DocumentJobEventType = Literal[
     "job_created",
     "job_archived",
     "job_unarchived",
+    "job_deleted",
     "job_cloned",
     "job_canceled",
     "stage_started",
@@ -103,6 +104,9 @@ class DocumentJobRecord(BaseModel):
     canceled_at: datetime | None = None
     archived_at: datetime | None = None
     archived_by: str | None = None
+    deleted_at: datetime | None = None
+    deleted_by: str | None = None
+    delete_reason: str | None = None
     translation_qa_status: DocumentJobTranslationQaStatus = "unreviewed"
     translation_qa_issue_type: DocumentJobTranslationQaIssueType | None = None
     translation_qa_note: str | None = None

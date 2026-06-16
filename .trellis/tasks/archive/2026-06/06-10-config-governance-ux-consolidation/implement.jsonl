@@ -1,7 +1,0 @@
-{"file": ".trellis/tasks/06-09-md2word-product-maturity-roadmap/roadmap.md", "reason": "Parent product maturity roadmap and phase-3 scope."}
-{"file": ".trellis/tasks/06-09-md2word-product-maturity-roadmap/task-breakdown.md", "reason": "Child task boundary and confirmed priority order."}
-{"file": "docs/api/term-rule-sets.md", "reason": "Term Rule Set draft, diff, preflight, publish, default, rollback contract."}
-{"file": "docs/api/term-rules.md", "reason": "Live Term Rules read/simulate surface and versioned-mode write guard."}
-{"file": "docs/api/translation-term-sets.md", "reason": "Translation Term Set CSV draft, diff, preflight, compatibility, publish, rollback contract."}
-{"file": "docs/api/translation-profiles.md", "reason": "Translation Profile draft/publish/default/rollback constraints and secret boundary."}
-{"file": "docs/api/templates.md", "reason": "Template version validation evidence, publish, default, disable contract."}

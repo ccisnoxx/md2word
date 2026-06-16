@@ -188,6 +188,10 @@ export function canCloneDocumentJob(job: DocumentJobResponse): boolean {
   return isDocumentJobActionEnabled(job, "clone");
 }
 
+export function canDeleteDocumentJob(job: DocumentJobResponse): boolean {
+  return isDocumentJobActionEnabled(job, "delete");
+}
+
 export function getJobSourceFilename(job: DocumentJobResponse): string {
   const sourceFile = job.request_snapshot.source_file;
   if (typeof sourceFile === "object" && sourceFile !== null && "original_filename" in sourceFile) {

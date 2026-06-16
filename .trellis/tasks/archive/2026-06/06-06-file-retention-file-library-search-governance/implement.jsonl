@@ -1,5 +1,0 @@
-{"file": ".trellis/spec/backend/index.md", "reason": "Backend pre-development checklist and verification expectations."}
-{"file": ".trellis/spec/backend/directory-structure.md", "reason": "File library search belongs in the files domain, not central routers."}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "Admin-only and query validation should follow existing HTTP behavior."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Thin router, domain service, schemas, and unittest coverage requirements."}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Task spans backend schema, frontend types/UI, and OpenAPI snapshot."}

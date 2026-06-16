@@ -1,4 +1,0 @@
-{"file": ".trellis/spec/backend/index.md", "reason": "Quality check entry point for backend-facing changes."}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify status-code and error translation behavior."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify service/router boundaries, schemas, and tests."}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verify API/frontend contract consistency."}

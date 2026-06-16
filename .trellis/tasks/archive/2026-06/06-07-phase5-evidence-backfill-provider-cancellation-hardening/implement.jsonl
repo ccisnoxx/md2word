@@ -1,2 +1,0 @@
-{"file": ".trellis/spec/backend/index.md", "reason": "Provider cancellation evidence covers backend API/service boundaries."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Targeted unittest verification and no external side effects."}

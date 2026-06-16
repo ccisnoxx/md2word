@@ -1,4 +1,0 @@
-{"file": ".trellis/tasks/06-03-product-roadmap/design.md", "reason": "Parent roadmap scope and Phase 1 boundary for task-context proposals."}
-{"file": ".trellis/tasks/06-03-product-roadmap/implement.md", "reason": "Recommended Trellis task split and explicit non-goals."}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Frontend query params, API payloads, and review display cross layer boundaries."}
-{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Prefer existing proposal API wrappers, tables, and page patterns over new abstractions."}

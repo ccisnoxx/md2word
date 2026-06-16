@@ -1,7 +1,0 @@
-{"file": "AGENTS.md", "reason": "Project operating constraints, documentation rules, verification rules, and git safety rules."}
-{"file": ".trellis/workflow.md", "reason": "Trellis planning/start/finish workflow and context manifest requirements."}
-{"file": ".codestable/attention.md", "reason": "Project runtime and testing constraints, including avoiding unintended conversion workflows."}
-{"file": ".trellis/tasks/06-08-phase7-controlled-real-integration-rollout-planning/design.md", "reason": "Parent Phase 7 decision selecting Slack/webhook as the first minimum closed loop."}
-{"file": ".trellis/tasks/archive/2026-06/06-08-phase6-closeout-acceptance/acceptance.md", "reason": "Phase 6 closeout constraints: real external/destructive execution remains gated."}
-{"file": ".trellis/tasks/archive/2026-06/06-07-phase6-real-alert-delivery-adapter-contract/design.md", "reason": "Accepted alert delivery adapter contract and fake parity baseline."}
-{"file": ".codestable/roadmap/real-integration-readiness/real-integration-readiness-items.yaml", "reason": "Dependency and status source for slack-webhook-delivery-pilot."}

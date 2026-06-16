@@ -1,2 +1,0 @@
-{"file": "frontend/src/components/PdfUploadPanel.vue", "reason": "Changed create flow component must be reviewed"}
-{"file": "frontend/tests/smoke/core-flow.spec.ts", "reason": "Smoke coverage for create flow mode selection"}

@@ -1194,7 +1194,7 @@ export type DocumentJobCreateRequest = {
   debug_full_text?: boolean;
 };
 
-export type DocumentJobActionId = "download" | "retry" | "cancel" | "archive" | "unarchive" | "clone";
+export type DocumentJobActionId = "download" | "retry" | "cancel" | "archive" | "unarchive" | "clone" | "delete";
 
 export type DocumentJobAvailableAction = {
   enabled: boolean;
@@ -1292,6 +1292,9 @@ export type DocumentJobResponse = {
   canceled_at: string | null;
   archived_at: string | null;
   archived_by: string | null;
+  deleted_at: string | null;
+  deleted_by: string | null;
+  delete_reason: string | null;
   translation_qa_status: TranslationQaStatus;
   translation_qa_issue_type: TranslationQaIssueType | null;
   translation_qa_note: string | null;
@@ -1336,6 +1339,56 @@ export type DocumentJobBulkResponse = {
   succeeded: number;
   failed: number;
   items: DocumentJobBulkItemResponse[];
+};
+
+export type DocumentJobDeleteExecuteRequest = {
+  reason: string;
+  confirmation: string;
+  preview_hash: string;
+};
+
+export type DocumentJobDeleteFileResponse = {
+  file_id: string;
+  file_type: string | null;
+  storage_provider: string | null;
+  status_before: string | null;
+  status_after: string | null;
+  size_bytes: number | null;
+  action: "delete" | "keep";
+  outcome: string;
+  reason: string;
+  deleted: boolean;
+  metadata_updated: boolean;
+  s3_delete_contract: Record<string, unknown> | null;
+};
+
+export type DocumentJobDeleteSafetyResponse = {
+  physical_delete_executed: boolean;
+  metadata_mutated: boolean;
+  audit_events_written: boolean;
+  s3_delete_executed: boolean;
+  deleted_job_metadata_retained: boolean;
+};
+
+export type DocumentJobDeletePreviewResponse = {
+  job_id: string;
+  action_mode: "delete_preview";
+  confirmation_phrase: string;
+  preview_hash: string;
+  totals: Record<string, number>;
+  files: DocumentJobDeleteFileResponse[];
+  safety: DocumentJobDeleteSafetyResponse;
+};
+
+export type DocumentJobDeleteExecuteResponse = {
+  job_id: string;
+  action_mode: "delete_execute";
+  confirmation_phrase: string;
+  preview_hash: string;
+  totals: Record<string, number>;
+  files: DocumentJobDeleteFileResponse[];
+  safety: DocumentJobDeleteSafetyResponse;
+  job: DocumentJobResponse;
 };
 
 export type DocumentJobArchiveResponse = {

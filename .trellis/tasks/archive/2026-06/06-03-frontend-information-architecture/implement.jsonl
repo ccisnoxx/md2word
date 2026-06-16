@@ -1,3 +1,0 @@
-{"file": ".trellis/spec/guides/index.md", "reason": "Frontend IA touches navigation and route boundaries; use thinking guides to keep scope and reuse clear."}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Route role metadata and frontend auth behavior are a frontend/backend contract boundary."}
-{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse existing auth store, RoleGate semantics, and page patterns instead of adding duplicate role logic."}

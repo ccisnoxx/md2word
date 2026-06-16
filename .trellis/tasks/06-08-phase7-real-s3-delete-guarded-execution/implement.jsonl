@@ -1,4 +1,0 @@
-{"file":"AGENTS.md","reason":"Destructive execution and git-operation constraints."}
-{"file":".trellis/tasks/06-08-phase7-real-s3-delete-guarded-rollout-planning/acceptance-planning.md","reason":"Current planning scaffold and missing target blockers."}
-{"file":".trellis/tasks/06-08-phase7-controlled-real-integration-rollout-planning/design.md","reason":"Phase 7 S3 delete lane separation."}
-{"file":".trellis/tasks/archive/2026-06/06-07-phase6-s3-delete-localstack-contract/implement.md","reason":"Phase 6 foundation evidence and real delete blocked state."}

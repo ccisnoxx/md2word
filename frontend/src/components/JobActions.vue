@@ -107,6 +107,24 @@
         </el-button>
       </span>
     </el-tooltip>
+    <el-tooltip
+      :disabled="!documentJobActionDisabledReason(job, 'delete')"
+      :content="documentJobActionDisabledReason(job, 'delete')"
+      placement="top"
+    >
+      <span>
+        <el-button
+          size="small"
+          type="danger"
+          :icon="DeleteIcon"
+          :loading="deleteLoading"
+          :disabled="!canDeleteDocumentJob(job)"
+          @click="$emit('delete', job)"
+        >
+          删除
+        </el-button>
+      </span>
+    </el-tooltip>
     <small v-if="firstDisabledReason" class="job-actions__reason">
       {{ firstDisabledReason }}
     </small>
@@ -115,13 +133,14 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { CircleClose, DocumentCopy, Download, FolderChecked, FolderOpened, Refresh, RefreshRight } from "@element-plus/icons-vue";
+import { CircleClose, Delete as DeleteIcon, DocumentCopy, Download, FolderChecked, FolderOpened, Refresh, RefreshRight } from "@element-plus/icons-vue";
 
 import type { DocumentJobActionId, DocumentJobResponse } from "@/api/types";
 import {
   canArchiveDocumentJob,
   canCancelDocumentJob,
   canCloneDocumentJob,
+  canDeleteDocumentJob,
   canDownloadDocumentJob,
   canRetryDocumentJob,
   canUnarchiveDocumentJob,
@@ -136,9 +155,10 @@ const props = defineProps<{
   cancelLoading?: boolean;
   archiveLoading?: boolean;
   unarchiveLoading?: boolean;
+  deleteLoading?: boolean;
 }>();
 
-const visibleActionOrder: DocumentJobActionId[] = ["download", "retry", "clone", "cancel", "archive", "unarchive"];
+const visibleActionOrder: DocumentJobActionId[] = ["download", "retry", "clone", "cancel", "archive", "unarchive", "delete"];
 const firstDisabledReason = computed(() => {
   for (const action of visibleActionOrder) {
     const reason = documentJobActionDisabledReason(props.job, action);
@@ -157,6 +177,7 @@ defineEmits<{
   cancel: [job: DocumentJobResponse];
   archive: [job: DocumentJobResponse];
   unarchive: [job: DocumentJobResponse];
+  delete: [job: DocumentJobResponse];
 }>();
 </script>
 

@@ -10,7 +10,7 @@ source_files:
   - app/domains/document_jobs/models.py
   - app/domains/document_jobs/service.py
   - app/domains/document_jobs/execution.py
-summary: Document Jobs API 提供 P0 PDF -> Word 任务创建、查询、事件、重试、clone、取消、归档和下载入口。
+summary: Document Jobs API 提供 P0 PDF -> Word 任务创建、查询、事件、重试、clone、取消、归档、删除和下载入口。
 tags: [document-jobs, api, pdf, word]
 last_reviewed: 2026-06-09
 ---
@@ -35,6 +35,8 @@ POST /api/v1/document-jobs/{job_id}/clone
 POST /api/v1/document-jobs/bulk-archive
 POST /api/v1/document-jobs/bulk-cancel
 POST /api/v1/document-jobs/{job_id}/unarchive
+POST /api/v1/document-jobs/{job_id}/delete-preview
+POST /api/v1/document-jobs/{job_id}/delete
 GET /api/v1/document-jobs/{job_id}/download-url
 GET /api/v1/document-jobs/{job_id}/download?token=...
 ```
@@ -148,7 +150,7 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 | `translation_qa_status` | 无 | 按翻译 QA 状态过滤；OpenAPI 枚举允许 `unreviewed` / `approved` / `needs_fix` / `blocked` / `all`，传 `all` 时返回全部 `en2zh_pdf_to_word` QA 任务。 |
 | `q` | 无 | 按任务 ID、源文件 ID、源文件名、错误码或错误信息搜索。 |
 | `sort` | `created_at_desc` | `created_at_desc` / `created_at_asc` / `updated_at_desc` / `updated_at_asc`。 |
-| `include_archived` | `false` | 是否包含已归档任务。 |
+| `include_archived` | `false` | 是否包含已归档任务；已删除任务始终不进入列表。 |
 | `created_from` | 无 | 按创建时间下界过滤，ISO datetime。 |
 | `created_to` | 无 | 按创建时间上界过滤，ISO datetime。 |
 
@@ -161,8 +163,9 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 ### `GET /api/v1/document-jobs/{job_id}`
 
 - 用途：读取任务详情。
-- 响应：`DocumentJobResponse`，包括状态、阶段、进度、中间产物 file id、失败诊断字段、retry count、`source_job_id`、request snapshot 和 `available_actions`。
-- `available_actions` 是服务端对当前用户和任务状态的操作可用性判断，键包括 `download`、`retry`、`cancel`、`archive`、`unarchive`、`clone`。每个 action 返回：
+- 响应：`DocumentJobResponse`，包括状态、阶段、进度、中间产物 file id、失败诊断字段、retry count、`source_job_id`、删除元数据 `deleted_at` / `deleted_by` / `delete_reason`、request snapshot 和 `available_actions`。
+- 已删除任务仍可通过详情读取 metadata、事件和审计证据，但所有任务动作都会被禁用；默认列表不会返回已删除任务。
+- `available_actions` 是服务端对当前用户和任务状态的操作可用性判断，键包括 `download`、`retry`、`cancel`、`archive`、`unarchive`、`clone`、`delete`。每个 action 返回：
 
 | 字段 | 说明 |
 |---|---|
@@ -288,6 +291,38 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 - 行为：逐个复用单任务 archive 语义；归档只从默认列表隐藏任务，不删除源文件、结果文件、debug/log 文件或事件。
 - 成功项写入 `document_job.archive` audit event。
 - 响应结构同 `bulk-retry`，`action=archive`。
+
+### `POST /api/v1/document-jobs/{job_id}/delete-preview`
+
+- 用途：Admin-only 预览删除任务会影响哪些文件。
+- 行为：只读，不修改任务、文件、事件或审计。
+- 限制：仅 `succeeded` / `failed` / `canceled` 终态任务允许删除；`pending` / `queued` / `running` 返回 `409 conflict`。Operator 返回 `403 forbidden`。
+- 响应：
+  - `confirmation_phrase`：执行删除时必须原样提交，例如 `DELETE docjob_xxx`。
+  - `preview_hash`：执行删除时必须提交，任务或文件状态变化后会失效。
+  - `totals`：文件总数、将删除数、保留数、已删除数、跳过数等。
+  - `files`：逐文件决策；可安全删除的本地文件返回 `action=delete`，被其他任务引用、已删除、pending upload、缺少 object key 或暂不支持的存储返回 `action=keep`。
+  - `safety`：预览阶段 `physical_delete_executed=false`、`metadata_mutated=false`、`audit_events_written=false`。
+
+### `POST /api/v1/document-jobs/{job_id}/delete`
+
+- 用途：Admin-only 执行任务删除；这是显式删除端点，不复用 `DELETE /api/v1/document-jobs/{job_id}` 的归档语义。
+- 请求体：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `reason` | 是 | 删除原因，不能为空，会写入 audit。 |
+| `confirmation` | 是 | 必须等于预览返回的 `confirmation_phrase`。 |
+| `preview_hash` | 是 | 必须等于最新预览返回的 `preview_hash`。 |
+
+- 行为：
+  - 将任务标记为 `deleted_at` / `deleted_by` / `delete_reason`，默认列表隐藏该任务。
+  - 保留任务 metadata、事件和 audit evidence；详情接口仍可读取。
+  - 清理只属于该任务且可安全删除的 `local_file` / `local_object` 文件，并把成功项 metadata 标记为 `deleted`。
+  - 被其他任务引用的 source PDF 会保留。
+  - 第一版不执行真实 S3 删除；S3 文件会保留并在响应中暴露 fake/safety contract。
+- 成功动作写入 `document_job.delete` audit event，并写入 `job_deleted` 任务事件。
+- 删除后的任务不能再下载、重试、clone、取消、归档、取消归档或再次删除；这些接口返回 `409 conflict`。
 
 ### 批量请求校验
 
