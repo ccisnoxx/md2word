@@ -3,16 +3,24 @@ doc_type: dev-guide
 slug: runbook
 component: backend-runbook
 status: current
-summary: 当前后端本地联调、运维动作和真实样例验证的运行说明。
-tags: [backend, runbook, jobs, local]
-last_reviewed: 2026-05-28
+summary: 当前后端本地开发、线上优先验证、运维动作和真实样例验证的运行说明。
+tags: [backend, runbook, jobs, deploy, hostdzire]
+last_reviewed: 2026-06-17
 ---
 
-# 本地运行与联调说明
+# 后端运行与线上验证说明
 
-## 0. 访问控制口径
+## 0. 线上优先验证边界
 
-本地单机联调可以使用：
+当前 P0 验收以 [线上优先验证流程](/Users/sc/PycharmProjects/md2word/docs/deploy/online-first-validation-workflow.md) 为准：本地只做代码/文档改写和不依赖真实服务的检查，完整 API、Worker、MySQL、Redis/Celery、MinerU 和 Golden Sample 证据在 `hostdzire` 收集。
+
+不要为了当前 P0 验收在本机启动前后端、MySQL、Redis/Celery、Worker 或前端 smoke。以下本地命令仅保留给专项开发调试使用，不构成本轮发布证据。
+
+## 0.1 访问控制口径
+
+当前 P0 主流程是 Files + Document Jobs，调用方先登录 `/api/v1/auth/login` 获取 Bearer JWT，再按 `operator` / `admin` 角色访问接口。普通 operator 可以上传、创建、查看、下载、取消、重试、归档自己的任务；任务级删除只允许 admin。
+
+本地 legacy jobs 排查仍可以使用旧访问模式：
 
 ```env
 JOBS_ACCESS_MODE=open
@@ -25,24 +33,28 @@ ADMIN_TOKEN=local-admin-token
 - `JOBS_ACCESS_MODE=token`，并配置 `JOBS_ACCESS_TOKEN`
 - 或 `JOBS_ACCESS_MODE=admin`，并配置 `ADMIN_TOKEN`
 
-jobs 运维动作默认由 `JOBS_OPS_ACCESS_MODE=admin` 控制，需要 `X-Admin-Token`。只有明确接受 `retry/cancel/cleanup-local-files` 和普通 jobs 查询同级时，才设置 `JOBS_OPS_ACCESS_MODE=jobs`。
+这些 `JOBS_*` 配置只用于 legacy jobs 入口和历史排查口径；新联调不要用它们替代 Bearer JWT。部分旧配置写接口仍兼容 legacy `X-Admin-Token`，但 P0 Document Jobs 工作台和 admin delete 以 Bearer admin JWT 为准。
 
-## 0.1 环境配置样例
+## 0.2 环境配置样例
 
 仓库根目录提供 `.env.example`，覆盖单实例生产化需要的主要配置：
 
 - `JOBS_REPOSITORY_BACKEND=mysql` 与 `JOBS_MYSQL_*`
 - `JOBS_ARTIFACT_STORAGE_BACKEND=local_file`，artifact 二进制仍保存在 artifact storage，不写入 MySQL
-- `JOBS_WORKER_MODE=in_process` / `external`
+- `DOCUMENT_JOBS_WORKER_BACKEND=celery` 与 `DOCUMENT_JOBS_CELERY_*`
+- legacy `JOBS_WORKER_MODE=in_process` / `external`
 - `JOBS_ACCESS_MODE`、`JOBS_ACCESS_TOKEN`、`JOBS_OPS_ACCESS_MODE`、`ADMIN_TOKEN`
 - `MINERU_CALLBACK_URL`、`MINERU_UID` 和 `MINERU_RESULT_HOST_ALLOWLIST`
 - `LOG_FORMAT=json`
+- `APP_VERSION` 和 `DEPLOYMENT_ID`，用于 P2 线上门禁和 health evidence 区分发布批次
 
 `MINERU_CALLBACK_URL` 直接按官方 callback 地址填写；callback 验签依赖 `uid + seed + content`，不要再给 URL 追加自定义 token 或 query 参数。
 
 不要把真实 token 或 password 提交到仓库；复制样例后在本地 `.env` 或部署环境里填真实值。
 
-## 1. 启动服务
+## 1. 本地服务启动（仅开发）
+
+当前机器不作为 P0 full-stack 验证环境；只有在专项开发排查时才使用本节命令。
 
 ```bash
 /Users/sc/miniconda3/envs/md2word/bin/python scripts/dev/run_api.py
@@ -54,7 +66,7 @@ jobs 运维动作默认由 `JOBS_OPS_ACCESS_MODE=admin` 控制，需要 `X-Admin
 http://127.0.0.1:8000
 ```
 
-## 2. 健康检查
+## 2. 本地健康检查（仅开发）
 
 ```bash
 curl http://127.0.0.1:8000/api/v1/health/live
@@ -84,7 +96,42 @@ curl http://127.0.0.1:8000/api/v1/health/metrics
 
 `metrics` 是 JSON 运维计数，不是 Prometheus 格式；当前包括 jobs 状态计数、stage message 状态计数、资源版本计数和 audit event 总数。
 
-## 2.0 独立 worker 模式
+`ready` 和 `metrics` 都包含非敏感 `deployment` 对象：
+
+- `environment`：当前 `APP_ENV`
+- `public_deployment_mode`：当前 `PUBLIC_DEPLOYMENT_MODE`
+- `version`：当前 `APP_VERSION`
+- `deployment_id`：当前 `DEPLOYMENT_ID`，未设置时为 `null`
+- `started_at`：API 进程启动时间
+
+P2 内部单租户发布时，推荐在 hostdzire `.env` 中显式设置 `APP_VERSION` 和 `DEPLOYMENT_ID`，并用 `scripts/ops/run_p2_online_gate.py` 生成线上证据报告。
+
+## 2.0 Document Jobs worker 模式
+
+P0 准生产/生产基线使用 MySQL metadata + Celery/Redis + 单 worker：
+
+```env
+JOBS_REPOSITORY_BACKEND=mysql
+DOCUMENT_JOBS_WORKER_BACKEND=celery
+DOCUMENT_JOBS_CELERY_BROKER_URL=redis://redis:6379/0
+DOCUMENT_JOBS_CELERY_QUEUE=document-jobs
+```
+
+启动 API 后另起 Document Jobs worker：
+
+```bash
+/Users/sc/miniconda3/envs/md2word/bin/python scripts/dev/run_document_worker.py
+```
+
+预期：
+
+- `/health/ready` 返回 `effective_repository_backend=mysql`
+- `/health/ready` 返回 `document_jobs_worker_backend=celery`
+- `/health/ready` 不出现 `document_jobs_metadata_store_not_mysql` 或 `document_jobs_worker_backend_eager_in_production`
+- `/health/ready` 不出现 `document_jobs_celery_broker_url_missing` 或 `document_jobs_celery_queue_missing`
+- 生产部署保持单 worker；多 worker 原子并发语义不是当前 P0 范围
+
+## 2.1 legacy stage worker 模式
 
 默认 `JOBS_WORKER_MODE=in_process` 时，API 进程在响应返回后通过 FastAPI
 `BackgroundTasks` 直接推进 stage。若要让 API 只接请求、由独立 worker 消费 stage
@@ -113,7 +160,7 @@ JOBS_WORKER_ID=md2word-worker-1
 当前外部 worker 仍面向单 worker 进程；`lease_owner`、`leased_at`、`lease_expires_at`
 用于 readiness 观察 stale running message，不是多 worker 抢占锁。
 
-## 2.1 jobs metadata backend 与 file -> sqlite 迁移
+## 2.2 jobs metadata backend 与 file -> sqlite 迁移
 
 默认策略：
 
@@ -329,18 +376,33 @@ docs/api/openapi.json
 
 预期 `Release check report` 顶层 `ok: True`。
 
+hostdzire 准生产/生产环境还应带运行时和 Golden Sample 预检：
+
+```bash
+GOLDEN_SAMPLE_USERNAME=admin \
+GOLDEN_SAMPLE_PASSWORD='<admin-password>' \
+/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_release.py \
+  --runtime-url http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000} \
+  --golden-sample-preflight \
+  --golden-sample-preflight-output tests/tmp/golden_sample_runs/preflight.json
+```
+
 当前 release check 包含：
 
 - OpenAPI snapshot 一致性检查
-- health/ready 和 health/metrics targeted smoke
+- P0 health/ready、MySQL metadata、Celery worker 和 health/metrics targeted smoke
+- P0 Word renderer/layout/table/formula 语义 targeted smoke
+- Golden Sample manifest、DOCX quality evidence、admin sign-off validation targeted smoke
+- Document Jobs admin delete 和 generated Word OOXML metadata smoke
 - file -> MySQL metadata migration fake-MySQL smoke
-- MySQL resource mode PDF -> callback -> completed smoke
 - job workflow policy tests
 - JSON logging tests
+- 可选 `--runtime-url` 真实 `/health/ready` 检查，要求 `deployment_init_ready=true`、`p0_document_jobs_ready=true`、`effective_repository_backend=mysql` 和 `document_jobs_worker_backend=celery`
+- 可选 `--golden-sample-preflight`，只检查 4 个 canonical PDF、admin 登录角色和运行时门禁，不提交真实转换任务
 
-如果 OpenAPI 分项失败，说明当前代码生成的 OpenAPI 与 `docs/api/openapi.json` 不一致；先确认 API 变更是否预期，再重新导出并提交快照。release check 不访问真实 MinerU、OpenAI 或公网。
+如果 OpenAPI 分项失败，说明当前代码生成的 OpenAPI 与 `docs/api/openapi.json` 不一致；先确认 API 变更是否预期，再重新导出并提交快照。无 `--runtime-url` 的本地 release check 不访问真实 MinerU、OpenAI 或公网；带 `--runtime-url` 的运行时门禁应在 hostdzire 执行。
 
-## 3. 创建 Document Job
+## 3. 本地 Document Job 调试（仅开发）
 
 当前公开 P0 主链路是 Files + Document Jobs。Legacy `/api/v1/jobs` endpoint family 已从 v1 router 移除，只保留历史文档说明；新联调、前端和集成方不要再使用旧入口。
 
@@ -372,100 +434,15 @@ curl -sS "http://127.0.0.1:8000/api/v1/document-jobs/{job_id}/download-url" \
 
 ## 3.1 历史 legacy jobs 入口
 
-以下旧入口已从公开 v1 API 移除，仅作为历史排查材料保留；不要用于新开发或验收。
+旧 `/api/v1/jobs` 和 `/api/v1/jobs/pdf` 入口已从公开 v1 API 移除，仅作为历史排查背景保留；不要用于新开发、联调或 P0 验收。历史链路曾支持 MinerU zip 上传、原始 PDF 在线提交、本地 callback 回放和旧 `download/result` 下载，但当前主合同统一使用 Files + Document Jobs：
 
-## 3. 上传 MinerU 输出 zip
+- 上传和创建：`POST /api/v1/files/upload-url` -> `PUT /api/v1/files/{file_id}/content` -> `POST /api/v1/document-jobs`
+- 查询：`GET /api/v1/document-jobs/{job_id}`
+- 事件：`GET /api/v1/document-jobs/{job_id}/events`
+- 文件：`GET /api/v1/document-jobs/{job_id}/files`
+- 下载：`GET /api/v1/document-jobs/{job_id}/download-url`
 
-```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/jobs" \
-  -F "package=@/path/to/mineru-output.zip" \
-  -F "translation_mode=direct"
-```
-
-如果要走翻译：
-
-```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/jobs" \
-  -F "package=@/path/to/mineru-output.zip" \
-  -F "translation_mode=en2zh"
-```
-
-前提：
-
-- `GET /api/v1/health/ready` 里的 `translation_available=true`
-- `translation_prompt_exists=true`
-
-## 3.1 上传原始 PDF 并提交 MinerU
-
-```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/jobs/pdf" \
-  -F "pdf=@/path/to/source.pdf" \
-  -F "translation_mode=direct"
-```
-
-前提：
-
-- `GET /api/v1/health/ready` 里的 `mineru_api_token_configured=true`
-
-当前这条链路会先做到：
-
-- 创建 job
-- 登记 `source_pdf`
-- 后台提交 MinerU
-- 任务进入 `parsing`
-
-接下来 callback 命中 `done + full_zip_url` 后，会自动继续：
-
-- 恢复远端结果 zip 到本地 `parsed_result_package`
-- 继续走后处理 conversion
-- 最终把任务推进到 `completed` 或 `failed`
-
-## 3.2 本地回放 MinerU callback
-
-先拿到上一步 PDF 任务的 `job_id` 和详情里的 `mineru_batch_id`：
-
-```bash
-curl "http://127.0.0.1:8000/api/v1/jobs/{job_id}"
-```
-
-然后按 `uid + mineru_callback_seed + content` 计算 `sha256`，再发送 callback：
-
-```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/mineru-callbacks/result" \
-  -H "Content-Type: application/json" \
-  -d '{"batch_id":"batch_test_001","checksum":"sha256(uid+seed+content) 的十六进制值","content":"{\"batch_id\":\"batch_test_001\",\"extract_result\":[{\"data_id\":\"job_123\",\"state\":\"done\",\"full_zip_url\":\"https://mineru.net/result.zip\"}]}"}'
-```
-
-预期：
-
-- `GET /api/v1/jobs/{job_id}` 通常会继续推进到 `completed`
-- `mineru_result_zip_url` 已持久化
-- `files` 里会新增 `parsed_result_package`
-- `events` 里出现：
-  - `mineru_callback_received`
-  - `mineru_callback_processed`
-  - `parsed_result_package_recovered`
-  - `job_completed`
-
-如果要模拟失败回调，把 `state` 改成 `failed`。预期是：
-
-- `status=failed`
-- `error_code=mineru_failed`
-
-## 4. 查询任务与下载结果
-
-```bash
-curl "http://127.0.0.1:8000/api/v1/jobs/{job_id}"
-curl "http://127.0.0.1:8000/api/v1/jobs/{job_id}/files"
-curl "http://127.0.0.1:8000/api/v1/jobs/{job_id}/events"
-curl -L "http://127.0.0.1:8000/api/v1/jobs/{job_id}/download/result" -o result.docx
-```
-
-如果是 `en2zh`，`events` 里会多出：
-
-- `translation_started`
-- `translation_completed`
-- 失败时的 `translation_failed`
+MinerU callback 仍命中 `POST /api/v1/mineru-callbacks/result`，但任务观察和恢复证据读取 Document Jobs 详情、事件、文件和 callback summary，不再读取旧 jobs 详情页。
 
 ## 4.1 查询默认模板和配置元数据
 
@@ -487,61 +464,58 @@ curl -L "http://127.0.0.1:8000/api/v1/templates/default/download" -o template.do
 ### retry
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/jobs/{job_id}/retry" \
-  -H "X-Admin-Token: ${ADMIN_TOKEN}" \
-  -F "reason=rerun"
+curl -sS -X POST "http://127.0.0.1:8000/api/v1/document-jobs/{job_id}/retry" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"reason":"rerun"}'
 ```
 
 ### cancel
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/jobs/{job_id}/cancel" \
-  -H "X-Admin-Token: ${ADMIN_TOKEN}" \
-  -F "reason=stop"
+curl -sS -X POST "http://127.0.0.1:8000/api/v1/document-jobs/{job_id}/cancel" \
+  -H "Authorization: Bearer ${TOKEN}"
 ```
 
-### cleanup-local-files
+### archive / unarchive
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/jobs/{job_id}/cleanup-local-files" \
-  -H "X-Admin-Token: ${ADMIN_TOKEN}" \
-  -F "reason=cleanup"
+curl -sS -X DELETE "http://127.0.0.1:8000/api/v1/document-jobs/{job_id}" \
+  -H "Authorization: Bearer ${TOKEN}"
+
+curl -sS -X POST "http://127.0.0.1:8000/api/v1/document-jobs/{job_id}/unarchive" \
+  -H "Authorization: Bearer ${TOKEN}"
 ```
 
-### recover-mineru-result
+### admin delete
 
-callback 长时间未到时，可以主动查询 MinerU batch 结果并恢复后续处理：
+任务级删除只允许 admin 执行；operator 前端不展示入口，接口返回 `403 forbidden`。执行前必须先预览，再带 `reason`、确认短语和 `preview_hash` 提交。
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/jobs/{job_id}/recover-mineru-result" \
-  -H "X-Admin-Token: ${ADMIN_TOKEN}"
+curl -sS -X POST "http://127.0.0.1:8000/api/v1/document-jobs/{job_id}/delete-preview" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}"
+
+curl -sS -X POST "http://127.0.0.1:8000/api/v1/document-jobs/{job_id}/delete" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"reason":"cleanup duplicate internal test","confirmation":"DELETE docjob_xxx","preview_hash":"<preview_hash>"}'
 ```
 
 注意：
 
-- 这些运维动作默认需要 `ADMIN_TOKEN`
-- `recover-mineru-result` 要求任务是已提交 MinerU 的 `source_pdf` parsing 任务
-- `cleanup-local-files` 当前只删未登记的运行态目录，例如 `work/`
-- `input/source.zip` 和 `output/result.docx` 会保留，因为它们还是唯一副本
+- 普通 operator 可以使用创建、查看、下载、取消、重试、归档等任务工作台动作，但不能执行任务级删除。
+- Document Jobs replay / callback 诊断通过任务详情、事件、callback summary 和 Ops Dashboard 恢复动作处理，不再使用旧 jobs 运维端点。
+- 文件物理清理仍走 Files retention 的 preview -> reason -> confirmation -> audit 流程；任务删除只清理可安全删除的关联本地文件，并保留任务 metadata、事件和 audit。
 
 ## 6. 真实样例联调口径
 
-当前本地已经验证过一条真实样例链路：
+P0 Golden Sample 以 `tests/fixtures/golden_samples/pdfs` 下的四个 OPA228 datasheet 页为 canonical suite：
 
-- 样例目录：`/Users/sc/MinerU/OPA228_P1.pdf-d1491424-9662-411d-8e39-fa6bcbd785a4`
-- 打包 zip：`/private/tmp/opa228_mineru_sample.zip`
-- 实际成功任务：`job_d93a9b69f751`
+- `gs-003`: `OPA228_P1.pdf`
+- `gs-004`: `OPA228_P2.pdf`
+- `gs-006`: `OPA228_P6.pdf`
+- `gs-008`: `OPA228_P7.pdf`
 
-这条链路已经证明：
+这四份样本通过 Files + Document Jobs 主链路执行 `direct_pdf_to_word`。P0 通过条件是 4/4 任务成功、4/4 结果 DOCX 可由 Word 打开、4/4 由 admin reviewer 人工签字通过；不再以扩充到 10-20 份样本作为阻塞条件。人工质量线要求接近原版排版并符合 Word 文档排版标准，二者冲突时以可维护的 Word 标准结构为准。
 
-- `POST /api/v1/jobs` 可接收真实 MinerU zip
-- 后台 stage 能推进到 `completed`
-- `download/result` 能得到有效 DOCX
-
-当前 PDF 在线提交能力只做到了对象级测试验证：
-
-- 合法 PDF 可进入 `parsing`
-- 缺 `MINERU_API_TOKEN` 时 `POST /api/v1/jobs/pdf` 返回 `503`
-- MinerU 提交失败时任务进入 `failed` 且 `error_code=mineru_submit_failed`
-- 合法 callback 可自动继续推进到 `completed`
-- 非法 `full_zip_url` 会被 callback ingress 直接以 `400` 拒绝
+正式执行地点是 hostdzire；本地不跑真实 Golden Sample 转换。执行、签字和证据回填步骤见 [线上优先验证流程](/Users/sc/PycharmProjects/md2word/docs/deploy/online-first-validation-workflow.md)。
