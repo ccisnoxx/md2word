@@ -288,10 +288,13 @@ def build_test_runtime(
     *,
     repository_factory: Callable[[Path], PersistenceAdapters] | None = None,
     app_env: str = "dev",
+    app_version: str = "dev",
+    deployment_id: str = "",
     jobs_repository_backend: str = "file",
     jobs_artifact_storage_backend: str = "local_file",
     jobs_worker_mode: str = "in_process",
     openai_api_key: str = "",
+    translation_provider_backend: str = "disabled",
     mineru_api_token: str = "",
     public_deployment_mode: str = "internal",
     mineru_callback_url: str = "",
@@ -353,12 +356,15 @@ def build_test_runtime(
         data_dir=str(data_dir),
         app_name="md2word_file_test",
         app_env=app_env,
+        app_version=app_version,
+        deployment_id=deployment_id,
         jobs_repository_backend=jobs_repository_backend,
         jobs_artifact_storage_backend=jobs_artifact_storage_backend,
         jobs_worker_mode=jobs_worker_mode,
         openai_api_key=openai_api_key,
         openai_base_url="",
         openai_model="deepseek-v4-flash",
+        translation_provider_backend=translation_provider_backend,
         mineru_api_token=mineru_api_token,
         public_deployment_mode=public_deployment_mode,
         mineru_callback_url=mineru_callback_url,
@@ -1244,6 +1250,11 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["app_name"], "md2word_file_test")
+        self.assertEqual(payload["deployment"]["environment"], "dev")
+        self.assertEqual(payload["deployment"]["public_deployment_mode"], "internal")
+        self.assertEqual(payload["deployment"]["version"], "dev")
+        self.assertIsNone(payload["deployment"]["deployment_id"])
+        self.assertTrue(payload["deployment"]["started_at"])
         self.assertEqual(payload["dependency_checks"]["configured_repository_backend"], "file")
         self.assertEqual(payload["dependency_checks"]["effective_repository_backend"], "file")
         self.assertEqual(payload["dependency_checks"]["worker_mode"], "in_process")
@@ -1269,6 +1280,8 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(payload["dependency_checks"]["stage_spool_observation_status"], "ok")
         self.assertEqual(payload["dependency_checks"]["default_translation_mode"], "direct")
         self.assertFalse(payload["dependency_checks"]["translation_required_for_default_mode"])
+        self.assertEqual(payload["dependency_checks"]["translation_provider_backend"], "disabled")
+        self.assertFalse(payload["dependency_checks"]["translation_debug_archive_enabled"])
         self.assertTrue(payload["dependency_checks"]["translation_client_configured"] is False)
         self.assertTrue(payload["dependency_checks"]["translation_prompt_exists"])
         self.assertFalse(payload["dependency_checks"]["mineru_api_token_configured"])
@@ -1302,14 +1315,16 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertFalse(checks["p0_document_jobs_ready"])
         self.assertFalse(checks["document_jobs_automatic_execution_enabled"])
         self.assertFalse(checks["deployment_init_ready"])
+        self.assertIn("document_jobs_metadata_store_not_mysql", checks["p0_document_jobs_blockers"])
         self.assertIn("document_jobs_worker_backend_disabled", checks["p0_document_jobs_blockers"])
         self.assertIn("auth_jwt_secret_key_missing", checks["p0_document_jobs_blockers"])
         self.assertIn("auth_internal_users_source_missing", checks["p0_document_jobs_blockers"])
         self.assertIn("mineru_api_token_missing", checks["p0_document_jobs_blockers"])
         self.assertIn("mineru_callback_url_missing", checks["p0_document_jobs_blockers"])
+        self.assertIn("document_jobs_metadata_store_not_mysql", checks["readiness_blockers"])
         self.assertIn("document_jobs_worker_backend_disabled", checks["readiness_blockers"])
 
-    def test_health_ready_allows_p0_document_jobs_when_production_config_is_complete(self):
+    def test_health_ready_blocks_p0_document_jobs_when_production_uses_non_mysql_metadata_store(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(
                 Path(temp_dir),
@@ -1323,13 +1338,63 @@ class FastAPIJobsBackendTests(TestCase):
                 mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
                 mineru_uid="mineru-user-1",
             )
+            runtime.settings.jobs_dir.mkdir(parents=True, exist_ok=True)
+            runtime.settings.tmp_dir.mkdir(parents=True, exist_ok=True)
             checks = runtime.health_service.build_dependency_checks()
 
+        self.assertTrue(checks["p0_document_jobs_required"])
+        self.assertFalse(checks["p0_document_jobs_ready"])
+        self.assertTrue(checks["document_jobs_automatic_execution_enabled"])
+        self.assertEqual(checks["p0_document_jobs_blockers"], ["document_jobs_metadata_store_not_mysql"])
+        self.assertFalse(checks["deployment_init_ready"])
+        self.assertIn("document_jobs_metadata_store_not_mysql", checks["readiness_blockers"])
+
+    def test_health_ready_blocks_p0_document_jobs_when_production_uses_eager_worker(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(
+                Path(temp_dir),
+                app_env="prod",
+                document_jobs_worker_backend="eager",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                mineru_api_token="token-123",
+                mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
+                mineru_uid="mineru-user-1",
+            )
+            checks = runtime.health_service.build_dependency_checks()
+
+        self.assertTrue(checks["p0_document_jobs_required"])
+        self.assertFalse(checks["p0_document_jobs_ready"])
+        self.assertTrue(checks["document_jobs_automatic_execution_enabled"])
+        self.assertEqual(checks["p0_document_jobs_blockers"], ["document_jobs_worker_backend_eager_in_production"])
+        self.assertFalse(checks["deployment_init_ready"])
+        self.assertIn("document_jobs_worker_backend_eager_in_production", checks["readiness_blockers"])
+
+    def test_health_ready_allows_p0_document_jobs_when_production_config_is_complete(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(
+                Path(temp_dir),
+                app_env="prod",
+                document_jobs_worker_backend="celery",
+                document_jobs_celery_broker_url="redis://redis:6379/0",
+                document_jobs_celery_queue="document-jobs",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                mineru_api_token="token-123",
+                mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
+                mineru_uid="mineru-user-1",
+            )
+            runtime.settings.jobs_dir.mkdir(parents=True, exist_ok=True)
+            runtime.settings.tmp_dir.mkdir(parents=True, exist_ok=True)
+            checks = runtime.health_service.build_dependency_checks()
+
+        self.assertEqual(checks["effective_repository_backend"], "mysql")
         self.assertTrue(checks["p0_document_jobs_required"])
         self.assertTrue(checks["p0_document_jobs_ready"])
         self.assertTrue(checks["document_jobs_automatic_execution_enabled"])
         self.assertEqual(checks["p0_document_jobs_blockers"], [])
         self.assertTrue(checks["deployment_init_ready"])
+        self.assertNotIn("document_jobs_metadata_store_not_mysql", checks["readiness_blockers"])
         self.assertNotIn("document_jobs_worker_backend_disabled", checks["readiness_blockers"])
         self.assertNotIn("auth_jwt_secret_key_missing", checks["readiness_blockers"])
 
@@ -1404,11 +1469,14 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(payload["overall_status"], "blocked")
         self.assertTrue(payload["release_gate"]["p0_document_jobs_required"])
         self.assertFalse(payload["release_gate"]["p0_document_jobs_ready"])
+        self.assertIn("document_jobs_metadata_store_not_mysql", blockers)
         self.assertIn("document_jobs_worker_backend_disabled", blockers)
         self.assertIn("mineru_api_token_missing", blockers)
         self.assertIn("mineru_callback_url_missing", blockers)
         blocker_findings = payload["release_gate"]["blocker_findings"]
+        self.assertIn("p0.document_jobs_metadata_store_not_mysql", [item["code"] for item in blocker_findings])
         self.assertIn("p0.document_jobs_worker_backend_disabled", [item["code"] for item in blocker_findings])
+        self.assertTrue(any("MySQL" in item["message"] for item in blocker_findings))
         self.assertTrue(any("文档任务执行器" in item["message"] for item in blocker_findings))
         self.assertEqual(groups["runtime_readiness"]["status"], "blocked")
         self.assertNotIn("test-jwt-secret", json.dumps(payload, ensure_ascii=False))
@@ -1513,6 +1581,10 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(create_response.status_code, 201)
         self.assertEqual(response.status_code, 200)
         payload = response.json()
+        self.assertEqual(payload["deployment"]["environment"], "dev")
+        self.assertEqual(payload["deployment"]["version"], "dev")
+        self.assertIsNone(payload["deployment"]["deployment_id"])
+        self.assertTrue(payload["deployment"]["started_at"])
         self.assertEqual(payload["metadata_store"], "file")
         self.assertEqual(payload["artifact_storage"], "local_file")
         self.assertEqual(payload["worker_mode"], "in_process")
@@ -3881,6 +3953,17 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertFalse(checks["translation_available"])
         self.assertFalse(checks["deployment_init_ready"])
         self.assertIn("default_translation_unavailable", checks["readiness_blockers"])
+
+    def test_health_ready_marks_translation_unavailable_when_provider_disabled(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir), openai_api_key="fake-key")
+            checks = runtime.health_service.build_dependency_checks()
+
+        self.assertEqual(checks["translation_provider_backend"], "disabled")
+        self.assertTrue(checks["translation_client_configured"])
+        self.assertTrue(checks["translation_prompt_exists"])
+        self.assertFalse(checks["translation_available"])
+        self.assertIn("translation_unavailable", checks["readiness_warnings"])
 
     def test_health_ready_blocks_when_callback_uid_missing(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -7366,6 +7449,42 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(clone_response.status_code, 403)
         self.assertIn("operator 不能选择任务资源版本", clone_response.json()["detail"])
 
+    def test_document_job_clone_rejects_operator_inheriting_debug_full_text(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                translation_debug_archive_enabled=True,
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, admin_headers, filename="clone-debug-source.pdf")
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=admin_headers,
+                    json={
+                        "source_file_id": source_file["id"],
+                        "mode": "en2zh_pdf_to_word",
+                        "document_language": "en",
+                        "debug_full_text": True,
+                    },
+                )
+                job_id = create_response.json()["job_id"]
+                runtime.document_job_repository.update_document_job(job_id, created_by="user_operator")
+                clone_response = client.post(
+                    f"/api/v1/document-jobs/{job_id}/clone",
+                    headers=operator_headers,
+                    json={"config_strategy": "keep_source_snapshot"},
+                )
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(clone_response.status_code, 403)
+        self.assertEqual(clone_response.json()["error_code"], "role_forbidden")
+
     def test_document_job_create_en2zh_binds_default_term_version(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(
@@ -7533,6 +7652,15 @@ class FastAPIJobsBackendTests(TestCase):
                     f"/api/v1/document-jobs/{job_id}/delete-preview",
                     headers=operator_headers,
                 )
+                operator_delete_response = client.post(
+                    f"/api/v1/document-jobs/{job_id}/delete",
+                    headers=operator_headers,
+                    json={
+                        "reason": "operator should not delete",
+                        "confirmation": f"DELETE {job_id}",
+                        "preview_hash": "preview",
+                    },
+                )
                 preview_response = client.post(
                     f"/api/v1/document-jobs/{job_id}/delete-preview",
                     headers=admin_headers,
@@ -7566,6 +7694,8 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(create_response.status_code, 201)
         self.assertEqual(create_response.json()["status"], "succeeded")
         self.assertEqual(operator_preview_response.status_code, 403)
+        self.assertEqual(operator_delete_response.status_code, 403)
+        self.assertEqual(operator_delete_response.json()["error_code"], "role_forbidden")
         self.assertEqual(preview_response.status_code, 200)
         self.assertEqual(preview_payload["action_mode"], "delete_preview")
         self.assertEqual(preview_payload["confirmation_phrase"], f"DELETE {job_id}")
@@ -8437,16 +8567,22 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(word_file.metadata["layout_page_count"], expected_layout_page_count)
         self.assertEqual(word_file.metadata["layout_block_count"], 6)
         self.assertIn("layout_wide_table:block_0003", word_file.metadata["layout_quality_flags"])
+        self.assertEqual(word_file.metadata["quality_flags"], [])
+        self.assertTrue(word_file.metadata["docx_quality"]["editable_content_available"])
+        self.assertFalse(word_file.metadata["docx_quality"]["image_only_suspected"])
+        self.assertGreaterEqual(word_file.metadata["docx_quality"]["landscape_sections"], 1)
         self.assertEqual(word_file.metadata["template_version_id"], "default@1")
         self.assertEqual([file.file_type for file in image_files], ["image_asset"])
         with zipfile.ZipFile(io.BytesIO(raw_bytes)) as archive:
             self.assertIn("content_list_v2.json", archive.namelist())
         with zipfile.ZipFile(io.BytesIO(word_bytes)) as archive:
             self.assertIn("word/document.xml", archive.namelist())
+            document_xml = archive.read("word/document.xml").decode("utf-8")
         self.assertEqual(ir_payload["schema_version"], "document-ir/v2")
         self.assertTrue(ir_payload["pages"])
         self.assertEqual(ir_payload["pages"][0]["metadata"]["orientation"], "portrait")
         self.assertEqual(ir_payload["pages"][1]["metadata"]["orientation"], "landscape")
+        self.assertIn('w:orient="landscape"', document_xml)
         self.assertEqual(
             [block["type"] for block in ir_payload["blocks"]],
             ["heading", "paragraph", "table", "image", "list", "formula"],
@@ -8512,6 +8648,13 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(create_response.status_code, 201)
         self.assertEqual(stored_job.status, "succeeded")
         self.assertEqual(word_file.file_type, "generated_word")
+        self.assertEqual(word_file.metadata["quality_flags"], [])
+        self.assertGreaterEqual(word_file.metadata["docx_quality"]["heading_paragraphs"], 1)
+        self.assertGreaterEqual(word_file.metadata["docx_quality"]["numbering_paragraphs"], 1)
+        self.assertGreaterEqual(word_file.metadata["docx_quality"]["table_header_rows"], 1)
+        self.assertGreaterEqual(word_file.metadata["docx_quality"]["table_no_split_rows"], 1)
+        self.assertEqual(word_file.metadata["docx_quality"]["latex_residue_count"], 0)
+        self.assertFalse(word_file.metadata["docx_quality"]["image_only_suspected"])
         self.assertIn("<w:pStyle", document_xml[: document_xml.index("6.5 Thermal Information")])
         self.assertIn("<w:numPr>", document_xml)
         self.assertIn('w:val="bullet"', numbering_xml)
@@ -8541,7 +8684,7 @@ class FastAPIJobsBackendTests(TestCase):
             app = create_app(runtime)
 
             with TestClient(app) as client:
-                headers = build_auth_header(client)
+                headers = build_auth_header(client, username="admin", password="admin-pass")
                 source_file = self._upload_source_pdf(client, headers, filename="english-datasheet.pdf")
                 create_response = client.post(
                     "/api/v1/document-jobs",
@@ -8605,6 +8748,38 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIn("ai_call_log", file_types)
         self.assertIn("ai_debug_archive", file_types)
 
+    def test_document_job_en2zh_debug_full_text_is_admin_only(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+                translation_debug_archive_enabled=True,
+            )
+            runtime.document_ir_translation_service = DocumentIRTranslationService(FakeDocumentJobTranslationProvider())
+            runtime.document_job_execution_service.document_ir_translation_service = runtime.document_ir_translation_service
+            runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = make_english_mineru_zip_bytes()
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, operator_headers, filename="operator-debug.pdf")
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=operator_headers,
+                    json={
+                        "source_file_id": source_file["id"],
+                        "mode": "en2zh_pdf_to_word",
+                        "document_language": "en",
+                        "debug_full_text": True,
+                    },
+                )
+
+        self.assertEqual(create_response.status_code, 403)
+        self.assertEqual(create_response.json()["error_code"], "role_forbidden")
+
     def test_document_job_translation_qa_reads_existing_artifacts_and_updates_review_state(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(
@@ -8622,11 +8797,12 @@ class FastAPIJobsBackendTests(TestCase):
             app = create_app(runtime)
 
             with TestClient(app) as client:
-                headers = build_auth_header(client)
-                source_file = self._upload_source_pdf(client, headers, filename="qa-english.pdf")
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, admin_headers, filename="qa-english.pdf")
                 create_response = client.post(
                     "/api/v1/document-jobs",
-                    headers=headers,
+                    headers=admin_headers,
                     json={
                         "source_file_id": source_file["id"],
                         "mode": "en2zh_pdf_to_word",
@@ -8636,18 +8812,18 @@ class FastAPIJobsBackendTests(TestCase):
                 )
                 job_id = create_response.json()["job_id"]
 
-                qa_response = client.get(f"/api/v1/document-jobs/{job_id}/translation-qa", headers=headers)
+                qa_response = client.get(f"/api/v1/document-jobs/{job_id}/translation-qa", headers=admin_headers)
                 update_response = client.patch(
                     f"/api/v1/document-jobs/{job_id}/translation-qa",
-                    headers=headers,
+                    headers=admin_headers,
                     json={
                         "status": "needs_fix",
                         "issue_type": "terminology",
                         "note": "术语译法需要复核。",
                     },
                 )
-                detail_response = client.get(f"/api/v1/document-jobs/{job_id}", headers=headers)
-                events_response = client.get(f"/api/v1/document-jobs/{job_id}/events", headers=headers)
+                detail_response = client.get(f"/api/v1/document-jobs/{job_id}", headers=admin_headers)
+                events_response = client.get(f"/api/v1/document-jobs/{job_id}/events", headers=admin_headers)
 
         self.assertEqual(create_response.status_code, 201)
         self.assertEqual(qa_response.status_code, 200)
@@ -8658,10 +8834,14 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertGreater(qa_payload["summary"]["final_segment_count"], 0)
         self.assertGreater(qa_payload["summary"]["ai_call_count"], 0)
         self.assertGreater(qa_payload["summary"]["term_trace_count"], 0)
+        self.assertTrue(qa_payload["summary"]["debug_full_text_enabled"])
         self.assertTrue(qa_payload["summary"]["source_comparison_available"])
         self.assertIn("document_ir_file_id", qa_payload["artifacts"])
         self.assertTrue(qa_payload["artifacts"]["ai_call_log_file_ids"])
         self.assertTrue(qa_payload["artifacts"]["ai_debug_archive_file_ids"])
+        self.assertTrue(qa_payload["artifacts"]["ai_debug_archive_contains_full_text"])
+        self.assertFalse(qa_payload["artifacts"]["ai_debug_archive_expired"])
+        self.assertIsNotNone(qa_payload["artifacts"]["ai_debug_archive_expires_at"])
         self.assertTrue(any(call["status"] == "succeeded" for call in qa_payload["ai_calls"]))
         self.assertTrue(any(trace["source_term"] == "input offset voltage" for trace in qa_payload["term_traces"]))
         matching_segments = [

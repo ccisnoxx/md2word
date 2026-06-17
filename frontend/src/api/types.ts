@@ -32,14 +32,24 @@ export type CurrentUserResponse = {
 export type HealthReadyResponse = {
   status: string;
   app_name: string;
+  deployment: HealthDeploymentInfo;
   jobs_dir: string;
   dependency_checks: Record<string, unknown>;
+};
+
+export type HealthDeploymentInfo = {
+  environment: string;
+  public_deployment_mode: string;
+  version: string;
+  deployment_id: string | null;
+  started_at: string;
 };
 
 export type HealthMetricsResponse = {
   status: string;
   app_name: string;
   generated_at: string;
+  deployment: HealthDeploymentInfo;
   metadata_store: string;
   artifact_storage: string;
   worker_mode: string;
@@ -1475,6 +1485,9 @@ export type DocumentJobTranslationQaArtifactsResponse = {
   document_ir_file_id: string | null;
   ai_call_log_file_ids: string[];
   ai_debug_archive_file_ids: string[];
+  ai_debug_archive_expires_at: string | null;
+  ai_debug_archive_expired: boolean;
+  ai_debug_archive_contains_full_text: boolean;
 };
 
 export type DocumentJobTranslationQaSummaryResponse = {
@@ -1484,6 +1497,7 @@ export type DocumentJobTranslationQaSummaryResponse = {
   ai_call_count: number;
   ai_call_statuses: Record<string, number>;
   term_trace_count: number;
+  debug_full_text_enabled: boolean;
   source_comparison_available: boolean;
   source_comparison_reason: string | null;
 };
