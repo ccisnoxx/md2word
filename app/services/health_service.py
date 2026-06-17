@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from app.api.v1.routers.health_schemas import (
+    HealthDeploymentInfo,
     HealthMetricsResponse,
     HealthOpsAlertItem,
     HealthOpsAlertsResponse,
@@ -96,6 +97,7 @@ class HealthService:
         self.audit_event_repository = audit_event_repository
         self.resource_version_repository = resource_version_repository
         self.default_template_id_getter = default_template_id_getter
+        self.started_at = utc_now()
 
     def _is_writable(self, path: Path | None = None) -> bool:
         target = path or self.settings.data_path
@@ -115,7 +117,9 @@ class HealthService:
         translation_prompt_exists = llm_client.SYSTEM_PROMPT_PATH.exists()
         stage_spool_counts = self.stage_message_store.count_stage_messages_by_status()
         running_observation = self._build_running_stage_observation()
+        translation_provider_enabled = self.settings.translation_provider_backend == "openai_compatible"
         translation_client_configured = bool(self.settings.openai_api_key) and llm_client.OpenAI is not None
+        translation_available = translation_provider_enabled and translation_client_configured and translation_prompt_exists
         stage_spool_available = self.stage_message_store_backend in {"database", "mysql"} or self.settings.stage_messages_dir.exists()
         stage_spool_replayable_messages = (
             stage_spool_counts.get("pending", 0)
@@ -189,10 +193,12 @@ class HealthService:
             "openai_api_key_configured": bool(self.settings.openai_api_key),
             "openai_base_url_configured": bool(self.settings.openai_base_url),
             "openai_model": self.settings.openai_model,
+            "translation_provider_backend": self.settings.translation_provider_backend,
+            "translation_debug_archive_enabled": self.settings.translation_debug_archive_enabled,
             "default_translation_mode": self.settings.default_translation_mode,
             "translation_required_for_default_mode": self.settings.default_translation_mode == "en2zh",
             "translation_client_configured": translation_client_configured,
-            "translation_available": translation_client_configured and translation_prompt_exists,
+            "translation_available": translation_available,
             "default_template_version": resource_labels["template"],
             "default_term_rule_version": resource_labels["term_rule_set"],
             "default_translation_profile_version": resource_labels["translation_profile"],
@@ -279,9 +285,11 @@ class HealthService:
             if not self.settings.document_jobs_celery_queue.strip():
                 blockers.append("document_jobs_celery_queue_missing")
         elif worker_backend == "eager" and required:
-            warnings.append("document_jobs_worker_backend_eager_in_production")
+            blockers.append("document_jobs_worker_backend_eager_in_production")
 
         if required:
+            if self.effective_repository_backend != "mysql":
+                blockers.append("document_jobs_metadata_store_not_mysql")
             if not self.settings.auth_jwt_secret_key.strip():
                 blockers.append("auth_jwt_secret_key_missing")
             if not self._auth_users_source_configured():
@@ -404,6 +412,7 @@ class HealthService:
             status="ok",
             app_name=self.settings.app_name,
             generated_at=utc_now(),
+            deployment=self._build_deployment_info(),
             metadata_store=self.effective_repository_backend,
             artifact_storage=self.artifact_storage_backend,
             worker_mode=self.settings.jobs_worker_mode,
@@ -414,6 +423,18 @@ class HealthService:
             document_job_callback_messages=callback_observation["status_counts"],
             resources=resources,
             audit_events={"total": self._count_audit_events()},
+        )
+
+    def _build_deployment_info(self) -> HealthDeploymentInfo:
+        """Return release identity fields safe for health responses and evidence reports."""
+
+        deployment_id = self.settings.deployment_id.strip() or None
+        return HealthDeploymentInfo(
+            environment=self.settings.app_env,
+            public_deployment_mode=self.settings.public_deployment_mode,
+            version=self.settings.app_version,
+            deployment_id=deployment_id,
+            started_at=self.started_at,
         )
 
     def _build_ops_alert_summary(
@@ -781,6 +802,7 @@ class HealthService:
         return HealthReadyResponse(
             status="ok",
             app_name=self.settings.app_name,
+            deployment=self._build_deployment_info(),
             jobs_dir=str(self.settings.jobs_dir),
             dependency_checks=self.build_dependency_checks(),
         )

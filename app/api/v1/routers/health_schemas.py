@@ -14,9 +14,20 @@ class HealthLiveResponse(BaseModel):
     app_name: str
 
 
+class HealthDeploymentInfo(BaseModel):
+    """Non-sensitive deployment identity fields for release evidence."""
+
+    environment: str
+    public_deployment_mode: str
+    version: str
+    deployment_id: str | None = None
+    started_at: datetime
+
+
 class HealthReadyResponse(BaseModel):
     status: str
     app_name: str
+    deployment: HealthDeploymentInfo
     jobs_dir: str
     dependency_checks: dict[str, Any]
 
@@ -25,6 +36,7 @@ class HealthMetricsResponse(BaseModel):
     status: str
     app_name: str
     generated_at: datetime
+    deployment: HealthDeploymentInfo
     metadata_store: str
     artifact_storage: str
     worker_mode: str

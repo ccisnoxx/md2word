@@ -10,7 +10,14 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 
 from scripts.ops.export_openapi import check_openapi_export, export_openapi
-from scripts.ops.check_release import check_release, check_runtime_readiness, format_release_report
+from scripts.ops.check_release import (
+    check_golden_sample_preflight,
+    check_release,
+    check_runtime_readiness,
+    format_release_report,
+)
+from scripts.ops.run_golden_sample_regression import RegressionConfig
+from scripts.ops.run_p2_online_gate import P2OnlineGateConfig, run_p2_online_gate
 
 
 class OpenAPIExportTests(TestCase):
@@ -65,6 +72,8 @@ class OpenAPIExportTests(TestCase):
                 "dependency_checks": {
                     "deployment_init_ready": False,
                     "p0_document_jobs_ready": False,
+                    "effective_repository_backend": "file",
+                    "document_jobs_worker_backend": "disabled",
                     "readiness_blockers": ["document_jobs_worker_backend_disabled"],
                     "p0_document_jobs_blockers": ["document_jobs_worker_backend_disabled"],
                 },
@@ -97,6 +106,8 @@ class OpenAPIExportTests(TestCase):
             responses["/api/v1/health/ready"]["dependency_checks"] = {
                 "deployment_init_ready": True,
                 "p0_document_jobs_ready": True,
+                "effective_repository_backend": "mysql",
+                "document_jobs_worker_backend": "celery",
                 "readiness_blockers": [],
                 "p0_document_jobs_blockers": [],
             }
@@ -109,3 +120,193 @@ class OpenAPIExportTests(TestCase):
         self.assertFalse(failed_item.ok)
         self.assertIn("document_jobs_worker_backend_disabled", failed_item.details)
         self.assertTrue(passed_item.ok)
+
+    def test_golden_sample_preflight_release_check_requires_admin_and_p0_runtime(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            sample_root = root / "pdfs"
+            sample_root.mkdir()
+            (sample_root / "OPA228_P1.pdf").write_bytes(b"%PDF-1.4\n")
+            manifest_path = root / "manifest.yaml"
+            manifest_path.write_text(
+                "\n".join(
+                    [
+                        "schema_version: 1",
+                        "sample_root: pdfs",
+                        "target_success_rate: 1.0",
+                        "samples:",
+                        "  - id: gs-003",
+                        "    filename: OPA228_P1.pdf",
+                        "    title: Datasheet page",
+                        "    enabled: true",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            responses = {
+                "/api/v1/health/ready": {
+                    "status": "ok",
+                    "dependency_checks": {
+                        "deployment_init_ready": True,
+                        "p0_document_jobs_ready": True,
+                        "effective_repository_backend": "mysql",
+                        "document_jobs_worker_backend": "celery",
+                        "readiness_blockers": [],
+                        "p0_document_jobs_blockers": [],
+                    },
+                },
+                "/api/v1/auth/me": {
+                    "username": "admin",
+                    "role": "admin",
+                },
+            }
+
+            class Handler(BaseHTTPRequestHandler):
+                def do_GET(self):  # noqa: N802
+                    payload = responses.get(self.path)
+                    if payload is None:
+                        self.send_response(404)
+                        self.end_headers()
+                        return
+                    body = json.dumps(payload).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+
+                def log_message(self, format, *args):  # noqa: A002
+                    return
+
+            server = HTTPServer(("127.0.0.1", 0), Handler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                config = RegressionConfig(
+                    base_url=f"http://127.0.0.1:{server.server_port}",
+                    bearer_token="token",
+                    required_role="admin",
+                    manifest_path=manifest_path,
+                )
+                item = check_golden_sample_preflight(config=config)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+        self.assertTrue(item.ok)
+        self.assertIn("[manifest] ok: True", item.details)
+        self.assertIn("[auth] ok: True", item.details)
+        self.assertIn("[runtime-readiness] ok: True", item.details)
+
+    def test_p2_online_gate_collects_runtime_evidence(self):
+        responses = {
+            "/api/v1/health/live": {"status": "ok", "app_name": "md2word_file"},
+            "/api/v1/health/ready": {
+                "status": "ok",
+                "app_name": "md2word_file",
+                "deployment": {
+                    "environment": "prod",
+                    "public_deployment_mode": "internal",
+                    "version": "2026.06.17-p2",
+                    "deployment_id": "hostdzire-p2-test",
+                    "started_at": "2026-06-17T00:00:00+00:00",
+                },
+                "dependency_checks": {
+                    "deployment_init_ready": True,
+                    "p0_document_jobs_ready": True,
+                    "effective_repository_backend": "mysql",
+                    "document_jobs_worker_backend": "celery",
+                    "translation_available": True,
+                    "readiness_blockers": [],
+                    "readiness_warnings": [],
+                    "p0_document_jobs_blockers": [],
+                },
+            },
+            "/api/v1/health/metrics": {
+                "status": "ok",
+                "app_name": "md2word_file",
+                "generated_at": "2026-06-17T00:00:01+00:00",
+                "deployment": {
+                    "environment": "prod",
+                    "public_deployment_mode": "internal",
+                    "version": "2026.06.17-p2",
+                    "deployment_id": "hostdzire-p2-test",
+                    "started_at": "2026-06-17T00:00:00+00:00",
+                },
+                "metadata_store": "mysql",
+                "artifact_storage": "local_object",
+                "worker_mode": "external",
+                "stage_dispatcher": "external_worker",
+                "jobs": {},
+                "document_jobs": {},
+                "stage_messages": {},
+                "document_job_callback_messages": {},
+                "resources": {},
+                "audit_events": {"total": 1},
+            },
+            "/api/v1/health/ops-alerts": {
+                "status": "ok",
+                "app_name": "md2word_file",
+                "generated_at": "2026-06-17T00:00:02+00:00",
+                "summary": {},
+                "alerts": [],
+                "safety": {
+                    "read_only": True,
+                    "writes_performed": False,
+                    "recovery_actions_executed": False,
+                    "provider_calls_executed": False,
+                    "notification_delivery_executed": False,
+                    "audit_events_written": False,
+                },
+            },
+        }
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):  # noqa: N802
+                payload = responses.get(self.path)
+                if payload is None:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                body = json.dumps(payload).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format, *args):  # noqa: A002
+                return
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with TemporaryDirectory() as temp_dir:
+                base_url = f"http://127.0.0.1:{server.server_port}"
+                report = run_p2_online_gate(
+                    P2OnlineGateConfig(
+                        base_url=base_url,
+                        public_url=base_url,
+                        bearer_token="test-token",
+                        runs_dir=Path(temp_dir),
+                        run_p0_preflight=False,
+                        run_p1_preflight=False,
+                    ),
+                    release_check_unittest_targets=(),
+                )
+                report_path = Path(report["run_dir"]) / "report.json"
+                report_exists = report_path.exists()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+        self.assertTrue(report["summary"]["p2_online_gate_ready"])
+        self.assertEqual(report["summary"]["deployment"]["deployment_id"], "hostdzire-p2-test")
+        self.assertEqual(report["summary"]["runtime"]["effective_repository_backend"], "mysql")
+        self.assertTrue(report["checks"]["release_check"]["ok"])
+        self.assertTrue(report["checks"]["public"]["ok"])
+        self.assertTrue(report_exists)

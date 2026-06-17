@@ -2872,6 +2872,28 @@
             "title": "Ai Call Log File Ids",
             "type": "array"
           },
+          "ai_debug_archive_contains_full_text": {
+            "default": false,
+            "title": "Ai Debug Archive Contains Full Text",
+            "type": "boolean"
+          },
+          "ai_debug_archive_expired": {
+            "default": false,
+            "title": "Ai Debug Archive Expired",
+            "type": "boolean"
+          },
+          "ai_debug_archive_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Debug Archive Expires At"
+          },
           "ai_debug_archive_file_ids": {
             "items": {
               "type": "string"
@@ -3129,6 +3151,11 @@
             },
             "title": "Ai Call Statuses",
             "type": "object"
+          },
+          "debug_full_text_enabled": {
+            "default": false,
+            "title": "Debug Full Text Enabled",
+            "type": "boolean"
           },
           "final_segment_count": {
             "default": 0,
@@ -6062,6 +6089,47 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HealthDeploymentInfo": {
+        "description": "Non-sensitive deployment identity fields for release evidence.",
+        "properties": {
+          "deployment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deployment Id"
+          },
+          "environment": {
+            "title": "Environment",
+            "type": "string"
+          },
+          "public_deployment_mode": {
+            "title": "Public Deployment Mode",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "environment",
+          "public_deployment_mode",
+          "version",
+          "started_at"
+        ],
+        "title": "HealthDeploymentInfo",
+        "type": "object"
+      },
       "HealthLiveResponse": {
         "properties": {
           "app_name": {
@@ -6096,6 +6164,9 @@
             },
             "title": "Audit Events",
             "type": "object"
+          },
+          "deployment": {
+            "$ref": "#/components/schemas/HealthDeploymentInfo"
           },
           "document_job_callback_messages": {
             "additionalProperties": {
@@ -6168,6 +6239,7 @@
           "status",
           "app_name",
           "generated_at",
+          "deployment",
           "metadata_store",
           "artifact_storage",
           "worker_mode",
@@ -6418,6 +6490,9 @@
             "title": "Dependency Checks",
             "type": "object"
           },
+          "deployment": {
+            "$ref": "#/components/schemas/HealthDeploymentInfo"
+          },
           "jobs_dir": {
             "title": "Jobs Dir",
             "type": "string"
@@ -6430,6 +6505,7 @@
         "required": [
           "status",
           "app_name",
+          "deployment",
           "jobs_dir",
           "dependency_checks"
         ],

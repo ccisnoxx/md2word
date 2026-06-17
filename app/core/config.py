@@ -22,6 +22,8 @@ class Settings(BaseSettings):
 
     app_name: str = "md2word_file"
     app_env: str = "dev"
+    app_version: str = "dev"
+    deployment_id: str = ""
     log_format: Literal["text", "json"] = "text"
     app_cors_origins: str = "http://127.0.0.1:3000,http://localhost:3000"
     data_dir: str = "var"

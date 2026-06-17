@@ -28,7 +28,13 @@
       <article class="overview-card">
         <span>应用</span>
         <strong>{{ appName }}</strong>
-        <small>就绪接口: {{ endpointStatus(ready?.status) }} · 指标接口: {{ endpointStatus(metrics?.status) }}</small>
+        <small>版本: {{ deploymentVersion }} · 就绪接口: {{ endpointStatus(ready?.status) }}</small>
+      </article>
+
+      <article class="overview-card">
+        <span>部署</span>
+        <strong>{{ deploymentId }}</strong>
+        <small>{{ deploymentRuntimeLabel }}</small>
       </article>
 
       <article class="overview-card">
@@ -201,6 +207,16 @@ const checks = computed(() => ready.value?.dependency_checks ?? {});
 const blockers = computed(() => stringListCheck("readiness_blockers"));
 const warnings = computed(() => stringListCheck("readiness_warnings"));
 const appName = computed(() => ready.value?.app_name || metrics.value?.app_name || missingText());
+const deploymentInfo = computed(() => ready.value?.deployment || metrics.value?.deployment || null);
+const deploymentId = computed(() => deploymentInfo.value?.deployment_id || missingText());
+const deploymentVersion = computed(() => deploymentInfo.value?.version || missingText());
+const deploymentRuntimeLabel = computed(() => {
+  const info = deploymentInfo.value;
+  if (!info) {
+    return missingText();
+  }
+  return `${commonValueText(info.environment)} · ${commonValueText(info.public_deployment_mode)} · ${formatDateTime(info.started_at)}`;
+});
 const auditEventsTotal = computed(() => metrics.value?.audit_events.total ?? 0);
 
 const readiness = computed<ReadinessView>(() => {
@@ -249,6 +265,10 @@ const readiness = computed<ReadinessView>(() => {
 
 const backendItems = computed<DetailItem[]>(() => [
   detailItem("app_name", appName.value),
+  detailItem("app_version", deploymentInfo.value?.version),
+  detailItem("deployment_id", deploymentInfo.value?.deployment_id),
+  detailItem("app_env", deploymentInfo.value?.environment),
+  detailItem("deployment_started_at", formatDateTime(deploymentInfo.value?.started_at)),
   detailItem("jobs_dir", ready.value?.jobs_dir),
   detailItem("metadata_store", metrics.value?.metadata_store || checkValue("effective_repository_backend")),
   detailItem("configured_repository", checkValue("configured_repository_backend")),
