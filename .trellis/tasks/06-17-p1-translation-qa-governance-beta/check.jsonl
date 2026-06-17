@@ -1,5 +1,0 @@
-{"file": ".trellis/spec/backend/index.md", "reason": "Quality check should confirm backend conventions and task fit."}
-{"file": ".trellis/spec/guides/index.md", "reason": "Quality check should apply shared guide triggers."}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verify data flow and API/UI consistency across P1 changes."}
-{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Verify new code reuses existing P1 services and avoids duplicate governance logic."}
-{"file": ".trellis/tasks/06-17-p1-translation-qa-governance-beta/research/current-state.md", "reason": "Quality check should validate work against known P1 gaps."}
