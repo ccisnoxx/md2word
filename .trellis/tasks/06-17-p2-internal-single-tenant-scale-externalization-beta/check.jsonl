@@ -1,0 +1,22 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Spec entry point for quality verification."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend quality review checklist, even though currently sparse."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify explicit errors and no hidden fallback behavior."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Verify no secrets/full text are logged or exposed in evidence."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Verify P2 did not add unnecessary schema or DB coupling."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verify API/schema/frontend/script contracts remain aligned."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Verify P2 reused existing health/ops/release controls."}
+{"file": ".trellis/tasks/06-17-p2-internal-single-tenant-scale-externalization-beta/research/current-state.md", "reason": "Verify implementation matches scoped current-state research."}
+{"check": "local_py_compile", "result": "pass", "command": "PYTHONPYCACHEPREFIX=/private/tmp/md2word-pyc .venv/bin/python -m py_compile app/core/config.py app/api/v1/routers/health_schemas.py app/services/health_service.py scripts/ops/run_p2_online_gate.py"}
+{"check": "local_targeted_unittest", "result": "pass", "command": "PYTHONPYCACHEPREFIX=/private/tmp/md2word-pyc .venv/bin/python -m unittest tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_ready_reports_runtime_dependencies tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_metrics_reports_runtime_counters tests.test_openapi_export.OpenAPIExportTests.test_p2_online_gate_collects_runtime_evidence"}
+{"check": "frontend_unit", "result": "pass", "command": "npm run --prefix frontend test:unit -- --run", "notes": "6 files / 17 tests"}
+{"check": "frontend_typecheck", "result": "pass", "command": "cd frontend && npx vue-tsc --noEmit"}
+{"check": "openapi_check", "result": "pass", "command": "PYTHONPYCACHEPREFIX=/private/tmp/md2word-pyc .venv/bin/python scripts/ops/export_openapi.py --check --no-diff"}
+{"check": "openapi_unittest", "result": "pass", "command": "PYTHONPYCACHEPREFIX=/private/tmp/md2word-pyc .venv/bin/python -m unittest tests.test_openapi_export"}
+{"check": "release_check", "result": "pass", "command": "PYTHONPYCACHEPREFIX=/private/tmp/md2word-pyc .venv/bin/python scripts/ops/check_release.py", "notes": "OpenAPI, frontend contract, smoke mock, and 31 targeted unittest groups / 139 tests passed."}
+{"check": "frontend_build", "result": "pass", "command": "npm run --prefix frontend build", "notes": "Rollup emitted existing large chunk / PURE comment warnings only."}
+{"check": "hostdzire_deploy", "result": "pass", "notes": "Uploaded by tar fallback because remote rsync was unavailable; rebuilt backend compose and published frontend release p2-20260617T080923Z."}
+{"check": "hostdzire_public_entry", "result": "pass", "notes": "Public root HTML, frontend asset, /api/v1/health/live, and /api/v1/health/ready returned success after release directory permission fix."}
+{"check": "hostdzire_p2_online_gate", "result": "pass", "run_id": "20260617T081408Z", "artifact_dir": ".trellis/tasks/06-17-p2-internal-single-tenant-scale-externalization-beta/artifacts/hostdzire-p2-online-gate-20260617T081408Z", "notes": "p2_online_gate_ready=true; blockers=none; warning=document_jobs_failed_present; remote gate skipped release-check unittests because full local check_release.py already passed."}
+{"check": "diff_whitespace", "result": "pass", "command": "git diff --check"}
+{"check": "evidence_secret_review", "result": "pass", "notes": "Copied P2 report contains admin username and redacted bearer_token only; no password/token/private key value found."}
+{"check": "spec_update", "result": "pass", "files": [".trellis/spec/backend/quality-guidelines.md", ".trellis/spec/backend/index.md"], "notes": "Recorded the P2 online health/release gate as an executable backend quality contract."}

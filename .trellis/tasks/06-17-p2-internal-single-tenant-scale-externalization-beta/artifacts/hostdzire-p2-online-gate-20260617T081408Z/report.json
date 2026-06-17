@@ -1,0 +1,525 @@
+{
+  "schema_version": 1,
+  "run_dir": "/workspace/tests/tmp/p2_online_runs/20260617T081408Z",
+  "generated_at": "2026-06-17T08:14:15.389110+00:00",
+  "config": {
+    "base_url": "http://api:8000",
+    "public_url": "https://md2word.962850.xyz",
+    "username": "admin",
+    "password": "",
+    "bearer_token": "***",
+    "runs_dir": "/workspace/tests/tmp/p2_online_runs",
+    "request_timeout_seconds": 30,
+    "run_release_check": true,
+    "run_p0_preflight": true,
+    "run_p1_preflight": true
+  },
+  "summary": {
+    "p2_online_gate_ready": true,
+    "blockers": [],
+    "warnings": [
+      "document_jobs_failed_present"
+    ],
+    "deployment": {
+      "environment": "dev",
+      "public_deployment_mode": "single_tenant_public",
+      "version": "2026.06.17-p2",
+      "deployment_id": "hostdzire-p2-20260617T080711Z",
+      "started_at": "2026-06-17T08:07:55.411689Z"
+    },
+    "runtime": {
+      "deployment_init_ready": true,
+      "p0_document_jobs_ready": true,
+      "effective_repository_backend": "mysql",
+      "document_jobs_worker_backend": "celery",
+      "translation_available": true,
+      "readiness_blockers": [],
+      "readiness_warnings": []
+    },
+    "ops_alert_status": "watch",
+    "critical_ops_alerts": []
+  },
+  "checks": {
+    "live": {
+      "name": "live",
+      "ok": true,
+      "url": "http://api:8000/api/v1/health/live",
+      "status_code": 200,
+      "blockers": [],
+      "payload": {
+        "status": "ok",
+        "app_name": "md2word_file"
+      }
+    },
+    "ready": {
+      "name": "ready",
+      "ok": true,
+      "url": "http://api:8000/api/v1/health/ready",
+      "status_code": 200,
+      "blockers": [],
+      "payload": {
+        "status": "ok",
+        "app_name": "md2word_file",
+        "deployment": {
+          "environment": "dev",
+          "public_deployment_mode": "single_tenant_public",
+          "version": "2026.06.17-p2",
+          "deployment_id": "hostdzire-p2-20260617T080711Z",
+          "started_at": "2026-06-17T08:07:55.411689Z"
+        },
+        "jobs_dir": "/app/var/jobs",
+        "dependency_checks": {
+          "readiness_required_checks": [
+            "jobs_dir_exists",
+            "jobs_dir_writable",
+            "stage_spool_dir_exists",
+            "tmp_dir_exists",
+            "template_docx_exists",
+            "layout_config_exists",
+            "subscript_config_exists"
+          ],
+          "readiness_non_blocking_checks": [
+            "mineru_api_token_configured",
+            "pdf_submission_available",
+            "translation_available",
+            "stage_spool_replayable_messages",
+            "stage_spool_failed_messages",
+            "stage_spool_running_stale_messages",
+            "stage_spool_needs_attention",
+            "p0_document_jobs_ready",
+            "document_jobs_automatic_execution_enabled",
+            "document_job_callback_replayable_messages",
+            "document_job_callback_failed_messages"
+          ],
+          "configured_repository_backend": "mysql",
+          "effective_repository_backend": "mysql",
+          "worker_mode": "external",
+          "document_jobs_worker_backend": "celery",
+          "document_jobs_celery_queue": "document-jobs",
+          "stage_dispatcher": "external_worker",
+          "stage_message_store": "mysql",
+          "artifact_storage": "local_object",
+          "jobs_dir_exists": true,
+          "jobs_dir_writable": true,
+          "artifact_root_writable": true,
+          "artifact_disk_free_bytes": 89313349632,
+          "stage_spool_dir_exists": true,
+          "stage_spool_pending_messages": 0,
+          "stage_spool_running_messages": 0,
+          "stage_spool_failed_messages": 0,
+          "stage_spool_replayable_messages": 0,
+          "stage_spool_running_stale_messages": 0,
+          "stage_spool_oldest_running_age_seconds": 0,
+          "stage_spool_needs_attention": false,
+          "stage_spool_observation_status": "ok",
+          "tmp_dir_exists": true,
+          "template_docx_exists": true,
+          "layout_config_exists": true,
+          "subscript_config_exists": true,
+          "translation_prompt_exists": true,
+          "mineru_api_token_configured": true,
+          "mineru_callback_url_configured": true,
+          "mineru_uid_configured": true,
+          "pdf_submission_available": true,
+          "public_deployment_mode": "single_tenant_public",
+          "p0_document_jobs_required": true,
+          "p0_document_jobs_ready": true,
+          "document_jobs_automatic_execution_enabled": true,
+          "p0_document_jobs_blockers": [],
+          "p0_document_jobs_warnings": [],
+          "document_jobs_running_stale_count": 0,
+          "document_jobs_timed_out_count": 0,
+          "document_jobs_running_oldest_age_seconds": 0,
+          "document_job_callback_pending_messages": 0,
+          "document_job_callback_running_messages": 0,
+          "document_job_callback_processed_messages": 14,
+          "document_job_callback_failed_messages": 0,
+          "document_job_callback_ignored_messages": 1,
+          "document_job_callback_replayable_messages": 0,
+          "document_job_callback_oldest_replayable_age_seconds": 0,
+          "openai_api_key_configured": true,
+          "openai_base_url_configured": true,
+          "openai_model": "deepseek-v4-flash",
+          "translation_provider_backend": "openai_compatible",
+          "translation_debug_archive_enabled": true,
+          "default_translation_mode": "direct",
+          "translation_required_for_default_mode": false,
+          "translation_client_configured": true,
+          "translation_available": true,
+          "default_template_version": null,
+          "default_term_rule_version": "electronics-default@seed",
+          "default_translation_profile_version": "electronics-en2zh@2026.06.12-1",
+          "mysql_schema_bootstrap_available": true,
+          "deployment_init_ready": true,
+          "deployment_init_missing_steps": [],
+          "readiness_blockers": [],
+          "readiness_warnings": []
+        }
+      }
+    },
+    "metrics": {
+      "name": "metrics",
+      "ok": true,
+      "url": "http://api:8000/api/v1/health/metrics",
+      "status_code": 200,
+      "blockers": [],
+      "payload": {
+        "status": "ok",
+        "app_name": "md2word_file",
+        "generated_at": "2026-06-17T08:14:08.456966Z",
+        "deployment": {
+          "environment": "dev",
+          "public_deployment_mode": "single_tenant_public",
+          "version": "2026.06.17-p2",
+          "deployment_id": "hostdzire-p2-20260617T080711Z",
+          "started_at": "2026-06-17T08:07:55.411689Z"
+        },
+        "metadata_store": "mysql",
+        "artifact_storage": "local_object",
+        "worker_mode": "external",
+        "stage_dispatcher": "external_worker",
+        "jobs": {},
+        "document_jobs": {
+          "failed": 1,
+          "succeeded": 21
+        },
+        "stage_messages": {
+          "pending": 0,
+          "running": 0,
+          "failed": 0
+        },
+        "document_job_callback_messages": {
+          "pending": 0,
+          "running": 0,
+          "processed": 14,
+          "failed": 0,
+          "ignored": 1
+        },
+        "resources": {
+          "template_versions": 0,
+          "term_rule_set_versions": 2,
+          "translation_profile_versions": 2,
+          "default_template_version": null,
+          "default_term_rule_version": "electronics-default@seed",
+          "default_translation_profile_version": "electronics-en2zh@2026.06.12-1"
+        },
+        "audit_events": {
+          "total": 232
+        }
+      }
+    },
+    "ops_alerts": {
+      "name": "ops_alerts",
+      "ok": true,
+      "url": "http://api:8000/api/v1/health/ops-alerts",
+      "status_code": 200,
+      "blockers": [],
+      "payload": {
+        "status": "watch",
+        "app_name": "md2word_file",
+        "generated_at": "2026-06-17T08:14:08.693875Z",
+        "summary": {
+          "readiness_blockers": 0,
+          "readiness_warnings": 0,
+          "stage_failed_messages": 0,
+          "stage_stale_running_messages": 0,
+          "stage_replayable_messages": 0,
+          "callback_failed_messages": 0,
+          "callback_replayable_messages": 0,
+          "callback_oldest_replayable_age_seconds": 0,
+          "failed_jobs": 1,
+          "running_jobs": 0,
+          "worker_mode": "external",
+          "stage_dispatcher": "external_worker",
+          "stage_message_store": "mysql",
+          "artifact_storage": "local_object"
+        },
+        "alerts": [
+          {
+            "code": "document_jobs_failed_present",
+            "severity": "warning",
+            "source": "jobs",
+            "title": "存在失败的文档任务",
+            "description": "存在失败的文档任务，应从任务详情查看错误阶段、事件流和文件区。",
+            "count": 1,
+            "suggested_route": "/jobs?status=failed&sort=updated_at_desc",
+            "suggested_action": "如需重试，使用既有任务页面流程手动执行。"
+          }
+        ],
+        "safety": {
+          "read_only": true,
+          "writes_performed": false,
+          "recovery_actions_executed": false,
+          "provider_calls_executed": false,
+          "notification_delivery_executed": false,
+          "audit_events_written": false
+        }
+      }
+    },
+    "public": {
+      "enabled": true,
+      "ok": true,
+      "checks": [
+        {
+          "name": "public_live",
+          "ok": true,
+          "url": "https://md2word.962850.xyz/api/v1/health/live",
+          "status_code": 200,
+          "blockers": [],
+          "payload": {
+            "status": "ok",
+            "app_name": "md2word_file"
+          }
+        },
+        {
+          "name": "public_ready",
+          "ok": true,
+          "url": "https://md2word.962850.xyz/api/v1/health/ready",
+          "status_code": 200,
+          "blockers": [],
+          "payload": {
+            "status": "ok",
+            "app_name": "md2word_file",
+            "deployment": {
+              "environment": "dev",
+              "public_deployment_mode": "single_tenant_public",
+              "version": "2026.06.17-p2",
+              "deployment_id": "hostdzire-p2-20260617T080711Z",
+              "started_at": "2026-06-17T08:07:55.411689Z"
+            },
+            "jobs_dir": "/app/var/jobs",
+            "dependency_checks": {
+              "readiness_required_checks": [
+                "jobs_dir_exists",
+                "jobs_dir_writable",
+                "stage_spool_dir_exists",
+                "tmp_dir_exists",
+                "template_docx_exists",
+                "layout_config_exists",
+                "subscript_config_exists"
+              ],
+              "readiness_non_blocking_checks": [
+                "mineru_api_token_configured",
+                "pdf_submission_available",
+                "translation_available",
+                "stage_spool_replayable_messages",
+                "stage_spool_failed_messages",
+                "stage_spool_running_stale_messages",
+                "stage_spool_needs_attention",
+                "p0_document_jobs_ready",
+                "document_jobs_automatic_execution_enabled",
+                "document_job_callback_replayable_messages",
+                "document_job_callback_failed_messages"
+              ],
+              "configured_repository_backend": "mysql",
+              "effective_repository_backend": "mysql",
+              "worker_mode": "external",
+              "document_jobs_worker_backend": "celery",
+              "document_jobs_celery_queue": "document-jobs",
+              "stage_dispatcher": "external_worker",
+              "stage_message_store": "mysql",
+              "artifact_storage": "local_object",
+              "jobs_dir_exists": true,
+              "jobs_dir_writable": true,
+              "artifact_root_writable": true,
+              "artifact_disk_free_bytes": 89313345536,
+              "stage_spool_dir_exists": true,
+              "stage_spool_pending_messages": 0,
+              "stage_spool_running_messages": 0,
+              "stage_spool_failed_messages": 0,
+              "stage_spool_replayable_messages": 0,
+              "stage_spool_running_stale_messages": 0,
+              "stage_spool_oldest_running_age_seconds": 0,
+              "stage_spool_needs_attention": false,
+              "stage_spool_observation_status": "ok",
+              "tmp_dir_exists": true,
+              "template_docx_exists": true,
+              "layout_config_exists": true,
+              "subscript_config_exists": true,
+              "translation_prompt_exists": true,
+              "mineru_api_token_configured": true,
+              "mineru_callback_url_configured": true,
+              "mineru_uid_configured": true,
+              "pdf_submission_available": true,
+              "public_deployment_mode": "single_tenant_public",
+              "p0_document_jobs_required": true,
+              "p0_document_jobs_ready": true,
+              "document_jobs_automatic_execution_enabled": true,
+              "p0_document_jobs_blockers": [],
+              "p0_document_jobs_warnings": [],
+              "document_jobs_running_stale_count": 0,
+              "document_jobs_timed_out_count": 0,
+              "document_jobs_running_oldest_age_seconds": 0,
+              "document_job_callback_pending_messages": 0,
+              "document_job_callback_running_messages": 0,
+              "document_job_callback_processed_messages": 14,
+              "document_job_callback_failed_messages": 0,
+              "document_job_callback_ignored_messages": 1,
+              "document_job_callback_replayable_messages": 0,
+              "document_job_callback_oldest_replayable_age_seconds": 0,
+              "openai_api_key_configured": true,
+              "openai_base_url_configured": true,
+              "openai_model": "deepseek-v4-flash",
+              "translation_provider_backend": "openai_compatible",
+              "translation_debug_archive_enabled": true,
+              "default_translation_mode": "direct",
+              "translation_required_for_default_mode": false,
+              "translation_client_configured": true,
+              "translation_available": true,
+              "default_template_version": null,
+              "default_term_rule_version": "electronics-default@seed",
+              "default_translation_profile_version": "electronics-en2zh@2026.06.12-1",
+              "mysql_schema_bootstrap_available": true,
+              "deployment_init_ready": true,
+              "deployment_init_missing_steps": [],
+              "readiness_blockers": [],
+              "readiness_warnings": []
+            }
+          }
+        }
+      ],
+      "blockers": []
+    },
+    "release_check": {
+      "name": "release_check",
+      "ok": true,
+      "blockers": [],
+      "items": [
+        {
+          "name": "openapi",
+          "ok": true,
+          "summary": "OpenAPI snapshot is current",
+          "details": "OpenAPI check report\noutput_path: /workspace/docs/api/openapi.json\nok: True\nchanged: False\npath_count: 128\nschema_count: 258"
+        },
+        {
+          "name": "frontend-contract",
+          "ok": true,
+          "summary": "Frontend API contracts match core OpenAPI fields",
+          "details": ""
+        },
+        {
+          "name": "frontend-smoke-mock",
+          "ok": true,
+          "summary": "Frontend smoke mock covers core contract scenarios",
+          "details": ""
+        },
+        {
+          "name": "runtime-readiness",
+          "ok": true,
+          "summary": "Runtime readiness passed with MySQL + Celery P0 baseline",
+          "details": "{\n  \"url\": \"http://api:8000/api/v1/health/ready\",\n  \"deployment_init_ready\": true,\n  \"p0_document_jobs_ready\": true,\n  \"effective_repository_backend\": \"mysql\",\n  \"document_jobs_worker_backend\": \"celery\",\n  \"readiness_blockers\": [],\n  \"p0_document_jobs_blockers\": []\n}"
+        }
+      ],
+      "formatted": "Release check report\nok: True\n\n[openapi] ok: True\nOpenAPI snapshot is current\nOpenAPI check report\noutput_path: /workspace/docs/api/openapi.json\nok: True\nchanged: False\npath_count: 128\nschema_count: 258\n\n[frontend-contract] ok: True\nFrontend API contracts match core OpenAPI fields\n\n[frontend-smoke-mock] ok: True\nFrontend smoke mock covers core contract scenarios\n\n[runtime-readiness] ok: True\nRuntime readiness passed with MySQL + Celery P0 baseline\n{\n  \"url\": \"http://api:8000/api/v1/health/ready\",\n  \"deployment_init_ready\": true,\n  \"p0_document_jobs_ready\": true,\n  \"effective_repository_backend\": \"mysql\",\n  \"document_jobs_worker_backend\": \"celery\",\n  \"readiness_blockers\": [],\n  \"p0_document_jobs_blockers\": []\n}"
+    },
+    "p0_preflight": {
+      "name": "p0_preflight",
+      "ok": true,
+      "blockers": [],
+      "report": {
+        "generated_at": "2026-06-17T08:14:14.599597+00:00",
+        "base_url": "http://api:8000",
+        "manifest_path": "/workspace/tests/fixtures/golden_samples/manifest.yaml",
+        "ok": true,
+        "blockers": [],
+        "checks": [
+          {
+            "name": "manifest",
+            "ok": true,
+            "blockers": [],
+            "details": {
+              "sample_root": "/workspace/tests/fixtures/golden_samples/pdfs",
+              "manifest_samples": 4,
+              "manifest_matched_pdf_files": [
+                "OPA228_P1.pdf",
+                "OPA228_P2.pdf",
+                "OPA228_P6.pdf",
+                "OPA228_P7.pdf"
+              ],
+              "missing_pdf_files": [],
+              "orphan_pdf_files": []
+            }
+          },
+          {
+            "name": "auth",
+            "ok": true,
+            "blockers": [],
+            "details": {
+              "username": "admin",
+              "required_role": "admin",
+              "password_configured": false,
+              "bearer_token_configured": true,
+              "role": "admin",
+              "source": "bearer_token"
+            }
+          },
+          {
+            "name": "runtime-readiness",
+            "ok": true,
+            "blockers": [],
+            "details": {
+              "url": "http://api:8000/api/v1/health/ready",
+              "status_code": 200,
+              "deployment_init_ready": true,
+              "p0_document_jobs_ready": true,
+              "effective_repository_backend": "mysql",
+              "document_jobs_worker_backend": "celery",
+              "readiness_blockers": [],
+              "p0_document_jobs_blockers": []
+            }
+          }
+        ]
+      }
+    },
+    "p1_preflight": {
+      "name": "p1_preflight",
+      "ok": true,
+      "blockers": [],
+      "report": {
+        "generated_at": "2026-06-17T08:14:15.388933+00:00",
+        "base_url": "http://api:8000",
+        "manifest_path": "/workspace/tests/fixtures/p1_translation_samples/manifest.yaml",
+        "ok": true,
+        "blockers": [],
+        "checks": [
+          {
+            "name": "manifest",
+            "ok": true,
+            "blockers": [],
+            "details": {
+              "sample_root": "/workspace/tests/fixtures/p1_translation_samples/pdfs",
+              "available_samples": 1,
+              "required_samples": 1,
+              "missing_pdf_files": []
+            }
+          },
+          {
+            "name": "auth",
+            "ok": true,
+            "blockers": [],
+            "details": {
+              "username": "admin",
+              "role": "admin"
+            }
+          },
+          {
+            "name": "runtime",
+            "ok": true,
+            "blockers": [],
+            "details": {
+              "health_status_code": 200,
+              "config_summary_status_code": 200,
+              "effective_repository_backend": "mysql",
+              "document_jobs_worker_backend": "celery",
+              "translation_provider_backend": "openai_compatible",
+              "translation_available": true,
+              "translation_debug_archive_enabled": true,
+              "en2zh_available": true
+            }
+          }
+        ]
+      },
+      "formatted": "P1 translation preflight\nok: True\nbase_url: http://api:8000\nmanifest: /workspace/tests/fixtures/p1_translation_samples/manifest.yaml\nblockers: none\n\n[manifest] ok: True\nblockers: none\n{\n  \"sample_root\": \"/workspace/tests/fixtures/p1_translation_samples/pdfs\",\n  \"available_samples\": 1,\n  \"required_samples\": 1,\n  \"missing_pdf_files\": []\n}\n\n[auth] ok: True\nblockers: none\n{\n  \"username\": \"admin\",\n  \"role\": \"admin\"\n}\n\n[runtime] ok: True\nblockers: none\n{\n  \"health_status_code\": 200,\n  \"config_summary_status_code\": 200,\n  \"effective_repository_backend\": \"mysql\",\n  \"document_jobs_worker_backend\": \"celery\",\n  \"translation_provider_backend\": \"openai_compatible\",\n  \"translation_available\": true,\n  \"translation_debug_archive_enabled\": true,\n  \"en2zh_available\": true\n}"
+    }
+  }
+}

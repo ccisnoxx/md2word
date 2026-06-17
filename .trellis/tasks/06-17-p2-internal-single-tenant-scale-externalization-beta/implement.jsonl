@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend spec entry point for health, ops, scripts, and API changes."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality expectations for backend and ops script work, even though currently sparse."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Error response and explicit failure handling expectations for health/ops/gate changes."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Logging and sensitive-data boundaries for deployment and ops evidence."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Database boundary awareness; P2 should avoid unnecessary schema changes."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Repository layout guidance for placing backend and ops code."}
+{"file": ".trellis/spec/guides/index.md", "reason": "Shared thinking guide index for cross-layer and reuse checks."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "P2 spans backend schemas, scripts, frontend API types, and docs."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "P2 must reuse existing health/ops/release-check controls rather than duplicate them."}
+{"file": ".trellis/tasks/06-17-p2-internal-single-tenant-scale-externalization-beta/research/current-state.md", "reason": "Current implementation map and scoped P2 design decisions."}
