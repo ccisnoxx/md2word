@@ -1,0 +1,161 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "Thinking guide index for implementation context."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "This task spans API, backend workflow, renderer, frontend, docs, and tests."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Renderer/runtime changes should reuse existing conversion strategies where possible."}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend spec index for the project."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Backend module placement guidance."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "API and workflow errors must remain explicit and traceable."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality bar for backend and renderer changes."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Diagnostics and quality evidence should align with logging conventions."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Production baseline is MySQL metadata with Celery worker."}
+{"file": ".trellis/tasks/06-16-p0-word-delivery-quality-beta/research/agent-synthesis.md", "reason": "Consolidated product, UX, frontend, backend, and QA planning decisions."}
+{"file": "frontend/src/utils/format.ts", "reason": "Central action visibility rule hides admin-only document job delete from operators."}
+{"file": "frontend/src/components/JobActions.vue", "reason": "Shared detail action toolbar consumes the action visibility rule."}
+{"file": "frontend/src/components/JobTable.vue", "reason": "Jobs table dropdown consumes the action visibility rule."}
+{"file": "frontend/src/pages/JobDetailPage.vue", "reason": "Job detail action summary and delete handler consume the action visibility rule."}
+{"file": "frontend/src/pages/JobsPage.vue", "reason": "Jobs page delete handler has a guard matching the table visibility rule."}
+{"file": "tests/fixtures/golden_samples/manifest.yaml", "reason": "P0 Golden Sample canonical suite is now the four available OPA228 PDFs with 100% automated chain target."}
+{"file": "scripts/ops/run_golden_sample_regression.py", "reason": "Golden Sample report separates automated chain target from admin manual Word quality sign-off."}
+{"file": "scripts/ops/run_golden_sample_regression.py", "reason": "Golden Sample report now extracts DOCX structure quality evidence for admin review without python-docx."}
+{"file": "docs/runbooks/backend.md", "reason": "Backend runbook documents Files + Document Jobs, MySQL + Celery single-worker baseline, and legacy jobs demotion."}
+{"file": "app/services/renderer/word_renderer.py", "reason": "DocumentIR v2 rendering now creates landscape Word sections for landscape pages and wide-table pages."}
+{"file": "app/services/renderer/table_renderer.py", "reason": "Word table width calculation now uses the active section so wide tables benefit from landscape pages."}
+{"file": "app/services/renderer/image_renderer.py", "reason": "Word image width calculation now uses the active section to stay consistent after section orientation changes."}
+{"file": "tests/test_document_ir_word_renderer_layout.py", "reason": "Renderer unit coverage asserts wide-table pages render into landscape sections."}
+{"file": "tests/test_fastapi_jobs_backend.py", "reason": "Document job worker integration coverage now verifies generated DOCX OOXML contains a landscape section."}
+{"file": "frontend/src/utils/format.ts", "reason": "Added Document Job quality evidence summary helpers that read generated_word and DocumentIR metadata without changing API contracts."}
+{"file": "frontend/src/pages/JobDetailPage.vue", "reason": "Job detail diagnostics now surfaces Word quality evidence, automatic quality flags, and manual review status."}
+{"file": "frontend/src/utils/format.test.ts", "reason": "Unit coverage verifies quality flag deduplication and manual-review-required status."}
+{"file": "app/services/health_service.py", "reason": "P0 production readiness now enforces the confirmed MySQL + Celery baseline instead of allowing file metadata or eager worker."}
+{"file": "app/domains/config_workbench/summary.py", "reason": "Config workbench renders the new MySQL metadata-store P0 blocker with a stable message."}
+{"file": "frontend/src/utils/displayText.ts", "reason": "Frontend readiness labels include the new MySQL metadata-store blocker."}
+{"file": "frontend/src/utils/displayText.test.ts", "reason": "Unit coverage verifies new readiness blocker labels."}
+{"file": "docs/dev/runtime-observability-and-health.md", "reason": "Health readiness docs now state MySQL + Celery requirements for P0 required environments."}
+{"file": "docs/runbooks/backend.md", "reason": "Backend runbook now lists expected MySQL + Celery health readiness signals."}
+{"file": "docs/testing/pdf-to-word-p0-integration-guide.md", "reason": "P0 integration guide distinguishes release validation from local metadata smoke testing."}
+{"file": "scripts/ops/run_golden_sample_regression.py", "reason": "Golden Sample reports now generate machine-readable admin sign-off templates and can apply signed YAML to existing run_dir reports."}
+{"file": "tests/fixtures/golden_samples/acceptance-record-template.md", "reason": "Manual acceptance template now documents admin sign-off YAML and apply-manual-signoff workflow."}
+{"file": "docs/testing/pdf-to-word-p0-integration-guide.md", "reason": "P0 integration guide now explains how admin sign-off changes p0_release_ready without rerunning samples."}
+{"file": "tests/test_golden_sample_manifest.py", "reason": "Golden Sample tests cover admin sign-off validation, job/hash mismatch blocking, and sign-off template content."}
+{"file": "scripts/ops/run_golden_sample_regression.py", "reason": "Golden Sample DOCX quality evidence now flags editable content availability and image-only screenshot suspicion in report summary and per-sample markdown."}
+{"file": "tests/test_golden_sample_manifest.py", "reason": "Golden Sample tests verify editable DOCX evidence and image-only DOCX risk detection."}
+{"file": "docs/testing/pdf-to-word-p0-integration-guide.md", "reason": "P0 integration guide documents editable evidence and image-only risk cues in Golden Sample reports."}
+{"file": "tests/fixtures/golden_samples/acceptance-record-template.md", "reason": "Manual acceptance template instructs admin to check 4/4 editable evidence and 0 image-only risk or document the override notes."}
+{"file": "scripts/ops/run_golden_sample_regression.py", "reason": "Golden Sample runner now supports --preflight to check manifest samples, auth credentials, API health, MySQL metadata, Celery worker, and p0_document_jobs_ready before running slow sample jobs."}
+{"file": "tests/test_golden_sample_manifest.py", "reason": "Golden Sample tests cover preflight pass/fail behavior for MySQL+Celery ready runtime versus non-MySQL/non-Celery blockers."}
+{"file": "docs/testing/pdf-to-word-p0-integration-guide.md", "reason": "P0 integration guide now instructs operators to run Golden Sample --preflight before the true 4-sample regression."}
+{"file": "tests/fixtures/golden_samples/README.md", "reason": "Golden Sample fixture README now documents preflight semantics and states that preflight failure is an environment blocker, not a sample failure."}
+{"file": "scripts/ops/run_golden_sample_regression.py", "reason": "Golden Sample --preflight now supports --preflight-output so readiness evidence can be archived as JSON for CI or task handoff."}
+{"file": "tests/test_golden_sample_manifest.py", "reason": "Golden Sample tests verify preflight JSON evidence writing creates parent directories and preserves blockers."}
+{"file": "docs/testing/pdf-to-word-p0-integration-guide.md", "reason": "P0 integration guide now shows --preflight-output in the preflight command."}
+{"file": "tests/fixtures/golden_samples/README.md", "reason": "Golden Sample fixture README now shows --preflight-output in the preflight command."}
+{"file": ".trellis/tasks/06-16-p0-word-delivery-quality-beta/preflight-current.json", "reason": "Archived current-machine Golden Sample preflight evidence showing all four PDFs present but auth/runtime blockers remaining."}
+{"file": "app/services/renderer/table_renderer.py", "reason": "Added a layout-table configuration helper that hides borders and top-aligns cells for two-column Word layout containers without changing editable data table rendering."}
+{"file": "app/services/renderer/word_renderer.py", "reason": "DocumentIR v2 two-column regions now render through a borderless layout table, reducing visible table-grid artifacts in datasheet double-column pages."}
+{"file": "tests/test_document_ir_word_renderer_layout.py", "reason": "Renderer layout test now asserts two-column layout tables write OOXML borders with w:val=none for every edge."}
+{"file": "app/services/renderer/semantic_text.py", "reason": "DocumentIR renderer formula normalization now handles unbraced ^\\circ temperature fragments and compacts microsecond units from real Golden Sample residual examples."}
+{"file": "app/conversion/runtime/text_rendering.py", "reason": "Legacy/runtime formula normalization was kept in parity with DocumentIR renderer for ^\\circ and \\mu unit handling."}
+{"file": "tests/test_document_ir_word_renderer_layout.py", "reason": "Renderer layout tests now cover Golden Sample formula examples $T_A = +25^\\circ C$ and $5 \\mu s$ in generated DOCX OOXML."}
+{"file": "tests/test_text_render_characterization.py", "reason": "Runtime characterization tests now cover unbraced circ temperature and microsecond unit compaction."}
+{"file": "app/services/renderer/image_renderer.py", "reason": "Image rendering now uses keep-with-next on image paragraphs and multi-line annotations so figure captions and footnotes stay bound to the image in Word."}
+{"file": "tests/test_document_ir_word_renderer_layout.py", "reason": "Renderer layout test now asserts image, figure caption, and footnote order plus keepNext OOXML for figure binding."}
+{"file": "app/services/renderer/semantic_text.py", "reason": "Added is_list_item_text so paragraph auto-list detection reuses the same MinerU marker contract as normalize_list_item and infer_list_item_level."}
+{"file": "app/services/renderer/text_renderer.py", "reason": "DocumentIR text renderer can now promote bullet-like paragraph text to real Word bullet paragraphs while keeping negative technical values like -40°C as normal text."}
+{"file": "app/services/renderer/word_renderer.py", "reason": "DocumentIR paragraph blocks now route through auto list-or-paragraph filling instead of always writing plain body text."}
+{"file": "app/conversion/runtime/text_rendering.py", "reason": "Legacy runtime exposes is_list_item_text for parity with DocumentIR list marker handling."}
+{"file": "app/conversion/runtime/page_layout_runtime.py", "reason": "Legacy page-layout runtime now promotes paragraph blocks with supported list markers to real Word list paragraphs."}
+{"file": "tests/runtime_direct_loaders.py", "reason": "Runtime direct loader now binds list detection, normalization, and level inference helpers into page_layout characterization tests."}
+{"file": "tests/test_document_ir_word_renderer_layout.py", "reason": "Renderer layout test covers bullet-like paragraph blocks becoming real Word lists and verifies -40°C operation remains a normal paragraph."}
+{"file": "tests/test_text_render_characterization.py", "reason": "Runtime text characterization now covers is_list_item_text positive markers and the negative temperature false-positive guard."}
+{"file": "tests/test_page_layout_characterization.py", "reason": "Page layout characterization verifies bullet-like paragraph blocks dispatch to fill_list_paragraph instead of body or title rendering."}
+{"file": "app/services/renderer/table_renderer.py", "reason": "Editable Word data tables now mark the first row as a repeating table header, prevent row splitting, and normalize formula text in table captions for datasheet pagination/readability."}
+{"file": "tests/test_document_ir_word_renderer_layout.py", "reason": "Renderer layout tests now assert table tblHeader/cantSplit OOXML and caption formula normalization."}
+{"file": "app/services/renderer/image_renderer.py", "reason": "Figure fallback text, captions, and footnotes now normalize datasheet formula fragments so visible figure annotations do not leak raw TeX."}
+{"file": "tests/test_document_ir_word_renderer_layout.py", "reason": "Renderer layout image test now covers figure caption/footnote formula normalization while preserving image-caption-footnote order and keepNext binding."}
+{"file": "app/services/renderer/semantic_text.py", "reason": "DocumentIR renderer now has conservative heading detection helpers for numbered, appendix/chapter, and Title Case datasheet headings emitted as paragraph text."}
+{"file": "app/services/renderer/text_renderer.py", "reason": "Paragraph rendering now auto-promotes heading-like paragraphs to Word heading styles before falling back to Normal body text."}
+{"file": "tests/test_document_ir_word_renderer_layout.py", "reason": "Renderer layout tests now cover paragraph-to-heading promotion and verify regular body sentences remain Normal."}
+{"file": "app/services/renderer/table_renderer.py", "reason": "DocumentIR editable table renderer now reuses the legacy datasheet 5-column width weighting and writes merged/expanded cell widths to reduce row inflation in parameter tables."}
+{"file": "tests/test_document_ir_word_renderer_layout.py", "reason": "Renderer layout tests now lock the 5-column datasheet table width weighting so the description column stays wider than narrow metadata columns."}
+{"file": "app/services/renderer/layout_plan.py", "reason": "Explicit wide blocks are now kept out of stable two-column regions so cross-column callouts/tables do not get forced into the left column."}
+{"file": "tests/test_document_ir_word_renderer_layout.py", "reason": "Layout plan tests now cover left/right columns with a wide block in between and assert the planner splits regions as two_col, one_col, two_col."}
+{"file": "app/services/renderer/semantic_text.py", "reason": "Added TOC entry parsing for datasheet table-of-contents rows with trailing page numbers."}
+{"file": "app/services/renderer/text_renderer.py", "reason": "DocumentIR renderer now writes TOC-like paragraph/list entries with right-aligned dotted tab leaders instead of plain text or bullets."}
+{"file": "app/services/renderer/word_renderer.py", "reason": "List block rendering now lets TOC-like list items use TOC entry formatting while regular revision bullets remain Word lists."}
+{"file": "tests/test_document_ir_word_renderer_layout.py", "reason": "Renderer layout tests now cover paragraph and list TOC entries with dotted tab leaders plus a normal revision bullet in the same block."}
+{"file": "app/conversion/runtime/table_html_parser.py", "reason": "HTML table parser now preserves whether each cell came from a th tag so grouped datasheet header rows retain header semantics beyond the first row."}
+{"file": "app/services/renderer/table_renderer.py", "reason": "DocumentIR table renderer now styles th cells as headers even when they appear after a grouped caption/header row."}
+{"file": "app/conversion/runtime/table_render_runtime.py", "reason": "Legacy table renderer parity now treats th cells as headers even outside the first row."}
+{"file": "tests/test_document_ir_word_renderer_layout.py", "reason": "Renderer layout tests now cover second-row th cells getting header styling in editable Word tables."}
+{"file": "tests/test_render_table_from_html_characterization.py", "reason": "Runtime table characterization now asserts second-row th cells are passed to fill_table_cell as headers."}
+{"file": "app/services/renderer/table_renderer.py", "reason": "DocumentIR table cell paragraphs now match runtime Word formatting by centering headers, left-aligning body cells, and forcing zero before/after spacing to reduce row inflation."}
+{"file": "tests/test_document_ir_word_renderer_layout.py", "reason": "Renderer layout tests now assert table paragraph alignment and zero spacing OOXML for editable datasheet tables."}
+{"file": "scripts/ops/run_golden_sample_regression.py", "reason": "Golden Sample DOCX quality evidence now reports Word-standard OOXML structures: TOC dotted tab leaders, keepNext paragraphs, repeated table headers, no-split table rows, shaded header cells, zero table-cell paragraph spacing, and landscape sections."}
+{"file": "tests/test_golden_sample_manifest.py", "reason": "Golden Sample manifest tests now verify the DOCX quality analyzer can read the new Word-standard structure evidence directly from OOXML without depending on python-docx."}
+{"file": "docs/testing/pdf-to-word-p0-integration-guide.md", "reason": "P0 integration guide now documents the expanded Golden Sample DOCX quality evidence fields used for admin review."}
+{"file": "tests/fixtures/golden_samples/README.md", "reason": "Golden Sample README now documents that reports include Word-standard structure evidence in addition to editable-content and LaTeX-residue signals."}
+{"file": "app/services/renderer/docx_quality.py", "reason": "DOCX quality evidence extraction moved into a shared renderer module that reads OOXML, including styles.xml heading style mappings, so backend metadata and Golden Sample reports use the same evidence contract."}
+{"file": "scripts/ops/run_golden_sample_regression.py", "reason": "Golden Sample regression now delegates DOCX quality analysis to the shared renderer docx_quality module instead of carrying a duplicate implementation."}
+{"file": "app/domains/document_jobs/execution.py", "reason": "Document Jobs now analyze generated Word bytes after rendering and persist docx_quality evidence in generated_word metadata and render/register event payloads."}
+{"file": "frontend/src/utils/format.ts", "reason": "Job detail quality evidence now surfaces generated_word metadata docx_quality counts for editable content, image-only suspicion, headings, numbering, TOC tabs, tables, table headers, no-split rows, and LaTeX residue."}
+{"file": "tests/test_golden_sample_manifest.py", "reason": "Golden Sample tests now cover heading paragraph detection through styles.xml numeric styleId mappings."}
+{"file": "tests/test_fastapi_jobs_backend.py", "reason": "Document Jobs backend tests now assert generated_word metadata contains docx_quality evidence for editable content, landscape sections, Word structure, and LaTeX residue."}
+{"file": "frontend/src/utils/format.test.ts", "reason": "Frontend quality evidence tests now assert docx_quality fields are displayed in the job detail evidence item model."}
+{"file": "docs/api/document-jobs.md", "reason": "Document Jobs API docs now document generated_word.metadata.docx_quality as machine evidence for admin Word quality review, not an automatic release gate."}
+{"file": "app/services/renderer/docx_quality.py", "reason": "Shared DOCX quality module now derives explicit risk flags for unavailable analysis, no editable content, image-only suspicion, and LaTeX residue."}
+{"file": "app/domains/document_jobs/execution.py", "reason": "Document Jobs now persist generated_word.metadata.quality_flags derived from docx_quality so job detail can enter the flagged manual review state for clear DOCX output risks."}
+{"file": "scripts/ops/run_golden_sample_regression.py", "reason": "Golden Sample reports now store, summarize, and display docx_quality_flags per sample and across the run."}
+{"file": "frontend/src/utils/format.ts", "reason": "Frontend quality evidence now labels docx_quality-derived flags such as image-only suspicion, no editable content, and LaTeX residue."}
+{"file": "tests/test_golden_sample_manifest.py", "reason": "Golden Sample tests now cover docx_quality flag derivation and Markdown report display."}
+{"file": "tests/test_fastapi_jobs_backend.py", "reason": "Document Jobs backend tests now assert normal P0 renderer output has no docx_quality-derived risk flags."}
+{"file": "frontend/src/utils/format.test.ts", "reason": "Frontend quality evidence tests now verify docx_quality-derived flags are deduplicated, labeled, and trigger the flagged manual review state."}
+{"file": "docs/api/document-jobs.md", "reason": "Document Jobs API docs now document generated_word.metadata.quality_flags derived from docx_quality as review hints, not release bypasses."}
+{"file": "tests/fixtures/golden_samples/README.md", "reason": "Golden Sample README now states that regression reports summarize clear DOCX machine risks as DOCX quality flags for admin review."}
+{"file": "docs/testing/pdf-to-word-p0-integration-guide.md", "reason": "P0 integration guide now documents DOCX quality flags as admin review hints and keeps admin manual sign-off as the release-quality authority."}
+{"file": ".trellis/tasks/06-16-p0-word-delivery-quality-beta/preflight-current.json", "reason": "Current-machine Golden Sample preflight evidence refreshed: all four canonical PDFs are present, while auth credentials and local API runtime remain blockers."}
+{"file": "scripts/ops/run_golden_sample_regression.py", "reason": "Golden Sample regression script now inserts the repository root into sys.path before importing shared app modules, preserving the documented script-path invocation."}
+{"file": "tests/test_golden_sample_manifest.py", "reason": "Golden Sample tests now run the preflight command as a subprocess through the script file path to catch import-path regressions."}
+{"file": "tests/fixtures/golden_samples/acceptance-record-template.md", "reason": "Admin acceptance template now includes DOCX quality flags in the manual sign-off review checklist and requires notes for any machine-risk override."}
+{"file": "scripts/ops/run_golden_sample_regression.py", "reason": "Manual sign-off validation now requires per-sample notes when admin passes a result that still has docx_quality_flags, preserving audit rationale for machine-risk overrides."}
+{"file": "scripts/ops/run_golden_sample_regression.py", "reason": "Manual sign-off template now carries docx_quality_flags and compact machine evidence fields into each sample entry for admin review."}
+{"file": "tests/test_golden_sample_manifest.py", "reason": "Golden Sample tests now cover missing notes for flagged pass verdicts and ensure manual sign-off templates include DOCX quality flags/evidence."}
+{"file": "tests/fixtures/golden_samples/acceptance-record-template.md", "reason": "Acceptance template now states that any sample signed pass with DOCX quality flags must include notes explaining the admin override."}
+{"file": "app/services/renderer/semantic_text.py", "reason": "Formula normalization now collapses double-escaped known TeX commands before converting datasheet symbols, covering manual quality record residues such as \\\\sqrt, \\\\mu, \\\\theta, \\\\psi, \\\\circ, and \\\\pm."}
+{"file": "app/conversion/runtime/text_rendering.py", "reason": "Runtime formula normalization mirrors the service renderer double-escaped TeX command handling so generated Word paths stay behaviorally aligned."}
+{"file": "app/services/renderer/text_renderer.py", "reason": "The shared paragraph writer now normalizes formula text before deciding whether rich-text markup is needed, so mixed paragraph content can render subscript/superscript Word runs instead of preserving TeX residue."}
+{"file": "tests/test_text_render_characterization.py", "reason": "Text rendering characterization now covers double-escaped datasheet TeX commands from the manual quality record."}
+{"file": "tests/test_document_ir_word_renderer_layout.py", "reason": "DocumentIR Word renderer tests now verify manual-quality-record formula residues are removed from final DOCX XML and rendered with Word subscript/superscript semantics."}
+{"file": "app/services/renderer/semantic_text.py", "reason": "Formula normalization now unwraps nested text wrappers such as \\mathrm{...^{\\circ}...} and compacts unit-style slashes/spaces, covering datasheet temperature-drift units like μV/°C without changing division expressions such as V_S / 2."}
+{"file": "app/conversion/runtime/text_rendering.py", "reason": "Runtime formula normalization mirrors nested text-wrapper and unit-slash handling for μV/°C style datasheet units."}
+{"file": "tests/test_text_render_characterization.py", "reason": "Formula characterization tests now cover nested \\mathrm temperature-drift units and preserve existing V to / V_S divide spacing behavior."}
+{"file": "tests/test_document_ir_word_renderer_layout.py", "reason": "DOCX renderer tests now assert nested \\mathrm μV/°C units are present in final XML and \\mathrm residue is absent."}
+{"file": "app/services/renderer/docx_quality.py", "reason": "DOCX quality evidence now derives conservative structure-risk hints for manual list markers, plain-text TOC entries, unstyled heading candidates, and wide tables without landscape sections, limited to non-table/non-numbered body paragraphs to avoid false positives."}
+{"file": "tests/test_golden_sample_manifest.py", "reason": "Golden Sample DOCX quality tests now cover structure-risk flag derivation and verify normal styled headings, Word numbering, tab leaders, and landscape sections are not flagged."}
+{"file": "frontend/src/utils/format.ts", "reason": "Job quality evidence now labels DOCX structure-risk flags and displays counts for unstyled heading candidates, manual list markers, plain-text TOC entries, and wide tables."}
+{"file": "frontend/src/utils/format.test.ts", "reason": "Frontend quality evidence tests now cover the new DOCX structure-risk flag labels and evidence fields."}
+{"file": "docs/api/document-jobs.md", "reason": "Document Jobs API docs now document the additional DOCX quality evidence fields and derived structure-risk flags as admin review hints."}
+{"file": "scripts/ops/run_golden_sample_regression.py", "reason": "Golden Sample report summary, Markdown table, and manual sign-off template now include DOCX structure-risk evidence for unstyled heading candidates, manual list markers, plain-text TOC entries, wide tables, and landscape sections."}
+{"file": "tests/test_golden_sample_manifest.py", "reason": "Golden Sample report tests now verify DOCX structure-risk evidence appears in summary totals, Markdown reports, and manual sign-off templates."}
+{"file": "docs/testing/pdf-to-word-p0-integration-guide.md", "reason": "P0 integration guide now documents the expanded DOCX quality report fields and structure-risk flags used for admin review."}
+{"file": "scripts/ops/run_golden_sample_regression.py", "reason": "Golden Sample regression now defaults to admin, carries GOLDEN_SAMPLE_REQUIRED_ROLE, and preflight validates the authenticated regression actor role through auth login or bearer /auth/me before release runs."}
+{"file": "tests/test_golden_sample_manifest.py", "reason": "Golden Sample tests now verify admin default ownership and block non-admin regression actors during preflight."}
+{"file": "tests/fixtures/golden_samples/README.md", "reason": "Golden Sample fixture README now uses admin credentials for canonical suite preflight/run commands and documents the admin role check."}
+{"file": "docs/testing/pdf-to-word-p0-integration-guide.md", "reason": "P0 integration guide now uses admin credentials for Golden Sample release validation and documents GOLDEN_SAMPLE_REQUIRED_ROLE=admin."}
+{"file": "docs/testing/pdf-to-word-golden-sample-acceptance-report.md", "reason": "Golden Sample acceptance report command now uses admin as the formal release-validation account."}
+{"file": ".trellis/tasks/06-16-p0-word-delivery-quality-beta/preflight-current.json", "reason": "Current-machine preflight evidence refreshed after admin default role changes; four PDFs are present while admin credentials and local API runtime remain blockers."}
+{"file": "tests/test_fastapi_jobs_backend.py", "reason": "Document job delete coverage now asserts operator cannot execute the task delete API directly, not only that delete-preview is admin-only."}
+{"file": ".trellis/tasks/06-16-p0-word-delivery-quality-beta/prd.md", "reason": "P0 PRD now explicitly records admin ownership for Golden Sample source/reviewer/final sign-off and states that Word document formatting standards outrank pixel-perfect PDF cloning."}
+{"file": "tests/fixtures/golden_samples/README.md", "reason": "Golden Sample README now states the 4 OPA228 PDFs are sufficient for the current P0 gate, admin owns sample sourcing/review/sign-off, and manual quality prioritizes maintainable Word structure."}
+{"file": "tests/fixtures/golden_samples/acceptance-record-template.md", "reason": "Acceptance template now captures admin sample-source confirmation and states admin source ownership, reviewer, and final sign-off requirements."}
+{"file": "docs/testing/pdf-to-word-p0-integration-guide.md", "reason": "P0 integration guide now states the 4 canonical samples cover current datasheet risk, do not need expansion to 10-20 for P0, and use Word-standard structure as the higher-priority manual quality criterion."}
+{"file": "docs/runbooks/backend.md", "reason": "Backend runbook now repeats the 4-sample P0 gate and clarifies that close layout is judged through maintainable Word document standards."}
+{"file": "README.md", "reason": "README now summarizes the P0 datasheet scope, 4-sample Golden Sample gate, Word document formatting standard, and admin final sign-off."}
+{"file": "scripts/ops/check_release.py", "reason": "Release check now includes P0 renderer, Golden Sample, admin delete, MySQL metadata, Celery readiness, and DOCX quality targeted tests in the default unittest gate."}
+{"file": "scripts/ops/check_release.py", "reason": "Runtime readiness release check now requires the P0 production baseline: deployment_init_ready, p0_document_jobs_ready, effective_repository_backend=mysql, and document_jobs_worker_backend=celery."}
+{"file": "scripts/ops/check_release.py", "reason": "Release check now supports --golden-sample-preflight and optional JSON evidence output, reusing the Golden Sample preflight without submitting real conversion jobs."}
+{"file": "tests/test_openapi_export.py", "reason": "Release check tests now cover the MySQL+Celery runtime readiness requirement and a passing Golden Sample preflight using a local fake admin/runtime server."}
+{"file": "docs/runbooks/backend.md", "reason": "Backend runbook now documents default P0 release check coverage and the production command with --runtime-url plus --golden-sample-preflight."}
+{"file": "docs/deploy/p0-docker-deployment.md", "reason": "P0 Docker deployment guide now documents the production Golden Sample preflight command and clarifies that runtime release checks require MySQL metadata and Celery worker."}
+{"file": "README.md", "reason": "README now notes that staging/production releases should run check_release.py with --runtime-url and --golden-sample-preflight using admin Golden Sample credentials."}
+{"file": ".trellis/tasks/06-16-p0-word-delivery-quality-beta/acceptance-audit.md", "reason": "Added a task-level acceptance audit mapping each PRD acceptance item to current evidence, missing external evidence, final release commands, and known blockers."}
+{"file": ".trellis/tasks/06-16-p0-word-delivery-quality-beta/task.json", "reason": "Task metadata now points to the PRD, acceptance audit, and current preflight evidence as related files."}
+{"file": ".trellis/tasks/06-16-p0-word-delivery-quality-beta/acceptance-audit.md", "reason": "Acceptance audit now records the user decision to skip local full-stack/frontend smoke and local MySQL/Redis/Celery validation; remaining service-level evidence must be collected in staging/production."}
