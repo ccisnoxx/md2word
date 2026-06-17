@@ -48,6 +48,13 @@ Health API 当前有五条入口：
 {
   "status": "ok",
   "app_name": "md2word_file",
+  "deployment": {
+    "environment": "prod",
+    "public_deployment_mode": "internal",
+    "version": "2026.06.17-p2",
+    "deployment_id": "hostdzire-20260617-p2",
+    "started_at": "2026-06-17T00:00:00+00:00"
+  },
   "jobs_dir": "/abs/path/var/jobs",
   "dependency_checks": {
     "configured_repository_backend": "file",
@@ -76,6 +83,8 @@ Health API 当前有五条入口：
     "openai_api_key_configured": true,
     "openai_base_url_configured": true,
     "openai_model": "deepseek-v4-flash",
+    "translation_provider_backend": "openai_compatible",
+    "translation_debug_archive_enabled": true,
     "default_translation_mode": "direct",
     "translation_client_configured": true,
     "translation_available": true,
@@ -100,6 +109,13 @@ Health API 当前有五条入口：
   "status": "ok",
   "app_name": "md2word_file",
   "generated_at": "2026-05-29T00:00:00+00:00",
+  "deployment": {
+    "environment": "prod",
+    "public_deployment_mode": "internal",
+    "version": "2026.06.17-p2",
+    "deployment_id": "hostdzire-20260617-p2",
+    "started_at": "2026-06-17T00:00:00+00:00"
+  },
   "metadata_store": "mysql",
   "artifact_storage": "local_file",
   "worker_mode": "in_process",
@@ -179,6 +195,12 @@ Health API 当前有五条入口：
 
 | 字段 | 说明 |
 |---|---|
+| `deployment` | ready/metrics 共同返回的非敏感部署追踪对象，用于 P2 线上证据 |
+| `deployment.environment` | 当前 `APP_ENV` |
+| `deployment.public_deployment_mode` | 当前 `PUBLIC_DEPLOYMENT_MODE`，内部单租户默认仍为 `internal` |
+| `deployment.version` | 当前 `APP_VERSION`，用于区分同步批次或发布版本 |
+| `deployment.deployment_id` | 当前 `DEPLOYMENT_ID`；未设置时为 `null` |
+| `deployment.started_at` | 当前 API 进程启动时间 |
 | `configured_repository_backend` | 当前配置期望的 jobs metadata 后端；默认 `file`，可配置为 `database` 或 `mysql` |
 | `effective_repository_backend` | 当前真实接入的 jobs metadata 后端；应与运行时实际 repository adapter 一致 |
 | `worker_mode` | 当前 worker 模式；`in_process` 表示 API 同进程执行，`external` 表示独立 worker 消费 stage message |
@@ -208,9 +230,11 @@ Health API 当前有五条入口：
 | `openai_api_key_configured` | 是否配置 `OPENAI_API_KEY` |
 | `openai_base_url_configured` | 是否显式配置 `OPENAI_BASE_URL` |
 | `openai_model` | 当前默认翻译模型名 |
+| `translation_provider_backend` | 当前翻译 provider backend；`en2zh` 线上可用时应为 `openai_compatible` |
+| `translation_debug_archive_enabled` | 是否允许 admin 为 `en2zh_pdf_to_word` 保存短期全文调试归档 |
 | `default_translation_mode` | 当前默认转换模式 |
 | `translation_client_configured` | 翻译客户端是否具备最小配置 |
-| `translation_available` | 当前 `en2zh` 分支是否可用 |
+| `translation_available` | 当前 `en2zh` 分支是否可用；需要 provider backend、OpenAI-compatible client 和翻译 prompt 同时可用 |
 | `translation_unavailable_reason` | 翻译不可用时的原因 |
 | `default_template_version` | MySQL resource mode 下当前默认 Template Version，形如 `{template_id}@{version}`；无默认值时为 `null` |
 | `default_term_rule_version` | MySQL resource mode 下当前默认 Term Rule Version，形如 `{set_id}@{version}`；无默认值时为 `null` |
@@ -232,7 +256,7 @@ Health API 当前有五条入口：
 - `template_docx_exists=false`
   - 说明默认模板缺失，`direct` 和 `en2zh` 都无法成功生成 DOCX。
 - `translation_available=false`
-  - 说明 `translation_mode=en2zh` 目前不可用，优先检查 `OPENAI_API_KEY`。
+  - 说明 `translation_mode=en2zh` 目前不可用，优先检查 `TRANSLATION_PROVIDER_BACKEND`、`OPENAI_API_KEY` 和翻译 prompt。
 - `translation_prompt_exists=false`
   - 说明翻译 prompt 资源缺失，`en2zh` 会被预检拒绝。
 - `mineru_api_token_configured=false`

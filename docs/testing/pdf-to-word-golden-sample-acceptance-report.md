@@ -2,22 +2,26 @@
 doc_type: test-report
 slug: pdf-to-word-golden-sample-acceptance-report
 component: pdf-to-word-backend
-status: blocked
-summary: P0 Golden Sample 验收报告；当前 4 个正式 PDF 已完成 hostdzire 真实回归且主链路 4/4 succeeded，但人工质量未通过 P0，样本规模仍低于 10-20 份目标。
+status: superseded
+summary: P0 Golden Sample 历史验收报告；2026-06-03 blocked 结论已被 2026-06-17 hostdzire admin signoff 证据取代。
 tags: [testing, golden-sample, pdf, word, p0]
-last_reviewed: 2026-06-03
+last_reviewed: 2026-06-17
 ---
 
 # P0 Golden Sample 验收报告
 
 ## 当前结论
 
-截至 2026-06-03，`tests/fixtures/golden_samples/pdfs/OPA228_P1.pdf`、`OPA228_P2.pdf`、`OPA228_P6.pdf` 和 `OPA228_P7.pdf` 已映射到 `manifest.yaml`，作为 4 个正式可运行样本。本轮已在 hostdzire 真实 API / Worker / MinerU 环境完成 4 个样本 live regression：主链路 4/4 succeeded，DOCX 包 4/4 openable。
+2026-06-17 收口结论：本报告中 2026-06-03 的 `blocked` 判断是历史状态，已被 `.trellis/tasks/06-16-p0-word-delivery-quality-beta/artifacts/hostdzire-golden-sample-20260617T053003Z/report.md` 取代。新的权威证据显示 4 个 OPA228 canonical samples 自动链路 4/4 succeeded、DOCX quality evidence 可用、admin manual signoff valid，`p0_release_ready=true`。
 
-当前仍不能声明完成 “10-20 份样本核心链路成功率 >= 90% 且成功样本 Word 可打开可编辑” 的正式验收，原因有两类：
+以下内容保留为历史排障和质量演进记录，不再代表当前 P0 发布状态。
 
-- 样本规模仍只有 4 个 runnable PDF，低于 10-20 份目标。
-- 4 个成功样本的人工质量均未达到 P0：heading、Word list、双栏/宽表布局、caption/table 顺序和公式/特殊符号仍存在缺口。
+截至 2026-06-03，`tests/fixtures/golden_samples/pdfs/OPA228_P1.pdf`、`OPA228_P2.pdf`、`OPA228_P6.pdf` 和 `OPA228_P7.pdf` 已映射到 `manifest.yaml`，作为当前 P0 canonical suite。本轮已在 hostdzire 真实 API / Worker / MinerU 环境完成 4 个样本 live regression：主链路 4/4 succeeded，DOCX 包 4/4 openable。
+
+当前仍不能声明完成 P0 正式验收，原因是：
+
+- 当前 4 个 canonical 样本的人工质量均未达到 P0。
+- P0 质量线要求接近原版排版，同时符合 Word 文档排版标准；heading、Word list、双栏/宽表布局、caption/table 顺序和公式/特殊符号仍存在缺口。
 
 失败分类结论为 `pipeline-parity-gap`：`md2word_main` / `app/conversion/runtime` 中已有部分 heading、list、formula、caption、table 和 layout 策略，但当前 API `document_jobs -> DocumentIR -> app/services/renderer` 链路没有接入这些 legacy runtime 策略。
 
@@ -38,7 +42,7 @@ last_reviewed: 2026-06-03
 
 | 项目 | 当前值 |
 |---|---|
-| 清单样本数 | 12 |
+| 清单样本数 | 4 |
 | 正式匹配 PDF 数 | 4 |
 | Manifest 外 PDF 数 | 0 |
 | Manifest 外 PDF | none |
@@ -46,18 +50,18 @@ last_reviewed: 2026-06-03
 | 主链路已执行正式样本数 | 4 |
 | 主链路成功数 | 4 |
 | 主链路失败数 | 0 |
-| 主链路成功率 | 100.00%（4/4，仅代表当前 runnable 样本；仍未达到 10-20 份正式样本规模） |
-| P0 目标 | 10-20 份样本核心链路成功率 >= 90%，成功样本 Word 可打开可编辑 |
+| 主链路成功率 | 100.00%（4/4，覆盖当前 P0 canonical suite） |
+| P0 目标 | 4 个 canonical 样本 4/4 主链路成功、4/4 Word 可打开可编辑、4/4 admin 人工质量通过 |
 | 人工质量状态 | 4/4 未通过 P0 版面与语义质量 |
-| 当前状态 | blocked: 主链路已在 4 个 runnable 样本上通过，但仍需补齐 10-20 份样本，并修复 `pipeline-parity-gap` 暴露的 DocumentIR layout 与 renderer 可编辑输出质量 |
+| 当前状态 | blocked: 主链路已在 4 个 canonical 样本上通过，但仍需修复 `pipeline-parity-gap` 暴露的 DocumentIR layout 与 renderer 可编辑输出质量 |
 
 ## 最近脚本验证
 
-2026-06-02 已运行一次 Golden Sample 脚本做 inventory smoke。该次运行使用 dummy bearer token，未启动真实后端/Worker/MinerU，因此只用于验证样本清单和报告字段，不计入正式 P0 回归。
+2026-06-02 已运行一次 Golden Sample 脚本做 inventory smoke。该次运行使用当时仍包含 backlog 占位样本的旧 manifest、dummy bearer token，未启动真实后端/Worker/MinerU，因此只作为历史脚本字段验证，不计入正式 P0 回归。当前正式 manifest 已收敛为 4 个 OPA228 canonical 样本。
 
 | 项目 | 结果 |
 |---|---|
-| Manifest 样本数 | 12 |
+| Manifest 样本数 | 12（历史旧 manifest） |
 | 正式匹配 PDF 数 | 1 |
 | 实际执行 | 1 |
 | 缺少 PDF | 11 |
@@ -75,7 +79,7 @@ last_reviewed: 2026-06-03
 |---|---|
 | 执行环境 | hostdzire API 容器内临时放入 Golden Sample 脚本、manifest 和 PDF |
 | 回归结果目录 | `/app/tests/tmp/golden_sample_runs/20260602T071017Z` |
-| Manifest 样本数 | 12 |
+| Manifest 样本数 | 12（历史旧 manifest） |
 | 正式匹配 PDF 数 | 1 |
 | 实际执行 | 1 |
 | 缺少 PDF | 11 |
@@ -86,7 +90,7 @@ last_reviewed: 2026-06-03
 | Word 可打开 | true |
 | result_file_id | `file_35a5e9c43885` |
 | 主链路结论 | 未卡在上传、建任务、Worker、MinerU、DocumentIR、Word 渲染或下载任一 stage |
-| P0 判定 | 仍 blocked：本次远端 smoke 只执行 1 个正式样本；当前 manifest 已扩展到 4 个正式匹配 PDF，但仍不满足 10-20 份样本规模目标 |
+| P0 判定 | 历史记录：本次远端 smoke 只执行 1 个样本；后续已扩展为 4 个 OPA228 canonical 样本 |
 
 ## 最新真实回归（4 个 runnable 样本）
 
@@ -97,7 +101,7 @@ last_reviewed: 2026-06-03
 | 回归批次 | `20260603T070724Z` |
 | 远端结果目录 | `/app/tests/tmp/golden_sample_runs/20260603T070724Z` |
 | 本地结果目录 | `tests/tmp/golden_sample_runs/20260603T070724Z` |
-| Manifest 样本数 | 12 |
+| Manifest 样本数 | 12（历史旧 manifest；当前正式 manifest 为 4） |
 | 正式匹配 PDF 数 | 4 |
 | 实际执行 | 4 |
 | 缺少 PDF | 8 |
@@ -105,9 +109,10 @@ last_reviewed: 2026-06-03
 | 成功 | 4 |
 | 失败 | 0 |
 | DOCX openable | 4 true / 0 false |
-| 脚本目标 | 90% |
-| 脚本 `met_target` | true |
-| P0 判定 | 仍 blocked：主链路通过不等于人工质量通过，且样本规模仍低于 10-20 份目标 |
+| 脚本目标 | 90%（历史旧脚本；当前正式 manifest 目标为 100%） |
+| 脚本 `met_target` | true（仅代表历史自动主链路达标） |
+| 当前脚本 P0 发布字段 | `p0_release_ready=false`，直到 admin 人工质量签字 |
+| P0 判定 | 仍 blocked：主链路通过不等于人工质量通过；canonical suite 需要 4/4 admin 人工质量通过 |
 
 逐样本结果：
 
@@ -143,7 +148,7 @@ last_reviewed: 2026-06-03
 | 类别 | 结论 | 后续路由 |
 |---|---|---|
 | environment | hostdzire 本轮可执行；API/Worker/MinerU 可用。远端容器运行前仍需同步 Golden Sample manifest/PDF。 | 记录运行注意事项，不进入修复 feature |
-| sample-sourcing | 12 个 manifest 样本中仍有 8 个 `missing_pdf`。 | 后续样本扩容 |
+| sample-sourcing | 当前正式 manifest 已收敛为 4 个 OPA228 canonical 样本；不再把 8 个占位 `missing_pdf` 作为 P0 缺口。 | 后续扩展样本另开 P1/P2 backlog |
 | document-ir-layout-risk | 双栏 block 分组、宽表分页/页面方向、caption 与表格/figure 的相对位置仍有风险。 | `document-ir-layout-risk-pass` |
 | word-renderer-editable-output | heading/list/formula/caption/table 样式策略没有同步到 API DocumentIR renderer。 | `word-renderer-editable-output-pass` |
 | pipeline-parity-gap | legacy runtime / `md2word_main` 已有部分修复，但线上 API DocumentIR renderer 未接入。 | 两个后续 feature 的共同前置判断 |
@@ -155,12 +160,14 @@ last_reviewed: 2026-06-03
 
 ## 正式验收命令
 
+后续重新验收按 [线上优先验证流程](/Users/sc/PycharmProjects/md2word/docs/deploy/online-first-validation-workflow.md) 在 hostdzire 执行，不在本地启动前后端或 MySQL/Redis/Celery。
+
 ```bash
-GOLDEN_SAMPLE_USERNAME=operator \
+GOLDEN_SAMPLE_USERNAME=admin \
 GOLDEN_SAMPLE_PASSWORD='<password>' \
 /Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/run_golden_sample_regression.py
 ```
 
 正式执行后，把 `tests/tmp/golden_sample_runs/{timestamp}/report.md` 的汇总结果回填到本报告，人工打开每个成功样本 Word 后按 `tests/fixtures/golden_samples/acceptance-record-template.md` 或本报告的人工质量口径记录结论。
 
-当前 4 个 OPA228 PDF 已进入正式 manifest 并完成真实链路执行；正式 P0 通过仍需要更多样本、人工质量通过，以及 `pipeline-parity-gap` 对应的 renderer 可编辑输出修复。DocumentIR layout facts 已开始接入主链路，但不改变当前 0/4 人工 P0 质量结论。
+当前 4 个 OPA228 PDF 已进入正式 manifest 并完成真实链路执行；正式 P0 通过不再以扩充到 10-20 份样本为阻塞条件，而以 canonical suite 4/4 admin 人工质量通过为准。DocumentIR layout facts 已开始接入主链路，但不改变当前 0/4 人工 P0 质量结论。
