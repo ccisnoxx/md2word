@@ -73,3 +73,37 @@ Implemented and validated P2 internal single-tenant deployment traceability, onl
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Frontend SaaS main flow UI polish
+
+**Date**: 2026-06-18
+**Task**: Frontend SaaS main flow UI polish
+**Branch**: `main`
+
+### Summary
+
+Implemented the first-round SaaS UI polish for the document job main flow with shared frontend tokens, product shell/page templates, unified job table/upload/detail/status styling, and frontend UI system specs. Verified npm run build and npm run test:unit; smoke was blocked by missing Playwright Chromium.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c56793a0` | (see git log) |
+| `07047892` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
