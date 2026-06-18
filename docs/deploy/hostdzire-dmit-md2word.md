@@ -3,9 +3,9 @@ doc_type: deploy-guide
 slug: hostdzire-dmit-md2word
 component: pdf-to-word-backend
 status: current
-summary: md2word 在 dmit + WireGuard + hostdzire 结构下的实际部署记录。
+summary: md2word 在 dmit + WireGuard + hostdzire 结构下的实际部署和线上验证记录。
 tags: [deploy, nginx, docker, wireguard, hostdzire, dmit]
-last_reviewed: 2026-06-10
+last_reviewed: 2026-06-17
 ---
 
 # md2word 线上部署记录
@@ -30,6 +30,18 @@ last_reviewed: 2026-06-10
 - MinerU 回调基础地址：`https://md2word.962850.xyz/api/v1/mineru-callbacks/result`
 
 `md2word-api.962850.xyz` 是早期错误域名，不作为线上入口使用。当前公开入口、CORS origin 和 MinerU callback URL 都应使用 `md2word.962850.xyz`。
+
+## 标准迭代流程
+
+后续代码和文档迭代遵循 [线上优先验证流程](/Users/sc/PycharmProjects/md2word/docs/deploy/online-first-validation-workflow.md)：
+
+1. 在本地改写或新增代码/文档，只做不依赖真实服务的轻量检查。
+2. 用私密 VPS 登录信息把变更同步到 `hostdzire:/root/md2word`；不要把 `/Users/sc/work_file/bak_file/VPS.txt` 的内容写入仓库或对话。
+3. 在 `hostdzire` 重新 build/up Docker Compose，并检查 API、Worker、MySQL、Redis/Celery。
+4. 先跑 `/health/ready` 和 `check_release.py --runtime-url`，再跑 Golden Sample 预检和真实 4 样本回归。
+5. admin reviewer 打开 4 个 DOCX，按 Word 文档排版标准优先的质量线签字。
+
+普通代码更新只动 `hostdzire`。只有域名、证书、WireGuard 或前置转发异常时才排查 `dmit`。
 
 ## 证书和入口
 
@@ -64,6 +76,6 @@ MinerU 公开回调当前按下面约定配置：
 
 - `DEFAULT_TRANSLATION_MODE=direct`
 - `OPENAI_BASE_URL` / `OPENAI_API_KEY` 已由 `.env` 管理，不写入文档
-- ready health 显示 `translation_available=true` 时，`en2zh_pdf_to_word` 可用于线上实验
+- ready health 显示 `translation_provider_backend=openai_compatible` 且 `translation_available=true` 时，`en2zh_pdf_to_word` 可用于线上实验
 
 即使翻译可用，默认任务模式仍保持 `direct`，避免普通 PDF 转 Word 请求默认消耗翻译额度。

@@ -3,9 +3,9 @@ doc_type: integration-acceptance
 slug: md2word-fe-be-integration-acceptance
 component: md2word-internal-portal
 status: current
-summary: md2word 前后端联调计划和验收口径，覆盖 mock/contract-first、接口完成标准、前端接入顺序和端到端验收。
+summary: md2word 前后端联调计划和验收口径，覆盖 mock/contract-first、接口完成标准、前端接入顺序和线上端到端验收。
 tags: [testing, integration, frontend, backend, acceptance, document-jobs]
-last_reviewed: 2026-06-10
+last_reviewed: 2026-06-17
 ---
 
 # md2word 前后端联调计划与验收口径
@@ -14,14 +14,16 @@ last_reviewed: 2026-06-10
 
 本联调计划服务内部工作台成熟化，不把真实 PDF/MinerU/翻译/Word 主流程作为每次页面迭代的前置条件。
 
+当前 P0 发布验收遵循 [线上优先验证流程](/Users/sc/PycharmProjects/md2word/docs/deploy/online-first-validation-workflow.md)。本地可以做 mock/contract-first 或纯静态检查，但不要为了当前验收启动本地前后端、MySQL、Redis/Celery、Playwright smoke 或真实 PDF 转 Word 链路；服务级证据在 hostdzire 收集。
+
 分层验收：
 
 | 层级 | 目标 | 必跑程度 |
 | --- | --- | --- |
 | Contract-first | 锁定 API 请求/响应、权限、错误码、状态流。 | 每次合同变化必跑。 |
 | Backend tests | 证明服务层和 API 行为稳定。 | 每次后端变化必跑相关测试。 |
-| Frontend build/smoke | 证明页面可加载、角色边界和状态展示正确。 | 每次前端变化必跑 build，关键页面跑 smoke。 |
-| Controlled E2E | 证明真实上传、建任务、事件、下载闭环可用。 | 发布或专项验收跑，不随普通页面迭代自动跑。 |
+| Frontend build/smoke | 证明页面可加载、角色边界和状态展示正确。 | 有前端变更且本地依赖/浏览器可用时运行；当前 P0 不把本地 smoke 作为服务级验收。 |
+| Controlled E2E | 证明真实上传、建任务、事件、下载闭环可用。 | 发布或专项验收在 hostdzire 跑，不随普通页面迭代自动跑。 |
 
 禁止在普通联调中隐式执行：
 
@@ -205,7 +207,7 @@ Mock smoke 通过标准：
 
 ### 5.3 真实 P0 主链路验收
 
-真实链路只在明确验收窗口执行，使用：
+真实链路只在明确验收窗口执行，并在 hostdzire 上使用：
 
 - [docs/testing/pdf-to-word-p0-integration-guide.md](./pdf-to-word-p0-integration-guide.md)
 - [docs/testing/pdf-to-word-golden-sample-acceptance-report.md](./pdf-to-word-golden-sample-acceptance-report.md)
@@ -220,7 +222,7 @@ Mock smoke 通过标准：
 6. 获取 `download-url`。
 7. 下载并打开 Word。
 
-真实验收不自动表示页面全部通过；页面仍需独立 mock smoke 和 build。
+真实验收不自动表示页面全部通过；页面仍需按变更范围做 mock smoke 或 build。当前本机不具备前端 smoke 条件时，不用为了验收强行补本地浏览器测试。
 
 ### 5.4 翻译 QA 真实验收
 
@@ -267,7 +269,7 @@ Mock smoke 通过标准：
 
 本阶段“联调通过”要求：
 
-- Contract、backend tests、frontend build、mock smoke 均通过。
+- Contract、backend tests、frontend build、mock smoke 按变更范围和环境可用性通过；本机不具备浏览器/服务依赖时，应明确跳过本地 smoke 并转到 hostdzire 收集服务级证据。
 - 真实 P0 验收如果本轮执行，必须单独记录样本、环境、任务 ID、下载结果和人工判断。
 - 未执行真实 P0 时，最终报告必须明确说明“未重跑 PDF/MinerU/翻译/Word 主流程”。
 - 不允许用 mock smoke 代替真实 Word 质量验收。

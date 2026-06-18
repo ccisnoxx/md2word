@@ -139,6 +139,7 @@
                     </span>
                   </el-dropdown-item>
                   <el-dropdown-item
+                    v-if="shouldShowDocumentJobAction(row, 'delete')"
                     command="delete"
                     :disabled="isJobPending(row) || !canDeleteDocumentJob(row)"
                   >
@@ -189,6 +190,7 @@ import {
   formatDateTime,
   getJobSourceFilename,
   jobModeText,
+  shouldShowDocumentJobAction,
   translationQaStatusTagType,
   translationQaStatusText,
 } from "@/utils/format";
@@ -242,7 +244,7 @@ function handleRowCommand(row: DocumentJobResponse, command: string | number | o
     emit("archive", row);
   } else if (command === "unarchive") {
     emit("unarchive", row);
-  } else if (command === "delete") {
+  } else if (command === "delete" && shouldShowDocumentJobAction(row, "delete")) {
     emit("delete", row);
   }
 }

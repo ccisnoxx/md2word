@@ -110,7 +110,7 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 | `translation_term_version` | 否 | 翻译术语集版本。 |
 | `translation_profile_id` | 否 | 翻译配置 ID，仅 Admin 可显式选择。 |
 | `translation_profile_version` | 否 | 翻译配置版本，仅 Admin 可显式选择。 |
-| `debug_full_text` | 否 | 是否保留全文调试信息。 |
+| `debug_full_text` | 否 | 是否保留全文调试信息。仅 `en2zh_pdf_to_word` 支持，且只有 admin 可以开启；默认关闭。 |
 
 - 响应：`201 Created`，包含 `job_id`、`status`、`stage`、`progress` 和完整 `job`。
 - 成功动作写入 `document_job.create` audit event。
@@ -178,6 +178,32 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 - 用途：读取任务事件。
 - 响应：事件列表，包含 `stage`、`level`、`event_type`、`message`、`payload`、`duration_ms` 和 `trace_id`。
 
+### `generated_word.metadata.docx_quality`
+
+成功任务登记 `generated_word` 文件时，会在文件 metadata 中写入轻量 DOCX 结构证据，供详情页和 Golden Sample 人工复核定位问题。该字段是机器线索，不替代 admin 对最终 Word 排版质量的签字。
+
+`generated_word.metadata.quality_flags` 会从 `docx_quality` 派生明确风险项，例如 `docx_quality_unavailable`、`docx_analysis_error`、`docx_no_editable_content`、`docx_image_only_suspected`、`docx_latex_residue:{count}`、`docx_manual_list_markers:{count}`、`docx_plain_toc_entries:{count}`、`docx_unstyled_heading_candidates:{count}` 和 `docx_wide_table_without_landscape:{count}`。这些 flag 只用于让详情页进入“带自动标记的人工复核”状态，不会绕过或替代 admin manual sign-off。
+
+常用字段：
+
+| 字段 | 说明 |
+|---|---|
+| `editable_content_available` | 是否存在可编辑文本或 Word table 证据。 |
+| `image_only_suspected` | 是否疑似只包含图片而缺少可编辑内容。 |
+| `heading_paragraphs` | 通过 paragraph style 或 styles.xml 识别出的 Word heading 段落数。 |
+| `heading_like_paragraphs` / `heading_like_unstyled_paragraphs` | 非表格正文段落中疑似标题的数量，以及其中未使用 Word heading 样式的数量。 |
+| `numbering_paragraphs` | 使用 Word numbering 的段落数。 |
+| `manual_list_marker_paragraphs` | 非表格正文段落中仍以字符 bullet/dash 呈现的列表项数量。 |
+| `toc_tab_leader_paragraphs` | 带点线 leader 制表位的目录式段落数。 |
+| `plain_toc_entry_paragraphs` | 疑似目录项但仍是普通点线/页码文本的段落数量。 |
+| `table_count` / `table_shapes` | Word table 数量和行列形状。 |
+| `wide_table_count` | 6 列及以上 Word table 数量，用于提示 datasheet 宽表版面风险。 |
+| `table_header_rows` | 设置为重复表头的行数。 |
+| `table_no_split_rows` | 设置防跨页断行的表格行数。 |
+| `table_cell_zero_spacing_paragraphs` | 表格单元格内零段前后距段落数。 |
+| `landscape_sections` | 横向 section 数量。 |
+| `latex_residue_count` / `latex_residue_examples` | 可见文本中的疑似 LaTeX 残留计数和示例。 |
+
 ### `GET /api/v1/document-jobs/{job_id}/translation-qa`
 
 - 用途：读取翻译结果 QA 证据摘要和任务级复核状态。
@@ -190,8 +216,8 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 
 - 响应包含：
   - `qa`：任务级复核状态、问题归因、备注、复核人和复核时间。
-  - `artifacts`：`document_ir`、`ai_call_log`、`ai_debug_archive` 文件 ID 摘要。
-  - `summary`：最终片段数、返回片段数、quality flags、AI call 数、术语 trace 数和源文对照可用性。
+  - `artifacts`：`document_ir`、`ai_call_log`、`ai_debug_archive` 文件 ID 摘要，以及 latest debug archive 的过期时间、是否过期、是否包含全文。
+  - `summary`：最终片段数、返回片段数、quality flags、AI call 数、术语 trace 数、`debug_full_text_enabled` 和源文对照可用性。
   - `segments`：从 `document_ir` 读取的最终文本片段；只有 debug archive 存在且未过期时才带源文/AI 译文对照。
   - `term_traces`：从 `ai_call_log` 读取的脱敏术语命中摘要。
   - `ai_calls`：metadata-only AI 调用摘要，不包含完整 prompt、response、正文或密钥。
@@ -236,6 +262,8 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 | `translation_term_set_id` / `translation_term_version` | 否 | 仅 `select_published_versions` 下可传，Admin-only。 |
 | `translation_profile_id` / `translation_profile_version` | 否 | 仅 `select_published_versions` 下可传，Admin-only。 |
 | `debug_full_text` | 否 | 覆盖新任务 debug 全文开关。 |
+
+`debug_full_text=true` 只允许 admin 使用。Operator clone 已开启全文归档的源任务时，若使用 `keep_source_snapshot` 继承该开关，也会被拒绝；应由 admin 创建 P1 QA 样本任务或 clone 任务。
 
 - 成功：`201 Created`，返回 `source_job_id`、新 `job_id` 和完整新 `job`，并写入 `job_cloned` 任务事件和 `document_job.clone` audit event。
 - 失败：源 PDF 不存在、不可见、过期或不是 uploaded source PDF 时返回 404/403/409；Operator 传显式资源版本返回 403。
@@ -296,9 +324,9 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 
 - 用途：Admin-only 预览删除任务会影响哪些文件。
 - 行为：只读，不修改任务、文件、事件或审计。
-- 限制：仅 `succeeded` / `failed` / `canceled` 终态任务允许删除；`pending` / `queued` / `running` 返回 `409 conflict`。Operator 返回 `403 forbidden`。
+- 限制：仅 `admin` 可调用，且仅 `succeeded` / `failed` / `canceled` 终态任务允许删除；`pending` / `queued` / `running` 返回 `409 conflict`。Operator 返回 `403 forbidden`，前端应隐藏任务级删除入口。
 - 响应：
-  - `confirmation_phrase`：执行删除时必须原样提交，例如 `DELETE docjob_xxx`。
+  - `confirmation_phrase`：兼容旧前端的确认短语，例如 `DELETE docjob_xxx`；当前 admin UI 不再要求输入该短语。
   - `preview_hash`：执行删除时必须提交，任务或文件状态变化后会失效。
   - `totals`：文件总数、将删除数、保留数、已删除数、跳过数等。
   - `files`：逐文件决策；可安全删除的本地文件返回 `action=delete`，被其他任务引用、已删除、pending upload、缺少 object key 或暂不支持的存储返回 `action=keep`。
@@ -307,12 +335,13 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 ### `POST /api/v1/document-jobs/{job_id}/delete`
 
 - 用途：Admin-only 执行任务删除；这是显式删除端点，不复用 `DELETE /api/v1/document-jobs/{job_id}` 的归档语义。
+- 前端约束：operator 不展示该入口；admin 必须先完成 preview 并在确认弹窗中确认删除，执行请求必须携带最新 `preview_hash`。`reason` 和 `confirmation` 仅为兼容旧客户端保留。
 - 请求体：
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
-| `reason` | 是 | 删除原因，不能为空，会写入 audit。 |
-| `confirmation` | 是 | 必须等于预览返回的 `confirmation_phrase`。 |
+| `reason` | 否 | 删除原因；为空时使用默认审计原因 `admin_preview_confirm_delete`。 |
+| `confirmation` | 否 | 旧客户端可继续提交，提交时必须等于预览返回的 `confirmation_phrase`。 |
 | `preview_hash` | 是 | 必须等于最新预览返回的 `preview_hash`。 |
 
 - 行为：
@@ -349,4 +378,4 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 
 - `direct_pdf_to_word` 是 P0 默认发布路径。
 - `en2zh_pdf_to_word` 仍按实验能力处理，不阻塞 P0 direct 发布。
-- Golden Sample 当前仍 blocked：正式规模和人工质量验收尚未完成。
+- Golden Sample 当前仍 blocked：正式规模已收敛为 4 个 OPA228 canonical 样本；主链路曾 4/4 通过，但仍等待 admin 人工 Word 质量验收 4/4 通过。

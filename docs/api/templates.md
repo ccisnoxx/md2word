@@ -12,9 +12,9 @@ source_files:
   - app/domains/templates/read_service.py
   - app/domains/resources/service.py
   - app/domains/templates/schemas.py
-summary: Templates API 提供多模板清单、详情、下载、默认模板切换、模板 CRUD、文件替换、Template Version 发布管理和成功动作审计。
+summary: Templates API 提供多模板清单、详情、下载、默认模板切换、模板 CRUD、文件替换、版式配置 draft version、Template Version 发布管理和成功动作审计。
 tags: [templates, api, manifest, audit]
-last_reviewed: 2026-06-01
+last_reviewed: 2026-06-17
 ---
 
 ## 概述
@@ -28,9 +28,10 @@ last_reviewed: 2026-06-01
 - 默认模板切换
 - 模板创建、元数据更新、删除
 - 模板 DOCX 替换和版本查看
+- 版式配置读取和保存为 draft version
 - Template Version 创建、发布、设默认和禁用
 
-Template Version 的 publish / set-default / disable 成功路径会写入 audit event。普通模板 CRUD 和旧运行态默认模板切换目前只保留 admin 鉴权，不写 audit event。
+Template Version 的 publish / set-default / disable 和版式配置 draft 创建成功路径会写入 audit event。普通模板 CRUD 和旧运行态默认模板切换目前只保留 admin 鉴权，不写 audit event。
 
 ## API 参考
 
@@ -94,6 +95,36 @@ Template Version 的 publish / set-default / disable 成功路径会写入 audit
   - `items[].verified_at`
   - `items[].template`
   - `items[].layout_config`
+
+### `GET /api/v1/templates/{template_id}/layout-config`
+
+- 用途：Admin-only 读取当前模板绑定的 Word 版式配置，用于前端 Word 页面样式配置页。
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
+- 响应：
+  - `template_id`
+  - `template_version_id`
+  - `version`
+  - `source_path`
+  - `config_sha256`
+  - `meta`：只读元信息，例如 `schema_version`、`template_name`、`output_filename`
+  - `config`：可编辑版式配置分组；不包含 `meta` 字段和 `sample_content`
+  - `field_schema`：前端表单渲染合同，按 `meta` 和 `groups` 区分字段类型、标签、单位和只读属性
+
+### `POST /api/v1/templates/{template_id}/layout-config/versions`
+
+- 用途：Admin-only 将页面提交的版式配置保存为新的 Template Profile draft version。
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
+- 前置：需要 `JOBS_REPOSITORY_BACKEND=mysql`，因为 draft / publish 状态由 `ResourceVersionService` 管理。
+- 请求体：JSON
+  - `config`: 完整版式配置 object
+- 行为：
+  - 校验只允许当前 `template-config/v1` 支持的字段；`sample_content` 不允许由页面提交
+  - 复制当前 DOCX 到下一版模板目录
+  - 写入新的 `layout_config.yaml`
+  - 创建 `TemplateVersionResponse(status="draft")`
+  - 不修改仓库内 `resources/template_configs/datasheet_template.yaml`
+  - 不自动发布，也不替换当前默认模板
+- 审计：成功后写 `template.layout_config_version_create`，`target_id={template_id}@{version}`。
 
 ### `POST /api/v1/templates`
 
@@ -201,7 +232,8 @@ Template Version 的 publish / set-default / disable 成功路径会写入 audit
 
 ## 当前限制
 
-- layout/subscript YAML 仍只返回元数据，不返回原始内容。
+- subscript YAML 仍只返回元数据，不返回原始内容。
+- 版式配置页面只编辑当前支持的 `template-config/v1` 字段；示例内容 `sample_content` 不参与运行时配置，不开放页面编辑。
 - Template Version 发布管理只在 MySQL metadata backend 下启用；file / sqlite backend 保持 manifest 兼容路径。
 - MySQL resource mode 下，jobs 创建已支持 `template_version` 快照；不传时绑定当前默认 Template Version。
 - file / sqlite backend 下，jobs 显式传 `template_version` 会返回 `503`，只传 `template_id` 仍走 legacy 模板选择路径。

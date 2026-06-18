@@ -11,6 +11,7 @@ from docx.image.exceptions import InvalidImageStreamError, UnexpectedEndOfFileEr
 from docx.shared import Cm
 
 from app.services.document_ir.models import DocumentIRAsset, DocumentIRBlock
+from app.services.renderer.semantic_text import normalize_formula_text
 from app.services.renderer.template_config import TemplateConfigPackage
 
 
@@ -32,10 +33,11 @@ class WordImageRendererMixin:
     ) -> None:
         asset = assets_by_id.get(block.asset_ref or "")
         image_content = image_loader(asset) if asset is not None else None
+        annotations = self._image_annotation_texts(block)
         paragraph = document.add_paragraph()
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         if not image_content:
-            self._fill_paragraph(paragraph, self._image_fallback_text(block), template_config.caption)
+            self._fill_paragraph(paragraph, normalize_formula_text(self._image_fallback_text(block)), template_config.caption)
             return
 
         try:
@@ -44,11 +46,15 @@ class WordImageRendererMixin:
             run.add_picture(io.BytesIO(image_content), width=available_width)
         except (InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError):
             paragraph.text = ""
-            self._fill_paragraph(paragraph, self._image_fallback_text(block), template_config.caption)
+            self._fill_paragraph(paragraph, normalize_formula_text(self._image_fallback_text(block)), template_config.caption)
 
-        for caption in self._image_annotation_texts(block):
+        if annotations:
+            paragraph.paragraph_format.keep_with_next = True
+        for index, caption in enumerate(annotations):
             caption_paragraph = document.add_paragraph()
-            self._fill_paragraph(caption_paragraph, caption, template_config.caption)
+            if index < len(annotations) - 1:
+                caption_paragraph.paragraph_format.keep_with_next = True
+            self._fill_paragraph(caption_paragraph, normalize_formula_text(caption), template_config.caption)
 
     def _available_width(
         self,
@@ -61,7 +67,7 @@ class WordImageRendererMixin:
         if not sections:
             base_width = Cm(14)
         else:
-            section = sections[0]
+            section = sections[-1]
             width = section.page_width - section.left_margin - section.right_margin
             base_width = width if width > 0 else Cm(14)
 

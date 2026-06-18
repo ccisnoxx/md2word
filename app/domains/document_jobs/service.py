@@ -76,6 +76,7 @@ DOCUMENT_JOB_FILE_TYPE_ORDER = {
     "ai_debug_archive": 60,
 }
 DOCUMENT_JOB_DELETE_TERMINAL_STATUSES = {"succeeded", "failed", "canceled"}
+DEFAULT_DOCUMENT_JOB_DELETE_REASON = "admin_preview_confirm_delete"
 
 
 @dataclass(frozen=True)
@@ -198,6 +199,7 @@ class DocumentJobService:
             mode,
             self._legacy_translation_term_version_id(mode, term_version_id, translation_term_version),
         )
+        self._ensure_debug_full_text_allowed(user, debug_full_text)
         debug_full_text_enabled = self._resolve_debug_full_text_enabled(mode, debug_full_text)
         now = utc_now()
         job_id = f"docjob_{uuid4().hex[:12]}"
@@ -437,6 +439,7 @@ class DocumentJobService:
             ai_call_count=len(ai_calls),
             ai_call_statuses=dict(Counter(call.status or "unknown" for call in ai_calls)),
             term_trace_count=len(term_traces),
+            debug_full_text_enabled=job.debug_full_text_enabled,
             source_comparison_available=source_reason is None,
             source_comparison_reason=source_reason,
         )
@@ -675,6 +678,13 @@ class DocumentJobService:
             self._ensure_resource_selection_allowed(user=user, **explicit_values)
         elif config_strategy not in {"keep_source_snapshot", "use_current_defaults"}:
             raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "config_strategy 非法。")
+        requested_debug_full_text = bool(debug_full_text)
+        inherited_debug_full_text = (
+            config_strategy == "keep_source_snapshot"
+            and debug_full_text is None
+            and source_job.debug_full_text_enabled
+        )
+        self._ensure_debug_full_text_allowed(user, requested_debug_full_text or inherited_debug_full_text)
 
         now = utc_now()
         new_job_id = f"docjob_{uuid4().hex[:12]}"
@@ -816,8 +826,8 @@ class DocumentJobService:
         job_id: str,
         *,
         user: AuthenticatedUser,
-        reason: str,
-        confirmation: str,
+        reason: str | None,
+        confirmation: str | None,
         preview_hash: str,
         trace_id: str | None,
     ) -> DocumentJobDeletePlan:
@@ -825,16 +835,15 @@ class DocumentJobService:
 
         job = self.get_job(job_id, user=user)
         self._ensure_delete_allowed(job, user=user)
-        normalized_reason = self._normalize_optional_text(reason)
-        if normalized_reason is None:
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "reason 不能为空。")
-        expected_confirmation = self._delete_confirmation_phrase(job)
-        if confirmation != expected_confirmation:
-            raise ApiError(
-                status.HTTP_400_BAD_REQUEST,
-                "invalid_request",
-                f"confirmation 必须为 {expected_confirmation}。",
-            )
+        normalized_reason = self._normalize_optional_text(reason) or DEFAULT_DOCUMENT_JOB_DELETE_REASON
+        if confirmation is not None:
+            expected_confirmation = self._delete_confirmation_phrase(job)
+            if confirmation != expected_confirmation:
+                raise ApiError(
+                    status.HTTP_400_BAD_REQUEST,
+                    "invalid_request",
+                    f"confirmation 必须为 {expected_confirmation}。",
+                )
         preview = self._build_delete_plan(job, action_mode="delete_preview")
         if preview.preview_hash != preview_hash:
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "删除预览已过期，请重新预览后再执行。")
@@ -1134,6 +1143,7 @@ class DocumentJobService:
                 ai_call_count=len(ai_call_items),
                 ai_call_statuses=dict(Counter(call.status or "unknown" for call in ai_call_items)),
                 term_trace_count=len(term_trace_items),
+                debug_full_text_enabled=job.debug_full_text_enabled,
                 source_comparison_available=False,
                 source_comparison_reason=source_reason,
             ),
@@ -1179,11 +1189,28 @@ class DocumentJobService:
         ai_log_files: list[DocumentFileRecord],
         debug_archive_files: list[DocumentFileRecord],
     ) -> DocumentJobTranslationQaArtifactsResponse:
+        latest_debug_archive = self._latest_file(debug_archive_files)
+        now = utc_now()
         return DocumentJobTranslationQaArtifactsResponse(
             document_ir_file_id=document_ir_file.id if document_ir_file is not None else None,
             ai_call_log_file_ids=[file.id for file in ai_log_files],
             ai_debug_archive_file_ids=[file.id for file in debug_archive_files],
+            ai_debug_archive_expires_at=latest_debug_archive.expires_at if latest_debug_archive is not None else None,
+            ai_debug_archive_expired=(
+                latest_debug_archive.expires_at is not None and latest_debug_archive.expires_at <= now
+                if latest_debug_archive is not None
+                else False
+            ),
+            ai_debug_archive_contains_full_text=bool(
+                latest_debug_archive is not None
+                and latest_debug_archive.metadata.get("contains_full_text") is True
+            ),
         )
+
+    def _latest_file(self, files: list[DocumentFileRecord]) -> DocumentFileRecord | None:
+        if not files:
+            return None
+        return sorted(files, key=lambda item: (item.created_at, item.id))[-1]
 
     def _read_document_ir(self, file: DocumentFileRecord) -> DocumentIR | None:
         try:
@@ -2201,3 +2228,7 @@ class DocumentJobService:
                 "TRANSLATION_DEBUG_ARCHIVE_ENABLED 未开启，不能保存翻译全文调试归档。",
             )
         return True
+
+    def _ensure_debug_full_text_allowed(self, user: AuthenticatedUser, debug_full_text: bool) -> None:
+        if debug_full_text and user.role != "admin":
+            raise ApiError(status.HTTP_403_FORBIDDEN, "role_forbidden", "只有 admin 可以开启翻译全文调试归档。")

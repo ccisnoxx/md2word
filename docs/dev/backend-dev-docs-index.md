@@ -25,7 +25,7 @@ last_reviewed: 2026-05-30
 11. [template-config-package-v1.md](/Users/sc/PycharmProjects/md2word/docs/dev/template-config-package-v1.md)
 12. [document-ir-v2.md](/Users/sc/PycharmProjects/md2word/docs/dev/document-ir-v2.md)
 13. [backend.md](/Users/sc/PycharmProjects/md2word/docs/runbooks/backend.md)
-14. API 细节查 [jobs.md](/Users/sc/MinerU/md2word_file/docs/api/jobs.md)、[mineru-callbacks.md](/Users/sc/MinerU/md2word_file/docs/api/mineru-callbacks.md)、[health.md](/Users/sc/MinerU/md2word_file/docs/api/health.md)、[templates.md](/Users/sc/MinerU/md2word_file/docs/api/templates.md)、[term-rule-sets.md](/Users/sc/PycharmProjects/md2word/docs/api/term-rule-sets.md) 和 [translation-profiles.md](/Users/sc/PycharmProjects/md2word/docs/api/translation-profiles.md)
+14. API 细节查 [document-jobs.md](/Users/sc/PycharmProjects/md2word/docs/api/document-jobs.md)、[files.md](/Users/sc/PycharmProjects/md2word/docs/api/files.md)、[mineru-callbacks.md](/Users/sc/MinerU/md2word_file/docs/api/mineru-callbacks.md)、[health.md](/Users/sc/MinerU/md2word_file/docs/api/health.md)、[templates.md](/Users/sc/MinerU/md2word_file/docs/api/templates.md)、[term-rule-sets.md](/Users/sc/PycharmProjects/md2word/docs/api/term-rule-sets.md) 和 [translation-profiles.md](/Users/sc/PycharmProjects/md2word/docs/api/translation-profiles.md)。Legacy [jobs.md](/Users/sc/PycharmProjects/md2word/docs/api/jobs.md) 只说明旧 `/api/v1/jobs` 已移除。
 
 ## 文档分工
 
@@ -44,7 +44,8 @@ last_reviewed: 2026-05-30
 | [template-config-package-v1.md](/Users/sc/PycharmProjects/md2word/docs/dev/template-config-package-v1.md) | 要调整 P0 Word 模板配置或排查渲染样式 | `template-config/v1` 文件集合、YAML 合同和 `template_id@version` 绑定格式 |
 | [document-ir-v2.md](/Users/sc/PycharmProjects/md2word/docs/dev/document-ir-v2.md) | 要迁移或排查 DocumentIR 布局字段 | v2 页面、bbox、role、caption/footnote 布局合同 |
 | [backend.md](/Users/sc/PycharmProjects/md2word/docs/runbooks/backend.md) | 日常联调或本地运维 | 真实上传、重试、取消、清理本地文件 |
-| [jobs.md](/Users/sc/MinerU/md2word_file/docs/api/jobs.md) | 联调前端或脚本调用方 | jobs 合同、下载入口、运维动作 |
+| [document-jobs.md](/Users/sc/PycharmProjects/md2word/docs/api/document-jobs.md) | 联调前端或脚本调用方 | 当前 P0 Files + Document Jobs 主任务合同、下载入口和任务动作 |
+| [jobs.md](/Users/sc/PycharmProjects/md2word/docs/api/jobs.md) | 排查历史引用 | legacy `/api/v1/jobs` 已从公开 v1 API 移除的说明 |
 | [mineru-callbacks.md](/Users/sc/MinerU/md2word_file/docs/api/mineru-callbacks.md) | 联调 MinerU callback | callback 鉴权、checksum、allowlist 和状态推进 |
 | [health.md](/Users/sc/MinerU/md2word_file/docs/api/health.md) | 看实例是否 ready | health/live、health/ready、health/metrics 的精确定义 |
 | [templates.md](/Users/sc/MinerU/md2word_file/docs/api/templates.md) | 需要读取默认模板和绑定配置 | 默认模板、layout YAML、subscript YAML 的只读元数据 |

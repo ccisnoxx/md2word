@@ -108,6 +108,7 @@
       </span>
     </el-tooltip>
     <el-tooltip
+      v-if="showDeleteAction"
       :disabled="!documentJobActionDisabledReason(job, 'delete')"
       :content="documentJobActionDisabledReason(job, 'delete')"
       placement="top"
@@ -145,6 +146,7 @@ import {
   canRetryDocumentJob,
   canUnarchiveDocumentJob,
   documentJobActionDisabledReason,
+  shouldShowDocumentJobAction,
 } from "@/utils/format";
 
 const props = defineProps<{
@@ -158,9 +160,13 @@ const props = defineProps<{
   deleteLoading?: boolean;
 }>();
 
-const visibleActionOrder: DocumentJobActionId[] = ["download", "retry", "clone", "cancel", "archive", "unarchive", "delete"];
+const actionOrder: DocumentJobActionId[] = ["download", "retry", "clone", "cancel", "archive", "unarchive", "delete"];
+const showDeleteAction = computed(() => shouldShowDocumentJobAction(props.job, "delete"));
 const firstDisabledReason = computed(() => {
-  for (const action of visibleActionOrder) {
+  for (const action of actionOrder) {
+    if (!shouldShowDocumentJobAction(props.job, action)) {
+      continue;
+    }
     const reason = documentJobActionDisabledReason(props.job, action);
     if (reason) {
       return `不可用：${reason}`;

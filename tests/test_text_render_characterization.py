@@ -294,9 +294,30 @@ class TextRenderCharacterizationTests(unittest.TestCase):
     def test_normalize_formula_text_converts_sqrt_and_compacts_units(self):
         self.assertEqual(self.module.normalize_formula_text(r"nV/ \sqrt{Hz}"), "nV/√Hz")
 
+    def test_normalize_formula_text_converts_unbraced_circ_and_microsecond_units(self):
+        normalized = self.module.normalize_formula_text(r"$T_A = +25^\circ C$, $5 \mu s$")
+
+        self.assertEqual(normalized, "T<sub>A</sub> = +25°C, 5 μs")
+
+    def test_normalize_formula_text_accepts_double_escaped_datasheet_tex_commands(self):
+        cases = {
+            r"$\\sqrt{Hz}$": "√Hz",
+            r"$5 \\mu s$": "5 μs",
+            r"$R_{\\theta JC(top)}$": "R<sub>θJC(top)</sub>",
+            r"nV/\\sqrt{Hz}": "nV/√Hz",
+            r"$\\mathrm { \\mu V / ^ { \\circ } C }$": "μV/°C",
+        }
+
+        for raw, expected in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(self.module.normalize_formula_text(raw), expected)
+
     def test_normalize_list_item_keeps_negative_temperature_text(self):
         self.assertEqual(self.module.normalize_list_item("• Low noise"), "Low noise")
         self.assertEqual(self.module.normalize_list_item("-40°C operation"), "-40°C operation")
+        self.assertTrue(self.module.is_list_item_text("• Low noise"))
+        self.assertTrue(self.module.is_list_item_text("- nested item"))
+        self.assertFalse(self.module.is_list_item_text("-40°C operation"))
         self.assertEqual(self.module.infer_list_item_level("– nested item"), 1)
 
     def test_infer_heading_level_treats_english_appendix_as_level_one(self):
@@ -307,6 +328,7 @@ class TextRenderCharacterizationTests(unittest.TestCase):
 
     def test_looks_like_heading_text_rejects_english_sentence(self):
         self.assertFalse(self.module.looks_like_heading_text("This section describes the device behavior"))
+        self.assertFalse(self.module.looks_like_heading_text("1.A is not a numbered section heading"))
 
     def test_is_cover_title_rejects_english_contents_heading(self):
         block = self.module.Block(

@@ -143,6 +143,11 @@
               />
             </el-select>
           </label>
+          <label v-if="selectedModeRequiresTranslationResources" class="switch-row">
+            <span>全文调试归档</span>
+            <el-switch v-model="debugFullText" active-text="开启" inactive-text="关闭" />
+            <small>仅 P1 复核样本使用；归档会按后端保留期过期。</small>
+          </label>
         </div>
       </div>
     </div>
@@ -199,6 +204,7 @@ const selectedTemplateVersion = ref("");
 const selectedTermRuleVersion = ref("");
 const selectedTranslationTermVersion = ref("");
 const selectedTranslationProfileVersion = ref("");
+const debugFullText = ref(false);
 const maxUploadMb = computed(() => Math.round(getMaxUploadBytes() / 1024 / 1024));
 const isAdmin = computed(() => auth.user?.role === "admin");
 const configWarnings = computed(() => (configSummary.value?.readiness.warnings || []).map(readinessCodeText));
@@ -344,7 +350,7 @@ async function submit(): Promise<void> {
       source_file_id: authorization.file_id,
       mode: mode.value,
       document_language: documentJobModeCreateLanguage(mode.value),
-      debug_full_text: false,
+      debug_full_text: isAdmin.value && selectedModeRequiresTranslationResources.value && debugFullText.value,
     };
     if (isAdmin.value) {
       if (selectedTemplateOption.value) {
@@ -384,6 +390,7 @@ watch(mode, (nextMode) => {
   if (!documentJobModeRequiresTranslationResources(nextMode)) {
     selectedTranslationTermVersion.value = "";
     selectedTranslationProfileVersion.value = "";
+    debugFullText.value = false;
   }
 });
 
@@ -546,6 +553,12 @@ onMounted(() => {
   gap: 6px;
 }
 
+.switch-row small {
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .upload-footer {
   display: flex;
   align-items: center;
@@ -592,6 +605,7 @@ onMounted(() => {
   .config-panel-header small,
   .config-summary-item span,
   .admin-config label span,
+  .switch-row small,
   .mode-label {
     color: #aab6ca;
   }

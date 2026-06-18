@@ -496,7 +496,7 @@ def delete_document_job(
         action="document_job.delete",
         target_type="document_job",
         target_id=plan.job.id,
-        reason=payload.reason,
+        reason=plan.job.delete_reason,
         details={
             "preview_hash": payload.preview_hash,
             "totals": plan.totals,

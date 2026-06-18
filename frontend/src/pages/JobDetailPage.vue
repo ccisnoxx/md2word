@@ -158,6 +158,40 @@
           <el-card class="page-section card-flat" shadow="never">
             <div class="section-header">
               <div>
+                <h2 class="section-title">Word 质量证据</h2>
+                <p class="section-subtitle">来自 generated_word、DocumentIR 文件 metadata 和后端质量标记。</p>
+              </div>
+              <el-button :icon="Refresh" :loading="filesLoading" @click="loadFiles()">刷新质量证据</el-button>
+            </div>
+            <ApiErrorAlert :error="filesError" :diagnostic-context="jobErrorDiagnosticContext('document_jobs.quality_evidence')" />
+            <template v-if="qualityEvidence">
+              <el-alert
+                class="quality-evidence-alert"
+                :type="qualityEvidence.tagType"
+                :closable="false"
+                show-icon
+                :title="qualityEvidence.title"
+              >
+                <p>{{ qualityEvidence.description }}</p>
+              </el-alert>
+              <div v-if="qualityEvidence.evidenceItems.length" class="quality-evidence-grid">
+                <div v-for="item in qualityEvidence.evidenceItems" :key="item.label" class="quality-evidence-item">
+                  <span>{{ item.label }}</span>
+                  <strong :class="{ mono: item.mono }">{{ item.value }}</strong>
+                </div>
+              </div>
+              <div v-if="qualityEvidence.flags.length" class="quality-flag-list">
+                <div v-for="flag in qualityEvidence.flags" :key="flag" class="quality-flag-item">
+                  <el-tag size="small" type="warning" effect="plain">{{ documentJobQualityFlagText(flag) }}</el-tag>
+                </div>
+              </div>
+              <el-empty v-else class="compact-empty" description="暂无自动质量标记" />
+            </template>
+          </el-card>
+
+          <el-card class="page-section card-flat" shadow="never">
+            <div class="section-header">
+              <div>
                 <h2 class="section-title">Callback 消息</h2>
                 <p class="section-subtitle">MinerU callback 的入库、重放和失败摘要；不展示 callback 原始 payload。</p>
               </div>
@@ -527,15 +561,18 @@ import JobProgress from "@/components/JobProgress.vue";
 import JobStatusBadge from "@/components/JobStatusBadge.vue";
 import { useAuthStore } from "@/stores/auth";
 import {
+  buildDocumentJobQualityEvidence,
   formatBytes,
   formatDateTime,
   getJobSourceFilename,
   documentJobActionDisabledReason,
+  documentJobQualityFlagText,
   isActiveJobStatus,
   isDocumentJobActionEnabled,
   jobModeText,
   jobStageText,
   jobStatusText,
+  shouldShowDocumentJobAction,
   translationQaStatusTagType,
   translationQaStatusText,
 } from "@/utils/format";
@@ -861,6 +898,7 @@ const dispositionFacts = computed(() => {
     { label: "错误码", value: job.value.error_code || "-", mono: true },
     { label: "Trace", value: latestTraceId.value, mono: true },
     { label: "Callback", value: callbackHealthText.value },
+    { label: "质量", value: qualityDispositionText.value },
     { label: "文件", value: fileAvailabilitySummary.value },
   ];
 });
@@ -878,12 +916,14 @@ const actionSummaries = computed(() => {
     unarchive: "取消归档",
     delete: "删除",
   };
-  return taskActionOrder.map((action) => ({
-    key: action,
-    label: labels[action],
-    enabled: isDocumentJobActionEnabled(job.value as DocumentJobResponse, action),
-    reason: documentJobActionDisabledReason(job.value as DocumentJobResponse, action),
-  }));
+  return taskActionOrder
+    .filter((action) => shouldShowDocumentJobAction(job.value as DocumentJobResponse, action))
+    .map((action) => ({
+      key: action,
+      label: labels[action],
+      enabled: isDocumentJobActionEnabled(job.value as DocumentJobResponse, action),
+      reason: documentJobActionDisabledReason(job.value as DocumentJobResponse, action),
+    }));
 });
 function jobErrorDiagnosticContext(operation: string) {
   return {
@@ -923,6 +963,28 @@ const fileAvailabilitySummary = computed(() => {
   }
   const downloadableCount = files.value.filter(canDownloadFile).length;
   return `${downloadableCount}/${files.value.length} 可下载`;
+});
+const qualityEvidence = computed(() => (job.value ? buildDocumentJobQualityEvidence(job.value, files.value) : null));
+const qualityDispositionText = computed(() => {
+  if (filesLoading.value) {
+    return "加载中";
+  }
+  if (filesError.value) {
+    return "加载失败";
+  }
+  if (!qualityEvidence.value) {
+    return "暂无";
+  }
+  if (qualityEvidence.value.status === "manual_review_required_with_flags") {
+    return `自动标记 ${qualityEvidence.value.flags.length} 项`;
+  }
+  if (qualityEvidence.value.status === "manual_review_required") {
+    return "待人工复核";
+  }
+  if (qualityEvidence.value.status === "missing_output") {
+    return "缺少结果文件";
+  }
+  return "待生成";
 });
 
 function readRecord(value: unknown): Record<string, unknown> | null {
@@ -1324,6 +1386,9 @@ async function handleUnarchive(target: DocumentJobResponse): Promise<void> {
 }
 
 async function handleDelete(target: DocumentJobResponse): Promise<void> {
+  if (!shouldShowDocumentJobAction(target, "delete")) {
+    return;
+  }
   deleteLoading.value = true;
   error.value = null;
   try {
@@ -1334,33 +1399,12 @@ async function handleDelete(target: DocumentJobResponse): Promise<void> {
       `删除任务会隐藏该任务并清理可安全删除的关联文件。将删除 ${deleteCount} 个文件，保留 ${keepCount} 个文件；任务 metadata、事件和 audit 会保留。`,
       "删除任务",
       {
-        confirmButtonText: "继续",
+        confirmButtonText: "确认删除",
         cancelButtonText: "返回",
         type: "warning",
       },
     );
-    const reasonResult = await ElMessageBox.prompt(
-      "请输入删除原因。该原因会写入审计记录。",
-      "删除原因",
-      {
-        confirmButtonText: "继续",
-        cancelButtonText: "返回",
-        inputType: "textarea",
-        inputValidator: (value) => Boolean(value.trim()) || "删除原因不能为空。",
-      },
-    );
-    const confirmationResult = await ElMessageBox.prompt(
-      `请输入确认短语：${preview.confirmation_phrase}`,
-      "确认删除任务",
-      {
-        confirmButtonText: "确认删除",
-        cancelButtonText: "返回",
-        inputValidator: (value) => value === preview.confirmation_phrase || "确认短语不匹配。",
-      },
-    );
     await documentJobsApi.delete(target.id, {
-      reason: reasonResult.value,
-      confirmation: confirmationResult.value,
       preview_hash: preview.preview_hash,
     });
     ElMessage.success("任务已删除。");
@@ -1705,6 +1749,68 @@ onBeforeUnmount(() => {
   margin: 4px 0 0;
 }
 
+.quality-evidence-alert {
+  margin-bottom: 14px;
+}
+
+.quality-evidence-alert p {
+  margin: 4px 0 0;
+}
+
+.quality-evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.quality-evidence-item {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #d9e2ec;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.quality-evidence-item span {
+  display: block;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.quality-evidence-item strong {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: #1f2937;
+  font-size: 13px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quality-flag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.quality-flag-item {
+  min-width: 0;
+}
+
+.quality-flag-item :deep(.el-tag__content) {
+  overflow: hidden;
+  max-width: min(100%, 420px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-empty {
+  padding: 16px 0 4px;
+}
+
 .snapshot-details {
   color: #344054;
 }
@@ -1751,7 +1857,8 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
   }
 
-  .task-disposition-facts {
+  .task-disposition-facts,
+  .quality-evidence-grid {
     grid-template-columns: 1fr;
   }
 }

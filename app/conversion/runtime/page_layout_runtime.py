@@ -805,6 +805,7 @@ def render_block_into_container(
     render_visual_block_fn = _runtime_value("render_visual_block", render_visual_block)
     normalize_list_item_fn = _runtime_value("normalize_list_item", lambda text: text)
     infer_list_item_level_fn = _runtime_value("infer_list_item_level", infer_list_item_level)
+    is_list_item_text_fn = _runtime_value("is_list_item_text", lambda _text: False)
     fill_list_paragraph_fn = _runtime_value("fill_list_paragraph", lambda *_args, **_kwargs: None)
     looks_like_heading_text_fn = _runtime_value("looks_like_heading_text", lambda _text: False)
     fill_title_paragraph_fn = _runtime_value("fill_title_paragraph", lambda *_args, **_kwargs: None)
@@ -827,7 +828,14 @@ def render_block_into_container(
         return
 
     paragraph = first_paragraph if first_paragraph is not None else container.add_paragraph()
-    if block.type == "title" or (block.type == "paragraph" and looks_like_heading_text_fn(block.text)):
+    if block.type == "paragraph" and is_list_item_text_fn(block.text):
+        fill_list_paragraph_fn(
+            paragraph,
+            normalize_list_item_fn(block.text),
+            render_config,
+            level=infer_list_item_level_fn(block.text),
+        )
+    elif block.type == "title" or (block.type == "paragraph" and looks_like_heading_text_fn(block.text)):
         keep_with_next = not (next_block is not None and next_block.type in _visual_types())
         fill_title_paragraph_fn(paragraph, block, page_width, render_config, keep_with_next=keep_with_next)
     else:

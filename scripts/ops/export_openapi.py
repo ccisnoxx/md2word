@@ -50,6 +50,7 @@ def _openapi_export_environment(data_dir: Path) -> Iterator[None]:
     overrides = {
         "APP_NAME": "md2word_file",
         "APP_ENV": "test",
+        "PUBLIC_DEPLOYMENT_MODE": "internal",
         "DATA_DIR": str(data_dir),
         "JOBS_REPOSITORY_BACKEND": "file",
         "JOBS_ARTIFACT_STORAGE_BACKEND": "local_file",

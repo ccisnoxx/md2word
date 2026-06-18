@@ -7,6 +7,7 @@ import sys
 import urllib.error
 import urllib.request
 import json
+import os
 from argparse import ArgumentParser
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,9 @@ from scripts.ops.export_openapi import check_openapi_export, format_pretty_repor
 
 DEFAULT_UNITTEST_TARGETS: tuple[str, ...] = (
     "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_ready_reports_runtime_dependencies",
+    "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_ready_blocks_p0_document_jobs_when_production_uses_non_mysql_metadata_store",
+    "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_ready_blocks_p0_document_jobs_when_production_uses_eager_worker",
+    "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_ready_allows_p0_document_jobs_when_production_config_is_complete",
     "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_metrics_reports_runtime_counters",
     "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_metrics_reports_default_resource_versions_in_mysql_mode",
     "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_create_detail_list_and_events_for_operator",
@@ -30,9 +34,23 @@ DEFAULT_UNITTEST_TARGETS: tuple[str, ...] = (
     "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_response_includes_server_action_availability",
     "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_download_url_returns_temporary_generated_word_link",
     "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_operator_scope_and_admin_visibility",
+    "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_delete_requires_admin_preview_and_removes_owned_files",
+    "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_worker_generated_word_keeps_renderer_ooxml_semantics",
+    "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_en2zh_worker_translates_ir_and_saves_ai_audit_artifacts",
+    "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_en2zh_debug_full_text_is_admin_only",
+    "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_translation_qa_reads_existing_artifacts_and_updates_review_state",
+    "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_clone_rejects_operator_inheriting_debug_full_text",
     "tests.test_metadata_shadow_copy.MetadataShadowCopyTests.test_shadow_copy_writes_mysql_and_validates_all_metadata",
     "tests.test_metadata_shadow_copy.MetadataShadowCopyTests.test_shadow_copy_to_mysql_refuses_non_empty_target_by_default",
+    "tests.test_database_job_repository.PersistenceAdapterTests.test_build_runtime_switches_to_database_repository_and_readiness",
     "tests.test_database_job_repository.PersistenceAdapterTests.test_build_runtime_switches_to_mysql_repository_and_readiness",
+    "tests.test_database_job_repository.PersistenceAdapterTests.test_build_runtime_keeps_file_repository_as_local_default",
+    "tests.test_text_render_characterization",
+    "tests.test_document_ir_word_renderer_layout",
+    "tests.test_page_layout_characterization",
+    "tests.test_render_table_from_html_characterization",
+    "tests.test_golden_sample_manifest",
+    "tests.test_p1_translation_sample_manifest",
     "tests.test_job_workflow_policy",
     "tests.test_backend_logging",
 )
@@ -60,6 +78,8 @@ def check_release(
     *,
     unittest_targets: Sequence[str] = DEFAULT_UNITTEST_TARGETS,
     runtime_url: str | None = None,
+    golden_sample_preflight: bool = False,
+    golden_sample_preflight_output_path: Path | None = None,
 ) -> ReleaseCheckReport:
     items: list[ReleaseCheckItem] = []
 
@@ -83,6 +103,7 @@ def check_release(
         result = subprocess.run(
             [sys.executable, "-m", "unittest", *unittest_targets],
             cwd=REPO_ROOT,
+            env=_build_unittest_environment(),
             text=True,
             capture_output=True,
             check=False,
@@ -103,6 +124,9 @@ def check_release(
 
     if runtime_url:
         items.append(check_runtime_readiness(runtime_url))
+
+    if golden_sample_preflight:
+        items.append(check_golden_sample_preflight(golden_sample_preflight_output_path))
 
     return ReleaseCheckReport(items=tuple(items))
 
@@ -159,6 +183,8 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
         "available_actions: Record<DocumentJobActionId, DocumentJobAvailableAction>",
         "filtered_summary?: Record<string, number>",
         "translation_qa_summary?: Partial<Record<TranslationQaStatus, number>>",
+        "ai_debug_archive_expires_at: string | null",
+        "debug_full_text_enabled: boolean",
     ):
         if needle not in frontend_types:
             missing.append(f"frontend types missing: {needle}")
@@ -252,20 +278,69 @@ def check_runtime_readiness(runtime_url: str) -> ReleaseCheckItem:
     p0_blockers = _string_list(checks.get("p0_document_jobs_blockers"))
     deployment_ready = checks.get("deployment_init_ready") is True
     p0_ready = checks.get("p0_document_jobs_ready") is True
-    ok = deployment_ready and p0_ready
+    metadata_store = checks.get("effective_repository_backend")
+    worker_backend = checks.get("document_jobs_worker_backend")
+    production_baseline_ready = metadata_store == "mysql" and worker_backend == "celery"
+    ok = deployment_ready and p0_ready and production_baseline_ready
     details = {
         "url": ready_url,
         "deployment_init_ready": deployment_ready,
         "p0_document_jobs_ready": p0_ready,
+        "effective_repository_backend": metadata_store,
+        "document_jobs_worker_backend": worker_backend,
         "readiness_blockers": blockers,
         "p0_document_jobs_blockers": p0_blockers,
     }
     return ReleaseCheckItem(
         name="runtime-readiness",
         ok=ok,
-        summary="Runtime readiness passed" if ok else "Runtime readiness failed",
+        summary=(
+            "Runtime readiness passed with MySQL + Celery P0 baseline"
+            if ok
+            else "Runtime readiness failed P0 MySQL + Celery baseline"
+        ),
         details=json.dumps(details, ensure_ascii=False, indent=2),
     )
+
+
+def check_golden_sample_preflight(
+    output_path: Path | None = None,
+    *,
+    config: object | None = None,
+) -> ReleaseCheckItem:
+    """Run the fast Golden Sample release preflight without submitting jobs."""
+
+    from scripts.ops.run_golden_sample_regression import (
+        RegressionConfig,
+        build_preflight_report,
+        format_preflight_report,
+        write_preflight_report,
+    )
+
+    preflight_config = config or RegressionConfig()
+    report = build_preflight_report(preflight_config)
+    if output_path is not None:
+        write_preflight_report(output_path, report)
+    return ReleaseCheckItem(
+        name="golden-sample-preflight",
+        ok=bool(report.get("ok")),
+        summary=(
+            "Golden Sample preflight passed"
+            if report.get("ok")
+            else "Golden Sample preflight failed"
+        ),
+        details=format_preflight_report(report),
+    )
+
+
+def _build_unittest_environment() -> dict[str, str]:
+    """Keep release-check credentials from changing targeted unittest expectations."""
+
+    env = dict(os.environ)
+    for key in tuple(env):
+        if key.startswith("GOLDEN_SAMPLE_"):
+            env.pop(key, None)
+    return env
 
 
 def _build_ready_url(runtime_url: str) -> str:
@@ -306,8 +381,26 @@ def main() -> None:
         default="",
         help="Optional running API base URL. When set, /api/v1/health/ready must pass deployment and P0 gates.",
     )
+    parser.add_argument(
+        "--golden-sample-preflight",
+        action="store_true",
+        help="Also run the fast Golden Sample preflight: manifest, admin auth, /health/ready, MySQL and Celery gates.",
+    )
+    parser.add_argument(
+        "--golden-sample-preflight-output",
+        default="",
+        help="Optional path to write Golden Sample preflight JSON evidence.",
+    )
     args = parser.parse_args()
-    report = check_release(runtime_url=args.runtime_url or None)
+    report = check_release(
+        runtime_url=args.runtime_url or None,
+        golden_sample_preflight=args.golden_sample_preflight,
+        golden_sample_preflight_output_path=(
+            Path(args.golden_sample_preflight_output)
+            if args.golden_sample_preflight_output
+            else None
+        ),
+    )
     print(format_release_report(report))
     raise SystemExit(0 if report.ok else 1)
 

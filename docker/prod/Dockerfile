@@ -18,6 +18,8 @@ COPY sitecustomize.py /app/
 
 RUN mkdir -p /app/var /app/deploy \
     && useradd --create-home --shell /usr/sbin/nologin md2word \
+    && chmod -R a+rX /app/app /app/scripts /app/resources \
+    && chmod a+r /app/sitecustomize.py \
     && chown -R md2word:md2word /app/var /app/deploy
 
 USER md2word

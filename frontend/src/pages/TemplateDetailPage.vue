@@ -1,25 +1,26 @@
-<!-- frontend/src/pages/TemplateDetailPage.vue: Template Profile version detail and admin lifecycle actions. -->
+<!-- frontend/src/pages/TemplateDetailPage.vue: Word template document file and version lifecycle page. -->
 <template>
   <main class="template-detail-page" aria-labelledby="template-title">
     <section class="page-heading">
       <div>
-        <p class="page-kicker">Template Profile</p>
-        <h1 id="template-title">{{ template?.name || templateId }}</h1>
-        <p>{{ template?.description || "查看模板详情、版本和验证证据。" }}</p>
+        <p class="page-kicker">Word 模板文档</p>
+        <h1 id="template-title">Word 模板文档</h1>
+        <p>{{ template?.name || templateId }}：管理 DOCX 模板文件、默认页眉内容、公司 Logo 和模板版本发布流程。</p>
       </div>
       <div class="toolbar">
+        <el-button :icon="Brush" @click="openStyleConfig">页面样式配置</el-button>
         <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
       </div>
     </section>
 
     <ApiErrorAlert :error="error" />
 
-    <section v-if="template" class="detail-grid">
-      <el-card class="card-flat" shadow="never">
+    <section v-if="template" class="document-grid">
+      <el-card class="card-flat document-summary-card" shadow="never">
         <div class="section-header">
           <div>
-            <h2 class="section-title">基础信息</h2>
-            <p class="section-subtitle">当前生产默认状态和文件信息。</p>
+            <h2 class="section-title">模板文件</h2>
+            <p class="section-subtitle">DOCX 文件决定默认页眉、Logo、基础版式骨架和可下载模板资产。</p>
           </div>
           <el-tag v-if="template.is_default" type="success" effect="plain">当前默认模板</el-tag>
         </div>
@@ -29,15 +30,37 @@
           <div><dt>模板文件</dt><dd>{{ template.template.file_name || "-" }}</dd></div>
           <div><dt>文件大小</dt><dd>{{ formatBytes(template.template.size_bytes) }}</dd></div>
         </dl>
-        <el-button :icon="Download" :disabled="!template.downloadable" @click="downloadTemplate">下载模板</el-button>
+        <div class="document-actions">
+          <el-button :icon="Download" :disabled="!template.downloadable" @click="downloadTemplate">下载模板</el-button>
+          <el-button :icon="Brush" type="primary" plain @click="openStyleConfig">配置页面样式</el-button>
+        </div>
+      </el-card>
+
+      <el-card class="card-flat boundary-card" shadow="never">
+        <div class="section-header compact">
+          <div>
+            <h2 class="section-title">职责边界</h2>
+            <p class="section-subtitle">模板文档和页面样式配置分开维护，发布后通过同一 Template Version 生效。</p>
+          </div>
+        </div>
+        <div class="boundary-list">
+          <article>
+            <strong>模板文档负责</strong>
+            <span>公司 Logo、默认页眉/页脚内容、DOCX 文件、版本验证和发布。</span>
+          </article>
+          <article>
+            <strong>页面样式负责</strong>
+            <span>页边距、标题、目录、正文、表格、页眉/页脚文字样式等输出格式。</span>
+          </article>
+        </div>
       </el-card>
 
       <RoleGate>
-        <el-card class="card-flat" shadow="never">
+        <el-card class="card-flat upload-card" shadow="never">
           <div class="section-header">
             <div>
-              <h2 class="section-title">上传 draft version</h2>
-              <p class="section-subtitle">只支持 .docx，新版本需验证后再发布。</p>
+              <h2 class="section-title">上传模板 draft</h2>
+              <p class="section-subtitle">只上传 .docx。新版本需创建验证任务、发布并设为默认后才会影响后续 Word 生成。</p>
             </div>
           </div>
           <el-upload
@@ -54,13 +77,12 @@
               <div class="el-upload__tip">已选择：{{ draftFile?.name || "无" }}</div>
             </template>
           </el-upload>
-          <el-input v-model="layoutConfigPath" class="form-gap" clearable placeholder="layout_config_path，可选" />
           <el-input
             v-model="renderPolicyJson"
             class="form-gap"
             type="textarea"
             :rows="3"
-            placeholder="render_policy_json，默认 {}"
+            placeholder="render_policy_json，高级可选，默认 {}"
           />
           <el-button type="primary" :loading="uploading" :disabled="!draftFile" @click="uploadDraftVersion">
             上传 draft
@@ -73,7 +95,7 @@
       <div class="section-header">
         <div>
           <h2 class="section-title">版本列表</h2>
-          <p class="section-subtitle">publish 和 set-default 是两个显式动作。</p>
+          <p class="section-subtitle">publish 和 set-default 是两个显式动作；页面样式 draft 也会出现在这里。</p>
         </div>
       </div>
 
@@ -89,6 +111,12 @@
             <el-tag v-if="row.is_default" type="success" effect="plain">默认</el-tag>
             <span v-else class="muted">否</span>
           </template>
+        </el-table-column>
+        <el-table-column label="模板文件" min-width="180">
+          <template #default="{ row }">{{ row.template.file_name || "-" }}</template>
+        </el-table-column>
+        <el-table-column label="样式配置" min-width="180">
+          <template #default="{ row }">{{ row.layout_config?.file_name || "-" }}</template>
         </el-table-column>
         <el-table-column label="验证证据" min-width="260">
           <template #default="{ row }">
@@ -190,12 +218,17 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type UploadFile, type UploadInstance, type UploadRawFile } from "element-plus";
-import { Download, Refresh, Upload } from "@element-plus/icons-vue";
+import { Brush, Download, Refresh, Upload } from "@element-plus/icons-vue";
+import { useRouter } from "vue-router";
 
 import { documentJobsApi } from "@/api/documentJobs";
 import { filesApi } from "@/api/files";
 import { templatesApi } from "@/api/templates";
-import type { DocumentJobMode, TemplateDetailResponse, TemplateVersionResponse } from "@/api/types";
+import type {
+  DocumentJobMode,
+  TemplateDetailResponse,
+  TemplateVersionResponse,
+} from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import RoleGate from "@/components/RoleGate.vue";
 import { useAuthStore } from "@/stores/auth";
@@ -207,6 +240,7 @@ const props = defineProps<{
   templateId: string;
 }>();
 
+const router = useRouter();
 const auth = useAuthStore();
 const template = ref<TemplateDetailResponse | null>(null);
 const versions = ref<TemplateVersionResponse[]>([]);
@@ -214,7 +248,6 @@ const loading = ref(false);
 const uploading = ref(false);
 const error = ref<ApiClientError | null>(null);
 const draftFile = ref<File | null>(null);
-const layoutConfigPath = ref("");
 const renderPolicyJson = ref("{}");
 const uploadRef = ref<UploadInstance>();
 const validationUploadRef = ref<UploadInstance>();
@@ -276,6 +309,10 @@ async function loadAll(): Promise<void> {
   }
 }
 
+function openStyleConfig(): void {
+  void router.push(`/settings/word-page-styles/${props.templateId}`);
+}
+
 function handleDraftFileChange(uploadFile: UploadFile): void {
   const rawFile = uploadFile.raw as UploadRawFile | undefined;
   if (!rawFile) {
@@ -304,10 +341,9 @@ async function uploadDraftVersion(): Promise<void> {
   try {
     await templatesApi.createVersion(props.templateId, {
       template: draftFile.value,
-      layout_config_path: layoutConfigPath.value,
       render_policy_json: renderPolicyJson.value,
     });
-    ElMessage.success("Template draft version 已上传。");
+    ElMessage.success("模板文档 draft version 已上传。");
     uploadRef.value?.clearFiles();
     draftFile.value = null;
     await loadAll();
@@ -508,10 +544,24 @@ onMounted(() => {
   gap: 16px;
 }
 
-.detail-grid {
+.document-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
   gap: 16px;
+}
+
+.upload-card {
+  grid-column: 1 / -1;
+}
+
+.document-summary-card,
+.boundary-card,
+.upload-card {
+  border: 1px solid #e5e7eb;
+}
+
+.compact {
+  margin-bottom: 10px;
 }
 
 .meta-list {
@@ -527,11 +577,42 @@ onMounted(() => {
 }
 
 .meta-list dt {
-  color: #667085;
+  color: #475569;
 }
 
 .meta-list dd {
   margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.document-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.boundary-list {
+  display: grid;
+  gap: 10px;
+}
+
+.boundary-list article {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.boundary-list strong {
+  color: #1e293b;
+}
+
+.boundary-list span,
+.evidence small,
+.dialog-note {
+  color: #475569;
 }
 
 .form-gap {
@@ -543,19 +624,14 @@ onMounted(() => {
   gap: 4px;
 }
 
-.evidence small,
-.dialog-note {
-  color: #667085;
-}
-
 .row-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-@media (max-width: 960px) {
-  .detail-grid {
+@media (max-width: 900px) {
+  .document-grid {
     grid-template-columns: 1fr;
   }
 }

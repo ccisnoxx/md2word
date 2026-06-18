@@ -16,6 +16,8 @@ from app.core.runtime import AppRuntime
 from app.domains.templates.schemas import (
     TemplateDeleteResponse,
     TemplateDetailResponse,
+    TemplateLayoutConfigDraftRequest,
+    TemplateLayoutConfigResponse,
     TemplateListResponse,
     TemplateUpdateRequest,
     TemplateVersionDefaultRequest,
@@ -185,6 +187,44 @@ def list_template_versions(
     except ValueError as exc:
         raise bad_request_http_exception(exc) from exc
     return TemplateVersionListResponse(template_id=template_id, items=items)
+
+
+@router.get("/{template_id}/layout-config", response_model=TemplateLayoutConfigResponse)
+def get_template_layout_config(
+    template_id: str,
+    actor: ActorContext = Depends(require_admin_actor),
+    runtime: AppRuntime = Depends(get_runtime),
+) -> TemplateLayoutConfigResponse:
+    del actor
+    try:
+        return runtime.template_read_service.get_template_layout_config(template_id)
+    except FileNotFoundError as exc:
+        raise not_found_http_exception(exc) from exc
+    except ValueError as exc:
+        raise bad_request_http_exception(exc) from exc
+
+
+@router.post("/{template_id}/layout-config/versions", response_model=TemplateVersionResponse, status_code=status.HTTP_201_CREATED)
+def create_template_layout_config_version(
+    template_id: str,
+    payload: TemplateLayoutConfigDraftRequest,
+    actor: ActorContext = Depends(require_admin_actor),
+    runtime: AppRuntime = Depends(get_runtime),
+    trace_id: str = Depends(get_trace_id),
+) -> TemplateVersionResponse:
+    try:
+        return runtime.template_read_service.create_template_layout_config_version(
+            template_id,
+            config=payload.config,
+            actor=actor,
+            trace_id=trace_id,
+        )
+    except RuntimeError as exc:
+        raise _template_versioning_unavailable_http_exception(exc) from exc
+    except FileNotFoundError as exc:
+        raise not_found_http_exception(exc) from exc
+    except ValueError as exc:
+        raise bad_request_http_exception(exc) from exc
 
 
 @router.post("/{template_id}/versions/{version}/publish", response_model=TemplateVersionResponse)

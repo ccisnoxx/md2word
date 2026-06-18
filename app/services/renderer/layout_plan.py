@@ -94,7 +94,12 @@ def _build_regions(body_blocks: list[DocumentIRBlock], page_width: float | None)
     for block in body_blocks:
         bbox = _bbox(block)
         mid_y = ((bbox[1] + bbox[3]) / 2) if bbox is not None else None
-        kind = "two_col" if mid_y is not None and any(start <= mid_y <= end for start, end in two_col_bands) else "one_col"
+        block_class = _classify_body_block(block, page_width)
+        kind = (
+            "two_col"
+            if block_class != "wide" and mid_y is not None and any(start <= mid_y <= end for start, end in two_col_bands)
+            else "one_col"
+        )
         if regions and regions[-1].kind == kind:
             regions[-1].blocks.append(block)
         else:

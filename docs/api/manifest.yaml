@@ -124,7 +124,7 @@ entries:
       - app/domains/templates/schemas.py
     doc_path: docs/api/templates.md
     status: current
-    note: "多模板清单、模板下载、运行态默认模板切换、模板 CRUD、文件替换、Template Version 发布管理和成功动作审计。"
+    note: "多模板清单、模板下载、运行态默认模板切换、模板 CRUD、文件替换、Word 页面样式配置 draft version、Template Version 发布管理和成功动作审计。"
   - entry: term-rule-categories
     category: endpoint
     source_files:

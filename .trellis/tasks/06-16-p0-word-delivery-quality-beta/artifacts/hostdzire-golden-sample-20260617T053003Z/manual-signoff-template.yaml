@@ -1,0 +1,76 @@
+# Fill this file after admin opens each generated DOCX.
+# If docx_quality_flags is not empty and the verdict is pass, notes must explain the admin override.
+# Copy to manual-signoff.yaml, set every verdict to pass, then run:
+# python scripts/ops/run_golden_sample_regression.py --apply-manual-signoff <run_dir>
+schema_version: 1
+regression_run_dir: /work/tests/tmp/golden_sample_runs/20260617T053003Z
+reviewer_role: admin
+reviewer: ''
+signed_at: ''
+final_signoff: false
+samples:
+- sample_id: gs-003
+  filename: OPA228_P1.pdf
+  job_id: docjob_b13468b519c3
+  docx_sha256: sha256:1148e96594647aba4984b19fa5ef9efa774644f96cbb4bd518733b24a0a710e1
+  docx_quality_flags: []
+  machine_evidence:
+    editable_content_available: true
+    image_only_suspected: false
+    heading_like_unstyled_paragraphs: 0
+    manual_list_marker_paragraphs: 0
+    plain_toc_entry_paragraphs: 0
+    wide_table_count: 0
+    landscape_sections: 0
+    latex_residue_count: 0
+  verdict: ''
+  notes: ''
+- sample_id: gs-004
+  filename: OPA228_P2.pdf
+  job_id: docjob_3e7ba8b8960e
+  docx_sha256: sha256:7a02266fb75b5c8794c8ba418b36a532ed1545c400787e4bb232bb404a24b67c
+  docx_quality_flags: []
+  machine_evidence:
+    editable_content_available: true
+    image_only_suspected: false
+    heading_like_unstyled_paragraphs: 0
+    manual_list_marker_paragraphs: 0
+    plain_toc_entry_paragraphs: 0
+    wide_table_count: 0
+    landscape_sections: 0
+    latex_residue_count: 0
+  verdict: ''
+  notes: ''
+- sample_id: gs-006
+  filename: OPA228_P6.pdf
+  job_id: docjob_cc4e04338e30
+  docx_sha256: sha256:b44c058b41aa08d59da523aa7a3076965eb92190acfdec22b0286a2df641e8fa
+  docx_quality_flags:
+  - docx_unstyled_heading_candidates:3
+  machine_evidence:
+    editable_content_available: true
+    image_only_suspected: false
+    heading_like_unstyled_paragraphs: 3
+    manual_list_marker_paragraphs: 0
+    plain_toc_entry_paragraphs: 0
+    wide_table_count: 0
+    landscape_sections: 1
+    latex_residue_count: 0
+  verdict: ''
+  notes: ''
+- sample_id: gs-008
+  filename: OPA228_P7.pdf
+  job_id: docjob_e3c2f334f9a5
+  docx_sha256: sha256:60cef62a75c665745c671fc4da57b94d79790082adf518fba371607dc028fc35
+  docx_quality_flags: []
+  machine_evidence:
+    editable_content_available: true
+    image_only_suspected: false
+    heading_like_unstyled_paragraphs: 0
+    manual_list_marker_paragraphs: 0
+    plain_toc_entry_paragraphs: 0
+    wide_table_count: 1
+    landscape_sections: 1
+    latex_residue_count: 0
+  verdict: ''
+  notes: ''

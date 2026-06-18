@@ -21,6 +21,7 @@ from app.domains.templates.models import TemplateManifestItem, TemplateState, Te
 from app.domains.templates.schemas import (
     TemplateAssetResponse,
     TemplateDetailResponse,
+    TemplateLayoutConfigResponse,
     TemplateListItemResponse,
     TemplateVersionResponse,
 )
@@ -52,6 +53,107 @@ ASSET_SPECS: tuple[AssetSpec, ...] = (
 )
 
 TEMPLATE_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
+HEX_COLOR_RE = re.compile(r"^#?[0-9a-fA-F]{6}$")
+ALIGNMENT_VALUES = ("left", "center", "right", "justify")
+
+LAYOUT_META_FIELD_SCHEMA: dict[str, dict[str, Any]] = {
+    "schema_version": {"type": "text", "label": "schema_version", "readonly": True},
+    "template_name": {"type": "text", "label": "配置名称", "readonly": True},
+    "output_filename": {"type": "text", "label": "输出文件名", "readonly": True},
+}
+
+PARAGRAPH_STYLE_FIELDS: dict[str, dict[str, Any]] = {
+    "font_name": {"type": "text", "label": "字体"},
+    "font_size": {"type": "number", "label": "字号", "unit": "pt"},
+    "bold": {"type": "boolean", "label": "加粗"},
+    "color": {"type": "color", "label": "颜色"},
+    "alignment": {"type": "alignment", "label": "对齐方式"},
+    "space_before": {"type": "number", "label": "段前间距", "unit": "pt"},
+    "space_after": {"type": "number", "label": "段后间距", "unit": "pt"},
+    "line_spacing": {"type": "number", "label": "行距"},
+    "first_line_indent_pt": {"type": "number", "label": "首行缩进", "unit": "pt"},
+    "left_indent_pt": {"type": "number", "label": "左缩进", "unit": "pt"},
+    "right_indent_pt": {"type": "number", "label": "右缩进", "unit": "pt"},
+}
+TEXT_STYLE_FIELDS: dict[str, dict[str, Any]] = {
+    "font_name": PARAGRAPH_STYLE_FIELDS["font_name"],
+    "font_size": PARAGRAPH_STYLE_FIELDS["font_size"],
+    "bold": PARAGRAPH_STYLE_FIELDS["bold"],
+    "alignment": PARAGRAPH_STYLE_FIELDS["alignment"],
+    "space_after": PARAGRAPH_STYLE_FIELDS["space_after"],
+}
+
+LAYOUT_GROUP_FIELD_SCHEMA: dict[str, dict[str, dict[str, Any]]] = {
+    "page_setup": {
+        "top_margin": {"type": "number", "label": "上边距", "unit": "cm"},
+        "bottom_margin": {"type": "number", "label": "下边距", "unit": "cm"},
+        "left_margin": {"type": "number", "label": "左边距", "unit": "cm"},
+        "right_margin": {"type": "number", "label": "右边距", "unit": "cm"},
+        "header_distance": {"type": "number", "label": "页眉距离", "unit": "cm"},
+        "footer_distance": {"type": "number", "label": "页脚距离", "unit": "cm"},
+    },
+    "part_number": TEXT_STYLE_FIELDS,
+    "category": TEXT_STYLE_FIELDS,
+    "heading1": PARAGRAPH_STYLE_FIELDS,
+    "heading2": PARAGRAPH_STYLE_FIELDS,
+    "heading3": PARAGRAPH_STYLE_FIELDS,
+    "toc_title": {
+        key: value
+        for key, value in PARAGRAPH_STYLE_FIELDS.items()
+        if key not in {"first_line_indent_pt", "left_indent_pt", "right_indent_pt"}
+    },
+    "toc_level1": {
+        key: value
+        for key, value in PARAGRAPH_STYLE_FIELDS.items()
+        if key not in {"first_line_indent_pt", "left_indent_pt", "right_indent_pt"}
+    },
+    "toc_level2": {
+        key: value
+        for key, value in PARAGRAPH_STYLE_FIELDS.items()
+        if key not in {"first_line_indent_pt", "left_indent_pt", "right_indent_pt"}
+    },
+    "toc_level3": {
+        key: value
+        for key, value in PARAGRAPH_STYLE_FIELDS.items()
+        if key not in {"first_line_indent_pt", "left_indent_pt", "right_indent_pt"}
+    },
+    "normal": PARAGRAPH_STYLE_FIELDS,
+    "table_content": {
+        key: value
+        for key, value in PARAGRAPH_STYLE_FIELDS.items()
+        if key not in {"bold"}
+    },
+    "table_style": {
+        "style_name": {"type": "text", "label": "表格样式"},
+        "header_fill": {"type": "color", "label": "表头底色"},
+        "border_color": {"type": "color", "label": "边框颜色"},
+    },
+    "table_note": {
+        **{key: value for key, value in PARAGRAPH_STYLE_FIELDS.items() if key != "bold"},
+        "italic": {"type": "boolean", "label": "斜体"},
+    },
+    "caption": PARAGRAPH_STYLE_FIELDS,
+    "long_table_caption": PARAGRAPH_STYLE_FIELDS,
+    "header": {
+        "enabled": {"type": "boolean", "label": "启用页眉覆盖"},
+        "logo_path": {"type": "text", "label": "Logo 路径", "readonly": True},
+        "logo_height_cm": {"type": "number", "label": "Logo 高度", "unit": "cm"},
+        "title_text": {"type": "text", "label": "页眉标题"},
+        "title_font_name": {"type": "text", "label": "页眉字体"},
+        "title_font_size": {"type": "number", "label": "页眉字号", "unit": "pt"},
+        "title_color": {"type": "color", "label": "页眉颜色"},
+    },
+    "footer": {
+        "enabled": {"type": "boolean", "label": "启用页脚覆盖"},
+        "show_page_number": {"type": "boolean", "label": "显示页码"},
+        "alignment": {"type": "alignment", "label": "页脚对齐"},
+    },
+}
+
+LAYOUT_FIELD_SCHEMA: dict[str, Any] = {
+    "meta": LAYOUT_META_FIELD_SCHEMA,
+    "groups": LAYOUT_GROUP_FIELD_SCHEMA,
+}
 
 
 class TemplateReadService:
@@ -467,6 +569,83 @@ class TemplateReadService:
                 )
             )
         return sorted(versions, key=lambda item: item.version, reverse=True)
+
+    def get_template_layout_config(self, template_id: str) -> TemplateLayoutConfigResponse:
+        """读取当前模板绑定的版式 YAML，并返回前端可渲染的字段合同。"""
+
+        template = self._require_template_item(template_id)
+        layout_path = self._template_version_layout_config_path(template, None)
+        if layout_path is None or not layout_path.exists():
+            raise FileNotFoundError(f"模板版式配置不存在: {template.id}")
+        raw_config = self._load_supported_layout_config(layout_path)
+        meta, config = self._split_layout_config(raw_config)
+        return TemplateLayoutConfigResponse(
+            template_id=template.id,
+            template_version_id=self.build_template_version_id(template.id, template.version),
+            version=template.version,
+            source_path=self._to_repo_relative_path(layout_path),
+            config_sha256=self._sha256_prefixed(layout_path),
+            meta=meta,
+            config=config,
+            field_schema=LAYOUT_FIELD_SCHEMA,
+        )
+
+    def create_template_layout_config_version(
+        self,
+        template_id: str,
+        *,
+        config: dict[str, Any],
+        actor: ActorContext | None = None,
+        trace_id: str | None = None,
+    ) -> TemplateVersionResponse:
+        """把页面提交的版式配置保存为新的模板 draft version，不直接改仓库 YAML。"""
+
+        self._require_resource_version_service()
+        template = self._require_template_item(template_id)
+        source_template_path = self.get_template_path(template.id)
+        if source_template_path is None or not source_template_path.exists():
+            raise FileNotFoundError(f"模板文件不存在: {template.id}")
+        source_layout_path = self._template_version_layout_config_path(template, None)
+        if source_layout_path is None or not source_layout_path.exists():
+            raise FileNotFoundError(f"模板版式配置不存在: {template.id}")
+        source_meta, _source_config = self._split_layout_config(self._load_supported_layout_config(source_layout_path))
+        validated_config = {
+            **source_meta,
+            **self._validate_layout_config(config),
+        }
+        next_version = self._next_template_version(template)
+        template_path = self._copy_versioned_template_file(
+            template_id=template.id,
+            version=next_version,
+            source_path=source_template_path,
+            source_filename=source_template_path.name,
+        )
+        layout_path = self._write_versioned_layout_config(
+            template_id=template.id,
+            version=next_version,
+            config=validated_config,
+        )
+        layout_config_path = self._to_repo_relative_path(layout_path)
+        record = self._create_template_resource_draft(
+            template=template,
+            version=next_version,
+            template_path=template_path,
+            layout_config_path=layout_config_path,
+            render_policy=template.render_policy,
+            require_service=True,
+        )
+        self._record_audit(
+            actor=actor,
+            action="template.layout_config_version_create",
+            target_id=f"{template.id}@{next_version}",
+            trace_id=trace_id,
+        )
+        return self._build_template_version_response(
+            template=template,
+            version=next_version,
+            template_path=template_path,
+            record=record,
+        )
 
     def get_template_path(self, template_id: str) -> Path | None:
         template = self._get_template_item(template_id)
@@ -885,6 +1064,131 @@ class TemplateReadService:
         destination = destination_dir / safe_name
         shutil.move(str(source_path), str(destination))
         return destination.resolve()
+
+    def _copy_versioned_template_file(
+        self,
+        *,
+        template_id: str,
+        version: int,
+        source_path: Path,
+        source_filename: str,
+    ) -> Path:
+        if not source_path.exists() or not source_path.is_file():
+            raise FileNotFoundError(f"模板文件不存在: {source_path}")
+        safe_name = self._safe_template_filename(source_filename, template_id)
+        destination_dir = self.settings.templates_storage_dir / template_id / f"v{version}"
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        destination = destination_dir / safe_name
+        shutil.copy2(str(source_path), str(destination))
+        return destination.resolve()
+
+    def _write_versioned_layout_config(
+        self,
+        *,
+        template_id: str,
+        version: int,
+        config: dict[str, Any],
+    ) -> Path:
+        destination_dir = self.settings.templates_storage_dir / template_id / f"v{version}"
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        destination = destination_dir / "layout_config.yaml"
+        temp_path = destination.with_suffix(destination.suffix + ".tmp")
+        temp_path.write_text(
+            yaml.safe_dump(config, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
+        temp_path.replace(destination)
+        return destination.resolve()
+
+    def _load_supported_layout_config(self, path: Path) -> dict[str, Any]:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        if not isinstance(raw, dict):
+            raise ValueError("模板版式配置必须是 YAML object。")
+        return {
+            key: value
+            for key, value in raw.items()
+            if key != "sample_content"
+        }
+
+    def _split_layout_config(self, raw: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+        """把只读元信息和页面可编辑分组拆开，避免前端提交元字段。"""
+
+        meta = {key: raw.get(key) for key in LAYOUT_META_FIELD_SCHEMA if key in raw}
+        if "schema_version" not in meta:
+            meta["schema_version"] = "template-config/v1"
+        config = {key: raw[key] for key in LAYOUT_GROUP_FIELD_SCHEMA if key in raw}
+        return meta, config
+
+    def _validate_layout_config(self, raw: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(raw, dict):
+            raise ValueError("config 必须是 object。")
+        readonly_keys = sorted(set(raw) & set(LAYOUT_META_FIELD_SCHEMA))
+        if readonly_keys:
+            raise ValueError(f"模板配置元信息为只读字段，不允许提交: {', '.join(readonly_keys)}")
+        allowed_top_level = set(LAYOUT_GROUP_FIELD_SCHEMA)
+        unknown_keys = sorted(set(raw) - allowed_top_level)
+        if "sample_content" in raw:
+            unknown_keys.append("sample_content")
+        if unknown_keys:
+            raise ValueError(f"不支持的模板配置分组: {', '.join(dict.fromkeys(unknown_keys))}")
+        missing_keys = [key for key in allowed_top_level if key not in raw]
+        if missing_keys:
+            raise ValueError(f"模板配置缺少分组: {', '.join(sorted(missing_keys))}")
+
+        validated: dict[str, Any] = {}
+        for group_name, group_schema in LAYOUT_GROUP_FIELD_SCHEMA.items():
+            group_value = raw[group_name]
+            if not isinstance(group_value, dict):
+                raise ValueError(f"{group_name} 必须是 object。")
+            unknown_fields = sorted(set(group_value) - set(group_schema))
+            if unknown_fields:
+                raise ValueError(f"{group_name} 包含不支持字段: {', '.join(unknown_fields)}")
+            missing_fields = sorted(set(group_schema) - set(group_value))
+            if missing_fields:
+                raise ValueError(f"{group_name} 缺少字段: {', '.join(missing_fields)}")
+            validated[group_name] = {
+                field_name: self._validate_layout_value(
+                    group_value[field_name],
+                    field_schema=field_schema,
+                    path=f"{group_name}.{field_name}",
+                )
+                for field_name, field_schema in group_schema.items()
+            }
+        return validated
+
+    @staticmethod
+    def _validate_layout_value(value: Any, *, field_schema: dict[str, Any], path: str) -> Any:
+        field_type = field_schema["type"]
+        if field_schema.get("readonly") and path != "header.logo_path":
+            raise ValueError(f"{path} 是只读字段。")
+        if field_type == "boolean":
+            if not isinstance(value, bool):
+                raise ValueError(f"{path} 必须是 boolean。")
+            return value
+        if field_type == "number":
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"{path} 必须是 number。")
+            if value < 0 and not path.endswith("_indent_pt"):
+                raise ValueError(f"{path} 不能小于 0。")
+            return value
+        if field_type == "alignment":
+            if value not in ALIGNMENT_VALUES:
+                raise ValueError(f"{path} 必须是 {'/'.join(ALIGNMENT_VALUES)}。")
+            return value
+        if field_type == "color":
+            if not isinstance(value, str) or not HEX_COLOR_RE.match(value):
+                raise ValueError(f"{path} 必须是 6 位 RGB 颜色。")
+            return value
+        if field_type == "text":
+            if not isinstance(value, str):
+                raise ValueError(f"{path} 必须是 string。")
+            normalized = value.strip()
+            if path == "header.logo_path":
+                candidate = Path(normalized)
+                if candidate.is_absolute() or ".." in candidate.parts:
+                    raise ValueError("header.logo_path 只能是模板配置目录下的相对路径。")
+            return normalized
+        raise ValueError(f"{path} 字段类型不受支持: {field_type}")
 
     def _load_state(self) -> TemplateState:
         path = self.settings.template_state_file

@@ -117,9 +117,9 @@ class DocumentJobUnarchiveResponse(BaseModel):
 
 
 class DocumentJobDeleteExecuteRequest(BaseModel):
-    reason: str
-    confirmation: str
     preview_hash: str
+    reason: str | None = None
+    confirmation: str | None = None
 
 
 class DocumentJobDeleteFileResponse(BaseModel):
@@ -244,6 +244,9 @@ class DocumentJobTranslationQaArtifactsResponse(BaseModel):
     document_ir_file_id: str | None = None
     ai_call_log_file_ids: list[str] = Field(default_factory=list)
     ai_debug_archive_file_ids: list[str] = Field(default_factory=list)
+    ai_debug_archive_expires_at: datetime | None = None
+    ai_debug_archive_expired: bool = False
+    ai_debug_archive_contains_full_text: bool = False
 
 
 class DocumentJobTranslationQaSummaryResponse(BaseModel):
@@ -253,6 +256,7 @@ class DocumentJobTranslationQaSummaryResponse(BaseModel):
     ai_call_count: int = 0
     ai_call_statuses: dict[str, int] = Field(default_factory=dict)
     term_trace_count: int = 0
+    debug_full_text_enabled: bool = False
     source_comparison_available: bool = False
     source_comparison_reason: str | None = None
 

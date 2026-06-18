@@ -5,7 +5,7 @@ component: md2word-internal-portal
 status: current
 summary: md2word 正式公司内部门户的产品边界、角色、页面/API 地图、部署配置和账号运营说明。
 tags: [internal-portal, frontend, backend, auth, deploy, operations]
-last_reviewed: 2026-06-10
+last_reviewed: 2026-06-17
 ---
 
 # md2word 正式内部门户运行说明
@@ -23,15 +23,15 @@ files 上传授权 -> document_jobs 创建任务 -> Worker 调用 MinerU/Documen
 - 外部客户门户、多租户自助控制台和计费。
 - 公司 SSO 接入；第一版继续使用内部账号文件 + JWT。
 - 在线 Word 编辑、在线人工改译文后重新生成 Word。
-- 任务级真实删除文件；文件删除只走文件管理与清理工作区的 retention/preview/confirmation/audit 合同。
+- 普通用户任务级删除；任务级删除只允许 admin 通过 preview + 确认弹窗 + audit 的受控流程执行。
 - 真实 S3 删除、自动清理执行和 provider cancellation 默认仍保持 gated/deferred。
 
 ## 2. 内部角色
 
 | 角色 | 前端入口 | 能做什么 | 不应做什么 |
 | --- | --- | --- | --- |
-| `operator` | 任务工作台、翻译 QA、术语建议 | 上传 PDF、创建任务、查看进度、下载结果、提交术语建议、复核翻译证据 | 进入配置中心、系统状态、审计日志、文件清理 |
-| `admin` | 全部内部入口 | 配置模板/术语/翻译版本、审核提案、查看审计、处理文件容量与清理、查看运维状态 | 绕过 preview/reason/confirmation 执行危险操作 |
+| `operator` | 任务工作台、翻译 QA、术语建议 | 上传 PDF、创建任务、查看进度、下载结果、提交术语建议、复核翻译证据 | 进入配置中心、系统状态、审计日志、文件清理、任务级删除 |
+| `admin` | 全部内部入口 | 配置模板/术语/翻译版本、审核提案、查看审计、处理文件容量与清理、查看运维状态、按受控流程删除任务 | 绕过 preview/audit 执行危险操作 |
 
 账号字段保留 `tenant_id` 和 `company_id`，但第一版按单租户内部系统使用，不实现复杂租户隔离。
 
@@ -47,7 +47,10 @@ files 上传授权 -> document_jobs 创建任务 -> Worker 调用 MinerU/Documen
 | `/jobs/:jobId/translation-qa` | operator/admin | 单任务翻译证据复核和术语建议跳转。 |
 | `/term-proposals` | operator/admin | operator 提交建议；admin 审核提案。 |
 | `/settings` | admin | 配置中心首页，按治理域进入模板、术语、翻译配置。 |
-| `/settings/templates` | admin | 模板配置和版本治理。 |
+| `/settings/templates` | admin | Word 模板文档列表，管理 DOCX 模板文件和版本治理入口。 |
+| `/settings/templates/:templateId` | admin | Word 模板文档详情、上传 draft、验证任务、发布、设默认和禁用。 |
+| `/settings/word-page-styles` | admin | Word 页面样式配置列表，进入指定模板的可视化样式编辑器。 |
+| `/settings/word-page-styles/:templateId` | admin | Word 页面样式配置详情，维护页边距、标题、目录、正文、表格和页眉页脚文字样式；保存会生成 draft version，发布后才生效。 |
 | `/settings/term-rule-sets` | admin | 术语工作台：草稿与发布。 |
 | `/settings/term-rules` | admin | 术语工作台：当前生效规则检查和模拟。 |
 | `/settings/translation-profiles` | admin | 翻译配置版本治理。 |
@@ -64,7 +67,7 @@ files 上传授权 -> document_jobs 创建任务 -> Worker 调用 MinerU/Documen
 | `/api/v1/auth` | 内部账号登录和当前用户查询。 |
 | `/api/v1/files` | 上传授权、文件内容上传、文件库搜索、quota、retention、cleanup run。 |
 | `/api/v1/document-jobs` | PDF -> Word 主任务创建、查询、事件、文件、QA、retry/cancel/archive/unarchive/clone/download。 |
-| `/api/v1/templates` | 模板详情、版本创建、发布、设默认和禁用。 |
+| `/api/v1/templates` | 模板详情、DOCX 版本创建、版式配置 draft version 创建、发布、设默认和禁用。 |
 | `/api/v1/term-rule-sets` | 术语规则集 draft、diff、preflight、publish、default、rollback。 |
 | `/api/v1/term-rules` | 当前 live 术语规则检查、模拟和兼容入口。 |
 | `/api/v1/translation-profiles` | 翻译配置版本治理。 |
@@ -78,7 +81,7 @@ OpenAPI 快照在 [docs/api/openapi.json](/Users/sc/PycharmProjects/md2word/docs
 
 ## 5. 正式部署配置
 
-正式内部门户推荐使用 Docker P0 编排，详见 [P0 Docker 部署说明](/Users/sc/PycharmProjects/md2word/docs/deploy/p0-docker-deployment.md)。
+正式内部门户推荐使用 Docker P0 编排，详见 [P0 Docker 部署说明](/Users/sc/PycharmProjects/md2word/docs/deploy/p0-docker-deployment.md)。发布和验收执行 [线上优先验证流程](/Users/sc/PycharmProjects/md2word/docs/deploy/online-first-validation-workflow.md)：本地只改写和做不依赖服务的检查，完整运行时证据在 hostdzire 收集。
 
 关键环境变量建议：
 
@@ -106,11 +109,13 @@ curl -sS http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}/api/v1/health/ready
 curl -sS http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}/api/v1/health/metrics
 ```
 
-发布前检查：
+发布前检查在 hostdzire 执行：
 
 ```bash
 /Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_release.py
-cd frontend && npm run build
+/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_release.py \
+  --runtime-url http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000} \
+  --golden-sample-preflight
 ```
 
 ## 6. 账号运营
@@ -153,7 +158,7 @@ cd frontend && npm run build
 
 - MySQL 只保存 metadata：任务、文件记录、事件、审计、资源版本等。
 - PDF、Word、MinerU raw result、DocumentIR 和 AI debug artifact 不写入 MySQL，受 `JOBS_ARTIFACT_STORAGE_BACKEND` 控制。
-- 文件管理与清理工作区只按 metadata 和 exact file ids 操作；物理删除必须经过 preview、reason、confirmation 和 audit。
+- 文件管理与清理工作区只按 metadata 和 exact file ids 操作；文件清理的物理删除仍必须经过 preview、reason、confirmation 和 audit。任务级删除已简化为 admin preview + 确认弹窗 + audit。
 - 系统状态页不承载危险操作，危险清理入口只在 `/system-status/file-retention` 的“清理执行”视图里。
 - debug archive 可能包含全文证据，默认短保留期；生产启用前要确认 `TRANSLATION_DEBUG_ARCHIVE_ENABLED` 和保留天数。
 
@@ -162,6 +167,6 @@ cd frontend && npm run build
 - operator 可以登录、上传 PDF、创建任务、查看进度、下载结果、进入翻译 QA、提交术语建议。
 - operator 访问 `/settings/**`、`/system-status/**` 会被前端路由拦回任务工作台，后端 admin API 仍有权限校验。
 - admin 可以进入配置中心、系统状态、审计日志、文件管理与清理。
-- 文件清理必须保持 preview -> reason -> confirmation -> audit，不新增任务级一键删除。
+- 文件清理必须保持 preview -> reason -> confirmation -> audit；任务级删除必须保持 preview -> confirm -> audit，不给 operator 开放入口。
 - `/health/ready` 不应出现未解释的 blocker；如有 MinerU、worker、MySQL、artifact storage blocker，先处理再开放使用。
-- `scripts/ops/check_release.py` 和 `frontend npm run build` 通过后再发布。
+- `scripts/ops/check_release.py --runtime-url`、Golden Sample 预检、4 样本真实回归和 admin 签字通过后再发布。
