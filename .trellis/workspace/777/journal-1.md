@@ -173,3 +173,36 @@ Polished admin operations pages with shared app-* status, evidence, filter, comp
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Polish config and terminology UI
+
+**Date**: 2026-06-18
+**Task**: Polish config and terminology UI
+**Branch**: `main`
+
+### Summary
+
+Unified config and terminology deep pages with shared app UI surfaces, updated frontend UI guidelines, and verified build/unit/browser smoke checks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d0de06e2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
