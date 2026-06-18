@@ -28,8 +28,8 @@
       </div>
     </section>
 
-    <section class="metric-grid app-page-shell app-page-shell--wide" aria-label="任务概览">
-      <article v-for="metric in metrics" :key="metric.key" class="metric-card" :class="`metric-${metric.tone}`">
+    <section class="metric-grid app-metric-grid app-page-shell app-page-shell--wide" aria-label="任务概览">
+      <article v-for="metric in metrics" :key="metric.key" class="metric-card app-metric-card" :class="`metric-${metric.tone}`">
         <span class="metric-icon" aria-hidden="true">
           <el-icon><component :is="metric.icon" /></el-icon>
         </span>
@@ -41,7 +41,7 @@
       </article>
     </section>
 
-    <section class="jobs-list-panel app-panel app-page-shell app-page-shell--wide" aria-label="任务列表">
+    <section class="jobs-list-panel app-filter-panel app-page-shell app-page-shell--wide" aria-label="任务列表">
       <div class="section-header table-header">
         <div>
           <p class="table-kicker page-kicker">当前视图：{{ activeFilterLabel }}</p>
@@ -218,7 +218,7 @@
         </el-tag>
       </div>
 
-      <el-card class="jobs-table-card card-flat app-panel" shadow="never">
+      <el-card class="jobs-table-card card-flat app-panel app-table-card" shadow="never">
         <div v-if="showEmptyState" class="empty-state" aria-live="polite">
           <el-icon><Files /></el-icon>
           <h3>{{ emptyStateTitle }}</h3>

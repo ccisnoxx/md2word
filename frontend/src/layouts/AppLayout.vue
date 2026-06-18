@@ -3,7 +3,15 @@
   <el-container class="app-layout">
     <el-header class="app-header">
       <div class="brand">
-        <router-link class="brand-link" to="/jobs">内部文档转换工作台</router-link>
+        <router-link class="brand-link" to="/jobs">
+          <span class="brand-mark" aria-hidden="true">
+            <el-icon><DocumentChecked /></el-icon>
+          </span>
+          <span class="brand-copy">
+            <strong>md2word</strong>
+            <small>内部文档转换工作台</small>
+          </span>
+        </router-link>
         <el-tag size="small" effect="plain">内部门户</el-tag>
       </div>
       <nav class="main-nav" aria-label="主导航">
@@ -32,7 +40,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { SwitchButton } from "@element-plus/icons-vue";
+import { DocumentChecked, SwitchButton } from "@element-plus/icons-vue";
 import { useRouter } from "vue-router";
 
 import AppBreadcrumb from "@/components/AppBreadcrumb.vue";
@@ -79,9 +87,9 @@ function handleLogout(): void {
   position: sticky;
   top: 0;
   z-index: 10;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(0, 1.4fr) minmax(220px, 0.9fr);
   align-items: center;
-  justify-content: space-between;
   gap: var(--app-space-4);
   height: var(--app-header-height);
   padding: 0 var(--app-space-6);
@@ -100,18 +108,56 @@ function handleLogout(): void {
 }
 
 .brand-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--app-space-2);
   color: var(--app-color-text);
-  font-size: 16px;
-  font-weight: 700;
+}
+
+.brand-link:hover,
+.brand-link:focus-visible {
+  color: var(--app-color-text);
+}
+
+.brand-mark {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--app-color-primary-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-primary-soft);
+  color: var(--app-color-primary-hover);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.brand-copy {
+  display: grid;
+  gap: 1px;
+}
+
+.brand-copy strong {
+  color: var(--app-color-text);
+  font-size: 15px;
+  line-height: 1.1;
+}
+
+.brand-copy small {
+  color: var(--app-color-text-muted);
+  font-size: 12px;
+  line-height: 1.2;
 }
 
 .main-nav {
-  flex: 1;
   justify-content: center;
+  min-width: 0;
 }
 
 .main-nav a {
+  min-height: 34px;
   padding: var(--app-space-2) 10px;
+  border: 1px solid transparent;
   border-radius: var(--app-radius-md);
   color: var(--app-color-text-muted);
   font-size: 14px;
@@ -122,23 +168,39 @@ function handleLogout(): void {
 }
 
 .main-nav a.router-link-active {
+  border: 1px solid var(--app-color-primary-border);
   background: var(--app-color-primary-soft);
   color: var(--app-color-primary-hover);
 }
 
+.main-nav a:hover,
+.main-nav a:focus-visible {
+  background: var(--app-color-surface-muted);
+  color: var(--app-color-primary-hover);
+}
+
+.header-actions {
+  justify-content: flex-end;
+  min-width: 0;
+}
+
 .user-text {
+  min-width: 0;
+  overflow: hidden;
   font-size: 14px;
   color: var(--app-color-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .app-main {
-  width: min(var(--app-content-width), 100%);
+  width: min(var(--app-content-wide), 100%);
   margin: 0 auto;
-  padding: var(--app-space-5) var(--app-space-6) 36px;
+  padding: var(--app-space-5) var(--app-space-6) 40px;
 }
 
 .breadcrumb-shell {
-  width: min(var(--app-content-width), 100%);
+  width: min(var(--app-content-wide), 100%);
   margin: 0 auto;
   padding: var(--app-space-3) var(--app-space-6) 0;
 }
@@ -172,26 +234,55 @@ function handleLogout(): void {
   }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 980px) {
   .app-header {
     align-items: flex-start;
-    flex-direction: column;
+    grid-template-columns: 1fr;
     height: auto;
     padding: var(--app-space-3) var(--app-space-4);
+  }
+
+  .brand,
+  .header-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .main-nav {
     justify-content: flex-start;
     overflow-x: auto;
     width: 100%;
+    padding-bottom: 2px;
   }
 
+  .main-nav a {
+    flex: 0 0 auto;
+  }
+}
+
+@media (max-width: 720px) {
   .app-main {
     padding: var(--app-space-4);
   }
 
   .breadcrumb-shell {
     padding: 10px var(--app-space-4) 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .brand {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .header-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .user-text {
+    width: 100%;
   }
 }
 </style>

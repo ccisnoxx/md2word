@@ -1,7 +1,7 @@
 <!-- frontend/src/pages/ForbiddenPage.vue: Explain route-level permission denial. -->
 <template>
-  <main class="forbidden-page" aria-labelledby="forbidden-title">
-    <section class="forbidden-panel">
+  <main class="forbidden-page app-page" aria-labelledby="forbidden-title">
+    <section class="forbidden-panel app-panel-card">
       <div class="icon-shell" aria-hidden="true">
         <el-icon><Lock /></el-icon>
       </div>
@@ -74,10 +74,10 @@ function logout(): void {
 .forbidden-panel {
   width: min(620px, 100%);
   padding: 28px;
-  border: 1px solid #d8e0eb;
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface);
+  box-shadow: var(--app-shadow-panel);
 }
 
 .icon-shell {
@@ -87,15 +87,15 @@ function logout(): void {
   width: 44px;
   height: 44px;
   margin-bottom: 14px;
-  border-radius: 8px;
-  background: #fff7ed;
-  color: #c2410c;
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-danger-soft);
+  color: var(--app-color-danger);
   font-size: 22px;
 }
 
 .eyebrow {
   margin: 0 0 6px;
-  color: #c2410c;
+  color: var(--app-color-danger);
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
@@ -103,13 +103,13 @@ function logout(): void {
 
 h1 {
   margin: 0;
-  color: #111827;
+  color: var(--app-color-text);
   font-size: 24px;
 }
 
 .summary {
   margin: 10px 0 18px;
-  color: #475467;
+  color: var(--app-color-text-muted);
   line-height: 1.7;
 }
 
@@ -126,15 +126,15 @@ h1 {
 }
 
 dt {
-  color: #667085;
+  color: var(--app-color-text-muted);
   font-size: 13px;
 }
 
 dd {
   overflow-wrap: anywhere;
   margin: 0;
-  color: #1f2937;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  color: var(--app-color-text);
+  font-family: var(--app-font-mono);
   font-size: 13px;
 }
 
