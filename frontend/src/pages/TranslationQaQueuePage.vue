@@ -1,42 +1,42 @@
 <!-- File: frontend/src/pages/TranslationQaQueuePage.vue -->
 <!-- Purpose: Render the translation QA review queue backed by document_jobs list filtering. -->
 <template>
-  <main class="translation-qa-queue-page" aria-labelledby="translation-qa-queue-title">
-    <section class="page-heading">
+  <main class="translation-qa-queue-page app-page" aria-labelledby="translation-qa-queue-title">
+    <section class="page-heading app-page-header app-page-shell">
       <div>
         <p class="page-kicker">Translation QA</p>
-        <h1 id="translation-qa-queue-title">翻译 QA 队列</h1>
-        <p>集中复核英文 PDF 翻译任务的证据、结论和术语反馈入口。</p>
+        <h1 id="translation-qa-queue-title" class="page-title">翻译 QA 队列</h1>
+        <p class="page-description">集中复核英文 PDF 翻译任务的证据、结论和术语反馈入口。</p>
       </div>
       <div class="heading-actions">
         <el-button :icon="Refresh" :loading="loading" @click="loadJobs">刷新</el-button>
       </div>
     </section>
 
-    <section class="metric-grid" aria-label="翻译 QA 队列概览">
-      <article class="metric-card">
+    <section class="qa-metric-grid app-metric-grid app-page-shell" aria-label="翻译 QA 队列概览">
+      <article class="app-metric-card">
         <span>当前筛选</span>
         <strong>{{ total }}</strong>
         <small>{{ activeFilterLabel }}</small>
       </article>
-      <article class="metric-card">
+      <article class="app-metric-card">
         <span>本页任务</span>
         <strong>{{ jobs.length }}</strong>
         <small>当前页返回数量</small>
       </article>
-      <article class="metric-card">
+      <article class="app-metric-card">
         <span>未复核</span>
         <strong>{{ countQaStatus("unreviewed") }}</strong>
         <small>除 QA 状态外的当前筛选</small>
       </article>
-      <article class="metric-card">
+      <article class="app-metric-card">
         <span>需处理</span>
         <strong>{{ countQaStatus("needs_fix") + countQaStatus("blocked") }}</strong>
         <small>除 QA 状态外的当前筛选</small>
       </article>
     </section>
 
-    <el-card class="card-flat queue-panel" shadow="never">
+    <el-card class="card-flat queue-panel app-panel-card app-table-card app-page-shell" shadow="never">
       <div class="section-header table-header">
         <div>
           <h2 class="section-title">复核列表</h2>
@@ -376,36 +376,14 @@ onMounted(() => {
 <style scoped lang="scss">
 .translation-qa-queue-page {
   display: grid;
-  gap: 18px;
+  gap: var(--app-space-4);
 }
 
 .page-heading {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 16px;
-  padding: 10px 0 2px;
-}
-
-.page-kicker {
-  margin: 0 0 4px;
-  color: #2563eb;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-.page-heading h1 {
-  margin: 0;
-  color: #111827;
-  font-size: 28px;
-  line-height: 1.2;
-}
-
-.page-heading p:last-child {
-  margin: 8px 0 0;
-  color: #667085;
+  gap: var(--app-space-4);
 }
 
 .heading-actions,
@@ -413,37 +391,11 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 
-.metric-grid {
-  display: grid;
+.qa-metric-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.metric-card {
-  min-width: 0;
-  min-height: 104px;
-  padding: 16px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.metric-card span,
-.metric-card small {
-  display: block;
-  color: #667085;
-  font-size: 13px;
-}
-
-.metric-card strong {
-  display: block;
-  margin: 6px 0;
-  color: #111827;
-  font-size: 26px;
-  line-height: 1;
 }
 
 .queue-panel {
@@ -459,7 +411,7 @@ onMounted(() => {
 }
 
 .job-link {
-  color: #2563eb;
+  color: var(--app-color-primary);
   font-weight: 650;
 }
 
@@ -467,7 +419,7 @@ onMounted(() => {
   max-width: 100%;
   margin-top: 4px;
   overflow: hidden;
-  color: #667085;
+  color: var(--app-color-text-muted);
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -491,7 +443,7 @@ onMounted(() => {
 }
 
 @media (max-width: 980px) {
-  .metric-grid {
+  .qa-metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -504,7 +456,7 @@ onMounted(() => {
     flex-direction: column;
   }
 
-  .metric-grid {
+  .qa-metric-grid {
     grid-template-columns: 1fr;
   }
 

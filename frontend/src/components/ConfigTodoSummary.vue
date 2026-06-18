@@ -1,6 +1,6 @@
 <!-- frontend/src/components/ConfigTodoSummary.vue: Render config workbench release-gate summary. -->
 <template>
-  <el-card class="config-summary card-flat" shadow="never">
+  <el-card class="config-summary card-flat app-panel-card" shadow="never">
     <div class="section-header">
       <div>
         <h2 class="section-title">运行门禁总览</h2>
@@ -19,8 +19,8 @@
     <el-skeleton v-if="loading" :rows="3" animated />
     <el-empty v-else-if="!summary" description="暂无配置工作台总览" :image-size="80" />
     <template v-else>
-      <div class="metric-grid">
-        <article v-for="item in metrics" :key="item.key" class="metric-item">
+      <div class="summary-metric-grid app-metric-grid">
+        <article v-for="item in metrics" :key="item.key" class="metric-item app-metric-card">
           <span>{{ item.label }}</span>
           <strong>{{ item.value }}</strong>
           <small>{{ item.helper }}</small>
@@ -155,50 +155,34 @@ function statusTagType(status: ConfigWorkbenchStatus): "success" | "warning" | "
 
 <style scoped lang="scss">
 .config-summary {
-  border: 1px solid #d9e2ec;
+  min-width: 0;
 }
 
 .summary-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 
-.metric-grid {
-  display: grid;
+.summary-metric-grid {
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 12px;
 }
 
 .metric-item {
-  display: grid;
-  gap: 6px;
   min-height: 104px;
-  padding: 14px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #fff;
-}
-
-.metric-item span {
-  color: #475467;
-  font-size: 13px;
 }
 
 .metric-item strong {
-  overflow-wrap: anywhere;
-  color: #111827;
   font-size: 22px;
   line-height: 1.15;
 }
 
 .metric-item small {
-  color: #667085;
   font-size: 12px;
 }
 
 .gate-alert {
-  margin-top: 12px;
+  margin-top: var(--app-space-3);
 }
 
 .finding-list {
@@ -207,7 +191,7 @@ function statusTagType(status: ConfigWorkbenchStatus): "success" | "warning" | "
 }
 
 @media (max-width: 1120px) {
-  .metric-grid {
+  .summary-metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -219,7 +203,7 @@ function statusTagType(status: ConfigWorkbenchStatus): "success" | "warning" | "
     flex-direction: column;
   }
 
-  .metric-grid {
+  .summary-metric-grid {
     grid-template-columns: 1fr;
   }
 }
