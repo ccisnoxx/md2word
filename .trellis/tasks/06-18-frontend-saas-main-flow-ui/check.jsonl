@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "Lists project thinking guides relevant to final review."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Review should catch duplicated styling, token drift, and unnecessary abstractions."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Review should verify UI changes did not alter API, routing, permissions, or behavior contracts."}
+{"file": ".trellis/tasks/06-18-frontend-saas-main-flow-ui/research/ui-direction.md", "reason": "Review should verify implementation follows the agreed restrained SaaS UI direction and risk checks."}
