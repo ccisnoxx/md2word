@@ -1,12 +1,12 @@
 <!-- File: frontend/src/pages/AuditLogPage.vue -->
 <!-- Purpose: Render the Admin-only audit event search, structured details display, current-page CSV export, and governed filtered export. -->
 <template>
-  <main class="audit-log-page" aria-labelledby="audit-log-title">
-    <section class="page-heading">
+  <main class="audit-log-page app-page" aria-labelledby="audit-log-title">
+    <section class="page-heading app-page-header app-page-shell">
       <div>
         <p class="page-kicker">Audit</p>
-        <h1 id="audit-log-title">审计日志</h1>
-        <p>只读查询已记录的高风险成功操作。</p>
+        <h1 id="audit-log-title" class="page-title">审计日志</h1>
+        <p class="page-description">只读查询已记录的高风险成功操作。</p>
       </div>
       <div class="heading-actions">
         <el-button :icon="Download" :disabled="total === 0" :loading="exportingAll" @click="exportFilteredCsv">
@@ -19,9 +19,9 @@
       </div>
     </section>
 
-    <ApiErrorAlert :error="error" />
+    <ApiErrorAlert class="app-page-shell" :error="error" />
 
-    <section class="filter-section" aria-label="审计日志筛选">
+    <section class="filter-section app-filter-panel app-page-shell" aria-label="审计日志筛选">
       <el-form class="filter-form" label-position="top">
         <el-form-item label="搜索">
           <el-input
@@ -73,7 +73,7 @@
       </div>
     </section>
 
-    <section class="audit-table-section" aria-label="审计事件列表">
+    <section class="audit-table-section app-filter-panel app-table-card app-page-shell" aria-label="审计事件列表">
       <div class="section-header">
         <div>
           <h2 class="section-title">事件列表</h2>
@@ -171,7 +171,7 @@
           </el-descriptions-item>
         </el-descriptions>
 
-        <section class="details-section" aria-label="审计详情顶层字段">
+        <section class="details-section app-evidence-panel app-table-card" aria-label="审计详情顶层字段">
           <h2 class="details-section-title">Top-level fields</h2>
           <el-table :data="selectedDetailEntries" table-layout="fixed" empty-text="暂无 details 字段">
             <el-table-column prop="key" label="Key" min-width="180">
@@ -187,7 +187,7 @@
           </el-table>
         </section>
 
-        <section class="details-section" aria-label="审计详情 JSON">
+        <section class="details-section app-evidence-panel" aria-label="审计详情 JSON">
           <h2 class="details-section-title">JSON</h2>
           <pre class="details-json mono">{{ selectedDetailsJson }}</pre>
         </section>
@@ -517,59 +517,28 @@ onMounted(() => {
 <style scoped lang="scss">
 .audit-log-page {
   display: grid;
-  gap: 18px;
+  gap: var(--app-space-4);
 }
 
 .page-heading {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 10px 0 2px;
-}
-
-.page-kicker {
-  margin: 0 0 4px;
-  color: #2563eb;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-.page-heading h1 {
-  margin: 0;
-  color: #111827;
-  font-size: 28px;
-  line-height: 1.2;
-}
-
-.page-heading p:last-child {
-  margin: 8px 0 0;
-  color: #667085;
+  gap: var(--app-space-4);
 }
 
 .heading-actions,
 .filter-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
-}
-
-.filter-section,
-.audit-table-section {
-  display: grid;
-  gap: 12px;
-  padding: 16px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #fff;
+  flex-wrap: wrap;
+  gap: var(--app-space-2);
 }
 
 .filter-form {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px 12px;
+  gap: var(--app-space-3);
 }
 
 .filter-form :deep(.el-form-item) {
@@ -588,19 +557,7 @@ onMounted(() => {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-}
-
-.section-title {
-  margin: 0;
-  color: #111827;
-  font-size: 18px;
-}
-
-.section-subtitle {
-  margin: 6px 0 0;
-  color: #667085;
-  font-size: 13px;
+  gap: var(--app-space-4);
 }
 
 .audit-table {
@@ -626,17 +583,17 @@ onMounted(() => {
 
 .details-drawer-content {
   display: grid;
-  gap: 18px;
+  gap: var(--app-space-4);
 }
 
 .details-section {
   display: grid;
-  gap: 10px;
+  gap: var(--app-space-3);
 }
 
 .details-section-title {
   margin: 0;
-  color: #111827;
+  color: var(--app-color-text);
   font-size: 15px;
   line-height: 1.35;
 }
@@ -645,10 +602,10 @@ onMounted(() => {
 .details-json {
   margin: 0;
   overflow: auto;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #f8fafc;
-  color: #111827;
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface);
+  color: var(--app-color-text);
   font-size: 12px;
   line-height: 1.55;
   white-space: pre-wrap;
@@ -657,33 +614,12 @@ onMounted(() => {
 
 .details-value {
   max-height: 180px;
-  padding: 8px;
+  padding: var(--app-space-2);
 }
 
 .details-json {
   max-height: 420px;
-  padding: 12px;
-}
-
-@media (prefers-color-scheme: dark) {
-  .page-heading h1,
-  .section-title,
-  .details-section-title {
-    color: #f8fafc;
-  }
-
-  .filter-section,
-  .audit-table-section {
-    border-color: rgba(148, 163, 184, 0.22);
-    background: rgba(15, 23, 42, 0.86);
-  }
-
-  .details-value,
-  .details-json {
-    border-color: rgba(148, 163, 184, 0.26);
-    background: rgba(15, 23, 42, 0.92);
-    color: #e5e7eb;
-  }
+  padding: var(--app-space-3);
 }
 
 @media (max-width: 980px) {

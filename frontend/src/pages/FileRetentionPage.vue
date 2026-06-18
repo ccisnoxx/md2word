@@ -1,25 +1,25 @@
 <!-- File: frontend/src/pages/FileRetentionPage.vue -->
 <!-- Purpose: Render the Admin-only file library, capacity policy, and cleanup execution workspace. -->
 <template>
-  <main class="file-retention-page" aria-labelledby="file-retention-title">
-    <section class="page-heading">
+  <main class="file-retention-page app-page" aria-labelledby="file-retention-title">
+    <section class="page-heading app-page-header app-page-shell app-page-shell--wide">
       <div>
         <p class="page-kicker">Files</p>
-        <h1 id="file-retention-title">文件管理与清理</h1>
-        <p>面向内部 admin 的文件库、容量策略和受控清理工作区；系统状态页只保留只读概览。</p>
+        <h1 id="file-retention-title" class="page-title">文件管理与清理</h1>
+        <p class="page-description">面向内部 admin 的文件库、容量策略和受控清理工作区；系统状态页只保留只读概览。</p>
       </div>
       <div class="heading-actions">
         <el-button :icon="Refresh" :loading="loading || storageLoading || policyLoading || libraryLoading || quotaPolicyLoading || quotaOpsLoading || cleanupHistoryLoading || schedulerDryRunLoading" @click="refreshRetentionPage">刷新</el-button>
       </div>
     </section>
 
-    <ApiErrorAlert :error="error" />
+    <ApiErrorAlert class="app-page-shell app-page-shell--wide" :error="error" />
 
-    <section class="file-workspace-nav" aria-label="文件管理工作区导航">
+    <section class="file-workspace-nav app-page-shell app-page-shell--wide" aria-label="文件管理工作区导航">
       <button
         v-for="item in fileWorkspaceTabs"
         :key="item.key"
-        class="file-workspace-tab"
+        class="file-workspace-tab app-workspace-tab"
         :class="{ 'is-active': activeFileManagementTab === item.key }"
         type="button"
         @click="selectFileManagementTab(item.key)"
@@ -32,7 +32,7 @@
 
     <el-tabs v-model="activeFileManagementTab" class="file-management-tabs">
       <el-tab-pane label="文件库" name="library">
-    <section v-loading="libraryLoading" class="retention-table-section" aria-label="文件库搜索">
+    <section v-loading="libraryLoading" class="retention-table-section app-filter-panel app-table-card app-page-shell app-page-shell--wide" aria-label="文件库搜索">
       <div class="section-header">
         <div>
           <h2 class="section-title">文件库搜索</h2>
@@ -140,7 +140,7 @@
 
       </el-tab-pane>
       <el-tab-pane label="容量与策略" name="capacity">
-    <section v-loading="storageLoading" class="retention-table-section" aria-label="存储使用和容量 readiness">
+    <section v-loading="storageLoading" class="retention-table-section app-filter-panel app-table-card app-page-shell app-page-shell--wide" aria-label="存储使用和容量 readiness">
       <div class="section-header">
         <div>
           <h2 class="section-title">存储使用与容量 readiness</h2>
@@ -153,30 +153,30 @@
         </div>
       </div>
 
-      <div class="summary-grid">
-        <article class="summary-card">
+      <div class="summary-grid app-metric-grid">
+        <article class="summary-card app-metric-card">
           <span>Active Used</span>
           <strong>{{ formatBytes(storageTotalValue("active_size_bytes")) }}</strong>
           <small>active files: {{ storageTotalValue("active_files") }} / seen: {{ storageTotalValue("files_seen") }}</small>
         </article>
-        <article class="summary-card">
+        <article class="summary-card app-metric-card">
           <span>Expired Estimate</span>
           <strong>{{ formatBytes(storageTotalValue("expired_size_bytes")) }}</strong>
           <small>expired files: {{ storageTotalValue("expired_files") }}</small>
         </article>
-        <article class="summary-card">
+        <article class="summary-card app-metric-card">
           <span>Reclaim Estimate</span>
           <strong>{{ formatBytes(storageReclaimValue("estimated_reclaimable_size_bytes")) }}</strong>
           <small>estimated files: {{ storageReclaimValue("estimated_reclaimable_files") }} · 仍需 delete-preview 验证</small>
         </article>
-        <article class="summary-card">
+        <article class="summary-card app-metric-card">
           <span>Disk Free</span>
           <strong>{{ formatBytes(storageUsage?.artifact_disk_free_bytes ?? null) }}</strong>
           <small>{{ storageUsage?.artifact_storage || "-" }} · writable={{ String(storageUsage?.artifact_root_writable ?? "-") }}</small>
         </article>
       </div>
 
-      <div class="quota-dry-run-panel" aria-label="quota policy dry-run">
+      <div class="quota-dry-run-panel app-evidence-panel" aria-label="quota policy dry-run">
         <div class="section-header">
           <div>
             <h3 class="section-title">Quota Policy Dry Run</h3>
@@ -213,18 +213,18 @@
           </el-form-item>
         </el-form>
 
-        <div v-if="quotaPolicyReport" class="quota-result-grid">
-          <article class="quota-result-card">
+        <div v-if="quotaPolicyReport" class="quota-result-grid app-compact-grid">
+          <article class="quota-result-card app-compact-card">
             <span>Current Used</span>
             <strong>{{ formatBytes(quotaPolicyReport.usage.current_used_size_bytes) }}</strong>
             <small>{{ formatRatio(quotaPolicyReport.usage.current_usage_ratio) }} of quota</small>
           </article>
-          <article class="quota-result-card">
+          <article class="quota-result-card app-compact-card">
             <span>Projected Used</span>
             <strong>{{ formatBytes(quotaPolicyReport.usage.projected_used_size_bytes) }}</strong>
             <small>{{ formatRatio(quotaPolicyReport.usage.projected_usage_ratio) }} after proposed upload</small>
           </article>
-          <article class="quota-result-card">
+          <article class="quota-result-card app-compact-card">
             <span>Thresholds</span>
             <strong>{{ formatBytes(quotaPolicyReport.policy.quota_bytes) }}</strong>
             <small>
@@ -232,7 +232,7 @@
               block={{ formatRatio(quotaPolicyReport.policy.block_threshold_ratio) }}
             </small>
           </article>
-          <article class="quota-result-card">
+          <article class="quota-result-card app-compact-card">
             <span>Upload Max</span>
             <strong>{{ formatBytes(quotaPolicyReport.policy.upload_max_bytes) }}</strong>
             <small>proposed={{ formatBytes(quotaPolicyReport.usage.proposed_upload_size_bytes) }}</small>
@@ -276,23 +276,23 @@
             </div>
           </div>
 
-          <div v-if="quotaOpsSummary" class="quota-result-grid">
-            <article class="quota-result-card">
+          <div v-if="quotaOpsSummary" class="quota-result-grid app-compact-grid">
+            <article class="quota-result-card app-compact-card">
               <span>Current Used</span>
               <strong>{{ formatBytes(quotaOpsSummary.usage.current_used_size_bytes) }}</strong>
               <small>{{ formatRatio(quotaOpsSummary.usage.current_usage_ratio) }} of quota</small>
             </article>
-            <article class="quota-result-card">
+            <article class="quota-result-card app-compact-card">
               <span>Policy</span>
               <strong>{{ quotaOpsSummary.policy.status }}</strong>
               <small>generated={{ formatDateTime(quotaOpsSummary.generated_at) }}</small>
             </article>
-            <article class="quota-result-card">
+            <article class="quota-result-card app-compact-card">
               <span>Current Block</span>
               <strong>{{ String(quotaOpsSummary.current_usage_would_block) }}</strong>
               <small>warn={{ String(quotaOpsSummary.current_usage_would_warn) }}</small>
             </article>
-            <article class="quota-result-card">
+            <article class="quota-result-card app-compact-card">
               <span>Replay Limit</span>
               <strong>{{ quotaOpsSummary.audit_replay_limit }}</strong>
               <small>truncated={{ String(quotaOpsSummary.audit_replay_truncated) }}</small>
@@ -376,7 +376,7 @@
       </div>
 
       <div class="storage-group-grid">
-        <article class="storage-group-card" aria-label="按 storage provider 汇总">
+        <article class="storage-group-card app-evidence-panel app-table-card" aria-label="按 storage provider 汇总">
           <h3>By Provider</h3>
           <el-table :data="storageUsage?.by_storage_provider || []" empty-text="暂无 provider 汇总" table-layout="fixed">
             <el-table-column prop="key" label="Provider" min-width="130" />
@@ -393,7 +393,7 @@
           </el-table>
         </article>
 
-        <article class="storage-group-card" aria-label="按 file type 汇总">
+        <article class="storage-group-card app-evidence-panel app-table-card" aria-label="按 file type 汇总">
           <h3>By File Type</h3>
           <el-table :data="storageUsage?.by_file_type || []" empty-text="暂无 file type 汇总" table-layout="fixed">
             <el-table-column prop="key" label="Type" min-width="150" />
@@ -406,7 +406,7 @@
           </el-table>
         </article>
 
-        <article class="storage-group-card" aria-label="按 status 汇总">
+        <article class="storage-group-card app-evidence-panel app-table-card" aria-label="按 status 汇总">
           <h3>By Status</h3>
           <el-table :data="storageUsage?.by_status || []" empty-text="暂无 status 汇总" table-layout="fixed">
             <el-table-column prop="key" label="Status" min-width="120" />
@@ -425,30 +425,30 @@
       </div>
     </section>
 
-    <section v-loading="loading" class="summary-grid" aria-label="文件清理计划摘要">
-      <article class="summary-card">
+    <section v-loading="loading" class="summary-grid app-metric-grid app-page-shell app-page-shell--wide" aria-label="文件清理计划摘要">
+      <article class="summary-card app-metric-card">
         <span>候选文件</span>
         <strong>{{ candidateCount }}</strong>
         <small>已选择：{{ selectedFileIds.length }} · 可标记 uploaded：{{ markableCount }}</small>
       </article>
-      <article class="summary-card">
+      <article class="summary-card app-metric-card">
         <span>保留天数</span>
         <strong>{{ plan?.retention_days ?? "-" }}</strong>
         <small>来自后端当前配置</small>
       </article>
-      <article class="summary-card">
+      <article class="summary-card app-metric-card">
         <span>文件总数</span>
         <strong>{{ totalValue("files_seen") }}</strong>
         <small>有 expires_at：{{ totalValue("files_with_expires_at") }}</small>
       </article>
-      <article class="summary-card">
+      <article class="summary-card app-metric-card">
         <span>生成时间</span>
         <strong class="summary-time">{{ formatDateTime(plan?.generated_at) }}</strong>
         <small>action: {{ plan?.action_mode || "dry_run" }}</small>
       </article>
     </section>
 
-    <section class="retention-table-section" aria-label="保留策略治理">
+    <section class="retention-table-section app-filter-panel app-table-card app-page-shell app-page-shell--wide" aria-label="保留策略治理">
       <div class="section-header">
         <div>
           <h2 class="section-title">保留策略</h2>
@@ -512,7 +512,7 @@
       </div>
     </section>
 
-    <section v-if="policyImpact" class="retention-table-section" aria-label="保留策略影响预览">
+    <section v-if="policyImpact" class="retention-table-section app-filter-panel app-table-card app-page-shell app-page-shell--wide" aria-label="保留策略影响预览">
       <div class="section-header">
         <div>
           <h2 class="section-title">策略影响预览</h2>
@@ -561,7 +561,7 @@
       标记 expired 仍是 metadata-only。物理删除和 manual cleanup run 都必须先预览、选择精确文件、填写 reason 并输入确认短语；scheduler dry-run 只生成只读计划和 lock/history 证据。所有这些操作都不会调用 provider，也不会执行 S3 delete。
     </el-alert>
 
-    <section class="retention-table-section" aria-label="过期候选文件">
+    <section class="retention-table-section app-filter-panel app-table-card app-page-shell app-page-shell--wide" aria-label="过期候选文件">
       <div class="section-header">
         <div>
           <h2 class="section-title">过期候选</h2>
@@ -650,7 +650,7 @@
       </el-table>
     </section>
 
-    <section v-if="deleteReport" class="retention-table-section" aria-label="物理删除预览和执行结果">
+    <section v-if="deleteReport" class="retention-table-section app-filter-panel app-table-card app-page-shell app-page-shell--wide" aria-label="物理删除预览和执行结果">
       <div class="section-header">
         <div>
           <h2 class="section-title">物理删除结果</h2>
@@ -715,7 +715,7 @@
       </el-table>
     </section>
 
-    <section v-if="cleanupRunReport" class="retention-table-section" aria-label="cleanup run 预览和执行结果">
+    <section v-if="cleanupRunReport" class="retention-table-section app-filter-panel app-table-card app-page-shell app-page-shell--wide" aria-label="cleanup run 预览和执行结果">
       <div class="section-header">
         <div>
           <h2 class="section-title">Cleanup Run 结果</h2>
@@ -732,23 +732,23 @@
         </div>
       </div>
 
-      <div class="cleanup-run-grid">
-        <article class="cleanup-run-card">
+      <div class="cleanup-run-grid app-compact-grid">
+        <article class="cleanup-run-card app-compact-card">
           <span>Preview Hash</span>
           <strong class="mono object-key">{{ cleanupRunReport.preview_hash }}</strong>
           <small>execute 必须提交同一个 hash；状态变化后需要重新 preview。</small>
         </article>
-        <article class="cleanup-run-card">
+        <article class="cleanup-run-card app-compact-card">
           <span>Requested Files</span>
           <strong>{{ cleanupRunReport.requested_file_ids.length }}</strong>
           <small class="mono object-key">{{ cleanupRunReport.requested_file_ids.join(", ") }}</small>
         </article>
-        <article class="cleanup-run-card">
+        <article class="cleanup-run-card app-compact-card">
           <span>Physical Delete</span>
           <strong>{{ cleanupRunReport.physical_delete.action_mode }}</strong>
           <small>复用 selected-file physical-delete safety contract。</small>
         </article>
-        <article class="cleanup-run-card">
+        <article class="cleanup-run-card app-compact-card">
           <span>Signed Plan</span>
           <strong class="mono object-key">{{ cleanupRunReport.cleanup_plan?.plan_id || "-" }}</strong>
           <small>expires {{ formatDateTime(cleanupRunReport.cleanup_plan?.expires_at) }} · {{ cleanupRunReport.cleanup_plan?.signature_algorithm || "-" }}</small>
@@ -814,7 +814,7 @@
       </el-table>
     </section>
 
-    <section class="retention-table-section scheduler-dry-run-section" aria-label="cleanup scheduler dry-run">
+    <section class="retention-table-section scheduler-dry-run-section app-filter-panel app-table-card app-page-shell app-page-shell--wide" aria-label="cleanup scheduler dry-run">
       <div class="section-header">
         <div>
           <h2 class="section-title">Scheduler Dry Run</h2>
@@ -849,23 +849,23 @@
         </el-form-item>
       </el-form>
 
-      <div v-if="schedulerDryRunReport" class="scheduler-dry-run-grid">
-        <article class="cleanup-run-card">
+      <div v-if="schedulerDryRunReport" class="scheduler-dry-run-grid app-compact-grid">
+        <article class="cleanup-run-card app-compact-card">
           <span>Run</span>
           <strong class="mono object-key">{{ schedulerDryRunReport.run_id }}</strong>
           <small>{{ schedulerDryRunReport.action_mode }}</small>
         </article>
-        <article class="cleanup-run-card">
+        <article class="cleanup-run-card app-compact-card">
           <span>Candidates</span>
           <strong>{{ schedulerRetentionCandidateCount }}</strong>
           <small>metadata-only retention candidates</small>
         </article>
-        <article class="cleanup-run-card">
+        <article class="cleanup-run-card app-compact-card">
           <span>Reclaim Estimate</span>
           <strong>{{ formatBytes(schedulerEstimatedReclaimBytes) }}</strong>
           <small>仍需 selected-file delete-preview 验证</small>
         </article>
-        <article class="cleanup-run-card">
+        <article class="cleanup-run-card app-compact-card">
           <span>Lock</span>
           <strong>{{ schedulerDryRunReport.lock.status }} · released={{ String(schedulerDryRunReport.lock.released) }}</strong>
           <small class="mono object-key">{{ schedulerDryRunReport.lock.owner_id }} · token={{ schedulerDryRunReport.lock.fencing_token }}</small>
@@ -884,7 +884,7 @@
       </div>
     </section>
 
-    <section class="retention-table-section" aria-label="cleanup run durable history">
+    <section class="retention-table-section app-filter-panel app-table-card app-page-shell app-page-shell--wide" aria-label="cleanup run durable history">
       <div class="section-header">
         <div>
           <h2 class="section-title">Cleanup Run History</h2>
@@ -936,23 +936,23 @@
         </el-table-column>
       </el-table>
 
-      <div v-if="selectedCleanupRunHistory" class="cleanup-history-detail">
-        <article class="cleanup-run-card">
+      <div v-if="selectedCleanupRunHistory" class="cleanup-history-detail app-compact-grid">
+        <article class="cleanup-run-card app-compact-card">
           <span>Preview Hash</span>
           <strong class="mono object-key">{{ selectedCleanupRunHistory.preview_hash }}</strong>
           <small>run <span class="mono">{{ selectedCleanupRunHistory.run_id }}</span></small>
         </article>
-        <article class="cleanup-run-card">
+        <article class="cleanup-run-card app-compact-card">
           <span>Reason</span>
           <strong>{{ selectedCleanupRunHistory.reason || "-" }}</strong>
           <small>{{ selectedCleanupRunHistory.error_code || selectedCleanupRunHistory.action_mode }}</small>
         </article>
-        <article class="cleanup-run-card">
+        <article class="cleanup-run-card app-compact-card">
           <span>Requested Files</span>
           <strong>{{ selectedCleanupRunHistory.requested_file_ids.length }}</strong>
           <small class="mono object-key">{{ selectedCleanupRunHistory.requested_file_ids.join(", ") }}</small>
         </article>
-        <article class="cleanup-run-card">
+        <article class="cleanup-run-card app-compact-card">
           <span>Signed Plan</span>
           <strong class="mono object-key">{{ selectedCleanupRunHistory.cleanup_plan?.plan_id || "-" }}</strong>
           <small>expires {{ formatDateTime(selectedCleanupRunHistory.cleanup_plan?.expires_at) }}</small>
@@ -2068,43 +2068,21 @@ watch(activeFileManagementTab, (tab) => {
 <style scoped lang="scss">
 .file-retention-page {
   display: grid;
-  gap: 18px;
+  gap: var(--app-space-4);
 }
 
 .page-heading {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 10px 0 2px;
-}
-
-.page-kicker {
-  margin: 0 0 4px;
-  color: #2563eb;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-.page-heading h1 {
-  margin: 0;
-  color: #111827;
-  font-size: 28px;
-  line-height: 1.2;
-}
-
-.page-heading p:last-child {
-  margin: 8px 0 0;
-  color: #667085;
+  gap: var(--app-space-4);
 }
 
 .heading-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 
 .retention-notice {
@@ -2114,51 +2092,7 @@ watch(activeFileManagementTab, (tab) => {
 .file-workspace-nav {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.file-workspace-tab {
-  display: grid;
-  gap: 5px;
-  min-height: 100px;
-  padding: 13px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #fff;
-  color: #111827;
-  text-align: left;
-  cursor: pointer;
-}
-
-.file-workspace-tab:hover,
-.file-workspace-tab.is-active {
-  border-color: #2563eb;
-  background: #f8fafc;
-}
-
-.file-workspace-tab span,
-.file-workspace-tab strong,
-.file-workspace-tab small {
-  display: block;
-}
-
-.file-workspace-tab span {
-  color: #667085;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.file-workspace-tab strong {
-  overflow-wrap: anywhere;
-  color: #111827;
-  font-size: 20px;
-  line-height: 1.2;
-}
-
-.file-workspace-tab small {
-  color: #667085;
-  font-size: 12px;
-  line-height: 1.45;
+  gap: var(--app-space-3);
 }
 
 .file-management-tabs {
@@ -2171,46 +2105,11 @@ watch(activeFileManagementTab, (tab) => {
 
 .file-management-tabs :deep(.el-tab-pane) {
   display: grid;
-  gap: 18px;
+  gap: var(--app-space-4);
 }
 
 .summary-grid {
-  display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.summary-card {
-  display: grid;
-  gap: 6px;
-  min-height: 112px;
-  padding: 16px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #fff;
-}
-
-.summary-card span,
-.summary-card strong,
-.summary-card small {
-  display: block;
-}
-
-.summary-card span {
-  color: #667085;
-  font-size: 13px;
-}
-
-.summary-card strong {
-  color: #111827;
-  font-size: 24px;
-  line-height: 1.2;
-}
-
-.summary-card small {
-  color: #667085;
-  font-size: 13px;
-  line-height: 1.5;
 }
 
 .summary-time {
@@ -2219,200 +2118,146 @@ watch(activeFileManagementTab, (tab) => {
 }
 
 .retention-table-section {
-  display: grid;
-  gap: 12px;
-  padding: 16px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #fff;
+  min-width: 0;
 }
 
 .section-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--app-space-4);
 }
 
 .toolbar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 
 .library-filter-form {
   display: grid;
   grid-template-columns: 1.8fr repeat(5, minmax(130px, 1fr));
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 
 .filter-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 
 .effective-policy-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 4px;
+  gap: var(--app-space-2);
+  margin-top: var(--app-space-1);
 }
 
 .storage-group-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 
 .quota-dry-run-panel {
-  display: grid;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #f8fafc;
+  min-width: 0;
 }
 
 .quota-dry-run-form {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(220px, 2fr);
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 
 .quota-result-grid {
-  display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
 }
 
 .quota-result-card {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-  padding: 12px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #fff;
-}
-
-.quota-result-card span,
-.quota-result-card small {
-  color: #667085;
-  font-size: 12px;
+  min-height: 86px;
 }
 
 .quota-result-card strong {
-  overflow-wrap: anywhere;
-  color: #111827;
   font-size: 18px;
-  line-height: 1.3;
 }
 
 .quota-reason-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 
 .quota-ops-panel {
   display: grid;
-  gap: 12px;
-  padding-top: 12px;
-  border-top: 1px solid #d9e2ec;
+  gap: var(--app-space-3);
+  padding-top: var(--app-space-3);
+  border-top: 1px solid var(--app-color-border);
 }
 
 .quota-ops-subsection {
   display: grid;
-  gap: 8px;
+  gap: var(--app-space-2);
   min-width: 0;
 }
 
 .scheduler-dry-run-section {
-  background: #fbfdff;
+  background: var(--app-color-surface);
 }
 
 .scheduler-dry-run-form {
   display: grid;
   grid-template-columns: minmax(220px, 2fr) minmax(180px, 1fr);
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 
 .scheduler-dry-run-grid {
-  display: grid;
   grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr));
-  gap: 12px;
 }
 
 .cleanup-run-grid {
-  display: grid;
   grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr));
-  gap: 12px;
 }
 
 .cleanup-history-detail {
-  display: grid;
   grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr));
-  gap: 12px;
 }
 
 .cleanup-run-card {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-  padding: 12px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #f8fafc;
-}
-
-.cleanup-run-card span,
-.cleanup-run-card small {
-  color: #667085;
-  font-size: 12px;
+  min-height: 82px;
 }
 
 .cleanup-run-card strong {
-  overflow-wrap: anywhere;
-  color: #111827;
   font-size: 14px;
-  line-height: 1.5;
 }
 
 .safety-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 
 .storage-group-card {
-  display: grid;
-  gap: 8px;
   min-width: 0;
 }
 
 .storage-group-card h3 {
   margin: 0;
-  color: #111827;
+  color: var(--app-color-text);
   font-size: 14px;
 }
 
 .section-title {
   margin: 0;
-  color: #111827;
-  font-size: 18px;
 }
 
 .section-subtitle {
-  margin: 6px 0 0;
-  color: #667085;
-  font-size: 13px;
+  margin: var(--app-space-1) 0 0;
 }
 
 .subsection-title {
   margin: 0;
-  color: #111827;
+  color: var(--app-color-text);
   font-size: 14px;
 }
 
@@ -2421,7 +2266,7 @@ watch(activeFileManagementTab, (tab) => {
 }
 
 .mono {
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-family: var(--app-font-mono);
   font-size: 12px;
 }
 
@@ -2430,7 +2275,7 @@ watch(activeFileManagementTab, (tab) => {
 }
 
 .delete-warning {
-  margin-bottom: 14px;
+  margin-bottom: var(--app-space-4);
 }
 
 @media (max-width: 920px) {

@@ -1,12 +1,12 @@
 <!-- File: frontend/src/pages/OpsDashboardPage.vue -->
 <!-- Purpose: Render Admin-only operations status, fake controls, and dry-run safety panels. -->
 <template>
-  <main class="ops-dashboard-page" aria-labelledby="ops-dashboard-title">
-    <section class="page-heading">
+  <main class="ops-dashboard-page app-page" aria-labelledby="ops-dashboard-title">
+    <section class="page-heading app-page-header app-page-shell app-page-shell--wide">
       <div>
         <p class="page-kicker">Operations</p>
-        <h1 id="ops-dashboard-title">运维看板</h1>
-        <p>汇总 worker、队列、readiness、存储和任务风险；任务恢复先做 registry preview，再复用既有任务动作处理。</p>
+        <h1 id="ops-dashboard-title" class="page-title">运维看板</h1>
+        <p class="page-description">汇总 worker、队列、readiness、存储和任务风险；任务恢复先做 registry preview，再复用既有任务动作处理。</p>
       </div>
       <div class="heading-actions">
         <el-tag :type="opsStatus.tagType" effect="plain">{{ opsStatus.label }}</el-tag>
@@ -14,15 +14,15 @@
       </div>
     </section>
 
-    <ApiErrorAlert :error="error" />
+    <ApiErrorAlert class="app-page-shell app-page-shell--wide" :error="error" />
 
-    <el-alert type="info" title="safe operations" :closable="false" show-icon>
+    <el-alert class="app-page-shell app-page-shell--wide" type="info" title="safe operations" :closable="false" show-icon>
       此页面不会同步恢复 MinerU 结果、cleanup、真实 provider cancellation 或真实删除；文档任务 replay 只投递 Worker 或清理终态 callback。
     </el-alert>
 
-    <section v-loading="loading" class="summary-grid" aria-label="运维摘要">
-      <article class="summary-card status-card" :class="`is-${opsStatus.key}`">
-        <span class="status-dot" aria-hidden="true"></span>
+    <section v-loading="loading" class="summary-grid app-metric-grid app-page-shell app-page-shell--wide" aria-label="运维摘要">
+      <article class="summary-card status-card app-metric-card app-status-card" :class="`is-${opsStatus.key}`">
+        <span class="status-dot app-status-dot" aria-hidden="true"></span>
         <div>
           <span>整体状态</span>
           <strong>{{ opsStatus.label }}</strong>
@@ -30,38 +30,38 @@
         </div>
       </article>
 
-      <article class="summary-card">
+      <article class="summary-card app-metric-card">
         <span>Worker</span>
         <strong>{{ workerMode }}</strong>
         <small>dispatcher: {{ stageDispatcher }}</small>
       </article>
 
-      <article class="summary-card">
+      <article class="summary-card app-metric-card">
         <span>P0 jobs</span>
         <strong>{{ p0DocumentJobsLabel }}</strong>
         <small>backend: {{ documentJobsWorkerBackend }} · required {{ booleanLabel(p0DocumentJobsRequired) }}</small>
       </article>
 
-      <article class="summary-card">
+      <article class="summary-card app-metric-card">
         <span>Stage queue</span>
         <strong>{{ queuePressureLabel }}</strong>
         <small>failed {{ stageFailedCount }} · stale {{ staleRunningCount }} · replayable {{ replayableCount }}</small>
       </article>
 
-      <article class="summary-card">
+      <article class="summary-card app-metric-card">
         <span>Callbacks</span>
         <strong>{{ callbackPressureLabel }}</strong>
         <small>failed {{ callbackFailedCount }} · replayable {{ callbackReplayableCount }}</small>
       </article>
 
-      <article class="summary-card">
+      <article class="summary-card app-metric-card">
         <span>Document jobs</span>
         <strong>{{ failedJobsTotal }} / {{ runningJobsTotal }}</strong>
         <small>失败 / 运行中样例来自 document-jobs 只读列表</small>
       </article>
     </section>
 
-    <section v-if="alertItems.length" class="alert-grid" aria-label="运维告警和建议">
+    <section v-if="alertItems.length" class="alert-grid app-alert-stack app-page-shell app-page-shell--wide" aria-label="运维告警和建议">
       <el-alert
         v-for="item in alertItems"
         :key="item.key"
@@ -75,8 +75,8 @@
       </el-alert>
     </section>
 
-    <section class="integration-control-panel" aria-label="真实集成控制面">
-      <el-card class="card-flat dashboard-panel" shadow="never">
+    <section class="integration-control-panel app-page-shell app-page-shell--wide" aria-label="真实集成控制面">
+      <el-card class="card-flat dashboard-panel app-panel-card app-table-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">Integration Control Plane</h2>
@@ -137,8 +137,8 @@
       </el-card>
     </section>
 
-    <section class="alert-delivery-panel" aria-label="告警 fake outbox 投递">
-      <el-card class="card-flat dashboard-panel" shadow="never">
+    <section class="alert-delivery-panel app-page-shell app-page-shell--wide" aria-label="告警 fake outbox 投递">
+      <el-card class="card-flat dashboard-panel app-panel-card app-table-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">Alert Delivery</h2>
@@ -157,7 +157,7 @@
           Fake-send 会写入 <span class="mono">ops.alert_delivery_fake</span> audit；后端 safety metadata 会保持 external delivery 为 false。
         </el-alert>
 
-        <section v-if="alertDeliveryContract" class="adapter-contract-panel" aria-label="alert delivery adapter contract">
+        <section v-if="alertDeliveryContract" class="adapter-contract-panel app-evidence-panel" aria-label="alert delivery adapter contract">
           <div class="section-header">
             <div>
               <h3 class="section-title">Adapter Contract</h3>
@@ -180,7 +180,7 @@
           </el-descriptions>
 
           <div class="contract-grid">
-            <article class="contract-card">
+            <article class="contract-card app-compact-card">
               <h4>Parity Checks</h4>
               <el-tag
                 v-for="item in alertDeliveryContractParityItems"
@@ -191,13 +191,13 @@
                 {{ item.label }}={{ item.value }}
               </el-tag>
             </article>
-            <article class="contract-card">
+            <article class="contract-card app-compact-card">
               <h4>Required Audit Fields</h4>
               <el-tag v-for="field in alertDeliveryContract.required_audit_fields" :key="field" effect="plain">
                 {{ field }}
               </el-tag>
             </article>
-            <article class="contract-card">
+            <article class="contract-card app-compact-card">
               <h4>Blocking Reasons</h4>
               <el-tag v-for="reason in alertDeliveryContract.blocking_reasons" :key="reason" type="warning" effect="plain">
                 {{ reason }}
@@ -249,7 +249,7 @@
             </el-table>
           </div>
 
-          <aside class="alert-delivery-controls">
+          <aside class="alert-delivery-controls app-evidence-panel">
             <el-form label-position="top">
               <el-form-item label="Channel">
                 <el-input model-value="local_outbox" readonly />
@@ -288,7 +288,7 @@
           </aside>
         </div>
 
-        <section class="adapter-contract-panel" aria-label="Phase 7 Slack webhook pilot">
+        <section class="adapter-contract-panel app-evidence-panel" aria-label="Phase 7 Slack webhook pilot">
           <div class="section-header">
             <div>
               <h3 class="section-title">Phase 7 Slack Pilot</h3>
@@ -329,7 +329,7 @@
           </el-descriptions>
 
           <div class="contract-grid">
-            <article class="contract-card">
+            <article class="contract-card app-compact-card">
               <h4>Control Gates</h4>
               <el-tag
                 v-for="reason in alertDeliveryCapability?.blocking_reasons || []"
@@ -343,7 +343,7 @@
                 ready
               </el-tag>
             </article>
-            <article class="contract-card">
+            <article class="contract-card app-compact-card">
               <h4>Rollback</h4>
               <el-tag v-for="item in realAlertDeliveryRollbackItems" :key="item.label" effect="plain">
                 {{ item.label }}={{ item.value }}
@@ -430,8 +430,8 @@
       </el-card>
     </section>
 
-    <section v-if="s3DeleteContract" class="s3-delete-contract-panel" aria-label="S3 delete LocalStack fake parity contract">
-      <el-card class="card-flat dashboard-panel" shadow="never">
+    <section v-if="s3DeleteContract" class="s3-delete-contract-panel app-page-shell app-page-shell--wide" aria-label="S3 delete LocalStack fake parity contract">
+      <el-card class="card-flat dashboard-panel app-panel-card app-table-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">S3 Delete Adapter Contract</h2>
@@ -458,19 +458,19 @@
         </el-descriptions>
 
         <div class="contract-grid">
-          <article class="contract-card">
+          <article class="contract-card app-compact-card">
             <h4>LocalStack Profile</h4>
             <el-tag v-for="item in s3DeleteLocalStackItems" :key="item.label" effect="plain">
               {{ item.label }}={{ item.value }}
             </el-tag>
           </article>
-          <article class="contract-card">
+          <article class="contract-card app-compact-card">
             <h4>Storage Summary</h4>
             <el-tag v-for="item in s3DeleteStorageItems" :key="item.label" effect="plain">
               {{ item.label }}={{ item.value }}
             </el-tag>
           </article>
-          <article class="contract-card">
+          <article class="contract-card app-compact-card">
             <h4>Parity Checks</h4>
             <el-tag
               v-for="item in s3DeleteContractParityItems"
@@ -481,13 +481,13 @@
               {{ item.label }}={{ item.value }}
             </el-tag>
           </article>
-          <article class="contract-card">
+          <article class="contract-card app-compact-card">
             <h4>Required Audit Fields</h4>
             <el-tag v-for="field in s3DeleteContract.required_audit_fields" :key="field" effect="plain">
               {{ field }}
             </el-tag>
           </article>
-          <article class="contract-card">
+          <article class="contract-card app-compact-card">
             <h4>Blocking Reasons</h4>
             <el-tag v-for="reason in s3DeleteContract.blocking_reasons" :key="reason" type="warning" effect="plain">
               {{ reason }}
@@ -497,8 +497,8 @@
       </el-card>
     </section>
 
-    <section class="alert-destination-panel" aria-label="告警 destination 配置 dry-run">
-      <el-card class="card-flat dashboard-panel" shadow="never">
+    <section class="alert-destination-panel app-page-shell app-page-shell--wide" aria-label="告警 destination 配置 dry-run">
+      <el-card class="card-flat dashboard-panel app-panel-card app-table-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">Alert Destination Config Dry Run</h2>
@@ -537,12 +537,12 @@
             </el-form-item>
           </el-form>
 
-          <aside class="alert-destination-controls">
-            <div class="metric-row">
+          <aside class="alert-destination-controls app-evidence-panel">
+            <div class="metric-row app-key-value-row">
               <span>request alerts</span>
               <strong>{{ selectedActiveAlertCodes.length }}</strong>
             </div>
-            <div class="metric-row">
+            <div class="metric-row app-key-value-row">
               <span>destination ids</span>
               <strong>{{ parsedAlertDestinationIds.length || "all" }}</strong>
             </div>
@@ -621,8 +621,8 @@
       </el-card>
     </section>
 
-    <section class="provider-cancellation-panel" aria-label="Provider cancellation fake control">
-      <el-card class="card-flat dashboard-panel" shadow="never">
+    <section class="provider-cancellation-panel app-page-shell app-page-shell--wide" aria-label="Provider cancellation fake control">
+      <el-card class="card-flat dashboard-panel app-panel-card app-table-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">Provider Cancellation Fake Control</h2>
@@ -644,7 +644,7 @@
 
         <section
           v-if="providerCancellationSemantics"
-          class="provider-semantics-panel"
+          class="provider-semantics-panel app-evidence-panel"
           aria-label="Provider cancellation semantics verification"
         >
           <div class="section-header">
@@ -672,7 +672,7 @@
             </el-descriptions-item>
           </el-descriptions>
 
-          <div class="provider-gates">
+          <div class="provider-gates app-evidence-panel">
             <span>Blocking reasons</span>
             <el-tag
               v-for="reason in providerCancellationSemantics.blocking_reasons"
@@ -725,12 +725,12 @@
             </el-form-item>
           </el-form>
 
-          <aside class="provider-cancellation-controls">
-            <div class="metric-row">
+          <aside class="provider-cancellation-controls app-evidence-panel">
+            <div class="metric-row app-key-value-row">
               <span>preview</span>
               <strong>{{ providerCancellationReport ? providerCancellationReport.outcome : "not run" }}</strong>
             </div>
-            <div class="metric-row">
+            <div class="metric-row app-key-value-row">
               <span>eligible</span>
               <strong>{{ providerCancellationReport ? booleanLabel(providerCancellationReport.eligible) : "not reported" }}</strong>
             </div>
@@ -817,7 +817,7 @@
             </el-descriptions-item>
           </el-descriptions>
 
-          <div class="provider-gates">
+          <div class="provider-gates app-evidence-panel">
             <span>Missing gates</span>
             <template v-if="providerCancellationReport.missing_gates.length">
               <el-tag
@@ -850,8 +850,8 @@
       </el-card>
     </section>
 
-    <section class="action-safety-panel" aria-label="恢复动作安全注册表">
-      <el-card class="card-flat dashboard-panel" shadow="never">
+    <section class="action-safety-panel app-page-shell app-page-shell--wide" aria-label="恢复动作安全注册表">
+      <el-card class="card-flat dashboard-panel app-panel-card app-table-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">Recovery Action Safety Registry</h2>
@@ -894,8 +894,8 @@
       </el-card>
     </section>
 
-    <section class="dashboard-panels" aria-label="worker 和系统详情">
-      <el-card class="card-flat dashboard-panel" shadow="never">
+    <section class="dashboard-panels app-page-shell app-page-shell--wide" aria-label="worker 和系统详情">
+      <el-card class="card-flat dashboard-panel app-panel-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">Worker / Queue</h2>
@@ -903,15 +903,15 @@
           </div>
           <router-link to="/system-status">系统状态</router-link>
         </div>
-        <div class="metric-table">
-          <div v-for="item in queueMetricItems" :key="item.label" class="metric-row">
+        <div class="metric-table app-key-value-list">
+          <div v-for="item in queueMetricItems" :key="item.label" class="metric-row app-key-value-row">
             <span>{{ item.label }}</span>
             <strong>{{ item.value }}</strong>
           </div>
         </div>
       </el-card>
 
-      <el-card class="card-flat dashboard-panel" shadow="never">
+      <el-card class="card-flat dashboard-panel app-panel-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">Runtime</h2>
@@ -925,7 +925,7 @@
         </el-descriptions>
       </el-card>
 
-      <el-card class="card-flat dashboard-panel" shadow="never">
+      <el-card class="card-flat dashboard-panel app-panel-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">Resources</h2>
@@ -940,8 +940,8 @@
       </el-card>
     </section>
 
-    <section class="job-panels" aria-label="任务样例">
-      <el-card class="card-flat job-panel" shadow="never">
+    <section class="job-panels app-page-shell app-page-shell--wide" aria-label="任务样例">
+      <el-card class="card-flat job-panel app-panel-card app-table-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">失败任务样例</h2>
@@ -994,7 +994,7 @@
         </el-table>
       </el-card>
 
-      <el-card class="card-flat job-panel" shadow="never">
+      <el-card class="card-flat job-panel app-panel-card app-table-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">运行中任务样例</h2>
@@ -1047,8 +1047,8 @@
       </el-card>
     </section>
 
-    <section v-if="jobRecoveryPreview" class="job-recovery-preview" aria-label="任务恢复预览">
-      <el-card class="card-flat dashboard-panel" shadow="never">
+    <section v-if="jobRecoveryPreview" class="job-recovery-preview app-page-shell app-page-shell--wide" aria-label="任务恢复预览">
+      <el-card class="card-flat dashboard-panel app-panel-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">任务恢复预览</h2>
@@ -1090,11 +1090,11 @@
         </el-alert>
 
         <div class="recovery-preview-grid">
-          <article v-for="item in jobRecoveryTargetSummaryItems" :key="item.label" class="recovery-preview-card">
+          <article v-for="item in jobRecoveryTargetSummaryItems" :key="item.label" class="recovery-preview-card app-compact-card">
             <span>{{ item.label }}</span>
             <strong>{{ item.value }}</strong>
           </article>
-          <article v-for="item in jobRecoveryRiskItems" :key="item.label" class="recovery-preview-card">
+          <article v-for="item in jobRecoveryRiskItems" :key="item.label" class="recovery-preview-card app-compact-card">
             <span>{{ item.label }}</span>
             <strong>{{ booleanLabel(item.value) }}</strong>
           </article>
@@ -1115,7 +1115,7 @@
       </el-card>
     </section>
 
-    <section class="reference-grid" aria-label="运维相关入口">
+    <section class="reference-grid app-filter-panel app-page-shell app-page-shell--wide" aria-label="运维相关入口">
       <router-link to="/system-status">系统状态</router-link>
       <router-link to="/system-status/audit-events">审计日志</router-link>
       <router-link to="/system-status/file-retention">文件管理与清理</router-link>
@@ -2640,42 +2640,21 @@ onMounted(() => {
 <style scoped lang="scss">
 .ops-dashboard-page {
   display: grid;
-  gap: 18px;
+  gap: var(--app-space-4);
 }
 
 .page-heading {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 10px 0 2px;
-}
-
-.page-kicker {
-  margin: 0 0 4px;
-  color: #2563eb;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-.page-heading h1 {
-  margin: 0;
-  color: #111827;
-  font-size: 28px;
-  line-height: 1.2;
-}
-
-.page-heading p:last-child {
-  margin: 8px 0 0;
-  color: #667085;
+  gap: var(--app-space-4);
 }
 
 .heading-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: var(--app-space-2);
 }
 
 .summary-grid,
@@ -2689,7 +2668,7 @@ onMounted(() => {
 .job-panels,
 .job-recovery-preview {
   display: grid;
-  gap: 14px;
+  gap: var(--app-space-4);
 }
 
 .summary-grid {
@@ -2705,91 +2684,36 @@ onMounted(() => {
 }
 
 .summary-card {
-  display: grid;
-  gap: 6px;
   min-height: 118px;
-  padding: 16px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #fff;
-}
-
-.summary-card span,
-.summary-card strong,
-.summary-card small {
-  display: block;
-}
-
-.summary-card span {
-  color: #667085;
-  font-size: 13px;
 }
 
 .summary-card strong {
-  color: #111827;
   font-size: 22px;
-  line-height: 1.2;
-}
-
-.summary-card small {
-  color: #667085;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.status-card {
-  grid-template-columns: 12px minmax(0, 1fr);
-  align-items: start;
 }
 
 .status-card strong {
   font-size: 24px;
 }
 
-.status-dot {
-  width: 10px;
-  height: 10px;
-  margin-top: 8px;
-  border-radius: 999px;
-  background: #94a3b8;
-}
-
-.status-card.is-ok .status-dot {
-  background: #16a34a;
-}
-
-.status-card.is-watch .status-dot {
-  background: #d97706;
-}
-
-.status-card.is-needs-attention .status-dot {
-  background: #dc2626;
-}
-
-.alert-grid {
-  display: grid;
-  gap: 12px;
-}
-
 .alert-description {
-  margin: 0 0 6px;
+  margin: 0 0 var(--app-space-2);
 }
 
 .toolbar {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 
 .delivery-warning {
-  margin-bottom: 14px;
+  margin-bottom: var(--app-space-4);
 }
 
 .alert-delivery-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;
-  gap: 14px;
+  gap: var(--app-space-4);
   align-items: start;
 }
 
@@ -2801,37 +2725,27 @@ onMounted(() => {
 }
 
 .adapter-contract-panel {
-  display: grid;
-  gap: 12px;
-  margin-bottom: 14px;
-  padding: 12px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #fbfdff;
+  margin-bottom: var(--app-space-4);
 }
 
 .contract-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 
 .contract-card {
   display: flex;
   flex-wrap: wrap;
   align-content: flex-start;
-  gap: 8px;
+  gap: var(--app-space-2);
   min-width: 0;
-  padding: 10px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #fff;
 }
 
 .contract-card h4 {
   flex-basis: 100%;
   margin: 0;
-  color: #111827;
+  color: var(--app-color-text);
   font-size: 13px;
 }
 
@@ -2839,34 +2753,29 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--app-space-3);
   min-height: 38px;
-  margin-bottom: 10px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: #f8fafc;
-  color: #475467;
+  margin-bottom: var(--app-space-3);
+  padding: var(--app-space-2) var(--app-space-3);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface-muted);
+  color: var(--app-color-text-muted);
   font-size: 13px;
 }
 
 .alert-delivery-controls {
-  display: grid;
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #fbfdff;
+  gap: var(--app-space-3);
 }
 
 .field-hint {
-  margin-left: 8px;
-  color: #667085;
+  margin-left: var(--app-space-2);
+  color: var(--app-color-text-muted);
   font-size: 12px;
 }
 
 .delivery-actions {
   display: grid;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 
 .delivery-actions .el-button {
@@ -2875,38 +2784,33 @@ onMounted(() => {
 }
 
 .alert-delivery-result {
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid #d9e2ec;
+  margin-top: var(--app-space-4);
+  padding-top: var(--app-space-4);
+  border-top: 1px solid var(--app-color-border);
 }
 
 .alert-destination-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;
-  gap: 14px;
+  gap: var(--app-space-4);
   align-items: start;
 }
 
 .alert-destination-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 14px;
+  gap: 0 var(--app-space-4);
 }
 
 .alert-destination-controls {
-  display: grid;
-  gap: 10px;
+  gap: var(--app-space-3);
   min-width: 0;
-  padding: 12px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #fbfdff;
 }
 
 .alert-destination-result {
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid #d9e2ec;
+  margin-top: var(--app-space-4);
+  padding-top: var(--app-space-4);
+  border-top: 1px solid var(--app-color-border);
 }
 
 .compact-list {
@@ -2927,120 +2831,72 @@ onMounted(() => {
 .provider-cancellation-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;
-  gap: 14px;
+  gap: var(--app-space-4);
   align-items: start;
 }
 
 .provider-cancellation-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 14px;
+  gap: 0 var(--app-space-4);
 }
 
 .provider-cancellation-controls {
-  display: grid;
-  gap: 10px;
+  gap: var(--app-space-3);
   min-width: 0;
-  padding: 12px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #fbfdff;
 }
 
 .provider-cancellation-result {
   display: grid;
-  gap: 12px;
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid #d9e2ec;
+  gap: var(--app-space-3);
+  margin-top: var(--app-space-4);
+  padding-top: var(--app-space-4);
+  border-top: 1px solid var(--app-color-border);
 }
 
 .provider-semantics-panel {
-  display: grid;
-  gap: 12px;
-  margin-bottom: 14px;
-  padding: 12px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #fbfdff;
+  margin-bottom: var(--app-space-4);
 }
 
 .provider-result-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 
 .provider-gates {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--app-space-2);
   min-height: 36px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: #f8fafc;
 }
 
 .provider-gates > span {
-  color: #475467;
+  color: var(--app-color-text-muted);
   font-size: 13px;
   font-weight: 600;
 }
 
 .dashboard-panel,
 .job-panel {
-  border: 1px solid #d9e2ec;
+  border-color: var(--app-color-border);
 }
 
 .section-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 12px;
-}
-
-.section-title {
-  margin: 0;
-  color: #111827;
-  font-size: 18px;
-}
-
-.section-subtitle {
-  margin: 6px 0 0;
-  color: #667085;
-  font-size: 13px;
+  gap: var(--app-space-4);
+  margin-bottom: var(--app-space-3);
 }
 
 .metric-table {
-  display: grid;
-  gap: 8px;
-}
-
-.metric-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 34px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: #f8fafc;
-}
-
-.metric-row span {
-  color: #475467;
-  font-size: 13px;
-}
-
-.metric-row strong {
-  color: #111827;
-  font-size: 15px;
+  min-width: 0;
 }
 
 .mono {
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-family: var(--app-font-mono);
   font-size: 12px;
 }
 
@@ -3051,38 +2907,17 @@ onMounted(() => {
 .job-recovery-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 
 .recovery-preview-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
+  gap: var(--app-space-3);
 }
 
 .recovery-preview-card {
-  display: grid;
-  gap: 4px;
   min-height: 78px;
-  padding: 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #f8fafc;
-}
-
-.recovery-preview-card span,
-.recovery-preview-card strong {
-  display: block;
-}
-
-.recovery-preview-card span {
-  color: #667085;
-  font-size: 12px;
-}
-
-.recovery-preview-card strong {
-  color: #111827;
-  font-size: 16px;
 }
 
 .recovery-preview-actions {
@@ -3090,7 +2925,7 @@ onMounted(() => {
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 
 .action-table {
@@ -3103,17 +2938,13 @@ onMounted(() => {
 }
 
 .action-title small {
-  color: #667085;
+  color: var(--app-color-text-muted);
 }
 
 .reference-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  padding: 14px 16px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #fff;
+  gap: var(--app-space-3);
 }
 
 @media (max-width: 1100px) {

@@ -51,6 +51,16 @@ These rules apply to `frontend/src/styles/main.scss`, `frontend/src/layouts/AppL
 - `app-metric-card`
 - `app-entry-card`
 - `app-subpanel`
+- `app-status-card`
+- `app-status-dot`
+- `app-alert-stack`
+- `app-filter-panel`
+- `app-evidence-panel`
+- `app-compact-grid`
+- `app-compact-card`
+- `app-key-value-list`
+- `app-key-value-row`
+- `app-workspace-tab`
 
 **Why**: Page-level Vue abstractions are unnecessary for the first UI polish round, but repeated page shells should still share dimensions, padding, borders, hierarchy, and typography.
 
@@ -94,6 +104,42 @@ These rules apply to `frontend/src/styles/main.scss`, `frontend/src/layouts/AppL
   border: 1px solid #d9e2ec;
   border-radius: 8px;
   background: #fff;
+}
+```
+
+## Convention: Operations Status And Evidence Surfaces
+
+**What**: Operations pages should use the shared status, evidence, filter, compact-card, key-value, and workspace-tab helpers when presenting health, alerts, dry-run evidence, audit tables, or guarded operations.
+
+**Why**: System status, ops dashboard, audit log, and file retention pages share the same information hierarchy: health summary, warnings, evidence, tables, timestamps, and guarded actions. Shared helpers keep severity colors, spacing, empty/loading surfaces, and dense evidence panels consistent without changing Element Plus behavior.
+
+**Good**:
+
+```vue
+<article class="app-metric-card app-status-card is-warning">
+  <span class="app-status-dot" aria-hidden="true"></span>
+  <div>
+    <strong>有告警</strong>
+    <small>核心 readiness 可用，但存在需要关注的非阻断警告。</small>
+  </div>
+</article>
+
+<section class="app-filter-panel app-table-card app-page-shell" aria-label="审计日志筛选">
+  <el-form label-position="top" />
+  <el-table :data="events" />
+</section>
+
+<div class="app-evidence-panel">
+  <el-tag type="warning" effect="plain">dry_run=true</el-tag>
+</div>
+```
+
+**Bad**:
+
+```scss
+.ops-card {
+  border: 1px solid #d9e2ec;
+  background: #fbfdff;
 }
 ```
 
