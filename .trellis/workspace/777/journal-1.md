@@ -107,3 +107,36 @@ Implemented the first-round SaaS UI polish for the document job main flow with s
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Frontend SaaS QA settings UI
+
+**Date**: 2026-06-18
+**Task**: Frontend SaaS QA settings UI
+**Branch**: `main`
+
+### Summary
+
+Implemented second-round frontend SaaS polish for Translation QA and settings entry pages, added shared workbench surface helpers, updated frontend UI system guidelines, and verified frontend build.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2862fbef` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
