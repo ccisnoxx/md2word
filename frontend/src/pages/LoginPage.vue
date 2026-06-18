@@ -10,8 +10,8 @@
           <span class="brand-name">md2word Workbench</span>
         </div>
         <p class="login-eyebrow">内部文档转换入口</p>
-        <h1 id="login-title">把 PDF 转换任务交给稳定队列。</h1>
-        <p class="login-lede">集中处理上传、转换进度和 Word 结果，适合内部运营与交付团队日常使用。</p>
+        <h1 id="login-title">md2word 内部工作台</h1>
+        <p class="login-lede">登录后处理 PDF 上传、转换进度、Word 结果交付和运行证据，面向内部运营与交付团队。</p>
 
         <div class="workflow-panel" aria-label="PDF 到 Word 的处理流程">
           <div class="document-preview" aria-hidden="true">
@@ -182,21 +182,20 @@ async function submit(): Promise<void> {
 
 <style scoped lang="scss">
 .login-page {
-  --login-bg: #f7f5ff;
-  --login-bg-secondary: #ecfeff;
-  --login-text: #16163a;
-  --login-muted: #5a6680;
-  --login-panel: rgba(255, 255, 255, 0.78);
-  --login-panel-strong: rgba(255, 255, 255, 0.9);
-  --login-border: rgba(99, 102, 241, 0.16);
-  --login-shadow: 0 28px 80px rgba(39, 39, 90, 0.18);
-  --login-accent: #4f46e5;
-  --login-accent-strong: #312e81;
-  --login-emerald: #0f9f75;
-  --login-amber: #b7791f;
-  --login-input-bg: rgba(255, 255, 255, 0.82);
-  --login-input-text: #16163a;
-  --login-input-placeholder: #7a849a;
+  --login-bg: var(--app-color-bg);
+  --login-bg-secondary: var(--app-color-surface-muted);
+  --login-text: var(--app-color-text);
+  --login-muted: var(--app-color-text-muted);
+  --login-panel: var(--app-color-surface);
+  --login-panel-strong: var(--app-color-surface-muted);
+  --login-border: var(--app-color-border);
+  --login-shadow: var(--app-shadow-panel);
+  --login-accent: var(--app-color-primary);
+  --login-accent-strong: var(--app-color-primary-hover);
+  --login-emerald: var(--app-color-success);
+  --login-input-bg: var(--app-color-surface);
+  --login-input-text: var(--app-color-text);
+  --login-input-placeholder: var(--app-color-text-faint);
 
   position: relative;
   overflow: hidden;
@@ -205,8 +204,8 @@ async function submit(): Promise<void> {
   place-items: center;
   padding: 48px 24px;
   background:
-    linear-gradient(120deg, rgba(79, 70, 229, 0.12), rgba(15, 159, 117, 0.1) 45%, transparent 70%),
-    linear-gradient(150deg, var(--login-bg), var(--login-bg-secondary));
+    linear-gradient(180deg, var(--login-bg-secondary), var(--login-bg) 42%),
+    var(--login-bg);
   color: var(--login-text);
   color-scheme: light;
 }
@@ -220,37 +219,25 @@ async function submit(): Promise<void> {
 }
 
 .login-page::before {
-  inset: -12% -8% auto auto;
-  width: 58vw;
-  height: 58vw;
-  max-width: 720px;
-  max-height: 720px;
-  background:
-    linear-gradient(135deg, rgba(79, 70, 229, 0.22), rgba(15, 159, 117, 0.08)),
-    linear-gradient(45deg, transparent 0 42%, rgba(255, 255, 255, 0.34) 42% 46%, transparent 46% 100%);
-  clip-path: polygon(18% 0, 100% 8%, 86% 72%, 38% 100%, 0 48%);
-  filter: blur(2px);
-  opacity: 0.88;
-  transform: translate3d(0, 0, 0);
-  animation: panel-drift 900ms ease-out both;
+  display: none;
 }
 
 .login-page::after {
   inset: 0;
   background-image:
-    linear-gradient(rgba(79, 70, 229, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(79, 70, 229, 0.08) 1px, transparent 1px);
+    linear-gradient(rgba(37, 99, 235, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(37, 99, 235, 0.06) 1px, transparent 1px);
   background-size: 48px 48px;
-  mask-image: linear-gradient(120deg, transparent 0%, #000 26%, transparent 82%);
-  opacity: 0.42;
+  mask-image: linear-gradient(180deg, #000 0%, transparent 76%);
+  opacity: 0.34;
 }
 
 .login-shell {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 420px);
-  gap: clamp(28px, 6vw, 72px);
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 410px);
+  gap: clamp(24px, 5vw, 56px);
   width: min(1080px, 100%);
   align-items: center;
 }
@@ -263,14 +250,12 @@ async function submit(): Promise<void> {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 28px;
+  margin-bottom: 22px;
   padding: 8px 12px 8px 8px;
   border: 1px solid var(--login-border);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.54);
-  box-shadow: 0 12px 30px rgba(49, 46, 129, 0.08);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  border-radius: var(--app-radius-md);
+  background: var(--login-panel);
+  box-shadow: var(--app-shadow-subtle);
 }
 
 .brand-mark {
@@ -278,9 +263,9 @@ async function submit(): Promise<void> {
   width: 34px;
   height: 34px;
   place-items: center;
-  border-radius: 8px;
-  background: linear-gradient(135deg, var(--login-accent), var(--login-emerald));
-  color: #ffffff;
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-primary-soft);
+  color: var(--login-accent-strong);
   font-size: 18px;
 }
 
@@ -300,18 +285,18 @@ async function submit(): Promise<void> {
 
 .login-copy h1 {
   max-width: 620px;
-  margin: 0 0 18px;
+  margin: 0 0 14px;
   color: var(--login-text);
-  font-size: clamp(34px, 5vw, 58px);
+  font-size: clamp(32px, 4vw, 44px);
   font-weight: 760;
-  line-height: 1.08;
+  line-height: 1.14;
 }
 
 .login-lede {
   max-width: 560px;
-  margin: 0 0 28px;
+  margin: 0 0 24px;
   color: var(--login-muted);
-  font-size: 17px;
+  font-size: 15px;
   line-height: 1.75;
 }
 
@@ -320,14 +305,12 @@ async function submit(): Promise<void> {
   grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
   gap: 20px;
   width: min(640px, 100%);
-  margin-bottom: 18px;
+  margin-bottom: 16px;
   padding: 18px;
   border: 1px solid var(--login-border);
-  border-radius: 8px;
+  border-radius: var(--app-radius-md);
   background: var(--login-panel);
-  box-shadow: 0 18px 50px rgba(49, 46, 129, 0.1);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  box-shadow: var(--app-shadow-subtle);
   animation: fade-up 420ms ease-out 80ms both;
 }
 
@@ -344,12 +327,12 @@ async function submit(): Promise<void> {
   min-height: 104px;
   place-items: center;
   border: 1px solid var(--login-border);
-  border-radius: 8px;
+  border-radius: var(--app-radius-md);
   background: var(--login-panel-strong);
   color: var(--login-accent-strong);
   font-size: 16px;
   font-weight: 800;
-  box-shadow: 0 12px 28px rgba(49, 46, 129, 0.12);
+  box-shadow: var(--app-shadow-subtle);
   transform-origin: center;
   animation: doc-enter 460ms ease-out both;
 }
@@ -369,7 +352,7 @@ async function submit(): Promise<void> {
   height: 2px;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(79, 70, 229, 0.16);
+  background: var(--app-color-primary-border);
 }
 
 .convert-line::after {
@@ -428,10 +411,8 @@ async function submit(): Promise<void> {
   min-height: 78px;
   padding: 14px;
   border: 1px solid var(--login-border);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.56);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  border-radius: var(--app-radius-md);
+  background: var(--login-panel);
 }
 
 .signal-item span {
@@ -451,11 +432,9 @@ async function submit(): Promise<void> {
   position: relative;
   overflow: hidden;
   border: 1px solid var(--login-border);
-  border-radius: 8px;
+  border-radius: var(--app-radius-md);
   background: var(--login-panel);
   box-shadow: var(--login-shadow);
-  backdrop-filter: blur(22px);
-  -webkit-backdrop-filter: blur(22px);
   animation: card-in 480ms ease-out 100ms both;
 }
 
@@ -464,7 +443,7 @@ async function submit(): Promise<void> {
   inset: 0 0 auto;
   height: 4px;
   content: "";
-  background: linear-gradient(90deg, var(--login-accent), var(--login-emerald), var(--login-amber));
+  background: var(--login-accent);
 }
 
 .login-card-header {
@@ -496,7 +475,7 @@ async function submit(): Promise<void> {
   }
 
   :deep(.el-input__wrapper) {
-    border-radius: 8px;
+    border-radius: var(--app-radius-md);
     background: var(--login-input-bg);
     box-shadow: 0 0 0 1px var(--login-border) inset;
     transition:
@@ -507,7 +486,7 @@ async function submit(): Promise<void> {
   :deep(.el-input__wrapper.is-focus) {
     box-shadow:
       0 0 0 1px var(--login-accent) inset,
-      0 0 0 3px rgba(79, 70, 229, 0.14);
+      var(--app-shadow-focus);
   }
 
   :deep(.el-input__inner) {
@@ -529,30 +508,29 @@ async function submit(): Promise<void> {
 }
 
 .login-card :deep(.el-alert) {
-  border-radius: 8px;
+  border-radius: var(--app-radius-md);
 }
 
 .login-button {
   width: 100%;
   min-height: 44px;
   margin-top: 8px;
-  border: 0;
-  border-radius: 8px;
-  background: linear-gradient(135deg, var(--login-accent), var(--login-emerald));
-  box-shadow: 0 14px 32px rgba(15, 159, 117, 0.2);
+  border: 1px solid var(--login-accent);
+  border-radius: var(--app-radius-md);
+  background: var(--login-accent);
+  box-shadow: none;
   font-weight: 750;
   transition:
     box-shadow 180ms ease-out,
-    filter 180ms ease-out,
-    transform 180ms ease-out;
+    background-color 180ms ease-out,
+    border-color 180ms ease-out;
 }
 
 .login-button:hover,
 .login-button:focus-visible {
-  background: linear-gradient(135deg, var(--login-accent), var(--login-emerald));
-  filter: saturate(1.08);
-  box-shadow: 0 18px 40px rgba(15, 159, 117, 0.28);
-  transform: translateY(-1px);
+  border-color: var(--login-accent-strong);
+  background: var(--login-accent-strong);
+  box-shadow: var(--app-shadow-focus);
 }
 
 .security-note {
@@ -612,49 +590,18 @@ async function submit(): Promise<void> {
   }
 }
 
-@keyframes panel-drift {
-  from {
-    opacity: 0;
-    transform: translate3d(28px, -18px, 0) rotate(2deg);
-  }
-
-  to {
-    opacity: 0.88;
-    transform: translate3d(0, 0, 0) rotate(0deg);
-  }
-}
-
 @media (prefers-color-scheme: dark) {
   .login-page {
-    --login-bg: #050711;
-    --login-bg-secondary: #0b1020;
-    --login-text: #f7f8ff;
-    --login-muted: #a9b4c7;
-    --login-panel: rgba(10, 16, 32, 0.74);
-    --login-panel-strong: rgba(15, 23, 42, 0.88);
-    --login-border: rgba(148, 163, 184, 0.2);
-    --login-shadow: 0 30px 90px rgba(0, 0, 0, 0.42);
-    --login-accent: #818cf8;
-    --login-accent-strong: #c7d2fe;
-    --login-emerald: #34d399;
-    --login-amber: #f5c451;
-    --login-input-bg: rgba(15, 23, 42, 0.84);
-    --login-input-text: #f8fafc;
-    --login-input-placeholder: #8fa0b8;
-
-    background:
-      linear-gradient(120deg, rgba(129, 140, 248, 0.2), rgba(52, 211, 153, 0.12) 44%, transparent 70%),
-      linear-gradient(150deg, var(--login-bg), var(--login-bg-secondary));
     color-scheme: dark;
   }
 
   .brand-row,
   .signal-item {
-    background: rgba(15, 23, 42, 0.58);
+    background: var(--login-panel);
   }
 
   .doc-card {
-    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.26);
+    box-shadow: var(--app-shadow-subtle);
   }
 
   .login-page::after {
@@ -668,7 +615,7 @@ async function submit(): Promise<void> {
     :deep(.el-input__wrapper.is-focus) {
       box-shadow:
         0 0 0 1px var(--login-accent) inset,
-        0 0 0 3px rgba(129, 140, 248, 0.22);
+        var(--app-shadow-focus);
     }
   }
 }

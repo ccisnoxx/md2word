@@ -28,6 +28,7 @@
   --app-color-danger-border: #fecaca;
   --app-color-info: #0891b2;
   --app-color-info-soft: #ecfeff;
+  --app-color-info-border: #a5f3fc;
 
   --app-radius-xs: 4px;
   --app-radius-sm: 6px;
@@ -45,6 +46,7 @@
 
   --app-shadow-subtle: 0 1px 2px rgba(15, 23, 42, 0.04);
   --app-shadow-panel: 0 8px 24px rgba(15, 23, 42, 0.06);
+  --app-shadow-panel-hover: 0 12px 30px rgba(15, 23, 42, 0.08);
   --app-shadow-focus: 0 0 0 3px rgba(37, 99, 235, 0.14);
 
   --app-content-width: 1280px;
@@ -68,6 +70,10 @@ body {
   background: var(--app-color-bg);
 }
 
+#app {
+  min-height: 100vh;
+}
+
 a {
   color: var(--app-color-primary);
   text-decoration: none;
@@ -76,6 +82,96 @@ a {
 
 a:hover {
   color: var(--app-color-primary-hover);
+}
+
+a:focus-visible,
+button:focus-visible,
+[role="button"]:focus-visible {
+  border-radius: var(--app-radius-sm);
+  outline: 2px solid var(--app-color-primary);
+  outline-offset: 2px;
+}
+
+button,
+[role="button"],
+.el-button,
+.el-dropdown,
+.el-upload-dragger,
+.app-entry-card,
+.app-workspace-tab {
+  cursor: pointer;
+}
+
+button:disabled,
+.el-button.is-disabled,
+.el-button.is-loading,
+.el-upload.is-disabled .el-upload-dragger {
+  cursor: not-allowed;
+}
+
+.el-button {
+  border-radius: var(--app-radius-md);
+  font-weight: 650;
+  transition:
+    border-color 160ms ease-out,
+    background-color 160ms ease-out,
+    color 160ms ease-out,
+    box-shadow 160ms ease-out;
+}
+
+.el-button:not(.is-disabled):focus-visible,
+.el-button:not(.is-disabled):hover {
+  box-shadow: var(--app-shadow-focus);
+}
+
+.el-button--primary {
+  border-color: var(--app-color-primary);
+  background: var(--app-color-primary);
+}
+
+.el-button--primary:not(.is-disabled):focus-visible,
+.el-button--primary:not(.is-disabled):hover {
+  border-color: var(--app-color-primary-hover);
+  background: var(--app-color-primary-hover);
+}
+
+.el-button.is-text,
+.el-button.is-link {
+  box-shadow: none;
+}
+
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner,
+.el-input-number .el-input__wrapper {
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface);
+  box-shadow: 0 0 0 1px var(--app-color-border) inset;
+  transition:
+    box-shadow 160ms ease-out,
+    background-color 160ms ease-out;
+}
+
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused,
+.el-textarea__inner:focus {
+  box-shadow:
+    0 0 0 1px var(--app-color-primary) inset,
+    var(--app-shadow-focus);
+}
+
+.el-form-item__label {
+  color: var(--app-color-text);
+  font-weight: 650;
+}
+
+.el-tag {
+  border-radius: var(--app-radius-pill);
+  font-weight: 650;
+}
+
+.el-alert {
+  border-radius: var(--app-radius-md);
 }
 
 .app-page {
@@ -105,19 +201,33 @@ a:hover {
 }
 
 .app-page-header {
+  min-width: 0;
   padding: var(--app-space-6);
 }
 
 .app-panel {
+  min-width: 0;
   padding: var(--app-space-5);
 }
 
 .app-panel-card {
   overflow: hidden;
+  min-width: 0;
   border: 1px solid var(--app-color-border);
   border-radius: var(--app-radius-md);
   background: var(--app-color-surface);
   box-shadow: var(--app-shadow-panel);
+}
+
+.app-page .el-card.card-flat {
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface);
+  box-shadow: var(--app-shadow-panel);
+}
+
+.app-page .el-card.card-flat.app-table-card {
+  box-shadow: none;
 }
 
 .app-panel-card > .el-card__body {
@@ -125,6 +235,7 @@ a:hover {
 }
 
 .app-table-card {
+  min-width: 0;
   box-shadow: none;
 }
 
@@ -139,6 +250,23 @@ a:hover {
 
   color: var(--app-color-text);
   background: transparent;
+}
+
+.app-table-card .el-table__header th.el-table__cell {
+  letter-spacing: 0;
+}
+
+.app-table-card .el-table td.el-table__cell,
+.app-table-card .el-table th.el-table__cell {
+  padding: 10px 0;
+}
+
+.app-table-card .el-table__row {
+  transition: background-color 140ms ease-out;
+}
+
+.app-table-card .el-pagination {
+  padding: var(--app-space-3) var(--app-space-4);
 }
 
 .app-table-card .el-table__inner-wrapper::before,
@@ -173,6 +301,15 @@ a:hover {
   border-radius: var(--app-radius-md);
   background: var(--app-color-surface);
   box-shadow: var(--app-shadow-subtle);
+}
+
+.app-metric-card,
+.app-compact-card,
+.app-governance-metric {
+  transition:
+    border-color 160ms ease-out,
+    background-color 160ms ease-out,
+    box-shadow 160ms ease-out;
 }
 
 .app-metric-card span,
@@ -211,7 +348,7 @@ a:hover {
 .app-entry-card:focus-visible {
   border-color: var(--app-color-primary-border);
   color: var(--app-color-primary-hover);
-  box-shadow: var(--app-shadow-panel);
+  box-shadow: var(--app-shadow-panel-hover);
   outline: none;
 }
 
@@ -219,6 +356,9 @@ a:hover {
   border: 1px solid var(--app-color-border-soft);
   border-radius: var(--app-radius-md);
   background: var(--app-color-surface-muted);
+  transition:
+    border-color 160ms ease-out,
+    background-color 160ms ease-out;
 }
 
 .app-status-card {
@@ -240,16 +380,37 @@ a:hover {
   background: var(--app-color-success);
 }
 
+.app-status-card.is-ready,
+.app-status-card.is-ok,
+.app-status-card.is-success {
+  border-color: var(--app-color-success-border);
+  background: var(--app-color-success-soft);
+}
+
 .app-status-card.is-degraded .app-status-dot,
 .app-status-card.is-watch .app-status-dot,
 .app-status-card.is-warning .app-status-dot {
   background: var(--app-color-warning);
 }
 
+.app-status-card.is-degraded,
+.app-status-card.is-watch,
+.app-status-card.is-warning {
+  border-color: var(--app-color-warning-border);
+  background: var(--app-color-warning-soft);
+}
+
 .app-status-card.is-blocked .app-status-dot,
 .app-status-card.is-needs-attention .app-status-dot,
 .app-status-card.is-danger .app-status-dot {
   background: var(--app-color-danger);
+}
+
+.app-status-card.is-blocked,
+.app-status-card.is-needs-attention,
+.app-status-card.is-danger {
+  border-color: var(--app-color-danger-border);
+  background: var(--app-color-danger-soft);
 }
 
 .app-alert-stack {
@@ -260,11 +421,22 @@ a:hover {
 .app-filter-panel {
   display: grid;
   gap: var(--app-space-3);
+  min-width: 0;
   padding: var(--app-space-4);
   border: 1px solid var(--app-color-border);
   border-radius: var(--app-radius-md);
   background: var(--app-color-surface);
   box-shadow: var(--app-shadow-subtle);
+}
+
+.app-filter-panel .toolbar,
+.app-filter-panel .section-header {
+  min-width: 0;
+}
+
+.app-filter-panel .el-input,
+.app-filter-panel .el-select {
+  min-width: 0;
 }
 
 .app-evidence-panel {
@@ -355,7 +527,7 @@ a:hover {
 .app-workspace-tab.is-active {
   border-color: var(--app-color-primary-border);
   background: var(--app-color-surface-muted);
-  box-shadow: var(--app-shadow-panel);
+  box-shadow: var(--app-shadow-panel-hover);
   outline: none;
 }
 
@@ -454,6 +626,7 @@ a:hover {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--app-space-2);
+  min-width: 0;
 }
 
 .app-action-row {
@@ -461,6 +634,12 @@ a:hover {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--app-space-2);
+  min-width: 0;
+}
+
+.app-action-row .el-button + .el-button,
+.toolbar .el-button + .el-button {
+  margin-left: 0;
 }
 
 .app-split-grid {
@@ -549,7 +728,9 @@ a:hover {
     --app-color-danger-border: rgba(251, 113, 133, 0.28);
     --app-color-info: #22d3ee;
     --app-color-info-soft: rgba(34, 211, 238, 0.12);
+    --app-color-info-border: rgba(34, 211, 238, 0.28);
     --app-shadow-panel: 0 16px 42px rgba(0, 0, 0, 0.28);
+    --app-shadow-panel-hover: 0 18px 48px rgba(0, 0, 0, 0.34);
   }
 }
 
@@ -572,5 +753,38 @@ a:hover {
   .app-split-grid,
   .app-review-grid {
     grid-template-columns: 1fr;
+  }
+
+  .app-filter-panel,
+  .app-evidence-panel {
+    padding: var(--app-space-3);
+  }
+
+  .app-key-value-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 520px) {
+  .app-page-header,
+  .app-panel,
+  .app-panel-card > .el-card__body {
+    padding: var(--app-space-3);
+  }
+
+  .el-dialog {
+    --el-dialog-width: calc(100vw - 24px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }

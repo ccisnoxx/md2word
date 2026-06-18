@@ -2,7 +2,41 @@
 
 ## Scope
 
-These rules apply to `frontend/src/styles/main.scss`, `frontend/src/layouts/AppLayout.vue`, and the document job main flow pages/components under `frontend/src/pages/` and `frontend/src/components/`.
+These rules apply to `frontend/src/styles/main.scss`, `frontend/src/layouts/AppLayout.vue`, and the completed productized workbench pages/components under `frontend/src/pages/` and `frontend/src/components/`.
+
+## Final SaaS Workbench Design System
+
+The accepted md2word frontend direction is a Stripe / Linear-like internal SaaS workbench: dense, calm, data-first, and task-oriented. The UI should optimize for scanning operational state, filtering records, reviewing evidence, and executing guarded actions.
+
+The `ui-ux-pro-max` design-system generation for md2word classified the product as a data-dense drill-down SaaS dashboard. Keep that pattern, but normalize visual choices to this project's existing `--app-*` tokens rather than importing an external palette, font stack, or UI library.
+
+### Visual Baseline
+
+- Product pattern: data-dense workbench with drill-down pages, not a marketing site or landing-page hero.
+- Tone: restrained neutral surfaces, clear blue primary actions, semantic success/warning/danger/info states, low decoration.
+- Typography: use `--app-font-sans` and `--app-font-mono`; do not add remote font imports for productization polish.
+- Layout: shared page shells, compact headers, metric cards, tables, filters, evidence panels, and action rows.
+- Effects: stable hover/focus states, table row hover, visible focus rings, no scale-based hover shifts.
+- Responsive rule: pages must remain usable at roughly 375px, 768px, 1024px, and 1440px. Dense tables may scroll inside their own containers, but the page itself should not create incoherent horizontal overflow.
+
+### Covered Workbench Areas
+
+The shared visual system applies to the completed frontend productization surface:
+
+- Main document job flow: `/jobs`, `/jobs/new`, `/jobs/:jobId`
+- Translation QA: `/translation-qa`, `/jobs/:jobId/translation-qa`
+- Settings entry: `/settings` and `ConfigTodoSummary`
+- System and operations: `/system-status`, `/system-status/ops-dashboard`, `/system-status/audit-events`, `/system-status/file-retention`
+- Configuration center: template list/detail and Word page style list/detail pages
+- Terminology and translation governance: term rule set/workbench, translation profiles, translation term sets, and proposal review pages
+
+### Final Audit Categories
+
+- Conforming: pages use shared `app-page`, `app-page-shell`, `app-page-header`, panel/table/filter/evidence helpers, `--app-*` tokens, Element Plus controls, and existing route/API/permission behavior.
+- Acceptable deviation: large governance and operations pages may retain page-local grid names where they express page-specific layout, as long as surfaces use shared helpers and tokens.
+- P0/P1 repair boundary: only fix issues that block route entry, break auth/permission/API behavior, create unreadable or overlapping primary workflows, hide safety evidence, alter guarded actions, or cause unhandled runtime errors.
+- P2 follow-up boundary: cosmetic cleanup such as reducing remaining local class names, trimming bundle size, or improving browser tooling reliability should not trigger a fifth productization round by itself.
+- No-redo rule: do not replace the Vue 3 + Element Plus + SCSS stack, do not add a new UI kit or icon library, and do not rebuild pages that already satisfy the shared workbench contract.
 
 ## Convention: Project Visual Tokens
 
