@@ -45,6 +45,12 @@ These rules apply to `frontend/src/styles/main.scss`, `frontend/src/layouts/AppL
 - `page-kicker`
 - `page-title`
 - `page-description`
+- `app-panel-card`
+- `app-table-card`
+- `app-metric-grid`
+- `app-metric-card`
+- `app-entry-card`
+- `app-subpanel`
 
 **Why**: Page-level Vue abstractions are unnecessary for the first UI polish round, but repeated page shells should still share dimensions, padding, borders, hierarchy, and typography.
 
@@ -57,6 +63,38 @@ These rules apply to `frontend/src/styles/main.scss`, `frontend/src/layouts/AppL
     <h1 id="jobs-title" class="page-title">任务列表</h1>
   </section>
 </main>
+```
+
+## Convention: Shared Workbench Surfaces
+
+**What**: When a page needs repeated metrics, entry links, table cards, or nested evidence panels, use the shared `app-*` surface helpers from `main.scss` before adding page-local card styles.
+
+**Why**: Translation QA and settings pages previously copied local metric cards, entry cards, and table shell styles. Reusing the shared helpers keeps later productization rounds aligned with the main job flow and prevents hardcoded color drift.
+
+**Good**:
+
+```vue
+<section class="app-metric-grid app-page-shell" aria-label="配置状态">
+  <article class="app-metric-card">
+    <span>阻断配置组</span>
+    <strong>{{ blockedGroups }}</strong>
+    <small>需要先处理再发布</small>
+  </article>
+</section>
+
+<el-card class="app-panel-card app-table-card app-page-shell" shadow="never">
+  <el-table :data="rows" />
+</el-card>
+```
+
+**Bad**:
+
+```scss
+.metric-card {
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  background: #fff;
+}
 ```
 
 ## Element Plus Styling Boundary

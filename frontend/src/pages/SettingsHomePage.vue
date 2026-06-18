@@ -1,22 +1,22 @@
 <!-- frontend/src/pages/SettingsHomePage.vue: Configuration workbench landing page and release gate. -->
 <template>
-  <main class="settings-page" aria-labelledby="settings-title">
-    <section class="page-heading">
+  <main class="settings-page app-page" aria-labelledby="settings-title">
+    <section class="page-heading app-page-header app-page-shell">
       <div>
         <p class="page-kicker">配置中心</p>
-        <h1 id="settings-title">配置工作台</h1>
-        <p>统一查看生产运行门禁、默认配置版本、草稿和待处理治理事项。</p>
+        <h1 id="settings-title" class="page-title">配置工作台</h1>
+        <p class="page-description">统一查看生产运行门禁、默认配置版本、草稿和待处理治理事项。</p>
       </div>
       <RoleGate>
         <el-tag type="warning" effect="plain">管理员操作已启用</el-tag>
       </RoleGate>
     </section>
 
-    <ConfigTodoSummary :summary="summary" :loading="initialLoading" :error="error" @refresh="refreshSummary" />
-    <div v-if="summary && refreshing" class="refresh-note">正在后台更新配置总览，当前页面保留上次结果。</div>
+    <ConfigTodoSummary class="app-page-shell" :summary="summary" :loading="initialLoading" :error="error" @refresh="refreshSummary" />
+    <div v-if="summary && refreshing" class="refresh-note app-page-shell">正在后台更新配置总览，当前页面保留上次结果。</div>
 
-    <section class="word-config-entry-grid" aria-label="Word 配置入口">
-      <router-link class="word-config-entry" to="/settings/templates">
+    <section class="word-config-entry-grid app-page-shell" aria-label="Word 配置入口">
+      <router-link class="word-config-entry app-entry-card" to="/settings/templates">
         <span class="settings-group-icon" aria-hidden="true">
           <el-icon><Document /></el-icon>
         </span>
@@ -25,7 +25,7 @@
           <small>管理 DOCX 模板文件、默认页眉内容、公司 Logo 和版本发布。</small>
         </span>
       </router-link>
-      <router-link class="word-config-entry" to="/settings/word-page-styles">
+      <router-link class="word-config-entry app-entry-card" to="/settings/word-page-styles">
         <span class="settings-group-icon" aria-hidden="true">
           <el-icon><Brush /></el-icon>
         </span>
@@ -36,7 +36,7 @@
       </router-link>
     </section>
 
-    <section v-if="summary" class="release-gate-workspace" aria-label="发布门禁处理队列">
+    <section v-if="summary" class="release-gate-workspace app-panel app-page-shell" aria-label="发布门禁处理队列">
       <div class="section-header">
         <div>
           <h2 class="section-title">发布门禁处理队列</h2>
@@ -70,7 +70,7 @@
       </div>
 
       <div v-if="releaseGateItems.length" class="gate-action-list">
-        <router-link v-for="item in releaseGateItems" :key="item.key" class="gate-action-item" :to="item.route">
+        <router-link v-for="item in releaseGateItems" :key="item.key" class="gate-action-item app-subpanel" :to="item.route">
           <el-tag size="small" :type="severityTagType(item.severity)" effect="plain">
             {{ configWorkbenchSeverityText(item.severity) }}
           </el-tag>
@@ -81,8 +81,8 @@
       <div v-else class="gate-empty">当前发布门禁没有待处理项。</div>
     </section>
 
-    <section v-if="summary" class="settings-groups" aria-label="配置治理状态">
-      <article v-for="group in summary.groups" :key="group.id" class="settings-group">
+    <section v-if="summary" class="settings-groups app-page-shell" aria-label="配置治理状态">
+      <article v-for="group in summary.groups" :key="group.id" class="settings-group app-panel">
         <header class="settings-group-header">
           <span class="settings-group-icon" aria-hidden="true">
             <el-icon><component :is="groupIcon(group.id)" /></el-icon>
@@ -126,7 +126,7 @@
           <router-link
             v-for="finding in visibleFindings(group)"
             :key="finding.code + finding.target_id"
-            class="finding-item"
+            class="finding-item app-subpanel"
             :to="finding.route || group.route"
           >
             <el-tag size="small" :type="severityTagType(finding.severity)" effect="plain">
@@ -404,36 +404,14 @@ onMounted(() => {
 <style scoped lang="scss">
 .settings-page {
   display: grid;
-  gap: 18px;
+  gap: var(--app-space-4);
 }
 
 .page-heading {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 16px;
-  padding: 10px 0 2px;
-}
-
-.page-kicker {
-  margin: 0 0 4px;
-  color: #2563eb;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-.page-heading h1 {
-  margin: 0;
-  color: #111827;
-  font-size: 28px;
-  line-height: 1.2;
-}
-
-.page-heading p:last-child {
-  margin: 8px 0 0;
-  color: #667085;
+  gap: var(--app-space-4);
 }
 
 .settings-groups {
@@ -445,28 +423,11 @@ onMounted(() => {
 .word-config-entry-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 14px;
+  gap: var(--app-space-3);
 }
 
 .word-config-entry {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 12px;
-  align-items: center;
-  padding: 16px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #fff;
-  color: #111827;
-  transition: border-color 180ms ease, box-shadow 180ms ease;
-}
-
-.word-config-entry:hover,
-.word-config-entry:focus-visible {
-  border-color: #93c5fd;
-  color: #1d4ed8;
-  box-shadow: 0 8px 22px rgb(15 23 42 / 8%);
-  outline: none;
+  min-height: 104px;
 }
 
 .word-config-entry span:last-child {
@@ -479,66 +440,41 @@ onMounted(() => {
 }
 
 .word-config-entry small {
-  color: #475569;
+  color: var(--app-color-text-muted);
   line-height: 1.45;
 }
 
 .refresh-note {
-  color: #667085;
+  color: var(--app-color-text-muted);
   font-size: 13px;
 }
 
 .release-gate-workspace {
   display: grid;
-  gap: 14px;
-  padding: 16px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #fff;
-}
-
-.section-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.section-title {
-  margin: 0;
-  color: #111827;
-  font-size: 18px;
-  line-height: 1.3;
-}
-
-.section-subtitle {
-  margin: 6px 0 0;
-  color: #667085;
-  font-size: 13px;
-  line-height: 1.5;
+  gap: var(--app-space-4);
 }
 
 .gate-tags {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 
 .gate-status-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 
 .gate-status-grid article {
   display: grid;
   gap: 5px;
   min-height: 92px;
-  padding: 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #f8fafc;
+  padding: var(--app-space-3);
+  border: 1px solid var(--app-color-border-soft);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface-muted);
 }
 
 .gate-status-grid span,
@@ -548,18 +484,18 @@ onMounted(() => {
 }
 
 .gate-status-grid span {
-  color: #667085;
+  color: var(--app-color-text-muted);
   font-size: 12px;
 }
 
 .gate-status-grid strong {
-  color: #111827;
+  color: var(--app-color-text);
   font-size: 20px;
   line-height: 1.2;
 }
 
 .gate-status-grid small {
-  color: #667085;
+  color: var(--app-color-text-muted);
   font-size: 12px;
 }
 
@@ -571,18 +507,19 @@ onMounted(() => {
 .gate-action-item {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 10px;
+  gap: var(--app-space-2);
   align-items: center;
   min-height: 44px;
-  padding: 10px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  color: #111827;
+  padding: var(--app-space-3);
+  color: var(--app-color-text);
+  transition:
+    border-color 180ms ease-out,
+    color 180ms ease-out;
 }
 
 .gate-action-item:hover {
-  border-color: #93c5fd;
-  color: #111827;
+  border-color: var(--app-color-primary-border);
+  color: var(--app-color-text);
 }
 
 .gate-action-item span {
@@ -591,27 +528,23 @@ onMounted(() => {
 
 .gate-action-item small,
 .gate-empty {
-  color: #667085;
+  color: var(--app-color-text-muted);
   font-size: 13px;
 }
 
 .settings-group {
   display: grid;
   align-content: start;
-  gap: 14px;
+  gap: var(--app-space-4);
   min-width: 0;
-  padding: 16px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #fff;
 }
 
 .settings-group-header {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr) auto;
-  gap: 12px;
+  gap: var(--app-space-3);
   align-items: flex-start;
-  color: #111827;
+  color: var(--app-color-text);
 }
 
 .group-tags {
@@ -626,9 +559,9 @@ onMounted(() => {
   place-items: center;
   width: 42px;
   height: 42px;
-  border-radius: 8px;
-  background: #eef2ff;
-  color: #4f46e5;
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-primary-soft);
+  color: var(--app-color-primary);
   font-size: 20px;
 }
 
@@ -643,7 +576,7 @@ onMounted(() => {
 }
 
 .settings-group-copy small {
-  color: #667085;
+  color: var(--app-color-text-muted);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -651,7 +584,7 @@ onMounted(() => {
 .group-metrics dl {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  gap: var(--app-space-2);
   margin: 0;
 }
 
@@ -660,13 +593,13 @@ onMounted(() => {
   gap: 4px;
   min-width: 0;
   padding: 10px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #f8fafc;
+  border: 1px solid var(--app-color-border-soft);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface-muted);
 }
 
 .group-metrics dt {
-  color: #667085;
+  color: var(--app-color-text-muted);
   font-size: 12px;
 }
 
@@ -674,7 +607,7 @@ onMounted(() => {
   min-width: 0;
   margin: 0;
   overflow-wrap: anywhere;
-  color: #111827;
+  color: var(--app-color-text);
   font-size: 13px;
   font-weight: 700;
 }
@@ -687,30 +620,30 @@ onMounted(() => {
 .finding-item {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 8px;
+  gap: var(--app-space-2);
   align-items: center;
   min-height: 42px;
   padding: 10px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #fff;
-  color: #111827;
+  color: var(--app-color-text);
+  transition:
+    border-color 180ms ease-out,
+    color 180ms ease-out;
 }
 
 .finding-item:hover {
-  border-color: #93c5fd;
-  color: #111827;
+  border-color: var(--app-color-primary-border);
+  color: var(--app-color-text);
 }
 
 .finding-more,
 .finding-empty,
 .finding-error {
-  color: #667085;
+  color: var(--app-color-text-muted);
   font-size: 13px;
 }
 
 .finding-error {
-  color: #b42318;
+  color: var(--app-color-danger);
 }
 
 .settings-link {
@@ -718,17 +651,20 @@ onMounted(() => {
   justify-content: center;
   min-height: 38px;
   padding: 9px 12px;
-  border: 1px solid #bfdbfe;
-  border-radius: 8px;
-  background: #eff6ff;
-  color: #1d4ed8;
+  border: 1px solid var(--app-color-primary-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-primary-soft);
+  color: var(--app-color-primary-hover);
   font-size: 14px;
   font-weight: 700;
+  transition:
+    border-color 180ms ease-out,
+    color 180ms ease-out;
 }
 
 .settings-link:hover {
-  border-color: #60a5fa;
-  color: #1d4ed8;
+  border-color: var(--app-color-primary);
+  color: var(--app-color-primary-hover);
 }
 
 @media (max-width: 1040px) {

@@ -1,11 +1,12 @@
 <!-- File: frontend/src/pages/TranslationResultQaPage.vue -->
 <!-- Purpose: 展示任务级翻译 QA 证据、复核状态和段落 trace 关联视图。 -->
 <template>
-  <main class="translation-result-qa-page" aria-labelledby="translation-qa-title">
-    <section class="section-header">
+  <main class="translation-result-qa-page app-page" aria-labelledby="translation-qa-title">
+    <section class="qa-page-header section-header app-page-header app-page-shell">
       <div>
-        <h1 id="translation-qa-title" class="section-title">翻译 QA</h1>
-        <p class="section-subtitle mono">{{ jobId }}</p>
+        <p class="page-kicker">Translation QA</p>
+        <h1 id="translation-qa-title" class="page-title">翻译 QA</h1>
+        <p class="page-description mono">{{ jobId }}</p>
       </div>
       <div class="toolbar">
         <el-button v-if="fromTranslationQaQueue" @click="openQaQueue">返回 QA 队列</el-button>
@@ -17,13 +18,13 @@
       </div>
     </section>
 
-    <ApiErrorAlert :error="error" />
-    <el-skeleton v-if="loading && !job && !qa" :rows="8" animated />
+    <ApiErrorAlert class="app-page-shell" :error="error" />
+    <el-skeleton v-if="loading && !job && !qa" class="app-page-shell" :rows="8" animated />
 
     <template v-else-if="job && qa">
       <el-alert
         v-if="!qa.available"
-        class="page-section"
+        class="page-section app-page-shell"
         type="warning"
         :closable="false"
         show-icon
@@ -31,15 +32,15 @@
       />
       <el-alert
         v-else-if="!qa.summary.source_comparison_available"
-        class="page-section"
+        class="page-section app-page-shell"
         type="info"
         :closable="false"
         show-icon
         :title="sourceComparisonReasonText(qa.summary.source_comparison_reason)"
       />
 
-      <section class="qa-grid page-section">
-        <el-card class="card-flat qa-panel" shadow="never">
+      <section class="qa-grid page-section app-page-shell">
+        <el-card class="card-flat qa-panel app-panel-card" shadow="never">
           <div class="section-header">
             <div>
               <h2 class="section-title">任务</h2>
@@ -57,7 +58,7 @@
           </el-descriptions>
         </el-card>
 
-        <el-card class="card-flat qa-panel" shadow="never">
+        <el-card class="card-flat qa-panel app-panel-card" shadow="never">
           <div class="section-header">
             <div>
               <h2 class="section-title">复核结论</h2>
@@ -94,15 +95,15 @@
         </el-card>
       </section>
 
-      <section class="metric-grid page-section" aria-label="QA 证据摘要">
-        <article v-for="metric in metrics" :key="metric.label" class="metric-card">
+      <section class="qa-metric-grid app-metric-grid page-section app-page-shell" aria-label="QA 证据摘要">
+        <article v-for="metric in metrics" :key="metric.label" class="app-metric-card">
           <span>{{ metric.label }}</span>
           <strong>{{ metric.value }}</strong>
           <small>{{ metric.helper }}</small>
         </article>
       </section>
 
-      <el-card class="page-section card-flat" shadow="never">
+      <el-card class="page-section card-flat app-panel-card app-page-shell" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">证据文件</h2>
@@ -134,7 +135,7 @@
         </el-descriptions>
       </el-card>
 
-      <el-card class="page-section card-flat" shadow="never">
+      <el-card class="page-section card-flat app-panel-card app-table-card app-page-shell" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">片段对照</h2>
@@ -147,7 +148,7 @@
           <el-table-column type="expand" width="48">
             <template #default="{ row }">
               <div class="segment-trace-detail">
-                <section class="trace-card">
+                <section class="trace-card app-subpanel">
                   <div class="trace-card-header">
                     <h3>该片段术语命中</h3>
                     <el-tag size="small" effect="plain">{{ termTraceCountText(row) }}</el-tag>
@@ -171,7 +172,7 @@
                   </el-table>
                 </section>
 
-                <section class="trace-card">
+                <section class="trace-card app-subpanel">
                   <div class="trace-card-header">
                     <h3>AI call evidence</h3>
                     <el-tag size="small" type="info" effect="plain">call-level only</el-tag>
@@ -230,8 +231,8 @@
         </el-table>
       </el-card>
 
-      <section class="qa-grid page-section">
-        <el-card class="card-flat qa-panel" shadow="never">
+      <section class="qa-grid page-section app-page-shell">
+        <el-card class="card-flat qa-panel app-panel-card app-table-card" shadow="never">
           <div class="section-header">
             <div>
               <h2 class="section-title">术语命中</h2>
@@ -253,7 +254,7 @@
           </p>
         </el-card>
 
-        <el-card class="card-flat qa-panel" shadow="never">
+        <el-card class="card-flat qa-panel app-panel-card app-table-card" shadow="never">
           <div class="section-header">
             <div>
               <h2 class="section-title">AI 调用摘要</h2>
@@ -691,45 +692,30 @@ onMounted(() => {
 <style scoped lang="scss">
 .translation-result-qa-page {
   display: grid;
-  gap: 16px;
+  gap: var(--app-space-4);
 }
 
-.qa-grid,
-.metric-grid {
+.qa-page-header {
+  align-items: flex-start;
+}
+
+.qa-page-header .toolbar {
+  justify-content: flex-end;
+}
+
+.qa-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  gap: var(--app-space-4);
 }
 
 .qa-panel {
   min-width: 0;
 }
 
-.metric-grid {
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-}
-
-.metric-card {
-  min-height: 98px;
-  padding: 16px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.metric-card span,
-.metric-card small,
 .review-meta {
-  color: #667085;
+  color: var(--app-color-text-muted);
   font-size: 13px;
-}
-
-.metric-card strong {
-  display: block;
-  margin: 6px 0;
-  color: #111827;
-  font-size: 24px;
-  line-height: 1;
 }
 
 .flag-list {
@@ -753,36 +739,33 @@ onMounted(() => {
 
 .segment-trace-detail {
   display: grid;
-  gap: 14px;
-  padding: 12px 8px;
+  gap: var(--app-space-3);
+  padding: var(--app-space-3) var(--app-space-2);
 }
 
 .trace-card {
   min-width: 0;
-  padding: 12px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #f8fafc;
+  padding: var(--app-space-3);
 }
 
 .trace-card-header {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--app-space-2);
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: var(--app-space-2);
 }
 
 .trace-card-header h3 {
   margin: 0;
-  color: #111827;
+  color: var(--app-color-text);
   font-size: 14px;
 }
 
 .trace-note {
-  margin: 0 0 10px;
-  color: #667085;
+  margin: 0 0 var(--app-space-2);
+  color: var(--app-color-text-muted);
   font-size: 13px;
   line-height: 1.6;
 }
@@ -793,8 +776,12 @@ onMounted(() => {
 
 @media (max-width: 980px) {
   .qa-grid,
-  .metric-grid {
+  .qa-metric-grid {
     grid-template-columns: 1fr;
+  }
+
+  .qa-page-header .toolbar {
+    justify-content: flex-start;
   }
 }
 </style>
