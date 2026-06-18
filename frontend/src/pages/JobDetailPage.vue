@@ -1,10 +1,11 @@
 <!-- File: frontend/src/pages/JobDetailPage.vue -->
 <!-- Purpose: 展示单个 document_job 的详情、事件、文件、下载和重试入口。 -->
 <template>
-  <div class="job-detail-page">
-    <div class="section-header">
+  <div class="job-detail-page app-page">
+    <div class="section-header detail-header app-page-header app-page-shell">
       <div>
-        <h1 class="section-title">任务详情</h1>
+        <p class="page-kicker">Document Jobs</p>
+        <h1 class="section-title page-title">任务详情</h1>
         <p class="section-subtitle mono">{{ jobId }}</p>
       </div>
       <div class="toolbar">
@@ -1635,6 +1636,54 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped lang="scss">
+.job-detail-page {
+  display: grid;
+  gap: var(--app-space-4);
+}
+
+.detail-header {
+  margin-bottom: 0;
+}
+
+.detail-header .toolbar {
+  justify-content: flex-end;
+}
+
+.job-detail-page :deep(.el-card.card-flat) {
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface);
+  box-shadow: var(--app-shadow-panel);
+}
+
+.job-detail-page :deep(.el-card__body) {
+  padding: var(--app-space-5);
+}
+
+.job-detail-page :deep(.el-button),
+.job-detail-page :deep(.el-select__wrapper),
+.job-detail-page :deep(.el-input__wrapper),
+.job-detail-page :deep(.el-textarea__inner) {
+  border-radius: var(--app-radius-md);
+}
+
+.detail-tabs {
+  min-width: 0;
+}
+
+.detail-tabs :deep(.el-tabs__nav-wrap::after) {
+  background-color: var(--app-color-border-soft);
+}
+
+.detail-tabs :deep(.el-tabs__item) {
+  color: var(--app-color-text-muted);
+  font-weight: 650;
+}
+
+.detail-tabs :deep(.el-tabs__item.is-active) {
+  color: var(--app-color-primary);
+}
+
 .detail-overview {
   display: grid;
   grid-template-columns: auto minmax(220px, 420px);
@@ -1659,12 +1708,12 @@ onBeforeUnmount(() => {
 }
 
 .download-link-notice span {
-  color: #667085;
+  color: var(--app-color-text-muted);
   font-size: 13px;
 }
 
 .download-link-notice a {
-  color: #2563eb;
+  color: var(--app-color-primary);
   font-weight: 700;
   text-decoration: none;
 }
@@ -1694,15 +1743,15 @@ onBeforeUnmount(() => {
 .task-disposition-fact {
   min-width: 0;
   padding: 10px;
-  border: 1px solid #d9e2ec;
-  border-radius: 6px;
-  background: #f8fafc;
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--app-radius-sm);
+  background: var(--app-color-surface-muted);
 }
 
 .task-disposition-fact span,
 .task-action-item small {
   display: block;
-  color: #667085;
+  color: var(--app-color-text-muted);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -1711,7 +1760,7 @@ onBeforeUnmount(() => {
   display: block;
   margin-top: 4px;
   overflow: hidden;
-  color: #1f2937;
+  color: var(--app-color-text);
   font-size: 13px;
   line-height: 1.4;
   text-overflow: ellipsis;
@@ -1720,7 +1769,7 @@ onBeforeUnmount(() => {
 
 .task-action-summary h3 {
   margin: 0 0 10px;
-  color: #1f2937;
+  color: var(--app-color-text);
   font-size: 15px;
 }
 
@@ -1766,14 +1815,14 @@ onBeforeUnmount(() => {
 .quality-evidence-item {
   min-width: 0;
   padding: 10px;
-  border: 1px solid #d9e2ec;
-  border-radius: 6px;
-  background: #f8fafc;
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--app-radius-sm);
+  background: var(--app-color-surface-muted);
 }
 
 .quality-evidence-item span {
   display: block;
-  color: #667085;
+  color: var(--app-color-text-muted);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -1782,7 +1831,7 @@ onBeforeUnmount(() => {
   display: block;
   margin-top: 4px;
   overflow: hidden;
-  color: #1f2937;
+  color: var(--app-color-text);
   font-size: 13px;
   line-height: 1.4;
   text-overflow: ellipsis;
@@ -1812,7 +1861,7 @@ onBeforeUnmount(() => {
 }
 
 .snapshot-details {
-  color: #344054;
+  color: var(--app-color-text-muted);
 }
 
 .snapshot-details summary {
@@ -1826,10 +1875,10 @@ onBeforeUnmount(() => {
   overflow: auto;
   margin: 0;
   padding: 12px;
-  border: 1px solid #d9e2ec;
-  border-radius: 6px;
-  background: #f8fafc;
-  color: #344054;
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--app-radius-sm);
+  background: var(--app-color-surface-muted);
+  color: var(--app-color-text-muted);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -1841,12 +1890,12 @@ onBeforeUnmount(() => {
 .file-name {
   word-break: break-word;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--app-color-text);
 }
 
 .file-meta {
   margin-top: 3px;
-  color: #667085;
+  color: var(--app-color-text-muted);
   font-size: 12px;
   word-break: break-all;
 }

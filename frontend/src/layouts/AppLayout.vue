@@ -71,7 +71,7 @@ function handleLogout(): void {
 <style scoped lang="scss">
 .app-layout {
   min-height: 100vh;
-  background: #f5f7fb;
+  background: var(--app-color-bg);
   color-scheme: light;
 }
 
@@ -82,11 +82,11 @@ function handleLogout(): void {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  height: 58px;
-  padding: 0 24px;
-  border-bottom: 1px solid rgba(217, 226, 236, 0.86);
-  background: rgba(255, 255, 255, 0.86);
+  gap: var(--app-space-4);
+  height: var(--app-header-height);
+  padding: 0 var(--app-space-6);
+  border-bottom: 1px solid var(--app-color-border-soft);
+  background: var(--app-color-surface-elevated);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
@@ -96,11 +96,11 @@ function handleLogout(): void {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 
 .brand-link {
-  color: #111827;
+  color: var(--app-color-text);
   font-size: 16px;
   font-weight: 700;
 }
@@ -111,61 +111,64 @@ function handleLogout(): void {
 }
 
 .main-nav a {
-  padding: 8px 10px;
-  border-radius: 8px;
-  color: #475467;
+  padding: var(--app-space-2) 10px;
+  border-radius: var(--app-radius-md);
+  color: var(--app-color-text-muted);
   font-size: 14px;
   font-weight: 600;
+  transition:
+    background-color 160ms ease-out,
+    color 160ms ease-out;
 }
 
 .main-nav a.router-link-active {
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--app-color-primary-soft);
+  color: var(--app-color-primary-hover);
 }
 
 .user-text {
   font-size: 14px;
-  color: #344054;
+  color: var(--app-color-text-muted);
 }
 
 .app-main {
-  width: min(1280px, 100%);
+  width: min(var(--app-content-width), 100%);
   margin: 0 auto;
-  padding: 20px 24px 36px;
+  padding: var(--app-space-5) var(--app-space-6) 36px;
 }
 
 .breadcrumb-shell {
-  width: min(1280px, 100%);
+  width: min(var(--app-content-width), 100%);
   margin: 0 auto;
-  padding: 12px 24px 0;
+  padding: var(--app-space-3) var(--app-space-6) 0;
 }
 
 @media (prefers-color-scheme: dark) {
   .app-layout {
-    background: #050711;
+    background: var(--app-color-bg);
     color-scheme: dark;
   }
 
   .app-header {
-    border-bottom-color: rgba(148, 163, 184, 0.18);
-    background: rgba(5, 7, 17, 0.82);
+    border-bottom-color: var(--app-color-border);
+    background: var(--app-color-surface-elevated);
   }
 
   .brand-link {
-    color: #f8fafc;
+    color: var(--app-color-text);
   }
 
   .main-nav a {
-    color: #cbd5e1;
+    color: var(--app-color-text-muted);
   }
 
   .main-nav a.router-link-active {
-    background: rgba(37, 99, 235, 0.22);
-    color: #bfdbfe;
+    background: var(--app-color-primary-soft);
+    color: var(--app-color-primary-hover);
   }
 
   .user-text {
-    color: #cbd5e1;
+    color: var(--app-color-text-muted);
   }
 }
 
@@ -174,7 +177,7 @@ function handleLogout(): void {
     align-items: flex-start;
     flex-direction: column;
     height: auto;
-    padding: 12px 16px;
+    padding: var(--app-space-3) var(--app-space-4);
   }
 
   .main-nav {
@@ -184,11 +187,11 @@ function handleLogout(): void {
   }
 
   .app-main {
-    padding: 16px;
+    padding: var(--app-space-4);
   }
 
   .breadcrumb-shell {
-    padding: 10px 16px 0;
+    padding: 10px var(--app-space-4) 0;
   }
 }
 </style>

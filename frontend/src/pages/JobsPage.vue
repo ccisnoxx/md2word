@@ -1,12 +1,12 @@
 <!-- File: frontend/src/pages/JobsPage.vue -->
 <!-- Purpose: Render the document job list workbench with filtering and batch actions. -->
 <template>
-  <main class="jobs-page" aria-labelledby="jobs-title">
-    <section class="jobs-hero">
+  <main class="jobs-page app-page" aria-labelledby="jobs-title">
+    <section class="jobs-hero app-page-header app-page-shell app-page-shell--wide">
       <div class="hero-copy">
-        <p class="hero-eyebrow">Document Jobs</p>
-        <h1 id="jobs-title">任务列表</h1>
-        <p>集中查看 PDF 转 Word 任务状态、失败原因和交付结果。上传创建任务已独立为更宽松的创建流程。</p>
+        <p class="hero-eyebrow page-kicker">Document Jobs</p>
+        <h1 id="jobs-title" class="page-title">任务列表</h1>
+        <p class="page-description">集中查看 PDF 转 Word 任务状态、失败原因和交付结果。上传创建任务已独立为更宽松的创建流程。</p>
       </div>
       <div class="hero-actions">
         <div class="live-pill" :class="{ 'is-loading': loading }">
@@ -28,7 +28,7 @@
       </div>
     </section>
 
-    <section class="metric-grid" aria-label="任务概览">
+    <section class="metric-grid app-page-shell app-page-shell--wide" aria-label="任务概览">
       <article v-for="metric in metrics" :key="metric.key" class="metric-card" :class="`metric-${metric.tone}`">
         <span class="metric-icon" aria-hidden="true">
           <el-icon><component :is="metric.icon" /></el-icon>
@@ -41,10 +41,10 @@
       </article>
     </section>
 
-    <section class="jobs-list-panel" aria-label="任务列表">
+    <section class="jobs-list-panel app-panel app-page-shell app-page-shell--wide" aria-label="任务列表">
       <div class="section-header table-header">
         <div>
-          <p class="table-kicker">当前视图：{{ activeFilterLabel }}</p>
+          <p class="table-kicker page-kicker">当前视图：{{ activeFilterLabel }}</p>
           <h2 class="section-title">转换任务</h2>
           <p class="section-subtitle">查看当前账号可见的 document_jobs。处理中任务会自动刷新。</p>
         </div>
@@ -218,7 +218,7 @@
         </el-tag>
       </div>
 
-      <el-card class="jobs-table-card card-flat" shadow="never">
+      <el-card class="jobs-table-card card-flat app-panel" shadow="never">
         <div v-if="showEmptyState" class="empty-state" aria-live="polite">
           <el-icon><Files /></el-icon>
           <h3>{{ emptyStateTitle }}</h3>
@@ -1047,27 +1047,12 @@ onBeforeUnmount(() => {
 
 <style scoped lang="scss">
 .jobs-page {
-  --jobs-bg: #f5f7fb;
-  --jobs-surface: #ffffff;
-  --jobs-surface-solid: #ffffff;
-  --jobs-surface-muted: #f8fafc;
-  --jobs-border: #d9e2ec;
-  --jobs-text: #111827;
-  --jobs-muted: #667085;
-  --jobs-faint: #8190a8;
-  --jobs-primary: #2563eb;
-  --jobs-green: #0f766e;
-  --jobs-amber: #b7791f;
-  --jobs-danger: #b42318;
-  --jobs-shadow-soft: 0 8px 22px rgba(15, 23, 42, 0.06);
-
   position: relative;
-  min-height: calc(100vh - 114px);
   margin: -20px -24px -36px;
   padding: 28px 24px 42px;
   overflow: visible;
-  color: var(--jobs-text);
-  background: var(--jobs-bg);
+  color: var(--app-color-text);
+  background: var(--app-color-bg);
   color-scheme: light;
 }
 
@@ -1076,9 +1061,6 @@ onBeforeUnmount(() => {
 .jobs-list-panel {
   position: relative;
   z-index: 1;
-  width: min(1440px, 100%);
-  margin-right: auto;
-  margin-left: auto;
 }
 
 .jobs-hero {
@@ -1087,11 +1069,6 @@ onBeforeUnmount(() => {
   gap: 18px 28px;
   align-items: start;
   min-height: auto;
-  padding: 22px;
-  border: 1px solid var(--jobs-border);
-  border-radius: 8px;
-  background: var(--jobs-surface);
-  box-shadow: var(--jobs-shadow-soft);
 }
 
 .hero-copy {
@@ -1100,26 +1077,15 @@ onBeforeUnmount(() => {
 
 .hero-eyebrow,
 .table-kicker {
-  margin: 0 0 10px;
-  color: var(--jobs-green);
-  font-size: 13px;
-  font-weight: 760;
+  margin-bottom: 10px;
 }
 
 .hero-copy h1 {
   margin: 0 0 8px;
-  color: var(--jobs-text);
-  font-size: 32px;
-  font-weight: 780;
-  line-height: 1.18;
 }
 
 .hero-copy p:last-child {
-  max-width: 760px;
-  margin: 0;
-  color: var(--jobs-muted);
-  font-size: 14px;
-  line-height: 1.6;
+  margin-bottom: 0;
 }
 
 .hero-actions {
@@ -1137,16 +1103,16 @@ onBeforeUnmount(() => {
   gap: 8px;
   min-height: 38px;
   padding: 0 12px;
-  border: 1px solid rgba(15, 118, 110, 0.22);
-  border-radius: 8px;
-  background: rgba(15, 118, 110, 0.08);
-  color: var(--jobs-green);
+  border: 1px solid var(--app-color-success-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-success-soft);
+  color: var(--app-color-success);
   font-size: 13px;
 }
 
 .live-pill small {
   flex-basis: 100%;
-  color: var(--jobs-muted);
+  color: var(--app-color-text-muted);
   font-size: 11px;
 }
 
@@ -1155,19 +1121,19 @@ onBeforeUnmount(() => {
   height: 8px;
   border-radius: 999px;
   background: currentColor;
-  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12);
+  box-shadow: 0 0 0 4px var(--app-color-success-soft);
 }
 
 .live-pill.is-loading span {
-  color: var(--jobs-primary);
+  color: var(--app-color-primary);
 }
 
 .hero-refresh {
   min-height: 38px;
-  border-color: var(--jobs-border);
-  border-radius: 8px;
-  background: var(--jobs-surface-solid);
-  color: var(--jobs-text);
+  border-color: var(--app-color-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface);
+  color: var(--app-color-text);
 }
 
 .metric-grid {
@@ -1184,10 +1150,10 @@ onBeforeUnmount(() => {
   align-items: center;
   min-height: 92px;
   padding: 14px;
-  border: 1px solid var(--jobs-border);
-  border-radius: 8px;
-  background: var(--jobs-surface);
-  box-shadow: var(--jobs-shadow-soft);
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface);
+  box-shadow: var(--app-shadow-panel);
 }
 
 .metric-icon {
@@ -1195,55 +1161,50 @@ onBeforeUnmount(() => {
   width: 44px;
   height: 44px;
   place-items: center;
-  border-radius: 8px;
-  background: rgba(37, 99, 235, 0.1);
-  color: var(--jobs-primary);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-primary-soft);
+  color: var(--app-color-primary);
   font-size: 20px;
 }
 
 .metric-card span:not(.metric-icon) {
   display: block;
-  color: var(--jobs-muted);
+  color: var(--app-color-text-muted);
   font-size: 13px;
 }
 
 .metric-card strong {
   display: block;
   margin: 4px 0;
-  color: var(--jobs-text);
+  color: var(--app-color-text);
   font-size: 26px;
   font-weight: 800;
   line-height: 1;
 }
 
 .metric-card em {
-  color: var(--jobs-faint);
+  color: var(--app-color-text-faint);
   font-size: 12px;
   font-style: normal;
 }
 
 .metric-green .metric-icon {
-  background: rgba(15, 118, 110, 0.11);
-  color: var(--jobs-green);
+  background: var(--app-color-success-soft);
+  color: var(--app-color-success);
 }
 
 .metric-amber .metric-icon {
-  background: rgba(183, 121, 31, 0.12);
-  color: var(--jobs-amber);
+  background: var(--app-color-warning-soft);
+  color: var(--app-color-warning);
 }
 
 .metric-indigo .metric-icon {
-  background: rgba(8, 145, 178, 0.11);
-  color: #0891b2;
+  background: var(--app-color-info-soft);
+  color: var(--app-color-info);
 }
 
 .jobs-list-panel {
   margin-top: 16px;
-  padding: 18px;
-  border: 1px solid var(--jobs-border);
-  border-radius: 8px;
-  background: var(--jobs-surface);
-  box-shadow: var(--jobs-shadow-soft);
 }
 
 .table-header {
@@ -1252,12 +1213,7 @@ onBeforeUnmount(() => {
 }
 
 .section-title {
-  color: var(--jobs-text);
   font-size: 20px;
-}
-
-.section-subtitle {
-  color: var(--jobs-muted);
 }
 
 .primary-toolbar {
@@ -1280,8 +1236,8 @@ onBeforeUnmount(() => {
   margin-left: 6px;
   place-items: center;
   border-radius: 999px;
-  background: #eff6ff;
-  color: var(--jobs-primary);
+  background: var(--app-color-primary-soft);
+  color: var(--app-color-primary);
   font-size: 12px;
   font-weight: 700;
 }
@@ -1297,7 +1253,7 @@ onBeforeUnmount(() => {
 }
 
 .advanced-filter-panel label > span {
-  color: #667085;
+  color: var(--app-color-text-muted);
   font-size: 12px;
 }
 
@@ -1323,7 +1279,7 @@ onBeforeUnmount(() => {
 }
 
 .summary-caption {
-  color: var(--jobs-muted);
+  color: var(--app-color-text-muted);
   font-size: 13px;
 }
 
@@ -1334,10 +1290,10 @@ onBeforeUnmount(() => {
   gap: 12px;
   margin-bottom: 12px;
   padding: 10px 12px;
-  border: 1px solid #bfdbfe;
-  border-radius: 8px;
-  background: #eff6ff;
-  color: #1e3a8a;
+  border: 1px solid var(--app-color-primary-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-primary-soft);
+  color: var(--app-color-primary-hover);
   font-size: 14px;
 }
 
@@ -1362,12 +1318,12 @@ onBeforeUnmount(() => {
 .download-link-notice span,
 .batch-failure-list p {
   margin: 0;
-  color: var(--jobs-muted);
+  color: var(--app-color-text-muted);
   font-size: 13px;
 }
 
 .download-link-notice a {
-  color: var(--jobs-primary);
+  color: var(--app-color-primary);
   font-weight: 700;
   text-decoration: none;
 }
@@ -1411,16 +1367,18 @@ onBeforeUnmount(() => {
   grid-template-columns: minmax(160px, 0.8fr) minmax(90px, 0.4fr) minmax(0, 1fr);
   gap: 8px;
   align-items: start;
-  color: var(--jobs-text);
+  color: var(--app-color-text);
   font-size: 13px;
   line-height: 1.5;
 }
 
 .jobs-table-card {
   overflow: hidden;
-  border: 1px solid var(--jobs-border);
-  border-radius: 8px;
-  background: var(--jobs-surface);
+  padding: 0;
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface);
+  box-shadow: none;
 }
 
 .jobs-table-card :deep(.el-card__body) {
@@ -1432,30 +1390,30 @@ onBeforeUnmount(() => {
   justify-items: center;
   gap: 10px;
   padding: 36px 20px 30px;
-  border-bottom: 1px solid var(--jobs-border);
-  background: var(--jobs-surface-muted);
+  border-bottom: 1px solid var(--app-color-border);
+  background: var(--app-color-surface-muted);
   text-align: center;
 }
 
 .empty-state .el-icon {
   width: 42px;
   height: 42px;
-  border-radius: 8px;
-  background: rgba(37, 99, 235, 0.1);
-  color: var(--jobs-primary);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-primary-soft);
+  color: var(--app-color-primary);
   font-size: 22px;
 }
 
 .empty-state h3 {
   margin: 2px 0 0;
-  color: var(--jobs-text);
+  color: var(--app-color-text);
   font-size: 18px;
 }
 
 .empty-state p {
   max-width: 520px;
   margin: 0;
-  color: var(--jobs-muted);
+  color: var(--app-color-text-muted);
   font-size: 14px;
   line-height: 1.7;
 }
@@ -1469,51 +1427,51 @@ onBeforeUnmount(() => {
 }
 
 .jobs-page :deep(.el-button) {
-  border-radius: 8px;
+  border-radius: var(--app-radius-md);
 }
 
 .jobs-page :deep(.el-button--primary) {
-  border: 1px solid var(--jobs-primary);
-  background: var(--jobs-primary);
+  border: 1px solid var(--app-color-primary);
+  background: var(--app-color-primary);
   box-shadow: none;
 }
 
 .jobs-page :deep(.el-select__wrapper),
 .jobs-page :deep(.el-input__wrapper) {
-  border-radius: 8px;
-  background: var(--jobs-surface-solid);
-  box-shadow: 0 0 0 1px var(--jobs-border) inset;
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface);
+  box-shadow: 0 0 0 1px var(--app-color-border) inset;
 }
 
 .jobs-page :deep(.el-select__placeholder),
 .jobs-page :deep(.el-select__selected-item),
 .jobs-page :deep(.el-input__inner) {
-  color: var(--jobs-text);
+  color: var(--app-color-text);
 }
 
 .jobs-page :deep(.el-tag) {
-  border-color: var(--jobs-border);
+  border-color: var(--app-color-border);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--app-color-surface);
 }
 
 .jobs-table-card :deep(.el-table) {
   --el-table-bg-color: transparent;
   --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: #f8fafc;
-  --el-table-row-hover-bg-color: #eff6ff;
-  --el-table-border-color: #e4e7ec;
-  --el-table-text-color: var(--jobs-text);
-  --el-table-header-text-color: var(--jobs-muted);
+  --el-table-header-bg-color: var(--app-color-surface-muted);
+  --el-table-row-hover-bg-color: var(--app-color-primary-soft);
+  --el-table-border-color: var(--app-color-border-soft);
+  --el-table-text-color: var(--app-color-text);
+  --el-table-header-text-color: var(--app-color-text-muted);
 
-  color: var(--jobs-text);
+  color: var(--app-color-text);
   background: transparent;
 }
 
 .jobs-table-card :deep(.el-table__inner-wrapper::before),
 .jobs-table-card :deep(.el-table__fixed-right::before),
 .jobs-table-card :deep(.el-table__fixed::before) {
-  background: var(--jobs-border);
+  background: var(--app-color-border);
 }
 
 .jobs-table-card :deep(.el-table th.el-table__cell) {
@@ -1522,70 +1480,57 @@ onBeforeUnmount(() => {
 
 .jobs-table-card :deep(.el-table td.el-table__cell),
 .jobs-table-card :deep(.el-table th.el-table__cell) {
-  border-bottom-color: var(--jobs-border);
+  border-bottom-color: var(--app-color-border);
 }
 
 .jobs-table-card :deep(.mono) {
-  color: var(--jobs-primary);
+  color: var(--app-color-primary);
 }
 
 .jobs-table-card :deep(.muted) {
-  color: var(--jobs-faint);
+  color: var(--app-color-text-faint);
 }
 
 .jobs-table-card :deep(.error-code) {
-  color: var(--jobs-danger);
+  color: var(--app-color-danger);
 }
 
 .jobs-table-card :deep(.el-pagination.is-background .btn-prev),
 .jobs-table-card :deep(.el-pagination.is-background .btn-next),
 .jobs-table-card :deep(.el-pagination.is-background .el-pager li) {
-  border-radius: 8px;
-  background: var(--jobs-surface-muted);
-  color: var(--jobs-text);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface-muted);
+  color: var(--app-color-text);
 }
 
 .jobs-table-card :deep(.el-pagination.is-background .el-pager li.is-active) {
-  background: var(--jobs-primary);
+  background: var(--app-color-primary);
   color: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
   .jobs-page {
-    --jobs-bg: #050711;
-    --jobs-surface: rgba(10, 16, 32, 0.9);
-    --jobs-surface-solid: rgba(15, 23, 42, 0.92);
-    --jobs-surface-muted: rgba(15, 23, 42, 0.66);
-    --jobs-border: rgba(148, 163, 184, 0.2);
-    --jobs-text: #f8fafc;
-    --jobs-muted: #aab6ca;
-    --jobs-faint: #8391aa;
-    --jobs-primary: #60a5fa;
-    --jobs-green: #34d399;
-    --jobs-amber: #f5c451;
-    --jobs-danger: #fb7185;
-
-    background: var(--jobs-bg);
+    background: var(--app-color-bg);
     color-scheme: dark;
   }
 
   .selection-bar {
-    border-color: rgba(96, 165, 250, 0.28);
-    background: rgba(37, 99, 235, 0.16);
-    color: #bfdbfe;
+    border-color: var(--app-color-primary-border);
+    background: var(--app-color-primary-soft);
+    color: var(--app-color-primary-hover);
   }
 
   .advanced-filter-panel label > span {
-    color: #aab6ca;
+    color: var(--app-color-text-muted);
   }
 
   .jobs-page :deep(.el-tag) {
-    background: rgba(15, 23, 42, 0.62);
+    background: var(--app-color-surface-muted);
   }
 
   .jobs-table-card :deep(.el-table) {
-    --el-table-header-bg-color: rgba(15, 23, 42, 0.72);
-    --el-table-row-hover-bg-color: rgba(96, 165, 250, 0.12);
+    --el-table-header-bg-color: var(--app-color-surface-muted);
+    --el-table-row-hover-bg-color: var(--app-color-primary-soft);
   }
 }
 

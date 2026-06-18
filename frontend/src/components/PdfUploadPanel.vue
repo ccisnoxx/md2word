@@ -407,20 +407,20 @@ onMounted(() => {
 
 <style scoped lang="scss">
 .upload-card {
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface);
+  box-shadow: var(--app-shadow-panel);
 }
 
 .upload-card :deep(.el-card__body) {
-  padding: 20px;
+  padding: var(--app-space-5);
 }
 
 .upload-card :deep(.el-upload-dragger) {
-  border-color: #d9e2ec;
-  border-radius: 8px;
-  background: #f8fafc;
+  border-color: var(--app-color-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface-muted);
   transition:
     border-color 180ms ease-out,
     box-shadow 180ms ease-out,
@@ -428,12 +428,12 @@ onMounted(() => {
 }
 
 .upload-card :deep(.el-upload-dragger:hover) {
-  border-color: #93c5fd;
-  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.12);
+  border-color: var(--app-color-primary);
+  box-shadow: var(--app-shadow-focus);
 }
 
 .upload-card :deep(.el-icon--upload) {
-  color: #2563eb;
+  color: var(--app-color-primary);
 }
 
 .upload-steps {
@@ -443,12 +443,12 @@ onMounted(() => {
 .upload-card :deep(.el-button),
 .upload-card :deep(.el-select__wrapper),
 .upload-card :deep(.el-input__wrapper) {
-  border-radius: 8px;
+  border-radius: var(--app-radius-md);
 }
 
 .upload-card :deep(.el-button--primary) {
-  border-color: #2563eb;
-  background: #2563eb;
+  border-color: var(--app-color-primary);
+  background: var(--app-color-primary);
 }
 
 .mode-row {
@@ -460,7 +460,7 @@ onMounted(() => {
 }
 
 .mode-label {
-  color: #344054;
+  color: var(--app-color-text-muted);
   font-size: 14px;
 }
 
@@ -473,9 +473,9 @@ onMounted(() => {
   gap: 12px;
   margin-top: 14px;
   padding: 12px;
-  border: 1px solid #e4e7ec;
-  border-radius: 8px;
-  background: #f8fafc;
+  border: 1px solid var(--app-color-border-soft);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface-muted);
 }
 
 .config-panel-header {
@@ -502,14 +502,14 @@ onMounted(() => {
 }
 
 .config-panel-header strong {
-  color: #111827;
+  color: var(--app-color-text);
   font-size: 14px;
 }
 
 .config-panel-header small,
 .config-summary-item span,
 .admin-config label span {
-  color: #667085;
+  color: var(--app-color-text-muted);
   font-size: 12px;
 }
 
@@ -523,14 +523,14 @@ onMounted(() => {
 .config-summary-item {
   min-height: 62px;
   padding: 10px;
-  border: 1px solid #edf0f3;
-  border-radius: 8px;
-  background: #fff;
+  border: 1px solid var(--app-color-border-soft);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface);
 }
 
 .config-summary-item b {
   margin-top: 6px;
-  color: #111827;
+  color: var(--app-color-text);
   font-size: 13px;
   word-break: break-all;
 }
@@ -554,7 +554,7 @@ onMounted(() => {
 }
 
 .switch-row small {
-  color: #667085;
+  color: var(--app-color-text-muted);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -581,25 +581,25 @@ onMounted(() => {
 
 @media (prefers-color-scheme: dark) {
   .upload-card {
-    border-color: rgba(148, 163, 184, 0.2);
-    background: rgba(10, 16, 32, 0.9);
-    box-shadow: 0 16px 42px rgba(0, 0, 0, 0.26);
+    border-color: var(--app-color-border);
+    background: var(--app-color-surface);
+    box-shadow: var(--app-shadow-panel);
   }
 
   .config-panel,
   .upload-card :deep(.el-upload-dragger) {
-    border-color: rgba(148, 163, 184, 0.2);
-    background: rgba(15, 23, 42, 0.66);
+    border-color: var(--app-color-border);
+    background: var(--app-color-surface-muted);
   }
 
   .config-summary-item {
-    border-color: rgba(148, 163, 184, 0.16);
-    background: rgba(15, 23, 42, 0.72);
+    border-color: var(--app-color-border-soft);
+    background: var(--app-color-surface);
   }
 
   .config-panel-header strong,
   .config-summary-item b {
-    color: #f8fafc;
+    color: var(--app-color-text);
   }
 
   .config-panel-header small,
@@ -607,7 +607,7 @@ onMounted(() => {
   .admin-config label span,
   .switch-row small,
   .mode-label {
-    color: #aab6ca;
+    color: var(--app-color-text-muted);
   }
 }
 </style>
