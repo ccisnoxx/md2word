@@ -140,3 +140,36 @@ Implemented second-round frontend SaaS polish for Translation QA and settings en
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Frontend SaaS ops UI polish
+
+**Date**: 2026-06-18
+**Task**: Frontend SaaS ops UI polish
+**Branch**: `main`
+
+### Summary
+
+Polished admin operations pages with shared app-* status, evidence, filter, compact-card, key-value, and workspace tab helpers; preserved existing ops behavior and updated frontend UI system guidance. Build passed; local smoke remains blocked by Chrome launch failure.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `06d5b541` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
