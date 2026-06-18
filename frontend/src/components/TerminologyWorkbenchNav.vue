@@ -1,6 +1,6 @@
 <!-- frontend/src/components/TerminologyWorkbenchNav.vue: Shared navigation for terminology governance subviews. -->
 <template>
-  <section class="terminology-workbench-nav" aria-label="术语工作台子视图">
+  <section class="terminology-workbench-nav app-panel-card" aria-label="术语工作台子视图">
     <div class="workbench-copy">
       <p class="workbench-kicker">Terminology Governance</p>
       <h2>术语工作台</h2>
@@ -83,9 +83,9 @@ const activeDescription = computed(() =>
   justify-content: space-between;
   gap: 16px;
   padding: 16px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #fff;
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface);
 }
 
 .workbench-copy {
@@ -96,7 +96,7 @@ const activeDescription = computed(() =>
 
 .workbench-kicker {
   margin: 0;
-  color: #2563eb;
+  color: var(--app-color-primary);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0;
@@ -105,14 +105,14 @@ const activeDescription = computed(() =>
 
 .workbench-copy h2 {
   margin: 0;
-  color: #111827;
+  color: var(--app-color-text);
   font-size: 18px;
   line-height: 1.25;
 }
 
 .workbench-copy p:last-child {
   margin: 0;
-  color: #667085;
+  color: var(--app-color-text-muted);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -128,16 +128,16 @@ const activeDescription = computed(() =>
   display: grid;
   gap: 4px;
   padding: 10px 12px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #f8fafc;
-  color: #344054;
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface-muted);
+  color: var(--app-color-text);
 }
 
 .workbench-tab.active {
-  border-color: #2563eb;
-  background: #eff6ff;
-  color: #1d4ed8;
+  border-color: var(--app-color-primary-border);
+  background: var(--app-color-primary-soft);
+  color: var(--app-color-primary-hover);
 }
 
 .workbench-tab span {
@@ -146,13 +146,13 @@ const activeDescription = computed(() =>
 }
 
 .workbench-tab small {
-  color: #667085;
+  color: var(--app-color-text-muted);
   font-size: 12px;
   line-height: 1.35;
 }
 
 .workbench-tab.active small {
-  color: #1e40af;
+  color: var(--app-color-primary-hover);
 }
 
 @media (max-width: 820px) {

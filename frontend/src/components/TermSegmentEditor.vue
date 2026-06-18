@@ -97,9 +97,9 @@ function applyVinExample(): void {
   gap: 8px;
   min-height: 34px;
   padding: 4px 10px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #fff;
+  border: 1px solid var(--app-color-border-soft);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface);
 }
 
 .segment-row {

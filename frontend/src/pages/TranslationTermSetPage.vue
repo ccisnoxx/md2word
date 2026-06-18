@@ -1,20 +1,20 @@
 <!-- File: frontend/src/pages/TranslationTermSetPage.vue -->
 <!-- Purpose: Provide the Admin Translation Term Set CSV import, export, default switching, and rollback page. -->
 <template>
-  <main class="translation-term-set-page" aria-labelledby="translation-term-set-title">
-    <section class="page-heading">
+  <main class="translation-term-set-page app-page" aria-labelledby="translation-term-set-title">
+    <section class="page-heading app-page-header app-page-shell app-page-shell--wide">
       <div>
         <p class="page-kicker">Translation Term Set</p>
-        <h1 id="translation-term-set-title">翻译术语集</h1>
-        <p>通过 CSV 管理 draft，查看版本并执行发布、设默认和回滚。</p>
+        <h1 id="translation-term-set-title" class="page-title">翻译术语集</h1>
+        <p class="page-description">通过 CSV 管理 draft，查看版本并执行发布、设默认和回滚。</p>
       </div>
       <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
     </section>
 
-    <ApiErrorAlert :error="error" />
+    <ApiErrorAlert class="app-page-shell app-page-shell--wide" :error="error" />
     <el-alert
       v-if="errorActionHint"
-      class="context-alert"
+      class="context-alert app-page-shell app-page-shell--wide"
       type="info"
       :title="errorActionHint"
       :closable="false"
@@ -22,7 +22,7 @@
     />
     <el-alert
       v-if="proposalGovernanceContext"
-      class="context-alert governance-context-alert"
+      class="context-alert governance-context-alert app-page-shell app-page-shell--wide"
       type="info"
       :closable="false"
       show-icon
@@ -39,6 +39,7 @@
     </el-alert>
 
     <el-alert
+      class="app-page-shell app-page-shell--wide"
       v-if="unavailable"
       type="warning"
       title="当前部署未启用 MySQL resource service，Translation Term Set 管理不可用。"
@@ -46,8 +47,8 @@
       show-icon
     />
 
-    <section v-else class="term-set-grid">
-      <el-card class="card-flat" shadow="never">
+    <section v-else class="term-set-grid app-page-shell app-page-shell--wide">
+      <el-card class="app-panel-card app-table-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">术语集</h2>
@@ -62,7 +63,7 @@
         </el-table>
       </el-card>
 
-      <el-card class="card-flat" shadow="never">
+      <el-card class="app-panel-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">Draft 摘要</h2>
@@ -78,7 +79,7 @@
             <div><dt>validation</dt><dd>{{ draft?.validation.valid ? "valid" : "invalid" }}</dd></div>
           </dl>
           <RoleGate>
-            <div class="action-row">
+            <div class="action-row app-action-row">
               <el-button type="primary" :disabled="!selectedSetId" @click="openImportDialog">导入 CSV</el-button>
               <el-button type="success" :disabled="!selectedSetId" @click="openPublishDialog">发布 draft</el-button>
               <el-button :disabled="!selectedSetId" @click="exportVersion(null)">导出默认 CSV</el-button>
@@ -88,7 +89,7 @@
       </el-card>
     </section>
 
-    <el-card v-if="!unavailable && lastImportReport" class="card-flat" shadow="never">
+    <el-card v-if="!unavailable && lastImportReport" class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
       <div class="section-header">
         <div>
           <h2 class="section-title">最近一次 CSV 导入</h2>
@@ -108,7 +109,7 @@
       </el-table>
     </el-card>
 
-    <el-card v-if="!unavailable" class="card-flat" shadow="never">
+    <el-card v-if="!unavailable" class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
       <div class="section-header">
         <div>
           <h2 class="section-title">Draft validation</h2>
@@ -127,7 +128,7 @@
       </el-table>
     </el-card>
 
-    <el-card v-if="!unavailable" class="card-flat" shadow="never">
+    <el-card v-if="!unavailable" class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
       <div class="section-header">
         <div>
           <h2 class="section-title">Diff / Preflight</h2>
@@ -136,20 +137,20 @@
         <el-tag v-if="diff" effect="plain">{{ diff.base_version }} -> {{ diff.target_version }}</el-tag>
       </div>
 
-      <div class="governance-summary-grid" aria-label="Translation Term Set diff summary">
-        <article class="summary-metric">
+      <div class="governance-summary-grid app-governance-grid" aria-label="Translation Term Set diff summary">
+        <article class="summary-metric app-governance-metric">
           <span>Added</span>
           <strong>{{ diff?.summary.added ?? "-" }}</strong>
         </article>
-        <article class="summary-metric">
+        <article class="summary-metric app-governance-metric">
           <span>Removed</span>
           <strong>{{ diff?.summary.removed ?? "-" }}</strong>
         </article>
-        <article class="summary-metric">
+        <article class="summary-metric app-governance-metric">
           <span>Changed</span>
           <strong>{{ diff?.summary.changed ?? "-" }}</strong>
         </article>
-        <article class="summary-metric">
+        <article class="summary-metric app-governance-metric">
           <span>Unchanged</span>
           <strong>{{ diff?.summary.unchanged ?? "-" }}</strong>
         </article>
@@ -194,18 +195,18 @@
         </el-table-column>
         <el-table-column label="before" min-width="260">
           <template #default="{ row }">
-            <pre class="diff-payload">{{ formatDiffPayload(row.before) }}</pre>
+            <pre class="diff-payload app-technical-block">{{ formatDiffPayload(row.before) }}</pre>
           </template>
         </el-table-column>
         <el-table-column label="after" min-width="260">
           <template #default="{ row }">
-            <pre class="diff-payload">{{ formatDiffPayload(row.after) }}</pre>
+            <pre class="diff-payload app-technical-block">{{ formatDiffPayload(row.after) }}</pre>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
 
-    <el-card v-if="!unavailable" class="card-flat" shadow="never">
+    <el-card v-if="!unavailable" class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
       <div class="section-header">
         <div>
           <h2 class="section-title">Pending proposal compatibility</h2>
@@ -213,20 +214,20 @@
         </div>
       </div>
 
-      <div class="governance-summary-grid" aria-label="Translation Term Proposal compatibility summary">
-        <article class="summary-metric">
+      <div class="governance-summary-grid app-governance-grid" aria-label="Translation Term Proposal compatibility summary">
+        <article class="summary-metric app-governance-metric">
           <span>Total</span>
           <strong>{{ proposalCompatibility?.summary.total ?? "-" }}</strong>
         </article>
-        <article class="summary-metric">
+        <article class="summary-metric app-governance-metric">
           <span>Compatible</span>
           <strong>{{ proposalCompatibility?.summary.compatible ?? "-" }}</strong>
         </article>
-        <article class="summary-metric">
+        <article class="summary-metric app-governance-metric">
           <span>Warnings</span>
           <strong>{{ proposalCompatibility?.summary.warning ?? "-" }}</strong>
         </article>
-        <article class="summary-metric">
+        <article class="summary-metric app-governance-metric">
           <span>Conflicts</span>
           <strong>{{ proposalCompatibility?.summary.conflict ?? "-" }}</strong>
         </article>
@@ -269,7 +270,7 @@
       </el-table>
     </el-card>
 
-    <el-card v-if="!unavailable" class="card-flat" shadow="never">
+    <el-card v-if="!unavailable" class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
       <div class="section-header">
         <div>
           <h2 class="section-title">Published versions</h2>
@@ -303,7 +304,7 @@
       </el-table>
     </el-card>
 
-    <el-card v-if="!unavailable" class="card-flat" shadow="never">
+    <el-card v-if="!unavailable" class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
       <div class="section-header">
         <div>
           <h2 class="section-title">Draft entries</h2>
@@ -332,7 +333,7 @@
         <el-table-column v-if="isAdmin" label="admin 操作" width="240" fixed="right">
           <template #default="{ row }">
             <RoleGate>
-              <div class="table-actions">
+              <div class="table-actions app-action-row">
                 <el-button link type="primary" :icon="Edit" @click="openEditTermDialog(row)">编辑</el-button>
                 <el-button
                   link
@@ -1127,42 +1128,36 @@ watch(() => route.fullPath, () => {
 <style scoped lang="scss">
 .translation-term-set-page {
   display: grid;
-  gap: 16px;
+  gap: var(--app-space-4);
 }
 
 .term-set-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(340px, 0.9fr);
-  gap: 16px;
+  gap: var(--app-space-4);
 }
 
 .summary-list {
   display: grid;
-  gap: 10px;
-  margin: 0 0 16px;
+  gap: var(--app-space-2);
+  margin: 0 0 var(--app-space-4);
 }
 
 .summary-list div {
   display: grid;
   grid-template-columns: 140px minmax(0, 1fr);
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 
 .summary-list dt {
-  color: #667085;
+  color: var(--app-color-text-muted);
 }
 
 .summary-list dd {
   min-width: 0;
   margin: 0;
-  color: #111827;
+  color: var(--app-color-text);
   overflow-wrap: anywhere;
-}
-
-.action-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 
 .context-alert {
@@ -1172,41 +1167,30 @@ watch(() => route.fullPath, () => {
 .context-summary {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--app-space-2);
   align-items: center;
 }
 
 .governance-context-alert {
-  border-left: 4px solid #2563eb;
+  border-left: 4px solid var(--app-color-primary);
 }
 
 .governance-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: var(--app-space-4);
 }
 
 .summary-metric {
   min-width: 0;
-  padding: 12px;
-  border: 1px solid #e4e7ec;
-  border-radius: 8px;
-  background: #fff;
 }
 
 .summary-metric span {
   display: block;
-  color: #667085;
   font-size: 12px;
 }
 
 .summary-metric strong {
   display: block;
   margin-top: 4px;
-  color: #111827;
-  font-size: 24px;
-  line-height: 1.2;
 }
 
 .blocking-list {
@@ -1238,7 +1222,7 @@ watch(() => route.fullPath, () => {
 .form-help {
   flex-basis: 100%;
   margin: 6px 0 0;
-  color: #667085;
+  color: var(--app-color-text-muted);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -1266,7 +1250,7 @@ watch(() => route.fullPath, () => {
 }
 
 :deep(.el-table__row.is-selected-row td) {
-  background: #ecf5ff;
+  background: var(--app-color-primary-soft);
 }
 
 @media (max-width: 1040px) {

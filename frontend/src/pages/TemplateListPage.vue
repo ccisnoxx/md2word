@@ -1,11 +1,11 @@
 <!-- frontend/src/pages/TemplateListPage.vue: Word template document list. -->
 <template>
-  <main class="template-list-page" aria-labelledby="templates-title">
-    <section class="page-heading">
+  <main class="template-list-page app-page" aria-labelledby="templates-title">
+    <section class="page-heading app-page-header app-page-shell app-page-shell--wide">
       <div>
         <p class="page-kicker">Word 模板文档</p>
-        <h1 id="templates-title">Word 模板文档</h1>
-        <p>管理 DOCX 模板文件、默认页眉内容、公司 Logo、模板版本和发布流程。</p>
+        <h1 id="templates-title" class="page-title">Word 模板文档</h1>
+        <p class="page-description">管理 DOCX 模板文件、默认页眉内容、公司 Logo、模板版本和发布流程。</p>
       </div>
       <div class="toolbar">
         <el-button :icon="Brush" @click="$router.push('/settings/word-page-styles')">Word 页面样式配置</el-button>
@@ -13,16 +13,17 @@
       </div>
     </section>
 
-    <ApiErrorAlert :error="error" />
+    <ApiErrorAlert class="app-page-shell app-page-shell--wide" :error="error" />
 
     <el-alert
+      class="app-page-shell app-page-shell--wide"
       title="模板文档负责 DOCX 文件、默认页眉和 Logo；页面样式配置负责页边距、标题、正文、目录和表格等输出格式。"
       type="info"
       show-icon
       :closable="false"
     />
 
-    <el-card class="card-flat" shadow="never">
+    <el-card class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
       <el-table :data="templates" :loading="loading" empty-text="暂无模板">
         <el-table-column prop="id" label="模板 ID" min-width="180">
           <template #default="{ row }">
@@ -91,6 +92,6 @@ onMounted(() => {
 <style scoped lang="scss">
 .template-list-page {
   display: grid;
-  gap: 16px;
+  gap: var(--app-space-4);
 }
 </style>

@@ -1,20 +1,20 @@
 <!-- File: frontend/src/pages/TermProposalsPage.vue -->
 <!-- Purpose: Render operator proposal forms and admin review queues for term governance. -->
 <template>
-  <main class="term-proposals-page" aria-labelledby="term-proposals-title">
-    <section class="page-heading">
+  <main class="term-proposals-page app-page" aria-labelledby="term-proposals-title">
+    <section class="page-heading app-page-header app-page-shell app-page-shell--wide">
       <div>
         <p class="page-kicker">术语建议</p>
-        <h1 id="term-proposals-title">术语建议</h1>
-        <p>操作员提交规则或翻译术语建议，管理员审核后合并到对应草稿。</p>
+        <h1 id="term-proposals-title" class="page-title">术语建议</h1>
+        <p class="page-description">操作员提交规则或翻译术语建议，管理员审核后合并到对应草稿。</p>
       </div>
       <el-button :icon="Refresh" :loading="loading" @click="loadActiveTab">刷新</el-button>
     </section>
 
-    <ApiErrorAlert :error="error" />
+    <ApiErrorAlert class="app-page-shell app-page-shell--wide" :error="error" />
     <el-alert
       v-if="errorDetailItems.length"
-      class="conflict-alert"
+      class="conflict-alert app-page-shell app-page-shell--wide"
       type="warning"
       title="后端返回的冲突或警告"
       :closable="false"
@@ -26,7 +26,7 @@
     </el-alert>
     <el-alert
       v-if="focusNoticeVisible"
-      class="focus-notice"
+      class="focus-notice app-page-shell app-page-shell--wide"
       type="info"
       title="队列定位提示"
       :closable="false"
@@ -35,7 +35,7 @@
       {{ focusNotice }}
     </el-alert>
 
-    <el-tabs v-model="activeTab" @tab-change="handleTabChange">
+    <el-tabs v-model="activeTab" class="app-panel-card app-page-shell app-page-shell--wide proposal-tabs" @tab-change="handleTabChange">
       <el-tab-pane label="我的建议" name="mine">
         <TermProposalTable
           :items="proposals"
@@ -46,13 +46,13 @@
         />
       </el-tab-pane>
       <el-tab-pane label="新建建议" name="new">
-        <el-card class="card-flat" shadow="never">
+        <el-card class="app-panel-card" shadow="never">
           <el-form ref="proposalFormRef" :model="proposalForm" :rules="proposalRules" label-width="110px">
             <el-form-item label="建议类型" prop="intent">
               <el-radio-group v-model="proposalForm.intent" @change="handleIntentChange">
-                <el-radio-button label="create">新增</el-radio-button>
-                <el-radio-button label="update">编辑</el-radio-button>
-                <el-radio-button label="disable">禁用</el-radio-button>
+                <el-radio-button value="create">新增</el-radio-button>
+                <el-radio-button value="update">编辑</el-radio-button>
+                <el-radio-button value="disable">禁用</el-radio-button>
               </el-radio-group>
             </el-form-item>
             <el-form-item v-if="proposalForm.intent !== 'create'" label="目标规则" prop="target_rule_id">
@@ -94,7 +94,7 @@
                 placeholder="可选 job_id"
               />
             </el-form-item>
-            <div v-if="termRuleContextVisible" class="proposal-context-summary">
+            <div v-if="termRuleContextVisible" class="proposal-context-summary app-evidence-panel">
               <el-descriptions :column="2" border size="small">
                 <el-descriptions-item label="来源任务">
                   <router-link
@@ -122,7 +122,7 @@
         </el-card>
       </el-tab-pane>
       <el-tab-pane label="翻译术语新建" name="translation-new">
-        <el-card class="card-flat" shadow="never">
+        <el-card class="app-panel-card" shadow="never">
           <el-form
             ref="translationProposalFormRef"
             :model="translationProposalForm"
@@ -158,7 +158,7 @@
                 placeholder="可选 job_id"
               />
             </el-form-item>
-            <div v-if="translationContextVisible" class="proposal-context-summary">
+            <div v-if="translationContextVisible" class="proposal-context-summary app-evidence-panel">
               <el-descriptions :column="2" border size="small">
                 <el-descriptions-item label="来源任务">
                   <router-link
@@ -190,7 +190,7 @@
       <el-tab-pane v-if="isAdmin" label="待审核队列" name="review">
         <section class="review-grid">
           <div class="review-list-panel">
-            <el-card class="card-flat batch-review-card" shadow="never">
+            <el-card class="app-panel-card batch-review-card" shadow="never">
               <div class="batch-review-header">
                 <div>
                   <h2 class="section-title">批量审核</h2>
@@ -205,7 +205,7 @@
                 :rows="2"
                 placeholder="批量审核意见；拒绝必填，通过可选。"
               />
-              <div class="toolbar">
+              <div class="toolbar app-action-row">
                 <el-button
                   type="success"
                   :loading="bulkReviewing"
@@ -250,7 +250,7 @@
               @selection-change="handleTermBulkSelectionChange"
             />
           </div>
-          <el-card class="card-flat" shadow="never">
+          <el-card class="app-panel-card" shadow="never">
             <template v-if="selectedProposal">
               <div class="section-header">
                 <div>
@@ -275,7 +275,7 @@
                 </el-button>
               </el-alert>
 
-              <div class="review-panels">
+              <div class="review-panels app-review-grid">
                 <div>
                   <h3>提议变更</h3>
                   <p><b>类型：</b>{{ proposalIntentText(selectedProposal.intent) }}</p>
@@ -310,7 +310,7 @@
                   <p>用于人工比对是否仍与提交时一致。</p>
                   <el-collapse class="technical-collapse">
                     <el-collapse-item title="查看技术字段">
-                      <pre>{{ currentRuleText }}</pre>
+                      <pre class="app-technical-block">{{ currentRuleText }}</pre>
                     </el-collapse-item>
                   </el-collapse>
                 </div>
@@ -319,7 +319,7 @@
                   <p>后端审核时会用它识别过期修改。</p>
                   <el-collapse class="technical-collapse">
                     <el-collapse-item title="查看技术字段">
-                      <pre>{{ snapshotText }}</pre>
+                      <pre class="app-technical-block">{{ snapshotText }}</pre>
                     </el-collapse-item>
                   </el-collapse>
                 </div>
@@ -332,7 +332,7 @@
                 :rows="3"
                 placeholder="审核意见；拒绝必填，通过可选。"
               />
-              <div class="toolbar">
+              <div class="toolbar app-action-row">
                 <el-button
                   type="success"
                   :loading="reviewing"
@@ -383,7 +383,7 @@
       <el-tab-pane v-if="isAdmin" label="翻译术语待审核" name="translation-review">
         <section class="review-grid">
           <div class="review-list-panel">
-            <el-card class="card-flat batch-review-card" shadow="never">
+            <el-card class="app-panel-card batch-review-card" shadow="never">
               <div class="batch-review-header">
                 <div>
                   <h2 class="section-title">批量审核</h2>
@@ -398,7 +398,7 @@
                 :rows="2"
                 placeholder="批量审核意见；拒绝必填，通过可选。"
               />
-              <div class="toolbar">
+              <div class="toolbar app-action-row">
                 <el-button
                   type="success"
                   :loading="bulkReviewing"
@@ -442,7 +442,7 @@
               @selection-change="handleTranslationBulkSelectionChange"
             />
           </div>
-          <el-card class="card-flat" shadow="never">
+          <el-card class="app-panel-card" shadow="never">
             <template v-if="selectedTranslationProposal">
               <div class="section-header">
                 <div>
@@ -454,7 +454,7 @@
                 </el-tag>
               </div>
 
-              <div class="review-panels">
+              <div class="review-panels app-review-grid">
                 <div>
                   <h3>提议变更</h3>
                   <p><b>绑定版本：</b>{{ translationObservedVersionLabel }}</p>
@@ -480,7 +480,7 @@
                   </ul>
                   <el-collapse class="technical-collapse">
                     <el-collapse-item title="查看技术字段">
-                      <pre>{{ translationChangesText }}</pre>
+                      <pre class="app-technical-block">{{ translationChangesText }}</pre>
                     </el-collapse-item>
                   </el-collapse>
                   <el-button
@@ -507,7 +507,7 @@
                 :rows="3"
                 placeholder="审核意见；拒绝必填，通过可选。"
               />
-              <div class="toolbar">
+              <div class="toolbar app-action-row">
                 <el-button
                   type="success"
                   :loading="reviewing"
@@ -1793,32 +1793,32 @@ watch(() => route.fullPath, () => {
 <style scoped lang="scss">
 .term-proposals-page {
   display: grid;
-  gap: 16px;
+  gap: var(--app-space-4);
 }
 
 .review-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(360px, 520px);
-  gap: 16px;
+  gap: var(--app-space-4);
 }
 
 .review-list-panel {
   display: grid;
   align-content: start;
-  gap: 12px;
+  gap: var(--app-space-3);
   min-width: 0;
 }
 
 .batch-review-card {
-  border-left: 4px solid #2563eb;
+  border-left: 4px solid var(--app-color-primary);
 }
 
 .batch-review-header {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--app-space-3);
   align-items: flex-start;
-  margin-bottom: 12px;
+  margin-bottom: var(--app-space-3);
 }
 
 .proposal-table-wrap {
@@ -1828,11 +1828,11 @@ watch(() => route.fullPath, () => {
 .conflict-alert,
 .review-comment,
 .bulk-result-alert {
-  margin-bottom: 12px;
+  margin-bottom: var(--app-space-3);
 }
 
 .focus-notice {
-  margin-bottom: 12px;
+  margin-bottom: var(--app-space-3);
 }
 
 .error-detail-list {
@@ -1850,8 +1850,8 @@ watch(() => route.fullPath, () => {
 
 .review-panels {
   display: grid;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: var(--app-space-3);
+  margin-bottom: var(--app-space-3);
 }
 
 .review-panels h3 {
@@ -1861,17 +1861,6 @@ watch(() => route.fullPath, () => {
 
 .review-panels p {
   margin: 6px 0;
-}
-
-.review-panels pre {
-  overflow: auto;
-  max-height: 220px;
-  margin: 0;
-  padding: 10px;
-  border-radius: 8px;
-  background: #f8fafc;
-  color: #111827;
-  font-size: 12px;
 }
 
 @media (max-width: 1100px) {

@@ -1,18 +1,19 @@
 <!-- frontend/src/pages/TranslationProfilesPage.vue: Translation Profile list, draft basics and version actions. -->
 <template>
-  <main class="translation-profiles-page" aria-labelledby="translation-profiles-title">
-    <section class="page-heading">
+  <main class="translation-profiles-page app-page" aria-labelledby="translation-profiles-title">
+    <section class="page-heading app-page-header app-page-shell app-page-shell--wide">
       <div>
         <p class="page-kicker">Translation Profile</p>
-        <h1 id="translation-profiles-title">翻译配置</h1>
-        <p>只管理基础字段 draft、发布、设默认和回滚；不提供 Prompt 正文编辑。</p>
+        <h1 id="translation-profiles-title" class="page-title">翻译配置</h1>
+        <p class="page-description">只管理基础字段 draft、发布、设默认和回滚；不提供 Prompt 正文编辑。</p>
       </div>
       <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
     </section>
 
-    <ApiErrorAlert :error="error" />
+    <ApiErrorAlert class="app-page-shell app-page-shell--wide" :error="error" />
 
     <el-alert
+      class="app-page-shell app-page-shell--wide"
       v-if="unavailable"
       type="warning"
       title="当前部署未启用 MySQL resource service，Translation Profile 版本管理不可用。"
@@ -20,8 +21,8 @@
       show-icon
     />
 
-    <section v-else class="profile-grid">
-      <el-card class="card-flat" shadow="never">
+    <section v-else class="profile-grid app-page-shell app-page-shell--wide">
+      <el-card class="app-panel-card app-table-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">Profile 列表</h2>
@@ -36,7 +37,7 @@
         </el-table>
       </el-card>
 
-      <el-card class="card-flat" shadow="never">
+      <el-card class="app-panel-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">Draft 基础字段</h2>
@@ -74,7 +75,7 @@
       </el-card>
     </section>
 
-    <el-card v-if="!unavailable" class="card-flat" shadow="never">
+    <el-card v-if="!unavailable" class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
       <div class="section-header">
         <div>
           <h2 class="section-title">Published versions</h2>
@@ -324,13 +325,13 @@ onMounted(() => {
 <style scoped lang="scss">
 .translation-profiles-page {
   display: grid;
-  gap: 16px;
+  gap: var(--app-space-4);
 }
 
 .profile-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(360px, 520px);
-  gap: 16px;
+  gap: var(--app-space-4);
 }
 
 @media (max-width: 1040px) {

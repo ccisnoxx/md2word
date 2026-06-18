@@ -98,11 +98,11 @@ defineExpose({ clearSelection });
 }
 
 :deep(.el-table__row.is-selected-row td) {
-  background: #ecf5ff;
+  background: var(--app-color-primary-soft);
 }
 
 .job-link {
-  color: #2563eb;
+  color: var(--app-color-primary);
   font-weight: 600;
 }
 </style>

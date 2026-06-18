@@ -456,6 +456,72 @@ a:hover {
   gap: var(--app-space-2);
 }
 
+.app-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--app-space-2);
+}
+
+.app-split-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.95fr) minmax(0, 1.4fr);
+  gap: var(--app-space-4);
+}
+
+.app-review-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr);
+  gap: var(--app-space-4);
+}
+
+.app-governance-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: var(--app-space-3);
+}
+
+.app-governance-metric {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: var(--app-space-3);
+  border: 1px solid var(--app-color-border-soft);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface-muted);
+}
+
+.app-governance-metric span {
+  color: var(--app-color-text-muted);
+  font-size: 12px;
+}
+
+.app-governance-metric strong {
+  color: var(--app-color-text);
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.app-technical-block {
+  overflow: auto;
+  max-width: 100%;
+  padding: var(--app-space-3);
+  border: 1px solid var(--app-color-border-soft);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface-muted);
+  color: var(--app-color-text);
+  font-family: var(--app-font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.app-inline-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--app-space-2);
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --app-color-bg: #050711;
@@ -501,5 +567,10 @@ a:hover {
 
   .page-title {
     font-size: 26px;
+  }
+
+  .app-split-grid,
+  .app-review-grid {
+    grid-template-columns: 1fr;
   }
 }

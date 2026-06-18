@@ -56,6 +56,13 @@ These rules apply to `frontend/src/styles/main.scss`, `frontend/src/layouts/AppL
 - `app-alert-stack`
 - `app-filter-panel`
 - `app-evidence-panel`
+- `app-action-row`
+- `app-split-grid`
+- `app-review-grid`
+- `app-governance-grid`
+- `app-governance-metric`
+- `app-technical-block`
+- `app-inline-meta`
 - `app-compact-grid`
 - `app-compact-card`
 - `app-key-value-list`
@@ -77,7 +84,7 @@ These rules apply to `frontend/src/styles/main.scss`, `frontend/src/layouts/AppL
 
 ## Convention: Shared Workbench Surfaces
 
-**What**: When a page needs repeated metrics, entry links, table cards, or nested evidence panels, use the shared `app-*` surface helpers from `main.scss` before adding page-local card styles.
+**What**: When a page needs repeated metrics, action rows, split/review grids, governance counters, entry links, table cards, technical evidence blocks, or nested evidence panels, use the shared `app-*` surface helpers from `main.scss` before adding page-local card styles.
 
 **Why**: Translation QA and settings pages previously copied local metric cards, entry cards, and table shell styles. Reusing the shared helpers keeps later productization rounds aligned with the main job flow and prevents hardcoded color drift.
 
@@ -95,6 +102,15 @@ These rules apply to `frontend/src/styles/main.scss`, `frontend/src/layouts/AppL
 <el-card class="app-panel-card app-table-card app-page-shell" shadow="never">
   <el-table :data="rows" />
 </el-card>
+
+<section class="app-governance-grid" aria-label="发布治理摘要">
+  <article class="app-governance-metric">
+    <span>可发布</span>
+    <strong>{{ publishableCount }}</strong>
+  </article>
+</section>
+
+<pre class="app-technical-block">{{ payloadPreview }}</pre>
 ```
 
 **Bad**:

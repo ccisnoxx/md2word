@@ -1,13 +1,13 @@
 <!-- frontend/src/pages/WordPageStyleDetailPage.vue: Visual editor for Word page style YAML groups. -->
 <template>
-  <main class="word-style-page" aria-labelledby="word-style-title">
-    <section class="style-hero">
+  <main class="word-style-page app-page" aria-labelledby="word-style-title">
+    <section class="style-hero app-page-header app-page-shell app-page-shell--wide">
       <div>
         <p class="page-kicker">Word 页面样式配置</p>
-        <h1 id="word-style-title">Word 页面样式配置</h1>
-        <p>{{ template?.name || templateId }}：维护后续 Word 生成时应用的页面排版样式。</p>
+        <h1 id="word-style-title" class="page-title">Word 页面样式配置</h1>
+        <p class="page-description">{{ template?.name || templateId }}：维护后续 Word 生成时应用的页面排版样式。</p>
       </div>
-      <div class="style-actions">
+      <div class="style-actions app-action-row">
         <el-select
           v-model="selectedTemplateId"
           class="template-switcher"
@@ -31,20 +31,20 @@
       </div>
     </section>
 
-    <ApiErrorAlert :error="error" />
+    <ApiErrorAlert class="app-page-shell app-page-shell--wide" :error="error" />
 
-    <section class="style-status-grid" aria-label="样式配置状态">
-      <article>
+    <section class="style-status-grid app-metric-grid app-page-shell app-page-shell--wide" aria-label="样式配置状态">
+      <article class="app-metric-card">
         <span>模板</span>
         <strong>{{ template?.name || templateId }}</strong>
         <small>{{ template?.is_default ? "当前默认模板" : "非默认模板" }}</small>
       </article>
-      <article>
+      <article class="app-metric-card">
         <span>配置分组</span>
         <strong>{{ layoutGroupEntries.length || "-" }}</strong>
         <small>按 datasheet_template.yaml 一级分类渲染</small>
       </article>
-      <article>
+      <article class="app-metric-card">
         <span>未保存</span>
         <strong>{{ dirtyFieldCount }}</strong>
         <small>{{ isLayoutDirty ? "保存后生成 draft version" : "当前无未保存改动" }}</small>
@@ -52,6 +52,7 @@
     </section>
 
     <el-alert
+      class="app-page-shell app-page-shell--wide"
       title="公司 Logo、默认页眉内容和 DOCX 文件由 Word 模板文档维护；这里保留页眉/页脚文字样式、对齐和开关等排版设置。"
       type="info"
       show-icon
@@ -59,6 +60,7 @@
     />
 
     <el-alert
+      class="app-page-shell app-page-shell--wide"
       v-if="!layoutConfig && !layoutConfigLoading"
       title="未加载到模板页面样式配置"
       type="warning"
@@ -67,7 +69,7 @@
     />
 
     <template v-if="layoutConfig">
-      <section class="config-meta-strip" aria-label="当前配置元信息">
+      <section class="config-meta-strip app-evidence-panel app-page-shell app-page-shell--wide" aria-label="当前配置元信息">
         <dl>
           <div v-for="[fieldName, value] in layoutMetaEntries" :key="fieldName">
             <dt>{{ layoutMetaLabel(fieldName) }}</dt>
@@ -78,7 +80,7 @@
         </dl>
       </section>
 
-      <section class="style-workbench" aria-label="Word 页面样式编辑器">
+      <section class="style-workbench app-page-shell app-page-shell--wide" aria-label="Word 页面样式编辑器">
         <aside class="category-rail" aria-label="样式大类">
           <button
             v-for="category in availableCategories"
@@ -95,7 +97,7 @@
           </button>
         </aside>
 
-        <section class="style-editor-panel">
+        <section class="style-editor-panel app-panel-card">
           <header class="style-panel-header">
             <div>
               <h2>{{ activeCategory?.title || "样式分组" }}</h2>
@@ -192,7 +194,7 @@
           </el-form>
         </section>
 
-        <aside class="change-panel" aria-label="配置变更摘要">
+        <aside class="change-panel app-panel-card" aria-label="配置变更摘要">
           <div class="change-panel-heading">
             <h2>变更摘要</h2>
             <el-tag v-if="isLayoutDirty" type="warning" effect="plain">{{ dirtyFieldCount }}</el-tag>
@@ -675,57 +677,33 @@ onBeforeUnmount(() => {
 <style scoped lang="scss">
 .word-style-page {
   display: grid;
-  gap: 16px;
+  gap: var(--app-space-4);
 }
 
 .style-hero {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  padding: 18px;
-  border: 1px solid #dbe3ef;
-  border-radius: 8px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  gap: var(--app-space-4);
 }
 
 .style-hero h1 {
-  margin: 4px 0;
-  color: #0f172a;
-  font-size: 26px;
-  line-height: 1.2;
+  margin: 0;
 }
 
 .style-hero p:last-child {
-  max-width: 760px;
-  margin: 0;
-  color: #475569;
+  margin: var(--app-space-1) 0 0;
 }
 
 .style-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 
 .template-switcher {
   width: 240px;
-}
-
-.style-status-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.style-status-grid article {
-  display: grid;
-  gap: 4px;
-  padding: 14px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #ffffff;
 }
 
 .style-status-grid span,
@@ -734,19 +712,15 @@ onBeforeUnmount(() => {
 .change-panel p,
 .change-panel li span,
 .change-note {
-  color: #475569;
+  color: var(--app-color-text-muted);
 }
 
 .style-status-grid strong {
-  color: #0f172a;
-  font-size: 20px;
+  color: var(--app-color-text);
 }
 
 .config-meta-strip {
-  padding: 12px 14px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #ffffff;
+  padding: var(--app-space-3) var(--app-space-4);
 }
 
 .config-meta-strip dl {
@@ -772,7 +746,7 @@ onBeforeUnmount(() => {
 .style-workbench {
   display: grid;
   grid-template-columns: 230px minmax(0, 1fr) 300px;
-  gap: 16px;
+  gap: var(--app-space-4);
   align-items: start;
 }
 
@@ -784,7 +758,7 @@ onBeforeUnmount(() => {
 
 .category-rail {
   display: grid;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 
 .category-rail button {
@@ -792,11 +766,11 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 4px;
   min-height: 72px;
-  padding: 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #1e293b;
+  padding: var(--app-space-3);
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface);
+  color: var(--app-color-text);
   text-align: left;
   cursor: pointer;
   transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
@@ -804,14 +778,14 @@ onBeforeUnmount(() => {
 
 .category-rail button:hover,
 .category-rail button:focus-visible {
-  border-color: #93c5fd;
-  box-shadow: 0 8px 22px rgb(15 23 42 / 8%);
+  border-color: var(--app-color-primary-border);
+  box-shadow: var(--app-shadow-panel);
   outline: none;
 }
 
 .category-rail button.active {
-  border-color: #2563eb;
-  background: #eff6ff;
+  border-color: var(--app-color-primary-border);
+  background: var(--app-color-primary-soft);
 }
 
 .category-rail button span {
@@ -819,7 +793,7 @@ onBeforeUnmount(() => {
 }
 
 .category-rail button small {
-  color: #475569;
+  color: var(--app-color-text-muted);
   line-height: 1.4;
 }
 
@@ -829,16 +803,9 @@ onBeforeUnmount(() => {
   right: 10px;
 }
 
-.style-editor-panel,
-.change-panel {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
 .style-editor-panel {
   min-width: 0;
-  padding: 16px;
+  padding: var(--app-space-4);
 }
 
 .style-panel-header,
@@ -858,7 +825,7 @@ onBeforeUnmount(() => {
 .change-panel h2,
 .layout-section h3 {
   margin: 0;
-  color: #0f172a;
+  color: var(--app-color-text);
   font-size: 16px;
   font-weight: 650;
 }
@@ -866,17 +833,17 @@ onBeforeUnmount(() => {
 .style-panel-header p,
 .layout-section-heading p {
   margin: 4px 0 0;
-  color: #475569;
+  color: var(--app-color-text-muted);
   font-size: 13px;
 }
 
 .group-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #e5e7eb;
+  gap: var(--app-space-2);
+  margin-bottom: var(--app-space-4);
+  padding-bottom: var(--app-space-3);
+  border-bottom: 1px solid var(--app-color-border);
 }
 
 .group-tabs button {
@@ -885,29 +852,29 @@ onBeforeUnmount(() => {
   gap: 6px;
   min-height: 34px;
   padding: 7px 10px;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #334155;
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface);
+  color: var(--app-color-text);
   cursor: pointer;
   transition: border-color 180ms ease, background-color 180ms ease;
 }
 
 .group-tabs button:hover,
 .group-tabs button:focus-visible {
-  border-color: #2563eb;
+  border-color: var(--app-color-primary);
   outline: none;
 }
 
 .group-tabs button.active {
-  border-color: #2563eb;
-  background: #eff6ff;
-  color: #1d4ed8;
+  border-color: var(--app-color-primary);
+  background: var(--app-color-primary-soft);
+  color: var(--app-color-primary-hover);
 }
 
 .layout-form {
   display: grid;
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 
 .layout-section-heading {
@@ -917,7 +884,7 @@ onBeforeUnmount(() => {
 .layout-fields {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 10px 14px;
+  gap: var(--app-space-3) var(--app-space-4);
 }
 
 .layout-fields :deep(.el-form-item) {
@@ -939,8 +906,8 @@ onBeforeUnmount(() => {
 
 .change-panel {
   display: grid;
-  gap: 12px;
-  padding: 14px;
+  gap: var(--app-space-3);
+  padding: var(--app-space-4);
 }
 
 .change-panel p {
@@ -959,11 +926,11 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 3px;
   padding-bottom: 10px;
-  border-bottom: 1px solid #eef2f7;
+  border-bottom: 1px solid var(--app-color-border-soft);
 }
 
 .change-panel li strong {
-  color: #0f172a;
+  color: var(--app-color-text);
   font-size: 13px;
 }
 
@@ -973,9 +940,9 @@ onBeforeUnmount(() => {
 }
 
 .change-note {
-  padding: 10px;
-  border-radius: 8px;
-  background: #f8fafc;
+  padding: var(--app-space-3);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface-muted);
   font-size: 12px;
   line-height: 1.5;
 }

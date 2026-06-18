@@ -1,21 +1,22 @@
 <!-- File: frontend/src/pages/TermRuleSetPage.vue -->
 <!-- Purpose: Provide Admin Term Rule Set draft governance, diff, preflight, and publish workflows. -->
 <template>
-  <main class="term-rule-set-page" aria-labelledby="term-rule-set-title">
-    <section class="page-heading">
+  <main class="term-rule-set-page app-page" aria-labelledby="term-rule-set-title">
+    <section class="page-heading app-page-header app-page-shell app-page-shell--wide">
       <div>
         <p class="page-kicker">Term Rule Set</p>
-        <h1 id="term-rule-set-title">术语规则集</h1>
-        <p>维护 draft 规则，查看 diff 和发布前校验；发布或切默认后才影响后续默认版本。</p>
+        <h1 id="term-rule-set-title" class="page-title">术语规则集</h1>
+        <p class="page-description">维护 draft 规则，查看 diff 和发布前校验；发布或切默认后才影响后续默认版本。</p>
       </div>
       <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
     </section>
 
-    <TerminologyWorkbenchNav active="draft-publish" />
+    <TerminologyWorkbenchNav class="app-page-shell app-page-shell--wide" active="draft-publish" />
 
-    <ApiErrorAlert :error="error" />
+    <ApiErrorAlert class="app-page-shell app-page-shell--wide" :error="error" />
 
     <el-alert
+      class="app-page-shell app-page-shell--wide"
       v-if="unavailable"
       type="warning"
       title="当前部署未启用 MySQL resource service，Term Rule Set 版本管理不可用。"
@@ -25,7 +26,7 @@
 
     <el-alert
       v-if="governanceContextVisible && !unavailable"
-      class="governance-context-alert"
+      class="governance-context-alert app-page-shell app-page-shell--wide"
       type="info"
       title="Proposal 治理上下文"
       :closable="false"
@@ -39,8 +40,8 @@
       </div>
     </el-alert>
 
-    <section v-if="!unavailable" class="rule-set-grid">
-      <el-card class="card-flat" shadow="never">
+    <section v-if="!unavailable" class="rule-set-grid app-page-shell app-page-shell--wide">
+      <el-card class="app-panel-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">规则集选择</h2>
@@ -52,7 +53,7 @@
         </el-select>
       </el-card>
 
-      <el-card class="card-flat" shadow="never">
+      <el-card class="app-panel-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">Draft 摘要</h2>
@@ -67,7 +68,7 @@
         </dl>
       </el-card>
 
-      <el-card class="card-flat" shadow="never">
+      <el-card class="app-panel-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">Preflight</h2>
@@ -95,7 +96,7 @@
     </section>
 
     <RoleGate>
-      <el-card v-if="!unavailable" class="card-flat" shadow="never">
+      <el-card v-if="!unavailable" class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">Draft 规则</h2>
@@ -106,7 +107,7 @@
           </el-button>
         </div>
 
-        <div class="toolbar filters" role="search">
+        <div class="toolbar filters app-filter-panel" role="search">
           <el-select v-model="draftRuleFilters.categoryId" clearable placeholder="全部分类" class="filter-select">
             <el-option v-for="category in categories" :key="category.id" :label="category.name" :value="category.id" />
           </el-select>
@@ -184,7 +185,7 @@
       </el-card>
     </RoleGate>
 
-    <el-card v-if="!unavailable" class="card-flat" shadow="never">
+    <el-card v-if="!unavailable" class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
       <div class="section-header">
         <div>
           <h2 class="section-title">Draft diff</h2>
@@ -192,8 +193,8 @@
         </div>
         <el-button :loading="diffLoading" @click="loadGovernanceReports">刷新 diff</el-button>
       </div>
-      <div class="diff-summary">
-        <div v-for="item in diffCounters" :key="item.key" class="diff-counter">
+      <div class="diff-summary app-governance-grid">
+        <div v-for="item in diffCounters" :key="item.key" class="diff-counter app-governance-metric">
           <span>{{ item.label }}</span>
           <strong>{{ item.value }}</strong>
         </div>
@@ -225,7 +226,7 @@
       </el-table>
     </el-card>
 
-    <el-card v-if="!unavailable" class="card-flat" shadow="never">
+    <el-card v-if="!unavailable" class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
       <div class="section-header">
         <div>
           <h2 class="section-title">发布前校验</h2>
@@ -248,7 +249,7 @@
       </el-table>
     </el-card>
 
-    <el-card v-if="!unavailable" class="card-flat" shadow="never">
+    <el-card v-if="!unavailable" class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
       <div class="section-header">
         <div>
           <h2 class="section-title">Published versions</h2>
@@ -282,7 +283,7 @@
     </el-card>
 
     <RoleGate>
-      <el-card v-if="!unavailable" class="card-flat" shadow="never">
+      <el-card v-if="!unavailable" class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">已 approve 待核对 proposals</h2>
@@ -299,7 +300,7 @@
     </RoleGate>
 
     <RoleGate>
-      <el-card v-if="!unavailable" class="card-flat" shadow="never">
+      <el-card v-if="!unavailable" class="app-panel-card app-page-shell app-page-shell--wide" shadow="never">
         <el-collapse>
           <el-collapse-item title="YAML 高级编辑兜底" name="yaml">
             <el-alert
@@ -1090,13 +1091,13 @@ watch(() => route.fullPath, () => {
 <style scoped lang="scss">
 .term-rule-set-page {
   display: grid;
-  gap: 16px;
+  gap: var(--app-space-4);
 }
 
 .rule-set-grid {
   display: grid;
   grid-template-columns: minmax(260px, 340px) minmax(0, 1fr) minmax(260px, 340px);
-  gap: 16px;
+  gap: var(--app-space-4);
 }
 
 .governance-context-alert {
@@ -1106,24 +1107,24 @@ watch(() => route.fullPath, () => {
 .governance-context-body {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 16px;
+  gap: var(--app-space-2) var(--app-space-4);
   align-items: center;
 }
 
 .summary-list {
   display: grid;
-  gap: 10px;
-  margin: 0 0 16px;
+  gap: var(--app-space-2);
+  margin: 0 0 var(--app-space-4);
 }
 
 .summary-list div {
   display: grid;
   grid-template-columns: 150px minmax(0, 1fr);
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 
 .summary-list dt {
-  color: #667085;
+  color: var(--app-color-text-muted);
 }
 
 .summary-list dd {
@@ -1135,8 +1136,8 @@ watch(() => route.fullPath, () => {
 .filters {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: var(--app-space-2);
+  margin-bottom: var(--app-space-3);
 }
 
 .filter-select {
@@ -1156,24 +1157,12 @@ watch(() => route.fullPath, () => {
   margin-top: 12px;
 }
 
-.diff-summary {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(110px, 1fr));
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
 .diff-counter {
   min-height: 62px;
-  padding: 10px 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #fff;
 }
 
 .diff-counter span {
   display: block;
-  color: #667085;
 }
 
 .diff-counter strong {
@@ -1185,7 +1174,7 @@ watch(() => route.fullPath, () => {
 .rule-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 16px;
+  column-gap: var(--app-space-4);
 }
 
 .dialog-alert,
