@@ -35,6 +35,7 @@ from app.domains.document_jobs.repository import (
 )
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.renderer import DocumentIRWordRenderer
+from app.services.renderer.docx_quality import analyze_docx_quality_bytes, build_docx_quality_flags
 from app.services.renderer.layout_plan import LayoutPlan, build_layout_plan
 from app.domains.translation.audit import (
     TranslationAuditService,
@@ -1015,6 +1016,9 @@ class DocumentJobExecutionService:
             config_path=template_selection.layout_config_path,
             image_loader=self._build_image_loader(rendering),
         )
+        docx_quality = analyze_docx_quality_bytes(word_content)
+        renderer_metadata["docx_quality"] = docx_quality
+        renderer_metadata["quality_flags"] = build_docx_quality_flags(docx_quality)
         uploading = self.job_repository.update_document_job_if_current(
             rendering.id,
             allowed_statuses={"running"},

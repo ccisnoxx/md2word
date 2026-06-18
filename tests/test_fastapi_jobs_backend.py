@@ -7669,11 +7669,7 @@ class FastAPIJobsBackendTests(TestCase):
                 delete_response = client.post(
                     f"/api/v1/document-jobs/{job_id}/delete",
                     headers={**admin_headers, "X-Trace-Id": "trace_docjob_delete"},
-                    json={
-                        "reason": "operator requested task cleanup",
-                        "confirmation": preview_payload["confirmation_phrase"],
-                        "preview_hash": preview_payload["preview_hash"],
-                    },
+                    json={"preview_hash": preview_payload["preview_hash"]},
                 )
                 list_response = client.get("/api/v1/document-jobs", headers=admin_headers)
                 detail_response = client.get(f"/api/v1/document-jobs/{job_id}", headers=admin_headers)
@@ -7724,7 +7720,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIsNotNone(stored_job)
         self.assertIsNotNone(stored_job.deleted_at)
         self.assertEqual(stored_job.deleted_by, "user_admin")
-        self.assertEqual(stored_job.delete_reason, "operator requested task cleanup")
+        self.assertEqual(stored_job.delete_reason, "admin_preview_confirm_delete")
         for record in stored_files.values():
             self.assertIsNotNone(record)
             self.assertEqual(record.status, "deleted")
@@ -7733,7 +7729,7 @@ class FastAPIJobsBackendTests(TestCase):
         delete_audit_events = [event for event in audit_events if event.action == "document_job.delete"]
         self.assertEqual(len(delete_audit_events), 1)
         self.assertEqual(delete_audit_events[0].target_id, job_id)
-        self.assertEqual(delete_audit_events[0].reason, "operator requested task cleanup")
+        self.assertEqual(delete_audit_events[0].reason, "admin_preview_confirm_delete")
 
     def test_document_job_delete_preserves_shared_source_file(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -9992,6 +9988,115 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(audit_events[4].reason, "switch production to compact density")
         self.assertEqual(audit_events[-1].target_id, "managed@1")
         self.assertNotIn("term_rules", records["2"].payload)
+
+    def test_template_layout_config_admin_creates_draft_version_without_mutating_source_yaml(self):
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            manifest_path = temp_root / "templates_manifest.yaml"
+            repo_root = Path(__file__).resolve().parents[1]
+            source_layout_path = repo_root / "resources" / "template_configs" / "datasheet_template.yaml"
+            original_source_text = source_layout_path.read_text(encoding="utf-8")
+            write_templates_manifest(
+                manifest_path,
+                [
+                    {
+                        "id": "default",
+                        "name": "Default Template",
+                        "description": "default",
+                        "enabled": True,
+                        "is_default_seed": True,
+                        "template_path": str((repo_root / "resources" / "templates" / "default" / "datasheet_template.docx").resolve()),
+                        "layout_config_path": str(source_layout_path.resolve()),
+                    }
+                ],
+            )
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                admin_token="secret-admin",
+                jobs_repository_backend="mysql",
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+                templates_manifest_path=str(manifest_path),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                denied_read = client.get("/api/v1/templates/default/layout-config")
+                denied_write = client.post(
+                    "/api/v1/templates/default/layout-config/versions",
+                    json={"config": {}},
+                )
+                read_response = client.get(
+                    "/api/v1/templates/default/layout-config",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                self.assertEqual(read_response.status_code, 200)
+                read_payload = read_response.json()
+                config = read_payload["config"]
+                config["page_setup"]["top_margin"] = 1.7
+                config["normal"]["font_size"] = 11
+
+                create_response = client.post(
+                    "/api/v1/templates/default/layout-config/versions",
+                    json={"config": config},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                invalid_config = json.loads(json.dumps(config))
+                invalid_config["sample_content"] = {"normal_text": "not supported"}
+                invalid_response = client.post(
+                    "/api/v1/templates/default/layout-config/versions",
+                    json={"config": invalid_config},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                readonly_meta_config = json.loads(json.dumps(config))
+                readonly_meta_config["template_name"] = "bad client edit"
+                readonly_meta_response = client.post(
+                    "/api/v1/templates/default/layout-config/versions",
+                    json={"config": readonly_meta_config},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+
+            self.assertEqual(denied_read.status_code, 403)
+            self.assertEqual(denied_write.status_code, 403)
+            self.assertEqual(read_payload["meta"]["schema_version"], "template-config/v1")
+            self.assertEqual(read_payload["meta"]["template_name"], "数据手册模板")
+            self.assertNotIn("schema_version", read_payload["config"])
+            self.assertNotIn("template_name", read_payload["config"])
+            self.assertNotIn("output_filename", read_payload["config"])
+            self.assertNotIn("sample_content", read_payload["config"])
+            self.assertIn("page_setup", read_payload["field_schema"]["groups"])
+            self.assertIn("top_margin", read_payload["field_schema"]["groups"]["page_setup"])
+            self.assertTrue(read_payload["field_schema"]["meta"]["template_name"]["readonly"])
+            self.assertEqual(create_response.status_code, 201)
+            created_payload = create_response.json()
+            self.assertEqual(created_payload["version"], 2)
+            self.assertEqual(created_payload["status"], "draft")
+            self.assertTrue(created_payload["layout_config"]["exists"])
+            self.assertEqual(invalid_response.status_code, 400)
+            self.assertIn("sample_content", invalid_response.json()["detail"])
+            self.assertEqual(readonly_meta_response.status_code, 400)
+            self.assertIn("只读", readonly_meta_response.json()["detail"])
+            self.assertEqual(source_layout_path.read_text(encoding="utf-8"), original_source_text)
+
+            record = runtime.resource_version_service.repository.get_resource_version("template", "default", "2")
+            self.assertIsNotNone(record)
+            layout_path = Path(record.payload["layout_config_path"])
+            self.assertTrue(layout_path.exists())
+            written_config = yaml.safe_load(layout_path.read_text(encoding="utf-8"))
+            self.assertEqual(written_config["schema_version"], "template-config/v1")
+            self.assertEqual(written_config["template_name"], "数据手册模板")
+            self.assertEqual(written_config["output_filename"], "datasheet_template.docx")
+            self.assertEqual(written_config["page_setup"]["top_margin"], 1.7)
+            self.assertEqual(written_config["normal"]["font_size"], 11)
+            self.assertEqual(record.payload["layout_config_sha256"], f"sha256:{hashlib.sha256(layout_path.read_bytes()).hexdigest()}")
+            self.assertTrue(Path(record.payload["docx_path"]).exists())
+            audit_events = runtime.audit_event_repository.list_audit_events()
+            self.assertEqual([event.action for event in audit_events], ["template.layout_config_version_create"])
+            self.assertEqual(audit_events[0].target_id, "default@2")
 
     def test_template_versioning_endpoints_require_mysql_resource_service(self):
         with tempfile.TemporaryDirectory() as temp_dir:

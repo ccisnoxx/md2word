@@ -15,6 +15,27 @@
     <ConfigTodoSummary :summary="summary" :loading="initialLoading" :error="error" @refresh="refreshSummary" />
     <div v-if="summary && refreshing" class="refresh-note">正在后台更新配置总览，当前页面保留上次结果。</div>
 
+    <section class="word-config-entry-grid" aria-label="Word 配置入口">
+      <router-link class="word-config-entry" to="/settings/templates">
+        <span class="settings-group-icon" aria-hidden="true">
+          <el-icon><Document /></el-icon>
+        </span>
+        <span>
+          <strong>Word 模板文档</strong>
+          <small>管理 DOCX 模板文件、默认页眉内容、公司 Logo 和版本发布。</small>
+        </span>
+      </router-link>
+      <router-link class="word-config-entry" to="/settings/word-page-styles">
+        <span class="settings-group-icon" aria-hidden="true">
+          <el-icon><Brush /></el-icon>
+        </span>
+        <span>
+          <strong>Word 页面样式配置</strong>
+          <small>维护页边距、标题、目录、正文、表格和页眉页脚文字样式。</small>
+        </span>
+      </router-link>
+    </section>
+
     <section v-if="summary" class="release-gate-workspace" aria-label="发布门禁处理队列">
       <div class="section-header">
         <div>
@@ -134,8 +155,10 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import {
+  Brush,
   Collection,
   Cpu,
+  Document,
   DocumentChecked,
   Files,
   Tickets,
@@ -417,6 +440,47 @@ onMounted(() => {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+}
+
+.word-config-entry-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.word-config-entry {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 16px;
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  background: #fff;
+  color: #111827;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.word-config-entry:hover,
+.word-config-entry:focus-visible {
+  border-color: #93c5fd;
+  color: #1d4ed8;
+  box-shadow: 0 8px 22px rgb(15 23 42 / 8%);
+  outline: none;
+}
+
+.word-config-entry span:last-child {
+  display: grid;
+  gap: 4px;
+}
+
+.word-config-entry strong {
+  color: inherit;
+}
+
+.word-config-entry small {
+  color: #475569;
+  line-height: 1.45;
 }
 
 .refresh-note {

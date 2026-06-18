@@ -126,9 +126,9 @@ last_reviewed: 2026-05-28
 - `artifacts` 是结果合同，不只是文件路径集合
 - `stage message` 是执行机制，不等于领域状态本身
 
-### 2.2 Workflow Variant A: MinerU 输出包直转 DOCX
+### 2.2 Historical Workflow Variant A: MinerU 输出包直转 DOCX
 
-当前第一条完整主链路是：
+以下是 legacy `/api/v1/jobs` 历史链路，用于理解仍存在的 `app/domains/jobs/` 代码和测试。当前公开 P0 主链路已迁移到 Files + Document Jobs，新联调不要使用该入口。
 
 1. `POST /api/v1/jobs` 接收 MinerU 输出 zip
 2. `JobCommandService` 创建 `job`
@@ -139,11 +139,11 @@ last_reviewed: 2026-05-28
 7. `conversion_entrypoint.convert()` 进入 `app/conversion/`
 8. 产出 `result_docx`，任务进入 `completed`
 
-这条链路当前已经是后端最完整、最稳定的业务闭环。
+这条链路不再是新集成的公开入口。
 
-### 2.3 Workflow Variant B: 原始 PDF 在线解析
+### 2.3 Historical Workflow Variant B: 原始 PDF 在线解析
 
-当前第二条链路是：
+以下同样是 legacy `/api/v1/jobs/pdf` 历史链路。当前公开原始 PDF 在线解析入口是先走 Files 上传，再创建 `/api/v1/document-jobs`。
 
 1. `POST /api/v1/jobs/pdf` 接收原始 PDF
 2. `JobCommandService` 创建 `job`

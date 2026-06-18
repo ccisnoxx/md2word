@@ -100,6 +100,21 @@ class TemplateVersionListResponse(BaseModel):
     items: list[TemplateVersionResponse]
 
 
+class TemplateLayoutConfigResponse(BaseModel):
+    template_id: str
+    template_version_id: str | None = None
+    version: int
+    source_path: str | None = None
+    config_sha256: str | None = None
+    meta: dict[str, Any] = Field(default_factory=dict)
+    config: dict[str, Any] = Field(default_factory=dict)
+    field_schema: dict[str, Any] = Field(default_factory=dict)
+
+
+class TemplateLayoutConfigDraftRequest(BaseModel):
+    config: dict[str, Any]
+
+
 class TemplateDeleteResponse(BaseModel):
     id: str
     deleted: bool

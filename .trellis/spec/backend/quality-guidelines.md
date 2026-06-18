@@ -111,6 +111,83 @@ P2_ONLINE_PASSWORD='<admin-password>' \
 python scripts/ops/run_p2_online_gate.py
 ```
 
+### Scenario: Word template document vs page style configuration
+
+#### 1. Scope / Trigger
+
+- Trigger: any change that touches Word template document management, layout YAML editing, template version creation, admin settings routes, or document-job template resolution.
+- Keep two product surfaces separate:
+  - Word template document management owns DOCX files, company logo/default header content in the DOCX, validation jobs, publish, and default-version lifecycle.
+  - Word page style configuration owns visual editing of output styles from `resources/template_configs/datasheet_template.yaml` groups.
+
+#### 2. Signatures
+
+- API: `GET /api/v1/templates/{template_id}/layout-config`
+- API: `POST /api/v1/templates/{template_id}/layout-config/versions`
+- Frontend route: `/settings/templates` and `/settings/templates/{template_id}` for template documents.
+- Frontend route: `/settings/word-page-styles` and `/settings/word-page-styles/{template_id}` for page styles.
+
+#### 3. Contracts
+
+- Both layout-config APIs require `require_admin_actor`; non-admin users must not read or write layout config through API or see frontend entry points.
+- `GET /layout-config` response fields:
+  - `meta`: readonly YAML metadata such as `schema_version`, `template_name`, and `output_filename`.
+  - `config`: editable layout groups only, keyed by YAML top-level groups such as `page_setup`, `heading1`, `normal`, `table_style`, `header`, and `footer`.
+  - `field_schema`: backend-owned allowlist with field `type`, Chinese `label`, optional `unit`, and optional `readonly`.
+- `POST /layout-config/versions` request body is `{ "config": <editable layout groups> }`.
+- Saving page styles creates a draft Template Version by copying the current DOCX template file and writing a versioned `layout_config.yaml`; it must not mutate the source repository YAML directly.
+- `schema_version`, `template_name`, `output_filename`, and `sample_content` are not editable style fields.
+- `header.logo_path` may exist in backend config for compatibility but is readonly UI-wise; company logo/default header content belongs to the template document surface.
+
+#### 4. Validation & Error Matrix
+
+- Non-admin actor -> `403`.
+- Missing template or missing layout YAML -> `404`.
+- Non-object `config` -> `400`.
+- Submitted readonly metadata (`schema_version`, `template_name`, `output_filename`) -> `400`.
+- Unknown top-level group or unknown field -> `400`.
+- Missing required group or field -> `400`.
+- Invalid field type, alignment outside `left/center/right/justify`, invalid RGB color, negative number except indent fields -> `400`.
+- Versioning backend unavailable -> `503`.
+
+#### 5. Good/Base/Bad Cases
+
+- Good: admin changes `heading1.font_size`, backend validates against `field_schema`, creates a draft version, and later publish/default actions make future Word generation use that version.
+- Base: readonly metadata appears as status context only; frontend submits `config` groups without `sample_content`.
+- Bad: exposing a raw YAML editor, combining DOCX logo/header editing with page style controls, or letting the frontend define its own allowlist independent of backend schema.
+
+#### 6. Tests Required
+
+- Backend tests assert admin-only access for both layout-config endpoints.
+- Backend tests assert draft layout saves do not mutate the source YAML and reject unknown/readonly fields.
+- Frontend smoke or unit coverage must assert non-admin routes are forbidden, template document pages do not show page-style form groups, and page-style pages hide `header.logo_path`.
+- Document generation tests must cover that published/default Template Version layout config is the path resolved for later Word jobs.
+
+#### 7. Wrong vs Correct
+
+Wrong:
+
+```json
+{
+  "schema_version": "template-config/v1",
+  "sample_content": { "normal_text": "demo" },
+  "heading1": { "font_size": 14 }
+}
+```
+
+Correct:
+
+Excerpt from a valid request; the real payload must include every allowlisted group and field:
+
+```json
+{
+  "config": {
+    "page_setup": { "top_margin": 2.3, "bottom_margin": 2.3 },
+    "heading1": { "font_name": "宋体", "font_size": 14, "bold": true }
+  }
+}
+```
+
 ---
 
 ## Testing Requirements

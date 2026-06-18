@@ -289,6 +289,25 @@ class RenderTableFromHtmlCharacterizationTests(unittest.TestCase):
         self.assertEqual(container.tables, [])
         self.assertEqual(container.paragraphs, [])
 
+    def test_later_th_cells_are_treated_as_table_headers(self):
+        container = FakeContainer()
+        block = self.make_block(
+            html="<table><tr><td colspan=\"2\">Group</td></tr><tr><th>PARAMETER</th><th>VALUE</th></tr></table>"
+        )
+        render_config = self.make_render_config()
+        seen: list[tuple[str, bool]] = []
+
+        def record_fill(cell, cell_model, is_header, _render_config, *, compact=False):
+            seen.append((cell_model.text, is_header))
+
+        with mock.patch.object(self.module, "fill_table_cell", side_effect=record_fill):
+            rendered = self.module.render_table_from_html(container, block, usable_width=8000, render_config=render_config)
+
+        self.assertTrue(rendered)
+        self.assertIn(("Group", True), seen)
+        self.assertIn(("PARAMETER", True), seen)
+        self.assertIn(("VALUE", True), seen)
+
     def test_large_simple_table_uses_chunk_renderer(self):
         container = FakeContainer()
         block = self.make_block()

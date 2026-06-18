@@ -82,12 +82,23 @@ const items = computed<BreadcrumbItem[]>(() => {
     case "settings-templates":
       return [
         { label: "配置中心", to: "/settings" },
-        { label: "模板配置" },
+        { label: "Word 模板文档" },
       ];
     case "settings-template-detail":
       return [
         { label: "配置中心", to: "/settings" },
-        { label: "模板配置", to: "/settings/templates" },
+        { label: "Word 模板文档", to: "/settings/templates" },
+        { label: templateId.value },
+      ];
+    case "settings-word-page-styles":
+      return [
+        { label: "配置中心", to: "/settings" },
+        { label: "Word 页面样式配置" },
+      ];
+    case "settings-word-page-style-detail":
+      return [
+        { label: "配置中心", to: "/settings" },
+        { label: "Word 页面样式配置", to: "/settings/word-page-styles" },
         { label: templateId.value },
       ];
     case "settings-term-rule-sets":

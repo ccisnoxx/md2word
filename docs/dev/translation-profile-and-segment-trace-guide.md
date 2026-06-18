@@ -66,24 +66,30 @@ curl -sS -X POST \
   -d '{"make_default":true}'
 ```
 
-4. 提交 `en2zh` job：
+4. 提交 `en2zh` document job：
 
 ```bash
 curl -sS -X POST \
-  http://127.0.0.1:8000/api/v1/jobs \
-  -F 'package=@/path/to/mineru-output.zip' \
-  -F 'translation_mode=en2zh' \
-  -F 'translation_profile_id=electronics-en2zh' \
-  -F 'translation_profile_version=2026.05.29-1'
+  http://127.0.0.1:8000/api/v1/document-jobs \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "source_file_id": "file_uploaded_pdf",
+    "mode": "en2zh_pdf_to_word",
+    "document_language": "en",
+    "translation_profile_id": "electronics-en2zh",
+    "translation_profile_version": "2026.05.29-1"
+  }'
 ```
 
 不传 `translation_profile_id` / `translation_profile_version` 时，MySQL resource mode 会绑定当前默认 published profile。
 
-5. 下载 segment trace：
+5. 查看翻译 QA 证据：
 
 ```bash
 curl -sS \
-  http://127.0.0.1:8000/api/v1/jobs/<job-id>/download/translation-trace
+  http://127.0.0.1:8000/api/v1/document-jobs/<job-id>/translation-qa \
+  -H "Authorization: Bearer ${TOKEN}"
 ```
 
 ## 核心概念
@@ -114,12 +120,12 @@ Translation Profile payload 只保存模型、目标语言、领域、prompt 版
 | `POST` | `/api/v1/translation-profiles/{profile_id}/versions/{version}/set-default` | 切默认版本 |
 | `POST` | `/api/v1/translation-profiles/{profile_id}/rollback` | 回滚默认版本 |
 
-`translation_trace` 下载入口属于 jobs artifact 合同：
+legacy `/api/v1/jobs` 曾提供 `translation_trace` 下载入口；当前新联调不要使用它。Document Jobs 工作台通过翻译 QA 证据接口读取可展示的片段、术语 trace 和 AI call 摘要：
 
 | 方法 | 路径 | 用途 |
 |---|---|---|
-| `GET` | `/api/v1/jobs/{job_id}/files` | 查看任务是否登记 `translation_trace` |
-| `GET` | `/api/v1/jobs/{job_id}/download/translation-trace` | 下载 segment trace JSON |
+| `GET` | `/api/v1/document-jobs/{job_id}/translation-qa` | 查看 P1 beta 翻译 QA 证据摘要 |
+| `PATCH` | `/api/v1/document-jobs/{job_id}/translation-qa` | 保存 QA 状态、问题类型和备注 |
 
 ## 常见场景
 

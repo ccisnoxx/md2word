@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import Any
 
 from docx import Document
+from docx.enum.section import WD_ORIENTATION, WD_SECTION_START
 from docx.image.exceptions import InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError
-from docx.shared import Cm
+from docx.shared import Cm, Mm
 
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset, DocumentIRBlock
 from app.services.renderer.image_renderer import WordImageRendererMixin
@@ -20,6 +21,8 @@ from app.services.renderer.text_renderer import WordTextRendererMixin
 
 
 ImageContentLoader = Callable[[DocumentIRAsset], bytes | None]
+A4_PORTRAIT_WIDTH = Mm(210)
+A4_PORTRAIT_HEIGHT = Mm(297)
 
 
 class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, WordImageRendererMixin):
@@ -47,10 +50,17 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
             for block in layout_plan.pages[0].regions[0].blocks:
                 self._render_block(document, block, assets_by_id, template_config, image_loader)
         else:
+            previous_page_landscape = False
             for page_index, page in enumerate(layout_plan.pages):
+                page_landscape = self._layout_page_requires_landscape(page)
                 if page_index > 0:
-                    document.add_page_break()
+                    if page_landscape != previous_page_landscape:
+                        document.add_section(WD_SECTION_START.NEW_PAGE)
+                    else:
+                        document.add_page_break()
+                self._configure_layout_page_section(document, page, template_config, landscape=page_landscape)
                 self._render_layout_page(document, page, assets_by_id, template_config, image_loader)
+                previous_page_landscape = page_landscape
 
         buffer = io.BytesIO()
         document.save(buffer)
@@ -72,18 +82,46 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
     def _apply_page_setup(self, document: Any, template_config: TemplateConfigPackage) -> None:
         setup = template_config.page_setup
         for section in document.sections:
-            if setup.top_margin is not None:
-                section.top_margin = Cm(setup.top_margin)
-            if setup.bottom_margin is not None:
-                section.bottom_margin = Cm(setup.bottom_margin)
-            if setup.left_margin is not None:
-                section.left_margin = Cm(setup.left_margin)
-            if setup.right_margin is not None:
-                section.right_margin = Cm(setup.right_margin)
-            if setup.header_distance is not None:
-                section.header_distance = Cm(setup.header_distance)
-            if setup.footer_distance is not None:
-                section.footer_distance = Cm(setup.footer_distance)
+            self._apply_page_setup_to_section(section, setup)
+
+    def _apply_page_setup_to_section(self, section: Any, setup: Any) -> None:
+        if setup.top_margin is not None:
+            section.top_margin = Cm(setup.top_margin)
+        if setup.bottom_margin is not None:
+            section.bottom_margin = Cm(setup.bottom_margin)
+        if setup.left_margin is not None:
+            section.left_margin = Cm(setup.left_margin)
+        if setup.right_margin is not None:
+            section.right_margin = Cm(setup.right_margin)
+        if setup.header_distance is not None:
+            section.header_distance = Cm(setup.header_distance)
+        if setup.footer_distance is not None:
+            section.footer_distance = Cm(setup.footer_distance)
+
+    def _configure_layout_page_section(
+        self,
+        document: Any,
+        page: LayoutPage,
+        template_config: TemplateConfigPackage,
+        *,
+        landscape: bool,
+    ) -> None:
+        if not document.sections:
+            return
+        section = document.sections[-1]
+        section.orientation = WD_ORIENTATION.LANDSCAPE if landscape else WD_ORIENTATION.PORTRAIT
+        section.page_width = A4_PORTRAIT_HEIGHT if landscape else A4_PORTRAIT_WIDTH
+        section.page_height = A4_PORTRAIT_WIDTH if landscape else A4_PORTRAIT_HEIGHT
+        self._apply_page_setup_to_section(section, template_config.page_setup)
+
+    def _layout_page_requires_landscape(self, page: LayoutPage) -> bool:
+        if page.width is not None and page.height is not None and page.width > page.height:
+            return True
+        return any(
+            block.type == "table" and block.layout is not None and block.layout.column_hint == "wide"
+            for region in page.regions
+            for block in region.blocks
+        )
 
     def _apply_header_footer(
         self,
@@ -148,12 +186,12 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
             return
         if block.type == "paragraph":
             paragraph = document.add_paragraph()
-            self._fill_paragraph(paragraph, block.text or "", template_config.normal)
+            self._fill_auto_list_or_paragraph(paragraph, block.text or "", template_config)
             return
         if block.type == "list":
             for item in block.list_items or []:
                 paragraph = document.add_paragraph()
-                self._fill_list_paragraph(paragraph, item, template_config)
+                self._fill_auto_list_item_paragraph(paragraph, item, template_config)
             return
         if block.type == "formula":
             paragraph = document.add_paragraph()
@@ -212,7 +250,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
             return
 
         table = document.add_table(rows=1, cols=2)
-        table.autofit = True
+        self._configure_layout_table(table)
         left_blocks, right_blocks = self._split_two_col_blocks(region.blocks)
         for cell, blocks in zip(table.rows[0].cells, (left_blocks, right_blocks), strict=True):
             cell.text = ""

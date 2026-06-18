@@ -118,6 +118,9 @@ const translationQaAvailableResponse = {
     document_ir_file_id: "file_ir_qa",
     ai_call_log_file_ids: ["file_ai_call_qa"],
     ai_debug_archive_file_ids: ["file_ai_debug_qa"],
+    ai_debug_archive_expires_at: "2026-06-18T00:00:00Z",
+    ai_debug_archive_expired: false,
+    ai_debug_archive_contains_full_text: true,
   },
   summary: {
     final_segment_count: 1,
@@ -126,6 +129,7 @@ const translationQaAvailableResponse = {
     ai_call_count: 1,
     ai_call_statuses: { succeeded: 1 },
     term_trace_count: 1,
+    debug_full_text_enabled: true,
     source_comparison_available: true,
     source_comparison_reason: null,
   },
@@ -189,6 +193,9 @@ const translationQaUnavailableResponse = {
     document_ir_file_id: null,
     ai_call_log_file_ids: [],
     ai_debug_archive_file_ids: [],
+    ai_debug_archive_expires_at: null,
+    ai_debug_archive_expired: false,
+    ai_debug_archive_contains_full_text: false,
   },
   summary: {
     final_segment_count: 0,
@@ -197,6 +204,7 @@ const translationQaUnavailableResponse = {
     ai_call_count: 0,
     ai_call_statuses: {},
     term_trace_count: 0,
+    debug_full_text_enabled: false,
     source_comparison_available: false,
     source_comparison_reason: "ai_debug_archive_missing",
   },
@@ -221,6 +229,7 @@ type DocumentJobCreatePayload = {
 type MockApiControls = {
   createdDocumentJobPayloads: () => DocumentJobCreatePayload[];
   translationQaPatchCount: () => number;
+  layoutConfigDraftPayloads: () => Array<{ config: Record<string, unknown> }>;
 };
 
 type MockRole = "operator" | "admin";
@@ -247,6 +256,128 @@ const adminPermissions = [
   "audit:read",
   "files:retention",
 ];
+
+const templateDetail = {
+  id: "default",
+  name: "数据手册模板",
+  description: "当前默认 DOCX 模板与绑定页面布局配置。",
+  version: 1,
+  is_default: true,
+  downloadable: true,
+  download_url: "/api/v1/templates/default/download",
+  template: {
+    label: "Word 模板",
+    exists: true,
+    file_name: "datasheet_template.docx",
+    size_bytes: 1024,
+    updated_at: "2026-06-11T00:00:00Z",
+    sha256: "sha256:docx",
+    download_url: "/api/v1/templates/default/download",
+  },
+  layout_config: {
+    label: "页面布局 YAML",
+    exists: true,
+    file_name: "datasheet_template.yaml",
+    size_bytes: 2048,
+    updated_at: "2026-06-11T00:00:00Z",
+    sha256: "sha256:layout",
+    download_url: null,
+  },
+  subscript_config: {
+    label: "术语上下标 YAML",
+    exists: true,
+    file_name: "subscripts_dictionary.yaml",
+    size_bytes: 512,
+    updated_at: "2026-06-11T00:00:00Z",
+    sha256: "sha256:subscript",
+    download_url: null,
+  },
+};
+
+const templateLayoutConfig = {
+  template_id: "default",
+  template_version_id: "default@1",
+  version: 1,
+  source_path: "resources/template_configs/datasheet_template.yaml",
+  config_sha256: "sha256:layout",
+  meta: {
+    schema_version: "template-config/v1",
+    template_name: "数据手册模板",
+    output_filename: "datasheet_template.docx",
+  },
+  config: {
+    page_setup: { top_margin: 2.3 },
+    part_number: { font_size: 22 },
+    category: { font_size: 12 },
+    heading1: { font_name: "宋体", font_size: 13, bold: true, color: "#0c69b2", alignment: "left" },
+    heading2: { font_size: 11 },
+    heading3: { font_size: 10 },
+    toc_title: { font_size: 13 },
+    toc_level1: { font_size: 11 },
+    toc_level2: { font_size: 10.5 },
+    toc_level3: { font_size: 10 },
+    normal: { font_size: 10.5, color: "#000000", alignment: "justify" },
+    table_content: { font_size: 9 },
+    table_style: { style_name: "Table Grid", header_fill: "#EEF3F8", border_color: "#C7CDD4" },
+    table_note: { font_size: 8, italic: false },
+    caption: { font_size: 9 },
+    long_table_caption: { font_size: 10.5 },
+    header: { enabled: false, logo_path: "assets/company_logo.png", title_text: "数据手册" },
+    footer: { enabled: false, show_page_number: true, alignment: "center" },
+  },
+  field_schema: {
+    meta: {
+      schema_version: { type: "text", label: "schema_version", readonly: true },
+      template_name: { type: "text", label: "配置名称", readonly: true },
+      output_filename: { type: "text", label: "输出文件名", readonly: true },
+    },
+    groups: {
+      page_setup: { top_margin: { type: "number", label: "上边距", unit: "cm" } },
+      part_number: { font_size: { type: "number", label: "字号", unit: "pt" } },
+      category: { font_size: { type: "number", label: "字号", unit: "pt" } },
+      heading1: {
+        font_name: { type: "text", label: "字体" },
+        font_size: { type: "number", label: "字号", unit: "pt" },
+        bold: { type: "boolean", label: "加粗" },
+        color: { type: "color", label: "颜色" },
+        alignment: { type: "alignment", label: "对齐方式" },
+      },
+      heading2: { font_size: { type: "number", label: "字号", unit: "pt" } },
+      heading3: { font_size: { type: "number", label: "字号", unit: "pt" } },
+      toc_title: { font_size: { type: "number", label: "字号", unit: "pt" } },
+      toc_level1: { font_size: { type: "number", label: "字号", unit: "pt" } },
+      toc_level2: { font_size: { type: "number", label: "字号", unit: "pt" } },
+      toc_level3: { font_size: { type: "number", label: "字号", unit: "pt" } },
+      normal: {
+        font_size: { type: "number", label: "字号", unit: "pt" },
+        color: { type: "color", label: "颜色" },
+        alignment: { type: "alignment", label: "对齐方式" },
+      },
+      table_content: { font_size: { type: "number", label: "字号", unit: "pt" } },
+      table_style: {
+        style_name: { type: "text", label: "表格样式" },
+        header_fill: { type: "color", label: "表头底色" },
+        border_color: { type: "color", label: "边框颜色" },
+      },
+      table_note: {
+        font_size: { type: "number", label: "字号", unit: "pt" },
+        italic: { type: "boolean", label: "斜体" },
+      },
+      caption: { font_size: { type: "number", label: "字号", unit: "pt" } },
+      long_table_caption: { font_size: { type: "number", label: "字号", unit: "pt" } },
+      header: {
+        enabled: { type: "boolean", label: "启用页眉覆盖" },
+        logo_path: { type: "text", label: "Logo 路径", readonly: true },
+        title_text: { type: "text", label: "页眉标题" },
+      },
+      footer: {
+        enabled: { type: "boolean", label: "启用页脚覆盖" },
+        show_page_number: { type: "boolean", label: "显示页码" },
+        alignment: { type: "alignment", label: "页脚对齐" },
+      },
+    },
+  },
+};
 
 function mockUser(role: MockRole) {
   const isAdmin = role === "admin";
@@ -732,6 +863,7 @@ const fileLibrarySearch = {
 async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockApiControls> {
   let currentRole: MockRole = "operator";
   const createdDocumentJobPayloads: DocumentJobCreatePayload[] = [];
+  const layoutConfigDraftPayloads: Array<{ config: Record<string, unknown> }> = [];
   let translationQaPatchCount = 0;
 
   await page.route("**/api/v1/auth/login", async (route) => {
@@ -1035,6 +1167,76 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
       }),
     });
   });
+  await page.route("**/api/v1/templates/default/layout-config/versions", async (route) => {
+    const payload = route.request().postDataJSON() as { config: Record<string, unknown> };
+    layoutConfigDraftPayloads.push(payload);
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        template_id: "default",
+        template_version_id: "default@2",
+        version: 2,
+        status: "draft",
+        is_current: false,
+        is_default: false,
+        snapshot_hash: "sha256:draft",
+        render_policy: {},
+        verification_job_id: null,
+        verification_note: null,
+        verified_by: null,
+        verified_at: null,
+        publish_reason: null,
+        published_by: null,
+        published_at: null,
+        template: templateDetail.template,
+        layout_config: { ...templateDetail.layout_config, file_name: "layout_config.yaml" },
+      }),
+    });
+  });
+  await page.route("**/api/v1/templates/default/layout-config", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(templateLayoutConfig) });
+  });
+  await page.route("**/api/v1/templates/default/versions", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        template_id: "default",
+        items: [
+          {
+            template_id: "default",
+            template_version_id: "default@1",
+            version: 1,
+            status: "published",
+            is_current: true,
+            is_default: true,
+            snapshot_hash: "sha256:published",
+            render_policy: {},
+            verification_job_id: "docjob_smoke_001",
+            verification_note: "smoke",
+            verified_by: "user_admin",
+            verified_at: "2026-06-11T00:00:00Z",
+            publish_reason: "baseline",
+            published_by: "user_admin",
+            published_at: "2026-06-11T00:00:00Z",
+            template: templateDetail.template,
+            layout_config: templateDetail.layout_config,
+          },
+        ],
+      }),
+    });
+  });
+  await page.route("**/api/v1/templates/default", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(templateDetail) });
+  });
+  await page.route("**/api/v1/templates", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [templateDetail] }),
+    });
+  });
   await page.route("**/api/v1/document-jobs/docjob_smoke_001", async (route) => {
     await route.fulfill({
       status: 200,
@@ -1211,6 +1413,7 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
   return {
     createdDocumentJobPayloads: () => createdDocumentJobPayloads,
     translationQaPatchCount: () => translationQaPatchCount,
+    layoutConfigDraftPayloads: () => layoutConfigDraftPayloads,
   };
 }
 
@@ -1346,6 +1549,52 @@ test("operator sees an explicit forbidden state for admin-only routes", async ({
   await expect(page).toHaveURL(/\/forbidden/);
   await expect(page.getByRole("heading", { name: "当前账号没有访问权限" })).toBeVisible();
   await expect(page.getByText("settings:read")).toBeVisible();
+
+  await page.goto("/settings/templates/default");
+  await expect(page).toHaveURL(/\/forbidden/);
+  await expect(page.getByText("admin")).toBeVisible();
+
+  await page.goto("/settings/word-page-styles/default");
+  await expect(page).toHaveURL(/\/forbidden/);
+  await expect(page.getByText("admin")).toBeVisible();
+});
+
+test("admin can edit Word page styles and save a draft version", async ({ page }) => {
+  const controls = await mockApi(page);
+
+  await page.goto("/login");
+  await page.getByPlaceholder("请输入用户名").fill("admin");
+  await page.getByPlaceholder("请输入密码").fill("admin-pass");
+  await page.getByRole("button", { name: "登录工作台" }).click();
+  await expect(page).toHaveURL(/\/jobs(\?|$)/);
+
+  await page.goto("/settings/templates");
+  await expect(page.getByRole("heading", { name: "Word 模板文档", level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: "管理文档" }).click();
+  await expect(page).toHaveURL(/\/settings\/templates\/default$/);
+  await expect(page.getByRole("heading", { name: "Word 模板文档", level: 1 })).toBeVisible();
+  await expect(page.getByText("模板文档负责")).toBeVisible();
+  await expect(page.getByText("页面设置")).not.toBeVisible();
+
+  await page.goto("/settings/word-page-styles");
+  await expect(page.getByRole("heading", { name: "Word 页面样式配置", level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: "配置页面样式" }).click();
+  await expect(page).toHaveURL(/\/settings\/word-page-styles\/default$/);
+  await expect(page.getByText("公司 Logo、默认页眉内容和 DOCX 文件由 Word 模板文档维护")).toBeVisible();
+  await expect(page.getByLabel("Word 页面样式编辑器").getByText("Logo 路径")).not.toBeVisible();
+
+  await page.locator(".category-rail button", { hasText: "标题" }).click();
+  await page.getByRole("tab", { name: /一级标题/ }).click();
+  const headingFontSize = page.locator(".layout-section .el-form-item", { hasText: "字号" }).locator("input").first();
+  await headingFontSize.fill("14");
+  await expect(page.getByText("1 项未保存")).toBeVisible();
+  await page.getByRole("button", { name: "保存为草稿版本" }).click();
+
+  await expect.poll(() => controls.layoutConfigDraftPayloads().length).toBe(1);
+  expect((controls.layoutConfigDraftPayloads()[0].config.heading1 as { font_size: number }).font_size).toBe(14);
+  expect(controls.layoutConfigDraftPayloads()[0].config).not.toHaveProperty("sample_content");
+  expect(controls.layoutConfigDraftPayloads()[0].config).not.toHaveProperty("template_name");
+  await expect(page.getByText("已生成页面样式 draft version 2")).toBeVisible();
 });
 
 test("operator can inspect the translation QA queue with backend all-status summary", async ({ page }) => {

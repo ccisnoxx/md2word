@@ -282,6 +282,7 @@ import {
   canRetryDocumentJob,
   formatDateTime,
   jobStatusText,
+  shouldShowDocumentJobAction,
   translationQaStatusText,
 } from "@/utils/format";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
@@ -867,7 +868,7 @@ async function handleUnarchive(job: DocumentJobResponse): Promise<void> {
 }
 
 async function handleDelete(job: DocumentJobResponse): Promise<void> {
-  if (isActionBusy(job.id)) {
+  if (isActionBusy(job.id) || !shouldShowDocumentJobAction(job, "delete")) {
     return;
   }
   setActionPending(job.id, "delete");
@@ -879,33 +880,12 @@ async function handleDelete(job: DocumentJobResponse): Promise<void> {
       `删除任务会隐藏该任务并清理可安全删除的关联文件。将删除 ${deleteCount} 个文件，保留 ${keepCount} 个文件；任务 metadata、事件和 audit 会保留。`,
       "删除任务",
       {
-        confirmButtonText: "继续",
+        confirmButtonText: "确认删除",
         cancelButtonText: "返回",
         type: "warning",
       },
     );
-    const reasonResult = await ElMessageBox.prompt(
-      "请输入删除原因。该原因会写入审计记录。",
-      "删除原因",
-      {
-        confirmButtonText: "继续",
-        cancelButtonText: "返回",
-        inputType: "textarea",
-        inputValidator: (value) => Boolean(value.trim()) || "删除原因不能为空。",
-      },
-    );
-    const confirmationResult = await ElMessageBox.prompt(
-      `请输入确认短语：${preview.confirmation_phrase}`,
-      "确认删除任务",
-      {
-        confirmButtonText: "确认删除",
-        cancelButtonText: "返回",
-        inputValidator: (value) => value === preview.confirmation_phrase || "确认短语不匹配。",
-      },
-    );
     await documentJobsApi.delete(job.id, {
-      reason: reasonResult.value,
-      confirmation: confirmationResult.value,
       preview_hash: preview.preview_hash,
     });
     ElMessage.success("任务已删除。");

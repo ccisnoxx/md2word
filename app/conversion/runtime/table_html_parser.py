@@ -10,6 +10,7 @@ class HtmlCell:
     rowspan: int = 1
     colspan: int = 1
     html: str | None = None
+    is_header: bool = False
 
 
 @dataclass(slots=True)
@@ -41,6 +42,7 @@ class SimpleTableHTMLParser(HTMLParser):
                 text="",
                 rowspan=safe_int(attrs_map.get("rowspan"), 1),
                 colspan=safe_int(attrs_map.get("colspan"), 1),
+                is_header=tag == "th",
             )
         elif self.current_cell is not None:
             self.current_cell_chunks.append(f"<{tag}{format_html_attrs(attrs)}>")

@@ -30,8 +30,12 @@ TOC_TITLE_RE = re.compile(r"^(目录|table of contents|contents)\b", re.IGNORECA
 TRAILING_PAGE_NOISE_RE = re.compile(r"(?:[.\s·。…]{2,}|\s+)\d+\s*$")
 INLINE_TEX_RE = re.compile(r"\$(?P<dollar>[^$\n]+)\$|\\\((?P<paren>.*?)\\\)")
 WRAPPER_RE = re.compile(r"\\(?:mathrm|mathsf|text)\s*\{([^{}]+)\}")
+TEXT_WRAPPER_START_RE = re.compile(r"\\(?:mathrm|mathsf|text)\s*\{")
 CONTROL_WORD_RE = re.compile(r"\\([A-Za-z]+)")
 SQRT_RE = re.compile(r"\\sqrt\s*\{([^{}]+)\}")
+DOUBLE_ESCAPED_TEX_COMMAND_RE = re.compile(
+    r"\\{2,}(?=(?:mathrm|mathsf|text|sqrt|Delta|delta|Theta|theta|mu|Omega|alpha|beta|gamma|lambda|rho|psi|phi|pm|circ|vee|to|max|min|typ|avg|rms|pk|pp)\b)"
+)
 LIST_MARKER_RE = re.compile(r"^\s*(?:[•■*]|[-–—])\s+")
 SIMPLE_EXPR_RE = re.compile(
     r"(?P<base>[A-Za-zΑ-Ωα-ωΔΨθρμπμΩ]+[A-Za-z0-9Α-Ωα-ωΔΨθρμπμΩ]*)"
@@ -173,7 +177,10 @@ def normalize_formula_text(text: str) -> str:
     normalized = re.sub(r"\s+,", ",", normalized)
     normalized = re.sub(r"([±+\-])\s+(\d)", r"\1\2", normalized)
     normalized = re.sub(r"(\d)\s*°\s*([CFK])\b", r"\1°\2", normalized)
+    normalized = re.sub(r"°\s+([CFK])\b", r"°\1", normalized)
+    normalized = re.sub(r"([µμ])\s+([A-Za-z])\b", r"\1\2", normalized)
     normalized = re.sub(r"([A-Za-zµμ])\s+Ω\b", r"\1Ω", normalized)
+    normalized = re.sub(r"([A-Za-zµμΩ°])\s*/\s*([°√A-Za-zµμΩ])", r"\1/\2", normalized)
     normalized = re.sub(r"/\s+√", "/√", normalized)
     normalized = re.sub(r"[ \t]+", " ", normalized)
     normalized = re.sub(r" ?\n ?", "\n", normalized)
@@ -181,7 +188,8 @@ def normalize_formula_text(text: str) -> str:
 
 
 def normalize_tex_text(text: str) -> str:
-    normalized = text
+    normalized = collapse_double_escaped_tex_commands(text)
+    normalized = unwrap_tex_text_wrappers(normalized)
     prev = None
     while prev != normalized:
         prev = normalized
@@ -200,6 +208,7 @@ def normalize_tex_text(text: str) -> str:
     normalized = re.sub(r"\{\s*", "{", normalized)
     normalized = re.sub(r"\s*\}", "}", normalized)
     normalized = normalized.replace("^{°}", "°")
+    normalized = normalized.replace("^°", "°")
     normalized = compact_math_token_runs(normalized)
     return normalized
 
@@ -251,7 +260,8 @@ def convert_simple_tex_expr(expr: str) -> str:
 
 
 def clean_tex_fragment(text: str) -> str:
-    cleaned = text.strip()
+    cleaned = collapse_double_escaped_tex_commands(text.strip())
+    cleaned = unwrap_tex_text_wrappers(cleaned)
     prev = None
     while prev != cleaned:
         prev = cleaned
@@ -277,6 +287,43 @@ def compact_math_token_runs(text: str) -> str:
         compacted = SPACED_ALPHA_TOKEN_RE.sub(lambda match: match.group(0).replace(" ", ""), compacted)
         compacted = SPACED_DIGIT_TOKEN_RE.sub(lambda match: match.group(0).replace(" ", ""), compacted)
     return compacted
+
+
+def collapse_double_escaped_tex_commands(text: str) -> str:
+    return DOUBLE_ESCAPED_TEX_COMMAND_RE.sub(r"\\", text)
+
+
+def unwrap_tex_text_wrappers(text: str) -> str:
+    result: list[str] = []
+    index = 0
+    while True:
+        match = TEXT_WRAPPER_START_RE.search(text, index)
+        if match is None:
+            result.append(text[index:])
+            return "".join(result)
+
+        result.append(text[index : match.start()])
+        content_start = match.end()
+        depth = 1
+        position = content_start
+        while position < len(text) and depth > 0:
+            char = text[position]
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+            position += 1
+
+        if depth != 0:
+            result.append(text[match.start() :])
+            return "".join(result)
+
+        inner = text[content_start : position - 1]
+        if "{" in inner or "}" in inner:
+            result.append(unwrap_tex_text_wrappers(inner))
+        else:
+            result.append(text[match.start() : position])
+        index = position
 
 
 def replace_control_word(match: re.Match[str]) -> str:
@@ -830,6 +877,12 @@ def set_numbering_child_value(parent: Any, tag: str, value: str) -> None:
 def infer_list_item_level(text: str) -> int:
     """Infer one nested level from dash-like MinerU list markers."""
     return 1 if re.match(r"^\s*[-–—]\s+", text or "") else 0
+
+
+def is_list_item_text(text: str) -> bool:
+    """Return true when a paragraph starts with a supported manual list marker."""
+
+    return LIST_MARKER_RE.match(text or "") is not None
 
 
 def normalize_list_item(text: str) -> str:

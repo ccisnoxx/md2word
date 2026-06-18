@@ -10,6 +10,7 @@ import zipfile
 from pathlib import Path
 
 from docx import Document
+from docx.enum.section import WD_ORIENTATION
 
 from app.services.document_ir.models import (
     DocumentIR,
@@ -52,6 +53,17 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertEqual([region.kind for region in plan.pages[0].regions], ["two_col", "one_col"])
         self.assertEqual([block.text for block in plan.pages[0].regions[0].blocks], ["Left A", "Right A", "Left B", "Right B"])
 
+    def test_build_layout_plan_keeps_explicit_wide_blocks_out_of_stable_two_column_regions(self) -> None:
+        document = self._make_v2_wide_between_columns_document()
+
+        plan = build_layout_plan(document)
+
+        self.assertEqual(plan.mode, "layout_v2")
+        self.assertEqual([region.kind for region in plan.pages[0].regions], ["two_col", "one_col", "two_col"])
+        self.assertEqual([block.text for block in plan.pages[0].regions[0].blocks], ["Left A", "Right A"])
+        self.assertEqual([block.text for block in plan.pages[0].regions[1].blocks], ["Wide callout"])
+        self.assertEqual([block.text for block in plan.pages[0].regions[2].blocks], ["Left B", "Right B"])
+
     def test_render_to_bytes_uses_two_column_table_for_v2_region(self) -> None:
         renderer = DocumentIRWordRenderer()
 
@@ -62,11 +74,14 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
             image_loader=lambda _asset: None,
         )
         rendered = Document(io.BytesIO(content))
+        xml = self._document_xml(content)
 
         self.assertGreaterEqual(len(rendered.tables), 1)
         self.assertIn("Left column", rendered.tables[0].cell(0, 0).text)
         self.assertIn("Right column", rendered.tables[0].cell(0, 1).text)
         self.assertTrue(any(paragraph.text == "Wide block" for paragraph in rendered.paragraphs))
+        for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            self.assertIn(f'<w:{edge} w:val="none"', xml)
 
     def test_render_to_bytes_prefers_column_hint_when_splitting_two_column_cells(self) -> None:
         renderer = DocumentIRWordRenderer()
@@ -163,11 +178,41 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertIn("A", rendered.tables[0].cell(1, 0).text)
         self.assertIn('w:gridSpan', xml)
         self.assertIn('w:vMerge', xml)
+        self.assertIn("<w:tblHeader", xml)
+        self.assertGreaterEqual(xml.count("<w:cantSplit"), 3)
+        self.assertIn('<w:jc w:val="center"', xml)
+        self.assertIn('<w:jc w:val="left"', xml)
+        self.assertIn('<w:spacing w:before="0" w:after="0"', xml)
         self.assertLess(xml.index("Table 1: merged cells"), xml.index("<w:tbl>"))
         self.assertLess(xml.index("<w:tbl>"), xml.index("Note: kept editable"))
         self.assertIn("<w:keepNext/>", xml[: xml.index("<w:tbl>")])
         self.assertTrue(any(paragraph.text == "Table 1: merged cells" for paragraph in rendered.paragraphs))
         self.assertTrue(any(paragraph.text == "Note: kept editable" for paragraph in rendered.paragraphs))
+
+    def test_render_to_bytes_styles_later_th_cells_as_table_headers(self) -> None:
+        renderer = DocumentIRWordRenderer()
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="docjob_later_th", source_file_id="file_later_th", document_language="en"),
+            blocks=[
+                DocumentIRBlock(
+                    id="block_later_th",
+                    type="table",
+                    order=0,
+                    html=(
+                        "<table><tr><td colspan=\"2\">Electrical Characteristics</td></tr>"
+                        "<tr><th>PARAMETER</th><th>TEST CONDITIONS</th></tr>"
+                        "<tr><td>VOS</td><td>TA = +25°C</td></tr></table>"
+                    ),
+                )
+            ],
+        )
+
+        content = renderer.render_to_bytes(document, template_path=None, config_path=None, image_loader=lambda _asset: None)
+        xml = self._document_xml(content)
+
+        self.assertIn("PARAMETER", xml)
+        self.assertIn("TEST CONDITIONS", xml)
+        self.assertGreaterEqual(xml.count("<w:shd"), 3)
 
     def test_render_to_bytes_normalizes_formula_text_in_table_cells_and_notes(self) -> None:
         renderer = DocumentIRWordRenderer()
@@ -182,7 +227,7 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
                         r"<table><tr><th>Parameter</th><th>Value</th></tr>"
                         r"<tr><td>$R_{\theta JA}$</td><td>nV/ \sqrt{Hz}</td></tr></table>"
                     ),
-                    captions=["Table 1: formulas"],
+                    captions=[r"Table 1: $R_{\theta JA}$ formulas"],
                     footnotes=[r"Note: E=mc^2"],
                 )
             ],
@@ -193,12 +238,92 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
 
         self.assertIn("R</w:t>", xml)
         self.assertIn("θJA", xml)
+        self.assertIn("Table 1: R", xml)
         self.assertIn("nV/√Hz", xml)
         self.assertIn("Note: E=mc", xml)
         self.assertIn('w:val="subscript"', xml)
         self.assertIn('w:val="superscript"', xml)
         self.assertNotIn(r"\theta", xml)
         self.assertNotIn(r"\sqrt", xml)
+
+    def test_datasheet_five_column_table_widths_prioritize_description_column(self) -> None:
+        renderer = DocumentIRWordRenderer()
+
+        widths = renderer._table_column_widths(5, 10_000)
+
+        self.assertEqual(sum(widths), 10_000)
+        self.assertGreater(widths[1], widths[0] * 3)
+        self.assertGreater(widths[1], widths[4] * 3)
+
+    def test_render_to_bytes_normalizes_datasheet_temperature_and_microsecond_symbols(self) -> None:
+        renderer = DocumentIRWordRenderer()
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="docjob_formula_edge", source_file_id="file_formula_edge", document_language="en"),
+            blocks=[
+                DocumentIRBlock(
+                    id="block_formula_edge",
+                    type="formula",
+                    order=0,
+                    latex=r"$T_A = +25^\circ C$, $5 \mu s$",
+                )
+            ],
+        )
+
+        content = renderer.render_to_bytes(document, template_path=None, config_path=None, image_loader=lambda _asset: None)
+        xml = self._document_xml(content)
+
+        self.assertIn("T", xml)
+        self.assertIn("A</w:t>", xml)
+        self.assertIn("+25°C", xml)
+        self.assertIn("5 μs", xml)
+        self.assertIn('w:val="subscript"', xml)
+        self.assertNotIn("^°", xml)
+        self.assertNotIn(r"\circ", xml)
+        self.assertNotIn(r"\mu", xml)
+
+    def test_render_to_bytes_normalizes_manual_quality_record_formula_residue(self) -> None:
+        renderer = DocumentIRWordRenderer()
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="docjob_manual_formula_residue", source_file_id="file_manual_formula_residue", document_language="en"),
+            blocks=[
+                DocumentIRBlock(
+                    id="block_manual_formula_residue",
+                    type="paragraph",
+                    order=0,
+                    text=(
+                        r"$\\sqrt{Hz}$ $5 \\mu s$ $PACKAGE^{(1)}$ $-40^{\\circ}C$ "
+                        r"$R_{\\theta JC(top)}$ $\\psi_{JT}$ $V_S = \\pm 5$ "
+                        r"$V_{CM}$ $I_B$ $R_L=5 kΩ$ nV/\\sqrt{Hz} "
+                        r"$\\mathrm { \\mu V / ^ { \\circ } C }$"
+                    ),
+                )
+            ],
+        )
+
+        content = renderer.render_to_bytes(document, template_path=None, config_path=None, image_loader=lambda _asset: None)
+        xml = self._document_xml(content)
+
+        self.assertIn("√Hz", xml)
+        self.assertIn("5 μs", xml)
+        self.assertIn("PACKAGE", xml)
+        self.assertIn("-40°C", xml)
+        self.assertIn("θJC(top)", xml)
+        self.assertIn("ψ", xml)
+        self.assertIn("±5", xml)
+        self.assertIn("CM", xml)
+        self.assertIn("R", xml)
+        self.assertIn("L", xml)
+        self.assertIn("nV/√Hz", xml)
+        self.assertIn("μV/°C", xml)
+        self.assertIn('w:val="subscript"', xml)
+        self.assertIn('w:val="superscript"', xml)
+        self.assertNotIn(r"\mathrm", xml)
+        self.assertNotIn(r"\sqrt", xml)
+        self.assertNotIn(r"\theta", xml)
+        self.assertNotIn(r"\psi", xml)
+        self.assertNotIn(r"\circ", xml)
+        self.assertNotIn(r"\pm", xml)
+        self.assertNotIn(r"\mu", xml)
 
     def test_render_to_bytes_uses_bbox_width_for_images_and_annotations(self) -> None:
         renderer = DocumentIRWordRenderer()
@@ -214,8 +339,8 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
                     order=0,
                     text="Ignored fallback",
                     asset_ref="asset_image",
-                    captions=["Figure 1: bbox-sized chart"],
-                    footnotes=["Source: MinerU"],
+                    captions=[r"Figure 1: $V_{OS}$ bbox-sized chart"],
+                    footnotes=[r"Source: $5 \mu s$ MinerU"],
                     layout=DocumentIRBlockLayout(page_index=0, bbox=(0, 80, 100, 180), role="body"),
                 )
             ],
@@ -233,8 +358,14 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
 
         self.assertIsNotNone(extent_match)
         self.assertLess(int(extent_match.group(1)), 3_000_000)
-        self.assertTrue(any(paragraph.text == "Figure 1: bbox-sized chart" for paragraph in rendered.paragraphs))
-        self.assertTrue(any(paragraph.text == "Source: MinerU" for paragraph in rendered.paragraphs))
+        self.assertLess(xml.index("<w:keepNext/>"), xml.index("<w:drawing>"))
+        self.assertLess(xml.index("<w:drawing>"), xml.index("Figure 1: V"))
+        self.assertLess(xml.index("Figure 1: V"), xml.index("Source: 5 μs MinerU"))
+        self.assertGreaterEqual(xml.count("<w:keepNext/>"), 2)
+        self.assertIn('w:val="subscript"', xml)
+        self.assertNotIn(r"\mu", xml)
+        self.assertTrue(any(paragraph.text == "Figure 1: VOS bbox-sized chart" for paragraph in rendered.paragraphs))
+        self.assertTrue(any(paragraph.text == "Source: 5 μs MinerU" for paragraph in rendered.paragraphs))
 
     def test_render_to_bytes_preserves_inline_rich_text_markup(self) -> None:
         renderer = DocumentIRWordRenderer()
@@ -300,6 +431,170 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertNotIn("• Low noise", xml)
         self.assertNotIn(r"\sqrt", xml)
 
+    def test_render_to_bytes_promotes_bullet_like_paragraphs_to_word_lists(self) -> None:
+        renderer = DocumentIRWordRenderer()
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="docjob_auto_list", source_file_id="file_auto_list", document_language="en"),
+            blocks=[
+                DocumentIRBlock(id="block_bullet", type="paragraph", order=0, text="• Paragraph bullet"),
+                DocumentIRBlock(id="block_dash", type="paragraph", order=1, text="- Nested paragraph bullet"),
+                DocumentIRBlock(id="block_temperature", type="paragraph", order=2, text="-40°C operation"),
+            ],
+        )
+
+        content = renderer.render_to_bytes(document, template_path=None, config_path=None, image_loader=lambda _asset: None)
+        rendered = Document(io.BytesIO(content))
+        xml = self._document_xml(content)
+        numbering_xml = self._numbering_xml(content)
+
+        self.assertEqual(
+            [paragraph.text for paragraph in rendered.paragraphs if paragraph.text],
+            ["Paragraph bullet", "Nested paragraph bullet", "-40°C operation"],
+        )
+        self.assertEqual(xml.count("<w:numPr>"), 2)
+        self.assertIn('w:val="bullet"', numbering_xml)
+        self.assertNotIn("• Paragraph bullet", xml)
+        self.assertNotIn("- Nested paragraph bullet", xml)
+        self.assertIn("-40°C operation", xml)
+
+    def test_render_to_bytes_promotes_heading_like_paragraphs_to_word_headings(self) -> None:
+        renderer = DocumentIRWordRenderer()
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="docjob_auto_heading", source_file_id="file_auto_heading", document_language="en"),
+            blocks=[
+                DocumentIRBlock(id="block_numbered_heading", type="paragraph", order=0, text="6.5 Thermal Information"),
+                DocumentIRBlock(id="block_title_case_heading", type="paragraph", order=1, text="Absolute Maximum Ratings"),
+                DocumentIRBlock(
+                    id="block_body",
+                    type="paragraph",
+                    order=2,
+                    text="This section describes the device behavior",
+                ),
+            ],
+        )
+
+        content = renderer.render_to_bytes(document, template_path=None, config_path=None, image_loader=lambda _asset: None)
+        rendered = Document(io.BytesIO(content))
+        xml = self._document_xml(content)
+
+        self.assertEqual([paragraph.text for paragraph in rendered.paragraphs], [
+            "6.5 Thermal Information",
+            "Absolute Maximum Ratings",
+            "This section describes the device behavior",
+        ])
+        self.assertEqual(rendered.paragraphs[0].style.name, "Heading 2")
+        self.assertEqual(rendered.paragraphs[1].style.name, "Heading 2")
+        self.assertEqual(rendered.paragraphs[2].style.name, "Normal")
+        self.assertGreaterEqual(xml.count('w:val="Heading2"'), 2)
+
+    def test_render_to_bytes_uses_tab_leaders_for_toc_like_entries(self) -> None:
+        renderer = DocumentIRWordRenderer()
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="docjob_toc", source_file_id="file_toc", document_language="en"),
+            blocks=[
+                DocumentIRBlock(id="block_toc_title", type="paragraph", order=0, text="Table of Contents"),
+                DocumentIRBlock(id="block_toc_entry", type="paragraph", order=1, text="1 Features........................ 1"),
+                DocumentIRBlock(
+                    id="block_toc_list",
+                    type="list",
+                    order=2,
+                    list_items=["Appendix A Device Pinout 120", "• Updated numbering"],
+                ),
+            ],
+        )
+
+        content = renderer.render_to_bytes(document, template_path=None, config_path=None, image_loader=lambda _asset: None)
+        rendered = Document(io.BytesIO(content))
+        xml = self._document_xml(content)
+
+        self.assertEqual(rendered.paragraphs[1].text, "1 Features\t1")
+        self.assertEqual(rendered.paragraphs[2].text, "Appendix A Device Pinout\t120")
+        self.assertEqual(rendered.paragraphs[3].text, "Updated numbering")
+        self.assertGreaterEqual(xml.count("<w:tab/>"), 2)
+        self.assertGreaterEqual(xml.count('w:leader="dot"'), 2)
+        self.assertEqual(xml.count("<w:numPr>"), 1)
+
+    def test_render_to_bytes_uses_configured_toc_styles(self) -> None:
+        renderer = DocumentIRWordRenderer()
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="docjob_toc_style", source_file_id="file_toc_style", document_language="en"),
+            blocks=[
+                DocumentIRBlock(id="block_toc_title", type="paragraph", order=0, text="Table of Contents"),
+                DocumentIRBlock(id="block_toc_level1", type="paragraph", order=1, text="1 Features........................ 1"),
+                DocumentIRBlock(id="block_toc_level2", type="paragraph", order=2, text="1.1 Device Details................ 2"),
+            ],
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "template.yaml"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        "schema_version: template-config/v1",
+                        "toc_title:",
+                        "  font_size: 15",
+                        "  color: '#112233'",
+                        "  alignment: center",
+                        "toc_level1:",
+                        "  font_size: 11",
+                        "  color: '#445566'",
+                        "  alignment: left",
+                        "toc_level2:",
+                        "  font_size: 10",
+                        "  color: '#778899'",
+                        "  alignment: left",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            content = renderer.render_to_bytes(document, template_path=None, config_path=config_path, image_loader=lambda _asset: None)
+
+        xml = self._document_xml(content)
+        self.assertIn('w:val="112233"', xml)
+        self.assertIn('w:val="445566"', xml)
+        self.assertIn('w:val="778899"', xml)
+        self.assertGreaterEqual(xml.count('w:leader="dot"'), 2)
+
+    def test_render_to_bytes_uses_configured_long_table_caption_and_border_color(self) -> None:
+        renderer = DocumentIRWordRenderer()
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="docjob_table_style", source_file_id="file_table_style", document_language="en"),
+            blocks=[
+                DocumentIRBlock(
+                    id="block_table",
+                    type="table",
+                    order=0,
+                    html="<table><tr><th>Parameter</th></tr><tr><td>Gain</td></tr></table>",
+                    captions=["A.1 Continued electrical characteristics"],
+                )
+            ],
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "template.yaml"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        "schema_version: template-config/v1",
+                        "table_style:",
+                        "  style_name: Table Grid",
+                        "  header_fill: AABBCC",
+                        "  border_color: '123456'",
+                        "caption:",
+                        "  color: '#111111'",
+                        "long_table_caption:",
+                        "  color: '#ABCDEF'",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            content = renderer.render_to_bytes(document, template_path=None, config_path=config_path, image_loader=lambda _asset: None)
+
+        xml = self._document_xml(content)
+        self.assertIn('w:val="ABCDEF"', xml)
+        self.assertIn('w:fill="AABBCC"', xml)
+        self.assertIn('w:color="123456"', xml)
+
     def test_render_to_bytes_uses_configured_heading_word_style_when_available(self) -> None:
         renderer = DocumentIRWordRenderer()
         document = DocumentIR(
@@ -335,6 +630,44 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
             rendered = Document(io.BytesIO(content))
 
         self.assertEqual(rendered.paragraphs[0].style.name, "Title")
+
+    def test_render_to_bytes_uses_landscape_section_for_wide_table_page(self) -> None:
+        renderer = DocumentIRWordRenderer()
+        wide_row = "".join(f"<th>H{index}</th>" for index in range(8))
+        wide_values = "".join(f"<td>V{index}</td>" for index in range(8))
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="docjob_wide", source_file_id="file_wide", document_language="en"),
+            pages=[
+                DocumentIRPage(index=0, width=612.0, height=792.0),
+                DocumentIRPage(index=1, width=612.0, height=792.0),
+            ],
+            blocks=[
+                DocumentIRBlock(
+                    id="block_intro",
+                    type="paragraph",
+                    order=0,
+                    text="Portrait intro",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(72, 80, 260, 120), role="body", column_hint="left"),
+                ),
+                DocumentIRBlock(
+                    id="block_wide_table",
+                    type="table",
+                    order=1,
+                    html=f"<table><tr>{wide_row}</tr><tr>{wide_values}</tr></table>",
+                    layout=DocumentIRBlockLayout(page_index=1, bbox=(40, 80, 572, 260), role="body", column_hint="wide"),
+                ),
+            ],
+        )
+
+        content = renderer.render_to_bytes(document, template_path=None, config_path=None, image_loader=lambda _asset: None)
+        rendered = Document(io.BytesIO(content))
+
+        self.assertGreaterEqual(len(rendered.sections), 2)
+        self.assertEqual(rendered.sections[0].orientation, WD_ORIENTATION.PORTRAIT)
+        self.assertEqual(rendered.sections[-1].orientation, WD_ORIENTATION.LANDSCAPE)
+        self.assertGreater(rendered.sections[-1].page_width, rendered.sections[-1].page_height)
+        self.assertEqual(len(rendered.tables[-1].columns), 8)
 
     def _document_xml(self, content: bytes) -> str:
         with zipfile.ZipFile(io.BytesIO(content)) as docx_zip:
@@ -428,6 +761,50 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
                     order=4,
                     text="Wide after hints",
                     layout=DocumentIRBlockLayout(page_index=0, bbox=(0, 300, 400, 330), role="body", column_hint="wide"),
+                ),
+            ],
+        )
+
+    def _make_v2_wide_between_columns_document(self) -> DocumentIR:
+        return DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="docjob_wide_between", source_file_id="file_wide_between", document_language="en"),
+            pages=[DocumentIRPage(index=0, width=400.0, height=600.0)],
+            blocks=[
+                DocumentIRBlock(
+                    id="block_left_a",
+                    type="paragraph",
+                    order=0,
+                    text="Left A",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(0, 60, 150, 80), role="body", column_hint="left"),
+                ),
+                DocumentIRBlock(
+                    id="block_right_a",
+                    type="paragraph",
+                    order=1,
+                    text="Right A",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(220, 70, 380, 90), role="body", column_hint="right"),
+                ),
+                DocumentIRBlock(
+                    id="block_wide_callout",
+                    type="paragraph",
+                    order=2,
+                    text="Wide callout",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(0, 180, 400, 220), role="body", column_hint="wide"),
+                ),
+                DocumentIRBlock(
+                    id="block_left_b",
+                    type="paragraph",
+                    order=3,
+                    text="Left B",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(0, 300, 150, 320), role="body", column_hint="left"),
+                ),
+                DocumentIRBlock(
+                    id="block_right_b",
+                    type="paragraph",
+                    order=4,
+                    text="Right B",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(220, 310, 380, 330), role="body", column_hint="right"),
                 ),
             ],
         )

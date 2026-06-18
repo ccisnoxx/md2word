@@ -233,14 +233,14 @@ def _build_templates_group(runtime: AppRuntime) -> ConfigWorkbenchGroup:
             _finding(
                 code="templates.read_failed",
                 severity="critical",
-                message="模板配置读取失败，请进入模板配置页或系统状态页排查。",
+                message="模板配置读取失败，请进入 Word 模板文档或页面样式配置页排查。",
                 route=route,
             )
         )
 
     return _group(
         group_id="templates",
-        label="模板与版式",
+        label="模板文档与页面样式",
         route=route,
         findings=findings,
         default_label=default_label,
@@ -727,6 +727,7 @@ READINESS_CODE_MESSAGES: dict[str, str] = {
     "default_translation_unavailable": "默认翻译模式依赖不可用。",
     "document_jobs_celery_broker_url_missing": "文档任务 Celery broker 未配置。",
     "document_jobs_celery_queue_missing": "文档任务 Celery 队列未配置。",
+    "document_jobs_metadata_store_not_mysql": "生产门禁下文档任务元数据存储必须使用 MySQL。",
     "document_jobs_stale_running_present": "存在长时间未更新的文档任务。",
     "document_jobs_timed_out_present": "存在已超时的文档任务。",
     "document_jobs_worker_backend_disabled": "文档任务执行器被禁用。",

@@ -23,6 +23,8 @@ import TranslationProfilesPage from "@/pages/TranslationProfilesPage.vue";
 import TranslationQaQueuePage from "@/pages/TranslationQaQueuePage.vue";
 import TranslationResultQaPage from "@/pages/TranslationResultQaPage.vue";
 import TranslationTermSetPage from "@/pages/TranslationTermSetPage.vue";
+import WordPageStyleDetailPage from "@/pages/WordPageStyleDetailPage.vue";
+import WordPageStyleListPage from "@/pages/WordPageStyleListPage.vue";
 import { pinia } from "@/stores";
 import { useAuthStore } from "@/stores/auth";
 
@@ -54,7 +56,20 @@ const router = createRouter({
         },
         { path: "translation-qa", name: "translation-qa", component: TranslationQaQueuePage, meta: { permissions: ["translation_qa:read"] } },
         { path: "settings", name: "settings", component: SettingsHomePage, meta: { permissions: ["settings:read"] } },
-        { path: "settings/templates", name: "settings-templates", component: TemplateListPage, meta: { permissions: ["settings:read"] } },
+        { path: "settings/templates", name: "settings-templates", component: TemplateListPage, meta: { roles: ["admin"], permissions: ["settings:read"] } },
+        {
+          path: "settings/word-page-styles",
+          name: "settings-word-page-styles",
+          component: WordPageStyleListPage,
+          meta: { roles: ["admin"], permissions: ["settings:read"] },
+        },
+        {
+          path: "settings/word-page-styles/:templateId",
+          name: "settings-word-page-style-detail",
+          component: WordPageStyleDetailPage,
+          props: true,
+          meta: { roles: ["admin"], permissions: ["settings:read"] },
+        },
         {
           path: "settings/term-rule-sets",
           name: "settings-term-rule-sets",
@@ -84,7 +99,7 @@ const router = createRouter({
           name: "settings-template-detail",
           component: TemplateDetailPage,
           props: true,
-          meta: { permissions: ["settings:read"] },
+          meta: { roles: ["admin"], permissions: ["settings:read"] },
         },
         { path: "term-proposals", name: "term-proposals", component: TermProposalsPage, meta: { permissions: ["term_proposals:read"] } },
         { path: "system-status", name: "system-status", component: SystemStatusPage, meta: { permissions: ["system:read"] } },

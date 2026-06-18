@@ -1,0 +1,74 @@
+#!/bin/zsh
+set -u
+
+PATH="/usr/sbin:/usr/bin:/bin:/sbin"
+
+WIFI_SERVICE="Wi-Fi"
+WIFI_DEVICE="en0"
+COMPANY_SSID="Pencil_5G"
+COMPANY_DNS="172.16.1.12"
+LOG_FILE="$HOME/Library/Logs/auto-wifi-dns.log"
+
+log() {
+  /bin/mkdir -p "$HOME/Library/Logs"
+  /usr/bin/printf '%s %s\n' "$(/bin/date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG_FILE"
+}
+
+current_ssid() {
+  local raw
+  raw="$(/usr/sbin/networksetup -getairportnetwork "$WIFI_DEVICE" 2>/dev/null || true)"
+
+  if [[ "$raw" == Current\ Wi-Fi\ Network:\ * ]]; then
+    /usr/bin/printf '%s' "${raw#Current Wi-Fi Network: }"
+  else
+    /usr/bin/printf ''
+  fi
+}
+
+current_manual_dns() {
+  /usr/sbin/networksetup -getdnsservers "$WIFI_SERVICE" 2>/dev/null || true
+}
+
+set_company_dns() {
+  local dns
+  dns="$(current_manual_dns)"
+
+  if [[ "$dns" == "$COMPANY_DNS" ]]; then
+    log "noop ssid=$COMPANY_SSID dns=$COMPANY_DNS"
+    return 0
+  fi
+
+  if /usr/sbin/networksetup -setdnsservers "$WIFI_SERVICE" "$COMPANY_DNS"; then
+    log "set ssid=$COMPANY_SSID dns=$COMPANY_DNS previous_dns=$(echo "$dns" | tr '\n' ',')"
+  else
+    log "error failed_to_set_company_dns ssid=$COMPANY_SSID"
+    return 1
+  fi
+}
+
+clear_company_dns_only() {
+  local ssid="$1"
+  local dns
+  dns="$(current_manual_dns)"
+
+  if [[ "$dns" == "$COMPANY_DNS" ]]; then
+    if /usr/sbin/networksetup -setdnsservers "$WIFI_SERVICE" Empty; then
+      log "clear ssid=$ssid previous_dns=$COMPANY_DNS dns=dhcp"
+    else
+      log "error failed_to_clear_company_dns ssid=$ssid"
+      return 1
+    fi
+  else
+    log "skip ssid=$ssid dns_unchanged current_dns=$(echo "$dns" | tr '\n' ',')"
+  fi
+}
+
+ssid="$(current_ssid)"
+
+if [[ -z "$ssid" ]]; then
+  log "skip ssid=unavailable dns_unchanged"
+elif [[ "$ssid" == "$COMPANY_SSID" ]]; then
+  set_company_dns
+else
+  clear_company_dns_only "$ssid"
+fi

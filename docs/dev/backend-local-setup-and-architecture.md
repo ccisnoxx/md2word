@@ -131,6 +131,8 @@ var/
 
 ## 当前主链路
 
+当前公开 P0 主链路是 Files + Document Jobs。下面的 `/api/v1/jobs` 流程是 legacy 历史链路，只用于理解旧模块和历史测试；新联调不要使用。
+
 1. `POST /api/v1/jobs` 接收 MinerU 输出 zip
 2. `JobCommandService` 创建 job、登记 `source_package`
 3. `JobStageService.enqueue_conversion()` 写入 stage spool
@@ -141,6 +143,8 @@ var/
 8. `GET /api/v1/jobs/{job_id}/result` / `download/result` 提供下载
 
 ### 原始 PDF 在线解析前半程
+
+当前新流程应使用 `POST /api/v1/files/upload-url`、`PUT /api/v1/files/{file_id}/content`、`POST /api/v1/document-jobs`。以下 `/api/v1/jobs/pdf` 只描述 legacy 历史链路。
 
 1. `POST /api/v1/jobs/pdf` 接收原始 PDF
 2. `JobCommandService` 创建 job、登记 `source_pdf`

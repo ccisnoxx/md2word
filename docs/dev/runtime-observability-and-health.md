@@ -86,6 +86,8 @@ access 日志字段约定：
 - `pdf_submission_available`
 - `openai_api_key_configured`
 - `translation_prompt_exists`
+- `translation_provider_backend`
+- `translation_debug_archive_enabled`
 - `translation_required_for_default_mode`
 - `translation_client_configured`
 - `translation_available`
@@ -130,7 +132,9 @@ access 日志字段约定：
 
 此时 `/health/ready` 会把 document_jobs 自动执行链路纳入 `deployment_init_ready`：
 
+- `effective_repository_backend` 必须是 `mysql`；生产/准生产 P0 不允许继续使用 file 或 sqlite metadata store。
 - `DOCUMENT_JOBS_WORKER_BACKEND` 不能是 `disabled`。
+- `DOCUMENT_JOBS_WORKER_BACKEND` 不能是 `eager`；P0 生产基线是 Celery + 单 worker。
 - `DOCUMENT_JOBS_WORKER_BACKEND=celery` 时必须配置 broker URL 和 queue。
 - `AUTH_JWT_SECRET_KEY` 和内部账号来源不能为空。
 - `MINERU_API_TOKEN`、`MINERU_CALLBACK_URL` 必须配置；callback URL 存在时 `MINERU_UID` 也必须配置。
@@ -180,7 +184,7 @@ worker 仍按单 worker 进程设计，不把它们当成多 worker 抢占锁；
 - `stage_spool_pending_messages`
 - `stage_spool_running_messages`
 - `stage_spool_failed_messages`
-- `GET /api/v1/jobs/{job_id}/events`
+- `GET /api/v1/document-jobs/{job_id}/events`
 
 如果 `stage_spool_pending_messages > 0` 或 `stage_spool_running_messages > 0`，说明有后台消息还没完成，重启应用会 replay。
 如果 `stage_spool_failed_messages > 0`，说明有失败消息留存在 spool 中；它不会被启动 replay 自动恢复，需要通过 job 详情、events 和 retry 决定下一步。
@@ -200,13 +204,13 @@ worker 仍按单 worker 进程设计，不把它们当成多 worker 抢占锁；
 
 这四个任意一个为 `false`，都足以让最小链路失败。
 
-### 场景 2.1：`/api/v1/jobs/pdf` 直接返回 `503`
+### 场景 2.1：PDF 在线任务创建返回 `503`
 
 优先看：
 
 - `mineru_api_token_configured`
 
-如果它是 `false`，说明当前实例根本不允许做 PDF 在线提交。
+如果它是 `false`，说明当前实例根本不允许做 PDF 在线提交。当前公开入口是 Files + Document Jobs；legacy `/api/v1/jobs/pdf` 不再作为新联调路径。
 
 ### 场景 3：`en2zh` 失败
 
@@ -214,11 +218,12 @@ worker 仍按单 worker 进程设计，不把它们当成多 worker 抢占锁；
 
 - `translation_available`
 - `translation_unavailable_reason`
+- `translation_provider_backend`
 - `translation_prompt_exists`
 - job 事件里的 `error_code`
 - job 事件里的 `translation_started/translation_completed/translation_failed`
 
-当前最常见的是 `OPENAI_API_KEY` 未配置。
+当前最常见的是 `TRANSLATION_PROVIDER_BACKEND` 未设为 `openai_compatible` 或 `OPENAI_API_KEY` 未配置。
 
 ### 场景 4：callback 被拒绝
 

@@ -215,6 +215,29 @@ class PageLayoutCharacterizationTests(__import__("unittest").TestCase):
 
         self.assertEqual(fill_title_paragraph.call_args.kwargs["keep_with_next"], False)
 
+    def test_render_block_into_container_promotes_bullet_like_paragraph_to_list(self):
+        paragraph = SimpleNamespace(text="")
+        container = SimpleNamespace(add_paragraph=lambda: paragraph)
+        block = self.make_block("paragraph", (0, 0, 100, 20), text="• Low noise")
+        render_config = self.make_render_config()
+
+        with (
+            mock.patch.object(self.module, "fill_list_paragraph") as fill_list_paragraph,
+            mock.patch.object(self.module, "fill_body_paragraph") as fill_body_paragraph,
+            mock.patch.object(self.module, "fill_title_paragraph") as fill_title_paragraph,
+        ):
+            self.module.render_block_into_container(
+                container,
+                block,
+                page_width=400,
+                usable_width=800,
+                render_config=render_config,
+            )
+
+        fill_list_paragraph.assert_called_once_with(paragraph, "Low noise", render_config, level=0)
+        fill_body_paragraph.assert_not_called()
+        fill_title_paragraph.assert_not_called()
+
     def test_should_start_new_section_false_for_consecutive_normal_pages(self):
         render_config = self.make_render_config()
         previous_page = self.module.PageData(

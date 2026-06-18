@@ -5,7 +5,7 @@ component: pdf-to-word-backend
 status: current
 summary: P0 API 与 document_jobs Worker 共用镜像和根目录 .env 的 Docker Compose 部署说明。
 tags: [deploy, docker, api, worker, mysql, redis]
-last_reviewed: 2026-06-10
+last_reviewed: 2026-06-17
 ---
 
 # P0 Docker 部署说明
@@ -29,6 +29,8 @@ last_reviewed: 2026-06-10
 - Docker `api` 只绑定 `127.0.0.1:${MD2WORD_API_BIND_PORT}`
 - 宿主机 `nginx` 再反代到 `127.0.0.1:${MD2WORD_API_BIND_PORT}`
 - 如有前置机，可让前置机通过 WireGuard / 内网把域名流量转发到部署机的 `80/443`
+
+md2word 当前按 [线上优先验证流程](/Users/sc/PycharmProjects/md2word/docs/deploy/online-first-validation-workflow.md) 发布：本地负责改写和不依赖服务的检查，完整 API/Worker/MySQL/Redis/Celery/Golden Sample 验证在 `hostdzire` 执行。
 
 ## 环境变量
 
@@ -85,17 +87,22 @@ docker compose --env-file .env -f docker/prod/docker-compose.yml build
 docker compose --env-file .env -f docker/prod/docker-compose.yml up -d
 ```
 
-检查：
+在部署机上检查：
 
 ```bash
 curl -sS http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}/api/v1/health/live
 curl -sS http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}/api/v1/health/ready
 /Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_release.py --runtime-url http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}
+GOLDEN_SAMPLE_USERNAME=admin GOLDEN_SAMPLE_PASSWORD='<admin-password>' \
+  /Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_release.py \
+  --runtime-url http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000} \
+  --golden-sample-preflight \
+  --golden-sample-preflight-output tests/tmp/golden_sample_runs/preflight.json
 docker compose --env-file .env -f docker/prod/docker-compose.yml ps
 docker compose --env-file .env -f docker/prod/docker-compose.yml logs -f api worker
 ```
 
-`check_release.py --runtime-url` 会读取 `/api/v1/health/ready`，同时检查 `deployment_init_ready` 和 `p0_document_jobs_ready`。公开或生产环境出现 `p0_document_jobs_blockers` 时，不应开放上传入口；常见阻断项是 document_jobs worker backend 未启用、Celery broker/queue 缺失、内部账号未配置、MinerU token/callback/uid 缺失。
+`check_release.py --runtime-url` 会读取 `/api/v1/health/ready`，同时检查 `deployment_init_ready`、`p0_document_jobs_ready`、MySQL metadata 和 Celery worker。公开或生产环境出现 `p0_document_jobs_blockers` 时，不应开放上传入口；常见阻断项是 document_jobs worker backend 未启用、Celery broker/queue 缺失、内部账号未配置、MinerU token/callback/uid 缺失。`--golden-sample-preflight` 只做快速门禁：4 个 canonical PDF、admin 登录角色和运行时 readiness，不提交真实转换任务。
 
 停止：
 
@@ -111,7 +118,7 @@ docker compose --env-file .env -f docker/prod/docker-compose.yml down -v
 
 ## 开发 Compose
 
-本地需要用 Docker 跑完整依赖时，可以使用开发编排：
+需要专门在本地 Docker 里调完整依赖时，可以使用开发编排；当前 P0 发布验收不要求本地跑这一步，full-stack 证据以 hostdzire 为准：
 
 ```bash
 docker compose --env-file .env -f docker/dev/docker-compose.yml up -d --build

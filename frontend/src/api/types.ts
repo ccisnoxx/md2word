@@ -1352,9 +1352,9 @@ export type DocumentJobBulkResponse = {
 };
 
 export type DocumentJobDeleteExecuteRequest = {
-  reason: string;
-  confirmation: string;
   preview_hash: string;
+  reason?: string | null;
+  confirmation?: string | null;
 };
 
 export type DocumentJobDeleteFileResponse = {
@@ -1694,6 +1694,34 @@ export type TemplateVersionResponse = {
 export type TemplateVersionListResponse = {
   template_id: string;
   items: TemplateVersionResponse[];
+};
+
+export type TemplateLayoutConfigFieldType = "text" | "number" | "boolean" | "alignment" | "color";
+
+export type TemplateLayoutConfigFieldSchema = {
+  type: TemplateLayoutConfigFieldType;
+  label: string;
+  unit?: string;
+  readonly?: boolean;
+  options?: string[];
+};
+
+export type TemplateLayoutConfigResponse = {
+  template_id: string;
+  template_version_id: string | null;
+  version: number;
+  source_path: string | null;
+  config_sha256: string | null;
+  meta: Record<string, unknown>;
+  config: Record<string, unknown>;
+  field_schema: {
+    meta: Record<string, TemplateLayoutConfigFieldSchema>;
+    groups: Record<string, Record<string, TemplateLayoutConfigFieldSchema>>;
+  };
+};
+
+export type TemplateLayoutConfigDraftRequest = {
+  config: Record<string, unknown>;
 };
 
 export type TemplateVersionPublishRequest = {

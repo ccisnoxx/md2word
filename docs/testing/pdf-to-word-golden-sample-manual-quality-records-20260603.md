@@ -23,7 +23,7 @@ last_reviewed: 2026-06-03
 | DOCX 包可打开 | 4 true / 0 false |
 | 检查方式 | LibreOffice DOCX 渲染、Poppler PDF 渲染、side-by-side 人工对照、`python-docx` 结构抽取、OOXML 媒体/numbering 检查 |
 
-本记录只做人工质量 triage。它不能替代正式 P0 通过声明：当前仍只有 4 个 runnable 样本，且本轮发现标题语义、列表语义、双栏/宽表版面、表格 caption 和数学/特殊符号存在质量缺口。
+本记录只做人工质量 triage。它不能替代正式 P0 通过声明：当前 4 个 runnable 样本已被确认为 P0 canonical suite，但本轮发现标题语义、列表语义、双栏/宽表版面、表格 caption 和数学/特殊符号存在质量缺口。
 
 ## 2. 批次级结构摘要
 
@@ -139,4 +139,3 @@ last_reviewed: 2026-06-03
 - 数学/特殊符号：`gs-003`、`gs-006`、`gs-008` 都有 LaTeX 残留。
 
 这些问题应在后续 `failure-classification` 中继续路由到 `document-ir-layout-risk-pass` 和 `word-renderer-editable-output-pass`；本记录不直接做修复。
-

@@ -164,7 +164,13 @@ def render_standard_html_table_impl(
                     merge_failures += 1
 
             merged_cell.width = sum(column_widths[col_idx : end_col + 1])
-            fill_table_cell_fn(merged_cell, cell_model, row_idx == 0, render_config, compact=compact)
+            fill_table_cell_fn(
+                merged_cell,
+                cell_model,
+                row_idx == 0 or bool(getattr(cell_model, "is_header", False)),
+                render_config,
+                compact=compact,
+            )
             merged_cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
 
             for r in range(row_idx, end_row + 1):

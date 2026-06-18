@@ -119,6 +119,12 @@
           <el-descriptions-item label="AI debug 归档">
             <span class="mono">{{ joinIds(qa.artifacts.ai_debug_archive_file_ids) }}</span>
           </el-descriptions-item>
+          <el-descriptions-item label="Debug 归档状态">
+            <div class="debug-archive-state">
+              <el-tag :type="debugArchiveTagType" size="small" effect="plain">{{ debugArchiveStateText }}</el-tag>
+              <span class="muted">{{ debugArchiveExpiryText }}</span>
+            </div>
+          </el-descriptions-item>
           <el-descriptions-item label="Quality flags">
             <div class="flag-list">
               <el-tag v-for="flag in qa.summary.quality_flags" :key="flag" size="small" effect="plain">{{ flag }}</el-tag>
@@ -396,11 +402,50 @@ const metrics = computed(() => {
       helper: qa.value.summary.source_comparison_available ? "source comparison available" : "metadata trace",
     },
     {
+      label: "Debug archive",
+      value: debugArchiveMetricValue.value,
+      helper: debugArchiveExpiryText.value,
+    },
+    {
       label: "Quality flags",
       value: qa.value.summary.quality_flags.length,
       helper: qa.value.summary.quality_flags[0] || "none",
     },
   ];
+});
+const debugArchiveMetricValue = computed(() => {
+  if (!qa.value?.summary.debug_full_text_enabled) {
+    return "off";
+  }
+  if (!qa.value.artifacts.ai_debug_archive_file_ids.length) {
+    return "missing";
+  }
+  return qa.value.artifacts.ai_debug_archive_expired ? "expired" : "active";
+});
+const debugArchiveTagType = computed<"success" | "warning" | "info">(() => {
+  if (debugArchiveMetricValue.value === "active") {
+    return "success";
+  }
+  if (debugArchiveMetricValue.value === "expired" || debugArchiveMetricValue.value === "missing") {
+    return "warning";
+  }
+  return "info";
+});
+const debugArchiveStateText = computed(() => {
+  const labels: Record<string, string> = {
+    off: "未开启",
+    missing: "缺失",
+    expired: "已过期",
+    active: "可用",
+  };
+  return labels[debugArchiveMetricValue.value] || "未知";
+});
+const debugArchiveExpiryText = computed(() => {
+  const expiresAt = qa.value?.artifacts.ai_debug_archive_expires_at;
+  if (!expiresAt) {
+    return qa.value?.summary.debug_full_text_enabled ? "未记录过期时间" : "未保存全文归档";
+  }
+  return `过期时间 ${formatDateTime(expiresAt)}`;
 });
 const termTracesBySegment = computed(() => {
   const grouped = new Map<string, DocumentJobTranslationQaTermTraceResponse[]>();
@@ -661,7 +706,7 @@ onMounted(() => {
 }
 
 .metric-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
 .metric-card {
@@ -697,6 +742,13 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.debug-archive-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
 .segment-trace-detail {

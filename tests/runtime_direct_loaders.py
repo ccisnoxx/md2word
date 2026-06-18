@@ -300,6 +300,9 @@ def load_page_layout_module():
     module.fill_title_paragraph = text_module.fill_title_paragraph
     module.fill_body_paragraph = text_module.fill_body_paragraph
     module.fill_list_paragraph = text_module.fill_list_paragraph
+    module.is_list_item_text = text_module.is_list_item_text
+    module.normalize_list_item = text_module.normalize_list_item
+    module.infer_list_item_level = text_module.infer_list_item_level
     module.normalize_toc_text = text_module.normalize_toc_text
     module.infer_heading_level = text_module.infer_heading_level
     module.get_toc_style_name = text_module.get_toc_style_name

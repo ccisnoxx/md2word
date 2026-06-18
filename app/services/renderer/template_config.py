@@ -93,10 +93,15 @@ class TemplateConfigPackage(BaseModel):
     heading1: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
     heading2: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
     heading3: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
+    toc_title: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
+    toc_level1: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
+    toc_level2: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
+    toc_level3: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
     normal: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
     table_content: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
     table_note: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
     caption: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
+    long_table_caption: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
 
     @classmethod
     def load(cls, config_path: Path | None) -> "TemplateConfigPackage":
@@ -121,3 +126,11 @@ class TemplateConfigPackage(BaseModel):
         normalized_level = max(1, min(int(level or 1), 3))
         configured = self.heading_style_for_level(normalized_level).word_style_name
         return configured or f"Heading {normalized_level}"
+
+    def toc_style_for_level(self, level: int | None) -> TemplateParagraphStyleConfig:
+        normalized_level = max(1, min(int(level or 1), 3))
+        if normalized_level == 1:
+            return self.toc_level1
+        if normalized_level == 2:
+            return self.toc_level2
+        return self.toc_level3

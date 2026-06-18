@@ -2,6 +2,8 @@
 import { apiRequest } from "@/api/client";
 import type {
   TemplateDetailResponse,
+  TemplateLayoutConfigDraftRequest,
+  TemplateLayoutConfigResponse,
   TemplateListResponse,
   TemplateVersionDefaultRequest,
   TemplateVersionListResponse,
@@ -44,6 +46,24 @@ export const templatesApi = {
     return apiRequest<TemplateVersionListResponse>({
       url: `/api/v1/templates/${templateId}/versions`,
       method: "GET",
+    });
+  },
+
+  getLayoutConfig(templateId: string): Promise<TemplateLayoutConfigResponse> {
+    return apiRequest<TemplateLayoutConfigResponse>({
+      url: `/api/v1/templates/${templateId}/layout-config`,
+      method: "GET",
+    });
+  },
+
+  createLayoutConfigVersion(
+    templateId: string,
+    payload: TemplateLayoutConfigDraftRequest,
+  ): Promise<TemplateVersionResponse> {
+    return apiRequest<TemplateVersionResponse>({
+      url: `/api/v1/templates/${templateId}/layout-config/versions`,
+      method: "POST",
+      data: payload,
     });
   },
 

@@ -2,12 +2,14 @@ from __future__ import annotations
 
 # app/services/renderer/table_renderer.py: 提供 DocumentIR Word 渲染器的 HTML 表格与表注 helper。
 
+import re
 from typing import Any
 
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Cm, Emu, Mm
+from docx.shared import Cm, Emu, Mm, Pt
 
 from app.conversion.runtime.table_html_parser import HtmlCell, HtmlTable, parse_html_table
 from app.services.document_ir.models import DocumentIRBlock
@@ -18,10 +20,21 @@ from app.services.renderer.template_config import TemplateConfigPackage
 MAX_COMPLEX_TABLE_ROWS = 400
 MAX_COMPLEX_TABLE_HTML_LEN = 30000
 MIN_TABLE_COLUMN_WIDTH = Mm(16)
+LONG_TABLE_CAPTION_RE = re.compile(r"^(?:续表|continued\s+table|[A-Z]\.\d+(?:\.\d+)?)\b", re.IGNORECASE)
 
 
 class WordTableRendererMixin:
     """封装可编辑 HTML 表格、合并单元格和表注渲染逻辑。"""
+
+    def _configure_layout_table(self, table: Any) -> None:
+        """把仅用于版面承载的 Word 表格配置为无边框容器。"""
+
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        table.autofit = False
+        self._clear_table_borders(table)
+        for row in table.rows:
+            for cell in row.cells:
+                cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
 
     def _render_table(self, document: Any, block: DocumentIRBlock, template_config: TemplateConfigPackage) -> None:
         table_model = parse_html_table(block.html)
@@ -51,6 +64,7 @@ class WordTableRendererMixin:
         """渲染常规 HTML table，保留 rowspan/colspan 合并结构。"""
 
         table = self._add_configured_table(document, len(table_model.rows), max_cols, usable_width, template_config)
+        column_widths = self._table_column_widths(max_cols, usable_width)
         occupied: dict[tuple[int, int], bool] = {}
         for row_index, row in enumerate(table_model.rows):
             col_index = 0
@@ -66,7 +80,8 @@ class WordTableRendererMixin:
                 merged_cell = base_cell
                 if end_row != row_index or end_col != col_index:
                     merged_cell = base_cell.merge(table.cell(end_row, end_col))
-                self._fill_table_cell(merged_cell, cell_model, row_index == 0, template_config)
+                merged_cell.width = sum(column_widths[col_index : end_col + 1])
+                self._fill_table_cell(merged_cell, cell_model, row_index == 0 or cell_model.is_header, template_config)
 
                 for occupied_row in range(row_index, end_row + 1):
                     for occupied_col in range(col_index, end_col + 1):
@@ -85,9 +100,11 @@ class WordTableRendererMixin:
 
         rows = self._expand_table_rows(table_model, max_cols)
         table = self._add_configured_table(document, len(rows), max_cols, usable_width, template_config)
+        column_widths = self._table_column_widths(max_cols, usable_width)
         for row_index, row in enumerate(rows):
             for col_index in range(max_cols):
                 text = row[col_index] if col_index < len(row) else ""
+                table.cell(row_index, col_index).width = column_widths[col_index]
                 self._fill_table_cell(
                     table.cell(row_index, col_index),
                     HtmlCell(text=text, html=text),
@@ -111,10 +128,24 @@ class WordTableRendererMixin:
         except (KeyError, ValueError):
             table.style = "Table Grid"
 
-        column_width = max(int(usable_width // max(cols, 1)), int(Emu(MIN_TABLE_COLUMN_WIDTH)))
-        for column in table.columns:
+        for column, column_width in zip(table.columns, self._table_column_widths(cols, usable_width), strict=True):
             column.width = column_width
+        if template_config.table_style.border_color:
+            self._set_table_borders(table, template_config.table_style.border_color)
+        self._configure_data_table_rows(table)
         return table
+
+    def _table_column_widths(self, cols: int, usable_width: int) -> list[int]:
+        if cols <= 0:
+            return []
+        if cols == 5:
+            weights = [0.11, 0.37, 0.21, 0.21, 0.10]
+            widths = [int(usable_width * weight) for weight in weights]
+            widths[1] += int(usable_width) - sum(widths)
+            return widths
+
+        column_width = max(int(usable_width // cols), int(Emu(MIN_TABLE_COLUMN_WIDTH)))
+        return [column_width for _ in range(cols)]
 
     def _fill_table_cell(
         self,
@@ -126,6 +157,9 @@ class WordTableRendererMixin:
         cell.text = ""
         paragraph = cell.paragraphs[0]
         self._fill_paragraph(paragraph, normalize_formula_text(cell_model.html or cell_model.text), template_config.table_content)
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER if is_header else WD_ALIGN_PARAGRAPH.LEFT
+        paragraph.paragraph_format.space_before = Pt(0)
+        paragraph.paragraph_format.space_after = Pt(0)
         if is_header and template_config.table_style.header_fill:
             self._set_cell_fill(cell, template_config.table_style.header_fill)
         cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
@@ -181,7 +215,7 @@ class WordTableRendererMixin:
         for text in self._unique_annotation_texts(block.captions):
             paragraph = document.add_paragraph()
             paragraph.paragraph_format.keep_with_next = True
-            self._fill_paragraph(paragraph, text, template_config.caption)
+            self._fill_paragraph(paragraph, normalize_formula_text(text), self._caption_style_for_text(text, template_config))
 
     def _render_table_notes(
         self,
@@ -210,7 +244,7 @@ class WordTableRendererMixin:
         sections = getattr(document, "sections", None)
         if not sections:
             return int(Cm(14))
-        section = sections[0]
+        section = sections[-1]
         width = section.page_width - section.left_margin - section.right_margin
         return int(width if width > 0 else Cm(14))
 
@@ -221,3 +255,56 @@ class WordTableRendererMixin:
             shading = OxmlElement("w:shd")
             tc_pr.append(shading)
         shading.set(qn("w:fill"), fill.strip().lstrip("#").upper())
+
+    def _caption_style_for_text(self, text: str, template_config: TemplateConfigPackage) -> Any:
+        if LONG_TABLE_CAPTION_RE.match((text or "").strip()):
+            return template_config.long_table_caption
+        return template_config.caption
+
+    def _set_table_borders(self, table: Any, color: str) -> None:
+        table_properties = table._tbl.tblPr
+        borders = table_properties.find(qn("w:tblBorders"))
+        if borders is None:
+            borders = OxmlElement("w:tblBorders")
+            table_properties.append(borders)
+        normalized_color = color.strip().lstrip("#").upper()
+        for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            element = borders.find(qn(f"w:{edge}"))
+            if element is None:
+                element = OxmlElement(f"w:{edge}")
+                borders.append(element)
+            element.set(qn("w:val"), "single")
+            element.set(qn("w:sz"), "4")
+            element.set(qn("w:space"), "0")
+            element.set(qn("w:color"), normalized_color)
+
+    def _clear_table_borders(self, table: Any) -> None:
+        table_properties = table._tbl.tblPr
+        borders = table_properties.find(qn("w:tblBorders"))
+        if borders is None:
+            borders = OxmlElement("w:tblBorders")
+            table_properties.append(borders)
+        for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            element = borders.find(qn(f"w:{edge}"))
+            if element is None:
+                element = OxmlElement(f"w:{edge}")
+                borders.append(element)
+            element.set(qn("w:val"), "none")
+            element.set(qn("w:sz"), "0")
+            element.set(qn("w:space"), "0")
+            element.set(qn("w:color"), "auto")
+
+    def _configure_data_table_rows(self, table: Any) -> None:
+        for row_index, row in enumerate(table.rows):
+            row_properties = row._tr.get_or_add_trPr()
+            self._ensure_row_flag(row_properties, "w:cantSplit")
+            if row_index == 0:
+                self._ensure_row_flag(row_properties, "w:tblHeader", value="true")
+
+    def _ensure_row_flag(self, row_properties: Any, tag: str, *, value: str | None = None) -> None:
+        element = row_properties.find(qn(tag))
+        if element is None:
+            element = OxmlElement(tag)
+            row_properties.append(element)
+        if value is not None:
+            element.set(qn("w:val"), value)
