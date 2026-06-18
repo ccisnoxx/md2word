@@ -1,11 +1,11 @@
 <!-- frontend/src/pages/TemplateDetailPage.vue: Word template document file and version lifecycle page. -->
 <template>
-  <main class="template-detail-page" aria-labelledby="template-title">
-    <section class="page-heading">
+  <main class="template-detail-page app-page" aria-labelledby="template-title">
+    <section class="page-heading app-page-header app-page-shell app-page-shell--wide">
       <div>
         <p class="page-kicker">Word 模板文档</p>
-        <h1 id="template-title">Word 模板文档</h1>
-        <p>{{ template?.name || templateId }}：管理 DOCX 模板文件、默认页眉内容、公司 Logo 和模板版本发布流程。</p>
+        <h1 id="template-title" class="page-title">Word 模板文档</h1>
+        <p class="page-description">{{ template?.name || templateId }}：管理 DOCX 模板文件、默认页眉内容、公司 Logo 和模板版本发布流程。</p>
       </div>
       <div class="toolbar">
         <el-button :icon="Brush" @click="openStyleConfig">页面样式配置</el-button>
@@ -13,10 +13,10 @@
       </div>
     </section>
 
-    <ApiErrorAlert :error="error" />
+    <ApiErrorAlert class="app-page-shell app-page-shell--wide" :error="error" />
 
-    <section v-if="template" class="document-grid">
-      <el-card class="card-flat document-summary-card" shadow="never">
+    <section v-if="template" class="document-grid app-page-shell app-page-shell--wide">
+      <el-card class="app-panel-card document-summary-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">模板文件</h2>
@@ -30,13 +30,13 @@
           <div><dt>模板文件</dt><dd>{{ template.template.file_name || "-" }}</dd></div>
           <div><dt>文件大小</dt><dd>{{ formatBytes(template.template.size_bytes) }}</dd></div>
         </dl>
-        <div class="document-actions">
+        <div class="document-actions app-action-row">
           <el-button :icon="Download" :disabled="!template.downloadable" @click="downloadTemplate">下载模板</el-button>
           <el-button :icon="Brush" type="primary" plain @click="openStyleConfig">配置页面样式</el-button>
         </div>
       </el-card>
 
-      <el-card class="card-flat boundary-card" shadow="never">
+      <el-card class="app-panel-card boundary-card" shadow="never">
         <div class="section-header compact">
           <div>
             <h2 class="section-title">职责边界</h2>
@@ -56,7 +56,7 @@
       </el-card>
 
       <RoleGate>
-        <el-card class="card-flat upload-card" shadow="never">
+        <el-card class="app-panel-card upload-card" shadow="never">
           <div class="section-header">
             <div>
               <h2 class="section-title">上传模板 draft</h2>
@@ -91,7 +91,7 @@
       </RoleGate>
     </section>
 
-    <el-card class="card-flat" shadow="never">
+    <el-card class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
       <div class="section-header">
         <div>
           <h2 class="section-title">版本列表</h2>
@@ -135,7 +135,7 @@
         <el-table-column label="admin 操作" width="330" fixed="right">
           <template #default="{ row }">
             <RoleGate>
-              <div class="row-actions">
+              <div class="row-actions app-action-row">
                 <el-button link type="primary" @click="openValidationDialog(row)">创建验证任务</el-button>
                 <el-button link type="success" :disabled="row.status === 'published'" @click="openPublishDialog(row)">
                   发布
@@ -172,8 +172,8 @@
         </template>
       </el-upload>
       <el-radio-group v-model="validationDialog.mode" class="form-gap">
-        <el-radio-button label="direct_pdf_to_word">直接转 Word</el-radio-button>
-        <el-radio-button label="en2zh_pdf_to_word">英译中</el-radio-button>
+        <el-radio-button value="direct_pdf_to_word">直接转 Word</el-radio-button>
+        <el-radio-button value="en2zh_pdf_to_word">英译中</el-radio-button>
       </el-radio-group>
       <template #footer>
         <el-button @click="validationDialog.visible = false">取消</el-button>
@@ -541,13 +541,13 @@ onMounted(() => {
 <style scoped lang="scss">
 .template-detail-page {
   display: grid;
-  gap: 16px;
+  gap: var(--app-space-4);
 }
 
 .document-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
-  gap: 16px;
+  gap: var(--app-space-4);
 }
 
 .upload-card {
@@ -557,7 +557,7 @@ onMounted(() => {
 .document-summary-card,
 .boundary-card,
 .upload-card {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--app-color-border);
 }
 
 .compact {
@@ -577,7 +577,7 @@ onMounted(() => {
 }
 
 .meta-list dt {
-  color: #475569;
+  color: var(--app-color-text-muted);
 }
 
 .meta-list dd {
@@ -588,7 +588,7 @@ onMounted(() => {
 .document-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 
 .boundary-list {
@@ -599,20 +599,20 @@ onMounted(() => {
 .boundary-list article {
   display: grid;
   gap: 4px;
-  padding: 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #f8fafc;
+  padding: var(--app-space-3);
+  border: 1px solid var(--app-color-border-soft);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface-muted);
 }
 
 .boundary-list strong {
-  color: #1e293b;
+  color: var(--app-color-text);
 }
 
 .boundary-list span,
 .evidence small,
 .dialog-note {
-  color: #475569;
+  color: var(--app-color-text-muted);
 }
 
 .form-gap {

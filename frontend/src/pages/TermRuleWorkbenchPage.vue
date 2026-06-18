@@ -1,36 +1,36 @@
 <!-- frontend/src/pages/TermRuleWorkbenchPage.vue: Admin read-only term rule inspection and simulation page. -->
 <template>
-  <main class="term-rule-workbench-page" aria-labelledby="term-rule-workbench-title">
-    <section class="page-heading">
+  <main class="term-rule-workbench-page app-page" aria-labelledby="term-rule-workbench-title">
+    <section class="page-heading app-page-header app-page-shell app-page-shell--wide">
       <div>
         <p class="page-kicker">Term Rule Workbench</p>
-        <h1 id="term-rule-workbench-title">术语规则检查</h1>
-        <p>只读查看当前 live runtime store，并用模拟接口检查文本渲染结果。</p>
+        <h1 id="term-rule-workbench-title" class="page-title">术语规则检查</h1>
+        <p class="page-description">只读查看当前 live runtime store，并用模拟接口检查文本渲染结果。</p>
       </div>
       <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
     </section>
 
-    <TerminologyWorkbenchNav active="live-rules" />
+    <TerminologyWorkbenchNav class="app-page-shell app-page-shell--wide" active="live-rules" />
 
-    <ApiErrorAlert :error="error" />
+    <ApiErrorAlert class="app-page-shell app-page-shell--wide" :error="error" />
 
-    <section class="summary-grid" aria-label="术语规则统计">
-      <el-card class="card-flat summary-card" shadow="never">
+    <section class="summary-grid app-metric-grid app-page-shell app-page-shell--wide" aria-label="术语规则统计">
+      <el-card class="app-panel-card summary-card app-metric-card" shadow="never">
         <span>分类数</span>
         <strong>{{ categories.length }}</strong>
       </el-card>
-      <el-card class="card-flat summary-card" shadow="never">
+      <el-card class="app-panel-card summary-card app-metric-card" shadow="never">
         <span>规则总数</span>
         <strong>{{ totalRuleCount }}</strong>
       </el-card>
-      <el-card class="card-flat summary-card" shadow="never">
+      <el-card class="app-panel-card summary-card app-metric-card" shadow="never">
         <span>启用规则</span>
         <strong>{{ enabledRuleCount }}</strong>
       </el-card>
     </section>
 
-    <section class="content-grid">
-      <el-card class="card-flat categories-card" shadow="never">
+    <section class="content-grid app-page-shell app-page-shell--wide">
+      <el-card class="app-panel-card app-table-card categories-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">分类概览</h2>
@@ -51,7 +51,7 @@
         </el-table>
       </el-card>
 
-      <el-card class="card-flat" shadow="never">
+      <el-card class="app-panel-card app-table-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">规则列表</h2>
@@ -60,7 +60,7 @@
           <span class="muted">共 {{ ruleTotal }} 条</span>
         </div>
 
-        <div class="toolbar filters" role="search">
+        <div class="toolbar filters app-filter-panel" role="search">
           <el-select v-model="filters.categoryId" clearable placeholder="全部分类" class="filter-select">
             <el-option v-for="category in categories" :key="category.id" :label="category.name" :value="category.id" />
           </el-select>
@@ -106,7 +106,7 @@
       </el-card>
     </section>
 
-    <el-card class="card-flat" shadow="never">
+    <el-card class="app-panel-card app-page-shell app-page-shell--wide" shadow="never">
       <div class="section-header">
         <div>
           <h2 class="section-title">规则模拟</h2>
@@ -123,15 +123,15 @@
       <div v-if="simulationResult" class="simulation-grid">
         <section>
           <h3>Original</h3>
-          <pre>{{ simulationResult.original }}</pre>
+          <pre class="app-technical-block">{{ simulationResult.original }}</pre>
         </section>
         <section>
           <h3>Markdown preview</h3>
-          <pre>{{ simulationResult.markdown_preview }}</pre>
+          <pre class="app-technical-block">{{ simulationResult.markdown_preview }}</pre>
         </section>
         <section>
           <h3>HTML preview</h3>
-          <pre>{{ simulationResult.html_preview }}</pre>
+          <pre class="app-technical-block">{{ simulationResult.html_preview }}</pre>
         </section>
       </div>
     </el-card>
@@ -163,11 +163,11 @@
 
         <section class="detail-section">
           <h3>Custom markdown</h3>
-          <pre>{{ detailDrawer.rule.custom_markdown || "-" }}</pre>
+          <pre class="app-technical-block">{{ detailDrawer.rule.custom_markdown || "-" }}</pre>
         </section>
         <section class="detail-section">
           <h3>Custom HTML</h3>
-          <pre>{{ detailDrawer.rule.custom_html || "-" }}</pre>
+          <pre class="app-technical-block">{{ detailDrawer.rule.custom_html || "-" }}</pre>
         </section>
         <section class="detail-section">
           <h3>Notes</h3>
@@ -318,42 +318,11 @@ onMounted(() => {
 <style scoped lang="scss">
 .term-rule-workbench-page {
   display: grid;
-  gap: 16px;
-}
-
-.page-heading {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 10px 0 2px;
-}
-
-.page-kicker {
-  margin: 0 0 4px;
-  color: #2563eb;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-.page-heading h1 {
-  margin: 0;
-  color: #111827;
-  font-size: 28px;
-  line-height: 1.2;
-}
-
-.page-heading p:last-child {
-  margin: 8px 0 0;
-  color: #667085;
+  gap: var(--app-space-4);
 }
 
 .summary-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 
 .summary-card {
@@ -362,12 +331,12 @@ onMounted(() => {
 }
 
 .summary-card span {
-  color: #667085;
+  color: var(--app-color-text-muted);
   font-size: 13px;
 }
 
 .summary-card strong {
-  color: #111827;
+  color: var(--app-color-text);
   font-size: 28px;
   line-height: 1;
 }
@@ -375,7 +344,7 @@ onMounted(() => {
 .content-grid {
   display: grid;
   grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
-  gap: 16px;
+  gap: var(--app-space-4);
 }
 
 .categories-card {
@@ -383,7 +352,7 @@ onMounted(() => {
 }
 
 .filters {
-  margin-bottom: 12px;
+  margin-bottom: var(--app-space-3);
 }
 
 .filter-select {
@@ -408,7 +377,7 @@ onMounted(() => {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
-  margin-top: 14px;
+  margin-top: var(--app-space-4);
 }
 
 .simulation-grid h3,
@@ -418,25 +387,9 @@ onMounted(() => {
   font-weight: 650;
 }
 
-pre {
-  overflow: auto;
-  min-height: 44px;
-  margin: 0;
-  padding: 10px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #f8fafc;
-  color: #111827;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 12px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
 .rule-detail {
   display: grid;
-  gap: 16px;
+  gap: var(--app-space-4);
 }
 
 .detail-section {
@@ -446,7 +399,7 @@ pre {
 
 .detail-section p {
   margin: 0;
-  color: #344054;
+  color: var(--app-color-text-muted);
   line-height: 1.6;
 }
 
