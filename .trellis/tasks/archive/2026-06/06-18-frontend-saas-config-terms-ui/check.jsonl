@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend quality check commands and scope expectations for validating the implementation."}
+{"file": ".trellis/spec/frontend/ui-system-guidelines.md", "reason": "Review criteria for shared UI tokens, page helpers, Element Plus boundaries, and behavior preservation."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Check that repeated visual patterns are consolidated through appropriate shared helpers instead of duplicated local styles."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Check that the visual migration did not alter route, API, permission, or state contracts."}
+{"file": ".trellis/tasks/06-18-frontend-saas-config-terms-ui/research/current-state.md", "reason": "Evidence baseline for target pages, residual risks, and behavior-sensitive code paths to verify after implementation."}
