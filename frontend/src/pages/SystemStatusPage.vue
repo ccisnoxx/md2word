@@ -1,12 +1,12 @@
 <!-- File: frontend/src/pages/SystemStatusPage.vue -->
 <!-- Purpose: Render the Admin-only overview for backend health, metrics, and storage operations. -->
 <template>
-  <main class="system-status-page" aria-labelledby="system-status-title">
-    <section class="page-heading">
+  <main class="system-status-page app-page" aria-labelledby="system-status-title">
+    <section class="page-heading app-page-header app-page-shell">
       <div>
         <p class="page-kicker">系统状态</p>
-        <h1 id="system-status-title">系统状态</h1>
-        <p>只读查看后端就绪检查、任务工作进程、存储、队列和默认资源状态。</p>
+        <h1 id="system-status-title" class="page-title">系统状态</h1>
+        <p class="page-description">只读查看后端就绪检查、任务工作进程、存储、队列和默认资源状态。</p>
       </div>
       <div class="heading-actions">
         <el-tag :type="readiness.tagType" effect="plain">{{ readiness.label }}</el-tag>
@@ -14,36 +14,36 @@
       </div>
     </section>
 
-    <ApiErrorAlert :error="error" />
+    <ApiErrorAlert class="app-page-shell" :error="error" />
 
-    <section v-loading="loading" class="overview-grid" aria-label="系统状态概览">
-      <article class="overview-card readiness-card" :class="`is-${readiness.key}`">
-        <span class="status-dot" aria-hidden="true"></span>
+    <section v-loading="loading" class="overview-grid app-metric-grid app-page-shell" aria-label="系统状态概览">
+      <article class="overview-card readiness-card app-metric-card app-status-card" :class="`is-${readiness.key}`">
+        <span class="status-dot app-status-dot" aria-hidden="true"></span>
         <div>
           <strong>{{ readiness.label }}</strong>
           <small>{{ readiness.description }}</small>
         </div>
       </article>
 
-      <article class="overview-card">
+      <article class="overview-card app-metric-card">
         <span>应用</span>
         <strong>{{ appName }}</strong>
         <small>版本: {{ deploymentVersion }} · 就绪接口: {{ endpointStatus(ready?.status) }}</small>
       </article>
 
-      <article class="overview-card">
+      <article class="overview-card app-metric-card">
         <span>部署</span>
         <strong>{{ deploymentId }}</strong>
         <small>{{ deploymentRuntimeLabel }}</small>
       </article>
 
-      <article class="overview-card">
+      <article class="overview-card app-metric-card">
         <span>指标时间</span>
         <strong>{{ formatDateTime(metrics?.generated_at) }}</strong>
         <small>页面刷新：{{ formatDateTime(refreshedAt) }}</small>
       </article>
 
-      <article class="overview-card">
+      <article class="overview-card app-metric-card">
         <span>审计事件</span>
         <strong>{{ auditEventsTotal }}</strong>
         <small>
@@ -53,7 +53,7 @@
       </article>
     </section>
 
-    <section v-if="blockers.length || warnings.length" class="status-alerts" aria-label="就绪检查阻断和告警">
+    <section v-if="blockers.length || warnings.length" class="status-alerts app-alert-stack app-page-shell" aria-label="就绪检查阻断和告警">
       <el-alert v-if="blockers.length" type="error" title="就绪检查阻断" :closable="false" show-icon>
         <ul class="status-list">
           <li v-for="blocker in blockers" :key="blocker">{{ formatReadinessItem(blocker) }}</li>
@@ -66,8 +66,8 @@
       </el-alert>
     </section>
 
-    <section class="status-panels" aria-label="系统状态详情">
-      <el-card class="card-flat status-panel" shadow="never">
+    <section class="status-panels app-page-shell" aria-label="系统状态详情">
+      <el-card class="card-flat status-panel app-panel-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">后端</h2>
@@ -81,7 +81,7 @@
         </el-descriptions>
       </el-card>
 
-      <el-card class="card-flat status-panel" shadow="never">
+      <el-card class="card-flat status-panel app-panel-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">工作进程</h2>
@@ -95,7 +95,7 @@
         </el-descriptions>
       </el-card>
 
-      <el-card class="card-flat status-panel" shadow="never">
+      <el-card class="card-flat status-panel app-panel-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">存储</h2>
@@ -113,8 +113,8 @@
       </el-card>
     </section>
 
-    <section class="status-panels status-panels-wide" aria-label="任务和资源状态">
-      <el-card class="card-flat status-panel" shadow="never">
+    <section class="status-panels status-panels-wide app-page-shell" aria-label="任务和资源状态">
+      <el-card class="card-flat status-panel app-panel-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">任务与队列</h2>
@@ -130,29 +130,29 @@
             </router-link>
           </div>
         </div>
-        <div class="metric-table">
-          <div v-for="item in jobMetricItems" :key="item.label" class="metric-row">
+        <div class="metric-table app-key-value-list">
+          <div v-for="item in jobMetricItems" :key="item.label" class="metric-row app-key-value-row">
             <span>{{ item.label }}</span>
             <strong>{{ item.value }}</strong>
           </div>
         </div>
         <el-divider />
-        <div class="metric-table">
-          <div v-for="item in stageMetricItems" :key="item.label" class="metric-row">
+        <div class="metric-table app-key-value-list">
+          <div v-for="item in stageMetricItems" :key="item.label" class="metric-row app-key-value-row">
             <span>{{ item.label }}</span>
             <strong>{{ item.value }}</strong>
           </div>
         </div>
         <el-divider />
-        <div class="metric-table">
-          <div v-for="item in callbackMetricItems" :key="item.label" class="metric-row">
+        <div class="metric-table app-key-value-list">
+          <div v-for="item in callbackMetricItems" :key="item.label" class="metric-row app-key-value-row">
             <span>{{ item.label }}</span>
             <strong>{{ item.value }}</strong>
           </div>
         </div>
       </el-card>
 
-      <el-card class="card-flat status-panel" shadow="never">
+      <el-card class="card-flat status-panel app-panel-card" shadow="never">
         <div class="section-header">
           <div>
             <h2 class="section-title">资源版本</h2>
@@ -453,165 +453,50 @@ onMounted(() => {
 <style scoped lang="scss">
 .system-status-page {
   display: grid;
-  gap: 18px;
+  gap: var(--app-space-4);
 }
 
 .page-heading {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 10px 0 2px;
-}
-
-.page-kicker {
-  margin: 0 0 4px;
-  color: #2563eb;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-.page-heading h1 {
-  margin: 0;
-  color: #111827;
-  font-size: 28px;
-  line-height: 1.2;
-}
-
-.page-heading p:last-child {
-  margin: 8px 0 0;
-  color: #667085;
+  gap: var(--app-space-4);
 }
 
 .heading-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: var(--app-space-2);
 }
 
 .overview-grid {
-  display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.overview-card {
-  display: grid;
-  gap: 6px;
-  min-height: 118px;
-  padding: 16px;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #fff;
-}
-
-.overview-card span,
-.overview-card strong,
-.overview-card small {
-  display: block;
-}
-
-.overview-card span {
-  color: #667085;
-  font-size: 13px;
-}
-
-.overview-card strong {
-  color: #111827;
-  font-size: 22px;
-  line-height: 1.2;
-}
-
-.overview-card small {
-  color: #667085;
-  font-size: 13px;
-  line-height: 1.5;
+  gap: var(--app-space-3);
 }
 
 .metric-link {
   display: inline-block;
-  margin-left: 8px;
-}
-
-.readiness-card {
-  grid-template-columns: 12px minmax(0, 1fr);
-  align-items: start;
+  margin-left: var(--app-space-2);
 }
 
 .readiness-card strong {
   font-size: 24px;
 }
 
-.status-dot {
-  width: 10px;
-  height: 10px;
-  margin-top: 8px;
-  border-radius: 999px;
-  background: #94a3b8;
-}
-
-.readiness-card.is-ready .status-dot {
-  background: #16a34a;
-}
-
-.readiness-card.is-degraded .status-dot {
-  background: #d97706;
-}
-
-.readiness-card.is-blocked .status-dot {
-  background: #dc2626;
-}
-
-.status-alerts {
-  display: grid;
-  gap: 12px;
-}
-
 .status-list {
-  margin: 6px 0 0;
+  margin: var(--app-space-2) 0 0;
   padding-left: 18px;
 }
 
 .status-panels {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  gap: var(--app-space-4);
 }
 
 .status-panels-wide {
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
-}
-
-.status-panel {
-  border: 1px solid #d9e2ec;
-}
-
-.metric-table {
-  display: grid;
-  gap: 8px;
-}
-
-.metric-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 34px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: #f8fafc;
-}
-
-.metric-row span {
-  color: #475467;
-  font-size: 13px;
-}
-
-.metric-row strong {
-  color: #111827;
-  font-size: 15px;
 }
 
 @media (max-width: 920px) {
