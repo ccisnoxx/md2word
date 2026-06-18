@@ -289,6 +289,7 @@ function pendingActionLabel(row: DocumentJobResponse): string {
 <style scoped lang="scss">
 .job-table {
   width: 100%;
+  overflow-x: auto;
 }
 
 .table {
@@ -296,7 +297,7 @@ function pendingActionLabel(row: DocumentJobResponse): string {
 }
 
 .error-code {
-  color: #b42318;
+  color: var(--app-color-danger);
 }
 
 .job-main {
@@ -315,7 +316,7 @@ function pendingActionLabel(row: DocumentJobResponse): string {
 }
 
 .job-title {
-  color: #1d4ed8;
+  color: var(--app-color-primary-hover);
   font-weight: 650;
 }
 
@@ -324,7 +325,7 @@ function pendingActionLabel(row: DocumentJobResponse): string {
   align-items: center;
   min-width: 0;
   gap: 6px;
-  color: #667085;
+  color: var(--app-color-text-muted);
 }
 
 .job-id {
@@ -361,7 +362,7 @@ function pendingActionLabel(row: DocumentJobResponse): string {
 }
 
 .action-pending-label {
-  color: #667085;
+  color: var(--app-color-text-muted);
   font-size: 12px;
 }
 
@@ -382,7 +383,7 @@ function pendingActionLabel(row: DocumentJobResponse): string {
 }
 
 .dropdown-action-reason {
-  color: #909399;
+  color: var(--app-color-text-faint);
   font-size: 11px;
   line-height: 1.3;
 }

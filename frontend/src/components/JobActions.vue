@@ -192,12 +192,16 @@ defineEmits<{
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--app-space-2);
+}
+
+.job-actions :deep(.el-button) {
+  border-radius: var(--app-radius-md);
 }
 
 .job-actions__reason {
   flex-basis: 100%;
-  color: #6b7280;
+  color: var(--app-color-text-muted);
   line-height: 1.4;
 }
 </style>
