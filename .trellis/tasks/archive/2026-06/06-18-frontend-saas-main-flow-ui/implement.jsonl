@@ -1,4 +1,0 @@
-{"file": ".trellis/spec/guides/index.md", "reason": "Lists project thinking guides relevant before frontend UI implementation."}
-{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Guides style/token reuse and avoiding duplicate page-local visual systems."}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Helps preserve backend/frontend contracts while changing presentation only."}
-{"file": ".trellis/tasks/06-18-frontend-saas-main-flow-ui/research/ui-direction.md", "reason": "Captures the confirmed SaaS UI direction, repo constraints, and implementation risks."}

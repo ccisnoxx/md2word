@@ -461,6 +461,7 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: var(--app-space-4);
+  border-color: var(--app-color-primary-border);
 }
 
 .heading-actions {
@@ -475,6 +476,10 @@ onMounted(() => {
   gap: var(--app-space-3);
 }
 
+.overview-card {
+  border-color: var(--app-color-primary-border);
+}
+
 .metric-link {
   display: inline-block;
   margin-left: var(--app-space-2);
@@ -482,6 +487,10 @@ onMounted(() => {
 
 .readiness-card strong {
   font-size: 24px;
+}
+
+.readiness-card {
+  min-height: 112px;
 }
 
 .status-list {
@@ -493,6 +502,15 @@ onMounted(() => {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--app-space-4);
+}
+
+.status-panel {
+  border-color: var(--app-color-border);
+}
+
+.status-panel :deep(.el-descriptions__label) {
+  color: var(--app-color-primary-rail);
+  font-weight: 700;
 }
 
 .status-panels-wide {

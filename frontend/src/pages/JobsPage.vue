@@ -1052,8 +1052,19 @@ onBeforeUnmount(() => {
   padding: 28px 24px 42px;
   overflow: visible;
   color: var(--app-color-text);
-  background: var(--app-color-bg);
-  color-scheme: light;
+  background: transparent;
+  color-scheme: var(--app-color-scheme);
+}
+
+.jobs-page::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 220px;
+  content: "";
+  background:
+    linear-gradient(100deg, var(--app-color-ambient-primary), transparent 62%),
+    linear-gradient(180deg, var(--app-color-glass-muted), transparent);
+  pointer-events: none;
 }
 
 .jobs-hero,
@@ -1069,6 +1080,7 @@ onBeforeUnmount(() => {
   gap: 18px 28px;
   align-items: start;
   min-height: auto;
+  border-color: var(--app-color-primary-border);
 }
 
 .hero-copy {
@@ -1103,10 +1115,10 @@ onBeforeUnmount(() => {
   gap: 8px;
   min-height: 38px;
   padding: 0 12px;
-  border: 1px solid var(--app-color-success-border);
+  border: 1px solid var(--app-color-accent-cyan-border);
   border-radius: var(--app-radius-md);
-  background: var(--app-color-success-soft);
-  color: var(--app-color-success);
+  background: linear-gradient(135deg, var(--app-color-accent-cyan-soft), var(--app-color-surface));
+  color: var(--app-color-accent-cyan);
   font-size: 13px;
 }
 
@@ -1126,6 +1138,7 @@ onBeforeUnmount(() => {
 
 .live-pill.is-loading span {
   color: var(--app-color-primary);
+  animation: app-status-pulse var(--app-motion-slow) ease-out infinite alternate;
 }
 
 .hero-refresh {
@@ -1152,7 +1165,7 @@ onBeforeUnmount(() => {
   padding: 14px;
   border: 1px solid var(--app-color-border);
   border-radius: var(--app-radius-md);
-  background: var(--app-color-surface);
+  background: linear-gradient(180deg, var(--app-color-surface), var(--app-color-surface-muted));
   box-shadow: var(--app-shadow-panel);
 }
 
@@ -1162,8 +1175,8 @@ onBeforeUnmount(() => {
   height: 44px;
   place-items: center;
   border-radius: var(--app-radius-md);
-  background: var(--app-color-primary-soft);
-  color: var(--app-color-primary);
+  background: linear-gradient(135deg, var(--app-color-primary), var(--app-color-primary-hover));
+  color: #ffffff;
   font-size: 20px;
 }
 
@@ -1189,18 +1202,18 @@ onBeforeUnmount(() => {
 }
 
 .metric-green .metric-icon {
-  background: var(--app-color-success-soft);
-  color: var(--app-color-success);
+  background: linear-gradient(135deg, var(--app-color-success), var(--app-color-accent-cyan));
+  color: #ffffff;
 }
 
 .metric-amber .metric-icon {
-  background: var(--app-color-warning-soft);
-  color: var(--app-color-warning);
+  background: linear-gradient(135deg, var(--app-color-warning), var(--app-color-accent-amber));
+  color: #ffffff;
 }
 
 .metric-indigo .metric-icon {
-  background: var(--app-color-info-soft);
-  color: var(--app-color-info);
+  background: linear-gradient(135deg, var(--app-color-info), var(--app-color-primary));
+  color: #ffffff;
 }
 
 .jobs-list-panel {
@@ -1276,6 +1289,15 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.quick-filter-row {
+  padding: 8px;
+  border: 1px solid var(--app-color-border-soft);
+  border-radius: var(--app-radius-md);
+  background:
+    linear-gradient(90deg, var(--app-color-primary-soft), transparent),
+    var(--app-color-surface-muted);
 }
 
 .summary-caption {
@@ -1375,7 +1397,7 @@ onBeforeUnmount(() => {
 .jobs-table-card {
   overflow: hidden;
   padding: 0;
-  border: 1px solid var(--app-color-border);
+  border: 1px solid var(--app-color-primary-border);
   border-radius: var(--app-radius-md);
   background: var(--app-color-surface);
   box-shadow: none;
@@ -1432,8 +1454,8 @@ onBeforeUnmount(() => {
 
 .jobs-page :deep(.el-button--primary) {
   border: 1px solid var(--app-color-primary);
-  background: var(--app-color-primary);
-  box-shadow: none;
+  background: linear-gradient(135deg, var(--app-color-primary), var(--app-color-primary-hover) 72%, var(--app-color-accent-cyan));
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--app-color-primary) 22%, transparent);
 }
 
 .jobs-page :deep(.el-select__wrapper),
@@ -1511,7 +1533,7 @@ onBeforeUnmount(() => {
 @media (prefers-color-scheme: dark) {
   .jobs-page {
     background: var(--app-color-bg);
-    color-scheme: dark;
+    color-scheme: var(--app-color-scheme);
   }
 
   .selection-bar {

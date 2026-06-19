@@ -1,4 +1,0 @@
-{"file": ".trellis/spec/backend/index.md", "reason": "Backend guideline entrypoint for document-job and template API changes."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Project quality and release gate expectations."}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Task changes API, backend services, frontend contracts, and docs."}
-{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Task should reuse existing template versioning and delete preview patterns."}

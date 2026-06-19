@@ -83,9 +83,9 @@ const activeDescription = computed(() =>
   justify-content: space-between;
   gap: 16px;
   padding: 16px;
-  border: 1px solid var(--app-color-border);
+  border: 1px solid var(--app-color-primary-border);
   border-radius: var(--app-radius-md);
-  background: var(--app-color-surface);
+  background: linear-gradient(135deg, var(--app-color-surface), var(--app-color-primary-soft));
 }
 
 .workbench-copy {
@@ -128,16 +128,17 @@ const activeDescription = computed(() =>
   display: grid;
   gap: 4px;
   padding: 10px 12px;
-  border: 1px solid var(--app-color-border);
+  border: 1px solid var(--app-color-border-soft);
   border-radius: var(--app-radius-md);
-  background: var(--app-color-surface-muted);
+  background: linear-gradient(180deg, var(--app-color-surface), var(--app-color-surface-muted));
   color: var(--app-color-text);
 }
 
 .workbench-tab.active {
   border-color: var(--app-color-primary-border);
-  background: var(--app-color-primary-soft);
+  background: linear-gradient(180deg, var(--app-color-primary-soft), var(--app-color-surface));
   color: var(--app-color-primary-hover);
+  box-shadow: inset 0 -2px 0 var(--app-color-accent-amber);
 }
 
 .workbench-tab span {

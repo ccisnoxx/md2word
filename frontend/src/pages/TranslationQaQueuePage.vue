@@ -384,6 +384,7 @@ onMounted(() => {
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--app-space-4);
+  border-color: var(--app-color-primary-border);
 }
 
 .heading-actions,
@@ -400,6 +401,7 @@ onMounted(() => {
 
 .queue-panel {
   min-width: 0;
+  border-color: var(--app-color-primary-border);
 }
 
 .table-header {
@@ -430,6 +432,11 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.evidence-tags :deep(.el-tag) {
+  border-color: var(--app-color-accent-cyan-border);
+  background: var(--app-color-accent-cyan-soft);
 }
 
 .action-row :deep(.el-button + .el-button) {

@@ -1583,7 +1583,7 @@ test("admin can edit Word page styles and save a draft version", async ({ page }
   await expect(page.getByText("公司 Logo、默认页眉内容和 DOCX 文件由 Word 模板文档维护")).toBeVisible();
   await expect(page.getByLabel("Word 页面样式编辑器").getByText("Logo 路径")).not.toBeVisible();
 
-  await page.locator(".category-rail button", { hasText: "标题" }).click();
+  await page.getByLabel("Word 页面样式编辑器").getByRole("button", { name: /^标题\s/ }).click();
   await page.getByRole("tab", { name: /一级标题/ }).click();
   const headingFontSize = page.locator(".layout-section .el-form-item", { hasText: "字号" }).locator("input").first();
   await headingFontSize.fill("14");

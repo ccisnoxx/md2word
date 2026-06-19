@@ -1,5 +1,0 @@
-{"file": ".trellis/spec/backend/index.md", "reason": "Backend task entrypoint and available guideline index."}
-{"file": ".trellis/spec/guides/index.md", "reason": "Shared Trellis thinking guide index for cross-layer work."}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "P1 spans backend services, API schemas, frontend UI, ops scripts, and docs."}
-{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "P1 should reuse existing Document Jobs, translation, QA, and governance services."}
-{"file": ".trellis/tasks/06-17-p1-translation-qa-governance-beta/research/current-state.md", "reason": "Current P1 capability and gap assessment for implementation."}
