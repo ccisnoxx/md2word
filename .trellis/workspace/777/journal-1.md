@@ -146,3 +146,38 @@ Filled backend Trellis specs with codebase-backed conventions, examples, and qua
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Frontend QA review drawer
+
+**Date**: 2026-06-20
+**Task**: Frontend QA review drawer
+**Branch**: `main`
+
+### Summary
+
+Implemented the third-round Translation QA review drawer, reused the shared review panel on the detail page, updated frontend specs and external docs, verified build/unit/smoke coverage, and archived the Trellis task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3a9bcf29` | (see git log) |
+| `9c737c24` | (see git log) |
+| `c14a5394` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
