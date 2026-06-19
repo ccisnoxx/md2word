@@ -9,17 +9,26 @@
           </span>
           <span class="brand-copy">
             <strong>md2word</strong>
-            <small>内部文档转换工作台</small>
+            <small>PDF → DOCX · QA · Audit</small>
           </span>
         </router-link>
-        <el-tag size="small" effect="plain">内部门户</el-tag>
+        <el-tag size="small" effect="plain">文档交付</el-tag>
       </div>
       <nav class="main-nav" aria-label="主导航">
         <router-link v-for="item in navItems" :key="item.to" :to="item.to">
-          {{ item.label }}
+          <el-icon aria-hidden="true"><component :is="item.icon" /></el-icon>
+          <span>{{ item.label }}</span>
         </router-link>
       </nav>
+      <div class="workflow-strip" aria-label="文档工作流">
+        <span>PDF</span>
+        <i aria-hidden="true"></i>
+        <span>DOCX</span>
+        <span>QA</span>
+        <span>Audit</span>
+      </div>
       <div class="header-actions">
+        <AppThemeToggle />
         <span class="user-text">
           {{ auth.user?.display_name || auth.user?.username || "未命名用户" }}
           <span v-if="auth.user?.role" class="muted">({{ auth.user.role }})</span>
@@ -39,11 +48,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
-import { DocumentChecked, SwitchButton } from "@element-plus/icons-vue";
+import { computed, type Component } from "vue";
+import {
+  DocumentChecked,
+  Files,
+  Reading,
+  Setting,
+  Stamp,
+  Monitor,
+  SwitchButton,
+} from "@element-plus/icons-vue";
 import { useRouter } from "vue-router";
 
 import AppBreadcrumb from "@/components/AppBreadcrumb.vue";
+import AppThemeToggle from "@/components/AppThemeToggle.vue";
 import { useAuthStore } from "@/stores/auth";
 
 const auth = useAuthStore();
@@ -52,20 +70,22 @@ const router = useRouter();
 type NavItem = {
   label: string;
   to: string;
+  icon: Component;
   permission?: string;
 };
 
 const navItems = computed<NavItem[]>(() => {
   const items: NavItem[] = [
-    { label: "任务工作台", to: "/jobs", permission: "document_jobs:read" },
-    { label: "翻译 QA", to: "/translation-qa", permission: "translation_qa:read" },
-    { label: "配置中心", to: "/settings", permission: "settings:read" },
+    { label: "任务工作台", to: "/jobs", icon: Files, permission: "document_jobs:read" },
+    { label: "翻译 QA", to: "/translation-qa", icon: Reading, permission: "translation_qa:read" },
+    { label: "配置中心", to: "/settings", icon: Setting, permission: "settings:read" },
     {
       label: auth.hasPermission("term_proposals:review") ? "提案审核" : "术语建议",
       to: "/term-proposals",
+      icon: Stamp,
       permission: "term_proposals:read",
     },
-    { label: "系统状态", to: "/system-status", permission: "system:read" },
+    { label: "系统状态", to: "/system-status", icon: Monitor, permission: "system:read" },
   ];
   return items.filter((item) => !item.permission || auth.hasPermission(item.permission));
 });
@@ -79,8 +99,8 @@ function handleLogout(): void {
 <style scoped lang="scss">
 .app-layout {
   min-height: 100vh;
-  background: var(--app-color-bg);
-  color-scheme: light;
+  background: transparent;
+  color-scheme: var(--app-color-scheme);
 }
 
 .app-header {
@@ -88,19 +108,29 @@ function handleLogout(): void {
   top: 0;
   z-index: 10;
   display: grid;
-  grid-template-columns: minmax(220px, 0.9fr) minmax(0, 1.4fr) minmax(220px, 0.9fr);
+  grid-template-columns: minmax(250px, 0.88fr) minmax(0, 1.36fr) auto minmax(220px, 0.72fr);
   align-items: center;
-  gap: var(--app-space-4);
-  height: var(--app-header-height);
+  gap: var(--app-space-3);
+  min-height: calc(var(--app-header-height) + 8px);
   padding: 0 var(--app-space-6);
-  border-bottom: 1px solid var(--app-color-border-soft);
-  background: var(--app-color-surface-elevated);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--app-color-border);
+  background: var(--app-gradient-glass);
+  box-shadow: var(--app-shadow-panel);
+  backdrop-filter: var(--app-backdrop-panel);
+  -webkit-backdrop-filter: var(--app-backdrop-panel);
+}
+
+.app-header::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  content: "";
+  background: linear-gradient(90deg, var(--app-color-primary), var(--app-color-accent-cyan) 70%, var(--app-color-accent-amber));
 }
 
 .brand,
 .main-nav,
+.workflow-strip,
 .header-actions {
   display: flex;
   align-items: center;
@@ -121,14 +151,15 @@ function handleLogout(): void {
 
 .brand-mark {
   display: inline-grid;
-  width: 32px;
-  height: 32px;
+  width: 38px;
+  height: 38px;
   place-items: center;
-  border: 1px solid var(--app-color-primary-border);
+  border: 1px solid rgba(255, 255, 255, 0.32);
   border-radius: var(--app-radius-md);
-  background: var(--app-color-primary-soft);
-  color: var(--app-color-primary-hover);
-  font-size: 14px;
+  background: linear-gradient(135deg, var(--app-color-primary), var(--app-color-primary-hover) 72%, var(--app-color-accent-cyan));
+  color: #ffffff;
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--app-color-primary) 28%, transparent);
+  font-size: 16px;
   font-weight: 800;
 }
 
@@ -139,7 +170,7 @@ function handleLogout(): void {
 
 .brand-copy strong {
   color: var(--app-color-text);
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.1;
 }
 
@@ -155,6 +186,11 @@ function handleLogout(): void {
 }
 
 .main-nav a {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   min-height: 34px;
   padding: var(--app-space-2) 10px;
   border: 1px solid transparent;
@@ -163,20 +199,79 @@ function handleLogout(): void {
   font-size: 14px;
   font-weight: 600;
   transition:
-    background-color 160ms ease-out,
-    color 160ms ease-out;
+    border-color var(--app-motion-fast) ease-out,
+    background-color var(--app-motion-fast) ease-out,
+    color var(--app-motion-fast) ease-out,
+    transform var(--app-motion-fast) ease-out,
+    box-shadow var(--app-motion-fast) ease-out;
+}
+
+.main-nav a .el-icon {
+  font-size: 15px;
 }
 
 .main-nav a.router-link-active {
   border: 1px solid var(--app-color-primary-border);
-  background: var(--app-color-primary-soft);
+  background: linear-gradient(180deg, var(--app-color-primary-soft), var(--app-color-glass-strong));
   color: var(--app-color-primary-hover);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--app-color-primary) 12%, transparent);
+}
+
+.main-nav a.router-link-active::after {
+  position: absolute;
+  inset: auto 10px 4px;
+  height: 2px;
+  border-radius: var(--app-radius-pill);
+  content: "";
+  background: linear-gradient(90deg, var(--app-color-accent-cyan), var(--app-color-accent-amber));
+  transition: opacity var(--app-motion-fast) ease-out;
 }
 
 .main-nav a:hover,
 .main-nav a:focus-visible {
   background: var(--app-color-surface-muted);
   color: var(--app-color-primary-hover);
+  transform: translateY(-1px);
+}
+
+.workflow-strip {
+  justify-content: center;
+  padding: 5px;
+  border: 1px solid var(--app-color-border-soft);
+  border-radius: var(--app-radius-pill);
+  background: var(--app-color-glass);
+  color: var(--app-color-primary-rail);
+  box-shadow: var(--app-shadow-subtle);
+  white-space: nowrap;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.workflow-strip span {
+  display: inline-grid;
+  min-width: 38px;
+  height: 24px;
+  place-items: center;
+  border-radius: var(--app-radius-pill);
+  background: var(--app-color-glass-strong);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.workflow-strip span:nth-last-child(2) {
+  color: var(--app-color-accent-cyan);
+}
+
+.workflow-strip span:last-child {
+  color: var(--app-color-accent-amber);
+}
+
+.workflow-strip i {
+  display: inline-block;
+  width: 24px;
+  height: 2px;
+  border-radius: var(--app-radius-pill);
+  background: linear-gradient(90deg, var(--app-color-primary), var(--app-color-accent-cyan));
 }
 
 .header-actions {
@@ -207,13 +302,13 @@ function handleLogout(): void {
 
 @media (prefers-color-scheme: dark) {
   .app-layout {
-    background: var(--app-color-bg);
-    color-scheme: dark;
+    background: transparent;
+    color-scheme: var(--app-color-scheme);
   }
 
   .app-header {
     border-bottom-color: var(--app-color-border);
-    background: var(--app-color-surface-elevated);
+    background: var(--app-gradient-glass);
   }
 
   .brand-link {
@@ -227,6 +322,14 @@ function handleLogout(): void {
   .main-nav a.router-link-active {
     background: var(--app-color-primary-soft);
     color: var(--app-color-primary-hover);
+  }
+
+  .workflow-strip {
+    background: var(--app-color-glass);
+  }
+
+  .workflow-strip span {
+    background: var(--app-color-glass-strong);
   }
 
   .user-text {
@@ -257,6 +360,12 @@ function handleLogout(): void {
 
   .main-nav a {
     flex: 0 0 auto;
+  }
+
+  .workflow-strip {
+    justify-content: flex-start;
+    overflow-x: auto;
+    width: 100%;
   }
 }
 

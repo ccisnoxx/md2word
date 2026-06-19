@@ -77,11 +77,11 @@ function levelTagType(level: string): "primary" | "success" | "warning" | "dange
 
 .event-message {
   margin: 6px 0;
-  color: #1f2937;
+  color: var(--app-color-text);
 }
 
 .event-meta {
-  color: #667085;
+  color: var(--app-color-text-muted);
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 12px;
 }

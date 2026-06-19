@@ -1,6 +1,9 @@
 <!-- frontend/src/pages/LoginPage.vue: Internal account login page for operators and admins. -->
 <template>
   <main class="login-page" aria-labelledby="login-title">
+    <div class="login-actions" aria-label="显示设置">
+      <AppThemeToggle />
+    </div>
     <section class="login-shell">
       <div class="login-copy">
         <div class="brand-row">
@@ -11,7 +14,7 @@
         </div>
         <p class="login-eyebrow">内部文档转换入口</p>
         <h1 id="login-title">md2word 内部工作台</h1>
-        <p class="login-lede">登录后处理 PDF 上传、转换进度、Word 结果交付和运行证据，面向内部运营与交付团队。</p>
+        <p class="login-lede">面向内部运营与交付团队的文档处理工作台，覆盖 PDF 上传、DOCX 交付、翻译 QA 和审计证据。</p>
 
         <div class="workflow-panel" aria-label="PDF 到 Word 的处理流程">
           <div class="document-preview" aria-hidden="true">
@@ -37,19 +40,25 @@
               <em>结果可追溯</em>
             </li>
           </ol>
+          <div class="assurance-strip" aria-label="工作台治理线索">
+            <span>Queue</span>
+            <span>QA Gate</span>
+            <span>Audit Trail</span>
+            <span>Config</span>
+          </div>
         </div>
 
         <div class="signal-grid" aria-label="工作台能力状态">
           <div class="signal-item">
-            <span>队列</span>
+            <span>转换队列</span>
             <strong>实时</strong>
           </div>
           <div class="signal-item">
-            <span>结果</span>
-            <strong>可下载</strong>
+            <span>QA 证据</span>
+            <strong>可追溯</strong>
           </div>
           <div class="signal-item">
-            <span>审计</span>
+            <span>审计链路</span>
             <strong>留痕</strong>
           </div>
         </div>
@@ -126,6 +135,7 @@ import type { FormInstance, FormRules } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
 
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
+import AppThemeToggle from "@/components/AppThemeToggle.vue";
 import { useAuthStore } from "@/stores/auth";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 
@@ -192,7 +202,8 @@ async function submit(): Promise<void> {
   --login-shadow: var(--app-shadow-panel);
   --login-accent: var(--app-color-primary);
   --login-accent-strong: var(--app-color-primary-hover);
-  --login-emerald: var(--app-color-success);
+  --login-emerald: var(--app-color-accent-cyan);
+  --login-amber: var(--app-color-accent-amber);
   --login-input-bg: var(--app-color-surface);
   --login-input-text: var(--app-color-text);
   --login-input-placeholder: var(--app-color-text-faint);
@@ -204,10 +215,17 @@ async function submit(): Promise<void> {
   place-items: center;
   padding: 48px 24px;
   background:
-    linear-gradient(180deg, var(--login-bg-secondary), var(--login-bg) 42%),
-    var(--login-bg);
+    var(--app-gradient-ambient),
+    linear-gradient(var(--app-color-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--app-color-grid-line) 1px, transparent 1px),
+    var(--app-gradient-page);
+  background-size:
+    auto,
+    48px 48px,
+    48px 48px,
+    auto;
   color: var(--login-text);
-  color-scheme: light;
+  color-scheme: var(--app-color-scheme);
 }
 
 .login-page::before,
@@ -222,14 +240,23 @@ async function submit(): Promise<void> {
   display: none;
 }
 
+.login-actions {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 2;
+}
+
 .login-page::after {
   inset: 0;
-  background-image:
-    linear-gradient(rgba(37, 99, 235, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(37, 99, 235, 0.06) 1px, transparent 1px);
-  background-size: 48px 48px;
-  mask-image: linear-gradient(180deg, #000 0%, transparent 76%);
-  opacity: 0.34;
+  background:
+    linear-gradient(90deg, transparent 0%, var(--app-color-ambient-primary) 48%, transparent 48%),
+    linear-gradient(180deg, transparent 0%, var(--app-color-ambient-amber) 64%, transparent 64%);
+  background-size:
+    260px 100%,
+    100% 180px;
+  mask-image: linear-gradient(180deg, #000 0%, transparent 78%);
+  opacity: 0.42;
 }
 
 .login-shell {
@@ -243,7 +270,7 @@ async function submit(): Promise<void> {
 }
 
 .login-copy {
-  animation: fade-up 420ms ease-out both;
+  animation: fade-up var(--app-motion-base) var(--app-ease-out) both;
 }
 
 .brand-row {
@@ -254,8 +281,10 @@ async function submit(): Promise<void> {
   padding: 8px 12px 8px 8px;
   border: 1px solid var(--login-border);
   border-radius: var(--app-radius-md);
-  background: var(--login-panel);
+  background: var(--app-color-glass-strong);
   box-shadow: var(--app-shadow-subtle);
+  backdrop-filter: var(--app-backdrop-panel);
+  -webkit-backdrop-filter: var(--app-backdrop-panel);
 }
 
 .brand-mark {
@@ -264,8 +293,8 @@ async function submit(): Promise<void> {
   height: 34px;
   place-items: center;
   border-radius: var(--app-radius-md);
-  background: var(--app-color-primary-soft);
-  color: var(--login-accent-strong);
+  background: linear-gradient(135deg, var(--login-accent), var(--login-accent-strong) 72%, var(--login-emerald));
+  color: #ffffff;
   font-size: 18px;
 }
 
@@ -278,7 +307,7 @@ async function submit(): Promise<void> {
 .login-eyebrow,
 .login-card-header span {
   margin: 0 0 12px;
-  color: var(--login-emerald);
+  color: var(--login-accent-strong);
   font-size: 13px;
   font-weight: 700;
 }
@@ -301,17 +330,36 @@ async function submit(): Promise<void> {
 }
 
 .workflow-panel {
+  position: relative;
+  overflow: hidden;
   display: grid;
   grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
   gap: 20px;
   width: min(640px, 100%);
   margin-bottom: 16px;
   padding: 18px;
-  border: 1px solid var(--login-border);
+  border: 1px solid var(--app-color-primary-border);
   border-radius: var(--app-radius-md);
-  background: var(--login-panel);
-  box-shadow: var(--app-shadow-subtle);
-  animation: fade-up 420ms ease-out 80ms both;
+  background:
+    linear-gradient(var(--app-color-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--app-color-grid-line) 1px, transparent 1px),
+    var(--app-gradient-glass);
+  background-size:
+    24px 24px,
+    24px 24px,
+    auto;
+  box-shadow: var(--app-shadow-panel);
+  backdrop-filter: var(--app-backdrop-panel);
+  -webkit-backdrop-filter: var(--app-backdrop-panel);
+  animation: fade-up var(--app-motion-base) var(--app-ease-out) 60ms both;
+}
+
+.workflow-panel::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  content: "";
+  background: linear-gradient(90deg, var(--login-accent), var(--login-emerald) 72%, var(--login-amber));
 }
 
 .document-preview {
@@ -323,18 +371,31 @@ async function submit(): Promise<void> {
 }
 
 .doc-card {
+  position: relative;
   display: grid;
   min-height: 104px;
   place-items: center;
-  border: 1px solid var(--login-border);
-  border-radius: var(--app-radius-md);
-  background: var(--login-panel-strong);
+  border: 1px solid var(--app-color-primary-border);
+  border-radius: var(--app-radius-sm);
+  background: linear-gradient(180deg, var(--app-color-glass-strong), var(--login-panel-strong));
   color: var(--login-accent-strong);
   font-size: 16px;
   font-weight: 800;
   box-shadow: var(--app-shadow-subtle);
   transform-origin: center;
-  animation: doc-enter 460ms ease-out both;
+  animation: doc-enter var(--app-motion-slow) var(--app-ease-out) both;
+}
+
+.doc-card::before {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 24px;
+  height: 18px;
+  border-top: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  content: "";
+  opacity: 0.22;
 }
 
 .doc-card-source {
@@ -342,8 +403,9 @@ async function submit(): Promise<void> {
 }
 
 .doc-card-target {
+  border-color: var(--app-color-accent-cyan-border);
   color: var(--login-emerald);
-  animation-delay: 360ms;
+  animation-delay: 220ms;
 }
 
 .convert-line {
@@ -362,7 +424,33 @@ async function submit(): Promise<void> {
   border-radius: inherit;
   background: linear-gradient(90deg, var(--login-accent), var(--login-emerald));
   transform: translateX(-100%);
-  animation: line-fill 600ms ease-out 520ms both;
+  animation: line-fill var(--app-motion-slow) var(--app-ease-out) 220ms both;
+}
+
+.assurance-strip {
+  display: flex;
+  flex-wrap: wrap;
+  grid-column: 1 / -1;
+  gap: 8px;
+}
+
+.assurance-strip span {
+  min-height: 26px;
+  padding: 6px 10px;
+  border: 1px solid var(--app-color-border-soft);
+  border-radius: var(--app-radius-pill);
+  background: var(--app-color-glass);
+  color: var(--login-accent-strong);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.assurance-strip span:nth-child(2) {
+  color: var(--login-emerald);
+}
+
+.assurance-strip span:nth-child(3) {
+  color: var(--login-amber);
 }
 
 .flow-list {
@@ -404,15 +492,25 @@ async function submit(): Promise<void> {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   width: min(520px, 100%);
-  animation: fade-up 420ms ease-out 140ms both;
+  animation: fade-up var(--app-motion-base) var(--app-ease-out) 120ms both;
 }
 
 .signal-item {
+  position: relative;
+  overflow: hidden;
   min-height: 78px;
   padding: 14px;
   border: 1px solid var(--login-border);
   border-radius: var(--app-radius-md);
-  background: var(--login-panel);
+  background: linear-gradient(180deg, var(--app-color-glass-strong), var(--login-panel-strong));
+}
+
+.signal-item::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  content: "";
+  background: linear-gradient(90deg, var(--login-accent), var(--login-emerald));
 }
 
 .signal-item span {
@@ -431,11 +529,13 @@ async function submit(): Promise<void> {
 .login-card {
   position: relative;
   overflow: hidden;
-  border: 1px solid var(--login-border);
+  border: 1px solid var(--app-color-primary-border);
   border-radius: var(--app-radius-md);
-  background: var(--login-panel);
+  background: var(--app-gradient-glass);
   box-shadow: var(--login-shadow);
-  animation: card-in 480ms ease-out 100ms both;
+  backdrop-filter: var(--app-backdrop-panel);
+  -webkit-backdrop-filter: var(--app-backdrop-panel);
+  animation: card-in var(--app-motion-slow) var(--app-ease-out) 80ms both;
 }
 
 .login-card::before {
@@ -443,7 +543,7 @@ async function submit(): Promise<void> {
   inset: 0 0 auto;
   height: 4px;
   content: "";
-  background: var(--login-accent);
+  background: linear-gradient(90deg, var(--login-accent), var(--login-emerald) 72%, var(--login-amber));
 }
 
 .login-card-header {
@@ -479,8 +579,8 @@ async function submit(): Promise<void> {
     background: var(--login-input-bg);
     box-shadow: 0 0 0 1px var(--login-border) inset;
     transition:
-      box-shadow 180ms ease-out,
-      background-color 180ms ease-out;
+      box-shadow var(--app-motion-base) ease-out,
+      background-color var(--app-motion-base) ease-out;
   }
 
   :deep(.el-input__wrapper.is-focus) {
@@ -517,13 +617,13 @@ async function submit(): Promise<void> {
   margin-top: 8px;
   border: 1px solid var(--login-accent);
   border-radius: var(--app-radius-md);
-  background: var(--login-accent);
-  box-shadow: none;
+  background: linear-gradient(135deg, var(--login-accent), var(--login-accent-strong) 72%, var(--login-emerald));
+  box-shadow: 0 12px 24px color-mix(in srgb, var(--login-accent) 24%, transparent);
   font-weight: 750;
   transition:
-    box-shadow 180ms ease-out,
-    background-color 180ms ease-out,
-    border-color 180ms ease-out;
+    box-shadow var(--app-motion-base) ease-out,
+    background-color var(--app-motion-base) ease-out,
+    border-color var(--app-motion-base) ease-out;
 }
 
 .login-button:hover,
@@ -592,22 +692,35 @@ async function submit(): Promise<void> {
 
 @media (prefers-color-scheme: dark) {
   .login-page {
-    color-scheme: dark;
+    color-scheme: var(--app-color-scheme);
+    background:
+      var(--app-gradient-ambient),
+      linear-gradient(var(--app-color-grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--app-color-grid-line) 1px, transparent 1px),
+      var(--app-gradient-page);
+    background-size:
+      auto,
+      48px 48px,
+      48px 48px,
+      auto;
   }
 
   .brand-row,
+  .assurance-strip span,
   .signal-item {
     background: var(--login-panel);
   }
 
+  .workflow-panel,
   .doc-card {
+    background: linear-gradient(180deg, var(--login-panel), var(--login-panel-strong));
     box-shadow: var(--app-shadow-subtle);
   }
 
   .login-page::after {
     background-image:
-      linear-gradient(rgba(148, 163, 184, 0.1) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(148, 163, 184, 0.1) 1px, transparent 1px);
+      linear-gradient(var(--app-color-grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--app-color-grid-line) 1px, transparent 1px);
     opacity: 0.32;
   }
 
