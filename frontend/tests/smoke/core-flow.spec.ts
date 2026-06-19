@@ -1417,6 +1417,96 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
   };
 }
 
+async function loginAsOperator(page: Page): Promise<void> {
+  await page.getByPlaceholder("请输入用户名").fill("operator");
+  await page.getByPlaceholder("请输入密码").fill("operator-pass");
+  await page.getByRole("button", { name: "登录工作台" }).click();
+  await expect(page).toHaveURL(/\/jobs(\?|$)/);
+}
+
+async function expectNoPageHorizontalOverflow(page: Page): Promise<void> {
+  const sizes = await page.evaluate(() => ({
+    body: document.body.scrollWidth,
+    document: document.documentElement.scrollWidth,
+    viewport: window.innerWidth,
+  }));
+  expect(sizes.body, `body width ${sizes.body} exceeds viewport ${sizes.viewport}`).toBeLessThanOrEqual(sizes.viewport + 1);
+  expect(sizes.document, `document width ${sizes.document} exceeds viewport ${sizes.viewport}`).toBeLessThanOrEqual(
+    sizes.viewport + 1,
+  );
+}
+
+async function settleWorkbenchScreenshot(page: Page): Promise<void> {
+  await expect(page.locator(".el-loading-mask")).toHaveCount(0);
+  await page.waitForTimeout(350);
+}
+
+async function expectLocatorInViewport(page: Page, selector: string): Promise<void> {
+  const box = await page.locator(selector).boundingBox();
+  const viewport = page.viewportSize();
+  expect(box, `${selector} should have a rendered bounding box`).not.toBeNull();
+  expect(viewport, "viewport should be available").not.toBeNull();
+  if (!box || !viewport) {
+    return;
+  }
+  expect(box.y, `${selector} should not start above the viewport`).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height, `${selector} should fit inside the viewport`).toBeLessThanOrEqual(viewport.height + 1);
+}
+
+test("operations redesign renders verified desktop and mobile screenshots", async ({ browser }, testInfo) => {
+  const viewports = [
+    { name: "desktop", width: 1440, height: 900 },
+    { name: "mobile", width: 375, height: 812 },
+  ];
+
+  for (const viewport of viewports) {
+    const context = await browser.newContext({
+      viewport: { width: viewport.width, height: viewport.height },
+    });
+    const page = await context.newPage();
+    await mockApi(page);
+
+    await page.goto("/login");
+    await expect(page.getByRole("heading", { name: "md2word 内部工作台" })).toBeVisible();
+    await expectNoPageHorizontalOverflow(page);
+    await settleWorkbenchScreenshot(page);
+    await page.screenshot({ path: testInfo.outputPath(`ops-login-${viewport.name}.png`) });
+
+    await loginAsOperator(page);
+    await expect(page.getByRole("heading", { name: "任务列表" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /失败任务/ })).toBeVisible();
+    await expect(page.getByText("smoke.pdf")).toBeVisible();
+    await expectNoPageHorizontalOverflow(page);
+    await settleWorkbenchScreenshot(page);
+    await page.screenshot({ path: testInfo.outputPath(`ops-jobs-${viewport.name}.png`) });
+
+    await page.locator(".jobs-table-card .el-table__body-wrapper .el-checkbox").first().click();
+    await expect(page.getByLabel("批量操作")).toBeVisible();
+    await expect(page.getByText("已选 1 个任务")).toBeVisible();
+    await expectNoPageHorizontalOverflow(page);
+    await expectLocatorInViewport(page, ".bulk-action-bar");
+    await settleWorkbenchScreenshot(page);
+    await page.screenshot({ path: testInfo.outputPath(`ops-jobs-bulk-${viewport.name}.png`) });
+
+    await page.goto("/translation-qa?translation_qa_status=all&sort=updated_at_desc&include_archived=false&page=1");
+    await expect(page.getByRole("heading", { name: "翻译 QA 队列" })).toBeVisible();
+    await expect(page.getByText("复核收件箱")).toBeVisible();
+    await expect(page.getByText("处理面板")).toBeVisible();
+    await expect(page.getByText("qa-smoke.pdf")).toBeVisible();
+    await expectNoPageHorizontalOverflow(page);
+    await settleWorkbenchScreenshot(page);
+    const qaLayoutHeights = await page.evaluate(() => ({
+      heading: document.querySelector(".translation-qa-queue-page .page-heading")?.getBoundingClientRect().height ?? 0,
+      inboxItem: document.querySelector(".translation-qa-queue-page .qa-inbox-item")?.getBoundingClientRect().height ?? 0,
+    }));
+    expect(qaLayoutHeights.heading).toBeLessThanOrEqual(viewport.width < 600 ? 240 : 140);
+    expect(qaLayoutHeights.inboxItem).toBeLessThanOrEqual(96);
+    await page.screenshot({ path: testInfo.outputPath(`ops-qa-${viewport.name}.png`) });
+
+    await context.close();
+  }
+});
+
 test("operator can log in and inspect the document job workbench", async ({ page }) => {
   await mockApi(page);
 
@@ -1610,7 +1700,8 @@ test("operator can inspect the translation QA queue with backend all-status summ
   await expect(page.getByRole("heading", { name: "翻译 QA 队列" })).toBeVisible();
   await expect(page.getByText("qa-smoke.pdf")).toBeVisible();
   await expect(page.getByText("未复核").first()).toBeVisible();
-  await expect(page.getByText("除 QA 状态外的当前筛选").first()).toBeVisible();
+  await expect(page.getByText("复核收件箱")).toBeVisible();
+  await expect(page.getByText("处理面板")).toBeVisible();
 });
 
 test("operator sees unavailable translation QA as readonly and cannot submit review", async ({ page }) => {
