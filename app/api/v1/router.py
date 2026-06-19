@@ -9,6 +9,7 @@ from app.api.v1.routers.auth import router as auth_router
 from app.domains.audit.router import router as audit_router
 from app.domains.config_workbench.router import router as config_workbench_router
 from app.domains.document_jobs.router import router as document_jobs_router
+from app.domains.document_jobs.incidents_router import router as document_job_incidents_router
 from app.domains.files.router import router as files_router
 from app.api.v1.routers.health import router as health_router
 from app.domains.jobs.mineru_callbacks_router import router as mineru_callbacks_router
@@ -27,6 +28,7 @@ router = APIRouter(prefix="/api/v1")
 router.include_router(auth_router)
 router.include_router(audit_router)
 router.include_router(config_workbench_router)
+router.include_router(document_job_incidents_router)
 router.include_router(document_jobs_router)
 router.include_router(files_router)
 router.include_router(health_router)

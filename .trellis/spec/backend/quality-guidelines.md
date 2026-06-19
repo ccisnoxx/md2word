@@ -41,6 +41,84 @@ health/readiness, or release behavior.
 - Use `ApiError` for known API failures with stable status/code/message.
 - Update `docs/api/openapi.json` when API contracts change.
 
+#### Scenario: Lightweight Document Job Incident Queue
+
+##### 1. Scope / Trigger
+
+- Trigger: a new operations queue needs cross-layer API contracts for triaging
+  `document_jobs` without creating a persistent `Incident` resource.
+- Keep the implementation as a read-mostly projection over existing
+  `document_jobs`, events, files, and available action rules.
+
+##### 2. Signatures
+
+- `GET /api/v1/document-job-incidents`
+- `GET /api/v1/document-job-incidents/{job_id}/diagnostics`
+- `POST /api/v1/document-job-incidents/bulk-retry`
+- `POST /api/v1/document-job-incidents/bulk-refresh`
+
+##### 3. Contracts
+
+- List filters may include `status`, `stage`, `failure_type`, `retryable`,
+  `retry_count`, `stalled_minutes`, `q`, `sort`, `page`, and `page_size`.
+- Response items wrap the existing `DocumentJobResponse` plus lightweight
+  fields: `failure_type`, `priority`, `is_incident`, `retryable`,
+  `retry_disabled_reason`, `stalled`, `stalled_minutes`, `blocked`,
+  `suggested_action`, and `evidence_summary`.
+- Diagnostics may include compact evidence links, recent event summaries, and
+  file summaries, but must not expose storage internals such as object keys,
+  buckets, checksums, presigned URLs, or full event payloads.
+- Bulk retry must reuse `DocumentJobService.retry_job` and existing
+  `build_available_actions` retry semantics; bulk refresh must not mutate state.
+
+##### 4. Validation & Error Matrix
+
+- Unknown `status`, `stage`, `failure_type`, `retry_count`, or `sort` -> `400`
+  `invalid_request`.
+- Empty, blank, duplicated, or over-limit `job_ids` -> `400 invalid_request`.
+- Per-item job visibility/not-found/state failures in bulk operations -> partial
+  item result with `ok=false`, `status_code`, `error_code`, and `detail`.
+- Non-retryable selected items in bulk retry -> `skipped=true` and
+  `error_code="not_retryable"`; do not abort the whole batch.
+
+##### 5. Good/Base/Bad Cases
+
+- Good: failed retryable job is classified, returned as retryable, and bulk
+  retry requeues it through the existing retry path.
+- Base: blocked QA or stalled active jobs are surfaced as incident projections
+  even when the underlying job status is not `failed`.
+- Bad: adding an `IncidentRecord`, incident repository, configurable rule store,
+  or independent retry permission logic for this lightweight queue.
+
+##### 6. Tests Required
+
+- Backend tests must cover priority ordering, filters, summary counts, invalid
+  filter errors, diagnostic privacy, bulk retry partial success/skips, audit
+  recording for successful retries, and bulk refresh read-only behavior.
+- OpenAPI export/check must be run after changing these schemas or routes.
+- Frontend/browser smoke tests should mock this dedicated API rather than
+  overloading the generic document job list endpoint.
+
+##### 7. Wrong vs Correct
+
+Wrong:
+
+```python
+class IncidentRecord(BaseModel):
+    job_id: str
+    status: str
+```
+
+Correct:
+
+```python
+class DocumentJobIncidentQueueItemResponse(BaseModel):
+    job: DocumentJobResponse
+    failure_type: DocumentJobIncidentFailureType
+    retryable: bool = False
+    suggested_action: str
+```
+
 ### Domain Boundaries
 
 - Keep business rules in services/workflow modules, not only in routers.

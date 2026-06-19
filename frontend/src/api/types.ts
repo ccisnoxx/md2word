@@ -1351,6 +1351,121 @@ export type DocumentJobBulkResponse = {
   items: DocumentJobBulkItemResponse[];
 };
 
+export type DocumentJobIncidentFailureType =
+  | "conversion_failed"
+  | "translation_failed"
+  | "qa_unavailable"
+  | "artifact_missing"
+  | "timeout_or_stalled"
+  | "worker_or_dispatch_failed"
+  | "unknown";
+
+export type DocumentJobIncidentSort =
+  | "priority"
+  | "updated_at_desc"
+  | "updated_at_asc"
+  | "retry_count_desc"
+  | "retry_count_asc";
+
+export type DocumentJobIncidentRetryCountBucket = "0" | "1_2" | "3_plus";
+
+export type DocumentJobIncidentQueueItemResponse = {
+  job: DocumentJobResponse;
+  failure_type: DocumentJobIncidentFailureType;
+  priority: number;
+  is_incident: boolean;
+  retryable: boolean;
+  retry_disabled_reason: string | null;
+  stalled: boolean;
+  stalled_minutes: number | null;
+  blocked: boolean;
+  suggested_action: string;
+  evidence_summary: string[];
+};
+
+export type DocumentJobIncidentSummaryResponse = {
+  total: number;
+  failed: number;
+  blocked: number;
+  stalled: number;
+  retryable: number;
+  non_retryable: number;
+  by_status: Record<string, number>;
+  by_failure_type: Record<DocumentJobIncidentFailureType, number>;
+};
+
+export type DocumentJobIncidentListResponse = {
+  items: DocumentJobIncidentQueueItemResponse[];
+  page: number;
+  page_size: number;
+  total: number;
+  summary: DocumentJobIncidentSummaryResponse;
+};
+
+export type DocumentJobIncidentEvidenceLinkResponse = {
+  kind: "detail" | "events" | "files" | "translation_qa";
+  title: string;
+  target: string;
+  available: boolean;
+  helper: string | null;
+};
+
+export type DocumentJobIncidentEventSummaryResponse = {
+  id: string;
+  stage: string;
+  level: string;
+  event_type: string;
+  message: string;
+  duration_ms: number | null;
+  trace_id: string | null;
+  created_at: string;
+};
+
+export type DocumentJobIncidentFileSummaryResponse = {
+  file_id: string;
+  file_type: string | null;
+  original_filename: string | null;
+  storage_provider: string | null;
+  status: string | null;
+  size_bytes: number | null;
+  expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DocumentJobIncidentDiagnosticResponse = {
+  item: DocumentJobIncidentQueueItemResponse;
+  evidence_links: DocumentJobIncidentEvidenceLinkResponse[];
+  recent_events: DocumentJobIncidentEventSummaryResponse[];
+  files: DocumentJobIncidentFileSummaryResponse[];
+};
+
+export type DocumentJobIncidentBulkRequest = {
+  job_ids: string[];
+  reason?: string | null;
+};
+
+export type DocumentJobIncidentBulkAction = "retry" | "refresh";
+
+export type DocumentJobIncidentBulkItemResponse = {
+  job_id: string;
+  ok: boolean;
+  skipped: boolean;
+  status_code: number;
+  error_code: string | null;
+  detail: string | null;
+  item: DocumentJobIncidentQueueItemResponse | null;
+};
+
+export type DocumentJobIncidentBulkResponse = {
+  action: DocumentJobIncidentBulkAction;
+  total: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  items: DocumentJobIncidentBulkItemResponse[];
+};
+
 export type DocumentJobDeleteExecuteRequest = {
   preview_hash: string;
   reason?: string | null;

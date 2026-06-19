@@ -8,7 +8,7 @@ import json
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, get_args
+from typing import Any, Protocol, get_args
 from uuid import uuid4
 
 from bs4 import BeautifulSoup
@@ -135,6 +135,14 @@ class DocumentJobDeletePlan:
     totals: dict[str, int]
     files: list[DocumentJobDeletePlanFile]
     safety: dict[str, bool]
+
+
+class _DocumentJobSearchable(Protocol):
+    id: str
+    source_file_id: str
+    request_snapshot: dict[str, Any]
+    error_code: str | None
+    error_message: str | None
 
 
 class DocumentJobService:
@@ -351,6 +359,27 @@ class DocumentJobService:
 
         self.get_job(job_id, user=user)
         return self.event_repository.list_document_job_events(job_id)
+
+    def list_visible_jobs(
+        self,
+        *,
+        user: AuthenticatedUser,
+        include_archived: bool = False,
+    ) -> list[DocumentJobRecord]:
+        """Return document_jobs visible to the user for read-only projections."""
+
+        return [
+            job
+            for job in self.job_repository.list_document_jobs()
+            if self._is_visible(job, user)
+            and job.deleted_at is None
+            and (include_archived or job.archived_at is None)
+        ]
+
+    def document_job_search_values(self, job: _DocumentJobSearchable) -> list[str]:
+        """Return the shared document_job search fields used by queue projections."""
+
+        return self._document_job_search_values(job)
 
     def list_files(self, job_id: str, *, user: AuthenticatedUser) -> list[DocumentFileRecord]:
         """先按任务权限校验，再返回任务上下文内可展示的文件元数据。"""
@@ -1713,7 +1742,7 @@ class DocumentJobService:
         counts = Counter(job.translation_qa_status for job in jobs)
         return {qa_status: counts.get(qa_status, 0) for qa_status in get_args(DocumentJobTranslationQaStatus)}
 
-    def _document_job_search_values(self, job: DocumentJobRecord) -> list[str]:
+    def _document_job_search_values(self, job: _DocumentJobSearchable) -> list[str]:
         source_file = job.request_snapshot.get("source_file")
         source_filename = None
         if isinstance(source_file, dict):

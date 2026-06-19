@@ -2172,6 +2172,537 @@
         "title": "DocumentJobFileListResponse",
         "type": "object"
       },
+      "DocumentJobIncidentBulkItemResponse": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentJobIncidentQueueItemResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "skipped": {
+            "default": false,
+            "title": "Skipped",
+            "type": "boolean"
+          },
+          "status_code": {
+            "title": "Status Code",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "job_id",
+          "ok",
+          "status_code"
+        ],
+        "title": "DocumentJobIncidentBulkItemResponse",
+        "type": "object"
+      },
+      "DocumentJobIncidentBulkRequest": {
+        "properties": {
+          "job_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Job Ids",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "DocumentJobIncidentBulkRequest",
+        "type": "object"
+      },
+      "DocumentJobIncidentBulkResponse": {
+        "properties": {
+          "action": {
+            "enum": [
+              "retry",
+              "refresh"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentJobIncidentBulkItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "succeeded": {
+            "title": "Succeeded",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action",
+          "total",
+          "succeeded",
+          "failed",
+          "skipped"
+        ],
+        "title": "DocumentJobIncidentBulkResponse",
+        "type": "object"
+      },
+      "DocumentJobIncidentDiagnosticResponse": {
+        "properties": {
+          "evidence_links": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentJobIncidentEvidenceLinkResponse"
+            },
+            "title": "Evidence Links",
+            "type": "array"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentJobIncidentFileSummaryResponse"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "item": {
+            "$ref": "#/components/schemas/DocumentJobIncidentQueueItemResponse"
+          },
+          "recent_events": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentJobIncidentEventSummaryResponse"
+            },
+            "title": "Recent Events",
+            "type": "array"
+          }
+        },
+        "required": [
+          "item"
+        ],
+        "title": "DocumentJobIncidentDiagnosticResponse",
+        "type": "object"
+      },
+      "DocumentJobIncidentEventSummaryResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "level": {
+            "title": "Level",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "id",
+          "stage",
+          "level",
+          "event_type",
+          "message",
+          "created_at"
+        ],
+        "title": "DocumentJobIncidentEventSummaryResponse",
+        "type": "object"
+      },
+      "DocumentJobIncidentEvidenceLinkResponse": {
+        "properties": {
+          "available": {
+            "default": true,
+            "title": "Available",
+            "type": "boolean"
+          },
+          "helper": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Helper"
+          },
+          "kind": {
+            "enum": [
+              "detail",
+              "events",
+              "files",
+              "translation_qa"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title",
+          "target"
+        ],
+        "title": "DocumentJobIncidentEvidenceLinkResponse",
+        "type": "object"
+      },
+      "DocumentJobIncidentFileSummaryResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "file_id": {
+            "title": "File Id",
+            "type": "string"
+          },
+          "file_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Type"
+          },
+          "original_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Filename"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "storage_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Provider"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DocumentJobIncidentFileSummaryResponse",
+        "type": "object"
+      },
+      "DocumentJobIncidentListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentJobIncidentQueueItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/DocumentJobIncidentSummaryResponse"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "page_size",
+          "total",
+          "summary"
+        ],
+        "title": "DocumentJobIncidentListResponse",
+        "type": "object"
+      },
+      "DocumentJobIncidentQueueItemResponse": {
+        "description": "异常处理队列中的轻量投影，不创建持久 Incident 资源。",
+        "properties": {
+          "blocked": {
+            "default": false,
+            "title": "Blocked",
+            "type": "boolean"
+          },
+          "evidence_summary": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Summary",
+            "type": "array"
+          },
+          "failure_type": {
+            "enum": [
+              "conversion_failed",
+              "translation_failed",
+              "qa_unavailable",
+              "artifact_missing",
+              "timeout_or_stalled",
+              "worker_or_dispatch_failed",
+              "unknown"
+            ],
+            "title": "Failure Type",
+            "type": "string"
+          },
+          "is_incident": {
+            "default": true,
+            "title": "Is Incident",
+            "type": "boolean"
+          },
+          "job": {
+            "$ref": "#/components/schemas/DocumentJobResponse"
+          },
+          "priority": {
+            "title": "Priority",
+            "type": "integer"
+          },
+          "retry_disabled_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry Disabled Reason"
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "stalled": {
+            "default": false,
+            "title": "Stalled",
+            "type": "boolean"
+          },
+          "stalled_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stalled Minutes"
+          },
+          "suggested_action": {
+            "title": "Suggested Action",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job",
+          "failure_type",
+          "priority",
+          "suggested_action"
+        ],
+        "title": "DocumentJobIncidentQueueItemResponse",
+        "type": "object"
+      },
+      "DocumentJobIncidentSummaryResponse": {
+        "description": "异常队列筛选后的顶部统计。",
+        "properties": {
+          "blocked": {
+            "default": 0,
+            "title": "Blocked",
+            "type": "integer"
+          },
+          "by_failure_type": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Failure Type",
+            "type": "object"
+          },
+          "by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Status",
+            "type": "object"
+          },
+          "failed": {
+            "default": 0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "non_retryable": {
+            "default": 0,
+            "title": "Non Retryable",
+            "type": "integer"
+          },
+          "retryable": {
+            "default": 0,
+            "title": "Retryable",
+            "type": "integer"
+          },
+          "stalled": {
+            "default": 0,
+            "title": "Stalled",
+            "type": "integer"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "title": "DocumentJobIncidentSummaryResponse",
+        "type": "object"
+      },
       "DocumentJobListResponse": {
         "properties": {
           "filtered_summary": {
@@ -14843,6 +15374,398 @@
         "summary": "Get Config Workbench Summary",
         "tags": [
           "config-workbench"
+        ]
+      }
+    },
+    "/api/v1/document-job-incidents": {
+      "get": {
+        "operationId": "list_document_job_incidents_api_v1_document_job_incidents_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stage",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stage"
+            }
+          },
+          {
+            "in": "query",
+            "name": "failure_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "enum": [
+                "artifact_missing",
+                "conversion_failed",
+                "qa_unavailable",
+                "timeout_or_stalled",
+                "translation_failed",
+                "unknown",
+                "worker_or_dispatch_failed"
+              ],
+              "title": "Failure Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "retryable",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Retryable"
+            }
+          },
+          {
+            "in": "query",
+            "name": "retry_count",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "enum": [
+                "0",
+                "1_2",
+                "3_plus"
+              ],
+              "title": "Retry Count"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stalled_minutes",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stalled Minutes"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "priority",
+              "enum": [
+                "priority",
+                "retry_count_asc",
+                "retry_count_desc",
+                "updated_at_asc",
+                "updated_at_desc"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentJobIncidentListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Document Job Incidents",
+        "tags": [
+          "document-job-incidents"
+        ]
+      }
+    },
+    "/api/v1/document-job-incidents/bulk-refresh": {
+      "post": {
+        "operationId": "bulk_refresh_document_job_incidents_api_v1_document_job_incidents_bulk_refresh_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentJobIncidentBulkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentJobIncidentBulkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bulk Refresh Document Job Incidents",
+        "tags": [
+          "document-job-incidents"
+        ]
+      }
+    },
+    "/api/v1/document-job-incidents/bulk-retry": {
+      "post": {
+        "operationId": "bulk_retry_document_job_incidents_api_v1_document_job_incidents_bulk_retry_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentJobIncidentBulkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentJobIncidentBulkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bulk Retry Document Job Incidents",
+        "tags": [
+          "document-job-incidents"
+        ]
+      }
+    },
+    "/api/v1/document-job-incidents/{job_id}/diagnostics": {
+      "get": {
+        "operationId": "get_document_job_incident_diagnostics_api_v1_document_job_incidents__job_id__diagnostics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentJobIncidentDiagnosticResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Document Job Incident Diagnostics",
+        "tags": [
+          "document-job-incidents"
         ]
       }
     },

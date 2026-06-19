@@ -7,6 +7,7 @@ import AppLayout from "@/layouts/AppLayout.vue";
 import AuditLogPage from "@/pages/AuditLogPage.vue";
 import FileRetentionPage from "@/pages/FileRetentionPage.vue";
 import ForbiddenPage from "@/pages/ForbiddenPage.vue";
+import IncidentTriagePage from "@/pages/IncidentTriagePage.vue";
 import JobCreatePage from "@/pages/JobCreatePage.vue";
 import JobDetailPage from "@/pages/JobDetailPage.vue";
 import JobsPage from "@/pages/JobsPage.vue";
@@ -45,6 +46,7 @@ const router = createRouter({
         { path: "", redirect: "/jobs" },
         { path: "forbidden", name: "forbidden", component: ForbiddenPage },
         { path: "jobs", name: "jobs", component: JobsPage, meta: { permissions: ["document_jobs:read"] } },
+        { path: "incidents", name: "incidents", component: IncidentTriagePage, meta: { permissions: ["document_jobs:read"] } },
         { path: "jobs/new", name: "job-create", component: JobCreatePage, meta: { permissions: ["document_jobs:create"] } },
         { path: "jobs/:jobId", name: "job-detail", component: JobDetailPage, props: true, meta: { permissions: ["document_jobs:read"] } },
         {
