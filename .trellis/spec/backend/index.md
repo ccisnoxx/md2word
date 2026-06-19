@@ -6,7 +6,9 @@
 
 ## Overview
 
-This directory contains guidelines for backend development. Fill in each file with your project's specific conventions.
+This directory contains the current backend development conventions for the
+FastAPI backend, domain services, metadata persistence adapters, runtime
+observability, and quality gates.
 
 ---
 
@@ -14,24 +16,31 @@ This directory contains guidelines for backend development. Fill in each file wi
 
 | Guide | Description | Status |
 |-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
-| [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
-| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
+| [Directory Structure](./directory-structure.md) | Module organization and file layout | Filled |
+| [Database Guidelines](./database-guidelines.md) | Metadata backends, queries, schema bootstrap | Filled |
+| [Error Handling](./error-handling.md) | Error types, handling strategies, API error shape | Filled |
+| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns, testing requirements | Filled |
+| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels, sensitive-data rules | Filled |
 
 ---
 
-## How to Fill These Guidelines
+## Pre-Development Checklist
 
-For each guideline file:
+Before backend changes:
 
-1. Document your project's **actual conventions** (not ideals)
-2. Include **code examples** from your codebase
-3. List **forbidden patterns** and why
-4. Add **common mistakes** your team has made
+1. Read [Directory Structure](./directory-structure.md) to choose the correct
+   layer and ownership boundary.
+2. Read [Error Handling](./error-handling.md) for any API, service, or workflow
+   change that can fail.
+3. Read [Database Guidelines](./database-guidelines.md) for persistence,
+   repository, metadata, migration, or storage changes.
+4. Read [Logging Guidelines](./logging-guidelines.md) for runtime,
+   observability, worker, provider, or ops changes.
+5. Read [Quality Guidelines](./quality-guidelines.md) before tests, release
+   gates, or review.
 
-The goal is to help AI assistants and new team members understand how YOUR project works.
+These guidelines document observed project conventions from the current codebase
+and existing dev docs. Update them when the implementation contract changes.
 
 ---
 
