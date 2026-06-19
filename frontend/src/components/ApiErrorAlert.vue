@@ -75,7 +75,7 @@ async function copyDiagnostic(): Promise<void> {
 
 .api-error-hint {
   margin-top: 6px;
-  color: #7a271a;
+  color: var(--app-color-danger);
   font-size: 13px;
   line-height: 1.5;
 }
