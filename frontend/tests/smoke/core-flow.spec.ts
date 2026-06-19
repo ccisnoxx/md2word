@@ -1,3 +1,5 @@
+// File: frontend/tests/smoke/core-flow.spec.ts
+// Purpose: Browser smoke coverage for the internal portal's core operator workflows.
 import { expect, test, type Page } from "@playwright/test";
 
 const actionStates = {
@@ -1866,6 +1868,26 @@ test("operator can use the translation QA drawer review flow", async ({ page }) 
   await expect(qaReviewPanel.getByText("qa-blocked-smoke.pdf")).toBeVisible();
 });
 
+test("operator can use the shared translation QA panel on the detail page", async ({ page }) => {
+  const controls = await mockApi(page);
+
+  await page.goto("/login");
+  await page.getByPlaceholder("请输入用户名").fill("operator");
+  await page.getByPlaceholder("请输入密码").fill("operator-pass");
+  await page.getByRole("button", { name: "登录工作台" }).click();
+  await expect(page).toHaveURL(/\/jobs(\?|$)/);
+
+  await page.goto("/jobs/docjob_qa_001/translation-qa");
+  await expect(page.getByRole("heading", { name: "翻译 QA", level: 1 })).toBeVisible();
+  const qaReviewPanel = page.getByLabel("翻译 QA 复核面板");
+  await expect(qaReviewPanel.getByText("qa-smoke.pdf")).toBeVisible();
+  await expect(qaReviewPanel.getByText("Hello world.")).toBeVisible();
+  await page.getByLabel("QA 备注").fill("detail shared panel");
+  await page.getByRole("button", { name: "保存复核" }).click();
+  await expect.poll(() => controls.translationQaPatchCount()).toBe(1);
+  await expect(page.getByText("翻译 QA 复核已保存。")).toBeVisible();
+});
+
 test("operator sees unavailable translation QA in the queue drawer as readonly", async ({ page }) => {
   const controls = await mockApi(page, { translationQaUnavailable: true });
 
@@ -1895,7 +1917,7 @@ test("operator sees unavailable translation QA as readonly and cannot submit rev
 
   await page.goto("/jobs/docjob_qa_001/translation-qa");
   await expect(page.getByRole("heading", { name: "翻译 QA", level: 1 })).toBeVisible();
-  await expect(page.getByText("任务缺少 DocumentIR 证据文件，无法展示最终文本片段。")).toBeVisible();
+  await expect(page.getByRole("alert").getByText("任务缺少 DocumentIR 证据文件，无法展示最终文本片段。")).toBeVisible();
   await expect(page.getByRole("button", { name: "保存复核" })).toBeDisabled();
   expect(controls.translationQaPatchCount()).toBe(0);
 });

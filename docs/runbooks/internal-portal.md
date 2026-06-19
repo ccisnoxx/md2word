@@ -5,7 +5,7 @@ component: md2word-internal-portal
 status: current
 summary: md2word 正式公司内部门户的产品边界、角色、页面/API 地图、部署配置和账号运营说明。
 tags: [internal-portal, frontend, backend, auth, deploy, operations]
-last_reviewed: 2026-06-17
+last_reviewed: 2026-06-20
 ---
 
 # md2word 正式内部门户运行说明
@@ -43,8 +43,8 @@ files 上传授权 -> document_jobs 创建任务 -> Worker 调用 MinerU/Documen
 | `/jobs` | operator/admin | 筛选任务、批量处理、下载、重试、取消、归档、clone/rerun。 |
 | `/jobs/new` | operator/admin | 上传 PDF 并创建转换任务。 |
 | `/jobs/:jobId` | operator/admin | 查看任务详情、文件、事件、失败信息、配置快照和可用操作。 |
-| `/translation-qa` | operator/admin | 翻译 QA 队列，筛选未复核或有问题的英译中任务。 |
-| `/jobs/:jobId/translation-qa` | operator/admin | 单任务翻译证据复核和术语建议跳转。 |
+| `/translation-qa` | operator/admin | 翻译 QA 队列，筛选未复核或有问题的英译中任务；行内复核默认打开右侧抽屉并通过 `qa_job_id` 支持 URL 恢复。 |
+| `/jobs/:jobId/translation-qa` | operator/admin | 单任务翻译证据复核和术语建议跳转；复用队列抽屉的 QA review panel，并保留完整术语/AI 调用证据表。 |
 | `/term-proposals` | operator/admin | operator 提交建议；admin 审核提案。 |
 | `/settings` | admin | 配置中心首页，按治理域进入模板、术语、翻译配置。 |
 | `/settings/templates` | admin | Word 模板文档列表，管理 DOCX 模板文件和版本治理入口。 |
@@ -78,6 +78,14 @@ files 上传授权 -> document_jobs 创建任务 -> Worker 调用 MinerU/Documen
 | `/api/v1/health` | live/ready/metrics 观测。 |
 
 OpenAPI 快照在 [docs/api/openapi.json](/Users/sc/PycharmProjects/md2word/docs/api/openapi.json)，API 文档入口在 [docs/api/manifest.yaml](/Users/sc/PycharmProjects/md2word/docs/api/manifest.yaml)。
+
+## 4.1 翻译 QA 操作口径
+
+- `/translation-qa` 是高频处理入口：操作员从队列行打开右侧复核抽屉，查看源文/AI 译文/最终文本片段、关键证据摘要，并保存任务级 QA 状态。
+- URL 只同步当前选中的 `qa_job_id`；筛选、排序和分页仍使用原有 query，复核草稿、当前片段和滚动位置不写入 URL。
+- 抽屉保存动作使用既有 `PATCH /api/v1/document-jobs/{job_id}/translation-qa`；保存并下一条会刷新当前筛选队列，再按 `blocked`、`needs_fix`、`unreviewed`、其他状态的顺序选下一条。
+- QA 证据不可用时仍打开只读诊断抽屉，展示 `availability_reason`、关键 artifact 缺失情况，并禁止提交。
+- `/jobs/:jobId/translation-qa` 使用同一套 review panel 作为单任务详情页的复核体验；该页面额外保留完整术语命中和 AI 调用摘要表，适合深度排查。
 
 ## 5. 正式部署配置
 

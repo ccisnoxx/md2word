@@ -14,8 +14,10 @@
         </el-tag>
         <el-tag :type="availabilityTagType" effect="plain">{{ availabilityText }}</el-tag>
         <el-button :icon="Refresh" :loading="loading" text @click="$emit('refresh')">刷新</el-button>
-        <el-button :icon="TopRight" text :disabled="!job && !qa" @click="$emit('open-detail')">详情页</el-button>
-        <el-button :icon="Close" text aria-label="关闭 QA 抽屉" @click="$emit('close')" />
+        <el-button v-if="showOpenDetail" :icon="TopRight" text :disabled="!job && !qa" @click="$emit('open-detail')">
+          详情页
+        </el-button>
+        <el-button v-if="showClose" :icon="Close" text aria-label="关闭 QA 抽屉" @click="$emit('close')" />
       </div>
     </header>
 
@@ -179,16 +181,22 @@
       </el-form>
 
       <div class="footer-command-row">
-        <div class="shortcut-hints" aria-label="快捷键提示">
+        <div v-if="showShortcutHints" class="shortcut-hints" aria-label="快捷键提示">
           <span><kbd>Esc</kbd>关闭</span>
           <span><kbd>⌘/Ctrl</kbd>+<kbd>Enter</kbd>保存并下一条</span>
           <span><kbd>J</kbd>/<kbd>K</kbd>切换片段</span>
         </div>
         <div class="review-actions">
-          <el-button :disabled="saving" @click="$emit('close')">关闭</el-button>
-          <el-button :loading="saving" :disabled="!qaEditable" @click="$emit('submit')">仅保存</el-button>
-          <el-button type="primary" :loading="saving" :disabled="!qaEditable" @click="$emit('submit-next')">
-            保存并下一条
+          <el-button v-if="showClose" :disabled="saving" @click="$emit('close')">关闭</el-button>
+          <el-button :loading="saving" :disabled="!qaEditable" @click="$emit('submit')">{{ submitLabel }}</el-button>
+          <el-button
+            v-if="showSubmitNext"
+            type="primary"
+            :loading="saving"
+            :disabled="!qaEditable"
+            @click="$emit('submit-next')"
+          >
+            {{ submitNextLabel }}
           </el-button>
         </div>
       </div>
@@ -228,7 +236,7 @@ import {
   type TranslationQaReviewDraft,
 } from "@/utils/translationQa";
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   job: DocumentJobResponse | null;
   qa: DocumentJobTranslationQaResponse | null;
   form: TranslationQaReviewDraft;
@@ -237,7 +245,20 @@ const props = defineProps<{
   error: ApiClientError | null;
   queueCleared: boolean;
   activeSegmentIndex: number;
-}>();
+  showClose?: boolean;
+  showOpenDetail?: boolean;
+  showSubmitNext?: boolean;
+  showShortcutHints?: boolean;
+  submitLabel?: string;
+  submitNextLabel?: string;
+}>(), {
+  showClose: true,
+  showOpenDetail: true,
+  showSubmitNext: true,
+  showShortcutHints: true,
+  submitLabel: "仅保存",
+  submitNextLabel: "保存并下一条",
+});
 
 const emit = defineEmits<{
   "update:form": [value: TranslationQaReviewDraft];

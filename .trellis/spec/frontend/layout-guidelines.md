@@ -25,6 +25,21 @@ Do not rely on the default CSS grid alignment on `main.app-page`. With `min-heig
 - Prefer flat or lightly elevated panels. Avoid broad gradients, glass effects, and decorative grid backgrounds on dense operational pages.
 - If a page needs a bottom fixed bulk-action bar, ensure no ancestor transform traps fixed positioning. Page-level entry animation may need to be disabled on that page.
 
+## Page-Level Drawers
+
+Workbench pages that open a right-side detail or review drawer from an in-page list should render the overlay at document level and keep URL state reversible:
+
+```vue
+<el-drawer append-to-body :model-value="Boolean(selectedId)" @close="clearSelectedId">
+  <SharedReviewPanel @close="clearSelectedId" />
+</el-drawer>
+```
+
+- Use `append-to-body` when a drawer must cover the protected shell topbar/sidebar and accept pointer events above sticky page controls.
+- Store deep-linkable selected rows in a specific query parameter such as `qa_job_id`, and remove only that parameter on close so unrelated filters/search params survive.
+- Keep the drawer content in a shared panel component when the same review surface is reused by a queue drawer and a detail page.
+- For unavailable or diagnostic-only states, reuse the same panel frame in read-only mode rather than adding a separate visual implementation.
+
 ## Tables And Actions
 
 - Put the scannable entity identity in the first meaningful column.
@@ -40,6 +55,7 @@ For page-level layout changes:
 - Assert no uncontrolled document/body horizontal overflow.
 - Assert fixed or sticky action bars fit in the viewport.
 - For grid-root workbench pages, assert compact header/queue elements do not stretch beyond their intended content height.
+- For page-level drawers, assert the overlay covers the protected shell, drawer actions are clickable, close removes only the drawer query parameter, and any keyboard shortcuts have visible hints.
 
 ## Wrong vs Correct
 
