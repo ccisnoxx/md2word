@@ -57,7 +57,7 @@
           <span class="updated-time">{{ formatDateTime(row.updated_at) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="168" fixed="right">
+      <el-table-column :key="actionColumnFixed ? 'actions-fixed' : 'actions-static'" label="操作" width="168" :fixed="actionColumnFixed">
         <template #default="{ row }">
           <div class="action-row">
             <el-button size="small" text type="primary" @click="$router.push(`/jobs/${row.id}`)">查看</el-button>
@@ -173,6 +173,7 @@
 </template>
 
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import { MoreFilled } from "@element-plus/icons-vue";
 
 import type { DocumentJobActionId, DocumentJobResponse } from "@/api/types";
@@ -215,6 +216,26 @@ const emit = defineEmits<{
   unarchive: [job: DocumentJobResponse];
   delete: [job: DocumentJobResponse];
 }>();
+
+const actionColumnFixed = ref<"right" | undefined>("right");
+let narrowViewportQuery: MediaQueryList | null = null;
+
+function syncActionColumnFixed(): void {
+  actionColumnFixed.value = narrowViewportQuery?.matches ? undefined : "right";
+}
+
+onMounted(() => {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return;
+  }
+  narrowViewportQuery = window.matchMedia("(max-width: 720px)");
+  syncActionColumnFixed();
+  narrowViewportQuery.addEventListener("change", syncActionColumnFixed);
+});
+
+onBeforeUnmount(() => {
+  narrowViewportQuery?.removeEventListener("change", syncActionColumnFixed);
+});
 
 function isBatchSelectable(row: DocumentJobResponse): boolean {
   return canRetryDocumentJob(row) || canArchiveDocumentJob(row) || canCancelDocumentJob(row);
@@ -392,5 +413,26 @@ function pendingActionLabel(row: DocumentJobResponse): string {
   display: flex;
   justify-content: flex-end;
   margin-top: 14px;
+}
+
+@media (max-width: 720px) {
+  .job-table {
+    overflow-x: auto;
+  }
+
+  .table,
+  .pagination-row {
+    min-width: 960px;
+  }
+
+  :deep(.el-table__cell.el-table-fixed-column--right) {
+    position: static !important;
+    right: auto !important;
+    z-index: auto !important;
+  }
+
+  :deep(.el-table__cell.el-table-fixed-column--right)::before {
+    display: none !important;
+  }
 }
 </style>

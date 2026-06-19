@@ -1048,6 +1048,7 @@ onBeforeUnmount(() => {
 <style scoped lang="scss">
 .jobs-page {
   position: relative;
+  isolation: isolate;
   margin: -20px -24px -36px;
   padding: 28px 24px 42px;
   overflow: visible;
@@ -1058,12 +1059,29 @@ onBeforeUnmount(() => {
 
 .jobs-page::before {
   position: absolute;
-  inset: 0 0 auto;
-  height: 220px;
+  inset: 0 0 auto 0;
+  z-index: 0;
+  height: 340px;
   content: "";
   background:
-    linear-gradient(100deg, var(--app-color-ambient-primary), transparent 62%),
-    linear-gradient(180deg, var(--app-color-glass-muted), transparent);
+    linear-gradient(100deg, color-mix(in srgb, var(--app-color-primary) 24%, transparent), transparent 60%),
+    linear-gradient(180deg, color-mix(in srgb, var(--app-color-accent-cyan) 16%, transparent), transparent 74%),
+    linear-gradient(90deg, transparent, color-mix(in srgb, var(--app-color-accent-emerald) 14%, transparent), transparent);
+  pointer-events: none;
+}
+
+.jobs-page::after {
+  position: absolute;
+  inset: 18px 24px auto;
+  z-index: 0;
+  height: 180px;
+  content: "";
+  background-image:
+    linear-gradient(var(--app-color-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--app-color-grid-line) 1px, transparent 1px);
+  background-size: 30px 30px;
+  mask-image: linear-gradient(90deg, transparent, #000 18%, #000 74%, transparent);
+  opacity: 0.95;
   pointer-events: none;
 }
 
@@ -1075,16 +1093,60 @@ onBeforeUnmount(() => {
 }
 
 .jobs-hero {
+  overflow: hidden;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 18px 28px;
   align-items: start;
-  min-height: auto;
-  border-color: var(--app-color-primary-border);
+  min-height: 186px;
+  border-color: color-mix(in srgb, var(--app-color-primary-border) 82%, transparent);
+  background:
+    linear-gradient(var(--app-color-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--app-color-grid-line) 1px, transparent 1px),
+    var(--app-gradient-hero);
+  background-size:
+    34px 34px,
+    34px 34px,
+    auto;
+  box-shadow:
+    0 24px 64px color-mix(in srgb, var(--app-color-primary) 24%, transparent),
+    var(--app-shadow-panel);
+}
+
+.jobs-hero::before {
+  width: 0;
+}
+
+.jobs-hero::after {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  content: "";
+  background:
+    linear-gradient(118deg, transparent 0 48%, rgba(255, 255, 255, 0.2) 48% 54%, transparent 68%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 44%);
+  opacity: 1;
+  mask-image: none;
+  pointer-events: none;
 }
 
 .hero-copy {
   max-width: 820px;
+}
+
+.jobs-hero .page-kicker,
+.jobs-hero .page-title,
+.jobs-hero .page-description {
+  color: #ffffff;
+}
+
+.jobs-hero .page-kicker::before {
+  background: linear-gradient(90deg, #ffffff, var(--app-color-accent-emerald));
+}
+
+.jobs-hero .page-description {
+  max-width: 700px;
+  color: rgba(255, 255, 255, 0.84);
 }
 
 .hero-eyebrow,
@@ -1115,16 +1177,19 @@ onBeforeUnmount(() => {
   gap: 8px;
   min-height: 38px;
   padding: 0 12px;
-  border: 1px solid var(--app-color-accent-cyan-border);
+  border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: var(--app-radius-md);
-  background: linear-gradient(135deg, var(--app-color-accent-cyan-soft), var(--app-color-surface));
-  color: var(--app-color-accent-cyan);
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
   font-size: 13px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .live-pill small {
   flex-basis: 100%;
-  color: var(--app-color-text-muted);
+  color: rgba(255, 255, 255, 0.72);
   font-size: 11px;
 }
 
@@ -1143,10 +1208,13 @@ onBeforeUnmount(() => {
 
 .hero-refresh {
   min-height: 38px;
-  border-color: var(--app-color-border);
+  border-color: rgba(255, 255, 255, 0.26);
   border-radius: var(--app-radius-md);
-  background: var(--app-color-surface);
-  color: var(--app-color-text);
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .metric-grid {
@@ -1157,16 +1225,39 @@ onBeforeUnmount(() => {
 }
 
 .metric-card {
+  position: relative;
+  overflow: hidden;
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);
   gap: 12px;
   align-items: center;
-  min-height: 92px;
-  padding: 14px;
-  border: 1px solid var(--app-color-border);
+  min-height: 112px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--app-color-primary-border) 72%, transparent);
   border-radius: var(--app-radius-md);
-  background: linear-gradient(180deg, var(--app-color-surface), var(--app-color-surface-muted));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--app-color-surface) 88%, var(--app-color-primary-soft)), var(--app-color-glass-muted)),
+    var(--app-gradient-panel-depth);
   box-shadow: var(--app-shadow-panel);
+  transition:
+    border-color var(--app-motion-base) ease-out,
+    box-shadow var(--app-motion-base) ease-out,
+    transform var(--app-motion-base) var(--app-ease-out);
+}
+
+.metric-card:hover {
+  border-color: var(--app-color-primary-border);
+  box-shadow: var(--app-shadow-panel-hover);
+  transform: translateY(-4px);
+}
+
+.metric-card::after {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  content: "";
+  background: var(--app-gradient-accent-line);
+  pointer-events: none;
 }
 
 .metric-icon {
@@ -1178,6 +1269,9 @@ onBeforeUnmount(() => {
   background: linear-gradient(135deg, var(--app-color-primary), var(--app-color-primary-hover));
   color: #ffffff;
   font-size: 20px;
+  box-shadow:
+    0 12px 22px color-mix(in srgb, var(--app-color-primary) 24%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.36);
 }
 
 .metric-card span:not(.metric-icon) {
@@ -1190,7 +1284,7 @@ onBeforeUnmount(() => {
   display: block;
   margin: 4px 0;
   color: var(--app-color-text);
-  font-size: 26px;
+  font-size: 30px;
   font-weight: 800;
   line-height: 1;
 }
@@ -1218,6 +1312,11 @@ onBeforeUnmount(() => {
 
 .jobs-list-panel {
   margin-top: 16px;
+  border-color: color-mix(in srgb, var(--app-color-primary-border) 72%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--app-color-surface) 86%, var(--app-color-primary-soft)), var(--app-color-glass-muted)),
+    var(--app-gradient-panel-depth);
+  box-shadow: var(--app-shadow-panel);
 }
 
 .table-header {
@@ -1292,12 +1391,13 @@ onBeforeUnmount(() => {
 }
 
 .quick-filter-row {
-  padding: 8px;
-  border: 1px solid var(--app-color-border-soft);
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--app-color-primary-border) 62%, transparent);
   border-radius: var(--app-radius-md);
   background:
-    linear-gradient(90deg, var(--app-color-primary-soft), transparent),
+    linear-gradient(90deg, color-mix(in srgb, var(--app-color-primary-soft) 84%, transparent), transparent),
     var(--app-color-surface-muted);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36);
 }
 
 .summary-caption {
@@ -1314,7 +1414,7 @@ onBeforeUnmount(() => {
   padding: 10px 12px;
   border: 1px solid var(--app-color-primary-border);
   border-radius: var(--app-radius-md);
-  background: var(--app-color-primary-soft);
+  background: linear-gradient(90deg, var(--app-color-primary-soft), var(--app-color-accent-cyan-soft));
   color: var(--app-color-primary-hover);
   font-size: 14px;
 }
@@ -1399,8 +1499,8 @@ onBeforeUnmount(() => {
   padding: 0;
   border: 1px solid var(--app-color-primary-border);
   border-radius: var(--app-radius-md);
-  background: var(--app-color-surface);
-  box-shadow: none;
+  background: var(--app-gradient-panel-depth);
+  box-shadow: var(--app-shadow-subtle);
 }
 
 .jobs-table-card :deep(.el-card__body) {
@@ -1454,8 +1554,8 @@ onBeforeUnmount(() => {
 
 .jobs-page :deep(.el-button--primary) {
   border: 1px solid var(--app-color-primary);
-  background: linear-gradient(135deg, var(--app-color-primary), var(--app-color-primary-hover) 72%, var(--app-color-accent-cyan));
-  box-shadow: 0 8px 18px color-mix(in srgb, var(--app-color-primary) 22%, transparent);
+  background: var(--app-gradient-action);
+  box-shadow: 0 12px 26px color-mix(in srgb, var(--app-color-primary) 26%, transparent);
 }
 
 .jobs-page :deep(.el-select__wrapper),
@@ -1480,8 +1580,8 @@ onBeforeUnmount(() => {
 .jobs-table-card :deep(.el-table) {
   --el-table-bg-color: transparent;
   --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: var(--app-color-surface-muted);
-  --el-table-row-hover-bg-color: var(--app-color-primary-soft);
+  --el-table-header-bg-color: color-mix(in srgb, var(--app-color-primary-soft) 72%, var(--app-color-surface));
+  --el-table-row-hover-bg-color: color-mix(in srgb, var(--app-color-primary-soft) 74%, transparent);
   --el-table-border-color: var(--app-color-border-soft);
   --el-table-text-color: var(--app-color-text);
   --el-table-header-text-color: var(--app-color-text-muted);
@@ -1498,6 +1598,9 @@ onBeforeUnmount(() => {
 
 .jobs-table-card :deep(.el-table th.el-table__cell) {
   font-weight: 760;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--app-color-primary-soft) 78%, transparent), transparent),
+    var(--el-table-header-bg-color);
 }
 
 .jobs-table-card :deep(.el-table td.el-table__cell),

@@ -48,6 +48,9 @@
   --app-color-ambient-primary: rgba(99, 102, 241, 0.16);
   --app-color-ambient-cyan: rgba(14, 165, 233, 0.1);
   --app-color-ambient-amber: rgba(16, 185, 129, 0.1);
+  --app-color-stage-primary: rgba(99, 102, 241, 0.12);
+  --app-color-stage-cyan: rgba(14, 165, 233, 0.11);
+  --app-color-stage-sheen: rgba(255, 255, 255, 0.55);
   --app-color-skeleton-base: rgba(226, 232, 240, 0.92);
   --app-color-skeleton-sheen: rgba(255, 255, 255, 0.86);
   --app-gradient-page: linear-gradient(180deg, #fbfaff 0%, var(--app-color-bg) 44%, #eef7ff 100%);
@@ -57,6 +60,10 @@
     linear-gradient(180deg, transparent 0%, var(--app-color-ambient-amber) 100%);
   --app-gradient-glass:
     linear-gradient(135deg, var(--app-color-glass-strong), var(--app-color-glass-muted) 58%, var(--app-color-primary-soft));
+  --app-gradient-panel-depth:
+    linear-gradient(145deg, color-mix(in srgb, var(--app-color-surface) 88%, var(--app-color-primary-soft)), var(--app-color-glass-muted) 56%, color-mix(in srgb, var(--app-color-accent-cyan-soft) 78%, var(--app-color-surface)));
+  --app-gradient-hero:
+    linear-gradient(135deg, color-mix(in srgb, var(--app-color-primary) 92%, #ffffff), color-mix(in srgb, var(--app-color-accent-cyan) 84%, var(--app-color-primary)) 54%, color-mix(in srgb, var(--app-color-accent-emerald) 86%, var(--app-color-accent-cyan)));
   --app-gradient-action:
     linear-gradient(135deg, var(--app-color-primary), var(--app-color-accent-cyan) 54%, var(--app-color-accent-emerald));
   --app-gradient-action-hover:
@@ -83,9 +90,9 @@
   --app-space-6: 24px;
   --app-space-7: 32px;
 
-  --app-shadow-subtle: 0 1px 2px rgba(15, 23, 42, 0.05);
-  --app-shadow-panel: 0 16px 40px rgba(15, 23, 42, 0.09);
-  --app-shadow-panel-hover: 0 20px 50px rgba(15, 23, 42, 0.12);
+  --app-shadow-subtle: 0 2px 8px rgba(30, 27, 75, 0.08);
+  --app-shadow-panel: 0 18px 48px rgba(30, 27, 75, 0.14);
+  --app-shadow-panel-hover: 0 24px 64px rgba(30, 27, 75, 0.18);
   --app-shadow-focus: 0 0 0 3px rgba(99, 102, 241, 0.22);
 
   --app-content-width: 1280px;
@@ -147,10 +154,14 @@ html {
 }
 
 body {
+  position: relative;
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
   background:
+    linear-gradient(120deg, rgba(99, 102, 241, 0.22), transparent 28%),
+    linear-gradient(240deg, rgba(14, 165, 233, 0.18), transparent 30%),
+    linear-gradient(180deg, transparent 0%, rgba(16, 185, 129, 0.13) 100%),
     var(--app-gradient-ambient),
     linear-gradient(var(--app-color-grid-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--app-color-grid-line) 1px, transparent 1px),
@@ -163,12 +174,29 @@ body {
   color: var(--app-color-text);
 }
 
+body::before {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  content: "";
+  background:
+    linear-gradient(118deg, transparent 0 18%, var(--app-color-stage-primary) 18% 24%, transparent 40%),
+    linear-gradient(62deg, transparent 0 34%, var(--app-color-stage-cyan) 34% 39%, transparent 56%),
+    linear-gradient(180deg, var(--app-color-stage-sheen), transparent 36%);
+  opacity: 0.86;
+  pointer-events: none;
+  transform: translateY(-10px);
+  animation: app-background-enter 560ms var(--app-ease-out) both;
+}
+
 ::selection {
   background: color-mix(in srgb, var(--app-color-primary) 24%, transparent);
   color: var(--app-color-text);
 }
 
 #app {
+  position: relative;
+  z-index: 1;
   min-height: 100vh;
 }
 
@@ -228,7 +256,9 @@ button:disabled,
   border-color: var(--app-color-primary);
   background: var(--app-gradient-action);
   background-size: 140% 140%;
-  box-shadow: 0 8px 18px color-mix(in srgb, var(--app-color-primary) 22%, transparent);
+  box-shadow:
+    0 12px 24px color-mix(in srgb, var(--app-color-primary) 26%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34);
 }
 
 .el-button--primary:not(.is-disabled):not(.is-loading):focus-visible,
@@ -237,8 +267,12 @@ button:disabled,
   background: var(--app-gradient-action-hover);
   background-position: 100% 0;
   box-shadow:
-    0 10px 22px color-mix(in srgb, var(--app-color-primary) 26%, transparent),
+    0 16px 34px color-mix(in srgb, var(--app-color-primary) 32%, transparent),
     var(--app-shadow-focus);
+}
+
+.el-button:not(.is-disabled):not(.is-loading):active {
+  transform: translateY(0);
 }
 
 .el-button.is-text,
@@ -419,7 +453,7 @@ button:disabled,
   overflow: hidden;
   border: 1px solid var(--app-color-border);
   border-radius: var(--app-radius-md);
-  background: var(--app-gradient-glass);
+  background: var(--app-gradient-panel-depth);
   box-shadow: var(--app-shadow-panel);
   backdrop-filter: var(--app-backdrop-panel);
   -webkit-backdrop-filter: var(--app-backdrop-panel);
@@ -438,7 +472,7 @@ button:disabled,
 .app-panel::before {
   position: absolute;
   inset: 0 auto 0 0;
-  width: 4px;
+  width: 5px;
   content: "";
   background: linear-gradient(180deg, var(--app-color-primary), var(--app-color-accent-cyan) 58%, var(--app-color-accent-emerald));
   pointer-events: none;
@@ -447,14 +481,14 @@ button:disabled,
 .app-page-header::after {
   position: absolute;
   inset: 0 0 0 auto;
-  width: min(280px, 34%);
+  width: min(360px, 38%);
   content: "";
   background-image:
     linear-gradient(var(--app-color-grid-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--app-color-grid-line) 1px, transparent 1px);
   background-size: 28px 28px;
   mask-image: linear-gradient(90deg, transparent, #000 34%, #000);
-  opacity: 0.85;
+  opacity: 0.95;
   pointer-events: none;
 }
 
@@ -475,7 +509,7 @@ button:disabled,
   min-width: 0;
   border: 1px solid var(--app-color-border);
   border-radius: var(--app-radius-md);
-  background: var(--app-gradient-glass);
+  background: var(--app-gradient-panel-depth);
   box-shadow: var(--app-shadow-panel);
   backdrop-filter: var(--app-backdrop-panel);
   -webkit-backdrop-filter: var(--app-backdrop-panel);
@@ -486,7 +520,7 @@ button:disabled,
   overflow: hidden;
   border: 1px solid var(--app-color-border);
   border-radius: var(--app-radius-md);
-  background: var(--app-gradient-glass);
+  background: var(--app-gradient-panel-depth);
   box-shadow: var(--app-shadow-panel);
   backdrop-filter: var(--app-backdrop-panel);
   -webkit-backdrop-filter: var(--app-backdrop-panel);
@@ -644,7 +678,7 @@ button:disabled,
   padding: var(--app-space-4);
   border: 1px solid var(--app-color-border);
   border-radius: var(--app-radius-md);
-  background: var(--app-gradient-glass);
+  background: var(--app-gradient-panel-depth);
   color: var(--app-color-text);
   box-shadow: var(--app-shadow-subtle);
   backdrop-filter: var(--app-backdrop-panel);
@@ -652,7 +686,8 @@ button:disabled,
   transition:
     border-color var(--app-motion-base) ease-out,
     box-shadow var(--app-motion-base) ease-out,
-    color var(--app-motion-base) ease-out;
+    color var(--app-motion-base) ease-out,
+    transform var(--app-motion-base) var(--app-ease-out);
 }
 
 .app-entry-card:hover,
@@ -660,6 +695,7 @@ button:disabled,
   border-color: var(--app-color-primary-border);
   color: var(--app-color-primary-hover);
   box-shadow: var(--app-shadow-panel-hover);
+  transform: translateY(-3px);
   outline: none;
 }
 
@@ -1150,6 +1186,18 @@ button:disabled,
   }
 }
 
+@keyframes app-background-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-18px);
+  }
+
+  to {
+    opacity: 0.86;
+    transform: translateY(-10px);
+  }
+}
+
 @mixin app-dark-theme-v2 {
   --app-color-bg: #090b1a;
   --app-color-bg-subtle: #11162d;
@@ -1196,6 +1244,9 @@ button:disabled,
   --app-color-ambient-primary: rgba(129, 140, 248, 0.24);
   --app-color-ambient-cyan: rgba(56, 189, 248, 0.13);
   --app-color-ambient-amber: rgba(52, 211, 153, 0.1);
+  --app-color-stage-primary: rgba(129, 140, 248, 0.12);
+  --app-color-stage-cyan: rgba(56, 189, 248, 0.12);
+  --app-color-stage-sheen: rgba(8, 10, 24, 0.18);
   --app-color-skeleton-base: rgba(51, 65, 85, 0.62);
   --app-color-skeleton-sheen: rgba(148, 163, 184, 0.26);
   --app-gradient-page: linear-gradient(180deg, #080a18 0%, var(--app-color-bg) 44%, #071923 100%);
@@ -1205,6 +1256,10 @@ button:disabled,
     linear-gradient(180deg, transparent 0%, var(--app-color-ambient-amber) 100%);
   --app-gradient-glass:
     linear-gradient(135deg, var(--app-color-glass-strong), var(--app-color-glass-muted) 58%, rgba(99, 102, 241, 0.18));
+  --app-gradient-panel-depth:
+    linear-gradient(145deg, rgba(20, 25, 52, 0.92), rgba(31, 38, 77, 0.66) 56%, rgba(56, 189, 248, 0.1));
+  --app-gradient-hero:
+    linear-gradient(135deg, #312e81, #0ea5e9 54%, #10b981);
   --app-gradient-action:
     linear-gradient(135deg, #818cf8, var(--app-color-accent-cyan) 54%, var(--app-color-accent-emerald));
   --app-gradient-action-hover:

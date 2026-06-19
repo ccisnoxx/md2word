@@ -105,17 +105,24 @@ function handleLogout(): void {
 
 .app-header {
   position: sticky;
-  top: 0;
+  top: 12px;
   z-index: 10;
   display: grid;
-  grid-template-columns: minmax(250px, 0.88fr) minmax(0, 1.36fr) auto minmax(220px, 0.72fr);
+  grid-template-columns: minmax(230px, 0.78fr) minmax(520px, 1.58fr) auto minmax(210px, 0.64fr);
   align-items: center;
   gap: var(--app-space-3);
+  width: min(calc(100% - 32px), var(--app-content-wide));
   min-height: calc(var(--app-header-height) + 8px);
+  margin: 12px auto 0;
   padding: 0 var(--app-space-6);
-  border-bottom: 1px solid var(--app-color-border);
-  background: var(--app-gradient-glass);
-  box-shadow: var(--app-shadow-panel);
+  border: 1px solid color-mix(in srgb, var(--app-color-primary-border) 74%, transparent);
+  border-radius: var(--app-radius-lg);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--app-color-surface-elevated) 82%, var(--app-color-primary-soft)), var(--app-color-glass-muted)),
+    var(--app-gradient-glass);
+  box-shadow:
+    0 18px 42px color-mix(in srgb, var(--app-color-primary) 16%, transparent),
+    var(--app-shadow-panel);
   backdrop-filter: var(--app-backdrop-panel);
   -webkit-backdrop-filter: var(--app-backdrop-panel);
 }
@@ -126,6 +133,15 @@ function handleLogout(): void {
   height: 3px;
   content: "";
   background: var(--app-gradient-accent-line);
+}
+
+.app-header::after {
+  position: absolute;
+  inset: 3px 3px auto;
+  height: 1px;
+  content: "";
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.72), transparent);
+  pointer-events: none;
 }
 
 .brand,
@@ -151,15 +167,15 @@ function handleLogout(): void {
 
 .brand-mark {
   display: inline-grid;
-  width: 38px;
-  height: 38px;
+  width: 42px;
+  height: 42px;
   place-items: center;
   border: 1px solid rgba(255, 255, 255, 0.32);
   border-radius: var(--app-radius-md);
   background: var(--app-gradient-action);
   color: #ffffff;
   box-shadow: 0 10px 22px color-mix(in srgb, var(--app-color-primary) 28%, transparent);
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 800;
 }
 
@@ -191,13 +207,14 @@ function handleLogout(): void {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 34px;
-  padding: var(--app-space-2) 10px;
+  min-height: 38px;
+  padding: var(--app-space-2) 12px;
   border: 1px solid transparent;
   border-radius: var(--app-radius-md);
   color: var(--app-color-text-muted);
   font-size: 14px;
   font-weight: 600;
+  white-space: nowrap;
   transition:
     border-color var(--app-motion-fast) ease-out,
     background-color var(--app-motion-fast) ease-out,
@@ -211,10 +228,12 @@ function handleLogout(): void {
 }
 
 .main-nav a.router-link-active {
-  border: 1px solid var(--app-color-primary-border);
-  background: linear-gradient(180deg, var(--app-color-primary-soft), var(--app-color-glass-strong));
-  color: var(--app-color-primary-hover);
-  box-shadow: 0 8px 20px color-mix(in srgb, var(--app-color-primary) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--app-color-primary-border) 76%, transparent);
+  background: var(--app-gradient-action);
+  color: #ffffff;
+  box-shadow:
+    0 10px 24px color-mix(in srgb, var(--app-color-primary) 22%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34);
 }
 
 .main-nav a.router-link-active::after {
@@ -229,9 +248,15 @@ function handleLogout(): void {
 
 .main-nav a:hover,
 .main-nav a:focus-visible {
-  background: var(--app-color-surface-muted);
+  background: color-mix(in srgb, var(--app-color-primary-soft) 64%, var(--app-color-glass-strong));
   color: var(--app-color-primary-hover);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--app-color-primary) 12%, transparent);
+}
+
+.main-nav a.router-link-active:hover,
+.main-nav a.router-link-active:focus-visible {
+  color: #ffffff;
 }
 
 .workflow-strip {
@@ -239,9 +264,13 @@ function handleLogout(): void {
   padding: 5px;
   border: 1px solid var(--app-color-border-soft);
   border-radius: var(--app-radius-pill);
-  background: var(--app-color-glass);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--app-color-primary-soft) 72%, transparent), var(--app-color-glass)),
+    var(--app-color-glass);
   color: var(--app-color-primary-rail);
-  box-shadow: var(--app-shadow-subtle);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    var(--app-shadow-subtle);
   white-space: nowrap;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -253,7 +282,7 @@ function handleLogout(): void {
   height: 24px;
   place-items: center;
   border-radius: var(--app-radius-pill);
-  background: var(--app-color-glass-strong);
+  background: color-mix(in srgb, var(--app-color-glass-strong) 82%, var(--app-color-primary-soft));
   font-size: 11px;
   font-weight: 800;
 }
@@ -291,7 +320,7 @@ function handleLogout(): void {
 .app-main {
   width: min(var(--app-content-wide), 100%);
   margin: 0 auto;
-  padding: var(--app-space-5) var(--app-space-6) 40px;
+  padding: var(--app-space-6) var(--app-space-6) 40px;
 }
 
 .breadcrumb-shell {
@@ -308,7 +337,9 @@ function handleLogout(): void {
 
   .app-header {
     border-bottom-color: var(--app-color-border);
-    background: var(--app-gradient-glass);
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--app-color-surface-elevated) 82%, var(--app-color-primary-soft)), var(--app-color-glass-muted)),
+      var(--app-gradient-glass);
   }
 
   .brand-link {
@@ -320,8 +351,8 @@ function handleLogout(): void {
   }
 
   .main-nav a.router-link-active {
-    background: var(--app-color-primary-soft);
-    color: var(--app-color-primary-hover);
+    background: var(--app-gradient-action);
+    color: #ffffff;
   }
 
   .workflow-strip {
@@ -342,6 +373,8 @@ function handleLogout(): void {
     align-items: flex-start;
     grid-template-columns: 1fr;
     height: auto;
+    width: calc(100% - 24px);
+    margin-top: 10px;
     padding: var(--app-space-3) var(--app-space-4);
   }
 
