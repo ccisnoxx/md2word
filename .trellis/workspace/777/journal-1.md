@@ -113,3 +113,36 @@ Completed and verified the first-pass operations workbench redesign for JobsPage
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Bootstrap backend Trellis guidelines
+
+**Date**: 2026-06-20
+**Task**: Bootstrap backend Trellis guidelines
+**Branch**: `main`
+
+### Summary
+
+Filled backend Trellis specs with codebase-backed conventions, examples, and quality guidance. Archived 00-bootstrap-guidelines.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b2c435d3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
