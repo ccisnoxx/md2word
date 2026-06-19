@@ -1,14 +1,14 @@
 <!-- File: frontend/src/pages/JobsPage.vue -->
 <!-- Purpose: Render the document job list workbench with filtering and batch actions. -->
 <template>
-  <main class="jobs-page app-page" aria-labelledby="jobs-title">
-    <section class="jobs-hero app-page-header app-page-shell app-page-shell--wide">
-      <div class="hero-copy">
-        <p class="hero-eyebrow page-kicker">Document Jobs</p>
+  <main class="jobs-page app-page" :class="{ 'has-bulk-actions': selectedJobs.length }" aria-labelledby="jobs-title">
+    <section class="jobs-command-header app-page-shell app-page-shell--wide">
+      <div class="command-copy">
+        <p class="page-kicker">Document Jobs</p>
         <h1 id="jobs-title" class="page-title">任务列表</h1>
-        <p class="page-description">集中查看 PDF 转 Word 任务状态、失败原因和交付结果。上传创建任务已独立为更宽松的创建流程。</p>
+        <p class="page-description">按异常、停滞、待 QA 和阻塞状态优先处理 document_jobs。</p>
       </div>
-      <div class="hero-actions">
+      <div class="command-actions">
         <div class="live-pill" :class="{ 'is-loading': loading }">
           <span aria-hidden="true"></span>
           <strong>{{ syncStatusText }}</strong>
@@ -24,21 +24,25 @@
             创建任务
           </el-button>
         </span>
-        <el-button class="hero-refresh" :icon="Refresh" :loading="loading" @click="() => loadJobs()">刷新任务</el-button>
+        <el-button :icon="Refresh" :loading="loading" @click="() => loadJobs()">刷新</el-button>
       </div>
     </section>
 
-    <section class="metric-grid app-metric-grid app-page-shell app-page-shell--wide" aria-label="任务概览">
-      <article v-for="metric in metrics" :key="metric.key" class="metric-card app-metric-card" :class="`metric-${metric.tone}`">
-        <span class="metric-icon" aria-hidden="true">
-          <el-icon><component :is="metric.icon" /></el-icon>
+    <section class="work-queue-strip app-page-shell app-page-shell--wide" aria-label="优先工作队列">
+      <button
+        v-for="item in workQueueItems"
+        :key="item.kind"
+        type="button"
+        class="work-queue-item"
+        :class="[`is-${item.tone}`, { 'is-active': item.active }]"
+        @click="applyWorkQueueFilter(item.kind)"
+      >
+        <span class="queue-count">{{ item.count }}</span>
+        <span class="queue-copy">
+          <strong>{{ item.label }}</strong>
+          <small>{{ item.helper }}</small>
         </span>
-        <div>
-          <span>{{ metric.label }}</span>
-          <strong>{{ metric.value }}</strong>
-          <em>{{ metric.helper }}</em>
-        </div>
-      </article>
+      </button>
     </section>
 
     <section class="jobs-list-panel app-filter-panel app-page-shell app-page-shell--wide" aria-label="任务列表">
@@ -120,21 +124,6 @@
         >
           {{ chip.label }}
         </el-tag>
-      </div>
-
-      <div v-if="selectedJobs.length" class="selection-bar" aria-label="批量操作">
-        <span>已选 {{ selectedJobs.length }} 个任务</span>
-        <div class="selection-actions">
-          <el-button :disabled="!selectedRetryableJobs.length" :loading="batchLoading" @click="handleBatchRetry">
-            批量重试 {{ selectedRetryableJobs.length }}
-          </el-button>
-          <el-button :disabled="!selectedCancelableJobs.length" :loading="batchLoading" @click="handleBatchCancel">
-            批量取消 {{ selectedCancelableJobs.length }}
-          </el-button>
-          <el-button :disabled="!selectedArchivableJobs.length" :loading="batchLoading" @click="handleBatchArchive">
-            批量归档 {{ selectedArchivableJobs.length }}
-          </el-button>
-        </div>
       </div>
 
       <ApiErrorAlert :error="error" :diagnostic-context="jobsErrorDiagnosticContext" />
@@ -236,6 +225,7 @@
           </div>
         </div>
         <JobTable
+          ref="jobTableRef"
           :jobs="jobs"
           :loading="loading"
           :page="page"
@@ -254,13 +244,32 @@
         />
       </el-card>
     </section>
+
+    <div v-if="selectedJobs.length" class="bulk-action-bar" aria-label="批量操作">
+      <div class="bulk-summary">
+        <strong>已选 {{ selectedJobs.length }} 个任务</strong>
+        <span>可重试 {{ selectedRetryableJobs.length }} · 可取消 {{ selectedCancelableJobs.length }} · 可归档 {{ selectedArchivableJobs.length }}</span>
+      </div>
+      <div class="bulk-actions">
+        <el-button :disabled="!selectedRetryableJobs.length" :loading="batchLoading" @click="handleBatchRetry">
+          批量重试
+        </el-button>
+        <el-button :disabled="!selectedCancelableJobs.length" :loading="batchLoading" @click="handleBatchCancel">
+          批量取消
+        </el-button>
+        <el-button :disabled="!selectedArchivableJobs.length" :loading="batchLoading" @click="handleBatchArchive">
+          批量归档
+        </el-button>
+        <el-button text @click="clearSelection">清除选择</el-button>
+      </div>
+    </div>
   </main>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { CircleCheck, Files, Filter, Plus, Refresh, Search, Timer, Warning } from "@element-plus/icons-vue";
+import { Files, Filter, Plus, Refresh, Search } from "@element-plus/icons-vue";
 import { useRoute, useRouter, type LocationQuery } from "vue-router";
 
 import type {
@@ -310,7 +319,14 @@ const batchResult = ref<DocumentJobBulkResponse | null>(null);
 const batchResultLabel = ref("");
 const lastDownloadLink = ref<DownloadLinkNotice | null>(null);
 const filteredSummary = ref<Record<string, number>>({});
+const translationQaSummary = ref<Record<TranslationQaStatus, number>>({
+  unreviewed: 0,
+  approved: 0,
+  needs_fix: 0,
+  blocked: 0,
+});
 const actionPending = ref<Record<string, DocumentJobActionId | undefined>>({});
+const jobTableRef = ref<JobTableExpose | null>(null);
 const statuses: DocumentJobStatus[] = ["pending", "queued", "running", "succeeded", "failed", "canceled"];
 const qaStatuses: TranslationQaStatus[] = ["unreviewed", "approved", "needs_fix", "blocked"];
 const sortOptions: Array<{ label: string; value: DocumentJobListSort }> = [
@@ -321,6 +337,18 @@ const sortOptions: Array<{ label: string; value: DocumentJobListSort }> = [
 ];
 
 type FilterChipKey = "status" | "status_group" | "translation_qa_status" | "q" | "sort" | "include_archived" | "created_range";
+type WorkQueueKind = "failed" | "stale" | "pending_qa" | "blocked_qa";
+type WorkQueueItem = {
+  kind: WorkQueueKind;
+  label: string;
+  helper: string;
+  count: number;
+  tone: "danger" | "warning" | "info";
+  active: boolean;
+};
+type JobTableExpose = {
+  clearSelection: () => void;
+};
 type LoadJobsOptions = {
   preserveError?: boolean;
   background?: boolean;
@@ -409,9 +437,6 @@ const activeFilterChips = computed<Array<{ key: FilterChipKey; label: string }>>
   return chips;
 });
 const returnQueryForDetail = computed(() => jobsRouteQuery());
-const activeCount = computed(
-  () => countByStatus("pending") + countByStatus("queued") + countByStatus("running"),
-);
 const selectedRetryableJobs = computed(() => selectedJobs.value.filter(canRetryDocumentJob));
 const selectedCancelableJobs = computed(() => selectedJobs.value.filter(canCancelDocumentJob));
 const selectedArchivableJobs = computed(() => selectedJobs.value.filter(canArchiveDocumentJob));
@@ -432,38 +457,38 @@ const syncStatusText = computed(() => {
   return "已同步";
 });
 const lastRefreshedLabel = computed(() => (lastRefreshedAt.value ? `最近 ${formatDateTime(lastRefreshedAt.value)}` : ""));
-const metrics = computed(() => [
+const workQueueItems = computed<WorkQueueItem[]>(() => [
   {
-    key: "total",
-    label: "全部任务",
-    value: total.value,
-    helper: "当前筛选结果",
-    icon: Files,
-    tone: "primary",
+    kind: "failed",
+    label: "失败任务",
+    helper: "进入失败处理视图",
+    count: countByStatus("failed"),
+    tone: "danger",
+    active: statusFilter.value === "failed",
   },
   {
-    key: "active",
-    label: "处理中",
-    value: activeCount.value,
-    helper: "等待或运行中",
-    icon: Timer,
-    tone: "indigo",
+    kind: "stale",
+    label: "停滞任务",
+    helper: "按最久未更新排序",
+    count: staleVisibleJobs.value.length,
+    tone: "warning",
+    active: statusGroupFilter.value === "active" && sortFilter.value === "updated_at_asc",
   },
   {
-    key: "succeeded",
-    label: "已完成",
-    value: countByStatus("succeeded"),
-    helper: "可下载交付",
-    icon: CircleCheck,
-    tone: "green",
+    kind: "pending_qa",
+    label: "待 QA",
+    helper: "翻译复核入口",
+    count: translationQaSummary.value.unreviewed,
+    tone: "info",
+    active: qaStatusFilter.value === "unreviewed",
   },
   {
-    key: "failed",
-    label: "需处理",
-    value: countByStatus("failed"),
-    helper: "失败任务",
-    icon: Warning,
-    tone: "amber",
+    kind: "blocked_qa",
+    label: "QA 阻塞",
+    helper: "优先解除阻塞",
+    count: translationQaSummary.value.blocked,
+    tone: "danger",
+    active: qaStatusFilter.value === "blocked",
   },
 ]);
 
@@ -496,6 +521,12 @@ async function loadJobs(options: LoadJobsOptions = {}): Promise<void> {
     selectedJobs.value = [];
     total.value = response.total;
     filteredSummary.value = response.filtered_summary ?? response.summary;
+    translationQaSummary.value = {
+      unreviewed: response.translation_qa_summary?.unreviewed ?? 0,
+      approved: response.translation_qa_summary?.approved ?? 0,
+      needs_fix: response.translation_qa_summary?.needs_fix ?? 0,
+      blocked: response.translation_qa_summary?.blocked ?? 0,
+    };
     lastRefreshedAt.value = new Date().toISOString();
   } catch (caught) {
     error.value = normalizeApiError(caught);
@@ -544,6 +575,11 @@ function goCreateJob(): void {
 
 function handleSelectionChange(selection: DocumentJobResponse[]): void {
   selectedJobs.value = selection;
+}
+
+function clearSelection(): void {
+  selectedJobs.value = [];
+  jobTableRef.value?.clearSelection();
 }
 
 function statusLabel(status: string): string {
@@ -614,6 +650,27 @@ function applyQuickFilter(kind: "active" | "failed" | "archived"): void {
     statusFilter.value = "";
     statusGroupFilter.value = "";
     includeArchived.value = true;
+  }
+  handleFilter();
+}
+
+function applyWorkQueueFilter(kind: WorkQueueKind): void {
+  searchKeyword.value = "";
+  createdRange.value = null;
+  includeArchived.value = false;
+  sortFilter.value = "updated_at_desc";
+  statusFilter.value = "";
+  statusGroupFilter.value = "";
+  qaStatusFilter.value = "";
+  if (kind === "failed") {
+    statusFilter.value = "failed";
+  } else if (kind === "stale") {
+    statusGroupFilter.value = "active";
+    sortFilter.value = "updated_at_asc";
+  } else if (kind === "pending_qa") {
+    qaStatusFilter.value = "unreviewed";
+  } else {
+    qaStatusFilter.value = "blocked";
   }
   handleFilter();
 }
@@ -1085,89 +1142,8 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-.jobs-hero,
-.metric-grid,
-.jobs-list-panel {
-  position: relative;
-  z-index: 1;
-}
-
-.jobs-hero {
-  overflow: hidden;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 18px 28px;
-  align-items: start;
-  min-height: 186px;
-  border-color: color-mix(in srgb, var(--app-color-primary-border) 82%, transparent);
-  background:
-    linear-gradient(var(--app-color-grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--app-color-grid-line) 1px, transparent 1px),
-    var(--app-gradient-hero);
-  background-size:
-    34px 34px,
-    34px 34px,
-    auto;
-  box-shadow:
-    0 24px 64px color-mix(in srgb, var(--app-color-primary) 24%, transparent),
-    var(--app-shadow-panel);
-}
-
-.jobs-hero::before {
-  width: 0;
-}
-
-.jobs-hero::after {
-  position: absolute;
-  inset: 0;
-  width: auto;
-  content: "";
-  background:
-    linear-gradient(118deg, transparent 0 48%, rgba(255, 255, 255, 0.2) 48% 54%, transparent 68%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 44%);
-  opacity: 1;
-  mask-image: none;
-  pointer-events: none;
-}
-
-.hero-copy {
-  max-width: 820px;
-}
-
-.jobs-hero .page-kicker,
-.jobs-hero .page-title,
-.jobs-hero .page-description {
-  color: #ffffff;
-}
-
-.jobs-hero .page-kicker::before {
-  background: linear-gradient(90deg, #ffffff, var(--app-color-accent-emerald));
-}
-
-.jobs-hero .page-description {
-  max-width: 700px;
-  color: rgba(255, 255, 255, 0.84);
-}
-
-.hero-eyebrow,
 .table-kicker {
   margin-bottom: 10px;
-}
-
-.hero-copy h1 {
-  margin: 0 0 8px;
-}
-
-.hero-copy p:last-child {
-  margin-bottom: 0;
-}
-
-.hero-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
 }
 
 .live-pill {
@@ -1204,110 +1180,6 @@ onBeforeUnmount(() => {
 .live-pill.is-loading span {
   color: var(--app-color-primary);
   animation: app-status-pulse var(--app-motion-slow) ease-out infinite alternate;
-}
-
-.hero-refresh {
-  min-height: 38px;
-  border-color: rgba(255, 255, 255, 0.26);
-  border-radius: var(--app-radius-md);
-  background: rgba(255, 255, 255, 0.14);
-  color: #ffffff;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-.metric-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-  margin-top: 16px;
-}
-
-.metric-card {
-  position: relative;
-  overflow: hidden;
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
-  gap: 12px;
-  align-items: center;
-  min-height: 112px;
-  padding: 16px;
-  border: 1px solid color-mix(in srgb, var(--app-color-primary-border) 72%, transparent);
-  border-radius: var(--app-radius-md);
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--app-color-surface) 88%, var(--app-color-primary-soft)), var(--app-color-glass-muted)),
-    var(--app-gradient-panel-depth);
-  box-shadow: var(--app-shadow-panel);
-  transition:
-    border-color var(--app-motion-base) ease-out,
-    box-shadow var(--app-motion-base) ease-out,
-    transform var(--app-motion-base) var(--app-ease-out);
-}
-
-.metric-card:hover {
-  border-color: var(--app-color-primary-border);
-  box-shadow: var(--app-shadow-panel-hover);
-  transform: translateY(-4px);
-}
-
-.metric-card::after {
-  position: absolute;
-  inset: 0 0 auto;
-  height: 3px;
-  content: "";
-  background: var(--app-gradient-accent-line);
-  pointer-events: none;
-}
-
-.metric-icon {
-  display: inline-grid;
-  width: 44px;
-  height: 44px;
-  place-items: center;
-  border-radius: var(--app-radius-md);
-  background: linear-gradient(135deg, var(--app-color-primary), var(--app-color-primary-hover));
-  color: #ffffff;
-  font-size: 20px;
-  box-shadow:
-    0 12px 22px color-mix(in srgb, var(--app-color-primary) 24%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.36);
-}
-
-.metric-card span:not(.metric-icon) {
-  display: block;
-  color: var(--app-color-text-muted);
-  font-size: 13px;
-}
-
-.metric-card strong {
-  display: block;
-  margin: 4px 0;
-  color: var(--app-color-text);
-  font-size: 30px;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.metric-card em {
-  color: var(--app-color-text-faint);
-  font-size: 12px;
-  font-style: normal;
-}
-
-.metric-green .metric-icon {
-  background: linear-gradient(135deg, var(--app-color-success), var(--app-color-accent-cyan));
-  color: #ffffff;
-}
-
-.metric-amber .metric-icon {
-  background: linear-gradient(135deg, var(--app-color-warning), var(--app-color-accent-amber));
-  color: #ffffff;
-}
-
-.metric-indigo .metric-icon {
-  background: linear-gradient(135deg, var(--app-color-info), var(--app-color-primary));
-  color: #ffffff;
 }
 
 .jobs-list-panel {
@@ -1405,27 +1277,6 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 
-.selection-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--app-color-primary-border);
-  border-radius: var(--app-radius-md);
-  background: linear-gradient(90deg, var(--app-color-primary-soft), var(--app-color-accent-cyan-soft));
-  color: var(--app-color-primary-hover);
-  font-size: 14px;
-}
-
-.selection-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
 .inline-result-alert {
   margin-bottom: 12px;
 }
@@ -1497,9 +1348,9 @@ onBeforeUnmount(() => {
 .jobs-table-card {
   overflow: hidden;
   padding: 0;
-  border: 1px solid var(--app-color-primary-border);
+  border: 1px solid var(--app-color-border);
   border-radius: var(--app-radius-md);
-  background: var(--app-gradient-panel-depth);
+  background: var(--app-color-surface);
   box-shadow: var(--app-shadow-subtle);
 }
 
@@ -1555,7 +1406,7 @@ onBeforeUnmount(() => {
 .jobs-page :deep(.el-button--primary) {
   border: 1px solid var(--app-color-primary);
   background: var(--app-gradient-action);
-  box-shadow: 0 12px 26px color-mix(in srgb, var(--app-color-primary) 26%, transparent);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--app-color-primary) 18%, transparent);
 }
 
 .jobs-page :deep(.el-select__wrapper),
@@ -1598,9 +1449,7 @@ onBeforeUnmount(() => {
 
 .jobs-table-card :deep(.el-table th.el-table__cell) {
   font-weight: 760;
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--app-color-primary-soft) 78%, transparent), transparent),
-    var(--el-table-header-bg-color);
+  background: var(--el-table-header-bg-color);
 }
 
 .jobs-table-card :deep(.el-table td.el-table__cell),
@@ -1633,15 +1482,233 @@ onBeforeUnmount(() => {
   color: #ffffff;
 }
 
+.jobs-page {
+  margin: -20px -24px -36px;
+  padding: 20px 24px 42px;
+  background: transparent;
+  animation: none;
+  transform: none;
+}
+
+.jobs-page.has-bulk-actions {
+  padding-bottom: 124px;
+}
+
+.jobs-page::before,
+.jobs-page::after {
+  display: none;
+}
+
+.jobs-command-header,
+.work-queue-strip,
+.jobs-list-panel {
+  position: relative;
+  z-index: 1;
+}
+
+.jobs-command-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--app-space-4);
+  align-items: center;
+  padding: var(--app-space-4) var(--app-space-5);
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface-elevated);
+  box-shadow: var(--app-shadow-subtle);
+}
+
+.command-copy {
+  min-width: 0;
+}
+
+.command-copy .page-title {
+  font-size: 24px;
+}
+
+.command-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--app-space-2);
+}
+
+.jobs-command-header .live-pill {
+  min-height: 34px;
+  border-color: var(--app-color-border);
+  background: var(--app-color-surface-muted);
+  color: var(--app-color-text);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.jobs-command-header .live-pill small {
+  flex-basis: auto;
+  color: var(--app-color-text-muted);
+}
+
+.work-queue-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--app-space-3);
+  margin-top: var(--app-space-3);
+}
+
+.work-queue-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--app-space-3);
+  align-items: center;
+  min-width: 0;
+  min-height: 74px;
+  padding: var(--app-space-3);
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface);
+  color: var(--app-color-text);
+  text-align: left;
+  box-shadow: var(--app-shadow-subtle);
+  transition:
+    border-color var(--app-motion-fast) ease-out,
+    background-color var(--app-motion-fast) ease-out,
+    box-shadow var(--app-motion-fast) ease-out;
+}
+
+.work-queue-item:hover,
+.work-queue-item:focus-visible,
+.work-queue-item.is-active {
+  border-color: var(--app-color-primary-border);
+  background: var(--app-color-primary-soft);
+  box-shadow: var(--app-shadow-focus);
+  outline: none;
+}
+
+.work-queue-item.is-danger {
+  border-color: var(--app-color-danger-border);
+}
+
+.work-queue-item.is-danger .queue-count {
+  color: var(--app-color-danger);
+  background: var(--app-color-danger-soft);
+}
+
+.work-queue-item.is-warning {
+  border-color: var(--app-color-warning-border);
+}
+
+.work-queue-item.is-warning .queue-count {
+  color: var(--app-color-warning);
+  background: var(--app-color-warning-soft);
+}
+
+.work-queue-item.is-info .queue-count {
+  color: var(--app-color-info);
+  background: var(--app-color-info-soft);
+}
+
+.queue-count {
+  display: inline-grid;
+  min-width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: var(--app-radius-md);
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.queue-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.queue-copy strong,
+.queue-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-copy strong {
+  font-size: 14px;
+}
+
+.queue-copy small {
+  color: var(--app-color-text-muted);
+  font-size: 12px;
+}
+
+.jobs-list-panel {
+  border: 1px solid var(--app-color-border);
+  margin-top: var(--app-space-3);
+  background: var(--app-color-surface-elevated);
+  box-shadow: var(--app-shadow-subtle);
+}
+
+.jobs-list-panel::before {
+  display: none;
+}
+
+.jobs-list-panel:hover,
+.jobs-table-card:hover {
+  border-color: var(--app-color-border);
+  box-shadow: var(--app-shadow-subtle);
+  transform: none;
+}
+
+.bulk-action-bar {
+  position: fixed;
+  right: max(16px, calc((100vw - var(--app-content-wide)) / 2 + 24px));
+  bottom: 16px;
+  left: max(16px, calc((100vw - var(--app-content-wide)) / 2 + 24px));
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--app-space-4);
+  padding: var(--app-space-3) var(--app-space-4);
+  border: 1px solid var(--app-color-primary-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface-elevated);
+  box-shadow: var(--app-shadow-panel);
+  backdrop-filter: var(--app-backdrop-panel);
+  -webkit-backdrop-filter: var(--app-backdrop-panel);
+}
+
+.bulk-summary {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.bulk-summary strong {
+  color: var(--app-color-text);
+  font-size: 14px;
+}
+
+.bulk-summary span {
+  color: var(--app-color-text-muted);
+  font-size: 12px;
+}
+
+.bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--app-space-2);
+}
+
 @media (prefers-color-scheme: dark) {
   .jobs-page {
     background: var(--app-color-bg);
     color-scheme: var(--app-color-scheme);
   }
 
-  .selection-bar {
+  .bulk-action-bar {
     border-color: var(--app-color-primary-border);
-    background: var(--app-color-primary-soft);
+    background: var(--app-color-surface-elevated);
     color: var(--app-color-primary-hover);
   }
 
@@ -1660,7 +1727,7 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 1080px) {
-  .metric-grid {
+  .work-queue-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1677,15 +1744,15 @@ onBeforeUnmount(() => {
     padding: 18px 12px 30px;
   }
 
-  .jobs-hero {
+  .jobs-command-header {
     grid-template-columns: 1fr;
   }
 
-  .hero-actions {
+  .command-actions {
     justify-content: flex-start;
   }
 
-  .metric-grid {
+  .work-queue-strip {
     grid-template-columns: 1fr;
   }
 
@@ -1700,12 +1767,15 @@ onBeforeUnmount(() => {
     width: 100%;
   }
 
-  .selection-bar {
+  .bulk-action-bar {
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
     align-items: stretch;
     flex-direction: column;
   }
 
-  .selection-actions {
+  .bulk-actions {
     justify-content: flex-start;
   }
 
@@ -1715,13 +1785,8 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 520px) {
-  .jobs-hero,
   .jobs-list-panel {
     padding: 16px;
-  }
-
-  .metric-card {
-    min-height: 96px;
   }
 }
 

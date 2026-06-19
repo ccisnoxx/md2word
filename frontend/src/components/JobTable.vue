@@ -3,15 +3,17 @@
 <template>
   <div class="job-table">
     <el-table
+      ref="tableRef"
       v-loading="loading"
       :data="jobs"
       border
       class="table"
       empty-text="暂无任务"
-      @selection-change="$emit('selection-change', $event)"
+      table-layout="fixed"
+      @selection-change="emit('selection-change', $event)"
     >
-      <el-table-column type="selection" width="46" :selectable="isBatchSelectable" />
-      <el-table-column label="任务" min-width="320">
+      <el-table-column type="selection" width="44" :selectable="isBatchSelectable" />
+      <el-table-column label="任务 / 异常" min-width="360">
         <template #default="{ row }">
           <div class="job-main">
             <router-link class="filename job-title" :to="`/jobs/${row.id}`" :title="getJobSourceFilename(row)">
@@ -22,67 +24,84 @@
               <el-tag size="small" effect="plain">{{ jobModeText[row.mode] || row.mode }}</el-tag>
               <el-tag v-if="row.archived_at" size="small" type="info" effect="plain">已归档</el-tag>
             </div>
+            <div v-if="failureSummary(row)" class="failure-summary">
+              <span class="mono error-code" :title="failureCode(row)">{{ failureCode(row) }}</span>
+              <span :title="failureSummary(row)">{{ failureSummary(row) }}</span>
+            </div>
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="状态与进度" min-width="220">
+      <el-table-column label="状态" min-width="126">
         <template #default="{ row }">
-          <div class="status-stack">
+          <div class="status-cell">
             <JobStatusBadge :status="row.status" />
-            <JobProgress :status="row.status" :stage="row.stage" :progress="row.progress" />
+            <span class="muted stage-label">{{ stageLabel(row) }}</span>
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="翻译 QA" min-width="128">
+      <el-table-column label="QA" min-width="126">
         <template #default="{ row }">
-          <el-tag
-            v-if="row.mode === 'en2zh_pdf_to_word'"
-            size="small"
-            :type="translationQaTagType(row)"
-            effect="plain"
-          >
-            {{ translationQaStatusLabel(row) }}
-          </el-tag>
+          <div v-if="supportsTranslationQa(row)" class="qa-cell">
+            <el-tag size="small" :type="translationQaTagType(row)" effect="plain">
+              {{ translationQaStatusLabel(row) }}
+            </el-tag>
+            <span v-if="row.translation_qa_reviewed_by" class="muted qa-reviewer">
+              {{ row.translation_qa_reviewed_by }}
+            </span>
+          </div>
           <span v-else class="muted">-</span>
         </template>
       </el-table-column>
-      <el-table-column label="异常" min-width="150">
+      <el-table-column label="进度" min-width="170">
         <template #default="{ row }">
-          <span v-if="row.error_code" class="mono error-code" :title="row.error_code">{{ row.error_code }}</span>
-          <span v-else class="muted">-</span>
+          <JobProgress :status="row.status" :stage="row.stage" :progress="row.progress" />
         </template>
       </el-table-column>
-      <el-table-column label="更新时间" min-width="155">
+      <el-table-column label="更新" min-width="150">
         <template #default="{ row }">
-          <span class="updated-time">{{ formatDateTime(row.updated_at) }}</span>
+          <span class="updated-time" :title="`创建：${formatDateTime(row.created_at)}`">
+            {{ formatDateTime(row.updated_at) }}
+          </span>
         </template>
       </el-table-column>
-      <el-table-column :key="actionColumnFixed ? 'actions-fixed' : 'actions-static'" label="操作" width="168" :fixed="actionColumnFixed">
+      <el-table-column :key="actionColumnFixed ? 'actions-fixed' : 'actions-static'" label="操作" width="158" :fixed="actionColumnFixed">
         <template #default="{ row }">
           <div class="action-row">
-            <el-button size="small" text type="primary" @click="$router.push(`/jobs/${row.id}`)">查看</el-button>
-            <el-tooltip
-              :disabled="!documentJobActionDisabledReason(row, 'download')"
-              :content="documentJobActionDisabledReason(row, 'download')"
-              placement="top"
+            <el-button
+              size="small"
+              text
+              :type="primaryActionType(row)"
+              :loading="isPrimaryActionLoading(row)"
+              :disabled="isPrimaryActionDisabled(row)"
+              @click="handlePrimaryAction(row)"
             >
-              <span class="action-tooltip-anchor">
+              {{ primaryActionLabel(row) }}
+            </el-button>
+            <el-dropdown trigger="click" @command="handleRowCommand(row, $event)">
+              <el-tooltip content="更多操作" placement="top">
                 <el-button
                   size="small"
                   text
-                  type="primary"
-                  :loading="isActionPending(row, 'download')"
-                  :disabled="isJobPending(row) || !canDownloadDocumentJob(row)"
-                  @click="$emit('download', row)"
-                >
-                  下载
-                </el-button>
-              </span>
-            </el-tooltip>
-            <el-dropdown trigger="click" @command="handleRowCommand(row, $event)">
-              <el-button size="small" text :icon="MoreFilled" :disabled="isJobPending(row)">更多</el-button>
+                  :icon="MoreFilled"
+                  class="more-action"
+                  aria-label="更多操作"
+                  title="更多操作"
+                />
+              </el-tooltip>
               <template #dropdown>
                 <el-dropdown-menu>
+                  <el-dropdown-item command="view">查看详情</el-dropdown-item>
+                  <el-dropdown-item
+                    command="download"
+                    :disabled="isJobPending(row) || !canDownloadDocumentJob(row)"
+                  >
+                    <span class="dropdown-action-label">
+                      <span>下载</span>
+                      <small v-if="rowActionDisabledReason(row, 'download')" class="dropdown-action-reason">
+                        {{ rowActionDisabledReason(row, 'download') }}
+                      </small>
+                    </span>
+                  </el-dropdown-item>
                   <el-dropdown-item
                     command="retry"
                     :disabled="isJobPending(row) || !canRetryDocumentJob(row)"
@@ -166,7 +185,7 @@
         :current-page="page"
         :page-size="pageSize"
         :total="total"
-        @current-change="$emit('page-change', $event)"
+        @current-change="emit('page-change', $event)"
       />
     </div>
   </div>
@@ -175,6 +194,8 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { MoreFilled } from "@element-plus/icons-vue";
+import { useRouter } from "vue-router";
+import type { TableInstance } from "element-plus";
 
 import type { DocumentJobActionId, DocumentJobResponse } from "@/api/types";
 import JobProgress from "@/components/JobProgress.vue";
@@ -188,9 +209,11 @@ import {
   canRetryDocumentJob,
   canUnarchiveDocumentJob,
   documentJobActionDisabledReason,
+  documentJobModeSupportsTranslationQa,
   formatDateTime,
   getJobSourceFilename,
   jobModeText,
+  jobStageText,
   shouldShowDocumentJobAction,
   translationQaStatusTagType,
   translationQaStatusText,
@@ -217,6 +240,10 @@ const emit = defineEmits<{
   delete: [job: DocumentJobResponse];
 }>();
 
+type PrimaryRowAction = "download" | "retry" | "view";
+
+const router = useRouter();
+const tableRef = ref<TableInstance>();
 const actionColumnFixed = ref<"right" | undefined>("right");
 let narrowViewportQuery: MediaQueryList | null = null;
 
@@ -237,8 +264,18 @@ onBeforeUnmount(() => {
   narrowViewportQuery?.removeEventListener("change", syncActionColumnFixed);
 });
 
+function clearSelection(): void {
+  tableRef.value?.clearSelection();
+}
+
+defineExpose({ clearSelection });
+
 function isBatchSelectable(row: DocumentJobResponse): boolean {
   return canRetryDocumentJob(row) || canArchiveDocumentJob(row) || canCancelDocumentJob(row);
+}
+
+function supportsTranslationQa(row: DocumentJobResponse): boolean {
+  return documentJobModeSupportsTranslationQa(row.mode);
 }
 
 // 表格 slot 的 row 类型较宽，统一在 helper 内按 DocumentJobResponse 读取 QA 状态。
@@ -251,11 +288,81 @@ function translationQaTagType(row: DocumentJobResponse): "success" | "warning" |
   return translationQaStatusTagType(row.translation_qa_status);
 }
 
+function stageLabel(row: DocumentJobResponse): string {
+  return jobStageText[row.stage] || row.stage;
+}
+
+function failureCode(row: DocumentJobResponse): string {
+  return row.error_code || row.failed_stage || "failed";
+}
+
+function failureSummary(row: DocumentJobResponse): string {
+  if (!row.error_code && !row.error_message && row.status !== "failed") {
+    return "";
+  }
+  const stageText = row.failed_stage ? jobStageText[row.failed_stage] || row.failed_stage : "";
+  return [stageText, row.error_message || "进入详情查看失败诊断。"].filter(Boolean).join(" · ");
+}
+
+function primaryAction(row: DocumentJobResponse): PrimaryRowAction {
+  if (canDownloadDocumentJob(row)) {
+    return "download";
+  }
+  if (canRetryDocumentJob(row)) {
+    return "retry";
+  }
+  return "view";
+}
+
+function primaryActionLabel(row: DocumentJobResponse): string {
+  const action = primaryAction(row);
+  if (action === "download") {
+    return "下载";
+  }
+  if (action === "retry") {
+    return "重试";
+  }
+  return "查看";
+}
+
+function primaryActionType(row: DocumentJobResponse): "primary" | "warning" | undefined {
+  const action = primaryAction(row);
+  if (action === "download" || action === "view") {
+    return "primary";
+  }
+  return "warning";
+}
+
+function isPrimaryActionLoading(row: DocumentJobResponse): boolean {
+  const action = primaryAction(row);
+  return action !== "view" && isActionPending(row, action);
+}
+
+function isPrimaryActionDisabled(row: DocumentJobResponse): boolean {
+  const action = primaryAction(row);
+  return action !== "view" && isJobPending(row);
+}
+
+function handlePrimaryAction(row: DocumentJobResponse): void {
+  const action = primaryAction(row);
+  if (action === "download") {
+    emit("download", row);
+  } else if (action === "retry") {
+    emit("retry", row);
+  } else {
+    void router.push(`/jobs/${row.id}`);
+  }
+}
+
 function handleRowCommand(row: DocumentJobResponse, command: string | number | object): void {
   if (typeof command !== "string") {
     return;
   }
-  if (command === "retry") {
+  if (command === "view") {
+    void router.push(`/jobs/${row.id}`);
+  } else if (command === "download") {
+    emit("download", row);
+  } else if (command === "retry") {
     emit("retry", row);
   } else if (command === "clone") {
     emit("clone", row);
@@ -317,10 +424,6 @@ function pendingActionLabel(row: DocumentJobResponse): string {
   width: 100%;
 }
 
-.error-code {
-  color: var(--app-color-danger);
-}
-
 .job-main {
   display: grid;
   gap: 6px;
@@ -338,15 +441,22 @@ function pendingActionLabel(row: DocumentJobResponse): string {
 
 .job-title {
   color: var(--app-color-primary-hover);
-  font-weight: 650;
+  font-weight: 700;
 }
 
-.job-meta {
+.job-meta,
+.failure-summary,
+.qa-cell,
+.status-cell {
   display: flex;
   align-items: center;
   min-width: 0;
   gap: 6px;
-  color: var(--app-color-text-muted);
+}
+
+.job-meta,
+.failure-summary {
+  flex-wrap: wrap;
 }
 
 .job-id {
@@ -358,14 +468,34 @@ function pendingActionLabel(row: DocumentJobResponse): string {
   white-space: nowrap;
 }
 
-.status-stack {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
+.failure-summary {
+  padding: 4px 6px;
+  border: 1px solid var(--app-color-danger-border);
+  border-radius: var(--app-radius-sm);
+  background: var(--app-color-danger-soft);
+  color: var(--app-color-danger);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
-.error-code,
-.updated-time {
+.failure-summary span:last-child {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--app-color-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-cell,
+.qa-cell {
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.stage-label,
+.qa-reviewer,
+.updated-time,
+.error-code {
   display: inline-block;
   max-width: 100%;
   overflow: hidden;
@@ -382,6 +512,10 @@ function pendingActionLabel(row: DocumentJobResponse): string {
   white-space: nowrap;
 }
 
+.more-action {
+  width: 28px;
+}
+
 .action-pending-label {
   color: var(--app-color-text-muted);
   font-size: 12px;
@@ -389,11 +523,6 @@ function pendingActionLabel(row: DocumentJobResponse): string {
 
 .action-row :deep(.el-button + .el-button) {
   margin-left: 0;
-}
-
-.action-tooltip-anchor,
-.dropdown-action-label {
-  display: inline-flex;
 }
 
 .dropdown-action-label {
@@ -422,7 +551,7 @@ function pendingActionLabel(row: DocumentJobResponse): string {
 
   .table,
   .pagination-row {
-    min-width: 960px;
+    min-width: 980px;
   }
 
   :deep(.el-table__cell.el-table-fixed-column--right) {
