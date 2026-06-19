@@ -408,11 +408,55 @@ onMounted(() => {
 }
 
 .page-heading {
+  overflow: hidden;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--app-space-4);
-  border-color: var(--app-color-primary-border);
+  min-height: 176px;
+  border-color: color-mix(in srgb, var(--app-color-primary-border) 78%, transparent);
+  background:
+    linear-gradient(var(--app-color-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--app-color-grid-line) 1px, transparent 1px),
+    var(--app-gradient-hero);
+  background-size:
+    32px 32px,
+    32px 32px,
+    auto;
+  box-shadow:
+    0 24px 64px color-mix(in srgb, var(--app-color-primary) 22%, transparent),
+    var(--app-shadow-panel);
+}
+
+.page-heading::before {
+  width: 0;
+}
+
+.page-heading::after {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  content: "";
+  background:
+    linear-gradient(116deg, transparent 0 44%, rgba(255, 255, 255, 0.2) 44% 50%, transparent 66%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent 44%);
+  opacity: 1;
+  mask-image: none;
+  pointer-events: none;
+}
+
+.page-heading .page-kicker,
+.page-heading .page-title,
+.page-heading .page-description {
+  color: #ffffff;
+}
+
+.page-heading .page-kicker::before {
+  background: linear-gradient(90deg, #ffffff, var(--app-color-accent-emerald));
+}
+
+.page-heading .page-description {
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .settings-groups {
@@ -424,12 +468,30 @@ onMounted(() => {
 .word-config-entry-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: var(--app-space-3);
+  gap: var(--app-space-4);
 }
 
 .word-config-entry {
-  min-height: 104px;
-  border-color: var(--app-color-primary-border);
+  min-height: 130px;
+  padding: var(--app-space-5);
+  border-color: color-mix(in srgb, var(--app-color-primary-border) 72%, transparent);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--app-color-surface) 88%, var(--app-color-primary-soft)), var(--app-color-glass-muted)),
+    var(--app-gradient-panel-depth);
+  box-shadow: var(--app-shadow-panel);
+}
+
+.word-config-entry::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 4px;
+  content: "";
+  background: var(--app-gradient-accent-line);
+}
+
+.word-config-entry::after {
+  width: 96px;
+  opacity: 1;
 }
 
 .word-config-entry span:last-child {
@@ -454,7 +516,10 @@ onMounted(() => {
 .release-gate-workspace {
   display: grid;
   gap: var(--app-space-4);
-  border-color: var(--app-color-accent-amber-border);
+  border-color: color-mix(in srgb, var(--app-color-accent-emerald-border) 78%, transparent);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--app-color-accent-emerald-soft) 48%, transparent), transparent 46%),
+    var(--app-gradient-panel-depth);
 }
 
 .gate-tags {
@@ -475,11 +540,24 @@ onMounted(() => {
   overflow: hidden;
   display: grid;
   gap: 5px;
-  min-height: 92px;
-  padding: var(--app-space-3);
-  border: 1px solid var(--app-color-accent-amber-border);
+  min-height: 112px;
+  padding: var(--app-space-4);
+  border: 1px solid color-mix(in srgb, var(--app-color-accent-emerald-border) 72%, transparent);
   border-radius: var(--app-radius-md);
-  background: linear-gradient(180deg, var(--app-color-accent-amber-soft), var(--app-color-surface));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--app-color-accent-emerald-soft) 86%, transparent), var(--app-color-glass-strong)),
+    var(--app-color-surface);
+  box-shadow: var(--app-shadow-subtle);
+  transition:
+    border-color var(--app-motion-fast) ease-out,
+    box-shadow var(--app-motion-fast) ease-out,
+    transform var(--app-motion-fast) var(--app-ease-out);
+}
+
+.gate-status-grid article:hover {
+  border-color: var(--app-color-accent-emerald-border);
+  box-shadow: var(--app-shadow-panel-hover);
+  transform: translateY(-2px);
 }
 
 .gate-status-grid article::before {
@@ -487,7 +565,7 @@ onMounted(() => {
   inset: 0 auto 0 0;
   width: 3px;
   content: "";
-  background: linear-gradient(180deg, var(--app-color-accent-amber), var(--app-color-primary));
+  background: linear-gradient(180deg, var(--app-color-accent-emerald), var(--app-color-primary));
 }
 
 .gate-status-grid span,
@@ -527,12 +605,16 @@ onMounted(() => {
   color: var(--app-color-text);
   transition:
     border-color 180ms ease-out,
-    color 180ms ease-out;
+    color 180ms ease-out,
+    transform 180ms var(--app-ease-out),
+    box-shadow 180ms ease-out;
 }
 
 .gate-action-item:hover {
   border-color: var(--app-color-primary-border);
   color: var(--app-color-text);
+  box-shadow: var(--app-shadow-subtle);
+  transform: translateY(-1px);
 }
 
 .gate-action-item span {
@@ -546,11 +628,25 @@ onMounted(() => {
 }
 
 .settings-group {
+  position: relative;
+  overflow: hidden;
   display: grid;
   align-content: start;
   gap: var(--app-space-4);
   min-width: 0;
-  border-color: var(--app-color-primary-border);
+  border-color: color-mix(in srgb, var(--app-color-primary-border) 70%, transparent);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--app-color-surface) 88%, var(--app-color-primary-soft)), var(--app-color-glass-muted)),
+    var(--app-gradient-panel-depth);
+}
+
+.settings-group::after {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 4px;
+  content: "";
+  background: var(--app-gradient-accent-line);
+  pointer-events: none;
 }
 
 .settings-group-header {
@@ -574,9 +670,12 @@ onMounted(() => {
   width: 42px;
   height: 42px;
   border-radius: var(--app-radius-md);
-  background: linear-gradient(135deg, var(--app-color-primary), var(--app-color-primary-hover) 72%, var(--app-color-accent-cyan));
+  background: var(--app-gradient-action);
   color: #ffffff;
   font-size: 20px;
+  box-shadow:
+    0 12px 22px color-mix(in srgb, var(--app-color-primary) 24%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34);
 }
 
 .settings-group-copy strong,
@@ -609,7 +708,9 @@ onMounted(() => {
   padding: 10px;
   border: 1px solid var(--app-color-border-soft);
   border-radius: var(--app-radius-md);
-  background: linear-gradient(180deg, var(--app-color-surface), var(--app-color-surface-muted));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--app-color-surface) 86%, var(--app-color-primary-soft)), var(--app-color-surface-muted));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32);
 }
 
 .group-metrics dt {
@@ -641,12 +742,16 @@ onMounted(() => {
   color: var(--app-color-text);
   transition:
     border-color 180ms ease-out,
-    color 180ms ease-out;
+    color 180ms ease-out,
+    transform 180ms var(--app-ease-out),
+    box-shadow 180ms ease-out;
 }
 
 .finding-item:hover {
   border-color: var(--app-color-primary-border);
   color: var(--app-color-text);
+  box-shadow: var(--app-shadow-subtle);
+  transform: translateY(-1px);
 }
 
 .finding-more,
@@ -665,20 +770,25 @@ onMounted(() => {
   justify-content: center;
   min-height: 38px;
   padding: 9px 12px;
-  border: 1px solid var(--app-color-primary-border);
+  border: 1px solid var(--app-color-primary);
   border-radius: var(--app-radius-md);
-  background: linear-gradient(135deg, var(--app-color-primary-soft), var(--app-color-surface));
-  color: var(--app-color-primary-hover);
+  background: var(--app-gradient-action);
+  color: #ffffff;
   font-size: 14px;
   font-weight: 700;
+  box-shadow: 0 12px 24px color-mix(in srgb, var(--app-color-primary) 22%, transparent);
   transition:
     border-color 180ms ease-out,
-    color 180ms ease-out;
+    color 180ms ease-out,
+    transform 180ms var(--app-ease-out),
+    box-shadow 180ms ease-out;
 }
 
 .settings-link:hover {
   border-color: var(--app-color-primary);
-  color: var(--app-color-primary-hover);
+  color: #ffffff;
+  box-shadow: var(--app-shadow-panel-hover);
+  transform: translateY(-2px);
 }
 
 @media (max-width: 1040px) {
