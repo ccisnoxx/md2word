@@ -66,3 +66,9 @@ This lets `main.app-page` distribute extra vertical space across auto grid rows.
 ```
 
 This keeps inbox and table layouts compact while preserving the page shell height.
+
+## Protected App Shell
+
+Protected routes use a global sidebar plus compact topbar shell. Keep brand identity in the sidebar, keep page context and breadcrumbs in the topbar, and do not add a separate breadcrumb row between the topbar and business page header.
+
+Desktop sidebar collapse state is a shell preference only. Persist it with `md2word.sidebar.collapsed`; mobile drawer state stays temporary and must not reuse the desktop preference.

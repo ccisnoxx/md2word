@@ -1,94 +1,109 @@
-<!-- frontend/src/layouts/AppLayout.vue: Protected workbench layout with compact header navigation. -->
+<!-- frontend/src/layouts/AppLayout.vue: Protected workbench shell with sidebar navigation and compact topbar. -->
 <template>
-  <el-container class="app-layout">
-    <el-header class="app-header">
-      <div class="brand">
-        <router-link class="brand-link" to="/jobs">
-          <span class="brand-mark" aria-hidden="true">
-            <el-icon><DocumentChecked /></el-icon>
-          </span>
-          <span class="brand-copy">
-            <strong>md2word</strong>
-            <small>PDF → DOCX · QA · Audit</small>
-          </span>
-        </router-link>
-        <el-tag size="small" effect="plain">文档交付</el-tag>
-      </div>
-      <nav class="main-nav" aria-label="主导航">
-        <router-link v-for="item in navItems" :key="item.to" :to="item.to">
-          <el-icon aria-hidden="true"><component :is="item.icon" /></el-icon>
-          <span>{{ item.label }}</span>
-        </router-link>
-      </nav>
-      <div class="workflow-strip" aria-label="文档工作流">
-        <span>PDF</span>
-        <i aria-hidden="true"></i>
-        <span>DOCX</span>
-        <span>QA</span>
-        <span>Audit</span>
-      </div>
-      <div class="header-actions">
-        <AppThemeToggle />
-        <span class="user-text">
-          {{ auth.user?.display_name || auth.user?.username || "未命名用户" }}
-          <span v-if="auth.user?.role" class="muted">({{ auth.user.role }})</span>
-        </span>
-        <el-button :icon="SwitchButton" text @click="handleLogout">退出</el-button>
-      </div>
-    </el-header>
+  <div class="app-layout" :class="{ 'is-sidebar-collapsed': sidebarCollapsed }">
+    <aside class="app-sidebar-shell" aria-label="主导航">
+      <AppSidebar
+        :groups="navGroups"
+        :active-group-id="routeContext.groupId"
+        :active-item-id="routeContext.itemId"
+        :collapsed="sidebarCollapsed"
+        @navigate="handleSidebarNavigate"
+        @toggle-collapse="toggleSidebarCollapsed"
+      />
+    </aside>
 
-    <div class="breadcrumb-shell">
-      <AppBreadcrumb />
+    <el-drawer
+      v-model="mobileDrawerOpen"
+      class="app-mobile-drawer"
+      direction="ltr"
+      size="304px"
+      :append-to-body="true"
+      :with-header="false"
+    >
+      <AppSidebar
+        :groups="navGroups"
+        :active-group-id="routeContext.groupId"
+        :active-item-id="routeContext.itemId"
+        mobile
+        @navigate="handleSidebarNavigate"
+      />
+    </el-drawer>
+
+    <div class="app-workbench">
+      <header class="app-topbar">
+        <div class="topbar-context">
+          <el-button class="topbar-menu-button" :icon="Menu" aria-label="打开导航" circle @click="openMobileDrawer" />
+          <div class="topbar-copy">
+            <span class="topbar-module">{{ routeContext.moduleLabel }}</span>
+            <strong class="topbar-page">{{ routeContext.pageLabel }}</strong>
+            <AppBreadcrumb class="topbar-breadcrumb" :items="routeContext.breadcrumbs" />
+          </div>
+        </div>
+
+        <div class="topbar-actions">
+          <AppThemeToggle />
+          <span class="topbar-user" aria-label="当前用户">
+            <span class="topbar-user-name">{{ userDisplayName }}</span>
+            <span v-if="userRoleLabel" class="topbar-user-role">{{ userRoleLabel }}</span>
+          </span>
+          <el-button class="topbar-logout" :icon="SwitchButton" text @click="handleLogout">退出</el-button>
+        </div>
+      </header>
+
+      <el-main class="app-main">
+        <router-view />
+      </el-main>
     </div>
-
-    <el-main class="app-main">
-      <router-view />
-    </el-main>
-  </el-container>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { computed, type Component } from "vue";
-import {
-  DocumentChecked,
-  Files,
-  Reading,
-  Setting,
-  Stamp,
-  Monitor,
-  SwitchButton,
-} from "@element-plus/icons-vue";
-import { useRouter } from "vue-router";
+import { computed, ref, watch } from "vue";
+import { Menu, SwitchButton } from "@element-plus/icons-vue";
+import { useRoute, useRouter } from "vue-router";
 
 import AppBreadcrumb from "@/components/AppBreadcrumb.vue";
+import AppSidebar from "@/components/AppSidebar.vue";
 import AppThemeToggle from "@/components/AppThemeToggle.vue";
+import { getAppNavigationGroups, getAppRouteContext, type AppAccessContext } from "@/navigation/appShell";
 import { useAuthStore } from "@/stores/auth";
+import { getStoredSidebarCollapsed, persistSidebarCollapsed } from "@/utils/sidebarState";
 
 const auth = useAuthStore();
+const route = useRoute();
 const router = useRouter();
+const sidebarCollapsed = ref(getStoredSidebarCollapsed());
+const mobileDrawerOpen = ref(false);
 
-type NavItem = {
-  label: string;
-  to: string;
-  icon: Component;
-  permission?: string;
-};
+const access = computed<AppAccessContext>(() => ({
+  role: auth.user?.role ?? null,
+  roles: auth.user?.roles ?? [],
+  permissions: auth.user?.permissions ?? [],
+}));
+const navGroups = computed(() => getAppNavigationGroups(access.value));
+const routeContext = computed(() => getAppRouteContext(route, access.value));
+const userDisplayName = computed(() => auth.user?.display_name || auth.user?.username || "未命名用户");
+const userRoleLabel = computed(() => auth.user?.role || "");
 
-const navItems = computed<NavItem[]>(() => {
-  const items: NavItem[] = [
-    { label: "任务工作台", to: "/jobs", icon: Files, permission: "document_jobs:read" },
-    { label: "翻译 QA", to: "/translation-qa", icon: Reading, permission: "translation_qa:read" },
-    { label: "配置中心", to: "/settings", icon: Setting, permission: "settings:read" },
-    {
-      label: auth.hasPermission("term_proposals:review") ? "提案审核" : "术语建议",
-      to: "/term-proposals",
-      icon: Stamp,
-      permission: "term_proposals:read",
-    },
-    { label: "系统状态", to: "/system-status", icon: Monitor, permission: "system:read" },
-  ];
-  return items.filter((item) => !item.permission || auth.hasPermission(item.permission));
-});
+watch(
+  () => route.fullPath,
+  () => {
+    mobileDrawerOpen.value = false;
+  },
+);
+
+function toggleSidebarCollapsed(): void {
+  sidebarCollapsed.value = !sidebarCollapsed.value;
+  persistSidebarCollapsed(sidebarCollapsed.value);
+}
+
+function openMobileDrawer(): void {
+  mobileDrawerOpen.value = true;
+}
+
+function handleSidebarNavigate(): void {
+  mobileDrawerOpen.value = false;
+}
 
 function handleLogout(): void {
   auth.logout();
@@ -98,333 +113,219 @@ function handleLogout(): void {
 
 <style scoped lang="scss">
 .app-layout {
-  min-height: 100vh;
-  background: transparent;
-  color-scheme: var(--app-color-scheme);
-}
-
-.app-header {
-  position: sticky;
-  top: 12px;
-  z-index: 10;
   display: grid;
-  grid-template-columns: minmax(230px, 0.78fr) minmax(520px, 1.58fr) auto minmax(210px, 0.64fr);
-  align-items: center;
-  gap: var(--app-space-3);
-  width: min(calc(100% - 32px), var(--app-content-wide));
-  min-height: calc(var(--app-header-height) + 8px);
-  margin: 12px auto 0;
-  padding: 0 var(--app-space-6);
-  border: 1px solid color-mix(in srgb, var(--app-color-primary-border) 74%, transparent);
-  border-radius: var(--app-radius-lg);
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--app-color-surface-elevated) 82%, var(--app-color-primary-soft)), var(--app-color-glass-muted)),
-    var(--app-gradient-glass);
-  box-shadow:
-    0 18px 42px color-mix(in srgb, var(--app-color-primary) 16%, transparent),
-    var(--app-shadow-panel);
-  backdrop-filter: var(--app-backdrop-panel);
-  -webkit-backdrop-filter: var(--app-backdrop-panel);
+  grid-template-columns: var(--app-sidebar-width, 280px) minmax(0, 1fr);
+  min-height: 100vh;
+  background: var(--app-color-bg);
+  color-scheme: var(--app-color-scheme);
+  transition: grid-template-columns var(--app-motion-base) var(--app-ease-out);
 }
 
-.app-header::before {
-  position: absolute;
-  inset: 0 0 auto;
-  height: 3px;
-  content: "";
-  background: var(--app-gradient-accent-line);
+.app-layout.is-sidebar-collapsed {
+  grid-template-columns: var(--app-sidebar-collapsed-width, 76px) minmax(0, 1fr);
 }
 
-.app-header::after {
-  position: absolute;
-  inset: 3px 3px auto;
-  height: 1px;
-  content: "";
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.72), transparent);
-  pointer-events: none;
+.app-sidebar-shell {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  height: 100vh;
+  min-width: 0;
+  border-right: 1px solid color-mix(in srgb, #334155 72%, transparent);
+  box-shadow: 14px 0 34px rgba(15, 23, 42, 0.08);
 }
 
-.brand,
-.main-nav,
-.workflow-strip,
-.header-actions {
+.app-workbench {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 100vh;
+}
+
+.app-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
-  gap: var(--app-space-2);
+  justify-content: space-between;
+  gap: var(--app-space-4);
+  min-width: 0;
+  min-height: var(--app-header-height);
+  padding: 10px var(--app-space-6);
+  border-bottom: 1px solid var(--app-color-border-soft);
+  background: color-mix(in srgb, var(--app-color-surface-elevated) 92%, transparent);
+  box-shadow: 0 8px 24px rgba(30, 27, 75, 0.06);
+  backdrop-filter: blur(14px) saturate(1.08);
+  -webkit-backdrop-filter: blur(14px) saturate(1.08);
 }
 
-.brand-link {
-  display: inline-flex;
+.topbar-context,
+.topbar-actions {
+  display: flex;
   align-items: center;
-  gap: var(--app-space-2);
-  color: var(--app-color-text);
-}
-
-.brand-link:hover,
-.brand-link:focus-visible {
-  color: var(--app-color-text);
-}
-
-.brand-mark {
-  display: inline-grid;
-  width: 42px;
-  height: 42px;
-  place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.32);
-  border-radius: var(--app-radius-md);
-  background: var(--app-gradient-action);
-  color: #ffffff;
-  box-shadow: 0 10px 22px color-mix(in srgb, var(--app-color-primary) 28%, transparent);
-  font-size: 18px;
-  font-weight: 800;
-}
-
-.brand-copy {
-  display: grid;
-  gap: 1px;
-}
-
-.brand-copy strong {
-  color: var(--app-color-text);
-  font-size: 16px;
-  line-height: 1.1;
-}
-
-.brand-copy small {
-  color: var(--app-color-text-muted);
-  font-size: 12px;
-  line-height: 1.2;
-}
-
-.main-nav {
-  justify-content: center;
   min-width: 0;
 }
 
-.main-nav a {
-  position: relative;
-  overflow: hidden;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 38px;
-  padding: var(--app-space-2) 12px;
-  border: 1px solid transparent;
-  border-radius: var(--app-radius-md);
-  color: var(--app-color-text-muted);
-  font-size: 14px;
-  font-weight: 600;
-  white-space: nowrap;
-  transition:
-    border-color var(--app-motion-fast) ease-out,
-    background-color var(--app-motion-fast) ease-out,
-    color var(--app-motion-fast) ease-out,
-    transform var(--app-motion-fast) ease-out,
-    box-shadow var(--app-motion-fast) ease-out;
+.topbar-context {
+  gap: var(--app-space-3);
 }
 
-.main-nav a .el-icon {
-  font-size: 15px;
-}
-
-.main-nav a.router-link-active {
-  border: 1px solid color-mix(in srgb, var(--app-color-primary-border) 76%, transparent);
-  background: var(--app-gradient-action);
-  color: #ffffff;
-  box-shadow:
-    0 10px 24px color-mix(in srgb, var(--app-color-primary) 22%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.34);
-}
-
-.main-nav a.router-link-active::after {
-  position: absolute;
-  inset: auto 10px 4px;
-  height: 2px;
-  border-radius: var(--app-radius-pill);
-  content: "";
-  background: linear-gradient(90deg, var(--app-color-accent-cyan), var(--app-color-accent-emerald));
-  transition: opacity var(--app-motion-fast) ease-out;
-}
-
-.main-nav a:hover,
-.main-nav a:focus-visible {
-  background: color-mix(in srgb, var(--app-color-primary-soft) 64%, var(--app-color-glass-strong));
-  color: var(--app-color-primary-hover);
-  transform: translateY(-2px);
-  box-shadow: 0 10px 22px color-mix(in srgb, var(--app-color-primary) 12%, transparent);
-}
-
-.main-nav a.router-link-active:hover,
-.main-nav a.router-link-active:focus-visible {
-  color: #ffffff;
-}
-
-.workflow-strip {
-  justify-content: center;
-  padding: 5px;
-  border: 1px solid var(--app-color-border-soft);
-  border-radius: var(--app-radius-pill);
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--app-color-primary-soft) 72%, transparent), var(--app-color-glass)),
-    var(--app-color-glass);
-  color: var(--app-color-primary-rail);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.42),
-    var(--app-shadow-subtle);
-  white-space: nowrap;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-.workflow-strip span {
-  display: inline-grid;
-  min-width: 38px;
-  height: 24px;
-  place-items: center;
-  border-radius: var(--app-radius-pill);
-  background: color-mix(in srgb, var(--app-color-glass-strong) 82%, var(--app-color-primary-soft));
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.workflow-strip span:nth-last-child(2) {
-  color: var(--app-color-accent-cyan);
-}
-
-.workflow-strip span:last-child {
-  color: var(--app-color-accent-emerald);
-}
-
-.workflow-strip i {
-  display: inline-block;
-  width: 24px;
-  height: 2px;
-  border-radius: var(--app-radius-pill);
-  background: var(--app-gradient-accent-line);
-}
-
-.header-actions {
+.topbar-actions {
   justify-content: flex-end;
+  gap: var(--app-space-2);
+}
+
+.topbar-menu-button {
+  display: none;
+  flex: 0 0 auto;
+  border-color: var(--app-color-border-soft);
+  background: var(--app-color-surface);
+  color: var(--app-color-primary-hover);
+}
+
+.topbar-copy {
+  display: grid;
+  align-content: center;
+  gap: 2px;
   min-width: 0;
 }
 
-.user-text {
-  min-width: 0;
+.topbar-module {
   overflow: hidden;
-  font-size: 14px;
-  color: var(--app-color-text-muted);
+  color: var(--app-color-text-faint);
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.topbar-page {
+  overflow: hidden;
+  color: var(--app-color-text);
+  font-size: 18px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-breadcrumb {
+  min-width: 0;
+}
+
+.topbar-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 260px;
+  min-height: 34px;
+  padding: 0 var(--app-space-3);
+  border: 1px solid var(--app-color-border-soft);
+  border-radius: var(--app-radius-pill);
+  background: var(--app-color-surface);
+  color: var(--app-color-text-muted);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.topbar-user-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-user-role {
+  flex: 0 0 auto;
+  color: var(--app-color-primary-hover);
+  font-size: 12px;
+}
+
+.topbar-logout {
+  flex: 0 0 auto;
+}
+
 .app-main {
-  width: min(var(--app-content-wide), 100%);
-  margin: 0 auto;
+  overflow: visible;
+  min-width: 0;
+  width: 100%;
   padding: var(--app-space-6) var(--app-space-6) 40px;
 }
 
-.breadcrumb-shell {
-  width: min(var(--app-content-wide), 100%);
-  margin: 0 auto;
-  padding: var(--app-space-3) var(--app-space-6) 0;
+:global(.app-mobile-drawer.el-drawer) {
+  background: #0f172a;
 }
 
-@media (prefers-color-scheme: dark) {
-  .app-layout {
-    background: transparent;
-    color-scheme: var(--app-color-scheme);
-  }
-
-  .app-header {
-    border-bottom-color: var(--app-color-border);
-    background:
-      linear-gradient(135deg, color-mix(in srgb, var(--app-color-surface-elevated) 82%, var(--app-color-primary-soft)), var(--app-color-glass-muted)),
-      var(--app-gradient-glass);
-  }
-
-  .brand-link {
-    color: var(--app-color-text);
-  }
-
-  .main-nav a {
-    color: var(--app-color-text-muted);
-  }
-
-  .main-nav a.router-link-active {
-    background: var(--app-gradient-action);
-    color: #ffffff;
-  }
-
-  .workflow-strip {
-    background: var(--app-color-glass);
-  }
-
-  .workflow-strip span {
-    background: var(--app-color-glass-strong);
-  }
-
-  .user-text {
-    color: var(--app-color-text-muted);
-  }
+:global(.app-mobile-drawer .el-drawer__body) {
+  height: 100%;
+  padding: 0;
 }
 
 @media (max-width: 980px) {
-  .app-header {
+  .app-layout,
+  .app-layout.is-sidebar-collapsed {
+    display: block;
+  }
+
+  .app-sidebar-shell {
+    display: none;
+  }
+
+  .app-workbench {
+    min-height: 100vh;
+  }
+
+  .app-topbar {
     align-items: flex-start;
-    grid-template-columns: 1fr;
-    height: auto;
-    width: calc(100% - 24px);
-    margin-top: 10px;
+    min-height: auto;
     padding: var(--app-space-3) var(--app-space-4);
   }
 
-  .brand,
-  .header-actions {
-    width: 100%;
-    justify-content: space-between;
+  .topbar-menu-button {
+    display: inline-flex;
   }
 
-  .main-nav {
-    justify-content: flex-start;
-    overflow-x: auto;
-    width: 100%;
-    padding-bottom: 2px;
-  }
-
-  .main-nav a {
+  .topbar-actions {
     flex: 0 0 auto;
   }
 
-  .workflow-strip {
-    justify-content: flex-start;
-    overflow-x: auto;
-    width: 100%;
-  }
-}
-
-@media (max-width: 720px) {
   .app-main {
     padding: var(--app-space-4);
   }
+}
 
-  .breadcrumb-shell {
-    padding: 10px var(--app-space-4) 0;
+@media (max-width: 640px) {
+  .app-topbar {
+    gap: var(--app-space-3);
+  }
+
+  .topbar-context {
+    flex: 1 1 auto;
+  }
+
+  .topbar-actions {
+    gap: 6px;
+  }
+
+  .topbar-user {
+    max-width: 118px;
+    padding: 0 var(--app-space-2);
+  }
+
+  .topbar-user-role,
+  .topbar-logout :deep(span) {
+    display: none;
+  }
+
+  .topbar-page {
+    font-size: 16px;
   }
 }
 
-@media (max-width: 520px) {
-  .brand {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .header-actions {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .user-text {
-    width: 100%;
+@media (max-width: 460px) {
+  .topbar-breadcrumb {
+    display: none;
   }
 }
 </style>
