@@ -202,8 +202,9 @@ async function submit(): Promise<void> {
   --login-shadow: var(--app-shadow-panel);
   --login-accent: var(--app-color-primary);
   --login-accent-strong: var(--app-color-primary-hover);
-  --login-emerald: var(--app-color-accent-cyan);
-  --login-amber: var(--app-color-accent-amber);
+  --login-sky: var(--app-color-accent-cyan);
+  --login-emerald: var(--app-color-accent-emerald);
+  --login-amber: var(--app-color-warning);
   --login-input-bg: var(--app-color-surface);
   --login-input-text: var(--app-color-text);
   --login-input-placeholder: var(--app-color-text-faint);
@@ -256,7 +257,7 @@ async function submit(): Promise<void> {
     260px 100%,
     100% 180px;
   mask-image: linear-gradient(180deg, #000 0%, transparent 78%);
-  opacity: 0.42;
+  opacity: 0.28;
 }
 
 .login-shell {
@@ -293,7 +294,7 @@ async function submit(): Promise<void> {
   height: 34px;
   place-items: center;
   border-radius: var(--app-radius-md);
-  background: linear-gradient(135deg, var(--login-accent), var(--login-accent-strong) 72%, var(--login-emerald));
+  background: linear-gradient(135deg, var(--login-accent), var(--login-sky) 58%, var(--login-emerald));
   color: #ffffff;
   font-size: 18px;
 }
@@ -359,7 +360,7 @@ async function submit(): Promise<void> {
   inset: 0 0 auto;
   height: 3px;
   content: "";
-  background: linear-gradient(90deg, var(--login-accent), var(--login-emerald) 72%, var(--login-amber));
+  background: linear-gradient(90deg, var(--login-accent), var(--login-sky) 62%, var(--login-emerald));
 }
 
 .document-preview {
@@ -422,7 +423,7 @@ async function submit(): Promise<void> {
   inset: 0;
   content: "";
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--login-accent), var(--login-emerald));
+  background: linear-gradient(90deg, var(--login-accent), var(--login-sky), var(--login-emerald));
   transform: translateX(-100%);
   animation: line-fill var(--app-motion-slow) var(--app-ease-out) 220ms both;
 }
@@ -510,7 +511,7 @@ async function submit(): Promise<void> {
   inset: 0 0 auto;
   height: 3px;
   content: "";
-  background: linear-gradient(90deg, var(--login-accent), var(--login-emerald));
+  background: linear-gradient(90deg, var(--login-accent), var(--login-sky), var(--login-emerald));
 }
 
 .signal-item span {
@@ -543,7 +544,7 @@ async function submit(): Promise<void> {
   inset: 0 0 auto;
   height: 4px;
   content: "";
-  background: linear-gradient(90deg, var(--login-accent), var(--login-emerald) 72%, var(--login-amber));
+  background: linear-gradient(90deg, var(--login-accent), var(--login-sky) 62%, var(--login-emerald));
 }
 
 .login-card-header {
@@ -617,7 +618,7 @@ async function submit(): Promise<void> {
   margin-top: 8px;
   border: 1px solid var(--login-accent);
   border-radius: var(--app-radius-md);
-  background: linear-gradient(135deg, var(--login-accent), var(--login-accent-strong) 72%, var(--login-emerald));
+  background: linear-gradient(135deg, var(--login-accent), var(--login-sky) 58%, var(--login-emerald));
   box-shadow: 0 12px 24px color-mix(in srgb, var(--login-accent) 24%, transparent);
   font-weight: 750;
   transition:
@@ -721,7 +722,7 @@ async function submit(): Promise<void> {
     background-image:
       linear-gradient(var(--app-color-grid-line) 1px, transparent 1px),
       linear-gradient(90deg, var(--app-color-grid-line) 1px, transparent 1px);
-    opacity: 0.32;
+    opacity: 0.22;
   }
 
   .login-form {

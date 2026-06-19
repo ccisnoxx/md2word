@@ -3,57 +3,66 @@
   --app-font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --app-font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 
-  --app-color-bg: #eef8f6;
-  --app-color-bg-subtle: #d9ebe8;
+  --app-color-bg: #f5f3ff;
+  --app-color-bg-subtle: #e5e7ff;
   --app-color-surface: #ffffff;
-  --app-color-surface-muted: #f6fbfa;
-  --app-color-surface-elevated: rgba(255, 255, 255, 0.94);
-  --app-color-border: #bdd8d3;
-  --app-color-border-soft: #d8e7e5;
-  --app-color-text: #12201f;
-  --app-color-text-muted: #516563;
-  --app-color-text-faint: #748684;
-  --app-color-primary: #0f766e;
-  --app-color-primary-hover: #0d9488;
-  --app-color-primary-soft: #e6fffb;
-  --app-color-primary-border: #99f6e4;
-  --app-color-primary-rail: #134e4a;
-  --app-color-accent-amber: #f97316;
-  --app-color-accent-amber-soft: #fff7ed;
-  --app-color-accent-amber-border: #fed7aa;
-  --app-color-accent-cyan: #2563eb;
-  --app-color-accent-cyan-soft: #eff6ff;
-  --app-color-accent-cyan-border: #bfdbfe;
-  --app-color-grid-line: rgba(15, 118, 110, 0.062);
-  --app-color-success: #0f766e;
+  --app-color-surface-muted: #f8f7ff;
+  --app-color-surface-elevated: rgba(255, 255, 255, 0.9);
+  --app-color-border: #d8dbff;
+  --app-color-border-soft: #e8e9ff;
+  --app-color-text: #1e1b4b;
+  --app-color-text-muted: #534f80;
+  --app-color-text-faint: #7570a3;
+  --app-color-primary: #6366f1;
+  --app-color-primary-hover: #4f46e5;
+  --app-color-primary-soft: #eef2ff;
+  --app-color-primary-border: #c7d2fe;
+  --app-color-primary-rail: #312e81;
+  --app-color-accent-emerald: #10b981;
+  --app-color-accent-emerald-soft: #ecfdf5;
+  --app-color-accent-emerald-border: #a7f3d0;
+  --app-color-accent-amber: var(--app-color-accent-emerald);
+  --app-color-accent-amber-soft: var(--app-color-accent-emerald-soft);
+  --app-color-accent-amber-border: var(--app-color-accent-emerald-border);
+  --app-color-accent-cyan: #0ea5e9;
+  --app-color-accent-cyan-soft: #f0f9ff;
+  --app-color-accent-cyan-border: #bae6fd;
+  --app-color-grid-line: rgba(99, 102, 241, 0.052);
+  --app-color-success: #059669;
   --app-color-success-soft: #ecfdf5;
-  --app-color-success-border: #99f6e4;
+  --app-color-success-border: #a7f3d0;
   --app-color-warning: #d97706;
   --app-color-warning-soft: #fff7ed;
   --app-color-warning-border: #fed7aa;
   --app-color-danger: #be123c;
   --app-color-danger-soft: #fef2f2;
   --app-color-danger-border: #fecdd3;
-  --app-color-info: #2563eb;
-  --app-color-info-soft: #eff6ff;
-  --app-color-info-border: #bfdbfe;
+  --app-color-info: #0ea5e9;
+  --app-color-info-soft: #f0f9ff;
+  --app-color-info-border: #bae6fd;
   --app-color-scheme: light;
-  --app-color-glass: rgba(255, 255, 255, 0.78);
-  --app-color-glass-strong: rgba(255, 255, 255, 0.92);
-  --app-color-glass-muted: rgba(246, 251, 250, 0.72);
+  --app-color-glass: rgba(255, 255, 255, 0.74);
+  --app-color-glass-strong: rgba(255, 255, 255, 0.9);
+  --app-color-glass-muted: rgba(248, 247, 255, 0.74);
   --app-color-overlay: rgba(15, 23, 42, 0.38);
-  --app-color-ambient-primary: rgba(13, 148, 136, 0.13);
-  --app-color-ambient-cyan: rgba(37, 99, 235, 0.1);
-  --app-color-ambient-amber: rgba(249, 115, 22, 0.08);
+  --app-color-ambient-primary: rgba(99, 102, 241, 0.16);
+  --app-color-ambient-cyan: rgba(14, 165, 233, 0.1);
+  --app-color-ambient-amber: rgba(16, 185, 129, 0.1);
   --app-color-skeleton-base: rgba(226, 232, 240, 0.92);
   --app-color-skeleton-sheen: rgba(255, 255, 255, 0.86);
-  --app-gradient-page: linear-gradient(180deg, #fbfffe 0%, var(--app-color-bg) 42%, #f7fbff 100%);
+  --app-gradient-page: linear-gradient(180deg, #fbfaff 0%, var(--app-color-bg) 44%, #eef7ff 100%);
   --app-gradient-ambient:
-    linear-gradient(115deg, var(--app-color-ambient-primary), transparent 30%),
-    linear-gradient(245deg, var(--app-color-ambient-cyan), transparent 32%),
+    linear-gradient(115deg, var(--app-color-ambient-primary), transparent 34%),
+    linear-gradient(245deg, var(--app-color-ambient-cyan), transparent 36%),
     linear-gradient(180deg, transparent 0%, var(--app-color-ambient-amber) 100%);
   --app-gradient-glass:
-    linear-gradient(135deg, var(--app-color-glass-strong), var(--app-color-glass-muted) 56%, var(--app-color-primary-soft));
+    linear-gradient(135deg, var(--app-color-glass-strong), var(--app-color-glass-muted) 58%, var(--app-color-primary-soft));
+  --app-gradient-action:
+    linear-gradient(135deg, var(--app-color-primary), var(--app-color-accent-cyan) 54%, var(--app-color-accent-emerald));
+  --app-gradient-action-hover:
+    linear-gradient(135deg, var(--app-color-primary-hover), var(--app-color-primary) 46%, var(--app-color-accent-emerald));
+  --app-gradient-accent-line:
+    linear-gradient(90deg, var(--app-color-primary), var(--app-color-accent-cyan) 62%, var(--app-color-accent-emerald));
   --app-backdrop-panel: blur(18px) saturate(1.15);
   --app-motion-fast: 160ms;
   --app-motion-base: 220ms;
@@ -77,7 +86,7 @@
   --app-shadow-subtle: 0 1px 2px rgba(15, 23, 42, 0.05);
   --app-shadow-panel: 0 16px 40px rgba(15, 23, 42, 0.09);
   --app-shadow-panel-hover: 0 20px 50px rgba(15, 23, 42, 0.12);
-  --app-shadow-focus: 0 0 0 3px rgba(13, 148, 136, 0.2);
+  --app-shadow-focus: 0 0 0 3px rgba(99, 102, 241, 0.22);
 
   --app-content-width: 1280px;
   --app-content-wide: 1440px;
@@ -205,24 +214,28 @@ button:disabled,
     border-color var(--app-motion-fast) ease-out,
     background-color var(--app-motion-fast) ease-out,
     color var(--app-motion-fast) ease-out,
-    box-shadow var(--app-motion-fast) ease-out;
+    box-shadow var(--app-motion-fast) ease-out,
+    transform var(--app-motion-fast) var(--app-ease-out);
 }
 
-.el-button:not(.is-disabled):focus-visible,
-.el-button:not(.is-disabled):hover {
+.el-button:not(.is-disabled):not(.is-loading):focus-visible,
+.el-button:not(.is-disabled):not(.is-loading):hover {
   box-shadow: var(--app-shadow-focus);
+  transform: translateY(-1px);
 }
 
 .el-button--primary {
   border-color: var(--app-color-primary);
-  background: linear-gradient(135deg, var(--app-color-primary), var(--app-color-primary-hover) 78%, var(--app-color-accent-cyan));
+  background: var(--app-gradient-action);
+  background-size: 140% 140%;
   box-shadow: 0 8px 18px color-mix(in srgb, var(--app-color-primary) 22%, transparent);
 }
 
-.el-button--primary:not(.is-disabled):focus-visible,
-.el-button--primary:not(.is-disabled):hover {
+.el-button--primary:not(.is-disabled):not(.is-loading):focus-visible,
+.el-button--primary:not(.is-disabled):not(.is-loading):hover {
   border-color: var(--app-color-primary-hover);
-  background: linear-gradient(135deg, var(--app-color-primary-hover), var(--app-color-primary) 72%, var(--app-color-accent-cyan));
+  background: var(--app-gradient-action-hover);
+  background-position: 100% 0;
   box-shadow:
     0 10px 22px color-mix(in srgb, var(--app-color-primary) 26%, transparent),
     var(--app-shadow-focus);
@@ -334,7 +347,7 @@ button:disabled,
 .el-tabs__active-bar {
   height: 3px;
   border-radius: var(--app-radius-pill);
-  background: linear-gradient(90deg, var(--app-color-primary), var(--app-color-accent-amber));
+  background: var(--app-gradient-accent-line);
 }
 
 .el-descriptions__body,
@@ -427,7 +440,7 @@ button:disabled,
   inset: 0 auto 0 0;
   width: 4px;
   content: "";
-  background: linear-gradient(180deg, var(--app-color-primary), var(--app-color-accent-cyan) 58%, var(--app-color-accent-amber));
+  background: linear-gradient(180deg, var(--app-color-primary), var(--app-color-accent-cyan) 58%, var(--app-color-accent-emerald));
   pointer-events: none;
 }
 
@@ -485,7 +498,7 @@ button:disabled,
   inset: 0 0 auto;
   height: 3px;
   content: "";
-  background: linear-gradient(90deg, var(--app-color-primary), var(--app-color-accent-cyan) 72%, var(--app-color-accent-amber));
+  background: var(--app-gradient-accent-line);
   pointer-events: none;
 }
 
@@ -591,7 +604,8 @@ button:disabled,
   transition:
     border-color var(--app-motion-fast) ease-out,
     background-color var(--app-motion-fast) ease-out,
-    box-shadow var(--app-motion-fast) ease-out;
+    box-shadow var(--app-motion-fast) ease-out,
+    transform var(--app-motion-fast) var(--app-ease-out);
 }
 
 .app-panel-card:hover,
@@ -602,6 +616,7 @@ button:disabled,
 .app-filter-panel:hover {
   border-color: var(--app-color-primary-border);
   box-shadow: var(--app-shadow-panel-hover);
+  transform: translateY(-2px);
 }
 
 .app-metric-card span,
@@ -763,7 +778,7 @@ button:disabled,
   inset: 0 0 auto;
   height: 2px;
   content: "";
-  background: linear-gradient(90deg, var(--app-color-primary), transparent 58%, var(--app-color-accent-amber));
+  background: linear-gradient(90deg, var(--app-color-primary), transparent 58%, var(--app-color-accent-emerald));
   opacity: 0.9;
   pointer-events: none;
 }
@@ -942,7 +957,7 @@ button:disabled,
   height: 3px;
   border-radius: var(--app-radius-pill);
   content: "";
-  background: linear-gradient(90deg, var(--app-color-accent-amber), var(--app-color-accent-cyan));
+  background: linear-gradient(90deg, var(--app-color-accent-emerald), var(--app-color-accent-cyan));
 }
 
 .section-title,
@@ -1045,7 +1060,7 @@ button:disabled,
   inset: 0 auto 0 0;
   width: 3px;
   content: "";
-  background: linear-gradient(180deg, var(--app-color-accent-amber), var(--app-color-primary));
+  background: linear-gradient(180deg, var(--app-color-accent-emerald), var(--app-color-primary));
   pointer-events: none;
 }
 
@@ -1135,174 +1150,32 @@ button:disabled,
   }
 }
 
-/* Explicit theme mode mirrors the system dark block so the header switch can override OS preference. */
-:root[data-theme="dark"] {
-  --app-color-bg: #050711;
-  --app-color-bg-subtle: #0f172a;
-  --app-color-surface: rgba(10, 16, 32, 0.94);
-  --app-color-surface-muted: rgba(15, 23, 42, 0.72);
-  --app-color-surface-elevated: rgba(5, 7, 17, 0.86);
-  --app-color-border: rgba(148, 163, 184, 0.2);
-  --app-color-border-soft: rgba(148, 163, 184, 0.14);
-  --app-color-text: #f8fafc;
-  --app-color-text-muted: #aab6ca;
-  --app-color-text-faint: #8391aa;
-  --app-color-primary: #60a5fa;
-  --app-color-primary-hover: #93c5fd;
-  --app-color-primary-soft: rgba(37, 99, 235, 0.2);
-  --app-color-primary-border: rgba(96, 165, 250, 0.32);
-  --app-color-primary-rail: #dbeafe;
-  --app-color-accent-amber: #f59e0b;
-  --app-color-accent-amber-soft: rgba(245, 158, 11, 0.14);
-  --app-color-accent-amber-border: rgba(245, 158, 11, 0.28);
-  --app-color-accent-cyan: #22d3ee;
-  --app-color-accent-cyan-soft: rgba(34, 211, 238, 0.12);
-  --app-color-accent-cyan-border: rgba(34, 211, 238, 0.28);
-  --app-color-grid-line: rgba(148, 163, 184, 0.08);
-  --app-color-success: #34d399;
-  --app-color-success-soft: rgba(16, 185, 129, 0.16);
-  --app-color-success-border: rgba(52, 211, 153, 0.28);
-  --app-color-warning: #f5c451;
-  --app-color-warning-soft: rgba(245, 196, 81, 0.14);
-  --app-color-warning-border: rgba(245, 196, 81, 0.28);
-  --app-color-danger: #fb7185;
-  --app-color-danger-soft: rgba(251, 113, 133, 0.14);
-  --app-color-danger-border: rgba(251, 113, 133, 0.28);
-  --app-color-info: #22d3ee;
-  --app-color-info-soft: rgba(34, 211, 238, 0.12);
-  --app-color-info-border: rgba(34, 211, 238, 0.28);
-  --app-color-scheme: dark;
-  --app-color-glass: rgba(15, 23, 42, 0.64);
-  --app-color-glass-strong: rgba(15, 23, 42, 0.82);
-  --app-color-glass-muted: rgba(30, 41, 59, 0.52);
-  --app-color-overlay: rgba(0, 0, 0, 0.58);
-  --app-color-ambient-primary: rgba(37, 99, 235, 0.2);
-  --app-color-ambient-cyan: rgba(34, 211, 238, 0.11);
-  --app-color-ambient-amber: rgba(245, 158, 11, 0.08);
-  --app-color-skeleton-base: rgba(51, 65, 85, 0.62);
-  --app-color-skeleton-sheen: rgba(148, 163, 184, 0.26);
-  --app-gradient-page: linear-gradient(180deg, #050711 0%, var(--app-color-bg) 42%, #0f172a 100%);
-  --app-gradient-ambient:
-    linear-gradient(115deg, var(--app-color-ambient-primary), transparent 30%),
-    linear-gradient(245deg, var(--app-color-ambient-cyan), transparent 34%),
-    linear-gradient(180deg, transparent 0%, var(--app-color-ambient-amber) 100%);
-  --app-gradient-glass:
-    linear-gradient(135deg, var(--app-color-glass-strong), var(--app-color-glass-muted) 58%, rgba(37, 99, 235, 0.16));
-  --app-shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.24);
-  --app-shadow-panel: 0 16px 42px rgba(0, 0, 0, 0.28);
-  --app-shadow-panel-hover: 0 18px 48px rgba(0, 0, 0, 0.34);
-  --app-shadow-focus: 0 0 0 3px rgba(96, 165, 250, 0.24);
-}
-
-:root[data-theme="dark"] body {
-  background:
-    var(--app-gradient-ambient),
-    linear-gradient(var(--app-color-grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--app-color-grid-line) 1px, transparent 1px),
-    var(--app-gradient-page);
-  background-size:
-    auto,
-    56px 56px,
-    56px 56px,
-    auto;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --app-color-bg: #050711;
-    --app-color-bg-subtle: #0f172a;
-    --app-color-surface: rgba(10, 16, 32, 0.94);
-    --app-color-surface-muted: rgba(15, 23, 42, 0.72);
-    --app-color-surface-elevated: rgba(5, 7, 17, 0.86);
-    --app-color-border: rgba(148, 163, 184, 0.2);
-    --app-color-border-soft: rgba(148, 163, 184, 0.14);
-    --app-color-text: #f8fafc;
-    --app-color-text-muted: #aab6ca;
-    --app-color-text-faint: #8391aa;
-    --app-color-primary: #60a5fa;
-    --app-color-primary-hover: #93c5fd;
-    --app-color-primary-soft: rgba(37, 99, 235, 0.2);
-    --app-color-primary-border: rgba(96, 165, 250, 0.32);
-    --app-color-primary-rail: #dbeafe;
-    --app-color-accent-amber: #f59e0b;
-    --app-color-accent-amber-soft: rgba(245, 158, 11, 0.14);
-    --app-color-accent-amber-border: rgba(245, 158, 11, 0.28);
-    --app-color-accent-cyan: #22d3ee;
-    --app-color-accent-cyan-soft: rgba(34, 211, 238, 0.12);
-    --app-color-accent-cyan-border: rgba(34, 211, 238, 0.28);
-    --app-color-grid-line: rgba(148, 163, 184, 0.08);
-    --app-color-success: #34d399;
-    --app-color-success-soft: rgba(16, 185, 129, 0.16);
-    --app-color-success-border: rgba(52, 211, 153, 0.28);
-    --app-color-warning: #f5c451;
-    --app-color-warning-soft: rgba(245, 196, 81, 0.14);
-    --app-color-warning-border: rgba(245, 196, 81, 0.28);
-    --app-color-danger: #fb7185;
-    --app-color-danger-soft: rgba(251, 113, 133, 0.14);
-    --app-color-danger-border: rgba(251, 113, 133, 0.28);
-    --app-color-info: #22d3ee;
-    --app-color-info-soft: rgba(34, 211, 238, 0.12);
-    --app-color-info-border: rgba(34, 211, 238, 0.28);
-    --app-color-scheme: dark;
-    --app-color-glass: rgba(15, 23, 42, 0.64);
-    --app-color-glass-strong: rgba(15, 23, 42, 0.82);
-    --app-color-glass-muted: rgba(30, 41, 59, 0.52);
-    --app-color-overlay: rgba(0, 0, 0, 0.58);
-    --app-color-ambient-primary: rgba(37, 99, 235, 0.2);
-    --app-color-ambient-cyan: rgba(34, 211, 238, 0.11);
-    --app-color-ambient-amber: rgba(245, 158, 11, 0.08);
-    --app-color-skeleton-base: rgba(51, 65, 85, 0.62);
-    --app-color-skeleton-sheen: rgba(148, 163, 184, 0.26);
-    --app-gradient-page: linear-gradient(180deg, #050711 0%, var(--app-color-bg) 42%, #0f172a 100%);
-    --app-gradient-ambient:
-      linear-gradient(115deg, var(--app-color-ambient-primary), transparent 30%),
-      linear-gradient(245deg, var(--app-color-ambient-cyan), transparent 34%),
-      linear-gradient(180deg, transparent 0%, var(--app-color-ambient-amber) 100%);
-    --app-gradient-glass:
-      linear-gradient(135deg, var(--app-color-glass-strong), var(--app-color-glass-muted) 58%, rgba(37, 99, 235, 0.16));
-    --app-shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.24);
-    --app-shadow-panel: 0 16px 42px rgba(0, 0, 0, 0.28);
-    --app-shadow-panel-hover: 0 18px 48px rgba(0, 0, 0, 0.34);
-    --app-shadow-focus: 0 0 0 3px rgba(96, 165, 250, 0.24);
-  }
-
-  :root:not([data-theme="light"]) body {
-    background:
-      var(--app-gradient-ambient),
-      linear-gradient(var(--app-color-grid-line) 1px, transparent 1px),
-      linear-gradient(90deg, var(--app-color-grid-line) 1px, transparent 1px),
-      var(--app-gradient-page);
-    background-size:
-      auto,
-      56px 56px,
-      56px 56px,
-      auto;
-  }
-}
-
 @mixin app-dark-theme-v2 {
-  --app-color-bg: #061211;
-  --app-color-bg-subtle: #0b1f1e;
-  --app-color-surface: rgba(8, 18, 20, 0.94);
-  --app-color-surface-muted: rgba(13, 31, 34, 0.74);
-  --app-color-surface-elevated: rgba(7, 16, 19, 0.88);
-  --app-color-border: rgba(148, 222, 211, 0.22);
-  --app-color-border-soft: rgba(148, 222, 211, 0.14);
-  --app-color-text: #f4fbfa;
-  --app-color-text-muted: #a9bfbc;
-  --app-color-text-faint: #7f9996;
-  --app-color-primary: #2dd4bf;
-  --app-color-primary-hover: #5eead4;
-  --app-color-primary-soft: rgba(45, 212, 191, 0.14);
-  --app-color-primary-border: rgba(94, 234, 212, 0.34);
-  --app-color-primary-rail: #ccfbf1;
-  --app-color-accent-amber: #fb923c;
-  --app-color-accent-amber-soft: rgba(251, 146, 60, 0.14);
-  --app-color-accent-amber-border: rgba(251, 146, 60, 0.3);
-  --app-color-accent-cyan: #60a5fa;
-  --app-color-accent-cyan-soft: rgba(96, 165, 250, 0.13);
-  --app-color-accent-cyan-border: rgba(96, 165, 250, 0.3);
-  --app-color-grid-line: rgba(148, 222, 211, 0.075);
+  --app-color-bg: #090b1a;
+  --app-color-bg-subtle: #11162d;
+  --app-color-surface: rgba(16, 20, 42, 0.94);
+  --app-color-surface-muted: rgba(24, 29, 58, 0.74);
+  --app-color-surface-elevated: rgba(13, 16, 34, 0.9);
+  --app-color-border: rgba(165, 180, 252, 0.24);
+  --app-color-border-soft: rgba(165, 180, 252, 0.15);
+  --app-color-text: #f8f7ff;
+  --app-color-text-muted: #c4c1e7;
+  --app-color-text-faint: #9690c4;
+  --app-color-primary: #a5b4fc;
+  --app-color-primary-hover: #c4b5fd;
+  --app-color-primary-soft: rgba(99, 102, 241, 0.2);
+  --app-color-primary-border: rgba(165, 180, 252, 0.36);
+  --app-color-primary-rail: #e0e7ff;
+  --app-color-accent-emerald: #34d399;
+  --app-color-accent-emerald-soft: rgba(52, 211, 153, 0.15);
+  --app-color-accent-emerald-border: rgba(52, 211, 153, 0.32);
+  --app-color-accent-amber: var(--app-color-accent-emerald);
+  --app-color-accent-amber-soft: var(--app-color-accent-emerald-soft);
+  --app-color-accent-amber-border: var(--app-color-accent-emerald-border);
+  --app-color-accent-cyan: #38bdf8;
+  --app-color-accent-cyan-soft: rgba(56, 189, 248, 0.13);
+  --app-color-accent-cyan-border: rgba(56, 189, 248, 0.3);
+  --app-color-grid-line: rgba(165, 180, 252, 0.062);
   --app-color-success: #34d399;
   --app-color-success-soft: rgba(52, 211, 153, 0.15);
   --app-color-success-border: rgba(52, 211, 153, 0.3);
@@ -1312,21 +1185,36 @@ button:disabled,
   --app-color-danger: #fb7185;
   --app-color-danger-soft: rgba(251, 113, 133, 0.14);
   --app-color-danger-border: rgba(251, 113, 133, 0.3);
-  --app-color-info: #60a5fa;
-  --app-color-info-soft: rgba(96, 165, 250, 0.13);
-  --app-color-info-border: rgba(96, 165, 250, 0.3);
+  --app-color-info: #38bdf8;
+  --app-color-info-soft: rgba(56, 189, 248, 0.13);
+  --app-color-info-border: rgba(56, 189, 248, 0.3);
   --app-color-scheme: dark;
-  --app-color-glass: rgba(8, 18, 20, 0.68);
-  --app-color-glass-strong: rgba(10, 24, 26, 0.86);
-  --app-color-glass-muted: rgba(15, 38, 41, 0.56);
+  --app-color-glass: rgba(16, 20, 42, 0.68);
+  --app-color-glass-strong: rgba(20, 25, 52, 0.88);
+  --app-color-glass-muted: rgba(31, 38, 77, 0.56);
   --app-color-overlay: rgba(0, 0, 0, 0.58);
-  --app-color-ambient-primary: rgba(45, 212, 191, 0.17);
-  --app-color-ambient-cyan: rgba(96, 165, 250, 0.11);
-  --app-color-ambient-amber: rgba(251, 146, 60, 0.09);
-  --app-gradient-page: linear-gradient(180deg, #061211 0%, var(--app-color-bg) 42%, #07192a 100%);
+  --app-color-ambient-primary: rgba(129, 140, 248, 0.24);
+  --app-color-ambient-cyan: rgba(56, 189, 248, 0.13);
+  --app-color-ambient-amber: rgba(52, 211, 153, 0.1);
+  --app-color-skeleton-base: rgba(51, 65, 85, 0.62);
+  --app-color-skeleton-sheen: rgba(148, 163, 184, 0.26);
+  --app-gradient-page: linear-gradient(180deg, #080a18 0%, var(--app-color-bg) 44%, #071923 100%);
+  --app-gradient-ambient:
+    linear-gradient(115deg, var(--app-color-ambient-primary), transparent 34%),
+    linear-gradient(245deg, var(--app-color-ambient-cyan), transparent 36%),
+    linear-gradient(180deg, transparent 0%, var(--app-color-ambient-amber) 100%);
   --app-gradient-glass:
-    linear-gradient(135deg, var(--app-color-glass-strong), var(--app-color-glass-muted) 58%, rgba(45, 212, 191, 0.12));
-  --app-shadow-focus: 0 0 0 3px rgba(45, 212, 191, 0.24);
+    linear-gradient(135deg, var(--app-color-glass-strong), var(--app-color-glass-muted) 58%, rgba(99, 102, 241, 0.18));
+  --app-gradient-action:
+    linear-gradient(135deg, #818cf8, var(--app-color-accent-cyan) 54%, var(--app-color-accent-emerald));
+  --app-gradient-action-hover:
+    linear-gradient(135deg, var(--app-color-primary-hover), #818cf8 46%, var(--app-color-accent-emerald));
+  --app-gradient-accent-line:
+    linear-gradient(90deg, #818cf8, var(--app-color-accent-cyan) 62%, var(--app-color-accent-emerald));
+  --app-shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.24);
+  --app-shadow-panel: 0 16px 42px rgba(0, 0, 0, 0.28);
+  --app-shadow-panel-hover: 0 18px 48px rgba(0, 0, 0, 0.34);
+  --app-shadow-focus: 0 0 0 3px rgba(129, 140, 248, 0.28);
 }
 
 :root[data-theme="dark"] {
