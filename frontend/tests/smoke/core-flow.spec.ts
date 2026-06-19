@@ -1480,6 +1480,33 @@ test("operations redesign renders verified desktop and mobile screenshots", asyn
     await settleWorkbenchScreenshot(page);
     await page.screenshot({ path: testInfo.outputPath(`ops-jobs-${viewport.name}.png`) });
 
+    if (viewport.name === "desktop") {
+      await expect(page.locator(".app-sidebar-shell")).toBeVisible();
+      await expect(page.locator(".app-sidebar-shell").getByText("Operations workbench")).toBeVisible();
+      await expect(page.locator(".app-sidebar-shell").getByRole("link", { name: "任务工作台" })).toHaveAttribute("aria-current", "page");
+      await page.screenshot({ path: testInfo.outputPath("app-shell-expanded-desktop.png") });
+
+      await page.getByRole("button", { name: "收起侧边栏" }).click();
+      await expect.poll(() => page.evaluate(() => window.localStorage.getItem("md2word.sidebar.collapsed"))).toBe("true");
+      await page.reload();
+      await expect(page.getByRole("button", { name: "展开侧边栏" })).toBeVisible();
+      await expect(page.locator(".app-sidebar-shell .sidebar-link-label")).toHaveCount(0);
+      await expectNoPageHorizontalOverflow(page);
+      await settleWorkbenchScreenshot(page);
+      await page.screenshot({ path: testInfo.outputPath("app-shell-collapsed-desktop.png") });
+    } else {
+      await expect(page.locator(".app-sidebar-shell")).toBeHidden();
+      await page.getByRole("button", { name: "打开导航" }).click();
+      await expect(page.locator(".app-mobile-drawer")).toBeVisible();
+      await expect(page.locator(".app-mobile-drawer").getByText("Operations workbench")).toBeVisible();
+      await expect(page.locator(".app-mobile-drawer").getByRole("link", { name: "任务工作台" })).toBeVisible();
+      await expectNoPageHorizontalOverflow(page);
+      await settleWorkbenchScreenshot(page);
+      await page.screenshot({ path: testInfo.outputPath("app-shell-mobile-drawer.png") });
+      await page.keyboard.press("Escape");
+      await expect(page.locator(".app-mobile-drawer")).toBeHidden();
+    }
+
     await page.locator(".jobs-table-card .el-table__body-wrapper .el-checkbox").first().click();
     await expect(page.getByLabel("批量操作")).toBeVisible();
     await expect(page.getByText("已选 1 个任务")).toBeVisible();
@@ -1732,7 +1759,7 @@ test("admin can inspect status, ops gates, and file retention workspaces", async
   await page.goto("/system-status");
   await expect(page.getByRole("heading", { name: "系统状态", level: 1 })).toBeVisible();
   await expect(page.getByText("md2word").first()).toBeVisible();
-  await expect(page.getByRole("link", { name: "运维看板" })).toBeVisible();
+  await expect(page.getByLabel("任务和资源状态").getByRole("link", { name: "运维看板" })).toBeVisible();
 
   await page.goto("/system-status/ops-dashboard");
   await expect(page.getByRole("heading", { name: "运维看板", level: 1 })).toBeVisible();
