@@ -214,3 +214,36 @@ Implemented lightweight document job incident queue API and incident triage work
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: Redeploy hostdzire project
+
+**Date**: 2026-06-20
+**Task**: Redeploy hostdzire project
+**Branch**: `main`
+
+### Summary
+
+Redeployed hostdzire from a clean bccebdc3 release worktree, rebuilt the production Docker Compose stack, and verified API readiness plus incident triage OpenAPI availability.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bccebdc3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
