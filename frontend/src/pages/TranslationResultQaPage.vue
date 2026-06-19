@@ -697,6 +697,7 @@ onMounted(() => {
 
 .qa-page-header {
   align-items: flex-start;
+  border-color: var(--app-color-primary-border);
 }
 
 .qa-page-header .toolbar {
@@ -711,6 +712,7 @@ onMounted(() => {
 
 .qa-panel {
   min-width: 0;
+  border-color: var(--app-color-primary-border);
 }
 
 .review-meta {
@@ -746,6 +748,7 @@ onMounted(() => {
 .trace-card {
   min-width: 0;
   padding: var(--app-space-3);
+  border-color: var(--app-color-accent-cyan-border);
 }
 
 .trace-card-header {

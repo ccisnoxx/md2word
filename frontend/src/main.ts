@@ -8,8 +8,11 @@ import App from "@/App.vue";
 import router from "@/router";
 import { pinia } from "@/stores";
 import "@/styles/main.scss";
+import { applyThemeMode, getStoredThemeMode } from "@/utils/theme";
 
 const app = createApp(App);
+
+applyThemeMode(getStoredThemeMode());
 
 app.use(pinia);
 app.use(router);

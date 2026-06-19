@@ -328,6 +328,7 @@ onMounted(() => {
 .summary-card {
   display: grid;
   gap: 6px;
+  border-color: var(--app-color-primary-border);
 }
 
 .summary-card span {
@@ -349,10 +350,12 @@ onMounted(() => {
 
 .categories-card {
   min-width: 0;
+  border-color: var(--app-color-primary-border);
 }
 
 .filters {
   margin-bottom: var(--app-space-3);
+  border-color: var(--app-color-accent-cyan-border);
 }
 
 .filter-select {
@@ -383,6 +386,7 @@ onMounted(() => {
 .simulation-grid h3,
 .detail-section h3 {
   margin: 0 0 8px;
+  color: var(--app-color-primary-rail);
   font-size: 14px;
   font-weight: 650;
 }

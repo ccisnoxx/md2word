@@ -412,6 +412,7 @@ onMounted(() => {
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--app-space-4);
+  border-color: var(--app-color-primary-border);
 }
 
 .settings-groups {
@@ -428,6 +429,7 @@ onMounted(() => {
 
 .word-config-entry {
   min-height: 104px;
+  border-color: var(--app-color-primary-border);
 }
 
 .word-config-entry span:last-child {
@@ -452,6 +454,7 @@ onMounted(() => {
 .release-gate-workspace {
   display: grid;
   gap: var(--app-space-4);
+  border-color: var(--app-color-accent-amber-border);
 }
 
 .gate-tags {
@@ -468,13 +471,23 @@ onMounted(() => {
 }
 
 .gate-status-grid article {
+  position: relative;
+  overflow: hidden;
   display: grid;
   gap: 5px;
   min-height: 92px;
   padding: var(--app-space-3);
-  border: 1px solid var(--app-color-border-soft);
+  border: 1px solid var(--app-color-accent-amber-border);
   border-radius: var(--app-radius-md);
-  background: var(--app-color-surface-muted);
+  background: linear-gradient(180deg, var(--app-color-accent-amber-soft), var(--app-color-surface));
+}
+
+.gate-status-grid article::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  content: "";
+  background: linear-gradient(180deg, var(--app-color-accent-amber), var(--app-color-primary));
 }
 
 .gate-status-grid span,
@@ -537,6 +550,7 @@ onMounted(() => {
   align-content: start;
   gap: var(--app-space-4);
   min-width: 0;
+  border-color: var(--app-color-primary-border);
 }
 
 .settings-group-header {
@@ -560,8 +574,8 @@ onMounted(() => {
   width: 42px;
   height: 42px;
   border-radius: var(--app-radius-md);
-  background: var(--app-color-primary-soft);
-  color: var(--app-color-primary);
+  background: linear-gradient(135deg, var(--app-color-primary), var(--app-color-primary-hover) 72%, var(--app-color-accent-cyan));
+  color: #ffffff;
   font-size: 20px;
 }
 
@@ -595,7 +609,7 @@ onMounted(() => {
   padding: 10px;
   border: 1px solid var(--app-color-border-soft);
   border-radius: var(--app-radius-md);
-  background: var(--app-color-surface-muted);
+  background: linear-gradient(180deg, var(--app-color-surface), var(--app-color-surface-muted));
 }
 
 .group-metrics dt {
@@ -653,7 +667,7 @@ onMounted(() => {
   padding: 9px 12px;
   border: 1px solid var(--app-color-primary-border);
   border-radius: var(--app-radius-md);
-  background: var(--app-color-primary-soft);
+  background: linear-gradient(135deg, var(--app-color-primary-soft), var(--app-color-surface));
   color: var(--app-color-primary-hover);
   font-size: 14px;
   font-weight: 700;

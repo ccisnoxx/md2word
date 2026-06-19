@@ -407,9 +407,9 @@ onMounted(() => {
 
 <style scoped lang="scss">
 .upload-card {
-  border: 1px solid var(--app-color-border);
+  border: 1px solid var(--app-color-primary-border);
   border-radius: var(--app-radius-md);
-  background: var(--app-color-surface);
+  background: linear-gradient(180deg, var(--app-color-surface), var(--app-color-surface-muted));
   box-shadow: var(--app-shadow-panel);
 }
 
@@ -418,9 +418,16 @@ onMounted(() => {
 }
 
 .upload-card :deep(.el-upload-dragger) {
-  border-color: var(--app-color-border);
+  border-color: var(--app-color-primary-border);
   border-radius: var(--app-radius-md);
-  background: var(--app-color-surface-muted);
+  background:
+    linear-gradient(var(--app-color-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--app-color-grid-line) 1px, transparent 1px),
+    linear-gradient(180deg, var(--app-color-primary-soft), var(--app-color-surface));
+  background-size:
+    28px 28px,
+    28px 28px,
+    auto;
   transition:
     border-color 180ms ease-out,
     box-shadow 180ms ease-out,
@@ -429,6 +436,14 @@ onMounted(() => {
 
 .upload-card :deep(.el-upload-dragger:hover) {
   border-color: var(--app-color-primary);
+  background:
+    linear-gradient(var(--app-color-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--app-color-grid-line) 1px, transparent 1px),
+    linear-gradient(180deg, var(--app-color-accent-cyan-soft), var(--app-color-surface));
+  background-size:
+    28px 28px,
+    28px 28px,
+    auto;
   box-shadow: var(--app-shadow-focus);
 }
 
@@ -448,7 +463,8 @@ onMounted(() => {
 
 .upload-card :deep(.el-button--primary) {
   border-color: var(--app-color-primary);
-  background: var(--app-color-primary);
+  background: linear-gradient(135deg, var(--app-color-primary), var(--app-color-primary-hover) 72%, var(--app-color-accent-cyan));
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--app-color-primary) 22%, transparent);
 }
 
 .mode-row {
@@ -473,9 +489,11 @@ onMounted(() => {
   gap: 12px;
   margin-top: 14px;
   padding: 12px;
-  border: 1px solid var(--app-color-border-soft);
+  border: 1px solid var(--app-color-accent-cyan-border);
   border-radius: var(--app-radius-md);
-  background: var(--app-color-surface-muted);
+  background:
+    linear-gradient(90deg, var(--app-color-primary-soft), transparent),
+    var(--app-color-surface-muted);
 }
 
 .config-panel-header {
@@ -525,7 +543,7 @@ onMounted(() => {
   padding: 10px;
   border: 1px solid var(--app-color-border-soft);
   border-radius: var(--app-radius-md);
-  background: var(--app-color-surface);
+  background: linear-gradient(180deg, var(--app-color-glass-strong), var(--app-color-surface-muted));
 }
 
 .config-summary-item b {

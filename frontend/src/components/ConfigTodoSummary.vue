@@ -156,6 +156,7 @@ function statusTagType(status: ConfigWorkbenchStatus): "success" | "warning" | "
 <style scoped lang="scss">
 .config-summary {
   min-width: 0;
+  border-color: var(--app-color-primary-border);
 }
 
 .summary-actions {
@@ -170,6 +171,7 @@ function statusTagType(status: ConfigWorkbenchStatus): "success" | "warning" | "
 
 .metric-item {
   min-height: 104px;
+  border-color: var(--app-color-primary-border);
 }
 
 .metric-item strong {

@@ -49,6 +49,7 @@ function handleCreated(jobId: string): void {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  border-color: var(--app-color-primary-border);
 }
 
 .create-upload-panel {
