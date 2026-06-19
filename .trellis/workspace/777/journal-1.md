@@ -181,3 +181,36 @@ Implemented the third-round Translation QA review drawer, reused the shared revi
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Incident triage workbench
+
+**Date**: 2026-06-20
+**Task**: Incident triage workbench
+**Branch**: `main`
+
+### Summary
+
+Implemented lightweight document job incident queue API and incident triage workbench with targeted backend, frontend, build, and browser smoke verification.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bccebdc3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
