@@ -144,15 +144,19 @@ last_reviewed: 2026-06-17
 接入顺序：
 
 1. `/translation-qa` 队列读取任务列表筛选。
-2. `GET /document-jobs/{job_id}/translation-qa`。
-3. `PATCH /document-jobs/{job_id}/translation-qa`。
-4. 术语规则提案和翻译术语提案 deep link。
+2. 队列行复核打开右侧 QA drawer，并通过 `qa_job_id` query 恢复选中任务。
+3. `GET /document-jobs/{job_id}/translation-qa`。
+4. `PATCH /document-jobs/{job_id}/translation-qa`。
+5. `/jobs/{job_id}/translation-qa` 详情页复用同一套 review panel，并保留完整术语/AI 调用证据表。
+6. 术语规则提案和翻译术语提案 deep link。
 
 验收：
 
 - Direct job 不进入 QA 队列。
-- QA 详情能区分证据不可用原因。
+- QA drawer 和 QA 详情页都能区分证据不可用原因；不可用时复核表单保持只读。
 - PATCH 后列表和详情 QA 状态一致。
+- 保存并下一条按当前队列筛选和 `blocked`、`needs_fix`、`unreviewed`、其他状态优先级前进。
+- `Esc`、`Cmd/Ctrl+Enter`、`J/K` 快捷键有可见提示，并且输入框聚焦时不触发单键导航。
 - 提案保留 source job/file/version 上下文。
 
 ### 4.4 第四批：admin 配置和运维页面
@@ -286,7 +290,7 @@ Mock smoke 通过标准：
 | Mock smoke `/login` | 通过 | Vite 指向本地 mock API；页面可加载，仅 favicon 404。 |
 | Mock smoke `/jobs` | 通过 | `auth/me`、`document-jobs/config-summary`、`document-jobs` 均返回 200；任务列表、上传区、批量动作可渲染。 |
 | Mock smoke `/jobs/:jobId` | 通过 | job detail、events、files 均返回 200；详情页状态、动作、文件、事件和配置快照可渲染。 |
-| Mock smoke translation QA | 通过 | QA queue 和 QA detail 均可加载；证据不可用原因、段落对比、空 term/AI call 状态可渲染。 |
+| Mock smoke translation QA | 通过 | QA queue、右侧 QA drawer 和 QA detail 均可加载；`qa_job_id` URL 恢复、保存、保存并下一条、不可用只读诊断、段落对比、空 term/AI call 状态可渲染。 |
 | Mock smoke admin settings/status | 通过 | `/settings` 所需 templates、template versions、translation profiles、profile draft、term proposals 均返回 200；`/system-status` 的 readiness/metrics 均返回 200；无控制台错误。 |
 | Operator permission boundary | 通过 | operator token 访问 `/settings` 被路由守卫重定向到 `/jobs`；`auth/me`、`config-summary`、`document-jobs` 均返回 200；无控制台错误。 |
 | Admin permission boundary | 通过 | admin token 可访问 `/settings` 和 `/system-status`；配置概览与状态页接口均返回 200。 |
