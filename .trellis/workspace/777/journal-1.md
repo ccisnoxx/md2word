@@ -56,13 +56,51 @@ Implemented protected app shell sidebar/topbar redesign with workflow navigation
 
 ### Main Changes
 
-(Add details)
+- Verified the committed first-pass redesign for JobsPage, JobTable, and TranslationQaQueuePage against the Trellis PRD and design-system guidance.
+- Confirmed compact operations layout, exception-first queue strip, advanced filters, main-column-first job table, sticky bulk action bar, and QA inbox/processing-panel structure are present.
+- Confirmed task-specific frontend spec guidance and smoke coverage are in place.
 
 ### Git Commits
 
 | Hash | Message |
 |------|---------|
 | `1499777b` | (see git log) |
+
+### Testing
+
+- [OK] `git diff --check`
+- [OK] `npm run test:unit` (28/28)
+- [OK] `npm run build`
+- [OK] `npm run test:smoke` (11/11)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 3: Frontend operations workbench redesign
+
+**Date**: 2026-06-20
+**Task**: Frontend operations workbench redesign
+**Branch**: `main`
+
+### Summary
+
+Completed and verified the first-pass operations workbench redesign for JobsPage, JobTable, and TranslationQaQueuePage, including compact command surfaces, queue summaries, bulk action bar, QA inbox model, frontend specs, build, and smoke verification.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cd7c77da` | (see git log) |
 
 ### Testing
 
