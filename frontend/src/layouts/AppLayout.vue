@@ -125,7 +125,7 @@ function handleLogout(): void {
   inset: 0 0 auto;
   height: 3px;
   content: "";
-  background: linear-gradient(90deg, var(--app-color-primary), var(--app-color-accent-cyan) 70%, var(--app-color-accent-amber));
+  background: var(--app-gradient-accent-line);
 }
 
 .brand,
@@ -156,7 +156,7 @@ function handleLogout(): void {
   place-items: center;
   border: 1px solid rgba(255, 255, 255, 0.32);
   border-radius: var(--app-radius-md);
-  background: linear-gradient(135deg, var(--app-color-primary), var(--app-color-primary-hover) 72%, var(--app-color-accent-cyan));
+  background: var(--app-gradient-action);
   color: #ffffff;
   box-shadow: 0 10px 22px color-mix(in srgb, var(--app-color-primary) 28%, transparent);
   font-size: 16px;
@@ -223,7 +223,7 @@ function handleLogout(): void {
   height: 2px;
   border-radius: var(--app-radius-pill);
   content: "";
-  background: linear-gradient(90deg, var(--app-color-accent-cyan), var(--app-color-accent-amber));
+  background: linear-gradient(90deg, var(--app-color-accent-cyan), var(--app-color-accent-emerald));
   transition: opacity var(--app-motion-fast) ease-out;
 }
 
@@ -263,7 +263,7 @@ function handleLogout(): void {
 }
 
 .workflow-strip span:last-child {
-  color: var(--app-color-accent-amber);
+  color: var(--app-color-accent-emerald);
 }
 
 .workflow-strip i {
@@ -271,7 +271,7 @@ function handleLogout(): void {
   width: 24px;
   height: 2px;
   border-radius: var(--app-radius-pill);
-  background: linear-gradient(90deg, var(--app-color-primary), var(--app-color-accent-cyan));
+  background: var(--app-gradient-accent-line);
 }
 
 .header-actions {
