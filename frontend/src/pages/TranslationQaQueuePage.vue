@@ -118,7 +118,7 @@
             <el-table-column label="任务" min-width="260">
               <template #default="{ row }">
                 <div class="job-cell">
-                  <router-link class="mono job-link" :to="translationQaRoute(row)">{{ row.id }}</router-link>
+                  <button type="button" class="mono job-link job-link-button" @click="openTranslationQa(row)">{{ row.id }}</button>
                   <div class="filename" :title="getJobSourceFilename(row)">{{ getJobSourceFilename(row) }}</div>
                   <div class="job-meta">
                     <el-tag size="small" effect="plain">{{ jobModeText[row.mode] || row.mode }}</el-tag>
@@ -165,11 +165,12 @@
             <el-table-column label="更新" min-width="148">
               <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
             </el-table-column>
-            <el-table-column label="操作" min-width="128">
+            <el-table-column label="操作" min-width="168">
               <template #default="{ row }">
                 <div class="action-row">
                   <el-button size="small" text type="primary" @click="openTranslationQa(row)">复核</el-button>
-                  <el-button size="small" text @click="openJobDetail(row)">详情</el-button>
+                  <el-button size="small" text @click="openTranslationQaDetail(row)">QA 详情</el-button>
+                  <el-button size="small" text @click="openJobDetail(row)">任务</el-button>
                 </div>
               </template>
             </el-table-column>
@@ -195,11 +196,41 @@
         <span>阻塞 {{ countQaStatus("blocked") }}</span>
       </aside>
     </section>
+
+    <el-drawer
+      :model-value="qaDrawerVisible"
+      class="translation-qa-review-drawer"
+      direction="rtl"
+      :size="qaDrawerSize"
+      :with-header="false"
+      :destroy-on-close="false"
+      append-to-body
+      @update:model-value="handleDrawerModelValue"
+    >
+      <TranslationQaReviewPanel
+        :job="qaDrawerJob"
+        :qa="qaDrawerData"
+        :form="qaReviewForm"
+        :loading="qaDrawerLoading"
+        :saving="qaDrawerSaving"
+        :error="qaDrawerError"
+        :queue-cleared="qaDrawerQueueCleared"
+        :active-segment-index="qaDrawerActiveSegmentIndex"
+        @update:form="updateQaReviewForm"
+        @segment-index-change="setQaDrawerActiveSegment"
+        @submit="submitQaReviewOnly"
+        @submit-next="submitQaReviewAndNext"
+        @refresh="refreshQaDrawer"
+        @close="closeQaDrawer"
+        @open-detail="openSelectedTranslationQaDetail"
+      />
+    </el-drawer>
   </main>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { ElMessage } from "element-plus";
 import { Filter, Refresh, Search } from "@element-plus/icons-vue";
 import { useRoute, useRouter, type LocationQuery, type RouteLocationRaw } from "vue-router";
 
@@ -208,11 +239,13 @@ import type {
   DocumentJobListSort,
   DocumentJobResponse,
   DocumentJobStatus,
+  DocumentJobTranslationQaResponse,
   TranslationQaIssueType,
   TranslationQaStatus,
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import JobStatusBadge from "@/components/JobStatusBadge.vue";
+import TranslationQaReviewPanel from "@/components/TranslationQaReviewPanel.vue";
 import {
   formatDateTime,
   getJobSourceFilename,
@@ -223,6 +256,13 @@ import {
   translationQaStatusText,
 } from "@/utils/format";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
+import {
+  selectNextTranslationQaJob,
+  shouldIgnoreTranslationQaShortcut,
+  translationQaIssueTypeText,
+  translationQaStatusOptions,
+  type TranslationQaReviewDraft,
+} from "@/utils/translationQa";
 
 const router = useRouter();
 const route = useRoute();
@@ -238,6 +278,20 @@ const statusFilter = ref<DocumentJobStatus | "">("");
 const searchKeyword = ref("");
 const sortFilter = ref<DocumentJobListSort>("updated_at_desc");
 const includeArchived = ref(false);
+const qaDrawerVisible = ref(false);
+const qaDrawerLoading = ref(false);
+const qaDrawerSaving = ref(false);
+const qaDrawerError = ref<ApiClientError | null>(null);
+const qaDrawerJob = ref<DocumentJobResponse | null>(null);
+const qaDrawerData = ref<DocumentJobTranslationQaResponse | null>(null);
+const qaDrawerQueueCleared = ref(false);
+const qaDrawerActiveSegmentIndex = ref(0);
+const selectedQaJobId = ref("");
+const qaReviewForm = reactive<TranslationQaReviewDraft>({
+  status: "unreviewed",
+  issue_type: null,
+  note: "",
+});
 
 type QueueFilterChipKey = "translation_qa_status" | "status" | "q" | "sort" | "include_archived";
 type QaInboxItem = {
@@ -249,7 +303,8 @@ type QaInboxItem = {
   active: boolean;
 };
 
-const qaStatuses: TranslationQaStatus[] = ["unreviewed", "approved", "needs_fix", "blocked"];
+const qaDrawerSize = "min(920px, 92vw)";
+const qaStatuses: TranslationQaStatus[] = translationQaStatusOptions;
 const statuses: DocumentJobStatus[] = ["pending", "queued", "running", "succeeded", "failed", "canceled"];
 const sortOptions: Array<{ label: string; value: DocumentJobListSort }> = [
   { label: "更新时间新到旧", value: "updated_at_desc" },
@@ -263,14 +318,8 @@ const qaSummary = ref<Record<TranslationQaStatus, number>>({
   needs_fix: 0,
   blocked: 0,
 });
-const qaIssueTypeText: Record<TranslationQaIssueType, string> = {
-  translation: "翻译问题",
-  terminology: "术语问题",
-  layout: "版式问题",
-  source_quality: "源文件质量",
-  artifact_missing: "证据缺失",
-  other: "其他",
-};
+let qaDrawerLoadToken = 0;
+let routeSyncInProgress = false;
 
 const activeFilterLabel = computed(() => {
   const qaText = qaStatusFilter.value ? translationQaStatusText[qaStatusFilter.value] : "全部 QA";
@@ -383,7 +432,7 @@ function positivePage(value: string): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 }
 
-function queueRouteQuery(nextPage = page.value): Record<string, string> {
+function queueRouteQuery(nextPage = page.value, qaJobId: string | null = selectedQaJobId.value): Record<string, string> {
   const query: Record<string, string> = {
     translation_qa_status: qaStatusFilter.value || "all",
     sort: sortFilter.value,
@@ -396,12 +445,20 @@ function queueRouteQuery(nextPage = page.value): Record<string, string> {
   if (searchKeyword.value.trim()) {
     query.q = searchKeyword.value.trim();
   }
+  if (qaJobId) {
+    query.qa_job_id = qaJobId;
+  }
   return query;
 }
 
 function isSameQueueRouteQuery(candidate: LocationQuery, expected: Record<string, string>): boolean {
-  const keys = ["translation_qa_status", "status", "sort", "include_archived", "q", "page"];
+  const keys = ["translation_qa_status", "status", "sort", "include_archived", "q", "page", "qa_job_id"];
   return keys.every((key) => firstQueryValue(candidate[key]) === (expected[key] ?? ""));
+}
+
+function isSameQueueFilterRouteQuery(left: LocationQuery, right: LocationQuery): boolean {
+  const keys = ["translation_qa_status", "status", "sort", "include_archived", "q", "page"];
+  return keys.every((key) => firstQueryValue(left[key]) === firstQueryValue(right[key]));
 }
 
 function applyRouteQueryFilters(): void {
@@ -498,8 +555,12 @@ async function syncRouteAndLoad(nextPage: number, replace = false): Promise<void
   page.value = nextPage;
   const query = queueRouteQuery(nextPage);
   if (!isSameQueueRouteQuery(route.query, query)) {
-    await router[replace ? "replace" : "push"]({ name: "translation-qa", query });
-    return;
+    routeSyncInProgress = true;
+    try {
+      await router[replace ? "replace" : "push"]({ name: "translation-qa", query });
+    } finally {
+      routeSyncInProgress = false;
+    }
   }
   await loadJobs();
 }
@@ -507,7 +568,7 @@ async function syncRouteAndLoad(nextPage: number, replace = false): Promise<void
 function queueReturnQuery(): Record<string, string> {
   return {
     from: "translation-qa",
-    ...queueRouteQuery(page.value),
+    ...queueRouteQuery(page.value, null),
   };
 }
 
@@ -520,11 +581,256 @@ function translationQaRoute(job: DocumentJobResponse): RouteLocationRaw {
 }
 
 function openTranslationQa(job: DocumentJobResponse): void {
+  void openQaDrawer(job);
+}
+
+function openTranslationQaDetail(job: DocumentJobResponse): void {
   void router.push(translationQaRoute(job));
 }
 
 function openJobDetail(job: DocumentJobResponse): void {
   void router.push({ name: "job-detail", params: { jobId: job.id } });
+}
+
+function handleDrawerModelValue(nextValue: boolean): void {
+  if (!nextValue) {
+    void closeQaDrawer();
+  }
+}
+
+function updateQaReviewForm(nextForm: TranslationQaReviewDraft): void {
+  qaReviewForm.status = nextForm.status;
+  qaReviewForm.issue_type = nextForm.issue_type;
+  qaReviewForm.note = nextForm.note;
+}
+
+function syncQaReviewForm(nextQa: DocumentJobTranslationQaResponse): void {
+  qaReviewForm.status = nextQa.qa.status;
+  qaReviewForm.issue_type = nextQa.qa.issue_type;
+  qaReviewForm.note = nextQa.qa.note || "";
+}
+
+function resetQaReviewForm(): void {
+  qaReviewForm.status = "unreviewed";
+  qaReviewForm.issue_type = null;
+  qaReviewForm.note = "";
+}
+
+function setQaDrawerActiveSegment(index: number): void {
+  const segmentCount = qaDrawerData.value?.segments.length || 0;
+  if (!segmentCount) {
+    qaDrawerActiveSegmentIndex.value = 0;
+    return;
+  }
+  qaDrawerActiveSegmentIndex.value = Math.min(Math.max(index, 0), segmentCount - 1);
+}
+
+async function replaceQaJobQuery(qaJobId: string | null): Promise<void> {
+  const query = queueRouteQuery(page.value, qaJobId);
+  if (isSameQueueRouteQuery(route.query, query)) {
+    return;
+  }
+  routeSyncInProgress = true;
+  try {
+    await router.replace({ name: "translation-qa", query });
+  } finally {
+    routeSyncInProgress = false;
+  }
+}
+
+async function openQaDrawer(job: DocumentJobResponse): Promise<void> {
+  selectedQaJobId.value = job.id;
+  qaDrawerVisible.value = true;
+  qaDrawerQueueCleared.value = false;
+  qaDrawerJob.value = job;
+  await replaceQaJobQuery(job.id);
+  await loadQaDrawer(job.id, job);
+}
+
+function openQaDrawerFromRoute(jobId: string): void {
+  selectedQaJobId.value = jobId;
+  qaDrawerVisible.value = true;
+  qaDrawerQueueCleared.value = false;
+  const rowJob = jobs.value.find((job) => job.id === jobId) || null;
+  void loadQaDrawer(jobId, rowJob);
+}
+
+async function loadQaDrawer(jobId: string, seedJob: DocumentJobResponse | null = null): Promise<void> {
+  const loadToken = ++qaDrawerLoadToken;
+  qaDrawerVisible.value = true;
+  qaDrawerLoading.value = true;
+  qaDrawerError.value = null;
+  qaDrawerQueueCleared.value = false;
+  qaDrawerActiveSegmentIndex.value = 0;
+  try {
+    const [jobResponse, qaResponse] = await Promise.all([
+      seedJob ? Promise.resolve(seedJob) : documentJobsApi.get(jobId),
+      documentJobsApi.getTranslationQa(jobId),
+    ]);
+    if (loadToken !== qaDrawerLoadToken || selectedQaJobId.value !== jobId) {
+      return;
+    }
+    qaDrawerJob.value = jobResponse;
+    qaDrawerData.value = qaResponse;
+    syncQaReviewForm(qaResponse);
+  } catch (caught) {
+    if (loadToken === qaDrawerLoadToken && selectedQaJobId.value === jobId) {
+      qaDrawerError.value = normalizeApiError(caught);
+    }
+  } finally {
+    if (loadToken === qaDrawerLoadToken && selectedQaJobId.value === jobId) {
+      qaDrawerLoading.value = false;
+    }
+  }
+}
+
+async function refreshQaDrawer(): Promise<void> {
+  await loadJobs();
+  if (qaDrawerQueueCleared.value) {
+    return;
+  }
+  const jobId = selectedQaJobId.value;
+  if (!jobId) {
+    return;
+  }
+  const rowJob = jobs.value.find((job) => job.id === jobId) || qaDrawerJob.value;
+  await loadQaDrawer(jobId, rowJob);
+}
+
+async function closeQaDrawer(): Promise<void> {
+  qaDrawerLoadToken += 1;
+  selectedQaJobId.value = "";
+  qaDrawerVisible.value = false;
+  qaDrawerLoading.value = false;
+  qaDrawerSaving.value = false;
+  qaDrawerError.value = null;
+  qaDrawerJob.value = null;
+  qaDrawerData.value = null;
+  qaDrawerQueueCleared.value = false;
+  qaDrawerActiveSegmentIndex.value = 0;
+  resetQaReviewForm();
+  await replaceQaJobQuery(null);
+}
+
+async function submitQaReviewOnly(): Promise<void> {
+  await submitQaReview("stay");
+}
+
+async function submitQaReviewAndNext(): Promise<void> {
+  await submitQaReview("next");
+}
+
+async function submitQaReview(mode: "stay" | "next"): Promise<void> {
+  const jobId = selectedQaJobId.value;
+  if (!jobId || !qaDrawerData.value?.available) {
+    ElMessage.warning("当前任务没有可复核的 QA 证据，已保持只读。");
+    return;
+  }
+  qaDrawerSaving.value = true;
+  qaDrawerError.value = null;
+  try {
+    const response = await documentJobsApi.updateTranslationQa(jobId, {
+      status: qaReviewForm.status,
+      issue_type: qaReviewForm.issue_type,
+      note: qaReviewForm.note || null,
+    });
+    qaDrawerJob.value = response.job;
+    if (qaDrawerData.value) {
+      qaDrawerData.value = { ...qaDrawerData.value, qa: response.qa };
+    }
+    ElMessage.success("翻译 QA 复核已保存。");
+    await loadJobs();
+    if (mode === "next") {
+      await openNextQaDrawer(jobId);
+    } else {
+      await loadQaDrawer(jobId, response.job);
+    }
+  } catch (caught) {
+    qaDrawerError.value = normalizeApiError(caught);
+  } finally {
+    qaDrawerSaving.value = false;
+  }
+}
+
+async function openNextQaDrawer(currentJobId: string): Promise<void> {
+  let nextJob = selectNextTranslationQaJob(jobs.value, currentJobId);
+  if (!nextJob && page.value * pageSize < total.value) {
+    await syncRouteAndLoad(page.value + 1, true);
+    nextJob = selectNextTranslationQaJob(jobs.value, currentJobId);
+  }
+  if (nextJob) {
+    await openQaDrawer(nextJob);
+    return;
+  }
+  await showQaQueueClearedState();
+}
+
+async function showQaQueueClearedState(): Promise<void> {
+  qaDrawerLoadToken += 1;
+  selectedQaJobId.value = "";
+  qaDrawerVisible.value = true;
+  qaDrawerLoading.value = false;
+  qaDrawerError.value = null;
+  qaDrawerJob.value = null;
+  qaDrawerData.value = null;
+  qaDrawerQueueCleared.value = true;
+  qaDrawerActiveSegmentIndex.value = 0;
+  resetQaReviewForm();
+  await replaceQaJobQuery(null);
+}
+
+function openSelectedTranslationQaDetail(): void {
+  const jobId = selectedQaJobId.value || qaDrawerData.value?.job_id;
+  if (!jobId) {
+    return;
+  }
+  void router.push({
+    name: "job-translation-qa",
+    params: { jobId },
+    query: queueReturnQuery(),
+  });
+}
+
+function syncQaDrawerFromRoute(): void {
+  const routeQaJobId = firstQueryValue(route.query.qa_job_id);
+  if (!routeQaJobId) {
+    if (selectedQaJobId.value && !qaDrawerQueueCleared.value) {
+      void closeQaDrawer();
+    }
+    return;
+  }
+  if (routeQaJobId !== selectedQaJobId.value || !qaDrawerVisible.value) {
+    openQaDrawerFromRoute(routeQaJobId);
+  }
+}
+
+function handleQaDrawerKeydown(event: KeyboardEvent): void {
+  if (!qaDrawerVisible.value || shouldIgnoreTranslationQaShortcut(event.target)) {
+    return;
+  }
+  if (event.key === "Escape") {
+    event.preventDefault();
+    void closeQaDrawer();
+    return;
+  }
+  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+    if (qaDrawerData.value?.available && !qaDrawerLoading.value && !qaDrawerSaving.value && !qaDrawerQueueCleared.value) {
+      event.preventDefault();
+      void submitQaReviewAndNext();
+    }
+    return;
+  }
+  if (event.metaKey || event.ctrlKey || event.altKey) {
+    return;
+  }
+  const key = event.key.toLowerCase();
+  if (key === "j") {
+    event.preventDefault();
+    setQaDrawerActiveSegment(qaDrawerActiveSegmentIndex.value + 1);
+  } else if (key === "k") {
+    event.preventDefault();
+    setQaDrawerActiveSegment(qaDrawerActiveSegmentIndex.value - 1);
+  }
 }
 
 function countQaStatus(status: TranslationQaStatus): number {
@@ -544,20 +850,31 @@ function stageLabel(job: DocumentJobResponse): string {
 }
 
 function issueTypeLabel(issueType: TranslationQaIssueType | null): string {
-  return issueType ? qaIssueTypeText[issueType] : "-";
+  return issueType ? translationQaIssueTypeText[issueType] : "-";
 }
 
 watch(
   () => route.query,
-  () => {
+  (nextQuery, previousQuery) => {
     applyRouteQueryFilters();
-    void loadJobs();
+    if (!routeSyncInProgress && !isSameQueueFilterRouteQuery(nextQuery, previousQuery)) {
+      void loadJobs();
+    }
+    if (!routeSyncInProgress) {
+      syncQaDrawerFromRoute();
+    }
   },
 );
 
 onMounted(() => {
   applyRouteQueryFilters();
+  syncQaDrawerFromRoute();
+  window.addEventListener("keydown", handleQaDrawerKeydown);
   void syncRouteAndLoad(page.value, true);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", handleQaDrawerKeydown);
 });
 </script>
 
@@ -823,6 +1140,21 @@ onMounted(() => {
   font-weight: 700;
 }
 
+.job-link-button {
+  display: inline;
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.job-link-button:hover,
+.job-link-button:focus-visible {
+  text-decoration: underline;
+}
+
 .filename {
   max-width: 100%;
   overflow: hidden;
@@ -883,6 +1215,17 @@ onMounted(() => {
   font-size: 13px;
 }
 
+:global(.translation-qa-review-drawer.el-drawer) {
+  max-width: 100vw;
+  background: var(--app-color-surface);
+}
+
+:global(.translation-qa-review-drawer .el-drawer__body) {
+  height: 100%;
+  padding: 0;
+  overflow: hidden;
+}
+
 @media (max-width: 1180px) {
   .qa-workspace {
     grid-template-columns: 1fr;
@@ -907,6 +1250,10 @@ onMounted(() => {
 }
 
 @media (max-width: 720px) {
+  :global(.translation-qa-review-drawer.el-drawer) {
+    width: 100vw !important;
+  }
+
   .page-heading,
   .heading-actions,
   .section-header {

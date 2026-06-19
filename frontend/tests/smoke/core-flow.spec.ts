@@ -103,6 +103,20 @@ const translationQaJob = {
   },
 };
 
+const translationQaBlockedJob = {
+  ...translationQaJob,
+  id: "docjob_qa_002",
+  source_file_id: "file_source_qa_blocked",
+  result_file_id: "file_result_qa_blocked",
+  document_ir_file_id: "file_ir_qa_blocked",
+  translation_qa_status: "blocked",
+  translation_qa_issue_type: "artifact_missing",
+  translation_qa_note: "debug archive missing",
+  request_snapshot: {
+    source_file: { original_filename: "qa-blocked-smoke.pdf" },
+  },
+};
+
 const translationQaAvailableResponse = {
   job_id: translationQaJob.id,
   available: true,
@@ -123,8 +137,8 @@ const translationQaAvailableResponse = {
     ai_debug_archive_contains_full_text: true,
   },
   summary: {
-    final_segment_count: 1,
-    returned_segment_count: 1,
+    final_segment_count: 2,
+    returned_segment_count: 2,
     quality_flags: [],
     ai_call_count: 1,
     ai_call_statuses: { succeeded: 1 },
@@ -145,6 +159,19 @@ const translationQaAvailableResponse = {
       source_text: "Hello world.",
       ai_translation_text: "你好，世界。",
       final_text: "你好，世界。",
+      source_available: true,
+    },
+    {
+      id: "segment_qa_002",
+      block_id: "block_qa_002",
+      page_index: 0,
+      order: 1,
+      block_type: "paragraph",
+      field: "text",
+      index: null,
+      source_text: "Second segment.",
+      ai_translation_text: "第二段。",
+      final_text: "第二段。",
       source_available: true,
     },
   ],
@@ -183,6 +210,34 @@ const translationQaAvailableResponse = {
       error_message: null,
     },
   ],
+};
+
+const translationQaBlockedResponse = {
+  ...translationQaAvailableResponse,
+  job_id: translationQaBlockedJob.id,
+  qa: {
+    status: "blocked",
+    issue_type: "artifact_missing",
+    note: "debug archive missing",
+    reviewed_by: "user_operator",
+    reviewed_at: "2026-06-11T00:04:00Z",
+  },
+  segments: [
+    {
+      id: "segment_qa_blocked_001",
+      block_id: "block_qa_blocked_001",
+      page_index: 0,
+      order: 0,
+      block_type: "paragraph",
+      field: "text",
+      index: null,
+      source_text: "Blocked evidence.",
+      ai_translation_text: "阻塞证据。",
+      final_text: "阻塞证据。",
+      source_available: true,
+    },
+  ],
+  term_traces: [],
 };
 
 const translationQaUnavailableResponse = {
@@ -1277,6 +1332,20 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
       body: JSON.stringify(translationQaJob),
     });
   });
+  await page.route("**/api/v1/document-jobs/docjob_qa_002/translation-qa**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(translationQaBlockedResponse),
+    });
+  });
+  await page.route("**/api/v1/document-jobs/docjob_qa_002", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(translationQaBlockedJob),
+    });
+  });
   await page.route("**/api/v1/document-jobs/docjob_created_001/events", async (route) => {
     await route.fulfill({
       status: 200,
@@ -1390,8 +1459,16 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
       items = [activeJob];
       filteredSummary = { running: 1 };
     } else if (isTranslationQaQueue) {
-      items = qaStatus === "approved" ? [] : [translationQaJob];
-      filteredSummary = qaStatus === "approved" ? {} : { succeeded: 1 };
+      if (qaStatus === "approved") {
+        items = [];
+      } else if (qaStatus === "blocked") {
+        items = [translationQaBlockedJob];
+      } else if (qaStatus === "all") {
+        items = [translationQaJob, translationQaBlockedJob];
+      } else {
+        items = [translationQaJob];
+      }
+      filteredSummary = items.length ? { succeeded: items.length } : {};
     }
     await route.fulfill({
       status: 200,
@@ -1404,7 +1481,7 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
         summary: { succeeded: 1, running: 1, failed: 1 },
         filtered_summary: filteredSummary,
         translation_qa_summary: isTranslationQaQueue
-          ? { unreviewed: 1, approved: 0, needs_fix: 0, blocked: 0 }
+          ? { unreviewed: 1, approved: 0, needs_fix: 0, blocked: 1 }
           : { unreviewed: 0, approved: 0, needs_fix: 0, blocked: 0 },
       }),
     });
@@ -1529,6 +1606,18 @@ test("operations redesign renders verified desktop and mobile screenshots", asyn
     expect(qaLayoutHeights.heading).toBeLessThanOrEqual(viewport.width < 600 ? 240 : 140);
     expect(qaLayoutHeights.inboxItem).toBeLessThanOrEqual(96);
     await page.screenshot({ path: testInfo.outputPath(`ops-qa-${viewport.name}.png`) });
+
+    await page.goto("/translation-qa?translation_qa_status=all&sort=updated_at_desc&include_archived=false&page=1&qa_job_id=docjob_qa_001");
+    await expect(page.locator(".translation-qa-review-drawer")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "docjob_qa_001" })).toBeVisible();
+    const qaReviewPanel = page.getByLabel("翻译 QA 复核面板");
+    await expect(qaReviewPanel.getByText("qa-smoke.pdf")).toBeVisible();
+    await expect(qaReviewPanel.getByText("Hello world.")).toBeVisible();
+    await expectNoPageHorizontalOverflow(page);
+    const drawerBox = await page.locator(".translation-qa-review-drawer").boundingBox();
+    expect(drawerBox?.width || 0).toBeLessThanOrEqual(viewport.width + 1);
+    await settleWorkbenchScreenshot(page);
+    await page.screenshot({ path: testInfo.outputPath(`ops-qa-drawer-${viewport.name}.png`) });
 
     await context.close();
   }
@@ -1729,6 +1818,70 @@ test("operator can inspect the translation QA queue with backend all-status summ
   await expect(page.getByText("未复核").first()).toBeVisible();
   await expect(page.getByText("复核收件箱")).toBeVisible();
   await expect(page.getByText("处理面板")).toBeVisible();
+});
+
+test("operator can use the translation QA drawer review flow", async ({ page }) => {
+  const controls = await mockApi(page);
+
+  await page.goto("/login");
+  await page.getByPlaceholder("请输入用户名").fill("operator");
+  await page.getByPlaceholder("请输入密码").fill("operator-pass");
+  await page.getByRole("button", { name: "登录工作台" }).click();
+  await expect(page).toHaveURL(/\/jobs(\?|$)/);
+
+  await page.goto("/translation-qa?translation_qa_status=all&sort=updated_at_desc&include_archived=false&page=1&qa_job_id=docjob_qa_001");
+  await expect(page.locator(".translation-qa-review-drawer")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "docjob_qa_001" })).toBeVisible();
+  const qaReviewPanel = page.getByLabel("翻译 QA 复核面板");
+  await expect(qaReviewPanel.getByText("qa-smoke.pdf")).toBeVisible();
+  await expect(page.getByText("1 / 2")).toBeVisible();
+
+  await page.getByLabel("QA 备注").fill("typing");
+  await page.keyboard.press("j");
+  await expect(page.getByText("1 / 2")).toBeVisible();
+  await page.locator(".qa-review-header").click();
+  await page.keyboard.press("j");
+  await expect(page.getByText("2 / 2")).toBeVisible();
+  await expect(qaReviewPanel.getByText("Esc")).toBeVisible();
+  await expect(qaReviewPanel.getByText("⌘/Ctrl")).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".translation-qa-review-drawer")).toBeHidden();
+  await expect(page).not.toHaveURL(/qa_job_id=/);
+
+  await page.getByRole("button", { name: "复核", exact: true }).first().click();
+  await expect(page).toHaveURL(/qa_job_id=docjob_qa_001/);
+  await expect(page.getByRole("heading", { name: "docjob_qa_001" })).toBeVisible();
+  await page.getByLabel("QA 备注").fill("smoke");
+  await page.getByRole("button", { name: "仅保存" }).click();
+  await expect.poll(() => controls.translationQaPatchCount()).toBe(1);
+  await expect(page).toHaveURL(/qa_job_id=docjob_qa_001/);
+  await expect(page.getByRole("heading", { name: "docjob_qa_001" })).toBeVisible();
+
+  await qaReviewPanel.locator(".segment-review-surface").click();
+  await page.keyboard.press("Control+Enter");
+  await expect.poll(() => controls.translationQaPatchCount()).toBe(2);
+  await expect(page).toHaveURL(/qa_job_id=docjob_qa_002/);
+  await expect(page.getByRole("heading", { name: "docjob_qa_002" })).toBeVisible();
+  await expect(qaReviewPanel.getByText("qa-blocked-smoke.pdf")).toBeVisible();
+});
+
+test("operator sees unavailable translation QA in the queue drawer as readonly", async ({ page }) => {
+  const controls = await mockApi(page, { translationQaUnavailable: true });
+
+  await page.goto("/login");
+  await page.getByPlaceholder("请输入用户名").fill("operator");
+  await page.getByPlaceholder("请输入密码").fill("operator-pass");
+  await page.getByRole("button", { name: "登录工作台" }).click();
+  await expect(page).toHaveURL(/\/jobs(\?|$)/);
+
+  await page.goto("/translation-qa?translation_qa_status=all&sort=updated_at_desc&include_archived=false&page=1&qa_job_id=docjob_qa_001");
+  await expect(page.locator(".translation-qa-review-drawer")).toBeVisible();
+  await expect(page.getByText("只读诊断")).toBeVisible();
+  await expect(page.getByRole("alert").getByText("任务缺少 DocumentIR 证据文件，无法展示最终文本片段。")).toBeVisible();
+  await expect(page.getByRole("button", { name: "仅保存" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "保存并下一条" })).toBeDisabled();
+  expect(controls.translationQaPatchCount()).toBe(0);
 });
 
 test("operator sees unavailable translation QA as readonly and cannot submit review", async ({ page }) => {
