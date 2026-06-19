@@ -56,6 +56,7 @@ class AppRuntime:
     term_version_service: Any
     document_word_renderer: Any
     document_job_service: Any
+    document_job_incident_service: Any
     document_job_execution_service: Any
     document_job_recovery_service: DocumentJobRecoveryService
     document_job_task_queue: Any | None

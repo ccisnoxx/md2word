@@ -30,6 +30,7 @@ from app.domains.document_jobs.execution import (
     EagerDocumentJobTaskQueue,
 )
 from app.domains.document_jobs.recovery import DocumentJobRecoveryService
+from app.domains.document_jobs.incidents import DocumentJobIncidentService
 from app.domains.document_jobs.service import DocumentJobService
 from app.domains.files import FileRetentionPolicyService, FileUploadService
 from app.services.document_ir import MinerUToDocumentIRService
@@ -214,6 +215,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         job_resource_snapshot_service,
         file_upload_service=file_upload_service,
     )
+    document_job_incident_service = DocumentJobIncidentService(document_job_service)
     term_rule_repository = FileTermRuleRepository(resolved_settings.term_rules_store_file)
     term_rule_service = TermRuleService(
         term_rule_repository,
@@ -368,6 +370,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         term_version_service=term_version_service,
         document_word_renderer=document_word_renderer,
         document_job_service=document_job_service,
+        document_job_incident_service=document_job_incident_service,
         document_job_execution_service=document_job_execution_service,
         document_job_recovery_service=document_job_recovery_service,
         document_job_task_queue=document_job_task_queue,

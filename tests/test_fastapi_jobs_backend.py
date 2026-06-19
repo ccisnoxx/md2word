@@ -43,6 +43,7 @@ from app.domains.audit.service import AuditService
 from app.domains.document_jobs.models import DocumentJobCallbackMessage, DocumentJobRecord
 from app.services.auth import AuthService, hash_password
 from app.domains.document_jobs.execution import DocumentJobExecutionService, EagerDocumentJobTaskQueue
+from app.domains.document_jobs.incidents import DocumentJobIncidentService
 from app.domains.document_jobs.recovery import DocumentJobRecoveryService
 from app.domains.document_jobs.service import DocumentJobService
 from app.services.document_ir import MinerUToDocumentIRService
@@ -531,6 +532,7 @@ def build_test_runtime(
         job_resource_snapshot_service,
         file_upload_service=file_upload_service,
     )
+    document_job_incident_service = DocumentJobIncidentService(document_job_service)
     health_service = HealthService(
         settings,
         stage_message_store,
@@ -688,6 +690,7 @@ def build_test_runtime(
         term_version_service=term_version_service,
         document_word_renderer=document_word_renderer,
         document_job_service=document_job_service,
+        document_job_incident_service=document_job_incident_service,
         document_job_execution_service=document_job_execution_service,
         document_job_recovery_service=document_job_recovery_service,
         document_job_task_queue=document_job_task_queue,
@@ -7270,6 +7273,196 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertFalse(archived_actions["archive"]["enabled"])
         self.assertFalse(archived_actions["retry"]["enabled"])
         self.assertIn("已归档", archived_actions["retry"]["disabled_reason"])
+
+    def test_document_job_incident_queue_filters_priority_and_diagnostics(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+            now = utc_now()
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                retryable_job_id = self._create_document_job_from_upload(client, headers, filename="retryable-incident.pdf")
+                non_retryable_job_id = self._create_document_job_from_upload(client, headers, filename="bad-input-incident.pdf")
+                blocked_job_id = self._create_document_job_from_upload(client, headers, filename="blocked-qa-incident.pdf")
+                stalled_job_id = self._create_document_job_from_upload(client, headers, filename="stalled-incident.pdf")
+                runtime.document_job_repository.update_document_job(
+                    retryable_job_id,
+                    status="failed",
+                    stage="failed",
+                    failed_stage="parsing",
+                    error_code="mineru_failed",
+                    error_message="MinerU failed",
+                    retry_count=1,
+                    updated_at=now - timedelta(minutes=8),
+                )
+                runtime.document_job_repository.update_document_job(
+                    non_retryable_job_id,
+                    status="failed",
+                    stage="failed",
+                    failed_stage="parsing",
+                    error_code="document_job_invalid_input",
+                    error_message="bad input",
+                    updated_at=now - timedelta(minutes=6),
+                )
+                runtime.document_job_repository.update_document_job(
+                    blocked_job_id,
+                    mode="en2zh_pdf_to_word",
+                    status="running",
+                    stage="parsing",
+                    translation_qa_status="blocked",
+                    translation_qa_issue_type="artifact_missing",
+                    translation_qa_note="DocumentIR missing",
+                    updated_at=now - timedelta(minutes=1),
+                )
+                runtime.document_job_repository.update_document_job(
+                    stalled_job_id,
+                    status="queued",
+                    stage="uploaded",
+                    updated_at=now - timedelta(minutes=25),
+                    timeout_at=now + timedelta(minutes=5),
+                )
+                list_response = client.get("/api/v1/document-job-incidents", headers=headers)
+                retryable_response = client.get(
+                    "/api/v1/document-job-incidents",
+                    headers=headers,
+                    params={"retryable": True},
+                )
+                artifact_response = client.get(
+                    "/api/v1/document-job-incidents",
+                    headers=headers,
+                    params={"failure_type": "artifact_missing"},
+                )
+                stage_response = client.get(
+                    "/api/v1/document-job-incidents",
+                    headers=headers,
+                    params={"stage": "parsing", "sort": "updated_at_desc"},
+                )
+                stalled_response = client.get(
+                    "/api/v1/document-job-incidents",
+                    headers=headers,
+                    params={"stalled_minutes": 20},
+                )
+                diagnostics_response = client.get(
+                    f"/api/v1/document-job-incidents/{retryable_job_id}/diagnostics",
+                    headers=headers,
+                )
+                invalid_response = client.get(
+                    "/api/v1/document-job-incidents",
+                    headers=headers,
+                    params={"failure_type": "not_real"},
+                )
+
+        self.assertEqual(list_response.status_code, 200)
+        payload = list_response.json()
+        self.assertEqual(payload["total"], 4)
+        self.assertEqual(
+            [item["job"]["id"] for item in payload["items"]],
+            [blocked_job_id, stalled_job_id, retryable_job_id, non_retryable_job_id],
+        )
+        self.assertEqual(payload["summary"]["failed"], 2)
+        self.assertEqual(payload["summary"]["blocked"], 1)
+        self.assertEqual(payload["summary"]["stalled"], 1)
+        self.assertEqual(payload["summary"]["retryable"], 1)
+        self.assertEqual(payload["summary"]["non_retryable"], 1)
+        self.assertEqual(payload["summary"]["by_failure_type"]["artifact_missing"], 1)
+        self.assertEqual(payload["summary"]["by_failure_type"]["timeout_or_stalled"], 1)
+        self.assertEqual(retryable_response.status_code, 200)
+        self.assertEqual([item["job"]["id"] for item in retryable_response.json()["items"]], [retryable_job_id])
+        self.assertEqual(artifact_response.status_code, 200)
+        self.assertEqual([item["job"]["id"] for item in artifact_response.json()["items"]], [blocked_job_id])
+        self.assertEqual(stage_response.status_code, 200)
+        self.assertEqual([item["job"]["id"] for item in stage_response.json()["items"]], [blocked_job_id, non_retryable_job_id, retryable_job_id])
+        self.assertEqual(stalled_response.status_code, 200)
+        self.assertEqual([item["job"]["id"] for item in stalled_response.json()["items"]], [stalled_job_id])
+        self.assertEqual(diagnostics_response.status_code, 200)
+        diagnostics_payload = diagnostics_response.json()
+        self.assertTrue(diagnostics_payload["item"]["retryable"])
+        self.assertEqual(diagnostics_payload["item"]["failure_type"], "conversion_failed")
+        self.assertIn("MinerU failed", diagnostics_payload["item"]["evidence_summary"])
+        self.assertTrue(any(link["kind"] == "detail" for link in diagnostics_payload["evidence_links"]))
+        self.assertTrue(diagnostics_payload["recent_events"])
+        self.assertTrue(diagnostics_payload["files"])
+        self.assertNotIn("object_key", diagnostics_payload["files"][0])
+        self.assertEqual(invalid_response.status_code, 400)
+        self.assertEqual(invalid_response.json()["error_code"], "invalid_request")
+
+    def test_document_job_incident_bulk_retry_skips_non_retryable_and_refreshes_status(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                retryable_job_id = self._create_document_job_from_upload(client, headers, filename="incident-bulk-retry.pdf")
+                non_retryable_job_id = self._create_document_job_from_upload(client, headers, filename="incident-bulk-invalid.pdf")
+                active_job_id = self._create_document_job_from_upload(client, headers, filename="incident-bulk-active.pdf")
+                runtime.document_job_repository.update_document_job(
+                    retryable_job_id,
+                    status="failed",
+                    stage="failed",
+                    failed_stage="rendering",
+                    error_code="render_failed",
+                    error_message="render failed",
+                )
+                runtime.document_job_repository.update_document_job(
+                    non_retryable_job_id,
+                    status="failed",
+                    stage="failed",
+                    failed_stage="parsing",
+                    error_code="document_job_invalid_input",
+                    error_message="bad input",
+                )
+                runtime.document_job_repository.update_document_job(
+                    active_job_id,
+                    status="running",
+                    stage="parsing",
+                )
+                retry_response = client.post(
+                    "/api/v1/document-job-incidents/bulk-retry",
+                    headers={**headers, "X-Trace-Id": "trace_incident_bulk_retry"},
+                    json={
+                        "job_ids": [retryable_job_id, non_retryable_job_id, active_job_id],
+                        "reason": "incident bulk retry",
+                    },
+                )
+                refresh_response = client.post(
+                    "/api/v1/document-job-incidents/bulk-refresh",
+                    headers=headers,
+                    json={"job_ids": [retryable_job_id, non_retryable_job_id, active_job_id]},
+                )
+
+            retried_job = runtime.document_job_repository.get_document_job(retryable_job_id)
+            audit_events = runtime.audit_event_repository.list_audit_events()
+
+        self.assertEqual(retry_response.status_code, 200)
+        retry_payload = retry_response.json()
+        self.assertEqual(retry_payload["action"], "retry")
+        self.assertEqual(retry_payload["succeeded"], 1)
+        self.assertEqual(retry_payload["skipped"], 2)
+        self.assertEqual(retry_payload["failed"], 0)
+        self.assertEqual(retried_job.status, "pending")
+        skipped_details = {item["job_id"]: item["detail"] for item in retry_payload["items"] if item["skipped"]}
+        self.assertIn("不可重试", skipped_details[non_retryable_job_id])
+        self.assertIn("failed", skipped_details[active_job_id])
+        retry_audit_events = [event for event in audit_events if event.action == "document_job.retry"]
+        self.assertEqual(len(retry_audit_events), 1)
+        self.assertEqual(retry_audit_events[0].target_id, retryable_job_id)
+        self.assertEqual(refresh_response.status_code, 200)
+        refresh_payload = refresh_response.json()
+        self.assertEqual(refresh_payload["action"], "refresh")
+        self.assertEqual(refresh_payload["succeeded"], 3)
+        self.assertEqual(refresh_payload["failed"], 0)
+        self.assertEqual(refresh_payload["skipped"], 0)
+        self.assertEqual({item["job_id"] for item in refresh_payload["items"]}, {retryable_job_id, non_retryable_job_id, active_job_id})
 
     def test_document_job_unarchive_restores_default_list_and_writes_audit(self):
         with tempfile.TemporaryDirectory() as temp_dir:

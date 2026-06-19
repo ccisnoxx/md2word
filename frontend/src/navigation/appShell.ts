@@ -23,6 +23,7 @@ export type AppNavGroupId = "processing" | "quality" | "configuration" | "system
 
 export type AppNavItemId =
   | "jobs"
+  | "incidents"
   | "job-create"
   | "translation-qa"
   | "term-proposals"
@@ -106,6 +107,7 @@ const NAV_GROUP_DEFINITIONS: AppNavGroupDefinition[] = [
     icon: Files,
     items: [
       { id: "jobs", label: "任务工作台", to: "/jobs", icon: Files, permissions: ["document_jobs:read"] },
+      { id: "incidents", label: "异常处理", to: "/incidents", icon: Operation, permissions: ["document_jobs:read"] },
       { id: "job-create", label: "创建任务", to: "/jobs/new", icon: DocumentAdd, permissions: ["document_jobs:create"] },
     ],
   },
@@ -178,6 +180,7 @@ const NAV_GROUP_DEFINITIONS: AppNavGroupDefinition[] = [
 
 const ROUTE_OWNERS: Record<string, RouteOwnership> = {
   jobs: { groupId: "processing", itemId: "jobs", pageLabel: "任务工作台" },
+  incidents: { groupId: "processing", itemId: "incidents", pageLabel: "异常处理" },
   "job-create": { groupId: "processing", itemId: "job-create", pageLabel: "创建任务" },
   "job-detail": { groupId: "processing", itemId: "jobs", pageLabel: "任务详情" },
   "translation-qa": { groupId: "quality", itemId: "translation-qa", pageLabel: "翻译 QA" },
