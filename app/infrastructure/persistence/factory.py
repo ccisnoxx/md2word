@@ -25,7 +25,11 @@ from app.domains.jobs.repository import (
 )
 from app.domains.resources.repository import ResourceVersionRepositoryProtocol
 from app.domains.saved_views.repository import SavedViewRepositoryProtocol
-from app.domains.term_rules.repository import TermRuleAssetRepositoryProtocol, TermRuleProposalRepositoryProtocol
+from app.domains.term_rules.repository import (
+    TermRuleAssetRepositoryProtocol,
+    TermRuleProposalRepositoryProtocol,
+    TermRuleReviewRepositoryProtocol,
+)
 from app.domains.terminology.repository import TerminologyReleaseRepositoryProtocol
 from app.domains.translation.repository import TranslationTermRepositoryProtocol
 from app.domains.users.repository import InternalUserRepositoryProtocol
@@ -68,6 +72,7 @@ from app.infrastructure.persistence.mysql import (
     MysqlStageMessageStore,
     MysqlTermRuleAssetRepository,
     MysqlTermRuleProposalRepository,
+    MysqlTermRuleReviewRepository,
     MysqlTerminologyReleaseRepository,
     MysqlTranslationTermRepository,
 )
@@ -113,6 +118,7 @@ class PersistenceAdapters:
     terminology_release_repository: TerminologyReleaseRepositoryProtocol
     resource_version_repository: ResourceVersionRepositoryProtocol | None = None
     term_rule_proposal_repository: TermRuleProposalRepositoryProtocol | None = None
+    term_rule_review_repository: TermRuleReviewRepositoryProtocol | None = None
     term_rule_asset_repository: TermRuleAssetRepositoryProtocol | None = None
     translation_term_repository: TranslationTermRepositoryProtocol | None = None
 
@@ -140,6 +146,7 @@ def build_file_persistence_adapters(data_dir: Path) -> PersistenceAdapters:
         terminology_release_repository=FileTerminologyReleaseRepository(backend),
         resource_version_repository=None,
         term_rule_proposal_repository=None,
+        term_rule_review_repository=None,
         term_rule_asset_repository=None,
         translation_term_repository=None,
     )
@@ -168,6 +175,7 @@ def build_sqlite_persistence_adapters(database_path: Path) -> PersistenceAdapter
         terminology_release_repository=SqliteTerminologyReleaseRepository(backend),
         resource_version_repository=None,
         term_rule_proposal_repository=None,
+        term_rule_review_repository=None,
         term_rule_asset_repository=None,
         translation_term_repository=None,
     )
@@ -200,6 +208,7 @@ def build_mysql_persistence_adapters(
         terminology_release_repository=MysqlTerminologyReleaseRepository(backend),
         resource_version_repository=MysqlResourceVersionRepository(backend),
         term_rule_proposal_repository=MysqlTermRuleProposalRepository(backend),
+        term_rule_review_repository=MysqlTermRuleReviewRepository(backend),
         term_rule_asset_repository=MysqlTermRuleAssetRepository(backend),
         translation_term_repository=MysqlTranslationTermRepository(backend),
     )

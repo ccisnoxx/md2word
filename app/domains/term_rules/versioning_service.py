@@ -24,7 +24,9 @@ from app.domains.term_rules.models import (
     TermRuleImportValidationSummary,
     TermRuleRecord,
     TermRuleSegmentRecord,
+    TermRuleScopeType,
     TermRulesStore,
+    normalize_term_key,
 )
 from app.domains.term_rules.repository import TermRuleAssetRepositoryProtocol, TermRuleRepositoryProtocol
 from app.domains.term_rules.schemas import (
@@ -312,11 +314,20 @@ class TermRuleSetVersionService:
             raise ValueError(f"规则 ID 已存在: {rule_id}")
         category = self._find_category(store, payload.category_id)
         source_term = self._normalize_required_text(payload.source_term, "source_term")
-        self._ensure_unique_source_term(store, source_term, exclude_rule_id=None)
+        scope_type, scope_id = self._resolve_rule_scope(payload.scope_type, payload.scope_id)
+        self._ensure_unique_source_term(
+            store,
+            source_term,
+            scope_type=scope_type,
+            scope_id=scope_id,
+            exclude_rule_id=None,
+        )
         rule = self._build_rule_record(
             rule_id=rule_id,
             category_id=category.id,
             source_term=source_term,
+            scope_type=scope_type,
+            scope_id=scope_id,
             apply_scope=payload.apply_scope,
             case_sensitive=payload.case_sensitive,
             enabled=payload.enabled,
@@ -348,7 +359,20 @@ class TermRuleSetVersionService:
         source_term = rule.source_term
         if "source_term" in fields and payload.source_term is not None:
             source_term = self._normalize_required_text(payload.source_term, "source_term")
-            self._ensure_unique_source_term(store, source_term, exclude_rule_id=rule.id)
+        scope_type = rule.scope_type
+        scope_id = rule.scope_id
+        if "scope_type" in fields and payload.scope_type is not None:
+            scope_type, scope_id = self._resolve_rule_scope(payload.scope_type, payload.scope_id)
+        elif "scope_id" in fields:
+            scope_type, scope_id = self._resolve_rule_scope(rule.scope_type.value, payload.scope_id)
+        if ("source_term" in fields and payload.source_term is not None) or "scope_type" in fields or "scope_id" in fields:
+            self._ensure_unique_source_term(
+                store,
+                source_term,
+                scope_type=scope_type,
+                scope_id=scope_id,
+                exclude_rule_id=rule.id,
+            )
         segments = [
             {"segment_text": segment.segment_text, "render_type": segment.render_type.value}
             for segment in sorted(rule.segments, key=lambda item: item.seq)
@@ -370,6 +394,8 @@ class TermRuleSetVersionService:
             rule_id=rule.id,
             category_id=category_id,
             source_term=source_term,
+            scope_type=scope_type,
+            scope_id=scope_id,
             apply_scope=(
                 payload.apply_scope
                 if "apply_scope" in fields and payload.apply_scope is not None
@@ -519,6 +545,55 @@ class TermRuleSetVersionService:
         self._mirror_version(record)
         if make_default:
             self._sync_live_store_then_set_default(normalized_id, record)
+        self._record_audit(
+            actor=actor,
+            action="term_rule_set.publish",
+            target_id=f"{normalized_id}@{version}",
+            trace_id=trace_id,
+            reason=publish_reason,
+        )
+        return self._version_response(record)
+
+    def publish_store_as_default(
+        self,
+        term_rule_set_id: str,
+        *,
+        store: TermRulesStore,
+        published_by: str | None,
+        publish_reason: str | None,
+        actor: ActorContext | None = None,
+        trace_id: str | None = None,
+    ) -> TermRuleSetVersionResponse:
+        """Publish an already reviewed effective store without mutating the editable draft."""
+
+        normalized_id = self._require_known_set_id(term_rule_set_id)
+        self._raise_for_store_findings(normalized_id, store)
+        version = self._next_version(normalized_id)
+        default_record = self._default_record(normalized_id)
+        payload = self._build_payload(
+            term_rule_set_id=normalized_id,
+            version=version,
+            store=store,
+            base_version=default_record.version if default_record is not None else None,
+            published_by=published_by,
+            publish_reason=publish_reason,
+            published_at=utc_now(),
+        )
+        self.resource_version_service.create_or_update_draft(
+            resource_type="term_rule_set",
+            resource_id=normalized_id,
+            version=version,
+            snapshot_hash=self._snapshot_hash(payload),
+            payload_ref=f"term_rule_set:{normalized_id}@{version}",
+            payload=payload,
+        )
+        record = self.resource_version_service.publish(
+            "term_rule_set",
+            normalized_id,
+            version,
+            make_default=False,
+        )
+        self._sync_live_store_then_set_default(normalized_id, record)
         self._record_audit(
             actor=actor,
             action="term_rule_set.publish",
@@ -907,7 +982,7 @@ class TermRuleSetVersionService:
 
     @staticmethod
     def _count_rules(store: TermRulesStore) -> tuple[int, int]:
-        return len(store.rules), sum(1 for rule in store.rules if rule.enabled)
+        return len(store.rules), sum(1 for rule in store.rules if rule.active and rule.enabled)
 
     def _resolve_store_ref(self, term_rule_set_id: str, ref: str) -> TermRuleSetStoreRef:
         """把 default/draft/版本号解析为 store 引用。"""
@@ -1013,6 +1088,11 @@ class TermRuleSetVersionService:
         return {
             "category_id": rule.category_id,
             "source_term": rule.source_term,
+            "normalized_term": rule.normalized_term,
+            "scope_type": rule.scope_type.value,
+            "scope_id": rule.scope_id,
+            "current_version": rule.current_version,
+            "active": rule.active,
             "rule_mode": rule.rule_mode.value,
             "apply_scope": rule.apply_scope.value,
             "case_sensitive": rule.case_sensitive,
@@ -1058,7 +1138,7 @@ class TermRuleSetVersionService:
             return "added"
         if before is not None and after is None:
             return "removed"
-        if before is not None and after is not None and before.enabled and not after.enabled:
+        if before is not None and after is not None and before.active and (not after.active or not after.enabled):
             return "disabled"
         if changed_fields:
             return "updated"
@@ -1081,7 +1161,7 @@ class TermRuleSetVersionService:
         warnings: list[TermRuleGovernanceFindingResponse] = []
         conflicts: list[TermRuleGovernanceFindingResponse] = []
         categories = self._category_map(draft.store)
-        seen_terms: dict[str, TermRuleRecord] = {}
+        seen_terms: dict[tuple[str, str, str], TermRuleRecord] = {}
         for index, rule in enumerate(draft.store.rules):
             path_prefix = f"rules.{index}"
             category = categories.get(rule.category_id)
@@ -1095,7 +1175,7 @@ class TermRuleSetVersionService:
                         rule=rule,
                     )
                 )
-            elif rule.enabled and not category.enabled:
+            elif rule.active and rule.enabled and not category.enabled:
                 errors.append(
                     self._finding(
                         severity="error",
@@ -1115,19 +1195,24 @@ class TermRuleSetVersionService:
                         rule=rule,
                     )
                 )
-            if rule.source_term in seen_terms:
+            identity_key = self._rule_identity_key(rule)
+            if rule.active and identity_key in seen_terms:
                 errors.append(
                     self._finding(
                         severity="error",
                         code="duplicate_source_term",
-                        message=f"draft 内 source_term 重复: {rule.source_term}",
+                        message=f"draft 内同 scope source_term 重复: {rule.source_term}",
                         path=f"{path_prefix}.source_term",
                         rule=rule,
-                        metadata={"first_rule_id": seen_terms[rule.source_term].id},
+                        metadata={
+                            "first_rule_id": seen_terms[identity_key].id,
+                            "scope_type": rule.scope_type.value,
+                            "scope_id": rule.scope_id,
+                        },
                     )
                 )
-            else:
-                seen_terms[rule.source_term] = rule
+            elif rule.active:
+                seen_terms[identity_key] = rule
 
         default_record = self._default_record(draft.record.resource_id)
         draft_base_version = self._payload_text(draft.record.payload, "base_version")
@@ -1172,6 +1257,71 @@ class TermRuleSetVersionService:
             )
         return errors, warnings, conflicts
 
+    def _raise_for_store_findings(self, term_rule_set_id: str, store: TermRulesStore) -> None:
+        errors = self._store_validation_errors(store)
+        if not errors:
+            return
+        raise ValueError(f"Term Rule Set {term_rule_set_id} 发布前校验失败: {errors[0].message}")
+
+    def _store_validation_errors(self, store: TermRulesStore) -> list[TermRuleGovernanceFindingResponse]:
+        """Run the blocking subset of preflight checks against a concrete store."""
+
+        errors: list[TermRuleGovernanceFindingResponse] = []
+        categories = self._category_map(store)
+        seen_terms: dict[tuple[str, str, str], TermRuleRecord] = {}
+        for index, rule in enumerate(store.rules):
+            path_prefix = f"rules.{index}"
+            category = categories.get(rule.category_id)
+            if category is None:
+                errors.append(
+                    self._finding(
+                        severity="error",
+                        code="missing_category",
+                        message=f"规则引用了不存在的分类: {rule.category_id}",
+                        path=f"{path_prefix}.category_id",
+                        rule=rule,
+                    )
+                )
+            elif rule.active and rule.enabled and not category.enabled:
+                errors.append(
+                    self._finding(
+                        severity="error",
+                        code="disabled_category",
+                        message=f"启用规则不能引用已禁用分类: {category.code}",
+                        path=f"{path_prefix}.category_id",
+                        rule=rule,
+                    )
+                )
+            if not rule.segments:
+                errors.append(
+                    self._finding(
+                        severity="error",
+                        code="empty_segments",
+                        message=f"规则 segments 不能为空: {rule.source_term}",
+                        path=f"{path_prefix}.segments",
+                        rule=rule,
+                    )
+                )
+            identity_key = self._rule_identity_key(rule)
+            if rule.active and identity_key in seen_terms:
+                errors.append(
+                    self._finding(
+                        severity="error",
+                        code="duplicate_source_term",
+                        message=f"同 scope source_term 重复: {rule.source_term}",
+                        path=f"{path_prefix}.source_term",
+                        rule=rule,
+                        metadata={
+                            "first_rule_id": seen_terms[identity_key].id,
+                            "scope_type": rule.scope_type.value,
+                            "scope_id": rule.scope_id,
+                        },
+                    )
+                )
+            elif rule.active:
+                seen_terms[identity_key] = rule
+        return errors
+
     @staticmethod
     def _finding(
         *,
@@ -1199,13 +1349,17 @@ class TermRuleSetVersionService:
     def _sorted_rules(store: TermRulesStore) -> list[TermRuleRecord]:
         """按 live rule 列表语义稳定排序 draft 规则。"""
 
-        return sorted(store.rules, key=lambda item: (item.priority, item.source_term))
+        return sorted(store.rules, key=lambda item: (item.priority, item.scope_type.value, item.scope_id or "", item.source_term))
 
     @staticmethod
     def _category_map(store: TermRulesStore) -> dict[str, TermRuleCategoryRecord]:
         """按 category id 建立 draft 分类索引。"""
 
         return {category.id: category for category in store.categories}
+
+    @staticmethod
+    def _rule_identity_key(rule: TermRuleRecord) -> tuple[str, str, str]:
+        return (rule.scope_type.value, rule.scope_id or "", rule.normalized_term or normalize_term_key(rule.source_term))
 
     def _rule_response(self, store: TermRulesStore, rule: TermRuleRecord) -> TermRuleResponse:
         """把 draft store 中的规则转换为 API 响应。"""
@@ -1217,6 +1371,11 @@ class TermRuleSetVersionService:
             category_code=category.code if category is not None else "",
             category_name=category.name if category is not None else "",
             source_term=rule.source_term,
+            normalized_term=rule.normalized_term,
+            scope_type=rule.scope_type.value,
+            scope_id=rule.scope_id,
+            current_version=rule.current_version,
+            active=rule.active,
             rule_mode=rule.rule_mode.value,
             apply_scope=rule.apply_scope.value,
             case_sensitive=rule.case_sensitive,
@@ -1258,13 +1417,32 @@ class TermRuleSetVersionService:
         store: TermRulesStore,
         source_term: str,
         *,
+        scope_type: TermRuleScopeType,
+        scope_id: str | None,
         exclude_rule_id: str | None,
     ) -> None:
-        """确保 draft 内 source_term 唯一。"""
+        """确保 draft 内同 scope active source_term 唯一。"""
 
+        normalized = normalize_term_key(source_term)
         for rule in store.rules:
-            if rule.source_term == source_term and rule.id != exclude_rule_id:
+            if not rule.active or rule.id == exclude_rule_id:
+                continue
+            if (
+                rule.scope_type == scope_type
+                and rule.scope_id == scope_id
+                and rule.normalized_term == normalized
+            ):
                 raise ValueError(f"规则 source_term 已存在: {source_term}")
+
+    @staticmethod
+    def _resolve_rule_scope(raw_scope_type: str | None, raw_scope_id: str | None) -> tuple[TermRuleScopeType, str | None]:
+        scope_type = TermRuleScopeType(str(raw_scope_type or TermRuleScopeType.GLOBAL.value))
+        if scope_type == TermRuleScopeType.GLOBAL:
+            return scope_type, None
+        scope_id = str(raw_scope_id or "").strip()
+        if not scope_id:
+            raise ValueError("department scope 规则必须提供 scope_id")
+        return scope_type, scope_id
 
     @staticmethod
     def _normalize_optional_id(raw_id: str | None) -> str | None:
@@ -1297,6 +1475,8 @@ class TermRuleSetVersionService:
         rule_id: str,
         category_id: str,
         source_term: str,
+        scope_type: TermRuleScopeType | None = None,
+        scope_id: str | None = None,
         apply_scope: str,
         case_sensitive: bool,
         enabled: bool,
@@ -1324,6 +1504,10 @@ class TermRuleSetVersionService:
             id=rule_id,
             category_id=category_id,
             source_term=source_term,
+            normalized_term=normalize_term_key(source_term),
+            scope_type=scope_type or TermRuleScopeType.GLOBAL,
+            scope_id=scope_id,
+            active=True,
             rule_mode=RuleMode.SIMPLE if len(parsed_segments) <= 2 else RuleMode.ADVANCED,
             apply_scope=parsed_apply_scope,
             case_sensitive=case_sensitive,

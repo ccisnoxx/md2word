@@ -19,6 +19,7 @@ class InternalUserResponse(BaseModel):
     role: InternalUserRole
     tenant_id: str
     company_id: str
+    department_id: str
     status: InternalUserStatus
     display_name: str | None = None
     created_at: datetime
@@ -35,6 +36,7 @@ class InternalUserListResponse(BaseModel):
 class InternalUserCreateRequest(BaseModel):
     username: str
     display_name: str | None = None
+    department_id: str = "default_department"
     role: InternalUserRole
     status: InternalUserStatus = "active"
     initial_password: str
@@ -42,6 +44,7 @@ class InternalUserCreateRequest(BaseModel):
 
 class InternalUserUpdateRequest(BaseModel):
     display_name: str | None = None
+    department_id: str | None = None
     role: InternalUserRole | None = None
     status: InternalUserStatus | None = None
 

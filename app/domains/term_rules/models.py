@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 def utc_now() -> datetime:
@@ -30,6 +30,30 @@ class RuleApplyScope(str, Enum):
     BOTH = "both"
 
 
+class TermRuleScopeType(str, Enum):
+    GLOBAL = "global"
+    DEPARTMENT = "department"
+
+
+class TermRuleReviewAction(str, Enum):
+    CREATE = "create"
+    UPDATE = "update"
+    DELETE = "delete"
+
+
+class TermRuleReviewItemStatus(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    CONFLICT = "conflict"
+
+
+def normalize_term_key(value: str) -> str:
+    """Build the stable conflict/matching key for effective terminology rules."""
+
+    return str(value or "").strip().casefold()
+
+
 class TermRuleCategoryRecord(BaseModel):
     id: str
     code: str
@@ -51,6 +75,11 @@ class TermRuleRecord(BaseModel):
     id: str
     category_id: str
     source_term: str
+    normalized_term: str = ""
+    scope_type: TermRuleScopeType = TermRuleScopeType.GLOBAL
+    scope_id: str | None = None
+    current_version: int = 1
+    active: bool = True
     rule_mode: RuleMode
     apply_scope: RuleApplyScope = RuleApplyScope.BOTH
     case_sensitive: bool = True
@@ -62,6 +91,17 @@ class TermRuleRecord(BaseModel):
     notes: str = ""
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def normalize_effective_identity(self) -> "TermRuleRecord":
+        self.normalized_term = self.normalized_term or normalize_term_key(self.source_term)
+        if self.scope_type == TermRuleScopeType.GLOBAL:
+            self.scope_id = None
+        elif not str(self.scope_id or "").strip():
+            raise ValueError("department-scoped term rule requires scope_id")
+        if self.current_version < 1:
+            self.current_version = 1
+        return self
 
 
 class TermRulesStore(BaseModel):
@@ -112,6 +152,67 @@ class TermRuleProposalRecord(BaseModel):
     published_term_rule_set_id: str | None = None
     published_term_rule_set_version: str | None = None
     published_at: datetime | None = None
+
+
+class TermRuleReviewBatchRecord(BaseModel):
+    """Submission batch grouping one or more terminology rule review items."""
+
+    id: str
+    submitted_by: str
+    submitter_department_id: str
+    source_job_id: str | None = None
+    source_file_id: str | None = None
+    reason: str = ""
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class TermRuleReviewItemRecord(BaseModel):
+    """One pending or reviewed terminology rule change under a review batch."""
+
+    id: str
+    batch_id: str
+    seq: int
+    action: TermRuleReviewAction
+    status: TermRuleReviewItemStatus = TermRuleReviewItemStatus.PENDING
+    scope_type: TermRuleScopeType
+    scope_id: str | None = None
+    normalized_term: str
+    target_rule_id: str | None = None
+    base_version: int | None = None
+    submitted_snapshot: dict[str, Any]
+    rejection_reason: str | None = None
+    conflict_reason: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def normalize_review_identity(self) -> "TermRuleReviewItemRecord":
+        self.normalized_term = normalize_term_key(self.normalized_term)
+        if self.scope_type == TermRuleScopeType.GLOBAL:
+            self.scope_id = None
+        elif not str(self.scope_id or "").strip():
+            raise ValueError("department-scoped review item requires scope_id")
+        return self
+
+
+class TermRuleVersionRecord(BaseModel):
+    """Audit history for an approved create, update, or soft-delete action."""
+
+    id: str
+    rule_id: str
+    version: int
+    action: TermRuleReviewAction
+    scope_type: TermRuleScopeType
+    scope_id: str | None = None
+    normalized_term: str
+    review_item_id: str | None = None
+    before_snapshot: dict[str, Any] | None = None
+    after_snapshot: dict[str, Any] | None = None
+    created_by: str
+    created_at: datetime = Field(default_factory=utc_now)
 
 
 class TermRuleImportValidationFinding(BaseModel):

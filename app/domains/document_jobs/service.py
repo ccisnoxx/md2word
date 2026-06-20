@@ -231,6 +231,7 @@ class DocumentJobService:
                 template_version_id=normalized_template_version_id if self._normalize_optional_text(template_version_id) else None,
                 term_rule_set_id=term_rule_set_id,
                 term_rule_set_version=term_rule_set_version,
+                term_rule_department_id=user.department_id,
                 translation_term_set_id=translation_term_set_id,
                 translation_term_version=translation_term_version,
                 translation_profile_id=translation_profile_id,
@@ -1102,6 +1103,7 @@ class DocumentJobService:
         use_latest_term_assets: bool,
         term_rule_set_id: str | None,
         term_rule_set_version: str | None,
+        term_rule_department_id: str | None = None,
         translation_term_set_id: str | None,
         translation_term_version: str | None,
     ) -> dict:
@@ -2077,6 +2079,7 @@ class DocumentJobService:
         translation_term_version: str | None,
         translation_profile_id: str | None,
         translation_profile_version: str | None,
+        term_rule_department_id: str | None = None,
     ) -> dict | None:
         if self.job_resource_snapshot_service is None:
             return None
@@ -2098,6 +2101,7 @@ class DocumentJobService:
             template_version=template_version,
             term_rule_set_id=self._normalize_optional_text(term_rule_set_id),
             term_rule_set_version=self._normalize_optional_text(term_rule_set_version),
+            term_rule_department_id=self._normalize_optional_text(term_rule_department_id),
             translation_term_set_id=self._normalize_optional_text(translation_term_set_id),
             translation_term_version=self._normalize_optional_text(translation_term_version),
             translation_profile_id=self._normalize_optional_text(translation_profile_id),

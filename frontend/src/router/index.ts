@@ -19,6 +19,7 @@ import SystemStatusPage from "@/pages/SystemStatusPage.vue";
 import TemplateDetailPage from "@/pages/TemplateDetailPage.vue";
 import TemplateListPage from "@/pages/TemplateListPage.vue";
 import TermRuleWorkbenchPage from "@/pages/TermRuleWorkbenchPage.vue";
+import TermRuleReviewFlowPage from "@/pages/TermRuleReviewFlowPage.vue";
 import TermRuleSetPage from "@/pages/TermRuleSetPage.vue";
 import TermProposalsPage from "@/pages/TermProposalsPage.vue";
 import TerminologyReleasesPage from "@/pages/TerminologyReleasesPage.vue";
@@ -113,6 +114,12 @@ const router = createRouter({
           component: TemplateDetailPage,
           props: true,
           meta: { roles: ["admin"], permissions: ["settings:read"] },
+        },
+        {
+          path: "term-rule-reviews",
+          name: "term-rule-reviews",
+          component: TermRuleReviewFlowPage,
+          meta: { permissions: ["term_proposals:read"] },
         },
         { path: "term-proposals", name: "term-proposals", component: TermProposalsPage, meta: { permissions: ["term_proposals:read"] } },
         { path: "system-status", name: "system-status", component: SystemStatusPage, meta: { permissions: ["system:read"] } },

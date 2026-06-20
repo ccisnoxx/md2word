@@ -56,6 +56,7 @@ def create_internal_user(
     record = runtime.internal_user_management_service.create_user(
         username=request.username,
         display_name=request.display_name,
+        department_id=request.department_id,
         role=request.role,
         status=request.status,
         initial_password=request.initial_password,
@@ -72,6 +73,7 @@ def create_internal_user(
             "role": record.role,
             "status": record.status,
             "display_name": record.display_name,
+            "department_id": record.department_id,
         },
     )
     return _build_user_response(record)
@@ -91,6 +93,8 @@ def update_internal_user(
         user_id,
         display_name=request.display_name,
         display_name_provided="display_name" in request.model_fields_set,
+        department_id=request.department_id,
+        department_id_provided="department_id" in request.model_fields_set,
         role=request.role,
         status_value=request.status,
         actor_id=user.id,
@@ -111,6 +115,7 @@ def update_internal_user(
             "role": result.user.role,
             "status": result.user.status,
             "display_name": result.user.display_name,
+            "department_id": result.user.department_id,
         },
     )
     return _build_user_response(result.user)
@@ -152,6 +157,7 @@ def _build_user_response(record: InternalUserRecord) -> InternalUserResponse:
         role=record.role,
         tenant_id=record.tenant_id,
         company_id=record.company_id,
+        department_id=record.department_id,
         status=record.status,
         display_name=record.display_name,
         created_at=record.created_at,

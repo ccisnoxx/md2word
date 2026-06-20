@@ -319,7 +319,7 @@
       </el-card>
     </RoleGate>
 
-    <el-dialog v-model="ruleDialog.visible" :title="ruleDialogTitle" width="760px">
+    <el-dialog v-model="ruleDialog.visible" :title="ruleDialogTitle" width="760px" class="rule-dialog">
       <el-form ref="ruleFormRef" :model="ruleForm" :rules="ruleRules" label-width="130px">
         <el-form-item label="Source term" prop="source_term">
           <el-input v-model="ruleForm.source_term" placeholder="例如 VIN" />
@@ -1175,6 +1175,11 @@ watch(() => route.fullPath, () => {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   column-gap: var(--app-space-4);
+}
+
+:deep(.rule-dialog .el-dialog__body) {
+  max-height: calc(100vh - 180px);
+  overflow-y: auto;
 }
 
 .dialog-alert,

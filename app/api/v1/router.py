@@ -17,6 +17,7 @@ from app.domains.ops.router import router as ops_router
 from app.domains.saved_views.router import router as saved_views_router
 from app.domains.term_rules.categories_router import router as term_rule_categories_router
 from app.domains.term_rules.proposals_router import router as term_rule_proposals_router
+from app.domains.term_rules.review_router import router as term_rule_reviews_router
 from app.domains.term_rules.sets_router import router as term_rule_sets_router
 from app.domains.term_rules.router import router as term_rules_router
 from app.domains.terminology.router import router as terminology_releases_router
@@ -41,6 +42,7 @@ router.include_router(saved_views_router)
 router.include_router(templates_router)
 router.include_router(term_rule_categories_router)
 router.include_router(term_rule_proposals_router)
+router.include_router(term_rule_reviews_router)
 router.include_router(term_rule_sets_router)
 router.include_router(term_rules_router)
 router.include_router(terminology_releases_router)

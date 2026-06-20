@@ -68,6 +68,7 @@ class InternalUserManagementService:
         *,
         username: str,
         display_name: str | None,
+        department_id: str,
         role: InternalUserRole,
         status: InternalUserStatus,
         initial_password: str,
@@ -86,6 +87,7 @@ class InternalUserManagementService:
             normalized_username=normalized_username,
             password_hash=hash_password(initial_password),
             role=role,
+            department_id=self._normalize_department_id(department_id),
             status=status,
             display_name=self._normalize_optional_text(display_name),
             created_at=now,
@@ -101,6 +103,8 @@ class InternalUserManagementService:
         *,
         display_name: str | None,
         display_name_provided: bool,
+        department_id: str | None,
+        department_id_provided: bool,
         role: InternalUserRole | None,
         status_value: InternalUserStatus | None,
         actor_id: str,
@@ -117,9 +121,16 @@ class InternalUserManagementService:
         if display_name_provided and normalized_display_name != record.display_name:
             changes["display_name"] = {"from": record.display_name, "to": normalized_display_name}
             record.display_name = normalized_display_name
+        if department_id_provided:
+            normalized_department_id = self._normalize_department_id(department_id)
+            if normalized_department_id != record.department_id:
+                changes["department_id"] = {"from": record.department_id, "to": normalized_department_id}
+                record.department_id = normalized_department_id
+                record.token_version += 1
         if role is not None and role != record.role:
             changes["role"] = {"from": record.role, "to": role}
             record.role = role
+            record.token_version += 1
         status_changed_to: InternalUserStatus | None = None
         if status_value is not None and status_value != record.status:
             changes["status"] = {"from": record.status, "to": status_value}
@@ -198,3 +209,9 @@ class InternalUserManagementService:
             return None
         normalized = value.strip()
         return normalized or None
+
+    def _normalize_department_id(self, value: str | None) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise ApiError(http_status.HTTP_400_BAD_REQUEST, "invalid_request", "department_id 不能为空。")
+        return normalized

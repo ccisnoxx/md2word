@@ -37,6 +37,7 @@ class InternalUserRecord(BaseModel):
     role: InternalUserRole
     tenant_id: str = "default"
     company_id: str = "default"
+    department_id: str = "default_department"
     status: InternalUserStatus = "active"
     display_name: str | None = None
     token_version: int = 1
@@ -55,6 +56,7 @@ class InternalUserRecord(BaseModel):
         self.username = username
         normalized_username = self.normalized_username.strip().lower() if self.normalized_username else ""
         self.normalized_username = normalized_username or normalize_username(username)
+        self.department_id = self.department_id.strip() or "default_department"
         if self.token_version < 1:
             raise ValueError("token_version must be positive")
         return self

@@ -26,6 +26,7 @@ class AuthTokenResponse(BaseModel):
     username: str
     tenant_id: str
     company_id: str
+    department_id: str
 
 
 class CurrentUserResponse(BaseModel):
@@ -36,4 +37,5 @@ class CurrentUserResponse(BaseModel):
     permissions: list[str]
     tenant_id: str
     company_id: str
+    department_id: str
     display_name: str | None = None

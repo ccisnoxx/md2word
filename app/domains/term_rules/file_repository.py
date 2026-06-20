@@ -35,6 +35,8 @@ class FileTermRuleRepository:
         store = self.load()
         counts: dict[str, tuple[int, int]] = {}
         for rule in store.rules:
+            if not rule.active:
+                continue
             total, enabled = counts.get(rule.category_id, (0, 0))
             counts[rule.category_id] = (total + 1, enabled + (1 if rule.enabled else 0))
         return [
@@ -51,7 +53,10 @@ class FileTermRuleRepository:
         page: int,
         page_size: int,
     ) -> tuple[list[TermRuleRecord], int]:
-        rules = sorted(self.load().rules, key=lambda item: (item.priority, item.source_term))
+        rules = sorted(
+            (rule for rule in self.load().rules if rule.active),
+            key=lambda item: (item.priority, item.scope_type.value, item.scope_id or "", item.source_term),
+        )
         needle = q.lower() if q else None
         filtered: list[TermRuleRecord] = []
         for rule in rules:

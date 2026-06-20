@@ -58,6 +58,11 @@ class TermRuleResponse(BaseModel):
     category_code: str
     category_name: str
     source_term: str
+    normalized_term: str
+    scope_type: Literal["global", "department"] = "global"
+    scope_id: str | None = None
+    current_version: int = 1
+    active: bool = True
     rule_mode: str
     apply_scope: str
     case_sensitive: bool
@@ -80,6 +85,8 @@ class TermRuleCreateRequest(BaseModel):
     id: str | None = None
     category_id: str
     source_term: str
+    scope_type: Literal["global", "department"] = "global"
+    scope_id: str | None = None
     apply_scope: str = "both"
     case_sensitive: bool = True
     enabled: bool = True
@@ -93,6 +100,8 @@ class TermRuleCreateRequest(BaseModel):
 class TermRuleUpdateRequest(BaseModel):
     category_id: str | None = None
     source_term: str | None = None
+    scope_type: Literal["global", "department"] | None = None
+    scope_id: str | None = None
     apply_scope: str | None = None
     case_sensitive: bool | None = None
     enabled: bool | None = None
@@ -475,3 +484,122 @@ class TermRuleProposalBulkResponse(BaseModel):
     succeeded: int
     failed: int
     items: list[TermRuleProposalBulkItemResponse] = Field(default_factory=list)
+
+
+class TermRuleReviewItemWriteRequest(BaseModel):
+    action: Literal["create", "update", "delete"]
+    target_rule_id: str | None = None
+    base_version: int | None = None
+    source_term: str | None = None
+    category_id: str | None = None
+    apply_scope: str = "both"
+    case_sensitive: bool = True
+    enabled: bool = True
+    priority: int = 100
+    segments: list[TermRuleSegmentWriteRequest] | None = None
+    custom_html: str | None = None
+    custom_markdown: str | None = None
+    notes: str = ""
+    scope_type: Literal["global", "department"] | None = None
+    scope_id: str | None = None
+
+
+class TermRuleReviewBatchCreateRequest(BaseModel):
+    source_job_id: str | None = None
+    source_file_id: str | None = None
+    reason: str = ""
+    items: list[TermRuleReviewItemWriteRequest] = Field(default_factory=list)
+
+
+class TermRuleReviewDecisionRequest(BaseModel):
+    reason: str | None = None
+
+
+class TermRuleReviewRejectRequest(BaseModel):
+    reason: str
+
+
+class TermRuleReviewBatchSummaryResponse(BaseModel):
+    pending: int = 0
+    approved: int = 0
+    rejected: int = 0
+    conflict: int = 0
+    total: int = 0
+
+
+class TermRuleVersionResponse(BaseModel):
+    id: str
+    rule_id: str
+    version: int
+    action: str
+    scope_type: str
+    scope_id: str | None = None
+    normalized_term: str
+    review_item_id: str | None = None
+    before_snapshot: dict[str, Any] | None = None
+    after_snapshot: dict[str, Any] | None = None
+    created_by: str
+    created_at: datetime
+
+
+class TermRuleReviewItemResponse(BaseModel):
+    id: str
+    batch_id: str
+    seq: int
+    action: str
+    status: str
+    scope_type: str
+    scope_id: str | None = None
+    normalized_term: str
+    target_rule_id: str | None = None
+    base_version: int | None = None
+    submitted_snapshot: dict[str, Any]
+    rejection_reason: str | None = None
+    conflict_reason: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class TermRuleReviewBatchResponse(BaseModel):
+    id: str
+    submitted_by: str
+    submitter_department_id: str
+    source_job_id: str | None = None
+    source_file_id: str | None = None
+    reason: str
+    status: str
+    summary: TermRuleReviewBatchSummaryResponse
+    items: list[TermRuleReviewItemResponse] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+
+class TermRuleReviewBatchListResponse(BaseModel):
+    items: list[TermRuleReviewBatchResponse]
+    page: int
+    page_size: int
+    total: int
+
+
+class TermRuleReviewBulkRequest(BaseModel):
+    item_ids: list[str] = Field(default_factory=list)
+    reason: str | None = None
+
+
+class TermRuleReviewBulkItemResponse(BaseModel):
+    item_id: str
+    ok: bool
+    status_code: int
+    error_code: str | None = None
+    detail: str | dict[str, Any] | None = None
+    item: TermRuleReviewItemResponse | None = None
+
+
+class TermRuleReviewBulkResponse(BaseModel):
+    action: Literal["approve", "reject"]
+    total: int
+    succeeded: int
+    failed: int
+    items: list[TermRuleReviewBulkItemResponse] = Field(default_factory=list)

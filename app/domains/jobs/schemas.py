@@ -56,6 +56,7 @@ class ResolvedTranslationTermVersionResponse(BaseModel):
 class JobResourceSnapshotResponse(BaseModel):
     template: ResolvedResourceVersionResponse | None = None
     term_rule_set: ResolvedResourceVersionResponse | None = None
+    term_rule_department_id: str | None = None
     translation_term_set: ResolvedTranslationTermVersionResponse | None = None
     translation_profile: ResolvedResourceVersionResponse | None = None
     mineru: JobMineruSnapshotResponse

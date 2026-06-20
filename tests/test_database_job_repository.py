@@ -67,6 +67,73 @@ def _mysql_config() -> MysqlPersistenceConfig:
     )
 
 
+_CURRENT_TRANSLATION_TERM_COLUMNS = {
+    "set_id",
+    "language_pair",
+    "version",
+    "seq",
+    "source_term",
+    "normalized_source_term",
+    "target_term",
+    "recommended_translations",
+    "forbidden_translations",
+    "synonyms",
+    "case_sensitive",
+    "status",
+    "priority",
+    "project",
+    "content_type",
+    "tags",
+    "maintainer",
+    "domain",
+    "category",
+    "note",
+    "created_at",
+    "updated_at",
+}
+
+_TRANSLATION_TERM_MAINTAINED_COLUMNS = {
+    "recommended_translations",
+    "forbidden_translations",
+    "synonyms",
+    "project",
+    "content_type",
+    "tags",
+    "maintainer",
+}
+
+
+_CURRENT_TERM_RULE_COLUMNS = {
+    "term_rule_set_id",
+    "version",
+    "rule_id",
+    "category_id",
+    "source_term",
+    "normalized_term",
+    "scope_type",
+    "scope_id",
+    "scope_key",
+    "current_version",
+    "active",
+    "rule_mode",
+    "apply_scope",
+    "case_sensitive",
+    "enabled",
+    "priority",
+    "custom_html",
+    "custom_markdown",
+    "notes",
+    "created_at",
+    "updated_at",
+}
+
+_CURRENT_TERM_RULE_INDEXES = {
+    "primary",
+    "uq_term_rules_scoped_source",
+    "idx_term_rules_category",
+}
+
+
 class _FakeMysqlDatabase:
     def __init__(self) -> None:
         self.jobs: dict[str, dict[str, Any]] = {}
@@ -96,6 +163,9 @@ class _FakeMysqlDatabase:
         self.translation_term_match_traces: dict[str, dict[str, Any]] = {}
         self.next_event_id = 1
         self.created_tables: set[str] = set()
+        self.table_columns: dict[str, set[str]] = {}
+        self.table_indexes: dict[str, set[str]] = {}
+        self.executed_sql: list[str] = []
 
     def connect(self) -> "_FakeMysqlConnection":
         return _FakeMysqlConnection(self)
@@ -132,6 +202,7 @@ class _FakeMysqlCursor:
 
     def execute(self, sql: str, params: tuple[Any, ...] = ()) -> None:
         normalized = " ".join(sql.lower().split())
+        self.database.executed_sql.append(normalized)
         self.rowcount = 0
         if normalized.startswith("create table"):
             for table in (
@@ -146,6 +217,9 @@ class _FakeMysqlCursor:
                 "term_rule_categories",
                 "term_rules",
                 "term_rule_segments",
+                "term_rule_review_batches",
+                "term_rule_review_items",
+                "term_rule_versions",
                 "translation_term_sets",
                 "translation_term_versions",
                 "translation_terms",
@@ -164,12 +238,58 @@ class _FakeMysqlCursor:
             ):
                 if f" {table} " in normalized:
                     self.database.created_tables.add(table)
+                    if table == "translation_terms" and table not in self.database.table_columns:
+                        self.database.table_columns[table] = set(_CURRENT_TRANSLATION_TERM_COLUMNS)
+                    if table == "term_rules" and table not in self.database.table_columns:
+                        self.database.table_columns[table] = set(_CURRENT_TERM_RULE_COLUMNS)
+                        self.database.table_indexes[table] = set(_CURRENT_TERM_RULE_INDEXES)
             self._rows = []
+            return
+        if normalized.startswith("select count(*) as column_count from information_schema.columns"):
+            table_name, column_name = params
+            existing_columns = self.database.table_columns.get(str(table_name), set())
+            self._rows = [{"column_count": int(str(column_name) in existing_columns)}]
+            return
+        if normalized.startswith("select count(*) as index_count from information_schema.statistics"):
+            table_name, index_name = params
+            existing_indexes = self.database.table_indexes.get(str(table_name), set())
+            self._rows = [{"index_count": int(str(index_name).lower() in existing_indexes or str(index_name) in existing_indexes)}]
             return
         if normalized.startswith("alter table term_rules modify source_term"):
             self._rows = []
             return
+        if normalized.startswith("alter table term_rules add column"):
+            column_name = normalized.split()[5]
+            self.database.table_columns.setdefault("term_rules", set()).add(column_name)
+            self._rows = []
+            return
+        if normalized.startswith("update term_rules set normalized_term"):
+            for row in self.database.term_rules.values():
+                if not row.get("normalized_term"):
+                    row["normalized_term"] = row["source_term"]
+            self._rows = []
+            return
+        if normalized.startswith("update term_rules set scope_key"):
+            for row in self.database.term_rules.values():
+                if not row.get("scope_key"):
+                    row["scope_key"] = row.get("scope_id") or ""
+            self._rows = []
+            return
+        if normalized.startswith("alter table term_rules drop index"):
+            index_name = normalized.split()[-1]
+            self.database.table_indexes.setdefault("term_rules", set()).discard(index_name)
+            self._rows = []
+            return
+        if normalized.startswith("alter table term_rules add unique key"):
+            index_name = normalized.split()[6]
+            self.database.table_indexes.setdefault("term_rules", set()).add(index_name)
+            self._rows = []
+            return
         if normalized.startswith("alter table translation_terms add column"):
+            if " if not exists " in f" {normalized} ":
+                raise AssertionError("MySQL fake does not support ADD COLUMN IF NOT EXISTS")
+            column_name = normalized.split()[5]
+            self.database.table_columns.setdefault("translation_terms", set()).add(column_name)
             self._rows = []
             return
         if normalized.startswith("insert into jobs"):
@@ -686,6 +806,12 @@ class _FakeMysqlCursor:
                 rule_id,
                 category_id,
                 source_term,
+                normalized_term,
+                scope_type,
+                scope_id,
+                scope_key,
+                current_version,
+                active,
                 rule_mode,
                 apply_scope,
                 case_sensitive,
@@ -703,6 +829,12 @@ class _FakeMysqlCursor:
                 "rule_id": rule_id,
                 "category_id": category_id,
                 "source_term": source_term,
+                "normalized_term": normalized_term,
+                "scope_type": scope_type,
+                "scope_id": scope_id,
+                "scope_key": scope_key,
+                "current_version": current_version,
+                "active": active,
                 "rule_mode": rule_mode,
                 "apply_scope": apply_scope,
                 "case_sensitive": case_sensitive,
@@ -1240,6 +1372,32 @@ class PersistenceAdapterTests(TestCase):
         self.assertEqual(refreshed_lock.fencing_token, second_lock.fencing_token)
         self.assertEqual(released_lock.status, "released")
         self.assertEqual(third_lock.fencing_token, 3)
+
+    def test_mysql_schema_maintenance_adds_missing_translation_term_columns_without_if_not_exists(self):
+        fake_mysql = _FakeMysqlDatabase()
+        fake_mysql.table_columns["translation_terms"] = (
+            _CURRENT_TRANSLATION_TERM_COLUMNS - _TRANSLATION_TERM_MAINTAINED_COLUMNS
+        )
+
+        build_mysql_persistence_adapters(
+            _mysql_config(),
+            connect_factory=fake_mysql.connect,
+        )
+
+        self.assertTrue(_TRANSLATION_TERM_MAINTAINED_COLUMNS.issubset(fake_mysql.table_columns["translation_terms"]))
+        translation_term_ddl = [
+            statement
+            for statement in fake_mysql.executed_sql
+            if statement.startswith("alter table translation_terms add column")
+        ]
+        self.assertEqual(len(translation_term_ddl), len(_TRANSLATION_TERM_MAINTAINED_COLUMNS))
+        self.assertTrue(all("if not exists" not in statement for statement in translation_term_ddl))
+        self.assertTrue(
+            any(
+                statement.startswith("select count(*) as column_count from information_schema.columns")
+                for statement in fake_mysql.executed_sql
+            )
+        )
 
     def test_mysql_runtime_bootstraps_term_assets_and_translation_terms(self):
         from app.main import build_runtime

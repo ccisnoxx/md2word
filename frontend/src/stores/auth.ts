@@ -47,6 +47,7 @@ function normalizeUser(response: CurrentUserResponse): CurrentUserResponse {
     Array.isArray(response.permissions) && response.permissions.length ? response.permissions : fallbackPermissions(role);
   return {
     ...response,
+    department_id: response.department_id || "default_department",
     roles,
     permissions,
   };
@@ -64,6 +65,7 @@ function userFromTokenResponse(response: AuthTokenResponse): CurrentUserResponse
         : fallbackPermissions(response.role),
     tenant_id: response.tenant_id,
     company_id: response.company_id,
+    department_id: response.department_id || "default_department",
     display_name: null,
   });
 }

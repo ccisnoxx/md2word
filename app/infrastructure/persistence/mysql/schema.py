@@ -104,6 +104,12 @@ MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
         rule_id VARCHAR(128) NOT NULL,
         category_id VARCHAR(128) NOT NULL,
         source_term VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+        normalized_term VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+        scope_type VARCHAR(32) NOT NULL DEFAULT 'global',
+        scope_id VARCHAR(128) NULL,
+        scope_key VARCHAR(128) NOT NULL DEFAULT '',
+        current_version INT NOT NULL DEFAULT 1,
+        active TINYINT(1) NOT NULL DEFAULT 1,
         rule_mode VARCHAR(32) NOT NULL,
         apply_scope VARCHAR(32) NOT NULL,
         case_sensitive TINYINT(1) NOT NULL,
@@ -115,7 +121,7 @@ MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
         created_at VARCHAR(40) NOT NULL,
         updated_at VARCHAR(40) NOT NULL,
         PRIMARY KEY (term_rule_set_id, version, rule_id),
-        UNIQUE KEY uq_term_rules_source (term_rule_set_id, version, source_term),
+        UNIQUE KEY uq_term_rules_scoped_source (term_rule_set_id, version, scope_type, scope_key, normalized_term),
         KEY idx_term_rules_category (term_rule_set_id, version, category_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
@@ -128,6 +134,50 @@ MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
         segment_text TEXT NOT NULL,
         render_type VARCHAR(32) NOT NULL,
         PRIMARY KEY (term_rule_set_id, version, rule_id, seq)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS term_rule_review_batches (
+        id VARCHAR(128) PRIMARY KEY,
+        submitted_by VARCHAR(128) NOT NULL,
+        submitter_department_id VARCHAR(128) NOT NULL,
+        payload LONGTEXT NOT NULL,
+        created_at VARCHAR(40) NOT NULL,
+        updated_at VARCHAR(40) NOT NULL,
+        KEY idx_term_rule_review_batches_submitter (submitted_by, created_at, id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS term_rule_review_items (
+        id VARCHAR(128) PRIMARY KEY,
+        batch_id VARCHAR(128) NOT NULL,
+        seq INT NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        action VARCHAR(32) NOT NULL,
+        scope_type VARCHAR(32) NOT NULL,
+        scope_id VARCHAR(128) NULL,
+        normalized_term VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+        payload LONGTEXT NOT NULL,
+        created_at VARCHAR(40) NOT NULL,
+        updated_at VARCHAR(40) NOT NULL,
+        KEY idx_term_rule_review_items_batch (batch_id, seq),
+        KEY idx_term_rule_review_items_status (status, created_at, id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS term_rule_versions (
+        id VARCHAR(128) PRIMARY KEY,
+        rule_id VARCHAR(128) NOT NULL,
+        version INT NOT NULL,
+        action VARCHAR(32) NOT NULL,
+        scope_type VARCHAR(32) NOT NULL,
+        scope_id VARCHAR(128) NULL,
+        normalized_term VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+        review_item_id VARCHAR(128) NULL,
+        payload LONGTEXT NOT NULL,
+        created_at VARCHAR(40) NOT NULL,
+        UNIQUE KEY uq_term_rule_versions_rule_version (rule_id, version),
+        KEY idx_term_rule_versions_rule (rule_id, created_at, id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
     """
@@ -370,13 +420,48 @@ MYSQL_SCHEMA_MAINTENANCE_STATEMENTS: tuple[str, ...] = (
     ALTER TABLE term_rules
     MODIFY source_term VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL
     """,
-    "ALTER TABLE translation_terms ADD COLUMN IF NOT EXISTS recommended_translations LONGTEXT NULL",
-    "ALTER TABLE translation_terms ADD COLUMN IF NOT EXISTS forbidden_translations LONGTEXT NULL",
-    "ALTER TABLE translation_terms ADD COLUMN IF NOT EXISTS synonyms LONGTEXT NULL",
-    "ALTER TABLE translation_terms ADD COLUMN IF NOT EXISTS project VARCHAR(128) NULL",
-    "ALTER TABLE translation_terms ADD COLUMN IF NOT EXISTS content_type VARCHAR(128) NULL",
-    "ALTER TABLE translation_terms ADD COLUMN IF NOT EXISTS tags LONGTEXT NULL",
-    "ALTER TABLE translation_terms ADD COLUMN IF NOT EXISTS maintainer VARCHAR(128) NULL",
+)
+
+MYSQL_SCHEMA_POST_COLUMN_MAINTENANCE_STATEMENTS: tuple[str, ...] = (
+    """
+    UPDATE term_rules
+    SET normalized_term = source_term
+    WHERE normalized_term = ''
+    """,
+    """
+    UPDATE term_rules
+    SET scope_key = COALESCE(scope_id, '')
+    WHERE scope_key = ''
+    """,
+)
+
+MYSQL_SCHEMA_COLUMN_MAINTENANCE: tuple[tuple[str, str, str], ...] = (
+    ("term_rules", "normalized_term", "normalized_term VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT ''"),
+    ("term_rules", "scope_type", "scope_type VARCHAR(32) NOT NULL DEFAULT 'global'"),
+    ("term_rules", "scope_id", "scope_id VARCHAR(128) NULL"),
+    ("term_rules", "scope_key", "scope_key VARCHAR(128) NOT NULL DEFAULT ''"),
+    ("term_rules", "current_version", "current_version INT NOT NULL DEFAULT 1"),
+    ("term_rules", "active", "active TINYINT(1) NOT NULL DEFAULT 1"),
+    ("translation_terms", "recommended_translations", "recommended_translations LONGTEXT NULL"),
+    ("translation_terms", "forbidden_translations", "forbidden_translations LONGTEXT NULL"),
+    ("translation_terms", "synonyms", "synonyms LONGTEXT NULL"),
+    ("translation_terms", "project", "project VARCHAR(128) NULL"),
+    ("translation_terms", "content_type", "content_type VARCHAR(128) NULL"),
+    ("translation_terms", "tags", "tags LONGTEXT NULL"),
+    ("translation_terms", "maintainer", "maintainer VARCHAR(128) NULL"),
+)
+
+MYSQL_SCHEMA_INDEX_DROP_MAINTENANCE: tuple[tuple[str, str], ...] = (
+    ("term_rules", "uq_term_rules_source"),
+)
+
+MYSQL_SCHEMA_INDEX_MAINTENANCE: tuple[tuple[str, str, str], ...] = (
+    (
+        "term_rules",
+        "uq_term_rules_scoped_source",
+        "ALTER TABLE term_rules ADD UNIQUE KEY uq_term_rules_scoped_source "
+        "(term_rule_set_id, version, scope_type, scope_key, normalized_term)",
+    ),
 )
 
 
@@ -388,3 +473,70 @@ def initialize_schema(connection: Any) -> None:
             cursor.execute(statement)
         for statement in MYSQL_SCHEMA_MAINTENANCE_STATEMENTS:
             cursor.execute(statement)
+        for table_name, column_name, column_definition in MYSQL_SCHEMA_COLUMN_MAINTENANCE:
+            _ensure_column(cursor, table_name, column_name, column_definition)
+        for statement in MYSQL_SCHEMA_POST_COLUMN_MAINTENANCE_STATEMENTS:
+            cursor.execute(statement)
+        for table_name, index_name in MYSQL_SCHEMA_INDEX_DROP_MAINTENANCE:
+            _drop_index_if_exists(cursor, table_name, index_name)
+        for table_name, index_name, statement in MYSQL_SCHEMA_INDEX_MAINTENANCE:
+            _ensure_index(cursor, table_name, index_name, statement)
+
+
+def _ensure_column(cursor: Any, table_name: str, column_name: str, column_definition: str) -> None:
+    """MySQL 版本差异下用 information_schema 保持列级 schema maintenance 幂等。"""
+
+    cursor.execute(
+        """
+        SELECT COUNT(*) AS column_count
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = %s
+          AND COLUMN_NAME = %s
+        """,
+        (table_name, column_name),
+    )
+    row = cursor.fetchone()
+    if _column_count(row) > 0:
+        return
+    cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_definition}")
+
+
+def _drop_index_if_exists(cursor: Any, table_name: str, index_name: str) -> None:
+    if not _index_exists(cursor, table_name, index_name):
+        return
+    cursor.execute(f"ALTER TABLE {table_name} DROP INDEX {index_name}")
+
+
+def _ensure_index(cursor: Any, table_name: str, index_name: str, statement: str) -> None:
+    if _index_exists(cursor, table_name, index_name):
+        return
+    cursor.execute(statement)
+
+
+def _index_exists(cursor: Any, table_name: str, index_name: str) -> bool:
+    cursor.execute(
+        """
+        SELECT COUNT(*) AS index_count
+        FROM INFORMATION_SCHEMA.STATISTICS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = %s
+          AND INDEX_NAME = %s
+        """,
+        (table_name, index_name),
+    )
+    return _count(row=cursor.fetchone(), key="index_count") > 0
+
+
+def _column_count(row: Any) -> int:
+    return _count(row=row, key="column_count")
+
+
+def _count(*, row: Any, key: str) -> int:
+    if row is None:
+        return 0
+    if isinstance(row, dict):
+        return int(row.get(key) or 0)
+    if isinstance(row, (list, tuple)) and row:
+        return int(row[0] or 0)
+    return int(row or 0)
