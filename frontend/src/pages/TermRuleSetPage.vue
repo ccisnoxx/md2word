@@ -319,7 +319,15 @@
       </el-card>
     </RoleGate>
 
-    <el-dialog v-model="ruleDialog.visible" :title="ruleDialogTitle" width="760px" class="rule-dialog">
+    <el-dialog
+      v-model="ruleDialog.visible"
+      :title="ruleDialogTitle"
+      width="min(760px, calc(100vw - 32px))"
+      top="24px"
+      class="rule-dialog"
+      append-to="body"
+      :append-to-body="true"
+    >
       <div class="rule-dialog-scroll">
         <el-form ref="ruleFormRef" :model="ruleForm" :rules="ruleRules" label-width="130px">
           <el-form-item label="Source term" prop="source_term">
@@ -1179,12 +1187,28 @@ watch(() => route.fullPath, () => {
   column-gap: var(--app-space-4);
 }
 
+:deep(.rule-dialog) {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
+  margin-bottom: 24px;
+}
+
+:deep(.rule-dialog .el-dialog__header),
+:deep(.rule-dialog .el-dialog__footer) {
+  flex: 0 0 auto;
+}
+
 :deep(.rule-dialog .el-dialog__body) {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
 }
 
 .rule-dialog-scroll {
   max-height: min(640px, calc(100vh - 220px));
+  max-height: min(640px, calc(100dvh - 220px));
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-right: 4px;
