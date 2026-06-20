@@ -7,6 +7,7 @@ import {
   incidentsSavedViewStateToQuery,
   jobsSavedViewStateToQuery,
   personalSavedViewToStripItem,
+  routeForSavedView,
   systemSavedViews,
   translationQaSavedViewStateToQuery,
 } from "@/utils/savedViews";
@@ -18,7 +19,7 @@ function buildSavedView(overrides: Partial<SavedViewResponse> = {}): SavedViewRe
     company_id: "company_default",
     owner_user_id: "user_operator",
     page_key: "jobs",
-    name: "Failed jobs",
+    name: "失败任务",
     filters: { status: "failed" },
     sort: "updated_at_desc",
     is_default: false,
@@ -41,9 +42,15 @@ describe("saved view helpers", () => {
       id: "savedview_1",
       source: "personal",
       page_key: "jobs",
-      name: "Failed jobs",
+      name: "失败任务",
     });
     expect(activeId).toBe("savedview_1");
+  });
+
+  it("keeps system presets Chinese-first for operator-visible labels", () => {
+    expect(systemSavedViews.jobs.map((view) => view.name)).toEqual(["处理中任务", "失败任务", "待 QA", "QA 阻塞"]);
+    expect(systemSavedViews.translation_qa.map((view) => view.name)).toEqual(["待复核", "需修正", "阻塞", "已通过"]);
+    expect(systemSavedViews.incidents.map((view) => view.name)).toEqual(["可重试异常", "停滞优先", "产物缺失", "多次重试"]);
   });
 
   it("treats only durable filter and sort query keys as meaningful", () => {
@@ -99,6 +106,17 @@ describe("saved view helpers", () => {
       stalled_minutes: "10",
       incident_job_id: "docjob_incident",
       page: "1",
+    });
+  });
+
+  it("builds saved-view routes from the shared workbench query helpers", () => {
+    expect(routeForSavedView({ page_key: "jobs", filters: { status: "failed" }, sort: "updated_at_desc" })).toMatchObject({
+      name: "jobs",
+      query: { status: "failed", page: "1" },
+    });
+    expect(routeForSavedView({ page_key: "translation_qa", filters: { translation_qa_status: "blocked" }, sort: "updated_at_desc" })).toMatchObject({
+      name: "translation-qa",
+      query: { translation_qa_status: "blocked", page: "1" },
     });
   });
 });

@@ -4,7 +4,7 @@
   <main class="jobs-page app-page" :class="{ 'has-bulk-actions': selectedJobs.length }" aria-labelledby="jobs-title">
     <section class="jobs-command-header app-page-shell app-page-shell--wide">
       <div class="command-copy">
-        <p class="page-kicker">Document Jobs</p>
+        <p class="page-kicker">任务工作台</p>
         <h1 id="jobs-title" class="page-title">任务列表</h1>
         <p class="page-description">按异常、停滞、待 QA 和阻塞状态优先处理 document_jobs。</p>
       </div>
@@ -194,26 +194,13 @@
           <el-button text size="small" @click="copyLastDownloadLink">复制链接</el-button>
         </div>
       </el-alert>
-      <el-alert
-        v-if="batchResult && batchResult.failed > 0"
+      <BatchResultStrip
+        v-if="normalizedBatchResult"
+        v-model:expanded="batchResultExpanded"
         class="inline-result-alert"
-        type="warning"
-        :closable="true"
-        show-icon
-        :title="`${batchResultLabel}存在失败项`"
+        :result="normalizedBatchResult"
         @close="batchResult = null"
-      >
-        <div class="batch-failure-list">
-          <p>{{ batchResultLabel }}失败 {{ batchResult.failed }} 个，成功 {{ batchResult.succeeded }} 个。</p>
-          <ul>
-            <li v-for="item in failedBatchItems" :key="item.job_id">
-              <span class="mono">{{ item.job_id }}</span>
-              <span>{{ item.error_code || item.status_code }}</span>
-              <span>{{ item.detail || "后端未返回失败详情。" }}</span>
-            </li>
-          </ul>
-        </div>
-      </el-alert>
+      />
 
       <div v-if="summaryEntries.length" class="summary-row" aria-label="状态汇总">
         <span class="summary-caption">当前筛选状态汇总</span>
@@ -300,9 +287,11 @@ import type {
 import { documentJobsApi } from "@/api/documentJobs";
 import { savedViewsApi } from "@/api/savedViews";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
+import BatchResultStrip from "@/components/BatchResultStrip.vue";
 import JobTable from "@/components/JobTable.vue";
 import SavedViewStrip from "@/components/SavedViewStrip.vue";
 import { useAuthStore } from "@/stores/auth";
+import { normalizeJobsBatchResult } from "@/utils/batchResults";
 import {
   canArchiveDocumentJob,
   canCancelDocumentJob,
@@ -346,6 +335,7 @@ const selectedJobs = ref<DocumentJobResponse[]>([]);
 const batchLoading = ref(false);
 const batchResult = ref<DocumentJobBulkResponse | null>(null);
 const batchResultLabel = ref("");
+const batchResultExpanded = ref(false);
 const lastDownloadLink = ref<DownloadLinkNotice | null>(null);
 const filteredSummary = ref<Record<string, number>>({});
 const translationQaSummary = ref<Record<TranslationQaStatus, number>>({
@@ -470,7 +460,9 @@ const returnQueryForDetail = computed(() => jobsRouteQuery());
 const selectedRetryableJobs = computed(() => selectedJobs.value.filter(canRetryDocumentJob));
 const selectedCancelableJobs = computed(() => selectedJobs.value.filter(canCancelDocumentJob));
 const selectedArchivableJobs = computed(() => selectedJobs.value.filter(canArchiveDocumentJob));
-const failedBatchItems = computed(() => batchResult.value?.items.filter((item) => !item.ok) || []);
+const normalizedBatchResult = computed(() =>
+  batchResult.value ? normalizeJobsBatchResult(batchResultLabel.value, batchResult.value) : null,
+);
 const activeVisibleJobs = computed(() => jobs.value.filter((job) => activeJobStatuses.includes(job.status)));
 const failedVisibleJobs = computed(() => jobs.value.filter((job) => job.status === "failed"));
 const staleVisibleJobs = computed(() => activeVisibleJobs.value.filter((job) => {
@@ -1334,12 +1326,8 @@ async function handleBatchCancel(): Promise<void> {
 // 用后端聚合结果展示批量操作的成功、失败数量和失败明细。
 function showBatchResult(label: string, result: DocumentJobBulkResponse): void {
   batchResultLabel.value = label;
-  batchResult.value = result.failed > 0 ? result : null;
-  if (result.failed > 0) {
-    ElMessage.warning(`${label}完成：成功 ${result.succeeded} 个，失败 ${result.failed} 个。`);
-    return;
-  }
-  ElMessage.success(`${label}完成：成功 ${result.succeeded} 个。`);
+  batchResult.value = result;
+  batchResultExpanded.value = result.failed > 0;
 }
 
 function setActionPending(jobId: string, action: DocumentJobActionId): void {
@@ -1566,8 +1554,7 @@ onBeforeUnmount(() => {
   align-items: center;
 }
 
-.download-link-notice span,
-.batch-failure-list p {
+.download-link-notice span {
   margin: 0;
   color: var(--app-color-text-muted);
   font-size: 13px;
@@ -1597,30 +1584,6 @@ onBeforeUnmount(() => {
   align-items: center;
   color: inherit;
   text-decoration: none;
-}
-
-.batch-failure-list {
-  display: grid;
-  gap: 8px;
-}
-
-.batch-failure-list ul {
-  display: grid;
-  gap: 6px;
-  max-height: 180px;
-  margin: 0;
-  padding-left: 18px;
-  overflow: auto;
-}
-
-.batch-failure-list li {
-  display: grid;
-  grid-template-columns: minmax(160px, 0.8fr) minmax(90px, 0.4fr) minmax(0, 1fr);
-  gap: 8px;
-  align-items: start;
-  color: var(--app-color-text);
-  font-size: 13px;
-  line-height: 1.5;
 }
 
 .jobs-table-card {
@@ -2062,9 +2025,6 @@ onBeforeUnmount(() => {
     justify-content: flex-start;
   }
 
-  .batch-failure-list li {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width: 520px) {

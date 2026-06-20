@@ -9,6 +9,7 @@ import type {
   DocumentJobStage,
   DocumentJobStatus,
 } from "@/api/types";
+import { isEditableShortcutTarget } from "@/utils/keyboardShortcuts";
 
 export const incidentFailureTypes: DocumentJobIncidentFailureType[] = [
   "conversion_failed",
@@ -125,15 +126,5 @@ export function failedOrSkippedBatchItems(result: DocumentJobIncidentBulkRespons
 }
 
 export function shouldIgnoreIncidentShortcut(target: EventTarget | null): boolean {
-  if (typeof HTMLElement === "undefined") {
-    return false;
-  }
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-  if (target.isContentEditable) {
-    return true;
-  }
-  const tagName = target.tagName.toLowerCase();
-  return tagName === "input" || tagName === "textarea" || tagName === "select" || Boolean(target.closest("[contenteditable='true']"));
+  return isEditableShortcutTarget(target);
 }

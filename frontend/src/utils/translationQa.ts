@@ -9,6 +9,7 @@ import type {
   TranslationQaStatus,
 } from "@/api/types";
 import { formatDateTime } from "@/utils/format";
+import { isEditableShortcutTarget } from "@/utils/keyboardShortcuts";
 
 export type TranslationQaReviewDraft = {
   status: TranslationQaStatus;
@@ -165,17 +166,7 @@ export function translationQaTermTraceRangeText(trace: DocumentJobTranslationQaT
 }
 
 export function shouldIgnoreTranslationQaShortcut(target: EventTarget | null): boolean {
-  if (typeof HTMLElement === "undefined") {
-    return false;
-  }
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-  if (target.isContentEditable) {
-    return true;
-  }
-  const tagName = target.tagName.toLowerCase();
-  return tagName === "input" || tagName === "textarea" || tagName === "select" || Boolean(target.closest("[contenteditable='true']"));
+  return isEditableShortcutTarget(target);
 }
 
 function readString(value: unknown): string | null {

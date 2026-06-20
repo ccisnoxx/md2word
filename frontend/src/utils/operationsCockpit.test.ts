@@ -120,7 +120,7 @@ describe("operations cockpit helpers", () => {
     expect(personalEntries).toHaveLength(1);
     expect(personalEntries[0]).toMatchObject({
       fallback: false,
-      pageLabel: "任务列表",
+      pageLabel: "任务工作台",
       to: { name: "jobs", query: { status: "failed", sort: "updated_at_desc", include_archived: "false", page: "1" } },
     });
 

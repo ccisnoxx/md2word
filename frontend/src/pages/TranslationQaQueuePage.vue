@@ -4,7 +4,7 @@
   <main class="translation-qa-queue-page app-page" aria-labelledby="translation-qa-queue-title">
     <section class="page-heading app-page-shell">
       <div>
-        <p class="page-kicker">Translation QA</p>
+        <p class="page-kicker">翻译 QA</p>
         <h1 id="translation-qa-queue-title" class="page-title">翻译 QA 队列</h1>
         <p class="page-description">按待复核、需修正和阻塞状态处理英文 PDF 翻译任务。</p>
       </div>

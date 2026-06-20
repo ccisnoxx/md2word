@@ -1,6 +1,6 @@
 // File: frontend/src/utils/savedViews.ts
-// Purpose: Shared saved-view state helpers and system presets for operations workbenches.
-import type { LocationQuery } from "vue-router";
+// Purpose: Shared saved-view state helpers, route builders, and system presets for operations workbenches.
+import type { LocationQuery, RouteLocationRaw } from "vue-router";
 
 import type { SavedViewFilters, SavedViewPageKey, SavedViewResponse } from "@/api/types";
 
@@ -23,6 +23,12 @@ export const TRANSLATION_QA_DEFAULT_SORT = "updated_at_desc";
 export const INCIDENTS_DEFAULT_SORT = "priority";
 export const DEFAULT_STALLED_MINUTES = 10;
 
+export const SAVED_VIEW_PAGE_LABELS: Record<SavedViewPageKey, string> = {
+  jobs: "任务工作台",
+  translation_qa: "翻译 QA",
+  incidents: "异常处理",
+};
+
 const DURABLE_QUERY_KEYS: Record<SavedViewPageKey, string[]> = {
   jobs: ["status", "status_group", "translation_qa_status", "q", "include_archived", "created_from", "created_to", "sort"],
   translation_qa: ["translation_qa_status", "status", "q", "include_archived", "sort"],
@@ -35,7 +41,7 @@ export const systemSavedViews: Record<SavedViewPageKey, SavedViewStripItem[]> = 
       id: "system:jobs:active",
       source: "system",
       page_key: "jobs",
-      name: "Active jobs",
+      name: "处理中任务",
       filters: { status_group: "active" },
       sort: "updated_at_desc",
     },
@@ -43,7 +49,7 @@ export const systemSavedViews: Record<SavedViewPageKey, SavedViewStripItem[]> = 
       id: "system:jobs:failed",
       source: "system",
       page_key: "jobs",
-      name: "Failed jobs",
+      name: "失败任务",
       filters: { status: "failed" },
       sort: "updated_at_desc",
     },
@@ -51,7 +57,7 @@ export const systemSavedViews: Record<SavedViewPageKey, SavedViewStripItem[]> = 
       id: "system:jobs:pending-qa",
       source: "system",
       page_key: "jobs",
-      name: "Pending QA",
+      name: "待 QA",
       filters: { translation_qa_status: "unreviewed" },
       sort: "updated_at_desc",
     },
@@ -59,7 +65,7 @@ export const systemSavedViews: Record<SavedViewPageKey, SavedViewStripItem[]> = 
       id: "system:jobs:blocked-qa",
       source: "system",
       page_key: "jobs",
-      name: "Blocked QA",
+      name: "QA 阻塞",
       filters: { translation_qa_status: "blocked" },
       sort: "updated_at_desc",
     },
@@ -69,7 +75,7 @@ export const systemSavedViews: Record<SavedViewPageKey, SavedViewStripItem[]> = 
       id: "system:translation_qa:unreviewed",
       source: "system",
       page_key: "translation_qa",
-      name: "Unreviewed",
+      name: "待复核",
       filters: { translation_qa_status: "unreviewed" },
       sort: TRANSLATION_QA_DEFAULT_SORT,
     },
@@ -77,7 +83,7 @@ export const systemSavedViews: Record<SavedViewPageKey, SavedViewStripItem[]> = 
       id: "system:translation_qa:needs-fix",
       source: "system",
       page_key: "translation_qa",
-      name: "Needs fix",
+      name: "需修正",
       filters: { translation_qa_status: "needs_fix" },
       sort: TRANSLATION_QA_DEFAULT_SORT,
     },
@@ -85,7 +91,7 @@ export const systemSavedViews: Record<SavedViewPageKey, SavedViewStripItem[]> = 
       id: "system:translation_qa:blocked",
       source: "system",
       page_key: "translation_qa",
-      name: "Blocked",
+      name: "阻塞",
       filters: { translation_qa_status: "blocked" },
       sort: TRANSLATION_QA_DEFAULT_SORT,
     },
@@ -93,7 +99,7 @@ export const systemSavedViews: Record<SavedViewPageKey, SavedViewStripItem[]> = 
       id: "system:translation_qa:approved",
       source: "system",
       page_key: "translation_qa",
-      name: "Approved",
+      name: "已通过",
       filters: { translation_qa_status: "approved" },
       sort: TRANSLATION_QA_DEFAULT_SORT,
     },
@@ -103,7 +109,7 @@ export const systemSavedViews: Record<SavedViewPageKey, SavedViewStripItem[]> = 
       id: "system:incidents:retryable",
       source: "system",
       page_key: "incidents",
-      name: "Retryable failures",
+      name: "可重试异常",
       filters: { retryable: true },
       sort: INCIDENTS_DEFAULT_SORT,
     },
@@ -111,7 +117,7 @@ export const systemSavedViews: Record<SavedViewPageKey, SavedViewStripItem[]> = 
       id: "system:incidents:stalled",
       source: "system",
       page_key: "incidents",
-      name: "Stalled first",
+      name: "停滞优先",
       filters: { stalled_minutes: DEFAULT_STALLED_MINUTES },
       sort: INCIDENTS_DEFAULT_SORT,
     },
@@ -119,7 +125,7 @@ export const systemSavedViews: Record<SavedViewPageKey, SavedViewStripItem[]> = 
       id: "system:incidents:artifact",
       source: "system",
       page_key: "incidents",
-      name: "Artifact missing",
+      name: "产物缺失",
       filters: { failure_type: "artifact_missing" },
       sort: INCIDENTS_DEFAULT_SORT,
     },
@@ -127,7 +133,7 @@ export const systemSavedViews: Record<SavedViewPageKey, SavedViewStripItem[]> = 
       id: "system:incidents:multiple-retries",
       source: "system",
       page_key: "incidents",
-      name: "Multiple retries",
+      name: "多次重试",
       filters: { retry_count: "3_plus" },
       sort: "retry_count_desc",
     },
@@ -239,6 +245,25 @@ export function incidentsSavedViewStateToQuery(
   return query;
 }
 
+export function routeForSavedView(view: SavedViewState & { page_key: SavedViewPageKey }, selectedJobId = ""): RouteLocationRaw {
+  if (view.page_key === "translation_qa") {
+    return {
+      name: "translation-qa",
+      query: translationQaSavedViewStateToQuery(view, 1, selectedJobId),
+    };
+  }
+  if (view.page_key === "incidents") {
+    return {
+      name: "incidents",
+      query: incidentsSavedViewStateToQuery(view, 1, selectedJobId),
+    };
+  }
+  return {
+    name: "jobs",
+    query: jobsSavedViewStateToQuery(view, 1),
+  };
+}
+
 function copyStringFilter(query: Record<string, string>, filters: SavedViewFilters, key: string): void {
   const value = filters[key];
   if (typeof value === "string" && value.trim()) {
@@ -252,4 +277,3 @@ function firstQueryValue(value: unknown): string {
   }
   return typeof value === "string" ? value : "";
 }
-

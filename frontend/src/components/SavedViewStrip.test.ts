@@ -61,7 +61,7 @@ describe("SavedViewStrip", () => {
     id: "system:jobs:failed",
     source: "system",
     page_key: "jobs",
-    name: "Failed jobs",
+    name: "失败任务",
     filters: { status: "failed" },
     sort: "updated_at_desc",
   };
@@ -69,7 +69,7 @@ describe("SavedViewStrip", () => {
     id: "savedview_1",
     source: "personal",
     page_key: "jobs",
-    name: "My failures",
+    name: "我的失败任务",
     filters: { status: "failed" },
     sort: "updated_at_desc",
     is_default: true,
@@ -79,8 +79,8 @@ describe("SavedViewStrip", () => {
   it("renders system and personal saved views with personal actions", async () => {
     const html = await renderSavedViewStrip([systemView], [personalView]);
 
-    expect(html).toContain("Failed jobs");
-    expect(html).toContain("My failures");
+    expect(html).toContain("失败任务");
+    expect(html).toContain("我的失败任务");
     expect(html).toContain("保存当前视图");
     expect(html).toContain("用当前筛选更新");
     expect(html).toContain("设为默认");
