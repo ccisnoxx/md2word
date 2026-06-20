@@ -1620,6 +1620,20 @@ test("operations redesign renders verified desktop and mobile screenshots", asyn
     await settleWorkbenchScreenshot(page);
     await page.screenshot({ path: testInfo.outputPath(`ops-jobs-${viewport.name}.png`) });
 
+    await page.goto("/jobs/docjob_smoke_001");
+    await expect(page.getByRole("heading", { name: "任务详情" })).toBeVisible();
+    await page.getByRole("tab", { name: "诊断" }).click();
+    await expect(page.getByRole("heading", { name: "诊断摘要" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "下一步建议" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "关键证据" }).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "事件预览" })).toBeVisible();
+    await expectNoPageHorizontalOverflow(page);
+    await settleWorkbenchScreenshot(page);
+    await page.screenshot({ path: testInfo.outputPath(`ops-job-detail-diagnostics-${viewport.name}.png`) });
+
+    await page.goto("/jobs?sort=created_at_desc&include_archived=false&page=1");
+    await expect(page.getByRole("heading", { name: "任务列表" })).toBeVisible();
+
     if (viewport.name === "desktop") {
       await expect(page.locator(".app-sidebar-shell")).toBeVisible();
       await expect(page.locator(".app-sidebar-shell").getByText("Operations workbench")).toBeVisible();
@@ -1962,7 +1976,7 @@ test("operator sees unavailable translation QA in the queue drawer as readonly",
 
   await page.goto("/translation-qa?translation_qa_status=all&sort=updated_at_desc&include_archived=false&page=1&qa_job_id=docjob_qa_001");
   await expect(page.locator(".translation-qa-review-drawer")).toBeVisible();
-  await expect(page.getByText("只读诊断")).toBeVisible();
+  await expect(page.locator(".qa-review-header-actions").getByText("只读诊断")).toBeVisible();
   await expect(page.getByRole("alert").getByText("任务缺少 DocumentIR 证据文件，无法展示最终文本片段。")).toBeVisible();
   await expect(page.getByRole("button", { name: "仅保存" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "保存并下一条" })).toBeDisabled();

@@ -148,6 +148,68 @@ export function translationQaStatusCountText(value: Record<string, number>): str
   return entries.length ? entries.map(([status, count]) => `${status}: ${count}`).join(", ") : "-";
 }
 
+export type TranslationQaEvidenceGuidance = {
+  type: "success" | "warning" | "error" | "info";
+  title: string;
+  description: string;
+};
+
+export function buildTranslationQaEvidenceGuidance(
+  qa: DocumentJobTranslationQaResponse | null,
+  status: TranslationQaStatus,
+  issueType: TranslationQaIssueType | null,
+): TranslationQaEvidenceGuidance {
+  if (!qa) {
+    return {
+      type: "info",
+      title: "等待 QA 证据加载",
+      description: "加载完成后会显示可用性、片段、术语命中、AI 调用和质量标记。",
+    };
+  }
+
+  if (!qa.available) {
+    return {
+      type: "warning",
+      title: "当前为只读诊断",
+      description: `${translationQaAvailabilityReasonText(qa.availability_reason)} 先修复或补齐证据，再进行 QA 复核。`,
+    };
+  }
+
+  if (status === "blocked") {
+    return {
+      type: "warning",
+      title: "QA 已标记为阻塞",
+      description: issueType
+        ? `阻塞归因是${translationQaIssueTypeText[issueType]}。请优先核对对应证据，再决定是否退回处理。`
+        : "请先选择问题归因并补充备注，方便后续定位证据缺口。",
+    };
+  }
+
+  if (status === "needs_fix") {
+    return {
+      type: "warning",
+      title: "QA 需要修复",
+      description: issueType
+        ? `当前问题归因为${translationQaIssueTypeText[issueType]}。请用片段对照、术语命中和质量标记确认修复范围。`
+        : "请先选择问题归因，并在备注中说明需要修复的片段或证据。",
+    };
+  }
+
+  if (status === "approved") {
+    return {
+      type: "success",
+      title: "QA 已通过",
+      description: "保留当前证据摘要用于复盘；如发现证据缺口，可改为 needs_fix 或 blocked。",
+    };
+  }
+
+  return {
+    type: "info",
+    title: "QA 尚未复核",
+    description: "先检查源文对照、最终文本、术语命中和 AI 调用状态，再保存复核结论。",
+  };
+}
+
 export function translationQaPageLabel(value: number | null): string {
   return value === null ? "-" : String(value + 1);
 }

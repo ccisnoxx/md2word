@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { DocumentJobIncidentQueueItemResponse } from "@/api/types";
 import {
+  buildIncidentDiagnosticGuidance,
   countBatchRetryable,
   failedOrSkippedBatchItems,
   incidentPriorityLabel,
@@ -112,6 +113,20 @@ describe("incident helpers", () => {
   it("labels stalled or blocked incidents ahead of retryable incidents", () => {
     expect(incidentPriorityLabel(buildIncident("stalled", false, true))).toBe("P0");
     expect(incidentPriorityLabel(buildIncident("retryable", true))).toBe("P1");
+  });
+
+  it("builds diagnostic guidance from retryability, failure type, and retry count", () => {
+    const retryable = buildIncident("retryable", true);
+    const artifactMissing = buildIncident("artifact", false);
+    artifactMissing.failure_type = "artifact_missing";
+    artifactMissing.job.retry_count = 3;
+
+    expect(buildIncidentDiagnosticGuidance(retryable)).toMatchObject({
+      type: "success",
+      title: "可按现有流程重试",
+    });
+    expect(buildIncidentDiagnosticGuidance(artifactMissing).bullets.join(" ")).toContain("generated_word");
+    expect(buildIncidentDiagnosticGuidance(artifactMissing).bullets.join(" ")).toContain("多次重试");
   });
 
   it("is safe when shortcut checks run without a DOM target", () => {

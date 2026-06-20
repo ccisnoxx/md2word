@@ -238,6 +238,81 @@ export type DocumentJobQualityEvidenceSummary = {
   evidenceItems: DocumentJobQualityEvidenceItem[];
 };
 
+export type DocumentJobDiagnosticRecommendation = {
+  type: "success" | "warning" | "error" | "info";
+  title: string;
+  description: string;
+  actionLabel: string;
+};
+
+export function buildDocumentJobDiagnosticRecommendation(options: {
+  job: DocumentJobResponse;
+  isStale?: boolean;
+  callbackProblemCount?: number;
+  missingResult?: boolean;
+  latestErrorMessage?: string | null;
+}): DocumentJobDiagnosticRecommendation {
+  const { job, isStale = false, callbackProblemCount = 0, missingResult = false, latestErrorMessage = null } = options;
+  const retryAction = job.available_actions.retry;
+  const retryEnabled = retryAction?.enabled === true;
+  const retryReason = retryAction?.disabled_reason || "后端未开放重试。";
+
+  if (job.status === "failed") {
+    return {
+      type: "error",
+      title: retryEnabled ? "失败任务可按后端授权重试" : "失败任务需要先确认不可重试原因",
+      description: retryEnabled
+        ? `后端返回重试可用。先核对失败阶段、错误码和最近错误事件，再使用现有重试动作。${latestErrorMessage ? `最近错误：${latestErrorMessage}` : ""}`.trim()
+        : `后端当前不允许重试：${retryReason}。请保留错误码、阶段和 trace_id，再打开事件流或详情证据排查。`,
+      actionLabel: retryEnabled ? "使用现有重试动作" : "查看事件和禁用原因",
+    };
+  }
+
+  if (isStale) {
+    return {
+      type: "warning",
+      title: "任务长时间未更新，先刷新诊断证据",
+      description: "任务仍处于活跃状态，但更新时间已超过操作阈值。先刷新事件、Callback 和文件证据，再决定是否联系技术运营。",
+      actionLabel: "刷新诊断",
+    };
+  }
+
+  if (job.status === "succeeded") {
+    if (missingResult) {
+      return {
+        type: "warning",
+        title: "任务已完成但结果证据缺失",
+        description: "后端状态已完成，但当前文件列表没有可确认的 generated_word 结果。请刷新文件证据并查看事件流。",
+        actionLabel: "刷新文件证据",
+      };
+    }
+    return {
+      type: callbackProblemCount > 0 ? "warning" : "success",
+      title: callbackProblemCount > 0 ? "任务已完成，但 Callback 仍有问题消息" : "任务已完成，可进入交付检查",
+      description: callbackProblemCount > 0
+        ? `任务结果已生成，但 Callback 摘要仍有 ${callbackProblemCount} 条问题消息。先处理 Callback 证据，再交付结果。`
+        : "结果文件和质量证据可用于人工复核；下载动作仍以后端返回的可用性为准。",
+      actionLabel: callbackProblemCount > 0 ? "查看 Callback 消息" : "检查质量证据",
+    };
+  }
+
+  if (job.status === "canceled") {
+    return {
+      type: "warning",
+      title: "任务已取消，保留证据用于复盘",
+      description: "取消不会删除源文件、事件或已登记文件。需要复跑时使用后端允许的重新发起动作。",
+      actionLabel: "查看文件和事件",
+    };
+  }
+
+  return {
+    type: "info",
+    title: "任务处理中，等待更多证据",
+    description: "页面会持续轮询任务详情。当前可先查看阶段、进度和最近事件；终态后会显示更明确的处置建议。",
+    actionLabel: "继续观察",
+  };
+}
+
 export function buildDocumentJobQualityEvidence(
   job: DocumentJobResponse,
   files: DocumentFileResponse[],

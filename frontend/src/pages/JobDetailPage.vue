@@ -156,6 +156,106 @@
         </el-tab-pane>
 
         <el-tab-pane label="诊断" name="diagnostics">
+          <el-card class="page-section diagnostic-overview-card card-flat" shadow="never" aria-live="polite">
+            <div class="section-header">
+              <div>
+                <h2 class="section-title">诊断摘要</h2>
+                <p class="section-subtitle">用现有任务、事件、文件和 Callback 数据说明当前结果、关键证据和下一步。</p>
+              </div>
+              <el-button
+                :icon="Refresh"
+                :loading="loading || eventsLoading || filesLoading || callbackSummaryLoading"
+                @click="loadAll"
+              >
+                刷新诊断
+              </el-button>
+            </div>
+
+            <section class="diagnostic-section-block" aria-label="下一步建议">
+              <div class="diagnostic-section-heading">
+                <div>
+                  <h3>下一步建议</h3>
+                  <p>只根据当前任务状态和后端动作可用性给出建议，不自动执行修复或重试。</p>
+                </div>
+              </div>
+              <el-alert
+                v-if="diagnosticRecommendation"
+                class="diagnostic-recommendation"
+                :type="diagnosticRecommendation.type"
+                :closable="false"
+                show-icon
+                :title="diagnosticRecommendation.title"
+              >
+                <p>{{ diagnosticRecommendation.description }}</p>
+                <strong>{{ diagnosticRecommendation.actionLabel }}</strong>
+              </el-alert>
+            </section>
+
+            <div class="diagnostic-summary-grid" aria-label="当前诊断摘要">
+              <div v-for="item in diagnosticSummaryFacts" :key="item.label" class="diagnostic-summary-item">
+                <span>{{ item.label }}</span>
+                <strong :class="{ mono: item.mono }">{{ item.value }}</strong>
+              </div>
+            </div>
+
+            <section class="diagnostic-section-block" aria-label="关键证据">
+              <div class="diagnostic-section-heading">
+                <div>
+                  <h3>关键证据</h3>
+                  <p>区分源文件、结果、DocumentIR、Callback 和最近错误事件；raw id/code 保持可复制。</p>
+                </div>
+              </div>
+              <div class="diagnostic-evidence-grid">
+                <article v-for="item in diagnosticEvidenceItems" :key="item.label" class="diagnostic-evidence-card">
+                  <span>{{ item.label }}</span>
+                  <strong :class="{ mono: item.mono }">{{ item.value }}</strong>
+                  <small>{{ item.helper }}</small>
+                </article>
+              </div>
+            </section>
+
+            <section class="diagnostic-section-block" aria-label="事件预览">
+              <div class="diagnostic-section-heading">
+                <div>
+                  <h3>事件预览</h3>
+                  <p>优先查看最近 error/warning；完整事件流仍在“事件”tab。</p>
+                </div>
+                <el-button text type="primary" @click="openEventsTab">查看完整事件流</el-button>
+              </div>
+              <ApiErrorAlert :error="eventsError" :diagnostic-context="jobErrorDiagnosticContext('document_jobs.diagnostic_event_preview')" />
+              <div v-if="eventsLoading && !events.length" class="diagnostic-loading">事件加载中...</div>
+              <ol v-else-if="diagnosticPreviewEvents.length" class="diagnostic-event-preview">
+                <li
+                  v-for="event in diagnosticPreviewEvents"
+                  :key="event.id"
+                  :class="`is-${event.level}`"
+                >
+                  <span>{{ formatDateTime(event.created_at) }} · {{ event.level }} · {{ jobStageText[event.stage] || event.stage }}</span>
+                  <strong class="mono">{{ event.event_type }}</strong>
+                  <p>{{ event.message }}</p>
+                  <small v-if="event.trace_id" class="mono">trace_id={{ event.trace_id }}</small>
+                </li>
+              </ol>
+              <el-empty v-else class="compact-empty" description="暂无事件证据；可刷新诊断或稍后查看事件流" />
+            </section>
+
+            <section v-if="diagnosticRecoveryItems.length" class="diagnostic-section-block" aria-label="错误恢复路径">
+              <div class="diagnostic-section-heading">
+                <div>
+                  <h3>恢复路径</h3>
+                  <p>部分诊断数据加载失败时，可单独刷新对应证据。</p>
+                </div>
+              </div>
+              <div class="diagnostic-recovery-actions">
+                <el-button v-if="filesError" :loading="filesLoading" @click="loadFiles()">刷新文件证据</el-button>
+                <el-button v-if="callbackSummaryError" :loading="callbackSummaryLoading" @click="loadCallbackSummary()">
+                  刷新 Callback
+                </el-button>
+                <el-button v-if="eventsError" :loading="eventsLoading" @click="loadEvents()">刷新事件</el-button>
+              </div>
+            </section>
+          </el-card>
+
           <el-card class="page-section card-flat" shadow="never">
             <div class="section-header">
               <div>
@@ -213,14 +313,14 @@
               :data="callbackSummary.recent_problem_messages"
               table-layout="fixed"
             >
-              <el-table-column prop="message_id" label="Message" min-width="180">
+              <el-table-column prop="message_id" label="消息 ID" min-width="180">
                 <template #default="{ row }"><span class="mono">{{ row.message_id }}</span></template>
               </el-table-column>
-              <el-table-column prop="status" label="Status" width="110" />
-              <el-table-column prop="attempts" label="Attempts" width="100" />
-              <el-table-column prop="error_code" label="Error Code" min-width="180" />
-              <el-table-column prop="error_message" label="Error Message" min-width="280" show-overflow-tooltip />
-              <el-table-column label="Updated" min-width="170">
+              <el-table-column prop="status" label="状态" width="110" />
+              <el-table-column prop="attempts" label="尝试次数" width="100" />
+              <el-table-column prop="error_code" label="错误码" min-width="180" />
+              <el-table-column prop="error_message" label="错误信息" min-width="280" show-overflow-tooltip />
+              <el-table-column label="更新时间" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
               </el-table-column>
             </el-table>
@@ -246,7 +346,7 @@
               <el-descriptions-item label="错误信息">{{ job.error_message || "-" }}</el-descriptions-item>
             </el-descriptions>
           </el-card>
-          <el-empty v-else class="page-section" description="当前任务没有失败诊断" />
+          <el-empty v-else class="page-section" description="当前任务没有失败诊断；请查看上方诊断摘要、质量证据和事件预览" />
         </el-tab-pane>
 
         <el-tab-pane label="上下文" name="context">
@@ -562,6 +662,7 @@ import JobProgress from "@/components/JobProgress.vue";
 import JobStatusBadge from "@/components/JobStatusBadge.vue";
 import { useAuthStore } from "@/stores/auth";
 import {
+  buildDocumentJobDiagnosticRecommendation,
   buildDocumentJobQualityEvidence,
   formatBytes,
   formatDateTime,
@@ -619,6 +720,12 @@ let pollRefreshCount = 0;
 
 type RetryStrategy = "keep_original" | "use_latest_term_assets" | "select_term_assets";
 type CloneConfigStrategy = NonNullable<DocumentJobCloneRequest["config_strategy"]>;
+type DiagnosticEvidenceItem = {
+  label: string;
+  value: string;
+  helper: string;
+  mono?: boolean;
+};
 
 const retryDialog = reactive({
   job: null as DocumentJobResponse | null,
@@ -822,13 +929,13 @@ const downloadHint = computed(() => {
   return "结果已生成。点击下载会重新获取临时链接，链接失效后再次点击下载即可。";
 });
 const callbackSummaryItems = computed(() => [
-  { label: "pending", value: String(callbackStatusCount("pending")) },
-  { label: "running", value: String(callbackStatusCount("running")) },
-  { label: "processed", value: String(callbackStatusCount("processed")) },
-  { label: "failed", value: String(callbackStatusCount("failed")) },
-  { label: "ignored", value: String(callbackStatusCount("ignored")) },
-  { label: "replayable", value: String(callbackSummary.value?.replayable_count ?? 0) },
-  { label: "oldest replayable", value: secondsLabel(callbackSummary.value?.oldest_replayable_age_seconds ?? null) },
+  { label: "待处理 pending", value: String(callbackStatusCount("pending")) },
+  { label: "处理中 running", value: String(callbackStatusCount("running")) },
+  { label: "已处理 processed", value: String(callbackStatusCount("processed")) },
+  { label: "失败 failed", value: String(callbackStatusCount("failed")) },
+  { label: "已忽略 ignored", value: String(callbackStatusCount("ignored")) },
+  { label: "可重放 replayable", value: String(callbackSummary.value?.replayable_count ?? 0) },
+  { label: "最早可重放", value: secondsLabel(callbackSummary.value?.oldest_replayable_age_seconds ?? null) },
 ]);
 const latestTraceId = computed(() => latestErrorEvent.value?.trace_id || "-");
 const dispositionAlertType = computed<"success" | "warning" | "error" | "info">(() => {
@@ -966,6 +1073,88 @@ const fileAvailabilitySummary = computed(() => {
   return `${downloadableCount}/${files.value.length} 可下载`;
 });
 const qualityEvidence = computed(() => (job.value ? buildDocumentJobQualityEvidence(job.value, files.value) : null));
+const callbackProblemCount = computed(() =>
+  (callbackSummary.value?.recent_problem_messages.length ?? 0)
+  + callbackStatusCount("failed")
+  + (callbackSummary.value?.replayable_count ?? 0),
+);
+const diagnosticRecommendation = computed(() => {
+  if (!job.value) {
+    return null;
+  }
+  return buildDocumentJobDiagnosticRecommendation({
+    job: job.value,
+    isStale: isJobStale.value,
+    callbackProblemCount: callbackProblemCount.value,
+    missingResult: qualityEvidence.value?.status === "missing_output",
+    latestErrorMessage: latestErrorEvent.value?.message || null,
+  });
+});
+const diagnosticSummaryFacts = computed(() => {
+  if (!job.value) {
+    return [];
+  }
+  return [
+    { label: "当前结果", value: jobStatusText[job.value.status] || job.value.status },
+    { label: "当前阶段", value: jobStageText[job.value.stage] || job.value.stage },
+    { label: "停止/失败阶段", value: job.value.failed_stage ? jobStageText[job.value.failed_stage] || job.value.failed_stage : "-" },
+    { label: "错误码", value: job.value.error_code || "-", mono: true },
+    { label: "trace_id", value: latestTraceId.value, mono: true },
+    { label: "最近更新", value: formatDateTime(job.value.updated_at) },
+  ];
+});
+const diagnosticEvidenceItems = computed<DiagnosticEvidenceItem[]>(() => {
+  if (!job.value) {
+    return [];
+  }
+  const sourceFile = findJobFile("source_pdf", job.value.source_file_id);
+  const resultFile = findJobFile("generated_word", job.value.result_file_id);
+  const documentIrFile = findJobFile("document_ir", job.value.document_ir_file_id);
+  const latestEvent = latestErrorEvent.value;
+  return [
+    {
+      label: "源文件",
+      value: sourceFile?.id || job.value.source_file_id || "-",
+      helper: sourceFile?.original_filename || sourceFilename.value || "任务源文件 ID",
+      mono: true,
+    },
+    {
+      label: "生成结果",
+      value: resultFile?.id || job.value.result_file_id || "-",
+      helper: resultFile ? fileAvailabilityText(resultFile) : "未找到 generated_word 文件记录",
+      mono: true,
+    },
+    {
+      label: "DocumentIR",
+      value: documentIrFile?.id || job.value.document_ir_file_id || "-",
+      helper: documentIrFile ? fileAvailabilityText(documentIrFile) : "未找到 DocumentIR 文件记录",
+      mono: true,
+    },
+    {
+      label: "Callback 问题",
+      value: callbackHealthText.value,
+      helper: callbackSummaryError.value ? "Callback 摘要加载失败，可单独刷新" : "failed / replayable / pending 由后端摘要返回",
+    },
+    {
+      label: "最近错误事件",
+      value: latestEvent?.event_type || "-",
+      helper: latestEvent
+        ? `${latestEvent.message}${latestEvent.trace_id ? ` · trace_id=${latestEvent.trace_id}` : ""}`
+        : "暂无 error 级别事件",
+      mono: true,
+    },
+  ];
+});
+const diagnosticPreviewEvents = computed(() => {
+  const important = events.value.filter((event) => event.level === "error" || event.level === "warning");
+  const source = important.length ? important : events.value;
+  return source.slice(-4).reverse();
+});
+const diagnosticRecoveryItems = computed(() => [
+  filesError.value ? "files" : "",
+  callbackSummaryError.value ? "callback" : "",
+  eventsError.value ? "events" : "",
+].filter(Boolean));
 const qualityDispositionText = computed(() => {
   if (filesLoading.value) {
     return "加载中";
@@ -987,6 +1176,10 @@ const qualityDispositionText = computed(() => {
   }
   return "待生成";
 });
+
+function openEventsTab(): void {
+  activeTab.value = "events";
+}
 
 function readRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null ? value as Record<string, unknown> : null;
@@ -1550,6 +1743,16 @@ function resetPageStateForRouteChange(): void {
   activeTab.value = "overview";
 }
 
+function findJobFile(fileType: string, preferredId?: string | null): DocumentFileResponse | null {
+  if (preferredId) {
+    const preferred = files.value.find((file) => file.id === preferredId && file.file_type === fileType);
+    if (preferred) {
+      return preferred;
+    }
+  }
+  return files.value.find((file) => file.file_type === fileType) || null;
+}
+
 // 文件区只做展示映射；文件归属、过期和下载权限以后端校验为准。
 function fileRoleText(fileType: string): string {
   if (fileType === "source_pdf") {
@@ -1790,6 +1993,132 @@ onBeforeUnmount(() => {
   align-items: center;
 }
 
+.diagnostic-overview-card {
+  display: grid;
+  gap: var(--app-space-3);
+}
+
+.diagnostic-overview-card :deep(.el-card__body) {
+  display: grid;
+  gap: var(--app-space-3);
+}
+
+.diagnostic-recommendation p,
+.diagnostic-recommendation strong {
+  display: block;
+  margin: 4px 0 0;
+}
+
+.diagnostic-summary-grid,
+.diagnostic-evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.diagnostic-summary-item,
+.diagnostic-evidence-card {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--app-radius-sm);
+  background: var(--app-color-surface-muted);
+}
+
+.diagnostic-summary-item span,
+.diagnostic-evidence-card span,
+.diagnostic-evidence-card small,
+.diagnostic-section-heading p,
+.diagnostic-loading {
+  color: var(--app-color-text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.diagnostic-summary-item strong,
+.diagnostic-evidence-card strong {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--app-color-text);
+  font-size: 13px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diagnostic-evidence-card small {
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-section-block {
+  display: grid;
+  gap: var(--app-space-2);
+}
+
+.diagnostic-section-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--app-space-2);
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.diagnostic-section-heading h3,
+.diagnostic-section-heading p {
+  margin: 0;
+}
+
+.diagnostic-section-heading h3 {
+  font-size: 15px;
+}
+
+.diagnostic-event-preview {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.diagnostic-event-preview li {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--app-color-border-soft);
+  border-left: 3px solid var(--app-color-border);
+  border-radius: var(--app-radius-sm);
+  background: var(--app-color-surface);
+}
+
+.diagnostic-event-preview li.is-error {
+  border-left-color: var(--el-color-danger);
+}
+
+.diagnostic-event-preview li.is-warning {
+  border-left-color: var(--el-color-warning);
+}
+
+.diagnostic-event-preview span,
+.diagnostic-event-preview small {
+  display: block;
+  color: var(--app-color-text-muted);
+  font-size: 12px;
+}
+
+.diagnostic-event-preview strong,
+.diagnostic-event-preview p {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--app-space-2);
+}
+
 .failure-summary {
   margin-bottom: 14px;
 }
@@ -1907,6 +2236,8 @@ onBeforeUnmount(() => {
   }
 
   .task-disposition-facts,
+  .diagnostic-summary-grid,
+  .diagnostic-evidence-grid,
   .quality-evidence-grid {
     grid-template-columns: 1fr;
   }

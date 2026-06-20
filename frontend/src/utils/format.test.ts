@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { DocumentFileResponse, DocumentJobResponse } from "@/api/types";
 import {
+  buildDocumentJobDiagnosticRecommendation,
   buildDocumentJobQualityEvidence,
   documentJobActionDisabledReason,
   documentJobQualityFlagText,
@@ -141,6 +142,41 @@ describe("document job action contract", () => {
     expect(shouldShowDocumentJobAction(adminRunningJob, "delete")).toBe(true);
     expect(shouldShowDocumentJobAction(adminTerminalJob, "delete")).toBe(true);
     expect(shouldShowDocumentJobAction(operatorJob, "download")).toBe(true);
+  });
+});
+
+describe("document job diagnostic recommendation", () => {
+  it("uses backend retry availability for failed-job guidance", () => {
+    const retryableJob = buildJob({
+      ...defaultAvailableActions,
+      retry: { enabled: true, disabled_reason: null, retryable: true },
+    }, {
+      status: "failed",
+      stage: "failed",
+      failed_stage: "parsing",
+      error_code: "mineru_failed",
+    });
+    const blockedJob = buildJob({
+      ...defaultAvailableActions,
+      retry: { enabled: false, disabled_reason: "人工锁定。", retryable: false },
+    }, {
+      status: "failed",
+      stage: "failed",
+      failed_stage: "rendering",
+      error_code: "render_failed",
+    });
+
+    expect(buildDocumentJobDiagnosticRecommendation({ job: retryableJob }).actionLabel).toBe("使用现有重试动作");
+    expect(buildDocumentJobDiagnosticRecommendation({ job: blockedJob }).description).toContain("人工锁定");
+  });
+
+  it("surfaces completed jobs with missing result evidence", () => {
+    const job = buildJob(defaultAvailableActions, { status: "succeeded", result_file_id: null });
+
+    expect(buildDocumentJobDiagnosticRecommendation({ job, missingResult: true })).toMatchObject({
+      type: "warning",
+      actionLabel: "刷新文件证据",
+    });
   });
 });
 
