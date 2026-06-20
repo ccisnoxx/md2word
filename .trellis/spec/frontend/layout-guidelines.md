@@ -49,6 +49,31 @@ Workbench pages that open a right-side detail or review drawer from an in-page l
 - Keep the drawer content in a shared panel component when the same review surface is reused by a queue drawer and a detail page.
 - For unavailable or diagnostic-only states, reuse the same panel frame in read-only mode rather than adding a separate visual implementation.
 
+## Dialog Forms
+
+Long workbench forms inside `el-dialog` must own their scroll container in page markup instead of relying only on Element Plus internal body selectors:
+
+```vue
+<el-dialog class="example-dialog">
+  <div class="example-dialog-scroll">
+    <el-form>
+      ...
+    </el-form>
+  </div>
+  <template #footer>...</template>
+</el-dialog>
+```
+
+```scss
+.example-dialog-scroll {
+  max-height: min(640px, calc(100vh - 220px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+```
+
+This keeps header/footer actions reachable and makes mouse-wheel behavior stable even when the dialog content is teleported by Element Plus.
+
 ## Tables And Actions
 
 - Put the scannable entity identity in the first meaningful column.

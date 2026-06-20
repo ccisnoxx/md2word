@@ -320,49 +320,51 @@
     </RoleGate>
 
     <el-dialog v-model="ruleDialog.visible" :title="ruleDialogTitle" width="760px" class="rule-dialog">
-      <el-form ref="ruleFormRef" :model="ruleForm" :rules="ruleRules" label-width="130px">
-        <el-form-item label="Source term" prop="source_term">
-          <el-input v-model="ruleForm.source_term" placeholder="例如 VIN" />
-        </el-form-item>
-        <el-form-item label="分类" prop="category_id">
-          <el-select v-model="ruleForm.category_id" filterable placeholder="选择分类">
-            <el-option v-for="category in categories" :key="category.id" :label="category.name" :value="category.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="Segments" prop="segments">
-          <TermSegmentEditor v-model="ruleForm.segments" />
-        </el-form-item>
-        <el-form-item label="预览">
-          <TermPreview :segments="ruleForm.segments" />
-        </el-form-item>
-        <div class="rule-form-grid">
-          <el-form-item label="Scope" prop="apply_scope">
-            <el-select v-model="ruleForm.apply_scope">
-              <el-option label="Both" value="both" />
-              <el-option label="Markdown" value="markdown" />
-              <el-option label="Table" value="table" />
+      <div class="rule-dialog-scroll">
+        <el-form ref="ruleFormRef" :model="ruleForm" :rules="ruleRules" label-width="130px">
+          <el-form-item label="Source term" prop="source_term">
+            <el-input v-model="ruleForm.source_term" placeholder="例如 VIN" />
+          </el-form-item>
+          <el-form-item label="分类" prop="category_id">
+            <el-select v-model="ruleForm.category_id" filterable placeholder="选择分类">
+              <el-option v-for="category in categories" :key="category.id" :label="category.name" :value="category.id" />
             </el-select>
           </el-form-item>
-          <el-form-item label="Priority" prop="priority">
-            <el-input-number v-model="ruleForm.priority" :min="0" :max="10000" />
+          <el-form-item label="Segments" prop="segments">
+            <TermSegmentEditor v-model="ruleForm.segments" />
           </el-form-item>
-          <el-form-item label="Case sensitive">
-            <el-switch v-model="ruleForm.case_sensitive" />
+          <el-form-item label="预览">
+            <TermPreview :segments="ruleForm.segments" />
           </el-form-item>
-          <el-form-item label="启用">
-            <el-switch v-model="ruleForm.enabled" />
+          <div class="rule-form-grid">
+            <el-form-item label="Scope" prop="apply_scope">
+              <el-select v-model="ruleForm.apply_scope">
+                <el-option label="Both" value="both" />
+                <el-option label="Markdown" value="markdown" />
+                <el-option label="Table" value="table" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="Priority" prop="priority">
+              <el-input-number v-model="ruleForm.priority" :min="0" :max="10000" />
+            </el-form-item>
+            <el-form-item label="Case sensitive">
+              <el-switch v-model="ruleForm.case_sensitive" />
+            </el-form-item>
+            <el-form-item label="启用">
+              <el-switch v-model="ruleForm.enabled" />
+            </el-form-item>
+          </div>
+          <el-form-item label="Custom markdown">
+            <el-input v-model="ruleForm.custom_markdown" clearable />
           </el-form-item>
-        </div>
-        <el-form-item label="Custom markdown">
-          <el-input v-model="ruleForm.custom_markdown" clearable />
-        </el-form-item>
-        <el-form-item label="Custom HTML">
-          <el-input v-model="ruleForm.custom_html" clearable />
-        </el-form-item>
-        <el-form-item label="Notes">
-          <el-input v-model="ruleForm.notes" type="textarea" :rows="3" />
-        </el-form-item>
-      </el-form>
+          <el-form-item label="Custom HTML">
+            <el-input v-model="ruleForm.custom_html" clearable />
+          </el-form-item>
+          <el-form-item label="Notes">
+            <el-input v-model="ruleForm.notes" type="textarea" :rows="3" />
+          </el-form-item>
+        </el-form>
+      </div>
       <template #footer>
         <el-button @click="ruleDialog.visible = false">取消</el-button>
         <el-button type="primary" :loading="savingRule" @click="saveRule">保存</el-button>
@@ -1178,8 +1180,14 @@ watch(() => route.fullPath, () => {
 }
 
 :deep(.rule-dialog .el-dialog__body) {
-  max-height: calc(100vh - 180px);
+  overflow: hidden;
+}
+
+.rule-dialog-scroll {
+  max-height: min(640px, calc(100vh - 220px));
   overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
 }
 
 .dialog-alert,
