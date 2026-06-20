@@ -412,3 +412,36 @@ Implemented terminology governance package release flow, quality menu terminolog
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: terminology rule review flow mvp
+
+**Date**: 2026-06-20
+**Task**: terminology rule review flow mvp
+**Branch**: `main`
+
+### Summary
+
+Implemented terminology rule review flow MVP: scoped effective rules, review batches, item-level approval/rejection, conflict handling, version history, MySQL persistence, frontend review UI, pagination, and dialog scroll fix.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `21c5183f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
