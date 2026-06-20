@@ -76,8 +76,8 @@ export type InternalUserResetPasswordRequest = {
 };
 
 export type InternalUserListQuery = {
-  role?: InternalUserRole | "";
-  status?: InternalUserStatus | "";
+  role?: InternalUserRole;
+  status?: InternalUserStatus;
   keyword?: string;
 };
 

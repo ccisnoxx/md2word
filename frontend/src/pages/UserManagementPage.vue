@@ -253,8 +253,8 @@ async function loadUsers(): Promise<void> {
   try {
     const response = await internalUsersApi.list({
       keyword: filters.keyword.trim() || undefined,
-      role: filters.role,
-      status: filters.status,
+      role: filters.role || undefined,
+      status: filters.status || undefined,
     });
     users.value = response.items;
     total.value = response.total;

@@ -15,7 +15,7 @@ export const internalUsersApi = {
     return apiRequest<InternalUserListResponse>({
       url: "/api/v1/users",
       method: "GET",
-      params,
+      params: buildInternalUserListParams(params),
     });
   },
 
@@ -43,3 +43,18 @@ export const internalUsersApi = {
     });
   },
 };
+
+function buildInternalUserListParams(params: InternalUserListQuery): InternalUserListQuery {
+  const query: InternalUserListQuery = {};
+  const keyword = params.keyword?.trim();
+  if (keyword) {
+    query.keyword = keyword;
+  }
+  if (params.role) {
+    query.role = params.role;
+  }
+  if (params.status) {
+    query.status = params.status;
+  }
+  return query;
+}
