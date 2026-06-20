@@ -313,3 +313,36 @@ Completed sixth-round personal operations cockpit landing and archived the Trell
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: Frontend workbench table preferences
+
+**Date**: 2026-06-20
+**Task**: Frontend workbench table preferences
+**Branch**: `main`
+
+### Summary
+
+Implemented and verified local table preferences for Jobs, Translation QA, and Incident workbenches; archived the Trellis task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b8f50926` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

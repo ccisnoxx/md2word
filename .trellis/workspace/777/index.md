@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 9
+- **Total Sessions**: 10
 - **Last Active**: 2026-06-20
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~315 | Active |
+| `journal-1.md` | ~348 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 10 | 2026-06-20 | Frontend workbench table preferences | `b8f50926` | `main` |
 | 9 | 2026-06-20 | Frontend operations cockpit | `a154ca36` | `main` |
 | 8 | 2026-06-20 | Frontend saved views workbench | `83bc7422` | `main` |
 | 7 | 2026-06-20 | Redeploy hostdzire project | `bccebdc3` | `main` |
