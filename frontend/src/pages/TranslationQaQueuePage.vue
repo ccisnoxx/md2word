@@ -100,6 +100,13 @@
               </div>
             </el-popover>
             <el-button :icon="Search" :loading="loading" @click="handleFilter">搜索</el-button>
+            <WorkbenchTableSettings
+              :model-value="tablePreferences"
+              settings-id="translation-qa-table-settings"
+              :columns="translationQaTableColumns"
+              @update:model-value="handleTablePreferencesUpdate"
+              @reset="handleTablePreferencesReset"
+            />
           </div>
         </div>
 
@@ -129,8 +136,16 @@
         </div>
 
         <div class="table-scroll">
-          <el-table v-loading="loading" :data="jobs" border class="queue-table" :empty-text="emptyText" table-layout="fixed">
-            <el-table-column label="任务" min-width="260">
+          <el-table
+            ref="tableRef"
+            v-loading="loading"
+            :data="jobs"
+            border
+            :class="['queue-table', `is-${tablePreferences.density}-density`]"
+            :empty-text="emptyText"
+            table-layout="fixed"
+          >
+            <el-table-column v-if="isTableColumnVisible('task')" label="任务" min-width="260">
               <template #default="{ row }">
                 <div class="job-cell">
                   <button type="button" class="mono job-link job-link-button" @click="openTranslationQa(row)">{{ row.id }}</button>
@@ -142,7 +157,7 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="任务状态" min-width="136">
+            <el-table-column v-if="isTableColumnVisible('job_status')" label="任务状态" min-width="136">
               <template #default="{ row }">
                 <div class="status-cell">
                   <JobStatusBadge :status="row.status" />
@@ -150,19 +165,19 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="QA 状态" min-width="132">
+            <el-table-column v-if="isTableColumnVisible('qa_status')" label="QA 状态" min-width="132">
               <template #default="{ row }">
                 <el-tag :type="qaStatusTagType(row)" effect="plain">
                   {{ qaStatusLabel(row) }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="问题归因" min-width="132">
+            <el-table-column v-if="isTableColumnVisible('issue_type')" label="问题归因" min-width="132">
               <template #default="{ row }">
                 {{ issueTypeLabel(row.translation_qa_issue_type) }}
               </template>
             </el-table-column>
-            <el-table-column label="证据" min-width="190">
+            <el-table-column v-if="isTableColumnVisible('evidence')" label="证据" min-width="190">
               <template #default="{ row }">
                 <div class="evidence-tags">
                   <el-tag size="small" :type="row.document_ir_file_id ? 'success' : 'info'" effect="plain">DocumentIR</el-tag>
@@ -171,16 +186,16 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="复核人" min-width="148">
+            <el-table-column v-if="isTableColumnVisible('reviewer')" label="复核人" min-width="148">
               <template #default="{ row }">
                 <div>{{ row.translation_qa_reviewed_by || "-" }}</div>
                 <div class="muted">{{ formatDateTime(row.translation_qa_reviewed_at) }}</div>
               </template>
             </el-table-column>
-            <el-table-column label="更新" min-width="148">
+            <el-table-column v-if="isTableColumnVisible('updated')" label="更新" min-width="148">
               <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
             </el-table-column>
-            <el-table-column label="操作" min-width="168">
+            <el-table-column v-if="isTableColumnVisible('actions')" label="操作" min-width="168">
               <template #default="{ row }">
                 <div class="action-row">
                   <el-button size="small" text type="primary" @click="openTranslationQa(row)">复核</el-button>
@@ -244,8 +259,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { ElMessage, ElMessageBox, type TableInstance } from "element-plus";
 import { Filter, Refresh, Search } from "@element-plus/icons-vue";
 import { useRoute, useRouter, type LocationQuery, type RouteLocationRaw } from "vue-router";
 
@@ -264,6 +279,7 @@ import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import JobStatusBadge from "@/components/JobStatusBadge.vue";
 import SavedViewStrip from "@/components/SavedViewStrip.vue";
 import TranslationQaReviewPanel from "@/components/TranslationQaReviewPanel.vue";
+import WorkbenchTableSettings from "@/components/WorkbenchTableSettings.vue";
 import {
   formatDateTime,
   getJobSourceFilename,
@@ -290,6 +306,14 @@ import {
   type SavedViewState,
   type SavedViewStripItem,
 } from "@/utils/savedViews";
+import {
+  getStoredWorkbenchTablePreferences,
+  isWorkbenchTableColumnVisible,
+  persistWorkbenchTablePreferences,
+  resetWorkbenchTablePreferences,
+  TRANSLATION_QA_TABLE_COLUMNS,
+  type WorkbenchTablePreferences,
+} from "@/utils/tablePreferences";
 
 const router = useRouter();
 const route = useRoute();
@@ -300,8 +324,11 @@ const savedViewsLoading = ref(false);
 const loading = ref(false);
 const error = ref<ApiClientError | null>(null);
 const page = ref(1);
-const pageSize = 20;
+const translationQaTableColumns = TRANSLATION_QA_TABLE_COLUMNS;
+const tablePreferences = ref(getStoredWorkbenchTablePreferences("translation_qa", translationQaTableColumns));
+const pageSize = computed(() => tablePreferences.value.pageSize);
 const total = ref(0);
+const tableRef = ref<TableInstance | null>(null);
 const qaStatusFilter = ref<TranslationQaStatus | "">("unreviewed");
 const statusFilter = ref<DocumentJobStatus | "">("");
 const searchKeyword = ref("");
@@ -534,7 +561,7 @@ async function loadJobs(): Promise<void> {
   try {
     const response = await documentJobsApi.list({
       page: page.value,
-      page_size: pageSize,
+      page_size: pageSize.value,
       translation_qa_status: qaStatusFilter.value || "all",
       status: statusFilter.value || undefined,
       q: searchKeyword.value.trim() || undefined,
@@ -771,6 +798,28 @@ function handleFilter(): void {
 
 function handlePageChange(nextPage: number): void {
   void syncRouteAndLoad(nextPage);
+}
+
+function isTableColumnVisible(columnId: string): boolean {
+  return isWorkbenchTableColumnVisible(tablePreferences.value, columnId);
+}
+
+function handleTablePreferencesUpdate(nextPreferences: WorkbenchTablePreferences): void {
+  const previousPageSize = tablePreferences.value.pageSize;
+  tablePreferences.value = persistWorkbenchTablePreferences("translation_qa", nextPreferences, translationQaTableColumns);
+  void nextTick(() => tableRef.value?.doLayout());
+  if (tablePreferences.value.pageSize !== previousPageSize) {
+    void syncRouteAndLoad(1);
+  }
+}
+
+function handleTablePreferencesReset(): void {
+  const previousPageSize = tablePreferences.value.pageSize;
+  tablePreferences.value = resetWorkbenchTablePreferences("translation_qa", translationQaTableColumns);
+  void nextTick(() => tableRef.value?.doLayout());
+  if (tablePreferences.value.pageSize !== previousPageSize) {
+    void syncRouteAndLoad(1);
+  }
 }
 
 function applyInboxFilter(status: TranslationQaStatus): void {
@@ -1015,7 +1064,7 @@ async function submitQaReview(mode: "stay" | "next"): Promise<void> {
 
 async function openNextQaDrawer(currentJobId: string): Promise<void> {
   let nextJob = selectNextTranslationQaJob(jobs.value, currentJobId);
-  if (!nextJob && page.value * pageSize < total.value) {
+  if (!nextJob && page.value * pageSize.value < total.value) {
     await syncRouteAndLoad(page.value + 1, true);
     nextJob = selectNextTranslationQaJob(jobs.value, currentJobId);
   }
@@ -1388,10 +1437,21 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
+.queue-table.is-compact-density {
+  :deep(.el-table__cell) {
+    padding: 6px 0;
+  }
+}
+
 .job-cell {
   display: grid;
   gap: 5px;
   min-width: 0;
+}
+
+.queue-table.is-compact-density .job-cell,
+.queue-table.is-compact-density .status-cell {
+  gap: 4px;
 }
 
 .job-link {
@@ -1430,6 +1490,12 @@ onBeforeUnmount(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.queue-table.is-compact-density .job-meta,
+.queue-table.is-compact-density .evidence-tags,
+.queue-table.is-compact-density .action-row {
+  gap: 4px;
 }
 
 .status-cell {
