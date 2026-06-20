@@ -18,6 +18,7 @@ from app.infrastructure.persistence.sqlite.jobs import SqliteJobEventRepository,
 from app.infrastructure.persistence.sqlite.retention_policies import SqliteRetentionPolicyRepository
 from app.infrastructure.persistence.sqlite.saved_views import SqliteSavedViewRepository
 from app.infrastructure.persistence.sqlite.stage_messages import SqliteStageMessageStore
+from app.infrastructure.persistence.sqlite.terminology_releases import SqliteTerminologyReleaseRepository
 
 __all__ = [
     "SqliteAuditEventRepository",
@@ -35,4 +36,5 @@ __all__ = [
     "SqliteRetentionPolicyRepository",
     "SqliteSavedViewRepository",
     "SqliteStageMessageStore",
+    "SqliteTerminologyReleaseRepository",
 ]

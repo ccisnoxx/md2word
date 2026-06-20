@@ -178,6 +178,24 @@ SQLITE_SCHEMA_STATEMENTS: tuple[str, ...] = (
     CREATE INDEX IF NOT EXISTS idx_saved_views_owner_page_position
     ON saved_views (tenant_id, company_id, owner_user_id, page_key, position, view_id)
     """,
+    """
+    CREATE TABLE IF NOT EXISTS terminology_releases (
+        release_id TEXT NOT NULL,
+        version TEXT NOT NULL,
+        status TEXT NOT NULL,
+        project TEXT NOT NULL,
+        language_pair TEXT NOT NULL,
+        content_type TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (release_id, version)
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_terminology_releases_scope_status
+    ON terminology_releases (status, project, language_pair, content_type)
+    """,
 )
 
 

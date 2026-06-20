@@ -315,14 +315,31 @@
         </RoleGate>
       </div>
       <el-table :data="draft?.entries || []" :loading="loading" empty-text="暂无 draft entries">
-        <el-table-column prop="source_term" label="source_term" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="target_term" label="target_term" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="normalized_source_term" label="normalized" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="status" label="status" width="110">
+        <el-table-column prop="source_term" label="源术语" min-width="180" show-overflow-tooltip />
+        <el-table-column label="推荐译法" min-width="200" show-overflow-tooltip>
+          <template #default="{ row }">{{ recommendedTranslationText(row) }}</template>
+        </el-table-column>
+        <el-table-column label="禁用译法" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ listText(row.forbidden_translations) }}</template>
+        </el-table-column>
+        <el-table-column label="同义词" min-width="160" show-overflow-tooltip>
+          <template #default="{ row }">{{ listText(row.synonyms) }}</template>
+        </el-table-column>
+        <el-table-column prop="language_pair" label="语言对" width="110" />
+        <el-table-column prop="project" label="项目" width="130" show-overflow-tooltip />
+        <el-table-column prop="content_type" label="内容类型" width="130" show-overflow-tooltip />
+        <el-table-column label="标签" width="160" show-overflow-tooltip>
+          <template #default="{ row }">{{ listText(row.tags) }}</template>
+        </el-table-column>
+        <el-table-column prop="status" label="状态" width="110">
           <template #default="{ row }">
-            <el-tag :type="row.status === 'active' ? 'success' : 'info'" effect="plain">{{ row.status }}</el-tag>
+            <el-tag :type="termStatusTag(row.status)" effect="plain">{{ termStatusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column prop="updated_at" label="更新时间" width="180">
+          <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
+        </el-table-column>
+        <el-table-column prop="maintainer" label="维护人" width="130" show-overflow-tooltip />
         <el-table-column prop="case_sensitive" label="case" width="90">
           <template #default="{ row }">{{ row.case_sensitive ? "sensitive" : "ignore" }}</template>
         </el-table-column>
@@ -339,10 +356,10 @@
                   link
                   type="warning"
                   :icon="CircleClose"
-                  :disabled="row.status === 'disabled'"
+                  :disabled="row.status === 'deprecated' || row.status === 'disabled'"
                   @click="disableDraftEntry(row)"
                 >
-                  禁用
+                  废弃
                 </el-button>
                 <el-button link type="danger" :icon="Delete" @click="deleteDraftEntry(row)">删除</el-button>
               </div>
@@ -393,8 +410,17 @@
               :disabled="entryDialog.mode === 'edit'"
             />
           </el-form-item>
-          <el-form-item label="target_term" prop="target_term">
+          <el-form-item label="推荐译法主值" prop="target_term">
             <el-input v-model="entryDialog.form.target_term" class="mono" />
+          </el-form-item>
+          <el-form-item label="推荐译法">
+            <el-input v-model="entryDialog.form.recommended_translations" placeholder="多个译法用 ; 分隔" />
+          </el-form-item>
+          <el-form-item label="禁用译法">
+            <el-input v-model="entryDialog.form.forbidden_translations" placeholder="多个译法用 ; 分隔" />
+          </el-form-item>
+          <el-form-item label="同义词">
+            <el-input v-model="entryDialog.form.synonyms" placeholder="多个同义词用 ; 分隔" />
           </el-form-item>
           <el-form-item label="case_sensitive">
             <el-switch v-model="entryDialog.form.case_sensitive" />
@@ -404,6 +430,18 @@
           </el-form-item>
           <el-form-item label="priority">
             <el-input-number v-model="entryDialog.form.priority" :min="-1000" :max="1000" controls-position="right" />
+          </el-form-item>
+          <el-form-item label="project">
+            <el-input v-model="entryDialog.form.project" />
+          </el-form-item>
+          <el-form-item label="content_type">
+            <el-input v-model="entryDialog.form.content_type" />
+          </el-form-item>
+          <el-form-item label="tags">
+            <el-input v-model="entryDialog.form.tags" placeholder="多个标签用 ; 分隔" />
+          </el-form-item>
+          <el-form-item label="maintainer">
+            <el-input v-model="entryDialog.form.maintainer" />
           </el-form-item>
           <el-form-item label="domain">
             <el-input v-model="entryDialog.form.domain" />
@@ -502,7 +540,7 @@ type DiffKind = TranslationTermSetDiffEntryResponse["kind"];
 type Compatibility = TranslationTermProposalCompatibilityItemResponse["compatibility"];
 type TagType = "success" | "warning" | "info" | "danger";
 type EntryDialogMode = "add" | "edit";
-type TermStatus = "active" | "disabled";
+type TermStatus = "editing" | "publishable" | "deprecated";
 
 const route = useRoute();
 const router = useRouter();
@@ -532,8 +570,9 @@ const dedupeOptions = [
 ];
 
 const termStatusOptions = [
-  { label: "active", value: "active" },
-  { label: "disabled", value: "disabled" },
+  { label: "编辑中", value: "editing" },
+  { label: "可发布", value: "publishable" },
+  { label: "已废弃", value: "deprecated" },
 ];
 
 const importDialog = reactive({
@@ -558,9 +597,16 @@ const entryDialog = reactive({
   form: {
     source_term: "",
     target_term: "",
+    recommended_translations: "",
+    forbidden_translations: "",
+    synonyms: "",
     case_sensitive: false,
-    status: "active" as TermStatus,
+    status: "publishable" as TermStatus,
     priority: 0,
+    project: "",
+    content_type: "",
+    tags: "",
+    maintainer: "",
     domain: "",
     category: "",
     note: "",
@@ -787,12 +833,63 @@ function optionalText(value: string): string | null {
   return normalized || null;
 }
 
+function splitListText(value: string): string[] {
+  return Array.from(new Set(value.split(";").map((item) => item.trim()).filter(Boolean)));
+}
+
+function joinListText(values: string[] | null | undefined): string {
+  return values?.join("; ") || "";
+}
+
+function listText(values: string[] | null | undefined): string {
+  return values?.length ? values.join("; ") : "-";
+}
+
+function recommendedTranslationText(row: TranslationTermEntryResponse): string {
+  return row.recommended_translations?.length ? listText(row.recommended_translations) : row.target_term;
+}
+
+function normalizeTermStatus(status: string): TermStatus {
+  if (status === "editing" || status === "deprecated") {
+    return status;
+  }
+  return status === "disabled" ? "deprecated" : "publishable";
+}
+
+function termStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    editing: "编辑中",
+    publishable: "可发布",
+    deprecated: "已废弃",
+    active: "可发布",
+    disabled: "已废弃",
+  };
+  return labels[status] || status;
+}
+
+function termStatusTag(status: string): TagType {
+  if (status === "publishable" || status === "active") {
+    return "success";
+  }
+  if (status === "editing") {
+    return "warning";
+  }
+  return "info";
+}
+
 function resetEntryForm(): void {
   entryDialog.form.source_term = "";
   entryDialog.form.target_term = "";
+  entryDialog.form.recommended_translations = "";
+  entryDialog.form.forbidden_translations = "";
+  entryDialog.form.synonyms = "";
   entryDialog.form.case_sensitive = false;
-  entryDialog.form.status = "active";
+  entryDialog.form.status = "publishable";
   entryDialog.form.priority = 0;
+  entryDialog.form.project = "";
+  entryDialog.form.content_type = "";
+  entryDialog.form.tags = "";
+  entryDialog.form.maintainer = "";
   entryDialog.form.domain = "";
   entryDialog.form.category = "";
   entryDialog.form.note = "";
@@ -808,9 +905,16 @@ function openEditTermDialog(row: TranslationTermEntryResponse): void {
   entryDialog.mode = "edit";
   entryDialog.form.source_term = row.source_term;
   entryDialog.form.target_term = row.target_term;
+  entryDialog.form.recommended_translations = joinListText(row.recommended_translations);
+  entryDialog.form.forbidden_translations = joinListText(row.forbidden_translations);
+  entryDialog.form.synonyms = joinListText(row.synonyms);
   entryDialog.form.case_sensitive = row.case_sensitive;
-  entryDialog.form.status = row.status === "disabled" ? "disabled" : "active";
+  entryDialog.form.status = normalizeTermStatus(row.status);
   entryDialog.form.priority = row.priority;
+  entryDialog.form.project = row.project || "";
+  entryDialog.form.content_type = row.content_type || "";
+  entryDialog.form.tags = joinListText(row.tags);
+  entryDialog.form.maintainer = row.maintainer || "";
   entryDialog.form.domain = row.domain || "";
   entryDialog.form.category = row.category || "";
   entryDialog.form.note = row.note || "";
@@ -856,9 +960,16 @@ async function submitDraftEntry(): Promise<void> {
     action: entryDialog.mode === "add" ? "add" : "update",
     source_term: entryDialog.form.source_term,
     target_term: entryDialog.form.target_term,
+    recommended_translations: splitListText(entryDialog.form.recommended_translations),
+    forbidden_translations: splitListText(entryDialog.form.forbidden_translations),
+    synonyms: splitListText(entryDialog.form.synonyms),
     case_sensitive: entryDialog.form.case_sensitive,
     status: entryDialog.form.status,
     priority: entryDialog.form.priority,
+    project: optionalText(entryDialog.form.project),
+    content_type: optionalText(entryDialog.form.content_type),
+    tags: splitListText(entryDialog.form.tags),
+    maintainer: optionalText(entryDialog.form.maintainer),
     domain: optionalText(entryDialog.form.domain),
     category: optionalText(entryDialog.form.category),
     note: entryDialog.form.note.trim(),
@@ -877,10 +988,10 @@ async function submitDraftEntry(): Promise<void> {
 async function disableDraftEntry(row: TranslationTermEntryResponse): Promise<void> {
   try {
     await ElMessageBox.confirm(
-      `将 ${row.source_term} 标记为 disabled。术语仍保留在 draft 中，但发布后不参与匹配。`,
-      "禁用 draft 术语",
+      `将 ${row.source_term} 标记为已废弃。术语仍保留在 draft 中，但不会进入治理包发布。`,
+      "废弃 draft 术语",
       {
-        confirmButtonText: "禁用",
+        confirmButtonText: "废弃",
         cancelButtonText: "取消",
         type: "warning",
       },
@@ -895,12 +1006,12 @@ async function disableDraftEntry(row: TranslationTermEntryResponse): Promise<voi
         {
           action: "update",
           source_term: row.source_term,
-          status: "disabled",
+          status: "deprecated",
         },
       ],
-      `disable ${row.source_term}`,
+      `deprecate ${row.source_term}`,
     );
-    ElMessage.success("draft 术语已禁用。");
+    ElMessage.success("draft 术语已标记为废弃。");
   } catch (caught) {
     await handleDraftChangeError(caught);
   }

@@ -18,6 +18,7 @@ from app.infrastructure.persistence.file.jobs import FileJobEventRepository, Fil
 from app.infrastructure.persistence.file.retention_policies import FileRetentionPolicyRepository
 from app.infrastructure.persistence.file.saved_views import FileSavedViewRepository
 from app.infrastructure.persistence.file.stage_messages import FileStageMessageStore
+from app.infrastructure.persistence.file.terminology_releases import FileTerminologyReleaseRepository
 
 __all__ = [
     "FileAuditEventRepository",
@@ -35,4 +36,5 @@ __all__ = [
     "FileRetentionPolicyRepository",
     "FileSavedViewRepository",
     "FileStageMessageStore",
+    "FileTerminologyReleaseRepository",
 ]

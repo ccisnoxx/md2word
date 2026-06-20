@@ -141,7 +141,7 @@ class DocumentIRTranslationService:
         for item_index, item in enumerate(items):
             item_matches: list[_TermMatch] = []
             for term_index, entry in enumerate(term_version.entries):
-                if entry.language_pair != language_pair or entry.status != "active":
+                if entry.language_pair != language_pair or entry.status not in {"publishable", "active"}:
                     continue
                 pattern = self._build_term_pattern(entry)
                 if pattern is None:

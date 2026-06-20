@@ -244,14 +244,23 @@ class TranslationTermEntryResponse(BaseModel):
     source_term: str
     normalized_source_term: str
     target_term: str
+    recommended_translations: list[str] = Field(default_factory=list)
+    forbidden_translations: list[str] = Field(default_factory=list)
+    synonyms: list[str] = Field(default_factory=list)
     version: str
     set_id: str
     case_sensitive: bool = False
     status: str
     priority: int = 0
+    project: str | None = None
+    content_type: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    maintainer: str | None = None
     domain: str | None = None
     category: str | None = None
     note: str = ""
+    created_at: datetime
+    updated_at: datetime
 
 
 class TranslationTermSetListItemResponse(BaseModel):
@@ -309,9 +318,16 @@ class TranslationTermSetDraftChangeRequest(BaseModel):
     action: str
     source_term: str
     target_term: str | None = None
+    recommended_translations: list[str] | None = None
+    forbidden_translations: list[str] | None = None
+    synonyms: list[str] | None = None
     case_sensitive: bool | None = None
     status: str | None = None
     priority: int | None = None
+    project: str | None = None
+    content_type: str | None = None
+    tags: list[str] | None = None
+    maintainer: str | None = None
     domain: str | None = None
     category: str | None = None
     note: str | None = None

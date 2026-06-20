@@ -53,6 +53,7 @@ from app.domains.term_rules.proposals_service import TermRuleProposalService
 from app.domains.term_rules.service import TermRuleService
 from app.domains.term_rules.sync_files import TermRuleFileSyncService
 from app.domains.term_rules.versioning_service import TermRuleSetVersionService
+from app.domains.terminology.service import TerminologyReleaseService
 from app.domains.templates.read_service import TemplateReadService
 from app.domains.translation.audit import TranslationAuditService
 from app.domains.translation.document_ir_translator import DocumentIRTranslationService
@@ -146,6 +147,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
     document_job_callback_message_store = persistence_adapters.document_job_callback_message_store
     internal_user_repository = persistence_adapters.internal_user_repository
     saved_view_repository = persistence_adapters.saved_view_repository
+    terminology_release_repository = persistence_adapters.terminology_release_repository
     stage_message_store = persistence_adapters.stage_message_store
     audit_service = AuditService(audit_event_repository)
     auth_service = AuthService(resolved_settings, internal_user_repository)
@@ -277,6 +279,11 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         and translation_term_set_version_service is not None
         else None
     )
+    terminology_release_service = TerminologyReleaseService(
+        terminology_release_repository,
+        translation_term_repository=persistence_adapters.translation_term_repository,
+        resource_version_service=resource_version_service,
+    )
     if term_rule_set_version_service is not None:
         term_rule_set_version_service.bootstrap_seed_as_default_if_empty(resolved_settings.term_rules_seed_file)
     else:
@@ -368,6 +375,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         document_job_callback_message_store=document_job_callback_message_store,
         internal_user_repository=internal_user_repository,
         saved_view_repository=saved_view_repository,
+        terminology_release_repository=terminology_release_repository,
         audit_service=audit_service,
         auth_service=auth_service,
         internal_user_management_service=internal_user_management_service,
@@ -394,6 +402,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         term_rule_proposal_service=term_rule_proposal_service,
         translation_term_set_version_service=translation_term_set_version_service,
         translation_term_proposal_service=translation_term_proposal_service,
+        terminology_release_service=terminology_release_service,
         translation_profile_service=translation_profile_service,
         resource_version_service=resource_version_service,
         job_resource_snapshot_service=job_resource_snapshot_service,

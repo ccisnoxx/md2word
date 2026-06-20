@@ -21,6 +21,7 @@ import TemplateListPage from "@/pages/TemplateListPage.vue";
 import TermRuleWorkbenchPage from "@/pages/TermRuleWorkbenchPage.vue";
 import TermRuleSetPage from "@/pages/TermRuleSetPage.vue";
 import TermProposalsPage from "@/pages/TermProposalsPage.vue";
+import TerminologyReleasesPage from "@/pages/TerminologyReleasesPage.vue";
 import TranslationProfilesPage from "@/pages/TranslationProfilesPage.vue";
 import TranslationQaQueuePage from "@/pages/TranslationQaQueuePage.vue";
 import TranslationResultQaPage from "@/pages/TranslationResultQaPage.vue";
@@ -83,10 +84,16 @@ const router = createRouter({
           meta: { permissions: ["settings:read"] },
         },
         {
+          path: "settings/terminology-releases",
+          name: "settings-terminology-releases",
+          component: TerminologyReleasesPage,
+          meta: { permissions: ["settings:read"] },
+        },
+        {
           path: "settings/term-rules",
           name: "settings-term-rules",
           component: TermRuleWorkbenchPage,
-          meta: { permissions: ["settings:read"] },
+          meta: { permissions: ["term_proposals:read"] },
         },
         {
           path: "settings/translation-profiles",

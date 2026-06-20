@@ -25,6 +25,7 @@ from app.infrastructure.persistence.mysql.saved_views import MysqlSavedViewRepos
 from app.infrastructure.persistence.mysql.stage_messages import MysqlStageMessageStore
 from app.infrastructure.persistence.mysql.term_assets import MysqlTermRuleAssetRepository, MysqlTranslationTermRepository
 from app.infrastructure.persistence.mysql.term_rule_proposals import MysqlTermRuleProposalRepository
+from app.infrastructure.persistence.mysql.terminology_releases import MysqlTerminologyReleaseRepository
 
 __all__ = [
     "ConnectFactory",
@@ -47,5 +48,6 @@ __all__ = [
     "MysqlStageMessageStore",
     "MysqlTermRuleAssetRepository",
     "MysqlTermRuleProposalRepository",
+    "MysqlTerminologyReleaseRepository",
     "MysqlTranslationTermRepository",
 ]

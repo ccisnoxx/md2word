@@ -1,4 +1,4 @@
-<!-- frontend/src/pages/TermRuleWorkbenchPage.vue: Admin read-only term rule inspection and simulation page. -->
+<!-- frontend/src/pages/TermRuleWorkbenchPage.vue: Read-only term rule inspection and proposal entry page. -->
 <template>
   <main class="term-rule-workbench-page app-page" aria-labelledby="term-rule-workbench-title">
     <section class="page-heading app-page-header app-page-shell app-page-shell--wide">
@@ -7,7 +7,19 @@
         <h1 id="term-rule-workbench-title" class="page-title">术语规则检查</h1>
         <p class="page-description">只读查看当前 live runtime store，并用模拟接口检查文本渲染结果。</p>
       </div>
-      <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
+      <div class="page-actions app-action-row">
+        <el-tooltip
+          :disabled="isAdmin"
+          content="你暂无新建正式术语规则权限，可提交规则建议，由术语管理员审核后生效。"
+          placement="bottom"
+        >
+          <span>
+            <el-button type="primary" :icon="Plus" :disabled="!isAdmin" @click="openFormalRuleDraft">新建规则</el-button>
+          </span>
+        </el-tooltip>
+        <el-button :icon="EditPen" @click="submitRuleSuggestion">提交规则建议</el-button>
+        <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
+      </div>
     </section>
 
     <TerminologyWorkbenchNav class="app-page-shell app-page-shell--wide" active="live-rules" />
@@ -55,7 +67,7 @@
         <div class="section-header">
           <div>
             <h2 class="section-title">规则列表</h2>
-            <p class="section-subtitle">仅支持查看、筛选和模拟，不提供编辑入口。</p>
+            <p class="section-subtitle">正式规则由术语管理员维护；普通用户通过规则建议进入审核。</p>
           </div>
           <span class="muted">共 {{ ruleTotal }} 条</span>
         </div>
@@ -180,7 +192,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
-import { Refresh, Search } from "@element-plus/icons-vue";
+import { useRouter } from "vue-router";
+import { EditPen, Plus, Refresh, Search } from "@element-plus/icons-vue";
 
 import { termRulesApi } from "@/api/termRules";
 import type {
@@ -191,10 +204,13 @@ import type {
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import TermPreview from "@/components/TermPreview.vue";
 import TerminologyWorkbenchNav from "@/components/TerminologyWorkbenchNav.vue";
+import { useAuthStore } from "@/stores/auth";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 
 type EnabledFilter = "all" | "enabled" | "disabled";
 
+const router = useRouter();
+const auth = useAuthStore();
 const categories = ref<TermRuleCategoryListItemResponse[]>([]);
 const rules = ref<TermRuleResponse[]>([]);
 const ruleTotal = ref(0);
@@ -224,6 +240,7 @@ const totalRuleCount = computed(() => categories.value.reduce((sum, category) =>
 const enabledRuleCount = computed(() =>
   categories.value.reduce((sum, category) => sum + category.enabled_rule_count, 0),
 );
+const isAdmin = computed(() => auth.user?.role === "admin" || auth.roles.includes("admin"));
 
 function enabledParam(): boolean | undefined {
   if (filters.enabled === "enabled") {
@@ -291,6 +308,24 @@ function resetFilters(): void {
   filters.enabled = "all";
   filters.keyword = "";
   void loadRules();
+}
+
+function openFormalRuleDraft(): void {
+  if (!isAdmin.value) {
+    return;
+  }
+  void router.push({ name: "settings-term-rule-sets" });
+}
+
+function submitRuleSuggestion(): void {
+  void router.push({
+    name: "term-proposals",
+    query: {
+      tab: "new",
+      proposal_type: "term_rule_suggestion",
+      reason: "术语规则建议：",
+    },
+  });
 }
 
 async function simulateText(): Promise<void> {
