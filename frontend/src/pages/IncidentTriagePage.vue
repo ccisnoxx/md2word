@@ -277,25 +277,54 @@
         </header>
 
         <ApiErrorAlert :error="drawerError" :diagnostic-context="drawerErrorDiagnosticContext" />
+        <section v-if="drawerError && !drawerLoading && !diagnostic" class="diagnostic-section diagnostic-recovery-state" aria-live="assertive">
+          <h3>诊断加载失败</h3>
+          <p>当前无法读取该异常的诊断详情。可刷新诊断、打开任务详情，或关闭抽屉返回列表。</p>
+          <div class="drawer-actions">
+            <el-button :loading="drawerLoading" @click="refreshDiagnostic">刷新诊断</el-button>
+            <el-button :disabled="!selectedIncidentJobId" @click="openSelectedJobDetail">打开详情</el-button>
+            <el-button text @click="closeDiagnostic">返回列表</el-button>
+          </div>
+        </section>
         <div v-if="drawerLoading" class="drawer-loading">诊断加载中...</div>
         <template v-else-if="diagnostic">
-          <section class="diagnostic-summary">
-            <div>
-              <span>失败类型</span>
-              <strong>{{ incidentFailureTypeText[diagnostic.item.failure_type] }}</strong>
+          <section class="diagnostic-section">
+            <h3>诊断摘要</h3>
+            <div class="diagnostic-summary">
+              <div>
+                <span>失败类型</span>
+                <strong>{{ incidentFailureTypeText[diagnostic.item.failure_type] }}</strong>
+              </div>
+              <div>
+                <span>重试性</span>
+                <strong>{{ diagnostic.item.retryable ? "可重试" : diagnostic.item.retry_disabled_reason || "不可重试" }}</strong>
+              </div>
+              <div>
+                <span>状态/阶段</span>
+                <strong>{{ jobStatusText[diagnostic.item.job.status] }} / {{ stageLabel(diagnostic.item) }}</strong>
+              </div>
+              <div>
+                <span>重试次数</span>
+                <strong>{{ diagnostic.item.job.retry_count }}</strong>
+              </div>
             </div>
-            <div>
-              <span>重试性</span>
-              <strong>{{ diagnostic.item.retryable ? "可重试" : diagnostic.item.retry_disabled_reason || "不可重试" }}</strong>
-            </div>
-            <div>
-              <span>状态/阶段</span>
-              <strong>{{ jobStatusText[diagnostic.item.job.status] }} / {{ stageLabel(diagnostic.item) }}</strong>
-            </div>
-            <div>
-              <span>重试次数</span>
-              <strong>{{ diagnostic.item.job.retry_count }}</strong>
-            </div>
+          </section>
+
+          <section class="diagnostic-section">
+            <h3>下一步建议</h3>
+            <el-alert
+              v-if="incidentDiagnosticGuidance"
+              class="incident-guidance-alert"
+              :type="incidentDiagnosticGuidance.type"
+              :closable="false"
+              show-icon
+              :title="incidentDiagnosticGuidance.title"
+            >
+              <p>{{ incidentDiagnosticGuidance.description }}</p>
+              <ul>
+                <li v-for="bullet in incidentDiagnosticGuidance.bullets" :key="bullet">{{ bullet }}</li>
+              </ul>
+            </el-alert>
           </section>
 
           <section class="diagnostic-section">
@@ -317,14 +346,32 @@
                 <dt>时间</dt>
                 <dd>创建 {{ formatDateTime(diagnostic.item.job.created_at) }} · 更新 {{ formatDateTime(diagnostic.item.job.updated_at) }}</dd>
               </div>
+              <div>
+                <dt>trace_id</dt>
+                <dd class="mono">{{ latestDiagnosticTraceId }}</dd>
+              </div>
             </dl>
             <div class="evidence-chips">
               <el-tag v-for="entry in diagnostic.item.evidence_summary" :key="entry" effect="plain">{{ entry }}</el-tag>
+              <el-tag v-if="!diagnostic.item.evidence_summary.length" effect="plain">暂无后端证据摘要</el-tag>
             </div>
           </section>
 
           <section class="diagnostic-section">
-            <h3>证据入口</h3>
+            <h3>事件时间线</h3>
+            <ol class="event-list">
+              <li v-for="event in diagnostic.recent_events" :key="event.id" :class="`is-${event.level}`">
+                <span class="event-meta">{{ formatDateTime(event.created_at) }} · {{ event.level }} · {{ eventStageLabel(event.stage) }}</span>
+                <strong>{{ event.event_type }}</strong>
+                <p>{{ event.message }}</p>
+                <small v-if="event.trace_id" class="mono">trace_id={{ event.trace_id }}</small>
+              </li>
+            </ol>
+            <el-empty v-if="!diagnostic.recent_events.length" class="compact-diagnostic-empty" description="暂无最近事件；可刷新诊断或打开详情查看完整事件流" />
+          </section>
+
+          <section class="diagnostic-section">
+            <h3>文件与入口</h3>
             <div class="evidence-links">
               <RouterLink
                 v-for="link in diagnostic.evidence_links"
@@ -333,25 +380,10 @@
                 :class="{ 'is-disabled': !link.available }"
                 :to="link.target"
               >
-                <strong>{{ link.title }}</strong>
-                <span>{{ link.helper || link.target }}</span>
+                <strong>{{ evidenceLinkTitle(link) }}</strong>
+                <span>{{ link.available ? link.helper || link.target : link.helper || '当前入口不可用' }}</span>
               </RouterLink>
             </div>
-          </section>
-
-          <section class="diagnostic-section">
-            <h3>最近事件</h3>
-            <ol class="event-list">
-              <li v-for="event in diagnostic.recent_events" :key="event.id">
-                <span class="event-meta">{{ formatDateTime(event.created_at) }} · {{ event.level }} · {{ event.stage }}</span>
-                <strong>{{ event.event_type }}</strong>
-                <p>{{ event.message }}</p>
-              </li>
-            </ol>
-          </section>
-
-          <section class="diagnostic-section">
-            <h3>文件摘要</h3>
             <div class="file-list">
               <div v-for="file in diagnostic.files" :key="file.file_id" class="file-row">
                 <span class="mono">{{ file.file_id }}</span>
@@ -360,11 +392,15 @@
                 <small>{{ file.original_filename || "-" }}</small>
               </div>
             </div>
+            <el-empty v-if="!diagnostic.files.length" class="compact-diagnostic-empty" description="暂无文件摘要；可打开任务详情查看完整文件列表" />
           </section>
         </template>
 
         <footer class="drawer-footer">
-          <ShortcutHintList :items="incidentDrawerShortcutHints" />
+          <div class="drawer-footer-copy">
+            <strong>操作</strong>
+            <ShortcutHintList :items="incidentDrawerShortcutHints" />
+          </div>
           <div class="drawer-actions">
             <el-button @click="refreshDiagnostic">刷新诊断</el-button>
             <el-button v-if="diagnostic?.item" @click="openJobDetail(diagnostic.item)">打开详情</el-button>
@@ -416,6 +452,7 @@ import { formatDateTime, getJobSourceFilename, jobStageText, jobStatusText } fro
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import type { ShortcutHint } from "@/utils/keyboardShortcuts";
 import {
+  buildIncidentDiagnosticGuidance,
   countBatchRetryable,
   failedOrSkippedBatchItems,
   incidentFailureTagType,
@@ -613,6 +650,12 @@ const normalizedBatchResult = computed(() =>
   batchResult.value ? normalizeIncidentBatchResult(batchResultActionLabel.value, batchResult.value) : null,
 );
 const diagnosticTitle = computed(() => diagnostic.value?.item.job.id || selectedIncidentJobId.value || "异常诊断");
+const incidentDiagnosticGuidance = computed(() =>
+  diagnostic.value ? buildIncidentDiagnosticGuidance(diagnostic.value.item) : null,
+);
+const latestDiagnosticTraceId = computed(() =>
+  [...(diagnostic.value?.recent_events || [])].reverse().find((event) => event.trace_id)?.trace_id || "-",
+);
 
 async function loadIncidents(options: { background?: boolean; preserveError?: boolean } = {}): Promise<void> {
   if (loading.value || backgroundRefreshing.value) {
@@ -1080,6 +1123,14 @@ function stageLabel(item: DocumentJobIncidentQueueItemResponse): string {
   return jobStageText[stage] || stage;
 }
 
+function eventStageLabel(stage: string): string {
+  return jobStageText[stage as DocumentJobStage] || stage;
+}
+
+function evidenceLinkTitle(link: DocumentJobIncidentDiagnosticResponse["evidence_links"][number]): string {
+  return link.kind === "events" ? "完整事件流" : link.title;
+}
+
 function failureTypeLabel(item: DocumentJobIncidentQueueItemResponse): string {
   return incidentFailureTypeText[item.failure_type];
 }
@@ -1173,6 +1224,13 @@ function syncDiagnosticFromRoute(): void {
 
 function openJobDetail(item: DocumentJobIncidentQueueItemResponse): void {
   void router.push({ name: "job-detail", params: { jobId: item.job.id } });
+}
+
+function openSelectedJobDetail(): void {
+  if (!selectedIncidentJobId.value) {
+    return;
+  }
+  void router.push({ name: "job-detail", params: { jobId: selectedIncidentJobId.value } });
 }
 
 async function handleSingleRetry(item: DocumentJobIncidentQueueItemResponse): Promise<void> {
@@ -1680,6 +1738,16 @@ onBeforeUnmount(() => {
   color: var(--app-color-text-muted);
 }
 
+.drawer-footer-copy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.drawer-footer-copy strong {
+  color: var(--app-color-text);
+}
+
 .drawer-loading {
   color: var(--app-color-text-muted);
 }
@@ -1719,6 +1787,20 @@ onBeforeUnmount(() => {
 .diagnostic-section h3 {
   margin: 0;
   font-size: 15px;
+}
+
+.diagnostic-recovery-state p,
+.incident-guidance-alert p,
+.incident-guidance-alert ul {
+  margin: 4px 0 0;
+}
+
+.incident-guidance-alert ul {
+  padding-left: 18px;
+}
+
+.incident-guidance-alert li {
+  margin-top: 2px;
 }
 
 .evidence-list {
@@ -1774,8 +1856,30 @@ onBeforeUnmount(() => {
   margin: 0;
 }
 
+.event-list li {
+  padding: 8px;
+  border: 1px solid var(--app-color-border-soft);
+  border-left: 3px solid var(--app-color-border);
+  border-radius: var(--app-radius-sm);
+}
+
+.event-list li.is-error {
+  border-left-color: var(--el-color-danger);
+}
+
+.event-list li.is-warning {
+  border-left-color: var(--el-color-warning);
+}
+
 .event-list p {
   margin: 2px 0 0;
+}
+
+.event-list small {
+  display: block;
+  margin-top: 3px;
+  color: var(--app-color-text-muted);
+  font-size: 12px;
 }
 
 .event-meta {
@@ -1804,6 +1908,10 @@ onBeforeUnmount(() => {
   color: var(--app-color-text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.compact-diagnostic-empty {
+  padding: 8px 0 0;
 }
 
 .mono {

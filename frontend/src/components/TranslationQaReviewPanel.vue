@@ -45,19 +45,33 @@
         </section>
 
         <el-alert
-          v-if="qa && !qa.available"
-          type="warning"
+          class="qa-guidance-alert"
+          :type="qaEvidenceGuidance.type"
           :closable="false"
           show-icon
-          :title="translationQaAvailabilityReasonText(qa.availability_reason)"
-        />
+          :title="qaEvidenceGuidance.title"
+        >
+          <p>{{ qaEvidenceGuidance.description }}</p>
+        </el-alert>
         <el-alert
-          v-else-if="qa && !qa.summary.source_comparison_available"
+          v-if="qa && qa.available && !qa.summary.source_comparison_available"
           type="info"
           :closable="false"
           show-icon
           :title="translationQaSourceComparisonReasonText(qa.summary.source_comparison_reason)"
         />
+
+        <section class="qa-evidence-overview" aria-label="QA 状态和证据概览">
+          <article v-for="group in qaEvidenceGroups" :key="group.title" class="qa-evidence-group">
+            <h3>{{ group.title }}</h3>
+            <dl>
+              <div v-for="item in group.items" :key="item.label">
+                <dt>{{ item.label }}</dt>
+                <dd :class="{ mono: item.mono }">{{ item.value }}</dd>
+              </div>
+            </dl>
+          </article>
+        </section>
 
         <section class="segment-review-surface" aria-label="片段对照">
           <div class="segment-review-header">
@@ -118,6 +132,10 @@
         </section>
 
         <section class="qa-evidence-summary" aria-label="关键证据">
+          <header class="qa-evidence-heading">
+            <h3>证据文件</h3>
+            <p>保留 DocumentIR、AI 调用日志和 debug 归档的原始 file id，便于排障复制。</p>
+          </header>
           <div class="evidence-row">
             <span>DocumentIR</span>
             <strong class="mono">{{ qa?.artifacts.document_ir_file_id || "-" }}</strong>
@@ -219,6 +237,7 @@ import type { ShortcutHint } from "@/utils/keyboardShortcuts";
 import { formatDateTime, getJobSourceFilename, translationQaStatusTagType, translationQaStatusText } from "@/utils/format";
 import type { ApiClientError } from "@/utils/errors";
 import {
+  buildTranslationQaEvidenceGuidance,
   buildTranslationQaSegmentRows,
   translationQaAvailabilityReasonText,
   translationQaDebugArchiveHelper,
@@ -239,6 +258,15 @@ const qaReviewShortcutHints: ShortcutHint[] = [
   { keys: ["Cmd/Ctrl", "Enter"], label: "保存并下一条" },
   { keys: ["J/K"], label: "切换片段" },
 ];
+
+type QaEvidenceOverviewGroup = {
+  title: string;
+  items: Array<{
+    label: string;
+    value: string;
+    mono?: boolean;
+  }>;
+};
 
 const props = withDefaults(defineProps<{
   job: DocumentJobResponse | null;
@@ -314,6 +342,44 @@ const availabilityTagType = computed<"success" | "warning" | "info">(() => {
   return "info";
 });
 const aiCallSummaryText = computed(() => translationQaStatusCountText(props.qa?.summary.ai_call_statuses || {}));
+const qaEvidenceGuidance = computed(() =>
+  buildTranslationQaEvidenceGuidance(props.qa, props.form.status, props.form.issue_type),
+);
+const sourceComparisonStatusText = computed(() => {
+  if (!props.qa) {
+    return "未加载";
+  }
+  if (props.qa.summary.source_comparison_available) {
+    return "可用";
+  }
+  return translationQaSourceComparisonReasonText(props.qa.summary.source_comparison_reason);
+});
+const qaEvidenceGroups = computed<QaEvidenceOverviewGroup[]>(() => [
+  {
+    title: "复核状态",
+    items: [
+      { label: "可用性", value: availabilityText.value },
+      { label: "当前状态", value: translationQaStatusText[props.form.status] },
+      { label: "问题归因", value: props.form.issue_type ? translationQaIssueTypeText[props.form.issue_type] : "未选择" },
+    ],
+  },
+  {
+    title: "对照证据",
+    items: [
+      { label: "源文对照", value: sourceComparisonStatusText.value },
+      { label: "片段数量", value: props.qa ? `${props.qa.summary.returned_segment_count}/${props.qa.summary.final_segment_count}` : "-" },
+      { label: "术语命中", value: String(props.qa?.summary.term_trace_count ?? "-") },
+    ],
+  },
+  {
+    title: "调用与质量",
+    items: [
+      { label: "AI 调用状态", value: aiCallSummaryText.value },
+      { label: "AI 调用数", value: String(props.qa?.summary.ai_call_count ?? "-") },
+      { label: "质量标记", value: props.qa?.summary.quality_flags.length ? `${props.qa.summary.quality_flags.length} 项` : "-" },
+    ],
+  },
+]);
 const summaryMetrics = computed(() => [
   {
     label: "片段",
@@ -464,6 +530,54 @@ function joinIds(ids: string[]): string {
   white-space: nowrap;
 }
 
+.qa-guidance-alert p {
+  margin: 4px 0 0;
+}
+
+.qa-evidence-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--app-space-2);
+}
+
+.qa-evidence-group {
+  display: grid;
+  gap: var(--app-space-2);
+  min-width: 0;
+  padding: var(--app-space-3);
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface);
+}
+
+.qa-evidence-group h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.qa-evidence-group dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.qa-evidence-group dl div {
+  display: grid;
+  gap: 2px;
+}
+
+.qa-evidence-group dt {
+  color: var(--app-color-text-muted);
+  font-size: 12px;
+}
+
+.qa-evidence-group dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
 .segment-review-surface,
 .qa-evidence-summary,
 .qa-review-empty {
@@ -601,6 +715,27 @@ function joinIds(ids: string[]): string {
   overflow: hidden;
 }
 
+.qa-evidence-heading {
+  display: grid;
+  gap: 4px;
+  padding: var(--app-space-3);
+  border-bottom: 1px solid var(--app-color-border-soft);
+}
+
+.qa-evidence-heading h3,
+.qa-evidence-heading p {
+  margin: 0;
+}
+
+.qa-evidence-heading h3 {
+  font-size: 14px;
+}
+
+.qa-evidence-heading p {
+  color: var(--app-color-text-muted);
+  font-size: 12px;
+}
+
 .evidence-row {
   display: grid;
   grid-template-columns: 132px minmax(0, 1fr);
@@ -670,6 +805,7 @@ function joinIds(ids: string[]): string {
   }
 
   .qa-summary-strip,
+  .qa-evidence-overview,
   .segment-columns,
   .review-form {
     grid-template-columns: 1fr;
