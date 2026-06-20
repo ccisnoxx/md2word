@@ -247,3 +247,36 @@ Redeployed hostdzire from a clean bccebdc3 release worktree, rebuilt the product
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: Frontend saved views workbench
+
+**Date**: 2026-06-20
+**Task**: Frontend saved views workbench
+**Branch**: `main`
+
+### Summary
+
+Completed fifth-round operations saved views workbench and archived the Trellis task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `83bc7422` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
