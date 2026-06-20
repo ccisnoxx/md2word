@@ -313,6 +313,21 @@ MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
         KEY idx_document_job_callback_messages_job_id (job_id, status, created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
+    """
+    CREATE TABLE IF NOT EXISTS saved_views (
+        view_id VARCHAR(128) PRIMARY KEY,
+        tenant_id VARCHAR(128) NOT NULL,
+        company_id VARCHAR(128) NOT NULL,
+        owner_user_id VARCHAR(128) NOT NULL,
+        page_key VARCHAR(64) NOT NULL,
+        position INT NOT NULL,
+        is_default TINYINT(1) NOT NULL,
+        payload LONGTEXT NOT NULL,
+        created_at VARCHAR(40) NOT NULL,
+        updated_at VARCHAR(40) NOT NULL,
+        KEY idx_saved_views_owner_page_position (tenant_id, company_id, owner_user_id, page_key, position, view_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
 )
 
 MYSQL_SCHEMA_MAINTENANCE_STATEMENTS: tuple[str, ...] = (

@@ -1466,6 +1466,53 @@ export type DocumentJobIncidentBulkResponse = {
   items: DocumentJobIncidentBulkItemResponse[];
 };
 
+export type SavedViewPageKey = "jobs" | "translation_qa" | "incidents";
+
+export type SavedViewFilterValue = string | number | boolean;
+
+export type SavedViewFilters = Record<string, SavedViewFilterValue>;
+
+export type SavedViewResponse = {
+  view_id: string;
+  tenant_id: string;
+  company_id: string;
+  owner_user_id: string;
+  page_key: SavedViewPageKey;
+  name: string;
+  filters: SavedViewFilters;
+  sort: string;
+  is_default: boolean;
+  position: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SavedViewListResponse = {
+  items: SavedViewResponse[];
+};
+
+export type SavedViewCreateRequest = {
+  page_key: SavedViewPageKey;
+  name: string;
+  filters: SavedViewFilters;
+  sort: string;
+  is_default?: boolean;
+  position?: number | null;
+};
+
+export type SavedViewUpdateRequest = {
+  name?: string | null;
+  filters?: SavedViewFilters | null;
+  sort?: string | null;
+  is_default?: boolean | null;
+  position?: number | null;
+};
+
+export type SavedViewReorderRequest = {
+  page_key: SavedViewPageKey;
+  view_ids: string[];
+};
+
 export type DocumentJobDeleteExecuteRequest = {
   preview_hash: string;
   reason?: string | null;

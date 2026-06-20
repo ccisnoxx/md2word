@@ -11,35 +11,10 @@ from app.core.runtime import AppRuntime
 from app.api.v1.routers.auth_schemas import AuthLoginRequest, AuthTokenResponse, CurrentUserResponse
 from app.services.auth.service import AuthConfigurationError, InvalidCredentialsError
 from app.services.auth.models import AuthenticatedUser
+from app.services.auth.permissions import permissions_for_role
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-
-_OPERATOR_PERMISSIONS = [
-    "document_jobs:read",
-    "document_jobs:create",
-    "document_jobs:download",
-    "document_jobs:retry",
-    "document_jobs:cancel",
-    "document_jobs:archive",
-    "document_jobs:clone",
-    "translation_qa:read",
-    "translation_qa:write",
-    "term_proposals:read",
-    "term_proposals:create",
-]
-
-_ADMIN_EXTRA_PERMISSIONS = [
-    "settings:read",
-    "settings:write",
-    "system:read",
-    "ops:read",
-    "ops:write",
-    "audit:read",
-    "files:retention",
-    "term_proposals:review",
-]
 
 
 def _roles_for_user(user: AuthenticatedUser) -> list[str]:
@@ -47,10 +22,7 @@ def _roles_for_user(user: AuthenticatedUser) -> list[str]:
 
 
 def _permissions_for_user(user: AuthenticatedUser) -> list[str]:
-    permissions = list(_OPERATOR_PERMISSIONS)
-    if user.role == "admin":
-        permissions.extend(_ADMIN_EXTRA_PERMISSIONS)
-    return permissions
+    return permissions_for_role(user.role)
 
 
 @router.post("/login", response_model=AuthTokenResponse)

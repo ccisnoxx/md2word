@@ -14,6 +14,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from app.services.auth.models import AuthenticatedUser, InternalUser
+from app.services.auth.permissions import permissions_for_role
 from app.core.config import Settings
 
 
@@ -210,6 +211,7 @@ class AuthService:
             tenant_id=user.tenant_id,
             company_id=user.company_id,
             display_name=user.display_name,
+            token_scopes=permissions_for_role(user.role),
         )
 
 

@@ -46,6 +46,7 @@ from app.domains.document_jobs.execution import DocumentJobExecutionService, Eag
 from app.domains.document_jobs.incidents import DocumentJobIncidentService
 from app.domains.document_jobs.recovery import DocumentJobRecoveryService
 from app.domains.document_jobs.service import DocumentJobService
+from app.domains.saved_views.service import SavedViewService
 from app.services.document_ir import MinerUToDocumentIRService
 from app.domains.files import FileRetentionPolicyService, FileUploadService
 from app.domains.files.cleanup_lock import FileRetentionCleanupLockService
@@ -451,6 +452,7 @@ def build_test_runtime(
     document_job_repository = persistence_adapters.document_job_repository
     document_job_event_repository = persistence_adapters.document_job_event_repository
     document_job_callback_message_store = persistence_adapters.document_job_callback_message_store
+    saved_view_repository = persistence_adapters.saved_view_repository
     stage_message_store = persistence_adapters.stage_message_store
     audit_service = AuditService(audit_event_repository)
     auth_service = AuthService(settings)
@@ -665,6 +667,7 @@ def build_test_runtime(
         resource_snapshot_service=job_resource_snapshot_service,
     )
     query_service = JobQueryService(job_repository, job_file_repository, job_event_repository)
+    saved_view_service = SavedViewService(saved_view_repository)
     return AppRuntime(
         settings=settings,
         persistence_adapters=persistence_adapters,
@@ -679,6 +682,7 @@ def build_test_runtime(
         document_job_repository=document_job_repository,
         document_job_event_repository=document_job_event_repository,
         document_job_callback_message_store=document_job_callback_message_store,
+        saved_view_repository=saved_view_repository,
         audit_service=audit_service,
         auth_service=auth_service,
         file_upload_service=file_upload_service,
@@ -690,6 +694,7 @@ def build_test_runtime(
         term_version_service=term_version_service,
         document_word_renderer=document_word_renderer,
         document_job_service=document_job_service,
+        saved_view_service=saved_view_service,
         document_job_incident_service=document_job_incident_service,
         document_job_execution_service=document_job_execution_service,
         document_job_recovery_service=document_job_recovery_service,

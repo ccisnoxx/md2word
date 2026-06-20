@@ -45,6 +45,21 @@
       </button>
     </section>
 
+    <SavedViewStrip
+      class="app-page-shell app-page-shell--wide"
+      :system-views="jobsSystemSavedViews"
+      :personal-views="personalSavedViewItems"
+      :active-view-id="activeSavedView"
+      :loading="savedViewsLoading"
+      @apply="applySavedView"
+      @save-current="saveCurrentSavedView"
+      @update="updateSavedViewFromCurrent"
+      @rename="renameSavedView"
+      @delete="deleteSavedView"
+      @set-default="setDefaultSavedView"
+      @move="moveSavedView"
+    />
+
     <section class="jobs-list-panel app-filter-panel app-page-shell app-page-shell--wide" aria-label="任务列表">
       <div class="section-header table-header">
         <div>
@@ -279,11 +294,14 @@ import type {
   DocumentJobResponse,
   DocumentJobStatus,
   DocumentJobStatusGroup,
+  SavedViewResponse,
   TranslationQaStatus,
 } from "@/api/types";
 import { documentJobsApi } from "@/api/documentJobs";
+import { savedViewsApi } from "@/api/savedViews";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import JobTable from "@/components/JobTable.vue";
+import SavedViewStrip from "@/components/SavedViewStrip.vue";
 import { useAuthStore } from "@/stores/auth";
 import {
   canArchiveDocumentJob,
@@ -296,11 +314,22 @@ import {
 } from "@/utils/format";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { copyDownloadLink, openDownloadLink, type DownloadLinkNotice } from "@/utils/download";
+import {
+  activeSavedViewId,
+  hasMeaningfulSavedViewQuery,
+  jobsSavedViewStateToQuery,
+  personalSavedViewToStripItem,
+  systemSavedViews,
+  type SavedViewState,
+  type SavedViewStripItem,
+} from "@/utils/savedViews";
 
 const router = useRouter();
 const route = useRoute();
 const auth = useAuthStore();
 const jobs = ref<DocumentJobResponse[]>([]);
+const savedViews = ref<SavedViewResponse[]>([]);
+const savedViewsLoading = ref(false);
 const loading = ref(false);
 const error = ref<ApiClientError | null>(null);
 const page = ref(1);
@@ -361,6 +390,7 @@ const lastRefreshedAt = ref<string | null>(null);
 const backgroundRefreshing = ref(false);
 const nowMs = ref(Date.now());
 let refreshTimer: number | undefined;
+let routeSyncInProgress = false;
 
 const jobsErrorDiagnosticContext = computed(() => ({
   route: route.fullPath,
@@ -491,6 +521,35 @@ const workQueueItems = computed<WorkQueueItem[]>(() => [
     active: qaStatusFilter.value === "blocked",
   },
 ]);
+const jobsSystemSavedViews = systemSavedViews.jobs;
+const personalSavedViewItems = computed(() => savedViews.value.map(personalSavedViewToStripItem));
+const allSavedViewItems = computed(() => [...jobsSystemSavedViews, ...personalSavedViewItems.value]);
+const currentSavedViewState = computed<SavedViewState>(() => {
+  const filters: SavedViewState["filters"] = {};
+  if (statusFilter.value) {
+    filters.status = statusFilter.value;
+  } else if (statusGroupFilter.value) {
+    filters.status_group = statusGroupFilter.value;
+  }
+  if (qaStatusFilter.value) {
+    filters.translation_qa_status = qaStatusFilter.value;
+  }
+  if (searchKeyword.value.trim()) {
+    filters.q = searchKeyword.value.trim();
+  }
+  if (includeArchived.value) {
+    filters.include_archived = true;
+  }
+  if (createdRange.value) {
+    filters.created_from = createdRange.value[0];
+    filters.created_to = createdRange.value[1];
+  }
+  return {
+    filters,
+    sort: sortFilter.value,
+  };
+});
+const activeSavedView = computed(() => activeSavedViewId(currentSavedViewState.value, allSavedViewItems.value));
 
 async function loadJobs(options: LoadJobsOptions = {}): Promise<void> {
   if (loading.value || backgroundRefreshing.value) {
@@ -537,6 +596,219 @@ async function loadJobs(options: LoadJobsOptions = {}): Promise<void> {
       loading.value = false;
     }
   }
+}
+
+async function loadSavedViews(): Promise<void> {
+  savedViewsLoading.value = true;
+  try {
+    const response = await savedViewsApi.list("jobs");
+    savedViews.value = response.items;
+  } catch (caught) {
+    handleSavedViewError(caught);
+  } finally {
+    savedViewsLoading.value = false;
+  }
+}
+
+async function initializeSavedViewsAndLoad(): Promise<void> {
+  applyRouteQueryFilters();
+  await loadSavedViews();
+  const defaultView = savedViews.value.find((view) => view.is_default);
+  if (defaultView && !hasMeaningfulSavedViewQuery(route.query, "jobs")) {
+    await applySavedView(personalSavedViewToStripItem(defaultView), true);
+    return;
+  }
+  await syncRouteAndLoad(page.value, true);
+}
+
+async function applySavedView(view: SavedViewStripItem, replace = false): Promise<void> {
+  batchResult.value = null;
+  const query = jobsSavedViewStateToQuery(view, 1);
+  await applySavedViewQuery(query, replace);
+}
+
+async function applySavedViewQuery(query: Record<string, string>, replace = false): Promise<void> {
+  if (!isSameJobsRouteQuery(route.query, query)) {
+    routeSyncInProgress = true;
+    try {
+      await router[replace ? "replace" : "push"]({ name: "jobs", query });
+    } finally {
+      routeSyncInProgress = false;
+    }
+  }
+  applyRouteQueryFilters();
+  await loadJobs();
+}
+
+async function promptSavedViewName(title: string, inputValue = ""): Promise<string | null> {
+  try {
+    const result = await ElMessageBox.prompt("名称仅用于当前页面的个人视图。", title, {
+      inputValue,
+      inputPlaceholder: "视图名称",
+      confirmButtonText: "保存",
+      cancelButtonText: "取消",
+      inputValidator(value) {
+        const normalized = value.trim();
+        if (!normalized) {
+          return "视图名称不能为空。";
+        }
+        if (normalized.length > 64) {
+          return "视图名称最多 64 个字符。";
+        }
+        return true;
+      },
+    });
+    return result.value.trim();
+  } catch (caught) {
+    if (caught === "cancel" || caught === "close") {
+      return null;
+    }
+    throw caught;
+  }
+}
+
+async function saveCurrentSavedView(): Promise<void> {
+  const name = await promptSavedViewName("保存当前视图");
+  if (!name) {
+    return;
+  }
+  savedViewsLoading.value = true;
+  try {
+    await savedViewsApi.create({
+      page_key: "jobs",
+      name,
+      filters: currentSavedViewState.value.filters,
+      sort: currentSavedViewState.value.sort,
+    });
+    await loadSavedViews();
+    ElMessage.success("视图已保存。");
+  } catch (caught) {
+    handleSavedViewError(caught);
+  } finally {
+    savedViewsLoading.value = false;
+  }
+}
+
+async function updateSavedViewFromCurrent(view: SavedViewStripItem): Promise<void> {
+  if (view.source !== "personal") {
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      `将用当前筛选和排序覆盖“${view.name}”。`,
+      "更新保存视图",
+      {
+        confirmButtonText: "确认更新",
+        cancelButtonText: "返回",
+        type: "warning",
+      },
+    );
+    savedViewsLoading.value = true;
+    await savedViewsApi.update(view.id, {
+      filters: currentSavedViewState.value.filters,
+      sort: currentSavedViewState.value.sort,
+    });
+    await loadSavedViews();
+    ElMessage.success("视图已更新。");
+  } catch (caught) {
+    if (caught === "cancel" || caught === "close") {
+      return;
+    }
+    handleSavedViewError(caught);
+  } finally {
+    savedViewsLoading.value = false;
+  }
+}
+
+async function renameSavedView(view: SavedViewStripItem): Promise<void> {
+  if (view.source !== "personal") {
+    return;
+  }
+  const name = await promptSavedViewName("重命名保存视图", view.name);
+  if (!name || name === view.name) {
+    return;
+  }
+  savedViewsLoading.value = true;
+  try {
+    await savedViewsApi.update(view.id, { name });
+    await loadSavedViews();
+    ElMessage.success("视图已重命名。");
+  } catch (caught) {
+    handleSavedViewError(caught);
+  } finally {
+    savedViewsLoading.value = false;
+  }
+}
+
+async function deleteSavedView(view: SavedViewStripItem): Promise<void> {
+  if (view.source !== "personal") {
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(`删除后无法从该页面恢复“${view.name}”。`, "删除保存视图", {
+      confirmButtonText: "确认删除",
+      cancelButtonText: "返回",
+      type: "warning",
+    });
+    savedViewsLoading.value = true;
+    await savedViewsApi.delete(view.id);
+    await loadSavedViews();
+    ElMessage.success("视图已删除。");
+  } catch (caught) {
+    if (caught === "cancel" || caught === "close") {
+      return;
+    }
+    handleSavedViewError(caught);
+  } finally {
+    savedViewsLoading.value = false;
+  }
+}
+
+async function setDefaultSavedView(view: SavedViewStripItem): Promise<void> {
+  if (view.source !== "personal") {
+    return;
+  }
+  savedViewsLoading.value = true;
+  try {
+    await savedViewsApi.update(view.id, { is_default: true });
+    await loadSavedViews();
+    ElMessage.success("默认视图已更新。");
+  } catch (caught) {
+    handleSavedViewError(caught);
+  } finally {
+    savedViewsLoading.value = false;
+  }
+}
+
+async function moveSavedView(view: SavedViewStripItem, direction: "left" | "right"): Promise<void> {
+  if (view.source !== "personal") {
+    return;
+  }
+  const ordered = [...savedViews.value].sort((left, right) => left.position - right.position);
+  const index = ordered.findIndex((item) => item.view_id === view.id);
+  const nextIndex = direction === "left" ? index - 1 : index + 1;
+  if (index < 0 || nextIndex < 0 || nextIndex >= ordered.length) {
+    return;
+  }
+  [ordered[index], ordered[nextIndex]] = [ordered[nextIndex], ordered[index]];
+  savedViewsLoading.value = true;
+  try {
+    const response = await savedViewsApi.reorder({
+      page_key: "jobs",
+      view_ids: ordered.map((item) => item.view_id),
+    });
+    savedViews.value = response.items;
+  } catch (caught) {
+    handleSavedViewError(caught);
+  } finally {
+    savedViewsLoading.value = false;
+  }
+}
+
+function handleSavedViewError(caught: unknown): void {
+  const normalized = normalizeApiError(caught);
+  error.value = normalized;
+  ElMessage.error(normalized.message);
 }
 
 function shouldAutoRefreshJobs(): boolean {
@@ -736,9 +1008,14 @@ async function syncRouteAndLoad(nextPage: number, replace = false): Promise<void
   page.value = nextPage;
   const query = jobsRouteQuery(nextPage);
   if (!isSameJobsRouteQuery(route.query, query)) {
-    await router[replace ? "replace" : "push"]({ name: "jobs", query });
-    return;
+    routeSyncInProgress = true;
+    try {
+      await router[replace ? "replace" : "push"]({ name: "jobs", query });
+    } finally {
+      routeSyncInProgress = false;
+    }
   }
+  applyRouteQueryFilters();
   await loadJobs();
 }
 
@@ -1083,15 +1360,16 @@ watch(
   () => route.query,
   () => {
     applyRouteQueryFilters();
-    batchResult.value = null;
-    void loadJobs();
+    if (!routeSyncInProgress) {
+      batchResult.value = null;
+      void loadJobs();
+    }
   },
   { deep: true },
 );
 
 onMounted(() => {
-  applyRouteQueryFilters();
-  void syncRouteAndLoad(page.value, true);
+  void initializeSavedViewsAndLoad();
   startAutoRefresh();
 });
 
@@ -1501,6 +1779,7 @@ onBeforeUnmount(() => {
 
 .jobs-command-header,
 .work-queue-strip,
+.saved-view-strip,
 .jobs-list-panel {
   position: relative;
   z-index: 1;
@@ -1554,6 +1833,10 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--app-space-3);
   margin-top: var(--app-space-3);
+}
+
+.saved-view-strip {
+  margin-top: var(--app-space-2);
 }
 
 .work-queue-item {

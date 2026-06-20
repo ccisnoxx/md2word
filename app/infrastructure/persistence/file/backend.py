@@ -18,6 +18,7 @@ class FilePersistenceBackend:
         self.document_files_dir = data_dir / "document_files"
         self.document_jobs_dir = data_dir / "document_jobs"
         self.document_job_callback_messages_dir = data_dir / "document_job_callback_messages"
+        self.saved_views_dir = data_dir / "saved_views"
         self.stage_messages_dir = data_dir / "stage_messages"
         self.tmp_dir = data_dir / "tmp"
         self.audit_events_jsonl = data_dir / "audit_events.jsonl"
@@ -26,6 +27,7 @@ class FilePersistenceBackend:
             self.document_files_dir,
             self.document_jobs_dir,
             self.document_job_callback_messages_dir,
+            self.saved_views_dir,
             self.stage_messages_dir,
             self.tmp_dir,
         ):
