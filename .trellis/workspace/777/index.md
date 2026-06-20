@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 11
+- **Total Sessions**: 12
 - **Last Active**: 2026-06-20
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~381 | Active |
+| `journal-1.md` | ~414 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 12 | 2026-06-20 | Terminology governance package release | `f79acc4c` | `main` |
 | 11 | 2026-06-20 | Frontend diagnostic detail experience | `91c88d5b` | `main` |
 | 10 | 2026-06-20 | Frontend workbench table preferences | `b8f50926` | `main` |
 | 9 | 2026-06-20 | Frontend operations cockpit | `a154ca36` | `main` |
