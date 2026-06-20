@@ -129,7 +129,7 @@ _CURRENT_TERM_RULE_COLUMNS = {
 
 _CURRENT_TERM_RULE_INDEXES = {
     "primary",
-    "uq_term_rules_scoped_source",
+    "idx_term_rules_scoped_source",
     "idx_term_rules_category",
 }
 
