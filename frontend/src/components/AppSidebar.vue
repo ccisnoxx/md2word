@@ -8,7 +8,7 @@
         </span>
         <span v-if="!isCompact" class="sidebar-brand-copy">
           <strong>md2word</strong>
-          <small>Operations workbench</small>
+          <small>运营工作台</small>
         </span>
       </router-link>
 
@@ -117,7 +117,7 @@ const openGroupIds = ref<Set<AppNavGroupId>>(new Set());
 const isCompact = computed(() => props.collapsed && !props.mobile);
 const collapseLabel = computed(() => (props.collapsed ? "展开侧边栏" : "收起侧边栏"));
 const collapseIcon = computed(() => (props.collapsed ? Expand : Fold));
-const brandAriaLabel = computed(() => (isCompact.value ? "md2word 工作台" : "md2word operations workbench"));
+const brandAriaLabel = computed(() => (isCompact.value ? "md2word 工作台" : "md2word 运营工作台"));
 const groupIdsKey = computed(() => props.groups.map((group) => group.id).join("|"));
 
 watch(

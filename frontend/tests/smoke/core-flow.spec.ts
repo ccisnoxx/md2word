@@ -1592,9 +1592,10 @@ async function expectLocatorInViewport(page: Page, selector: string): Promise<vo
   expect(box.y + box.height, `${selector} should fit inside the viewport`).toBeLessThanOrEqual(viewport.height + 1);
 }
 
-test("operations redesign renders verified desktop and mobile screenshots", async ({ browser }, testInfo) => {
+test("operations redesign renders verified desktop, tablet, and mobile screenshots", async ({ browser }, testInfo) => {
   const viewports = [
     { name: "desktop", width: 1440, height: 900 },
+    { name: "tablet", width: 768, height: 1024 },
     { name: "mobile", width: 375, height: 812 },
   ];
 
@@ -1636,7 +1637,7 @@ test("operations redesign renders verified desktop and mobile screenshots", asyn
 
     if (viewport.name === "desktop") {
       await expect(page.locator(".app-sidebar-shell")).toBeVisible();
-      await expect(page.locator(".app-sidebar-shell").getByText("Operations workbench")).toBeVisible();
+      await expect(page.locator(".app-sidebar-shell").getByText("运营工作台")).toBeVisible();
       await expect(page.locator(".app-sidebar-shell").getByRole("link", { name: "任务工作台" })).toHaveAttribute("aria-current", "page");
       await page.screenshot({ path: testInfo.outputPath("app-shell-expanded-desktop.png") });
 
@@ -1652,11 +1653,11 @@ test("operations redesign renders verified desktop and mobile screenshots", asyn
       await expect(page.locator(".app-sidebar-shell")).toBeHidden();
       await page.getByRole("button", { name: "打开导航" }).click();
       await expect(page.locator(".app-mobile-drawer")).toBeVisible();
-      await expect(page.locator(".app-mobile-drawer").getByText("Operations workbench")).toBeVisible();
+      await expect(page.locator(".app-mobile-drawer").getByText("运营工作台")).toBeVisible();
       await expect(page.locator(".app-mobile-drawer").getByRole("link", { name: "任务工作台" })).toBeVisible();
       await expectNoPageHorizontalOverflow(page);
       await settleWorkbenchScreenshot(page);
-      await page.screenshot({ path: testInfo.outputPath("app-shell-mobile-drawer.png") });
+      await page.screenshot({ path: testInfo.outputPath(`app-shell-drawer-${viewport.name}.png`) });
       await page.keyboard.press("Escape");
       await expect(page.locator(".app-mobile-drawer")).toBeHidden();
     }

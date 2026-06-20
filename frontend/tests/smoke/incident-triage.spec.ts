@@ -375,17 +375,43 @@ function mainRows(page: Page) {
   return page.locator(".incident-table .el-table__body-wrapper tbody tr");
 }
 
+async function expectNoPageHorizontalOverflow(page: Page): Promise<void> {
+  const sizes = await page.evaluate(() => ({
+    body: document.body.scrollWidth,
+    document: document.documentElement.scrollWidth,
+    viewport: window.innerWidth,
+  }));
+  expect(sizes.body, `body width ${sizes.body} exceeds viewport ${sizes.viewport}`).toBeLessThanOrEqual(sizes.viewport + 1);
+  expect(sizes.document, `document width ${sizes.document} exceeds viewport ${sizes.viewport}`).toBeLessThanOrEqual(
+    sizes.viewport + 1,
+  );
+}
+
+async function expectDrawerInsideViewport(page: Page): Promise<void> {
+  const box = await page.locator(".incident-diagnostic-drawer").boundingBox();
+  const viewport = page.viewportSize();
+  expect(box, "incident drawer should have a rendered box").not.toBeNull();
+  expect(viewport, "viewport should be available").not.toBeNull();
+  if (!box || !viewport) {
+    return;
+  }
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
+}
+
 async function selectIncidentRow(page: Page, filename: string): Promise<void> {
   const row = mainRows(page).filter({ hasText: filename }).first();
   await row.locator(".el-checkbox__input").click();
 }
 
 test("operator can triage incidents from the desktop queue and diagnostic drawer", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
   const controls = await setupIncidentApi(page);
 
   await page.goto("/incidents");
 
   await expect(page.getByRole("heading", { name: "异常处理" })).toBeVisible();
+  await expectNoPageHorizontalOverflow(page);
   await expect(page.getByLabel("快捷键提示").first()).toContainText("Cmd/Ctrl+Enter");
   await expect(mainRows(page).nth(0)).toContainText("blocked-source.pdf");
   await expect(mainRows(page).nth(1)).toContainText("retry-source.pdf");
@@ -404,6 +430,8 @@ test("operator can triage incidents from the desktop queue and diagnostic drawer
   await expect(page.getByRole("heading", { name: "docjob_incident_retry" })).toBeVisible();
   await expect(page.getByText("worker timeout while rendering").first()).toBeVisible();
   await expect(page.getByText("事件时间线")).toBeVisible();
+  await expectNoPageHorizontalOverflow(page);
+  await expectDrawerInsideViewport(page);
 
   await page.keyboard.press("Control+Enter");
   await expect.poll(() => controls.retryRequests).toEqual(["docjob_incident_retry"]);
@@ -438,20 +466,31 @@ test("operator sees batch refresh, retry confirmation, and expandable failure de
   await expect.poll(() => controls.bulkRetryBodies).toHaveLength(1);
 });
 
-test("incident triage page remains usable on a mobile viewport", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+test("incident triage page remains usable on mobile and tablet viewports", async ({ page }) => {
   await setupIncidentApi(page);
 
-  await page.goto("/incidents?incident_job_id=docjob_incident_blocked");
+  for (const viewport of [
+    { width: 375, height: 844 },
+    { width: 768, height: 1024 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/incidents?incident_job_id=docjob_incident_blocked");
 
-  await expect(page.getByRole("button", { name: "打开导航" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "异常处理" })).toBeVisible();
-  await expect(page.getByText("停滞/超时")).toBeVisible();
-  await expect(page.getByText("blocked-source.pdf").first()).toBeVisible();
-  await expect(page.getByRole("heading", { name: "docjob_incident_blocked" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "打开导航" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "异常处理" })).toBeVisible();
+    await expect(page.getByText("停滞/超时")).toBeVisible();
+    await expect(page.getByText("blocked-source.pdf").first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "docjob_incident_blocked" })).toBeVisible();
+    await expectNoPageHorizontalOverflow(page);
+    await expectDrawerInsideViewport(page);
 
-  await page.getByRole("button", { name: "关闭" }).click();
-  await expect(page.getByRole("heading", { name: "docjob_incident_blocked" })).toBeHidden();
-  await page.getByRole("button", { name: "打开导航" }).click();
-  await expect(page.locator(".app-mobile-drawer").getByText("异常处理")).toBeVisible();
+    await page.getByRole("button", { name: "关闭" }).click();
+    await expect(page.getByRole("heading", { name: "docjob_incident_blocked" })).toBeHidden();
+    await expectNoPageHorizontalOverflow(page);
+    await page.getByRole("button", { name: "打开导航" }).click();
+    await expect(page.locator(".app-mobile-drawer").getByText("异常处理")).toBeVisible();
+    await expectNoPageHorizontalOverflow(page);
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".app-mobile-drawer")).toBeHidden();
+  }
 });

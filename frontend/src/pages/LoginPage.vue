@@ -10,7 +10,7 @@
           <span class="brand-mark" aria-hidden="true">
             <el-icon><DocumentChecked /></el-icon>
           </span>
-          <span class="brand-name">md2word Workbench</span>
+          <span class="brand-name">md2word 工作台</span>
         </div>
         <p class="login-eyebrow">内部文档转换入口</p>
         <h1 id="login-title">md2word 内部工作台</h1>
@@ -41,10 +41,10 @@
             </li>
           </ol>
           <div class="assurance-strip" aria-label="工作台治理线索">
-            <span>Queue</span>
-            <span>QA Gate</span>
-            <span>Audit Trail</span>
-            <span>Config</span>
+            <span>队列</span>
+            <span>QA 闸口</span>
+            <span>审计链路</span>
+            <span>配置</span>
           </div>
         </div>
 

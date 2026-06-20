@@ -327,26 +327,31 @@ test("cockpit shows partial saved-view errors without blocking queues", async ({
   await expect(page.locator(".priority-strip").getByRole("link", { name: /失败任务/ })).toContainText("2");
 });
 
-test("cockpit preserves dense mobile ordering without document overflow", async ({ page }) => {
-  await page.setViewportSize({ width: 375, height: 844 });
+test("cockpit preserves dense mobile and tablet ordering without document overflow", async ({ page }) => {
   await setupCockpitApi(page);
 
-  await page.goto("/cockpit");
+  for (const viewport of [
+    { width: 375, height: 844 },
+    { width: 768, height: 1024 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/cockpit");
 
-  await expect(page.getByRole("button", { name: "打开导航" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "今日工作" })).toBeVisible();
-  await expect(page.getByText("我的阻塞 QA")).toBeVisible();
-  await expect(page.getByText("incident-cockpit.pdf")).toBeVisible();
+    await expect(page.getByRole("button", { name: "打开导航" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "今日工作" })).toBeVisible();
+    await expect(page.getByText("我的阻塞 QA")).toBeVisible();
+    await expect(page.getByText("incident-cockpit.pdf")).toBeVisible();
 
-  const positions = await page.evaluate(() => {
-    const priority = document.querySelector(".priority-strip")?.getBoundingClientRect().top ?? 0;
-    const savedViews = document.querySelector("[aria-label='保存视图入口']")?.getBoundingClientRect().top ?? 0;
-    const preview = document.querySelector("[aria-label='下一步工作']")?.getBoundingClientRect().top ?? 0;
-    return { priority, savedViews, preview };
-  });
-  expect(positions.priority).toBeLessThan(positions.savedViews);
-  expect(positions.savedViews).toBeLessThan(positions.preview);
-  await expectNoHorizontalOverflow(page);
+    const positions = await page.evaluate(() => {
+      const priority = document.querySelector(".priority-strip")?.getBoundingClientRect().top ?? 0;
+      const savedViews = document.querySelector("[aria-label='保存视图入口']")?.getBoundingClientRect().top ?? 0;
+      const preview = document.querySelector("[aria-label='下一步工作']")?.getBoundingClientRect().top ?? 0;
+      return { priority, savedViews, preview };
+    });
+    expect(positions.priority).toBeLessThan(positions.savedViews);
+    expect(positions.savedViews).toBeLessThan(positions.preview);
+    await expectNoHorizontalOverflow(page);
+  }
 });
 
 test("command palette opens with Cmd/Ctrl+K, filters permissions, and routes to saved views", async ({ page }) => {

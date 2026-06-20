@@ -299,23 +299,28 @@ test("desktop workbench table preferences stay local to each page", async ({ pag
   await expectNoPageHorizontalOverflow(page);
 });
 
-test("table settings controls fit and remain keyboard reachable on mobile", async ({ page }) => {
-  await page.setViewportSize({ width: 375, height: 812 });
+test("table settings controls fit and remain keyboard reachable on mobile and tablet", async ({ page }) => {
   await setupApi(page);
 
-  for (const route of [
-    "/jobs?sort=created_at_desc&include_archived=false&page=1",
-    "/translation-qa?translation_qa_status=all&sort=updated_at_desc&include_archived=false&page=1",
-    "/incidents?page=1&sort=priority",
+  for (const viewport of [
+    { width: 375, height: 812 },
+    { width: 768, height: 1024 },
   ]) {
-    await page.goto(route);
-    await expectNoPageHorizontalOverflow(page);
-    const panel = await openSettingsWithKeyboard(page);
-    await expect(panel.getByText("标准")).toBeVisible();
-    await expect(panel.getByText("紧凑")).toBeVisible();
-    await expect(panel.getByText("恢复默认")).toBeVisible();
-    await expectPanelInsideViewport(page);
-    await panel.getByRole("button", { name: "关闭" }).click();
-    await expect(page.getByLabel("表格设置面板")).toBeHidden();
+    await page.setViewportSize(viewport);
+    for (const route of [
+      "/jobs?sort=created_at_desc&include_archived=false&page=1",
+      "/translation-qa?translation_qa_status=all&sort=updated_at_desc&include_archived=false&page=1",
+      "/incidents?page=1&sort=priority",
+    ]) {
+      await page.goto(route);
+      await expectNoPageHorizontalOverflow(page);
+      const panel = await openSettingsWithKeyboard(page);
+      await expect(panel.getByText("标准")).toBeVisible();
+      await expect(panel.getByText("紧凑")).toBeVisible();
+      await expect(panel.getByText("恢复默认")).toBeVisible();
+      await expectPanelInsideViewport(page);
+      await panel.getByRole("button", { name: "关闭" }).click();
+      await expect(page.getByLabel("表格设置面板")).toBeHidden();
+    }
   }
 });
