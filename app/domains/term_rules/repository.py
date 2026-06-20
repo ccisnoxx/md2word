@@ -9,6 +9,10 @@ from app.domains.term_rules.models import (
     TermRuleProposalRecord,
     TermRuleProposalStatus,
     TermRuleRecord,
+    TermRuleReviewBatchRecord,
+    TermRuleReviewItemRecord,
+    TermRuleReviewItemStatus,
+    TermRuleVersionRecord,
     TermRulesStore,
 )
 
@@ -54,3 +58,27 @@ class TermRuleAssetRepositoryProtocol(Protocol):
     """术语规则版本的 SQL 明细投影持久化合同。"""
 
     def replace_version(self, term_rule_set_id: str, version: str, store: TermRulesStore) -> None: ...
+
+
+class TermRuleReviewRepositoryProtocol(Protocol):
+    """术语规则批次审核流的持久化合同。"""
+
+    def save_batch(self, batch: TermRuleReviewBatchRecord) -> TermRuleReviewBatchRecord: ...
+    def get_batch(self, batch_id: str) -> TermRuleReviewBatchRecord | None: ...
+    def list_batches(
+        self,
+        *,
+        submitted_by: str | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[TermRuleReviewBatchRecord], int]: ...
+    def save_item(self, item: TermRuleReviewItemRecord) -> TermRuleReviewItemRecord: ...
+    def get_item(self, item_id: str) -> TermRuleReviewItemRecord | None: ...
+    def list_items(
+        self,
+        *,
+        batch_id: str | None = None,
+        status: TermRuleReviewItemStatus | None = None,
+    ) -> list[TermRuleReviewItemRecord]: ...
+    def save_version(self, version: TermRuleVersionRecord) -> TermRuleVersionRecord: ...
+    def list_versions(self, *, rule_id: str | None = None) -> list[TermRuleVersionRecord]: ...

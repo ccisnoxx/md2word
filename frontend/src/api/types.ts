@@ -16,6 +16,7 @@ export type AuthTokenResponse = {
   username: string;
   tenant_id: string;
   company_id: string;
+  department_id?: string;
 };
 
 export type CurrentUserResponse = {
@@ -26,6 +27,7 @@ export type CurrentUserResponse = {
   permissions: string[];
   tenant_id: string;
   company_id: string;
+  department_id?: string;
   display_name: string | null;
 };
 
@@ -44,6 +46,7 @@ export type InternalUserResponse = {
   role: InternalUserRole;
   tenant_id: string;
   company_id: string;
+  department_id: string;
   status: InternalUserStatus;
   display_name: string | null;
   created_at: string;
@@ -60,6 +63,7 @@ export type InternalUserListResponse = {
 export type InternalUserCreateRequest = {
   username: string;
   display_name?: string | null;
+  department_id?: string;
   role: InternalUserRole;
   status: InternalUserStatus;
   initial_password: string;
@@ -67,6 +71,7 @@ export type InternalUserCreateRequest = {
 
 export type InternalUserUpdateRequest = {
   display_name?: string | null;
+  department_id?: string | null;
   role?: InternalUserRole | null;
   status?: InternalUserStatus | null;
 };
@@ -1983,6 +1988,11 @@ export type TermRuleResponse = {
   category_code: string;
   category_name: string;
   source_term: string;
+  normalized_term: string;
+  scope_type: "global" | "department";
+  scope_id: string | null;
+  current_version: number;
+  active: boolean;
   rule_mode: string;
   apply_scope: string;
   case_sensitive: boolean;
@@ -2005,6 +2015,8 @@ export type TermRuleCreateRequest = {
   id?: string | null;
   category_id: string;
   source_term: string;
+  scope_type?: "global" | "department";
+  scope_id?: string | null;
   apply_scope?: string;
   case_sensitive?: boolean;
   enabled?: boolean;
@@ -2018,6 +2030,8 @@ export type TermRuleCreateRequest = {
 export type TermRuleUpdateRequest = {
   category_id?: string | null;
   source_term?: string | null;
+  scope_type?: "global" | "department" | null;
+  scope_id?: string | null;
   apply_scope?: string | null;
   case_sensitive?: boolean | null;
   enabled?: boolean | null;
@@ -2036,6 +2050,120 @@ export type RuleSimulationResponse = {
   original: string;
   markdown_preview: string;
   html_preview: string;
+};
+
+export type TermRuleReviewAction = "create" | "update" | "delete";
+export type TermRuleReviewItemStatus = "pending" | "approved" | "rejected" | "conflict";
+
+export type TermRuleReviewItemWriteRequest = {
+  action: TermRuleReviewAction;
+  target_rule_id?: string | null;
+  base_version?: number | null;
+  source_term?: string | null;
+  category_id?: string | null;
+  apply_scope?: string;
+  case_sensitive?: boolean;
+  enabled?: boolean;
+  priority?: number;
+  segments?: TermRuleSegmentWriteRequest[] | null;
+  custom_html?: string | null;
+  custom_markdown?: string | null;
+  notes?: string;
+  scope_type?: "global" | "department" | null;
+  scope_id?: string | null;
+};
+
+export type TermRuleReviewBatchCreateRequest = {
+  source_job_id?: string | null;
+  source_file_id?: string | null;
+  reason?: string;
+  items: TermRuleReviewItemWriteRequest[];
+};
+
+export type TermRuleReviewBatchSummaryResponse = {
+  pending: number;
+  approved: number;
+  rejected: number;
+  conflict: number;
+  total: number;
+};
+
+export type TermRuleReviewItemResponse = {
+  id: string;
+  batch_id: string;
+  seq: number;
+  action: TermRuleReviewAction;
+  status: TermRuleReviewItemStatus;
+  scope_type: "global" | "department";
+  scope_id: string | null;
+  normalized_term: string;
+  target_rule_id: string | null;
+  base_version: number | null;
+  submitted_snapshot: Record<string, unknown>;
+  rejection_reason: string | null;
+  conflict_reason: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TermRuleReviewBatchResponse = {
+  id: string;
+  submitted_by: string;
+  submitter_department_id: string;
+  source_job_id: string | null;
+  source_file_id: string | null;
+  reason: string;
+  status: string;
+  summary: TermRuleReviewBatchSummaryResponse;
+  items: TermRuleReviewItemResponse[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type TermRuleReviewBatchListResponse = {
+  items: TermRuleReviewBatchResponse[];
+  page: number;
+  page_size: number;
+  total: number;
+};
+
+export type TermRuleReviewBulkRequest = {
+  item_ids: string[];
+  reason?: string | null;
+};
+
+export type TermRuleReviewBulkItemResponse = {
+  item_id: string;
+  ok: boolean;
+  status_code: number;
+  error_code: string | null;
+  detail: string | Record<string, unknown> | null;
+  item: TermRuleReviewItemResponse | null;
+};
+
+export type TermRuleReviewBulkResponse = {
+  action: "approve" | "reject";
+  total: number;
+  succeeded: number;
+  failed: number;
+  items: TermRuleReviewBulkItemResponse[];
+};
+
+export type TermRuleVersionResponse = {
+  id: string;
+  rule_id: string;
+  version: number;
+  action: TermRuleReviewAction;
+  scope_type: "global" | "department";
+  scope_id: string | null;
+  normalized_term: string;
+  review_item_id: string | null;
+  before_snapshot: Record<string, unknown> | null;
+  after_snapshot: Record<string, unknown> | null;
+  created_by: string;
+  created_at: string;
 };
 
 export type TermRuleProposalIntent = "create" | "update" | "disable";

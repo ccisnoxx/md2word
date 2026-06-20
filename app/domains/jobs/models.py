@@ -61,6 +61,7 @@ class ConversionOptions(BaseModel):
     template_version: str | None = None
     term_rule_set_id: str | None = None
     term_rule_set_version: str | None = None
+    term_rule_department_id: str | None = None
     translation_term_set_id: str | None = None
     translation_term_version: str | None = None
     translation_profile_id: str | None = None
@@ -97,6 +98,7 @@ class JobResourceSnapshot(BaseModel):
 
     template: ResolvedResourceVersion | None = None
     term_rule_set: ResolvedResourceVersion | None = None
+    term_rule_department_id: str | None = None
     translation_term_set: ResolvedTranslationTermVersion | None = None
     translation_profile: ResolvedResourceVersion | None = None
     mineru: JobMineruSnapshot = Field(default_factory=JobMineruSnapshot)

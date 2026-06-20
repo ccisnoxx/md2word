@@ -17,7 +17,9 @@ from app.domains.term_rules.models import (
     TermRuleCategoryRecord,
     TermRuleRecord,
     TermRuleSegmentRecord,
+    TermRuleScopeType,
     TermRulesStore,
+    normalize_term_key,
 )
 
 
@@ -123,13 +125,18 @@ class TermRuleYamlCodec:
                 "description": category.description,
             }
 
-        for rule in sorted(store.rules, key=lambda item: (item.priority, -len(item.source_term), item.source_term)):
+        for rule in sorted(store.rules, key=lambda item: (item.priority, item.scope_type.value, item.scope_id or "", -len(item.source_term), item.source_term)):
             category = categories_by_id.get(rule.category_id)
             if category is None:
                 continue
             rules_section.append(
                 {
                     "source_term": rule.source_term,
+                    "normalized_term": rule.normalized_term,
+                    "scope_type": rule.scope_type.value,
+                    "scope_id": rule.scope_id,
+                    "current_version": rule.current_version,
+                    "active": rule.active,
                     "category": category.code,
                     "segments": [
                         {
@@ -153,7 +160,7 @@ class TermRuleYamlCodec:
         }
         return yaml.safe_dump(yaml_data, allow_unicode=True, sort_keys=False, default_flow_style=False)
 
-    def dump_legacy_runtime_yaml(self, store: TermRulesStore) -> str:
+    def dump_legacy_runtime_yaml(self, store: TermRulesStore, *, department_id: str | None = None) -> str:
         categories_by_id = {item.id: item for item in store.categories}
         categories_section: dict[str, dict[str, Any]] = {}
         subscript_rules: dict[str, dict[str, str]] = {}
@@ -168,7 +175,7 @@ class TermRuleYamlCodec:
             }
             subscript_rules[category.code] = {}
 
-        for rule in sorted(store.rules, key=lambda item: (item.priority, -len(item.source_term), item.source_term)):
+        for rule in self._effective_runtime_rules(store, department_id=department_id):
             category = categories_by_id.get(rule.category_id)
             if category is None:
                 continue
@@ -243,7 +250,7 @@ class TermRuleYamlCodec:
             )
 
         rules: list[TermRuleRecord] = []
-        seen_terms: set[str] = set()
+        seen_terms: set[tuple[str, str, str]] = set()
         for index, item in enumerate(rules_raw):
             path_prefix = f"rules.{index}"
             if not isinstance(item, dict):
@@ -254,16 +261,42 @@ class TermRuleYamlCodec:
             if not source_term:
                 errors.append(CodecIssue(code="missing_source_term", message="source_term 不能为空", path=f"{path_prefix}.source_term"))
                 continue
-            if source_term in seen_terms:
+            scope_type_value = str(item.get("scope_type", TermRuleScopeType.GLOBAL.value) or TermRuleScopeType.GLOBAL.value).strip()
+            try:
+                scope_type = TermRuleScopeType(scope_type_value)
+            except ValueError:
+                errors.append(
+                    CodecIssue(
+                        code="invalid_scope_type",
+                        message=f"不支持的 scope_type: {scope_type_value}",
+                        path=f"{path_prefix}.scope_type",
+                    )
+                )
+                continue
+            scope_id = None if scope_type == TermRuleScopeType.GLOBAL else str(item.get("scope_id", "") or "").strip()
+            if scope_type == TermRuleScopeType.DEPARTMENT and not scope_id:
+                errors.append(
+                    CodecIssue(
+                        code="missing_scope_id",
+                        message="department scope 规则必须提供 scope_id",
+                        path=f"{path_prefix}.scope_id",
+                    )
+                )
+                continue
+            normalized_term = normalize_term_key(str(item.get("normalized_term") or source_term))
+            active = self._to_bool(item.get("active"), True)
+            identity_key = (scope_type.value, scope_id or "", normalized_term)
+            if active and identity_key in seen_terms:
                 warnings.append(
                     CodecIssue(
                         code="duplicate_source_term",
-                        message=f"发现重复 source_term，后续项将被跳过: {source_term}",
+                        message=f"发现同 scope 重复 source_term，后续项将被跳过: {source_term}",
                         path=f"{path_prefix}.source_term",
                     )
                 )
                 continue
-            seen_terms.add(source_term)
+            if active:
+                seen_terms.add(identity_key)
 
             category_code = str(item.get("category", "") or "").strip()
             category_id = category_ids.get(category_code)
@@ -336,6 +369,7 @@ class TermRuleYamlCodec:
 
             case_sensitive = self._to_bool(item.get("case_sensitive"), True)
             enabled = self._to_bool(item.get("enabled"), True)
+            current_version = self._to_int(item.get("current_version"), 1)
             category_priority = next((category.priority for category in categories if category.id == category_id), 100)
             priority = self._to_int(item.get("priority"), category_priority)
             notes = str(item.get("notes", "") or "")
@@ -346,6 +380,11 @@ class TermRuleYamlCodec:
                     id=uuid.uuid4().hex,
                     category_id=category_id,
                     source_term=source_term,
+                    normalized_term=normalized_term,
+                    scope_type=scope_type,
+                    scope_id=scope_id,
+                    current_version=current_version,
+                    active=active,
                     rule_mode=rule_mode,
                     apply_scope=apply_scope,
                     case_sensitive=case_sensitive,
@@ -360,6 +399,23 @@ class TermRuleYamlCodec:
 
         store = TermRulesStore(categories=categories, rules=rules)
         return CodecValidationResult(errors=errors, warnings=warnings, store=store if not errors else None)
+
+    @staticmethod
+    def _effective_runtime_rules(store: TermRulesStore, *, department_id: str | None) -> list[TermRuleRecord]:
+        effective: dict[str, TermRuleRecord] = {}
+        for rule in store.rules:
+            if not rule.active:
+                continue
+            if rule.scope_type == TermRuleScopeType.GLOBAL:
+                effective[rule.normalized_term or normalize_term_key(rule.source_term)] = rule
+        normalized_department = str(department_id or "").strip()
+        if normalized_department:
+            for rule in store.rules:
+                if not rule.active:
+                    continue
+                if rule.scope_type == TermRuleScopeType.DEPARTMENT and rule.scope_id == normalized_department:
+                    effective[rule.normalized_term or normalize_term_key(rule.source_term)] = rule
+        return sorted(effective.values(), key=lambda item: (item.priority, -len(item.source_term), item.source_term))
 
     @staticmethod
     def _to_int(value: Any, default: int) -> int:

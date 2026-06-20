@@ -50,6 +50,7 @@ from app.domains.saved_views.service import SavedViewService
 from app.domains.term_rules.bootstrap import TermRuleBootstrapService
 from app.domains.term_rules.import_validation import TermRuleImportValidationService
 from app.domains.term_rules.proposals_service import TermRuleProposalService
+from app.domains.term_rules.review_service import TermRuleReviewService
 from app.domains.term_rules.service import TermRuleService
 from app.domains.term_rules.sync_files import TermRuleFileSyncService
 from app.domains.term_rules.versioning_service import TermRuleSetVersionService
@@ -259,6 +260,17 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         and term_rule_set_version_service is not None
         else None
     )
+    term_rule_review_service = (
+        TermRuleReviewService(
+            repository=persistence_adapters.term_rule_review_repository,
+            term_rule_service=term_rule_service,
+            term_rule_set_version_service=term_rule_set_version_service,
+            audit_service=audit_service,
+        )
+        if persistence_adapters.term_rule_review_repository is not None
+        and term_rule_set_version_service is not None
+        else None
+    )
     translation_profile_service = (
         TranslationProfileVersionService(resolved_settings, resource_version_service, audit_service)
         if resource_version_service is not None
@@ -400,6 +412,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         term_rule_file_sync_service=term_rule_file_sync_service,
         term_rule_set_version_service=term_rule_set_version_service,
         term_rule_proposal_service=term_rule_proposal_service,
+        term_rule_review_service=term_rule_review_service,
         translation_term_set_version_service=translation_term_set_version_service,
         translation_term_proposal_service=translation_term_proposal_service,
         terminology_release_service=terminology_release_service,

@@ -14,7 +14,9 @@ from app.domains.term_rules.models import (
     TermRuleCategoryRecord,
     TermRuleRecord,
     TermRuleSegmentRecord,
+    TermRuleScopeType,
     TermRulesStore,
+    normalize_term_key,
     utc_now,
 )
 from app.domains.term_rules.repository import TermRuleRepositoryProtocol
@@ -135,6 +137,8 @@ class TermRuleService:
         custom_html: str | None,
         custom_markdown: str | None,
         notes: str,
+        scope_type: str = TermRuleScopeType.GLOBAL.value,
+        scope_id: str | None = None,
     ) -> TermRuleRecord:
         store = self.repository.load()
         normalized_id = self._normalize_optional_id(rule_id) or uuid.uuid4().hex
@@ -142,11 +146,20 @@ class TermRuleService:
             raise ValueError(f"规则 ID 已存在: {normalized_id}")
         category = self._find_category(store, category_id)
         normalized_source = self._normalize_source_term(source_term)
-        self._ensure_unique_source_term(store, normalized_source, exclude_rule_id=None)
+        resolved_scope_type, resolved_scope_id = self._resolve_rule_scope(scope_type, scope_id)
+        self._ensure_unique_source_term(
+            store,
+            normalized_source,
+            scope_type=resolved_scope_type,
+            scope_id=resolved_scope_id,
+            exclude_rule_id=None,
+        )
         rule = self._build_rule_record(
             rule_id=normalized_id,
             category_id=category.id,
             source_term=normalized_source,
+            scope_type=resolved_scope_type,
+            scope_id=resolved_scope_id,
             apply_scope=apply_scope,
             case_sensitive=case_sensitive,
             enabled=enabled,
@@ -169,7 +182,20 @@ class TermRuleService:
         source_term = rule.source_term
         if "source_term" in fields:
             source_term = self._normalize_source_term(str(fields["source_term"]))
-            self._ensure_unique_source_term(store, source_term, exclude_rule_id=rule.id)
+        scope_type = rule.scope_type
+        scope_id = rule.scope_id
+        if "scope_type" in fields:
+            scope_type, scope_id = self._resolve_rule_scope(str(fields.get("scope_type") or rule.scope_type.value), fields.get("scope_id"))
+        elif "scope_id" in fields:
+            scope_type, scope_id = self._resolve_rule_scope(rule.scope_type.value, fields.get("scope_id"))
+        if "source_term" in fields or "scope_type" in fields or "scope_id" in fields:
+            self._ensure_unique_source_term(
+                store,
+                source_term,
+                scope_type=scope_type,
+                scope_id=scope_id,
+                exclude_rule_id=rule.id,
+            )
         segments = [
             {"segment_text": segment.segment_text, "render_type": segment.render_type.value}
             for segment in sorted(rule.segments, key=lambda item: item.seq)
@@ -193,6 +219,8 @@ class TermRuleService:
             rule_id=rule.id,
             category_id=category_id,
             source_term=source_term,
+            scope_type=scope_type,
+            scope_id=scope_id,
             apply_scope=fields.get("apply_scope", rule.apply_scope.value),
             case_sensitive=fields.get("case_sensitive", rule.case_sensitive),
             enabled=fields.get("enabled", rule.enabled),
@@ -245,11 +273,12 @@ class TermRuleService:
         self.export_runtime_yaml()
         return store, imported, warnings
 
-    def simulate(self, text: str) -> dict[str, str]:
-        categories = {item.id: item for item in self.repository.load().categories if item.enabled}
+    def simulate(self, text: str, *, department_id: str | None = None) -> dict[str, str]:
+        store = self.repository.load()
+        categories = {item.id: item for item in store.categories if item.enabled}
         rules = [
             rule
-            for rule in self.repository.load().rules
+            for rule in self.yaml_codec._effective_runtime_rules(store, department_id=department_id)
             if rule.enabled and rule.category_id in categories
         ]
         markdown_result = text
@@ -322,11 +351,26 @@ class TermRuleService:
         store: TermRulesStore,
         source_term: str,
         *,
+        scope_type: TermRuleScopeType,
+        scope_id: str | None,
         exclude_rule_id: str | None,
     ) -> None:
+        normalized = normalize_term_key(source_term)
         for rule in store.rules:
-            if rule.source_term == source_term and rule.id != exclude_rule_id:
+            if not rule.active or rule.id == exclude_rule_id:
+                continue
+            if rule.scope_type == scope_type and rule.scope_id == scope_id and rule.normalized_term == normalized:
                 raise ValueError(f"规则 source_term 已存在: {source_term}")
+
+    @staticmethod
+    def _resolve_rule_scope(raw_scope_type: str | None, raw_scope_id: str | None) -> tuple[TermRuleScopeType, str | None]:
+        scope_type = TermRuleScopeType(str(raw_scope_type or TermRuleScopeType.GLOBAL.value))
+        if scope_type == TermRuleScopeType.GLOBAL:
+            return scope_type, None
+        scope_id = str(raw_scope_id or "").strip()
+        if not scope_id:
+            raise ValueError("department scope 规则必须提供 scope_id")
+        return scope_type, scope_id
 
     def _build_rule_record(
         self,
@@ -334,6 +378,8 @@ class TermRuleService:
         rule_id: str,
         category_id: str,
         source_term: str,
+        scope_type: TermRuleScopeType = TermRuleScopeType.GLOBAL,
+        scope_id: str | None = None,
         apply_scope: str,
         case_sensitive: bool,
         enabled: bool,
@@ -355,6 +401,9 @@ class TermRuleService:
             id=rule_id,
             category_id=category_id,
             source_term=source_term,
+            normalized_term=normalize_term_key(source_term),
+            scope_type=scope_type,
+            scope_id=scope_id,
             rule_mode=RuleMode.SIMPLE if len(parsed_segments) <= 2 else RuleMode.ADVANCED,
             apply_scope=parsed_apply_scope,
             case_sensitive=case_sensitive,

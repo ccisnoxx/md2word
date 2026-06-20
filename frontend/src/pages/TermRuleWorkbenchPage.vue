@@ -86,9 +86,9 @@
             clearable
             class="keyword-input"
             placeholder="搜索 source term"
-            @keyup.enter="loadRules"
+            @keyup.enter="searchRules"
           />
-          <el-button type="primary" :icon="Search" :loading="loading" @click="loadRules">搜索</el-button>
+          <el-button type="primary" :icon="Search" :loading="loading" @click="searchRules">搜索</el-button>
           <el-button @click="resetFilters">清除</el-button>
         </div>
 
@@ -100,6 +100,13 @@
             </template>
           </el-table-column>
           <el-table-column prop="category_name" label="分类" min-width="130" show-overflow-tooltip />
+          <el-table-column label="规则域" width="140">
+            <template #default="{ row }">
+              <el-tag effect="plain" :type="row.scope_type === 'global' ? 'info' : 'warning'">
+                {{ scopeLabel(row) }}
+              </el-tag>
+            </template>
+          </el-table-column>
           <el-table-column prop="apply_scope" label="Scope" width="116" />
           <el-table-column prop="priority" label="Priority" width="94" />
           <el-table-column label="状态" width="88">
@@ -115,6 +122,18 @@
             </template>
           </el-table-column>
         </el-table>
+        <div class="table-pagination">
+          <el-pagination
+            v-model:current-page="pagination.page"
+            v-model:page-size="pagination.pageSize"
+            background
+            layout="total, sizes, prev, pager, next"
+            :page-sizes="[20, 50, 100]"
+            :total="ruleTotal"
+            @current-change="loadRules"
+            @size-change="handlePageSizeChange"
+          />
+        </div>
       </el-card>
     </section>
 
@@ -155,6 +174,8 @@
           <el-descriptions-item label="ID">{{ detailDrawer.rule.id }}</el-descriptions-item>
           <el-descriptions-item label="Source term">{{ detailDrawer.rule.source_term }}</el-descriptions-item>
           <el-descriptions-item label="分类">{{ detailDrawer.rule.category_name }}</el-descriptions-item>
+          <el-descriptions-item label="规则域">{{ scopeLabel(detailDrawer.rule) }}</el-descriptions-item>
+          <el-descriptions-item label="版本">{{ detailDrawer.rule.current_version }}</el-descriptions-item>
           <el-descriptions-item label="Scope">{{ detailDrawer.rule.apply_scope }}</el-descriptions-item>
           <el-descriptions-item label="Case sensitive">
             {{ detailDrawer.rule.case_sensitive ? "是" : "否" }}
@@ -227,6 +248,10 @@ const filters = reactive({
   enabled: "all" as EnabledFilter,
   keyword: "",
 });
+const pagination = reactive({
+  page: 1,
+  pageSize: 20,
+});
 
 const detailDrawer = reactive<{
   visible: boolean;
@@ -261,8 +286,8 @@ async function loadRules(): Promise<void> {
   error.value = null;
   try {
     const response = await termRulesApi.listRules({
-      page: 1,
-      page_size: 200,
+      page: pagination.page,
+      page_size: pagination.pageSize,
       category_id: filters.categoryId || undefined,
       enabled: enabledParam(),
       q: filters.keyword.trim() || undefined,
@@ -307,7 +332,22 @@ function resetFilters(): void {
   filters.categoryId = "";
   filters.enabled = "all";
   filters.keyword = "";
+  pagination.page = 1;
   void loadRules();
+}
+
+function handlePageSizeChange(): void {
+  pagination.page = 1;
+  void loadRules();
+}
+
+function searchRules(): void {
+  pagination.page = 1;
+  void loadRules();
+}
+
+function scopeLabel(rule: TermRuleResponse): string {
+  return rule.scope_type === "global" ? "全局" : `部门 ${rule.scope_id || "-"}`;
 }
 
 function openFormalRuleDraft(): void {
@@ -319,11 +359,9 @@ function openFormalRuleDraft(): void {
 
 function submitRuleSuggestion(): void {
   void router.push({
-    name: "term-proposals",
+    name: "term-rule-reviews",
     query: {
-      tab: "new",
-      proposal_type: "term_rule_suggestion",
-      reason: "术语规则建议：",
+      action: "create",
     },
   });
 }
@@ -403,6 +441,12 @@ onMounted(() => {
 
 .rule-table {
   width: 100%;
+}
+
+.table-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
 }
 
 .simulation-actions {

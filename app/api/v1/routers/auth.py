@@ -61,6 +61,7 @@ def login(
         username=user.username,
         tenant_id=user.tenant_id,
         company_id=user.company_id,
+        department_id=user.department_id,
     )
 
 
@@ -74,6 +75,7 @@ def get_current_user(user: AuthenticatedUser = Depends(require_current_user)) ->
         permissions=_permissions_for_user(user),
         tenant_id=user.tenant_id,
         company_id=user.company_id,
+        department_id=user.department_id,
         display_name=user.display_name,
     )
 
@@ -107,5 +109,6 @@ def change_password(
         permissions=_permissions_for_user(authenticated_user),
         tenant_id=authenticated_user.tenant_id,
         company_id=authenticated_user.company_id,
+        department_id=authenticated_user.department_id,
         display_name=authenticated_user.display_name,
     )

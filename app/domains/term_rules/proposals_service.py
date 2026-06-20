@@ -18,7 +18,9 @@ from app.domains.term_rules.models import (
     TermRuleProposalStatus,
     TermRuleRecord,
     TermRuleSegmentRecord,
+    TermRuleScopeType,
     TermRulesStore,
+    normalize_term_key,
     utc_now,
 )
 from app.domains.term_rules.repository import TermRuleProposalRepositoryProtocol
@@ -602,6 +604,11 @@ class TermRuleProposalService:
             category_code=category.code if category is not None else "",
             category_name=category.name if category is not None else "",
             source_term=rule.source_term,
+            normalized_term=rule.normalized_term,
+            scope_type=rule.scope_type.value,
+            scope_id=rule.scope_id,
+            current_version=rule.current_version,
+            active=rule.active,
             rule_mode=rule.rule_mode.value,
             apply_scope=rule.apply_scope.value,
             case_sensitive=rule.case_sensitive,
@@ -639,8 +646,11 @@ class TermRuleProposalService:
         *,
         exclude_rule_id: str | None,
     ) -> None:
+        normalized = normalize_term_key(source_term)
         for rule in store.rules:
-            if rule.source_term == source_term and rule.id != exclude_rule_id:
+            if not rule.active or rule.scope_type != TermRuleScopeType.GLOBAL or rule.id == exclude_rule_id:
+                continue
+            if rule.normalized_term == normalized:
                 raise ValueError(f"规则 source_term 已存在: {source_term}")
 
     def _ensure_no_conflicting_source_segments(self, store: TermRulesStore, proposal: TermRuleProposalRecord) -> None:
@@ -648,7 +658,11 @@ class TermRuleProposalService:
 
         proposed_segments = [segment.model_dump(mode="json") for segment in proposal.segments]
         for rule in store.rules:
-            if rule.source_term != proposal.source_term:
+            if (
+                not rule.active
+                or rule.scope_type != TermRuleScopeType.GLOBAL
+                or rule.normalized_term != normalize_term_key(proposal.source_term)
+            ):
                 continue
             existing_segments = [segment.model_dump(mode="json") for segment in rule.segments]
             if existing_segments != proposed_segments:

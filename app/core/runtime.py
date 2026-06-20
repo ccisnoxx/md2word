@@ -74,6 +74,7 @@ class AppRuntime:
     term_rule_file_sync_service: Any
     term_rule_set_version_service: Any | None
     term_rule_proposal_service: Any | None
+    term_rule_review_service: Any | None
     translation_term_set_version_service: Any | None
     translation_term_proposal_service: Any | None
     terminology_release_service: Any

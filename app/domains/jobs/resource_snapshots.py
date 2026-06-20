@@ -96,6 +96,7 @@ class JobResourceSnapshotService:
         return JobResourceSnapshot(
             template=template,
             term_rule_set=term_rule_set,
+            term_rule_department_id=self._optional_text(options.term_rule_department_id),
             translation_term_set=translation_term_set,
             translation_profile=translation_profile,
             mineru=self._build_mineru_snapshot(source_kind=source_kind, job_id=job_id),
@@ -140,6 +141,7 @@ class JobResourceSnapshotService:
         return job.resource_snapshot.model_copy(
             update={
                 "term_rule_set": next_term_rule_set,
+                "term_rule_department_id": self._optional_text(options.term_rule_department_id) or job.resource_snapshot.term_rule_department_id,
                 "translation_term_set": next_translation_term_set,
             }
         )
@@ -174,7 +176,11 @@ class JobResourceSnapshotService:
             )
         template_path = self._materialize_template(snapshot.template)
         layout_config_path = self._materialize_template_layout_config(snapshot.template)
-        subscript_config_path = self._materialize_term_rule_set(snapshot.term_rule_set, job_paths)
+        subscript_config_path = self._materialize_term_rule_set(
+            snapshot.term_rule_set,
+            job_paths,
+            department_id=snapshot.term_rule_department_id,
+        )
         translation_profile = (
             self._materialize_translation_profile(snapshot.translation_profile)
             if job.translation_mode == "en2zh"
@@ -354,6 +360,8 @@ class JobResourceSnapshotService:
         self,
         snapshot: ResolvedResourceVersion | None,
         job_paths: JobPaths,
+        *,
+        department_id: str | None,
     ) -> Path | None:
         if snapshot is None:
             return None
@@ -365,7 +373,7 @@ class JobResourceSnapshotService:
         store = TermRulesStore.model_validate(store_payload)
         job_paths.resource_subscript_config.parent.mkdir(parents=True, exist_ok=True)
         job_paths.resource_subscript_config.write_text(
-            self.term_rule_yaml_codec.dump_legacy_runtime_yaml(store),
+            self.term_rule_yaml_codec.dump_legacy_runtime_yaml(store, department_id=department_id),
             encoding="utf-8",
         )
         return job_paths.resource_subscript_config
@@ -497,7 +505,7 @@ class JobResourceSnapshotService:
     def _has_term_rule_selection(options: ConversionOptions) -> bool:
         return any(
             JobResourceSnapshotService._optional_text(value)
-            for value in (options.term_rule_set_id, options.term_rule_set_version)
+            for value in (options.term_rule_set_id, options.term_rule_set_version, options.term_rule_department_id)
         )
 
     @staticmethod

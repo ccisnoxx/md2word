@@ -62,9 +62,10 @@ class MysqlTermRuleAssetRepository:
                     cursor.execute(
                         """
                         INSERT INTO term_rules
-                            (term_rule_set_id, version, rule_id, category_id, source_term, rule_mode, apply_scope,
+                            (term_rule_set_id, version, rule_id, category_id, source_term, normalized_term,
+                             scope_type, scope_id, scope_key, current_version, active, rule_mode, apply_scope,
                              case_sensitive, enabled, priority, custom_html, custom_markdown, notes, created_at, updated_at)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """,
                         (
                             term_rule_set_id,
@@ -72,6 +73,12 @@ class MysqlTermRuleAssetRepository:
                             rule.id,
                             rule.category_id,
                             rule.source_term,
+                            rule.normalized_term,
+                            rule.scope_type.value,
+                            rule.scope_id,
+                            rule.scope_id or "",
+                            rule.current_version,
+                            int(rule.active),
                             rule.rule_mode.value,
                             rule.apply_scope.value,
                             int(rule.case_sensitive),

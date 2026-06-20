@@ -30,7 +30,7 @@ export const termRulesApi = {
       method: "GET",
       params: {
         page: params.page ?? 1,
-        page_size: params.page_size ?? 200,
+        page_size: params.page_size ?? 20,
         category_id: params.category_id,
         enabled: params.enabled,
         q: params.q,

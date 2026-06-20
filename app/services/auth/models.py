@@ -17,6 +17,7 @@ class AuthenticatedUser(BaseModel):
     role: InternalUserRole
     tenant_id: str
     company_id: str
+    department_id: str = "default_department"
     display_name: str | None = None
     token_version: int = 1
     token_scopes: list[str] = Field(default_factory=list)
