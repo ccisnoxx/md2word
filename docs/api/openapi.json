@@ -268,6 +268,10 @@
             "title": "Company Id",
             "type": "string"
           },
+          "department_id": {
+            "title": "Department Id",
+            "type": "string"
+          },
           "expires_in": {
             "title": "Expires In",
             "type": "integer"
@@ -317,7 +321,8 @@
           "user_id",
           "username",
           "tenant_id",
-          "company_id"
+          "company_id",
+          "department_id"
         ],
         "title": "AuthTokenResponse",
         "type": "object"
@@ -653,6 +658,10 @@
             "title": "Company Id",
             "type": "string"
           },
+          "department_id": {
+            "title": "Department Id",
+            "type": "string"
+          },
           "display_name": {
             "anyOf": [
               {
@@ -702,7 +711,8 @@
           "roles",
           "permissions",
           "tenant_id",
-          "company_id"
+          "company_id",
+          "department_id"
         ],
         "title": "CurrentUserResponse",
         "type": "object"
@@ -7075,6 +7085,11 @@
       },
       "InternalUserCreateRequest": {
         "properties": {
+          "department_id": {
+            "default": "default_department",
+            "title": "Department Id",
+            "type": "string"
+          },
           "display_name": {
             "anyOf": [
               {
@@ -7176,6 +7191,10 @@
             ],
             "title": "Created By"
           },
+          "department_id": {
+            "title": "Department Id",
+            "type": "string"
+          },
           "display_name": {
             "anyOf": [
               {
@@ -7243,6 +7262,7 @@
           "role",
           "tenant_id",
           "company_id",
+          "department_id",
           "status",
           "created_at",
           "updated_at"
@@ -7252,6 +7272,17 @@
       },
       "InternalUserUpdateRequest": {
         "properties": {
+          "department_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department Id"
+          },
           "display_name": {
             "anyOf": [
               {
@@ -10845,6 +10876,26 @@
             "title": "Priority",
             "type": "integer"
           },
+          "scope_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Id"
+          },
+          "scope_type": {
+            "default": "global",
+            "enum": [
+              "global",
+              "department"
+            ],
+            "title": "Scope Type",
+            "type": "string"
+          },
           "segments": {
             "items": {
               "$ref": "#/components/schemas/TermRuleSegmentWriteRequest"
@@ -11884,6 +11935,11 @@
       },
       "TermRuleResponse": {
         "properties": {
+          "active": {
+            "default": true,
+            "title": "Active",
+            "type": "boolean"
+          },
           "apply_scope": {
             "title": "Apply Scope",
             "type": "string"
@@ -11903,6 +11959,11 @@
           "category_name": {
             "title": "Category Name",
             "type": "string"
+          },
+          "current_version": {
+            "default": 1,
+            "title": "Current Version",
+            "type": "integer"
           },
           "custom_html": {
             "anyOf": [
@@ -11934,6 +11995,10 @@
             "title": "Id",
             "type": "string"
           },
+          "normalized_term": {
+            "title": "Normalized Term",
+            "type": "string"
+          },
           "notes": {
             "title": "Notes",
             "type": "string"
@@ -11944,6 +12009,26 @@
           },
           "rule_mode": {
             "title": "Rule Mode",
+            "type": "string"
+          },
+          "scope_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Id"
+          },
+          "scope_type": {
+            "default": "global",
+            "enum": [
+              "global",
+              "department"
+            ],
+            "title": "Scope Type",
             "type": "string"
           },
           "segments": {
@@ -11964,6 +12049,7 @@
           "category_code",
           "category_name",
           "source_term",
+          "normalized_term",
           "rule_mode",
           "apply_scope",
           "case_sensitive",
@@ -11973,6 +12059,636 @@
           "notes"
         ],
         "title": "TermRuleResponse",
+        "type": "object"
+      },
+      "TermRuleReviewBatchCreateRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TermRuleReviewItemWriteRequest"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "source_file_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source File Id"
+          },
+          "source_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Job Id"
+          }
+        },
+        "title": "TermRuleReviewBatchCreateRequest",
+        "type": "object"
+      },
+      "TermRuleReviewBatchListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TermRuleReviewBatchResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "page_size",
+          "total"
+        ],
+        "title": "TermRuleReviewBatchListResponse",
+        "type": "object"
+      },
+      "TermRuleReviewBatchResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TermRuleReviewItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "source_file_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source File Id"
+          },
+          "source_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Job Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "submitted_by": {
+            "title": "Submitted By",
+            "type": "string"
+          },
+          "submitter_department_id": {
+            "title": "Submitter Department Id",
+            "type": "string"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/TermRuleReviewBatchSummaryResponse"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "submitted_by",
+          "submitter_department_id",
+          "reason",
+          "status",
+          "summary",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TermRuleReviewBatchResponse",
+        "type": "object"
+      },
+      "TermRuleReviewBatchSummaryResponse": {
+        "properties": {
+          "approved": {
+            "default": 0,
+            "title": "Approved",
+            "type": "integer"
+          },
+          "conflict": {
+            "default": 0,
+            "title": "Conflict",
+            "type": "integer"
+          },
+          "pending": {
+            "default": 0,
+            "title": "Pending",
+            "type": "integer"
+          },
+          "rejected": {
+            "default": 0,
+            "title": "Rejected",
+            "type": "integer"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "title": "TermRuleReviewBatchSummaryResponse",
+        "type": "object"
+      },
+      "TermRuleReviewBulkItemResponse": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TermRuleReviewItemResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "status_code": {
+            "title": "Status Code",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "item_id",
+          "ok",
+          "status_code"
+        ],
+        "title": "TermRuleReviewBulkItemResponse",
+        "type": "object"
+      },
+      "TermRuleReviewBulkRequest": {
+        "properties": {
+          "item_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Item Ids",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "TermRuleReviewBulkRequest",
+        "type": "object"
+      },
+      "TermRuleReviewBulkResponse": {
+        "properties": {
+          "action": {
+            "enum": [
+              "approve",
+              "reject"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TermRuleReviewBulkItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "succeeded": {
+            "title": "Succeeded",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action",
+          "total",
+          "succeeded",
+          "failed"
+        ],
+        "title": "TermRuleReviewBulkResponse",
+        "type": "object"
+      },
+      "TermRuleReviewDecisionRequest": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "TermRuleReviewDecisionRequest",
+        "type": "object"
+      },
+      "TermRuleReviewItemResponse": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "base_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Version"
+          },
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "conflict_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conflict Reason"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "normalized_term": {
+            "title": "Normalized Term",
+            "type": "string"
+          },
+          "rejection_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejection Reason"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          },
+          "scope_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Id"
+          },
+          "scope_type": {
+            "title": "Scope Type",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "submitted_snapshot": {
+            "additionalProperties": true,
+            "title": "Submitted Snapshot",
+            "type": "object"
+          },
+          "target_rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Rule Id"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "batch_id",
+          "seq",
+          "action",
+          "status",
+          "scope_type",
+          "normalized_term",
+          "submitted_snapshot",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TermRuleReviewItemResponse",
+        "type": "object"
+      },
+      "TermRuleReviewItemStatus": {
+        "enum": [
+          "pending",
+          "approved",
+          "rejected",
+          "conflict"
+        ],
+        "title": "TermRuleReviewItemStatus",
+        "type": "string"
+      },
+      "TermRuleReviewItemWriteRequest": {
+        "properties": {
+          "action": {
+            "enum": [
+              "create",
+              "update",
+              "delete"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "apply_scope": {
+            "default": "both",
+            "title": "Apply Scope",
+            "type": "string"
+          },
+          "base_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Version"
+          },
+          "case_sensitive": {
+            "default": true,
+            "title": "Case Sensitive",
+            "type": "boolean"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "custom_html": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Html"
+          },
+          "custom_markdown": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Markdown"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "notes": {
+            "default": "",
+            "title": "Notes",
+            "type": "string"
+          },
+          "priority": {
+            "default": 100,
+            "title": "Priority",
+            "type": "integer"
+          },
+          "scope_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Id"
+          },
+          "scope_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "global",
+                  "department"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Type"
+          },
+          "segments": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TermRuleSegmentWriteRequest"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segments"
+          },
+          "source_term": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Term"
+          },
+          "target_rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Rule Id"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "TermRuleReviewItemWriteRequest",
+        "type": "object"
+      },
+      "TermRuleReviewRejectRequest": {
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "TermRuleReviewRejectRequest",
         "type": "object"
       },
       "TermRuleSegmentResponse": {
@@ -12861,6 +13577,32 @@
             ],
             "title": "Priority"
           },
+          "scope_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Id"
+          },
+          "scope_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "global",
+                  "department"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Type"
+          },
           "segments": {
             "anyOf": [
               {
@@ -12888,6 +13630,552 @@
           }
         },
         "title": "TermRuleUpdateRequest",
+        "type": "object"
+      },
+      "TermRuleVersionResponse": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "after_snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After Snapshot"
+          },
+          "before_snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Snapshot"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "normalized_term": {
+            "title": "Normalized Term",
+            "type": "string"
+          },
+          "review_item_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Item Id"
+          },
+          "rule_id": {
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "scope_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Id"
+          },
+          "scope_type": {
+            "title": "Scope Type",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "rule_id",
+          "version",
+          "action",
+          "scope_type",
+          "normalized_term",
+          "created_by",
+          "created_at"
+        ],
+        "title": "TermRuleVersionResponse",
+        "type": "object"
+      },
+      "TerminologyReleaseAssetResponse": {
+        "properties": {
+          "item_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Count"
+          },
+          "resource_id": {
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "snapshot_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Hash"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_id",
+          "version"
+        ],
+        "title": "TerminologyReleaseAssetResponse",
+        "type": "object"
+      },
+      "TerminologyReleaseCopyResponse": {
+        "properties": {
+          "draft": {
+            "$ref": "#/components/schemas/TerminologyReleaseCreateRequest"
+          },
+          "source": {
+            "$ref": "#/components/schemas/TerminologyReleaseResponse"
+          }
+        },
+        "required": [
+          "source",
+          "draft"
+        ],
+        "title": "TerminologyReleaseCopyResponse",
+        "type": "object"
+      },
+      "TerminologyReleaseCreateRequest": {
+        "properties": {
+          "release_note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Note"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/TerminologyReleaseScopeRequest"
+          },
+          "source_release_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Release Id"
+          },
+          "source_release_version": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Release Version"
+          },
+          "term_rule_set_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Term Rule Set Id",
+            "type": "string"
+          },
+          "term_rule_set_version": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Term Rule Set Version",
+            "type": "string"
+          },
+          "translation_term_set_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Translation Term Set Id",
+            "type": "string"
+          },
+          "translation_term_version": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Translation Term Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "translation_term_set_id",
+          "translation_term_version",
+          "term_rule_set_id",
+          "term_rule_set_version",
+          "scope"
+        ],
+        "title": "TerminologyReleaseCreateRequest",
+        "type": "object"
+      },
+      "TerminologyReleaseFindingResponse": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning",
+              "conflict"
+            ],
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "code",
+          "message"
+        ],
+        "title": "TerminologyReleaseFindingResponse",
+        "type": "object"
+      },
+      "TerminologyReleaseListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TerminologyReleaseResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "TerminologyReleaseListResponse",
+        "type": "object"
+      },
+      "TerminologyReleaseResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "release_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Note"
+          },
+          "rolled_back_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rolled Back At"
+          },
+          "rolled_back_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rolled Back By"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/TerminologyReleaseScopeResponse"
+          },
+          "source_release_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Release Id"
+          },
+          "source_release_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Release Version"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "rolled_back"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "term_rule_set": {
+            "$ref": "#/components/schemas/TerminologyReleaseAssetResponse"
+          },
+          "translation_term_set": {
+            "$ref": "#/components/schemas/TerminologyReleaseAssetResponse"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "validation_report": {
+            "$ref": "#/components/schemas/TerminologyReleaseValidationReportResponse"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "status",
+          "scope",
+          "translation_term_set",
+          "term_rule_set",
+          "validation_report",
+          "created_at",
+          "updated_at",
+          "published_at"
+        ],
+        "title": "TerminologyReleaseResponse",
+        "type": "object"
+      },
+      "TerminologyReleaseScopeRequest": {
+        "properties": {
+          "content_type": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Content Type",
+            "type": "string"
+          },
+          "language_pair": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Language Pair",
+            "type": "string"
+          },
+          "project": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Project",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project",
+          "language_pair",
+          "content_type"
+        ],
+        "title": "TerminologyReleaseScopeRequest",
+        "type": "object"
+      },
+      "TerminologyReleaseScopeResponse": {
+        "properties": {
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "language_pair": {
+            "title": "Language Pair",
+            "type": "string"
+          },
+          "project": {
+            "title": "Project",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project",
+          "language_pair",
+          "content_type"
+        ],
+        "title": "TerminologyReleaseScopeResponse",
+        "type": "object"
+      },
+      "TerminologyReleaseValidationReportResponse": {
+        "properties": {
+          "blocking": {
+            "title": "Blocking",
+            "type": "boolean"
+          },
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/TerminologyReleaseFindingResponse"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/TerminologyReleaseFindingResponse"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/TerminologyReleaseValidationSummaryResponse"
+          },
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/TerminologyReleaseFindingResponse"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "valid",
+          "blocking",
+          "summary"
+        ],
+        "title": "TerminologyReleaseValidationReportResponse",
+        "type": "object"
+      },
+      "TerminologyReleaseValidationSummaryResponse": {
+        "properties": {
+          "conflict_count": {
+            "default": 0,
+            "title": "Conflict Count",
+            "type": "integer"
+          },
+          "error_count": {
+            "default": 0,
+            "title": "Error Count",
+            "type": "integer"
+          },
+          "overlapping_release_count": {
+            "default": 0,
+            "title": "Overlapping Release Count",
+            "type": "integer"
+          },
+          "publishable_term_count": {
+            "default": 0,
+            "title": "Publishable Term Count",
+            "type": "integer"
+          },
+          "warning_count": {
+            "default": 0,
+            "title": "Warning Count",
+            "type": "integer"
+          }
+        },
+        "title": "TerminologyReleaseValidationSummaryResponse",
         "type": "object"
       },
       "TranslationProfileDetailResponse": {
@@ -13256,6 +14544,22 @@
             ],
             "title": "Category"
           },
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
           "domain": {
             "anyOf": [
               {
@@ -13267,9 +14571,27 @@
             ],
             "title": "Domain"
           },
+          "forbidden_translations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Forbidden Translations",
+            "type": "array"
+          },
           "language_pair": {
             "title": "Language Pair",
             "type": "string"
+          },
+          "maintainer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maintainer"
           },
           "normalized_source_term": {
             "title": "Normalized Source Term",
@@ -13285,6 +14607,24 @@
             "title": "Priority",
             "type": "integer"
           },
+          "project": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project"
+          },
+          "recommended_translations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recommended Translations",
+            "type": "array"
+          },
           "set_id": {
             "title": "Set Id",
             "type": "string"
@@ -13297,8 +14637,27 @@
             "title": "Status",
             "type": "string"
           },
+          "synonyms": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Synonyms",
+            "type": "array"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
           "target_term": {
             "title": "Target Term",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
             "type": "string"
           },
           "version": {
@@ -13313,7 +14672,9 @@
           "target_term",
           "version",
           "set_id",
-          "status"
+          "status",
+          "created_at",
+          "updated_at"
         ],
         "title": "TranslationTermEntryResponse",
         "type": "object"
@@ -14389,6 +15750,17 @@
             ],
             "title": "Category"
           },
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          },
           "domain": {
             "anyOf": [
               {
@@ -14399,6 +15771,31 @@
               }
             ],
             "title": "Domain"
+          },
+          "forbidden_translations": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden Translations"
+          },
+          "maintainer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maintainer"
           },
           "note": {
             "anyOf": [
@@ -14422,6 +15819,31 @@
             ],
             "title": "Priority"
           },
+          "project": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project"
+          },
+          "recommended_translations": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommended Translations"
+          },
           "source_term": {
             "title": "Source Term",
             "type": "string"
@@ -14436,6 +15858,34 @@
               }
             ],
             "title": "Status"
+          },
+          "synonyms": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Synonyms"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
           },
           "target_term": {
             "anyOf": [
@@ -22791,6 +24241,611 @@
         ]
       }
     },
+    "/api/v1/term-rule-reviews/batches": {
+      "get": {
+        "operationId": "list_review_batches_api_v1_term_rule_reviews_batches_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mine",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Mine",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "submitted_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Submitted By"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermRuleReviewBatchListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Review Batches",
+        "tags": [
+          "term-rule-reviews"
+        ]
+      },
+      "post": {
+        "operationId": "create_review_batch_api_v1_term_rule_reviews_batches_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TermRuleReviewBatchCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermRuleReviewBatchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Review Batch",
+        "tags": [
+          "term-rule-reviews"
+        ]
+      }
+    },
+    "/api/v1/term-rule-reviews/batches/{batch_id}": {
+      "get": {
+        "operationId": "get_review_batch_api_v1_term_rule_reviews_batches__batch_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermRuleReviewBatchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Review Batch",
+        "tags": [
+          "term-rule-reviews"
+        ]
+      }
+    },
+    "/api/v1/term-rule-reviews/history": {
+      "get": {
+        "operationId": "list_term_rule_versions_api_v1_term_rule_reviews_history_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "rule_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rule Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TermRuleVersionResponse"
+                  },
+                  "title": "Response List Term Rule Versions Api V1 Term Rule Reviews History Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Term Rule Versions",
+        "tags": [
+          "term-rule-reviews"
+        ]
+      }
+    },
+    "/api/v1/term-rule-reviews/items": {
+      "get": {
+        "operationId": "list_review_items_api_v1_term_rule_reviews_items_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TermRuleReviewItemStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TermRuleReviewItemResponse"
+                  },
+                  "title": "Response List Review Items Api V1 Term Rule Reviews Items Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Review Items",
+        "tags": [
+          "term-rule-reviews"
+        ]
+      }
+    },
+    "/api/v1/term-rule-reviews/items/bulk-approve": {
+      "post": {
+        "operationId": "bulk_approve_review_items_api_v1_term_rule_reviews_items_bulk_approve_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TermRuleReviewBulkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermRuleReviewBulkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bulk Approve Review Items",
+        "tags": [
+          "term-rule-reviews"
+        ]
+      }
+    },
+    "/api/v1/term-rule-reviews/items/bulk-reject": {
+      "post": {
+        "operationId": "bulk_reject_review_items_api_v1_term_rule_reviews_items_bulk_reject_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TermRuleReviewBulkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermRuleReviewBulkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bulk Reject Review Items",
+        "tags": [
+          "term-rule-reviews"
+        ]
+      }
+    },
+    "/api/v1/term-rule-reviews/items/{item_id}/approve": {
+      "post": {
+        "operationId": "approve_review_item_api_v1_term_rule_reviews_items__item_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TermRuleReviewDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermRuleReviewItemResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Review Item",
+        "tags": [
+          "term-rule-reviews"
+        ]
+      }
+    },
+    "/api/v1/term-rule-reviews/items/{item_id}/reject": {
+      "post": {
+        "operationId": "reject_review_item_api_v1_term_rule_reviews_items__item_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TermRuleReviewRejectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermRuleReviewItemResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Review Item",
+        "tags": [
+          "term-rule-reviews"
+        ]
+      }
+    },
     "/api/v1/term-rule-sets": {
       "get": {
         "operationId": "list_term_rule_sets_api_v1_term_rule_sets_get",
@@ -24181,6 +26236,22 @@
               ],
               "title": "X-Admin-Token"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
           }
         ],
         "requestBody": {
@@ -24508,6 +26579,22 @@
               ],
               "title": "X-Admin-Token"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
           }
         ],
         "responses": {
@@ -24620,6 +26707,22 @@
               ],
               "title": "X-Admin-Token"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
           }
         ],
         "requestBody": {
@@ -24657,6 +26760,515 @@
         "summary": "Update Term Rule",
         "tags": [
           "term-rules"
+        ]
+      }
+    },
+    "/api/v1/terminology-releases": {
+      "get": {
+        "description": "Return terminology governance releases, optionally filtered by lifecycle and scope.",
+        "operationId": "list_terminology_releases_api_v1_terminology_releases_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "active",
+                    "rolled_back"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project"
+            }
+          },
+          {
+            "in": "query",
+            "name": "language_pair",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Language Pair"
+            }
+          },
+          {
+            "in": "query",
+            "name": "content_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Content Type"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TerminologyReleaseListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Terminology Releases",
+        "tags": [
+          "terminology-releases"
+        ]
+      },
+      "post": {
+        "description": "Publish a terminology governance package after preflight passes.",
+        "operationId": "publish_terminology_release_api_v1_terminology_releases_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TerminologyReleaseCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TerminologyReleaseResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Terminology Release",
+        "tags": [
+          "terminology-releases"
+        ]
+      }
+    },
+    "/api/v1/terminology-releases/preflight": {
+      "post": {
+        "description": "Run read-only preflight for a terminology governance release request.",
+        "operationId": "preflight_terminology_release_api_v1_terminology_releases_preflight_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TerminologyReleaseCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TerminologyReleaseValidationReportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preflight Terminology Release",
+        "tags": [
+          "terminology-releases"
+        ]
+      }
+    },
+    "/api/v1/terminology-releases/{release_id}": {
+      "get": {
+        "description": "Return one terminology governance release version or the latest version.",
+        "operationId": "get_terminology_release_api_v1_terminology_releases__release_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "release_id",
+            "required": true,
+            "schema": {
+              "title": "Release Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TerminologyReleaseResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Terminology Release",
+        "tags": [
+          "terminology-releases"
+        ]
+      }
+    },
+    "/api/v1/terminology-releases/{release_id}/copy": {
+      "post": {
+        "description": "Return a create request prefilled from an existing release.",
+        "operationId": "copy_terminology_release_api_v1_terminology_releases__release_id__copy_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "release_id",
+            "required": true,
+            "schema": {
+              "title": "Release Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TerminologyReleaseCopyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Copy Terminology Release",
+        "tags": [
+          "terminology-releases"
+        ]
+      }
+    },
+    "/api/v1/terminology-releases/{release_id}/rollback": {
+      "post": {
+        "description": "Rollback the latest active terminology governance release version.",
+        "operationId": "rollback_terminology_release_api_v1_terminology_releases__release_id__rollback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "release_id",
+            "required": true,
+            "schema": {
+              "title": "Release Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TerminologyReleaseResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rollback Terminology Release",
+        "tags": [
+          "terminology-releases"
         ]
       }
     },

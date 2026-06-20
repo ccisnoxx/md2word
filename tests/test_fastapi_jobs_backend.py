@@ -716,6 +716,7 @@ def build_test_runtime(
         term_rule_review_service=None,
         translation_term_set_version_service=translation_term_set_version_service,
         translation_term_proposal_service=translation_term_proposal_service,
+        terminology_release_service=None,
         translation_profile_service=translation_profile_service,
         resource_version_service=resource_version_service,
         job_resource_snapshot_service=job_resource_snapshot_service,
