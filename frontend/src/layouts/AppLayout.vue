@@ -6,6 +6,7 @@
         :groups="navGroups"
         :active-group-id="routeContext.groupId"
         :active-item-id="routeContext.itemId"
+        :brand-to="defaultProtectedRoute"
         :collapsed="sidebarCollapsed"
         @navigate="handleSidebarNavigate"
         @toggle-collapse="toggleSidebarCollapsed"
@@ -24,6 +25,7 @@
         :groups="navGroups"
         :active-group-id="routeContext.groupId"
         :active-item-id="routeContext.itemId"
+        :brand-to="defaultProtectedRoute"
         mobile
         @navigate="handleSidebarNavigate"
       />
@@ -65,7 +67,7 @@ import { useRoute, useRouter } from "vue-router";
 import AppBreadcrumb from "@/components/AppBreadcrumb.vue";
 import AppSidebar from "@/components/AppSidebar.vue";
 import AppThemeToggle from "@/components/AppThemeToggle.vue";
-import { getAppNavigationGroups, getAppRouteContext, type AppAccessContext } from "@/navigation/appShell";
+import { getAppNavigationGroups, getAppRouteContext, getDefaultProtectedRoute, type AppAccessContext } from "@/navigation/appShell";
 import { useAuthStore } from "@/stores/auth";
 import { getStoredSidebarCollapsed, persistSidebarCollapsed } from "@/utils/sidebarState";
 
@@ -82,6 +84,7 @@ const access = computed<AppAccessContext>(() => ({
 }));
 const navGroups = computed(() => getAppNavigationGroups(access.value));
 const routeContext = computed(() => getAppRouteContext(route, access.value));
+const defaultProtectedRoute = computed(() => getDefaultProtectedRoute(access.value));
 const userDisplayName = computed(() => auth.user?.display_name || auth.user?.username || "未命名用户");
 const userRoleLabel = computed(() => auth.user?.role || "");
 

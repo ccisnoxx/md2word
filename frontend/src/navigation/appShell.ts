@@ -12,6 +12,7 @@ import {
   Management,
   Monitor,
   Notebook,
+  Odometer,
   Operation,
   Reading,
   Setting,
@@ -22,6 +23,7 @@ import {
 export type AppNavGroupId = "processing" | "quality" | "configuration" | "system";
 
 export type AppNavItemId =
+  | "cockpit"
   | "jobs"
   | "incidents"
   | "job-create"
@@ -59,6 +61,7 @@ export type AppNavItem = {
   icon: Component;
   roles?: string[];
   permissions?: string[];
+  anyPermissions?: string[];
   badge?: string;
   tone?: AppNavTone;
 };
@@ -100,12 +103,15 @@ const GROUP_LABELS: Record<AppNavGroupId, string> = {
   system: "系统运维",
 };
 
+export const COCKPIT_SOURCE_PERMISSIONS = ["document_jobs:read", "translation_qa:read"] as const;
+
 const NAV_GROUP_DEFINITIONS: AppNavGroupDefinition[] = [
   {
     id: "processing",
     label: GROUP_LABELS.processing,
     icon: Files,
     items: [
+      { id: "cockpit", label: "今日工作", to: "/cockpit", icon: Odometer, anyPermissions: [...COCKPIT_SOURCE_PERMISSIONS] },
       { id: "jobs", label: "任务工作台", to: "/jobs", icon: Files, permissions: ["document_jobs:read"] },
       { id: "incidents", label: "异常处理", to: "/incidents", icon: Operation, permissions: ["document_jobs:read"] },
       { id: "job-create", label: "创建任务", to: "/jobs/new", icon: DocumentAdd, permissions: ["document_jobs:create"] },
@@ -179,6 +185,7 @@ const NAV_GROUP_DEFINITIONS: AppNavGroupDefinition[] = [
 ];
 
 const ROUTE_OWNERS: Record<string, RouteOwnership> = {
+  cockpit: { groupId: "processing", itemId: "cockpit", pageLabel: "今日工作" },
   jobs: { groupId: "processing", itemId: "jobs", pageLabel: "任务工作台" },
   incidents: { groupId: "processing", itemId: "incidents", pageLabel: "异常处理" },
   "job-create": { groupId: "processing", itemId: "job-create", pageLabel: "创建任务" },
@@ -215,6 +222,9 @@ function hasRouteAccess(item: AppNavItemDefinition, access: AppAccessContext): b
   if (item.permissions?.length && !item.permissions.every((permission) => access.permissions.includes(permission))) {
     return false;
   }
+  if (item.anyPermissions?.length && !item.anyPermissions.some((permission) => access.permissions.includes(permission))) {
+    return false;
+  }
   return true;
 }
 
@@ -236,6 +246,17 @@ export function findNavigationItem(itemId: AppNavItemId | null, access: AppAcces
     }
   }
   return null;
+}
+
+export function canAccessOperationsCockpit(access: AppAccessContext): boolean {
+  return COCKPIT_SOURCE_PERMISSIONS.some((permission) => access.permissions.includes(permission));
+}
+
+export function getDefaultProtectedRoute(access: AppAccessContext): RouteLocationRaw {
+  if (canAccessOperationsCockpit(access)) {
+    return "/cockpit";
+  }
+  return getAppNavigationGroups(access)[0]?.items[0]?.to ?? "/forbidden";
 }
 
 function stringParam(value: unknown): string {
@@ -265,6 +286,8 @@ export function getBreadcrumbItems(route: RouteLocationNormalizedLoaded, access:
   const templateId = stringParam(route.params.templateId);
 
   switch (route.name) {
+    case "cockpit":
+      return [{ label: "今日工作" }];
     case "jobs":
       return [{ label: "任务工作台" }];
     case "job-create":

@@ -985,6 +985,33 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
       }),
     });
   });
+  await page.route(/\/api\/v1\/document-job-incidents(?:\/.*)?(?:\?.*)?$/, async (route) => {
+    const url = new URL(route.request().url());
+    if (route.request().method() === "GET" && url.pathname === "/api/v1/document-job-incidents") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [],
+          page: 1,
+          page_size: Number(url.searchParams.get("page_size") || 20),
+          total: 0,
+          summary: {
+            total: 0,
+            failed: 0,
+            blocked: 0,
+            stalled: 0,
+            retryable: 0,
+            non_retryable: 0,
+            by_status: {},
+            by_failure_type: {},
+          },
+        }),
+      });
+      return;
+    }
+    await route.fallback();
+  });
   await page.route("**/api/v1/health/ready", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(healthReady) });
   });
@@ -1184,7 +1211,7 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
       body: JSON.stringify({
         job_id: documentJob.id,
         file_id: "file_result_smoke",
-        download_url: "/api/v1/files/file_result_smoke/content",
+        download_url: "about:blank#file_result_smoke",
         method: "GET",
         expires_at: "2026-06-11T00:11:00Z",
         file: {
@@ -1533,7 +1560,7 @@ async function loginAsOperator(page: Page): Promise<void> {
   await page.getByPlaceholder("请输入用户名").fill("operator");
   await page.getByPlaceholder("请输入密码").fill("operator-pass");
   await page.getByRole("button", { name: "登录工作台" }).click();
-  await expect(page).toHaveURL(/\/jobs(\?|$)/);
+  await expect(page).toHaveURL(/\/cockpit(\?|$)/);
 }
 
 async function expectNoPageHorizontalOverflow(page: Page): Promise<void> {
@@ -1585,6 +1612,7 @@ test("operations redesign renders verified desktop and mobile screenshots", asyn
     await page.screenshot({ path: testInfo.outputPath(`ops-login-${viewport.name}.png`) });
 
     await loginAsOperator(page);
+    await page.goto("/jobs?sort=created_at_desc&include_archived=false&page=1");
     await expect(page.getByRole("heading", { name: "任务列表" })).toBeVisible();
     await expect(page.getByRole("button", { name: /失败任务/ })).toBeVisible();
     await expect(page.getByText("smoke.pdf")).toBeVisible();
@@ -1666,7 +1694,8 @@ test("operator can log in and inspect the document job workbench", async ({ page
   await page.getByPlaceholder("请输入密码").fill("operator-pass");
   await page.getByRole("button", { name: "登录工作台" }).click();
 
-  await expect(page).toHaveURL(/\/jobs(\?|$)/);
+  await expect(page).toHaveURL(/\/cockpit(\?|$)/);
+  await page.goto("/jobs?sort=created_at_desc&include_archived=false&page=1");
   await expect(page.getByRole("heading", { name: "任务列表" })).toBeVisible();
   await expect(page.getByText("smoke.pdf")).toBeVisible();
   await page.getByRole("button", { name: "处理中" }).click();
@@ -1691,7 +1720,8 @@ test("operator sees list action conflicts after the refresh completes", async ({
   await page.getByPlaceholder("请输入用户名").fill("operator");
   await page.getByPlaceholder("请输入密码").fill("operator-pass");
   await page.getByRole("button", { name: "登录工作台" }).click();
-  await expect(page).toHaveURL(/\/jobs(\?|$)/);
+  await expect(page).toHaveURL(/\/cockpit(\?|$)/);
+  await page.goto("/jobs?sort=created_at_desc&include_archived=false&page=1");
 
   await page.getByRole("button", { name: "下载" }).click();
   await expect(page.getByText("任务状态已变化，请刷新后重试。")).toBeVisible();
@@ -1706,7 +1736,7 @@ test("operator cannot create a job when config summary is unavailable", async ({
   await page.getByPlaceholder("请输入用户名").fill("operator");
   await page.getByPlaceholder("请输入密码").fill("operator-pass");
   await page.getByRole("button", { name: "登录工作台" }).click();
-  await expect(page).toHaveURL(/\/jobs(\?|$)/);
+  await expect(page).toHaveURL(/\/cockpit(\?|$)/);
 
   await page.goto("/jobs/new");
   await expect(page.getByRole("heading", { name: "创建转换任务" })).toBeVisible();
@@ -1727,7 +1757,7 @@ test("operator can create an English to Chinese document job from the mode selec
   await page.getByPlaceholder("请输入用户名").fill("operator");
   await page.getByPlaceholder("请输入密码").fill("operator-pass");
   await page.getByRole("button", { name: "登录工作台" }).click();
-  await expect(page).toHaveURL(/\/jobs(\?|$)/);
+  await expect(page).toHaveURL(/\/cockpit(\?|$)/);
 
   await page.goto("/jobs/new");
   await expect(page.getByRole("heading", { name: "创建转换任务" })).toBeVisible();
@@ -1756,7 +1786,7 @@ test("operator sees unavailable English to Chinese mode disabled while direct mo
   await page.getByPlaceholder("请输入用户名").fill("operator");
   await page.getByPlaceholder("请输入密码").fill("operator-pass");
   await page.getByRole("button", { name: "登录工作台" }).click();
-  await expect(page).toHaveURL(/\/jobs(\?|$)/);
+  await expect(page).toHaveURL(/\/cockpit(\?|$)/);
 
   await page.goto("/jobs/new");
   await expect(page.getByRole("heading", { name: "创建转换任务" })).toBeVisible();
@@ -1784,7 +1814,7 @@ test("operator sees an explicit forbidden state for admin-only routes", async ({
   await page.getByPlaceholder("请输入用户名").fill("operator");
   await page.getByPlaceholder("请输入密码").fill("operator-pass");
   await page.getByRole("button", { name: "登录工作台" }).click();
-  await expect(page).toHaveURL(/\/jobs(\?|$)/);
+  await expect(page).toHaveURL(/\/cockpit(\?|$)/);
 
   await page.goto("/settings");
   await expect(page).toHaveURL(/\/forbidden/);
@@ -1807,7 +1837,7 @@ test("admin can edit Word page styles and save a draft version", async ({ page }
   await page.getByPlaceholder("请输入用户名").fill("admin");
   await page.getByPlaceholder("请输入密码").fill("admin-pass");
   await page.getByRole("button", { name: "登录工作台" }).click();
-  await expect(page).toHaveURL(/\/jobs(\?|$)/);
+  await expect(page).toHaveURL(/\/cockpit(\?|$)/);
 
   await page.goto("/settings/templates");
   await expect(page.getByRole("heading", { name: "Word 模板文档", level: 1 })).toBeVisible();
@@ -1845,7 +1875,7 @@ test("operator can inspect the translation QA queue with backend all-status summ
   await page.getByPlaceholder("请输入用户名").fill("operator");
   await page.getByPlaceholder("请输入密码").fill("operator-pass");
   await page.getByRole("button", { name: "登录工作台" }).click();
-  await expect(page).toHaveURL(/\/jobs(\?|$)/);
+  await expect(page).toHaveURL(/\/cockpit(\?|$)/);
 
   await page.goto("/translation-qa?translation_qa_status=all&sort=updated_at_desc&include_archived=false&page=1");
   await expect(page.getByRole("heading", { name: "翻译 QA 队列" })).toBeVisible();
@@ -1862,7 +1892,7 @@ test("operator can use the translation QA drawer review flow", async ({ page }) 
   await page.getByPlaceholder("请输入用户名").fill("operator");
   await page.getByPlaceholder("请输入密码").fill("operator-pass");
   await page.getByRole("button", { name: "登录工作台" }).click();
-  await expect(page).toHaveURL(/\/jobs(\?|$)/);
+  await expect(page).toHaveURL(/\/cockpit(\?|$)/);
 
   await page.goto("/translation-qa?translation_qa_status=all&sort=updated_at_desc&include_archived=false&page=1&qa_job_id=docjob_qa_001");
   await expect(page.locator(".translation-qa-review-drawer")).toBeVisible();
@@ -1908,7 +1938,7 @@ test("operator can use the shared translation QA panel on the detail page", asyn
   await page.getByPlaceholder("请输入用户名").fill("operator");
   await page.getByPlaceholder("请输入密码").fill("operator-pass");
   await page.getByRole("button", { name: "登录工作台" }).click();
-  await expect(page).toHaveURL(/\/jobs(\?|$)/);
+  await expect(page).toHaveURL(/\/cockpit(\?|$)/);
 
   await page.goto("/jobs/docjob_qa_001/translation-qa");
   await expect(page.getByRole("heading", { name: "翻译 QA", level: 1 })).toBeVisible();
@@ -1928,7 +1958,7 @@ test("operator sees unavailable translation QA in the queue drawer as readonly",
   await page.getByPlaceholder("请输入用户名").fill("operator");
   await page.getByPlaceholder("请输入密码").fill("operator-pass");
   await page.getByRole("button", { name: "登录工作台" }).click();
-  await expect(page).toHaveURL(/\/jobs(\?|$)/);
+  await expect(page).toHaveURL(/\/cockpit(\?|$)/);
 
   await page.goto("/translation-qa?translation_qa_status=all&sort=updated_at_desc&include_archived=false&page=1&qa_job_id=docjob_qa_001");
   await expect(page.locator(".translation-qa-review-drawer")).toBeVisible();
@@ -1946,7 +1976,7 @@ test("operator sees unavailable translation QA as readonly and cannot submit rev
   await page.getByPlaceholder("请输入用户名").fill("operator");
   await page.getByPlaceholder("请输入密码").fill("operator-pass");
   await page.getByRole("button", { name: "登录工作台" }).click();
-  await expect(page).toHaveURL(/\/jobs(\?|$)/);
+  await expect(page).toHaveURL(/\/cockpit(\?|$)/);
 
   await page.goto("/jobs/docjob_qa_001/translation-qa");
   await expect(page.getByRole("heading", { name: "翻译 QA", level: 1 })).toBeVisible();
@@ -1962,7 +1992,7 @@ test("admin can inspect status, ops gates, and file retention workspaces", async
   await page.getByPlaceholder("请输入用户名").fill("admin");
   await page.getByPlaceholder("请输入密码").fill("admin-pass");
   await page.getByRole("button", { name: "登录工作台" }).click();
-  await expect(page).toHaveURL(/\/jobs(\?|$)/);
+  await expect(page).toHaveURL(/\/cockpit(\?|$)/);
 
   await page.goto("/system-status");
   await expect(page.getByRole("heading", { name: "系统状态", level: 1 })).toBeVisible();

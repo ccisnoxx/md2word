@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RouteLocationNormalizedLoaded } from "vue-router";
 
-import { getAppNavigationGroups, getAppRouteContext, type AppAccessContext } from "@/navigation/appShell";
+import { getAppNavigationGroups, getAppRouteContext, getDefaultProtectedRoute, type AppAccessContext } from "@/navigation/appShell";
 
 const operatorAccess: AppAccessContext = {
   role: "operator",
@@ -48,7 +48,7 @@ describe("app shell navigation", () => {
     const operatorItemIds = operatorGroups.flatMap((group) => group.items.map((item) => item.id));
 
     expect(operatorGroups.map((group) => group.id)).toEqual(["processing", "quality"]);
-    expect(operatorItemIds).toEqual(["jobs", "job-create", "translation-qa", "term-proposals"]);
+    expect(operatorItemIds).toEqual(["cockpit", "jobs", "incidents", "job-create", "translation-qa", "term-proposals"]);
     expect(operatorItemIds).not.toContain("settings");
     expect(operatorItemIds).not.toContain("system-status");
 
@@ -56,6 +56,45 @@ describe("app shell navigation", () => {
     expect(adminItemIds).toContain("templates");
     expect(adminItemIds).toContain("ops-dashboard");
     expect(adminItemIds).toContain("file-retention");
+  });
+
+  it("shows the cockpit for any underlying source permission and keeps it first", () => {
+    const qaOnlyGroups = getAppNavigationGroups({
+      role: "operator",
+      roles: ["operator"],
+      permissions: ["translation_qa:read"],
+    });
+    const qaOnlyItemIds = qaOnlyGroups.flatMap((group) => group.items.map((item) => item.id));
+    expect(qaOnlyItemIds[0]).toBe("cockpit");
+    expect(qaOnlyItemIds).toContain("translation-qa");
+    expect(qaOnlyItemIds).not.toContain("jobs");
+
+    const settingsOnlyGroups = getAppNavigationGroups({
+      role: "operator",
+      roles: ["operator"],
+      permissions: ["settings:read"],
+    });
+    expect(settingsOnlyGroups.flatMap((group) => group.items.map((item) => item.id))).not.toContain("cockpit");
+  });
+
+  it("resolves default protected landing with a cockpit-first fallback", () => {
+    expect(getDefaultProtectedRoute(operatorAccess)).toBe("/cockpit");
+    expect(
+      getDefaultProtectedRoute({
+        role: "operator",
+        roles: ["operator"],
+        permissions: ["settings:read"],
+      }),
+    ).toBe("/settings/term-rule-sets");
+    expect(getDefaultProtectedRoute({ role: "guest", roles: ["guest"], permissions: [] })).toBe("/forbidden");
+  });
+
+  it("maps cockpit routes to the processing navigation context", () => {
+    const context = getAppRouteContext(routeFixture("cockpit"), operatorAccess);
+    expect(context.groupId).toBe("processing");
+    expect(context.itemId).toBe("cockpit");
+    expect(context.pageLabel).toBe("今日工作");
+    expect(context.breadcrumbs.map((item) => item.label)).toEqual(["今日工作"]);
   });
 
   it("maps detail routes back to their owned sidebar item", () => {
