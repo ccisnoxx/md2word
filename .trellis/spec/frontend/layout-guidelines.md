@@ -25,6 +25,15 @@ Do not rely on the default CSS grid alignment on `main.app-page`. With `min-heig
 - Prefer flat or lightly elevated panels. Avoid broad gradients, glass effects, and decorative grid backgrounds on dense operational pages.
 - If a page needs a bottom fixed bulk-action bar, ensure no ancestor transform traps fixed positioning. Page-level entry animation may need to be disabled on that page.
 
+## Personal Cockpit Aggregators
+
+Personal cockpit or landing pages that summarize work across existing queues must be launch surfaces, not second queue implementations:
+
+- Reuse existing page APIs and saved-view query helpers, such as `jobsSavedViewStateToQuery`, `translationQaSavedViewStateToQuery`, and `incidentsSavedViewStateToQuery`.
+- Deep links must preserve the destination page's query contract, including drawer parameters like `qa_job_id` and `incident_job_id`.
+- Fetch only source modules allowed by the current account permissions, and show partial module errors without blocking successfully loaded queues.
+- Keep bulk actions, team assignment, drag/drop customization, realtime push, and BI dashboards in their owning pages or separate features unless the task explicitly changes that contract.
+
 ## Page-Level Drawers
 
 Workbench pages that open a right-side detail or review drawer from an in-page list should render the overlay at document level and keep URL state reversible:

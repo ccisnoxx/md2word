@@ -136,6 +136,7 @@ import { useRoute, useRouter } from "vue-router";
 
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import AppThemeToggle from "@/components/AppThemeToggle.vue";
+import { getDefaultProtectedRoute } from "@/navigation/appShell";
 import { useAuthStore } from "@/stores/auth";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 
@@ -180,7 +181,13 @@ async function submit(): Promise<void> {
   error.value = null;
   try {
     await auth.login({ username: form.username, password: form.password });
-    const redirect = typeof route.query.redirect === "string" ? route.query.redirect : "/jobs";
+    const redirect = typeof route.query.redirect === "string"
+      ? route.query.redirect
+      : getDefaultProtectedRoute({
+          role: auth.user?.role ?? null,
+          roles: auth.user?.roles ?? [],
+          permissions: auth.user?.permissions ?? [],
+        });
     await router.push(redirect);
   } catch (caught) {
     error.value = normalizeApiError(caught);

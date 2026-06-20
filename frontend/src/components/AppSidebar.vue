@@ -2,7 +2,7 @@
 <template>
   <div class="app-sidebar" :class="{ 'is-collapsed': isCompact, 'is-mobile': mobile }">
     <div class="sidebar-brand-row">
-      <router-link class="sidebar-brand" to="/jobs" :aria-label="brandAriaLabel" @click="emitNavigate">
+      <router-link class="sidebar-brand" :to="brandTo" :aria-label="brandAriaLabel" @click="emitNavigate">
         <span class="sidebar-brand-mark" aria-hidden="true">
           <el-icon><DocumentChecked /></el-icon>
         </span>
@@ -85,6 +85,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { ArrowDown, ArrowRight, DocumentChecked, Expand, Fold } from "@element-plus/icons-vue";
+import type { RouteLocationRaw } from "vue-router";
 
 import type { AppNavGroup, AppNavGroupId, AppNavItemId } from "@/navigation/appShell";
 
@@ -93,12 +94,14 @@ const props = withDefaults(
     groups: AppNavGroup[];
     activeGroupId?: AppNavGroupId | null;
     activeItemId?: AppNavItemId | null;
+    brandTo?: RouteLocationRaw;
     collapsed?: boolean;
     mobile?: boolean;
   }>(),
   {
     activeGroupId: null,
     activeItemId: null,
+    brandTo: "/cockpit",
     collapsed: false,
     mobile: false,
   },

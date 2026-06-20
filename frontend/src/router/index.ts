@@ -13,6 +13,7 @@ import JobDetailPage from "@/pages/JobDetailPage.vue";
 import JobsPage from "@/pages/JobsPage.vue";
 import LoginPage from "@/pages/LoginPage.vue";
 import OpsDashboardPage from "@/pages/OpsDashboardPage.vue";
+import OperationsCockpitPage from "@/pages/OperationsCockpitPage.vue";
 import SettingsHomePage from "@/pages/SettingsHomePage.vue";
 import SystemStatusPage from "@/pages/SystemStatusPage.vue";
 import TemplateDetailPage from "@/pages/TemplateDetailPage.vue";
@@ -26,6 +27,7 @@ import TranslationResultQaPage from "@/pages/TranslationResultQaPage.vue";
 import TranslationTermSetPage from "@/pages/TranslationTermSetPage.vue";
 import WordPageStyleDetailPage from "@/pages/WordPageStyleDetailPage.vue";
 import WordPageStyleListPage from "@/pages/WordPageStyleListPage.vue";
+import { getDefaultProtectedRoute, type AppAccessContext } from "@/navigation/appShell";
 import { pinia } from "@/stores";
 import { useAuthStore } from "@/stores/auth";
 
@@ -43,7 +45,8 @@ const router = createRouter({
       component: AppLayout,
       meta: { requiresAuth: true },
       children: [
-        { path: "", redirect: "/jobs" },
+        { path: "", name: "protected-root", component: OperationsCockpitPage },
+        { path: "cockpit", name: "cockpit", component: OperationsCockpitPage },
         { path: "forbidden", name: "forbidden", component: ForbiddenPage },
         { path: "jobs", name: "jobs", component: JobsPage, meta: { permissions: ["document_jobs:read"] } },
         { path: "incidents", name: "incidents", component: IncidentTriagePage, meta: { permissions: ["document_jobs:read"] } },
@@ -127,10 +130,18 @@ const router = createRouter({
     },
     {
       path: "/:pathMatch(.*)*",
-      redirect: "/jobs",
+      redirect: "/cockpit",
     },
   ],
 });
+
+function authAccess(auth: ReturnType<typeof useAuthStore>): AppAccessContext {
+  return {
+    role: auth.user?.role ?? null,
+    roles: auth.user?.roles ?? [],
+    permissions: auth.user?.permissions ?? [],
+  };
+}
 
 function loginRedirect(
   to: RouteLocationNormalized,
@@ -181,7 +192,7 @@ router.beforeEach(async (to) => {
       if (!auth.user) {
         await auth.loadCurrentUser();
       }
-      return "/jobs";
+      return getDefaultProtectedRoute(authAccess(auth));
     } catch {
       auth.logout();
       return true;
@@ -199,6 +210,10 @@ router.beforeEach(async (to) => {
       auth.logout();
       return loginRedirect(to, authFailureReason(caught));
     }
+  }
+
+  if (to.name === "protected-root") {
+    return getDefaultProtectedRoute(authAccess(auth));
   }
 
   const allowedRoles = routeRoles(to);
