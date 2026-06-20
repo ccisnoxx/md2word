@@ -121,7 +121,7 @@ MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
         created_at VARCHAR(40) NOT NULL,
         updated_at VARCHAR(40) NOT NULL,
         PRIMARY KEY (term_rule_set_id, version, rule_id),
-        UNIQUE KEY uq_term_rules_scoped_source (term_rule_set_id, version, scope_type, scope_key, normalized_term),
+        KEY idx_term_rules_scoped_source (term_rule_set_id, version, scope_type, scope_key, normalized_term),
         KEY idx_term_rules_category (term_rule_set_id, version, category_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
@@ -453,13 +453,14 @@ MYSQL_SCHEMA_COLUMN_MAINTENANCE: tuple[tuple[str, str, str], ...] = (
 
 MYSQL_SCHEMA_INDEX_DROP_MAINTENANCE: tuple[tuple[str, str], ...] = (
     ("term_rules", "uq_term_rules_source"),
+    ("term_rules", "uq_term_rules_scoped_source"),
 )
 
 MYSQL_SCHEMA_INDEX_MAINTENANCE: tuple[tuple[str, str, str], ...] = (
     (
         "term_rules",
-        "uq_term_rules_scoped_source",
-        "ALTER TABLE term_rules ADD UNIQUE KEY uq_term_rules_scoped_source "
+        "idx_term_rules_scoped_source",
+        "ALTER TABLE term_rules ADD KEY idx_term_rules_scoped_source "
         "(term_rule_set_id, version, scope_type, scope_key, normalized_term)",
     ),
 )
