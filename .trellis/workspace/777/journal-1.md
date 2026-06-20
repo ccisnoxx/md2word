@@ -379,3 +379,36 @@ Implemented ninth-round frontend diagnostic UX for Job Detail, Incident drawer, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: Terminology governance package release
+
+**Date**: 2026-06-20
+**Task**: Terminology governance package release
+**Branch**: `main`
+
+### Summary
+
+Implemented terminology governance package release flow, quality menu terminology IA updates, terminology field governance, and validation coverage.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f79acc4c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
