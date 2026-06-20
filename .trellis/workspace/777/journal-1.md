@@ -346,3 +346,36 @@ Implemented and verified local table preferences for Jobs, Translation QA, and I
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: Frontend diagnostic detail experience
+
+**Date**: 2026-06-20
+**Task**: Frontend diagnostic detail experience
+**Branch**: `main`
+
+### Summary
+
+Implemented ninth-round frontend diagnostic UX for Job Detail, Incident drawer, and Translation QA evidence surfaces; verified unit, build, and targeted smoke checks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `91c88d5b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
