@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     )
     from app.domains.jobs.artifact_storage import ArtifactStorageProtocol
     from app.domains.jobs.dispatch import StageDispatcherProtocol
+    from app.domains.saved_views.repository import SavedViewRepositoryProtocol
     from app.infrastructure.persistence import PersistenceAdapters
 
 
@@ -45,6 +46,7 @@ class AppRuntime:
     document_job_repository: DocumentJobRepositoryProtocol
     document_job_event_repository: DocumentJobEventRepositoryProtocol
     document_job_callback_message_store: DocumentJobCallbackMessageStoreProtocol
+    saved_view_repository: SavedViewRepositoryProtocol
     audit_service: Any
     auth_service: Any
     file_upload_service: Any
@@ -57,6 +59,7 @@ class AppRuntime:
     document_word_renderer: Any
     document_job_service: Any
     document_job_incident_service: Any
+    saved_view_service: Any
     document_job_execution_service: Any
     document_job_recovery_service: DocumentJobRecoveryService
     document_job_task_queue: Any | None

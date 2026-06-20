@@ -13,6 +13,8 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app.domains.document_jobs.models import DocumentJobCallbackMessage, DocumentJobEventRecord, DocumentJobRecord
+from app.domains.saved_views.models import SavedViewRecord
+from app.domains.saved_views.repository import SavedViewScope
 from app.domains.jobs.models import (
     JobEvent,
     JobFile,
@@ -76,6 +78,7 @@ class _FakeMysqlDatabase:
         self.document_job_callback_messages: dict[str, dict[str, Any]] = {}
         self.job_files: dict[tuple[str, str], dict[str, Any]] = {}
         self.stage_messages: dict[str, dict[str, Any]] = {}
+        self.saved_views: dict[str, dict[str, Any]] = {}
         self.resource_versions: dict[tuple[str, str, str], dict[str, Any]] = {}
         self.resource_default_versions: dict[tuple[str, str], dict[str, Any]] = {}
         self.term_rule_proposals: dict[str, dict[str, Any]] = {}
@@ -133,6 +136,7 @@ class _FakeMysqlCursor:
                 "job_events",
                 "job_files",
                 "stage_messages",
+                "saved_views",
                 "resource_versions",
                 "resource_default_versions",
                 "term_rule_proposals",
@@ -936,6 +940,67 @@ class _FakeMysqlCursor:
             ]
             self._rows = sorted(rows, key=lambda item: (item["created_at"], item["id"]))
             return
+        if normalized.startswith("delete from saved_views"):
+            tenant_id, company_id, owner_user_id, page_key = params
+            self.database.saved_views = {
+                view_id: row
+                for view_id, row in self.database.saved_views.items()
+                if not (
+                    row["tenant_id"] == tenant_id
+                    and row["company_id"] == company_id
+                    and row["owner_user_id"] == owner_user_id
+                    and row["page_key"] == page_key
+                )
+            }
+            self._rows = []
+            return
+        if normalized.startswith("insert into saved_views"):
+            view_id, tenant_id, company_id, owner_user_id, page_key, position, is_default, payload, created_at, updated_at = params
+            self.database.saved_views[view_id] = {
+                "view_id": view_id,
+                "tenant_id": tenant_id,
+                "company_id": company_id,
+                "owner_user_id": owner_user_id,
+                "page_key": page_key,
+                "position": position,
+                "is_default": is_default,
+                "payload": payload,
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+            self._rows = []
+            return
+        if "from saved_views" in normalized:
+            rows = list(self.database.saved_views.values())
+            if "and page_key" in normalized:
+                tenant_id, company_id, owner_user_id, page_key = params
+                rows = [
+                    row
+                    for row in rows
+                    if row["tenant_id"] == tenant_id
+                    and row["company_id"] == company_id
+                    and row["owner_user_id"] == owner_user_id
+                    and row["page_key"] == page_key
+                ]
+            else:
+                tenant_id, company_id, owner_user_id = params
+                rows = [
+                    row
+                    for row in rows
+                    if row["tenant_id"] == tenant_id
+                    and row["company_id"] == company_id
+                    and row["owner_user_id"] == owner_user_id
+                ]
+            self._rows = [
+                {"payload": row["payload"]}
+                for row in sorted(rows, key=lambda item: (item["page_key"], item["position"], item["created_at"], item["view_id"]))
+            ]
+            if "order by position" in normalized:
+                self._rows = [
+                    {"payload": row["payload"]}
+                    for row in sorted(rows, key=lambda item: (item["position"], item["created_at"], item["view_id"]))
+                ]
+            return
         raise AssertionError(f"Unexpected SQL: {sql}")
 
     def fetchone(self) -> dict[str, Any] | None:
@@ -976,6 +1041,7 @@ class PersistenceAdapterTests(TestCase):
                 "job_events",
                 "job_files",
                 "stage_messages",
+                "saved_views",
                 "resource_versions",
                 "resource_default_versions",
                 "term_rule_proposals",
@@ -1529,6 +1595,7 @@ class PersistenceAdapterTests(TestCase):
         document_job_repository = adapters.document_job_repository
         document_job_event_repository = adapters.document_job_event_repository
         document_job_callback_message_store = adapters.document_job_callback_message_store
+        saved_view_repository = adapters.saved_view_repository
         stage_message_store = adapters.stage_message_store
 
         job = self._build_source_pdf_job("job_contract")
@@ -1882,6 +1949,78 @@ class PersistenceAdapterTests(TestCase):
         stage_message_store.delete_stage_message("msg_running")
         self.assertIsNone(stage_message_store.get_stage_message("msg_running"))
         self.assertEqual(stage_message_store.count_stage_messages_by_status(), {"pending": 0, "running": 1, "failed": 1})
+
+        saved_view_scope = SavedViewScope(
+            tenant_id="tenant_default",
+            company_id="company_default",
+            owner_user_id="operator",
+        )
+        saved_view_base_time = utc_now()
+        first_saved_view = SavedViewRecord(
+            view_id="savedview_jobs_first",
+            tenant_id="tenant_default",
+            company_id="company_default",
+            owner_user_id="operator",
+            page_key="jobs",
+            name="Failed jobs",
+            filters={"status": "failed"},
+            sort="updated_at_desc",
+            is_default=True,
+            position=0,
+            created_at=saved_view_base_time,
+            updated_at=saved_view_base_time,
+        )
+        second_saved_view = first_saved_view.model_copy(
+            update={
+                "view_id": "savedview_jobs_second",
+                "name": "Active jobs",
+                "filters": {"status_group": "active"},
+                "is_default": False,
+                "position": 1,
+                "created_at": saved_view_base_time + timedelta(seconds=1),
+                "updated_at": saved_view_base_time + timedelta(seconds=1),
+            }
+        )
+        qa_saved_view = first_saved_view.model_copy(
+            update={
+                "view_id": "savedview_qa",
+                "page_key": "translation_qa",
+                "name": "QA blocked",
+                "filters": {"translation_qa_status": "blocked"},
+                "sort": "created_at_desc",
+                "is_default": False,
+                "position": 0,
+                "created_at": saved_view_base_time + timedelta(seconds=2),
+                "updated_at": saved_view_base_time + timedelta(seconds=2),
+            }
+        )
+        saved_view_repository.replace_saved_views_for_page(
+            saved_view_scope,
+            "jobs",
+            [second_saved_view, first_saved_view],
+        )
+        saved_view_repository.replace_saved_views_for_page(saved_view_scope, "translation_qa", [qa_saved_view])
+        self.assertEqual(
+            [record.view_id for record in saved_view_repository.list_saved_views(saved_view_scope, "jobs")],
+            ["savedview_jobs_first", "savedview_jobs_second"],
+        )
+        self.assertEqual(
+            {record.view_id for record in saved_view_repository.list_all_saved_views(saved_view_scope)},
+            {"savedview_jobs_first", "savedview_jobs_second", "savedview_qa"},
+        )
+        saved_view_repository.replace_saved_views_for_page(
+            saved_view_scope,
+            "jobs",
+            [second_saved_view.model_copy(update={"position": 0})],
+        )
+        self.assertEqual(
+            [record.view_id for record in saved_view_repository.list_saved_views(saved_view_scope, "jobs")],
+            ["savedview_jobs_second"],
+        )
+        self.assertEqual(
+            [record.view_id for record in saved_view_repository.list_saved_views(saved_view_scope, "translation_qa")],
+            ["savedview_qa"],
+        )
 
         query_service = JobQueryService(job_repository, job_file_repository, job_event_repository)
         detail_job, detail_files, detail_events = query_service.get_job_detail(job.id)

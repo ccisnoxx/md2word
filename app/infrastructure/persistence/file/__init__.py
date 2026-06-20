@@ -15,6 +15,7 @@ from app.infrastructure.persistence.file.document_jobs import (
 from app.infrastructure.persistence.file.files import FileDocumentFileRepository, FileJobFileRepository
 from app.infrastructure.persistence.file.jobs import FileJobEventRepository, FileJobSnapshotRepository
 from app.infrastructure.persistence.file.retention_policies import FileRetentionPolicyRepository
+from app.infrastructure.persistence.file.saved_views import FileSavedViewRepository
 from app.infrastructure.persistence.file.stage_messages import FileStageMessageStore
 
 __all__ = [
@@ -30,5 +31,6 @@ __all__ = [
     "FileRetentionCleanupLockRepository",
     "FileRetentionCleanupRunHistoryRepository",
     "FileRetentionPolicyRepository",
+    "FileSavedViewRepository",
     "FileStageMessageStore",
 ]

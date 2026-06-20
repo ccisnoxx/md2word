@@ -46,6 +46,7 @@ from app.domains.jobs.stage import JobStageService
 from app.domains.ops.real_alert_delivery import EnvironmentSecretResolver, SlackWebhookAlertDeliveryProvider
 from app.services.renderer import DocumentIRWordRenderer
 from app.domains.resources.service import ResourceVersionService
+from app.domains.saved_views.service import SavedViewService
 from app.domains.term_rules.bootstrap import TermRuleBootstrapService
 from app.domains.term_rules.import_validation import TermRuleImportValidationService
 from app.domains.term_rules.proposals_service import TermRuleProposalService
@@ -142,6 +143,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
     document_job_repository = persistence_adapters.document_job_repository
     document_job_event_repository = persistence_adapters.document_job_event_repository
     document_job_callback_message_store = persistence_adapters.document_job_callback_message_store
+    saved_view_repository = persistence_adapters.saved_view_repository
     stage_message_store = persistence_adapters.stage_message_store
     audit_service = AuditService(audit_event_repository)
     auth_service = AuthService(resolved_settings)
@@ -216,6 +218,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         file_upload_service=file_upload_service,
     )
     document_job_incident_service = DocumentJobIncidentService(document_job_service)
+    saved_view_service = SavedViewService(saved_view_repository)
     term_rule_repository = FileTermRuleRepository(resolved_settings.term_rules_store_file)
     term_rule_service = TermRuleService(
         term_rule_repository,
@@ -359,6 +362,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         document_job_repository=document_job_repository,
         document_job_event_repository=document_job_event_repository,
         document_job_callback_message_store=document_job_callback_message_store,
+        saved_view_repository=saved_view_repository,
         audit_service=audit_service,
         auth_service=auth_service,
         file_upload_service=file_upload_service,
@@ -371,6 +375,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         document_word_renderer=document_word_renderer,
         document_job_service=document_job_service,
         document_job_incident_service=document_job_incident_service,
+        saved_view_service=saved_view_service,
         document_job_execution_service=document_job_execution_service,
         document_job_recovery_service=document_job_recovery_service,
         document_job_task_queue=document_job_task_queue,

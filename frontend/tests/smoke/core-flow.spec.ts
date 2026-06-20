@@ -952,6 +952,39 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
       body: JSON.stringify(user),
     });
   });
+  await page.route(/\/api\/v1\/saved-views(?:\/.*)?(?:\?.*)?$/, async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [] }) });
+      return;
+    }
+    if (route.request().method() === "DELETE") {
+      await route.fulfill({ status: 204, body: "" });
+      return;
+    }
+    if (new URL(route.request().url()).pathname.endsWith("/reorder")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [] }) });
+      return;
+    }
+    const payload = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({
+      status: route.request().method() === "POST" ? 201 : 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        view_id: "savedview_smoke",
+        tenant_id: "tenant_default",
+        company_id: "company_default",
+        owner_user_id: "user_operator",
+        page_key: payload.page_key || "jobs",
+        name: payload.name || "Smoke view",
+        filters: payload.filters || {},
+        sort: payload.sort || "updated_at_desc",
+        is_default: Boolean(payload.is_default),
+        position: 0,
+        created_at: "2026-06-20T00:00:00Z",
+        updated_at: "2026-06-20T00:00:00Z",
+      }),
+    });
+  });
   await page.route("**/api/v1/health/ready", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(healthReady) });
   });

@@ -145,6 +145,24 @@ SQLITE_SCHEMA_STATEMENTS: tuple[str, ...] = (
     CREATE INDEX IF NOT EXISTS idx_document_job_callback_messages_job_id
     ON document_job_callback_messages (job_id, status, created_at)
     """,
+    """
+    CREATE TABLE IF NOT EXISTS saved_views (
+        view_id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        company_id TEXT NOT NULL,
+        owner_user_id TEXT NOT NULL,
+        page_key TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        is_default INTEGER NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_saved_views_owner_page_position
+    ON saved_views (tenant_id, company_id, owner_user_id, page_key, position, view_id)
+    """,
 )
 
 

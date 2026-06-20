@@ -294,6 +294,39 @@ async function setupIncidentApi(page: Page): Promise<IncidentApiControls> {
       display_name: "Smoke Operator",
     });
   });
+  await page.route(/\/api\/v1\/saved-views(?:\/.*)?(?:\?.*)?$/, async (route) => {
+    if (route.request().method() === "GET") {
+      await fulfillJson(route, { items: [] });
+      return;
+    }
+    if (route.request().method() === "DELETE") {
+      await route.fulfill({ status: 204, body: "" });
+      return;
+    }
+    if (new URL(route.request().url()).pathname.endsWith("/reorder")) {
+      await fulfillJson(route, { items: [] });
+      return;
+    }
+    const payload = route.request().postDataJSON() as Record<string, unknown>;
+    await fulfillJson(
+      route,
+      {
+        view_id: "savedview_incident_smoke",
+        tenant_id: "tenant_default",
+        company_id: "company_default",
+        owner_user_id: "user_operator",
+        page_key: payload.page_key || "incidents",
+        name: payload.name || "Smoke incident view",
+        filters: payload.filters || {},
+        sort: payload.sort || "priority",
+        is_default: Boolean(payload.is_default),
+        position: 0,
+        created_at: ISO_NOW,
+        updated_at: ISO_NOW,
+      },
+      route.request().method() === "POST" ? 201 : 200,
+    );
+  });
 
   await page.route(/\/api\/v1\/document-job-incidents(?:\/.*)?(?:\?.*)?$/, async (route) => {
     const url = new URL(route.request().url());

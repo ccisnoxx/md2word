@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const chromeExecutablePath = process.env.PW_CHROME_EXECUTABLE_PATH || "";
+
 export default defineConfig({
   testDir: "./tests/smoke",
   timeout: 30_000,
@@ -21,7 +23,9 @@ export default defineConfig({
       name: "chrome",
       use: {
         ...devices["Desktop Chrome"],
-        channel: "chrome",
+        ...(chromeExecutablePath
+          ? { launchOptions: { executablePath: chromeExecutablePath } }
+          : { channel: "chrome" }),
       },
     },
   ],
