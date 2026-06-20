@@ -13,6 +13,7 @@ from app.infrastructure.persistence.file.document_jobs import (
     FileDocumentJobRepository,
 )
 from app.infrastructure.persistence.file.files import FileDocumentFileRepository, FileJobFileRepository
+from app.infrastructure.persistence.file.internal_users import FileInternalUserRepository
 from app.infrastructure.persistence.file.jobs import FileJobEventRepository, FileJobSnapshotRepository
 from app.infrastructure.persistence.file.retention_policies import FileRetentionPolicyRepository
 from app.infrastructure.persistence.file.saved_views import FileSavedViewRepository
@@ -24,6 +25,7 @@ __all__ = [
     "FileDocumentJobCallbackMessageStore",
     "FileDocumentJobEventRepository",
     "FileDocumentJobRepository",
+    "FileInternalUserRepository",
     "FileJobEventRepository",
     "FileJobFileRepository",
     "FileJobSnapshotRepository",

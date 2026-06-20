@@ -29,6 +29,58 @@ export type CurrentUserResponse = {
   display_name: string | null;
 };
 
+export type AuthChangePasswordRequest = {
+  current_password: string;
+  new_password: string;
+};
+
+export type InternalUserRole = "admin" | "operator";
+export type InternalUserStatus = "active" | "disabled";
+
+export type InternalUserResponse = {
+  id: string;
+  username: string;
+  normalized_username: string;
+  role: InternalUserRole;
+  tenant_id: string;
+  company_id: string;
+  status: InternalUserStatus;
+  display_name: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+  updated_by: string | null;
+};
+
+export type InternalUserListResponse = {
+  items: InternalUserResponse[];
+  total: number;
+};
+
+export type InternalUserCreateRequest = {
+  username: string;
+  display_name?: string | null;
+  role: InternalUserRole;
+  status: InternalUserStatus;
+  initial_password: string;
+};
+
+export type InternalUserUpdateRequest = {
+  display_name?: string | null;
+  role?: InternalUserRole | null;
+  status?: InternalUserStatus | null;
+};
+
+export type InternalUserResetPasswordRequest = {
+  new_password: string;
+};
+
+export type InternalUserListQuery = {
+  role?: InternalUserRole | "";
+  status?: InternalUserStatus | "";
+  keyword?: string;
+};
+
 export type HealthReadyResponse = {
   status: string;
   app_name: string;

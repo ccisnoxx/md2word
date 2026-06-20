@@ -119,6 +119,101 @@ class DocumentJobIncidentQueueItemResponse(BaseModel):
     suggested_action: str
 ```
 
+#### Scenario: Managed Internal User Accounts
+
+##### 1. Scope / Trigger
+
+- Trigger: internal users become a managed product capability rather than a
+  startup-only JSON/env configuration source.
+- This is cross-layer work: metadata storage, auth service, admin APIs, audit
+  events, OpenAPI snapshots, and frontend route/type contracts must move
+  together.
+- Keep the scope to managed internal `admin` / `operator` users. Do not add SSO,
+  OAuth, SAML, LDAP, MFA, self-registration, email/SMS reset, custom
+  permissions, user deletion, teams, or org hierarchy in this scenario.
+
+##### 2. Signatures
+
+- DB/file repository port: `InternalUserRepositoryProtocol`
+  - `count_internal_users() -> int`
+  - `list_internal_users(role=None, status=None) -> list[InternalUserRecord]`
+  - `get_internal_user(user_id) -> InternalUserRecord | None`
+  - `get_internal_user_by_username(normalized_username) -> InternalUserRecord | None`
+  - `save_internal_user(user) -> InternalUserRecord`
+- DB schema: sqlite/MySQL table `internal_users` with `user_id`,
+  `normalized_username`, `role`, `status`, `payload`, `created_at`, and
+  `updated_at`; `normalized_username` is unique.
+- APIs:
+  - `GET /api/v1/users`
+  - `POST /api/v1/users`
+  - `PATCH /api/v1/users/{user_id}`
+  - `POST /api/v1/users/{user_id}/reset-password`
+  - `POST /api/v1/auth/change-password`
+
+##### 3. Contracts
+
+- `InternalUserResponse` must never include `password_hash`, raw passwords,
+  bearer tokens, or JWTs.
+- The managed repository is the runtime source of truth. `AUTH_INTERNAL_USERS_FILE`
+  and `AUTH_INTERNAL_USERS_JSON` are bootstrap inputs only when the repository is
+  empty; once any managed user exists, do not auto-merge configured users.
+- JWT payloads must include a freshness value such as `token_version`, and bearer
+  validation must reload the current repository record.
+- Role-derived permissions remain centralized in `permissions_for_role`; add
+  route permissions such as `users:manage` there rather than per-user grants.
+- Successful lifecycle operations must write audit events with safe details only:
+  `auth.login`, `auth.change_password`, `users.create`, `users.update`,
+  `users.disable`, `users.enable`, and `users.reset_password`.
+
+##### 4. Validation & Error Matrix
+
+- Missing/invalid bearer token -> `401 unauthorized` / `401 invalid_token`.
+- Non-admin access to `/users` -> `403 role_forbidden`.
+- Blank username or blank/weak password -> `400 invalid_request`.
+- Duplicate username after case-insensitive normalization -> `409 user_conflict`.
+- Unknown user id -> `404 not_found`.
+- Disabling or downgrading the last active admin -> `409 last_admin_conflict`.
+- Disabled users cannot log in, and disabled users' existing tokens must fail
+  validation because the repository record is reloaded.
+
+##### 5. Good/Base/Bad Cases
+
+- Good: config users seed an empty file/sqlite/MySQL repository once, then all
+  login and `/auth/me` calls read the repository.
+- Base: admin creates an operator, resets their password, disables the account,
+  and the old token immediately fails.
+- Bad: keeping config JSON as a live fallback after managed users exist, exposing
+  `password_hash` in response schemas, or letting MySQL duplicate-key upserts
+  overwrite an existing user on username conflict.
+
+##### 6. Tests Required
+
+- Repository parity test for file/sqlite/MySQL covering create/update, lookup by
+  normalized username, role/status filtering, and token version persistence.
+- API tests for admin-only list/create/update/reset, duplicate username,
+  last-active-admin protection, self change-password, disabled login rejection,
+  token invalidation, and audit events without password/hash/token content.
+- Existing auth compatibility tests for configured-user bootstrap, login, `/me`,
+  invalid/expired tokens, and wrong-role access.
+- OpenAPI export/check and frontend build must pass after contract changes.
+
+##### 7. Wrong vs Correct
+
+Wrong:
+
+```python
+if repository.get_internal_user_by_username(username_key) is None:
+    return configured_users_by_username.get(username_key)
+```
+
+Correct:
+
+```python
+if user_repository.count_internal_users() == 0:
+    bootstrap_configured_users_once()
+user = user_repository.get_internal_user_by_username(username_key)
+```
+
 ### Domain Boundaries
 
 - Keep business rules in services/workflow modules, not only in routers.

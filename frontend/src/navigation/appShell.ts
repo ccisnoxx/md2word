@@ -18,6 +18,7 @@ import {
   Setting,
   Stamp,
   Ticket,
+  User,
 } from "@element-plus/icons-vue";
 
 export type AppNavGroupId = "processing" | "quality" | "configuration" | "system";
@@ -38,6 +39,7 @@ export type AppNavItemId =
   | "translation-profiles"
   | "system-status"
   | "audit-events"
+  | "users"
   | "file-retention"
   | "ops-dashboard";
 
@@ -172,6 +174,7 @@ const NAV_GROUP_DEFINITIONS: AppNavGroupDefinition[] = [
     items: [
       { id: "system-status", label: "系统状态", to: "/system-status", icon: Monitor, permissions: ["system:read"] },
       { id: "audit-events", label: "审计日志", to: "/system-status/audit-events", icon: DataAnalysis, permissions: ["audit:read"] },
+      { id: "users", label: "用户管理", to: "/system-status/users", icon: User, roles: ["admin"], permissions: ["users:manage"] },
       {
         id: "file-retention",
         label: "文件保留",
@@ -204,6 +207,7 @@ const ROUTE_OWNERS: Record<string, RouteOwnership> = {
   "system-status": { groupId: "system", itemId: "system-status", pageLabel: "系统状态" },
   "system-status-ops-dashboard": { groupId: "system", itemId: "ops-dashboard", pageLabel: "运维看板" },
   "system-status-audit-events": { groupId: "system", itemId: "audit-events", pageLabel: "审计日志" },
+  "system-status-users": { groupId: "system", itemId: "users", pageLabel: "用户管理" },
   "system-status-file-retention": { groupId: "system", itemId: "file-retention", pageLabel: "文件保留" },
   forbidden: { groupId: null, itemId: null, moduleLabel: "访问控制", pageLabel: "没有访问权限" },
 };
@@ -380,6 +384,11 @@ export function getBreadcrumbItems(route: RouteLocationNormalizedLoaded, access:
       return [
         { label: "系统状态", to: "/system-status" },
         { label: "审计日志" },
+      ];
+    case "system-status-users":
+      return [
+        { label: "系统状态", to: "/system-status" },
+        { label: "用户管理" },
       ];
     case "system-status-file-retention":
       return [

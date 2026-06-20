@@ -27,12 +27,14 @@ from app.domains.resources.repository import ResourceVersionRepositoryProtocol
 from app.domains.saved_views.repository import SavedViewRepositoryProtocol
 from app.domains.term_rules.repository import TermRuleAssetRepositoryProtocol, TermRuleProposalRepositoryProtocol
 from app.domains.translation.repository import TranslationTermRepositoryProtocol
+from app.domains.users.repository import InternalUserRepositoryProtocol
 from app.infrastructure.persistence.file import (
     FileAuditEventRepository,
     FileDocumentFileRepository,
     FileDocumentJobCallbackMessageStore,
     FileDocumentJobEventRepository,
     FileDocumentJobRepository,
+    FileInternalUserRepository,
     FileJobEventRepository,
     FileJobFileRepository,
     FileJobSnapshotRepository,
@@ -50,6 +52,7 @@ from app.infrastructure.persistence.mysql import (
     MysqlDocumentJobCallbackMessageStore,
     MysqlDocumentJobEventRepository,
     MysqlDocumentJobRepository,
+    MysqlInternalUserRepository,
     MysqlJobEventRepository,
     MysqlJobFileRepository,
     MysqlJobSnapshotRepository,
@@ -71,6 +74,7 @@ from app.infrastructure.persistence.sqlite import (
     SqliteDocumentJobCallbackMessageStore,
     SqliteDocumentJobEventRepository,
     SqliteDocumentJobRepository,
+    SqliteInternalUserRepository,
     SqliteJobEventRepository,
     SqliteJobFileRepository,
     SqliteJobSnapshotRepository,
@@ -99,6 +103,7 @@ class PersistenceAdapters:
     document_job_repository: DocumentJobRepositoryProtocol
     document_job_event_repository: DocumentJobEventRepositoryProtocol
     document_job_callback_message_store: DocumentJobCallbackMessageStoreProtocol
+    internal_user_repository: InternalUserRepositoryProtocol
     saved_view_repository: SavedViewRepositoryProtocol
     stage_message_store: StageMessageStoreProtocol
     resource_version_repository: ResourceVersionRepositoryProtocol | None = None
@@ -124,6 +129,7 @@ def build_file_persistence_adapters(data_dir: Path) -> PersistenceAdapters:
         document_job_repository=FileDocumentJobRepository(backend),
         document_job_event_repository=FileDocumentJobEventRepository(backend),
         document_job_callback_message_store=FileDocumentJobCallbackMessageStore(backend),
+        internal_user_repository=FileInternalUserRepository(backend),
         saved_view_repository=FileSavedViewRepository(backend),
         stage_message_store=FileStageMessageStore(backend),
         resource_version_repository=None,
@@ -150,6 +156,7 @@ def build_sqlite_persistence_adapters(database_path: Path) -> PersistenceAdapter
         document_job_repository=SqliteDocumentJobRepository(backend),
         document_job_event_repository=SqliteDocumentJobEventRepository(backend),
         document_job_callback_message_store=SqliteDocumentJobCallbackMessageStore(backend),
+        internal_user_repository=SqliteInternalUserRepository(backend),
         saved_view_repository=SqliteSavedViewRepository(backend),
         stage_message_store=SqliteStageMessageStore(backend),
         resource_version_repository=None,
@@ -180,6 +187,7 @@ def build_mysql_persistence_adapters(
         document_job_repository=MysqlDocumentJobRepository(backend),
         document_job_event_repository=MysqlDocumentJobEventRepository(backend),
         document_job_callback_message_store=MysqlDocumentJobCallbackMessageStore(backend),
+        internal_user_repository=MysqlInternalUserRepository(backend),
         saved_view_repository=MysqlSavedViewRepository(backend),
         stage_message_store=MysqlStageMessageStore(backend),
         resource_version_repository=MysqlResourceVersionRepository(backend),

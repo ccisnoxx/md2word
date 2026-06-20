@@ -32,6 +32,7 @@ from app.domains.jobs.repository import (
     StageMessageStoreProtocol,
 )
 from app.domains.resources.repository import ResourceVersionRepositoryProtocol
+from app.domains.users.repository import InternalUserRepositoryProtocol
 
 
 DEFAULT_TERM_RULE_SET_ID = "electronics-default"
@@ -82,6 +83,7 @@ class HealthService:
         document_job_repository: DocumentJobRepositoryProtocol | None = None,
         document_job_callback_message_store: DocumentJobCallbackMessageStoreProtocol | None = None,
         audit_event_repository: AuditEventRepositoryProtocol | None = None,
+        internal_user_repository: InternalUserRepositoryProtocol | None = None,
         resource_version_repository: ResourceVersionRepositoryProtocol | None = None,
         default_template_id_getter: Callable[[], str] | None = None,
     ) -> None:
@@ -95,6 +97,7 @@ class HealthService:
         self.document_job_repository = document_job_repository
         self.document_job_callback_message_store = document_job_callback_message_store
         self.audit_event_repository = audit_event_repository
+        self.internal_user_repository = internal_user_repository
         self.resource_version_repository = resource_version_repository
         self.default_template_id_getter = default_template_id_getter
         self.started_at = utc_now()
@@ -316,6 +319,8 @@ class HealthService:
         )
 
     def _auth_users_source_configured(self) -> bool:
+        if self.internal_user_repository is not None and self.internal_user_repository.count_internal_users() > 0:
+            return True
         users_file = self.settings.auth_internal_users_file_path
         if users_file is not None:
             try:

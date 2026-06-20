@@ -251,6 +251,19 @@ MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
     """
+    CREATE TABLE IF NOT EXISTS internal_users (
+        user_id VARCHAR(128) PRIMARY KEY,
+        normalized_username VARCHAR(255) NOT NULL,
+        role VARCHAR(32) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        payload LONGTEXT NOT NULL,
+        created_at VARCHAR(40) NOT NULL,
+        updated_at VARCHAR(40) NOT NULL,
+        UNIQUE KEY uq_internal_users_normalized_username (normalized_username),
+        KEY idx_internal_users_role_status (role, status, normalized_username)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
     CREATE TABLE IF NOT EXISTS document_files (
         file_id VARCHAR(128) PRIMARY KEY,
         payload LONGTEXT NOT NULL,

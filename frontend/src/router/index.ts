@@ -25,6 +25,7 @@ import TranslationProfilesPage from "@/pages/TranslationProfilesPage.vue";
 import TranslationQaQueuePage from "@/pages/TranslationQaQueuePage.vue";
 import TranslationResultQaPage from "@/pages/TranslationResultQaPage.vue";
 import TranslationTermSetPage from "@/pages/TranslationTermSetPage.vue";
+import UserManagementPage from "@/pages/UserManagementPage.vue";
 import WordPageStyleDetailPage from "@/pages/WordPageStyleDetailPage.vue";
 import WordPageStyleListPage from "@/pages/WordPageStyleListPage.vue";
 import { getDefaultProtectedRoute, type AppAccessContext } from "@/navigation/appShell";
@@ -119,6 +120,12 @@ const router = createRouter({
           name: "system-status-audit-events",
           component: AuditLogPage,
           meta: { permissions: ["audit:read"] },
+        },
+        {
+          path: "system-status/users",
+          name: "system-status-users",
+          component: UserManagementPage,
+          meta: { roles: ["admin"], permissions: ["users:manage"] },
         },
         {
           path: "system-status/file-retention",

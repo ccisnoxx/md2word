@@ -13,7 +13,9 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from app.services.auth.models import AuthenticatedUser, InternalUser
+from app.domains.users.models import InternalUserRecord, normalize_username, utc_now
+from app.domains.users.repository import InternalUserRepositoryProtocol
+from app.services.auth.models import AuthenticatedUser
 from app.services.auth.permissions import permissions_for_role
 from app.core.config import Settings
 
@@ -76,19 +78,19 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 class AuthService:
-    """基于配置加载内部账号，并用 HS256 JWT 表达登录态。"""
+    """Authenticate managed internal users and issue HS256 JWT access tokens."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, user_repository: InternalUserRepositoryProtocol) -> None:
         self.settings = settings
-        self._users_by_username = self._load_users_by_username(*self._read_users_config())
-        self._users_by_id = {item.id: item for item in self._users_by_username.values()}
+        self.user_repository = user_repository
+        self._bootstrap_repository_from_config_if_empty()
 
     def authenticate(self, username: str, password: str) -> AuthenticatedUser:
         """校验用户名密码，成功后返回不含密码哈希的用户上下文。"""
 
         self._ensure_auth_configured()
-        normalized_username = _normalize_username(username)
-        user = self._users_by_username.get(normalized_username)
+        normalized_username = normalize_username(username)
+        user = self.user_repository.get_internal_user_by_username(normalized_username)
         if user is None or user.status != "active" or not verify_password(password, user.password_hash):
             raise InvalidCredentialsError("用户名或密码错误。")
         return self._to_authenticated_user(user)
@@ -105,6 +107,7 @@ class AuthService:
             "role": user.role,
             "tenant_id": user.tenant_id,
             "company_id": user.company_id,
+            "token_version": user.token_version,
             "iat": int(issued_at.timestamp()),
             "exp": int(expires_at.timestamp()),
         }
@@ -118,16 +121,21 @@ class AuthService:
 
         payload = self._decode_jwt(token)
         user_id = str(payload.get("sub") or "")
-        user = self._users_by_id.get(user_id)
+        token_version = payload.get("token_version")
+        if not isinstance(token_version, int):
+            raise TokenValidationError("invalid_token", "token 缺少版本信息。")
+        user = self.user_repository.get_internal_user(user_id)
         if user is None or user.status != "active":
             raise TokenValidationError("invalid_token", "token 对应账号不存在或已禁用。")
+        if user.token_version != token_version:
+            raise TokenValidationError("invalid_token", "token 已失效。")
         return self._to_authenticated_user(user)
 
     def _ensure_auth_configured(self) -> None:
         self._require_jwt_secret()
-        if not self._users_by_username:
+        if self.user_repository.count_internal_users() == 0:
             raise AuthConfigurationError(
-                "AUTH_INTERNAL_USERS_FILE/AUTH_INTERNAL_USERS_JSON 未配置，内部账号登录不可用。"
+                "托管内部用户仓库为空，且 AUTH_INTERNAL_USERS_FILE/AUTH_INTERNAL_USERS_JSON 未导入。"
             )
 
     def _require_jwt_secret(self) -> str:
@@ -170,6 +178,17 @@ class AuthService:
             raise TokenValidationError("token_expired", "token 已过期。")
         return payload
 
+    def _bootstrap_repository_from_config_if_empty(self) -> None:
+        """Import configured users once when the managed repository is empty."""
+
+        if self.user_repository.count_internal_users() > 0:
+            return
+        raw_users_json, source_label = self._read_users_config()
+        if not raw_users_json.strip():
+            return
+        for user in self._load_configured_users(raw_users_json, source_label):
+            self.user_repository.save_internal_user(user)
+
     def _read_users_config(self) -> tuple[str, str]:
         """从 Settings 读取内部账号 JSON 文本，并把文件读取错误转成鉴权配置错误。"""
 
@@ -178,12 +197,12 @@ class AuthService:
         except OSError as exc:
             raise AuthConfigurationError(f"AUTH_INTERNAL_USERS_FILE 无法读取: {self.settings.auth_internal_users_file}") from exc
 
-    def _load_users_by_username(self, raw_users_json: str, source_label: str) -> dict[str, InternalUser]:
-        """解析内部账号 JSON，并按标准化用户名建立索引。"""
+    def _load_configured_users(self, raw_users_json: str, source_label: str) -> list[InternalUserRecord]:
+        """Parse legacy configured users into managed repository records."""
 
         raw_text = raw_users_json.strip()
         if not raw_text:
-            return {}
+            return []
         try:
             decoded = json.loads(raw_text)
         except json.JSONDecodeError as exc:
@@ -191,19 +210,24 @@ class AuthService:
         raw_users = decoded.get("users") if isinstance(decoded, dict) else decoded
         if not isinstance(raw_users, list):
             raise AuthConfigurationError(f"{source_label} 必须是用户数组或包含 users 数组。")
-        users_by_username: dict[str, InternalUser] = {}
+        users_by_username: dict[str, InternalUserRecord] = {}
+        now = utc_now()
         for raw_user in raw_users:
             try:
-                user = InternalUser.model_validate(raw_user)
+                user = InternalUserRecord.model_validate(raw_user)
             except ValidationError as exc:
                 raise AuthConfigurationError(f"{source_label} 用户配置无效: {exc}") from exc
-            username_key = _normalize_username(user.username)
+            username_key = normalize_username(user.username)
             if username_key in users_by_username:
                 raise AuthConfigurationError(f"{source_label} 用户名重复: {user.username}")
+            user.created_at = user.created_at or now
+            user.updated_at = user.updated_at or now
+            user.created_by = user.created_by or "config_bootstrap"
+            user.updated_by = user.updated_by or "config_bootstrap"
             users_by_username[username_key] = user
-        return users_by_username
+        return list(users_by_username.values())
 
-    def _to_authenticated_user(self, user: InternalUser) -> AuthenticatedUser:
+    def _to_authenticated_user(self, user: InternalUserRecord) -> AuthenticatedUser:
         return AuthenticatedUser(
             id=user.id,
             username=user.username,
@@ -211,12 +235,9 @@ class AuthService:
             tenant_id=user.tenant_id,
             company_id=user.company_id,
             display_name=user.display_name,
+            token_version=user.token_version,
             token_scopes=permissions_for_role(user.role),
         )
-
-
-def _normalize_username(username: str) -> str:
-    return username.strip().lower()
 
 
 def _utc_now() -> datetime:

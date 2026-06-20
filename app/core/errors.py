@@ -17,6 +17,8 @@ ApiErrorCode = Literal[
     "role_forbidden",
     "not_found",
     "conflict",
+    "user_conflict",
+    "last_admin_conflict",
     "file_too_large",
     "service_unavailable",
     "auth_unconfigured",

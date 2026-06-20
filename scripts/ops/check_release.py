@@ -148,6 +148,8 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
     paths = payload.get("paths") if isinstance(payload, dict) else None
     schemas = payload.get("components", {}).get("schemas", {}) if isinstance(payload, dict) else {}
     document_jobs_get = paths.get("/api/v1/document-jobs", {}).get("get", {}) if isinstance(paths, dict) else {}
+    auth_change_password = paths.get("/api/v1/auth/change-password", {}).get("post", {}) if isinstance(paths, dict) else {}
+    users_path = paths.get("/api/v1/users", {}) if isinstance(paths, dict) else {}
     parameter_names = {
         parameter.get("name")
         for parameter in document_jobs_get.get("parameters", [])
@@ -167,6 +169,17 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
         if name not in job_properties:
             missing.append(f"OpenAPI DocumentJobResponse field: {name}")
 
+    if not auth_change_password:
+        missing.append("OpenAPI POST /auth/change-password")
+    if "get" not in users_path or "post" not in users_path:
+        missing.append("OpenAPI /users list/create operations")
+    user_properties = schemas.get("InternalUserResponse", {}).get("properties", {})
+    for name in ("id", "username", "role", "status", "display_name", "updated_at"):
+        if name not in user_properties:
+            missing.append(f"OpenAPI InternalUserResponse field: {name}")
+    if "password_hash" in user_properties:
+        missing.append("OpenAPI InternalUserResponse must not expose password_hash")
+
     types_path = REPO_ROOT / "frontend/src/api/types.ts"
     try:
         frontend_types = types_path.read_text(encoding="utf-8")
@@ -185,6 +198,9 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
         "translation_qa_summary?: Partial<Record<TranslationQaStatus, number>>",
         "ai_debug_archive_expires_at: string | null",
         "debug_full_text_enabled: boolean",
+        "export type AuthChangePasswordRequest",
+        "export type InternalUserResponse",
+        "export type InternalUserResetPasswordRequest",
     ):
         if needle not in frontend_types:
             missing.append(f"frontend types missing: {needle}")
