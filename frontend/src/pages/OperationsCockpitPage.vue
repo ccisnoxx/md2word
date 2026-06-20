@@ -4,7 +4,7 @@
   <main class="operations-cockpit-page app-page" aria-labelledby="operations-cockpit-title">
     <section class="cockpit-command-header app-page-shell app-page-shell--wide">
       <div class="command-copy">
-        <p class="page-kicker">Operations Cockpit</p>
+        <p class="page-kicker">运营驾驶舱</p>
         <h1 id="operations-cockpit-title" class="page-title">今日工作</h1>
         <p class="page-description">聚合异常、翻译 QA、任务队列和个人视图，直接进入现有处理页面。</p>
       </div>
@@ -46,7 +46,7 @@
       <section class="cockpit-panel app-page-shell app-page-shell--wide" aria-label="保存视图入口">
         <div class="section-header compact">
           <div>
-            <p class="table-kicker page-kicker">Saved Views</p>
+            <p class="table-kicker page-kicker">保存视图</p>
             <h2 class="section-title">个人入口</h2>
           </div>
           <el-button size="small" :icon="Refresh" :loading="savedViewsState.loading" @click="loadSavedViews">刷新视图</el-button>
@@ -77,7 +77,7 @@
       <section class="cockpit-panel app-page-shell app-page-shell--wide" aria-label="下一步工作">
         <div class="section-header compact">
           <div>
-            <p class="table-kicker page-kicker">Next Work</p>
+            <p class="table-kicker page-kicker">下一步工作</p>
             <h2 class="section-title">优先处理项</h2>
           </div>
           <div class="module-refresh-actions">

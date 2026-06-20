@@ -43,6 +43,10 @@
         </div>
 
         <div class="topbar-actions">
+          <el-button class="topbar-command" :icon="Search" aria-label="打开命令面板" @click="openCommandPalette">
+            <span>搜索</span>
+            <kbd>Cmd/Ctrl+K</kbd>
+          </el-button>
           <AppThemeToggle />
           <span class="topbar-user" aria-label="当前用户">
             <span class="topbar-user-name">{{ userDisplayName }}</span>
@@ -56,17 +60,20 @@
         <router-view />
       </el-main>
     </div>
+
+    <OperatorCommandPalette ref="commandPaletteRef" :access="access" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { Menu, SwitchButton } from "@element-plus/icons-vue";
+import { Menu, Search, SwitchButton } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 
 import AppBreadcrumb from "@/components/AppBreadcrumb.vue";
 import AppSidebar from "@/components/AppSidebar.vue";
 import AppThemeToggle from "@/components/AppThemeToggle.vue";
+import OperatorCommandPalette from "@/components/OperatorCommandPalette.vue";
 import { getAppNavigationGroups, getAppRouteContext, getDefaultProtectedRoute, type AppAccessContext } from "@/navigation/appShell";
 import { useAuthStore } from "@/stores/auth";
 import { getStoredSidebarCollapsed, persistSidebarCollapsed } from "@/utils/sidebarState";
@@ -76,6 +83,7 @@ const route = useRoute();
 const router = useRouter();
 const sidebarCollapsed = ref(getStoredSidebarCollapsed());
 const mobileDrawerOpen = ref(false);
+const commandPaletteRef = ref<InstanceType<typeof OperatorCommandPalette> | null>(null);
 
 const access = computed<AppAccessContext>(() => ({
   role: auth.user?.role ?? null,
@@ -102,6 +110,10 @@ function toggleSidebarCollapsed(): void {
 
 function openMobileDrawer(): void {
   mobileDrawerOpen.value = true;
+}
+
+function openCommandPalette(): void {
+  commandPaletteRef.value?.show();
 }
 
 function handleSidebarNavigate(): void {
@@ -177,6 +189,24 @@ function handleLogout(): void {
 .topbar-actions {
   justify-content: flex-end;
   gap: var(--app-space-2);
+}
+
+.topbar-command {
+  flex: 0 0 auto;
+}
+
+.topbar-command kbd {
+  display: inline-grid;
+  min-height: 18px;
+  margin-left: 6px;
+  place-items: center;
+  padding: 0 6px;
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--app-radius-sm);
+  background: var(--app-color-surface-muted);
+  color: var(--app-color-text-muted);
+  font-family: var(--app-font-mono);
+  font-size: 11px;
 }
 
 .topbar-menu-button {
@@ -309,6 +339,11 @@ function handleLogout(): void {
 
   .topbar-actions {
     gap: 6px;
+  }
+
+  .topbar-command :deep(span),
+  .topbar-command kbd {
+    display: none;
   }
 
   .topbar-user {

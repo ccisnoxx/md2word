@@ -4,7 +4,7 @@
   <section class="translation-qa-review-panel" aria-label="翻译 QA 复核面板">
     <header class="qa-review-header">
       <div class="qa-review-identity">
-        <p class="page-kicker">Translation QA Review</p>
+        <p class="page-kicker">翻译 QA 复核</p>
         <h2>{{ displayJobId }}</h2>
         <p :title="displayFilename">{{ displayFilename }}</p>
       </div>
@@ -131,11 +131,11 @@
             <strong class="mono">{{ joinIds(qa?.artifacts.ai_debug_archive_file_ids || []) }}</strong>
           </div>
           <div class="evidence-row">
-            <span>AI calls</span>
+            <span>AI 调用</span>
             <strong>{{ aiCallSummaryText }}</strong>
           </div>
           <div class="evidence-row">
-            <span>Quality flags</span>
+            <span>质量标记</span>
             <div class="flag-list">
               <el-tag v-for="flag in qa?.summary.quality_flags || []" :key="flag" size="small" effect="plain">{{ flag }}</el-tag>
               <strong v-if="!qa?.summary.quality_flags.length">-</strong>
@@ -181,11 +181,7 @@
       </el-form>
 
       <div class="footer-command-row">
-        <div v-if="showShortcutHints" class="shortcut-hints" aria-label="快捷键提示">
-          <span><kbd>Esc</kbd>关闭</span>
-          <span><kbd>⌘/Ctrl</kbd>+<kbd>Enter</kbd>保存并下一条</span>
-          <span><kbd>J</kbd>/<kbd>K</kbd>切换片段</span>
-        </div>
+        <ShortcutHintList v-if="showShortcutHints" :items="qaReviewShortcutHints" />
         <div class="review-actions">
           <el-button v-if="showClose" :disabled="saving" @click="$emit('close')">关闭</el-button>
           <el-button :loading="saving" :disabled="!qaEditable" @click="$emit('submit')">{{ submitLabel }}</el-button>
@@ -218,6 +214,8 @@ import type {
   TranslationQaStatus,
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
+import ShortcutHintList from "@/components/ShortcutHintList.vue";
+import type { ShortcutHint } from "@/utils/keyboardShortcuts";
 import { formatDateTime, getJobSourceFilename, translationQaStatusTagType, translationQaStatusText } from "@/utils/format";
 import type { ApiClientError } from "@/utils/errors";
 import {
@@ -235,6 +233,12 @@ import {
   translationQaTermTraceRangeText,
   type TranslationQaReviewDraft,
 } from "@/utils/translationQa";
+
+const qaReviewShortcutHints: ShortcutHint[] = [
+  { keys: ["Esc"], label: "关闭" },
+  { keys: ["Cmd/Ctrl", "Enter"], label: "保存并下一条" },
+  { keys: ["J/K"], label: "切换片段" },
+];
 
 const props = withDefaults(defineProps<{
   job: DocumentJobResponse | null;
@@ -314,20 +318,20 @@ const summaryMetrics = computed(() => [
   {
     label: "片段",
     value: props.qa ? `${props.qa.summary.returned_segment_count}/${props.qa.summary.final_segment_count}` : "-",
-    helper: "returned/final",
+    helper: "返回/总数",
   },
   {
     label: "术语命中",
     value: props.qa?.summary.term_trace_count ?? "-",
-    helper: props.qa?.summary.term_trace_count ? "trace available" : "none",
+    helper: props.qa?.summary.term_trace_count ? "有命中" : "无命中",
   },
   {
-    label: "AI calls",
+    label: "AI 调用",
     value: props.qa?.summary.ai_call_count ?? "-",
     helper: aiCallSummaryText.value,
   },
   {
-    label: "Debug archive",
+    label: "Debug 归档",
     value: translationQaDebugArchiveStateText(debugArchiveState.value),
     helper: translationQaDebugArchiveHelper(props.qa),
   },
@@ -411,7 +415,6 @@ function joinIds(ids: string[]): string {
 .segment-nav,
 .qa-review-empty-actions,
 .review-actions,
-.shortcut-hints,
 .segment-tags,
 .flag-list {
   display: flex;
@@ -651,25 +654,6 @@ function joinIds(ids: string[]): string {
   gap: var(--app-space-3);
   align-items: center;
   justify-content: space-between;
-}
-
-.shortcut-hints {
-  color: var(--app-color-text-muted);
-  font-size: 12px;
-}
-
-kbd {
-  display: inline-grid;
-  min-width: 22px;
-  height: 20px;
-  place-items: center;
-  padding: 0 5px;
-  border: 1px solid var(--app-color-border);
-  border-radius: var(--app-radius-sm);
-  background: var(--app-color-surface);
-  color: var(--app-color-text);
-  font-family: inherit;
-  font-size: 11px;
 }
 
 .review-meta {

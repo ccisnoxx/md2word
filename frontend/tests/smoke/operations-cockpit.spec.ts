@@ -203,7 +203,7 @@ async function setupCockpitApi(page: Page, options: MockOptions = {}): Promise<v
           company_id: "company_default",
           owner_user_id: "user_operator",
           page_key: "jobs",
-          name: "My failed jobs",
+          name: "我的失败任务",
           filters: { status: "failed" },
           sort: "updated_at_desc",
           is_default: true,
@@ -219,7 +219,7 @@ async function setupCockpitApi(page: Page, options: MockOptions = {}): Promise<v
           company_id: "company_default",
           owner_user_id: "user_operator",
           page_key: "translation_qa",
-          name: "My blocked QA",
+          name: "我的阻塞 QA",
           filters: { translation_qa_status: "blocked" },
           sort: "updated_at_desc",
           is_default: true,
@@ -300,9 +300,10 @@ test("operator lands on the desktop cockpit and can follow generated queue links
 
   await expect(page).toHaveURL(/\/cockpit$/);
   await expect(page.getByRole("heading", { name: "今日工作" })).toBeVisible();
-  await expect(page.getByRole("link", { name: /可重试异常/ })).toContainText("3");
-  await expect(page.getByRole("link", { name: /QA 阻塞/ })).toContainText("3");
-  await expect(page.getByRole("link", { name: /My blocked QA/ })).toHaveAttribute(
+  const priorityStrip = page.locator(".priority-strip");
+  await expect(priorityStrip.getByRole("link", { name: /可重试异常/ })).toContainText("3");
+  await expect(priorityStrip.getByRole("link", { name: /QA 阻塞/ })).toContainText("3");
+  await expect(page.getByRole("link", { name: /我的阻塞 QA/ })).toHaveAttribute(
     "href",
     /translation-qa\?translation_qa_status=blocked&sort=updated_at_desc&include_archived=false&page=1/,
   );
@@ -310,7 +311,7 @@ test("operator lands on the desktop cockpit and can follow generated queue links
 
   await expectNoHorizontalOverflow(page);
 
-  await page.getByRole("link", { name: /QA 阻塞/ }).click();
+  await priorityStrip.getByRole("link", { name: /QA 阻塞/ }).click();
   await expect(page).toHaveURL(/\/translation-qa\?translation_qa_status=blocked/);
 });
 
@@ -321,9 +322,9 @@ test("cockpit shows partial saved-view errors without blocking queues", async ({
   await page.goto("/cockpit");
 
   await expect(page.getByText(/异常处理 保存视图加载失败/)).toBeVisible();
-  await expect(page.getByRole("link", { name: /Retryable failures/ })).toBeVisible();
+  await expect(page.locator(".priority-strip").getByRole("link", { name: /可重试异常/ })).toBeVisible();
   await expect(page.getByText("incident-cockpit.pdf")).toBeVisible();
-  await expect(page.getByRole("link", { name: /失败任务/ })).toContainText("2");
+  await expect(page.locator(".priority-strip").getByRole("link", { name: /失败任务/ })).toContainText("2");
 });
 
 test("cockpit preserves dense mobile ordering without document overflow", async ({ page }) => {
@@ -334,7 +335,7 @@ test("cockpit preserves dense mobile ordering without document overflow", async 
 
   await expect(page.getByRole("button", { name: "打开导航" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "今日工作" })).toBeVisible();
-  await expect(page.getByText("My blocked QA")).toBeVisible();
+  await expect(page.getByText("我的阻塞 QA")).toBeVisible();
   await expect(page.getByText("incident-cockpit.pdf")).toBeVisible();
 
   const positions = await page.evaluate(() => {
@@ -345,5 +346,45 @@ test("cockpit preserves dense mobile ordering without document overflow", async 
   });
   expect(positions.priority).toBeLessThan(positions.savedViews);
   expect(positions.savedViews).toBeLessThan(positions.preview);
+  await expectNoHorizontalOverflow(page);
+});
+
+test("command palette opens with Cmd/Ctrl+K, filters permissions, and routes to saved views", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 920 });
+  await setupCockpitApi(page);
+
+  await page.goto("/cockpit");
+  await page.keyboard.press("Control+K");
+
+  await expect(page.getByRole("dialog", { name: "命令面板" })).toBeVisible();
+  await expect(page.getByPlaceholder("搜索页面、视图或操作")).toBeFocused();
+  await expect(page.getByRole("option", { name: /今日工作/ })).toBeVisible();
+  await expect(page.getByRole("option", { name: /创建任务/ })).toBeVisible();
+  await expect(page.getByRole("option", { name: /运维看板/ })).toHaveCount(0);
+
+  await page.getByPlaceholder("搜索页面、视图或操作").fill("我的失败任务");
+  await expect(page.getByRole("option", { name: /任务工作台 · 我的失败任务/ })).toBeVisible();
+  await page.keyboard.press("Enter");
+
+  await expect(page).toHaveURL(/\/jobs\?/);
+  await expect(page).toHaveURL(/status=failed/);
+  await expect(page).toHaveURL(/sort=updated_at_desc/);
+  await expect(page).toHaveURL(/include_archived=false/);
+  await expect(page).toHaveURL(/page=1/);
+});
+
+test("command palette closes with Escape and stays usable on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 844 });
+  await setupCockpitApi(page);
+
+  await page.goto("/cockpit");
+  await page.getByRole("button", { name: "打开命令面板" }).click();
+
+  await expect(page.getByRole("dialog", { name: "命令面板" })).toBeVisible();
+  await expect(page.getByRole("option", { name: /^异常处理 处理队列/ })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "命令面板" })).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
 });

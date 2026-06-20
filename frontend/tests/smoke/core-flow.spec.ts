@@ -1614,7 +1614,7 @@ test("operations redesign renders verified desktop and mobile screenshots", asyn
     await loginAsOperator(page);
     await page.goto("/jobs?sort=created_at_desc&include_archived=false&page=1");
     await expect(page.getByRole("heading", { name: "任务列表" })).toBeVisible();
-    await expect(page.getByRole("button", { name: /失败任务/ })).toBeVisible();
+    await expect(page.locator(".work-queue-strip").getByRole("button", { name: /失败任务/ })).toBeVisible();
     await expect(page.getByText("smoke.pdf")).toBeVisible();
     await expectNoPageHorizontalOverflow(page);
     await settleWorkbenchScreenshot(page);
@@ -1698,7 +1698,7 @@ test("operator can log in and inspect the document job workbench", async ({ page
   await page.goto("/jobs?sort=created_at_desc&include_archived=false&page=1");
   await expect(page.getByRole("heading", { name: "任务列表" })).toBeVisible();
   await expect(page.getByText("smoke.pdf")).toBeVisible();
-  await page.getByRole("button", { name: "处理中" }).click();
+  await page.getByRole("button", { name: "处理中", exact: true }).click();
   await expect(page).toHaveURL(/status_group=active/);
   await expect(page.getByText("active-smoke.pdf")).toBeVisible();
   await expect(page.getByRole("link", { name: "smoke.pdf", exact: true })).toHaveCount(0);
@@ -1908,7 +1908,7 @@ test("operator can use the translation QA drawer review flow", async ({ page }) 
   await page.keyboard.press("j");
   await expect(page.getByText("2 / 2")).toBeVisible();
   await expect(qaReviewPanel.getByText("Esc")).toBeVisible();
-  await expect(qaReviewPanel.getByText("⌘/Ctrl")).toBeVisible();
+  await expect(qaReviewPanel.getByText("Cmd/Ctrl")).toBeVisible();
 
   await page.keyboard.press("Escape");
   await expect(page.locator(".translation-qa-review-drawer")).toBeHidden();

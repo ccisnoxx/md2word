@@ -1,7 +1,7 @@
 <!-- File: frontend/src/components/SavedViewStrip.vue -->
 <!-- Purpose: Render compact system presets and personal saved-view actions for operations workbenches. -->
 <template>
-  <section class="saved-view-strip" aria-label="Saved views">
+  <section class="saved-view-strip" aria-label="保存视图">
     <div class="saved-view-group">
       <button
         v-for="view in systemViews"
@@ -27,7 +27,7 @@
           <span>{{ view.name }}</span>
         </button>
         <el-dropdown trigger="click" @command="handleCommand(view, $event)">
-          <button type="button" class="saved-view-menu-button" :aria-label="`${view.name} actions`">
+          <button type="button" class="saved-view-menu-button" :aria-label="`${view.name} 操作`">
             <MoreFilled aria-hidden="true" />
           </button>
           <template #dropdown>

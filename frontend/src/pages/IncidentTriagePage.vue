@@ -4,7 +4,7 @@
   <main class="incident-page app-page" :class="{ 'has-bulk-actions': selectedItems.length }" aria-labelledby="incident-title">
     <section class="incident-command-header app-page-shell app-page-shell--wide">
       <div class="command-copy">
-        <p class="page-kicker">Incident Triage</p>
+        <p class="page-kicker">异常分诊</p>
         <h1 id="incident-title" class="page-title">异常处理</h1>
         <p class="page-description">集中处理失败、阻塞、可重试和长时间未更新的 document_jobs。</p>
       </div>
@@ -65,12 +65,7 @@
           <h2 class="section-title">异常队列</h2>
           <p class="section-subtitle">默认按处理优先级排序；抽屉状态通过 <span class="mono">incident_job_id</span> 恢复。</p>
         </div>
-        <div class="shortcut-hints" aria-label="快捷键提示">
-          <kbd>R</kbd><span>刷新</span>
-          <kbd>Esc</kbd><span>关闭抽屉</span>
-          <kbd>J/K</kbd><span>移动</span>
-          <kbd>⌘/Ctrl Enter</kbd><span>安全动作</span>
-        </div>
+        <ShortcutHintList :items="incidentListShortcutHints" />
       </div>
 
       <div class="toolbar filter-toolbar">
@@ -137,28 +132,17 @@
 
       <ApiErrorAlert :error="error" :diagnostic-context="incidentErrorDiagnosticContext" />
 
-      <section v-if="batchResult" class="batch-result-strip" aria-label="批量操作结果">
-        <div class="batch-result-main">
-          <strong>{{ batchResultTitle }}</strong>
-          <span>成功 {{ batchResult.succeeded }} · 失败 {{ batchResult.failed }} · 跳过 {{ batchResult.skipped }}</span>
-        </div>
-        <div class="batch-result-actions">
+      <BatchResultStrip
+        v-if="normalizedBatchResult"
+        v-model:expanded="batchResultExpanded"
+        :result="normalizedBatchResult"
+        @close="batchResult = null"
+      >
+        <template #actions>
           <el-button size="small" text :icon="Refresh" @click="manualRefresh">刷新队列</el-button>
           <el-button size="small" text :disabled="!failedBatchItems.length" @click="reselectFailedItems">重选失败/跳过</el-button>
-          <el-button size="small" text @click="batchResultExpanded = !batchResultExpanded">
-            {{ batchResultExpanded ? "收起明细" : "展开明细" }}
-          </el-button>
-          <el-button size="small" text @click="batchResult = null">关闭</el-button>
-        </div>
-        <ul v-if="batchResultExpanded && failedBatchItems.length" class="batch-result-details">
-          <li v-for="item in failedBatchItems" :key="item.job_id">
-            <span class="mono">{{ item.job_id }}</span>
-            <span>{{ item.skipped ? "skipped" : "failed" }}</span>
-            <span>{{ item.error_code || item.status_code }}</span>
-            <span>{{ item.detail || "后端未返回详情。" }}</span>
-          </li>
-        </ul>
-      </section>
+        </template>
+      </BatchResultStrip>
 
       <div class="incident-table-wrap">
         <el-table
@@ -278,7 +262,7 @@
       <section class="diagnostic-panel" aria-label="异常诊断">
         <header class="drawer-header">
           <div>
-            <p class="page-kicker">Diagnostic</p>
+            <p class="page-kicker">异常诊断</p>
             <h2>{{ diagnosticTitle }}</h2>
             <p v-if="diagnostic?.item" class="drawer-subtitle">{{ diagnostic.item.suggested_action }}</p>
           </div>
@@ -311,7 +295,7 @@
             <h3>关键证据</h3>
             <dl class="evidence-list">
               <div>
-                <dt>Job ID</dt>
+                <dt>任务 ID</dt>
                 <dd class="mono">{{ diagnostic.item.job.id }}</dd>
               </div>
               <div>
@@ -319,7 +303,7 @@
                 <dd>{{ getJobSourceFilename(diagnostic.item.job) }}</dd>
               </div>
               <div>
-                <dt>Error</dt>
+                <dt>错误</dt>
                 <dd>{{ diagnostic.item.job.error_code || "-" }} · {{ diagnostic.item.job.error_message || "-" }}</dd>
               </div>
               <div>
@@ -373,11 +357,7 @@
         </template>
 
         <footer class="drawer-footer">
-          <div class="shortcut-hints">
-            <kbd>Esc</kbd><span>关闭</span>
-            <kbd>⌘/Ctrl Enter</kbd><span>安全重试</span>
-            <kbd>J/K</kbd><span>上一条/下一条</span>
-          </div>
+          <ShortcutHintList :items="incidentDrawerShortcutHints" />
           <div class="drawer-actions">
             <el-button @click="refreshDiagnostic">刷新诊断</el-button>
             <el-button v-if="diagnostic?.item" @click="openJobDetail(diagnostic.item)">打开详情</el-button>
@@ -419,10 +399,14 @@ import type {
   SavedViewResponse,
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
+import BatchResultStrip from "@/components/BatchResultStrip.vue";
 import JobStatusBadge from "@/components/JobStatusBadge.vue";
 import SavedViewStrip from "@/components/SavedViewStrip.vue";
+import ShortcutHintList from "@/components/ShortcutHintList.vue";
+import { normalizeIncidentBatchResult } from "@/utils/batchResults";
 import { formatDateTime, getJobSourceFilename, jobStageText, jobStatusText } from "@/utils/format";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
+import type { ShortcutHint } from "@/utils/keyboardShortcuts";
 import {
   countBatchRetryable,
   failedOrSkippedBatchItems,
@@ -494,6 +478,17 @@ let drawerLoadToken = 0;
 
 const statuses: DocumentJobStatus[] = ["pending", "queued", "running", "succeeded", "failed", "canceled"];
 const stages: DocumentJobStage[] = ["uploaded", "parsing", "parsed", "ir_converting", "rendering", "uploading", "completed", "failed", "canceled"];
+const incidentListShortcutHints: ShortcutHint[] = [
+  { keys: ["R"], label: "刷新" },
+  { keys: ["Esc"], label: "关闭抽屉" },
+  { keys: ["J/K"], label: "移动" },
+  { keys: ["Cmd/Ctrl", "Enter"], label: "安全动作" },
+];
+const incidentDrawerShortcutHints: ShortcutHint[] = [
+  { keys: ["Esc"], label: "关闭" },
+  { keys: ["Cmd/Ctrl", "Enter"], label: "安全重试" },
+  { keys: ["J/K"], label: "上一条/下一条" },
+];
 
 type FilterChipKey = "status" | "stage" | "failure_type" | "retryable" | "retry_count" | "stalled_minutes" | "q" | "sort";
 type SummaryFilter = "stalled" | "failed" | "retryable" | "artifact";
@@ -590,12 +585,15 @@ const activeSavedView = computed(() => activeSavedViewId(currentSavedViewState.v
 const selectedRetryableCount = computed(() => countBatchRetryable(selectedItems.value).retryable);
 const selectedNonRetryableCount = computed(() => countBatchRetryable(selectedItems.value).nonRetryable);
 const failedBatchItems = computed(() => failedOrSkippedBatchItems(batchResult.value));
-const batchResultTitle = computed(() => {
+const batchResultActionLabel = computed(() => {
   if (!batchResult.value) {
     return "";
   }
-  return batchResult.value.action === "retry" ? "批量重试完成" : "批量刷新完成";
+  return batchResult.value.action === "retry" ? "批量重试" : "批量刷新";
 });
+const normalizedBatchResult = computed(() =>
+  batchResult.value ? normalizeIncidentBatchResult(batchResultActionLabel.value, batchResult.value) : null,
+);
 const diagnosticTitle = computed(() => diagnostic.value?.item.job.id || selectedIncidentJobId.value || "异常诊断");
 
 async function loadIncidents(options: { background?: boolean; preserveError?: boolean } = {}): Promise<void> {
@@ -1216,10 +1214,10 @@ function showBatchResult(result: DocumentJobIncidentBulkResponse): void {
   batchResult.value = result;
   batchResultExpanded.value = result.failed > 0 || result.skipped > 0;
   if (result.failed > 0 || result.skipped > 0) {
-    ElMessage.warning(`${batchResultTitle.value}：成功 ${result.succeeded}，失败 ${result.failed}，跳过 ${result.skipped}。`);
+    ElMessage.warning(`${batchResultActionLabel.value}完成：成功 ${result.succeeded}，失败 ${result.failed}，跳过 ${result.skipped}。`);
     return;
   }
-  ElMessage.success(`${batchResultTitle.value}：成功 ${result.succeeded}。`);
+  ElMessage.success(`${batchResultActionLabel.value}完成：成功 ${result.succeeded}。`);
 }
 
 function reselectFailedItems(): void {
@@ -1354,8 +1352,7 @@ onBeforeUnmount(() => {
 .command-actions,
 .toolbar,
 .bulk-actions,
-.drawer-actions,
-.batch-result-actions {
+.drawer-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1491,65 +1488,12 @@ onBeforeUnmount(() => {
 }
 
 .active-filter-chips,
-.shortcut-hints,
 .job-meta,
 .evidence-chips {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-}
-
-.shortcut-hints {
-  color: var(--app-color-text-muted);
-  font-size: 12px;
-}
-
-kbd {
-  display: inline-flex;
-  min-width: 22px;
-  justify-content: center;
-  padding: 2px 6px;
-  border: 1px solid var(--app-color-border);
-  border-radius: 4px;
-  background: var(--app-color-surface);
-  color: var(--app-color-text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 11px;
-}
-
-.batch-result-strip {
-  display: grid;
-  gap: var(--app-space-2);
-  padding: 12px;
-  border: 1px solid var(--el-color-warning-light-5);
-  border-radius: var(--app-radius-md);
-  background: var(--el-color-warning-light-9);
-}
-
-.batch-result-main {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--app-space-3);
-}
-
-.batch-result-details {
-  display: grid;
-  gap: 6px;
-  padding-left: 0;
-  margin: 0;
-  list-style: none;
-}
-
-.batch-result-details li {
-  display: grid;
-  grid-template-columns: minmax(140px, 1fr) 80px 120px minmax(0, 2fr);
-  gap: 8px;
-  align-items: center;
-  padding: 6px 8px;
-  border-radius: var(--app-radius-sm);
-  background: var(--app-color-surface);
 }
 
 .incident-table-wrap {
@@ -1849,7 +1793,6 @@ kbd {
     bottom: 12px;
   }
 
-  .batch-result-details li,
   .file-row,
   .evidence-list div {
     grid-template-columns: 1fr;

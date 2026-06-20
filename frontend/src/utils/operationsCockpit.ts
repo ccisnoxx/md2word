@@ -15,12 +15,11 @@ import { getJobSourceFilename, isActiveJobStatus } from "@/utils/format";
 import {
   DEFAULT_STALLED_MINUTES,
   INCIDENTS_DEFAULT_SORT,
+  SAVED_VIEW_PAGE_LABELS,
   TRANSLATION_QA_DEFAULT_SORT,
-  jobsSavedViewStateToQuery,
-  incidentsSavedViewStateToQuery,
   personalSavedViewToStripItem,
+  routeForSavedView,
   systemSavedViews,
-  translationQaSavedViewStateToQuery,
   type SavedViewState,
   type SavedViewStripItem,
 } from "@/utils/savedViews";
@@ -81,11 +80,7 @@ export type OperationsPreviewInput = {
   limit?: number;
 };
 
-export const COCKPIT_PAGE_LABELS: Record<SavedViewPageKey, string> = {
-  jobs: "任务列表",
-  translation_qa: "翻译 QA",
-  incidents: "异常处理",
-};
+export const COCKPIT_PAGE_LABELS: Record<SavedViewPageKey, string> = SAVED_VIEW_PAGE_LABELS;
 
 const QA_STATUS_PRIORITY: Record<TranslationQaStatus, number> = {
   blocked: 2,
@@ -108,25 +103,6 @@ export function cockpitSourceAccess(access: AppAccessContext): CockpitSourceAcce
 
 export function hasCockpitSourceAccess(access: CockpitSourceAccess): boolean {
   return access.jobs || access.incidents || access.translation_qa;
-}
-
-export function routeForSavedView(view: SavedViewState & { page_key: SavedViewPageKey }, selectedJobId = ""): RouteLocationRaw {
-  if (view.page_key === "translation_qa") {
-    return {
-      name: "translation-qa",
-      query: translationQaSavedViewStateToQuery(view, 1, selectedJobId),
-    };
-  }
-  if (view.page_key === "incidents") {
-    return {
-      name: "incidents",
-      query: incidentsSavedViewStateToQuery(view, 1, selectedJobId),
-    };
-  }
-  return {
-    name: "jobs",
-    query: jobsSavedViewStateToQuery(view, 1),
-  };
 }
 
 export function buildSavedViewLauncherEntries(

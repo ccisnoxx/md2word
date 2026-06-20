@@ -386,7 +386,7 @@ test("operator can triage incidents from the desktop queue and diagnostic drawer
   await page.goto("/incidents");
 
   await expect(page.getByRole("heading", { name: "异常处理" })).toBeVisible();
-  await expect(page.getByLabel("快捷键提示").first()).toContainText("⌘/Ctrl Enter");
+  await expect(page.getByLabel("快捷键提示").first()).toContainText("Cmd/Ctrl+Enter");
   await expect(mainRows(page).nth(0)).toContainText("blocked-source.pdf");
   await expect(mainRows(page).nth(1)).toContainText("retry-source.pdf");
 
