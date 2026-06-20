@@ -152,6 +152,7 @@ class _FakeMysqlCursor:
                 "translation_term_proposals",
                 "translation_term_proposal_changes",
                 "translation_term_match_traces",
+                "terminology_releases",
                 "audit_events",
                 "internal_users",
                 "document_files",
@@ -166,6 +167,9 @@ class _FakeMysqlCursor:
             self._rows = []
             return
         if normalized.startswith("alter table term_rules modify source_term"):
+            self._rows = []
+            return
+        if normalized.startswith("alter table translation_terms add column"):
             self._rows = []
             return
         if normalized.startswith("insert into jobs"):
@@ -817,9 +821,16 @@ class _FakeMysqlCursor:
                 source_term,
                 normalized_source_term,
                 target_term,
+                recommended_translations,
+                forbidden_translations,
+                synonyms,
                 case_sensitive,
                 term_status,
                 priority,
+                project,
+                content_type,
+                tags,
+                maintainer,
                 domain,
                 category,
                 note,
@@ -834,9 +845,16 @@ class _FakeMysqlCursor:
                 "source_term": source_term,
                 "normalized_source_term": normalized_source_term,
                 "target_term": target_term,
+                "recommended_translations": recommended_translations,
+                "forbidden_translations": forbidden_translations,
+                "synonyms": synonyms,
                 "case_sensitive": case_sensitive,
                 "status": term_status,
                 "priority": priority,
+                "project": project,
+                "content_type": content_type,
+                "tags": tags,
+                "maintainer": maintainer,
                 "domain": domain,
                 "category": category,
                 "note": note,
@@ -1162,7 +1180,9 @@ class PersistenceAdapterTests(TestCase):
                 "translation_term_proposals",
                 "translation_term_proposal_changes",
                 "translation_term_match_traces",
+                "terminology_releases",
                 "audit_events",
+                "internal_users",
                 "document_files",
                 "file_retention_policies",
                 "file_retention_cleanup_locks",

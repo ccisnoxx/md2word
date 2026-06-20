@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Literal
 
 
-TranslationTermStatus = Literal["active", "disabled"]
+TranslationTermStatus = Literal["editing", "publishable", "deprecated", "active", "disabled"]
 TranslationTermVersionStatus = Literal["draft", "published", "archived"]
 TranslationTermProposalStatus = Literal["pending", "approved", "rejected", "published"]
 TranslationTermProposalAction = Literal["add", "update", "delete"]
@@ -52,11 +52,18 @@ class TranslationTermEntry:
     source_term: str
     target_term: str
     version: str
+    recommended_translations: tuple[str, ...] = field(default_factory=tuple)
+    forbidden_translations: tuple[str, ...] = field(default_factory=tuple)
+    synonyms: tuple[str, ...] = field(default_factory=tuple)
     set_id: str = ""
     normalized_source_term: str = ""
     case_sensitive: bool = False
     status: TranslationTermStatus = "active"
     priority: int = 0
+    project: str | None = None
+    content_type: str | None = None
+    tags: tuple[str, ...] = field(default_factory=tuple)
+    maintainer: str | None = None
     domain: str | None = None
     category: str | None = None
     note: str = ""

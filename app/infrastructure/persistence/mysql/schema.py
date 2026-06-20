@@ -167,9 +167,16 @@ MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
         source_term VARCHAR(512) NOT NULL,
         normalized_source_term VARCHAR(512) NOT NULL,
         target_term VARCHAR(512) NOT NULL,
+        recommended_translations LONGTEXT NOT NULL,
+        forbidden_translations LONGTEXT NOT NULL,
+        synonyms LONGTEXT NOT NULL,
         case_sensitive TINYINT(1) NOT NULL,
         status VARCHAR(32) NOT NULL,
         priority INT NOT NULL,
+        project VARCHAR(128) NULL,
+        content_type VARCHAR(128) NULL,
+        tags LONGTEXT NOT NULL,
+        maintainer VARCHAR(128) NULL,
         domain VARCHAR(128) NULL,
         category VARCHAR(128) NULL,
         note TEXT NOT NULL,
@@ -179,6 +186,21 @@ MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
         UNIQUE KEY uq_translation_terms_normalized (set_id, version, normalized_source_term),
         KEY idx_translation_terms_source (set_id, version, source_term),
         KEY idx_translation_terms_language_pair (language_pair, version)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS terminology_releases (
+        release_id VARCHAR(128) NOT NULL,
+        version VARCHAR(64) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        project VARCHAR(128) NOT NULL,
+        language_pair VARCHAR(32) NOT NULL,
+        content_type VARCHAR(128) NOT NULL,
+        payload LONGTEXT NOT NULL,
+        created_at VARCHAR(40) NOT NULL,
+        updated_at VARCHAR(40) NOT NULL,
+        PRIMARY KEY (release_id, version),
+        KEY idx_terminology_releases_scope_status (status, project, language_pair, content_type)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
     """
@@ -348,6 +370,13 @@ MYSQL_SCHEMA_MAINTENANCE_STATEMENTS: tuple[str, ...] = (
     ALTER TABLE term_rules
     MODIFY source_term VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL
     """,
+    "ALTER TABLE translation_terms ADD COLUMN IF NOT EXISTS recommended_translations LONGTEXT NULL",
+    "ALTER TABLE translation_terms ADD COLUMN IF NOT EXISTS forbidden_translations LONGTEXT NULL",
+    "ALTER TABLE translation_terms ADD COLUMN IF NOT EXISTS synonyms LONGTEXT NULL",
+    "ALTER TABLE translation_terms ADD COLUMN IF NOT EXISTS project VARCHAR(128) NULL",
+    "ALTER TABLE translation_terms ADD COLUMN IF NOT EXISTS content_type VARCHAR(128) NULL",
+    "ALTER TABLE translation_terms ADD COLUMN IF NOT EXISTS tags LONGTEXT NULL",
+    "ALTER TABLE translation_terms ADD COLUMN IF NOT EXISTS maintainer VARCHAR(128) NULL",
 )
 
 

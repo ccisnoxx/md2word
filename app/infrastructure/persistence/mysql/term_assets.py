@@ -2,6 +2,7 @@ from __future__ import annotations
 
 # app/infrastructure/persistence/mysql/term_assets.py: MySQL backend 的术语规则和翻译术语明细表 adapter。
 
+import json
 from dataclasses import replace
 from datetime import datetime
 from typing import Any
@@ -308,8 +309,10 @@ class MysqlTranslationTermRepository:
                         """
                         INSERT INTO translation_terms
                             (set_id, language_pair, version, seq, source_term, normalized_source_term, target_term,
-                             case_sensitive, status, priority, domain, category, note, created_at, updated_at)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                             recommended_translations, forbidden_translations, synonyms,
+                             case_sensitive, status, priority, project, content_type, tags, maintainer,
+                             domain, category, note, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """,
                         (
                             resolved_entry.set_id,
@@ -319,9 +322,16 @@ class MysqlTranslationTermRepository:
                             resolved_entry.source_term,
                             resolved_entry.normalized_source_term,
                             resolved_entry.target_term,
+                            self._json_list(resolved_entry.recommended_translations),
+                            self._json_list(resolved_entry.forbidden_translations),
+                            self._json_list(resolved_entry.synonyms),
                             int(resolved_entry.case_sensitive),
                             resolved_entry.status,
                             resolved_entry.priority,
+                            resolved_entry.project,
+                            resolved_entry.content_type,
+                            self._json_list(resolved_entry.tags),
+                            resolved_entry.maintainer,
                             resolved_entry.domain,
                             resolved_entry.category,
                             resolved_entry.note,
@@ -339,7 +349,9 @@ class MysqlTranslationTermRepository:
                 cursor.execute(
                     """
                     SELECT set_id, language_pair, version, source_term, normalized_source_term, target_term,
-                           case_sensitive, status, priority, domain, category, note, created_at, updated_at
+                           recommended_translations, forbidden_translations, synonyms,
+                           case_sensitive, status, priority, project, content_type, tags, maintainer,
+                           domain, category, note, created_at, updated_at
                     FROM translation_terms
                     WHERE set_id = %s AND version = %s
                     ORDER BY seq
@@ -597,9 +609,16 @@ class MysqlTranslationTermRepository:
             source_term=row["source_term"],
             normalized_source_term=row["normalized_source_term"],
             target_term=row["target_term"],
+            recommended_translations=MysqlTranslationTermRepository._load_json_list(row.get("recommended_translations")),
+            forbidden_translations=MysqlTranslationTermRepository._load_json_list(row.get("forbidden_translations")),
+            synonyms=MysqlTranslationTermRepository._load_json_list(row.get("synonyms")),
             case_sensitive=bool(row["case_sensitive"]),
             status=row["status"],
             priority=int(row["priority"]),
+            project=row.get("project"),
+            content_type=row.get("content_type"),
+            tags=MysqlTranslationTermRepository._load_json_list(row.get("tags")),
+            maintainer=row.get("maintainer"),
             domain=row["domain"],
             category=row["category"],
             note=row["note"],
@@ -676,6 +695,22 @@ class MysqlTranslationTermRepository:
     @classmethod
     def _optional_iso(cls, value: Any | None) -> str | None:
         return cls._iso(value) if value is not None else None
+
+    @staticmethod
+    def _json_list(values: tuple[str, ...] | list[str]) -> str:
+        return json.dumps([item for item in values if item], ensure_ascii=False, separators=(",", ":"))
+
+    @staticmethod
+    def _load_json_list(value: Any) -> tuple[str, ...]:
+        if not value:
+            return ()
+        try:
+            decoded = json.loads(str(value))
+        except json.JSONDecodeError:
+            return ()
+        if not isinstance(decoded, list):
+            return ()
+        return tuple(str(item).strip() for item in decoded if str(item).strip())
 
     @staticmethod
     def _optional_bool_int(value: bool | None) -> int | None:

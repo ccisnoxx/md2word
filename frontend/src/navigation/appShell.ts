@@ -32,6 +32,7 @@ export type AppNavItemId =
   | "term-proposals"
   | "term-rule-sets"
   | "term-rules"
+  | "terminology-releases"
   | "translation-term-sets"
   | "settings"
   | "templates"
@@ -132,8 +133,6 @@ const NAV_GROUP_DEFINITIONS: AppNavGroupDefinition[] = [
         icon: Stamp,
         permissions: ["term_proposals:read"],
       },
-      { id: "term-rule-sets", label: "术语发布", to: "/settings/term-rule-sets", icon: Ticket, permissions: ["settings:read"] },
-      { id: "term-rules", label: "术语规则", to: "/settings/term-rules", icon: Collection, permissions: ["settings:read"] },
       {
         id: "translation-term-sets",
         label: "翻译术语集",
@@ -141,6 +140,8 @@ const NAV_GROUP_DEFINITIONS: AppNavGroupDefinition[] = [
         icon: Notebook,
         permissions: ["settings:read"],
       },
+      { id: "term-rules", label: "术语规则", to: "/settings/term-rules", icon: Collection, permissions: ["term_proposals:read"] },
+      { id: "terminology-releases", label: "术语发布", to: "/settings/terminology-releases", icon: Ticket, permissions: ["settings:read"] },
     ],
   },
   {
@@ -199,8 +200,9 @@ const ROUTE_OWNERS: Record<string, RouteOwnership> = {
   "settings-template-detail": { groupId: "configuration", itemId: "templates", pageLabel: "Word 模板详情" },
   "settings-word-page-styles": { groupId: "configuration", itemId: "word-page-styles", pageLabel: "页面样式" },
   "settings-word-page-style-detail": { groupId: "configuration", itemId: "word-page-styles", pageLabel: "页面样式详情" },
-  "settings-term-rule-sets": { groupId: "quality", itemId: "term-rule-sets", pageLabel: "术语发布" },
+  "settings-term-rule-sets": { groupId: "quality", itemId: "term-rules", pageLabel: "规则集草稿与发布" },
   "settings-term-rules": { groupId: "quality", itemId: "term-rules", pageLabel: "术语规则" },
+  "settings-terminology-releases": { groupId: "quality", itemId: "terminology-releases", pageLabel: "术语发布" },
   "settings-translation-profiles": { groupId: "configuration", itemId: "translation-profiles", pageLabel: "翻译配置" },
   "settings-translation-term-sets": { groupId: "quality", itemId: "translation-term-sets", pageLabel: "翻译术语集" },
   "term-proposals": { groupId: "quality", itemId: "term-proposals" },
@@ -351,13 +353,18 @@ export function getBreadcrumbItems(route: RouteLocationNormalizedLoaded, access:
       ];
     case "settings-term-rule-sets":
       return [
-        { label: "配置中心", to: "/settings" },
+        { label: "质量治理" },
         { label: "术语工作台", to: terminologyWorkbenchRoute(route) },
         { label: "草稿与发布" },
       ];
+    case "settings-terminology-releases":
+      return [
+        { label: "质量治理" },
+        { label: "术语发布" },
+      ];
     case "settings-term-rules":
       return [
-        { label: "配置中心", to: "/settings" },
+        { label: "质量治理" },
         { label: "术语工作台", to: terminologyWorkbenchRoute(route) },
         { label: "当前生效规则" },
       ];
@@ -368,7 +375,7 @@ export function getBreadcrumbItems(route: RouteLocationNormalizedLoaded, access:
       ];
     case "settings-translation-term-sets":
       return [
-        { label: "配置中心", to: "/settings" },
+        { label: "质量治理" },
         { label: "翻译术语集" },
       ];
     case "term-proposals":

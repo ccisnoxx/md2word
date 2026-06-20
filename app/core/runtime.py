@@ -49,6 +49,7 @@ class AppRuntime:
     document_job_callback_message_store: DocumentJobCallbackMessageStoreProtocol
     internal_user_repository: InternalUserRepositoryProtocol
     saved_view_repository: SavedViewRepositoryProtocol
+    terminology_release_repository: Any
     audit_service: Any
     auth_service: Any
     internal_user_management_service: Any
@@ -75,6 +76,7 @@ class AppRuntime:
     term_rule_proposal_service: Any | None
     translation_term_set_version_service: Any | None
     translation_term_proposal_service: Any | None
+    terminology_release_service: Any
     translation_profile_service: Any | None
     resource_version_service: Any | None
     job_resource_snapshot_service: Any

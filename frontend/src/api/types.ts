@@ -2282,6 +2282,95 @@ export type TermRuleSetRollbackRequest = {
   version: string;
 };
 
+export type TerminologyReleaseStatus = "active" | "rolled_back";
+
+export type TerminologyReleaseScopeRequest = {
+  project: string;
+  language_pair: string;
+  content_type: string;
+};
+
+export type TerminologyReleaseScopeResponse = TerminologyReleaseScopeRequest;
+
+export type TerminologyReleaseCreateRequest = {
+  translation_term_set_id: string;
+  translation_term_version: string;
+  term_rule_set_id: string;
+  term_rule_set_version: string;
+  scope: TerminologyReleaseScopeRequest;
+  release_note?: string | null;
+  source_release_id?: string | null;
+  source_release_version?: string | null;
+};
+
+export type TerminologyReleaseFindingResponse = {
+  severity: "error" | "warning" | "conflict";
+  code: string;
+  message: string;
+  path: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export type TerminologyReleaseValidationSummaryResponse = {
+  error_count: number;
+  warning_count: number;
+  conflict_count: number;
+  publishable_term_count: number;
+  overlapping_release_count: number;
+};
+
+export type TerminologyReleaseValidationReportResponse = {
+  valid: boolean;
+  blocking: boolean;
+  summary: TerminologyReleaseValidationSummaryResponse;
+  errors: TerminologyReleaseFindingResponse[];
+  warnings: TerminologyReleaseFindingResponse[];
+  conflicts: TerminologyReleaseFindingResponse[];
+};
+
+export type TerminologyReleaseAssetResponse = {
+  resource_id: string;
+  version: string;
+  snapshot_hash: string | null;
+  item_count: number | null;
+};
+
+export type TerminologyReleaseResponse = {
+  id: string;
+  version: string;
+  status: TerminologyReleaseStatus;
+  scope: TerminologyReleaseScopeResponse;
+  translation_term_set: TerminologyReleaseAssetResponse;
+  term_rule_set: TerminologyReleaseAssetResponse;
+  validation_report: TerminologyReleaseValidationReportResponse;
+  release_note: string | null;
+  source_release_id: string | null;
+  source_release_version: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  published_at: string;
+  rolled_back_by: string | null;
+  rolled_back_at: string | null;
+};
+
+export type TerminologyReleaseListResponse = {
+  items: TerminologyReleaseResponse[];
+  total: number;
+};
+
+export type TerminologyReleaseListQuery = {
+  status?: TerminologyReleaseStatus;
+  project?: string;
+  language_pair?: string;
+  content_type?: string;
+};
+
+export type TerminologyReleaseCopyResponse = {
+  source: TerminologyReleaseResponse;
+  draft: TerminologyReleaseCreateRequest;
+};
+
 export type TranslationProfileListItemResponse = {
   id: string;
   default_version: string | null;
@@ -2411,14 +2500,23 @@ export type TranslationTermEntryResponse = {
   source_term: string;
   normalized_source_term: string;
   target_term: string;
+  recommended_translations: string[];
+  forbidden_translations: string[];
+  synonyms: string[];
   version: string;
   set_id: string;
   case_sensitive: boolean;
   status: string;
   priority: number;
+  project: string | null;
+  content_type: string | null;
+  tags: string[];
+  maintainer: string | null;
   domain: string | null;
   category: string | null;
   note: string;
+  created_at: string;
+  updated_at: string;
 };
 
 export type TranslationTermSetListItemResponse = {
@@ -2474,9 +2572,16 @@ export type TranslationTermSetDraftChangeRequest = {
   action: string;
   source_term: string;
   target_term?: string | null;
+  recommended_translations?: string[] | null;
+  forbidden_translations?: string[] | null;
+  synonyms?: string[] | null;
   case_sensitive?: boolean | null;
   status?: string | null;
   priority?: number | null;
+  project?: string | null;
+  content_type?: string | null;
+  tags?: string[] | null;
+  maintainer?: string | null;
   domain?: string | null;
   category?: string | null;
   note?: string | null;

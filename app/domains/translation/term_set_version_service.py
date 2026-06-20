@@ -47,14 +47,23 @@ DRAFT_VERSION = "draft"
 SHANGHAI_TZ = timezone(timedelta(hours=8))
 TRANSLATION_TERM_IMPORT_TARGETS = {"draft", "seed"}
 TRANSLATION_TERM_IMPORT_DEDUPE_MODES = {"reject", "keep_first"}
+TRANSLATION_TERM_ALLOWED_STATUSES = {"editing", "publishable", "deprecated", "active", "disabled"}
+TRANSLATION_TERM_PUBLISHABLE_STATUSES = {"publishable", "active"}
 TRANSLATION_TERM_CSV_COLUMNS = (
     "language_pair",
     "source_term",
     "target_term",
+    "recommended_translations",
+    "forbidden_translations",
+    "synonyms",
     "version",
     "case_sensitive",
     "status",
     "priority",
+    "project",
+    "content_type",
+    "tags",
+    "maintainer",
     "domain",
     "category",
     "note",
@@ -160,9 +169,16 @@ class TranslationTermDraftChange:
     source_term: str
     provided_fields: frozenset[str]
     target_term: str | None = None
+    recommended_translations: tuple[str, ...] | None = None
+    forbidden_translations: tuple[str, ...] | None = None
+    synonyms: tuple[str, ...] | None = None
     case_sensitive: bool | None = None
     status: str | None = None
     priority: int | None = None
+    project: str | None = None
+    content_type: str | None = None
+    tags: tuple[str, ...] | None = None
+    maintainer: str | None = None
     domain: str | None = None
     category: str | None = None
     note: str | None = None
@@ -776,11 +792,11 @@ class TranslationTermSetVersionService:
                         normalized_source_term,
                     )
                 )
-            if entry.status not in {"active", "disabled"}:
+            if entry.status not in TRANSLATION_TERM_ALLOWED_STATUSES:
                 errors.append(
                     TranslationTermValidationFinding(
                         "invalid_term_status",
-                        f"术语状态只能是 active 或 disabled: {entry.status}",
+                        f"术语状态只能是 editing、publishable、deprecated、active 或 disabled: {entry.status}",
                         normalized_source_term,
                     )
                 )
@@ -795,7 +811,7 @@ class TranslationTermSetVersionService:
                 )
             else:
                 seen[normalized_source_term] = source_term
-            if entry.status == "active":
+            if entry.status in TRANSLATION_TERM_PUBLISHABLE_STATUSES:
                 normalized_terms.append((normalized_source_term, source_term))
 
         for index, (left_key, left_source) in enumerate(normalized_terms):
@@ -915,7 +931,7 @@ class TranslationTermSetVersionService:
                 raise ValueError(f"不支持的 Translation Term Set draft action: {action}")
             source_term = self._normalize_required_text(change.source_term, "source_term")
             status = self._normalize_optional_text(change.status)
-            if status is not None and status not in {"active", "disabled"}:
+            if status is not None and status not in TRANSLATION_TERM_ALLOWED_STATUSES:
                 raise ValueError(f"不支持的翻译术语状态: {status}")
             provided_fields = self._provided_fields(change)
             parsed.append(
@@ -925,9 +941,16 @@ class TranslationTermSetVersionService:
                     source_term=source_term,
                     provided_fields=provided_fields,
                     target_term=self._normalize_optional_change_text(change.target_term),
+                    recommended_translations=self._normalize_string_tuple(change.recommended_translations) if "recommended_translations" in provided_fields else None,
+                    forbidden_translations=self._normalize_string_tuple(change.forbidden_translations) if "forbidden_translations" in provided_fields else None,
+                    synonyms=self._normalize_string_tuple(change.synonyms) if "synonyms" in provided_fields else None,
                     case_sensitive=change.case_sensitive,
                     status=status,
                     priority=change.priority,
+                    project=self._normalize_optional_text(change.project) if "project" in provided_fields else None,
+                    content_type=self._normalize_optional_text(change.content_type) if "content_type" in provided_fields else None,
+                    tags=self._normalize_string_tuple(change.tags) if "tags" in provided_fields else None,
+                    maintainer=self._normalize_optional_text(change.maintainer) if "maintainer" in provided_fields else None,
                     domain=self._normalize_optional_text(change.domain) if "domain" in provided_fields else None,
                     category=self._normalize_optional_text(change.category) if "category" in provided_fields else None,
                     note=self._normalize_optional_change_text(change.note) if "note" in provided_fields else None,
@@ -953,10 +976,17 @@ class TranslationTermSetVersionService:
                     language_pair=language_pair,
                     source_term=change.source_term,
                     target_term=self._normalize_required_text(change.target_term or "", "target_term"),
+                    recommended_translations=change.recommended_translations or (),
+                    forbidden_translations=change.forbidden_translations or (),
+                    synonyms=change.synonyms or (),
                     version=DRAFT_VERSION,
                     case_sensitive=bool(change.case_sensitive) if change.case_sensitive is not None else False,
-                    status=change.status or "active",
+                    status=change.status or "publishable",
                     priority=int(change.priority or 0),
+                    project=change.project,
+                    content_type=change.content_type,
+                    tags=change.tags or (),
+                    maintainer=change.maintainer,
                     domain=change.domain,
                     category=change.category,
                     note=change.note or "",
@@ -970,12 +1000,26 @@ class TranslationTermSetVersionService:
                 updates: dict[str, Any] = {"updated_at": utc_now()}
                 if "target_term" in change.provided_fields:
                     updates["target_term"] = change.target_term or ""
+                if "recommended_translations" in change.provided_fields:
+                    updates["recommended_translations"] = change.recommended_translations or ()
+                if "forbidden_translations" in change.provided_fields:
+                    updates["forbidden_translations"] = change.forbidden_translations or ()
+                if "synonyms" in change.provided_fields:
+                    updates["synonyms"] = change.synonyms or ()
                 if "case_sensitive" in change.provided_fields:
                     updates["case_sensitive"] = bool(change.case_sensitive)
                 if "status" in change.provided_fields:
                     updates["status"] = change.status
                 if "priority" in change.provided_fields:
                     updates["priority"] = change.priority if change.priority is not None else 0
+                if "project" in change.provided_fields:
+                    updates["project"] = change.project
+                if "content_type" in change.provided_fields:
+                    updates["content_type"] = change.content_type
+                if "tags" in change.provided_fields:
+                    updates["tags"] = change.tags or ()
+                if "maintainer" in change.provided_fields:
+                    updates["maintainer"] = change.maintainer
                 if "domain" in change.provided_fields:
                     updates["domain"] = change.domain
                 if "category" in change.provided_fields:
@@ -1046,17 +1090,24 @@ class TranslationTermSetVersionService:
         target_term = self._required_csv_text(row, "target_term")
         version = self._required_csv_text(row, "version")
         status = (row.get("status") or "active").strip() or "active"
-        if status not in {"active", "disabled"}:
-            raise ValueError(f"Translation Term Set CSV status 只能是 active 或 disabled: {status}")
+        if status not in TRANSLATION_TERM_ALLOWED_STATUSES:
+            raise ValueError(f"Translation Term Set CSV status 只能是 editing、publishable、deprecated、active 或 disabled: {status}")
         return TranslationTermEntry(
             language_pair=language_pair,
             source_term=source_term,
             normalized_source_term=normalize_translation_source_term(source_term),
             target_term=target_term,
+            recommended_translations=self._split_csv_list(row.get("recommended_translations")),
+            forbidden_translations=self._split_csv_list(row.get("forbidden_translations")),
+            synonyms=self._split_csv_list(row.get("synonyms")),
             version=version,
             case_sensitive=self._csv_bool(row.get("case_sensitive")),
             status=status,
             priority=self._csv_int(row.get("priority"), default=0),
+            project=self._optional_csv_text(row.get("project")),
+            content_type=self._optional_csv_text(row.get("content_type")),
+            tags=self._split_csv_list(row.get("tags")),
+            maintainer=self._optional_csv_text(row.get("maintainer")),
             domain=self._optional_csv_text(row.get("domain")),
             category=self._optional_csv_text(row.get("category")),
             note=(row.get("note") or "").strip(),
@@ -1072,10 +1123,17 @@ class TranslationTermSetVersionService:
                     "language_pair": entry.language_pair,
                     "source_term": entry.source_term,
                     "target_term": entry.target_term,
+                    "recommended_translations": self._join_csv_list(entry.recommended_translations),
+                    "forbidden_translations": self._join_csv_list(entry.forbidden_translations),
+                    "synonyms": self._join_csv_list(entry.synonyms),
                     "version": entry.version,
                     "case_sensitive": "true" if entry.case_sensitive else "false",
                     "status": entry.status,
                     "priority": str(entry.priority),
+                    "project": entry.project or "",
+                    "content_type": entry.content_type or "",
+                    "tags": self._join_csv_list(entry.tags),
+                    "maintainer": entry.maintainer or "",
                     "domain": entry.domain or "",
                     "category": entry.category or "",
                     "note": entry.note,
@@ -1429,6 +1487,13 @@ class TranslationTermSetVersionService:
                 source_term=entry.source_term.strip(),
                 normalized_source_term=normalize_translation_source_term(entry.source_term),
                 target_term=entry.target_term.strip(),
+                recommended_translations=tuple(item.strip() for item in entry.recommended_translations if item.strip()),
+                forbidden_translations=tuple(item.strip() for item in entry.forbidden_translations if item.strip()),
+                synonyms=tuple(item.strip() for item in entry.synonyms if item.strip()),
+                project=(entry.project or "").strip() or None,
+                content_type=(entry.content_type or "").strip() or None,
+                tags=tuple(item.strip() for item in entry.tags if item.strip()),
+                maintainer=(entry.maintainer or "").strip() or None,
                 updated_at=now,
             )
             for entry in entries
@@ -1446,9 +1511,16 @@ class TranslationTermSetVersionService:
             "source_term": entry.source_term.strip(),
             "normalized_source_term": normalize_translation_source_term(entry.source_term),
             "target_term": entry.target_term.strip(),
+            "recommended_translations": list(entry.recommended_translations),
+            "forbidden_translations": list(entry.forbidden_translations),
+            "synonyms": list(entry.synonyms),
             "case_sensitive": bool(entry.case_sensitive),
             "status": entry.status,
             "priority": int(entry.priority),
+            "project": entry.project,
+            "content_type": entry.content_type,
+            "tags": list(entry.tags),
+            "maintainer": entry.maintainer,
             "domain": entry.domain,
             "category": entry.category,
             "note": entry.note,
@@ -1497,6 +1569,22 @@ class TranslationTermSetVersionService:
         if value is None:
             return None
         return str(value).strip()
+
+    @staticmethod
+    def _normalize_string_tuple(values: list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
+        if not values:
+            return ()
+        return tuple(dict.fromkeys(item.strip() for item in values if item.strip()))
+
+    @staticmethod
+    def _split_csv_list(value: str | None) -> tuple[str, ...]:
+        if not value:
+            return ()
+        return tuple(dict.fromkeys(item.strip() for item in value.split(";") if item.strip()))
+
+    @staticmethod
+    def _join_csv_list(values: tuple[str, ...] | list[str]) -> str:
+        return ";".join(item.strip() for item in values if item.strip())
 
     @staticmethod
     def _provided_fields(change: TranslationTermSetDraftChangeRequest) -> frozenset[str]:
@@ -1620,14 +1708,23 @@ class TranslationTermSetVersionService:
             source_term=entry.source_term,
             normalized_source_term=entry.normalized_source_term,
             target_term=entry.target_term,
+            recommended_translations=list(entry.recommended_translations),
+            forbidden_translations=list(entry.forbidden_translations),
+            synonyms=list(entry.synonyms),
             version=entry.version,
             set_id=entry.set_id,
             case_sensitive=entry.case_sensitive,
             status=entry.status,
             priority=entry.priority,
+            project=entry.project,
+            content_type=entry.content_type,
+            tags=list(entry.tags),
+            maintainer=entry.maintainer,
             domain=entry.domain,
             category=entry.category,
             note=entry.note,
+            created_at=entry.created_at,
+            updated_at=entry.updated_at,
         )
 
     @staticmethod

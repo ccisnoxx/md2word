@@ -48,6 +48,16 @@
       <el-tab-pane label="新建建议" name="new">
         <el-card class="app-panel-card" shadow="never">
           <el-form ref="proposalFormRef" :model="proposalForm" :rules="proposalRules" label-width="110px">
+            <el-alert
+              v-if="termRuleSuggestionMode"
+              class="proposal-mode-alert"
+              type="info"
+              title="术语规则建议"
+              :closable="false"
+              show-icon
+            >
+              你提交的是术语规则建议，审核通过后由术语管理员转为正式规则草稿。
+            </el-alert>
             <el-form-item label="建议类型" prop="intent">
               <el-radio-group v-model="proposalForm.intent" @change="handleIntentChange">
                 <el-radio-button value="create">新增</el-radio-button>
@@ -638,6 +648,7 @@ const proposalFormRef = ref<FormInstance>();
 const translationProposalFormRef = ref<FormInstance>();
 const termRuleContextLocked = ref(false);
 const translationContextLocked = ref(false);
+const termRuleSuggestionMode = ref(false);
 const termReviewTableRef = ref<InstanceType<typeof TermProposalTable> & { clearSelection: () => void }>();
 const translationReviewTableRef = ref<InstanceType<typeof TranslationTermProposalTable> & { clearSelection: () => void }>();
 
@@ -1081,6 +1092,9 @@ function handleTabChange(): void {
   }
   routeFocusProposalId.value = "";
   focusNotice.value = "";
+  if (activeTab.value !== "new") {
+    termRuleSuggestionMode.value = false;
+  }
   void loadActiveTab();
 }
 
@@ -1274,6 +1288,11 @@ function applyRouteProposalContext(): void {
   const tab = requestedRouteTab();
   if (isTermFormTab(tab)) {
     resetProposalForm();
+    termRuleSuggestionMode.value = queryString("proposal_type") === "term_rule_suggestion";
+    if (termRuleSuggestionMode.value) {
+      proposalForm.intent = "create";
+      proposalForm.reason = queryString("reason") || "术语规则建议：";
+    }
     proposalForm.source_job_id = queryString("source_job_id");
     proposalForm.source_file_id = queryString("source_file_id");
     proposalForm.observed_term_rule_set_id = queryString("observed_term_rule_set_id");
@@ -1353,6 +1372,7 @@ function resetProposalForm(): void {
   proposalForm.observed_term_rule_version = "";
   proposalForm.target_rule_id = "";
   termRuleContextLocked.value = false;
+  termRuleSuggestionMode.value = false;
 }
 
 function resetTranslationProposalForm(): void {

@@ -48,7 +48,7 @@ describe("app shell navigation", () => {
     const operatorItemIds = operatorGroups.flatMap((group) => group.items.map((item) => item.id));
 
     expect(operatorGroups.map((group) => group.id)).toEqual(["processing", "quality"]);
-    expect(operatorItemIds).toEqual(["cockpit", "jobs", "incidents", "job-create", "translation-qa", "term-proposals"]);
+    expect(operatorItemIds).toEqual(["cockpit", "jobs", "incidents", "job-create", "translation-qa", "term-proposals", "term-rules"]);
     expect(operatorItemIds).not.toContain("settings");
     expect(operatorItemIds).not.toContain("system-status");
 
@@ -85,7 +85,7 @@ describe("app shell navigation", () => {
         roles: ["operator"],
         permissions: ["settings:read"],
       }),
-    ).toBe("/settings/term-rule-sets");
+    ).toBe("/settings/translation-term-sets");
     expect(getDefaultProtectedRoute({ role: "guest", roles: ["guest"], permissions: [] })).toBe("/forbidden");
   });
 

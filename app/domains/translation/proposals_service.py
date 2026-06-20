@@ -540,7 +540,7 @@ class TranslationTermProposalService:
                     source_term=change.source_term,
                     target_term=self._normalize_required_text(change.target_term or "", "target_term"),
                     case_sensitive=bool(change.case_sensitive) if change.case_sensitive is not None else False,
-                    status=change.status or "active",
+                    status=change.status or "publishable",
                     priority=int(change.priority or 0),
                     domain=change.domain,
                     category=change.category,
@@ -580,7 +580,7 @@ class TranslationTermProposalService:
             source_term = self._normalize_required_text(str(raw_change.get("source_term", "")), "source_term")
             target_term = self._normalize_optional_text(raw_change.get("target_term"))
             status = self._normalize_optional_text(raw_change.get("status"))
-            if status is not None and status not in {"active", "disabled"}:
+            if status is not None and status not in {"editing", "publishable", "deprecated", "active", "disabled"}:
                 raise ValueError(f"不支持的翻译术语状态: {status}")
             changes.append(
                 TranslationTermProposalChangeRecord(

@@ -26,6 +26,7 @@ from app.domains.jobs.repository import (
 from app.domains.resources.repository import ResourceVersionRepositoryProtocol
 from app.domains.saved_views.repository import SavedViewRepositoryProtocol
 from app.domains.term_rules.repository import TermRuleAssetRepositoryProtocol, TermRuleProposalRepositoryProtocol
+from app.domains.terminology.repository import TerminologyReleaseRepositoryProtocol
 from app.domains.translation.repository import TranslationTermRepositoryProtocol
 from app.domains.users.repository import InternalUserRepositoryProtocol
 from app.infrastructure.persistence.file import (
@@ -44,6 +45,7 @@ from app.infrastructure.persistence.file import (
     FileRetentionPolicyRepository,
     FileSavedViewRepository,
     FileStageMessageStore,
+    FileTerminologyReleaseRepository,
 )
 from app.infrastructure.persistence.mysql import (
     ConnectFactory,
@@ -66,6 +68,7 @@ from app.infrastructure.persistence.mysql import (
     MysqlStageMessageStore,
     MysqlTermRuleAssetRepository,
     MysqlTermRuleProposalRepository,
+    MysqlTerminologyReleaseRepository,
     MysqlTranslationTermRepository,
 )
 from app.infrastructure.persistence.sqlite import (
@@ -84,6 +87,7 @@ from app.infrastructure.persistence.sqlite import (
     SqliteRetentionPolicyRepository,
     SqliteSavedViewRepository,
     SqliteStageMessageStore,
+    SqliteTerminologyReleaseRepository,
 )
 
 
@@ -106,6 +110,7 @@ class PersistenceAdapters:
     internal_user_repository: InternalUserRepositoryProtocol
     saved_view_repository: SavedViewRepositoryProtocol
     stage_message_store: StageMessageStoreProtocol
+    terminology_release_repository: TerminologyReleaseRepositoryProtocol
     resource_version_repository: ResourceVersionRepositoryProtocol | None = None
     term_rule_proposal_repository: TermRuleProposalRepositoryProtocol | None = None
     term_rule_asset_repository: TermRuleAssetRepositoryProtocol | None = None
@@ -132,6 +137,7 @@ def build_file_persistence_adapters(data_dir: Path) -> PersistenceAdapters:
         internal_user_repository=FileInternalUserRepository(backend),
         saved_view_repository=FileSavedViewRepository(backend),
         stage_message_store=FileStageMessageStore(backend),
+        terminology_release_repository=FileTerminologyReleaseRepository(backend),
         resource_version_repository=None,
         term_rule_proposal_repository=None,
         term_rule_asset_repository=None,
@@ -159,6 +165,7 @@ def build_sqlite_persistence_adapters(database_path: Path) -> PersistenceAdapter
         internal_user_repository=SqliteInternalUserRepository(backend),
         saved_view_repository=SqliteSavedViewRepository(backend),
         stage_message_store=SqliteStageMessageStore(backend),
+        terminology_release_repository=SqliteTerminologyReleaseRepository(backend),
         resource_version_repository=None,
         term_rule_proposal_repository=None,
         term_rule_asset_repository=None,
@@ -190,6 +197,7 @@ def build_mysql_persistence_adapters(
         internal_user_repository=MysqlInternalUserRepository(backend),
         saved_view_repository=MysqlSavedViewRepository(backend),
         stage_message_store=MysqlStageMessageStore(backend),
+        terminology_release_repository=MysqlTerminologyReleaseRepository(backend),
         resource_version_repository=MysqlResourceVersionRepository(backend),
         term_rule_proposal_repository=MysqlTermRuleProposalRepository(backend),
         term_rule_asset_repository=MysqlTermRuleAssetRepository(backend),
