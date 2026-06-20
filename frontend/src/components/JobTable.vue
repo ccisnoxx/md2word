@@ -1,19 +1,19 @@
 <!-- File: frontend/src/components/JobTable.vue -->
 <!-- Purpose: 展示 document_jobs 分页表格、批量选择和任务级操作入口。 -->
 <template>
-  <div class="job-table">
+  <div class="job-table" :class="`is-${density}-density`">
     <el-table
       ref="tableRef"
       v-loading="loading"
       :data="jobs"
       border
-      class="table"
+      :class="['table', `is-${density}-density`]"
       empty-text="暂无任务"
       table-layout="fixed"
       @selection-change="emit('selection-change', $event)"
     >
-      <el-table-column type="selection" width="44" :selectable="isBatchSelectable" />
-      <el-table-column label="任务 / 异常" min-width="360">
+      <el-table-column v-if="isColumnVisible('selection')" type="selection" width="44" :selectable="isBatchSelectable" />
+      <el-table-column v-if="isColumnVisible('identity')" label="任务 / 异常" min-width="360">
         <template #default="{ row }">
           <div class="job-main">
             <router-link class="filename job-title" :to="`/jobs/${row.id}`" :title="getJobSourceFilename(row)">
@@ -31,7 +31,7 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="状态" min-width="126">
+      <el-table-column v-if="isColumnVisible('status')" label="状态" min-width="126">
         <template #default="{ row }">
           <div class="status-cell">
             <JobStatusBadge :status="row.status" />
@@ -39,7 +39,7 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="QA" min-width="126">
+      <el-table-column v-if="isColumnVisible('qa')" label="QA" min-width="126">
         <template #default="{ row }">
           <div v-if="supportsTranslationQa(row)" class="qa-cell">
             <el-tag size="small" :type="translationQaTagType(row)" effect="plain">
@@ -52,19 +52,25 @@
           <span v-else class="muted">-</span>
         </template>
       </el-table-column>
-      <el-table-column label="进度" min-width="170">
+      <el-table-column v-if="isColumnVisible('progress')" label="进度" min-width="170">
         <template #default="{ row }">
           <JobProgress :status="row.status" :stage="row.stage" :progress="row.progress" />
         </template>
       </el-table-column>
-      <el-table-column label="更新" min-width="150">
+      <el-table-column v-if="isColumnVisible('updated')" label="更新" min-width="150">
         <template #default="{ row }">
           <span class="updated-time" :title="`创建：${formatDateTime(row.created_at)}`">
             {{ formatDateTime(row.updated_at) }}
           </span>
         </template>
       </el-table-column>
-      <el-table-column :key="actionColumnFixed ? 'actions-fixed' : 'actions-static'" label="操作" width="158" :fixed="actionColumnFixed">
+      <el-table-column
+        v-if="isColumnVisible('actions')"
+        :key="actionColumnFixed ? 'actions-fixed' : 'actions-static'"
+        label="操作"
+        width="158"
+        :fixed="actionColumnFixed"
+      >
         <template #default="{ row }">
           <div class="action-row">
             <el-button
@@ -192,7 +198,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { MoreFilled } from "@element-plus/icons-vue";
 import { useRouter } from "vue-router";
 import type { TableInstance } from "element-plus";
@@ -218,6 +224,7 @@ import {
   translationQaStatusTagType,
   translationQaStatusText,
 } from "@/utils/format";
+import type { WorkbenchTableDensity } from "@/utils/tablePreferences";
 
 const props = defineProps<{
   jobs: DocumentJobResponse[];
@@ -226,6 +233,8 @@ const props = defineProps<{
   pageSize: number;
   total: number;
   actionPending?: Record<string, DocumentJobActionId | undefined>;
+  density: WorkbenchTableDensity;
+  visibleColumns: string[];
 }>();
 
 const emit = defineEmits<{
@@ -247,6 +256,10 @@ const tableRef = ref<TableInstance>();
 const actionColumnFixed = ref<"right" | undefined>("right");
 let narrowViewportQuery: MediaQueryList | null = null;
 
+function isColumnVisible(columnId: string): boolean {
+  return props.visibleColumns.includes(columnId);
+}
+
 function syncActionColumnFixed(): void {
   actionColumnFixed.value = narrowViewportQuery?.matches ? undefined : "right";
 }
@@ -263,6 +276,13 @@ onMounted(() => {
 onBeforeUnmount(() => {
   narrowViewportQuery?.removeEventListener("change", syncActionColumnFixed);
 });
+
+watch(
+  () => [props.density, props.visibleColumns.join("|")],
+  () => {
+    void nextTick(() => tableRef.value?.doLayout());
+  },
+);
 
 function clearSelection(): void {
   tableRef.value?.clearSelection();
@@ -424,10 +444,20 @@ function pendingActionLabel(row: DocumentJobResponse): string {
   width: 100%;
 }
 
+.table.is-compact-density {
+  :deep(.el-table__cell) {
+    padding: 6px 0;
+  }
+}
+
 .job-main {
   display: grid;
   gap: 6px;
   min-width: 0;
+}
+
+.is-compact-density .job-main {
+  gap: 4px;
 }
 
 .filename {
@@ -478,6 +508,10 @@ function pendingActionLabel(row: DocumentJobResponse): string {
   line-height: 1.35;
 }
 
+.is-compact-density .failure-summary {
+  padding: 3px 6px;
+}
+
 .failure-summary span:last-child {
   overflow: hidden;
   min-width: 0;
@@ -490,6 +524,11 @@ function pendingActionLabel(row: DocumentJobResponse): string {
 .qa-cell {
   align-items: flex-start;
   flex-direction: column;
+}
+
+.is-compact-density .status-cell,
+.is-compact-density .qa-cell {
+  gap: 4px;
 }
 
 .stage-label,
@@ -542,6 +581,10 @@ function pendingActionLabel(row: DocumentJobResponse): string {
   display: flex;
   justify-content: flex-end;
   margin-top: 14px;
+}
+
+.is-compact-density .pagination-row {
+  margin-top: 10px;
 }
 
 @media (max-width: 720px) {

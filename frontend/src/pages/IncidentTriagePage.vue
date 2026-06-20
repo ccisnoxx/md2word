@@ -122,6 +122,13 @@
           </div>
         </el-popover>
         <el-button :icon="Refresh" :loading="loading" @click="handleFilter">搜索</el-button>
+        <WorkbenchTableSettings
+          :model-value="tablePreferences"
+          settings-id="incident-table-settings"
+          :columns="incidentTableColumns"
+          @update:model-value="handleTablePreferencesUpdate"
+          @reset="handleTablePreferencesReset"
+        />
       </div>
 
       <div v-if="activeFilterChips.length" class="active-filter-chips" aria-label="当前筛选条件">
@@ -150,15 +157,15 @@
           v-loading="loading"
           :data="items"
           border
-          class="incident-table"
+          :class="['incident-table', `is-${tablePreferences.density}-density`]"
           empty-text="当前筛选下暂无异常"
           table-layout="fixed"
           :row-class-name="incidentRowClassName"
           @selection-change="handleSelectionChange"
           @row-click="openDiagnostic"
         >
-          <el-table-column type="selection" width="44" />
-          <el-table-column label="任务 / 证据" min-width="360">
+          <el-table-column v-if="isTableColumnVisible('selection')" type="selection" width="44" />
+          <el-table-column v-if="isTableColumnVisible('identity')" label="任务 / 证据" min-width="360">
             <template #default="{ row }">
               <div class="incident-main">
                 <button type="button" class="job-title-button" @click.stop="openDiagnostic(row)">
@@ -178,7 +185,7 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="状态" width="150">
+          <el-table-column v-if="isTableColumnVisible('status')" label="状态" width="150">
             <template #default="{ row }">
               <div class="status-cell">
                 <JobStatusBadge :status="row.job.status" />
@@ -186,7 +193,7 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="重试" width="150">
+          <el-table-column v-if="isTableColumnVisible('retry')" label="重试" width="150">
             <template #default="{ row }">
               <div class="retry-cell">
                 <el-tag size="small" :type="row.retryable ? 'success' : 'info'" effect="plain">
@@ -196,7 +203,7 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="更新" width="172">
+          <el-table-column v-if="isTableColumnVisible('updated')" label="更新" width="172">
             <template #default="{ row }">
               <div class="time-cell">
                 <span>{{ formatDateTime(row.job.updated_at) }}</span>
@@ -204,7 +211,7 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="170" fixed="right">
+          <el-table-column v-if="isTableColumnVisible('actions')" label="操作" width="170" fixed="right">
             <template #default="{ row }">
               <div class="action-row">
                 <el-button
@@ -378,7 +385,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox, type TableInstance } from "element-plus";
 import { Filter, Refresh, Search } from "@element-plus/icons-vue";
 import { useRoute, useRouter, type LocationQuery } from "vue-router";
@@ -403,6 +410,7 @@ import BatchResultStrip from "@/components/BatchResultStrip.vue";
 import JobStatusBadge from "@/components/JobStatusBadge.vue";
 import SavedViewStrip from "@/components/SavedViewStrip.vue";
 import ShortcutHintList from "@/components/ShortcutHintList.vue";
+import WorkbenchTableSettings from "@/components/WorkbenchTableSettings.vue";
 import { normalizeIncidentBatchResult } from "@/utils/batchResults";
 import { formatDateTime, getJobSourceFilename, jobStageText, jobStatusText } from "@/utils/format";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
@@ -434,6 +442,14 @@ import {
   type SavedViewState,
   type SavedViewStripItem,
 } from "@/utils/savedViews";
+import {
+  getStoredWorkbenchTablePreferences,
+  INCIDENT_TABLE_COLUMNS,
+  isWorkbenchTableColumnVisible,
+  persistWorkbenchTablePreferences,
+  resetWorkbenchTablePreferences,
+  type WorkbenchTablePreferences,
+} from "@/utils/tablePreferences";
 
 const router = useRouter();
 const route = useRoute();
@@ -447,7 +463,9 @@ const batchLoading = ref(false);
 const error = ref<ApiClientError | null>(null);
 const drawerError = ref<ApiClientError | null>(null);
 const page = ref(1);
-const pageSize = 20;
+const incidentTableColumns = INCIDENT_TABLE_COLUMNS;
+const tablePreferences = ref(getStoredWorkbenchTablePreferences("incidents", incidentTableColumns));
+const pageSize = computed(() => tablePreferences.value.pageSize);
 const total = ref(0);
 const summary = ref<DocumentJobIncidentSummaryResponse | null>(null);
 const statusFilter = ref<DocumentJobStatus | "">("");
@@ -611,7 +629,7 @@ async function loadIncidents(options: { background?: boolean; preserveError?: bo
   try {
     const response = await documentJobIncidentsApi.list({
       page: page.value,
-      page_size: pageSize,
+      page_size: pageSize.value,
       status: statusFilter.value || undefined,
       stage: stageFilter.value || undefined,
       failure_type: failureTypeFilter.value || undefined,
@@ -959,6 +977,30 @@ function handleFilter(): void {
 
 function handlePageChange(nextPage: number): void {
   void syncRouteAndLoad(nextPage);
+}
+
+function isTableColumnVisible(columnId: string): boolean {
+  return isWorkbenchTableColumnVisible(tablePreferences.value, columnId);
+}
+
+function handleTablePreferencesUpdate(nextPreferences: WorkbenchTablePreferences): void {
+  const previousPageSize = tablePreferences.value.pageSize;
+  tablePreferences.value = persistWorkbenchTablePreferences("incidents", nextPreferences, incidentTableColumns);
+  void nextTick(() => tableRef.value?.doLayout());
+  if (tablePreferences.value.pageSize !== previousPageSize) {
+    batchResult.value = null;
+    void syncRouteAndLoad(1);
+  }
+}
+
+function handleTablePreferencesReset(): void {
+  const previousPageSize = tablePreferences.value.pageSize;
+  tablePreferences.value = resetWorkbenchTablePreferences("incidents", incidentTableColumns);
+  void nextTick(() => tableRef.value?.doLayout());
+  if (tablePreferences.value.pageSize !== previousPageSize) {
+    batchResult.value = null;
+    void syncRouteAndLoad(1);
+  }
 }
 
 function applySummaryFilter(kind: SummaryFilter): void {
@@ -1504,10 +1546,23 @@ onBeforeUnmount(() => {
   min-width: 980px;
 }
 
+.incident-table.is-compact-density {
+  :deep(.el-table__cell) {
+    padding: 6px 0;
+  }
+}
+
 .incident-main {
   display: grid;
   gap: 6px;
   min-width: 0;
+}
+
+.incident-table.is-compact-density .incident-main,
+.incident-table.is-compact-density .status-cell,
+.incident-table.is-compact-density .retry-cell,
+.incident-table.is-compact-density .time-cell {
+  gap: 4px;
 }
 
 .job-title-button {
@@ -1561,6 +1616,10 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+.incident-table.is-compact-density .action-row {
+  gap: 2px;
 }
 
 .pagination-row {

@@ -120,6 +120,13 @@
             </div>
           </el-popover>
           <el-button :icon="Refresh" :loading="loading" @click="handleFilter">搜索</el-button>
+          <WorkbenchTableSettings
+            :model-value="tablePreferences"
+            settings-id="jobs-table-settings"
+            :columns="jobsTableColumns"
+            @update:model-value="handleTablePreferencesUpdate"
+            @reset="handleTablePreferencesReset"
+          />
         </div>
       </div>
 
@@ -234,6 +241,8 @@
           :page-size="pageSize"
           :total="total"
           :action-pending="actionPending"
+          :density="tablePreferences.density"
+          :visible-columns="tablePreferences.visibleColumns"
           @page-change="handlePageChange"
           @selection-change="handleSelectionChange"
           @download="handleDownload"
@@ -290,6 +299,7 @@ import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import BatchResultStrip from "@/components/BatchResultStrip.vue";
 import JobTable from "@/components/JobTable.vue";
 import SavedViewStrip from "@/components/SavedViewStrip.vue";
+import WorkbenchTableSettings from "@/components/WorkbenchTableSettings.vue";
 import { useAuthStore } from "@/stores/auth";
 import { normalizeJobsBatchResult } from "@/utils/batchResults";
 import {
@@ -312,6 +322,13 @@ import {
   type SavedViewState,
   type SavedViewStripItem,
 } from "@/utils/savedViews";
+import {
+  getStoredWorkbenchTablePreferences,
+  JOBS_TABLE_COLUMNS,
+  persistWorkbenchTablePreferences,
+  resetWorkbenchTablePreferences,
+  type WorkbenchTablePreferences,
+} from "@/utils/tablePreferences";
 
 const router = useRouter();
 const route = useRoute();
@@ -322,7 +339,9 @@ const savedViewsLoading = ref(false);
 const loading = ref(false);
 const error = ref<ApiClientError | null>(null);
 const page = ref(1);
-const pageSize = 20;
+const jobsTableColumns = JOBS_TABLE_COLUMNS;
+const tablePreferences = ref(getStoredWorkbenchTablePreferences("jobs", jobsTableColumns));
+const pageSize = computed(() => tablePreferences.value.pageSize);
 const total = ref(0);
 const statusFilter = ref<DocumentJobStatus | "">("");
 const statusGroupFilter = ref<DocumentJobStatusGroup | "">("");
@@ -558,7 +577,7 @@ async function loadJobs(options: LoadJobsOptions = {}): Promise<void> {
   try {
     const response = await documentJobsApi.list({
       page: page.value,
-      page_size: pageSize,
+      page_size: pageSize.value,
       status: statusFilter.value || undefined,
       status_group: statusGroupFilter.value || undefined,
       translation_qa_status: qaStatusFilter.value || undefined,
@@ -821,6 +840,24 @@ function startAutoRefresh(): void {
 
 function handlePageChange(nextPage: number): void {
   void syncRouteAndLoad(nextPage);
+}
+
+function handleTablePreferencesUpdate(nextPreferences: WorkbenchTablePreferences): void {
+  const previousPageSize = tablePreferences.value.pageSize;
+  tablePreferences.value = persistWorkbenchTablePreferences("jobs", nextPreferences, jobsTableColumns);
+  if (tablePreferences.value.pageSize !== previousPageSize) {
+    batchResult.value = null;
+    void syncRouteAndLoad(1);
+  }
+}
+
+function handleTablePreferencesReset(): void {
+  const previousPageSize = tablePreferences.value.pageSize;
+  tablePreferences.value = resetWorkbenchTablePreferences("jobs", jobsTableColumns);
+  if (tablePreferences.value.pageSize !== previousPageSize) {
+    batchResult.value = null;
+    void syncRouteAndLoad(1);
+  }
 }
 
 function handleFilter(): void {
