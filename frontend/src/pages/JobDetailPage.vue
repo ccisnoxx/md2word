@@ -4,7 +4,7 @@
   <div class="job-detail-page app-page">
     <div class="section-header detail-header app-page-header app-page-shell">
       <div>
-        <p class="page-kicker">Document Jobs</p>
+        <p class="page-kicker">转换任务</p>
         <h1 class="section-title page-title">任务详情</h1>
         <p class="section-subtitle mono">{{ jobId }}</p>
       </div>
@@ -58,7 +58,7 @@
         <div class="section-header">
           <div>
             <h2 class="section-title">任务处置</h2>
-            <p class="section-subtitle">基于后端任务状态、事件、Callback 和文件记录汇总；动作可用性以后端返回为准。</p>
+            <p class="section-subtitle">基于后端任务状态、事件、回调和文件记录汇总；动作可用性以后端返回为准。</p>
           </div>
           <el-button :icon="Refresh" :loading="loading || eventsLoading || filesLoading || callbackSummaryLoading" @click="loadAll">
             刷新诊断
@@ -119,11 +119,11 @@
               <el-descriptions-item label="源文件 ID">{{ job.source_file_id }}</el-descriptions-item>
               <el-descriptions-item label="来源任务 ID">{{ job.source_job_id || "-" }}</el-descriptions-item>
               <el-descriptions-item label="结果文件 ID">{{ job.result_file_id || "-" }}</el-descriptions-item>
-              <el-descriptions-item label="Template">{{ boundTemplateLabel }}</el-descriptions-item>
-              <el-descriptions-item label="Term Rule Set">{{ boundTermRuleSetLabel }}</el-descriptions-item>
-              <el-descriptions-item label="Translation Term Set">{{ boundTranslationTermSetLabel }}</el-descriptions-item>
-              <el-descriptions-item label="Translation Profile">{{ boundTranslationProfileLabel }}</el-descriptions-item>
-              <el-descriptions-item label="legacy term_version_id">{{ job.term_version_id || "-" }}</el-descriptions-item>
+              <el-descriptions-item label="Word 模板">{{ boundTemplateLabel }}</el-descriptions-item>
+              <el-descriptions-item label="术语规则集">{{ boundTermRuleSetLabel }}</el-descriptions-item>
+              <el-descriptions-item label="翻译术语集">{{ boundTranslationTermSetLabel }}</el-descriptions-item>
+              <el-descriptions-item label="翻译配置">{{ boundTranslationProfileLabel }}</el-descriptions-item>
+              <el-descriptions-item label="旧术语版本 ID">{{ job.term_version_id || "-" }}</el-descriptions-item>
               <el-descriptions-item label="创建时间">{{ formatDateTime(job.created_at) }}</el-descriptions-item>
               <el-descriptions-item label="更新时间">{{ formatDateTime(job.updated_at) }}</el-descriptions-item>
               <el-descriptions-item label="重试次数">{{ job.retry_count }}</el-descriptions-item>
@@ -160,7 +160,7 @@
             <div class="section-header">
               <div>
                 <h2 class="section-title">诊断摘要</h2>
-                <p class="section-subtitle">用现有任务、事件、文件和 Callback 数据说明当前结果、关键证据和下一步。</p>
+                <p class="section-subtitle">用现有任务、事件、文件和回调数据说明当前结果、关键证据和下一步。</p>
               </div>
               <el-button
                 :icon="Refresh"
@@ -202,7 +202,7 @@
               <div class="diagnostic-section-heading">
                 <div>
                   <h3>关键证据</h3>
-                  <p>区分源文件、结果、DocumentIR、Callback 和最近错误事件；raw id/code 保持可复制。</p>
+                  <p>区分源文件、结果、DocumentIR、回调和最近错误事件；原始 ID/错误码保持可复制。</p>
                 </div>
               </div>
               <div class="diagnostic-evidence-grid">
@@ -218,7 +218,7 @@
               <div class="diagnostic-section-heading">
                 <div>
                   <h3>事件预览</h3>
-                  <p>优先查看最近 error/warning；完整事件流仍在“事件”tab。</p>
+                  <p>优先查看最近错误/警告（error/warning）；完整事件流仍在“事件”页签。</p>
                 </div>
                 <el-button text type="primary" @click="openEventsTab">查看完整事件流</el-button>
               </div>
@@ -249,7 +249,7 @@
               <div class="diagnostic-recovery-actions">
                 <el-button v-if="filesError" :loading="filesLoading" @click="loadFiles()">刷新文件证据</el-button>
                 <el-button v-if="callbackSummaryError" :loading="callbackSummaryLoading" @click="loadCallbackSummary()">
-                  刷新 Callback
+                  刷新回调
                 </el-button>
                 <el-button v-if="eventsError" :loading="eventsLoading" @click="loadEvents()">刷新事件</el-button>
               </div>
@@ -260,7 +260,7 @@
             <div class="section-header">
               <div>
                 <h2 class="section-title">Word 质量证据</h2>
-                <p class="section-subtitle">来自 generated_word、DocumentIR 文件 metadata 和后端质量标记。</p>
+                <p class="section-subtitle">来自 generated_word 结果、DocumentIR 文件元数据和后端质量标记。</p>
               </div>
               <el-button :icon="Refresh" :loading="filesLoading" @click="loadFiles()">刷新质量证据</el-button>
             </div>
@@ -293,10 +293,10 @@
           <el-card class="page-section card-flat" shadow="never">
             <div class="section-header">
               <div>
-                <h2 class="section-title">Callback 消息</h2>
-                <p class="section-subtitle">MinerU callback 的入库、重放和失败摘要；不展示 callback 原始 payload。</p>
+                <h2 class="section-title">回调消息</h2>
+                <p class="section-subtitle">MinerU 回调（callback）的入库、重放和失败摘要；不展示回调原始 payload。</p>
               </div>
-              <el-button :icon="Refresh" :loading="callbackSummaryLoading" @click="loadCallbackSummary()">刷新 Callback</el-button>
+              <el-button :icon="Refresh" :loading="callbackSummaryLoading" @click="loadCallbackSummary()">刷新回调</el-button>
             </div>
             <ApiErrorAlert
               :error="callbackSummaryError"
@@ -370,8 +370,8 @@
             <el-descriptions :column="2" border>
               <el-descriptions-item label="来源任务">{{ job.id }}</el-descriptions-item>
               <el-descriptions-item label="来源文件">{{ job.source_file_id }}</el-descriptions-item>
-              <el-descriptions-item label="Observed Term Rule Set">{{ termRuleProposalVersionLabel }}</el-descriptions-item>
-              <el-descriptions-item v-if="job.mode === 'en2zh_pdf_to_word'" label="Observed Translation Term Set">
+              <el-descriptions-item label="当前术语规则集">{{ termRuleProposalVersionLabel }}</el-descriptions-item>
+              <el-descriptions-item v-if="job.mode === 'en2zh_pdf_to_word'" label="当前翻译术语集">
                 {{ translationTermProposalVersionLabel }}
               </el-descriptions-item>
             </el-descriptions>
@@ -553,7 +553,7 @@
             </el-radio-group>
           </el-form-item>
           <template v-if="isAdmin && cloneDialog.strategy === 'select_published_versions'">
-            <el-form-item label="Template">
+            <el-form-item label="Word 模板">
               <el-select
                 v-model="cloneDialog.templateVersion"
                 clearable
@@ -980,10 +980,10 @@ const dispositionDescription = computed(() => {
     return "";
   }
   if (job.value.status === "failed") {
-    return `${failureHelpText.value} 查看下方动作禁用原因和诊断 tab 可获得更完整事件线索。`;
+    return `${failureHelpText.value} 查看下方动作禁用原因和诊断页签可获得更完整事件线索。`;
   }
   if (isJobStale.value) {
-    return "该任务仍处于活跃状态，但更新时间已超过 10 分钟。请先刷新事件流和 Callback 摘要，必要时联系技术运营。";
+    return "该任务仍处于活跃状态，但更新时间已超过 10 分钟。请先刷新事件流和回调摘要，必要时联系技术运营。";
   }
   if (job.value.status === "succeeded") {
     return "任务结果已登记。下载按钮会生成临时链接；链接失效后可以再次获取。";
@@ -1004,8 +1004,8 @@ const dispositionFacts = computed(() => {
     { label: "最近更新", value: formatDateTime(job.value.updated_at) },
     { label: "失败阶段", value: job.value.failed_stage || "-" },
     { label: "错误码", value: job.value.error_code || "-", mono: true },
-    { label: "Trace", value: latestTraceId.value, mono: true },
-    { label: "Callback", value: callbackHealthText.value },
+    { label: "trace_id", value: latestTraceId.value, mono: true },
+    { label: "回调", value: callbackHealthText.value },
     { label: "质量", value: qualityDispositionText.value },
     { label: "文件", value: fileAvailabilitySummary.value },
   ];
@@ -1131,16 +1131,16 @@ const diagnosticEvidenceItems = computed<DiagnosticEvidenceItem[]>(() => {
       mono: true,
     },
     {
-      label: "Callback 问题",
+      label: "回调问题",
       value: callbackHealthText.value,
-      helper: callbackSummaryError.value ? "Callback 摘要加载失败，可单独刷新" : "failed / replayable / pending 由后端摘要返回",
+      helper: callbackSummaryError.value ? "回调摘要加载失败，可单独刷新" : "failed / replayable / pending 由后端摘要返回",
     },
     {
       label: "最近错误事件",
       value: latestEvent?.event_type || "-",
       helper: latestEvent
         ? `${latestEvent.message}${latestEvent.trace_id ? ` · trace_id=${latestEvent.trace_id}` : ""}`
-        : "暂无 error 级别事件",
+        : "暂无错误级别（error）事件",
       mono: true,
     },
   ];
@@ -1590,7 +1590,7 @@ async function handleDelete(target: DocumentJobResponse): Promise<void> {
     const deleteCount = preview.totals.delete || 0;
     const keepCount = preview.totals.keep || 0;
     await ElMessageBox.confirm(
-      `删除任务会隐藏该任务并清理可安全删除的关联文件。将删除 ${deleteCount} 个文件，保留 ${keepCount} 个文件；任务 metadata、事件和 audit 会保留。`,
+      `删除任务会隐藏该任务并清理可安全删除的关联文件。将删除 ${deleteCount} 个文件，保留 ${keepCount} 个文件；任务元数据（metadata）、事件和审计记录（audit）会保留。`,
       "删除任务",
       {
         confirmButtonText: "确认删除",
@@ -1775,7 +1775,7 @@ function fileTypeText(fileType: string): string {
     document_ir: "DocumentIR",
     image_asset: "图片资产",
     ai_call_log: "AI 调用日志",
-    ai_debug_archive: "AI debug 归档",
+    ai_debug_archive: "AI 调试归档",
   };
   return labels[fileType] || fileType;
 }

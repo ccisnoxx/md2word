@@ -182,7 +182,7 @@
                 <div class="evidence-tags">
                   <el-tag size="small" :type="row.document_ir_file_id ? 'success' : 'info'" effect="plain">DocumentIR</el-tag>
                   <el-tag size="small" :type="row.result_file_id ? 'success' : 'info'" effect="plain">DOCX</el-tag>
-                  <el-tag size="small" :type="row.debug_full_text_enabled ? 'success' : 'info'" effect="plain">Debug</el-tag>
+                  <el-tag size="small" :type="row.debug_full_text_enabled ? 'success' : 'info'" effect="plain">调试归档</el-tag>
                 </div>
               </template>
             </el-table-column>

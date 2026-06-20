@@ -134,7 +134,7 @@
         <section class="qa-evidence-summary" aria-label="关键证据">
           <header class="qa-evidence-heading">
             <h3>证据文件</h3>
-            <p>保留 DocumentIR、AI 调用日志和 debug 归档的原始 file id，便于排障复制。</p>
+            <p>保留 DocumentIR、AI 调用日志和调试归档的原始 file id，便于排障复制。</p>
           </header>
           <div class="evidence-row">
             <span>DocumentIR</span>
@@ -145,7 +145,7 @@
             <strong class="mono">{{ joinIds(qa?.artifacts.ai_call_log_file_ids || []) }}</strong>
           </div>
           <div class="evidence-row">
-            <span>Debug 归档</span>
+            <span>调试归档</span>
             <strong class="mono">{{ joinIds(qa?.artifacts.ai_debug_archive_file_ids || []) }}</strong>
           </div>
           <div class="evidence-row">
@@ -397,7 +397,7 @@ const summaryMetrics = computed(() => [
     helper: aiCallSummaryText.value,
   },
   {
-    label: "Debug 归档",
+    label: "调试归档",
     value: translationQaDebugArchiveStateText(debugArchiveState.value),
     helper: translationQaDebugArchiveHelper(props.qa),
   },

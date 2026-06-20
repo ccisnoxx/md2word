@@ -55,16 +55,24 @@ Workbench pages that open a right-side detail or review drawer from an in-page l
 - Keep low-frequency row actions in an overflow menu; expose only the primary action inline.
 - Keep table wrappers horizontally scrollable on mobile instead of forcing a full card-list rewrite unless the task explicitly asks for it.
 
+## Operator-Facing Copy
+
+- High-frequency protected workbench surfaces must use Chinese-first visible copy.
+- Technical tokens such as `QA`, `PDF`, `DOCX`, `API`, `Word`, `DocumentIR`, `trace_id`, raw ids, enum values, event codes, and error codes may remain visible, but pair them with Chinese context when they are not self-explanatory.
+- Do not rename code identifiers, route names, API fields, test names, or developer comments solely for copy cleanup.
+
 ## Required Verification
 
 For page-level layout changes:
 
 - Run `npm run build` from `frontend/`.
-- Capture or inspect affected pages at `1440px` and `375px`.
+- Capture or inspect affected pages at `1440px`, `768px`, and `375px`.
 - Assert no uncontrolled document/body horizontal overflow.
 - Assert fixed or sticky action bars fit in the viewport.
 - For grid-root workbench pages, assert compact header/queue elements do not stretch beyond their intended content height.
 - For page-level drawers, assert the overlay covers the protected shell, drawer actions are clickable, close removes only the drawer query parameter, and any keyboard shortcuts have visible hints.
+- For command palettes, drawers, mobile navigation, and table settings popovers, assert `Escape` closes transient UI where expected and that keyboard-opened controls remain inside the viewport.
+- For table settings, verify the popover at mobile/tablet widths as well as desktop; wide tables may scroll only inside their own wrapper.
 
 ## Wrong vs Correct
 
