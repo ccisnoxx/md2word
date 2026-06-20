@@ -63,6 +63,21 @@ SQLITE_SCHEMA_STATEMENTS: tuple[str, ...] = (
     ON audit_events (created_at, id)
     """,
     """
+    CREATE TABLE IF NOT EXISTS internal_users (
+        user_id TEXT PRIMARY KEY,
+        normalized_username TEXT NOT NULL UNIQUE,
+        role TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_internal_users_role_status
+    ON internal_users (role, status, normalized_username)
+    """,
+    """
     CREATE TABLE IF NOT EXISTS document_files (
         file_id TEXT PRIMARY KEY,
         payload TEXT NOT NULL,

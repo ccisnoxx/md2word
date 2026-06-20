@@ -27,6 +27,7 @@ const ADMIN_EXTRA_PERMISSIONS = [
   "ops:read",
   "ops:write",
   "audit:read",
+  "users:manage",
   "files:retention",
   "term_proposals:review",
 ];

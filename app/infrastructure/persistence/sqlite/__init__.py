@@ -13,6 +13,7 @@ from app.infrastructure.persistence.sqlite.document_jobs import (
     SqliteDocumentJobRepository,
 )
 from app.infrastructure.persistence.sqlite.files import SqliteDocumentFileRepository, SqliteJobFileRepository
+from app.infrastructure.persistence.sqlite.internal_users import SqliteInternalUserRepository
 from app.infrastructure.persistence.sqlite.jobs import SqliteJobEventRepository, SqliteJobSnapshotRepository
 from app.infrastructure.persistence.sqlite.retention_policies import SqliteRetentionPolicyRepository
 from app.infrastructure.persistence.sqlite.saved_views import SqliteSavedViewRepository
@@ -24,6 +25,7 @@ __all__ = [
     "SqliteDocumentJobCallbackMessageStore",
     "SqliteDocumentJobEventRepository",
     "SqliteDocumentJobRepository",
+    "SqliteInternalUserRepository",
     "SqliteJobEventRepository",
     "SqliteJobFileRepository",
     "SqliteJobSnapshotRepository",

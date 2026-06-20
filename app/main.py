@@ -61,6 +61,7 @@ from app.domains.translation.proposals_service import TranslationTermProposalSer
 from app.domains.translation.provider import build_translation_provider
 from app.domains.translation.term_set_version_service import TranslationTermSetVersionService
 from app.domains.translation.term_version_service import TermVersionService
+from app.domains.users.service import InternalUserManagementService
 
 NON_PRODUCTION_ENVS = {"dev", "local", "test"}
 
@@ -143,10 +144,12 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
     document_job_repository = persistence_adapters.document_job_repository
     document_job_event_repository = persistence_adapters.document_job_event_repository
     document_job_callback_message_store = persistence_adapters.document_job_callback_message_store
+    internal_user_repository = persistence_adapters.internal_user_repository
     saved_view_repository = persistence_adapters.saved_view_repository
     stage_message_store = persistence_adapters.stage_message_store
     audit_service = AuditService(audit_event_repository)
-    auth_service = AuthService(resolved_settings)
+    auth_service = AuthService(resolved_settings, internal_user_repository)
+    internal_user_management_service = InternalUserManagementService(internal_user_repository)
     file_retention_policy_service = FileRetentionPolicyService(
         resolved_settings,
         file_retention_policy_repository,
@@ -321,6 +324,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         job_repository=job_repository,
         document_job_repository=document_job_repository,
         document_job_callback_message_store=document_job_callback_message_store,
+        internal_user_repository=internal_user_repository,
         audit_event_repository=audit_event_repository,
         resource_version_repository=resource_version_service.repository if resource_version_service is not None else None,
         default_template_id_getter=template_read_service.get_default_template_id,
@@ -362,9 +366,11 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         document_job_repository=document_job_repository,
         document_job_event_repository=document_job_event_repository,
         document_job_callback_message_store=document_job_callback_message_store,
+        internal_user_repository=internal_user_repository,
         saved_view_repository=saved_view_repository,
         audit_service=audit_service,
         auth_service=auth_service,
+        internal_user_management_service=internal_user_management_service,
         file_upload_service=file_upload_service,
         file_retention_policy_service=file_retention_policy_service,
         document_ir_service=document_ir_service,

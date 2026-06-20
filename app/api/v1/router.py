@@ -23,6 +23,7 @@ from app.domains.templates.router import router as templates_router
 from app.domains.translation.proposals_router import router as translation_term_proposals_router
 from app.domains.translation.sets_router import router as translation_term_sets_router
 from app.domains.translation.router import router as translation_profiles_router
+from app.domains.users.router import router as users_router
 
 
 router = APIRouter(prefix="/api/v1")
@@ -44,3 +45,4 @@ router.include_router(term_rules_router)
 router.include_router(translation_term_proposals_router)
 router.include_router(translation_term_sets_router)
 router.include_router(translation_profiles_router)
+router.include_router(users_router)

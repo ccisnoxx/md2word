@@ -29,6 +29,7 @@ ADMIN_EXTRA_PERMISSIONS: tuple[str, ...] = (
     "ops:read",
     "ops:write",
     "audit:read",
+    "users:manage",
     "files:retention",
     "term_proposals:review",
 )

@@ -52,6 +52,7 @@
             <span class="topbar-user-name">{{ userDisplayName }}</span>
             <span v-if="userRoleLabel" class="topbar-user-role">{{ userRoleLabel }}</span>
           </span>
+          <el-button class="topbar-change-password" :icon="Lock" text @click="openChangePasswordDialog">修改密码</el-button>
           <el-button class="topbar-logout" :icon="SwitchButton" text @click="handleLogout">退出</el-button>
         </div>
       </header>
@@ -62,20 +63,56 @@
     </div>
 
     <OperatorCommandPalette ref="commandPaletteRef" :access="access" />
+
+    <el-dialog v-model="changePasswordDialogVisible" title="修改密码" width="min(520px, 96vw)">
+      <el-form label-position="top">
+        <el-form-item label="当前密码">
+          <el-input
+            v-model="changePasswordForm.current_password"
+            type="password"
+            show-password
+            autocomplete="current-password"
+          />
+        </el-form-item>
+        <el-form-item label="新密码">
+          <el-input
+            v-model="changePasswordForm.new_password"
+            type="password"
+            show-password
+            autocomplete="new-password"
+          />
+        </el-form-item>
+        <el-form-item label="确认新密码">
+          <el-input
+            v-model="changePasswordForm.confirm_password"
+            type="password"
+            show-password
+            autocomplete="new-password"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="changePasswordDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="changingPassword" @click="submitChangePassword">确认修改</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
-import { Menu, Search, SwitchButton } from "@element-plus/icons-vue";
+import { computed, reactive, ref, watch } from "vue";
+import { ElMessage } from "element-plus";
+import { Lock, Menu, Search, SwitchButton } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 
+import { authApi } from "@/api/auth";
 import AppBreadcrumb from "@/components/AppBreadcrumb.vue";
 import AppSidebar from "@/components/AppSidebar.vue";
 import AppThemeToggle from "@/components/AppThemeToggle.vue";
 import OperatorCommandPalette from "@/components/OperatorCommandPalette.vue";
 import { getAppNavigationGroups, getAppRouteContext, getDefaultProtectedRoute, type AppAccessContext } from "@/navigation/appShell";
 import { useAuthStore } from "@/stores/auth";
+import { normalizeApiError } from "@/utils/errors";
 import { getStoredSidebarCollapsed, persistSidebarCollapsed } from "@/utils/sidebarState";
 
 const auth = useAuthStore();
@@ -84,6 +121,13 @@ const router = useRouter();
 const sidebarCollapsed = ref(getStoredSidebarCollapsed());
 const mobileDrawerOpen = ref(false);
 const commandPaletteRef = ref<InstanceType<typeof OperatorCommandPalette> | null>(null);
+const changePasswordDialogVisible = ref(false);
+const changingPassword = ref(false);
+const changePasswordForm = reactive({
+  current_password: "",
+  new_password: "",
+  confirm_password: "",
+});
 
 const access = computed<AppAccessContext>(() => ({
   role: auth.user?.role ?? null,
@@ -123,6 +167,35 @@ function handleSidebarNavigate(): void {
 function handleLogout(): void {
   auth.logout();
   void router.push("/login");
+}
+
+function openChangePasswordDialog(): void {
+  changePasswordForm.current_password = "";
+  changePasswordForm.new_password = "";
+  changePasswordForm.confirm_password = "";
+  changePasswordDialogVisible.value = true;
+}
+
+async function submitChangePassword(): Promise<void> {
+  if (changePasswordForm.new_password !== changePasswordForm.confirm_password) {
+    ElMessage.error("两次输入的新密码不一致。");
+    return;
+  }
+  changingPassword.value = true;
+  try {
+    await authApi.changePassword({
+      current_password: changePasswordForm.current_password,
+      new_password: changePasswordForm.new_password,
+    });
+    ElMessage.success("密码已修改，请重新登录。");
+    changePasswordDialogVisible.value = false;
+    auth.logout();
+    void router.push({ path: "/login", query: { auth: "password_changed" } });
+  } catch (caught) {
+    ElMessage.error(normalizeApiError(caught).message);
+  } finally {
+    changingPassword.value = false;
+  }
 }
 </script>
 
@@ -279,6 +352,10 @@ function handleLogout(): void {
   flex: 0 0 auto;
 }
 
+.topbar-change-password {
+  flex: 0 0 auto;
+}
+
 .app-main {
   overflow: visible;
   min-width: 0;
@@ -352,6 +429,7 @@ function handleLogout(): void {
   }
 
   .topbar-user-role,
+  .topbar-change-password :deep(span),
   .topbar-logout :deep(span) {
     display: none;
   }

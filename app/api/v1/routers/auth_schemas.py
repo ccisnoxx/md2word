@@ -10,6 +10,11 @@ class AuthLoginRequest(BaseModel):
     password: str
 
 
+class AuthChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
 class AuthTokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

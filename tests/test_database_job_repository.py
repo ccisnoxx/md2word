@@ -35,12 +35,14 @@ from app.domains.translation.models import (
     TranslationTermProposalChangeRecord,
     TranslationTermProposalRecord,
 )
+from app.domains.users.models import InternalUserRecord
 from app.infrastructure.persistence import (
     PersistenceAdapters,
     build_file_persistence_adapters,
     build_mysql_persistence_adapters,
     build_sqlite_persistence_adapters,
 )
+from app.services.auth import hash_password
 from app.infrastructure.persistence.file import FileJobSnapshotRepository
 from app.infrastructure.persistence.mysql import MysqlJobSnapshotRepository, MysqlPersistenceConfig
 from app.infrastructure.persistence.sqlite import SqliteJobSnapshotRepository
@@ -70,6 +72,7 @@ class _FakeMysqlDatabase:
         self.jobs: dict[str, dict[str, Any]] = {}
         self.job_events: list[dict[str, Any]] = []
         self.audit_events: list[dict[str, Any]] = []
+        self.internal_users: dict[str, dict[str, Any]] = {}
         self.document_files: dict[str, dict[str, Any]] = {}
         self.file_retention_policies: dict[str, dict[str, Any]] = {}
         self.file_retention_cleanup_locks: dict[str, dict[str, Any]] = {}
@@ -150,6 +153,7 @@ class _FakeMysqlCursor:
                 "translation_term_proposal_changes",
                 "translation_term_match_traces",
                 "audit_events",
+                "internal_users",
                 "document_files",
                 "file_retention_policies",
                 "file_retention_cleanup_locks",
@@ -218,6 +222,68 @@ class _FakeMysqlCursor:
             self._rows = [
                 {"payload": row["payload"]}
                 for row in sorted(self.database.audit_events, key=lambda item: (item["created_at"], item["id"]))
+            ]
+            return
+        if normalized.startswith("select count(*) as count from internal_users"):
+            self._rows = [{"count": len(self.database.internal_users)}]
+            return
+        if normalized.startswith("insert into internal_users"):
+            user_id, normalized_username, user_role, user_status, payload, created_at, updated_at = params
+            self.database.internal_users[user_id] = {
+                "user_id": user_id,
+                "normalized_username": normalized_username,
+                "role": user_role,
+                "status": user_status,
+                "payload": payload,
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+            self._rows = []
+            return
+        if normalized.startswith("update internal_users"):
+            normalized_username, user_role, user_status, payload, updated_at, user_id = params
+            existing = self.database.internal_users[user_id]
+            self.database.internal_users[user_id] = {
+                "user_id": user_id,
+                "normalized_username": normalized_username,
+                "role": user_role,
+                "status": user_status,
+                "payload": payload,
+                "created_at": existing["created_at"],
+                "updated_at": updated_at,
+            }
+            self._rows = []
+            return
+        if normalized.startswith("select payload from internal_users where user_id"):
+            row = self.database.internal_users.get(params[0])
+            self._rows = [{"payload": row["payload"]}] if row is not None else []
+            return
+        if normalized.startswith("select payload from internal_users where normalized_username"):
+            normalized_username = params[0]
+            row = next(
+                (
+                    item
+                    for item in self.database.internal_users.values()
+                    if item["normalized_username"] == normalized_username
+                ),
+                None,
+            )
+            self._rows = [{"payload": row["payload"]}] if row is not None else []
+            return
+        if normalized.startswith("select payload from internal_users"):
+            rows = list(self.database.internal_users.values())
+            if "where role" in normalized and "status" in normalized:
+                user_role, user_status = params
+                rows = [row for row in rows if row["role"] == user_role and row["status"] == user_status]
+            elif "where role" in normalized:
+                (user_role,) = params
+                rows = [row for row in rows if row["role"] == user_role]
+            elif "where status" in normalized:
+                (user_status,) = params
+                rows = [row for row in rows if row["status"] == user_status]
+            self._rows = [
+                {"payload": row["payload"]}
+                for row in sorted(rows, key=lambda item: (item["created_at"], item["normalized_username"], item["user_id"]))
             ]
             return
         if normalized.startswith("insert into document_files"):
@@ -1011,6 +1077,48 @@ class _FakeMysqlCursor:
 
 
 class PersistenceAdapterTests(TestCase):
+    def test_internal_user_repository_contract_matches_all_backends(self):
+        for backend_name, build_adapters in (
+            ("file", lambda path: build_file_persistence_adapters(path)),
+            ("sqlite", lambda path: build_sqlite_persistence_adapters(path / "metadata.sqlite3")),
+            (
+                "mysql",
+                lambda path: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=_FakeMysqlDatabase().connect,
+                ),
+            ),
+        ):
+            with self.subTest(backend=backend_name), TemporaryDirectory() as temp_dir:
+                repository = build_adapters(Path(temp_dir)).internal_user_repository
+                admin = InternalUserRecord(
+                    id="user_admin",
+                    username="Admin",
+                    password_hash=hash_password("admin-pass", salt="admin-salt", iterations=1000),
+                    role="admin",
+                    status="active",
+                    display_name="Admin User",
+                )
+                operator = InternalUserRecord(
+                    id="user_operator",
+                    username="operator",
+                    password_hash=hash_password("operator-pass", salt="operator-salt", iterations=1000),
+                    role="operator",
+                    status="disabled",
+                    display_name="Operator User",
+                )
+
+                repository.save_internal_user(admin)
+                repository.save_internal_user(operator)
+                admin.token_version += 1
+                repository.save_internal_user(admin)
+
+                self.assertEqual(repository.count_internal_users(), 2)
+                self.assertEqual(repository.get_internal_user("user_admin").token_version, 2)
+                self.assertEqual(repository.get_internal_user_by_username("admin").id, "user_admin")
+                self.assertEqual([item.id for item in repository.list_internal_users(role="admin")], ["user_admin"])
+                self.assertEqual([item.id for item in repository.list_internal_users(status="disabled")], ["user_operator"])
+
     def test_metadata_repository_contract_matches_file_backend(self):
         for repository_name, build_adapters in (
             ("file", lambda data_dir: build_file_persistence_adapters(data_dir / "file")),
