@@ -54,7 +54,7 @@ Workbench pages that open a right-side detail or review drawer from an in-page l
 Long workbench forms inside `el-dialog` must own their scroll container in page markup instead of relying only on Element Plus internal body selectors:
 
 ```vue
-<el-dialog class="example-dialog">
+<el-dialog class="example-dialog" append-to="body" :append-to-body="true">
   <div class="example-dialog-scroll">
     <el-form>
       ...
@@ -73,6 +73,35 @@ Long workbench forms inside `el-dialog` must own their scroll container in page 
 ```
 
 This keeps header/footer actions reachable and makes mouse-wheel behavior stable even when the dialog content is teleported by Element Plus.
+
+Workbench pages inherit entry animations that leave a `transform` on `.app-page`. A non-teleported dialog overlay will be fixed relative to that transformed page instead of the viewport; after the page scrolls to a lower action button, the dialog can open partly or completely off screen. Dialogs opened from protected workbench pages must therefore append to `body` and constrain their own height:
+
+```vue
+<el-dialog
+  class="rule-dialog"
+  width="min(760px, calc(100vw - 32px))"
+  top="24px"
+  append-to="body"
+  :append-to-body="true"
+>
+  <div class="rule-dialog-scroll">...</div>
+</el-dialog>
+```
+
+```scss
+:deep(.rule-dialog) {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
+}
+
+:deep(.rule-dialog .el-dialog__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+```
 
 ## Tables And Actions
 
