@@ -520,3 +520,38 @@ Implemented Acceptance Center latest-summary contract and frontend review flow, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: Execute next-stage product plan P0 slice
+
+**Date**: 2026-06-21
+**Task**: Execute next-stage product plan P0 slice
+**Branch**: `main`
+
+### Summary
+
+Closed the P0 execution slice from the next-stage product plan: clarified Acceptance Center starter evidence semantics, fixed body-mounted dialog scroll styling, added browser smoke coverage, and recorded the Trellis execution task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a0897014` | (see git log) |
+| `7bfb9018` | (see git log) |
+| `d9df20c8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
