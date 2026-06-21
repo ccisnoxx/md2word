@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 16
+- **Total Sessions**: 17
 - **Last Active**: 2026-06-21
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~557 | Active |
+| `journal-1.md` | ~590 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 17 | 2026-06-21 | Production redeploy | `5fca4500` | `main` |
 | 16 | 2026-06-21 | Execute next-stage product plan P0 slice | `a0897014`, `7bfb9018`, `d9df20c8` | `main` |
 | 15 | 2026-06-21 | Execute next-stage product deepening plan | `7b265c6c`, `5c29111f`, `ab001397` | `main` |
 | 14 | 2026-06-21 | Deploy md2word to hostdzire | `8a5ec485` | `main` |

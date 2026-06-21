@@ -555,3 +555,36 @@ Closed the P0 execution slice from the next-stage product plan: clarified Accept
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: Production redeploy
+
+**Date**: 2026-06-21
+**Task**: Production redeploy
+**Branch**: `main`
+
+### Summary
+
+Updated production to commit cdc49e2, verified public and loopback health, release gate, compose state, and recorded deployment evidence.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5fca4500` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
