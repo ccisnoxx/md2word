@@ -574,7 +574,7 @@ onMounted(() => {
   margin-top: var(--app-space-4);
 }
 
-:deep(.user-dialog) {
+:global(.user-dialog) {
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - 48px);
@@ -582,12 +582,12 @@ onMounted(() => {
   margin-bottom: 24px;
 }
 
-:deep(.user-dialog .el-dialog__header),
-:deep(.user-dialog .el-dialog__footer) {
+:global(.user-dialog .el-dialog__header),
+:global(.user-dialog .el-dialog__footer) {
   flex: 0 0 auto;
 }
 
-:deep(.user-dialog .el-dialog__body) {
+:global(.user-dialog .el-dialog__body) {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;

@@ -2236,7 +2236,7 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
-:deep(.job-action-dialog) {
+:global(.job-action-dialog) {
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - 48px);
@@ -2244,12 +2244,12 @@ onBeforeUnmount(() => {
   margin-bottom: 24px;
 }
 
-:deep(.job-action-dialog .el-dialog__header),
-:deep(.job-action-dialog .el-dialog__footer) {
+:global(.job-action-dialog .el-dialog__header),
+:global(.job-action-dialog .el-dialog__footer) {
   flex: 0 0 auto;
 }
 
-:deep(.job-action-dialog .el-dialog__body) {
+:global(.job-action-dialog .el-dialog__body) {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
