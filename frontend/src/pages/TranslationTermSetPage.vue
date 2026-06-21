@@ -64,12 +64,14 @@
       </el-card>
 
       <el-card class="app-panel-card" shadow="never">
-        <div class="section-header">
+        <div class="section-header term-set-draft-header">
           <div>
             <h2 class="section-title">草稿摘要</h2>
             <p class="section-subtitle">CSV 导入是本阶段唯一草稿修改入口。</p>
           </div>
-          <el-tag v-if="draft?.snapshot_hash" class="mono" effect="plain">{{ draft.snapshot_hash }}</el-tag>
+          <el-tag v-if="draft?.snapshot_hash" class="draft-hash-tag mono" effect="plain" :title="draft.snapshot_hash">
+            {{ draft.snapshot_hash }}
+          </el-tag>
         </div>
         <el-empty v-if="!selectedSetId" description="请选择术语集" :image-size="90" />
         <template v-else>
@@ -1268,6 +1270,8 @@ watch(() => route.fullPath, () => {
 <style scoped lang="scss">
 .translation-term-set-page {
   display: grid;
+  align-content: start;
+  grid-auto-rows: max-content;
   gap: var(--app-space-4);
 }
 
@@ -1298,6 +1302,29 @@ watch(() => route.fullPath, () => {
   margin: 0;
   color: var(--app-color-text);
   overflow-wrap: anywhere;
+}
+
+.term-set-draft-header {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.term-set-draft-header > div {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.draft-hash-tag {
+  flex: 0 1 min(100%, 280px);
+  max-width: 100%;
+}
+
+.draft-hash-tag :deep(.el-tag__content) {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .context-alert {
