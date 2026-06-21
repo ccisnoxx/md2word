@@ -236,6 +236,50 @@ for (const viewport of [
   });
 }
 
+test("term rule draft dialog updates superscript preview after render type change", async ({ page }) => {
+  await setupTermRuleSetApi(page);
+  await page.setViewportSize({ width: 1440, height: 960 });
+
+  await page.goto("/settings/term-rule-sets");
+  await page.getByRole("button", { name: "新增规则" }).click();
+  await page.getByRole("button", { name: "填入 VIN 示例" }).click();
+
+  await expect(page.locator(".rule-dialog .term-preview sub")).toHaveCount(2);
+
+  const rows = page.locator(".rule-dialog .segment-row");
+  await rows.nth(1).locator(".el-select").click();
+  await page.getByRole("option", { name: "上标" }).click();
+
+  await expect(page.locator(".rule-dialog .term-preview sub")).toHaveCount(0);
+  await expect(page.locator(".rule-dialog .term-preview sup")).toHaveCount(2);
+
+  const metrics = await page.locator(".rule-dialog .term-preview").first().evaluate((preview) => {
+    const plain = preview.querySelector<HTMLElement>("span");
+    const superscript = preview.querySelector<HTMLElement>("sup");
+    const plainRect = plain?.getBoundingClientRect();
+    const superscriptRect = superscript?.getBoundingClientRect();
+    return {
+      superscriptIsRaised: Boolean(plainRect && superscriptRect && superscriptRect.top < plainRect.top),
+    };
+  });
+  expect(metrics.superscriptIsRaised).toBe(true);
+});
+
+test("term rule draft page exposes advanced rule creation", async ({ page }) => {
+  await setupTermRuleSetApi(page);
+  await page.setViewportSize({ width: 1440, height: 960 });
+
+  await page.goto("/settings/term-rule-sets");
+
+  await expect(page.getByRole("button", { name: "新增高级规则" })).toBeVisible();
+  await page.getByRole("button", { name: "新增高级规则" }).click();
+
+  await expect(page.getByRole("dialog", { name: "新增高级 draft rule" })).toBeVisible();
+  await expect(page.locator(".rule-dialog .segment-row")).toHaveCount(3);
+  await expect(page.locator(".rule-dialog").getByText("Custom markdown")).toBeVisible();
+  await expect(page.locator(".rule-dialog").getByText("Custom HTML")).toBeVisible();
+});
+
 function draftResponse() {
   return {
     term_rule_set_id: defaultSetId,

@@ -140,6 +140,37 @@ leave the page-owned scroll container as a normal scoped class:
 - Keep low-frequency row actions in an overflow menu; expose only the primary action inline.
 - Keep table wrappers horizontally scrollable on mobile instead of forcing a full card-list rewrite unless the task explicitly asks for it.
 
+## Inline Rich Text Previews
+
+Term, formula, and typography previews that render native inline tags such as
+`<sub>` and `<sup>` must keep those tags in normal inline flow. Do not make the
+preview root an `inline-flex`, `flex`, or `grid` container when browser-default
+subscript/superscript positioning is part of the visual contract.
+
+```scss
+/* Wrong: flex items do not honor vertical-align like inline children. */
+.term-preview {
+  display: inline-flex;
+  align-items: baseline;
+}
+
+/* Correct: sub/sup remain inline descendants and keep their native offsets. */
+.term-preview {
+  display: inline-block;
+  line-height: 1.35;
+  vertical-align: baseline;
+}
+
+.term-preview sub,
+.term-preview sup {
+  line-height: 0;
+}
+```
+
+Regression tests for these previews should assert both the rendered tag
+(`sup` vs `sub`) and a bounding-box relationship, such as superscript top
+being above adjacent plain text top.
+
 ## Operator-Facing Copy
 
 - High-frequency protected workbench surfaces must use Chinese-first visible copy.
