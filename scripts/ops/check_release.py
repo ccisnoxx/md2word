@@ -45,6 +45,8 @@ DEFAULT_UNITTEST_TARGETS: tuple[str, ...] = (
     "tests.test_database_job_repository.PersistenceAdapterTests.test_build_runtime_switches_to_database_repository_and_readiness",
     "tests.test_database_job_repository.PersistenceAdapterTests.test_build_runtime_switches_to_mysql_repository_and_readiness",
     "tests.test_database_job_repository.PersistenceAdapterTests.test_build_runtime_keeps_file_repository_as_local_default",
+    "tests.test_internal_user_management",
+    "tests.test_acceptance_center_api",
     "tests.test_text_render_characterization",
     "tests.test_document_ir_word_renderer_layout",
     "tests.test_page_layout_characterization",
@@ -150,6 +152,9 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
     document_jobs_get = paths.get("/api/v1/document-jobs", {}).get("get", {}) if isinstance(paths, dict) else {}
     auth_change_password = paths.get("/api/v1/auth/change-password", {}).get("post", {}) if isinstance(paths, dict) else {}
     users_path = paths.get("/api/v1/users", {}) if isinstance(paths, dict) else {}
+    acceptance_runs_path = paths.get("/api/v1/acceptance/runs", {}) if isinstance(paths, dict) else {}
+    acceptance_run_path = paths.get("/api/v1/acceptance/runs/{run_id}", {}) if isinstance(paths, dict) else {}
+    acceptance_review_path = paths.get("/api/v1/acceptance/runs/{run_id}/review", {}) if isinstance(paths, dict) else {}
     parameter_names = {
         parameter.get("name")
         for parameter in document_jobs_get.get("parameters", [])
@@ -180,6 +185,34 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
     if "password_hash" in user_properties:
         missing.append("OpenAPI InternalUserResponse must not expose password_hash")
 
+    if "get" not in acceptance_runs_path:
+        missing.append("OpenAPI GET /acceptance/runs")
+    if "get" not in acceptance_run_path:
+        missing.append("OpenAPI GET /acceptance/runs/{run_id}")
+    if "post" not in acceptance_review_path:
+        missing.append("OpenAPI POST /acceptance/runs/{run_id}/review")
+    acceptance_properties = schemas.get("AcceptanceRunResponse", {}).get("properties", {})
+    for name in (
+        "id",
+        "title",
+        "tier",
+        "status",
+        "environment",
+        "report_path_or_url",
+        "blockers",
+        "warnings",
+        "reviewer",
+        "decision",
+        "reviewed_at",
+        "review_note",
+    ):
+        if name not in acceptance_properties:
+            missing.append(f"OpenAPI AcceptanceRunResponse field: {name}")
+    acceptance_review_properties = schemas.get("AcceptanceRunReviewRequest", {}).get("properties", {})
+    for name in ("decision", "review_note"):
+        if name not in acceptance_review_properties:
+            missing.append(f"OpenAPI AcceptanceRunReviewRequest field: {name}")
+
     types_path = REPO_ROOT / "frontend/src/api/types.ts"
     try:
         frontend_types = types_path.read_text(encoding="utf-8")
@@ -201,9 +234,35 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
         "export type AuthChangePasswordRequest",
         "export type InternalUserResponse",
         "export type InternalUserResetPasswordRequest",
+        "export type AcceptanceRunResponse",
+        "export type AcceptanceRunListResponse",
+        "export type AcceptanceReviewRequest",
+        'export type AcceptanceReviewDecision = "approved"',
+        'export type AcceptanceRunStatus = "passed"',
+        "review_note: string | null",
     ):
         if needle not in frontend_types:
             missing.append(f"frontend types missing: {needle}")
+
+    acceptance_wrapper_path = REPO_ROOT / "frontend/src/api/acceptance.ts"
+    try:
+        acceptance_wrapper = acceptance_wrapper_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return ReleaseCheckItem(
+            name="frontend-contract",
+            ok=False,
+            summary=f"Cannot read frontend acceptance wrapper: {acceptance_wrapper_path}",
+            details=str(exc),
+        )
+
+    for needle in (
+        'url: "/api/v1/acceptance/runs"',
+        "`/api/v1/acceptance/runs/${runId}`",
+        "`/api/v1/acceptance/runs/${runId}/review`",
+        "review_note",
+    ):
+        if needle not in acceptance_wrapper:
+            missing.append(f"frontend acceptance wrapper missing: {needle}")
 
     return ReleaseCheckItem(
         name="frontend-contract",

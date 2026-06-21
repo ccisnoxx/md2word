@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.core.config import Settings
+from app.domains.acceptance.repository import AcceptanceRunRepositoryProtocol
 from app.domains.audit.repository import AuditEventRepositoryProtocol
 from app.domains.document_jobs.repository import (
     DocumentJobCallbackMessageStoreProtocol,
@@ -34,6 +35,7 @@ from app.domains.terminology.repository import TerminologyReleaseRepositoryProto
 from app.domains.translation.repository import TranslationTermRepositoryProtocol
 from app.domains.users.repository import InternalUserRepositoryProtocol
 from app.infrastructure.persistence.file import (
+    FileAcceptanceRunRepository,
     FileAuditEventRepository,
     FileDocumentFileRepository,
     FileDocumentJobCallbackMessageStore,
@@ -53,6 +55,7 @@ from app.infrastructure.persistence.file import (
 )
 from app.infrastructure.persistence.mysql import (
     ConnectFactory,
+    MysqlAcceptanceRunRepository,
     MysqlAuditEventRepository,
     MysqlDocumentFileRepository,
     MysqlDocumentJobCallbackMessageStore,
@@ -77,6 +80,7 @@ from app.infrastructure.persistence.mysql import (
     MysqlTranslationTermRepository,
 )
 from app.infrastructure.persistence.sqlite import (
+    SqliteAcceptanceRunRepository,
     SqliteAuditEventRepository,
     SqliteDocumentFileRepository,
     SqliteDocumentJobCallbackMessageStore,
@@ -105,6 +109,7 @@ class PersistenceAdapters:
     job_file_repository: JobFileRepositoryProtocol
     job_event_repository: JobEventRepositoryProtocol
     audit_event_repository: AuditEventRepositoryProtocol
+    acceptance_run_repository: AcceptanceRunRepositoryProtocol
     document_file_repository: DocumentFileRepositoryProtocol
     file_retention_policy_repository: FileRetentionPolicyRepositoryProtocol
     file_retention_cleanup_lock_repository: FileRetentionCleanupLockRepositoryProtocol
@@ -133,6 +138,7 @@ def build_file_persistence_adapters(data_dir: Path) -> PersistenceAdapters:
         job_file_repository=FileJobFileRepository(backend),
         job_event_repository=FileJobEventRepository(backend),
         audit_event_repository=FileAuditEventRepository(backend),
+        acceptance_run_repository=FileAcceptanceRunRepository(backend),
         document_file_repository=FileDocumentFileRepository(backend),
         file_retention_policy_repository=FileRetentionPolicyRepository(backend),
         file_retention_cleanup_lock_repository=FileRetentionCleanupLockRepository(backend),
@@ -162,6 +168,7 @@ def build_sqlite_persistence_adapters(database_path: Path) -> PersistenceAdapter
         job_file_repository=SqliteJobFileRepository(backend),
         job_event_repository=SqliteJobEventRepository(backend),
         audit_event_repository=SqliteAuditEventRepository(backend),
+        acceptance_run_repository=SqliteAcceptanceRunRepository(backend),
         document_file_repository=SqliteDocumentFileRepository(backend),
         file_retention_policy_repository=SqliteRetentionPolicyRepository(backend),
         file_retention_cleanup_lock_repository=SqliteRetentionCleanupLockRepository(backend),
@@ -195,6 +202,7 @@ def build_mysql_persistence_adapters(
         job_file_repository=MysqlJobFileRepository(backend),
         job_event_repository=MysqlJobEventRepository(backend),
         audit_event_repository=MysqlAuditEventRepository(backend),
+        acceptance_run_repository=MysqlAcceptanceRunRepository(backend),
         document_file_repository=MysqlDocumentFileRepository(backend),
         file_retention_policy_repository=MysqlRetentionPolicyRepository(backend),
         file_retention_cleanup_lock_repository=MysqlRetentionCleanupLockRepository(backend),

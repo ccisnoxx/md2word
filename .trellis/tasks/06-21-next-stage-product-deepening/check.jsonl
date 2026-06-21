@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Check cross-layer data flow from acceptance APIs through frontend page, docs, tests, and release scripts."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify new/hardened backend failures use explicit stable API errors without silent fallbacks."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Verify metadata persistence parity and safe schema bootstrap behavior."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify tests, OpenAPI snapshot, release gate, and sensitive-data exclusions."}
+{"file": ".trellis/spec/frontend/layout-guidelines.md", "reason": "Verify protected-page layout, dialog/drawer viewport behavior, and mobile overflow."}
+{"file": ".trellis/spec/frontend/api-contract-guidelines.md", "reason": "Verify frontend request/response contracts and optional query parameter behavior."}
+{"file": "docs/runbooks/internal-portal.md", "reason": "Verify account operations and acceptance evidence docs match shipped behavior."}
+{"file": "docs/api/manifest.yaml", "reason": "Verify API manifest includes changed and new endpoint families."}
+{"file": "docs/deploy/online-first-validation-workflow.md", "reason": "Verify Acceptance Center language does not contradict deployment validation workflow."}

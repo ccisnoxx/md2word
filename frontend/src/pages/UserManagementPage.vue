@@ -15,6 +15,7 @@
     </section>
 
     <ApiErrorAlert class="app-page-shell" :error="error" />
+    <ApiErrorAlert class="app-page-shell" :error="operationError" />
 
     <section class="filter-section app-filter-panel app-page-shell" aria-label="用户筛选">
       <el-form class="filter-form" label-position="top">
@@ -98,70 +99,120 @@
       </el-table>
     </section>
 
-    <el-dialog v-model="createDialogVisible" title="新建用户" width="min(560px, 96vw)">
-      <el-form label-position="top">
-        <el-form-item label="用户名">
-          <el-input v-model="createForm.username" autocomplete="off" />
-        </el-form-item>
-        <el-form-item label="显示名">
-          <el-input v-model="createForm.display_name" autocomplete="off" />
-        </el-form-item>
-        <el-form-item label="角色">
-          <el-segmented v-model="createForm.role" :options="roleOptions" />
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-segmented v-model="createForm.status" :options="statusOptions" />
-        </el-form-item>
-        <el-form-item label="初始密码">
-          <el-input v-model="createForm.initial_password" type="password" show-password autocomplete="new-password" />
-        </el-form-item>
-        <el-form-item label="确认密码">
-          <el-input v-model="createForm.confirm_password" type="password" show-password autocomplete="new-password" />
-        </el-form-item>
-      </el-form>
+    <el-dialog
+      v-model="createDialogVisible"
+      title="新建用户"
+      width="min(560px, calc(100vw - 32px))"
+      top="24px"
+      class="user-dialog"
+      append-to="body"
+      :append-to-body="true"
+    >
+      <div class="user-dialog-scroll">
+        <ApiErrorAlert :error="operationError" />
+        <el-alert
+          v-if="createForm.role === 'admin'"
+          class="dialog-alert"
+          type="warning"
+          show-icon
+          :closable="false"
+          title="管理员账号拥有全部配置、系统和用户管理权限，请仅授予可信人员。"
+        />
+        <el-form label-position="top">
+          <el-form-item label="用户名">
+            <el-input v-model="createForm.username" autocomplete="off" />
+          </el-form-item>
+          <el-form-item label="显示名">
+            <el-input v-model="createForm.display_name" autocomplete="off" />
+          </el-form-item>
+          <el-form-item label="角色">
+            <el-segmented v-model="createForm.role" :options="roleOptions" />
+          </el-form-item>
+          <el-form-item label="状态">
+            <el-segmented v-model="createForm.status" :options="statusOptions" />
+          </el-form-item>
+          <el-form-item label="初始密码">
+            <el-input v-model="createForm.initial_password" type="password" show-password autocomplete="new-password" />
+          </el-form-item>
+          <el-form-item label="确认密码">
+            <el-input v-model="createForm.confirm_password" type="password" show-password autocomplete="new-password" />
+          </el-form-item>
+        </el-form>
+      </div>
       <template #footer>
         <el-button @click="createDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="submitCreate">创建</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="editDialogVisible" title="编辑用户" width="min(520px, 96vw)">
-      <el-form v-if="selectedUser" label-position="top">
-        <el-form-item label="用户名">
-          <el-input :model-value="selectedUser.username" disabled />
-        </el-form-item>
-        <el-form-item label="显示名">
-          <el-input v-model="editForm.display_name" autocomplete="off" />
-        </el-form-item>
-        <el-form-item label="角色">
-          <el-segmented v-model="editForm.role" :options="roleOptions" />
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-segmented v-model="editForm.status" :options="statusOptions" />
-        </el-form-item>
-      </el-form>
+    <el-dialog
+      v-model="editDialogVisible"
+      title="编辑用户"
+      width="min(520px, calc(100vw - 32px))"
+      top="24px"
+      class="user-dialog"
+      append-to="body"
+      :append-to-body="true"
+    >
+      <div class="user-dialog-scroll">
+        <ApiErrorAlert :error="operationError" />
+        <el-alert
+          v-if="editRiskText"
+          class="dialog-alert"
+          type="warning"
+          show-icon
+          :closable="false"
+          :title="editRiskText"
+        />
+        <el-form v-if="selectedUser" label-position="top">
+          <el-form-item label="用户名">
+            <el-input :model-value="selectedUser.username" disabled />
+          </el-form-item>
+          <el-form-item label="显示名">
+            <el-input v-model="editForm.display_name" autocomplete="off" />
+          </el-form-item>
+          <el-form-item label="角色">
+            <el-segmented v-model="editForm.role" :options="roleOptions" />
+          </el-form-item>
+          <el-form-item label="状态">
+            <el-segmented v-model="editForm.status" :options="statusOptions" />
+          </el-form-item>
+        </el-form>
+      </div>
       <template #footer>
         <el-button @click="editDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="submitEdit">保存</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="resetPasswordDialogVisible" title="重置密码" width="min(520px, 96vw)">
-      <el-alert
-        v-if="selectedUser"
-        type="warning"
-        show-icon
-        :closable="false"
-        :title="`将重置 ${selectedUser.username} 的登录密码，旧 token 会立即失效。`"
-      />
-      <el-form class="dialog-form" label-position="top">
-        <el-form-item label="临时密码">
-          <el-input v-model="resetPasswordForm.new_password" type="password" show-password autocomplete="new-password" />
-        </el-form-item>
-        <el-form-item label="确认密码">
-          <el-input v-model="resetPasswordForm.confirm_password" type="password" show-password autocomplete="new-password" />
-        </el-form-item>
-      </el-form>
+    <el-dialog
+      v-model="resetPasswordDialogVisible"
+      title="重置密码"
+      width="min(520px, calc(100vw - 32px))"
+      top="24px"
+      class="user-dialog"
+      append-to="body"
+      :append-to-body="true"
+    >
+      <div class="user-dialog-scroll">
+        <ApiErrorAlert :error="operationError" />
+        <el-alert
+          v-if="selectedUser"
+          class="dialog-alert"
+          type="warning"
+          show-icon
+          :closable="false"
+          :title="`将重置 ${selectedUser.username} 的登录密码，旧 token 会立即失效。`"
+        />
+        <el-form class="dialog-form" label-position="top">
+          <el-form-item label="临时密码">
+            <el-input v-model="resetPasswordForm.new_password" type="password" show-password autocomplete="new-password" />
+          </el-form-item>
+          <el-form-item label="确认密码">
+            <el-input v-model="resetPasswordForm.confirm_password" type="password" show-password autocomplete="new-password" />
+          </el-form-item>
+        </el-form>
+      </div>
       <template #footer>
         <el-button @click="resetPasswordDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="submitResetPassword">确认重置</el-button>
@@ -171,8 +222,8 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
-import { ElMessage } from "element-plus";
+import { computed, onMounted, reactive, ref } from "vue";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { Edit, Key, Plus, Refresh, Search } from "@element-plus/icons-vue";
 
 import { internalUsersApi } from "@/api/users";
@@ -224,6 +275,7 @@ const loadedAt = ref<string | null>(null);
 const loading = ref(false);
 const saving = ref(false);
 const error = ref<ApiClientError | null>(null);
+const operationError = ref<ApiClientError | null>(null);
 const createDialogVisible = ref(false);
 const editDialogVisible = ref(false);
 const resetPasswordDialogVisible = ref(false);
@@ -245,6 +297,24 @@ const editForm = reactive<EditForm>({
 const resetPasswordForm = reactive<ResetPasswordForm>({
   new_password: "",
   confirm_password: "",
+});
+
+const editRiskText = computed(() => {
+  const user = selectedUser.value;
+  if (!user) {
+    return "";
+  }
+  const risks: string[] = [];
+  if (user.role === "admin" && editForm.role !== "admin") {
+    risks.push("将管理员降级为操作员");
+  }
+  if (user.status === "active" && editForm.status === "disabled") {
+    risks.push("将账号停用并使旧 token 失效");
+  }
+  if (user.role !== editForm.role || user.status !== editForm.status) {
+    risks.push("角色或状态变化会立即影响权限");
+  }
+  return Array.from(new Set(risks)).join("；");
 });
 
 async function loadUsers(): Promise<void> {
@@ -278,6 +348,7 @@ function resetFilters(): void {
 }
 
 function openCreateDialog(): void {
+  operationError.value = null;
   createForm.username = "";
   createForm.display_name = "";
   createForm.role = "operator";
@@ -288,6 +359,7 @@ function openCreateDialog(): void {
 }
 
 async function submitCreate(): Promise<void> {
+  operationError.value = null;
   if (createForm.initial_password !== createForm.confirm_password) {
     ElMessage.error("两次输入的新密码不一致。");
     return;
@@ -305,13 +377,14 @@ async function submitCreate(): Promise<void> {
     createDialogVisible.value = false;
     await loadUsers();
   } catch (caught) {
-    ElMessage.error(normalizeApiError(caught).message);
+    handleOperationError(caught);
   } finally {
     saving.value = false;
   }
 }
 
 function openEditDialog(user: InternalUserResponse): void {
+  operationError.value = null;
   selectedUser.value = user;
   editForm.display_name = user.display_name || "";
   editForm.role = user.role;
@@ -321,6 +394,10 @@ function openEditDialog(user: InternalUserResponse): void {
 
 async function submitEdit(): Promise<void> {
   if (!selectedUser.value) {
+    return;
+  }
+  operationError.value = null;
+  if (editRiskText.value && !(await confirmCriticalUserChange(selectedUser.value, editRiskText.value))) {
     return;
   }
   saving.value = true;
@@ -334,13 +411,17 @@ async function submitEdit(): Promise<void> {
     editDialogVisible.value = false;
     await loadUsers();
   } catch (caught) {
-    ElMessage.error(normalizeApiError(caught).message);
+    handleOperationError(caught);
   } finally {
     saving.value = false;
   }
 }
 
 async function toggleUserStatus(user: InternalUserResponse): Promise<void> {
+  operationError.value = null;
+  if (!(await confirmStatusChange(user))) {
+    return;
+  }
   saving.value = true;
   try {
     await internalUsersApi.update(user.id, {
@@ -349,13 +430,14 @@ async function toggleUserStatus(user: InternalUserResponse): Promise<void> {
     ElMessage.success(user.status === "active" ? "用户已停用。" : "用户已启用。");
     await loadUsers();
   } catch (caught) {
-    ElMessage.error(normalizeApiError(caught).message);
+    handleOperationError(caught);
   } finally {
     saving.value = false;
   }
 }
 
 function openResetPasswordDialog(user: InternalUserResponse): void {
+  operationError.value = null;
   selectedUser.value = user;
   resetPasswordForm.new_password = "";
   resetPasswordForm.confirm_password = "";
@@ -366,6 +448,7 @@ async function submitResetPassword(): Promise<void> {
   if (!selectedUser.value) {
     return;
   }
+  operationError.value = null;
   if (resetPasswordForm.new_password !== resetPasswordForm.confirm_password) {
     ElMessage.error("两次输入的新密码不一致。");
     return;
@@ -379,10 +462,42 @@ async function submitResetPassword(): Promise<void> {
     resetPasswordDialogVisible.value = false;
     await loadUsers();
   } catch (caught) {
-    ElMessage.error(normalizeApiError(caught).message);
+    handleOperationError(caught);
   } finally {
     saving.value = false;
   }
+}
+
+async function confirmCriticalUserChange(user: InternalUserResponse, riskText: string): Promise<boolean> {
+  return ElMessageBox.confirm(
+    `${riskText}。该操作会影响 ${user.username} 的访问权限，并可能使旧 token 立即失效。`,
+    "确认修改用户权限",
+    {
+      confirmButtonText: "确认保存",
+      cancelButtonText: "取消",
+      type: "warning",
+    },
+  ).then(() => true).catch(() => false);
+}
+
+async function confirmStatusChange(user: InternalUserResponse): Promise<boolean> {
+  const disabling = user.status === "active";
+  return ElMessageBox.confirm(
+    disabling
+      ? `停用 ${user.username} 后，该账号无法登录，已有 token 会立即失效。`
+      : `启用 ${user.username} 后，该账号可重新使用当前密码登录。`,
+    disabling ? "确认停用用户" : "确认启用用户",
+    {
+      confirmButtonText: disabling ? "确认停用" : "确认启用",
+      cancelButtonText: "取消",
+      type: disabling ? "warning" : "info",
+    },
+  ).then(() => true).catch(() => false);
+}
+
+function handleOperationError(caught: unknown): void {
+  operationError.value = normalizeApiError(caught);
+  ElMessage.error(operationError.value.message);
 }
 
 function roleLabel(role: InternalUserRole): string {
@@ -457,6 +572,37 @@ onMounted(() => {
 
 .dialog-form {
   margin-top: var(--app-space-4);
+}
+
+:deep(.user-dialog) {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
+  margin-bottom: 24px;
+}
+
+:deep(.user-dialog .el-dialog__header),
+:deep(.user-dialog .el-dialog__footer) {
+  flex: 0 0 auto;
+}
+
+:deep(.user-dialog .el-dialog__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.user-dialog-scroll {
+  max-height: min(560px, calc(100vh - 220px));
+  max-height: min(560px, calc(100dvh - 220px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+}
+
+.dialog-alert {
+  margin-bottom: var(--app-space-4);
 }
 
 @media (max-width: 780px) {

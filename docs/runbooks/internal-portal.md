@@ -5,7 +5,7 @@ component: md2word-internal-portal
 status: current
 summary: md2word 正式公司内部门户的产品边界、角色、页面/API 地图、部署配置和账号运营说明。
 tags: [internal-portal, frontend, backend, auth, deploy, operations]
-last_reviewed: 2026-06-20
+last_reviewed: 2026-06-21
 ---
 
 # md2word 正式内部门户运行说明
@@ -21,7 +21,7 @@ files 上传授权 -> document_jobs 创建任务 -> Worker 调用 MinerU/Documen
 当前明确不做：
 
 - 外部客户门户、多租户自助控制台和计费。
-- 公司 SSO 接入；第一版继续使用内部账号文件 + JWT。
+- 公司 SSO 接入；第一版继续使用托管内部账号 + JWT，配置文件只作为空仓库 bootstrap 输入。
 - 在线 Word 编辑、在线人工改译文后重新生成 Word。
 - 普通用户任务级删除；任务级删除只允许 admin 通过 preview + 确认弹窗 + audit 的受控流程执行。
 - 真实 S3 删除、自动清理执行和 provider cancellation 默认仍保持 gated/deferred。
@@ -31,7 +31,7 @@ files 上传授权 -> document_jobs 创建任务 -> Worker 调用 MinerU/Documen
 | 角色 | 前端入口 | 能做什么 | 不应做什么 |
 | --- | --- | --- | --- |
 | `operator` | 任务工作台、翻译 QA、术语建议 | 上传 PDF、创建任务、查看进度、下载结果、提交术语建议、复核翻译证据 | 进入配置中心、系统状态、审计日志、文件清理、任务级删除 |
-| `admin` | 全部内部入口 | 配置模板/术语/翻译版本、审核提案、查看审计、处理文件容量与清理、查看运维状态、按受控流程删除任务 | 绕过 preview/audit 执行危险操作 |
+| `admin` | 全部内部入口 | 配置模板/术语/翻译版本、审核提案、管理内部用户、查看审计、处理文件容量与清理、查看运维状态、按受控流程删除任务 | 绕过 preview/audit 执行危险操作 |
 
 账号字段保留 `tenant_id` 和 `company_id`，但第一版按单租户内部系统使用，不实现复杂租户隔离。
 
@@ -58,13 +58,17 @@ files 上传授权 -> document_jobs 创建任务 -> Worker 调用 MinerU/Documen
 | `/system-status` | admin | 只读系统状态概览。 |
 | `/system-status/ops-dashboard` | admin | 运维 readiness、受控真实集成 gate 和恢复动作预览。 |
 | `/system-status/audit-events` | admin | 审计日志查询和导出。 |
+| `/system-status/users` | admin | 托管内部用户管理：创建用户、启停账号、调整角色和重置密码。 |
+| `/system-status/acceptance` | admin | 验收中心：查看 P0/P1/P2 证据摘要、报告路径、阻断项和复核结论。 |
 | `/system-status/file-retention` | admin | 文件库、容量与策略、清理执行三段式文件管理工作区。 |
 
 ## 4. API 域
 
 | API 域 | 当前职责 |
 | --- | --- |
-| `/api/v1/auth` | 内部账号登录和当前用户查询。 |
+| `/api/v1/auth` | 内部账号登录、当前用户查询和当前用户修改密码。 |
+| `/api/v1/users` | Admin-only 托管内部用户列表、创建、更新启停/角色和重置密码。 |
+| `/api/v1/acceptance` | Admin-only P0/P1/P2 验收运行摘要、报告路径和复核记录。 |
 | `/api/v1/files` | 上传授权、文件内容上传、文件库搜索、quota、retention、cleanup run。 |
 | `/api/v1/document-jobs` | PDF -> Word 主任务创建、查询、事件、文件、QA、retry/cancel/archive/unarchive/clone/download。 |
 | `/api/v1/templates` | 模板详情、DOCX 版本创建、版式配置 draft version 创建、发布、设默认和禁用。 |
@@ -128,7 +132,9 @@ curl -sS http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}/api/v1/health/metrics
 
 ## 6. 账号运营
 
-内部账号从 `AUTH_INTERNAL_USERS_FILE` 读取，推荐文件为 `deploy/auth_internal_users.json`。不要把真实文件提交到仓库；`.gitignore` 已排除该路径。
+内部账号现在由托管用户仓库作为运行时真源。`AUTH_INTERNAL_USERS_FILE` / `AUTH_INTERNAL_USERS_JSON` 只在托管仓库为空时导入一次，用于首批账号 bootstrap 或迁移；仓库已有用户后，不会再自动合并配置文件里的账号。
+
+推荐仍保留 `deploy/auth_internal_users.json` 作为首次部署或应急恢复输入。不要把真实文件提交到仓库；`.gitignore` 已排除该路径。
 
 账号示例：
 
@@ -155,12 +161,22 @@ curl -sS http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}/api/v1/health/metrics
 /Users/sc/miniconda3/envs/md2word/bin/python -c "from app.services.auth.service import hash_password; print(hash_password('change-me-password'))"
 ```
 
-账号操作原则：
+日常账号操作原则：
 
-- 新增人员：追加用户记录，设置 `status=active`，重启 API/worker 使配置生效。
-- 禁用人员：把 `status` 改为 `disabled`，重启 API/worker；已有 JWT 在后端校验时会因账号不可用而失效。
+- 新增人员：由 admin 进入 `/system-status/users` 创建用户并设置初始密码。
+- 禁用人员：由 admin 在用户管理页面停用账号；已有 JWT 会因账号状态或 `token_version` 变化而失效。
+- 重置密码：由 admin 在用户管理页面重置临时密码；用户旧 token 会失效。
+- 修改本人密码：登录后在顶部栏使用“修改密码”，成功后需要重新登录。
 - 角色调整：只使用 `operator` 和 `admin` 两类角色；新增角色需要先设计权限合同。
+- 迁移/恢复：上线前确认至少两个 active admin 可登录，并备份 MySQL/volume 与 bootstrap 文件。托管仓库非空后，单纯编辑 `AUTH_INTERNAL_USERS_FILE` 不会覆盖运行时用户。
 - 密钥轮换：更换 `AUTH_JWT_SECRET_KEY` 会使现有 token 全部失效，需通知用户重新登录。
+
+## 6.1 验收中心操作口径
+
+- `/system-status/acceptance` 是发布验收证据索引，不执行转换、翻译、清理、provider 调用或真实发布动作。
+- Acceptance Center 仓库为空时会初始化三条 starter summaries：P0 Golden Sample 为当前已知 failed，P1/P2 为 unknown，均不会被当成通过。
+- Admin 可对每条摘要提交 `approved`、`rejected` 或 `needs_changes` 复核结论；复核会写入 audit，但不会修改原始 `status`、`blockers` 或 `warnings`。
+- 正式发布仍以最新 `check_release.py --runtime-url`、Golden Sample、P1 translation 和 P2 online gate 报告为准。starter summaries 需要被最新运行报告或人工导入摘要替换后，才适合作为最终证据。
 
 ## 7. 数据与文件边界
 
@@ -175,6 +191,7 @@ curl -sS http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}/api/v1/health/metrics
 - operator 可以登录、上传 PDF、创建任务、查看进度、下载结果、进入翻译 QA、提交术语建议。
 - operator 访问 `/settings/**`、`/system-status/**` 会被前端路由拦回任务工作台，后端 admin API 仍有权限校验。
 - admin 可以进入配置中心、系统状态、审计日志、文件管理与清理。
+- admin 可以进入验收中心查看 P0/P1/P2 摘要，unknown/failed 不能被当成整体通过。
 - 文件清理必须保持 preview -> reason -> confirmation -> audit；任务级删除必须保持 preview -> confirm -> audit，不给 operator 开放入口。
 - `/health/ready` 不应出现未解释的 blocker；如有 MinerU、worker、MySQL、artifact storage blocker，先处理再开放使用。
 - `scripts/ops/check_release.py --runtime-url`、Golden Sample 预检、4 样本真实回归和 admin 签字通过后再发布。

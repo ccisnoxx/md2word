@@ -42,7 +42,8 @@ export type AppNavItemId =
   | "audit-events"
   | "users"
   | "file-retention"
-  | "ops-dashboard";
+  | "ops-dashboard"
+  | "acceptance-center";
 
 export type AppAccessContext = {
   role?: string | null;
@@ -184,6 +185,14 @@ const NAV_GROUP_DEFINITIONS: AppNavGroupDefinition[] = [
         permissions: ["files:retention"],
       },
       { id: "ops-dashboard", label: "运维看板", to: "/system-status/ops-dashboard", icon: DocumentChecked, permissions: ["ops:read"] },
+      {
+        id: "acceptance-center",
+        label: "验收中心",
+        to: "/system-status/acceptance",
+        icon: DocumentChecked,
+        roles: ["admin"],
+        permissions: ["ops:read"],
+      },
     ],
   },
 ];
@@ -211,6 +220,7 @@ const ROUTE_OWNERS: Record<string, RouteOwnership> = {
   "system-status-audit-events": { groupId: "system", itemId: "audit-events", pageLabel: "审计日志" },
   "system-status-users": { groupId: "system", itemId: "users", pageLabel: "用户管理" },
   "system-status-file-retention": { groupId: "system", itemId: "file-retention", pageLabel: "文件保留" },
+  "system-status-acceptance": { groupId: "system", itemId: "acceptance-center", pageLabel: "验收中心" },
   forbidden: { groupId: null, itemId: null, moduleLabel: "访问控制", pageLabel: "没有访问权限" },
 };
 
@@ -401,6 +411,11 @@ export function getBreadcrumbItems(route: RouteLocationNormalizedLoaded, access:
       return [
         { label: "系统状态", to: "/system-status" },
         { label: "文件管理与清理" },
+      ];
+    case "system-status-acceptance":
+      return [
+        { label: "系统状态", to: "/system-status" },
+        { label: "验收中心" },
       ];
     case "forbidden":
       return [{ label: "没有访问权限" }];

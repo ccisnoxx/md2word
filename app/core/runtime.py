@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from app.core.config import Settings
 
 if TYPE_CHECKING:
+    from app.domains.acceptance.repository import AcceptanceRunRepositoryProtocol
     from app.domains.audit.repository import AuditEventRepositoryProtocol
     from app.domains.document_jobs.repository import (
         DocumentJobCallbackMessageStoreProtocol,
@@ -40,6 +41,7 @@ class AppRuntime:
     job_file_repository: JobFileRepositoryProtocol
     job_event_repository: JobEventRepositoryProtocol
     audit_event_repository: AuditEventRepositoryProtocol
+    acceptance_run_repository: AcceptanceRunRepositoryProtocol
     document_file_repository: DocumentFileRepositoryProtocol
     file_retention_policy_repository: Any
     file_retention_cleanup_lock_repository: Any
@@ -51,6 +53,7 @@ class AppRuntime:
     saved_view_repository: SavedViewRepositoryProtocol
     terminology_release_repository: Any
     audit_service: Any
+    acceptance_run_service: Any
     auth_service: Any
     internal_user_management_service: Any
     file_upload_service: Any

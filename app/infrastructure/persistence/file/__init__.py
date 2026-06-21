@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from app.infrastructure.persistence.file.acceptance import FileAcceptanceRunRepository
 from app.infrastructure.persistence.file.audit import FileAuditEventRepository
 from app.infrastructure.persistence.file.backend import FilePersistenceBackend
 from app.infrastructure.persistence.file.cleanup_locks import FileRetentionCleanupLockRepository
@@ -21,6 +22,7 @@ from app.infrastructure.persistence.file.stage_messages import FileStageMessageS
 from app.infrastructure.persistence.file.terminology_releases import FileTerminologyReleaseRepository
 
 __all__ = [
+    "FileAcceptanceRunRepository",
     "FileAuditEventRepository",
     "FileDocumentFileRepository",
     "FileDocumentJobCallbackMessageStore",

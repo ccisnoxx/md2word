@@ -336,6 +336,19 @@ MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
     """
+    CREATE TABLE IF NOT EXISTS acceptance_runs (
+        run_id VARCHAR(128) PRIMARY KEY,
+        tier VARCHAR(8) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        decision VARCHAR(32) NULL,
+        payload LONGTEXT NOT NULL,
+        started_at VARCHAR(40) NULL,
+        finished_at VARCHAR(40) NULL,
+        updated_at VARCHAR(40) NOT NULL,
+        KEY idx_acceptance_runs_tier_status_updated (tier, status, updated_at, run_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
     CREATE TABLE IF NOT EXISTS document_files (
         file_id VARCHAR(128) PRIMARY KEY,
         payload LONGTEXT NOT NULL,

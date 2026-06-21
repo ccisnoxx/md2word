@@ -64,33 +64,44 @@
 
     <OperatorCommandPalette ref="commandPaletteRef" :access="access" />
 
-    <el-dialog v-model="changePasswordDialogVisible" title="修改密码" width="min(520px, 96vw)">
-      <el-form label-position="top">
-        <el-form-item label="当前密码">
-          <el-input
-            v-model="changePasswordForm.current_password"
-            type="password"
-            show-password
-            autocomplete="current-password"
-          />
-        </el-form-item>
-        <el-form-item label="新密码">
-          <el-input
-            v-model="changePasswordForm.new_password"
-            type="password"
-            show-password
-            autocomplete="new-password"
-          />
-        </el-form-item>
-        <el-form-item label="确认新密码">
-          <el-input
-            v-model="changePasswordForm.confirm_password"
-            type="password"
-            show-password
-            autocomplete="new-password"
-          />
-        </el-form-item>
-      </el-form>
+    <el-dialog
+      v-model="changePasswordDialogVisible"
+      title="修改密码"
+      width="min(520px, calc(100vw - 32px))"
+      top="24px"
+      class="password-dialog"
+      append-to="body"
+      :append-to-body="true"
+    >
+      <div class="password-dialog-scroll">
+        <ApiErrorAlert :error="changePasswordError" />
+        <el-form label-position="top">
+          <el-form-item label="当前密码">
+            <el-input
+              v-model="changePasswordForm.current_password"
+              type="password"
+              show-password
+              autocomplete="current-password"
+            />
+          </el-form-item>
+          <el-form-item label="新密码">
+            <el-input
+              v-model="changePasswordForm.new_password"
+              type="password"
+              show-password
+              autocomplete="new-password"
+            />
+          </el-form-item>
+          <el-form-item label="确认新密码">
+            <el-input
+              v-model="changePasswordForm.confirm_password"
+              type="password"
+              show-password
+              autocomplete="new-password"
+            />
+          </el-form-item>
+        </el-form>
+      </div>
       <template #footer>
         <el-button @click="changePasswordDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="changingPassword" @click="submitChangePassword">确认修改</el-button>
@@ -107,12 +118,13 @@ import { useRoute, useRouter } from "vue-router";
 
 import { authApi } from "@/api/auth";
 import AppBreadcrumb from "@/components/AppBreadcrumb.vue";
+import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import AppSidebar from "@/components/AppSidebar.vue";
 import AppThemeToggle from "@/components/AppThemeToggle.vue";
 import OperatorCommandPalette from "@/components/OperatorCommandPalette.vue";
 import { getAppNavigationGroups, getAppRouteContext, getDefaultProtectedRoute, type AppAccessContext } from "@/navigation/appShell";
 import { useAuthStore } from "@/stores/auth";
-import { normalizeApiError } from "@/utils/errors";
+import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { getStoredSidebarCollapsed, persistSidebarCollapsed } from "@/utils/sidebarState";
 
 const auth = useAuthStore();
@@ -123,6 +135,7 @@ const mobileDrawerOpen = ref(false);
 const commandPaletteRef = ref<InstanceType<typeof OperatorCommandPalette> | null>(null);
 const changePasswordDialogVisible = ref(false);
 const changingPassword = ref(false);
+const changePasswordError = ref<ApiClientError | null>(null);
 const changePasswordForm = reactive({
   current_password: "",
   new_password: "",
@@ -173,15 +186,18 @@ function openChangePasswordDialog(): void {
   changePasswordForm.current_password = "";
   changePasswordForm.new_password = "";
   changePasswordForm.confirm_password = "";
+  changePasswordError.value = null;
   changePasswordDialogVisible.value = true;
 }
 
 async function submitChangePassword(): Promise<void> {
   if (changePasswordForm.new_password !== changePasswordForm.confirm_password) {
+    changePasswordError.value = null;
     ElMessage.error("两次输入的新密码不一致。");
     return;
   }
   changingPassword.value = true;
+  changePasswordError.value = null;
   try {
     await authApi.changePassword({
       current_password: changePasswordForm.current_password,
@@ -192,7 +208,8 @@ async function submitChangePassword(): Promise<void> {
     auth.logout();
     void router.push({ path: "/login", query: { auth: "password_changed" } });
   } catch (caught) {
-    ElMessage.error(normalizeApiError(caught).message);
+    changePasswordError.value = normalizeApiError(caught);
+    ElMessage.error(changePasswordError.value.message);
   } finally {
     changingPassword.value = false;
   }
@@ -361,6 +378,33 @@ async function submitChangePassword(): Promise<void> {
   min-width: 0;
   width: 100%;
   padding: var(--app-space-6) var(--app-space-6) 40px;
+}
+
+:deep(.password-dialog) {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
+  margin-bottom: 24px;
+}
+
+:deep(.password-dialog .el-dialog__header),
+:deep(.password-dialog .el-dialog__footer) {
+  flex: 0 0 auto;
+}
+
+:deep(.password-dialog .el-dialog__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.password-dialog-scroll {
+  max-height: min(520px, calc(100vh - 220px));
+  max-height: min(520px, calc(100dvh - 220px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
 }
 
 :global(.app-mobile-drawer.el-drawer) {

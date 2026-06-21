@@ -22,6 +22,7 @@ from app.core.runtime import AppRuntime
 from app.domains.term_rules.file_repository import FileTermRuleRepository
 from app.infrastructure.persistence import build_persistence_adapters
 from app.services.health_service import HealthService
+from app.domains.acceptance.service import AcceptanceRunService
 from app.domains.audit.service import AuditService
 from app.services.auth import AuthService
 from app.domains.document_jobs.execution import (
@@ -139,6 +140,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
     job_file_repository = persistence_adapters.job_file_repository
     job_event_repository = persistence_adapters.job_event_repository
     audit_event_repository = persistence_adapters.audit_event_repository
+    acceptance_run_repository = persistence_adapters.acceptance_run_repository
     document_file_repository = persistence_adapters.document_file_repository
     file_retention_policy_repository = persistence_adapters.file_retention_policy_repository
     file_retention_cleanup_lock_repository = persistence_adapters.file_retention_cleanup_lock_repository
@@ -151,6 +153,8 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
     terminology_release_repository = persistence_adapters.terminology_release_repository
     stage_message_store = persistence_adapters.stage_message_store
     audit_service = AuditService(audit_event_repository)
+    acceptance_run_service = AcceptanceRunService(acceptance_run_repository)
+    acceptance_run_service.bootstrap_default_runs_if_empty()
     auth_service = AuthService(resolved_settings, internal_user_repository)
     internal_user_management_service = InternalUserManagementService(internal_user_repository)
     file_retention_policy_service = FileRetentionPolicyService(
@@ -378,6 +382,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         job_file_repository=job_file_repository,
         job_event_repository=job_event_repository,
         audit_event_repository=audit_event_repository,
+        acceptance_run_repository=acceptance_run_repository,
         document_file_repository=document_file_repository,
         file_retention_policy_repository=file_retention_policy_repository,
         file_retention_cleanup_lock_repository=file_retention_cleanup_lock_repository,
@@ -389,6 +394,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         saved_view_repository=saved_view_repository,
         terminology_release_repository=terminology_release_repository,
         audit_service=audit_service,
+        acceptance_run_service=acceptance_run_service,
         auth_service=auth_service,
         internal_user_management_service=internal_user_management_service,
         file_upload_service=file_upload_service,

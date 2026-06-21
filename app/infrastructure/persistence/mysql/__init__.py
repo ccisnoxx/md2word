@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from app.infrastructure.persistence.mysql.acceptance import MysqlAcceptanceRunRepository
 from app.infrastructure.persistence.mysql.audit import MysqlAuditEventRepository
 from app.infrastructure.persistence.mysql.backend import (
     ConnectFactory,
@@ -30,6 +31,7 @@ from app.infrastructure.persistence.mysql.terminology_releases import MysqlTermi
 
 __all__ = [
     "ConnectFactory",
+    "MysqlAcceptanceRunRepository",
     "MysqlAuditEventRepository",
     "MysqlDocumentFileRepository",
     "MysqlDocumentJobCallbackMessageStore",
