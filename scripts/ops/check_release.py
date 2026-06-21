@@ -153,6 +153,7 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
     auth_change_password = paths.get("/api/v1/auth/change-password", {}).get("post", {}) if isinstance(paths, dict) else {}
     users_path = paths.get("/api/v1/users", {}) if isinstance(paths, dict) else {}
     acceptance_runs_path = paths.get("/api/v1/acceptance/runs", {}) if isinstance(paths, dict) else {}
+    acceptance_latest_summary_path = paths.get("/api/v1/acceptance/runs/latest-summary", {}) if isinstance(paths, dict) else {}
     acceptance_run_path = paths.get("/api/v1/acceptance/runs/{run_id}", {}) if isinstance(paths, dict) else {}
     acceptance_review_path = paths.get("/api/v1/acceptance/runs/{run_id}/review", {}) if isinstance(paths, dict) else {}
     parameter_names = {
@@ -187,6 +188,8 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
 
     if "get" not in acceptance_runs_path:
         missing.append("OpenAPI GET /acceptance/runs")
+    if "get" not in acceptance_latest_summary_path:
+        missing.append("OpenAPI GET /acceptance/runs/latest-summary")
     if "get" not in acceptance_run_path:
         missing.append("OpenAPI GET /acceptance/runs/{run_id}")
     if "post" not in acceptance_review_path:
@@ -212,6 +215,10 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
     for name in ("decision", "review_note"):
         if name not in acceptance_review_properties:
             missing.append(f"OpenAPI AcceptanceRunReviewRequest field: {name}")
+    acceptance_latest_properties = schemas.get("AcceptanceLatestSummaryResponse", {}).get("properties", {})
+    for name in ("overall_status", "missing_tiers", "blocker_count", "warning_count", "latest_reviewed_run", "tiers", "generated_at"):
+        if name not in acceptance_latest_properties:
+            missing.append(f"OpenAPI AcceptanceLatestSummaryResponse field: {name}")
 
     types_path = REPO_ROOT / "frontend/src/api/types.ts"
     try:
@@ -236,9 +243,11 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
         "export type InternalUserResetPasswordRequest",
         "export type AcceptanceRunResponse",
         "export type AcceptanceRunListResponse",
+        "export type AcceptanceLatestSummaryResponse",
         "export type AcceptanceReviewRequest",
         'export type AcceptanceReviewDecision = "approved"',
         'export type AcceptanceRunStatus = "passed"',
+        'export type AcceptanceLatestOverallStatus = "accepted"',
         "review_note: string | null",
     ):
         if needle not in frontend_types:
@@ -257,6 +266,7 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
 
     for needle in (
         'url: "/api/v1/acceptance/runs"',
+        'url: "/api/v1/acceptance/runs/latest-summary"',
         "`/api/v1/acceptance/runs/${runId}`",
         "`/api/v1/acceptance/runs/${runId}/review`",
         "review_note",
@@ -276,13 +286,15 @@ def check_frontend_smoke_mock_contracts() -> ReleaseCheckItem:
     """检查核心 smoke mock 是否覆盖产品成熟化验收场景。"""
 
     smoke_path = REPO_ROOT / "frontend/tests/smoke/core-flow.spec.ts"
+    user_auth_smoke_path = REPO_ROOT / "frontend/tests/smoke/user-auth.spec.ts"
     try:
         smoke_source = smoke_path.read_text(encoding="utf-8")
+        user_auth_smoke_source = user_auth_smoke_path.read_text(encoding="utf-8")
     except OSError as exc:
         return ReleaseCheckItem(
             name="frontend-smoke-mock",
             ok=False,
-            summary=f"Cannot read smoke mock: {smoke_path}",
+            summary="Cannot read frontend smoke mock",
             details=str(exc),
         )
 
@@ -305,6 +317,18 @@ def check_frontend_smoke_mock_contracts() -> ReleaseCheckItem:
         for name, needle in required_needles.items()
         if needle not in smoke_source
     ]
+    user_auth_required_needles = {
+        "managed_users_list": "/api/v1/users",
+        "auth_change_password": "/api/v1/auth/change-password",
+        "password_changed_notice": "password_changed",
+        "dangerous_user_confirmation": "确认停用",
+        "forbidden_default_route": "返回可访问页面",
+    }
+    missing.extend(
+        f"{name}: {needle}"
+        for name, needle in user_auth_required_needles.items()
+        if needle not in user_auth_smoke_source
+    )
     forbidden_needles = ("storage_backend", "storage_path", "media_type", "retention_until")
     stale = [f"stale file mock field: {needle}" for needle in forbidden_needles if needle in smoke_source]
     failures = missing + stale
