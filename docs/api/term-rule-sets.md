@@ -15,7 +15,7 @@ source_files:
   - app/domains/term_rules/schemas.py
 summary: Term-rule-sets API 在 MySQL resource service 下提供术语规则集 draft、结构化 draft rule CRUD、diff/preflight、import/export、publish、set-default、rollback 和成功动作审计。
 tags: [term-rules, resource-versioning, api, audit]
-last_reviewed: 2026-06-04
+last_reviewed: 2026-06-21
 ---
 
 ## 概述
@@ -35,6 +35,7 @@ last_reviewed: 2026-06-04
 - import / export / publish / set-default / rollback 成功后会写 audit event
 - publish 成功后会把已 approve 且尚未发布的 term rule proposals 关联到本次 published version
 - 读取 draft、diff、preflight 和结构化 draft rules 需要 Bearer JWT，兼容 legacy `X-Admin-Token`；写入、导入导出、发布、设默认和回滚需要 Bearer admin JWT 或 legacy `X-Admin-Token`
+- draft 写入接口兼容可选 `expected_snapshot_hash`；客户端传入后，服务会在写入前校验当前 draft `snapshot_hash`，不匹配时返回 `409 draft_snapshot_conflict`
 
 ## API 参考
 
@@ -83,6 +84,7 @@ last_reviewed: 2026-06-04
 - 用途：用完整 v2 YAML 更新 draft。
 - 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 请求体：
+  - `expected_snapshot_hash`：可选；用于防止基于过期 draft 覆盖最新内容
   - `yaml_text`
 - 成功响应：`TermRuleSetDraftResponse`
 - 关键语义：
@@ -106,6 +108,17 @@ last_reviewed: 2026-06-04
     "errors": [],
     "warnings": []
   }
+}
+```
+
+过期 draft snapshot 返回 `409`，`detail` 结构：
+
+```json
+{
+  "code": "draft_snapshot_conflict",
+  "message": "Term Rule Set draft 已被其他修改更新，请刷新后重试。",
+  "expected_snapshot_hash": "client-known-hash",
+  "actual_snapshot_hash": "current-draft-hash"
 }
 ```
 
@@ -139,6 +152,7 @@ last_reviewed: 2026-06-04
 - 请求体：复用 `TermRuleCreateRequest`
 - 成功响应：`201 TermRuleDraftRuleMutationResponse`
 - 关键语义：
+  - `expected_snapshot_hash` 可选；传入后服务会拒绝过期 draft 写入
   - `id` 可选；缺省时由服务生成稳定唯一 ID
   - `category_id` 必须存在于当前 draft categories
   - `source_term` 在当前 draft 内必须唯一
@@ -153,6 +167,7 @@ last_reviewed: 2026-06-04
 - 请求体：复用 `TermRuleUpdateRequest`
 - 成功响应：`TermRuleDraftRuleMutationResponse`
 - 关键语义：
+  - `expected_snapshot_hash` 可选；传入后服务会拒绝过期 draft 写入
   - `category_id` 变更时必须指向当前 draft 内存在的分类
   - `source_term` 变更后仍必须在当前 draft 内唯一
   - `segments` 变更且未显式传入 `custom_html` / `custom_markdown` 时，会按新 segments 重新生成渲染结果
@@ -162,6 +177,8 @@ last_reviewed: 2026-06-04
 
 - 用途：从当前 draft 删除一条结构化规则。
 - 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
+- 查询参数：
+  - `expected_snapshot_hash`：可选；用于防止基于过期 draft 删除最新内容
 - 成功响应：`TermRuleDraftRuleDeleteResponse`
 - 关键语义：
   - 删除只作用于 draft
@@ -211,15 +228,18 @@ last_reviewed: 2026-06-04
 - 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 请求体字段：
   - `yaml_text`：完整 term-rules v2 YAML
+  - `expected_snapshot_hash`：可选；`target=draft` 时用于防止基于过期 draft 覆盖最新内容，`target=seed` 时忽略
   - `target`：`draft` 或 `seed`，默认 `draft`
   - `dedupe`：`reject` 或 `keep_first`，默认 `reject`
 - 成功响应：`TermRuleSetImportResponse`
 - 审计：成功后写 `term_rule_set.import`。
 - 关键语义：
+  - `schema_version: 2` 与 `schema_version: 2.1` 均可导入；`2.1` 主要用于表达可逆的高级渲染字段
   - `target=draft` 只更新 resource version draft
   - `target=seed` 会作为 versioned seed 导入并同步 live runtime store 和 runtime YAML
   - `dedupe=reject` 时重复 `source_term` 会作为导入错误返回
   - `dedupe=keep_first` 时保留首次出现的规则并在 import report 中记录重复项
+  - `custom_markdown` / `custom_html` 会被保留；未提供时由 `segments` 自动生成
 
 ### `GET /api/v1/term-rule-sets/{set_id}/export`
 
@@ -231,7 +251,8 @@ last_reviewed: 2026-06-04
 - 成功响应：`TermRuleSetExportResponse`
 - 审计：成功后写 `term_rule_set.export`。
 - 关键语义：
-  - `format=term_rules_v2` 导出规范 v2 YAML
+  - `format=term_rules_v2` 导出规范 v2 YAML；为了兼容既有 seed，导出仍写 `schema_version: 2`
+  - 与 `segments` 生成值不同的 `custom_markdown` / `custom_html` 会被写入导出 YAML，避免高级规则 round-trip 丢失自定义预览
   - `format=legacy_runtime` 导出 legacy runtime YAML
   - export 不改变 draft、published version、默认指针或 runtime YAML
 

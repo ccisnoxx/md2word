@@ -83,6 +83,7 @@ class TermRuleListResponse(BaseModel):
 
 class TermRuleCreateRequest(BaseModel):
     id: str | None = None
+    expected_snapshot_hash: str | None = None
     category_id: str
     source_term: str
     scope_type: Literal["global", "department"] = "global"
@@ -98,6 +99,7 @@ class TermRuleCreateRequest(BaseModel):
 
 
 class TermRuleUpdateRequest(BaseModel):
+    expected_snapshot_hash: str | None = None
     category_id: str | None = None
     source_term: str | None = None
     scope_type: Literal["global", "department"] | None = None
@@ -205,11 +207,13 @@ class TermRuleSetDraftResponse(BaseModel):
 
 
 class TermRuleSetDraftUpdateRequest(BaseModel):
+    expected_snapshot_hash: str | None = None
     yaml_text: str
 
 
 class TermRuleSetImportRequest(BaseModel):
     yaml_text: str
+    expected_snapshot_hash: str | None = None
     target: Literal["draft", "seed"] = "draft"
     dedupe: Literal["reject", "keep_first"] = "reject"
 

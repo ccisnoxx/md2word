@@ -94,6 +94,9 @@ last_reviewed: 2026-06-04
 - 用途：导出当前 live store 的规范化 v2 YAML。
 - 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 返回：`yaml_text`
+- 关键语义：
+  - 导出保持 `schema_version: 2`，兼容既有 seed 文件
+  - 与 `segments` 生成值不同的 `custom_markdown` / `custom_html` 会被写入 YAML，避免高级规则 round-trip 丢失自定义渲染
 
 ### `POST /api/v1/term-rules/simulate`
 
@@ -112,6 +115,9 @@ last_reviewed: 2026-06-04
 - 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 请求体：
   - `yaml_text`
+- 关键语义：
+  - 接受 `schema_version: 2` 和 `schema_version: 2.1`
+  - 导入时保留 `custom_markdown` / `custom_html`；未提供时由 `segments` 自动生成
 - 返回：
   - `valid`
   - `summary`
@@ -125,6 +131,8 @@ last_reviewed: 2026-06-04
 - 请求体：
   - `yaml_text`
 - 关键语义：
+  - 接受 `schema_version: 2` 和 `schema_version: 2.1`
+  - `custom_markdown` / `custom_html` 会作为高级渲染字段保留；未提供时由 `segments` 自动生成
   - 不做增量 merge
   - 成功后会同步刷新 runtime YAML
   - MySQL versioned mode 下返回 `400`，避免绕过 Term Rule Set draft / publish

@@ -30,6 +30,7 @@ Term Rule Set 版本管理把术语规则从“直接改 live runtime store”�
 - 测试和本地验证使用 `/Users/sc/miniconda3/envs/md2word/bin/python`
 
 file / sqlite backend 下，`/api/v1/term-rule-sets` 返回 `503`；legacy `/api/v1/term-rules` 和 `/api/v1/term-rule-categories` 写接口仍保持兼容。
+Term Rule Set draft 写接口可选传 `expected_snapshot_hash` 防止覆盖较新的 draft；YAML 导入兼容 `schema_version: 2` 和 `2.1`，并保留高级规则的 `custom_markdown` / `custom_html`。
 
 ## 快速上手
 
@@ -48,6 +49,8 @@ curl -sS -X PUT \
   -H 'X-Admin-Token: <admin-token>' \
   -d '{"yaml_text":"schema_version: 2\ncategories: {}\nrules: []\n"}'
 ```
+
+如果调用方先读取了 draft，建议在更新请求中同时传入 `expected_snapshot_hash`；服务发现当前 draft 已被其他操作更新时会返回 `409 draft_snapshot_conflict`，调用方应刷新后重试。
 
 3. 发布并设为默认：
 

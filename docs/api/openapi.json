@@ -11414,6 +11414,17 @@
             "title": "Enabled",
             "type": "boolean"
           },
+          "expected_snapshot_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Snapshot Hash"
+          },
           "id": {
             "anyOf": [
               {
@@ -13512,6 +13523,17 @@
       },
       "TermRuleSetDraftUpdateRequest": {
         "properties": {
+          "expected_snapshot_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Snapshot Hash"
+          },
           "yaml_text": {
             "title": "Yaml Text",
             "type": "string"
@@ -13655,6 +13677,17 @@
             ],
             "title": "Dedupe",
             "type": "string"
+          },
+          "expected_snapshot_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Snapshot Hash"
           },
           "target": {
             "default": "draft",
@@ -14113,6 +14146,17 @@
               }
             ],
             "title": "Enabled"
+          },
+          "expected_snapshot_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Snapshot Hash"
           },
           "notes": {
             "anyOf": [
@@ -26395,6 +26439,22 @@
             "schema": {
               "title": "Rule Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expected_snapshot_hash",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Snapshot Hash"
             }
           },
           {

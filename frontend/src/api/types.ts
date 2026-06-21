@@ -2101,6 +2101,7 @@ export type TermRuleListResponse = {
 
 export type TermRuleCreateRequest = {
   id?: string | null;
+  expected_snapshot_hash?: string | null;
   category_id: string;
   source_term: string;
   scope_type?: "global" | "department";
@@ -2116,6 +2117,7 @@ export type TermRuleCreateRequest = {
 };
 
 export type TermRuleUpdateRequest = {
+  expected_snapshot_hash?: string | null;
   category_id?: string | null;
   source_term?: string | null;
   scope_type?: "global" | "department" | null;
@@ -2491,6 +2493,7 @@ export type TermRuleSetPublishRequest = {
 };
 
 export type TermRuleSetDraftUpdateRequest = {
+  expected_snapshot_hash?: string | null;
   yaml_text: string;
 };
 
