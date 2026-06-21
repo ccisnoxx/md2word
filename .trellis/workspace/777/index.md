@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 13
-- **Last Active**: 2026-06-20
+- **Total Sessions**: 14
+- **Last Active**: 2026-06-21
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~447 | Active |
+| `journal-1.md` | ~480 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 14 | 2026-06-21 | Deploy md2word to hostdzire | `8a5ec485` | `main` |
 | 13 | 2026-06-20 | terminology rule review flow mvp | `21c5183f` | `main` |
 | 12 | 2026-06-20 | Terminology governance package release | `f79acc4c` | `main` |
 | 11 | 2026-06-20 | Frontend diagnostic detail experience | `91c88d5b` | `main` |
