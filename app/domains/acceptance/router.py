@@ -13,6 +13,8 @@ from app.api.dependencies import get_runtime, get_trace_id, require_admin_user
 from app.core.runtime import AppRuntime
 from app.domains.acceptance.models import AcceptanceRunRecord, AcceptanceRunStatus, AcceptanceRunTier
 from app.domains.acceptance.schemas import (
+    AcceptanceLatestSummaryResponse,
+    AcceptanceLatestTierSummaryResponse,
     AcceptanceRunListResponse,
     AcceptanceRunResponse,
     AcceptanceRunReviewRequest,
@@ -36,6 +38,35 @@ def list_acceptance_runs(
 
     records = runtime.acceptance_run_service.list_runs(tier=tier, status=status_value, limit=limit)
     return AcceptanceRunListResponse(items=[_build_run_response(record) for record in records], total=len(records))
+
+
+@router.get("/runs/latest-summary", response_model=AcceptanceLatestSummaryResponse)
+def get_acceptance_latest_summary(
+    runtime: AppRuntime = Depends(get_runtime),
+    _user: AuthenticatedUser = Depends(require_admin_user),
+) -> AcceptanceLatestSummaryResponse:
+    """Return the derived latest P0/P1/P2 acceptance state for admin signoff."""
+
+    summary = runtime.acceptance_run_service.build_latest_summary()
+    return AcceptanceLatestSummaryResponse(
+        overall_status=summary.overall_status,
+        missing_tiers=summary.missing_tiers,
+        blocker_count=summary.blocker_count,
+        warning_count=summary.warning_count,
+        latest_reviewed_run=_build_run_response(summary.latest_reviewed_run) if summary.latest_reviewed_run else None,
+        tiers=[
+            AcceptanceLatestTierSummaryResponse(
+                tier=tier_summary.tier,
+                run=_build_run_response(tier_summary.run) if tier_summary.run else None,
+                missing=tier_summary.missing,
+                risk_level=tier_summary.risk_level,
+                blockers=tier_summary.blockers,
+                warnings=tier_summary.warnings,
+            )
+            for tier_summary in summary.tiers
+        ],
+        generated_at=summary.generated_at,
+    )
 
 
 @router.get("/runs/{run_id}", response_model=AcceptanceRunResponse)

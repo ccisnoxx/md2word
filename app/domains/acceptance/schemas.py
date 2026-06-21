@@ -9,7 +9,13 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from app.domains.acceptance.models import AcceptanceReviewDecision, AcceptanceRunStatus, AcceptanceRunTier
+from app.domains.acceptance.models import (
+    AcceptanceLatestOverallStatus,
+    AcceptanceReviewDecision,
+    AcceptanceRunRiskLevel,
+    AcceptanceRunStatus,
+    AcceptanceRunTier,
+)
 
 
 class AcceptanceRunResponse(BaseModel):
@@ -35,6 +41,25 @@ class AcceptanceRunResponse(BaseModel):
 class AcceptanceRunListResponse(BaseModel):
     items: list[AcceptanceRunResponse]
     total: int
+
+
+class AcceptanceLatestTierSummaryResponse(BaseModel):
+    tier: AcceptanceRunTier
+    run: AcceptanceRunResponse | None = None
+    missing: bool = False
+    risk_level: AcceptanceRunRiskLevel
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class AcceptanceLatestSummaryResponse(BaseModel):
+    overall_status: AcceptanceLatestOverallStatus
+    missing_tiers: list[AcceptanceRunTier] = Field(default_factory=list)
+    blocker_count: int = 0
+    warning_count: int = 0
+    latest_reviewed_run: AcceptanceRunResponse | None = None
+    tiers: list[AcceptanceLatestTierSummaryResponse]
+    generated_at: datetime
 
 
 class AcceptanceRunReviewRequest(BaseModel):

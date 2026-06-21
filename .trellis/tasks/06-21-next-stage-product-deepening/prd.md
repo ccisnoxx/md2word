@@ -55,32 +55,46 @@ MVP behavior:
 - Provide a compact page under the protected internal portal for acceptance evidence.
 - Show recent P0 Golden Sample, P1 translation, and P2 online gate runs or manually recorded summaries.
 - Show status, environment, report path/URL, blockers, timestamps, reviewer, review status, and review note.
-- Allow admin users to record a `pass` or `block` decision.
+- Allow admin users to record an `approved`, `rejected`, or `needs_changes` review decision.
 - Record audit events for acceptance review decisions.
 - Provide links or references to existing reports and related operational pages when available.
 - Do not store large artifacts, secrets, JWTs, raw customer text, full LLM prompts/responses, or binary files in acceptance metadata.
 
 Recommended backend contract:
 
-- `GET /api/v1/acceptance-runs`
-- `GET /api/v1/acceptance-runs/{run_id}`
-- `GET /api/v1/acceptance-runs/latest-summary`
-- `POST /api/v1/acceptance-runs/{run_id}/review`
+- `GET /api/v1/acceptance/runs`
+- `GET /api/v1/acceptance/runs/{run_id}`
+- `GET /api/v1/acceptance/runs/latest-summary`
+- `POST /api/v1/acceptance/runs/{run_id}/review`
 
 Recommended data fields:
 
 - `id`
-- `gate_type`: `p0_golden_sample`, `p1_translation`, `p2_online`
-- `status`: `passed`, `blocked`, `failed`, `unknown`
+- `tier`: `P0`, `P1`, `P2`
+- `status`: `passed`, `failed`, `unknown`
 - `environment`
+- `source`
 - `report_path_or_url`
+- `summary`
 - `blockers`
+- `warnings`
 - `started_at`
-- `completed_at`
-- `review_status`: `unreviewed`, `passed`, `blocked`
+- `finished_at`
+- `decision`: `approved`, `rejected`, `needs_changes`, or `null`
 - `reviewer`
 - `review_note`
 - `reviewed_at`
+- `updated_at`
+
+Recommended latest-summary fields:
+
+- `overall_status`: `accepted`, `blocked`, `incomplete`, or `needs_attention`
+- `missing_tiers`
+- `blocker_count`
+- `warning_count`
+- `latest_reviewed_run`
+- `tiers`
+- `generated_at`
 
 ### R5. Frontend Implementation Boundaries
 
@@ -91,16 +105,16 @@ Recommended data fields:
 
 ## Acceptance Criteria
 
-- [ ] User-management tests are part of the default release check path.
-- [ ] Internal portal and API docs describe managed users, bootstrap behavior, admin operations, and rollback/lockout precautions.
-- [ ] User-management dangerous actions and auth state changes have clear Chinese feedback.
-- [ ] Forbidden users can return to a route they are actually allowed to access.
-- [ ] Acceptance Center backend APIs exist, are admin-protected where writes occur, and never expose secrets.
-- [ ] Acceptance review decisions write audit events.
-- [ ] Acceptance Center frontend page shows gate summaries, blockers, reports, and review controls.
-- [ ] P0/P1/P2 evidence summaries can be reviewed without changing conversion, QA, terminology, or ops workflow behavior.
-- [ ] OpenAPI snapshot and manifest/docs are updated for new or changed public contracts.
-- [ ] Targeted backend tests, frontend unit/build checks, and relevant smoke/visual checks pass or any skipped validation is explicitly justified.
+- [x] User-management tests are part of the default release check path.
+- [x] Internal portal and API docs describe managed users, bootstrap behavior, admin operations, and rollback/lockout precautions.
+- [x] User-management dangerous actions and auth state changes have clear Chinese feedback.
+- [x] Forbidden users can return to a route they are actually allowed to access.
+- [x] Acceptance Center backend APIs exist, are admin-protected where writes occur, and never expose secrets.
+- [x] Acceptance review decisions write audit events.
+- [x] Acceptance Center frontend page shows gate summaries, blockers, reports, and review controls.
+- [x] P0/P1/P2 evidence summaries can be reviewed without changing conversion, QA, terminology, or ops workflow behavior.
+- [x] OpenAPI snapshot and manifest/docs are updated for new or changed public contracts.
+- [x] Targeted backend tests, frontend unit/build checks, and relevant smoke/visual checks pass or any skipped validation is explicitly justified.
 
 ## Out Of Scope
 

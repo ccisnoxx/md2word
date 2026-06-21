@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { acceptanceApi } from "@/api/acceptance";
 import { apiRequest } from "@/api/client";
-import type { AcceptanceRunListResponse, AcceptanceRunResponse } from "@/api/types";
+import type { AcceptanceLatestSummaryResponse, AcceptanceRunListResponse, AcceptanceRunResponse } from "@/api/types";
 
 vi.mock("@/api/client", () => ({
   apiRequest: vi.fn(),
@@ -33,6 +33,25 @@ const listResponse: AcceptanceRunListResponse = {
   total: 1,
 };
 
+const latestSummaryResponse: AcceptanceLatestSummaryResponse = {
+  overall_status: "accepted",
+  missing_tiers: [],
+  blocker_count: 0,
+  warning_count: 0,
+  latest_reviewed_run: null,
+  tiers: [
+    {
+      tier: "P0",
+      run: acceptanceRun,
+      missing: false,
+      risk_level: "success",
+      blockers: [],
+      warnings: [],
+    },
+  ],
+  generated_at: "2026-06-21T01:13:00Z",
+};
+
 describe("acceptance API", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -55,6 +74,17 @@ describe("acceptance API", () => {
 
     expect(apiRequest).toHaveBeenCalledWith({
       url: "/api/v1/acceptance/runs/run_p0_1",
+      method: "GET",
+    });
+  });
+
+  it("requests the latest acceptance summary endpoint", async () => {
+    vi.mocked(apiRequest).mockResolvedValue(latestSummaryResponse);
+
+    await acceptanceApi.latestSummary();
+
+    expect(apiRequest).toHaveBeenCalledWith({
+      url: "/api/v1/acceptance/runs/latest-summary",
       method: "GET",
     });
   });

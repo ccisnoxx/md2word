@@ -218,6 +218,84 @@ if user_repository.count_internal_users() == 0:
 user = user_repository.get_internal_user_by_username(username_key)
 ```
 
+#### Scenario: Acceptance Center Latest Evidence Summary
+
+##### 1. Scope / Trigger
+
+- Trigger: admin Acceptance Center exposes cross-layer evidence state consumed by
+  the frontend release UI and release checks.
+- The summary is a derived view over compact acceptance run metadata. It must not
+  become a second persisted source of truth or mutate evidence records.
+
+##### 2. Signatures
+
+- `GET /api/v1/acceptance/runs`
+- `GET /api/v1/acceptance/runs/{run_id}`
+- `GET /api/v1/acceptance/runs/latest-summary`
+- `POST /api/v1/acceptance/runs/{run_id}/review`
+
+##### 3. Contracts
+
+- `AcceptanceRunRecord` uses tier values `P0`, `P1`, `P2`; status values
+  `passed`, `failed`, `unknown`; and review decisions `approved`, `rejected`,
+  `needs_changes`.
+- `latest-summary` returns `overall_status`, `missing_tiers`, `blocker_count`,
+  `warning_count`, `latest_reviewed_run`, `tiers`, and `generated_at`.
+- `overall_status` is derived as `incomplete` when any tier is missing,
+  `blocked` when latest tier evidence has blockers or failed status,
+  `needs_attention` when latest tier evidence has warnings or unknown status,
+  and `accepted` only when all latest tier evidence is present and clean.
+- Evidence recency follows `finished_at`, then `started_at`, then `updated_at`.
+  Review actions may update metadata, but must not make an older evidence run the
+  latest run for its tier.
+- Review endpoints update `reviewer`, `decision`, `reviewed_at`, and
+  `review_note` only. They must not change the evidence `status`, `blockers`, or
+  `warnings`.
+
+##### 4. Validation & Error Matrix
+
+- Missing bearer token -> `401 unauthorized`.
+- Non-admin access -> `403 role_forbidden`.
+- Unknown `run_id` -> `404 not_found`.
+- Invalid tier, status, or decision enum -> FastAPI/Pydantic validation error.
+- Partial review metadata in storage -> model validation error; review metadata
+  must be stored together.
+
+##### 5. Good/Base/Bad Cases
+
+- Good: P0 passed, P1 missing, P2 unknown returns `overall_status=incomplete`,
+  includes `P1` in `missing_tiers`, and keeps P2 blockers visible.
+- Base: an admin approves an unknown run; the review audit is written, but the
+  run status remains `unknown` and the UI still shows warnings/blockers.
+- Bad: deriving acceptance from the latest reviewed run, storing a separate
+  overall status record, or treating `approved` as equivalent to `passed`.
+
+##### 6. Tests Required
+
+- API tests must cover admin-only access, list/detail/filter, `latest-summary`,
+  review persistence, audit event details, and missing-run errors.
+- Service tests must cover the evidence-time ordering invariant where reviewing
+  an older run does not make it the latest tier evidence.
+- OpenAPI export/check, frontend contract needles, frontend API wrapper unit
+  tests, and Acceptance Center smoke mocks must be updated when fields or paths
+  change.
+
+##### 7. Wrong vs Correct
+
+Wrong:
+
+```python
+latest = max(runs, key=lambda record: record.updated_at)
+overall_status = "accepted" if latest.decision == "approved" else "blocked"
+```
+
+Correct:
+
+```python
+latest = max(runs, key=lambda record: record.finished_at or record.started_at or record.updated_at)
+overall_status = derive_from_latest_tier_status_blockers_and_warnings(tiers)
+```
+
 ### Domain Boundaries
 
 - Keep business rules in services/workflow modules, not only in routers.
