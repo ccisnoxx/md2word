@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "Shared verification checklist trigger reference."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Ensure final docs and command output do not expose sensitive values."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Release check expectations and forbidden deployment shortcuts."}
+{"file": ".trellis/tasks/06-21-deploy-latest-md2word-to-hostdzire/research/deploy-context.md", "reason": "Task-specific deployment topology and acceptance criteria context."}

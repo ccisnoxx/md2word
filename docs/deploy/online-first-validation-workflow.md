@@ -5,7 +5,7 @@ component: md2word-deploy-validation
 status: current
 summary: md2word 本地改写、上传 hostdzire、线上验证和 Golden Sample 签字的标准流程。
 tags: [deploy, validation, hostdzire, golden-sample, mysql, celery]
-last_reviewed: 2026-06-17
+last_reviewed: 2026-06-21
 ---
 
 # 线上优先验证流程
@@ -16,7 +16,7 @@ last_reviewed: 2026-06-17
 
 ## 固定环境
 
-- `hostdzire` 是项目部署和验证机器，部署目录为 `/root/md2word`，运行 Docker Compose、MySQL、Redis/Celery、API、Worker 和本机 nginx。
+- `hostdzire` 是项目部署和验证机器，普通上线使用 `/root/md2word-releases/<short-sha>` release 目录，运行 Docker Compose、MySQL、Redis/Celery、API、Worker 和本机 nginx。
 - `dmit` 是公网前置机，只负责通过 WireGuard / nginx stream 把 `80/443` 流量转发到 `hostdzire`。普通代码更新不改 `dmit`。
 - 公开入口使用 `https://md2word.962850.xyz`。在 `hostdzire` 本机验证 API 时优先使用 `http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}`。
 - 准生产/生产基线是 MySQL metadata + Redis/Celery + 单 worker。
@@ -41,9 +41,59 @@ last_reviewed: 2026-06-17
 - 不把本地 `npm run test:smoke`、Playwright、前后端联调 smoke 作为本轮验收要求。
 - 不在本地跑 Golden Sample 真实转换；本地最多检查 manifest 和脚本参数。
 
-## 上传到 hostdzire
+## 发布到 hostdzire
+
+当前推荐路径是 GitHub release 目录发布，不再把 `/root/md2word` 作为普通 `git pull` 目标。`/root/md2word` 可能保留历史本地修改；不要为了上线直接在该目录 reset 或覆盖。
+
+本地先确认目标 commit 已经推到 GitHub：
+
+```bash
+git status --short --branch
+git push origin main
+git ls-remote origin refs/heads/main
+```
+
+在 hostdzire 上创建新 release。`VPS.txt` 只用于人工取得登录信息，命令里用 `<hostdzire-ssh>` 占位，例如 `root@<hostdzire>`：
+
+```bash
+FULL_SHA="<target-full-sha>"
+SHORT_SHA="${FULL_SHA:0:7}"
+RELEASE_DIR="/root/md2word-releases/${SHORT_SHA}"
+REPO_URL="git@github.com:ccisnoxx/md2word.git"
+
+CURRENT_ENV="$(docker inspect md2word-p0-api-1 \
+  --format '{{ index .Config.Labels "com.docker.compose.project.environment_file" }}')"
+CURRENT_RELEASE="$(dirname "${CURRENT_ENV}")"
+
+git clone "${REPO_URL}" "${RELEASE_DIR}"
+git -C "${RELEASE_DIR}" checkout "${FULL_SHA}"
+cp "${CURRENT_RELEASE}/.env" "${RELEASE_DIR}/.env"
+cp "${CURRENT_RELEASE}/deploy/auth_internal_users.json" \
+  "${RELEASE_DIR}/deploy/auth_internal_users.json"
+
+RELEASE_ID="$(date -u +%Y%m%dT%H%M%SZ)"
+if grep -q "^APP_VERSION=" "${RELEASE_DIR}/.env"; then
+  sed -i "s/^APP_VERSION=.*/APP_VERSION=${SHORT_SHA}/" "${RELEASE_DIR}/.env"
+else
+  printf "\nAPP_VERSION=%s\n" "${SHORT_SHA}" >> "${RELEASE_DIR}/.env"
+fi
+
+if grep -q "^DEPLOYMENT_ID=" "${RELEASE_DIR}/.env"; then
+  sed -i "s/^DEPLOYMENT_ID=.*/DEPLOYMENT_ID=hostdzire-${RELEASE_ID}-${SHORT_SHA}/" \
+    "${RELEASE_DIR}/.env"
+else
+  printf "DEPLOYMENT_ID=hostdzire-%s-%s\n" "${RELEASE_ID}" "${SHORT_SHA}" \
+    >> "${RELEASE_DIR}/.env"
+fi
+```
+
+如果 `RELEASE_DIR` 已存在，先确认它的 `git rev-parse HEAD` 是否等于目标 `FULL_SHA`。不要直接覆盖已存在 release；重新部署同一 commit 时复用该目录 build/up 即可。
+
+### rsync / tar fallback
 
 上传前先确认本地没有要保留但未说明的临时文件。`VPS.txt` 只用于人工取得登录信息，命令里用 `<hostdzire-ssh>` 占位，例如 `root@<hostdzire>`。
+
+只有在 GitHub clone 不可用、且明确需要直接同步本地文件时，才使用本节 fallback。fallback 必须保留 `.env`、内部账号文件、运行时数据目录和临时输出；默认不要带 `--delete`。
 
 先 dry-run：
 
@@ -115,7 +165,7 @@ ssh <hostdzire-ssh> 'mkdir -p /root/md2word && tar --no-same-owner -xzf /root/md
 在 hostdzire 上执行：
 
 ```bash
-cd /root/md2word
+cd "${RELEASE_DIR}"
 docker compose --env-file .env -f docker/prod/docker-compose.yml build
 docker compose --env-file .env -f docker/prod/docker-compose.yml up -d
 docker compose --env-file .env -f docker/prod/docker-compose.yml ps
@@ -149,9 +199,16 @@ curl -fsS "${API_BASE_URL}/api/v1/health/live"
 curl -fsS "${API_BASE_URL}/api/v1/health/ready"
 curl -fsS "${API_BASE_URL}/api/v1/health/metrics"
 
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_release.py \
-  --runtime-url "${API_BASE_URL}"
+touch /tmp/md2word_empty_env
+docker run --rm --user 0 --network md2word-p0_default \
+  -v "${RELEASE_DIR}:/app" \
+  -v /tmp/md2word_empty_env:/app/.env:ro \
+  -w /app md2word-p0:latest \
+  python scripts/ops/check_release.py \
+    --runtime-url "http://md2word-p0-api-1:8000"
 ```
+
+`check_release.py` 的本地单元测试必须遮蔽生产 `.env`，否则测试会读到 MySQL / `local_object` 线上配置并误报失败。上面的 Docker runner 复用生产镜像依赖，同时把完整 release 目录挂载进去读取 `docs/`、`frontend/` 和 `tests/`。
 
 再从公网入口检查 dmit -> hostdzire 转发：
 
