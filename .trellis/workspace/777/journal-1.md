@@ -94,7 +94,10 @@ Completed and verified the first-pass operations workbench redesign for JobsPage
 
 ### Main Changes
 
-(Add details)
+- Deployed GitHub commit `fecd3337` to hostdzire release directory `/root/md2word-releases/fecd3337`.
+- Preserved the previous release's `.env` and internal users JSON, then updated non-sensitive release tracking fields.
+- Rebuilt `md2word-p0:latest` and recreated API/Worker while leaving MySQL and Redis running.
+- Added repeatable hostdzire release deployment docs and archived the task evidence.
 
 ### Git Commits
 
@@ -104,7 +107,11 @@ Completed and verified the first-pass operations workbench redesign for JobsPage
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] hostdzire loopback `/api/v1/health/live` and `/api/v1/health/ready`
+- [OK] public `https://md2word.962850.xyz/api/v1/health/live` and `/api/v1/health/ready`
+- [OK] release gate via production image + mounted release directory + empty `.env` overlay: OpenAPI, frontend contract, smoke mock, 145 targeted unit tests, runtime readiness
+- [OK] `git diff --check`
+- [OK] sensitive-data scan across deploy docs and task evidence
 
 ### Status
 
@@ -433,6 +440,39 @@ Implemented terminology rule review flow MVP: scoped effective rules, review bat
 | Hash | Message |
 |------|---------|
 | `21c5183f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 14: Deploy md2word to hostdzire
+
+**Date**: 2026-06-21
+**Task**: Deploy md2word to hostdzire
+**Branch**: `main`
+
+### Summary
+
+Deployed fecd3337 to hostdzire release directory, verified health and release gate, and documented the repeatable GitHub release deployment flow.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8a5ec485` | (see git log) |
 
 ### Testing
 
