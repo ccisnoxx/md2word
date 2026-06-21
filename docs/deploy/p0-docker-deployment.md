@@ -5,7 +5,7 @@ component: pdf-to-word-backend
 status: current
 summary: P0 API 与 document_jobs Worker 共用镜像和根目录 .env 的 Docker Compose 部署说明。
 tags: [deploy, docker, api, worker, mysql, redis]
-last_reviewed: 2026-06-17
+last_reviewed: 2026-06-21
 ---
 
 # P0 Docker 部署说明
@@ -31,6 +31,8 @@ last_reviewed: 2026-06-17
 - 如有前置机，可让前置机通过 WireGuard / 内网把域名流量转发到部署机的 `80/443`
 
 md2word 当前按 [线上优先验证流程](/Users/sc/PycharmProjects/md2word/docs/deploy/online-first-validation-workflow.md) 发布：本地负责改写和不依赖服务的检查，完整 API/Worker/MySQL/Redis/Celery/Golden Sample 验证在 `hostdzire` 执行。
+
+hostdzire 普通上线使用 `/root/md2word-releases/<short-sha>` 目录；每个 release 从 GitHub clone，复制上一版 `.env` 和内部账号 JSON 后 build/up。`/root/md2word` 是历史工作树，不作为默认上线目录。
 
 ## 环境变量
 
@@ -92,7 +94,13 @@ docker compose --env-file .env -f docker/prod/docker-compose.yml up -d
 ```bash
 curl -sS http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}/api/v1/health/live
 curl -sS http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}/api/v1/health/ready
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_release.py --runtime-url http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}
+touch /tmp/md2word_empty_env
+docker run --rm --user 0 --network md2word-p0_default \
+  -v "${RELEASE_DIR:-$PWD}:/app" \
+  -v /tmp/md2word_empty_env:/app/.env:ro \
+  -w /app md2word-p0:latest \
+  python scripts/ops/check_release.py \
+    --runtime-url http://md2word-p0-api-1:8000
 GOLDEN_SAMPLE_USERNAME=admin GOLDEN_SAMPLE_PASSWORD='<admin-password>' \
   /Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_release.py \
   --runtime-url http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000} \
