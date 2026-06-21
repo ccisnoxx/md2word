@@ -188,6 +188,8 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
 
     if "get" not in acceptance_runs_path:
         missing.append("OpenAPI GET /acceptance/runs")
+    if "post" not in acceptance_runs_path:
+        missing.append("OpenAPI POST /acceptance/runs")
     if "get" not in acceptance_latest_summary_path:
         missing.append("OpenAPI GET /acceptance/runs/latest-summary")
     if "get" not in acceptance_run_path:
@@ -215,6 +217,23 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
     for name in ("decision", "review_note"):
         if name not in acceptance_review_properties:
             missing.append(f"OpenAPI AcceptanceRunReviewRequest field: {name}")
+    acceptance_upsert_properties = schemas.get("AcceptanceRunUpsertRequest", {}).get("properties", {})
+    for name in (
+        "id",
+        "title",
+        "tier",
+        "status",
+        "environment",
+        "source",
+        "report_path_or_url",
+        "started_at",
+        "finished_at",
+        "summary",
+        "blockers",
+        "warnings",
+    ):
+        if name not in acceptance_upsert_properties:
+            missing.append(f"OpenAPI AcceptanceRunUpsertRequest field: {name}")
     acceptance_latest_properties = schemas.get("AcceptanceLatestSummaryResponse", {}).get("properties", {})
     for name in ("overall_status", "missing_tiers", "blocker_count", "warning_count", "latest_reviewed_run", "tiers", "generated_at"):
         if name not in acceptance_latest_properties:
@@ -243,6 +262,7 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
         "export type InternalUserResetPasswordRequest",
         "export type AcceptanceRunResponse",
         "export type AcceptanceRunListResponse",
+        "export type AcceptanceRunUpsertRequest",
         "export type AcceptanceLatestSummaryResponse",
         "export type AcceptanceReviewRequest",
         'export type AcceptanceReviewDecision = "approved"',
@@ -269,6 +289,7 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
         'url: "/api/v1/acceptance/runs/latest-summary"',
         "`/api/v1/acceptance/runs/${runId}`",
         "`/api/v1/acceptance/runs/${runId}/review`",
+        "buildAcceptanceRunUpsertPayload",
         "review_note",
     ):
         if needle not in acceptance_wrapper:
@@ -287,9 +308,11 @@ def check_frontend_smoke_mock_contracts() -> ReleaseCheckItem:
 
     smoke_path = REPO_ROOT / "frontend/tests/smoke/core-flow.spec.ts"
     user_auth_smoke_path = REPO_ROOT / "frontend/tests/smoke/user-auth.spec.ts"
+    acceptance_smoke_path = REPO_ROOT / "frontend/tests/smoke/acceptance-center.spec.ts"
     try:
         smoke_source = smoke_path.read_text(encoding="utf-8")
         user_auth_smoke_source = user_auth_smoke_path.read_text(encoding="utf-8")
+        acceptance_smoke_source = acceptance_smoke_path.read_text(encoding="utf-8")
     except OSError as exc:
         return ReleaseCheckItem(
             name="frontend-smoke-mock",
@@ -328,6 +351,18 @@ def check_frontend_smoke_mock_contracts() -> ReleaseCheckItem:
         f"{name}: {needle}"
         for name, needle in user_auth_required_needles.items()
         if needle not in user_auth_smoke_source
+    )
+    acceptance_required_needles = {
+        "acceptance_runs": "/api/v1/acceptance/runs",
+        "acceptance_latest_summary": "/api/v1/acceptance/runs/latest-summary",
+        "acceptance_review": "/review",
+        "acceptance_upsert_payload": "upsertPayloads",
+        "acceptance_register_button": "登记运行",
+    }
+    missing.extend(
+        f"{name}: {needle}"
+        for name, needle in acceptance_required_needles.items()
+        if needle not in acceptance_smoke_source
     )
     forbidden_needles = ("storage_backend", "storage_path", "media_type", "retention_until")
     stale = [f"stale file mock field: {needle}" for needle in forbidden_needles if needle in smoke_source]

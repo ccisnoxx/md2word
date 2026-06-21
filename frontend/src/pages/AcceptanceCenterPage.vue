@@ -10,6 +10,7 @@
       </div>
       <div class="heading-actions">
         <el-tag :type="overallStatus.tagType" effect="plain">{{ overallStatus.label }}</el-tag>
+        <el-button type="primary" :icon="Plus" @click="openRunDialog">登记运行</el-button>
         <el-button :icon="Refresh" :loading="loading" @click="loadRuns">刷新</el-button>
       </div>
     </section>
@@ -226,6 +227,70 @@
         <el-empty v-else description="请选择一条验收运行" :image-size="96" />
       </div>
     </el-drawer>
+
+    <el-dialog
+      v-model="runDialogVisible"
+      class="acceptance-run-dialog"
+      title="登记验收运行"
+      width="760px"
+      destroy-on-close
+      append-to-body
+      @closed="resetRunForm"
+    >
+      <ApiErrorAlert :error="runError" />
+      <el-form label-position="top" class="acceptance-run-form">
+        <div class="run-form-grid">
+          <el-form-item label="运行 ID" required>
+            <el-input v-model="runForm.id" maxlength="160" placeholder="acceptance_p1_translation_current" />
+          </el-form-item>
+          <el-form-item label="标题" required>
+            <el-input v-model="runForm.title" maxlength="240" placeholder="P1 Translation Formal Run" />
+          </el-form-item>
+          <el-form-item label="层级" required>
+            <el-select v-model="runForm.tier" class="form-control" placeholder="选择层级">
+              <el-option v-for="option in tierOptions" :key="option.value" :label="option.label" :value="option.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="状态" required>
+            <el-select v-model="runForm.status" class="form-control" placeholder="选择状态">
+              <el-option v-for="option in statusOptions" :key="option.value" :label="option.label" :value="option.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="环境" required>
+            <el-input v-model="runForm.environment" maxlength="120" placeholder="hostdzire" />
+          </el-form-item>
+          <el-form-item label="来源" required>
+            <el-input v-model="runForm.source" maxlength="160" placeholder="manual_import:p1_translation" />
+          </el-form-item>
+          <el-form-item label="开始时间">
+            <el-date-picker v-model="runForm.started_at" class="form-control" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" placeholder="选择开始时间" />
+          </el-form-item>
+          <el-form-item label="结束时间">
+            <el-date-picker v-model="runForm.finished_at" class="form-control" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" placeholder="选择结束时间" />
+          </el-form-item>
+        </div>
+        <el-form-item label="报告路径或 URL">
+          <el-input v-model="runForm.report_path_or_url" maxlength="1000" placeholder="tests/tmp/p1_translation_runs/run-1/report.md" />
+        </el-form-item>
+        <el-form-item label="摘要">
+          <el-input v-model="runForm.summary" type="textarea" :rows="4" maxlength="4000" show-word-limit placeholder="记录本次运行结论、样本范围和签字状态。" />
+        </el-form-item>
+        <div class="run-form-grid">
+          <el-form-item label="阻断项">
+            <el-input v-model="runForm.blockersText" type="textarea" :rows="4" placeholder="每行一条 blocker" />
+          </el-form-item>
+          <el-form-item label="告警项">
+            <el-input v-model="runForm.warningsText" type="textarea" :rows="4" placeholder="每行一条 warning" />
+          </el-form-item>
+        </div>
+      </el-form>
+      <template #footer>
+        <div class="dialog-actions">
+          <el-button @click="runDialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="runSaving" @click="submitRunUpsert">保存运行</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </main>
 </template>
 
@@ -233,7 +298,7 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Refresh, View } from "@element-plus/icons-vue";
+import { Plus, Refresh, View } from "@element-plus/icons-vue";
 
 import { acceptanceApi } from "@/api/acceptance";
 import type {
@@ -242,6 +307,7 @@ import type {
   AcceptanceRunResponse,
   AcceptanceRunStatus,
   AcceptanceRunTier,
+  AcceptanceRunUpsertRequest,
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
@@ -267,10 +333,35 @@ type ReviewForm = {
   note: string;
 };
 
+type RunForm = {
+  id: string;
+  title: string;
+  tier: "P0" | "P1" | "P2";
+  status: "passed" | "failed" | "unknown";
+  environment: string;
+  source: string;
+  report_path_or_url: string;
+  started_at: string | null;
+  finished_at: string | null;
+  summary: string;
+  blockersText: string;
+  warningsText: string;
+};
+
 const route = useRoute();
 const router = useRouter();
 
 const tierOrder = ["P0", "P1", "P2"] as const;
+const tierOptions: Array<{ label: string; value: RunForm["tier"] }> = [
+  { label: "P0 Golden Sample", value: "P0" },
+  { label: "P1 翻译验收", value: "P1" },
+  { label: "P2 在线门禁", value: "P2" },
+];
+const statusOptions: Array<{ label: string; value: RunForm["status"] }> = [
+  { label: "已通过", value: "passed" },
+  { label: "失败", value: "failed" },
+  { label: "未知，需确认", value: "unknown" },
+];
 const decisionOptions = [
   { label: "复核通过", value: "approved" },
   { label: "复核拒绝", value: "rejected" },
@@ -292,14 +383,18 @@ const error = ref<ApiClientError | null>(null);
 const detailLoading = ref(false);
 const detailError = ref<ApiClientError | null>(null);
 const operationError = ref<ApiClientError | null>(null);
+const runError = ref<ApiClientError | null>(null);
 const drawerVisible = ref(false);
+const runDialogVisible = ref(false);
 const selectedRunId = ref("");
 const selectedRun = ref<AcceptanceRunResponse | null>(null);
 const reviewSaving = ref(false);
+const runSaving = ref(false);
 const reviewForm = reactive<ReviewForm>({
   decision: "",
   note: "",
 });
+const runForm = reactive<RunForm>(buildDefaultRunForm());
 
 const orderedRuns = computed(() => [...runs.value].sort(compareRuns));
 const showEmptyState = computed(() => !loading.value && !error.value && runs.value.length === 0);
@@ -480,6 +575,79 @@ async function submitReview(): Promise<void> {
   }
 }
 
+function openRunDialog(): void {
+  Object.assign(runForm, buildDefaultRunForm());
+  runError.value = null;
+  runDialogVisible.value = true;
+}
+
+async function submitRunUpsert(): Promise<void> {
+  runError.value = null;
+  if (!validateRunForm()) {
+    return;
+  }
+  runSaving.value = true;
+  try {
+    const response = await acceptanceApi.upsert(buildRunPayload());
+    updateRunInList(response);
+    if (selectedRunId.value === response.id) {
+      selectedRun.value = response;
+      hydrateReviewForm(response);
+    }
+    ElMessage.success("验收运行已保存。");
+    runDialogVisible.value = false;
+    await loadRuns();
+  } catch (caught) {
+    runError.value = normalizeApiError(caught);
+    ElMessage.error(runError.value.message);
+  } finally {
+    runSaving.value = false;
+  }
+}
+
+function resetRunForm(): void {
+  Object.assign(runForm, buildDefaultRunForm());
+  runError.value = null;
+}
+
+function buildRunPayload(): AcceptanceRunUpsertRequest {
+  return {
+    id: runForm.id,
+    title: runForm.title,
+    tier: runForm.tier,
+    status: runForm.status,
+    environment: runForm.environment,
+    source: runForm.source,
+    report_path_or_url: runForm.report_path_or_url,
+    started_at: runForm.started_at,
+    finished_at: runForm.finished_at,
+    summary: runForm.summary,
+    blockers: textLines(runForm.blockersText),
+    warnings: textLines(runForm.warningsText),
+  };
+}
+
+function validateRunForm(): boolean {
+  const requiredFields: Array<[string, string]> = [
+    [runForm.id, "运行 ID"],
+    [runForm.title, "标题"],
+    [runForm.environment, "环境"],
+    [runForm.source, "来源"],
+  ];
+  const missing = requiredFields.find(([value]) => !value.trim());
+  if (missing) {
+    ElMessage.error(`${missing[1]}不能为空。`);
+    return false;
+  }
+  const startedAt = timestamp(runForm.started_at);
+  const finishedAt = timestamp(runForm.finished_at);
+  if (startedAt && finishedAt && finishedAt < startedAt) {
+    ElMessage.error("结束时间不能早于开始时间。");
+    return false;
+  }
+  return true;
+}
+
 function hydrateReviewForm(run: AcceptanceRunResponse): void {
   reviewForm.decision = run.decision ?? "";
   reviewForm.note = run.review_note ?? "";
@@ -497,6 +665,28 @@ function updateRunInList(run: AcceptanceRunResponse): void {
 
 function reviewRequiresNote(decision: AcceptanceReviewDecision): boolean {
   return decision === "rejected" || decision === "needs_changes";
+}
+
+function buildDefaultRunForm(): RunForm {
+  return {
+    id: defaultRunId(),
+    title: "",
+    tier: "P0",
+    status: "unknown",
+    environment: "hostdzire",
+    source: "manual_import",
+    report_path_or_url: "",
+    started_at: null,
+    finished_at: null,
+    summary: "",
+    blockersText: "",
+    warningsText: "",
+  };
+}
+
+function defaultRunId(): string {
+  const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+  return `acceptance_manual_${stamp}`;
 }
 
 async function confirmRiskyApproval(run: AcceptanceRunResponse): Promise<boolean> {
@@ -709,6 +899,10 @@ function safeList(value: string[] | null | undefined): string[] {
   return Array.isArray(value) ? value.filter((item) => typeof item === "string" && item.trim()) : [];
 }
 
+function textLines(value: string): string[] {
+  return value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+}
+
 function evidenceItemText(value: string): string {
   return evidenceMessageLabels[value] ?? value;
 }
@@ -797,7 +991,8 @@ onMounted(async () => {
 .page-heading,
 .section-header,
 .heading-actions,
-.review-actions {
+.review-actions,
+.dialog-actions {
   display: flex;
   align-items: center;
 }
@@ -809,7 +1004,8 @@ onMounted(async () => {
 }
 
 .heading-actions,
-.review-actions {
+.review-actions,
+.dialog-actions {
   justify-content: flex-end;
   gap: var(--app-space-2);
 }
@@ -940,6 +1136,21 @@ onMounted(async () => {
   margin-bottom: var(--app-space-2);
 }
 
+.acceptance-run-form {
+  display: grid;
+  gap: var(--app-space-3);
+}
+
+.run-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--app-space-3);
+}
+
+.form-control {
+  width: 100%;
+}
+
 @media (max-width: 860px) {
   .page-heading,
   .section-header,
@@ -949,12 +1160,17 @@ onMounted(async () => {
   }
 
   .heading-actions,
-  .review-actions {
+  .review-actions,
+  .dialog-actions {
     justify-content: flex-start;
     width: 100%;
   }
 
   .tier-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .run-form-grid {
     grid-template-columns: 1fr;
   }
 

@@ -153,6 +153,108 @@ class AcceptanceCenterApiTests(TestCase):
         self.assertEqual(review_events[0].details["decision"], "approved")
         self.assertEqual(review_events[0].details["run_status"], "unknown")
 
+    def test_admin_upserts_acceptance_run_and_clears_stale_review(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir)
+            runtime = build_test_runtime(
+                data_dir,
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+            base_time = utc_now()
+            create_payload = {
+                "id": "acceptance_p1_formal_run",
+                "title": "P1 Translation Formal Run",
+                "tier": "P1",
+                "status": "unknown",
+                "environment": "hostdzire",
+                "source": "manual_import:p1_translation",
+                "report_path_or_url": "tests/tmp/p1_translation_runs/run-1/report.md",
+                "started_at": base_time.isoformat(),
+                "finished_at": (base_time + timedelta(minutes=8)).isoformat(),
+                "summary": "等待人工签字。",
+                "blockers": ["p1_manual_signoff_pending"],
+                "warnings": [" report_pending ", ""],
+            }
+            update_payload = {
+                **create_payload,
+                "status": "passed",
+                "summary": "P1 formal run passed with manual signoff.",
+                "blockers": [],
+                "warnings": [],
+                "finished_at": (base_time + timedelta(minutes=12)).isoformat(),
+            }
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_headers = build_auth_header(client, username="operator", password="operator-pass")
+
+                unauthenticated_upsert = client.post("/api/v1/acceptance/runs", json=create_payload)
+                operator_forbidden = client.post("/api/v1/acceptance/runs", headers=operator_headers, json=create_payload)
+                create_response = client.post("/api/v1/acceptance/runs", headers=admin_headers, json=create_payload)
+                review_response = client.post(
+                    "/api/v1/acceptance/runs/acceptance_p1_formal_run/review",
+                    headers=admin_headers,
+                    json={"decision": "needs_changes", "review_note": "等待 signoff。"},
+                )
+                update_response = client.post("/api/v1/acceptance/runs", headers=admin_headers, json=update_payload)
+
+            persisted = build_file_persistence_adapters(data_dir).acceptance_run_repository.get_acceptance_run(
+                "acceptance_p1_formal_run"
+            )
+            events = runtime.audit_event_repository.list_audit_events()
+
+        self.assertEqual(unauthenticated_upsert.status_code, 401)
+        self.assertEqual(operator_forbidden.status_code, 403)
+        self.assertEqual(operator_forbidden.json()["error_code"], "role_forbidden")
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.json()["status"], "unknown")
+        self.assertEqual(create_response.json()["warnings"], ["report_pending"])
+        self.assertEqual(review_response.status_code, 200)
+        self.assertEqual(review_response.json()["decision"], "needs_changes")
+        self.assertEqual(update_response.status_code, 200)
+        self.assertEqual(update_response.json()["status"], "passed")
+        self.assertEqual(update_response.json()["blockers"], [])
+        self.assertEqual(update_response.json()["decision"], None)
+        self.assertIsNotNone(persisted)
+        self.assertEqual(persisted.status, "passed")
+        self.assertEqual(persisted.decision, None)
+        upsert_events = [event for event in events if event.action == "acceptance_run.upsert"]
+        self.assertEqual(len(upsert_events), 2)
+        self.assertEqual([event.details["created"] for event in upsert_events], [True, False])
+        self.assertEqual(upsert_events[1].details["review_cleared"], True)
+
+    def test_admin_upsert_rejects_invalid_acceptance_run_times(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+            base_time = utc_now()
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                response = client.post(
+                    "/api/v1/acceptance/runs",
+                    headers=admin_headers,
+                    json={
+                        "id": "acceptance_invalid_times",
+                        "title": "Invalid Acceptance Run",
+                        "tier": "P0",
+                        "status": "failed",
+                        "environment": "hostdzire",
+                        "source": "manual_import",
+                        "started_at": base_time.isoformat(),
+                        "finished_at": (base_time - timedelta(minutes=1)).isoformat(),
+                    },
+                )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error_code"], "invalid_request")
+
     def test_latest_summary_uses_evidence_time_before_review_update_time(self) -> None:
         with TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(

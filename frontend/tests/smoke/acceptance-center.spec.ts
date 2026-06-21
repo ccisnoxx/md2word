@@ -68,8 +68,10 @@ const acceptanceRuns = [
   },
 ];
 
-async function setupAcceptanceApi(page: Page): Promise<{ reviewPayloads: unknown[] }> {
+async function setupAcceptanceApi(page: Page): Promise<{ reviewPayloads: unknown[]; upsertPayloads: unknown[] }> {
+  const mockRuns = acceptanceRuns.map((run) => ({ ...run, blockers: [...run.blockers], warnings: [...run.warnings] }));
   const reviewPayloads: unknown[] = [];
+  const upsertPayloads: unknown[] = [];
 
   await page.addInitScript((tokenKey) => {
     window.localStorage.setItem(tokenKey, "smoke-token");
@@ -89,7 +91,38 @@ async function setupAcceptanceApi(page: Page): Promise<{ reviewPayloads: unknown
   });
 
   await page.route("**/api/v1/acceptance/runs", async (route) => {
-    await fulfillJson(route, { items: acceptanceRuns, total: acceptanceRuns.length });
+    if (route.request().method() === "POST") {
+      const payload = route.request().postDataJSON();
+      upsertPayloads.push(payload);
+      const existingIndex = mockRuns.findIndex((candidate) => candidate.id === payload.id);
+      const savedRun = {
+        id: payload.id,
+        title: payload.title,
+        tier: payload.tier,
+        status: payload.status,
+        environment: payload.environment,
+        source: payload.source,
+        report_path_or_url: payload.report_path_or_url ?? null,
+        started_at: payload.started_at ?? null,
+        finished_at: payload.finished_at ?? null,
+        summary: payload.summary ?? null,
+        blockers: payload.blockers ?? [],
+        warnings: payload.warnings ?? [],
+        reviewer: null,
+        decision: null,
+        reviewed_at: null,
+        review_note: null,
+        updated_at: "2026-06-21T00:20:00Z",
+      };
+      if (existingIndex >= 0) {
+        mockRuns.splice(existingIndex, 1, savedRun);
+      } else {
+        mockRuns.unshift(savedRun);
+      }
+      await fulfillJson(route, savedRun, existingIndex >= 0 ? 200 : 201);
+      return;
+    }
+    await fulfillJson(route, { items: mockRuns, total: mockRuns.length });
   });
 
   await page.route("**/api/v1/acceptance/runs/latest-summary", async (route) => {
@@ -99,7 +132,7 @@ async function setupAcceptanceApi(page: Page): Promise<{ reviewPayloads: unknown
       blocker_count: 2,
       warning_count: 3,
       latest_reviewed_run: null,
-      tiers: acceptanceRuns.map((run) => ({
+      tiers: mockRuns.map((run) => ({
         tier: run.tier,
         run,
         missing: false,
@@ -113,7 +146,7 @@ async function setupAcceptanceApi(page: Page): Promise<{ reviewPayloads: unknown
 
   await page.route(/\/api\/v1\/acceptance\/runs\/(?!latest-summary$)([^/]+)$/, async (route) => {
     const runId = route.request().url().split("/").pop() || "";
-    const run = acceptanceRuns.find((candidate) => candidate.id === runId);
+    const run = mockRuns.find((candidate) => candidate.id === runId);
     await fulfillJson(route, run ?? { error_code: "not_found", message: "missing" }, run ? 200 : 404);
   });
 
@@ -121,7 +154,7 @@ async function setupAcceptanceApi(page: Page): Promise<{ reviewPayloads: unknown
     const payload = route.request().postDataJSON();
     reviewPayloads.push(payload);
     const runId = route.request().url().split("/").at(-2) || "";
-    const run = acceptanceRuns.find((candidate) => candidate.id === runId) ?? acceptanceRuns[0];
+    const run = mockRuns.find((candidate) => candidate.id === runId) ?? mockRuns[0];
     await fulfillJson(route, {
       ...run,
       reviewer: "user_admin",
@@ -132,7 +165,7 @@ async function setupAcceptanceApi(page: Page): Promise<{ reviewPayloads: unknown
     });
   });
 
-  return { reviewPayloads };
+  return { reviewPayloads, upsertPayloads };
 }
 
 test("admin reviews an acceptance run", async ({ page }) => {
@@ -161,6 +194,37 @@ test("admin reviews an acceptance run", async ({ page }) => {
     decision: "needs_changes",
     review_note: "补齐 P1 formal run 后再验收。",
   });
+});
+
+test("admin registers an acceptance run summary", async ({ page }) => {
+  const controls = await setupAcceptanceApi(page);
+
+  await page.goto("/system-status/acceptance");
+
+  await page.getByRole("button", { name: "登记运行" }).click();
+  await expect(page.getByRole("dialog", { name: "登记验收运行" })).toBeVisible();
+  await page.getByLabel("运行 ID").fill("acceptance_p0_manual_smoke");
+  await page.getByLabel("标题").fill("P0 Manual Smoke");
+  await page.getByLabel("来源").fill("manual_import:smoke");
+  await page.getByPlaceholder("tests/tmp/p1_translation_runs/run-1/report.md").fill("tests/tmp/smoke/report.md");
+  await page.getByPlaceholder("记录本次运行结论、样本范围和签字状态。").fill("smoke run summary");
+  await page.getByPlaceholder("每行一条 blocker").fill("manual_review_pending");
+  await page.getByRole("button", { name: "保存运行" }).click();
+
+  await expect.poll(() => controls.upsertPayloads.length).toBe(1);
+  expect(controls.upsertPayloads[0]).toEqual({
+    id: "acceptance_p0_manual_smoke",
+    title: "P0 Manual Smoke",
+    tier: "P0",
+    status: "unknown",
+    environment: "hostdzire",
+    source: "manual_import:smoke",
+    report_path_or_url: "tests/tmp/smoke/report.md",
+    summary: "smoke run summary",
+    blockers: ["manual_review_pending"],
+    warnings: [],
+  });
+  await expect(page.getByText("P0 Manual Smoke")).toBeVisible();
 });
 
 for (const viewport of [

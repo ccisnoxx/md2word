@@ -150,6 +150,21 @@ export type AcceptanceRunListResponse = {
   total: number;
 };
 
+export type AcceptanceRunUpsertRequest = {
+  id: string;
+  title: string;
+  tier: AcceptanceRunTier;
+  status: AcceptanceRunStatus;
+  environment: string;
+  source: string;
+  report_path_or_url?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  summary?: string | null;
+  blockers: string[];
+  warnings: string[];
+};
+
 export type AcceptanceLatestTierSummaryResponse = {
   tier: AcceptanceRunTier;
   run: AcceptanceRunResponse | null;

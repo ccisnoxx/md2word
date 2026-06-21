@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.api.dependencies import get_runtime, get_trace_id, require_admin_user
 from app.core.runtime import AppRuntime
@@ -18,6 +18,7 @@ from app.domains.acceptance.schemas import (
     AcceptanceRunListResponse,
     AcceptanceRunResponse,
     AcceptanceRunReviewRequest,
+    AcceptanceRunUpsertRequest,
 )
 from app.domains.audit.models import ActorContext
 from app.services.auth.models import AuthenticatedUser
@@ -38,6 +39,52 @@ def list_acceptance_runs(
 
     records = runtime.acceptance_run_service.list_runs(tier=tier, status=status_value, limit=limit)
     return AcceptanceRunListResponse(items=[_build_run_response(record) for record in records], total=len(records))
+
+
+@router.post("/runs", response_model=AcceptanceRunResponse, status_code=status.HTTP_201_CREATED)
+def upsert_acceptance_run(
+    request: AcceptanceRunUpsertRequest,
+    response: Response,
+    runtime: AppRuntime = Depends(get_runtime),
+    trace_id: str = Depends(get_trace_id),
+    user: AuthenticatedUser = Depends(require_admin_user),
+) -> AcceptanceRunResponse:
+    """Create or replace one admin-provided acceptance evidence summary."""
+
+    existing = runtime.acceptance_run_repository.get_acceptance_run(request.id.strip())
+    record = runtime.acceptance_run_service.upsert_run(
+        run_id=request.id,
+        title=request.title,
+        tier=request.tier,
+        status=request.status,
+        environment=request.environment,
+        source=request.source,
+        report_path_or_url=request.report_path_or_url,
+        started_at=request.started_at,
+        finished_at=request.finished_at,
+        summary=request.summary,
+        blockers=request.blockers,
+        warnings=request.warnings,
+    )
+    if existing is not None:
+        response.status_code = status.HTTP_200_OK
+    runtime.audit_service.record(
+        actor=_actor_from_user(user),
+        action="acceptance_run.upsert",
+        target_type="acceptance_run",
+        target_id=record.id,
+        trace_id=trace_id,
+        details={
+            "created": existing is None,
+            "run_status": record.status,
+            "tier": record.tier,
+            "environment": record.environment,
+            "source": record.source,
+            "review_cleared": existing is not None
+            and (existing.reviewer is not None or existing.decision is not None or existing.reviewed_at is not None),
+        },
+    )
+    return _build_run_response(record)
 
 
 @router.get("/runs/latest-summary", response_model=AcceptanceLatestSummaryResponse)
