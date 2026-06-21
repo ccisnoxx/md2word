@@ -230,6 +230,7 @@ user = user_repository.get_internal_user_by_username(username_key)
 ##### 2. Signatures
 
 - `GET /api/v1/acceptance/runs`
+- `POST /api/v1/acceptance/runs`
 - `GET /api/v1/acceptance/runs/{run_id}`
 - `GET /api/v1/acceptance/runs/latest-summary`
 - `POST /api/v1/acceptance/runs/{run_id}/review`
@@ -248,6 +249,10 @@ user = user_repository.get_internal_user_by_username(username_key)
 - Evidence recency follows `finished_at`, then `started_at`, then `updated_at`.
   Review actions may update metadata, but must not make an older evidence run the
   latest run for its tier.
+- `POST /acceptance/runs` is an admin evidence-registration API. Creating a new
+  run id returns `201`; replacing an existing id returns `200` and clears stale
+  `reviewer`, `decision`, `reviewed_at`, and `review_note` so new evidence must
+  be reviewed again.
 - Review endpoints update `reviewer`, `decision`, `reviewed_at`, and
   `review_note` only. They must not change the evidence `status`, `blockers`, or
   `warnings`.
@@ -258,6 +263,8 @@ user = user_repository.get_internal_user_by_username(username_key)
 - Non-admin access -> `403 role_forbidden`.
 - Unknown `run_id` -> `404 not_found`.
 - Invalid tier, status, or decision enum -> FastAPI/Pydantic validation error.
+- `finished_at` earlier than `started_at` on an upserted run -> `400
+  invalid_request`.
 - Partial review metadata in storage -> model validation error; review metadata
   must be stored together.
 
@@ -267,13 +274,18 @@ user = user_repository.get_internal_user_by_username(username_key)
   includes `P1` in `missing_tiers`, and keeps P2 blockers visible.
 - Base: an admin approves an unknown run; the review audit is written, but the
   run status remains `unknown` and the UI still shows warnings/blockers.
+- Base: an admin replaces a previously reviewed run with fresh evidence; the old
+  review fields are removed and the upsert audit records whether an existing run
+  was replaced.
 - Bad: deriving acceptance from the latest reviewed run, storing a separate
-  overall status record, or treating `approved` as equivalent to `passed`.
+  overall status record, treating `approved` as equivalent to `passed`, or
+  carrying an old review decision onto newly registered evidence.
 
 ##### 6. Tests Required
 
-- API tests must cover admin-only access, list/detail/filter, `latest-summary`,
-  review persistence, audit event details, and missing-run errors.
+- API tests must cover admin-only access, list/detail/filter, run upsert,
+  replacing a reviewed run, invalid run times, `latest-summary`, review
+  persistence, audit event details, and missing-run errors.
 - Service tests must cover the evidence-time ordering invariant where reviewing
   an older run does not make it the latest tier evidence.
 - OpenAPI export/check, frontend contract needles, frontend API wrapper unit

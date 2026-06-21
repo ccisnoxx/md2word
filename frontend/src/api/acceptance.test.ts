@@ -89,6 +89,43 @@ describe("acceptance API", () => {
     });
   });
 
+  it("posts a normalized acceptance run upsert payload", async () => {
+    vi.mocked(apiRequest).mockResolvedValue({ ...acceptanceRun, id: "acceptance_p1_current" });
+
+    await acceptanceApi.upsert({
+      id: " acceptance_p1_current ",
+      title: " P1 Translation Formal Run ",
+      tier: "P1",
+      status: "unknown",
+      environment: " hostdzire ",
+      source: " manual_import:p1_translation ",
+      report_path_or_url: " tests/tmp/p1/report.md ",
+      started_at: "2026-06-21T01:00:00Z",
+      finished_at: " ",
+      summary: " 等待人工签字。 ",
+      blockers: [" p1_manual_signoff_pending ", ""],
+      warnings: [" report_pending "],
+    });
+
+    expect(apiRequest).toHaveBeenCalledWith({
+      url: "/api/v1/acceptance/runs",
+      method: "POST",
+      data: {
+        id: "acceptance_p1_current",
+        title: "P1 Translation Formal Run",
+        tier: "P1",
+        status: "unknown",
+        environment: "hostdzire",
+        source: "manual_import:p1_translation",
+        report_path_or_url: "tests/tmp/p1/report.md",
+        started_at: "2026-06-21T01:00:00Z",
+        summary: "等待人工签字。",
+        blockers: ["p1_manual_signoff_pending"],
+        warnings: ["report_pending"],
+      },
+    });
+  });
+
   it("posts a review decision with a trimmed note", async () => {
     vi.mocked(apiRequest).mockResolvedValue({ ...acceptanceRun, decision: "needs_changes" });
 

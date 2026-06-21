@@ -64,6 +64,37 @@ Acceptance API 挂在 `/api/v1/acceptance` 下，为内部 admin 提供小型验
 }
 ```
 
+### `POST /api/v1/acceptance/runs`
+
+- 用途：由 admin 登记或替换一条验收运行摘要，把最新脚本报告或人工整理的验收结论写入 Acceptance Center。
+- 鉴权：Admin Bearer JWT。
+- 创建新 `id` 返回 `201`；覆盖已有 `id` 返回 `200`。
+- 同 `id` 覆盖表示新的验收证据替换旧证据，服务会清空旧 `reviewer`、`decision`、`reviewed_at` 和 `review_note`，需要 admin 重新复核。
+- 成功动作写入 `acceptance_run.upsert` audit event。
+- 请求体：
+
+```json
+{
+  "id": "acceptance_p1_translation_current",
+  "title": "P1 Translation Formal Run",
+  "tier": "P1",
+  "status": "unknown",
+  "environment": "hostdzire",
+  "source": "manual_import:p1_translation",
+  "report_path_or_url": "tests/tmp/p1_translation_runs/run-1/report.md",
+  "started_at": "2026-06-21T01:00:00Z",
+  "finished_at": "2026-06-21T01:08:00Z",
+  "summary": "等待人工签字。",
+  "blockers": ["p1_manual_signoff_pending"],
+  "warnings": ["report_pending"]
+}
+```
+
+- `tier`: `P0`、`P1` 或 `P2`
+- `status`: `passed`、`failed` 或 `unknown`
+- `finished_at` 不能早于 `started_at`。
+- `blockers` 和 `warnings` 会去除空白项；有 blocker 或 failed 的最新证据会让 `latest-summary` 进入阻断态。
+
 ### `GET /api/v1/acceptance/runs/{run_id}`
 
 - 用途：读取单条验收运行详情。

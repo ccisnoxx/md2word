@@ -43,6 +43,21 @@ class AcceptanceRunListResponse(BaseModel):
     total: int
 
 
+class AcceptanceRunUpsertRequest(BaseModel):
+    id: str = Field(..., max_length=160)
+    title: str = Field(..., max_length=240)
+    tier: AcceptanceRunTier
+    status: AcceptanceRunStatus = "unknown"
+    environment: str = Field(..., max_length=120)
+    source: str = Field(..., max_length=160)
+    report_path_or_url: str | None = Field(default=None, max_length=1000)
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    summary: str | None = Field(default=None, max_length=4000)
+    blockers: list[str] = Field(default_factory=list, max_length=100)
+    warnings: list[str] = Field(default_factory=list, max_length=100)
+
+
 class AcceptanceLatestTierSummaryResponse(BaseModel):
     tier: AcceptanceRunTier
     run: AcceptanceRunResponse | None = None

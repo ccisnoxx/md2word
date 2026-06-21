@@ -8,9 +8,10 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import status as http_status
+from pydantic import ValidationError
 
-from app.domains.acceptance.defaults import build_default_acceptance_runs
 from app.core.errors import ApiError
+from app.domains.acceptance.defaults import build_default_acceptance_runs
 from app.domains.acceptance.models import (
     AcceptanceLatestOverallStatus,
     AcceptanceLatestSummary,
@@ -51,6 +52,44 @@ class AcceptanceRunService:
         if record is None:
             raise ApiError(http_status.HTTP_404_NOT_FOUND, "not_found", "验收运行不存在。")
         return record
+
+    def upsert_run(
+        self,
+        *,
+        run_id: str,
+        title: str,
+        tier: AcceptanceRunTier,
+        status: AcceptanceRunStatus,
+        environment: str,
+        source: str,
+        report_path_or_url: str | None = None,
+        started_at: datetime | None = None,
+        finished_at: datetime | None = None,
+        summary: str | None = None,
+        blockers: list[str] | None = None,
+        warnings: list[str] | None = None,
+    ) -> AcceptanceRunRecord:
+        """Persist a fresh evidence summary and clear review metadata from replaced runs."""
+
+        try:
+            record = AcceptanceRunRecord(
+                id=run_id,
+                title=title,
+                tier=tier,
+                status=status,
+                environment=environment,
+                source=source,
+                report_path_or_url=report_path_or_url,
+                started_at=started_at,
+                finished_at=finished_at,
+                summary=summary,
+                blockers=blockers or [],
+                warnings=warnings or [],
+                updated_at=utc_now(),
+            )
+        except (ValidationError, ValueError) as exc:
+            raise ApiError(http_status.HTTP_400_BAD_REQUEST, "invalid_request", str(exc)) from exc
+        return self.repository.save_acceptance_run(record)
 
     def bootstrap_default_runs_if_empty(self) -> list[AcceptanceRunRecord]:
         """Seed explicit P0/P1/P2 starter summaries only when no runs exist."""

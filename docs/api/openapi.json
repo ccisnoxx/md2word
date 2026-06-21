@@ -339,6 +339,122 @@
         "title": "AcceptanceRunReviewRequest",
         "type": "object"
       },
+      "AcceptanceRunUpsertRequest": {
+        "properties": {
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Blockers",
+            "type": "array"
+          },
+          "environment": {
+            "maxLength": 120,
+            "title": "Environment",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "maxLength": 160,
+            "title": "Id",
+            "type": "string"
+          },
+          "report_path_or_url": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Path Or Url"
+          },
+          "source": {
+            "maxLength": 160,
+            "title": "Source",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "default": "unknown",
+            "enum": [
+              "passed",
+              "failed",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "tier": {
+            "enum": [
+              "P0",
+              "P1",
+              "P2"
+            ],
+            "title": "Tier",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 240,
+            "title": "Title",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "tier",
+          "environment",
+          "source"
+        ],
+        "title": "AcceptanceRunUpsertRequest",
+        "type": "object"
+      },
       "AuditEventExportManifest": {
         "description": "返回一次审计导出的治理清单。",
         "properties": {
@@ -17110,6 +17226,64 @@
           }
         },
         "summary": "List Acceptance Runs",
+        "tags": [
+          "acceptance"
+        ]
+      },
+      "post": {
+        "description": "Create or replace one admin-provided acceptance evidence summary.",
+        "operationId": "upsert_acceptance_run_api_v1_acceptance_runs_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptanceRunUpsertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptanceRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upsert Acceptance Run",
         "tags": [
           "acceptance"
         ]
