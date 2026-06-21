@@ -10,7 +10,7 @@ source_files:
   - app/domains/acceptance/service.py
   - app/domains/acceptance/repository.py
   - app/domains/acceptance/defaults.py
-summary: Acceptance API 提供 Admin-only P0/P1/P2 验收证据摘要和复核记录。
+summary: Acceptance API 提供 Admin-only P0/P1/P2 验收证据摘要、最新状态派生和复核记录。
 tags: [acceptance, ops, api, admin]
 last_reviewed: 2026-06-21
 ---
@@ -20,7 +20,7 @@ last_reviewed: 2026-06-21
 Acceptance API 挂在 `/api/v1/acceptance` 下，为内部 admin 提供小型验收证据索引。
 它只保存摘要、报告路径、阻断项、告警和复核结论；不保存 PDF、Word、二进制 artifact、JWT、secret、客户全文、完整 prompt 或 provider 响应。
 
-运行时仓库为空时，服务会写入三条非通过的 starter summaries，分别指向当前 P0 Golden Sample、P1 translation 和 P2 online gate 证据来源。它们用于引导复核，不代表最新验收运行通过。
+运行时仓库为空时，服务会写入三条 starter summaries，分别指向当前 P0 Golden Sample、P1 translation 和 P2 online gate 证据来源。P0 starter summary 反映 2026-06-17 hostdzire admin signoff；P1/P2 仍是 `unknown` 且带 blocker。starter summaries 用于引导复核，后续发布仍应被最新脚本报告或人工导入摘要替换。
 
 ## API 参考
 
@@ -41,15 +41,15 @@ Acceptance API 挂在 `/api/v1/acceptance` 下，为内部 admin 提供小型验
       "id": "acceptance_p0_golden_sample_current",
       "title": "P0 Golden Sample canonical suite",
       "tier": "P0",
-      "status": "failed",
+      "status": "passed",
       "environment": "hostdzire",
       "source": "manual_summary:golden_sample_acceptance_report",
       "report_path_or_url": "docs/testing/pdf-to-word-golden-sample-acceptance-report.md",
       "started_at": null,
       "finished_at": null,
-      "summary": "Current canonical-suite report records the main chain as exercised, but P0 manual Word quality is not approved.",
-      "blockers": ["p0_manual_quality_not_approved"],
-      "warnings": ["starter_summary_replace_with_latest_run_report"],
+      "summary": "The current Golden Sample report records the 2026-06-17 hostdzire admin signoff as the latest P0 fact.",
+      "blockers": [],
+      "warnings": ["manual_summary_replace_with_latest_run_report_after_next_release"],
       "reviewer": null,
       "decision": null,
       "reviewed_at": null,
@@ -66,6 +66,57 @@ Acceptance API 挂在 `/api/v1/acceptance` 下，为内部 admin 提供小型验
 - 用途：读取单条验收运行详情。
 - 鉴权：Admin Bearer JWT。
 - 缺失时返回 `404 not_found`。
+
+### `GET /api/v1/acceptance/runs/latest-summary`
+
+- 用途：从当前 runs 派生 P0/P1/P2 最新验收状态，用于验收中心概览和发布签字判断。
+- 鉴权：Admin Bearer JWT。
+- 该接口不写入 metadata，不读取原始 PDF、Word、LLM prompt/response 或 provider payload。
+- `overall_status`：
+  - `accepted`：P0/P1/P2 最新证据均存在，且没有 blocker、failed、unknown 或 warning。
+  - `blocked`：至少一个层级的最新证据失败或带 blocker。
+  - `incomplete`：缺少 P0/P1/P2 任一层级证据。
+  - `needs_attention`：没有 blocker，但存在 warning 或 unknown。
+- 响应示例：
+
+```json
+{
+  "overall_status": "incomplete",
+  "missing_tiers": ["P2"],
+  "blocker_count": 1,
+  "warning_count": 2,
+  "latest_reviewed_run": null,
+  "tiers": [
+    {
+      "tier": "P0",
+      "run": {
+        "id": "acceptance_p0_golden_sample_current",
+        "title": "P0 Golden Sample canonical suite",
+        "tier": "P0",
+        "status": "passed",
+        "environment": "hostdzire",
+        "source": "manual_summary:golden_sample_acceptance_report",
+        "report_path_or_url": "docs/testing/pdf-to-word-golden-sample-acceptance-report.md",
+        "started_at": null,
+        "finished_at": null,
+        "summary": "The current Golden Sample report records the 2026-06-17 hostdzire admin signoff as the latest P0 fact.",
+        "blockers": [],
+        "warnings": ["manual_summary_replace_with_latest_run_report_after_next_release"],
+        "reviewer": null,
+        "decision": null,
+        "reviewed_at": null,
+        "review_note": null,
+        "updated_at": "2026-06-21T00:00:00Z"
+      },
+      "missing": false,
+      "risk_level": "warning",
+      "blockers": [],
+      "warnings": ["manual_summary_replace_with_latest_run_report_after_next_release"]
+    }
+  ],
+  "generated_at": "2026-06-21T00:00:00Z"
+}
+```
 
 ### `POST /api/v1/acceptance/runs/{run_id}/review`
 
@@ -87,5 +138,7 @@ Acceptance API 挂在 `/api/v1/acceptance` 下，为内部 admin 提供小型验
 ## 运营注意事项
 
 - Acceptance Center 是证据索引和签字面，不执行转换、翻译、清理、provider 调用或真实发布动作。
-- starter summaries 必须被最新脚本报告或人工导入摘要替换后，才适合作为发布验收证据。
+- starter summaries 必须被最新脚本报告或人工导入摘要替换后，才适合作为下一次发布验收证据。
 - `approved` 表示 reviewer 对该条摘要负责，不等于所有 P0/P1/P2 gate 自动通过；页面仍会展示原始 `status`、`blockers` 和 `warnings`。
+- `latest-summary` 是派生视图，不是第二个持久化真源；实际证据仍以 `runs` 记录及其报告路径为准。
+- `latest-summary` 每个 tier 的最新证据按 `finished_at`、`started_at`、`updated_at` 顺序判断；复核动作更新 review metadata，但不改变证据运行的新旧顺序。

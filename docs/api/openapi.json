@@ -1,6 +1,129 @@
 {
   "components": {
     "schemas": {
+      "AcceptanceLatestSummaryResponse": {
+        "properties": {
+          "blocker_count": {
+            "default": 0,
+            "title": "Blocker Count",
+            "type": "integer"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "latest_reviewed_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AcceptanceRunResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "missing_tiers": {
+            "items": {
+              "enum": [
+                "P0",
+                "P1",
+                "P2"
+              ],
+              "type": "string"
+            },
+            "title": "Missing Tiers",
+            "type": "array"
+          },
+          "overall_status": {
+            "enum": [
+              "accepted",
+              "blocked",
+              "incomplete",
+              "needs_attention"
+            ],
+            "title": "Overall Status",
+            "type": "string"
+          },
+          "tiers": {
+            "items": {
+              "$ref": "#/components/schemas/AcceptanceLatestTierSummaryResponse"
+            },
+            "title": "Tiers",
+            "type": "array"
+          },
+          "warning_count": {
+            "default": 0,
+            "title": "Warning Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "overall_status",
+          "tiers",
+          "generated_at"
+        ],
+        "title": "AcceptanceLatestSummaryResponse",
+        "type": "object"
+      },
+      "AcceptanceLatestTierSummaryResponse": {
+        "properties": {
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "missing": {
+            "default": false,
+            "title": "Missing",
+            "type": "boolean"
+          },
+          "risk_level": {
+            "enum": [
+              "success",
+              "warning",
+              "danger",
+              "unknown"
+            ],
+            "title": "Risk Level",
+            "type": "string"
+          },
+          "run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AcceptanceRunResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tier": {
+            "enum": [
+              "P0",
+              "P1",
+              "P2"
+            ],
+            "title": "Tier",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tier",
+          "risk_level"
+        ],
+        "title": "AcceptanceLatestTierSummaryResponse",
+        "type": "object"
+      },
       "AcceptanceRunListResponse": {
         "properties": {
           "items": {
@@ -16882,6 +17005,56 @@
           }
         },
         "summary": "List Acceptance Runs",
+        "tags": [
+          "acceptance"
+        ]
+      }
+    },
+    "/api/v1/acceptance/runs/latest-summary": {
+      "get": {
+        "description": "Return the derived latest P0/P1/P2 acceptance state for admin signoff.",
+        "operationId": "get_acceptance_latest_summary_api_v1_acceptance_runs_latest_summary_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptanceLatestSummaryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Acceptance Latest Summary",
         "tags": [
           "acceptance"
         ]

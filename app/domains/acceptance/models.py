@@ -16,6 +16,8 @@ from app.domains.resources.models import utc_now
 AcceptanceRunTier = Literal["P0", "P1", "P2"]
 AcceptanceRunStatus = Literal["passed", "failed", "unknown"]
 AcceptanceReviewDecision = Literal["approved", "rejected", "needs_changes"]
+AcceptanceLatestOverallStatus = Literal["accepted", "blocked", "incomplete", "needs_attention"]
+AcceptanceRunRiskLevel = Literal["success", "warning", "danger", "unknown"]
 
 
 class AcceptanceRunRecord(BaseModel):
@@ -59,6 +61,29 @@ class AcceptanceRunRecord(BaseModel):
         if any(part is not None for part in review_parts) and not all(part is not None for part in review_parts):
             raise ValueError("reviewer, decision, and reviewed_at must be stored together")
         return self
+
+
+class AcceptanceLatestTierSummary(BaseModel):
+    """Latest Acceptance Center evidence state for one release tier."""
+
+    tier: AcceptanceRunTier
+    run: AcceptanceRunRecord | None = None
+    missing: bool = False
+    risk_level: AcceptanceRunRiskLevel
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class AcceptanceLatestSummary(BaseModel):
+    """Derived P0/P1/P2 acceptance state; this is not a persisted source of truth."""
+
+    overall_status: AcceptanceLatestOverallStatus
+    missing_tiers: list[AcceptanceRunTier] = Field(default_factory=list)
+    blocker_count: int = 0
+    warning_count: int = 0
+    latest_reviewed_run: AcceptanceRunRecord | None = None
+    tiers: list[AcceptanceLatestTierSummary]
+    generated_at: datetime = Field(default_factory=utc_now)
 
 
 def _normalize_required_text(value: str, field_name: str) -> str:

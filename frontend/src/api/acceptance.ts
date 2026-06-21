@@ -1,7 +1,12 @@
 // File: frontend/src/api/acceptance.ts
 // Purpose: Wrap Admin Acceptance Center run and review APIs.
 import { apiRequest } from "@/api/client";
-import type { AcceptanceReviewRequest, AcceptanceRunListResponse, AcceptanceRunResponse } from "@/api/types";
+import type {
+  AcceptanceLatestSummaryResponse,
+  AcceptanceReviewRequest,
+  AcceptanceRunListResponse,
+  AcceptanceRunResponse,
+} from "@/api/types";
 
 type AcceptanceReviewApiPayload = {
   decision: AcceptanceReviewRequest["decision"];
@@ -12,6 +17,13 @@ export const acceptanceApi = {
   list(): Promise<AcceptanceRunListResponse> {
     return apiRequest<AcceptanceRunListResponse>({
       url: "/api/v1/acceptance/runs",
+      method: "GET",
+    });
+  },
+
+  latestSummary(): Promise<AcceptanceLatestSummaryResponse> {
+    return apiRequest<AcceptanceLatestSummaryResponse>({
+      url: "/api/v1/acceptance/runs/latest-summary",
       method: "GET",
     });
   },

@@ -50,7 +50,7 @@ entries:
       - docs/api/openapi.json
     doc_path: docs/api/acceptance.md
     status: current
-    note: "Admin-only P0/P1/P2 验收证据摘要、默认非通过引导记录和复核 audit 合同。"
+    note: "Admin-only P0/P1/P2 验收证据摘要、latest-summary 派生视图和复核 audit 合同。"
   - entry: health
     category: endpoint
     source_files:

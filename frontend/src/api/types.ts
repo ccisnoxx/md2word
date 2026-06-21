@@ -122,6 +122,8 @@ export type HealthMetricsResponse = {
 export type AcceptanceRunTier = "P0" | "P1" | "P2" | (string & {});
 export type AcceptanceRunStatus = "passed" | "failed" | "unknown" | (string & {});
 export type AcceptanceReviewDecision = "approved" | "rejected" | "needs_changes";
+export type AcceptanceLatestOverallStatus = "accepted" | "blocked" | "incomplete" | "needs_attention";
+export type AcceptanceRunRiskLevel = "success" | "warning" | "danger" | "unknown";
 
 export type AcceptanceRunResponse = {
   id: string;
@@ -146,6 +148,25 @@ export type AcceptanceRunResponse = {
 export type AcceptanceRunListResponse = {
   items: AcceptanceRunResponse[];
   total: number;
+};
+
+export type AcceptanceLatestTierSummaryResponse = {
+  tier: AcceptanceRunTier;
+  run: AcceptanceRunResponse | null;
+  missing: boolean;
+  risk_level: AcceptanceRunRiskLevel;
+  blockers: string[];
+  warnings: string[];
+};
+
+export type AcceptanceLatestSummaryResponse = {
+  overall_status: AcceptanceLatestOverallStatus;
+  missing_tiers: AcceptanceRunTier[];
+  blocker_count: number;
+  warning_count: number;
+  latest_reviewed_run: AcceptanceRunResponse | null;
+  tiers: AcceptanceLatestTierSummaryResponse[];
+  generated_at: string;
 };
 
 export type AcceptanceReviewRequest = {

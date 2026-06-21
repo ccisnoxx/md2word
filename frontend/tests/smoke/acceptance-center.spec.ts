@@ -9,15 +9,15 @@ const acceptanceRuns = [
     id: "acceptance_p0_golden_sample_current",
     title: "P0 Golden Sample canonical suite",
     tier: "P0",
-    status: "failed",
+    status: "passed",
     environment: "hostdzire",
     source: "manual_summary:golden_sample_acceptance_report",
     report_path_or_url: "docs/testing/pdf-to-word-golden-sample-acceptance-report.md",
     started_at: null,
     finished_at: null,
-    summary: "P0 manual Word quality is not approved.",
-    blockers: ["p0_manual_quality_not_approved"],
-    warnings: ["starter_summary_replace_with_latest_run_report"],
+    summary: "2026-06-17 hostdzire admin signoff is the latest P0 fact.",
+    blockers: [],
+    warnings: ["manual_summary_replace_with_latest_run_report_after_next_release"],
     reviewer: null,
     decision: null,
     reviewed_at: null,
@@ -88,7 +88,26 @@ async function setupAcceptanceApi(page: Page): Promise<{ reviewPayloads: unknown
     await fulfillJson(route, { items: acceptanceRuns, total: acceptanceRuns.length });
   });
 
-  await page.route(/\/api\/v1\/acceptance\/runs\/([^/]+)$/, async (route) => {
+  await page.route("**/api/v1/acceptance/runs/latest-summary", async (route) => {
+    await fulfillJson(route, {
+      overall_status: "blocked",
+      missing_tiers: [],
+      blocker_count: 2,
+      warning_count: 3,
+      latest_reviewed_run: null,
+      tiers: acceptanceRuns.map((run) => ({
+        tier: run.tier,
+        run,
+        missing: false,
+        risk_level: run.blockers.length || run.status === "failed" ? "danger" : run.warnings.length || run.status === "unknown" ? "warning" : "success",
+        blockers: run.blockers,
+        warnings: run.warnings,
+      })),
+      generated_at: "2026-06-21T00:03:00Z",
+    });
+  });
+
+  await page.route(/\/api\/v1\/acceptance\/runs\/(?!latest-summary$)([^/]+)$/, async (route) => {
     const runId = route.request().url().split("/").pop() || "";
     const run = acceptanceRuns.find((candidate) => candidate.id === runId);
     await fulfillJson(route, run ?? { error_code: "not_found", message: "missing" }, run ? 200 : 404);

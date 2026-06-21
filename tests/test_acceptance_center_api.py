@@ -5,6 +5,7 @@ from __future__ import annotations
 # File: tests/test_acceptance_center_api.py
 # Purpose: Cover Acceptance Center list/detail/review APIs, permissions, audit, and file persistence.
 
+from datetime import timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
@@ -20,7 +21,7 @@ from tests.test_fastapi_jobs_backend import build_auth_header, build_auth_users_
 
 
 class AcceptanceCenterApiTests(TestCase):
-    def test_runtime_bootstraps_non_passing_acceptance_summaries_when_empty(self) -> None:
+    def test_runtime_bootstraps_current_acceptance_summaries_when_empty(self) -> None:
         with TemporaryDirectory() as temp_dir:
             settings = Settings(
                 _env_file=None,
@@ -34,9 +35,11 @@ class AcceptanceCenterApiTests(TestCase):
             reloaded = build_file_persistence_adapters(Path(temp_dir)).acceptance_run_repository.list_acceptance_runs()
 
         self.assertEqual({record.tier for record in seeded}, {"P0", "P1", "P2"})
-        self.assertNotIn("passed", {record.status for record in seeded})
         self.assertEqual(len(seeded), 3)
         self.assertEqual(len(reloaded), 3)
+        p0_run = next(record for record in reloaded if record.tier == "P0")
+        self.assertEqual(p0_run.status, "passed")
+        self.assertIn("2026-06-17", p0_run.summary or "")
         p2_run = next(record for record in reloaded if record.tier == "P2")
         self.assertIn("p2_online_gate_not_recorded", p2_run.blockers)
 
@@ -86,6 +89,7 @@ class AcceptanceCenterApiTests(TestCase):
                 unauthenticated_list = client.get("/api/v1/acceptance/runs")
                 operator_forbidden = client.get("/api/v1/acceptance/runs", headers=operator_headers)
                 list_response = client.get("/api/v1/acceptance/runs", headers=admin_headers)
+                latest_summary = client.get("/api/v1/acceptance/runs/latest-summary", headers=admin_headers)
                 filtered_response = client.get(
                     "/api/v1/acceptance/runs",
                     headers=admin_headers,
@@ -115,6 +119,16 @@ class AcceptanceCenterApiTests(TestCase):
         self.assertEqual(list_response.status_code, 200)
         self.assertEqual(list_response.json()["total"], 2)
         self.assertEqual({item["id"] for item in list_response.json()["items"]}, {"acceptance_p0_unknown", "acceptance_p2_passed"})
+        self.assertEqual(latest_summary.status_code, 200)
+        self.assertEqual(latest_summary.json()["overall_status"], "incomplete")
+        self.assertEqual(latest_summary.json()["missing_tiers"], ["P1"])
+        self.assertEqual(latest_summary.json()["blocker_count"], 2)
+        self.assertEqual(latest_summary.json()["warning_count"], 2)
+        self.assertEqual(latest_summary.json()["latest_reviewed_run"], None)
+        self.assertEqual(
+            {item["tier"]: item["missing"] for item in latest_summary.json()["tiers"]},
+            {"P0": False, "P1": True, "P2": False},
+        )
         self.assertEqual(filtered_response.status_code, 200)
         self.assertEqual([item["id"] for item in filtered_response.json()["items"]], ["acceptance_p0_unknown"])
         self.assertEqual(detail_response.status_code, 200)
@@ -135,3 +149,50 @@ class AcceptanceCenterApiTests(TestCase):
         self.assertEqual(review_events[0].target_id, "acceptance_p0_unknown")
         self.assertEqual(review_events[0].details["decision"], "approved")
         self.assertEqual(review_events[0].details["run_status"], "unknown")
+
+    def test_latest_summary_uses_evidence_time_before_review_update_time(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            base_time = utc_now()
+            runtime.acceptance_run_repository.save_acceptance_run(
+                AcceptanceRunRecord(
+                    id="acceptance_p0_old_unknown",
+                    title="Older P0 Golden Sample",
+                    tier="P0",
+                    status="unknown",
+                    environment="hostdzire",
+                    source="golden_sample",
+                    finished_at=base_time,
+                    blockers=["old_run_blocker"],
+                    updated_at=base_time,
+                )
+            )
+            runtime.acceptance_run_repository.save_acceptance_run(
+                AcceptanceRunRecord(
+                    id="acceptance_p0_new_passed",
+                    title="Newer P0 Golden Sample",
+                    tier="P0",
+                    status="passed",
+                    environment="hostdzire",
+                    source="golden_sample",
+                    finished_at=base_time + timedelta(minutes=10),
+                    updated_at=base_time + timedelta(minutes=10),
+                )
+            )
+
+            runtime.acceptance_run_service.review_run(
+                "acceptance_p0_old_unknown",
+                decision="approved",
+                reviewer="user_admin",
+                review_note="Reviewed after the newer evidence run.",
+            )
+            summary = runtime.acceptance_run_service.build_latest_summary()
+
+        p0_summary = next(item for item in summary.tiers if item.tier == "P0")
+        self.assertIsNotNone(p0_summary.run)
+        self.assertEqual(p0_summary.run.id, "acceptance_p0_new_passed")
+        self.assertEqual(p0_summary.risk_level, "success")

@@ -232,11 +232,12 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { Refresh, View } from "@element-plus/icons-vue";
 
 import { acceptanceApi } from "@/api/acceptance";
 import type {
+  AcceptanceLatestSummaryResponse,
   AcceptanceReviewDecision,
   AcceptanceRunResponse,
   AcceptanceRunStatus,
@@ -271,12 +272,13 @@ const router = useRouter();
 
 const tierOrder = ["P0", "P1", "P2"] as const;
 const decisionOptions = [
-  { label: "通过", value: "approved" },
-  { label: "拒绝", value: "rejected" },
+  { label: "复核通过", value: "approved" },
+  { label: "复核拒绝", value: "rejected" },
   { label: "需修改", value: "needs_changes" },
 ];
 
 const runs = ref<AcceptanceRunResponse[]>([]);
+const latestSummary = ref<AcceptanceLatestSummaryResponse | null>(null);
 const total = ref(0);
 const loading = ref(false);
 const error = ref<ApiClientError | null>(null);
@@ -294,9 +296,10 @@ const reviewForm = reactive<ReviewForm>({
 
 const orderedRuns = computed(() => [...runs.value].sort(compareRuns));
 const showEmptyState = computed(() => !loading.value && !error.value && runs.value.length === 0);
-const blockerCount = computed(() => runs.value.reduce((count, run) => count + safeList(run.blockers).length, 0));
-const warningCount = computed(() => runs.value.reduce((count, run) => count + safeList(run.warnings).length, 0));
+const blockerCount = computed(() => latestSummary.value?.blocker_count ?? runs.value.reduce((count, run) => count + safeList(run.blockers).length, 0));
+const warningCount = computed(() => latestSummary.value?.warning_count ?? runs.value.reduce((count, run) => count + safeList(run.warnings).length, 0));
 const latestReviewedRun = computed(() =>
+  latestSummary.value?.latest_reviewed_run ??
   runs.value
     .filter((run) => run.reviewed_at)
     .sort((left, right) => timestamp(right.reviewed_at) - timestamp(left.reviewed_at))[0] ?? null,
@@ -315,6 +318,9 @@ const latestReviewMeta = computed(() => {
 const selectedRunReportHref = computed(() => reportHref(selectedRun.value?.report_path_or_url));
 
 const overallStatus = computed<StatusView>(() => {
+  if (latestSummary.value) {
+    return latestSummaryStatusMeta(latestSummary.value);
+  }
   if (!runs.value.length) {
     return {
       key: "unknown",
@@ -358,8 +364,9 @@ const overallStatus = computed<StatusView>(() => {
 
 const tierCards = computed<TierCard[]>(() =>
   tierOrder.map((tier) => {
-    const run = latestRunForTier(tier);
-    const status = run ? riskMeta(run) : statusMeta("unknown");
+    const summary = latestSummary.value?.tiers.find((item) => normalizeTier(item.tier) === tier);
+    const run = summary?.run ?? latestRunForTier(tier);
+    const status = summary ? riskLevelMeta(summary.risk_level, summary.missing) : run ? riskMeta(run) : statusMeta("unknown");
     return {
       tier,
       label: tierLabel(tier),
@@ -376,9 +383,10 @@ async function loadRuns(): Promise<void> {
   loading.value = true;
   error.value = null;
   try {
-    const response = await acceptanceApi.list();
+    const [response, summary] = await Promise.all([acceptanceApi.list(), acceptanceApi.latestSummary()]);
     runs.value = response.items;
     total.value = response.total;
+    latestSummary.value = summary;
     if (selectedRunId.value) {
       selectedRun.value = runs.value.find((run) => run.id === selectedRunId.value) ?? selectedRun.value;
     }
@@ -436,6 +444,16 @@ async function submitReview(): Promise<void> {
     ElMessage.error("请选择复核决策。");
     return;
   }
+  if (reviewRequiresNote(reviewForm.decision) && !reviewForm.note.trim()) {
+    ElMessage.error("拒绝或需修改时必须填写复核备注。");
+    return;
+  }
+  if (reviewForm.decision === "approved" && selectedRun.value && riskMeta(selectedRun.value).key !== "success") {
+    const confirmed = await confirmRiskyApproval(selectedRun.value);
+    if (!confirmed) {
+      return;
+    }
+  }
   reviewSaving.value = true;
   try {
     const response = await acceptanceApi.review(selectedRunId.value, {
@@ -468,6 +486,22 @@ function updateRunInList(run: AcceptanceRunResponse): void {
   }
   runs.value.unshift(run);
   total.value += 1;
+}
+
+function reviewRequiresNote(decision: AcceptanceReviewDecision): boolean {
+  return decision === "rejected" || decision === "needs_changes";
+}
+
+async function confirmRiskyApproval(run: AcceptanceRunResponse): Promise<boolean> {
+  return ElMessageBox.confirm(
+    `${run.title || run.id} 仍存在 unknown、warning 或 blocker。复核通过只代表人工确认该条摘要，不会把原始验收状态改为 passed。`,
+    "确认复核通过",
+    {
+      confirmButtonText: "确认提交",
+      cancelButtonText: "返回检查",
+      type: "warning",
+    },
+  ).then(() => true).catch(() => false);
 }
 
 function latestRunForTier(tier: "P0" | "P1" | "P2"): AcceptanceRunResponse | null {
@@ -554,6 +588,72 @@ function statusMeta(status: AcceptanceRunStatus): StatusView {
     label: `未识别: ${status}`,
     tagType: "info",
     description: "状态未被前端识别，不按通过处理。",
+  };
+}
+
+function latestSummaryStatusMeta(summary: AcceptanceLatestSummaryResponse): StatusView {
+  if (summary.overall_status === "accepted") {
+    return {
+      key: "success",
+      label: "可接受",
+      tagType: "success",
+      description: "P0/P1/P2 最新证据均未报告阻断或告警。",
+    };
+  }
+  if (summary.overall_status === "blocked") {
+    return {
+      key: "danger",
+      label: "存在阻断",
+      tagType: "danger",
+      description: `最新证据包含 ${summary.blocker_count} 个阻断项，不能作为发布通过结论。`,
+    };
+  }
+  if (summary.overall_status === "incomplete") {
+    return {
+      key: "warning",
+      label: "证据不完整",
+      tagType: "warning",
+      description: `缺少 ${summary.missing_tiers.join(" / ")} 验收证据，不能视为完整通过。`,
+    };
+  }
+  return {
+    key: "warning",
+    label: "需要关注",
+    tagType: "warning",
+    description: `最新证据包含 ${summary.warning_count} 个告警或未知状态。`,
+  };
+}
+
+function riskLevelMeta(riskLevel: string, missing: boolean): StatusView {
+  if (missing) {
+    return {
+      key: "unknown",
+      label: "缺少证据",
+      tagType: "info",
+      description: "该层级暂无最新验收运行。",
+    };
+  }
+  if (riskLevel === "danger") {
+    return {
+      key: "danger",
+      label: "存在阻断",
+      tagType: "danger",
+      description: "该层级最新证据包含失败状态或 blocker。",
+    };
+  }
+  if (riskLevel === "warning" || riskLevel === "unknown") {
+    return {
+      key: "warning",
+      label: "需要关注",
+      tagType: "warning",
+      description: "该层级最新证据包含告警或未知状态。",
+    };
+  }
+  return {
+    key: "success",
+    label: "无明显风险",
+    tagType: "success",
+    description: "该层级最新证据未返回 blocker 或 warning。",
   };
 }
 
