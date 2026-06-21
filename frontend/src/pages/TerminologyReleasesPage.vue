@@ -4,7 +4,7 @@
   <main class="terminology-releases-page app-page" aria-labelledby="terminology-releases-title">
     <section class="page-heading app-page-header app-page-shell app-page-shell--wide">
       <div>
-        <p class="page-kicker">Terminology Release</p>
+        <p class="page-kicker">术语发布</p>
         <h1 id="terminology-releases-title" class="page-title">术语发布</h1>
         <p class="page-description">发布“术语集 + 规则配置 + 适用范围”的治理包，统一管理版本、范围和发布前校验。</p>
       </div>
@@ -99,7 +99,7 @@
             </el-select>
           </el-form-item>
           <el-form-item label="术语集版本" prop="translation_term_version">
-            <el-select v-model="form.translation_term_version" filterable placeholder="选择 published version">
+            <el-select v-model="form.translation_term_version" filterable placeholder="选择已发布版本">
               <el-option
                 v-for="version in termSetVersions"
                 :key="version.version"
@@ -117,7 +117,7 @@
             </el-select>
           </el-form-item>
           <el-form-item label="规则版本" prop="term_rule_set_version">
-            <el-select v-model="form.term_rule_set_version" filterable placeholder="选择 published version">
+            <el-select v-model="form.term_rule_set_version" filterable placeholder="选择已发布版本">
               <el-option
                 v-for="version in ruleSetVersions"
                 :key="version.version"
@@ -150,9 +150,9 @@
             </el-tag>
           </div>
           <div v-if="preflight" class="governance-summary-grid app-governance-grid">
-            <article class="summary-metric app-governance-metric"><span>Errors</span><strong>{{ preflight.summary.error_count }}</strong></article>
-            <article class="summary-metric app-governance-metric"><span>Conflicts</span><strong>{{ preflight.summary.conflict_count }}</strong></article>
-            <article class="summary-metric app-governance-metric"><span>Warnings</span><strong>{{ preflight.summary.warning_count }}</strong></article>
+            <article class="summary-metric app-governance-metric"><span>错误</span><strong>{{ preflight.summary.error_count }}</strong></article>
+            <article class="summary-metric app-governance-metric"><span>冲突</span><strong>{{ preflight.summary.conflict_count }}</strong></article>
+            <article class="summary-metric app-governance-metric"><span>告警</span><strong>{{ preflight.summary.warning_count }}</strong></article>
             <article class="summary-metric app-governance-metric"><span>可发布词条</span><strong>{{ preflight.summary.publishable_term_count }}</strong></article>
           </div>
           <el-table :data="preflightFindings" empty-text="暂无校验结果">
@@ -161,7 +161,7 @@
                 <el-tag :type="findingTagType(row.severity)" effect="plain">{{ severityText(row.severity) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="code" label="Code" width="220" show-overflow-tooltip />
+            <el-table-column prop="code" label="代码" width="220" show-overflow-tooltip />
             <el-table-column prop="message" label="说明" min-width="260" show-overflow-tooltip />
           </el-table>
         </template>
@@ -200,9 +200,11 @@
         </el-descriptions>
         <section class="detail-section">
           <h3>校验报告</h3>
-          <el-table :data="detailFindings" empty-text="暂无 finding">
-            <el-table-column prop="severity" label="级别" width="90" />
-            <el-table-column prop="code" label="Code" width="210" show-overflow-tooltip />
+          <el-table :data="detailFindings" empty-text="暂无校验结果">
+            <el-table-column label="级别" width="90">
+              <template #default="{ row }">{{ severityText(row.severity) }}</template>
+            </el-table-column>
+            <el-table-column prop="code" label="代码" width="210" show-overflow-tooltip />
             <el-table-column prop="message" label="说明" min-width="260" show-overflow-tooltip />
           </el-table>
         </section>

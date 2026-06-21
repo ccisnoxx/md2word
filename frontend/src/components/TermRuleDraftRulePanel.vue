@@ -4,8 +4,8 @@
   <el-card class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
     <div class="section-header">
       <div>
-        <h2 class="section-title">Draft 规则</h2>
-        <p class="section-subtitle">新增、编辑、启停和移除都只作用于 draft。</p>
+        <h2 class="section-title">草稿规则</h2>
+        <p class="section-subtitle">新增、编辑、启停和移除都只作用于草稿。</p>
       </div>
       <div class="rule-actions">
         <el-button type="primary" :icon="Plus" :disabled="!selectedSetId" @click="emit('create')">
@@ -30,7 +30,7 @@
         v-model="filters.keyword"
         clearable
         class="keyword-input"
-        placeholder="搜索 source term"
+        placeholder="搜索源术语"
         @keyup.enter="emit('search')"
       />
       <el-button type="primary" :icon="Search" :loading="loading" @click="emit('search')">
@@ -39,16 +39,18 @@
       <el-button @click="emit('reset')">清除</el-button>
     </div>
 
-    <el-table :data="rules" :loading="loading" empty-text="暂无 draft rule" class="rule-table">
-      <el-table-column prop="source_term" label="Source term" min-width="150" show-overflow-tooltip />
+    <el-table :data="rules" :loading="loading" empty-text="暂无草稿规则" class="rule-table">
+      <el-table-column prop="source_term" label="源术语" min-width="150" show-overflow-tooltip />
       <el-table-column label="预览" min-width="150">
         <template #default="{ row }">
           <TermPreview :segments="row.segments" />
         </template>
       </el-table-column>
       <el-table-column prop="category_name" label="分类" min-width="130" show-overflow-tooltip />
-      <el-table-column prop="apply_scope" label="Scope" width="116" />
-      <el-table-column prop="priority" label="Priority" width="94" />
+      <el-table-column label="适用范围" width="116">
+        <template #default="{ row }">{{ applyScopeLabel(row.apply_scope) }}</template>
+      </el-table-column>
+      <el-table-column prop="priority" label="优先级" width="94" />
       <el-table-column label="状态" width="92">
         <template #default="{ row }">
           <el-tag :type="row.enabled ? 'success' : 'info'" effect="plain">
@@ -135,6 +137,15 @@ const emit = defineEmits<{
   reset: [];
   load: [];
 }>();
+
+function applyScopeLabel(scope: string): string {
+  const labels: Record<string, string> = {
+    both: "正文+表格",
+    markdown: "正文",
+    table: "表格",
+  };
+  return labels[scope] || scope;
+}
 </script>
 
 <style scoped lang="scss">

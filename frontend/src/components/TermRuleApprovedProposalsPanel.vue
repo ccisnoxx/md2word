@@ -4,7 +4,7 @@
   <el-card class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
     <div class="section-header">
       <div>
-        <h2 class="section-title">已 approve 待核对 proposals</h2>
+        <h2 class="section-title">已通过待核对建议</h2>
         <p class="section-subtitle">发布前核对本次已审核合并的来源建议。</p>
       </div>
     </div>

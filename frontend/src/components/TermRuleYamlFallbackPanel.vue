@@ -7,13 +7,13 @@
         <el-alert
           class="yaml-warning"
           type="warning"
-          title="这是高级兜底入口。主流程应优先使用结构化 draft rule 编辑，保存前会由后端校验 YAML。"
+          title="这是高级兜底入口。主流程应优先使用结构化草稿规则编辑，保存前会由后端校验 YAML。"
           :closable="false"
           show-icon
         />
         <el-input v-model="yamlText" type="textarea" :rows="14" class="mono" />
         <el-button class="yaml-save" type="warning" :loading="saving" @click="emit('save')">
-          保存 YAML draft
+          保存 YAML 草稿
         </el-button>
       </el-collapse-item>
     </el-collapse>

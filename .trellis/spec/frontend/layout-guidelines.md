@@ -140,6 +140,28 @@ leave the page-owned scroll container as a normal scoped class:
 - Keep low-frequency row actions in an overflow menu; expose only the primary action inline.
 - Keep table wrappers horizontally scrollable on mobile instead of forcing a full card-list rewrite unless the task explicitly asks for it.
 
+## Governance Diff And Preflight Panels
+
+Rule-governance and terminology-governance pages must keep release controls visible when diff/preflight data is large:
+
+- Render destructive diff counters with Chinese business meaning, such as `移除` plus a short explanation that the draft will remove those rules from the published/default set.
+- Paginate or virtualize diff item tables when they can exceed one viewport. Default page size should be around 20 rows, with a visible total and optional change-type filter.
+- Keep rule-set selectors, draft summaries, preflight summaries, and publish actions in a compact control band rather than separate full-width cards.
+- Treat raw change types (`added`, `updated`, `disabled`, `removed`, `unchanged`) as API enum values. Map them at the display boundary instead of renaming API fields.
+
+```vue
+<el-alert
+  v-if="diff.summary.removed"
+  title="草稿将移除已发布版本中的规则，请确认这些删除符合预期。"
+  type="warning"
+/>
+<el-pagination
+  v-model:current-page="diffFilters.page"
+  :page-size="20"
+  :total="filteredDiffItems.length"
+/>
+```
+
 ## Inline Rich Text Previews
 
 Term, formula, and typography previews that render native inline tags such as
@@ -183,6 +205,7 @@ For page-level layout changes:
 
 - Run `npm run build` from `frontend/`.
 - Capture or inspect affected pages at `1440px`, `768px`, and `375px`.
+- If using `vite preview`, remember it validates only the static build. Protected workbench pages still need a backend/API target plus an authenticated browser session before page-level smoke can prove the full workflow.
 - Assert no uncontrolled document/body horizontal overflow.
 - For body-mounted dialogs, assert the dialog is mounted outside `main`, the
   footer is inside the viewport, `.el-dialog__body` computes to

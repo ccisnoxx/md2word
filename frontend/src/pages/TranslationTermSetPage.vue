@@ -4,9 +4,9 @@
   <main class="translation-term-set-page app-page" aria-labelledby="translation-term-set-title">
     <section class="page-heading app-page-header app-page-shell app-page-shell--wide">
       <div>
-        <p class="page-kicker">Translation Term Set</p>
+        <p class="page-kicker">翻译术语集</p>
         <h1 id="translation-term-set-title" class="page-title">翻译术语集</h1>
-        <p class="page-description">通过 CSV 管理 draft，查看版本并执行发布、设默认和回滚。</p>
+        <p class="page-description">通过 CSV 管理草稿，查看版本并执行发布、设默认和回滚。</p>
       </div>
       <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
     </section>
@@ -28,13 +28,13 @@
       show-icon
     >
       <template #title>
-        <span>Proposal 治理上下文</span>
+        <span>建议治理上下文</span>
       </template>
       <div class="context-summary">
-        <el-tag effect="plain">proposal: {{ proposalGovernanceContext.proposalId }}</el-tag>
-        <el-tag effect="plain">set: {{ proposalGovernanceContext.setId || "-" }}</el-tag>
-        <el-tag effect="plain">observed: {{ proposalGovernanceContext.observedVersion || "-" }}</el-tag>
-        <el-button link type="primary" @click="returnToProposalReview">返回 proposal 审核页</el-button>
+        <el-tag effect="plain">建议 ID：{{ proposalGovernanceContext.proposalId }}</el-tag>
+        <el-tag effect="plain">术语集：{{ proposalGovernanceContext.setId || "-" }}</el-tag>
+        <el-tag effect="plain">观察版本：{{ proposalGovernanceContext.observedVersion || "-" }}</el-tag>
+        <el-button link type="primary" @click="returnToProposalReview">返回建议审核页</el-button>
       </div>
     </el-alert>
 
@@ -42,7 +42,7 @@
       class="app-page-shell app-page-shell--wide"
       v-if="unavailable"
       type="warning"
-      title="当前部署未启用 MySQL resource service，Translation Term Set 管理不可用。"
+      title="当前部署未启用 MySQL resource service，翻译术语集管理不可用。"
       :closable="false"
       show-icon
     />
@@ -52,11 +52,11 @@
         <div class="section-header">
           <div>
             <h2 class="section-title">术语集</h2>
-            <p class="section-subtitle">选择 set 查看 draft 和 published versions。</p>
+            <p class="section-subtitle">选择术语集查看草稿和已发布版本。</p>
           </div>
         </div>
-        <el-table :data="sets" :loading="loading" empty-text="暂无 Translation Term Set" @row-click="selectSet">
-          <el-table-column prop="set_id" label="set_id" min-width="210" show-overflow-tooltip />
+        <el-table :data="sets" :loading="loading" empty-text="暂无翻译术语集" @row-click="selectSet">
+          <el-table-column prop="set_id" label="术语集 ID" min-width="210" show-overflow-tooltip />
           <el-table-column prop="language_pair" label="语言方向" width="110" />
           <el-table-column prop="default_version" label="默认版本" width="150" show-overflow-tooltip />
           <el-table-column prop="version_count" label="版本数" width="90" />
@@ -66,22 +66,22 @@
       <el-card class="app-panel-card" shadow="never">
         <div class="section-header">
           <div>
-            <h2 class="section-title">Draft 摘要</h2>
-            <p class="section-subtitle">CSV 导入是本阶段唯一 draft 修改入口。</p>
+            <h2 class="section-title">草稿摘要</h2>
+            <p class="section-subtitle">CSV 导入是本阶段唯一草稿修改入口。</p>
           </div>
           <el-tag v-if="draft?.snapshot_hash" class="mono" effect="plain">{{ draft.snapshot_hash }}</el-tag>
         </div>
         <el-empty v-if="!selectedSetId" description="请选择术语集" :image-size="90" />
         <template v-else>
           <dl class="summary-list">
-            <div><dt>base version</dt><dd>{{ draft?.base_version || "-" }}</dd></div>
-            <div><dt>term_count</dt><dd>{{ draft?.term_count ?? "-" }}</dd></div>
-            <div><dt>validation</dt><dd>{{ draft?.validation.valid ? "valid" : "invalid" }}</dd></div>
+            <div><dt>基线版本</dt><dd>{{ draft?.base_version || "-" }}</dd></div>
+            <div><dt>术语数</dt><dd>{{ draft?.term_count ?? "-" }}</dd></div>
+            <div><dt>校验状态</dt><dd>{{ draft?.validation.valid ? "有效" : "无效" }}</dd></div>
           </dl>
           <RoleGate>
             <div class="action-row app-action-row">
               <el-button type="primary" :disabled="!selectedSetId" @click="openImportDialog">导入 CSV</el-button>
-              <el-button type="success" :disabled="!selectedSetId" @click="openPublishDialog">发布 draft</el-button>
+              <el-button type="success" :disabled="!selectedSetId" @click="openPublishDialog">发布草稿</el-button>
               <el-button :disabled="!selectedSetId" @click="exportVersion(null)">导出默认 CSV</el-button>
             </div>
           </RoleGate>
@@ -104,54 +104,56 @@
       >
         <el-table-column prop="row_number" label="重复行" width="100" />
         <el-table-column prop="kept_row_number" label="保留行" width="100" />
-        <el-table-column prop="source_term" label="source_term" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="normalized_source_term" label="normalized" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="source_term" label="源术语" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="normalized_source_term" label="规范化术语" min-width="180" show-overflow-tooltip />
       </el-table>
     </el-card>
 
     <el-card v-if="!unavailable" class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
       <div class="section-header">
         <div>
-          <h2 class="section-title">Draft validation</h2>
-          <p class="section-subtitle">errors 会阻断发布，warnings 作为发布前提示。</p>
+          <h2 class="section-title">草稿校验</h2>
+          <p class="section-subtitle">错误会阻断发布，告警作为发布前提示。</p>
         </div>
       </div>
-      <el-table :data="validationFindings" :loading="loading" empty-text="暂无 validation findings">
+      <el-table :data="validationFindings" :loading="loading" empty-text="暂无草稿校验结果">
         <el-table-column prop="level" label="级别" width="100">
           <template #default="{ row }">
-            <el-tag :type="row.level === 'error' ? 'danger' : 'warning'" effect="plain">{{ row.level }}</el-tag>
+            <el-tag :type="row.level === 'error' ? 'danger' : 'warning'" effect="plain">
+              {{ validationLevelLabel(row.level) }}
+            </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="code" label="code" width="220" show-overflow-tooltip />
-        <el-table-column prop="normalized_source_term" label="normalized_source_term" width="220" show-overflow-tooltip />
-        <el-table-column prop="message" label="message" min-width="260" show-overflow-tooltip />
+        <el-table-column prop="code" label="代码" width="220" show-overflow-tooltip />
+        <el-table-column prop="normalized_source_term" label="规范化术语" width="220" show-overflow-tooltip />
+        <el-table-column prop="message" label="说明" min-width="260" show-overflow-tooltip />
       </el-table>
     </el-card>
 
     <el-card v-if="!unavailable" class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
       <div class="section-header">
         <div>
-          <h2 class="section-title">Diff / Preflight</h2>
-          <p class="section-subtitle">default-vs-draft 的只读治理预览，不会发布或修改 draft。</p>
+          <h2 class="section-title">差异 / 发布前检查</h2>
+          <p class="section-subtitle">默认版本与草稿的只读治理预览，不会发布或修改草稿。</p>
         </div>
         <el-tag v-if="diff" effect="plain">{{ diff.base_version }} -> {{ diff.target_version }}</el-tag>
       </div>
 
       <div class="governance-summary-grid app-governance-grid" aria-label="Translation Term Set diff summary">
         <article class="summary-metric app-governance-metric">
-          <span>Added</span>
+          <span>新增</span>
           <strong>{{ diff?.summary.added ?? "-" }}</strong>
         </article>
         <article class="summary-metric app-governance-metric">
-          <span>Removed</span>
+          <span>移除</span>
           <strong>{{ diff?.summary.removed ?? "-" }}</strong>
         </article>
         <article class="summary-metric app-governance-metric">
-          <span>Changed</span>
+          <span>变更</span>
           <strong>{{ diff?.summary.changed ?? "-" }}</strong>
         </article>
         <article class="summary-metric app-governance-metric">
-          <span>Unchanged</span>
+          <span>未变</span>
           <strong>{{ diff?.summary.unchanged ?? "-" }}</strong>
         </article>
       </div>
@@ -160,7 +162,7 @@
         v-if="preflight?.publish_blocked"
         class="context-alert"
         type="error"
-        title="Preflight 阻断发布"
+        title="发布前检查阻断发布"
         :closable="false"
         show-icon
       >
@@ -172,20 +174,20 @@
         v-else-if="preflight"
         class="context-alert"
         type="success"
-        title="Preflight 未发现阻断项"
+        title="发布前检查未发现阻断项"
         :closable="false"
         show-icon
       />
 
-      <el-table :data="visibleDiffItems" :loading="loading" empty-text="暂无 draft diff 变化">
-        <el-table-column label="Kind" width="110">
+      <el-table :data="visibleDiffItems" :loading="loading" empty-text="暂无草稿差异">
+        <el-table-column label="类型" width="110">
           <template #default="{ row }">
-            <el-tag :type="diffKindTag(row.kind)" effect="plain">{{ row.kind }}</el-tag>
+            <el-tag :type="diffKindTag(row.kind)" effect="plain">{{ diffKindLabel(row.kind) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="source_term" label="source_term" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="normalized_source_term" label="normalized" min-width="170" show-overflow-tooltip />
-        <el-table-column label="changed_fields" min-width="220">
+        <el-table-column prop="source_term" label="源术语" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="normalized_source_term" label="规范化术语" min-width="170" show-overflow-tooltip />
+        <el-table-column label="变更字段" min-width="220">
           <template #default="{ row }">
             <span v-if="!row.changed_fields.length" class="muted">-</span>
             <span v-else class="tag-stack">
@@ -193,12 +195,12 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="before" min-width="260">
+        <el-table-column label="变更前" min-width="260">
           <template #default="{ row }">
             <pre class="diff-payload app-technical-block">{{ formatDiffPayload(row.before) }}</pre>
           </template>
         </el-table-column>
-        <el-table-column label="after" min-width="260">
+        <el-table-column label="变更后" min-width="260">
           <template #default="{ row }">
             <pre class="diff-payload app-technical-block">{{ formatDiffPayload(row.after) }}</pre>
           </template>
@@ -209,26 +211,26 @@
     <el-card v-if="!unavailable" class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
       <div class="section-header">
         <div>
-          <h2 class="section-title">Pending proposal compatibility</h2>
-          <p class="section-subtitle">只读预览 pending proposals 与当前 draft 的兼容性。</p>
+          <h2 class="section-title">待审核建议兼容性</h2>
+          <p class="section-subtitle">只读预览待审核建议与当前草稿的兼容性。</p>
         </div>
       </div>
 
       <div class="governance-summary-grid app-governance-grid" aria-label="Translation Term Proposal compatibility summary">
         <article class="summary-metric app-governance-metric">
-          <span>Total</span>
+          <span>总数</span>
           <strong>{{ proposalCompatibility?.summary.total ?? "-" }}</strong>
         </article>
         <article class="summary-metric app-governance-metric">
-          <span>Compatible</span>
+          <span>兼容</span>
           <strong>{{ proposalCompatibility?.summary.compatible ?? "-" }}</strong>
         </article>
         <article class="summary-metric app-governance-metric">
-          <span>Warnings</span>
+          <span>告警</span>
           <strong>{{ proposalCompatibility?.summary.warning ?? "-" }}</strong>
         </article>
         <article class="summary-metric app-governance-metric">
-          <span>Conflicts</span>
+          <span>冲突</span>
           <strong>{{ proposalCompatibility?.summary.conflict ?? "-" }}</strong>
         </article>
       </div>
@@ -244,27 +246,27 @@
       <el-table
         :data="proposalCompatibility?.items || []"
         :loading="loading"
-        empty-text="暂无 pending Translation Term Proposal"
+        empty-text="暂无待审核翻译术语建议"
         :row-class-name="proposalCompatibilityRowClassName"
       >
-        <el-table-column prop="proposal_id" label="Proposal" min-width="160">
+        <el-table-column prop="proposal_id" label="建议 ID" min-width="160">
           <template #default="{ row }">
             <router-link :to="{ name: 'term-proposals', query: { tab: 'translation-review', proposal_id: row.proposal_id } }" class="mono">
               {{ row.proposal_id }}
             </router-link>
           </template>
         </el-table-column>
-        <el-table-column label="Compatibility" width="140">
+        <el-table-column label="兼容性" width="140">
           <template #default="{ row }">
-            <el-tag :type="compatibilityTag(row.compatibility)" effect="plain">{{ row.compatibility }}</el-tag>
+            <el-tag :type="compatibilityTag(row.compatibility)" effect="plain">{{ compatibilityLabel(row.compatibility) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="observed_version" label="Observed" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="change_count" label="Changes" width="100" />
-        <el-table-column label="Conflicts" min-width="220">
+        <el-table-column prop="observed_version" label="观察版本" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="change_count" label="变更数" width="100" />
+        <el-table-column label="冲突" min-width="220">
           <template #default="{ row }">{{ findingCodes(row.conflicts) }}</template>
         </el-table-column>
-        <el-table-column label="Warnings" min-width="220">
+        <el-table-column label="告警" min-width="220">
           <template #default="{ row }">{{ findingCodes(row.warnings) }}</template>
         </el-table-column>
       </el-table>
@@ -273,11 +275,11 @@
     <el-card v-if="!unavailable" class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
       <div class="section-header">
         <div>
-          <h2 class="section-title">Published versions</h2>
-          <p class="section-subtitle">rollback 只切默认指针，不生成新版本。</p>
+          <h2 class="section-title">已发布版本</h2>
+          <p class="section-subtitle">回滚只切默认指针，不生成新版本。</p>
         </div>
       </div>
-      <el-table :data="detail?.versions || []" :loading="loading" empty-text="暂无 published version">
+      <el-table :data="detail?.versions || []" :loading="loading" empty-text="暂无已发布版本">
         <el-table-column prop="version" label="版本" width="170" show-overflow-tooltip />
         <el-table-column label="默认" width="90">
           <template #default="{ row }">
@@ -286,18 +288,18 @@
           </template>
         </el-table-column>
         <el-table-column prop="term_count" label="术语数" width="90" />
-        <el-table-column prop="snapshot_hash" label="snapshot" min-width="210" show-overflow-tooltip />
+        <el-table-column prop="snapshot_hash" label="快照哈希" min-width="210" show-overflow-tooltip />
         <el-table-column label="发布时间" width="190">
           <template #default="{ row }">{{ formatDateTime(row.published_at) }}</template>
         </el-table-column>
         <el-table-column prop="published_by" label="发布人" width="120" />
         <el-table-column prop="release_note" label="发布说明" min-width="180" show-overflow-tooltip />
-        <el-table-column v-if="isAdmin" label="admin 操作" width="260" fixed="right">
+        <el-table-column v-if="isAdmin" label="管理操作" width="260" fixed="right">
           <template #default="{ row }">
             <RoleGate>
               <el-button link type="primary" @click="exportVersion(row.version)">导出</el-button>
               <el-button link type="warning" :disabled="row.is_default" @click="setDefault(row.version)">设默认</el-button>
-              <el-button link type="danger" :disabled="row.is_default" @click="rollback(row.version)">Rollback</el-button>
+              <el-button link type="danger" :disabled="row.is_default" @click="rollback(row.version)">回滚</el-button>
             </RoleGate>
           </template>
         </el-table-column>
@@ -307,14 +309,14 @@
     <el-card v-if="!unavailable" class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
       <div class="section-header">
         <div>
-          <h2 class="section-title">Draft entries</h2>
-          <p class="section-subtitle">逐行维护当前 draft；发布后才会影响后续新任务的默认术语版本。</p>
+          <h2 class="section-title">草稿词条</h2>
+          <p class="section-subtitle">逐行维护当前草稿；发布后才会影响后续新任务的默认术语版本。</p>
         </div>
         <RoleGate>
           <el-button type="primary" :icon="Plus" :disabled="!selectedSetId" @click="openAddTermDialog">新增术语</el-button>
         </RoleGate>
       </div>
-      <el-table :data="draft?.entries || []" :loading="loading" empty-text="暂无 draft entries">
+      <el-table :data="draft?.entries || []" :loading="loading" empty-text="暂无草稿词条">
         <el-table-column prop="source_term" label="源术语" min-width="180" show-overflow-tooltip />
         <el-table-column label="推荐译法" min-width="200" show-overflow-tooltip>
           <template #default="{ row }">{{ recommendedTranslationText(row) }}</template>
@@ -340,14 +342,14 @@
           <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
         </el-table-column>
         <el-table-column prop="maintainer" label="维护人" width="130" show-overflow-tooltip />
-        <el-table-column prop="case_sensitive" label="case" width="90">
-          <template #default="{ row }">{{ row.case_sensitive ? "sensitive" : "ignore" }}</template>
+        <el-table-column prop="case_sensitive" label="区分大小写" width="110">
+          <template #default="{ row }">{{ row.case_sensitive ? "区分" : "忽略" }}</template>
         </el-table-column>
-        <el-table-column prop="priority" label="priority" width="90" />
-        <el-table-column prop="domain" label="domain" width="140" show-overflow-tooltip />
-        <el-table-column prop="category" label="category" width="140" show-overflow-tooltip />
-        <el-table-column prop="note" label="note" min-width="160" show-overflow-tooltip />
-        <el-table-column v-if="isAdmin" label="admin 操作" width="240" fixed="right">
+        <el-table-column prop="priority" label="优先级" width="90" />
+        <el-table-column prop="domain" label="领域" width="140" show-overflow-tooltip />
+        <el-table-column prop="category" label="分类" width="140" show-overflow-tooltip />
+        <el-table-column prop="note" label="备注" min-width="160" show-overflow-tooltip />
+        <el-table-column v-if="isAdmin" label="管理操作" width="240" fixed="right">
           <template #default="{ row }">
             <RoleGate>
               <div class="table-actions app-action-row">
@@ -369,9 +371,9 @@
       </el-table>
     </el-card>
 
-    <el-dialog v-model="importDialog.visible" title="导入 Translation Term CSV" width="720px">
+    <el-dialog v-model="importDialog.visible" title="导入翻译术语 CSV" width="720px">
       <el-form ref="importFormRef" :model="importDialog.form" :rules="importRules" label-width="90px">
-        <el-form-item label="dedupe" prop="dedupe">
+        <el-form-item label="重复处理" prop="dedupe">
           <el-segmented v-model="importDialog.form.dedupe" :options="dedupeOptions" />
           <p class="form-help">{{ dedupeHint }}</p>
         </el-form-item>
@@ -395,14 +397,14 @@
       />
       <template #footer>
         <el-button @click="importDialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="importing" @click="importCsv">导入到 draft</el-button>
+        <el-button type="primary" :loading="importing" @click="importCsv">导入到草稿</el-button>
       </template>
     </el-dialog>
 
     <el-dialog v-model="entryDialog.visible" :title="entryDialogTitle" width="720px">
       <el-form ref="entryFormRef" :model="entryDialog.form" :rules="entryRules" label-width="120px">
         <div class="entry-form-grid">
-          <el-form-item label="source_term" prop="source_term">
+          <el-form-item label="源术语" prop="source_term">
             <el-input
               v-model="entryDialog.form.source_term"
               class="mono"
@@ -422,34 +424,34 @@
           <el-form-item label="同义词">
             <el-input v-model="entryDialog.form.synonyms" placeholder="多个同义词用 ; 分隔" />
           </el-form-item>
-          <el-form-item label="case_sensitive">
+          <el-form-item label="区分大小写">
             <el-switch v-model="entryDialog.form.case_sensitive" />
           </el-form-item>
-          <el-form-item label="status" prop="status">
+          <el-form-item label="状态" prop="status">
             <el-segmented v-model="entryDialog.form.status" :options="termStatusOptions" />
           </el-form-item>
-          <el-form-item label="priority">
+          <el-form-item label="优先级">
             <el-input-number v-model="entryDialog.form.priority" :min="-1000" :max="1000" controls-position="right" />
           </el-form-item>
-          <el-form-item label="project">
+          <el-form-item label="项目">
             <el-input v-model="entryDialog.form.project" />
           </el-form-item>
-          <el-form-item label="content_type">
+          <el-form-item label="内容类型">
             <el-input v-model="entryDialog.form.content_type" />
           </el-form-item>
-          <el-form-item label="tags">
+          <el-form-item label="标签">
             <el-input v-model="entryDialog.form.tags" placeholder="多个标签用 ; 分隔" />
           </el-form-item>
-          <el-form-item label="maintainer">
+          <el-form-item label="维护人">
             <el-input v-model="entryDialog.form.maintainer" />
           </el-form-item>
-          <el-form-item label="domain">
+          <el-form-item label="领域">
             <el-input v-model="entryDialog.form.domain" />
           </el-form-item>
-          <el-form-item label="category">
+          <el-form-item label="分类">
             <el-input v-model="entryDialog.form.category" />
           </el-form-item>
-          <el-form-item label="note">
+          <el-form-item label="备注">
             <el-input v-model="entryDialog.form.note" type="textarea" :rows="3" />
           </el-form-item>
         </div>
@@ -458,17 +460,17 @@
         v-if="draft?.snapshot_hash"
         class="dialog-alert"
         type="info"
-        :title="`基于当前 draft snapshot: ${draft.snapshot_hash}`"
+        :title="`基于当前草稿快照：${draft.snapshot_hash}`"
         :closable="false"
         show-icon
       />
       <template #footer>
         <el-button @click="entryDialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="entrySaving" @click="submitDraftEntry">保存到 draft</el-button>
+        <el-button type="primary" :loading="entrySaving" @click="submitDraftEntry">保存到草稿</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="publishDialog.visible" title="发布 Translation Term Set draft" width="540px">
+    <el-dialog v-model="publishDialog.visible" title="发布翻译术语集草稿" width="540px">
       <el-form ref="publishFormRef" :model="publishDialog.form" :rules="publishRules" label-width="100px">
         <el-form-item label="发布说明" prop="release_note">
           <el-input v-model="publishDialog.form.release_note" type="textarea" :rows="4" />
@@ -483,12 +485,12 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="exportDialog.visible" title="导出 Translation Term CSV" width="760px">
+    <el-dialog v-model="exportDialog.visible" title="导出翻译术语 CSV" width="760px">
       <el-descriptions :column="2" border>
-        <el-descriptions-item label="set_id">{{ exportDialog.manifest?.set_id || "-" }}</el-descriptions-item>
-        <el-descriptions-item label="version">{{ exportDialog.manifest?.version || "-" }}</el-descriptions-item>
-        <el-descriptions-item label="language_pair">{{ exportDialog.manifest?.language_pair || "-" }}</el-descriptions-item>
-        <el-descriptions-item label="exported_by">{{ exportDialog.manifest?.exported_by || "-" }}</el-descriptions-item>
+        <el-descriptions-item label="术语集 ID">{{ exportDialog.manifest?.set_id || "-" }}</el-descriptions-item>
+        <el-descriptions-item label="版本">{{ exportDialog.manifest?.version || "-" }}</el-descriptions-item>
+        <el-descriptions-item label="语言对">{{ exportDialog.manifest?.language_pair || "-" }}</el-descriptions-item>
+        <el-descriptions-item label="导出人">{{ exportDialog.manifest?.exported_by || "-" }}</el-descriptions-item>
       </el-descriptions>
       <el-input v-model="exportDialog.csv_text" type="textarea" :rows="14" class="mono export-text" readonly />
       <template #footer>
@@ -628,18 +630,18 @@ const publishRules: FormRules = {
 };
 
 const entryRules: FormRules = {
-  source_term: [{ required: true, message: "请填写 source_term", trigger: "blur" }],
-  target_term: [{ required: true, message: "请填写 target_term", trigger: "blur" }],
-  status: [{ required: true, message: "请选择 status", trigger: "change" }],
+  source_term: [{ required: true, message: "请填写源术语", trigger: "blur" }],
+  target_term: [{ required: true, message: "请填写推荐译法主值", trigger: "blur" }],
+  status: [{ required: true, message: "请选择状态", trigger: "change" }],
 };
 
 const dedupeHints: Record<DedupeMode, string> = {
-  reject: "默认策略。只要 CSV 存在重复 normalized_source_term，后端会拒绝导入，draft 不会保存。",
+  reject: "默认策略。只要 CSV 存在重复规范化术语，后端会拒绝导入，草稿不会保存。",
   keep_first: "治理导入策略。保留第一条重复术语，丢弃后续重复行，并在导入报告中列出被丢弃的行。",
 };
 
 const dedupeHint = computed(() => dedupeHints[importDialog.form.dedupe]);
-const entryDialogTitle = computed(() => (entryDialog.mode === "add" ? "新增 draft 术语" : "编辑 draft 术语"));
+const entryDialogTitle = computed(() => (entryDialog.mode === "add" ? "新增草稿术语" : "编辑草稿术语"));
 
 const proposalGovernanceContext = computed(() => {
   const proposalId = queryString("proposal_id");
@@ -690,7 +692,7 @@ const proposalCompatibilityNotice = computed(() => {
   if (!proposalId || loading.value || targetProposalCompatibility.value) {
     return "";
   }
-  return `proposal ${proposalId} 当前不在 pending compatibility 列表中；可能已审核、已发布、已拒绝，或当前 set 不匹配。`;
+  return `建议 ${proposalId} 当前不在待审核兼容性列表中；可能已审核、已发布、已拒绝，或当前术语集不匹配。`;
 });
 
 // 根据 Translation Term Set 页面语境给 Admin 提供下一步处理建议。
@@ -700,22 +702,22 @@ const errorActionHint = computed(() => {
     return "";
   }
   if (currentError.status === 503) {
-    return "当前部署未启用 MySQL resource service，本页面不会保存任何 Translation Term Set 变更。";
+    return "当前部署未启用 MySQL resource service，本页面不会保存任何翻译术语集变更。";
   }
   if (currentError.status === 404) {
-    return "目标 set 或 version 不存在。请刷新术语集列表后确认版本仍可用。";
+    return "目标术语集或版本不存在。请刷新术语集列表后确认版本仍可用。";
   }
   if (currentError.status === 409 && currentError.code === "draft_snapshot_conflict") {
-    return "draft 已被其他修改更新，本页面已刷新当前 set。请重新确认后再保存。";
+    return "草稿已被其他修改更新，本页面已刷新当前术语集。请重新确认后再保存。";
   }
   if (currentError.status === 400 && /CSV|重复|dedupe|language_pair|字段/.test(currentError.message)) {
-    return "CSV 未导入，draft 未保存。请按错误信息修正 CSV，或在确认可丢弃重复行后改用 keep_first。";
+    return "CSV 未导入，草稿未保存。请按错误信息修正 CSV，或在确认可丢弃重复行后改用“保留第一条”。";
   }
   if (currentError.status === 400 && /draft|术语|source_term|target_term|changes|新增|目标|状态/.test(currentError.message)) {
-    return "draft 行级修改未保存。请按错误信息修正表单后重试。";
+    return "草稿行级修改未保存。请按错误信息修正表单后重试。";
   }
   if (currentError.status === 400) {
-    return "操作未执行。请确认目标版本是 published 状态，且请求参数符合当前 API 合同。";
+    return "操作未执行。请确认目标版本是已发布状态，且请求参数符合当前 API 合同。";
   }
   return "";
 });
@@ -801,7 +803,7 @@ function openImportDialog(): void {
   importDialog.visible = true;
 }
 
-// 将 CSV 导入 draft；失败时保留后端错误并提示 draft 未保存。
+// 将 CSV 导入草稿；失败时保留后端错误并提示草稿未保存。
 async function importCsv(): Promise<void> {
   if (!selectedSetId.value) {
     return;
@@ -819,7 +821,7 @@ async function importCsv(): Promise<void> {
       dedupe: importDialog.form.dedupe,
     });
     lastImportReport.value = response.import_report;
-    ElMessage.success("CSV 已导入 draft。");
+    ElMessage.success("CSV 已导入草稿。");
     await loadAll();
   } catch (caught) {
     setPageError(caught);
@@ -940,7 +942,7 @@ async function handleDraftChangeError(caught: unknown): Promise<void> {
   }
   error.value = normalized;
   if (normalized.status === 409 && normalized.code === "draft_snapshot_conflict") {
-    ElMessage.warning("draft 已被其他修改更新，已刷新当前 set。");
+    ElMessage.warning("草稿已被其他修改更新，已刷新当前术语集。");
     try {
       await loadSelectedSet();
     } catch (refreshError) {
@@ -976,7 +978,7 @@ async function submitDraftEntry(): Promise<void> {
   };
   try {
     await applyDraftEntryChanges([change], `${change.action} ${change.source_term}`);
-    ElMessage.success("draft 术语已保存。");
+    ElMessage.success("草稿术语已保存。");
     entryDialog.visible = false;
   } catch (caught) {
     await handleDraftChangeError(caught);
@@ -988,8 +990,8 @@ async function submitDraftEntry(): Promise<void> {
 async function disableDraftEntry(row: TranslationTermEntryResponse): Promise<void> {
   try {
     await ElMessageBox.confirm(
-      `将 ${row.source_term} 标记为已废弃。术语仍保留在 draft 中，但不会进入治理包发布。`,
-      "废弃 draft 术语",
+      `将 ${row.source_term} 标记为已废弃。术语仍保留在草稿中，但不会进入治理包发布。`,
+      "废弃草稿术语",
       {
         confirmButtonText: "废弃",
         cancelButtonText: "取消",
@@ -1011,7 +1013,7 @@ async function disableDraftEntry(row: TranslationTermEntryResponse): Promise<voi
       ],
       `deprecate ${row.source_term}`,
     );
-    ElMessage.success("draft 术语已标记为废弃。");
+    ElMessage.success("草稿术语已标记为废弃。");
   } catch (caught) {
     await handleDraftChangeError(caught);
   }
@@ -1020,8 +1022,8 @@ async function disableDraftEntry(row: TranslationTermEntryResponse): Promise<voi
 async function deleteDraftEntry(row: TranslationTermEntryResponse): Promise<void> {
   try {
     await ElMessageBox.confirm(
-      `从当前 draft 移除 ${row.source_term}。此操作不会删除任何 published history，只有发布 draft 后才会影响后续新任务。`,
-      "删除 draft 术语",
+      `从当前草稿移除 ${row.source_term}。此操作不会删除任何已发布历史，只有发布草稿后才会影响后续新任务。`,
+      "删除草稿术语",
       {
         confirmButtonText: "删除",
         cancelButtonText: "取消",
@@ -1042,20 +1044,20 @@ async function deleteDraftEntry(row: TranslationTermEntryResponse): Promise<void
       ],
       `delete ${row.source_term}`,
     );
-    ElMessage.success("draft 术语已删除。");
+    ElMessage.success("草稿术语已删除。");
   } catch (caught) {
     await handleDraftChangeError(caught);
   }
 }
 
-// 打开发布 draft 对话框，要求填写发布说明。
+// 打开发布草稿对话框，要求填写发布说明。
 function openPublishDialog(): void {
   publishDialog.form.release_note = "";
   publishDialog.form.make_default = true;
   publishDialog.visible = true;
 }
 
-// 发布当前 draft，并按开关决定是否设为默认版本。
+// 发布当前草稿，并按开关决定是否设为默认版本。
 async function publishDraft(): Promise<void> {
   if (!selectedSetId.value) {
     return;
@@ -1071,7 +1073,7 @@ async function publishDraft(): Promise<void> {
       make_default: publishDialog.form.make_default,
       release_note: publishDialog.form.release_note,
     });
-    ElMessage.success("Translation Term Set draft 已发布。");
+    ElMessage.success("翻译术语集草稿已发布。");
     publishDialog.visible = false;
     await loadAll();
   } catch (caught) {
@@ -1139,6 +1141,24 @@ function diffKindTag(kind: DiffKind): TagType {
   return "info";
 }
 
+function diffKindLabel(kind: DiffKind): string {
+  const labels: Record<DiffKind, string> = {
+    added: "新增",
+    removed: "移除",
+    changed: "变更",
+    unchanged: "未变",
+  };
+  return labels[kind] || kind;
+}
+
+function validationLevelLabel(level: string): string {
+  const labels: Record<string, string> = {
+    error: "错误",
+    warning: "告警",
+  };
+  return labels[level] || level;
+}
+
 // 将 proposal compatibility 映射为表格标签样式。
 function compatibilityTag(compatibility: Compatibility): TagType {
   if (compatibility === "compatible") {
@@ -1148,6 +1168,15 @@ function compatibilityTag(compatibility: Compatibility): TagType {
     return "warning";
   }
   return "danger";
+}
+
+function compatibilityLabel(compatibility: Compatibility): string {
+  const labels: Record<Compatibility, string> = {
+    compatible: "兼容",
+    warning: "有告警",
+    conflict: "有冲突",
+  };
+  return labels[compatibility] || compatibility;
 }
 
 // 汇总 finding codes，避免在列表中渲染大段冲突 payload。
@@ -1182,7 +1211,7 @@ async function setDefault(version: string): Promise<void> {
   }
   try {
     await ElMessageBox.confirm(
-      "将该 published version 切换为默认翻译术语集版本。此操作只影响后续使用默认配置的新 job；已创建 job 的 resource snapshot 不会改变。",
+      "将该已发布版本切换为默认翻译术语集版本。此操作只影响后续使用默认配置的新任务；已创建任务的资源快照不会改变。",
       `设默认 ${version}`,
       {
         confirmButtonText: "设默认",
@@ -1203,17 +1232,17 @@ async function setDefault(version: string): Promise<void> {
   }
 }
 
-// Rollback 只切默认指针，不生成新版本、不删除历史版本、不改已有 job 快照。
+// 回滚只切默认指针，不生成新版本、不删除历史版本、不改已有 job 快照。
 async function rollback(version: string): Promise<void> {
   if (!selectedSetId.value) {
     return;
   }
   try {
     await ElMessageBox.confirm(
-      "Rollback 只会把默认版本指针切回该 published version，不会生成新版本，不会删除或修改历史版本，也不会改变已创建 job 的 resource snapshot。",
-      `Rollback ${version}`,
+      "回滚只会把默认版本指针切回该已发布版本，不会生成新版本，不会删除或修改历史版本，也不会改变已创建任务的资源快照。",
+      `回滚 ${version}`,
       {
-        confirmButtonText: "Rollback",
+        confirmButtonText: "回滚",
         cancelButtonText: "取消",
         type: "warning",
       },
@@ -1224,7 +1253,7 @@ async function rollback(version: string): Promise<void> {
   error.value = null;
   try {
     await translationTermSetsApi.rollback(selectedSetId.value, { version });
-    ElMessage.success("已完成 rollback。");
+    ElMessage.success("已完成回滚。");
     await loadAll();
   } catch (caught) {
     setPageError(caught);

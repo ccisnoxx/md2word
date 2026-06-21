@@ -4,7 +4,7 @@
   <main class="translation-result-qa-page app-page" aria-labelledby="translation-qa-title">
     <section class="qa-page-header section-header app-page-header app-page-shell">
       <div>
-        <p class="page-kicker">Translation QA</p>
+        <p class="page-kicker">翻译 QA</p>
         <h1 id="translation-qa-title" class="page-title">翻译 QA</h1>
         <p class="page-description mono">{{ jobId }}</p>
       </div>
@@ -34,10 +34,10 @@
           <el-descriptions :column="1" border size="small">
             <el-descriptions-item label="创建时间">{{ formatDateTime(job.created_at) }}</el-descriptions-item>
             <el-descriptions-item label="更新时间">{{ formatDateTime(job.updated_at) }}</el-descriptions-item>
-            <el-descriptions-item label="Template">{{ boundTemplateLabel }}</el-descriptions-item>
-            <el-descriptions-item label="Term Rule Set">{{ boundTermRuleSetLabel }}</el-descriptions-item>
-            <el-descriptions-item label="Translation Term Set">{{ boundTranslationTermSetLabel }}</el-descriptions-item>
-            <el-descriptions-item label="Translation Profile">{{ boundTranslationProfileLabel }}</el-descriptions-item>
+            <el-descriptions-item label="模板">{{ boundTemplateLabel }}</el-descriptions-item>
+            <el-descriptions-item label="术语规则集">{{ boundTermRuleSetLabel }}</el-descriptions-item>
+            <el-descriptions-item label="翻译术语集">{{ boundTranslationTermSetLabel }}</el-descriptions-item>
+            <el-descriptions-item label="翻译配置">{{ boundTranslationProfileLabel }}</el-descriptions-item>
           </el-descriptions>
         </el-card>
       </section>
@@ -73,10 +73,10 @@
             </div>
           </div>
           <el-table :data="qa.term_traces" empty-text="暂无术语命中">
-            <el-table-column label="Segment" min-width="150" prop="segment_id" />
-            <el-table-column label="Source" min-width="130" prop="source_term" />
-            <el-table-column label="Target" min-width="150" prop="target_term" />
-            <el-table-column label="Version" min-width="170">
+            <el-table-column label="段落" min-width="150" prop="segment_id" />
+            <el-table-column label="源术语" min-width="130" prop="source_term" />
+            <el-table-column label="目标术语" min-width="150" prop="target_term" />
+            <el-table-column label="版本" min-width="170">
               <template #default="{ row }">
                 <span class="mono">{{ versionLabel(row.translation_term_set_id, row.translation_term_version) }}</span>
               </template>
@@ -96,11 +96,11 @@
           </div>
           <el-table :data="qa.ai_calls" empty-text="暂无 AI 调用日志">
             <el-table-column label="状态" width="96" prop="status" />
-            <el-table-column label="Provider" min-width="170">
+            <el-table-column label="供应商" min-width="170">
               <template #default="{ row }">{{ providerLabel(row.provider) }}</template>
             </el-table-column>
-            <el-table-column label="Items" width="88" prop="item_count" />
-            <el-table-column label="Chars" width="88" prop="char_count" />
+            <el-table-column label="条目数" width="88" prop="item_count" />
+            <el-table-column label="字符数" width="88" prop="char_count" />
             <el-table-column label="耗时" width="96">
               <template #default="{ row }">{{ row.duration_ms ?? "-" }} ms</template>
             </el-table-column>
