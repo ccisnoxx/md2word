@@ -102,9 +102,14 @@
             <h2 class="section-title">Draft 规则</h2>
             <p class="section-subtitle">新增、编辑、启停和移除都只作用于 draft。</p>
           </div>
-          <el-button type="primary" :icon="Plus" :disabled="!selectedSetId" @click="openCreateRuleDialog">
-            新增规则
-          </el-button>
+          <div class="rule-actions">
+            <el-button type="primary" :icon="Plus" :disabled="!selectedSetId" @click="openCreateRuleDialog()">
+              新增规则
+            </el-button>
+            <el-button :icon="EditPen" :disabled="!selectedSetId" @click="openCreateRuleDialog('advanced')">
+              新增高级规则
+            </el-button>
+          </div>
         </div>
 
         <div class="toolbar filters app-filter-panel" role="search">
@@ -460,6 +465,7 @@ import { formatDateTime } from "@/utils/format";
 
 type EnabledFilter = "all" | "enabled" | "disabled";
 type RuleDialogMode = "create" | "edit";
+type RuleDialogVariant = "basic" | "advanced";
 
 type RuleFormState = {
   source_term: string;
@@ -514,6 +520,7 @@ const draftRuleFilters = reactive({
 const ruleDialog = reactive({
   visible: false,
   mode: "create" as RuleDialogMode,
+  variant: "basic" as RuleDialogVariant,
   ruleId: "",
 });
 
@@ -546,7 +553,12 @@ const governanceContextVisible = computed(() =>
   Boolean(governanceProposalId.value || governanceTargetRuleId.value || governanceSourceTerm.value),
 );
 
-const ruleDialogTitle = computed(() => (ruleDialog.mode === "create" ? "新增 draft rule" : "编辑 draft rule"));
+const ruleDialogTitle = computed(() => {
+  if (ruleDialog.mode === "edit") {
+    return "编辑 draft rule";
+  }
+  return ruleDialog.variant === "advanced" ? "新增高级 draft rule" : "新增 draft rule";
+});
 
 const preflightStatusLabel = computed(() => {
   if (!preflightReport.value) {
@@ -594,7 +606,15 @@ const diffCounters = computed(() => {
 });
 
 // 创建新规则表单默认值。
-function createEmptyRuleForm(): RuleFormState {
+function createEmptyRuleForm(variant: RuleDialogVariant = "basic"): RuleFormState {
+  const segments: TermRuleSegmentWriteRequest[] =
+    variant === "advanced"
+      ? [
+          { segment_text: "", render_type: "plain" },
+          { segment_text: "", render_type: "subscript" },
+          { segment_text: "", render_type: "superscript" },
+        ]
+      : [{ segment_text: "", render_type: "plain" }];
   return {
     source_term: "",
     category_id: "",
@@ -602,7 +622,7 @@ function createEmptyRuleForm(): RuleFormState {
     case_sensitive: true,
     enabled: true,
     priority: 100,
-    segments: [{ segment_text: "", render_type: "plain" }],
+    segments,
     custom_html: "",
     custom_markdown: "",
     notes: "",
@@ -779,11 +799,12 @@ async function refreshAfterDraftMutation(nextDraft?: TermRuleSetDraftResponse): 
 }
 
 // 打开新增规则对话框。
-function openCreateRuleDialog(): void {
-  Object.assign(ruleForm, createEmptyRuleForm(), {
+function openCreateRuleDialog(variant: RuleDialogVariant = "basic"): void {
+  Object.assign(ruleForm, createEmptyRuleForm(variant), {
     category_id: categories.value[0]?.id || "",
   });
   ruleDialog.mode = "create";
+  ruleDialog.variant = variant;
   ruleDialog.ruleId = "";
   ruleDialog.visible = true;
 }
@@ -806,6 +827,7 @@ function openEditRuleDialog(rule: TermRuleResponse): void {
     notes: rule.notes || "",
   });
   ruleDialog.mode = "edit";
+  ruleDialog.variant = rule.segments.length > 2 || Boolean(rule.custom_html || rule.custom_markdown) ? "advanced" : "basic";
   ruleDialog.ruleId = rule.id;
   ruleDialog.visible = true;
 }
@@ -1101,6 +1123,8 @@ watch(() => route.fullPath, () => {
 <style scoped lang="scss">
 .term-rule-set-page {
   display: grid;
+  align-content: start;
+  grid-auto-rows: max-content;
   gap: var(--app-space-4);
 }
 
@@ -1148,6 +1172,13 @@ watch(() => route.fullPath, () => {
   flex-wrap: wrap;
   gap: var(--app-space-2);
   margin-bottom: var(--app-space-3);
+}
+
+.rule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--app-space-2);
+  justify-content: flex-end;
 }
 
 .filter-select {
