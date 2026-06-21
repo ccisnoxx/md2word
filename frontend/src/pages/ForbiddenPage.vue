@@ -29,7 +29,7 @@
       </dl>
 
       <div class="actions">
-        <el-button type="primary" :icon="Back" @click="goJobs">返回任务工作台</el-button>
+        <el-button type="primary" :icon="Back" @click="goDefaultRoute">返回可访问页面</el-button>
         <el-button :icon="SwitchButton" @click="logout">切换账号</el-button>
       </div>
     </section>
@@ -41,6 +41,7 @@ import { computed } from "vue";
 import { Back, Lock, SwitchButton } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 
+import { getDefaultProtectedRoute } from "@/navigation/appShell";
 import { useAuthStore } from "@/stores/auth";
 
 const auth = useAuthStore();
@@ -49,9 +50,16 @@ const router = useRouter();
 
 const fromPath = computed(() => (typeof route.query.from === "string" ? route.query.from : ""));
 const requiredPermissions = computed(() => (typeof route.query.required === "string" ? route.query.required : ""));
+const defaultRoute = computed(() =>
+  getDefaultProtectedRoute({
+    role: auth.user?.role ?? null,
+    roles: auth.user?.roles ?? [],
+    permissions: auth.user?.permissions ?? [],
+  }),
+);
 
-function goJobs(): void {
-  void router.push("/jobs");
+function goDefaultRoute(): void {
+  void router.push(defaultRoute.value);
 }
 
 function logout(): void {

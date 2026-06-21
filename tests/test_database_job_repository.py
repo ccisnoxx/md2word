@@ -12,6 +12,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from app.domains.acceptance.models import AcceptanceRunRecord
 from app.domains.document_jobs.models import DocumentJobCallbackMessage, DocumentJobEventRecord, DocumentJobRecord
 from app.domains.saved_views.models import SavedViewRecord
 from app.domains.saved_views.repository import SavedViewScope
@@ -139,6 +140,7 @@ class _FakeMysqlDatabase:
         self.jobs: dict[str, dict[str, Any]] = {}
         self.job_events: list[dict[str, Any]] = []
         self.audit_events: list[dict[str, Any]] = []
+        self.acceptance_runs: dict[str, dict[str, Any]] = {}
         self.internal_users: dict[str, dict[str, Any]] = {}
         self.document_files: dict[str, dict[str, Any]] = {}
         self.file_retention_policies: dict[str, dict[str, Any]] = {}
@@ -228,6 +230,7 @@ class _FakeMysqlCursor:
                 "translation_term_match_traces",
                 "terminology_releases",
                 "audit_events",
+                "acceptance_runs",
                 "internal_users",
                 "document_files",
                 "file_retention_policies",
@@ -347,6 +350,54 @@ class _FakeMysqlCursor:
                 {"payload": row["payload"]}
                 for row in sorted(self.database.audit_events, key=lambda item: (item["created_at"], item["id"]))
             ]
+            return
+        if normalized.startswith("insert into acceptance_runs"):
+            run_id, tier, run_status, decision, payload, started_at, finished_at, updated_at = params
+            self.database.acceptance_runs[run_id] = {
+                "run_id": run_id,
+                "tier": tier,
+                "status": run_status,
+                "decision": decision,
+                "payload": payload,
+                "started_at": started_at,
+                "finished_at": finished_at,
+                "updated_at": updated_at,
+            }
+            self._rows = []
+            return
+        if normalized.startswith("update acceptance_runs"):
+            tier, run_status, decision, payload, started_at, finished_at, updated_at, run_id = params
+            self.database.acceptance_runs[run_id] = {
+                "run_id": run_id,
+                "tier": tier,
+                "status": run_status,
+                "decision": decision,
+                "payload": payload,
+                "started_at": started_at,
+                "finished_at": finished_at,
+                "updated_at": updated_at,
+            }
+            self._rows = []
+            return
+        if normalized.startswith("select payload from acceptance_runs where run_id"):
+            row = self.database.acceptance_runs.get(params[0])
+            self._rows = [{"payload": row["payload"]}] if row is not None else []
+            return
+        if normalized.startswith("select payload from acceptance_runs"):
+            rows = list(self.database.acceptance_runs.values())
+            param_index = 0
+            if "where tier" in normalized:
+                tier = params[param_index]
+                param_index += 1
+                rows = [row for row in rows if row["tier"] == tier]
+            if "status" in normalized:
+                run_status = params[param_index]
+                param_index += 1
+                rows = [row for row in rows if row["status"] == run_status]
+            rows = sorted(rows, key=lambda item: (item["updated_at"], item["run_id"]), reverse=True)
+            if " limit " in normalized:
+                rows = rows[: int(params[-1])]
+            self._rows = [{"payload": row["payload"]} for row in rows]
             return
         if normalized.startswith("select count(*) as count from internal_users"):
             self._rows = [{"count": len(self.database.internal_users)}]
@@ -1306,6 +1357,9 @@ class PersistenceAdapterTests(TestCase):
                 "term_rule_categories",
                 "term_rules",
                 "term_rule_segments",
+                "term_rule_review_batches",
+                "term_rule_review_items",
+                "term_rule_versions",
                 "translation_term_sets",
                 "translation_term_versions",
                 "translation_terms",
@@ -1314,6 +1368,7 @@ class PersistenceAdapterTests(TestCase):
                 "translation_term_match_traces",
                 "terminology_releases",
                 "audit_events",
+                "acceptance_runs",
                 "internal_users",
                 "document_files",
                 "file_retention_policies",
@@ -1875,6 +1930,7 @@ class PersistenceAdapterTests(TestCase):
         job_file_repository = adapters.job_file_repository
         job_event_repository = adapters.job_event_repository
         audit_event_repository = adapters.audit_event_repository
+        acceptance_run_repository = adapters.acceptance_run_repository
         document_file_repository = adapters.document_file_repository
         cleanup_lock_repository = adapters.file_retention_cleanup_lock_repository
         cleanup_run_history_repository = adapters.file_retention_cleanup_run_history_repository
@@ -1949,6 +2005,59 @@ class PersistenceAdapterTests(TestCase):
         self.assertEqual([event.action for event in audit_events], ["job.retry"])
         self.assertEqual(audit_events[0].reason, "contract")
         self.assertEqual(audit_events[0].details, {"workflow": "retry", "attempt": 1})
+
+        acceptance_base_time = utc_now()
+        unknown_acceptance_run = AcceptanceRunRecord(
+            id="acceptance_p0_unknown",
+            title="P0 Golden Sample",
+            tier="P0",
+            status="unknown",
+            environment="hostdzire",
+            source="golden_sample",
+            report_path_or_url="tests/tmp/golden_sample_runs/run-1/report.md",
+            summary="等待人工签字。",
+            blockers=["admin_manual_review_pending"],
+            updated_at=acceptance_base_time,
+        )
+        failed_acceptance_run = AcceptanceRunRecord(
+            id="acceptance_p1_failed",
+            title="P1 Translation",
+            tier="P1",
+            status="failed",
+            environment="hostdzire",
+            source="p1_translation",
+            summary="翻译 beta gate 未通过。",
+            warnings=["sample_count_low"],
+            updated_at=acceptance_base_time + timedelta(seconds=1),
+        )
+        acceptance_run_repository.save_acceptance_run(unknown_acceptance_run)
+        acceptance_run_repository.save_acceptance_run(failed_acceptance_run)
+        reviewed_unknown_run = AcceptanceRunRecord.model_validate(
+            unknown_acceptance_run.model_copy(
+                update={
+                    "reviewer": "user_admin",
+                    "decision": "needs_changes",
+                    "reviewed_at": acceptance_base_time + timedelta(seconds=2),
+                    "review_note": "保留 unknown，等待补证据。",
+                    "updated_at": acceptance_base_time + timedelta(seconds=2),
+                }
+            ).model_dump(mode="python")
+        )
+        acceptance_run_repository.save_acceptance_run(reviewed_unknown_run)
+        self.assertEqual(acceptance_run_repository.get_acceptance_run("acceptance_p0_unknown").status, "unknown")
+        self.assertEqual(acceptance_run_repository.get_acceptance_run("acceptance_p0_unknown").decision, "needs_changes")
+        self.assertEqual(
+            [record.id for record in acceptance_run_repository.list_acceptance_runs(limit=1)],
+            ["acceptance_p0_unknown"],
+        )
+        self.assertEqual(
+            [record.id for record in acceptance_run_repository.list_acceptance_runs(tier="P1")],
+            ["acceptance_p1_failed"],
+        )
+        self.assertEqual(
+            [record.id for record in acceptance_run_repository.list_acceptance_runs(status="unknown")],
+            ["acceptance_p0_unknown"],
+        )
 
         document_file = DocumentFileRecord(
             id="file_contract",

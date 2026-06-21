@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from app.infrastructure.persistence.sqlite.acceptance import SqliteAcceptanceRunRepository
 from app.infrastructure.persistence.sqlite.audit import SqliteAuditEventRepository
 from app.infrastructure.persistence.sqlite.backend import SqlitePersistenceBackend
 from app.infrastructure.persistence.sqlite.cleanup_locks import SqliteRetentionCleanupLockRepository
@@ -21,6 +22,7 @@ from app.infrastructure.persistence.sqlite.stage_messages import SqliteStageMess
 from app.infrastructure.persistence.sqlite.terminology_releases import SqliteTerminologyReleaseRepository
 
 __all__ = [
+    "SqliteAcceptanceRunRepository",
     "SqliteAuditEventRepository",
     "SqliteDocumentFileRepository",
     "SqliteDocumentJobCallbackMessageStore",

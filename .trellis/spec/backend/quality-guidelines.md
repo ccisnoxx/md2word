@@ -40,6 +40,10 @@ health/readiness, or release behavior.
   dependencies.
 - Use `ApiError` for known API failures with stable status/code/message.
 - Update `docs/api/openapi.json` when API contracts change.
+- When a new or changed API is consumed by the frontend, extend
+  `scripts/ops/check_release.py` frontend-contract checks for the OpenAPI
+  path/schema fields and the matching `frontend/src/api/*` wrapper/type needles;
+  this catches drift such as request field renames before runtime smoke tests.
 
 #### Scenario: Lightweight Document Job Incident Queue
 
@@ -291,6 +295,9 @@ Choose the smallest useful validation:
 
 `scripts/ops/check_release.py` checks OpenAPI freshness, frontend contract
 needles, smoke mock contract needles, and a curated backend unittest target set.
+Frontend contract needles should cover every frontend-consumed API surface that
+has a stable wrapper, including path availability, required schema fields, and
+request body field names that differ from page-local form names.
 
 ### Online And Golden Sample Validation
 

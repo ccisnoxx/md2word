@@ -3,7 +3,7 @@ status: current
 project: md2word_file
 entry_type: endpoint
 source_root: app
-last_scanned: 2026-06-03
+last_scanned: 2026-06-21
 
 openapi:
   doc_path: docs/api/openapi.json
@@ -13,6 +13,44 @@ openapi:
   note: "提交版 OpenAPI JSON 快照；发布前检查必须与当前代码生成结果一致。"
 
 entries:
+  - entry: auth
+    category: endpoint
+    source_files:
+      - app/api/v1/router.py
+      - app/api/v1/routers/auth.py
+      - app/api/v1/routers/auth_schemas.py
+      - app/services/auth/service.py
+      - app/services/auth/permissions.py
+      - docs/api/openapi.json
+    doc_path: docs/api/auth.md
+    status: current
+    note: "内部账号登录、当前用户查询和自助修改密码；托管用户仓库为运行时真源，配置用户只做空仓库 bootstrap。"
+  - entry: users
+    category: endpoint
+    source_files:
+      - app/api/v1/router.py
+      - app/domains/users/router.py
+      - app/domains/users/schemas.py
+      - app/domains/users/service.py
+      - app/domains/users/repository.py
+      - app/services/auth/service.py
+      - docs/api/openapi.json
+    doc_path: docs/api/users.md
+    status: current
+    note: "Admin-only 托管内部用户生命周期管理：列表、创建、更新启停/角色、重置密码和安全响应合同。"
+  - entry: acceptance
+    category: endpoint
+    source_files:
+      - app/api/v1/router.py
+      - app/domains/acceptance/router.py
+      - app/domains/acceptance/schemas.py
+      - app/domains/acceptance/service.py
+      - app/domains/acceptance/repository.py
+      - app/domains/acceptance/defaults.py
+      - docs/api/openapi.json
+    doc_path: docs/api/acceptance.md
+    status: current
+    note: "Admin-only P0/P1/P2 验收证据摘要、默认非通过引导记录和复核 audit 合同。"
   - entry: health
     category: endpoint
     source_files:

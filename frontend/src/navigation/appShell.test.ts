@@ -55,6 +55,7 @@ describe("app shell navigation", () => {
     const adminItemIds = getAppNavigationGroups(adminAccess).flatMap((group) => group.items.map((item) => item.id));
     expect(adminItemIds).toContain("templates");
     expect(adminItemIds).toContain("ops-dashboard");
+    expect(adminItemIds).toContain("acceptance-center");
     expect(adminItemIds).toContain("file-retention");
   });
 
@@ -122,5 +123,12 @@ describe("app shell navigation", () => {
   it("uses review terminology labels only when the permission is present", () => {
     expect(getAppRouteContext(routeFixture("term-proposals"), operatorAccess).breadcrumbs[0]?.label).toBe("术语建议");
     expect(getAppRouteContext(routeFixture("term-proposals"), adminAccess).breadcrumbs[0]?.label).toBe("提案审核");
+  });
+
+  it("maps acceptance center into the system operations navigation context", () => {
+    const context = getAppRouteContext(routeFixture("system-status-acceptance"), adminAccess);
+    expect(context.groupId).toBe("system");
+    expect(context.itemId).toBe("acceptance-center");
+    expect(context.breadcrumbs.map((item) => item.label)).toEqual(["系统状态", "验收中心"]);
   });
 });

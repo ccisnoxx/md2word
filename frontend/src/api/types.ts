@@ -119,6 +119,40 @@ export type HealthMetricsResponse = {
   audit_events: Record<string, number>;
 };
 
+export type AcceptanceRunTier = "P0" | "P1" | "P2" | (string & {});
+export type AcceptanceRunStatus = "passed" | "failed" | "unknown" | (string & {});
+export type AcceptanceReviewDecision = "approved" | "rejected" | "needs_changes";
+
+export type AcceptanceRunResponse = {
+  id: string;
+  title: string;
+  tier: AcceptanceRunTier;
+  status: AcceptanceRunStatus;
+  environment: string;
+  source: string;
+  report_path_or_url: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  summary: string | null;
+  blockers: string[];
+  warnings: string[];
+  reviewer: string | null;
+  decision: AcceptanceReviewDecision | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  updated_at: string;
+};
+
+export type AcceptanceRunListResponse = {
+  items: AcceptanceRunResponse[];
+  total: number;
+};
+
+export type AcceptanceReviewRequest = {
+  decision: AcceptanceReviewDecision;
+  note?: string | null;
+};
+
 export type HealthOpsStatus = "ok" | "watch" | "needs_attention";
 export type HealthOpsAlertSeverity = "info" | "warning" | "critical";
 export type HealthOpsAlertSource = "readiness" | "stage_spool" | "jobs" | "document_job_callbacks";

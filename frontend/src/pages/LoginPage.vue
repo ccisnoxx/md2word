@@ -74,10 +74,10 @@
         <el-alert
           v-if="authNotice"
           class="auth-notice"
-          type="warning"
+          :type="authNotice.type"
           :closable="false"
           show-icon
-          :title="authNotice"
+          :title="authNotice.title"
         />
         <el-form
           ref="formRef"
@@ -159,13 +159,25 @@ const rules: FormRules<typeof form> = {
 
 const authNotice = computed(() => {
   const reason = route.query.auth;
+  if (reason === "password_changed") {
+    return {
+      type: "success" as const,
+      title: "密码已修改，请使用新密码重新登录。",
+    };
+  }
   if (reason === "token_expired") {
-    return "登录已过期，请重新登录。";
+    return {
+      type: "warning" as const,
+      title: "登录已过期，请重新登录。",
+    };
   }
   if (reason === "invalid_token") {
-    return "登录状态无效，请重新登录。";
+    return {
+      type: "warning" as const,
+      title: "登录状态无效，请重新登录。",
+    };
   }
-  return "";
+  return null;
 });
 
 async function submit(): Promise<void> {
