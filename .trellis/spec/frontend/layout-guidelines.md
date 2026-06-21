@@ -89,17 +89,48 @@ Workbench pages inherit entry animations that leave a `transform` on `.app-page`
 ```
 
 ```scss
-:deep(.rule-dialog) {
+:global(.rule-dialog) {
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - 48px);
   max-height: calc(100dvh - 48px);
 }
 
-:deep(.rule-dialog .el-dialog__body) {
+:global(.rule-dialog .el-dialog__body) {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
+}
+```
+
+For dialogs teleported to `body`, selectors that target Element Plus internals
+must be global. Scoped `:deep(.rule-dialog .el-dialog__body)` can look correct
+in source but fail to affect the body-mounted `.el-dialog__body` in browser
+runtime. Use `:global(...)` for the dialog frame, header, body, and footer, and
+leave the page-owned scroll container as a normal scoped class:
+
+```scss
+:global(.rule-dialog) {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 48px);
+}
+
+:global(.rule-dialog .el-dialog__header),
+:global(.rule-dialog .el-dialog__footer) {
+  flex: 0 0 auto;
+}
+
+:global(.rule-dialog .el-dialog__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.rule-dialog-scroll {
+  max-height: min(640px, calc(100dvh - 220px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 ```
 
@@ -122,6 +153,10 @@ For page-level layout changes:
 - Run `npm run build` from `frontend/`.
 - Capture or inspect affected pages at `1440px`, `768px`, and `375px`.
 - Assert no uncontrolled document/body horizontal overflow.
+- For body-mounted dialogs, assert the dialog is mounted outside `main`, the
+  footer is inside the viewport, `.el-dialog__body` computes to
+  `overflow: hidden`, and the page-owned scroll container computes to
+  `overflow-y: auto`.
 - Assert fixed or sticky action bars fit in the viewport.
 - For grid-root workbench pages, assert compact header/queue elements do not stretch beyond their intended content height.
 - For page-level drawers, assert the overlay covers the protected shell, drawer actions are clickable, close removes only the drawer query parameter, and any keyboard shortcuts have visible hints.

@@ -1187,7 +1187,7 @@ watch(() => route.fullPath, () => {
   column-gap: var(--app-space-4);
 }
 
-:deep(.rule-dialog) {
+:global(.rule-dialog) {
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - 48px);
@@ -1195,12 +1195,12 @@ watch(() => route.fullPath, () => {
   margin-bottom: 24px;
 }
 
-:deep(.rule-dialog .el-dialog__header),
-:deep(.rule-dialog .el-dialog__footer) {
+:global(.rule-dialog .el-dialog__header),
+:global(.rule-dialog .el-dialog__footer) {
   flex: 0 0 auto;
 }
 
-:deep(.rule-dialog .el-dialog__body) {
+:global(.rule-dialog .el-dialog__body) {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
