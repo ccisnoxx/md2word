@@ -82,7 +82,7 @@
           <p class="section-subtitle">可查看版本并由 admin 执行 set-default 或 rollback。</p>
         </div>
       </div>
-      <el-table :data="detail?.versions || []" :loading="loading" empty-text="暂无 published version">
+      <el-table class="published-version-table" :data="detail?.versions || []" :loading="loading" empty-text="暂无 published version">
         <el-table-column prop="version" label="版本" width="120" />
         <el-table-column label="默认" width="90">
           <template #default="{ row }">
@@ -92,16 +92,18 @@
         </el-table-column>
         <el-table-column prop="target_language" label="目标语言" width="120" />
         <el-table-column prop="domain" label="领域" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="prompt_version" label="prompt_version" min-width="170" />
-        <el-table-column prop="model" label="model" min-width="150" />
+        <el-table-column prop="prompt_version" label="prompt_version" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="model" label="model" min-width="230" show-overflow-tooltip />
         <el-table-column label="发布时间" width="190">
           <template #default="{ row }">{{ formatDateTime(row.published_at) }}</template>
         </el-table-column>
-        <el-table-column v-if="isAdmin" label="admin 操作" width="210" fixed="right">
+        <el-table-column v-if="isAdmin" label="admin 操作" width="230">
           <template #default="{ row }">
             <RoleGate>
-              <el-button link type="warning" :disabled="row.is_default" @click="setDefault(row.version)">设默认</el-button>
-              <el-button link type="danger" @click="rollback(row.version)">Rollback</el-button>
+              <span class="version-actions">
+                <el-button link type="warning" :disabled="row.is_default" @click="setDefault(row.version)">设默认</el-button>
+                <el-button link type="danger" @click="rollback(row.version)">Rollback</el-button>
+              </span>
             </RoleGate>
           </template>
         </el-table-column>
@@ -325,6 +327,8 @@ onMounted(() => {
 <style scoped lang="scss">
 .translation-profiles-page {
   display: grid;
+  align-content: start;
+  grid-auto-rows: max-content;
   gap: var(--app-space-4);
 }
 
@@ -338,5 +342,21 @@ onMounted(() => {
   .profile-grid {
     grid-template-columns: 1fr;
   }
+}
+
+:deep(.published-version-table .cell) {
+  min-width: 0;
+}
+
+:deep(.published-version-table .version-actions) {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--app-space-2);
+  max-width: 100%;
+}
+
+:deep(.published-version-table .version-actions .el-button + .el-button) {
+  margin-left: 0;
 }
 </style>

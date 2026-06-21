@@ -24,7 +24,7 @@
     />
 
     <el-card class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
-      <el-table :data="templates" :loading="loading" empty-text="暂无模板">
+      <el-table class="word-style-table" :data="templates" :loading="loading" empty-text="暂无模板">
         <el-table-column prop="id" label="模板 ID" min-width="170">
           <template #default="{ row }">
             <router-link :to="`/settings/word-page-styles/${row.id}`" class="mono">{{ row.id }}</router-link>
@@ -37,20 +37,20 @@
             <span v-else class="muted">否</span>
           </template>
         </el-table-column>
-        <el-table-column label="样式配置文件" min-width="210">
+        <el-table-column label="样式配置文件" min-width="220" show-overflow-tooltip>
           <template #default="{ row }">
             <span>{{ row.layout_config.file_name || "-" }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="模板文档" min-width="190">
+        <el-table-column label="模板文档" min-width="240" show-overflow-tooltip>
           <template #default="{ row }">
             <router-link :to="`/settings/templates/${row.id}`">{{ row.template.file_name || "查看文档" }}</router-link>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="170" fixed="right">
+        <el-table-column label="操作" width="150">
           <template #default="{ row }">
-            <el-button link type="primary" :icon="Brush" @click="$router.push(`/settings/word-page-styles/${row.id}`)">
-              配置页面样式
+            <el-button class="row-action-button" link type="primary" :icon="Brush" @click="$router.push(`/settings/word-page-styles/${row.id}`)">
+              配置样式
             </el-button>
           </template>
         </el-table-column>
@@ -92,6 +92,17 @@ onMounted(() => {
 <style scoped lang="scss">
 .word-style-list-page {
   display: grid;
+  align-content: start;
+  grid-auto-rows: max-content;
   gap: var(--app-space-4);
+}
+
+:deep(.word-style-table .cell) {
+  min-width: 0;
+}
+
+:deep(.word-style-table .row-action-button) {
+  max-width: 100%;
+  white-space: nowrap;
 }
 </style>
