@@ -2,7 +2,7 @@
 <template>
   <section class="terminology-workbench-nav app-panel-card" aria-label="术语工作台子视图">
     <div class="workbench-copy">
-      <p class="workbench-kicker">Terminology Governance</p>
+      <p class="workbench-kicker">术语治理</p>
       <h2>术语工作台</h2>
       <p>{{ activeDescription }}</p>
     </div>
@@ -58,21 +58,21 @@ const options = computed(() => [
   {
     key: "draft-publish" as const,
     label: "草稿与发布",
-    helper: "draft / diff / preflight / publish",
+    helper: "草稿 / 差异 / 发布前检查 / 发布",
     to: draftPublishRoute.value,
   },
   {
     key: "live-rules" as const,
     label: "当前生效规则",
-    helper: "live inspection / simulation",
+    helper: "生效规则检查 / 模拟",
     to: liveRulesRoute.value,
   },
 ]);
 
 const activeDescription = computed(() =>
   props.active === "draft-publish"
-    ? "生产修改进入 draft，发布或切默认后才影响后续默认版本和 runtime 同步。"
-    : "当前视图只读检查 live runtime store，用于确认实际转换路径正在消费的规则。",
+    ? "生产修改进入草稿，发布或切默认后才影响后续默认版本和运行时同步。"
+    : "当前视图只读检查运行时生效规则，用于确认实际转换路径正在消费的规则。",
 );
 </script>
 

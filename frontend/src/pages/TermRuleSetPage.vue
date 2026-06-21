@@ -4,9 +4,9 @@
   <main class="term-rule-set-page app-page" aria-labelledby="term-rule-set-title">
     <section class="page-heading app-page-header app-page-shell app-page-shell--wide">
       <div>
-        <p class="page-kicker">Term Rule Set</p>
+        <p class="page-kicker">术语规则集</p>
         <h1 id="term-rule-set-title" class="page-title">术语规则集</h1>
-        <p class="page-description">维护 draft 规则，查看 diff 和发布前校验；发布或切默认后才影响后续默认版本。</p>
+        <p class="page-description">维护草稿规则，查看差异和发布前校验；发布或切默认后才影响后续默认版本。</p>
       </div>
       <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
     </section>
@@ -33,65 +33,60 @@
       show-icon
     >
       <div class="governance-context-body">
-        <span>proposal: {{ governanceProposalId || "-" }}</span>
-        <span>source_term: {{ governanceSourceTerm || "-" }}</span>
-        <span>target_rule: {{ governanceTargetRuleId || "-" }}</span>
-        <el-button link type="primary" @click="returnToProposalReview">返回 proposal 审核页</el-button>
+        <span>建议 ID：{{ governanceProposalId || "-" }}</span>
+        <span>源术语：{{ governanceSourceTerm || "-" }}</span>
+        <span>目标规则：{{ governanceTargetRuleId || "-" }}</span>
+        <el-button link type="primary" @click="returnToProposalReview">返回建议审核页</el-button>
       </div>
     </el-alert>
 
-    <section v-if="!unavailable" class="rule-set-grid app-page-shell app-page-shell--wide">
+    <section v-if="!unavailable" class="rule-set-control app-page-shell app-page-shell--wide">
       <el-card class="app-panel-card" shadow="never">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">规则集选择</h2>
-            <p class="section-subtitle">按现有规则集管理，不新建规则集。</p>
+        <div class="rule-set-control-grid">
+          <div class="rule-set-select-block">
+            <span class="control-label">规则集</span>
+            <el-select v-model="selectedSetId" :disabled="loading" placeholder="选择规则集" @change="loadSelectedSet">
+              <el-option v-for="item in sets" :key="item.id" :label="item.id" :value="item.id" />
+            </el-select>
+            <small>按现有规则集管理，不新建规则集。</small>
+          </div>
+          <dl class="compact-summary" aria-label="草稿摘要">
+            <div><dt>基线版本</dt><dd>{{ draft?.base_version || "-" }}</dd></div>
+            <div><dt>规则总数</dt><dd>{{ draft?.rule_count ?? "-" }}</dd></div>
+            <div><dt>启用规则</dt><dd>{{ draft?.enabled_rule_count ?? "-" }}</dd></div>
+            <div>
+              <dt>快照哈希</dt>
+              <dd>
+                <el-tooltip v-if="draft?.snapshot_hash" :content="draft.snapshot_hash" placement="top">
+                  <span class="mono">{{ draftSnapshotShort }}</span>
+                </el-tooltip>
+                <span v-else>-</span>
+              </dd>
+            </div>
+          </dl>
+          <div class="preflight-compact">
+            <div class="preflight-heading">
+              <span class="control-label">发布前检查</span>
+              <el-tag :type="preflightStatusType" effect="plain">
+                {{ preflightStatusLabel }}
+              </el-tag>
+            </div>
+            <dl class="preflight-counts">
+              <div><dt>错误</dt><dd>{{ preflightReport?.summary.error_count ?? "-" }}</dd></div>
+              <div><dt>告警</dt><dd>{{ preflightReport?.summary.warning_count ?? "-" }}</dd></div>
+              <div><dt>冲突</dt><dd>{{ preflightReport?.summary.conflict_count ?? "-" }}</dd></div>
+            </dl>
+            <RoleGate>
+              <el-button
+                type="primary"
+                :disabled="!selectedSetId || Boolean(preflightReport?.blocking)"
+                @click="openPublishDialog"
+              >
+                发布草稿
+              </el-button>
+            </RoleGate>
           </div>
         </div>
-        <el-select v-model="selectedSetId" :disabled="loading" placeholder="选择规则集" @change="loadSelectedSet">
-          <el-option v-for="item in sets" :key="item.id" :label="item.id" :value="item.id" />
-        </el-select>
-      </el-card>
-
-      <el-card class="app-panel-card" shadow="never">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">Draft 摘要</h2>
-            <p class="section-subtitle">结构化编辑只修改 draft，不刷新 runtime YAML。</p>
-          </div>
-          <el-tag v-if="draft?.snapshot_hash" effect="plain" class="mono">{{ draft.snapshot_hash }}</el-tag>
-        </div>
-        <dl class="summary-list">
-          <div><dt>base version</dt><dd>{{ draft?.base_version || "-" }}</dd></div>
-          <div><dt>rule_count</dt><dd>{{ draft?.rule_count ?? "-" }}</dd></div>
-          <div><dt>enabled_rule_count</dt><dd>{{ draft?.enabled_rule_count ?? "-" }}</dd></div>
-        </dl>
-      </el-card>
-
-      <el-card class="app-panel-card" shadow="never">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">Preflight</h2>
-            <p class="section-subtitle">Blocking errors 会阻止发布。</p>
-          </div>
-          <el-tag :type="preflightStatusType" effect="plain">
-            {{ preflightStatusLabel }}
-          </el-tag>
-        </div>
-        <dl class="summary-list">
-          <div><dt>errors</dt><dd>{{ preflightReport?.summary.error_count ?? "-" }}</dd></div>
-          <div><dt>warnings</dt><dd>{{ preflightReport?.summary.warning_count ?? "-" }}</dd></div>
-          <div><dt>conflicts</dt><dd>{{ preflightReport?.summary.conflict_count ?? "-" }}</dd></div>
-        </dl>
-        <RoleGate>
-          <el-button
-            type="primary"
-            :disabled="!selectedSetId || Boolean(preflightReport?.blocking)"
-            @click="openPublishDialog"
-          >
-            发布 draft
-          </el-button>
-        </RoleGate>
       </el-card>
     </section>
 
@@ -280,13 +275,20 @@ const publishRules: FormRules = {
 };
 
 const ruleRules: FormRules = {
-  source_term: [{ required: true, message: "请填写 source term", trigger: "blur" }],
+  source_term: [{ required: true, message: "请填写源术语", trigger: "blur" }],
   category_id: [{ required: true, message: "请选择分类", trigger: "change" }],
 };
 
 const categoryMap = computed(() =>
   Object.fromEntries(categories.value.map((category) => [category.id, category.name])),
 );
+const draftSnapshotShort = computed(() => {
+  const snapshotHash = draft.value?.snapshot_hash;
+  if (!snapshotHash) {
+    return "-";
+  }
+  return snapshotHash.length > 22 ? `${snapshotHash.slice(0, 22)}…` : snapshotHash;
+});
 const governanceProposalId = computed(() => queryString("proposal_id"));
 const governanceTargetRuleId = computed(() => queryString("target_rule_id"));
 const governanceSourceTerm = computed(() => queryString("source_term"));
@@ -297,9 +299,9 @@ const governanceContextVisible = computed(() =>
 
 const ruleDialogTitle = computed(() => {
   if (ruleDialog.mode === "edit") {
-    return "编辑 draft rule";
+    return "编辑草稿规则";
   }
-  return ruleDialog.variant === "advanced" ? "新增高级 draft rule" : "新增 draft rule";
+  return ruleDialog.variant === "advanced" ? "新增高级草稿规则" : "新增草稿规则";
 });
 
 const preflightStatusLabel = computed(() => {
@@ -487,7 +489,7 @@ async function handleDraftMutationError(caught: unknown): Promise<void> {
   const normalized = normalizeApiError(caught);
   error.value = normalized;
   if (normalized.status === 409 && normalized.code === "draft_snapshot_conflict") {
-    ElMessage.warning("当前 draft 已被其他修改更新，已刷新最新内容，请重新确认后保存。");
+    ElMessage.warning("当前草稿已被其他修改更新，已刷新最新内容，请重新确认后保存。");
     await refreshAfterDraftMutation();
   }
 }
@@ -547,7 +549,7 @@ async function saveRule(): Promise<void> {
       ruleDialog.mode === "create"
         ? await termRuleSetsApi.createDraftRule(selectedSetId.value, payload)
         : await termRuleSetsApi.updateDraftRule(selectedSetId.value, ruleDialog.ruleId, payload);
-    ElMessage.success(ruleDialog.mode === "create" ? "Draft rule 已新增。" : "Draft rule 已保存。");
+    ElMessage.success(ruleDialog.mode === "create" ? "草稿规则已新增。" : "草稿规则已保存。");
     ruleDialog.visible = false;
     await refreshAfterDraftMutation(response.draft);
   } catch (caught) {
@@ -569,7 +571,7 @@ async function toggleRule(rule: TermRuleResponse): Promise<void> {
       expected_snapshot_hash: currentDraftSnapshotHash(),
       enabled: !rule.enabled,
     });
-    ElMessage.success(rule.enabled ? "Draft rule 已停用。" : "Draft rule 已启用。");
+    ElMessage.success(rule.enabled ? "草稿规则已停用。" : "草稿规则已启用。");
     await refreshAfterDraftMutation(response.draft);
   } catch (caught) {
     await handleDraftMutationError(caught);
@@ -585,10 +587,10 @@ async function deleteRule(rule: TermRuleResponse): Promise<void> {
   }
   try {
     await ElMessageBox.confirm(
-      "该操作只会从当前 draft 移除规则，不会删除任何文件或历史 published version。",
+      "该操作只会从当前草稿移除规则，不会删除任何文件或历史已发布版本。",
       `删除 ${rule.source_term}`,
       {
-        confirmButtonText: "删除 draft rule",
+        confirmButtonText: "删除草稿规则",
         cancelButtonText: "取消",
         type: "warning",
       },
@@ -600,7 +602,7 @@ async function deleteRule(rule: TermRuleResponse): Promise<void> {
   error.value = null;
   try {
     const response = await termRuleSetsApi.deleteDraftRule(selectedSetId.value, rule.id, currentDraftSnapshotHash());
-    ElMessage.success("Draft rule 已删除。");
+    ElMessage.success("草稿规则已删除。");
     await refreshAfterDraftMutation(response.draft);
   } catch (caught) {
     await handleDraftMutationError(caught);
@@ -644,7 +646,7 @@ async function publishDraft(): Promise<void> {
       make_default: true,
       publish_reason: publishDialog.form.publish_reason,
     });
-    ElMessage.success("Term Rule Set draft 已发布。");
+    ElMessage.success("术语规则集草稿已发布。");
     publishDialog.visible = false;
     await loadAll();
   } catch (caught) {
@@ -665,7 +667,7 @@ async function setDefault(version: string): Promise<void> {
     return;
   }
   try {
-    await ElMessageBox.confirm("将该 published version 切换为默认术语规则集版本。", `设默认 ${version}`, {
+    await ElMessageBox.confirm("将该已发布版本切换为默认术语规则集版本。", `设默认 ${version}`, {
       confirmButtonText: "设默认",
       cancelButtonText: "取消",
       type: "warning",
@@ -683,14 +685,14 @@ async function setDefault(version: string): Promise<void> {
   }
 }
 
-// Rollback 只切默认指针到指定 published version。
+// 回滚只切默认指针到指定 published version。
 async function rollback(version: string): Promise<void> {
   if (!selectedSetId.value) {
     return;
   }
   try {
-    await ElMessageBox.confirm("Rollback 会基于该版本恢复规则集，请确认这是已发布版本。", `Rollback ${version}`, {
-      confirmButtonText: "Rollback",
+    await ElMessageBox.confirm("回滚会基于该版本恢复规则集，请确认这是已发布版本。", `回滚 ${version}`, {
+      confirmButtonText: "回滚",
       cancelButtonText: "取消",
       type: "warning",
     });
@@ -700,7 +702,7 @@ async function rollback(version: string): Promise<void> {
   error.value = null;
   try {
     await termRuleSetsApi.rollback(selectedSetId.value, { version });
-    ElMessage.success("已完成 rollback。");
+    ElMessage.success("已完成回滚。");
     await loadAll();
   } catch (caught) {
     error.value = normalizeApiError(caught);
@@ -719,7 +721,7 @@ async function saveYamlDraft(): Promise<void> {
       expected_snapshot_hash: currentDraftSnapshotHash(),
       yaml_text: yamlText.value,
     });
-    ElMessage.success("YAML draft 已保存。");
+    ElMessage.success("YAML 草稿已保存。");
     await refreshAfterDraftMutation(response);
   } catch (caught) {
     await handleDraftMutationError(caught);
@@ -763,10 +765,72 @@ watch(() => route.fullPath, () => {
   gap: var(--app-space-4);
 }
 
-.rule-set-grid {
+.rule-set-control-grid {
   display: grid;
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr) minmax(260px, 340px);
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr) minmax(260px, 340px);
+  align-items: start;
   gap: var(--app-space-4);
+}
+
+.rule-set-select-block,
+.preflight-compact {
+  display: grid;
+  gap: var(--app-space-2);
+}
+
+.rule-set-select-block small {
+  color: var(--app-color-text-muted);
+  line-height: 1.5;
+}
+
+.control-label {
+  color: var(--app-color-text-muted);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.compact-summary,
+.preflight-counts {
+  display: grid;
+  gap: var(--app-space-2);
+  margin: 0;
+}
+
+.compact-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.compact-summary div,
+.preflight-counts div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.compact-summary dt,
+.preflight-counts dt {
+  color: var(--app-color-text-muted);
+  font-size: 12px;
+}
+
+.compact-summary dd,
+.preflight-counts dd {
+  min-width: 0;
+  margin: 0;
+  font-weight: 650;
+  word-break: break-word;
+}
+
+.preflight-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--app-space-2);
+}
+
+.preflight-counts {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .governance-context-alert {
@@ -780,30 +844,19 @@ watch(() => route.fullPath, () => {
   align-items: center;
 }
 
-.summary-list {
-  display: grid;
-  gap: var(--app-space-2);
-  margin: 0 0 var(--app-space-4);
-}
-
-.summary-list div {
-  display: grid;
-  grid-template-columns: 150px minmax(0, 1fr);
-  gap: var(--app-space-2);
-}
-
-.summary-list dt {
-  color: var(--app-color-text-muted);
-}
-
-.summary-list dd {
-  margin: 0;
-  font-weight: 650;
-  word-break: break-word;
-}
-
 @media (max-width: 1120px) {
-  .rule-set-grid {
+  .rule-set-control-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .compact-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .compact-summary,
+  .preflight-counts {
     grid-template-columns: 1fr;
   }
 }

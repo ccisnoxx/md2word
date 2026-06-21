@@ -41,7 +41,7 @@ describe("TermRuleSetPage advanced draft-rule creation", () => {
   it("opens advanced creation with preset format segments and custom render fields", () => {
     expect(formSource).toContain('export type RuleDialogVariant = "basic" | "advanced";');
     expect(formSource).toMatch(/variant === "advanced"[\s\S]*render_type: "subscript"[\s\S]*render_type: "superscript"/);
-    expect(source).toContain('return ruleDialog.variant === "advanced" ? "新增高级 draft rule" : "新增 draft rule";');
+    expect(source).toContain('return ruleDialog.variant === "advanced" ? "新增高级草稿规则" : "新增草稿规则";');
     expect(dialogSource).toContain('v-model="form.custom_markdown"');
     expect(dialogSource).toContain('v-model="form.custom_html"');
   });
@@ -65,8 +65,11 @@ describe("TermRuleSetPage draft snapshot guard", () => {
 describe("TermRuleSetPage governance reports", () => {
   it("keeps diff and preflight display logic outside the page component", () => {
     expect(source).toMatch(/<TermRuleGovernanceReports[\s\S]*:diff-report="diffReport"[\s\S]*@refresh="loadGovernanceReports"/);
-    expect(governanceSource).toContain("Draft diff");
+    expect(governanceSource).toContain("草稿差异");
     expect(governanceSource).toContain("发布前校验");
+    expect(governanceSource).toContain("草稿将移除");
+    expect(governanceSource).toContain("pagedDiffItems");
+    expect(governanceSource).toContain("diffFilters.pageSize");
     expect(governanceSource).toContain("termRuleDiffCounters");
     expect(governanceSource).toContain("termRulePreflightFindings");
     expect(governanceDisplaySource).toContain("termRulePreflightStatusLabel");
@@ -78,7 +81,7 @@ describe("TermRuleSetPage configuration management panels", () => {
   it("keeps published-version and YAML fallback display outside the page component", () => {
     expect(source).toMatch(/<TermRulePublishedVersionsPanel[\s\S]*@set-default="setDefault"[\s\S]*@rollback="rollback"/);
     expect(source).toMatch(/<TermRuleYamlFallbackPanel[\s\S]*v-model:yaml-text="yamlText"[\s\S]*@save="saveYamlDraft"/);
-    expect(versionsSource).toContain("Published versions");
+    expect(versionsSource).toContain("已发布版本");
     expect(versionsSource).toContain("emit('set-default', row.version)");
     expect(versionsSource).toContain("emit('rollback', row.version)");
     expect(yamlSource).toContain("YAML 高级编辑兜底");
@@ -90,9 +93,9 @@ describe("TermRuleSetPage publish and proposal review panels", () => {
   it("keeps proposal review display and publish dialog markup outside the page component", () => {
     expect(source).toMatch(/<TermRuleApprovedProposalsPanel[\s\S]*@select="openApprovedProposal"/);
     expect(source).toMatch(/<TermRulePublishDialog[\s\S]*v-model:visible="publishDialog\.visible"[\s\S]*@publish="publishDraft"/);
-    expect(proposalsSource).toContain("已 approve 待核对 proposals");
+    expect(proposalsSource).toContain("已通过待核对建议");
     expect(proposalsSource).toContain("TermProposalTable");
-    expect(publishSource).toContain("发布 Term Rule Set draft");
+    expect(publishSource).toContain("发布术语规则集草稿");
     expect(publishSource).toContain("termRulePreflightFindings");
     expect(publishSource).toContain("defineExpose({ validate })");
   });

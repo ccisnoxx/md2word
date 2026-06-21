@@ -1,12 +1,12 @@
 <!-- File: frontend/src/components/TermRulePublishDialog.vue -->
 <!-- Purpose: Render the Term Rule Set publish confirmation dialog and expose form validation. -->
 <template>
-  <el-dialog v-model="visible" title="发布 Term Rule Set draft" width="640px">
+  <el-dialog v-model="visible" title="发布术语规则集草稿" width="640px">
     <el-alert
       v-if="preflightReport?.blocking"
       class="dialog-alert"
       type="error"
-      title="当前 draft 存在 blocking preflight finding，不能发布。"
+      title="当前草稿存在阻断项，不能发布。"
       :closable="false"
       show-icon
     />
@@ -14,7 +14,7 @@
       v-else-if="preflightReport && preflightReport.summary.warning_count > 0"
       class="dialog-alert"
       type="warning"
-      title="当前 draft 存在 warning，发布前请确认影响。"
+      title="当前草稿存在告警，发布前请确认影响。"
       :closable="false"
       show-icon
     />
@@ -25,8 +25,10 @@
       class="dialog-findings"
       max-height="220"
     >
-      <el-table-column prop="severity" label="级别" width="90" />
-      <el-table-column prop="code" label="Code" width="190" show-overflow-tooltip />
+      <el-table-column label="级别" width="90">
+        <template #default="{ row }">{{ termRuleFindingSeverityLabel(row.severity) }}</template>
+      </el-table-column>
+      <el-table-column prop="code" label="代码" width="190" show-overflow-tooltip />
       <el-table-column prop="message" label="说明" min-width="220" show-overflow-tooltip />
     </el-table>
     <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
@@ -53,7 +55,10 @@ import { computed, ref } from "vue";
 import type { FormInstance, FormRules } from "element-plus";
 
 import type { TermRuleSetPreflightResponse } from "@/api/types";
-import { termRulePreflightFindings } from "@/composables/useTermRuleGovernanceDisplay";
+import {
+  termRuleFindingSeverityLabel,
+  termRulePreflightFindings,
+} from "@/composables/useTermRuleGovernanceDisplay";
 
 export type TermRulePublishFormState = {
   publish_reason: string;

@@ -12,7 +12,7 @@
   >
     <div class="rule-dialog-scroll">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="130px">
-        <el-form-item label="Source term" prop="source_term">
+        <el-form-item label="源术语" prop="source_term">
           <el-input v-model="form.source_term" placeholder="例如 VIN" />
         </el-form-item>
         <el-form-item label="分类" prop="category_id">
@@ -20,37 +20,37 @@
             <el-option v-for="category in categories" :key="category.id" :label="category.name" :value="category.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="Segments" prop="segments">
+        <el-form-item label="术语片段" prop="segments">
           <TermSegmentEditor v-model="form.segments" />
         </el-form-item>
         <el-form-item label="预览">
           <TermPreview :segments="form.segments" />
         </el-form-item>
         <div class="rule-form-grid">
-          <el-form-item label="Scope" prop="apply_scope">
+          <el-form-item label="适用范围" prop="apply_scope">
             <el-select v-model="form.apply_scope">
-              <el-option label="Both" value="both" />
-              <el-option label="Markdown" value="markdown" />
-              <el-option label="Table" value="table" />
+              <el-option label="正文和表格" value="both" />
+              <el-option label="仅正文 Markdown" value="markdown" />
+              <el-option label="仅表格" value="table" />
             </el-select>
           </el-form-item>
-          <el-form-item label="Priority" prop="priority">
+          <el-form-item label="优先级" prop="priority">
             <el-input-number v-model="form.priority" :min="0" :max="10000" />
           </el-form-item>
-          <el-form-item label="Case sensitive">
+          <el-form-item label="区分大小写">
             <el-switch v-model="form.case_sensitive" />
           </el-form-item>
           <el-form-item label="启用">
             <el-switch v-model="form.enabled" />
           </el-form-item>
         </div>
-        <el-form-item label="Custom markdown">
+        <el-form-item label="自定义 Markdown">
           <el-input v-model="form.custom_markdown" clearable />
         </el-form-item>
-        <el-form-item label="Custom HTML">
+        <el-form-item label="自定义 HTML">
           <el-input v-model="form.custom_html" clearable />
         </el-form-item>
-        <el-form-item label="Notes">
+        <el-form-item label="备注">
           <el-input v-model="form.notes" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>

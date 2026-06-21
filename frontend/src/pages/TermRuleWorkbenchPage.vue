@@ -3,9 +3,9 @@
   <main class="term-rule-workbench-page app-page" aria-labelledby="term-rule-workbench-title">
     <section class="page-heading app-page-header app-page-shell app-page-shell--wide">
       <div>
-        <p class="page-kicker">Term Rule Workbench</p>
+        <p class="page-kicker">术语规则工作台</p>
         <h1 id="term-rule-workbench-title" class="page-title">术语规则检查</h1>
-        <p class="page-description">只读查看当前 live runtime store，并用模拟接口检查文本渲染结果。</p>
+        <p class="page-description">只读查看当前运行时生效规则，并用模拟接口检查文本渲染结果。</p>
       </div>
       <div class="page-actions app-action-row">
         <el-tooltip
@@ -46,7 +46,7 @@
         <div class="section-header">
           <div>
             <h2 class="section-title">分类概览</h2>
-            <p class="section-subtitle">来自当前 live term rules store。</p>
+            <p class="section-subtitle">来自当前运行时生效规则。</p>
           </div>
         </div>
         <el-table :data="categories" :loading="loading" empty-text="暂无分类" size="small">
@@ -85,7 +85,7 @@
             v-model="filters.keyword"
             clearable
             class="keyword-input"
-            placeholder="搜索 source term"
+            placeholder="搜索源术语"
             @keyup.enter="searchRules"
           />
           <el-button type="primary" :icon="Search" :loading="loading" @click="searchRules">搜索</el-button>
@@ -93,7 +93,7 @@
         </div>
 
         <el-table :data="rules" :loading="loading" empty-text="暂无规则" class="rule-table">
-          <el-table-column prop="source_term" label="Source term" min-width="150" show-overflow-tooltip />
+          <el-table-column prop="source_term" label="源术语" min-width="150" show-overflow-tooltip />
           <el-table-column label="预览" min-width="150">
             <template #default="{ row }">
               <TermPreview :segments="row.segments" />
@@ -107,8 +107,10 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="apply_scope" label="Scope" width="116" />
-          <el-table-column prop="priority" label="Priority" width="94" />
+          <el-table-column label="适用范围" width="116">
+            <template #default="{ row }">{{ applyScopeLabel(row.apply_scope) }}</template>
+          </el-table-column>
+          <el-table-column prop="priority" label="优先级" width="94" />
           <el-table-column label="状态" width="88">
             <template #default="{ row }">
               <el-tag :type="row.enabled ? 'success' : 'info'" effect="plain">
@@ -141,7 +143,7 @@
       <div class="section-header">
         <div>
           <h2 class="section-title">规则模拟</h2>
-          <p class="section-subtitle">结果按文本展示，HTML preview 不直接渲染。</p>
+          <p class="section-subtitle">结果按文本展示，HTML 预览不直接渲染。</p>
         </div>
       </div>
       <ApiErrorAlert :error="simulationError" />
@@ -153,15 +155,15 @@
       </div>
       <div v-if="simulationResult" class="simulation-grid">
         <section>
-          <h3>Original</h3>
+          <h3>原文</h3>
           <pre class="app-technical-block">{{ simulationResult.original }}</pre>
         </section>
         <section>
-          <h3>Markdown preview</h3>
+          <h3>Markdown 预览</h3>
           <pre class="app-technical-block">{{ simulationResult.markdown_preview }}</pre>
         </section>
         <section>
-          <h3>HTML preview</h3>
+          <h3>HTML 预览</h3>
           <pre class="app-technical-block">{{ simulationResult.html_preview }}</pre>
         </section>
       </div>
@@ -172,38 +174,38 @@
       <div v-else-if="detailDrawer.rule" class="rule-detail">
         <el-descriptions :column="1" border>
           <el-descriptions-item label="ID">{{ detailDrawer.rule.id }}</el-descriptions-item>
-          <el-descriptions-item label="Source term">{{ detailDrawer.rule.source_term }}</el-descriptions-item>
+          <el-descriptions-item label="源术语">{{ detailDrawer.rule.source_term }}</el-descriptions-item>
           <el-descriptions-item label="分类">{{ detailDrawer.rule.category_name }}</el-descriptions-item>
           <el-descriptions-item label="规则域">{{ scopeLabel(detailDrawer.rule) }}</el-descriptions-item>
           <el-descriptions-item label="版本">{{ detailDrawer.rule.current_version }}</el-descriptions-item>
-          <el-descriptions-item label="Scope">{{ detailDrawer.rule.apply_scope }}</el-descriptions-item>
-          <el-descriptions-item label="Case sensitive">
+          <el-descriptions-item label="适用范围">{{ applyScopeLabel(detailDrawer.rule.apply_scope) }}</el-descriptions-item>
+          <el-descriptions-item label="区分大小写">
             {{ detailDrawer.rule.case_sensitive ? "是" : "否" }}
           </el-descriptions-item>
-          <el-descriptions-item label="Priority">{{ detailDrawer.rule.priority }}</el-descriptions-item>
+          <el-descriptions-item label="优先级">{{ detailDrawer.rule.priority }}</el-descriptions-item>
           <el-descriptions-item label="状态">{{ detailDrawer.rule.enabled ? "启用" : "停用" }}</el-descriptions-item>
         </el-descriptions>
 
         <section class="detail-section">
-          <h3>Segments</h3>
+          <h3>术语片段</h3>
           <TermPreview :segments="detailDrawer.rule.segments" />
           <el-table :data="detailDrawer.rule.segments" size="small" class="segments-table">
-            <el-table-column prop="seq" label="Seq" width="70" />
-            <el-table-column prop="segment_text" label="Text" min-width="180" />
-            <el-table-column prop="render_type" label="Render" width="120" />
+            <el-table-column prop="seq" label="序号" width="70" />
+            <el-table-column prop="segment_text" label="文本" min-width="180" />
+            <el-table-column prop="render_type" label="样式" width="120" />
           </el-table>
         </section>
 
         <section class="detail-section">
-          <h3>Custom markdown</h3>
+          <h3>自定义 Markdown</h3>
           <pre class="app-technical-block">{{ detailDrawer.rule.custom_markdown || "-" }}</pre>
         </section>
         <section class="detail-section">
-          <h3>Custom HTML</h3>
+          <h3>自定义 HTML</h3>
           <pre class="app-technical-block">{{ detailDrawer.rule.custom_html || "-" }}</pre>
         </section>
         <section class="detail-section">
-          <h3>Notes</h3>
+          <h3>备注</h3>
           <p>{{ detailDrawer.rule.notes || "-" }}</p>
         </section>
       </div>
@@ -348,6 +350,15 @@ function searchRules(): void {
 
 function scopeLabel(rule: TermRuleResponse): string {
   return rule.scope_type === "global" ? "全局" : `部门 ${rule.scope_id || "-"}`;
+}
+
+function applyScopeLabel(scope: string): string {
+  const labels: Record<string, string> = {
+    both: "正文+表格",
+    markdown: "正文",
+    table: "表格",
+  };
+  return labels[scope] || scope;
 }
 
 function openFormalRuleDraft(): void {

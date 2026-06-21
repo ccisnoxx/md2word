@@ -90,7 +90,7 @@
               <div>
                 <strong class="mono">{{ activeSegment.id }}</strong>
                 <span>
-                  {{ activeSegment.block_type }} · page {{ translationQaPageLabel(activeSegment.page_index) }} · order
+                  {{ activeSegment.block_type }} · 页 {{ translationQaPageLabel(activeSegment.page_index) }} · 顺序
                   {{ activeSegment.order }}
                 </span>
               </div>
@@ -134,7 +134,7 @@
         <section class="qa-evidence-summary" aria-label="关键证据">
           <header class="qa-evidence-heading">
             <h3>证据文件</h3>
-            <p>保留 DocumentIR、AI 调用日志和调试归档的原始 file id，便于排障复制。</p>
+            <p>保留 DocumentIR、AI 调用日志和调试归档的原始文件 ID，便于排障复制。</p>
           </header>
           <div class="evidence-row">
             <span>DocumentIR</span>
