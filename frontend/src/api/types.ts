@@ -786,6 +786,24 @@ export type DocumentFileResponse = {
   updated_at: string;
 };
 
+export type DocumentFileSummaryResponse = {
+  id: string;
+  tenant_id: string;
+  company_id: string;
+  job_id: string | null;
+  file_type: string;
+  storage_provider: string;
+  original_filename: string;
+  mime_type: string;
+  size_bytes: number;
+  status: string;
+  expires_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  quality_evidence: Record<string, unknown>;
+};
+
 export type FileLibrarySort =
   | "created_at_desc"
   | "created_at_asc"
@@ -1718,7 +1736,7 @@ export type DocumentJobEventListResponse = {
 
 export type DocumentJobFileListResponse = {
   job_id: string;
-  files: DocumentFileResponse[];
+  files: DocumentFileSummaryResponse[];
 };
 
 export type DocumentJobCallbackProblemSummaryResponse = {
@@ -1893,7 +1911,7 @@ export type DocumentJobDownloadUrlResponse = {
   download_url: string;
   method: "GET";
   expires_at: string;
-  file: DocumentFileResponse;
+  file: DocumentFileSummaryResponse;
 };
 
 export type DocumentJobRetryResponse = {

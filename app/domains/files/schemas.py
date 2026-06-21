@@ -46,6 +46,26 @@ class DocumentFileResponse(BaseModel):
     updated_at: datetime
 
 
+class DocumentFileSummaryResponse(BaseModel):
+    """返回面向任务详情和下载签发的安全文件摘要，不暴露对象定位或 raw metadata。"""
+
+    id: str
+    tenant_id: str
+    company_id: str
+    job_id: str | None = None
+    file_type: str
+    storage_provider: str
+    original_filename: str
+    mime_type: str
+    size_bytes: int
+    status: str
+    expires_at: datetime | None = None
+    created_by: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    quality_evidence: dict[str, Any] = Field(default_factory=dict)
+
+
 class FileLibrarySearchItemResponse(BaseModel):
     """返回文件库搜索中的安全文件摘要，不包含对象定位或 raw metadata。"""
 

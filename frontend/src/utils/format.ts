@@ -2,6 +2,7 @@
 // Purpose: 统一任务页面使用的状态文案、展示格式和操作权限判断。
 import type {
   DocumentFileResponse,
+  DocumentFileSummaryResponse,
   DocumentLanguage,
   DocumentJobActionId,
   DocumentJobMode,
@@ -10,6 +11,8 @@ import type {
   DocumentJobStatus,
   TranslationQaStatus,
 } from "@/api/types";
+
+type DocumentJobQualityFile = DocumentFileResponse | DocumentFileSummaryResponse;
 
 export const jobStatusText: Record<DocumentJobStatus, string> = {
   pending: "等待投递",
@@ -315,7 +318,7 @@ export function buildDocumentJobDiagnosticRecommendation(options: {
 
 export function buildDocumentJobQualityEvidence(
   job: DocumentJobResponse,
-  files: DocumentFileResponse[],
+  files: DocumentJobQualityFile[],
 ): DocumentJobQualityEvidenceSummary {
   const resultFile = selectDocumentJobFile(files, "generated_word", job.result_file_id);
   const documentIrFile = selectDocumentJobFile(files, "document_ir", job.document_ir_file_id);
@@ -362,13 +365,16 @@ export function buildDocumentJobQualityEvidence(
   };
 }
 
-export function collectDocumentJobQualityFlags(files: DocumentFileResponse[]): string[] {
+export function collectDocumentJobQualityFlags(files: DocumentJobQualityFile[]): string[] {
   const flags = files
     .filter((file) => file.file_type === "generated_word" || file.file_type === "document_ir")
-    .flatMap((file) => [
-      ...readStringArray(file.metadata.quality_flags),
-      ...readStringArray(file.metadata.layout_quality_flags),
-    ]);
+    .flatMap((file) => {
+      const qualityEvidence = readFileQualityEvidence(file);
+      return [
+        ...readStringArray(qualityEvidence.quality_flags),
+        ...readStringArray(qualityEvidence.layout_quality_flags),
+      ];
+    });
   return Array.from(new Set(flags));
 }
 
@@ -399,10 +405,10 @@ export function documentJobQualityFlagText(flag: string): string {
 }
 
 function selectDocumentJobFile(
-  files: DocumentFileResponse[],
+  files: DocumentJobQualityFile[],
   fileType: string,
   preferredId?: string | null,
-): DocumentFileResponse | null {
+): DocumentJobQualityFile | null {
   if (preferredId) {
     const preferred = files.find((file) => file.id === preferredId && file.file_type === fileType);
     if (preferred) {
@@ -414,11 +420,11 @@ function selectDocumentJobFile(
 
 function buildDocumentJobQualityEvidenceItems(
   job: DocumentJobResponse,
-  resultFile: DocumentFileResponse | null,
-  documentIrFile: DocumentFileResponse | null,
+  resultFile: DocumentJobQualityFile | null,
+  documentIrFile: DocumentJobQualityFile | null,
 ): DocumentJobQualityEvidenceItem[] {
-  const resultMetadata: Record<string, unknown> = resultFile?.metadata || {};
-  const irMetadata: Record<string, unknown> = documentIrFile?.metadata || {};
+  const resultMetadata = resultFile ? readFileQualityEvidence(resultFile) : {};
+  const irMetadata = documentIrFile ? readFileQualityEvidence(documentIrFile) : {};
   const docxQuality = readRecord(resultMetadata.docx_quality);
   const items: DocumentJobQualityEvidenceItem[] = [];
   addEvidenceItem(items, "结果文件", resultFile?.id || job.result_file_id, true);
@@ -442,6 +448,13 @@ function buildDocumentJobQualityEvidenceItems(
   addEvidenceItem(items, "LaTeX 残留", readDisplayValue(docxQuality.latex_residue_count), true);
   addEvidenceItem(items, "Template", readString(resultMetadata.template_version_id) || job.template_version_id, true);
   return items;
+}
+
+function readFileQualityEvidence(file: DocumentJobQualityFile): Record<string, unknown> {
+  if ("quality_evidence" in file) {
+    return file.quality_evidence || {};
+  }
+  return file.metadata || {};
 }
 
 function addEvidenceItem(

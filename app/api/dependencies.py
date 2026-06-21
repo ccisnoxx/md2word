@@ -92,6 +92,18 @@ def require_admin_access(
     require_admin_actor(runtime, authorization, x_admin_token, None)
 
 
+def require_authenticated_or_admin_access(
+    runtime: AppRuntime = Depends(get_runtime),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+) -> None:
+    """允许内部用户 JWT 或 legacy admin token 读取治理资源，禁止匿名访问。"""
+
+    if _optional_jwt_user(runtime, authorization) is not None:
+        return
+    require_admin_actor(runtime, None, x_admin_token, None)
+
+
 def require_admin_actor(
     runtime: AppRuntime = Depends(get_runtime),
     authorization: str | None = Header(default=None, alias="Authorization"),

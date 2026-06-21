@@ -178,9 +178,16 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 - 用途：读取任务事件。
 - 响应：事件列表，包含 `stage`、`level`、`event_type`、`message`、`payload`、`duration_ms` 和 `trace_id`。
 
+### `GET /api/v1/document-jobs/{job_id}/files`
+
+- 用途：读取任务详情页可展示和可签发下载链接的文件摘要。
+- 响应使用安全摘要：包含 `id`、`file_type`、`storage_provider`、`original_filename`、`mime_type`、`size_bytes`、`status`、`expires_at`、创建信息和 `quality_evidence`。
+- 不返回 `bucket`、`object_key`、`checksum_sha256`、`etag`、raw `metadata`、本地路径、文件内容或签名 URL。
+- `quality_evidence` 只对白名单质量字段开放，用于详情页和 Golden Sample 人工复核定位问题。
+
 ### `generated_word.metadata.docx_quality`
 
-成功任务登记 `generated_word` 文件时，会在文件 metadata 中写入轻量 DOCX 结构证据，供详情页和 Golden Sample 人工复核定位问题。该字段是机器线索，不替代 admin 对最终 Word 排版质量的签字。
+成功任务登记 `generated_word` 文件时，会在文件 metadata 中写入轻量 DOCX 结构证据；任务详情和下载签发响应只通过 `quality_evidence` 暴露白名单摘要。该字段是机器线索，不替代 admin 对最终 Word 排版质量的签字。
 
 `generated_word.metadata.quality_flags` 会从 `docx_quality` 派生明确风险项，例如 `docx_quality_unavailable`、`docx_analysis_error`、`docx_no_editable_content`、`docx_image_only_suspected`、`docx_latex_residue:{count}`、`docx_manual_list_markers:{count}`、`docx_plain_toc_entries:{count}`、`docx_unstyled_heading_candidates:{count}` 和 `docx_wide_table_without_landscape:{count}`。这些 flag 只用于让详情页进入“带自动标记的人工复核”状态，不会绕过或替代 admin manual sign-off。
 
@@ -366,7 +373,8 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 ### `GET /api/v1/document-jobs/{job_id}/download-url`
 
 - 用途：为成功任务生成临时下载链接。
-- 响应包含 `download_url`、`method=GET`、`expires_at` 和结果文件 metadata。
+- 响应包含 `download_url`、`method=GET`、`expires_at` 和文件安全摘要。
+- 默认结果文件和显式 `file_id` 下载都会校验文件状态、归属和 `expires_at`；过期文件返回 `409 conflict`。
 - 成功动作写入 `document_job.download_authorize` audit event。
 
 ### `GET /api/v1/document-jobs/{job_id}/download`

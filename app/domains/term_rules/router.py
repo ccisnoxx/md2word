@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.api.dependencies import get_runtime, get_trace_id, require_admin_access, require_admin_actor
+from app.api.dependencies import get_runtime, get_trace_id, require_admin_access, require_admin_actor, require_current_user
 from app.api.errors import bad_request_http_exception, not_found_http_exception
 from app.domains.term_rules.write_guard import ensure_legacy_term_rule_write_allowed
 from app.core.runtime import AppRuntime
@@ -83,6 +83,7 @@ def list_term_rules(
     enabled: bool | None = Query(default=None),
     q: str | None = Query(default=None),
     runtime: AppRuntime = Depends(get_runtime),
+    _user=Depends(require_current_user),
 ) -> TermRuleListResponse:
     items, total = runtime.term_rule_service.query_rules_page(
         category_id=category_id,
@@ -138,7 +139,7 @@ def create_term_rule(
     return _serialize_rule(runtime, rule)
 
 
-@router.get("/export", response_model=RuleExportResponse)
+@router.get("/export", response_model=RuleExportResponse, dependencies=[Depends(require_admin_access)])
 def export_term_rules(
     runtime: AppRuntime = Depends(get_runtime),
 ) -> RuleExportResponse:
@@ -149,6 +150,7 @@ def export_term_rules(
 def get_term_rule(
     rule_id: str,
     runtime: AppRuntime = Depends(get_runtime),
+    _user=Depends(require_current_user),
 ) -> TermRuleResponse:
     try:
         rule = runtime.term_rule_service.get_rule(rule_id)
@@ -211,11 +213,12 @@ def delete_term_rule(
 def simulate_term_rules(
     payload: RuleSimulationRequest,
     runtime: AppRuntime = Depends(get_runtime),
+    _user=Depends(require_current_user),
 ) -> RuleSimulationResponse:
     return RuleSimulationResponse.model_validate(runtime.term_rule_service.simulate(payload.text))
 
 
-@router.post("/import/validate", response_model=TermRuleImportValidationReportResponse)
+@router.post("/import/validate", response_model=TermRuleImportValidationReportResponse, dependencies=[Depends(require_admin_access)])
 def validate_term_rule_import(
     payload: RuleImportRequest,
     runtime: AppRuntime = Depends(get_runtime),

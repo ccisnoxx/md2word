@@ -5,7 +5,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.api.dependencies import get_runtime, get_trace_id, require_admin_access, require_admin_actor
+from app.api.dependencies import (
+    get_runtime,
+    get_trace_id,
+    require_admin_access,
+    require_admin_actor,
+    require_authenticated_or_admin_access,
+)
 from app.api.errors import bad_request_http_exception, not_found_http_exception
 from app.domains.audit.models import ActorContext
 from app.core.runtime import AppRuntime
@@ -137,6 +143,7 @@ def _approved_unpublished_proposal_count(runtime: AppRuntime, term_rule_set_id: 
 @router.get("", response_model=TermRuleSetListResponse)
 def list_term_rule_sets(
     runtime: AppRuntime = Depends(get_runtime),
+    _access=Depends(require_authenticated_or_admin_access),
 ) -> TermRuleSetListResponse:
     return _require_term_rule_set_version_service(runtime).list_sets()
 
@@ -145,6 +152,7 @@ def list_term_rule_sets(
 def get_term_rule_set(
     set_id: str,
     runtime: AppRuntime = Depends(get_runtime),
+    _access=Depends(require_authenticated_or_admin_access),
 ) -> TermRuleSetDetailResponse:
     try:
         return _require_term_rule_set_version_service(runtime).get_set_detail(set_id)
@@ -158,6 +166,7 @@ def get_term_rule_set(
 def get_term_rule_set_draft(
     set_id: str,
     runtime: AppRuntime = Depends(get_runtime),
+    _access=Depends(require_authenticated_or_admin_access),
 ) -> TermRuleSetDraftResponse:
     try:
         return _require_term_rule_set_version_service(runtime).get_draft(set_id)
@@ -174,6 +183,7 @@ def diff_term_rule_set_draft(
     to_ref: str = Query(default="draft", alias="to"),
     include_unchanged: bool = Query(default=False),
     runtime: AppRuntime = Depends(get_runtime),
+    _access=Depends(require_authenticated_or_admin_access),
 ) -> TermRuleSetDiffResponse:
     """返回 Term Rule Set draft 相对基线版本的结构化差异。"""
 
@@ -195,6 +205,7 @@ def preflight_term_rule_set_draft(
     set_id: str,
     base: str = Query(default="default"),
     runtime: AppRuntime = Depends(get_runtime),
+    _access=Depends(require_authenticated_or_admin_access),
 ) -> TermRuleSetPreflightResponse:
     """返回 Term Rule Set draft 的发布前治理校验报告。"""
 
@@ -219,6 +230,7 @@ def list_term_rule_set_draft_rules(
     enabled: bool | None = Query(default=None),
     q: str | None = Query(default=None),
     runtime: AppRuntime = Depends(get_runtime),
+    _access=Depends(require_authenticated_or_admin_access),
 ) -> TermRuleListResponse:
     """分页查询 Term Rule Set draft 内的结构化规则。"""
 
@@ -242,6 +254,7 @@ def get_term_rule_set_draft_rule(
     set_id: str,
     rule_id: str,
     runtime: AppRuntime = Depends(get_runtime),
+    _access=Depends(require_authenticated_or_admin_access),
 ) -> TermRuleResponse:
     """读取 Term Rule Set draft 内的一条结构化规则。"""
 

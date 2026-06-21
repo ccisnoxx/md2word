@@ -377,6 +377,92 @@ Frontend contract needles should cover every frontend-consumed API surface that
 has a stable wrapper, including path availability, required schema fields, and
 request body field names that differ from page-local form names.
 
+## Scenario: Safe Document File Summaries For Job-Facing APIs
+
+### 1. Scope / Trigger
+
+- Trigger: An API response exposes document file metadata to task detail pages,
+  download authorization responses, or other operator-facing surfaces.
+- This is cross-layer because the backend schema, OpenAPI snapshot, frontend
+  hand-written types, task page quality evidence, and regression tests must stay
+  aligned.
+
+### 2. Signatures
+
+- Full internal/admin file metadata schema:
+  `DocumentFileResponse`
+- Operator/job-facing safe schema:
+  `DocumentFileSummaryResponse`
+- Job files response:
+  `GET /api/v1/document-jobs/{job_id}/files -> DocumentJobFileListResponse`
+- Download authorization response:
+  `GET /api/v1/document-jobs/{job_id}/download-url -> DocumentJobDownloadUrlResponse`
+
+### 3. Contracts
+
+- `DocumentFileSummaryResponse` may expose:
+  `id`, `tenant_id`, `company_id`, `job_id`, `file_type`,
+  `storage_provider`, `original_filename`, `mime_type`, `size_bytes`,
+  `status`, `expires_at`, `created_by`, `created_at`, `updated_at`, and
+  `quality_evidence`.
+- It must not expose object location or raw storage metadata:
+  `bucket`, `object_key`, `checksum_sha256`, `etag`, raw `metadata`, local
+  paths, file bytes, or presigned URLs.
+- `quality_evidence` is a whitelist projection for detail-page review only. It
+  may include known quality flags, layout counters, renderer/template labels,
+  and `docx_quality` counters, but must not pass through arbitrary metadata.
+
+### 4. Validation & Error Matrix
+
+- Missing/invalid Bearer token for document job APIs -> `401 unauthorized` /
+  `401 invalid_token`.
+- Job/file ownership mismatch -> `403 forbidden`.
+- File type is not job-downloadable -> `409 conflict`.
+- File status is not `uploaded` -> `409 conflict`.
+- `expires_at <= utc_now()` for default result or explicit `file_id` downloads
+  -> `409 conflict`.
+
+### 5. Good/Base/Bad Cases
+
+- Good: job detail lists `generated_word` with `quality_evidence.docx_quality`
+  and without `object_key`.
+- Base: source PDF download authorization returns a safe file summary and a
+  short-lived `download_url`.
+- Bad: reusing `DocumentFileResponse` in a job-facing response leaks
+  `bucket`, `object_key`, `checksum_sha256`, `etag`, or raw `metadata`.
+
+### 6. Tests Required
+
+- Backend API tests must assert job-facing file payloads do not contain
+  `bucket`, `object_key`, `checksum_sha256`, `etag`, or raw `metadata`.
+- Download tests must cover both explicit `file_id` expiry and default
+  generated Word expiry.
+- OpenAPI must be regenerated after schema changes.
+- Frontend unit/build validation must cover hand-written type changes and
+  quality evidence reading.
+- `scripts/ops/check_release.py` should pass for cross-layer API contract
+  changes.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```python
+return DocumentJobFileListResponse(
+    job_id=job.id,
+    files=[DocumentFileResponse(**file.model_dump(mode="python")) for file in files],
+)
+```
+
+#### Correct
+
+```python
+return DocumentJobFileListResponse(
+    job_id=job.id,
+    files=[_build_document_file_summary_response(file) for file in files],
+)
+```
+
 ### Online And Golden Sample Validation
 
 Local code changes should not automatically run online validation. Production or

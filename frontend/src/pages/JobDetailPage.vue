@@ -663,7 +663,7 @@ import { DataAnalysis, Download, EditPen, Refresh } from "@element-plus/icons-vu
 import { useRoute, useRouter } from "vue-router";
 
 import type {
-  DocumentFileResponse,
+  DocumentFileSummaryResponse,
   DocumentJobActionId,
   DocumentJobCallbackMessageSummaryResponse,
   DocumentJobCloneRequest,
@@ -708,7 +708,7 @@ const auth = useAuthStore();
 const jobId = computed(() => String(route.params.jobId || ""));
 const job = ref<DocumentJobResponse | null>(null);
 const events = ref<DocumentJobEventResponse[]>([]);
-const files = ref<DocumentFileResponse[]>([]);
+const files = ref<DocumentFileSummaryResponse[]>([]);
 const callbackSummary = ref<DocumentJobCallbackMessageSummaryResponse | null>(null);
 const loading = ref(false);
 const eventsLoading = ref(false);
@@ -1456,7 +1456,7 @@ async function handleDownload(target: DocumentJobResponse): Promise<void> {
   }
 }
 
-async function handleFileDownload(file: DocumentFileResponse): Promise<void> {
+async function handleFileDownload(file: DocumentFileSummaryResponse): Promise<void> {
   if (!job.value) {
     return;
   }
@@ -1763,7 +1763,7 @@ function resetPageStateForRouteChange(): void {
   activeTab.value = "overview";
 }
 
-function findJobFile(fileType: string, preferredId?: string | null): DocumentFileResponse | null {
+function findJobFile(fileType: string, preferredId?: string | null): DocumentFileSummaryResponse | null {
   if (preferredId) {
     const preferred = files.value.find((file) => file.id === preferredId && file.file_type === fileType);
     if (preferred) {
@@ -1810,16 +1810,16 @@ function fileTagType(fileType: string): "success" | "warning" | "info" {
   return "info";
 }
 
-function isFileExpired(file: DocumentFileResponse): boolean {
+function isFileExpired(file: DocumentFileSummaryResponse): boolean {
   const expiresAt = parseDate(file.expires_at);
   return Boolean(expiresAt && expiresAt.getTime() <= Date.now());
 }
 
-function canDownloadFile(file: DocumentFileResponse): boolean {
+function canDownloadFile(file: DocumentFileSummaryResponse): boolean {
   return file.status === "uploaded" && !isFileExpired(file);
 }
 
-function fileAvailabilityText(file: DocumentFileResponse): string {
+function fileAvailabilityText(file: DocumentFileSummaryResponse): string {
   if (file.status !== "uploaded") {
     return file.status;
   }
