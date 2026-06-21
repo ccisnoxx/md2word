@@ -15,20 +15,17 @@ from uuid import uuid4
 from app.domains.audit.models import ActorContext
 from app.domains.resources.models import ResourceVersionRecord, ResourceVersionStatus, utc_now
 from app.domains.term_rules.models import (
-    RuleApplyScope,
-    RuleMode,
-    RuleRenderType,
     TermRuleCategoryRecord,
     TermRuleImportValidationFinding,
     TermRuleImportValidationReport,
     TermRuleImportValidationSummary,
     TermRuleRecord,
-    TermRuleSegmentRecord,
     TermRuleScopeType,
     TermRulesStore,
     normalize_term_key,
 )
 from app.domains.term_rules.repository import TermRuleAssetRepositoryProtocol, TermRuleRepositoryProtocol
+from app.domains.term_rules.rule_builder import build_term_rule_record
 from app.domains.term_rules.schemas import (
     TermRuleCreateRequest,
     TermRuleDraftRuleDeleteResponse,
@@ -54,8 +51,6 @@ from app.domains.resources.service import ResourceVersionService
 from app.domains.term_rules.yaml_codec import (
     CURRENT_SCHEMA_VERSION,
     TermRuleYamlCodec,
-    render_segments_html,
-    render_segments_markdown,
 )
 
 
@@ -128,6 +123,15 @@ class TermRuleSetPreflightError(ValueError):
     def __init__(self, report: TermRuleSetPreflightResponse) -> None:
         super().__init__("Term Rule Set 发布前校验未通过。")
         self.report = report
+
+
+class TermRuleSetDraftSnapshotConflictError(RuntimeError):
+    """客户端基于过期 Term Rule Set draft snapshot 提交了变更。"""
+
+    def __init__(self, *, expected_snapshot_hash: str, actual_snapshot_hash: str) -> None:
+        self.expected_snapshot_hash = expected_snapshot_hash
+        self.actual_snapshot_hash = actual_snapshot_hash
+        super().__init__("Term Rule Set draft 已被其他修改更新，请刷新后重试。")
 
 
 class TermRuleSetVersionService:
@@ -308,7 +312,9 @@ class TermRuleSetVersionService:
         """在 Term Rule Set draft 中新增一条规则，并返回新的 draft 元数据。"""
 
         normalized_id = self._require_known_set_id(term_rule_set_id)
-        store = self.get_draft_store(normalized_id)
+        draft_record = self._ensure_draft_record(normalized_id)
+        self._ensure_expected_draft_snapshot(draft_record, payload.expected_snapshot_hash)
+        store = self._store_from_record(draft_record)
         rule_id = self._normalize_optional_id(payload.id) or uuid4().hex
         if any(rule.id == rule_id for rule in store.rules):
             raise ValueError(f"规则 ID 已存在: {rule_id}")
@@ -322,7 +328,7 @@ class TermRuleSetVersionService:
             scope_id=scope_id,
             exclude_rule_id=None,
         )
-        rule = self._build_rule_record(
+        rule = build_term_rule_record(
             rule_id=rule_id,
             category_id=category.id,
             source_term=source_term,
@@ -350,7 +356,9 @@ class TermRuleSetVersionService:
         """更新 Term Rule Set draft 中的一条规则，并返回新的 draft 元数据。"""
 
         normalized_id = self._require_known_set_id(term_rule_set_id)
-        store = self.get_draft_store(normalized_id)
+        draft_record = self._ensure_draft_record(normalized_id)
+        self._ensure_expected_draft_snapshot(draft_record, payload.expected_snapshot_hash)
+        store = self._store_from_record(draft_record)
         rule = self._find_rule(store, rule_id)
         fields = payload.model_fields_set
         category_id = rule.category_id
@@ -390,7 +398,7 @@ class TermRuleSetVersionService:
             custom_markdown = payload.custom_markdown
         elif segments_changed:
             custom_markdown = None
-        updated = self._build_rule_record(
+        updated = build_term_rule_record(
             rule_id=rule.id,
             category_id=category_id,
             source_term=source_term,
@@ -425,23 +433,41 @@ class TermRuleSetVersionService:
         draft = self.update_draft(normalized_id, updated_store)
         return TermRuleDraftRuleMutationResponse(rule=self._rule_response(updated_store, updated), draft=draft)
 
-    def delete_draft_rule(self, term_rule_set_id: str, rule_id: str) -> TermRuleDraftRuleDeleteResponse:
+    def delete_draft_rule(
+        self,
+        term_rule_set_id: str,
+        rule_id: str,
+        *,
+        expected_snapshot_hash: str | None = None,
+    ) -> TermRuleDraftRuleDeleteResponse:
         """从 Term Rule Set draft 中移除一条规则，并返回新的 draft 元数据。"""
 
         normalized_id = self._require_known_set_id(term_rule_set_id)
-        store = self.get_draft_store(normalized_id)
+        draft_record = self._ensure_draft_record(normalized_id)
+        self._ensure_expected_draft_snapshot(draft_record, expected_snapshot_hash)
+        store = self._store_from_record(draft_record)
         self._find_rule(store, rule_id)
         updated_store = store.model_copy(update={"rules": [rule for rule in store.rules if rule.id != rule_id]})
         draft = self.update_draft(normalized_id, updated_store)
         return TermRuleDraftRuleDeleteResponse(id=rule_id, removed=True, draft=draft)
 
-    def update_draft(self, term_rule_set_id: str, store: TermRulesStore) -> TermRuleSetDraftResponse:
+    def update_draft(
+        self,
+        term_rule_set_id: str,
+        store: TermRulesStore,
+        *,
+        expected_snapshot_hash: str | None = None,
+    ) -> TermRuleSetDraftResponse:
         normalized_id = self._require_known_set_id(term_rule_set_id)
         existing = self.resource_version_service.repository.get_resource_version(
             "term_rule_set",
             normalized_id,
             DRAFT_VERSION,
         )
+        if expected_snapshot_hash is not None:
+            if existing is None:
+                existing = self._ensure_draft_record(normalized_id)
+            self._ensure_expected_draft_snapshot(existing, expected_snapshot_hash)
         base_version = self._payload_text(existing.payload if existing is not None else None, "base_version")
         if base_version is None:
             default_record = self._default_record(normalized_id)
@@ -471,6 +497,7 @@ class TermRuleSetVersionService:
         dedupe: str,
         validation: TermRuleImportValidationReport,
         import_report: TermRuleSetImportReport,
+        expected_snapshot_hash: str | None = None,
         actor: ActorContext | None = None,
         trace_id: str | None = None,
     ) -> TermRuleSetImportResult:
@@ -485,7 +512,11 @@ class TermRuleSetVersionService:
             record = self._import_seed_store(normalized_id, store, actor=actor, trace_id=trace_id)
             version = record.version
         else:
-            record = self._replace_draft_record(normalized_id, store)
+            record = self._replace_draft_record(
+                normalized_id,
+                store,
+                expected_snapshot_hash=expected_snapshot_hash,
+            )
             version = DRAFT_VERSION
         self._record_audit(
             actor=actor,
@@ -737,12 +768,22 @@ class TermRuleSetVersionService:
         self._sync_live_store_then_set_default(normalized_id, published)
         return published
 
-    def _replace_draft_record(self, term_rule_set_id: str, store: TermRulesStore) -> ResourceVersionRecord:
+    def _replace_draft_record(
+        self,
+        term_rule_set_id: str,
+        store: TermRulesStore,
+        *,
+        expected_snapshot_hash: str | None = None,
+    ) -> ResourceVersionRecord:
         existing = self.resource_version_service.repository.get_resource_version(
             "term_rule_set",
             term_rule_set_id,
             DRAFT_VERSION,
         )
+        if expected_snapshot_hash is not None:
+            if existing is None:
+                existing = self._ensure_draft_record(term_rule_set_id)
+            self._ensure_expected_draft_snapshot(existing, expected_snapshot_hash)
         base_version = self._payload_text(existing.payload if existing is not None else None, "base_version")
         if base_version is None:
             default_record = self._default_record(term_rule_set_id)
@@ -761,6 +802,25 @@ class TermRuleSetVersionService:
             payload_ref=f"term_rule_set:{term_rule_set_id}@{DRAFT_VERSION}",
             payload=payload,
         )
+
+    def _ensure_expected_draft_snapshot(
+        self,
+        record: ResourceVersionRecord,
+        expected_snapshot_hash: str | None,
+    ) -> None:
+        """在客户端提供 draft 快照时阻止基于过期内容覆盖最新 draft。"""
+
+        if expected_snapshot_hash is None:
+            return
+        expected_hash = expected_snapshot_hash.strip()
+        if not expected_hash:
+            raise ValueError("expected_snapshot_hash 不能为空。")
+        actual_hash = record.snapshot_hash or ""
+        if actual_hash != expected_hash:
+            raise TermRuleSetDraftSnapshotConflictError(
+                expected_snapshot_hash=expected_hash,
+                actual_snapshot_hash=actual_hash,
+            )
 
     def _import_seed_store(
         self,
@@ -1468,82 +1528,6 @@ class TermRuleSetVersionService:
         if not normalized:
             raise ValueError(f"{field_name} 不能为空")
         return normalized
-
-    def _build_rule_record(
-        self,
-        *,
-        rule_id: str,
-        category_id: str,
-        source_term: str,
-        scope_type: TermRuleScopeType | None = None,
-        scope_id: str | None = None,
-        apply_scope: str,
-        case_sensitive: bool,
-        enabled: bool,
-        priority: int,
-        segments: list[dict[str, Any]],
-        custom_html: str | None,
-        custom_markdown: str | None,
-        notes: str,
-        created_at: Any | None = None,
-    ) -> TermRuleRecord:
-        """按 live 规则构建约定创建 draft 规则记录。"""
-
-        parsed_segments = self._build_segments(segments)
-        try:
-            parsed_apply_scope = RuleApplyScope(str(apply_scope).strip().lower())
-        except ValueError as exc:
-            raise ValueError(f"不支持的 apply_scope: {apply_scope}") from exc
-        resolved_custom_html = custom_html if custom_html is not None else render_segments_html(parsed_segments)
-        resolved_custom_markdown = (
-            custom_markdown
-            if custom_markdown is not None
-            else render_segments_markdown(parsed_segments)
-        )
-        return TermRuleRecord(
-            id=rule_id,
-            category_id=category_id,
-            source_term=source_term,
-            normalized_term=normalize_term_key(source_term),
-            scope_type=scope_type or TermRuleScopeType.GLOBAL,
-            scope_id=scope_id,
-            active=True,
-            rule_mode=RuleMode.SIMPLE if len(parsed_segments) <= 2 else RuleMode.ADVANCED,
-            apply_scope=parsed_apply_scope,
-            case_sensitive=case_sensitive,
-            enabled=enabled,
-            priority=int(priority),
-            segments=parsed_segments,
-            custom_html=resolved_custom_html,
-            custom_markdown=resolved_custom_markdown,
-            notes=str(notes or ""),
-            **({"created_at": created_at} if created_at is not None else {}),
-        )
-
-    @staticmethod
-    def _build_segments(raw_segments: list[dict[str, Any]]) -> list[TermRuleSegmentRecord]:
-        """把 API segment payload 转换为按序保存的规则片段。"""
-
-        if not raw_segments:
-            raise ValueError("segments 必须是非空数组")
-        segments: list[TermRuleSegmentRecord] = []
-        for index, raw_segment in enumerate(raw_segments):
-            segment_text = str(raw_segment.get("segment_text", "") or "")
-            if not segment_text:
-                raise ValueError("segment_text 不能为空")
-            render_type_value = str(raw_segment.get("render_type", "") or "").strip().lower()
-            try:
-                render_type = RuleRenderType(render_type_value)
-            except ValueError as exc:
-                raise ValueError(f"不支持的 render_type: {render_type_value}") from exc
-            segments.append(
-                TermRuleSegmentRecord(
-                    seq=index + 1,
-                    segment_text=segment_text,
-                    render_type=render_type,
-                )
-            )
-        return segments
 
     @staticmethod
     def build_import_validation_report(

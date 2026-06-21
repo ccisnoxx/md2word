@@ -28,6 +28,7 @@ DEFAULT_UNITTEST_TARGETS: tuple[str, ...] = (
     "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_ready_allows_p0_document_jobs_when_production_config_is_complete",
     "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_metrics_reports_runtime_counters",
     "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_health_metrics_reports_default_resource_versions_in_mysql_mode",
+    "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_term_rule_yaml_codec_preserves_custom_render_fields",
     "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_create_detail_list_and_events_for_operator",
     "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_create_rejects_unready_required_execution",
     "tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_list_supports_workbench_filters_without_running_worker",
@@ -238,6 +239,30 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
     for name in ("overall_status", "missing_tiers", "blocker_count", "warning_count", "latest_reviewed_run", "tiers", "generated_at"):
         if name not in acceptance_latest_properties:
             missing.append(f"OpenAPI AcceptanceLatestSummaryResponse field: {name}")
+    term_rule_create_properties = schemas.get("TermRuleCreateRequest", {}).get("properties", {})
+    term_rule_update_properties = schemas.get("TermRuleUpdateRequest", {}).get("properties", {})
+    term_rule_draft_update_properties = schemas.get("TermRuleSetDraftUpdateRequest", {}).get("properties", {})
+    term_rule_import_properties = schemas.get("TermRuleSetImportRequest", {}).get("properties", {})
+    for schema_name, properties in (
+        ("TermRuleCreateRequest", term_rule_create_properties),
+        ("TermRuleUpdateRequest", term_rule_update_properties),
+        ("TermRuleSetDraftUpdateRequest", term_rule_draft_update_properties),
+        ("TermRuleSetImportRequest", term_rule_import_properties),
+    ):
+        if "expected_snapshot_hash" not in properties:
+            missing.append(f"OpenAPI {schema_name} field: expected_snapshot_hash")
+    term_rule_delete_parameters: set[str] = set()
+    if isinstance(paths, dict):
+        term_rule_delete = paths.get("/api/v1/term-rule-sets/{set_id}/draft/rules/{rule_id}", {}).get("delete", {})
+        term_rule_delete_parameters = {
+            name
+            for parameter in term_rule_delete.get("parameters", [])
+            if isinstance(parameter, dict)
+            for name in (parameter.get("name"),)
+            if isinstance(name, str)
+        }
+    if "expected_snapshot_hash" not in term_rule_delete_parameters:
+        missing.append("OpenAPI DELETE /term-rule-sets/{set_id}/draft/rules/{rule_id} parameter: expected_snapshot_hash")
 
     types_path = REPO_ROOT / "frontend/src/api/types.ts"
     try:
@@ -269,6 +294,7 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
         'export type AcceptanceRunStatus = "passed"',
         'export type AcceptanceLatestOverallStatus = "accepted"',
         "review_note: string | null",
+        "expected_snapshot_hash?: string | null",
     ):
         if needle not in frontend_types:
             missing.append(f"frontend types missing: {needle}")

@@ -183,8 +183,6 @@ import {
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { releaseGateRouteForCode, releaseGateRouteLabel } from "@/utils/releaseGateRoutes";
 
-const CACHE_TTL_MS = 60_000;
-
 type ReleaseGateItem = {
   key: string;
   severity: "critical" | "warning";
@@ -193,7 +191,7 @@ type ReleaseGateItem = {
   routeLabel: string;
 };
 
-let summaryCache: { value: ConfigWorkbenchSummaryResponse; loadedAt: number } | null = null;
+let summaryRequestSeq = 0;
 
 const summary = ref<ConfigWorkbenchSummaryResponse | null>(null);
 const initialLoading = ref(false);
@@ -232,21 +230,16 @@ const iconMap = {
   translation_term_sets: Tickets,
 } satisfies Record<ConfigWorkbenchGroupId, unknown>;
 
-async function loadSummary(force = false): Promise<void> {
-  const cached = summaryCache;
-  if (!force && cached && Date.now() - cached.loadedAt < CACHE_TTL_MS) {
-    summary.value = cached.value;
-    void fetchSummary({ background: true });
-    return;
-  }
+async function loadSummary(): Promise<void> {
   await fetchSummary({ background: Boolean(summary.value) });
 }
 
 async function refreshSummary(): Promise<void> {
-  await loadSummary(true);
+  await fetchSummary({ background: Boolean(summary.value) });
 }
 
 async function fetchSummary({ background }: { background: boolean }): Promise<void> {
+  const requestSeq = ++summaryRequestSeq;
   if (background) {
     refreshing.value = true;
   } else {
@@ -255,14 +248,28 @@ async function fetchSummary({ background }: { background: boolean }): Promise<vo
   error.value = null;
   try {
     const response = await configSummaryApi.get("overview");
-    summary.value = withDerivedOverallStatus(response);
-    summaryCache = { value: summary.value, loadedAt: Date.now() };
-    void loadDeferredGroupDetails(response.groups);
+    if (requestSeq !== summaryRequestSeq) {
+      return;
+    }
+    resetGroupDetailState();
+    summary.value = response;
+    void loadDeferredGroupDetails(response.groups, requestSeq);
   } catch (caught) {
-    error.value = normalizeApiError(caught);
+    if (requestSeq === summaryRequestSeq) {
+      error.value = normalizeApiError(caught);
+    }
   } finally {
-    initialLoading.value = false;
-    refreshing.value = false;
+    if (requestSeq === summaryRequestSeq) {
+      initialLoading.value = false;
+      refreshing.value = false;
+    }
+  }
+}
+
+function resetGroupDetailState(): void {
+  for (const groupId of Object.keys(groupLoading) as ConfigWorkbenchGroupId[]) {
+    groupLoading[groupId] = false;
+    groupErrors[groupId] = "";
   }
 }
 
@@ -346,54 +353,36 @@ function releaseGateFindingItems(
   });
 }
 
-async function loadDeferredGroupDetails(groups: ConfigWorkbenchGroup[]): Promise<void> {
+async function loadDeferredGroupDetails(groups: ConfigWorkbenchGroup[], requestSeq: number): Promise<void> {
   await Promise.allSettled(
     groups
       .filter((group) => group.detail_status === "deferred")
-      .map((group) => loadGroupDetail(group.id)),
+      .map((group) => loadGroupDetail(group.id, requestSeq)),
   );
 }
 
-async function loadGroupDetail(groupId: ConfigWorkbenchGroupId): Promise<void> {
+async function loadGroupDetail(groupId: ConfigWorkbenchGroupId, requestSeq: number): Promise<void> {
   groupLoading[groupId] = true;
   groupErrors[groupId] = "";
   try {
     const group = await configSummaryApi.getGroup(groupId, "full");
-    if (!summary.value) {
+    if (requestSeq !== summaryRequestSeq || !summary.value) {
       return;
     }
-    summary.value = withDerivedOverallStatus({
+    summary.value = {
       ...summary.value,
       groups: summary.value.groups.map((item) => item.id === group.id ? group : item),
-    });
-    summaryCache = { value: summary.value, loadedAt: Date.now() };
+    };
   } catch (caught) {
-    const normalized = normalizeApiError(caught);
-    groupErrors[groupId] = normalized.message || "深度检查加载失败。";
+    if (requestSeq === summaryRequestSeq) {
+      const normalized = normalizeApiError(caught);
+      groupErrors[groupId] = normalized.message || "深度检查加载失败。";
+    }
   } finally {
-    groupLoading[groupId] = false;
+    if (requestSeq === summaryRequestSeq) {
+      groupLoading[groupId] = false;
+    }
   }
-}
-
-function withDerivedOverallStatus(response: ConfigWorkbenchSummaryResponse): ConfigWorkbenchSummaryResponse {
-  return {
-    ...response,
-    overall_status: deriveOverallStatus(response.groups, response.release_gate.blockers, response.release_gate.warnings),
-  };
-}
-
-function deriveOverallStatus(
-  groups: ConfigWorkbenchGroup[],
-  blockers: string[],
-  warnings: string[],
-): ConfigWorkbenchStatus {
-  if (blockers.length || groups.some((group) => group.status === "blocked")) {
-    return "blocked";
-  }
-  if (warnings.length || groups.some((group) => group.status === "warning" || group.status === "unavailable")) {
-    return "warning";
-  }
-  return "ready";
 }
 
 onMounted(() => {
@@ -404,6 +393,8 @@ onMounted(() => {
 <style scoped lang="scss">
 .settings-page {
   display: grid;
+  align-content: start;
+  grid-auto-rows: max-content;
   gap: var(--app-space-4);
 }
 

@@ -10757,6 +10757,82 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(missing_after_delete_response.status_code, 404)
         self.assertEqual(runtime_yaml_after_delete, original_runtime_yaml)
 
+    def test_term_rule_set_draft_rule_mutations_reject_stale_snapshot_hash(self):
+        """验证结构化 draft rule 写入可用 snapshot hash 防止覆盖较新的 draft。"""
+
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                admin_token="secret-admin",
+                jobs_repository_backend="mysql",
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=fake_mysql.connect,
+                ),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                category_id = client.get("/api/v1/term-rule-categories").json()["items"][0]["id"]
+                draft_before_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/draft",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                stale_snapshot_hash = draft_before_response.json()["snapshot_hash"]
+                create_response = client.post(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules",
+                    headers={"X-Admin-Token": "secret-admin"},
+                    json={
+                        "id": "rule_snapshot_guard",
+                        "expected_snapshot_hash": stale_snapshot_hash,
+                        "category_id": category_id,
+                        "source_term": "VSNAPSHOT",
+                        "segments": [{"segment_text": "VSNAPSHOT", "render_type": "plain"}],
+                    },
+                )
+                snapshot_after_create = create_response.json()["draft"]["snapshot_hash"]
+                stale_update_response = client.patch(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules/rule_snapshot_guard",
+                    headers={"X-Admin-Token": "secret-admin"},
+                    json={
+                        "expected_snapshot_hash": stale_snapshot_hash,
+                        "notes": "stale update",
+                    },
+                )
+                current_update_response = client.patch(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules/rule_snapshot_guard",
+                    headers={"X-Admin-Token": "secret-admin"},
+                    json={
+                        "expected_snapshot_hash": snapshot_after_create,
+                        "notes": "current update",
+                    },
+                )
+                snapshot_after_update = current_update_response.json()["draft"]["snapshot_hash"]
+                stale_delete_response = client.delete(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules/rule_snapshot_guard",
+                    params={"expected_snapshot_hash": snapshot_after_create},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                current_delete_response = client.delete(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules/rule_snapshot_guard",
+                    params={"expected_snapshot_hash": snapshot_after_update},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+
+        self.assertEqual(draft_before_response.status_code, 200)
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(stale_update_response.status_code, 409)
+        self.assertEqual(stale_update_response.json()["detail"]["code"], "draft_snapshot_conflict")
+        self.assertEqual(stale_update_response.json()["detail"]["expected_snapshot_hash"], stale_snapshot_hash)
+        self.assertEqual(stale_update_response.json()["detail"]["actual_snapshot_hash"], snapshot_after_create)
+        self.assertEqual(current_update_response.status_code, 200)
+        self.assertEqual(stale_delete_response.status_code, 409)
+        self.assertEqual(stale_delete_response.json()["detail"]["actual_snapshot_hash"], snapshot_after_update)
+        self.assertEqual(current_delete_response.status_code, 200)
+        self.assertTrue(current_delete_response.json()["removed"])
+
     def test_term_rule_set_draft_rule_crud_auth_backend_and_validation_errors(self):
         """覆盖 draft rule CRUD 的鉴权、后端开关和基础校验错误。"""
 
@@ -11202,6 +11278,42 @@ class FastAPIJobsBackendTests(TestCase):
 
         self.assertEqual(guarded_response.status_code, 400)
         self.assertIn("/api/v1/term-rule-sets", guarded_response.json()["detail"])
+
+    def test_term_rule_yaml_codec_preserves_custom_render_fields(self):
+        """验证 v2.1 YAML 高级渲染字段导入导出后不退化为 segments 生成值。"""
+
+        codec = TermRuleYamlCodec()
+        yaml_text = (
+            "schema_version: 2.1\n"
+            "categories:\n"
+            "  voltage_terms:\n"
+            "    name: 电压相关\n"
+            "    priority: 10\n"
+            "    enabled: true\n"
+            "rules:\n"
+            "  - source_term: VADV\n"
+            "    category: voltage_terms\n"
+            "    segments:\n"
+            "      - segment_text: V\n"
+            "        render_type: plain\n"
+            "      - segment_text: ADV\n"
+            "        render_type: superscript\n"
+            "    custom_markdown: 'V^ADV-custom^'\n"
+            "    custom_html: '<span class=\"term\">V<sup>ADV-custom</sup></span>'\n"
+            "    enabled: true\n"
+        )
+
+        store = codec.parse_yaml_text(yaml_text)
+        exported = codec.dump_store(store)
+        reparsed = codec.parse_yaml_text(exported)
+
+        self.assertEqual(len(store.rules), 1)
+        self.assertEqual(store.rules[0].custom_markdown, "V^ADV-custom^")
+        self.assertEqual(store.rules[0].custom_html, '<span class="term">V<sup>ADV-custom</sup></span>')
+        self.assertIn("custom_markdown: V^ADV-custom^", exported)
+        self.assertIn("custom_html: <span class=\"term\">V<sup>ADV-custom</sup></span>", exported)
+        self.assertEqual(reparsed.rules[0].custom_markdown, store.rules[0].custom_markdown)
+        self.assertEqual(reparsed.rules[0].custom_html, store.rules[0].custom_html)
 
     def test_term_rule_set_import_export_api_reports_duplicates_and_exports_history(self):
         from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config

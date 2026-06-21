@@ -9,17 +9,15 @@ from typing import Any
 
 from app.domains.term_rules.models import (
     RuleApplyScope,
-    RuleMode,
-    RuleRenderType,
     TermRuleCategoryRecord,
     TermRuleRecord,
-    TermRuleSegmentRecord,
     TermRuleScopeType,
     TermRulesStore,
     normalize_term_key,
     utc_now,
 )
 from app.domains.term_rules.repository import TermRuleRepositoryProtocol
+from app.domains.term_rules.rule_builder import build_term_rule_record
 from app.domains.term_rules.yaml_codec import (
     CATEGORY_CODE_RE,
     TermRuleYamlCodec,
@@ -154,7 +152,7 @@ class TermRuleService:
             scope_id=resolved_scope_id,
             exclude_rule_id=None,
         )
-        rule = self._build_rule_record(
+        rule = build_term_rule_record(
             rule_id=normalized_id,
             category_id=category.id,
             source_term=normalized_source,
@@ -215,7 +213,7 @@ class TermRuleService:
         elif segments_changed:
             custom_markdown = None
 
-        updated = self._build_rule_record(
+        updated = build_term_rule_record(
             rule_id=rule.id,
             category_id=category_id,
             source_term=source_term,
@@ -371,70 +369,3 @@ class TermRuleService:
         if not scope_id:
             raise ValueError("department scope 规则必须提供 scope_id")
         return scope_type, scope_id
-
-    def _build_rule_record(
-        self,
-        *,
-        rule_id: str,
-        category_id: str,
-        source_term: str,
-        scope_type: TermRuleScopeType = TermRuleScopeType.GLOBAL,
-        scope_id: str | None = None,
-        apply_scope: str,
-        case_sensitive: bool,
-        enabled: bool,
-        priority: int,
-        segments: list[dict[str, Any]],
-        custom_html: str | None,
-        custom_markdown: str | None,
-        notes: str,
-        created_at=None,
-    ) -> TermRuleRecord:
-        parsed_segments = self._build_segments(segments)
-        try:
-            parsed_apply_scope = RuleApplyScope(str(apply_scope).strip().lower())
-        except ValueError as exc:
-            raise ValueError(f"不支持的 apply_scope: {apply_scope}") from exc
-        resolved_custom_html = custom_html if custom_html is not None else render_segments_html(parsed_segments)
-        resolved_custom_markdown = custom_markdown if custom_markdown is not None else render_segments_markdown(parsed_segments)
-        return TermRuleRecord(
-            id=rule_id,
-            category_id=category_id,
-            source_term=source_term,
-            normalized_term=normalize_term_key(source_term),
-            scope_type=scope_type,
-            scope_id=scope_id,
-            rule_mode=RuleMode.SIMPLE if len(parsed_segments) <= 2 else RuleMode.ADVANCED,
-            apply_scope=parsed_apply_scope,
-            case_sensitive=case_sensitive,
-            enabled=enabled,
-            priority=int(priority),
-            segments=parsed_segments,
-            custom_html=resolved_custom_html,
-            custom_markdown=resolved_custom_markdown,
-            notes=str(notes or ""),
-            **({"created_at": created_at} if created_at is not None else {}),
-        )
-
-    @staticmethod
-    def _build_segments(raw_segments: list[dict[str, Any]]) -> list[TermRuleSegmentRecord]:
-        if not raw_segments:
-            raise ValueError("segments 必须是非空数组")
-        segments: list[TermRuleSegmentRecord] = []
-        for index, raw_segment in enumerate(raw_segments):
-            segment_text = str(raw_segment.get("segment_text", "") or "")
-            if not segment_text:
-                raise ValueError("segment_text 不能为空")
-            render_type_value = str(raw_segment.get("render_type", "") or "").strip().lower()
-            try:
-                render_type = RuleRenderType(render_type_value)
-            except ValueError as exc:
-                raise ValueError(f"不支持的 render_type: {render_type_value}") from exc
-            segments.append(
-                TermRuleSegmentRecord(
-                    seq=index + 1,
-                    segment_text=segment_text,
-                    render_type=render_type,
-                )
-            )
-        return segments

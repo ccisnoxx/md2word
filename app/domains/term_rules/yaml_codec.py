@@ -24,6 +24,7 @@ from app.domains.term_rules.models import (
 
 
 CURRENT_SCHEMA_VERSION = 2
+SUPPORTED_SCHEMA_VERSIONS = {"2", "2.0", "2.1"}
 CATEGORY_CODE_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
@@ -129,29 +130,34 @@ class TermRuleYamlCodec:
             category = categories_by_id.get(rule.category_id)
             if category is None:
                 continue
-            rules_section.append(
-                {
-                    "source_term": rule.source_term,
-                    "normalized_term": rule.normalized_term,
-                    "scope_type": rule.scope_type.value,
-                    "scope_id": rule.scope_id,
-                    "current_version": rule.current_version,
-                    "active": rule.active,
-                    "category": category.code,
-                    "segments": [
-                        {
-                            "segment_text": segment.segment_text,
-                            "render_type": segment.render_type.value,
-                        }
-                        for segment in sorted(rule.segments, key=lambda item: item.seq)
-                    ],
-                    "apply_scope": rule.apply_scope.value,
-                    "case_sensitive": rule.case_sensitive,
-                    "enabled": rule.enabled,
-                    "priority": rule.priority,
-                    "notes": rule.notes,
-                }
-            )
+            generated_html = render_segments_html(rule.segments)
+            generated_markdown = render_segments_markdown(rule.segments)
+            rule_payload: dict[str, Any] = {
+                "source_term": rule.source_term,
+                "normalized_term": rule.normalized_term,
+                "scope_type": rule.scope_type.value,
+                "scope_id": rule.scope_id,
+                "current_version": rule.current_version,
+                "active": rule.active,
+                "category": category.code,
+                "segments": [
+                    {
+                        "segment_text": segment.segment_text,
+                        "render_type": segment.render_type.value,
+                    }
+                    for segment in sorted(rule.segments, key=lambda item: item.seq)
+                ],
+                "apply_scope": rule.apply_scope.value,
+                "case_sensitive": rule.case_sensitive,
+                "enabled": rule.enabled,
+                "priority": rule.priority,
+                "notes": rule.notes,
+            }
+            if rule.custom_markdown is not None and rule.custom_markdown != generated_markdown:
+                rule_payload["custom_markdown"] = rule.custom_markdown
+            if rule.custom_html is not None and rule.custom_html != generated_html:
+                rule_payload["custom_html"] = rule.custom_html
+            rules_section.append(rule_payload)
 
         yaml_data = {
             "schema_version": CURRENT_SCHEMA_VERSION,
@@ -202,7 +208,7 @@ class TermRuleYamlCodec:
         rules_raw = raw.get("rules", []) or []
         schema_version = raw.get("schema_version")
 
-        if schema_version is not None and schema_version != CURRENT_SCHEMA_VERSION:
+        if schema_version is not None and self._schema_version_text(schema_version) not in SUPPORTED_SCHEMA_VERSIONS:
             errors.append(
                 CodecIssue(
                     code="unknown_schema_version",
@@ -373,6 +379,8 @@ class TermRuleYamlCodec:
             category_priority = next((category.priority for category in categories if category.id == category_id), 100)
             priority = self._to_int(item.get("priority"), category_priority)
             notes = str(item.get("notes", "") or "")
+            custom_html = self._optional_text(item.get("custom_html")) if "custom_html" in item else None
+            custom_markdown = self._optional_text(item.get("custom_markdown")) if "custom_markdown" in item else None
             rule_mode = RuleMode.SIMPLE if len(segments) <= 2 else RuleMode.ADVANCED
 
             rules.append(
@@ -391,8 +399,8 @@ class TermRuleYamlCodec:
                     enabled=enabled,
                     priority=priority,
                     segments=segments,
-                    custom_html=render_segments_html(segments),
-                    custom_markdown=render_segments_markdown(segments),
+                    custom_html=custom_html if custom_html is not None else render_segments_html(segments),
+                    custom_markdown=custom_markdown if custom_markdown is not None else render_segments_markdown(segments),
                     notes=notes,
                 )
             )
@@ -439,3 +447,15 @@ class TermRuleYamlCodec:
             if normalized in {"0", "false", "no", "off"}:
                 return False
         return bool(value)
+
+    @staticmethod
+    def _schema_version_text(value: Any) -> str:
+        if isinstance(value, float) and value.is_integer():
+            return str(int(value))
+        return str(value).strip()
+
+    @staticmethod
+    def _optional_text(value: Any) -> str | None:
+        if value is None:
+            return None
+        return str(value)

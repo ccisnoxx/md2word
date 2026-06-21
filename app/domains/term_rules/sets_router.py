@@ -40,6 +40,7 @@ from app.domains.term_rules.schemas import (
     TermRuleUpdateRequest,
 )
 from app.domains.term_rules.versioning_service import (
+    TermRuleSetDraftSnapshotConflictError,
     TermRuleSetImportDuplicate,
     TermRuleSetImportReport,
     TermRuleSetPreflightError,
@@ -129,6 +130,18 @@ def _import_response(result) -> TermRuleSetImportResponse:
         snapshot_hash=result.record.snapshot_hash,
         validation=_validation_report_response(result.validation),
         import_report=_import_report_response(result.import_report),
+    )
+
+
+def _draft_snapshot_conflict_http_exception(exc: TermRuleSetDraftSnapshotConflictError) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "draft_snapshot_conflict",
+            "message": str(exc),
+            "expected_snapshot_hash": exc.expected_snapshot_hash,
+            "actual_snapshot_hash": exc.actual_snapshot_hash,
+        },
     )
 
 
@@ -281,6 +294,8 @@ def create_term_rule_set_draft_rule(
 
     try:
         return _require_term_rule_set_version_service(runtime).create_draft_rule(set_id, payload)
+    except TermRuleSetDraftSnapshotConflictError as exc:
+        raise _draft_snapshot_conflict_http_exception(exc) from exc
     except FileNotFoundError as exc:
         raise not_found_http_exception(exc) from exc
     except ValueError as exc:
@@ -306,6 +321,8 @@ def update_term_rule_set_draft_rule(
             rule_id,
             payload,
         )
+    except TermRuleSetDraftSnapshotConflictError as exc:
+        raise _draft_snapshot_conflict_http_exception(exc) from exc
     except FileNotFoundError as exc:
         raise not_found_http_exception(exc) from exc
     except ValueError as exc:
@@ -320,12 +337,19 @@ def update_term_rule_set_draft_rule(
 def delete_term_rule_set_draft_rule(
     set_id: str,
     rule_id: str,
+    expected_snapshot_hash: str | None = Query(default=None),
     runtime: AppRuntime = Depends(get_runtime),
 ) -> TermRuleDraftRuleDeleteResponse:
     """从 Term Rule Set draft 内移除一条结构化规则。"""
 
     try:
-        return _require_term_rule_set_version_service(runtime).delete_draft_rule(set_id, rule_id)
+        return _require_term_rule_set_version_service(runtime).delete_draft_rule(
+            set_id,
+            rule_id,
+            expected_snapshot_hash=expected_snapshot_hash,
+        )
+    except TermRuleSetDraftSnapshotConflictError as exc:
+        raise _draft_snapshot_conflict_http_exception(exc) from exc
     except FileNotFoundError as exc:
         raise not_found_http_exception(exc) from exc
     except ValueError as exc:
@@ -353,7 +377,13 @@ def update_term_rule_set_draft_rules(
             },
         )
     try:
-        return service.update_draft(set_id, result.parsed_store)
+        return service.update_draft(
+            set_id,
+            result.parsed_store,
+            expected_snapshot_hash=payload.expected_snapshot_hash,
+        )
+    except TermRuleSetDraftSnapshotConflictError as exc:
+        raise _draft_snapshot_conflict_http_exception(exc) from exc
     except FileNotFoundError as exc:
         raise not_found_http_exception(exc) from exc
     except ValueError as exc:
@@ -402,9 +432,12 @@ def import_term_rule_set(
             dedupe=payload.dedupe,
             validation=validation_report,
             import_report=_build_import_report(validation_result, dedupe=payload.dedupe),
+            expected_snapshot_hash=payload.expected_snapshot_hash if payload.target == "draft" else None,
             actor=actor,
             trace_id=trace_id,
         )
+    except TermRuleSetDraftSnapshotConflictError as exc:
+        raise _draft_snapshot_conflict_http_exception(exc) from exc
     except FileNotFoundError as exc:
         raise not_found_http_exception(exc) from exc
     except ValueError as exc:

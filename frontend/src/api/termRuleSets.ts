@@ -105,10 +105,15 @@ export const termRuleSetsApi = {
   },
 
   // 从当前 draft 移除一条结构化规则。
-  deleteDraftRule(setId: string, ruleId: string): Promise<TermRuleDraftRuleDeleteResponse> {
+  deleteDraftRule(
+    setId: string,
+    ruleId: string,
+    expectedSnapshotHash?: string | null,
+  ): Promise<TermRuleDraftRuleDeleteResponse> {
     return apiRequest<TermRuleDraftRuleDeleteResponse>({
       url: `/api/v1/term-rule-sets/${setId}/draft/rules/${ruleId}`,
       method: "DELETE",
+      params: expectedSnapshotHash ? { expected_snapshot_hash: expectedSnapshotHash } : undefined,
     });
   },
 
