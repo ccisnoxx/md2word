@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend guideline index for API, persistence, error, logging, and quality rules."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Backend domain/composition-root ownership boundaries for implementation."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Persistence parity and schema rules for any metadata changes."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Stable API error shape and known error handling requirements."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Release gate, contract, and test expectations for backend changes."}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend guideline index for protected workbench changes."}
+{"file": ".trellis/spec/frontend/layout-guidelines.md", "reason": "Workbench layout, dialog, drawer, and responsive verification rules."}
+{"file": ".trellis/spec/frontend/api-contract-guidelines.md", "reason": "Frontend API wrapper and optional query parameter contract rules."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer API/data-flow checklist for this product-plan execution slice."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse checklist before extracting helpers or shared frontend/backend patterns."}
