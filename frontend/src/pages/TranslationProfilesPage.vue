@@ -38,12 +38,14 @@
       </el-card>
 
       <el-card class="app-panel-card" shadow="never">
-        <div class="section-header">
+        <div class="section-header profile-draft-header">
           <div>
             <h2 class="section-title">草稿基础字段</h2>
             <p class="section-subtitle">开放目标语言、领域、提示词版本、模型和批次限制。</p>
           </div>
-          <el-tag v-if="draft?.snapshot_hash" class="mono" effect="plain">{{ draft.snapshot_hash }}</el-tag>
+          <el-tag v-if="draft?.snapshot_hash" class="draft-hash-tag mono" effect="plain" :title="draft.snapshot_hash">
+            {{ draft.snapshot_hash }}
+          </el-tag>
         </div>
         <el-empty v-if="!selectedProfileId" description="请选择翻译配置" :image-size="90" />
         <el-form v-else ref="draftFormRef" :model="draftForm" :rules="draftRules" label-width="160px">
@@ -336,6 +338,29 @@ onMounted(() => {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(360px, 520px);
   gap: var(--app-space-4);
+}
+
+.profile-draft-header {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.profile-draft-header > div {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.draft-hash-tag {
+  flex: 0 1 min(100%, 280px);
+  max-width: 100%;
+}
+
+.draft-hash-tag :deep(.el-tag__content) {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (max-width: 1040px) {
