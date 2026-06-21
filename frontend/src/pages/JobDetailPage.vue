@@ -473,160 +473,180 @@
         </el-tab-pane>
       </el-tabs>
 
-      <el-dialog v-model="retryDialogVisible" title="重试任务" width="640px">
-        <el-form label-width="150px">
-          <el-form-item label="任务 ID">
-            <el-input :model-value="retryDialog.job?.id || ''" disabled />
-          </el-form-item>
-          <el-form-item label="原因">
-            <el-input v-model="retryDialog.reason" type="textarea" :rows="2" />
-          </el-form-item>
-          <el-form-item label="配置策略">
-            <el-radio-group v-model="retryDialog.strategy">
-              <el-radio label="keep_original">沿用原配置</el-radio>
-              <el-radio v-if="isAdmin" label="use_latest_term_assets">使用最新术语默认值</el-radio>
-              <el-radio v-if="isAdmin" label="select_term_assets">指定术语版本</el-radio>
-            </el-radio-group>
-          </el-form-item>
-          <template v-if="isAdmin && retryDialog.strategy === 'select_term_assets'">
-            <el-form-item label="术语规则集">
-              <el-select
-                v-model="retryDialog.termRuleVersion"
-                clearable
-                filterable
-                :loading="configLoading"
-                placeholder="沿用原术语规则集"
-              >
-                <el-option
-                  v-for="option in configSummary?.options.term_rule_sets || []"
-                  :key="configOptionKey(option)"
-                  :label="option.label"
-                  :value="configOptionKey(option)"
-                />
-              </el-select>
+      <el-dialog
+        v-model="retryDialogVisible"
+        title="重试任务"
+        width="min(640px, calc(100vw - 32px))"
+        top="24px"
+        class="job-action-dialog"
+        append-to="body"
+        :append-to-body="true"
+      >
+        <div class="job-action-dialog-scroll">
+          <el-form label-width="150px">
+            <el-form-item label="任务 ID">
+              <el-input :model-value="retryDialog.job?.id || ''" disabled />
             </el-form-item>
-            <el-form-item v-if="retryDialog.job?.mode === 'en2zh_pdf_to_word'" label="翻译术语集">
-              <el-select
-                v-model="retryDialog.translationTermVersion"
-                clearable
-                filterable
-                :loading="configLoading"
-                placeholder="沿用原翻译术语集"
-              >
-                <el-option
-                  v-for="option in configSummary?.options.translation_term_sets || []"
-                  :key="configOptionKey(option)"
-                  :label="option.label"
-                  :value="configOptionKey(option)"
-                />
-              </el-select>
+            <el-form-item label="原因">
+              <el-input v-model="retryDialog.reason" type="textarea" :rows="2" />
             </el-form-item>
-          </template>
-          <el-alert
-            v-if="isAdmin && retryDialog.strategy === 'use_latest_term_assets'"
-            type="info"
-            :closable="false"
-            show-icon
-            title="重试只重绑术语规则集和翻译术语集默认值；模板和翻译配置沿用原任务快照。"
-          />
-          <ApiErrorAlert :error="configError" :diagnostic-context="jobErrorDiagnosticContext('document_jobs.config_summary')" />
-        </el-form>
+            <el-form-item label="配置策略">
+              <el-radio-group v-model="retryDialog.strategy">
+                <el-radio label="keep_original">沿用原配置</el-radio>
+                <el-radio v-if="isAdmin" label="use_latest_term_assets">使用最新术语默认值</el-radio>
+                <el-radio v-if="isAdmin" label="select_term_assets">指定术语版本</el-radio>
+              </el-radio-group>
+            </el-form-item>
+            <template v-if="isAdmin && retryDialog.strategy === 'select_term_assets'">
+              <el-form-item label="术语规则集">
+                <el-select
+                  v-model="retryDialog.termRuleVersion"
+                  clearable
+                  filterable
+                  :loading="configLoading"
+                  placeholder="沿用原术语规则集"
+                >
+                  <el-option
+                    v-for="option in configSummary?.options.term_rule_sets || []"
+                    :key="configOptionKey(option)"
+                    :label="option.label"
+                    :value="configOptionKey(option)"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item v-if="retryDialog.job?.mode === 'en2zh_pdf_to_word'" label="翻译术语集">
+                <el-select
+                  v-model="retryDialog.translationTermVersion"
+                  clearable
+                  filterable
+                  :loading="configLoading"
+                  placeholder="沿用原翻译术语集"
+                >
+                  <el-option
+                    v-for="option in configSummary?.options.translation_term_sets || []"
+                    :key="configOptionKey(option)"
+                    :label="option.label"
+                    :value="configOptionKey(option)"
+                  />
+                </el-select>
+              </el-form-item>
+            </template>
+            <el-alert
+              v-if="isAdmin && retryDialog.strategy === 'use_latest_term_assets'"
+              type="info"
+              :closable="false"
+              show-icon
+              title="重试只重绑术语规则集和翻译术语集默认值；模板和翻译配置沿用原任务快照。"
+            />
+            <ApiErrorAlert :error="configError" :diagnostic-context="jobErrorDiagnosticContext('document_jobs.config_summary')" />
+          </el-form>
+        </div>
         <template #footer>
           <el-button @click="retryDialogVisible = false">取消</el-button>
           <el-button type="warning" :loading="retryLoading" @click="submitRetryDialog">提交重试</el-button>
         </template>
       </el-dialog>
 
-      <el-dialog v-model="cloneDialogVisible" title="重新发起为新任务" width="680px">
-        <el-form label-width="150px">
-          <el-form-item label="源任务 ID">
-            <el-input :model-value="cloneDialog.job?.id || ''" disabled />
-          </el-form-item>
-          <el-form-item label="原因">
-            <el-input v-model="cloneDialog.reason" type="textarea" :rows="2" />
-          </el-form-item>
-          <el-form-item label="配置策略">
-            <el-radio-group v-model="cloneDialog.strategy">
-              <el-radio label="keep_source_snapshot">沿用源任务快照</el-radio>
-              <el-radio label="use_current_defaults">使用当前默认配置</el-radio>
-              <el-radio v-if="isAdmin" label="select_published_versions">指定 published 版本</el-radio>
-            </el-radio-group>
-          </el-form-item>
-          <template v-if="isAdmin && cloneDialog.strategy === 'select_published_versions'">
-            <el-form-item label="Word 模板">
-              <el-select
-                v-model="cloneDialog.templateVersion"
-                clearable
-                filterable
-                :loading="configLoading"
-                placeholder="使用当前默认模板"
-              >
-                <el-option
-                  v-for="option in configSummary?.options.templates || []"
-                  :key="configOptionKey(option)"
-                  :label="option.label"
-                  :value="configOptionKey(option)"
-                />
-              </el-select>
+      <el-dialog
+        v-model="cloneDialogVisible"
+        title="重新发起为新任务"
+        width="min(680px, calc(100vw - 32px))"
+        top="24px"
+        class="job-action-dialog"
+        append-to="body"
+        :append-to-body="true"
+      >
+        <div class="job-action-dialog-scroll">
+          <el-form label-width="150px">
+            <el-form-item label="源任务 ID">
+              <el-input :model-value="cloneDialog.job?.id || ''" disabled />
             </el-form-item>
-            <el-form-item label="术语规则集">
-              <el-select
-                v-model="cloneDialog.termRuleVersion"
-                clearable
-                filterable
-                :loading="configLoading"
-                placeholder="使用当前默认术语规则集"
-              >
-                <el-option
-                  v-for="option in configSummary?.options.term_rule_sets || []"
-                  :key="configOptionKey(option)"
-                  :label="option.label"
-                  :value="configOptionKey(option)"
-                />
-              </el-select>
+            <el-form-item label="原因">
+              <el-input v-model="cloneDialog.reason" type="textarea" :rows="2" />
             </el-form-item>
-            <el-form-item v-if="cloneDialog.job?.mode === 'en2zh_pdf_to_word'" label="翻译术语集">
-              <el-select
-                v-model="cloneDialog.translationTermVersion"
-                clearable
-                filterable
-                :loading="configLoading"
-                placeholder="使用当前默认翻译术语集"
-              >
-                <el-option
-                  v-for="option in configSummary?.options.translation_term_sets || []"
-                  :key="configOptionKey(option)"
-                  :label="option.label"
-                  :value="configOptionKey(option)"
-                />
-              </el-select>
+            <el-form-item label="配置策略">
+              <el-radio-group v-model="cloneDialog.strategy">
+                <el-radio label="keep_source_snapshot">沿用源任务快照</el-radio>
+                <el-radio label="use_current_defaults">使用当前默认配置</el-radio>
+                <el-radio v-if="isAdmin" label="select_published_versions">指定 published 版本</el-radio>
+              </el-radio-group>
             </el-form-item>
-            <el-form-item v-if="cloneDialog.job?.mode === 'en2zh_pdf_to_word'" label="翻译配置">
-              <el-select
-                v-model="cloneDialog.translationProfileVersion"
-                clearable
-                filterable
-                :loading="configLoading"
-                placeholder="使用当前默认翻译配置"
-              >
-                <el-option
-                  v-for="option in configSummary?.options.translation_profiles || []"
-                  :key="configOptionKey(option)"
-                  :label="option.label"
-                  :value="configOptionKey(option)"
-                />
-              </el-select>
-            </el-form-item>
-          </template>
-          <el-alert
-            v-if="cloneDialog.strategy === 'keep_source_snapshot'"
-            type="info"
-            :closable="false"
-            show-icon
-            title="重新发起会创建独立新任务；源任务状态、retry_count、归档状态都不会改变。"
-          />
-          <ApiErrorAlert :error="configError" :diagnostic-context="jobErrorDiagnosticContext('document_jobs.config_summary')" />
-        </el-form>
+            <template v-if="isAdmin && cloneDialog.strategy === 'select_published_versions'">
+              <el-form-item label="Word 模板">
+                <el-select
+                  v-model="cloneDialog.templateVersion"
+                  clearable
+                  filterable
+                  :loading="configLoading"
+                  placeholder="使用当前默认模板"
+                >
+                  <el-option
+                    v-for="option in configSummary?.options.templates || []"
+                    :key="configOptionKey(option)"
+                    :label="option.label"
+                    :value="configOptionKey(option)"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="术语规则集">
+                <el-select
+                  v-model="cloneDialog.termRuleVersion"
+                  clearable
+                  filterable
+                  :loading="configLoading"
+                  placeholder="使用当前默认术语规则集"
+                >
+                  <el-option
+                    v-for="option in configSummary?.options.term_rule_sets || []"
+                    :key="configOptionKey(option)"
+                    :label="option.label"
+                    :value="configOptionKey(option)"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item v-if="cloneDialog.job?.mode === 'en2zh_pdf_to_word'" label="翻译术语集">
+                <el-select
+                  v-model="cloneDialog.translationTermVersion"
+                  clearable
+                  filterable
+                  :loading="configLoading"
+                  placeholder="使用当前默认翻译术语集"
+                >
+                  <el-option
+                    v-for="option in configSummary?.options.translation_term_sets || []"
+                    :key="configOptionKey(option)"
+                    :label="option.label"
+                    :value="configOptionKey(option)"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item v-if="cloneDialog.job?.mode === 'en2zh_pdf_to_word'" label="翻译配置">
+                <el-select
+                  v-model="cloneDialog.translationProfileVersion"
+                  clearable
+                  filterable
+                  :loading="configLoading"
+                  placeholder="使用当前默认翻译配置"
+                >
+                  <el-option
+                    v-for="option in configSummary?.options.translation_profiles || []"
+                    :key="configOptionKey(option)"
+                    :label="option.label"
+                    :value="configOptionKey(option)"
+                  />
+                </el-select>
+              </el-form-item>
+            </template>
+            <el-alert
+              v-if="cloneDialog.strategy === 'keep_source_snapshot'"
+              type="info"
+              :closable="false"
+              show-icon
+              title="重新发起会创建独立新任务；源任务状态、retry_count、归档状态都不会改变。"
+            />
+            <ApiErrorAlert :error="configError" :diagnostic-context="jobErrorDiagnosticContext('document_jobs.config_summary')" />
+          </el-form>
+        </div>
         <template #footer>
           <el-button @click="cloneDialogVisible = false">取消</el-button>
           <el-button type="primary" :loading="cloneLoading" @click="submitCloneDialog">创建新任务</el-button>
@@ -2214,6 +2234,33 @@ onBeforeUnmount(() => {
 
 .job-file-table {
   width: 100%;
+}
+
+:deep(.job-action-dialog) {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
+  margin-bottom: 24px;
+}
+
+:deep(.job-action-dialog .el-dialog__header),
+:deep(.job-action-dialog .el-dialog__footer) {
+  flex: 0 0 auto;
+}
+
+:deep(.job-action-dialog .el-dialog__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.job-action-dialog-scroll {
+  max-height: min(620px, calc(100vh - 220px));
+  max-height: min(620px, calc(100dvh - 220px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
 }
 
 .file-name {
