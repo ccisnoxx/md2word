@@ -588,3 +588,36 @@ Updated production to commit cdc49e2, verified public and loopback health, relea
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: Term rule governance workbench
+
+**Date**: 2026-06-21
+**Task**: Term rule governance workbench
+**Branch**: `main`
+
+### Summary
+
+Improved term rule governance workbench layout, diff pagination, Chinese-first copy, and added guarded draft repair tooling.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3f483a1c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
