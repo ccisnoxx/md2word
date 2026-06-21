@@ -161,12 +161,12 @@
           <section v-if="safeList(selectedRun.blockers).length || safeList(selectedRun.warnings).length" class="drawer-alerts app-alert-stack">
             <el-alert v-if="safeList(selectedRun.blockers).length" type="error" title="验收阻断" :closable="false" show-icon>
               <ul class="evidence-list">
-                <li v-for="blocker in safeList(selectedRun.blockers)" :key="blocker">{{ blocker }}</li>
+                <li v-for="blocker in safeList(selectedRun.blockers)" :key="blocker">{{ evidenceItemText(blocker) }}</li>
               </ul>
             </el-alert>
             <el-alert v-if="safeList(selectedRun.warnings).length" type="warning" title="验收告警" :closable="false" show-icon>
               <ul class="evidence-list">
-                <li v-for="warning in safeList(selectedRun.warnings)" :key="warning">{{ warning }}</li>
+                <li v-for="warning in safeList(selectedRun.warnings)" :key="warning">{{ evidenceItemText(warning) }}</li>
               </ul>
             </el-alert>
           </section>
@@ -276,6 +276,13 @@ const decisionOptions = [
   { label: "复核拒绝", value: "rejected" },
   { label: "需修改", value: "needs_changes" },
 ];
+const evidenceMessageLabels: Record<string, string> = {
+  starter_summary_historical_p0_signoff: "这是历史 P0 签字摘要，不代表下一次发布的最新运行证据。",
+  starter_summary_replace_with_latest_run_report_before_release: "发布前需要用最新脚本报告或人工导入摘要替换这条 starter summary。",
+  p1_formal_regression_not_recorded: "尚未记录正式 P1 翻译回归报告。",
+  p1_manual_signoff_pending: "P1 人工签字仍待完成。",
+  p2_online_gate_not_recorded: "尚未记录 P2 在线门禁报告。",
+};
 
 const runs = ref<AcceptanceRunResponse[]>([]);
 const latestSummary = ref<AcceptanceLatestSummaryResponse | null>(null);
@@ -700,6 +707,10 @@ function decisionMeta(decision: AcceptanceReviewDecision | null): { label: strin
 
 function safeList(value: string[] | null | undefined): string[] {
   return Array.isArray(value) ? value.filter((item) => typeof item === "string" && item.trim()) : [];
+}
+
+function evidenceItemText(value: string): string {
+  return evidenceMessageLabels[value] ?? value;
 }
 
 function timestamp(value?: string | null): number {

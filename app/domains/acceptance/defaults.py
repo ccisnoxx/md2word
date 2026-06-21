@@ -12,7 +12,7 @@ from app.domains.resources.models import utc_now
 
 
 def build_default_acceptance_runs(*, updated_at: datetime | None = None) -> list[AcceptanceRunRecord]:
-    """Build non-passing starter summaries that point admins to current evidence sources."""
+    """Build starter summaries that point admins to evidence sources."""
 
     now = updated_at or utc_now()
     return [
@@ -24,9 +24,16 @@ def build_default_acceptance_runs(*, updated_at: datetime | None = None) -> list
             environment="hostdzire",
             source="manual_summary:golden_sample_acceptance_report",
             report_path_or_url="docs/testing/pdf-to-word-golden-sample-acceptance-report.md",
-            summary="The current Golden Sample report records the 2026-06-17 hostdzire admin signoff as the latest P0 fact.",
+            summary=(
+                "Historical starter summary: the Golden Sample report records the 2026-06-17 "
+                "hostdzire admin signoff. Replace this starter summary with the latest run "
+                "report before using Acceptance Center as release evidence."
+            ),
             blockers=[],
-            warnings=["manual_summary_replace_with_latest_run_report_after_next_release"],
+            warnings=[
+                "starter_summary_historical_p0_signoff",
+                "starter_summary_replace_with_latest_run_report_before_release",
+            ],
             updated_at=now,
         ),
         AcceptanceRunRecord(

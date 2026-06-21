@@ -20,7 +20,7 @@ last_reviewed: 2026-06-21
 Acceptance API 挂在 `/api/v1/acceptance` 下，为内部 admin 提供小型验收证据索引。
 它只保存摘要、报告路径、阻断项、告警和复核结论；不保存 PDF、Word、二进制 artifact、JWT、secret、客户全文、完整 prompt 或 provider 响应。
 
-运行时仓库为空时，服务会写入三条 starter summaries，分别指向当前 P0 Golden Sample、P1 translation 和 P2 online gate 证据来源。P0 starter summary 反映 2026-06-17 hostdzire admin signoff；P1/P2 仍是 `unknown` 且带 blocker。starter summaries 用于引导复核，后续发布仍应被最新脚本报告或人工导入摘要替换。
+运行时仓库为空时，服务会写入三条 starter summaries，分别指向 P0 Golden Sample、P1 translation 和 P2 online gate 证据来源。P0 starter summary 只是 2026-06-17 hostdzire admin signoff 的历史引导摘要；P1/P2 仍是 `unknown` 且带 blocker。starter summaries 不能直接当成下一次发布证据，发布前必须被最新脚本报告或人工导入摘要替换。
 
 ## API 参考
 
@@ -47,9 +47,12 @@ Acceptance API 挂在 `/api/v1/acceptance` 下，为内部 admin 提供小型验
       "report_path_or_url": "docs/testing/pdf-to-word-golden-sample-acceptance-report.md",
       "started_at": null,
       "finished_at": null,
-      "summary": "The current Golden Sample report records the 2026-06-17 hostdzire admin signoff as the latest P0 fact.",
+      "summary": "Historical starter summary: the Golden Sample report records the 2026-06-17 hostdzire admin signoff. Replace this starter summary with the latest run report before using Acceptance Center as release evidence.",
       "blockers": [],
-      "warnings": ["manual_summary_replace_with_latest_run_report_after_next_release"],
+      "warnings": [
+        "starter_summary_historical_p0_signoff",
+        "starter_summary_replace_with_latest_run_report_before_release"
+      ],
       "reviewer": null,
       "decision": null,
       "reviewed_at": null,
@@ -99,9 +102,12 @@ Acceptance API 挂在 `/api/v1/acceptance` 下，为内部 admin 提供小型验
         "report_path_or_url": "docs/testing/pdf-to-word-golden-sample-acceptance-report.md",
         "started_at": null,
         "finished_at": null,
-        "summary": "The current Golden Sample report records the 2026-06-17 hostdzire admin signoff as the latest P0 fact.",
+        "summary": "Historical starter summary: the Golden Sample report records the 2026-06-17 hostdzire admin signoff. Replace this starter summary with the latest run report before using Acceptance Center as release evidence.",
         "blockers": [],
-        "warnings": ["manual_summary_replace_with_latest_run_report_after_next_release"],
+        "warnings": [
+          "starter_summary_historical_p0_signoff",
+          "starter_summary_replace_with_latest_run_report_before_release"
+        ],
         "reviewer": null,
         "decision": null,
         "reviewed_at": null,
@@ -111,7 +117,10 @@ Acceptance API 挂在 `/api/v1/acceptance` 下，为内部 admin 提供小型验
       "missing": false,
       "risk_level": "warning",
       "blockers": [],
-      "warnings": ["manual_summary_replace_with_latest_run_report_after_next_release"]
+      "warnings": [
+        "starter_summary_historical_p0_signoff",
+        "starter_summary_replace_with_latest_run_report_before_release"
+      ]
     }
   ],
   "generated_at": "2026-06-21T00:00:00Z"
@@ -138,7 +147,7 @@ Acceptance API 挂在 `/api/v1/acceptance` 下，为内部 admin 提供小型验
 ## 运营注意事项
 
 - Acceptance Center 是证据索引和签字面，不执行转换、翻译、清理、provider 调用或真实发布动作。
-- starter summaries 必须被最新脚本报告或人工导入摘要替换后，才适合作为下一次发布验收证据。
+- starter summaries 是引导数据；必须被最新脚本报告或人工导入摘要替换后，才适合作为下一次发布验收证据。
 - `approved` 表示 reviewer 对该条摘要负责，不等于所有 P0/P1/P2 gate 自动通过；页面仍会展示原始 `status`、`blockers` 和 `warnings`。
 - `latest-summary` 是派生视图，不是第二个持久化真源；实际证据仍以 `runs` 记录及其报告路径为准。
 - `latest-summary` 每个 tier 的最新证据按 `finished_at`、`started_at`、`updated_at` 顺序判断；复核动作更新 review metadata，但不改变证据运行的新旧顺序。

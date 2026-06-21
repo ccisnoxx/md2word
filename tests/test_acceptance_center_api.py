@@ -40,6 +40,9 @@ class AcceptanceCenterApiTests(TestCase):
         p0_run = next(record for record in reloaded if record.tier == "P0")
         self.assertEqual(p0_run.status, "passed")
         self.assertIn("2026-06-17", p0_run.summary or "")
+        self.assertIn("Historical starter summary", p0_run.summary or "")
+        self.assertIn("starter_summary_historical_p0_signoff", p0_run.warnings)
+        self.assertIn("starter_summary_replace_with_latest_run_report_before_release", p0_run.warnings)
         p2_run = next(record for record in reloaded if record.tier == "P2")
         self.assertIn("p2_online_gate_not_recorded", p2_run.blockers)
 

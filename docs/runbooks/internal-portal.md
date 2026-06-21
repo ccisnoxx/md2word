@@ -174,10 +174,10 @@ curl -sS http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}/api/v1/health/metrics
 ## 6.1 验收中心操作口径
 
 - `/system-status/acceptance` 是发布验收证据索引，不执行转换、翻译、清理、provider 调用或真实发布动作。
-- Acceptance Center 仓库为空时会初始化三条 starter summaries：P0 Golden Sample 反映 2026-06-17 hostdzire admin signoff，P1/P2 为 unknown 且带 blocker。
+- Acceptance Center 仓库为空时会初始化三条 starter summaries：P0 Golden Sample 是 2026-06-17 hostdzire admin signoff 的历史引导摘要，P1/P2 为 unknown 且带 blocker。
 - Admin 可对每条摘要提交 `approved`、`rejected` 或 `needs_changes` 复核结论；复核会写入 audit，但不会修改原始 `status`、`blockers` 或 `warnings`。
 - `/api/v1/acceptance/runs/latest-summary` 只从现有 runs 派生 P0/P1/P2 最新状态，不是第二个持久化真源。
-- 正式发布仍以最新 `check_release.py --runtime-url`、Golden Sample、P1 translation 和 P2 online gate 报告为准。starter summaries 需要被最新运行报告或人工导入摘要替换后，才适合作为下一次发布证据。
+- 正式发布仍以最新 `check_release.py --runtime-url`、Golden Sample、P1 translation 和 P2 online gate 报告为准。starter summaries 需要被最新运行报告或人工导入摘要替换后，才适合作为下一次发布证据；不能把历史 starter summary 直接视为新发布通过。
 
 ## 7. 数据与文件边界
 

@@ -15,9 +15,13 @@ const acceptanceRuns = [
     report_path_or_url: "docs/testing/pdf-to-word-golden-sample-acceptance-report.md",
     started_at: null,
     finished_at: null,
-    summary: "2026-06-17 hostdzire admin signoff is the latest P0 fact.",
+    summary:
+      "Historical starter summary: the Golden Sample report records the 2026-06-17 hostdzire admin signoff. Replace this starter summary with the latest run report before using Acceptance Center as release evidence.",
     blockers: [],
-    warnings: ["manual_summary_replace_with_latest_run_report_after_next_release"],
+    warnings: [
+      "starter_summary_historical_p0_signoff",
+      "starter_summary_replace_with_latest_run_report_before_release",
+    ],
     reviewer: null,
     decision: null,
     reviewed_at: null,
@@ -140,6 +144,11 @@ test("admin reviews an acceptance run", async ({ page }) => {
   await expect(page.getByText("P0 Golden Sample canonical suite")).toBeVisible();
   await expect(page.getByText("P1 en2zh translation beta gate")).toBeVisible();
   await expect(page.getByText("P2 internal online gate")).toBeVisible();
+
+  await page.getByText("P0 Golden Sample canonical suite").click();
+  await expect(page.getByText("这是历史 P0 签字摘要，不代表下一次发布的最新运行证据。")).toBeVisible();
+  await page.getByRole("button", { name: "关闭", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "P0 Golden Sample canonical suite" })).toBeHidden();
 
   await page.getByText("P1 en2zh translation beta gate").click();
   await expect(page.getByRole("heading", { name: "P1 en2zh translation beta gate" })).toBeVisible();
