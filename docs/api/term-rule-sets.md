@@ -34,12 +34,14 @@ last_reviewed: 2026-06-04
 - MySQL versioned mode 下，legacy `/term-rules` 和 `/term-rule-categories` 写接口会拒绝直写
 - import / export / publish / set-default / rollback 成功后会写 audit event
 - publish 成功后会把已 approve 且尚未发布的 term rule proposals 关联到本次 published version
+- 读取 draft、diff、preflight 和结构化 draft rules 需要 Bearer JWT，兼容 legacy `X-Admin-Token`；写入、导入导出、发布、设默认和回滚需要 Bearer admin JWT 或 legacy `X-Admin-Token`
 
 ## API 参考
 
 ### `GET /api/v1/term-rule-sets`
 
 - 用途：列出当前支持的术语规则集。
+- 认证：Bearer JWT；兼容 legacy `X-Admin-Token`。
 - 前置：需要 MySQL resource service。
 - 响应：
   - `items[].id`
@@ -51,6 +53,7 @@ last_reviewed: 2026-06-04
 ### `GET /api/v1/term-rule-sets/{set_id}`
 
 - 用途：查看规则集的默认版本和 published versions。
+- 认证：Bearer JWT；兼容 legacy `X-Admin-Token`。
 - 当前支持：`set_id=electronics-default`
 - 响应：
   - `id`
@@ -62,6 +65,7 @@ last_reviewed: 2026-06-04
 ### `GET /api/v1/term-rule-sets/{set_id}/draft`
 
 - 用途：查看当前 draft。
+- 认证：Bearer JWT；兼容 legacy `X-Admin-Token`。
 - 当前行为：
   - 已有 draft 时直接返回 draft
   - 没有 draft 且已有默认 published 版本时，从默认版本派生 draft
@@ -108,7 +112,7 @@ last_reviewed: 2026-06-04
 ### `GET /api/v1/term-rule-sets/{set_id}/draft/rules`
 
 - 用途：分页查询当前 draft 中的结构化规则。
-- 认证：不需要 admin 权限。
+- 认证：Bearer JWT；兼容 legacy `X-Admin-Token`；不要求 JWT 用户是 admin。
 - 查询参数：
   - `page`：默认 `1`，最小 `1`
   - `page_size`：默认 `20`，范围 `1..200`
@@ -124,7 +128,7 @@ last_reviewed: 2026-06-04
 ### `GET /api/v1/term-rule-sets/{set_id}/draft/rules/{rule_id}`
 
 - 用途：读取当前 draft 中的一条结构化规则。
-- 认证：不需要 admin 权限。
+- 认证：Bearer JWT；兼容 legacy `X-Admin-Token`；不要求 JWT 用户是 admin。
 - 成功响应：`TermRuleResponse`
 - `rule_id` 不存在返回 `404`
 
@@ -166,7 +170,7 @@ last_reviewed: 2026-06-04
 ### `GET /api/v1/term-rule-sets/{set_id}/diff`
 
 - 用途：查看 draft 相对默认版本或指定 published version 的结构化差异。
-- 认证：不需要 admin 权限。
+- 认证：Bearer JWT；兼容 legacy `X-Admin-Token`；不要求 JWT 用户是 admin。
 - 查询参数：
   - `from`：默认 `default`；支持 `default` 或 published version
   - `to`：默认 `draft`；当前仅支持 `draft`
@@ -182,7 +186,7 @@ last_reviewed: 2026-06-04
 ### `GET /api/v1/term-rule-sets/{set_id}/preflight`
 
 - 用途：查看当前 draft 发布前治理校验报告。
-- 认证：不需要 admin 权限。
+- 认证：Bearer JWT；兼容 legacy `X-Admin-Token`；不要求 JWT 用户是 admin。
 - 查询参数：
   - `base`：默认 `default`；支持 `default` 或 published version
 - 成功响应：`TermRuleSetPreflightResponse`

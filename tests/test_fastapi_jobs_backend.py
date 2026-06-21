@@ -9287,6 +9287,15 @@ class FastAPIJobsBackendTests(TestCase):
                 )
                 source_download_path = source_download_url_response.json()["download_url"].replace("http://testserver", "")
                 source_download_response = client.get(source_download_path)
+                result_file_id = create_response.json()["job"]["result_file_id"]
+                runtime.document_file_repository.update_document_file(
+                    result_file_id,
+                    expires_at=utc_now() - timedelta(seconds=1),
+                )
+                expired_result_download_url_response = client.get(
+                    f"/api/v1/document-jobs/{job_id}/download-url",
+                    headers=headers,
+                )
                 events_response = client.get(f"/api/v1/document-jobs/{job_id}/events", headers=headers)
 
         self.assertEqual(create_response.status_code, 201)
@@ -9298,11 +9307,26 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIn("mineru_raw_result", file_types)
         self.assertIn("document_ir", file_types)
         self.assertIn("image_asset", file_types)
+        for file_payload in file_payloads:
+            self.assertIn("quality_evidence", file_payload)
+            self.assertNotIn("bucket", file_payload)
+            self.assertNotIn("object_key", file_payload)
+            self.assertNotIn("checksum_sha256", file_payload)
+            self.assertNotIn("etag", file_payload)
+            self.assertNotIn("metadata", file_payload)
+        generated_word_payload = next(file for file in file_payloads if file["file_type"] == "generated_word")
+        self.assertIn("docx_quality", generated_word_payload["quality_evidence"])
         self.assertEqual(source_download_url_response.status_code, 200)
         self.assertEqual(source_download_url_response.json()["file_id"], source_file["id"])
-        self.assertEqual(source_download_url_response.json()["file"]["file_type"], "source_pdf")
+        source_download_file = source_download_url_response.json()["file"]
+        self.assertEqual(source_download_file["file_type"], "source_pdf")
+        self.assertNotIn("bucket", source_download_file)
+        self.assertNotIn("object_key", source_download_file)
+        self.assertNotIn("metadata", source_download_file)
         self.assertEqual(source_download_response.status_code, 200)
         self.assertTrue(source_download_response.content.startswith(b"%PDF"))
+        self.assertEqual(expired_result_download_url_response.status_code, 409)
+        self.assertEqual(expired_result_download_url_response.json()["error_code"], "conflict")
         download_events = [
             event for event in events_response.json()["items"]
             if event["event_type"] == "download_authorized" and event["payload"]["file_id"] == source_file["id"]
@@ -10404,7 +10428,10 @@ class FastAPIJobsBackendTests(TestCase):
                 )
                 self.assertEqual(draft_default_response.status_code, 400)
                 self.assertIn("published", draft_default_response.json()["detail"])
-                default_after_draft_response = client.get("/api/v1/term-rule-sets/electronics-default")
+                default_after_draft_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
                 self.assertEqual(default_after_draft_response.json()["default_version"], version_v1)
 
                 draft_v2_response = client.put(
@@ -10449,8 +10476,11 @@ class FastAPIJobsBackendTests(TestCase):
                     json={"version": version_v1},
                     headers={"X-Admin-Token": "secret-admin"},
                 )
-                export_response = client.get("/api/v1/term-rules/export")
-                detail_response = client.get("/api/v1/term-rule-sets/electronics-default")
+                export_response = client.get("/api/v1/term-rules/export", headers={"X-Admin-Token": "secret-admin"})
+                detail_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
 
         self.assertEqual(rollback_response.status_code, 200)
         self.assertEqual(missing_reason_publish_response.status_code, 422)
@@ -10540,7 +10570,10 @@ class FastAPIJobsBackendTests(TestCase):
                     },
                     headers={"X-Admin-Token": "secret-admin"},
                 )
-                detail_response = client.get("/api/v1/term-rule-sets/electronics-default")
+                detail_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
 
             default_after_failure = runtime.resource_version_service.repository.get_default_resource_version(
                 "term_rule_set",
@@ -10574,7 +10607,10 @@ class FastAPIJobsBackendTests(TestCase):
             )
             app = create_app(runtime)
             with TestClient(app) as client:
-                draft_before_response = client.get("/api/v1/term-rule-sets/electronics-default/draft")
+                draft_before_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/draft",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
                 self.assertEqual(draft_before_response.status_code, 200)
 
                 invalid_response = client.put(
@@ -10582,7 +10618,10 @@ class FastAPIJobsBackendTests(TestCase):
                     json={"yaml_text": "schema_version: 2\ncategories: [bad]\nrules: []\n"},
                     headers={"X-Admin-Token": "secret-admin"},
                 )
-                draft_after_response = client.get("/api/v1/term-rule-sets/electronics-default/draft")
+                draft_after_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/draft",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
 
         self.assertEqual(invalid_response.status_code, 400)
         self.assertEqual(invalid_response.json()["detail"]["code"], "invalid_term_rule_set_draft")
@@ -10633,10 +10672,14 @@ class FastAPIJobsBackendTests(TestCase):
             app = create_app(runtime)
             with TestClient(app) as client:
                 category_id = client.get("/api/v1/term-rule-categories").json()["items"][0]["id"]
-                list_before_response = client.get("/api/v1/term-rule-sets/electronics-default/draft/rules?q=VOLD")
+                list_before_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules?q=VOLD",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
                 existing_rule_id = list_before_response.json()["items"][0]["id"]
                 get_before_response = client.get(
                     f"/api/v1/term-rule-sets/electronics-default/draft/rules/{existing_rule_id}",
+                    headers={"X-Admin-Token": "secret-admin"},
                 )
                 create_response = client.post(
                     "/api/v1/term-rule-sets/electronics-default/draft/rules",
@@ -10678,6 +10721,7 @@ class FastAPIJobsBackendTests(TestCase):
                 )
                 disabled_list_response = client.get(
                     "/api/v1/term-rule-sets/electronics-default/draft/rules?enabled=false&q=VIN",
+                    headers={"X-Admin-Token": "secret-admin"},
                 )
                 runtime_yaml_after_patch = runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8")
                 delete_response = client.delete(
@@ -10686,6 +10730,7 @@ class FastAPIJobsBackendTests(TestCase):
                 )
                 missing_after_delete_response = client.get(
                     "/api/v1/term-rule-sets/electronics-default/draft/rules/rule_draft_vin",
+                    headers={"X-Admin-Token": "secret-admin"},
                 )
                 runtime_yaml_after_delete = runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8")
 
@@ -10739,7 +10784,10 @@ class FastAPIJobsBackendTests(TestCase):
             file_runtime = build_test_runtime(Path(temp_dir), admin_token="secret-admin")
             app = create_app(file_runtime)
             with TestClient(app) as client:
-                file_list_response = client.get("/api/v1/term-rule-sets/electronics-default/draft/rules")
+                file_list_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/draft/rules",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
                 file_create_response = client.post(
                     "/api/v1/term-rule-sets/electronics-default/draft/rules",
                     headers={"X-Admin-Token": "secret-admin"},
@@ -10898,10 +10946,14 @@ class FastAPIJobsBackendTests(TestCase):
             )
             app = create_app(runtime)
             with TestClient(app) as client:
-                default_version = client.get("/api/v1/term-rule-sets/electronics-default").json()["default_version"]
+                default_version = client.get(
+                    "/api/v1/term-rule-sets/electronics-default",
+                    headers={"X-Admin-Token": "secret-admin"},
+                ).json()["default_version"]
                 category_id = client.get("/api/v1/term-rule-categories").json()["items"][0]["id"]
                 draft_rules = client.get(
                     "/api/v1/term-rule-sets/electronics-default/draft/rules?page_size=20",
+                    headers={"X-Admin-Token": "secret-admin"},
                 ).json()["items"]
                 rule_ids = {item["source_term"]: item["id"] for item in draft_rules}
                 update_response = client.patch(
@@ -10931,14 +10983,22 @@ class FastAPIJobsBackendTests(TestCase):
                         "segments": [{"segment_text": "VADD", "render_type": "plain"}],
                     },
                 )
-                diff_response = client.get("/api/v1/term-rule-sets/electronics-default/diff?from=default")
+                diff_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/diff?from=default",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
                 explicit_diff_response = client.get(
                     f"/api/v1/term-rule-sets/electronics-default/diff?from={default_version}&to=draft",
+                    headers={"X-Admin-Token": "secret-admin"},
                 )
                 include_unchanged_response = client.get(
                     "/api/v1/term-rule-sets/electronics-default/diff?include_unchanged=true",
+                    headers={"X-Admin-Token": "secret-admin"},
                 )
-                preflight_response = client.get("/api/v1/term-rule-sets/electronics-default/preflight")
+                preflight_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/preflight",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
                 runtime_yaml_before_publish = runtime.settings.term_rules_runtime_yaml_file.read_text(
                     encoding="utf-8"
                 )
@@ -11016,8 +11076,14 @@ class FastAPIJobsBackendTests(TestCase):
             file_runtime = build_test_runtime(Path(temp_dir), admin_token="secret-admin")
             file_app = create_app(file_runtime)
             with TestClient(file_app) as client:
-                file_diff_response = client.get("/api/v1/term-rule-sets/electronics-default/diff")
-                file_preflight_response = client.get("/api/v1/term-rule-sets/electronics-default/preflight")
+                file_diff_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/diff",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                file_preflight_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/preflight",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
 
         self.assertEqual(file_diff_response.status_code, 503)
         self.assertEqual(file_preflight_response.status_code, 503)
@@ -11060,7 +11126,10 @@ class FastAPIJobsBackendTests(TestCase):
             runtime_yaml_before_publish = runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8")
             app = create_app(runtime)
             with TestClient(app) as client:
-                preflight_response = client.get("/api/v1/term-rule-sets/electronics-default/preflight")
+                preflight_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/preflight",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
                 publish_response = client.post(
                     "/api/v1/term-rule-sets/electronics-default/publish",
                     headers={"X-Admin-Token": "secret-admin"},
@@ -11318,7 +11387,10 @@ class FastAPIJobsBackendTests(TestCase):
                     headers=operator_headers,
                 )
                 runtime_yaml_text = runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8")
-                draft_response = client.get("/api/v1/term-rule-sets/electronics-default/draft")
+                draft_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default/draft",
+                    headers=admin_headers,
+                )
                 publish_response = client.post(
                     "/api/v1/term-rule-sets/electronics-default/publish",
                     headers=admin_headers,
@@ -11431,7 +11503,10 @@ class FastAPIJobsBackendTests(TestCase):
                         "publish_reason": "publish urgent missing rule",
                     },
                 )
-                detail_response = client.get("/api/v1/term-rule-sets/electronics-default")
+                detail_response = client.get(
+                    "/api/v1/term-rule-sets/electronics-default",
+                    headers=admin_headers,
+                )
                 refreshed_response = client.get(
                     f"/api/v1/term-rule-proposals/{proposal_id}",
                     headers=operator_headers,
@@ -11498,7 +11573,7 @@ class FastAPIJobsBackendTests(TestCase):
                 operator_headers = build_auth_header(client)
                 admin_headers = build_auth_header(client, username="admin", password="admin-pass")
                 category_id = client.get("/api/v1/term-rule-categories").json()["items"][0]["id"]
-                target_rule_id = client.get("/api/v1/term-rules?q=VOLD").json()["items"][0]["id"]
+                target_rule_id = client.get("/api/v1/term-rules?q=VOLD", headers=operator_headers).json()["items"][0]["id"]
                 update_response = client.post(
                     "/api/v1/term-rule-proposals",
                     headers=operator_headers,
@@ -11592,7 +11667,7 @@ class FastAPIJobsBackendTests(TestCase):
                 operator_headers = build_auth_header(client)
                 admin_headers = build_auth_header(client, username="admin", password="admin-pass")
                 category_id = client.get("/api/v1/term-rule-categories").json()["items"][0]["id"]
-                target_rule_id = client.get("/api/v1/term-rules?q=VOLD").json()["items"][0]["id"]
+                target_rule_id = client.get("/api/v1/term-rules?q=VOLD", headers=operator_headers).json()["items"][0]["id"]
                 create_response = client.post(
                     "/api/v1/term-rule-proposals",
                     headers=operator_headers,
@@ -11695,7 +11770,7 @@ class FastAPIJobsBackendTests(TestCase):
                 operator_headers = build_auth_header(client)
                 admin_headers = build_auth_header(client, username="admin", password="admin-pass")
                 category_id = client.get("/api/v1/term-rule-categories").json()["items"][0]["id"]
-                target_rule_id = client.get("/api/v1/term-rules?q=VOLD").json()["items"][0]["id"]
+                target_rule_id = client.get("/api/v1/term-rules?q=VOLD", headers=operator_headers).json()["items"][0]["id"]
                 create_response = client.post(
                     "/api/v1/term-rule-proposals",
                     headers=operator_headers,
@@ -11795,7 +11870,7 @@ class FastAPIJobsBackendTests(TestCase):
                 operator_headers = build_auth_header(client)
                 admin_headers = build_auth_header(client, username="admin", password="admin-pass")
                 category_id = client.get("/api/v1/term-rule-categories").json()["items"][0]["id"]
-                existing_rule = client.get("/api/v1/term-rules?q=VOLD").json()["items"][0]
+                existing_rule = client.get("/api/v1/term-rules?q=VOLD", headers=operator_headers).json()["items"][0]
                 create_response = client.post(
                     "/api/v1/term-rule-proposals",
                     headers=operator_headers,
@@ -11890,7 +11965,7 @@ class FastAPIJobsBackendTests(TestCase):
                 operator_headers = build_auth_header(client)
                 admin_headers = build_auth_header(client, username="admin", password="admin-pass")
                 category_id = client.get("/api/v1/term-rule-categories").json()["items"][0]["id"]
-                target_rule_id = client.get("/api/v1/term-rules?q=VOLD").json()["items"][0]["id"]
+                target_rule_id = client.get("/api/v1/term-rules?q=VOLD", headers=operator_headers).json()["items"][0]["id"]
                 detail_before_response = client.get(
                     "/api/v1/term-rule-sets/electronics-default",
                     headers=admin_headers,
@@ -12000,7 +12075,7 @@ class FastAPIJobsBackendTests(TestCase):
                 operator_headers = build_auth_header(client)
                 admin_headers = build_auth_header(client, username="admin", password="admin-pass")
                 category_id = client.get("/api/v1/term-rule-categories").json()["items"][0]["id"]
-                target_rule_id = client.get("/api/v1/term-rules?q=VOLD").json()["items"][0]["id"]
+                target_rule_id = client.get("/api/v1/term-rules?q=VOLD", headers=operator_headers).json()["items"][0]["id"]
                 create_ok_response = client.post(
                     "/api/v1/term-rule-proposals",
                     headers=operator_headers,
@@ -12278,18 +12353,32 @@ class FastAPIJobsBackendTests(TestCase):
 
     def test_term_rule_categories_export_and_simulate_are_available(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            app = create_app(build_test_runtime(Path(temp_dir)))
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
             with TestClient(app) as client:
+                headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
                 categories_response = client.get("/api/v1/term-rule-categories")
                 self.assertEqual(categories_response.status_code, 200)
                 self.assertGreater(len(categories_response.json()["items"]), 0)
 
-                export_response = client.get("/api/v1/term-rules/export")
+                anonymous_rules_response = client.get("/api/v1/term-rules")
+                self.assertEqual(anonymous_rules_response.status_code, 401)
+
+                denied_export_response = client.get("/api/v1/term-rules/export", headers=headers)
+                self.assertEqual(denied_export_response.status_code, 403)
+
+                export_response = client.get("/api/v1/term-rules/export", headers=admin_headers)
                 self.assertEqual(export_response.status_code, 200)
                 self.assertIn("schema_version: 2", export_response.json()["yaml_text"])
 
                 simulate_response = client.post(
                     "/api/v1/term-rules/simulate",
+                    headers=headers,
                     json={"text": "VIN VOUT"},
                 )
                 self.assertEqual(simulate_response.status_code, 200)
@@ -12324,7 +12413,14 @@ class FastAPIJobsBackendTests(TestCase):
                 )
             }
             with TestClient(app) as client:
-                validate_response = client.post("/api/v1/term-rules/import/validate", json=payload)
+                validate_denied_response = client.post("/api/v1/term-rules/import/validate", json=payload)
+                self.assertEqual(validate_denied_response.status_code, 403)
+
+                validate_response = client.post(
+                    "/api/v1/term-rules/import/validate",
+                    json=payload,
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
                 self.assertEqual(validate_response.status_code, 200)
                 self.assertTrue(validate_response.json()["valid"])
 
@@ -12339,7 +12435,7 @@ class FastAPIJobsBackendTests(TestCase):
                 self.assertEqual(import_response.status_code, 200)
                 self.assertEqual(import_response.json()["total"], 1)
 
-                export_response = client.get("/api/v1/term-rules/export")
+                export_response = client.get("/api/v1/term-rules/export", headers={"X-Admin-Token": "secret-admin"})
                 self.assertIn("source_term: VIN", export_response.json()["yaml_text"])
 
                 sync_response = client.post(

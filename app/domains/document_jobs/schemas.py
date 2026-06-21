@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from app.domains.files.schemas import DocumentFileResponse
+from app.domains.files.schemas import DocumentFileSummaryResponse
 
 DocumentJobActionId = Literal["download", "retry", "cancel", "archive", "unarchive", "clone", "delete"]
 
@@ -196,10 +196,10 @@ class DocumentJobEventListResponse(BaseModel):
 
 
 class DocumentJobFileListResponse(BaseModel):
-    """任务详情页使用的文件汇总响应，不包含长期下载地址。"""
+    """任务详情页使用的文件汇总响应，不包含存储对象定位、raw metadata 或长期下载地址。"""
 
     job_id: str
-    files: list[DocumentFileResponse]
+    files: list[DocumentFileSummaryResponse]
 
 
 class DocumentJobCallbackProblemSummaryResponse(BaseModel):
@@ -389,7 +389,7 @@ class DocumentJobDownloadUrlResponse(BaseModel):
     download_url: str
     method: Literal["GET"] = "GET"
     expires_at: datetime
-    file: DocumentFileResponse
+    file: DocumentFileSummaryResponse
 
 
 class DocumentJobRetryRequest(BaseModel):

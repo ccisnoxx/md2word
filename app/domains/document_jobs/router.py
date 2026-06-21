@@ -19,7 +19,7 @@ from app.domains.document_jobs.config_summary import build_document_job_config_s
 from app.domains.document_jobs.models import DocumentJobEventRecord, DocumentJobRecord
 from app.core.errors import ApiError
 from app.domains.files.models import DocumentFileRecord
-from app.domains.files.schemas import DocumentFileResponse
+from app.domains.files.schemas import DocumentFileSummaryResponse
 from app.domains.resources.models import utc_now
 from app.core.runtime import AppRuntime
 from app.domains.document_jobs.schemas import (
@@ -61,6 +61,28 @@ router = APIRouter(prefix="/document-jobs", tags=["document-jobs"])
 DOCUMENT_JOB_BULK_LIMIT = 50
 DOCUMENT_JOB_STATUS_GROUP_FILTER_VALUES = ("active",)
 DOCUMENT_JOB_TRANSLATION_QA_STATUS_FILTER_VALUES = ("unreviewed", "approved", "needs_fix", "blocked", "all")
+DOCUMENT_JOB_QUALITY_METADATA_KEYS = (
+    "schema_version",
+    "renderer_mode",
+    "layout_page_count",
+    "layout_block_count",
+    "template_version_id",
+)
+DOCUMENT_JOB_DOCX_QUALITY_KEYS = (
+    "editable_content_available",
+    "image_only_suspected",
+    "heading_paragraphs",
+    "heading_like_unstyled_paragraphs",
+    "numbering_paragraphs",
+    "manual_list_marker_paragraphs",
+    "toc_tab_leader_paragraphs",
+    "plain_toc_entry_paragraphs",
+    "table_count",
+    "wide_table_count",
+    "table_header_rows",
+    "table_no_split_rows",
+    "latex_residue_count",
+)
 
 
 @router.post("", response_model=DocumentJobCreateResponse, status_code=status.HTTP_201_CREATED)
@@ -305,7 +327,7 @@ def get_document_job_files(
     files = runtime.document_job_service.list_files(job_id, user=user)
     return DocumentJobFileListResponse(
         job_id=job_id,
-        files=[_build_document_file_response(file) for file in files],
+        files=[_build_document_file_summary_response(file) for file in files],
     )
 
 
@@ -590,7 +612,7 @@ def create_document_job_download_url(
         file_id=file.id,
         download_url=download_url,
         expires_at=expires_at,
-        file=_build_document_file_response(file),
+        file=_build_document_file_summary_response(file),
     )
 
 
@@ -662,8 +684,53 @@ def _build_document_job_event_response(event: DocumentJobEventRecord) -> Documen
     return DocumentJobEventResponse(**event.model_dump(mode="python"))
 
 
-def _build_document_file_response(file: DocumentFileRecord) -> DocumentFileResponse:
-    return DocumentFileResponse(**file.model_dump(mode="python"))
+def _build_document_file_summary_response(file: DocumentFileRecord) -> DocumentFileSummaryResponse:
+    return DocumentFileSummaryResponse(
+        id=file.id,
+        tenant_id=file.tenant_id,
+        company_id=file.company_id,
+        job_id=file.job_id,
+        file_type=file.file_type,
+        storage_provider=file.storage_provider,
+        original_filename=file.original_filename,
+        mime_type=file.mime_type,
+        size_bytes=file.size_bytes,
+        status=file.status,
+        expires_at=file.expires_at,
+        created_by=file.created_by,
+        created_at=file.created_at,
+        updated_at=file.updated_at,
+        quality_evidence=_build_document_file_quality_evidence(file),
+    )
+
+
+def _build_document_file_quality_evidence(file: DocumentFileRecord) -> dict[str, Any]:
+    """只把任务详情需要的质量证据白名单化输出，避免透传 raw metadata。"""
+
+    if file.file_type not in {"generated_word", "document_ir"}:
+        return {}
+    metadata = file.metadata or {}
+    evidence: dict[str, Any] = {}
+    for key in DOCUMENT_JOB_QUALITY_METADATA_KEYS:
+        value = metadata.get(key)
+        if isinstance(value, str | int | float | bool):
+            evidence[key] = value
+    quality_flags = _read_string_list(metadata.get("quality_flags"))
+    if quality_flags:
+        evidence["quality_flags"] = quality_flags
+    layout_quality_flags = _read_string_list(metadata.get("layout_quality_flags"))
+    if layout_quality_flags:
+        evidence["layout_quality_flags"] = layout_quality_flags
+    docx_quality = metadata.get("docx_quality")
+    if isinstance(docx_quality, dict):
+        safe_docx_quality = {
+            key: value
+            for key in DOCUMENT_JOB_DOCX_QUALITY_KEYS
+            if isinstance((value := docx_quality.get(key)), str | int | float | bool)
+        }
+        if safe_docx_quality:
+            evidence["docx_quality"] = safe_docx_quality
+    return evidence
 
 
 def _build_translation_qa_state_response(job: DocumentJobRecord) -> DocumentJobTranslationQaStateResponse:

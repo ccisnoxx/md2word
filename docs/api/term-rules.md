@@ -42,6 +42,7 @@ last_reviewed: 2026-06-04
 ### `GET /api/v1/term-rules`
 
 - 用途：分页查询规则。
+- 认证：Bearer JWT。
 - 查询参数：
   - `page`
   - `page_size`
@@ -52,6 +53,7 @@ last_reviewed: 2026-06-04
 ### `GET /api/v1/term-rules/{rule_id}`
 
 - 用途：查询单条规则详情。
+- 认证：Bearer JWT。
 
 ### `POST /api/v1/term-rules`
 
@@ -90,11 +92,13 @@ last_reviewed: 2026-06-04
 ### `GET /api/v1/term-rules/export`
 
 - 用途：导出当前 live store 的规范化 v2 YAML。
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 返回：`yaml_text`
 
 ### `POST /api/v1/term-rules/simulate`
 
 - 用途：对输入文本执行规则模拟。
+- 认证：Bearer JWT。
 - 请求体：
   - `text`
 - 返回：
@@ -105,6 +109,7 @@ last_reviewed: 2026-06-04
 ### `POST /api/v1/term-rules/import/validate`
 
 - 用途：导入前校验 v2 YAML。
+- 认证：Bearer admin JWT；兼容 legacy `X-Admin-Token`
 - 请求体：
   - `yaml_text`
 - 返回：

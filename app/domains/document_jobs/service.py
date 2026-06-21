@@ -547,7 +547,7 @@ class DocumentJobService:
 
         job = self.get_job(job_id, user=user)
         self._ensure_job_not_deleted(job)
-        return job, self._get_completed_result_file(job)
+        return job, self._get_downloadable_completed_result_file(job)
 
     def get_file_for_download(
         self,
@@ -561,7 +561,7 @@ class DocumentJobService:
         job = self.get_job(job_id, user=user)
         self._ensure_job_not_deleted(job)
         if file_id is None:
-            return job, self._get_completed_result_file(job)
+            return job, self._get_downloadable_completed_result_file(job)
         return job, self._get_downloadable_task_file(job, file_id=file_id)
 
     def get_result_file_for_authorized_download(
@@ -576,7 +576,7 @@ class DocumentJobService:
         if job is None:
             raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"文档任务不存在: {job_id}")
         self._ensure_job_not_deleted(job)
-        file = self._get_completed_result_file(job)
+        file = self._get_downloadable_completed_result_file(job)
         if file.id != file_id:
             raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "下载链接与结果文件不匹配。")
         return job, file
@@ -1506,6 +1506,11 @@ class DocumentJobService:
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "结果文件尚未完成上传。")
         return file
 
+    def _get_downloadable_completed_result_file(self, job: DocumentJobRecord) -> DocumentFileRecord:
+        file = self._get_completed_result_file(job)
+        self._ensure_file_not_expired(file)
+        return file
+
     def _list_files_for_job(self, job: DocumentJobRecord) -> list[DocumentFileRecord]:
         files = [
             file
@@ -1537,9 +1542,12 @@ class DocumentJobService:
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "该文件类型不支持从任务详情下载。")
         if file.status != "uploaded":
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文件尚未完成上传，不能下载。")
+        self._ensure_file_not_expired(file)
+        return file
+
+    def _ensure_file_not_expired(self, file: DocumentFileRecord) -> None:
         if file.expires_at is not None and file.expires_at <= utc_now():
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文件已过期，不能下载。")
-        return file
 
     def _file_belongs_to_job(self, job: DocumentJobRecord, file: DocumentFileRecord) -> bool:
         return file.job_id == job.id or file.id == job.source_file_id
