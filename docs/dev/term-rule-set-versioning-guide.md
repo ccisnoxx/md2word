@@ -27,7 +27,7 @@ Term Rule Set 版本管理把术语规则从“直接改 live runtime store”�
 - 写接口需要 `X-Admin-Token`
 - 写接口可选 `X-Actor-Id`，只作为已通过 admin token 请求的审计操作者标签
 - 当前默认规则集 ID 是 `electronics-default`
-- 测试和本地验证使用 `/Users/sc/miniconda3/envs/md2word/bin/python`
+- 测试和本地验证使用 `.venv/bin/python`
 
 file / sqlite backend 下，`/api/v1/term-rule-sets` 返回 `503`；legacy `/api/v1/term-rules` 和 `/api/v1/term-rule-categories` 写接口仍保持兼容。
 Term Rule Set draft 写接口可选传 `expected_snapshot_hash` 防止覆盖较新的 draft；YAML 导入兼容 `schema_version: 2` 和 `2.1`，并保留高级规则的 `custom_markdown` / `custom_html`。

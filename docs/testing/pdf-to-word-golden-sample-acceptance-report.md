@@ -165,7 +165,7 @@ last_reviewed: 2026-06-17
 ```bash
 GOLDEN_SAMPLE_USERNAME=admin \
 GOLDEN_SAMPLE_PASSWORD='<password>' \
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/run_golden_sample_regression.py
+.venv/bin/python scripts/ops/run_golden_sample_regression.py
 ```
 
 正式执行后，把 `tests/tmp/golden_sample_runs/{timestamp}/report.md` 的汇总结果回填到本报告，人工打开每个成功样本 Word 后按 `tests/fixtures/golden_samples/acceptance-record-template.md` 或本报告的人工质量口径记录结论。

@@ -71,7 +71,7 @@ cp .env.example .env
 生成内部账号密码哈希：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python -c "from app.services.auth.service import hash_password; print(hash_password('change-me-password'))"
+.venv/bin/python -c "from app.services.auth.service import hash_password; print(hash_password('change-me-password'))"
 ```
 
 `deploy/auth_internal_users.json` 示例：
@@ -102,7 +102,7 @@ docker run --rm --user 0 --network md2word-p0_default \
   python scripts/ops/check_release.py \
     --runtime-url http://md2word-p0-api-1:8000
 GOLDEN_SAMPLE_USERNAME=admin GOLDEN_SAMPLE_PASSWORD='<admin-password>' \
-  /Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_release.py \
+  .venv/bin/python scripts/ops/check_release.py \
   --runtime-url http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000} \
   --golden-sample-preflight \
   --golden-sample-preflight-output tests/tmp/golden_sample_runs/preflight.json

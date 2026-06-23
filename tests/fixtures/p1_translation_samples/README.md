@@ -25,12 +25,12 @@ translation term/profile 使用线上当前默认 published 版本
 P1_TRANSLATION_BASE_URL="http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}" \
 P1_TRANSLATION_USERNAME=admin \
 P1_TRANSLATION_PASSWORD='<admin-password>' \
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/run_p1_translation_regression.py
+.venv/bin/python scripts/ops/run_p1_translation_regression.py
 ```
 
 默认只运行 `source_status=available` 的样本。正式 beta gate 需要补齐 `target_sample_count=3` 个真实英文 datasheet，并设置 `P1_TRANSLATION_FORMAL=1`；脚本输出 `tests/tmp/p1_translation_runs/<run_id>/report.json`、`report.md` 和 `manual-signoff-template.yaml`。admin 填写 `manual-signoff.yaml` 后执行：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/run_p1_translation_regression.py \
+.venv/bin/python scripts/ops/run_p1_translation_regression.py \
   --apply-manual-signoff tests/tmp/p1_translation_runs/<run_id>
 ```

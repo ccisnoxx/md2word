@@ -27,7 +27,7 @@ Translation Profile 把 `en2zh` 翻译配置从 settings-only 升级为“先改
 - 写接口可选 `X-Actor-Id`，只作为已通过 admin token 请求的审计操作者标签
 - 当前默认 profile ID 是 `electronics-en2zh`
 - `en2zh` 任务仍需要翻译运行时配置可用：`OPENAI_API_KEY`、OpenAI SDK 和 `resources/prompts/translation_en2zh.md`
-- 测试和本地验证使用 `/Users/sc/miniconda3/envs/md2word/bin/python`
+- 测试和本地验证使用 `.venv/bin/python`
 
 file / sqlite backend 下，`/api/v1/translation-profiles` 返回 `503`；未显式选择 profile 的 `en2zh` job 继续使用 settings / `.env` 兼容路径。MySQL resource mode 下，`en2zh` job 需要默认 published profile，或显式传入 published profile 版本。
 

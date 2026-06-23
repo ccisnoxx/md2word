@@ -57,7 +57,7 @@ ADMIN_TOKEN=local-admin-token
 当前机器不作为 P0 full-stack 验证环境；只有在专项开发排查时才使用本节命令。
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/dev/run_api.py
+.venv/bin/python scripts/dev/run_api.py
 ```
 
 默认监听：
@@ -120,7 +120,7 @@ DOCUMENT_JOBS_CELERY_QUEUE=document-jobs
 启动 API 后另起 Document Jobs worker：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/dev/run_document_worker.py
+.venv/bin/python scripts/dev/run_document_worker.py
 ```
 
 预期：
@@ -146,8 +146,8 @@ JOBS_WORKER_ID=md2word-worker-1
 分别启动：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/dev/run_api.py
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/dev/run_stage_worker.py
+.venv/bin/python scripts/dev/run_api.py
+.venv/bin/python scripts/dev/run_stage_worker.py
 ```
 
 预期：
@@ -173,7 +173,7 @@ JOBS_WORKER_ID=md2word-worker-1
 从已有 file backend 切到 sqlite 前，先做只读完整性检查：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_local_file_storage_integrity.py \
+.venv/bin/python scripts/ops/check_local_file_storage_integrity.py \
   --data-dir var
 ```
 
@@ -182,7 +182,7 @@ JOBS_WORKER_ID=md2word-worker-1
 生成并校验 sqlite shadow copy：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/shadow_copy_metadata_to_database.py \
+.venv/bin/python scripts/ops/shadow_copy_metadata_to_database.py \
   --data-dir var \
   --database-path var/metadata.sqlite3
 ```
@@ -190,7 +190,7 @@ JOBS_WORKER_ID=md2word-worker-1
 只读复核：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/shadow_copy_metadata_to_database.py \
+.venv/bin/python scripts/ops/shadow_copy_metadata_to_database.py \
   --data-dir var \
   --database-path var/metadata.sqlite3 \
   --validate-only
@@ -243,14 +243,14 @@ curl http://127.0.0.1:8000/api/v1/health/ready
 从 file metadata 切到 MySQL 前，先让目标 MySQL database 保持空 metadata，再执行 shadow copy：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/shadow_copy_metadata_to_mysql.py \
+.venv/bin/python scripts/ops/shadow_copy_metadata_to_mysql.py \
   --data-dir var
 ```
 
 只读复核：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/shadow_copy_metadata_to_mysql.py \
+.venv/bin/python scripts/ops/shadow_copy_metadata_to_mysql.py \
   --data-dir var \
   --validate-only
 ```
@@ -288,7 +288,7 @@ curl http://127.0.0.1:8000/api/v1/health/ready
 已有本地 artifact 切换到 local object 前，可先 shadow upload 并回填 `JobFile` metadata：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/shadow_upload_artifacts_to_object_storage.py \
+.venv/bin/python scripts/ops/shadow_upload_artifacts_to_object_storage.py \
   --data-dir var \
   --object-root var/object_artifacts \
   --metadata-backend file
@@ -297,7 +297,7 @@ curl http://127.0.0.1:8000/api/v1/health/ready
 如果 metadata 已切到 sqlite：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/shadow_upload_artifacts_to_object_storage.py \
+.venv/bin/python scripts/ops/shadow_upload_artifacts_to_object_storage.py \
   --data-dir var \
   --object-root var/object_artifacts \
   --metadata-backend database \
@@ -365,13 +365,13 @@ docs/api/openapi.json
 路由、schema、response model 或 endpoint 文档变更后，重新导出：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/export_openapi.py
+.venv/bin/python scripts/ops/export_openapi.py
 ```
 
 发布前执行只读检查：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_release.py
+.venv/bin/python scripts/ops/check_release.py
 ```
 
 预期 `Release check report` 顶层 `ok: True`。
@@ -381,7 +381,7 @@ hostdzire 准生产/生产环境还应带运行时和 Golden Sample 预检：
 ```bash
 GOLDEN_SAMPLE_USERNAME=admin \
 GOLDEN_SAMPLE_PASSWORD='<admin-password>' \
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_release.py \
+.venv/bin/python scripts/ops/check_release.py \
   --runtime-url http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000} \
   --golden-sample-preflight \
   --golden-sample-preflight-output tests/tmp/golden_sample_runs/preflight.json

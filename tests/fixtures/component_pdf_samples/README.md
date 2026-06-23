@@ -21,11 +21,11 @@ tests/fixtures/component_pdf_samples/
 
 ## 本地闭环
 
-1. 使用 `md2word_main` 或 worktree 调试环境在本地复现问题。
+1. 使用正式项目 PyCharm 配置入口或 worktree 调试环境在本地复现问题，输入路径可以指向 `md2word_main/mineru_result/`。
 2. 添加最小化 MinerU 结果包：
 
    ```bash
-   /Users/sc/miniconda3/envs/md2word/bin/python scripts/dev/manage_component_pdf_samples.py \
+   .venv/bin/python scripts/dev/manage_component_pdf_samples.py \
      add-mineru-sample \
      --sample-id ti-opamp-opa228-p1-smoke \
      --brand texas-instruments \
@@ -44,7 +44,7 @@ tests/fixtures/component_pdf_samples/
 4. 运行电子元器件样例回归：
 
    ```bash
-   /Users/sc/miniconda3/envs/md2word/bin/python scripts/dev/run_component_pdf_regression.py
+   .venv/bin/python scripts/dev/run_component_pdf_regression.py
    ```
 
 5. 使用 `acceptance-record-template.md` 记录人工验收结果，并将生成的 DOCX/报告保存在 `tests/tmp/` 或外部证据存储中。

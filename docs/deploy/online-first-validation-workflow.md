@@ -245,7 +245,7 @@ P2_ONLINE_BASE_URL="http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}" \
 P2_ONLINE_PUBLIC_URL="https://md2word.962850.xyz" \
 P2_ONLINE_USERNAME=admin \
 P2_ONLINE_PASSWORD='<admin-password>' \
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/run_p2_online_gate.py
+.venv/bin/python scripts/ops/run_p2_online_gate.py
 ```
 
 报告输出到 `tests/tmp/p2_online_runs/<run_id>/report.json` 和 `report.md`。`p2_online_gate_ready=true` 表示本次内部单租户发布门禁通过；如果存在 critical ops alert、runtime blocker、release check 失败或 P0/P1 preflight 失败，应先处理或在任务验收证据中明确延期风险。
@@ -257,7 +257,7 @@ P2_ONLINE_PASSWORD='<admin-password>' \
 ```bash
 GOLDEN_SAMPLE_USERNAME=admin \
 GOLDEN_SAMPLE_PASSWORD='<admin-password>' \
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_release.py \
+.venv/bin/python scripts/ops/check_release.py \
   --runtime-url "http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}" \
   --golden-sample-preflight \
   --golden-sample-preflight-output tests/tmp/golden_sample_runs/preflight.json
@@ -268,13 +268,13 @@ GOLDEN_SAMPLE_PASSWORD='<admin-password>' \
 ```bash
 GOLDEN_SAMPLE_USERNAME=admin \
 GOLDEN_SAMPLE_PASSWORD='<admin-password>' \
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/run_golden_sample_regression.py
+.venv/bin/python scripts/ops/run_golden_sample_regression.py
 ```
 
 管理员打开本次 `tests/tmp/golden_sample_runs/<run_id>/` 下的 4 个 DOCX，按 Word 文档排版标准优先、接近原版排版次之的口径进行人工 review。通过后复制并填写 `manual-signoff.yaml`，再应用签字：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/run_golden_sample_regression.py \
+.venv/bin/python scripts/ops/run_golden_sample_regression.py \
   --apply-manual-signoff tests/tmp/golden_sample_runs/<run_id>
 ```
 
@@ -290,7 +290,7 @@ P1 不重跑 P0 Word 质量线，也不扩大到泛 PDF。P1 验证对象是 `te
 P1_TRANSLATION_BASE_URL="http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}" \
 P1_TRANSLATION_USERNAME=admin \
 P1_TRANSLATION_PASSWORD='<admin-password>' \
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/run_p1_translation_regression.py \
+.venv/bin/python scripts/ops/run_p1_translation_regression.py \
   --preflight \
   --preflight-output tests/tmp/p1_translation_runs/preflight.json
 ```
@@ -301,7 +301,7 @@ P1_TRANSLATION_PASSWORD='<admin-password>' \
 P1_TRANSLATION_BASE_URL="http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}" \
 P1_TRANSLATION_USERNAME=admin \
 P1_TRANSLATION_PASSWORD='<admin-password>' \
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/run_p1_translation_regression.py
+.venv/bin/python scripts/ops/run_p1_translation_regression.py
 ```
 
 正式 beta gate 需要 admin 补齐 3 个真实英文 datasheet 样本后再运行：
@@ -311,13 +311,13 @@ P1_TRANSLATION_FORMAL=1 \
 P1_TRANSLATION_BASE_URL="http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}" \
 P1_TRANSLATION_USERNAME=admin \
 P1_TRANSLATION_PASSWORD='<admin-password>' \
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/run_p1_translation_regression.py
+.venv/bin/python scripts/ops/run_p1_translation_regression.py
 ```
 
 管理员打开本次 `tests/tmp/p1_translation_runs/<run_id>/` 下的中文 DOCX，并在 QA 页面核对源文/AI/最终文本、术语命中、AI call log 和 debug archive 过期状态。通过后复制并填写 `manual-signoff.yaml`，再应用签字：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/run_p1_translation_regression.py \
+.venv/bin/python scripts/ops/run_p1_translation_regression.py \
   --apply-manual-signoff tests/tmp/p1_translation_runs/<run_id>
 ```
 

@@ -12,7 +12,7 @@ last_reviewed: 2026-06-23
 
 ## 目的
 
-当本地电子元器件 PDF 暴露出转换排版问题，并且这个问题后续不应再回归时，使用这套流程沉淀样例和验收记录。正式转换代码源始终是 `app/conversion`；`md2word_main` 只作为本地调试薄壳和样例来源。
+当本地电子元器件 PDF 暴露出转换排版问题，并且这个问题后续不应再回归时，使用这套流程沉淀样例和验收记录。正式转换代码源始终是 `app/conversion`；`md2word_main` 只作为历史样例资产来源，不再作为运行入口。
 
 这套样例体系独立于：
 
@@ -34,10 +34,10 @@ tests/fixtures/component_pdf_samples/
 
 ## 添加新的本地 MinerU 样例
 
-从本地 MinerU 结果目录开始添加样例。这个目录通常来自 `md2word_main/mineru_result/`。
+从本地 MinerU 结果目录开始添加样例。这个目录可以来自 `md2word_main/mineru_result/`，但转换调试应在正式项目中通过 `scripts/dev/run_local_mineru_debug_config.py` 运行。
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/dev/manage_component_pdf_samples.py \
+.venv/bin/python scripts/dev/manage_component_pdf_samples.py \
   add-mineru-sample \
   --sample-id ti-opamp-opa228-p7-wide-table \
   --brand texas-instruments \
@@ -57,20 +57,20 @@ tests/fixtures/component_pdf_samples/
 添加后运行 manifest 校验：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/dev/manage_component_pdf_samples.py validate
+.venv/bin/python scripts/dev/manage_component_pdf_samples.py validate
 ```
 
 ## 本地回归闭环
 
 推荐的日常流程是：
 
-1. 在 `md2word_main` 或 worktree 调试环境中发现本地问题。
+1. 在正式项目 PyCharm 配置入口或 worktree 调试环境中发现本地问题，输入路径可以指向 `md2word_main/mineru_result/`。
 2. 将最小化后的 MinerU 样例加入 `tests/fixtures/component_pdf_samples/`。
 3. 只在 `app/conversion` 中修复转换行为。
 4. 运行电子元器件样例回归：
 
    ```bash
-   /Users/sc/miniconda3/envs/md2word/bin/python scripts/dev/run_component_pdf_regression.py
+   .venv/bin/python scripts/dev/run_component_pdf_regression.py
    ```
 
 5. 人工检查生成的 DOCX。
@@ -83,13 +83,13 @@ tests/fixtures/component_pdf_samples/
 修改样例治理结构、manifest 或脚本时运行：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python -m unittest tests.test_component_pdf_sample_governance
+.venv/bin/python -m unittest tests.test_component_pdf_sample_governance
 ```
 
 某个电子元器件样例暴露转换问题并完成修复后，运行对应样例回归：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/dev/run_component_pdf_regression.py \
+.venv/bin/python scripts/dev/run_component_pdf_regression.py \
   --sample-id <sample-id>
 ```
 
