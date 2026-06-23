@@ -21,7 +21,7 @@ tests/fixtures/component_pdf_samples/
 
 ## 本地闭环
 
-1. 使用正式项目 PyCharm 配置入口或 worktree 调试环境在本地复现问题，输入路径可以指向 `md2word_main/mineru_result/`。
+1. 使用正式项目 PyCharm 配置入口或 worktree 调试环境在本地复现问题，输入路径优先指向正式项目根目录的 `mineru_result/`。
 2. 添加最小化 MinerU 结果包：
 
    ```bash
@@ -32,8 +32,8 @@ tests/fixtures/component_pdf_samples/
      --category op-amp \
      --product OPA228 \
      --title "OPA228 第 1 页排版烟测" \
-     --source-pdf "md2word_main:test_pdf/OPA228_P1.pdf" \
-     --mineru-package /path/to/mineru_result/OPA228_P1.pdf-uuid \
+     --source-pdf "local:mineru_result/OPA228_P1.pdf-uuid/<origin>.pdf" \
+     --mineru-package mineru_result/OPA228_P1.pdf-uuid \
      --tag datasheet \
      --tag op_amp \
      --acceptance-focus "标题和第一段保持可读" \

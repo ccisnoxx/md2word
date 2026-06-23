@@ -1,6 +1,6 @@
 {
-  "input_path": "/Users/sc/PycharmProjects/PythonProject/md2word_main/mineru_result/OPA228_P1.pdf-d1491424-9662-411d-8e39-fa6bcbd785a4",
-  "output_path": "tests/tmp/local_mineru_debug/OPA228_P1.docx",
+  "input_path": "mineru_result/OPA228_P1.pdf-d1491424-9662-411d-8e39-fa6bcbd785a4",
+  "output_path": "tests/tmp/local_mineru_debug/direct/OPA228_P1.docx",
   "document_language": "en",
   "translation_mode": "direct",
   "template_path": "resources/templates/default/datasheet_template.docx",

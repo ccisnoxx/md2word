@@ -30,14 +30,21 @@ last_reviewed: 2026-06-23
 /Users/sc/PycharmProjects/md2word
 ```
 
-新建或更新一个 Python Run Configuration：
+仓库已提供两个可共享 Run Configuration：
+
+- `Local MinerU Direct`
+- `Local MinerU En2Zh`
+
+如果 PyCharm 没有自动识别 `.run/` 下的配置，可以手动新建 Python Run Configuration：
 
 - Script path: `scripts/dev/run_local_mineru_debug_config.py`
 - Working directory: `/Users/sc/PycharmProjects/md2word`
 - Python interpreter: 选择正式项目的 Python 3.11 解释器，例如 `.venv/bin/python`
-- Parameters: 留空
+- Parameters:
+  - direct：`--config scripts/dev/local_mineru_debug_direct_config.json`
+  - en2zh：`--config scripts/dev/local_mineru_debug_en2zh_config.json`
 
-默认配置文件：
+默认直接运行脚本时使用 direct 配置兼容文件：
 
 ```text
 scripts/dev/local_mineru_debug_config.json
@@ -55,8 +62,8 @@ app.conversion.runtime_runner.run_conversion(...)
 
 ```json
 {
-  "input_path": "/Users/sc/PycharmProjects/PythonProject/md2word_main/mineru_result/OPA228_P1.pdf-d1491424-9662-411d-8e39-fa6bcbd785a4",
-  "output_path": "tests/tmp/local_mineru_debug/OPA228_P1.docx",
+  "input_path": "mineru_result/OPA228_P1.pdf-d1491424-9662-411d-8e39-fa6bcbd785a4",
+  "output_path": "tests/tmp/local_mineru_debug/direct/OPA228_P1.docx",
   "document_language": "en",
   "translation_mode": "direct",
   "template_path": "resources/templates/default/datasheet_template.docx",
@@ -72,7 +79,8 @@ app.conversion.runtime_runner.run_conversion(...)
 路径规则：
 
 - 相对路径从正式项目根目录 `/Users/sc/PycharmProjects/md2word` 解析。
-- 绝对路径可以指向 `md2word_main/mineru_result` 下的历史 MinerU 结果包。
+- 新样例优先放在正式项目根目录的 `mineru_result/`。
+- 历史样例可以先复制或同步到正式项目 `mineru_result/` 后再运行；不要从 `md2word_main` 启动转换。
 - 输出建议写入 `tests/tmp/`，不要提交生成的 DOCX、PNG、PDF 或调试 trace。
 
 常用字段：
@@ -101,14 +109,35 @@ app.conversion.runtime_runner.run_conversion(...)
 如果需要使用另一个配置文件，可以在 PyCharm Parameters 中传入：
 
 ```text
---config scripts/dev/local_mineru_debug_config.json
+--config scripts/dev/local_mineru_debug_en2zh_config.json
 ```
 
 命令行等价验证：
 
 ```bash
 .venv/bin/python scripts/dev/run_local_mineru_debug_config.py
+.venv/bin/python scripts/dev/run_local_mineru_debug_config.py --config scripts/dev/local_mineru_debug_direct_config.json
+.venv/bin/python scripts/dev/run_local_mineru_debug_config.py --config scripts/dev/local_mineru_debug_en2zh_config.json
 ```
+
+## direct 与 en2zh 配置
+
+`scripts/dev/local_mineru_debug_direct_config.json` 用于原排版直出：
+
+- `translation_mode=direct`
+- `document_language=en`
+- 输出到 `tests/tmp/local_mineru_debug/direct/`
+- `translation_request_output` / `translation_response` / `translation_trace_output` 留空
+
+`scripts/dev/local_mineru_debug_en2zh_config.json` 用于英文转中文后出 Word：
+
+- `translation_mode=en2zh`
+- `document_language=auto`，转换后默认按中文排版覆盖处理
+- `translation_request_output` 写到 `tests/tmp/local_mineru_debug/en2zh/`
+- `translation_trace_output` 只在翻译响应成功应用后生成
+- `translation_api_key` 和 `translation_base_url` 默认留空，真实值从 `.env`、环境变量或 PyCharm 环境变量读取
+
+如果没有 `OPENAI_API_KEY` 且没有配置 `translation_response`，en2zh 会明确失败并提示缺少 key；这是预期行为，不会自动回退为 direct。需要离线调试时，先让脚本写出 `translation_request_output`，再把本地未提交的响应 JSON 填到 `translation_response`。
 
 ## 命令行临时入口
 
@@ -116,8 +145,8 @@ app.conversion.runtime_runner.run_conversion(...)
 
 ```bash
 .venv/bin/python scripts/dev/run_local_mineru_conversion.py \
-  /Users/sc/PycharmProjects/PythonProject/md2word_main/mineru_result/OPA228_P1.pdf-d1491424-9662-411d-8e39-fa6bcbd785a4 \
-  --output tests/tmp/local_conversion/OPA228_P1.docx \
+  mineru_result/OPA228_P1.pdf-d1491424-9662-411d-8e39-fa6bcbd785a4 \
+  --output tests/tmp/local_conversion/direct/OPA228_P1.docx \
   --document-language en \
   --translation-mode direct
 ```
@@ -181,5 +210,10 @@ PyCharm 日常调试优先使用配置文件入口，避免每次手写参数。
 ## 风险和约束
 
 - `md2word_main/resources/term_rules/term_rules.v2.yaml` 可能包含历史本地规则，但不能整包复制进正式项目；需要走术语规则流程。
+- 正式项目根目录的 `mineru_result/` 是本地 staging，已被 `.gitignore` 忽略。
 - 专有或客户 PDF 不应提交到正式项目；使用 manifest 指针或私有证据存储。
 - 如果本地历史输出看起来更好，要把最小行为差异沉淀到 `app/conversion` 并补测试，不能恢复 `md2word_main` 作为第二代码源。
+
+完整第一阶段计划和后续扩展路线见：
+
+[local-component-pdf-debugging-implementation-plan.md](/Users/sc/PycharmProjects/md2word/docs/dev/local-component-pdf-debugging-implementation-plan.md)
