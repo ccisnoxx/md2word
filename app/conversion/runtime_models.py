@@ -84,6 +84,8 @@ class SectionLayout:
     right_margin: Any
     header_distance: Any
     footer_distance: Any
+    page_width: Any | None = None
+    page_height: Any | None = None
 
 
 @dataclass(slots=True)
@@ -98,6 +100,8 @@ class RenderConfig:
 @dataclass(slots=True)
 class TableStyleConfig:
     header_bold: bool = True
+    header_fill: str = ""
+    border_color: str = "C7CDD4"
 
 
 @dataclass(slots=True)

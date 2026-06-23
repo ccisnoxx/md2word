@@ -8,16 +8,20 @@ from typing import Any
 from docx import Document
 from docx.enum.section import WD_ORIENTATION, WD_SECTION_START
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK, WD_TAB_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Emu, Mm, Pt
 
+from app.conversion.runtime.page_flow_runtime import PageFlowPlan, build_page_flow_plan
+
 
 _RUNTIME_MODULE: Any | None = None
 TOP_LEVEL_SECTION_TITLE_RE = re.compile(r"^\s*\d{1,2}\s+\S")
+TOC_COLUMN_ENTRY_RE = re.compile(r"^\s*\d{1,2}(?:\.\d+)*\s+\S")
 DENSE_PAGE_BOTTOM_RATIO = 0.96
 DENSE_PAGE_OVERFLOW_RATIO = 1.08
+TOC_COLUMN_MIN_ENTRY_COUNT = 3
 
 
 def bind_runtime(module: Any) -> None:
@@ -341,9 +345,19 @@ def render_document_page_body(
 
 
 def configure_section(section: Any, page_size: tuple[float, float] | None, layout: Any) -> None:
-    landscape = bool(page_size and page_size[0] > page_size[1])
+    configured_width = getattr(layout, "page_width", None)
+    configured_height = getattr(layout, "page_height", None)
+    has_configured_page_size = configured_width is not None and configured_height is not None
+    landscape = bool(
+        configured_width > configured_height
+        if has_configured_page_size
+        else page_size and page_size[0] > page_size[1]
+    )
     section.orientation = WD_ORIENTATION.LANDSCAPE if landscape else WD_ORIENTATION.PORTRAIT
-    if page_size:
+    if has_configured_page_size:
+        section.page_width = configured_width
+        section.page_height = configured_height
+    elif page_size:
         section.page_width = Pt(page_size[0])
         section.page_height = Pt(page_size[1])
     else:
@@ -500,6 +514,8 @@ def render_page_body(
     prepare_body_render_plan_fn = _runtime_value("prepare_body_render_plan", prepare_body_render_plan)
     render_two_col_region_fn = _runtime_value("render_two_col_region", render_two_col_region)
     render_one_col_region_fn = _runtime_value("render_one_col_region", render_one_col_region)
+    build_page_flow_plan_fn = _runtime_value("build_page_flow_plan", build_page_flow_plan)
+    insert_page_break_fn = _runtime_value("insert_page_break", insert_page_break)
     split_toc_page_blocks_fn = _runtime_value("split_toc_page_blocks", split_toc_page_blocks)
 
     if not body_blocks:
@@ -521,12 +537,15 @@ def render_page_body(
         return
 
     page_width, usable_width, regions = body_render_plan
+    flow_plan = build_page_flow_plan_fn(regions, render_config, page_width, usable_width)
 
     for region in regions:
+        if flow_plan.should_break_before_region(region):
+            insert_page_break_fn(document)
         if region.kind == "two_col":
             render_two_col_region_fn(document, region.blocks, page_width, usable_width, render_config)
         else:
-            render_one_col_region_fn(document, region.blocks, page_width, usable_width, render_config)
+            render_one_col_region_fn(document, region.blocks, page_width, usable_width, render_config, flow_plan=flow_plan)
 
 
 def prepare_body_render_plan(
@@ -634,14 +653,31 @@ def render_toc_page(
     fill_toc_title_paragraph_fn = _runtime_value("fill_toc_title_paragraph", lambda *_args, **_kwargs: None)
     fill_toc_entry_paragraph_fn = _runtime_value("fill_toc_entry_paragraph", lambda *_args, **_kwargs: None)
     render_block_into_container_fn = _runtime_value("render_block_into_container", render_block_into_container)
+    split_toc_column_blocks_fn = _runtime_value("split_toc_column_blocks", split_toc_column_blocks)
+    render_toc_columns_fn = _runtime_value("render_toc_columns", render_toc_columns)
 
     page_width = max(block.x2 for block in body_blocks) or 1000.0
     usable_width = document.sections[-1].page_width - document.sections[-1].left_margin - document.sections[-1].right_margin
+    renderable_blocks = [
+        block
+        for block in sorted(body_blocks, key=lambda current: (current.y1, current.x1))
+        if not (
+            block.type == "title"
+            and is_cover_title_fn(block, normalize_toc_text_fn(block.text), page_width)
+        )
+    ]
 
-    for block in sorted(body_blocks, key=lambda current: (current.y1, current.x1)):
-        if block.type == "title" and is_cover_title_fn(block, normalize_toc_text_fn(block.text), page_width):
-            continue
+    toc_columns = split_toc_column_blocks_fn(renderable_blocks, page_width)
+    if toc_columns is not None:
+        title_blocks, left_blocks, right_blocks = toc_columns
+        for block in title_blocks:
+            toc_text = normalize_toc_text_fn(block.text)
+            paragraph = document.add_paragraph()
+            fill_toc_title_paragraph_fn(paragraph, toc_text, render_config)
+        render_toc_columns_fn(document, left_blocks, right_blocks, page_width, usable_width, render_config)
+        return
 
+    for block in renderable_blocks:
         if block.type == "title":
             toc_text = normalize_toc_text_fn(block.text)
             paragraph = document.add_paragraph()
@@ -663,6 +699,139 @@ def render_toc_page(
             continue
 
         render_block_into_container_fn(document, block, page_width, usable_width, render_config)
+
+
+def split_toc_column_blocks(
+    body_blocks: list[Any],
+    page_width: float,
+) -> tuple[list[Any], list[Any], list[Any]] | None:
+    """Return source-positioned TOC columns when MinerU already exposes them."""
+    normalize_toc_text_fn = _runtime_value("normalize_toc_text", lambda text: text)
+    classify_body_block_fn = _runtime_value("classify_body_block", classify_body_block)
+    count_toc_block_entries_fn = _runtime_value("count_toc_block_entries", count_toc_block_entries)
+    title_blocks: list[Any] = []
+    left_blocks: list[Any] = []
+    right_blocks: list[Any] = []
+    left_entry_count = 0
+    right_entry_count = 0
+
+    for block in sorted(body_blocks, key=lambda current: (current.y1, current.x1)):
+        if block.type == "title" and _toc_title_re().match(normalize_toc_text_fn(block.text)):
+            title_blocks.append(block)
+            continue
+
+        entry_count = count_toc_block_entries_fn(block)
+        if entry_count == 0:
+            return None
+
+        role = classify_body_block_fn(block, page_width)
+        if role == "left":
+            left_blocks.append(block)
+            left_entry_count += entry_count
+        elif role == "right":
+            right_blocks.append(block)
+            right_entry_count += entry_count
+        else:
+            return None
+
+    if not title_blocks:
+        return None
+    if left_entry_count < TOC_COLUMN_MIN_ENTRY_COUNT or right_entry_count < TOC_COLUMN_MIN_ENTRY_COUNT:
+        return None
+    return title_blocks, left_blocks, right_blocks
+
+
+def count_toc_block_entries(block: Any) -> int:
+    normalize_toc_text_fn = _runtime_value("normalize_toc_text", lambda text: text)
+    looks_like_toc_entry_text_fn = _runtime_value("looks_like_toc_entry_text", looks_like_toc_entry_text)
+    looks_like_toc_column_entry_text_fn = _runtime_value(
+        "looks_like_toc_column_entry_text",
+        looks_like_toc_column_entry_text,
+    )
+    if block.type == "list":
+        return sum(
+            1
+            for item in block.items
+            if looks_like_toc_column_entry_text_fn(normalize_toc_text_fn(item), looks_like_toc_entry_text_fn)
+        )
+    if block.type in {"title", "paragraph"}:
+        return int(looks_like_toc_column_entry_text_fn(normalize_toc_text_fn(block.text), looks_like_toc_entry_text_fn))
+    return 0
+
+
+def looks_like_toc_column_entry_text(text: str, looks_like_toc_entry_text_fn: Any | None = None) -> bool:
+    if looks_like_toc_entry_text_fn is None:
+        looks_like_toc_entry_text_fn = _runtime_value("looks_like_toc_entry_text", looks_like_toc_entry_text)
+    return bool(looks_like_toc_entry_text_fn(text) or TOC_COLUMN_ENTRY_RE.match(text))
+
+
+def render_toc_columns(
+    document: Document,
+    left_blocks: list[Any],
+    right_blocks: list[Any],
+    page_width: float,
+    usable_width: int,
+    render_config: Any,
+) -> None:
+    clear_table_borders_fn = _runtime_value("clear_table_borders", clear_table_borders)
+    render_toc_blocks_in_cell_fn = _runtime_value("render_toc_blocks_in_cell", render_toc_blocks_in_cell)
+    table = document.add_table(rows=1, cols=2)
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.autofit = False
+    clear_table_borders_fn(table)
+
+    column_width = usable_width // 2
+    content_width = column_width - Emu(int(Mm(3)))
+    for idx, cell in enumerate(table.rows[0].cells):
+        cell.width = column_width
+        cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+        cell.text = ""
+        render_toc_blocks_in_cell_fn(
+            cell,
+            left_blocks if idx == 0 else right_blocks,
+            page_width / 2,
+            content_width,
+            render_config,
+        )
+
+
+def render_toc_blocks_in_cell(
+    cell: Any,
+    blocks: list[Any],
+    page_width: float,
+    usable_width: int,
+    render_config: Any,
+) -> None:
+    normalize_toc_text_fn = _runtime_value("normalize_toc_text", lambda text: text)
+    fill_toc_entry_paragraph_fn = _runtime_value("fill_toc_entry_paragraph", lambda *_args, **_kwargs: None)
+    fill_toc_title_paragraph_fn = _runtime_value("fill_toc_title_paragraph", lambda *_args, **_kwargs: None)
+    first_paragraph = cell.paragraphs[0]
+    first_used = False
+
+    def next_paragraph() -> Any:
+        nonlocal first_used
+        if not first_used:
+            first_used = True
+            return first_paragraph
+        return cell.add_paragraph()
+
+    for block in sorted(blocks, key=lambda current: (current.y1, current.x1)):
+        if block.type == "list":
+            for item in block.items:
+                fill_toc_entry_paragraph_fn(next_paragraph(), item, render_config, usable_width)
+            continue
+
+        if block.type == "title":
+            toc_text = normalize_toc_text_fn(block.text)
+            paragraph = next_paragraph()
+            if _toc_title_re().match(toc_text):
+                fill_toc_title_paragraph_fn(paragraph, toc_text, render_config)
+            else:
+                fill_toc_entry_paragraph_fn(paragraph, toc_text, render_config, usable_width)
+            continue
+
+        if block.type == "paragraph":
+            fill_toc_entry_paragraph_fn(next_paragraph(), block.text, render_config, usable_width)
 
 
 def build_regions(body_blocks: list[Any], page_width: float) -> list[Any]:
@@ -754,11 +923,17 @@ def render_one_col_region(
     page_width: float,
     usable_width: int,
     render_config: Any,
+    flow_plan: PageFlowPlan | None = None,
 ) -> None:
     render_block_into_container_fn = _runtime_value("render_block_into_container", render_block_into_container)
+    insert_page_break_fn = _runtime_value("insert_page_break", insert_page_break)
     for idx, block in enumerate(blocks):
+        if flow_plan and flow_plan.should_break_before_block(block):
+            insert_page_break_fn(document)
         next_block = blocks[idx + 1] if idx + 1 < len(blocks) else None
         render_block_into_container_fn(document, block, page_width, usable_width, render_config, next_block=next_block)
+        if flow_plan and flow_plan.should_break_after_block(block):
+            insert_page_break_fn(document)
 
 
 def render_two_col_region(
@@ -801,6 +976,13 @@ def render_two_col_region(
             content_width,
             render_config,
         )
+
+
+def insert_page_break(container: Any) -> None:
+    paragraph = container.add_paragraph()
+    paragraph.paragraph_format.space_before = Pt(0)
+    paragraph.paragraph_format.space_after = Pt(0)
+    paragraph.add_run().add_break(WD_BREAK.PAGE)
 
 
 def clear_table_borders(table: Any) -> None:

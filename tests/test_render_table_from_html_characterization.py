@@ -398,7 +398,7 @@ class RenderTableFromHtmlCharacterizationTests(unittest.TestCase):
             fill_rich_text_fn=record_rich_text,
             prepare_text_fn=lambda text, _config: text,
             fill_table_cell_fn=record_fill,
-            remove_table_borders_fn=lambda _table: None,
+            remove_table_borders_fn=lambda _table, _render_config=None: None,
             get_style_config_fn=self.module.get_style_config,
         )
 
@@ -423,6 +423,18 @@ class RenderTableFromHtmlCharacterizationTests(unittest.TestCase):
         self.assertEqual(border_map["w:insideH"]["w:val"], "single")
         self.assertEqual(border_map["w:insideH"]["w:sz"], self.module.TABLE_INNER_BORDER_SZ)
 
+    def test_remove_table_borders_uses_configured_border_color(self):
+        table = FakeTable(rows=2, cols=2)
+        render_config = self.make_render_config()
+        render_config.table_style.border_color = "AABBCC"
+
+        self.module.remove_table_borders(table, render_config)
+
+        borders = table._tbl.tblPr.find("w:tblBorders")
+        border_map = {child.tag: child.attrs for child in borders.children}
+        self.assertEqual(border_map["w:top"]["w:color"], "AABBCC")
+        self.assertEqual(border_map["w:insideH"]["w:color"], "AABBCC")
+
     def test_fill_table_cell_keeps_header_cell_plain(self):
         cell = FakeCell()
         render_config = self.make_render_config()
@@ -434,6 +446,18 @@ class RenderTableFromHtmlCharacterizationTests(unittest.TestCase):
         self.assertIsNone(shading)
         self.assertFalse(self.module.TABLE_HEADER_FILL)
         self.assertFalse(fill_table_cell_impl.call_args.kwargs["compact"])
+
+    def test_fill_table_cell_applies_configured_header_fill(self):
+        cell = FakeCell()
+        render_config = self.make_render_config()
+        render_config.table_style.header_fill = "EEF3F8"
+
+        with mock.patch.object(self.module, "fill_table_cell_impl"):
+            self.module.fill_table_cell(cell, self.module.HtmlCell("H1"), True, render_config)
+
+        shading = cell._tc.tcPr.find("w:shd")
+        self.assertIsNotNone(shading)
+        self.assertEqual(shading.attrs["w:fill"], "EEF3F8")
 
     def test_split_long_simple_table_rows_without_source_pages_keeps_default_packing(self):
         table_long_renderer = self.module.table_long_renderer
@@ -506,6 +530,31 @@ class RenderTableFromHtmlCharacterizationTests(unittest.TestCase):
         self.assertTrue(rendered)
         render_large_table_fallback.assert_called_once_with(container, block, table_model, render_config, 8000)
         render_long_simple_table.assert_not_called()
+
+    def test_estimated_table_under_long_threshold_does_not_use_large_table_path(self):
+        container = FakeContainer()
+        block = self.make_block(html="x" * (self.module.MAX_COMPLEX_TABLE_HTML_LEN + 1))
+        table_model = self.module.HtmlTable(rows=[[self.module.HtmlCell("H1")]])
+
+        rendered = self.module.render_large_table_if_needed_impl(
+            container,
+            block,
+            table_model,
+            max_cols=1,
+            html_len=self.module.MAX_COMPLEX_TABLE_HTML_LEN + 1,
+            render_config=self.make_render_config(),
+            usable_width=8000,
+            max_complex_rows=self.module.MAX_COMPLEX_TABLE_ROWS,
+            max_complex_html_len=self.module.MAX_COMPLEX_TABLE_HTML_LEN,
+            is_long_simple_table_fn=self.module.is_long_simple_table,
+            render_long_simple_table_fn=mock.Mock(),
+            render_large_table_fallback_fn=mock.Mock(),
+            logger=self.module.logger,
+            estimated_page_count=2,
+            long_table_page_threshold=2,
+        )
+
+        self.assertFalse(rendered)
 
     def test_small_table_renders_standard_table_and_appends_caption_and_footnote(self):
         container = FakeContainer()

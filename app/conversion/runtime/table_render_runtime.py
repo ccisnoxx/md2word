@@ -95,26 +95,33 @@ def render_large_table_if_needed_impl(
     render_long_simple_table_fn: Any,
     render_large_table_fallback_fn: Any,
     logger: Any,
+    estimated_page_count: int | None = None,
+    long_table_page_threshold: int = 2,
 ) -> bool:
-    if len(table_model.rows) <= max_complex_rows and html_len <= max_complex_html_len:
+    if estimated_page_count is None:
+        if len(table_model.rows) <= max_complex_rows and html_len <= max_complex_html_len:
+            return False
+    elif estimated_page_count <= long_table_page_threshold:
         return False
 
     logger.warning(
-        "large table fallback page={} block={} rows={} max_cols={} html_len={} caption={}",
+        "large table fallback page={} block={} rows={} max_cols={} html_len={} estimated_pages={} caption={}",
         block.page_idx,
         block.block_idx,
         len(table_model.rows),
         max_cols,
         html_len,
+        estimated_page_count if estimated_page_count is not None else "unknown",
         block.captions[0] if block.captions else "N/A",
     )
-    if is_long_simple_table_fn(table_model, max_complex_rows):
+    if is_long_simple_table_fn(table_model, 0 if estimated_page_count is not None else max_complex_rows):
         logger.info(
-            "long simple table chunk rendering page={} block={} rows={} max_cols={} caption={}",
+            "long simple table chunk rendering page={} block={} rows={} max_cols={} estimated_pages={} caption={}",
             block.page_idx,
             block.block_idx,
             len(table_model.rows),
             max_cols,
+            estimated_page_count if estimated_page_count is not None else "unknown",
             block.captions[0] if block.captions else "N/A",
         )
         render_long_simple_table_fn(container, block, table_model, render_config, usable_width)
@@ -137,7 +144,7 @@ def render_standard_html_table_impl(
     table = container.add_table(rows=len(table_model.rows), cols=max_cols)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
-    remove_table_borders_fn(table)
+    remove_table_borders_fn(table, render_config)
     configure_table_rows(table, repeat_header=True)
 
     column_widths = compute_table_column_widths(max_cols, usable_width)
@@ -269,7 +276,7 @@ def render_large_table_fallback_impl(
         table = container.add_table(rows=len(expanded_rows), cols=max_cols)
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
         table.autofit = False
-        remove_table_borders_fn(table)
+        remove_table_borders_fn(table, render_config)
         configure_table_rows(table, repeat_header=True)
 
         for row_idx, row_values in enumerate(expanded_rows):
