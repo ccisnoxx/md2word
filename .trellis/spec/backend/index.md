@@ -44,4 +44,9 @@ and existing dev docs. Update them when the implementation contract changes.
 
 ---
 
-**Language**: All documentation should be written in **English**.
+**Language**: Backend code-spec documents should be written in **English** by
+default. User-facing dev guides, fixture README files, and manual acceptance
+templates should follow the user's requested language and the surrounding
+document language; when the user explicitly asks for Chinese, write those
+artifacts in Chinese while preserving machine-readable paths, command names,
+arguments, sample ids, and enum values.
