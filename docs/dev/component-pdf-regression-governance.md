@@ -3,27 +3,25 @@ doc_type: dev-guide
 slug: component-pdf-regression-governance
 component: conversion-runtime
 status: current
-summary: Brand/category sample governance and local regression workflow for electronic component PDFs.
+summary: 电子元器件 PDF 的品牌/分类样例治理与本地回归流程。
 tags: [conversion, mineru, regression, samples, datasheet]
 last_reviewed: 2026-06-23
 ---
 
-# Component PDF Regression Governance
+# 电子元器件 PDF 样例回归治理
 
-## Purpose
+## 目的
 
-Use this workflow when a local electronic component PDF exposes a conversion
-layout issue that should not regress. The official conversion code remains
-`app/conversion`; `md2word_main` is only a thin local shell and sample source.
+当本地电子元器件 PDF 暴露出转换排版问题，并且这个问题后续不应再回归时，使用这套流程沉淀样例和验收记录。正式转换代码源始终是 `app/conversion`；`md2word_main` 只作为本地调试薄壳和样例来源。
 
-This suite is separate from:
+这套样例体系独立于：
 
-- P0 Golden Samples under `tests/fixtures/golden_samples/`
-- P1 translation samples under `tests/fixtures/p1_translation_samples/`
+- `tests/fixtures/golden_samples/` 下的 P0 Golden Samples
+- `tests/fixtures/p1_translation_samples/` 下的 P1 翻译样例
 
-## Sample Layout
+## 样例目录结构
 
-Component samples live under:
+电子元器件样例放在：
 
 ```text
 tests/fixtures/component_pdf_samples/
@@ -32,14 +30,11 @@ tests/fixtures/component_pdf_samples/
   samples/<brand>/<category>/<sample-id>/mineru/
 ```
 
-`brand`, `category`, and `sample-id` use lowercase kebab-case. The manifest owns
-the review metadata: product, title, source PDF reference, MinerU package path,
-tags, and acceptance focus.
+`brand`、`category` 和 `sample-id` 使用小写 kebab-case。`manifest.yaml` 统一维护样例元数据，包括产品型号、标题、源 PDF 引用、MinerU 结果包路径、标签和人工验收关注点。
 
-## Add A New Local MinerU Sample
+## 添加新的本地 MinerU 样例
 
-Start from a local MinerU result directory, usually discovered through
-`md2word_main/mineru_result/`.
+从本地 MinerU 结果目录开始添加样例。这个目录通常来自 `md2word_main/mineru_result/`。
 
 ```bash
 /Users/sc/miniconda3/envs/md2word/bin/python scripts/dev/manage_component_pdf_samples.py \
@@ -48,58 +43,54 @@ Start from a local MinerU result directory, usually discovered through
   --brand texas-instruments \
   --category op-amp \
   --product OPA228 \
-  --title "OPA228 electrical characteristics wide table" \
+  --title "OPA228 电气特性宽表" \
   --source-pdf "md2word_main:test_pdf/OPA228_P7.pdf" \
   --mineru-package /Users/sc/PycharmProjects/PythonProject/md2word_main/mineru_result/OPA228_P7.pdf-d457d448-c495-41ea-8bcf-41a3f18c00fb \
   --tag datasheet \
   --tag wide_table \
   --tag electrical_characteristics \
-  --acceptance-focus "Wide electrical characteristics table remains editable" \
-  --acceptance-focus "Units and symbols stay readable" \
+  --acceptance-focus "电气特性宽表在 Word 中保持可编辑" \
+  --acceptance-focus "单位和符号保持可读" \
   --apply
 ```
 
-Run validation after adding:
+添加后运行 manifest 校验：
 
 ```bash
 /Users/sc/miniconda3/envs/md2word/bin/python scripts/dev/manage_component_pdf_samples.py validate
 ```
 
-## Local Regression Loop
+## 本地回归闭环
 
-The intended loop is:
+推荐的日常流程是：
 
-1. Discover a local issue in `md2word_main` or a worktree sandbox.
-2. Add a minimized MinerU sample to `tests/fixtures/component_pdf_samples/`.
-3. Fix behavior in `app/conversion`.
-4. Run component regression:
+1. 在 `md2word_main` 或 worktree 调试环境中发现本地问题。
+2. 将最小化后的 MinerU 样例加入 `tests/fixtures/component_pdf_samples/`。
+3. 只在 `app/conversion` 中修复转换行为。
+4. 运行电子元器件样例回归：
 
    ```bash
    /Users/sc/miniconda3/envs/md2word/bin/python scripts/dev/run_component_pdf_regression.py
    ```
 
-5. Review the generated DOCX manually.
-6. Record manual results using
-   `tests/fixtures/component_pdf_samples/acceptance-record-template.md`.
+5. 人工检查生成的 DOCX。
+6. 使用 `tests/fixtures/component_pdf_samples/acceptance-record-template.md` 记录人工验收结果。
 
-Generated DOCX and reports are written under
-`tests/tmp/component_pdf_regression/` by default. Do not commit generated DOCX,
-rendered PNG/PDF files, or proprietary customer PDFs.
+默认情况下，生成的 DOCX 和报告会写入 `tests/tmp/component_pdf_regression/`。不要提交生成的 DOCX、渲染 PNG/PDF，或任何专有/客户 PDF。
 
-## Targeted Validation
+## 针对性验证
 
-For sample-governance changes:
+修改样例治理结构、manifest 或脚本时运行：
 
 ```bash
 /Users/sc/miniconda3/envs/md2word/bin/python -m unittest tests.test_component_pdf_sample_governance
 ```
 
-For conversion behavior changes caused by a component sample:
+某个电子元器件样例暴露转换问题并完成修复后，运行对应样例回归：
 
 ```bash
 /Users/sc/miniconda3/envs/md2word/bin/python scripts/dev/run_component_pdf_regression.py \
   --sample-id <sample-id>
 ```
 
-Then run the relevant conversion characterization tests before handoff.
-
+交付前再运行相关的 conversion characterization tests，确保修复没有破坏既有转换行为。
