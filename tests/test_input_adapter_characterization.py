@@ -482,6 +482,42 @@ class InputAdapterCharacterizationTests(__import__("unittest").TestCase):
         self.assertEqual(block.page_idx, 1)
         self.assertEqual(block.block_idx, 2)
 
+    def test_parse_visual_block_merges_numbered_footnote_fragments(self):
+        block = self.module.parse_visual_block(
+            "table",
+            (1.0, 2.0, 3.0, 4.0),
+            {
+                "table_footnote": [
+                    {"type": "text", "content": "(5) The maximum power dissipation is a function of"},
+                    {"type": "equation_inline", "content": "T_{J(MAX)}"},
+                    {"type": "text", "content": ","},
+                    {"type": "equation_inline", "content": "R_{\\theta JA}"},
+                    {"type": "text", "content": "and"},
+                    {"type": "equation_inline", "content": "T_A"},
+                    {"type": "text", "content": "."},
+                    {"type": "text", "content": "(6) Independent note."},
+                ],
+            },
+            Path("."),
+            page_idx=1,
+            block_idx=2,
+        )
+
+        self.assertEqual(
+            block.footnotes,
+            [
+                "(5) The maximum power dissipation is a function of "
+                "T<sub>J(MAX)</sub>, R<sub>θJA</sub> and T<sub>A</sub>.",
+                "(6) Independent note.",
+            ],
+        )
+
+    def test_merge_footnote_fragments_keeps_unmarked_notes_separate(self):
+        self.assertEqual(
+            self.module.merge_footnote_fragments(["Source: data sheet.", "All values are typical."]),
+            ["Source: data sheet.", "All values are typical."],
+        )
+
     def test_parse_visual_block_returns_table_placeholder_for_images_directory(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             package_root = Path(temp_dir)

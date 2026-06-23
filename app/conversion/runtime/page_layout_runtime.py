@@ -15,6 +15,9 @@ from docx.shared import Emu, Mm, Pt
 
 
 _RUNTIME_MODULE: Any | None = None
+TOP_LEVEL_SECTION_TITLE_RE = re.compile(r"^\s*\d{1,2}\s+\S")
+DENSE_PAGE_BOTTOM_RATIO = 0.96
+DENSE_PAGE_OVERFLOW_RATIO = 1.08
 
 
 def bind_runtime(module: Any) -> None:
@@ -241,6 +244,18 @@ def should_start_new_section(
     ):
         return True
 
+    should_start_new_page_before_dense_section_fn = _runtime_value(
+        "should_start_new_page_before_dense_section",
+        should_start_new_page_before_dense_section,
+    )
+    if should_start_new_page_before_dense_section_fn(
+        current_body_blocks,
+        previous_body_blocks,
+        page,
+        previous_rendered_page,
+    ):
+        return True
+
     if previous_is_toc and not current_is_toc:
         return True
 
@@ -251,6 +266,44 @@ def should_start_new_section(
         return True
 
     return False
+
+
+def should_start_new_page_before_dense_section(
+    current_body_blocks: list[Any],
+    previous_body_blocks: list[Any],
+    current_page: Any,
+    previous_page: Any,
+) -> bool:
+    """Keep a new top-level section from being squeezed after a dense visual page."""
+    if not current_body_blocks or not previous_body_blocks:
+        return False
+
+    current_first_block = next(
+        (block for block in sorted(current_body_blocks, key=lambda item: (item.y1, item.x1))),
+        None,
+    )
+    if current_first_block is None or current_first_block.type != "title":
+        return False
+
+    title_text = (current_first_block.text or "").strip()
+    if not TOP_LEVEL_SECTION_TITLE_RE.match(title_text):
+        return False
+
+    current_page_height = current_page.page_size[1] if current_page.page_size else None
+    if current_page_height and current_first_block.y1 > current_page_height * 0.25:
+        return False
+
+    previous_page_height = previous_page.page_size[1] if previous_page.page_size else None
+    if not previous_page_height:
+        return False
+
+    previous_bottom = max((block.y2 for block in previous_body_blocks), default=0.0)
+    if previous_bottom < previous_page_height * DENSE_PAGE_BOTTOM_RATIO:
+        return False
+    if previous_bottom > previous_page_height * DENSE_PAGE_OVERFLOW_RATIO:
+        return False
+
+    return any(block.type in _visual_types() for block in previous_body_blocks)
 
 
 def resolve_toc_page_state(body_blocks: list[Any], toc_mode_active: bool) -> bool:

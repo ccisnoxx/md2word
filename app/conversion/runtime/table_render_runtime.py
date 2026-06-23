@@ -6,6 +6,8 @@ from typing import Any
 
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from docx.shared import Emu, Mm, Pt
 
 
@@ -136,6 +138,7 @@ def render_standard_html_table_impl(
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
     remove_table_borders_fn(table)
+    configure_table_rows(table, repeat_header=True)
 
     column_widths = compute_table_column_widths(max_cols, usable_width)
     for col_idx, col in enumerate(table.columns):
@@ -267,6 +270,7 @@ def render_large_table_fallback_impl(
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
         table.autofit = False
         remove_table_borders_fn(table)
+        configure_table_rows(table, repeat_header=True)
 
         for row_idx, row_values in enumerate(expanded_rows):
             for col_idx in range(max_cols):
@@ -281,6 +285,23 @@ def render_large_table_fallback_impl(
                 cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
 
     render_block_footnotes_fn(container, block, render_config)
+
+
+def configure_table_rows(table: Any, *, repeat_header: bool) -> None:
+    for row_idx, row in enumerate(table.rows):
+        row_properties = row._tr.get_or_add_trPr()
+        ensure_row_flag(row_properties, "w:cantSplit")
+        if repeat_header and row_idx == 0:
+            ensure_row_flag(row_properties, "w:tblHeader", value="true")
+
+
+def ensure_row_flag(row_properties: Any, tag: str, *, value: str | None = None) -> None:
+    element = row_properties.find(qn(tag))
+    if element is None:
+        element = OxmlElement(tag)
+        row_properties.append(element)
+    if value is not None:
+        element.set(qn("w:val"), value)
 
 
 def fill_table_cell_impl(
