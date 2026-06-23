@@ -153,6 +153,68 @@ app.conversion.runtime_runner.run_conversion(...)
 
 PyCharm 日常调试优先使用配置文件入口，避免每次手写参数。
 
+## DOCX 标准视觉验收
+
+DOCX 版式验收优先使用标准渲染链，不再使用 macOS Quick Look 缩略图作为最终判断。Quick Look / `qlmanage` 只适合在标准链不可用时做临时预览；它不是 Word 或 LibreOffice 排版引擎，页眉、浮动图片、锚定对象、文本环绕和字体度量可能出现误判。
+
+标准链路：
+
+```text
+DOCX --soffice--> PDF --pdf2image + Poppler--> PNG
+```
+
+本机依赖：
+
+- Python 虚拟环境：`pdf2image`、`Pillow`
+- macOS 系统工具：LibreOffice 提供 `soffice`
+- macOS 系统工具：Poppler 提供 `pdfinfo` 和 `pdftoppm`
+
+首次配置：
+
+```bash
+.venv/bin/python -m ensurepip --upgrade
+.venv/bin/python -m pip install pdf2image
+brew install poppler
+brew install --cask libreoffice
+```
+
+确认依赖：
+
+```bash
+.venv/bin/python -c "import pdf2image, PIL; print('pdf2image ok', PIL.__version__)"
+command -v soffice
+command -v pdfinfo
+command -v pdftoppm
+```
+
+渲染 direct：
+
+```bash
+env TMPDIR=/private/tmp .venv/bin/python \
+  /Users/sc/.codex/plugins/cache/openai-primary-runtime/documents/26.622.11653/skills/documents/render_docx.py \
+  tests/tmp/local_mineru_debug/direct/OPA228_P1.docx \
+  --output_dir tests/tmp/local_mineru_debug/visual_qa/standard_render/direct \
+  --emit_pdf
+```
+
+渲染 en2zh：
+
+```bash
+env TMPDIR=/private/tmp .venv/bin/python \
+  /Users/sc/.codex/plugins/cache/openai-primary-runtime/documents/26.622.11653/skills/documents/render_docx.py \
+  tests/tmp/local_mineru_debug/en2zh/OPA228_P1.zh.docx \
+  --output_dir tests/tmp/local_mineru_debug/visual_qa/standard_render/en2zh \
+  --emit_pdf
+```
+
+Codex 桌面沙箱注意点：
+
+- 在 Codex 受限沙箱内直接运行 LibreOffice 可能出现 `Abort trap: 6`。
+- 同一条 `render_docx.py` 命令在非沙箱权限下可以正常完成。
+- 因此通过 Codex 执行标准渲染时，需要用非沙箱权限运行；在本机终端或 PyCharm 正常运行时，按上面的命令即可。
+
+视觉检查以 `page-*.png` 和可选的中间 PDF 为准。检查首页顶部 logo、页眉标题、产品标题、正文起始区域、表格边框、图片缩放、页脚页码和分页；如果 Word 实际打开结果与 Quick Look 不一致，以 Word 或标准 LibreOffice 渲染为准。
+
 ## md2word_main 的状态
 
 `md2word_main/mineru_to_docx.py` 已 deprecated：

@@ -35,6 +35,7 @@ last_reviewed: 2026-06-23
    - 需要离线复现时，先保留 `translation_request_output`，把人工或模型返回保存到本地未提交 JSON，再填入 `translation_response`。
 4. 检查输出。
    - 自动检查只确认脚本状态、DOCX 存在和可打开。
+   - 视觉检查优先使用 LibreOffice + Poppler 标准渲染链生成 `page-*.png`；macOS Quick Look / `qlmanage` 只作为标准链不可用时的临时预览，不作为最终版式结论。
    - 人工检查必须对照 PDF，看标题、目录、表格、图片、页眉页脚、单位符号和翻译文本是否可读。
 5. 定位问题。
    - MinerU 包缺块或识别错：先记录为解析输入问题。
@@ -92,6 +93,7 @@ last_reviewed: 2026-06-23
 | direct 单样例 | 脚本退出 0，DOCX 生成 | 对照 PDF 看排版 | `tests/tmp/local_mineru_debug/direct/` |
 | en2zh 缺 key | 脚本失败且提示 `OPENAI_API_KEY` | 不要求 DOCX | `tests/tmp/local_mineru_debug/en2zh/` |
 | en2zh 有 key/response | 脚本退出 0，DOCX/trace 生成 | 对照 PDF 和中文术语检查 | `tests/tmp/local_mineru_debug/en2zh/` |
+| DOCX 视觉验收 | `render_docx.py` 生成 `page-*.png` 和可选 PDF | 检查首页顶部、表格、图片、页脚和分页 | `tests/tmp/local_mineru_debug/visual_qa/standard_render/` |
 | 长期样例回归 | `run_component_pdf_regression.py` | 填人工验收记录 | `tests/tmp/component_pdf_regression/` |
 
 第一阶段改动验证命令：
@@ -101,6 +103,8 @@ last_reviewed: 2026-06-23
 .venv/bin/python scripts/dev/manage_component_pdf_samples.py validate
 .venv/bin/python scripts/dev/run_local_mineru_debug_config.py --config scripts/dev/local_mineru_debug_direct_config.json
 ```
+
+DOCX 标准视觉验收命令和依赖清单见 [local-conversion-sandbox.md](/Users/sc/PycharmProjects/md2word/docs/dev/local-conversion-sandbox.md)。在 Codex 受限沙箱内运行 LibreOffice 可能出现 `Abort trap: 6`；通过 Codex 执行渲染时使用非沙箱权限，本机终端和 PyCharm 正常运行不需要特殊处理。
 
 en2zh 缺 key 的预期验证：
 
