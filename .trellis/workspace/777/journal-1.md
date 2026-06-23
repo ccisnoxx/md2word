@@ -687,3 +687,36 @@ Implemented brand/category component PDF sample governance, manifest validation,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: Localize component PDF governance docs
+
+**Date**: 2026-06-23
+**Task**: Localize component PDF governance docs
+**Branch**: `main`
+
+### Summary
+
+Converted component PDF governance user docs and acceptance template to Chinese, and clarified doc language rules for user-facing dev guides.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d60ae8b6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
