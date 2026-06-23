@@ -410,6 +410,21 @@ class RenderTableFromHtmlCharacterizationTests(unittest.TestCase):
             all(row._tr.trPr.find("w:cantSplit") is not None for row in container.tables[0].rows)
         )
 
+    def test_numbered_section_table_caption_uses_heading_style(self):
+        container = FakeContainer()
+        render_config = self.make_render_config()
+        block = self.make_block(captions=["6.4 Thermal Information: OPA227, OPA228"])
+
+        with (
+            mock.patch.object(self.module, "apply_named_style_config") as apply_named_style_config,
+            mock.patch.object(self.module, "fill_rich_text") as fill_rich_text,
+        ):
+            self.module.render_block_captions(container, block, render_config, keep_with_next=True)
+
+        apply_named_style_config.assert_called_once_with(container.paragraphs[0], render_config, "Heading 2")
+        self.assertEqual(fill_rich_text.call_args.kwargs["style_name"], "Heading 2")
+        self.assertTrue(container.paragraphs[0].paragraph_format.keep_with_next)
+
     def test_remove_table_borders_applies_printable_grid(self):
         table = FakeTable(rows=2, cols=2)
 

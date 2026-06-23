@@ -2,6 +2,7 @@ from __future__ import annotations
 
 # app/conversion/runtime/table_render_runtime.py: 渲染 MinerU HTML 表格、caption 和 footnote 到 DOCX。
 
+import re
 from typing import Any
 
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
@@ -9,6 +10,9 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Emu, Mm, Pt
+
+
+SECTION_CAPTION_RE = re.compile(r"^\s*(?P<num>\d+(?:\.\d+)+)\s+\S")
 
 
 def render_block_captions_impl(
@@ -22,15 +26,26 @@ def render_block_captions_impl(
     keep_with_next: bool = False,
 ) -> None:
     for caption in block.captions:
+        prepared = prepare_text_fn(caption, render_config)
+        style_name = resolve_caption_style_name(prepared)
         caption_paragraph = container.add_paragraph()
         caption_paragraph.paragraph_format.keep_with_next = keep_with_next
-        apply_named_style_config_fn(caption_paragraph, render_config, "Caption")
+        apply_named_style_config_fn(caption_paragraph, render_config, style_name)
         fill_rich_text_fn(
             caption_paragraph,
-            prepare_text_fn(caption, render_config),
+            prepared,
             render_config=render_config,
-            style_name="Caption",
+            style_name=style_name,
         )
+
+
+def resolve_caption_style_name(caption: str) -> str:
+    """Render numbered section-like table captions as headings, not centered captions."""
+    match = SECTION_CAPTION_RE.match(caption or "")
+    if match is None:
+        return "Caption"
+    level = min(match.group("num").count(".") + 1, 3)
+    return f"Heading {level}"
 
 
 def render_block_footnotes_impl(

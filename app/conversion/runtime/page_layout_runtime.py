@@ -22,6 +22,8 @@ TOC_COLUMN_ENTRY_RE = re.compile(r"^\s*\d{1,2}(?:\.\d+)*\s+\S")
 DENSE_PAGE_BOTTOM_RATIO = 0.96
 DENSE_PAGE_OVERFLOW_RATIO = 1.08
 TOC_COLUMN_MIN_ENTRY_COUNT = 3
+A4_WIDTH = Mm(210)
+A4_HEIGHT = Mm(297)
 
 
 def bind_runtime(module: Any) -> None:
@@ -263,7 +265,12 @@ def should_start_new_section(
     if previous_is_toc and not current_is_toc:
         return True
 
-    if is_landscape_page(page.page_size) != is_landscape_page(previous_rendered_page.page_size):
+    layout = getattr(render_config, "section_layout", None)
+    has_configured_page_size = (
+        getattr(layout, "page_width", None) is not None
+        and getattr(layout, "page_height", None) is not None
+    )
+    if not has_configured_page_size and is_landscape_page(page.page_size) != is_landscape_page(previous_rendered_page.page_size):
         return True
 
     if render_config.use_mineru_header_footer and (header_blocks or footer_blocks or page_number_blocks):
@@ -330,6 +337,7 @@ def render_document_page_body(
 ) -> None:
     render_toc_page_fn = _runtime_value("render_toc_page", render_toc_page)
     render_page_body_fn = _runtime_value("render_page_body", render_page_body)
+    insert_page_break_fn = _runtime_value("insert_page_break", insert_page_break)
     is_toc_page_fn = _runtime_value("is_toc_page", is_toc_page)
     split_toc_page_blocks_fn = _runtime_value("split_toc_page_blocks", split_toc_page_blocks)
     if current_is_toc:
@@ -337,6 +345,7 @@ def render_document_page_body(
             toc_blocks, remaining_blocks = split_toc_page_blocks_fn(body_blocks)
             render_toc_page_fn(document, toc_blocks, render_config, skip_product_title)
             if remaining_blocks:
+                insert_page_break_fn(document)
                 render_page_body_fn(document, remaining_blocks, render_config, False)
         else:
             render_toc_page_fn(document, body_blocks, render_config, skip_product_title)
@@ -348,21 +357,14 @@ def configure_section(section: Any, page_size: tuple[float, float] | None, layou
     configured_width = getattr(layout, "page_width", None)
     configured_height = getattr(layout, "page_height", None)
     has_configured_page_size = configured_width is not None and configured_height is not None
-    landscape = bool(
-        configured_width > configured_height
-        if has_configured_page_size
-        else page_size and page_size[0] > page_size[1]
-    )
+    landscape = bool(configured_width > configured_height) if has_configured_page_size else False
     section.orientation = WD_ORIENTATION.LANDSCAPE if landscape else WD_ORIENTATION.PORTRAIT
     if has_configured_page_size:
         section.page_width = configured_width
         section.page_height = configured_height
-    elif page_size:
-        section.page_width = Pt(page_size[0])
-        section.page_height = Pt(page_size[1])
     else:
-        section.page_width = _runtime_value("A4_HEIGHT", None) if landscape else _runtime_value("A4_WIDTH", None)
-        section.page_height = _runtime_value("A4_WIDTH", None) if landscape else _runtime_value("A4_HEIGHT", None)
+        section.page_width = _runtime_value("A4_WIDTH", None)
+        section.page_height = _runtime_value("A4_HEIGHT", None)
     section.left_margin = layout.left_margin
     section.right_margin = layout.right_margin
     section.top_margin = layout.top_margin

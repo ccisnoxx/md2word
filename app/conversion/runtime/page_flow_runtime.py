@@ -9,6 +9,7 @@ from typing import Any
 
 from app.conversion.runtime.table_html_parser import HtmlTable, parse_html_table
 from app.conversion.runtime.table_long_renderer import estimate_paragraph_height, estimate_row_height
+from app.conversion.runtime.table_render_runtime import resolve_caption_style_name
 from app.conversion.runtime.text_rendering import infer_heading_level
 
 
@@ -231,7 +232,10 @@ def estimate_visual_group_height_pt(
     page_body_height = estimate_page_body_height_pt(render_config)
     bbox_height = max(block.height, 1.0)
     visual_height = min(max((bbox_height / max(source_page_height, 1.0)) * page_body_height, 18.0), page_body_height * 0.82)
-    captions = sum(estimate_text_height_pt(text, render_config, usable_width, "Caption") for text in block.captions)
+    captions = sum(
+        estimate_text_height_pt(text, render_config, usable_width, resolve_caption_style_name(text))
+        for text in block.captions
+    )
     notes = sum(estimate_text_height_pt(text, render_config, usable_width, "TableNote") for text in block.footnotes)
     return visual_height + captions + notes + 4.0
 
@@ -242,7 +246,10 @@ def estimate_table_group_height_pt(
     render_config: Any,
     usable_width: int,
 ) -> float:
-    caption_height = sum(estimate_text_height_pt(text, render_config, usable_width, "Caption") for text in block.captions)
+    caption_height = sum(
+        estimate_text_height_pt(text, render_config, usable_width, resolve_caption_style_name(text))
+        for text in block.captions
+    )
     note_height = sum(estimate_text_height_pt(text, render_config, usable_width, "TableNote") for text in block.footnotes)
     row_height = sum(estimate_table_row_height_pt(row, table_model, render_config, usable_width) for row in table_model.rows)
     return caption_height + row_height + note_height + 4.0
@@ -254,7 +261,10 @@ def estimate_table_anchor_height_pt(
     render_config: Any,
     usable_width: int,
 ) -> float:
-    caption_height = sum(estimate_text_height_pt(text, render_config, usable_width, "Caption") for text in block.captions)
+    caption_height = sum(
+        estimate_text_height_pt(text, render_config, usable_width, resolve_caption_style_name(text))
+        for text in block.captions
+    )
     visible_rows = table_model.rows[:MIN_TABLE_ROWS_VISIBLE]
     rows_height = sum(estimate_table_row_height_pt(row, table_model, render_config, usable_width) for row in visible_rows)
     return caption_height + rows_height + 2.0

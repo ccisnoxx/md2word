@@ -220,6 +220,8 @@ def load_section_layout(
         right_margin=page_margin,
         header_distance=mm_fn(8),
         footer_distance=mm_fn(8),
+        page_width=mm_fn(210),
+        page_height=mm_fn(297),
     )
 
     if template_document and template_document.sections:
