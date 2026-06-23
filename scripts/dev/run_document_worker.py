@@ -1,4 +1,4 @@
-#!/Users/sc/miniconda3/envs/md2word/bin/python
+#!/usr/bin/env python3
 from __future__ import annotations
 
 # scripts/dev/run_document_worker.py: PyCharm 友好的 document_jobs Celery Worker 入口。

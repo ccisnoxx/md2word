@@ -1,4 +1,4 @@
-#!/Users/sc/miniconda3/envs/md2word/bin/python
+#!/usr/bin/env python3
 from __future__ import annotations
 
 # scripts/dev/run_stage_worker.py: PyCharm 友好的独立 stage worker 进程入口。

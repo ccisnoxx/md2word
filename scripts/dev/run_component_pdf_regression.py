@@ -1,4 +1,4 @@
-#!/Users/sc/miniconda3/envs/md2word/bin/python
+#!/usr/bin/env python3
 """Run local DOCX regression for governed electronic component PDF samples."""
 
 from __future__ import annotations
