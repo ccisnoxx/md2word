@@ -4,6 +4,7 @@ deploy/auth_internal_users.json
 .DS_Store
 ._*
 .idea/json_assistant_history.xml
+mineru_result/
 __pycache__/
 tests/__pycache__/
 tests/tmp/*

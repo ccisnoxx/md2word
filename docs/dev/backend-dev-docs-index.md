@@ -25,9 +25,10 @@ last_reviewed: 2026-05-30
 11. [template-config-package-v1.md](/Users/sc/PycharmProjects/md2word/docs/dev/template-config-package-v1.md)
 12. [document-ir-v2.md](/Users/sc/PycharmProjects/md2word/docs/dev/document-ir-v2.md)
 13. [local-conversion-sandbox.md](/Users/sc/PycharmProjects/md2word/docs/dev/local-conversion-sandbox.md)
-14. [component-pdf-regression-governance.md](/Users/sc/PycharmProjects/md2word/docs/dev/component-pdf-regression-governance.md)
-15. [backend.md](/Users/sc/PycharmProjects/md2word/docs/runbooks/backend.md)
-16. API 细节查 [document-jobs.md](/Users/sc/PycharmProjects/md2word/docs/api/document-jobs.md)、[files.md](/Users/sc/PycharmProjects/md2word/docs/api/files.md)、[mineru-callbacks.md](/Users/sc/MinerU/md2word_file/docs/api/mineru-callbacks.md)、[health.md](/Users/sc/MinerU/md2word_file/docs/api/health.md)、[templates.md](/Users/sc/MinerU/md2word_file/docs/api/templates.md)、[term-rule-sets.md](/Users/sc/PycharmProjects/md2word/docs/api/term-rule-sets.md) 和 [translation-profiles.md](/Users/sc/PycharmProjects/md2word/docs/api/translation-profiles.md)。Legacy [jobs.md](/Users/sc/PycharmProjects/md2word/docs/api/jobs.md) 只说明旧 `/api/v1/jobs` 已移除。
+14. [local-component-pdf-debugging-implementation-plan.md](/Users/sc/PycharmProjects/md2word/docs/dev/local-component-pdf-debugging-implementation-plan.md)
+15. [component-pdf-regression-governance.md](/Users/sc/PycharmProjects/md2word/docs/dev/component-pdf-regression-governance.md)
+16. [backend.md](/Users/sc/PycharmProjects/md2word/docs/runbooks/backend.md)
+17. API 细节查 [document-jobs.md](/Users/sc/PycharmProjects/md2word/docs/api/document-jobs.md)、[files.md](/Users/sc/PycharmProjects/md2word/docs/api/files.md)、[mineru-callbacks.md](/Users/sc/MinerU/md2word_file/docs/api/mineru-callbacks.md)、[health.md](/Users/sc/MinerU/md2word_file/docs/api/health.md)、[templates.md](/Users/sc/MinerU/md2word_file/docs/api/templates.md)、[term-rule-sets.md](/Users/sc/PycharmProjects/md2word/docs/api/term-rule-sets.md) 和 [translation-profiles.md](/Users/sc/PycharmProjects/md2word/docs/api/translation-profiles.md)。Legacy [jobs.md](/Users/sc/PycharmProjects/md2word/docs/api/jobs.md) 只说明旧 `/api/v1/jobs` 已移除。
 
 ## 文档分工
 
@@ -46,6 +47,7 @@ last_reviewed: 2026-05-30
 | [template-config-package-v1.md](/Users/sc/PycharmProjects/md2word/docs/dev/template-config-package-v1.md) | 要调整 P0 Word 模板配置或排查渲染样式 | `template-config/v1` 文件集合、YAML 合同和 `template_id@version` 绑定格式 |
 | [document-ir-v2.md](/Users/sc/PycharmProjects/md2word/docs/dev/document-ir-v2.md) | 要迁移或排查 DocumentIR 布局字段 | v2 页面、bbox、role、caption/footnote 布局合同 |
 | [local-conversion-sandbox.md](/Users/sc/PycharmProjects/md2word/docs/dev/local-conversion-sandbox.md) | 要用本地 MinerU 结果包调试 Word 转换 | 正式项目作为唯一转换代码源、PyCharm 配置入口、sandbox 审计和样例资产盘点 |
+| [local-component-pdf-debugging-implementation-plan.md](/Users/sc/PycharmProjects/md2word/docs/dev/local-component-pdf-debugging-implementation-plan.md) | 要按 direct/en2zh 建立本地电子元器件 PDF 调试闭环 | 本地 `mineru_result` staging、PyCharm preset、direct/en2zh 配置、验收矩阵和后续扩展路线 |
 | [component-pdf-regression-governance.md](/Users/sc/PycharmProjects/md2word/docs/dev/component-pdf-regression-governance.md) | 要沉淀电子元器件品牌/分类样例并跑本地回归 | `component_pdf_samples` manifest、MinerU 样例添加、DOCX 回归和人工验收记录 |
 | [backend.md](/Users/sc/PycharmProjects/md2word/docs/runbooks/backend.md) | 日常联调或本地运维 | 真实上传、重试、取消、清理本地文件 |
 | [document-jobs.md](/Users/sc/PycharmProjects/md2word/docs/api/document-jobs.md) | 联调前端或脚本调用方 | 当前 P0 Files + Document Jobs 主任务合同、下载入口和任务动作 |

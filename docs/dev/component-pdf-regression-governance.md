@@ -34,7 +34,7 @@ tests/fixtures/component_pdf_samples/
 
 ## 添加新的本地 MinerU 样例
 
-从本地 MinerU 结果目录开始添加样例。这个目录可以来自 `md2word_main/mineru_result/`，但转换调试应在正式项目中通过 `scripts/dev/run_local_mineru_debug_config.py` 运行。
+从本地 MinerU 结果目录开始添加样例。新样例优先放在正式项目根目录 `mineru_result/`，转换调试应在正式项目中通过 `scripts/dev/run_local_mineru_debug_config.py` 运行。
 
 ```bash
 .venv/bin/python scripts/dev/manage_component_pdf_samples.py \
@@ -44,8 +44,8 @@ tests/fixtures/component_pdf_samples/
   --category op-amp \
   --product OPA228 \
   --title "OPA228 电气特性宽表" \
-  --source-pdf "md2word_main:test_pdf/OPA228_P7.pdf" \
-  --mineru-package /Users/sc/PycharmProjects/PythonProject/md2word_main/mineru_result/OPA228_P7.pdf-d457d448-c495-41ea-8bcf-41a3f18c00fb \
+  --source-pdf "local:mineru_result/OPA228_P7.pdf-d457d448-c495-41ea-8bcf-41a3f18c00fb/bb850108-9783-4a28-8523-9b115319bd47_origin.pdf" \
+  --mineru-package mineru_result/OPA228_P7.pdf-d457d448-c495-41ea-8bcf-41a3f18c00fb \
   --tag datasheet \
   --tag wide_table \
   --tag electrical_characteristics \
@@ -64,7 +64,7 @@ tests/fixtures/component_pdf_samples/
 
 推荐的日常流程是：
 
-1. 在正式项目 PyCharm 配置入口或 worktree 调试环境中发现本地问题，输入路径可以指向 `md2word_main/mineru_result/`。
+1. 在正式项目 PyCharm 配置入口或 worktree 调试环境中发现本地问题，输入路径优先指向正式项目内 `mineru_result/`。
 2. 将最小化后的 MinerU 样例加入 `tests/fixtures/component_pdf_samples/`。
 3. 只在 `app/conversion` 中修复转换行为。
 4. 运行电子元器件样例回归：

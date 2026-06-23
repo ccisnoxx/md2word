@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase, mock
+from xml.etree import ElementTree
 
 import json
 
@@ -71,6 +72,50 @@ class LocalMinerUConversionCliTests(TestCase):
 
 
 class LocalMinerUDebugConfigTests(TestCase):
+    def test_repo_debug_configs_target_project_local_mineru_result(self) -> None:
+        repo_root = Path.cwd()
+
+        default_kwargs = run_local_mineru_debug_config.build_conversion_kwargs(
+            repo_root / "scripts/dev/local_mineru_debug_config.json",
+            repo_root=repo_root,
+        )
+        direct_kwargs = run_local_mineru_debug_config.build_conversion_kwargs(
+            repo_root / "scripts/dev/local_mineru_debug_direct_config.json",
+            repo_root=repo_root,
+        )
+        en2zh_kwargs = run_local_mineru_debug_config.build_conversion_kwargs(
+            repo_root / "scripts/dev/local_mineru_debug_en2zh_config.json",
+            repo_root=repo_root,
+        )
+
+        self.assertEqual(default_kwargs["translation_mode"], "direct")
+        self.assertEqual(direct_kwargs["translation_mode"], "direct")
+        self.assertEqual(en2zh_kwargs["translation_mode"], "en2zh")
+        self.assertEqual(default_kwargs["input_path"], direct_kwargs["input_path"])
+        self.assertEqual(Path(direct_kwargs["input_path"]).relative_to(repo_root).parts[0], "mineru_result")
+        self.assertEqual(Path(en2zh_kwargs["input_path"]).relative_to(repo_root).parts[0], "mineru_result")
+        self.assertIn("tests/tmp/local_mineru_debug/direct", direct_kwargs["output_path"])
+        self.assertIn("tests/tmp/local_mineru_debug/en2zh", en2zh_kwargs["output_path"])
+        self.assertIsNone(en2zh_kwargs["translation_api_key"])
+        self.assertIsNotNone(en2zh_kwargs["translation_request_output"])
+        self.assertIsNotNone(en2zh_kwargs["translation_trace_output"])
+
+    def test_pycharm_run_configs_reference_local_debug_configs(self) -> None:
+        repo_root = Path.cwd()
+        expectations = {
+            "Local MinerU Direct.run.xml": "scripts/dev/local_mineru_debug_direct_config.json",
+            "Local MinerU En2Zh.run.xml": "scripts/dev/local_mineru_debug_en2zh_config.json",
+        }
+
+        for filename, config_path in expectations.items():
+            with self.subTest(filename=filename):
+                tree = ElementTree.parse(repo_root / ".run" / filename)
+                options = {option.attrib["name"]: option.attrib.get("value", "") for option in tree.findall(".//option[@name]")}
+
+                self.assertEqual(options["SCRIPT_NAME"], "$PROJECT_DIR$/scripts/dev/run_local_mineru_debug_config.py")
+                self.assertEqual(options["WORKING_DIRECTORY"], "$PROJECT_DIR$")
+                self.assertIn(config_path, options["PARAMETERS"])
+
     def test_build_conversion_kwargs_resolves_relative_paths_from_official_repo(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             repo_root = Path(tmp_dir)
