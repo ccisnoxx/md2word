@@ -5,6 +5,7 @@ import { createRouter, createWebHistory, type RouteLocationNormalized } from "vu
 import { setUnauthorizedHandler } from "@/api/client";
 import AppLayout from "@/layouts/AppLayout.vue";
 import AcceptanceCenterPage from "@/pages/AcceptanceCenterPage.vue";
+import AiProviderConfigPage from "@/pages/AiProviderConfigPage.vue";
 import AuditLogPage from "@/pages/AuditLogPage.vue";
 import FileRetentionPage from "@/pages/FileRetentionPage.vue";
 import ForbiddenPage from "@/pages/ForbiddenPage.vue";
@@ -102,6 +103,12 @@ const router = createRouter({
           name: "settings-translation-profiles",
           component: TranslationProfilesPage,
           meta: { permissions: ["settings:read"] },
+        },
+        {
+          path: "settings/ai-provider",
+          name: "settings-ai-provider",
+          component: AiProviderConfigPage,
+          meta: { roles: ["admin"], permissions: ["settings:write"] },
         },
         {
           path: "settings/translation-term-sets",

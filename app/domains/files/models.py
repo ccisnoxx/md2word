@@ -15,6 +15,7 @@ DocumentFileType = Literal[
     "mineru_raw_result",
     "document_ir",
     "image_asset",
+    "image_assets_archive",
     "generated_word",
     "ai_call_log",
     "ai_debug_archive",

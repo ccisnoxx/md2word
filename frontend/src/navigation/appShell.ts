@@ -3,6 +3,7 @@ import type { Component } from "vue";
 import type { RouteLocationNormalizedLoaded, RouteLocationRaw } from "vue-router";
 import {
   Collection,
+  Cpu,
   DataAnalysis,
   Document,
   DocumentAdd,
@@ -35,6 +36,7 @@ export type AppNavItemId =
   | "terminology-releases"
   | "translation-term-sets"
   | "settings"
+  | "ai-provider"
   | "templates"
   | "word-page-styles"
   | "translation-profiles"
@@ -167,6 +169,14 @@ const NAV_GROUP_DEFINITIONS: AppNavGroupDefinition[] = [
         icon: Management,
         permissions: ["settings:read"],
       },
+      {
+        id: "ai-provider",
+        label: "AI 配置",
+        to: "/settings/ai-provider",
+        icon: Cpu,
+        roles: ["admin"],
+        permissions: ["settings:write"],
+      },
     ],
   },
   {
@@ -213,6 +223,7 @@ const ROUTE_OWNERS: Record<string, RouteOwnership> = {
   "settings-term-rules": { groupId: "quality", itemId: "term-rules", pageLabel: "术语规则" },
   "settings-terminology-releases": { groupId: "quality", itemId: "terminology-releases", pageLabel: "术语发布" },
   "settings-translation-profiles": { groupId: "configuration", itemId: "translation-profiles", pageLabel: "翻译配置" },
+  "settings-ai-provider": { groupId: "configuration", itemId: "ai-provider", pageLabel: "AI 配置" },
   "settings-translation-term-sets": { groupId: "quality", itemId: "translation-term-sets", pageLabel: "翻译术语集" },
   "term-proposals": { groupId: "quality", itemId: "term-proposals" },
   "system-status": { groupId: "system", itemId: "system-status", pageLabel: "系统状态" },
@@ -382,6 +393,11 @@ export function getBreadcrumbItems(route: RouteLocationNormalizedLoaded, access:
       return [
         { label: "配置中心", to: "/settings" },
         { label: "翻译配置" },
+      ];
+    case "settings-ai-provider":
+      return [
+        { label: "配置中心", to: "/settings" },
+        { label: "AI 配置" },
       ];
     case "settings-translation-term-sets":
       return [

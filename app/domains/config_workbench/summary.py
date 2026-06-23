@@ -720,6 +720,7 @@ def _unique_strings(values: Any) -> list[str]:
 
 
 READINESS_CODE_MESSAGES: dict[str, str] = {
+    "ai_provider_config_invalid": "AI provider 配置文件不可读取或不是合法 JSON。",
     "auth_internal_users_source_missing": "内部账号来源未配置。",
     "auth_jwt_secret_key_missing": "认证签名密钥未配置。",
     "data_dir_not_writable": "数据目录不可写。",

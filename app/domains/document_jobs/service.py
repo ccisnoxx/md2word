@@ -61,7 +61,7 @@ DOCUMENT_JOB_DOWNLOAD_FILE_TYPES: set[DocumentFileType] = {
     "source_pdf",
     "mineru_raw_result",
     "document_ir",
-    "image_asset",
+    "image_assets_archive",
     "generated_word",
     "ai_call_log",
     "ai_debug_archive",
@@ -71,7 +71,7 @@ DOCUMENT_JOB_FILE_TYPE_ORDER = {
     "generated_word": 10,
     "mineru_raw_result": 20,
     "document_ir": 30,
-    "image_asset": 40,
+    "image_assets_archive": 40,
     "ai_call_log": 50,
     "ai_debug_archive": 60,
 }
@@ -639,7 +639,7 @@ class DocumentJobService:
         self.record_event(
             retried,
             event_type="retry_requested",
-            stage="uploaded",
+            stage=retried.stage,
             level="info",
             message="文档任务已请求重试。",
             payload={
@@ -647,6 +647,7 @@ class DocumentJobService:
                 "reason": self._normalize_optional_text(reason),
                 "previous_error_code": job.error_code,
                 "previous_failed_stage": job.failed_stage,
+                "resume_stage": retried.stage,
                 "use_latest_term_assets": use_latest_term_assets,
                 "term_assets": retried.request_snapshot.get("term_assets"),
                 "resources": retried.request_snapshot.get("resources"),
@@ -1107,10 +1108,11 @@ class DocumentJobService:
         translation_term_set_id: str | None,
         translation_term_version: str | None,
     ) -> dict:
+        resume_status, resume_stage, resume_progress = self._retry_resume_state(job)
         patch = {
-            "status": "queued" if self.task_queue is not None else "pending",
-            "stage": "uploaded",
-            "progress": 5 if self.task_queue is not None else 0,
+            "status": resume_status,
+            "stage": resume_stage,
+            "progress": resume_progress,
             "failed_stage": None,
             "error_code": None,
             "error_message": None,
@@ -1141,6 +1143,17 @@ class DocumentJobService:
             patch["mineru_data_id"] = None
             patch["mineru_callback_seed"] = None
         return patch
+
+    def _retry_resume_state(self, job: DocumentJobRecord) -> tuple[str, str, int]:
+        """Choose the earliest valid workflow stage that preserves completed artifacts."""
+
+        if job.result_file_id is not None:
+            return "running", "uploading", max(job.progress, 90)
+        if job.document_ir_file_id is not None:
+            return "running", "rendering", max(job.progress, 60)
+        if job.mineru_raw_result_file_id is not None:
+            return "running", "parsed", max(job.progress, 30)
+        return ("queued", "uploaded", 5) if self.task_queue is not None else ("pending", "uploaded", 0)
 
     def _build_translation_qa_state(self, job: DocumentJobRecord) -> DocumentJobTranslationQaStateResponse:
         return DocumentJobTranslationQaStateResponse(
@@ -1519,6 +1532,7 @@ class DocumentJobService:
             and file.company_id == job.company_id
             and file.file_type in DOCUMENT_JOB_DOWNLOAD_FILE_TYPES
             and self._file_belongs_to_job(job, file)
+            and self._is_current_downloadable_job_file(job, file)
         ]
         return sorted(
             files,
@@ -1540,6 +1554,8 @@ class DocumentJobService:
             raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "下载文件与文档任务不匹配。")
         if file.file_type not in DOCUMENT_JOB_DOWNLOAD_FILE_TYPES:
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "该文件类型不支持从任务详情下载。")
+        if not self._is_current_downloadable_job_file(job, file):
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "该文件不属于当前任务重试轮次，不能从任务详情下载。")
         if file.status != "uploaded":
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文件尚未完成上传，不能下载。")
         self._ensure_file_not_expired(file)
@@ -1551,6 +1567,34 @@ class DocumentJobService:
 
     def _file_belongs_to_job(self, job: DocumentJobRecord, file: DocumentFileRecord) -> bool:
         return file.job_id == job.id or file.id == job.source_file_id
+
+    def _is_current_downloadable_job_file(self, job: DocumentJobRecord, file: DocumentFileRecord) -> bool:
+        if file.file_type == "source_pdf":
+            return file.id == job.source_file_id
+        if file.file_type == "mineru_raw_result" and file.id == job.mineru_raw_result_file_id:
+            return True
+        if file.file_type == "document_ir" and file.id == job.document_ir_file_id:
+            return True
+        if file.file_type == "generated_word" and file.id == job.result_file_id:
+            return True
+        return self._file_matches_current_retry_count(job, file)
+
+    def _file_matches_current_retry_count(self, job: DocumentJobRecord, file: DocumentFileRecord) -> bool:
+        retry_count = self._file_retry_count(file)
+        if retry_count is None:
+            return job.retry_count == 0
+        return retry_count == job.retry_count
+
+    @staticmethod
+    def _file_retry_count(file: DocumentFileRecord) -> int | None:
+        raw_value = (file.metadata or {}).get("retry_count")
+        if isinstance(raw_value, bool):
+            return None
+        if isinstance(raw_value, int):
+            return raw_value
+        if isinstance(raw_value, str) and raw_value.isdigit():
+            return int(raw_value)
+        return None
 
     def _ensure_delete_allowed(self, job: DocumentJobRecord, *, user: AuthenticatedUser) -> None:
         if user.role != "admin":

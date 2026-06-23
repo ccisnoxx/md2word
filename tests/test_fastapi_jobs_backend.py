@@ -79,6 +79,7 @@ from app.domains.templates.read_service import TemplateReadService
 from app.domains.translation.audit import TranslationAuditService
 from app.domains.translation.document_ir_translator import DocumentIRTranslationService
 from app.domains.translation.models import TranslationTermEntry, TranslationTermProposalChangeRecord
+from app.domains.translation.provider_config import AiProviderConfigService
 from app.domains.translation.profiles_service import DEFAULT_TRANSLATION_PROFILE_ID, TranslationProfileVersionService
 from app.domains.translation.proposals_service import TranslationTermProposalService
 from app.domains.translation.provider import build_translation_provider
@@ -473,9 +474,17 @@ def build_test_runtime(
         retention_days_resolver=file_retention_policy_service.resolve_retention_days,
     )
     document_ir_service = MinerUToDocumentIRService()
-    translation_provider = build_translation_provider(settings)
+    ai_provider_config_service = AiProviderConfigService(settings)
+    translation_provider = build_translation_provider(
+        settings,
+        config_resolver=ai_provider_config_service.get_effective_config,
+    )
     document_ir_translation_service = DocumentIRTranslationService(translation_provider)
-    translation_audit_service = TranslationAuditService(settings, file_upload_service)
+    translation_audit_service = TranslationAuditService(
+        settings,
+        file_upload_service,
+        config_resolver=ai_provider_config_service.get_effective_config,
+    )
     term_version_service = TermVersionService(
         settings.translation_terms_file,
         default_term_version_id=settings.default_translation_term_version_id,
@@ -555,6 +564,7 @@ def build_test_runtime(
         audit_event_repository=audit_event_repository,
         resource_version_repository=resource_version_service.repository if resource_version_service is not None else None,
         default_template_id_getter=template_read_service.get_default_template_id,
+        ai_provider_config_service=ai_provider_config_service,
     )
     term_rule_repository = FileTermRuleRepository(settings.term_rules_store_file)
     term_rule_service = TermRuleService(
@@ -700,6 +710,7 @@ def build_test_runtime(
         file_upload_service=file_upload_service,
         file_retention_policy_service=file_retention_policy_service,
         document_ir_service=document_ir_service,
+        ai_provider_config_service=ai_provider_config_service,
         translation_provider=translation_provider,
         document_ir_translation_service=document_ir_translation_service,
         translation_audit_service=translation_audit_service,
@@ -1327,6 +1338,85 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIsNone(payload["dependency_checks"]["default_term_rule_version"])
         self.assertIsNone(payload["dependency_checks"]["default_translation_profile_version"])
         self.assertFalse(payload["dependency_checks"]["mysql_schema_bootstrap_available"])
+
+    def test_ai_provider_config_api_updates_runtime_config_and_masks_secret(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_get_response = client.get("/api/v1/ai-provider-config", headers=operator_headers)
+                update_response = client.put(
+                    "/api/v1/ai-provider-config",
+                    headers={**admin_headers, "X-Trace-Id": "trace_ai_provider_update"},
+                    json={
+                        "backend": "openai_compatible",
+                        "base_url": "https://llm.example.test/v1",
+                        "model": "deepseek-v4-flash",
+                        "timeout_seconds": 45,
+                        "max_output_tokens": 16000,
+                        "api_key": "sk-test-secret-123456",
+                    },
+                )
+                get_response = client.get("/api/v1/ai-provider-config", headers=admin_headers)
+                health_response = client.get("/api/v1/health/ready")
+
+            config_file_exists = runtime.settings.ai_provider_config_file.exists()
+            audit_events = runtime.audit_event_repository.list_audit_events()
+
+        self.assertEqual(operator_get_response.status_code, 403)
+        self.assertEqual(update_response.status_code, 200)
+        payload = update_response.json()
+        self.assertEqual(payload["backend"], "openai_compatible")
+        self.assertEqual(payload["base_url"], "https://llm.example.test/v1")
+        self.assertEqual(payload["model"], "deepseek-v4-flash")
+        self.assertEqual(payload["timeout_seconds"], 45)
+        self.assertEqual(payload["max_output_tokens"], 16000)
+        self.assertTrue(payload["api_key_configured"])
+        self.assertEqual(payload["api_key_mask"], "sk-t...3456")
+        self.assertEqual(payload["source"], "runtime_config")
+        self.assertEqual(payload["updated_by"], "user_admin")
+        self.assertNotIn("sk-test-secret-123456", update_response.text)
+        self.assertEqual(get_response.json()["api_key_mask"], "sk-t...3456")
+        self.assertTrue(config_file_exists)
+
+        checks = health_response.json()["dependency_checks"]
+        self.assertEqual(checks["translation_provider_backend"], "openai_compatible")
+        self.assertEqual(checks["openai_model"], "deepseek-v4-flash")
+        self.assertTrue(checks["openai_api_key_configured"])
+        self.assertTrue(checks["openai_base_url_configured"])
+        self.assertEqual(checks["ai_provider_config_source"], "runtime_config")
+
+        matching_events = [
+            event
+            for event in audit_events
+            if event.action == "ai_provider_config.update"
+        ]
+        self.assertEqual(len(matching_events), 1)
+        self.assertEqual(matching_events[0].actor_id, "user_admin")
+        self.assertEqual(matching_events[0].trace_id, "trace_ai_provider_update")
+        self.assertTrue(matching_events[0].details["api_key_configured"])
+        self.assertNotIn("sk-test-secret-123456", json.dumps(matching_events[0].details, ensure_ascii=False))
+
+    def test_health_ready_reports_invalid_ai_provider_config_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(Path(temp_dir))
+            runtime.settings.ai_provider_config_file.parent.mkdir(parents=True, exist_ok=True)
+            runtime.settings.ai_provider_config_file.write_text(
+                json.dumps({"backend": "bad_backend"}),
+                encoding="utf-8",
+            )
+            checks = runtime.health_service.build_dependency_checks()
+
+        self.assertEqual(checks["ai_provider_config_error"], "ai_provider_config_invalid")
+        self.assertIn("ai_provider_config_invalid", checks["readiness_warnings"])
+        self.assertNotIn("ai_provider_config_invalid", checks["readiness_blockers"])
 
     def test_health_ready_blocks_p0_document_jobs_in_production_when_required_config_missing(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -8754,9 +8844,15 @@ class FastAPIJobsBackendTests(TestCase):
                 runtime.document_file_repository.get_document_file(file_id)
                 for file_id in stored_job.image_asset_file_ids
             ]
+            image_archive_files = [
+                file
+                for file in runtime.document_file_repository.list_document_files()
+                if file.job_id == job_id and file.file_type == "image_assets_archive"
+            ]
             raw_bytes = runtime.file_upload_service.read_file_content(raw_file)
             ir_payload = json.loads(runtime.file_upload_service.read_file_content(ir_file).decode("utf-8"))
             image_bytes = runtime.file_upload_service.read_file_content(image_files[0])
+            image_archive_bytes = runtime.file_upload_service.read_file_content(image_archive_files[0])
             word_bytes = runtime.file_upload_service.read_file_content(word_file)
             events = runtime.document_job_event_repository.list_document_job_events(job_id)
 
@@ -8781,8 +8877,14 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertGreaterEqual(word_file.metadata["docx_quality"]["landscape_sections"], 1)
         self.assertEqual(word_file.metadata["template_version_id"], "default@1")
         self.assertEqual([file.file_type for file in image_files], ["image_asset"])
+        self.assertEqual([file.file_type for file in image_archive_files], ["image_assets_archive"])
+        self.assertEqual(image_archive_files[0].metadata["image_asset_count"], 1)
+        self.assertEqual(image_archive_files[0].metadata["retry_count"], 0)
         with zipfile.ZipFile(io.BytesIO(raw_bytes)) as archive:
             self.assertIn("content_list_v2.json", archive.namelist())
+        with zipfile.ZipFile(io.BytesIO(image_archive_bytes)) as archive:
+            self.assertIn("manifest.json", archive.namelist())
+            self.assertIn("images/asset_block_0004_figure1.png", archive.namelist())
         with zipfile.ZipFile(io.BytesIO(word_bytes)) as archive:
             self.assertIn("word/document.xml", archive.namelist())
             document_xml = archive.read("word/document.xml").decode("utf-8")
@@ -9158,6 +9260,88 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(ai_log_payload["error"]["type"], "RuntimeError")
         self.assertNotIn("The input offset voltage is low.", ai_log_text)
 
+    def test_document_job_retry_translation_failure_resumes_after_mineru_and_filters_old_files(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            provider = FakeDocumentJobTranslationProvider(raise_error=True)
+            runtime.document_ir_translation_service = DocumentIRTranslationService(provider)
+            runtime.document_job_execution_service.document_ir_translation_service = runtime.document_ir_translation_service
+            runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = make_english_mineru_zip_bytes()
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers, filename="english-retry.pdf")
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={
+                        "source_file_id": source_file["id"],
+                        "mode": "en2zh_pdf_to_word",
+                        "document_language": "en",
+                    },
+                )
+                job_id = create_response.json()["job_id"]
+                first_job = runtime.document_job_repository.get_document_job(job_id)
+                old_ai_log = next(
+                    file
+                    for file in runtime.document_file_repository.list_document_files()
+                    if file.job_id == job_id and file.file_type == "ai_call_log"
+                )
+
+                provider.raise_error = False
+                retry_response = client.post(
+                    f"/api/v1/document-jobs/{job_id}/retry",
+                    headers={**headers, "X-Trace-Id": "trace_translation_retry"},
+                    json={"reason": "provider fixed"},
+                )
+                files_response = client.get(f"/api/v1/document-jobs/{job_id}/files", headers=headers)
+                old_log_download_response = client.get(
+                    f"/api/v1/document-jobs/{job_id}/download-url",
+                    headers=headers,
+                    params={"file_id": old_ai_log.id},
+                )
+
+            all_job_files = [
+                file
+                for file in runtime.document_file_repository.list_document_files()
+                if file.job_id == job_id
+            ]
+            retry_events = [
+                event
+                for event in runtime.document_job_event_repository.list_document_job_events(job_id)
+                if event.event_type == "retry_requested"
+            ]
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.json()["status"], "failed")
+        self.assertIsNotNone(first_job)
+        self.assertEqual(first_job.error_code, "translation_failed")
+        self.assertIsNotNone(first_job.mineru_raw_result_file_id)
+        self.assertEqual(retry_response.status_code, 200)
+        self.assertEqual(retry_response.json()["status"], "succeeded")
+        self.assertEqual(retry_response.json()["retry_count"], 1)
+        self.assertEqual(len(provider.requests), 2)
+        self.assertEqual(len(runtime.document_job_execution_service.fake_mineru_client.calls), 1)
+        self.assertEqual(len(runtime.document_job_execution_service.fake_mineru_client.download_calls), 1)
+        self.assertEqual(retry_events[-1].payload["resume_stage"], "parsed")
+        self.assertEqual(old_log_download_response.status_code, 409)
+
+        repository_file_types = [file.file_type for file in all_job_files]
+        self.assertEqual(repository_file_types.count("ai_call_log"), 2)
+        self.assertEqual(repository_file_types.count("image_assets_archive"), 2)
+        visible_file_types = [file["file_type"] for file in files_response.json()["files"]]
+        self.assertEqual(visible_file_types.count("ai_call_log"), 1)
+        self.assertEqual(visible_file_types.count("image_assets_archive"), 1)
+        self.assertIn("generated_word", visible_file_types)
+        self.assertNotIn("image_asset", visible_file_types)
+
     def test_document_job_download_url_returns_temporary_generated_word_link(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(
@@ -9306,7 +9490,8 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIn("generated_word", file_types)
         self.assertIn("mineru_raw_result", file_types)
         self.assertIn("document_ir", file_types)
-        self.assertIn("image_asset", file_types)
+        self.assertIn("image_assets_archive", file_types)
+        self.assertNotIn("image_asset", file_types)
         for file_payload in file_payloads:
             self.assertIn("quality_evidence", file_payload)
             self.assertNotIn("bucket", file_payload)

@@ -59,6 +59,7 @@ class AppRuntime:
     file_upload_service: Any
     file_retention_policy_service: Any
     document_ir_service: Any
+    ai_provider_config_service: Any
     translation_provider: Any
     document_ir_translation_service: Any
     translation_audit_service: Any

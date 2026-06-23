@@ -107,6 +107,7 @@ class Settings(BaseSettings):
     translation_provider_backend: Literal["disabled", "openai_compatible"] = "disabled"
     translation_provider_timeout_seconds: float = 120.0
     translation_provider_max_output_tokens: int = 12000
+    ai_provider_config_path: str = "var/config/ai_provider_config.json"
     translation_debug_archive_enabled: bool = False
     translation_debug_archive_retention_days: int = 1
     translation_max_pages: int = 20
@@ -241,6 +242,10 @@ class Settings(BaseSettings):
     @property
     def translation_terms_file(self) -> Path:
         return self._resolve_config_path(self.translation_terms_path)
+
+    @property
+    def ai_provider_config_file(self) -> Path:
+        return self._resolve_runtime_data_path(self.ai_provider_config_path, "config/ai_provider_config.json")
 
     @property
     def default_template_path(self) -> Path | None:

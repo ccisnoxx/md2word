@@ -119,6 +119,31 @@ export type HealthMetricsResponse = {
   audit_events: Record<string, number>;
 };
 
+export type AiProviderBackend = "disabled" | "openai_compatible";
+
+export type AiProviderConfigResponse = {
+  backend: AiProviderBackend;
+  base_url: string | null;
+  model: string;
+  timeout_seconds: number;
+  max_output_tokens: number;
+  api_key_configured: boolean;
+  api_key_mask: string | null;
+  source: "settings" | "runtime_config";
+  updated_at: string | null;
+  updated_by: string | null;
+};
+
+export type AiProviderConfigUpdateRequest = {
+  backend: AiProviderBackend;
+  base_url?: string | null;
+  model?: string | null;
+  timeout_seconds?: number | null;
+  max_output_tokens?: number | null;
+  api_key?: string | null;
+  clear_api_key?: boolean;
+};
+
 export type AcceptanceRunTier = "P0" | "P1" | "P2" | (string & {});
 export type AcceptanceRunStatus = "passed" | "failed" | "unknown" | (string & {});
 export type AcceptanceReviewDecision = "approved" | "rejected" | "needs_changes";
