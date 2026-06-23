@@ -2,12 +2,25 @@ from __future__ import annotations
 
 # app/conversion/runtime_runner.py: legacy MinerU 输出到 DOCX 转换链路的共享运行入口。
 
+import re
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 from docx import Document
+from docx.shared import Mm, Pt
 from loguru import logger
 
-from app.conversion.runtime import llm_client, translation_runtime
+from app.conversion import runtime_helpers, runtime_models, runtime_rendering_api
+from app.conversion.runtime import (
+    input_adapter_runtime,
+    llm_client,
+    page_layout_runtime,
+    page_repair_runtime,
+    render_config_runtime,
+    text_rendering,
+    translation_runtime,
+)
 from app.conversion.runtime.input_adapter_runtime import load_pages, materialize_input
 from app.conversion.runtime.page_layout_runtime import build_document
 
@@ -27,6 +40,76 @@ DEFAULT_TEMPLATE_CANDIDATES = (
     Path("resources/templates/default/datasheet_template.docx"),
     Path(__file__).resolve().parents[2] / "resources" / "templates" / "default" / "datasheet_template.docx",
 )
+DEFAULT_SUBSCRIPT_CONFIG_CANDIDATES = (
+    Path("var/config/runtime_subscripts_dictionary.yaml"),
+    Path(__file__).resolve().parents[2] / "var" / "config" / "runtime_subscripts_dictionary.yaml",
+    Path("resources/term_rules/subscripts_dictionary.yaml"),
+    Path(__file__).resolve().parents[2] / "resources" / "term_rules" / "subscripts_dictionary.yaml",
+)
+VISUAL_TYPES = {"image", "table", "chart", "equation_interline", "seal"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif", ".svg"}
+A4_WIDTH = Mm(210)
+A4_HEIGHT = Mm(297)
+HEADER_FOOTER_FONT = Pt(8.5)
+PRODUCT_TITLE_RE = re.compile(r"^(?P<part>[A-Z0-9xX,+/\- ]{3,})\s+(?P<category>.+)$")
+TOC_ENTRY_RE = re.compile(
+    r"^(?:(?:\d+[、.])|(?:\d+\.\d+)|(?:附录\s*[A-Z\d.\-]+)|(?:appendix\s+[A-Z\d.\-]+)|(?:(?:表|table|图|figure)\s*[A-Z\d.\-]+)|(?:chapter|section|part)\s+(?:[ivxlcdm]+|\d+)).*",
+    re.IGNORECASE,
+)
+_RUNTIME_BOUND = False
+
+
+def ensure_runtime_bound() -> None:
+    """Bind legacy runtime modules to the official conversion host once."""
+
+    global _RUNTIME_BOUND
+    if _RUNTIME_BOUND:
+        return
+
+    host = _build_runtime_host()
+    for module in (
+        input_adapter_runtime,
+        page_layout_runtime,
+        page_repair_runtime,
+        render_config_runtime,
+        text_rendering,
+    ):
+        module.bind_runtime(host)
+    _RUNTIME_BOUND = True
+
+
+def _build_runtime_host() -> SimpleNamespace:
+    host = SimpleNamespace(
+        logger=logger,
+        VISUAL_TYPES=VISUAL_TYPES,
+        IMAGE_EXTENSIONS=IMAGE_EXTENSIONS,
+        A4_WIDTH=A4_WIDTH,
+        A4_HEIGHT=A4_HEIGHT,
+        HEADER_FOOTER_FONT=HEADER_FOOTER_FONT,
+        PRODUCT_TITLE_RE=PRODUCT_TITLE_RE,
+        TOC_ENTRY_RE=TOC_ENTRY_RE,
+        find_subscript_config_path=lambda: render_config_runtime.find_subscript_config_path(
+            DEFAULT_SUBSCRIPT_CONFIG_CANDIDATES
+        ),
+    )
+    for module in (
+        runtime_models,
+        runtime_helpers,
+        page_repair_runtime,
+        input_adapter_runtime,
+        text_rendering,
+        page_layout_runtime,
+        runtime_rendering_api,
+    ):
+        _copy_public_attributes(host, module)
+    return host
+
+
+def _copy_public_attributes(target: SimpleNamespace, module: Any) -> None:
+    for name in dir(module):
+        if name.startswith("_"):
+            continue
+        setattr(target, name, getattr(module, name))
 
 
 def run_conversion(
@@ -57,6 +140,7 @@ def run_conversion(
     """
     Shared conversion entrypoint used by both CLI and FastAPI-facing adapters.
     """
+    ensure_runtime_bound()
     original_input = Path(input_path).expanduser().resolve()
     resolved_output_path = resolve_output_path(original_input, output_path)
     resolved_template_path = None if no_template else resolve_template_path(template_arg=template_path, default_candidates=DEFAULT_TEMPLATE_CANDIDATES)
@@ -71,6 +155,11 @@ def run_conversion(
     resolved_translation_trace_output = (
         Path(translation_trace_output).expanduser().resolve() if translation_trace_output else None
     )
+    resolved_output_path.parent.mkdir(parents=True, exist_ok=True)
+    if resolved_translation_request_output is not None:
+        resolved_translation_request_output.parent.mkdir(parents=True, exist_ok=True)
+    if resolved_translation_trace_output is not None:
+        resolved_translation_trace_output.parent.mkdir(parents=True, exist_ok=True)
 
     logger.info("start conversion input={} output={}", original_input, resolved_output_path)
     logger.debug(

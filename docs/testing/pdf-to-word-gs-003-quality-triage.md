@@ -79,6 +79,11 @@ rendered_pages=2
 
 ## 6. md2word_main 本地基线
 
+> 2026-06-23 更新：本节保留 2026-06-02 的历史基线证据。当前长期维护策略已调整为
+> `/Users/sc/PycharmProjects/md2word/app/conversion` 是唯一转换代码源，
+> `md2word_main` 只保留薄调试壳、样例输入输出和运行配置。新的本地调试流程见
+> [local-conversion-sandbox.md](/Users/sc/PycharmProjects/md2word/docs/dev/local-conversion-sandbox.md)。
+
 2026-06-02 使用 `md2word_main/mineru_result/OPA228_P1.pdf-d1491424-9662-411d-8e39-fa6bcbd785a4` 跑本地转换基线。
 
 运行方式：
@@ -132,6 +137,7 @@ PYTHONPATH=/Users/sc/PycharmProjects/md2word:/Users/sc/PycharmProjects/md2word/t
 - 输出：`/Users/sc/PycharmProjects/PythonProject/md2word_main/out/OPA228_P1_standalone.docx`
 - 渲染：`/Users/sc/PycharmProjects/PythonProject/md2word_main/out/OPA228_P1_standalone_rendered/page-1.png`
 - 渲染页数：1
-- 模板来源：`/Users/sc/PycharmProjects/PythonProject/md2word_main/resources/templates/default/datasheet_template.docx`
+- 模板来源：`/Users/sc/PycharmProjects/PythonProject/md2word_main/resources/templates/default/datasheet_template.docx`（历史路径；当前模板由官方 `md2word/resources/` 提供）
 
-结论：`md2word_main` 已可作为独立本地转换 sandbox 使用。后续质量修复应先落在 `md2word_main/app/conversion/runtime/*`，每个切片本地 render 验证通过后，再同步到线上项目 `md2word` 的对应转换/renderer 代码。
+当前结论：`md2word_main` 不再作为独立转换代码源。后续质量修复必须先落在正式项目
+`md2word/app/conversion/runtime/*`，再用 `md2word_main` 的薄壳和样例资产做本地 render 验证。

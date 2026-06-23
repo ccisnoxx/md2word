@@ -489,6 +489,93 @@ quasi-production validation follows the deployment docs and may include:
 Only run these when the task explicitly requires online/runtime evidence or the
 release process calls for it.
 
+## Scenario: Local MinerU Conversion Sandbox Tools
+
+### 1. Scope / Trigger
+
+- Trigger: local development needs to run MinerU result directories or zips
+  without making `md2word_main` a second source of conversion code.
+- The official conversion code source is `app/conversion` in this repository.
+  Local CLIs must be thin wrappers over the official runtime.
+
+### 2. Signatures
+
+- `python scripts/dev/run_local_mineru_conversion.py [input_path] [--output PATH]`
+- `python scripts/dev/audit_conversion_sandbox.py --sandbox-root PATH drift`
+- `python scripts/dev/audit_conversion_sandbox.py --sandbox-root PATH samples`
+- `python scripts/dev/audit_conversion_sandbox.py --sandbox-root PATH thin`
+- `python scripts/dev/migrate_md2word_main_sandbox.py --sandbox-root PATH [--apply]`
+- Runtime binding entrypoint: `app.conversion.runtime_runner.ensure_runtime_bound()`
+
+### 3. Contracts
+
+- The local conversion CLI must call
+  `app.conversion.runtime_runner.run_conversion`; it must not import or execute
+  `md2word_main/mineru_to_docx.py`.
+- `runtime_facade.load_pages()` and `runtime_runner.run_conversion()` must bind
+  legacy runtime modules before calling `load_pages` or `build_document`.
+- Drift audits are read-only and compare relative paths such as
+  `app/conversion` and `resources`; they report drift instead of copying files.
+- Sample inventory audits are read-only and list `test_pdf/*.pdf` plus
+  `mineru_result/*` package capabilities.
+- Thin-shell audits fail when active duplicate sources such as `app`, `cli_core`,
+  or `resources` still exist in `md2word_main`.
+- The migration script archives duplicate sources under `_legacy_duplicate_core/`
+  and writes only the debug entrypoint, config, README, and thin-shell test.
+
+### 4. Validation & Error Matrix
+
+- Missing local conversion input -> CLI exits with an explicit input-path error.
+- Sandbox drift present -> drift command exits non-zero unless `--allow-drift`
+  is provided.
+- Missing sandbox paths -> report one-sided files or empty inventories; do not
+  create fallback success.
+- Active duplicate sources in a migrated sandbox -> thin-shell audit exits
+  non-zero; do not treat archived duplicate code as importable runtime code.
+- Missing runtime binding -> regression tests must catch `PageData is not bound`
+  or equivalent model-binding failures.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a PyCharm run configuration points at `run_local_mineru_conversion.py`
+  and passes a MinerU result directory; output goes under `tests/tmp/`.
+- Base: `md2word_main` keeps historical sample assets while drift audits show
+  which copied core files differ from the official repository.
+- Base: a migrated `md2word_main` keeps `test_pdf/`, `mineru_result/`, and
+  `out/`, while copied conversion code is isolated under `_legacy_duplicate_core/`.
+- Bad: copying `md2word_main/app/conversion` over this repository, or adding a
+  second thick CLI that binds runtime modules independently.
+
+### 6. Tests Required
+
+- Unit tests assert the thin CLI builds `run_conversion` kwargs and can take
+  input from `MD2WORD_LOCAL_MINERU_INPUT`.
+- Unit tests assert drift classification for same, changed, official-only, and
+  sandbox-only files.
+- Unit tests assert sample inventory detects PDFs and MinerU package evidence.
+- Unit tests assert the migration script archives duplicate active paths and
+  writes thin-shell files without deleting sample assets.
+- Unit tests assert thin-shell audit blocks active duplicate source paths.
+- Runtime binding tests assert `runtime_facade.load_pages()` works on a minimal
+  MinerU v2 package without manual test-side binding.
+- A local smoke may run one real sandbox package to DOCX under `tests/tmp/`.
+
+### 7. Wrong vs Correct
+
+Wrong:
+
+```python
+from md2word_main.mineru_to_docx import run_conversion
+```
+
+Correct:
+
+```python
+from app.conversion import runtime_runner
+
+runtime_runner.run_conversion(input_path=input_path, output_path=output_path, ...)
+```
+
 ---
 
 ## Code Review Checklist
