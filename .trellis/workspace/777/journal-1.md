@@ -755,3 +755,36 @@ Added official config-driven PyCharm MinerU debug entrypoint, deprecated md2word
 ### Next Steps
 
 - None - task complete
+
+
+## Session 23: Local MinerU layout planning
+
+**Date**: 2026-06-23
+**Task**: Local MinerU layout planning
+**Branch**: `main`
+
+### Summary
+
+Implemented local MinerU DOCX layout planning, YAML page sizing, TOC column preservation, table thresholding, P0 render validation, and backend spec notes.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ee08cc5c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
