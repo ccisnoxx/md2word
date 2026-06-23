@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 21
+- **Total Sessions**: 22
 - **Last Active**: 2026-06-23
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~722 | Active |
+| `journal-1.md` | ~757 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 22 | 2026-06-23 | Remove md2word_main runtime entrypoint | `d8f6de69`, `a944d6f3`, `f6869dea` | `main` |
 | 21 | 2026-06-23 | Localize component PDF governance docs | `d60ae8b6` | `main` |
 | 20 | 2026-06-23 | Component PDF regression governance | `274f0d70` | `main` |
 | 19 | 2026-06-23 | Local conversion sandbox migration | `45d3aa19` | `main` |
