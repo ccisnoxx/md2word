@@ -654,3 +654,36 @@ Converted md2word_main into a thin local debug shell, added official md2word san
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: Component PDF regression governance
+
+**Date**: 2026-06-23
+**Task**: Component PDF regression governance
+**Branch**: `main`
+
+### Summary
+
+Implemented brand/category component PDF sample governance, manifest validation, add-sample CLI, local regression runner, docs, fixture sample, and targeted/release verification.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `274f0d70` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
