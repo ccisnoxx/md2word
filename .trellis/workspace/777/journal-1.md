@@ -720,3 +720,38 @@ Converted component PDF governance user docs and acceptance template to Chinese,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 22: Remove md2word_main runtime entrypoint
+
+**Date**: 2026-06-23
+**Task**: Remove md2word_main runtime entrypoint
+**Branch**: `main`
+
+### Summary
+
+Added official config-driven PyCharm MinerU debug entrypoint, deprecated md2word_main runtime entry, updated Chinese docs/tests, and cleaned stale dev script interpreter paths.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d8f6de69` | (see git log) |
+| `a944d6f3` | (see git log) |
+| `f6869dea` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
