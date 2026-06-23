@@ -1,4 +1,4 @@
-#!/Users/sc/miniconda3/envs/md2word/bin/python
+#!/usr/bin/env python3
 """Convert the legacy md2word_main project into a thin local debug sandbox."""
 
 from __future__ import annotations
@@ -130,93 +130,23 @@ def build_thin_entrypoint(official_root: Path) -> str:
     return f'''#!/usr/bin/env python3
 from __future__ import annotations
 
-# mineru_to_docx.py: Thin compatibility entrypoint that delegates to the official md2word runtime.
-
-import json
-import os
 import sys
-from pathlib import Path
 
+DEPRECATED_MESSAGE = """md2word_main/mineru_to_docx.py 已废弃，不再作为转换运行入口。
 
-SANDBOX_ROOT = Path(__file__).resolve().parent
-DEFAULT_OFFICIAL_REPO = Path({str(official_root)!r})
-CONFIG_PATH = SANDBOX_ROOT / "sandbox_config.json"
+请在正式项目中运行本地 MinerU 调试：
+  项目：{official_root}
+  PyCharm Script path: {official_root}/scripts/dev/run_local_mineru_debug_config.py
+  配置文件：{official_root}/scripts/dev/local_mineru_debug_config.json
 
-
-def load_config() -> dict:
-    if not CONFIG_PATH.exists():
-        return {{}}
-    return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-
-
-def resolve_official_repo(config: dict) -> Path:
-    raw_value = os.environ.get("MD2WORD_OFFICIAL_REPO") or config.get("official_repo") or str(DEFAULT_OFFICIAL_REPO)
-    official_repo = Path(raw_value).expanduser().resolve()
-    if not (official_repo / "app" / "conversion").is_dir():
-        raise SystemExit(f"Official md2word app/conversion not found: {{official_repo}}")
-    return official_repo
-
-
-def resolve_sandbox_path(value: str | None) -> str | None:
-    if not value:
-        return None
-    path = Path(value).expanduser()
-    if not path.is_absolute():
-        path = SANDBOX_ROOT / path
-    return str(path.resolve())
-
-
-def build_config_argv(config: dict) -> list[str]:
-    argv: list[str] = []
-    input_path = resolve_sandbox_path(config.get("input_path"))
-    if input_path:
-        argv.append(input_path)
-    option_map = {{
-        "output_path": "--output",
-        "template_path": "--template",
-        "layout_config_path": "--layout-config",
-        "subscript_config": "--subscript-config",
-        "document_language": "--document-language",
-        "translation_mode": "--translation-mode",
-        "translation_request_output": "--translation-request-output",
-        "translation_response": "--translation-response",
-        "translation_trace_output": "--translation-trace-output",
-        "translation_model": "--translation-model",
-        "translation_api_key": "--translation-api-key",
-        "translation_base_url": "--translation-base-url",
-        "translation_max_pages": "--translation-max-pages",
-        "translation_max_chars": "--translation-max-chars",
-        "log_level": "--log-level",
-    }}
-    path_keys = {{"output_path", "template_path", "layout_config_path", "subscript_config", "translation_request_output", "translation_response", "translation_trace_output"}}
-    for key, option in option_map.items():
-        value = config.get(key)
-        if value in (None, ""):
-            continue
-        if key in path_keys:
-            value = resolve_sandbox_path(str(value))
-        argv.extend([option, str(value)])
-    if config.get("no_template"):
-        argv.append("--no-template")
-    if config.get("use_mineru_header_footer"):
-        argv.append("--use-mineru-header-footer")
-    return argv
+md2word_main 只保留 test_pdf/、mineru_result/、out/ 等历史样例资产。
+"""
 
 
 def main(argv: list[str] | None = None) -> None:
-    config = load_config()
-    official_repo = resolve_official_repo(config)
-    sandbox_text = str(SANDBOX_ROOT)
-    sys.path = [str(official_repo)] + [
-        value for value in sys.path
-        if value and str(Path(value).resolve()) != sandbox_text
-    ]
-    from scripts.dev.run_local_mineru_conversion import main as official_main
-
-    effective_argv = list(sys.argv[1:] if argv is None else argv)
-    if not effective_argv:
-        effective_argv = build_config_argv(config)
-    official_main(effective_argv)
+    _ = argv
+    print(DEPRECATED_MESSAGE, file=sys.stderr)
+    raise SystemExit(2)
 
 
 if __name__ == "__main__":
@@ -253,7 +183,7 @@ def build_sandbox_config(sandbox_root: Path, official_root: Path) -> str:
         "document_language": "en",
         "translation_mode": "direct",
         "log_level": "INFO",
-        "notes": "Relative paths are resolved from the md2word_main sandbox root.",
+        "notes": "Deprecated historical config. Run scripts/dev/run_local_mineru_debug_config.py in the official md2word project instead.",
     }
     return json.dumps(config, ensure_ascii=False, indent=2) + "\n"
 
@@ -261,41 +191,40 @@ def build_sandbox_config(sandbox_root: Path, official_root: Path) -> str:
 def build_readme(official_root: Path) -> str:
     return f'''# md2word_main
 
-Thin local debug shell for running MinerU result directories through the official md2word conversion runtime.
+`md2word_main` 已不再作为转换代码运行入口。这个目录只保留历史样例资产和输出资产，例如 `test_pdf/`、`mineru_result/`、`out/`。
 
-## Source Of Truth
+## 正式运行入口
 
-- Official conversion code: `{official_root}/app/conversion`
-- This directory keeps only the debug entrypoint, sample inputs/outputs, run configuration, and this documentation.
-- Previous copied conversion code is archived under `{ARCHIVE_DIR_NAME}/` and must not be imported or edited for new fixes.
+所有本地 MinerU 转 DOCX 调试都在正式项目中运行：
 
-## Run A Local Sample
+- 正式项目：`{official_root}`
+- PyCharm Script path: `{official_root}/scripts/dev/run_local_mineru_debug_config.py`
+- 默认配置文件：`{official_root}/scripts/dev/local_mineru_debug_config.json`
+- Python 解释器：在 PyCharm 中选择正式项目的 Python 3.11 解释器。
 
-```bash
-python3 mineru_to_docx.py \\
-  mineru_result/OPA228_P1.pdf-d1491424-9662-411d-8e39-fa6bcbd785a4 \\
-  --output out/OPA228_P1_standalone.docx \\
-  --document-language en \\
-  --translation-mode direct
+配置文件里的 `input_path` 可以使用绝对路径指向本目录下的 `mineru_result/`，例如：
+
+```json
+{{
+  "input_path": "/Users/sc/PycharmProjects/PythonProject/md2word_main/mineru_result/OPA228_P1.pdf-d1491424-9662-411d-8e39-fa6bcbd785a4",
+  "output_path": "tests/tmp/local_mineru_debug/OPA228_P1.docx",
+  "document_language": "en",
+  "translation_mode": "direct"
+}}
 ```
 
-If no CLI arguments are provided, `mineru_to_docx.py` reads `sandbox_config.json`.
+## 废弃入口
 
-Use `MD2WORD_OFFICIAL_REPO=/path/to/md2word` only when the official repository moves.
+`mineru_to_docx.py` 已标记为 deprecated。直接运行它只会打印迁移提示并以非零状态退出，不会再代理调用正式项目转换代码。
 
-## Validate The Thin Shell
+## 资产说明
 
-```bash
-python3 -m unittest tests.test_thin_shell
-python3 mineru_to_docx.py
-python3 mineru_to_docx.py \\
-  mineru_result/OPA228_P1.pdf-d1491424-9662-411d-8e39-fa6bcbd785a4 \\
-  --output out/smoke.docx \\
-  --document-language en \\
-  --translation-mode direct
-```
+- `test_pdf/`：历史测试 PDF。
+- `mineru_result/`：历史 MinerU 解析结果包，可作为正式项目配置文件中的输入。
+- `out/`：历史本地输出目录。
+- `{ARCHIVE_DIR_NAME}/`：历史复制代码归档，不能作为新修复入口。
 
-Run the official repository checks from `{official_root}` before promoting any conversion behavior change.
+所有转换行为修复必须先进入 `{official_root}/app/conversion`，再用正式项目测试和样例回归验证。
 '''
 
 
@@ -323,6 +252,13 @@ class ThinShellTests(TestCase):
         self.assertTrue((official_repo / "app" / "conversion").is_dir())
         self.assertTrue((ROOT / config["input_path"]).exists())
         self.assertTrue((ROOT / "mineru_to_docx.py").exists())
+
+    def test_mineru_to_docx_is_deprecated(self) -> None:
+        text = (ROOT / "mineru_to_docx.py").read_text(encoding="utf-8")
+
+        self.assertIn("已废弃", text)
+        self.assertIn("run_local_mineru_debug_config.py", text)
+        self.assertNotIn("run_local_mineru_conversion", text)
 '''
 
 

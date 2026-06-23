@@ -9,7 +9,12 @@ from unittest import TestCase, mock
 import json
 
 from app.conversion import runtime_facade
-from scripts.dev import audit_conversion_sandbox, migrate_md2word_main_sandbox, run_local_mineru_conversion
+from scripts.dev import (
+    audit_conversion_sandbox,
+    migrate_md2word_main_sandbox,
+    run_local_mineru_conversion,
+    run_local_mineru_debug_config,
+)
 
 
 class LocalMinerUConversionCliTests(TestCase):
@@ -63,6 +68,82 @@ class LocalMinerUConversionCliTests(TestCase):
         run_conversion.assert_called_once()
         self.assertEqual(run_conversion.call_args.kwargs["input_path"], "/tmp/mineru-package")
         self.assertEqual(run_conversion.call_args.kwargs["document_language"], "en")
+
+
+class LocalMinerUDebugConfigTests(TestCase):
+    def test_build_conversion_kwargs_resolves_relative_paths_from_official_repo(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            repo_root = Path(tmp_dir)
+            config_path = repo_root / "local_mineru_debug_config.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "input_path": "tests/fixtures/mineru-package",
+                        "output_path": "tests/tmp/local_mineru_debug/out.docx",
+                        "template": "resources/templates/default/datasheet_template.docx",
+                        "layout_config": "resources/template_configs/datasheet_template.yaml",
+                        "subscript_config": "resources/term_rules/subscripts_dictionary.yaml",
+                        "translation_mode": "llm_en_to_zh",
+                        "translation_trace_output": "tests/tmp/local_mineru_debug/trace.json",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            kwargs = run_local_mineru_debug_config.build_conversion_kwargs(config_path, repo_root=repo_root)
+
+        self.assertEqual(kwargs["input_path"], str((repo_root / "tests/fixtures/mineru-package").resolve()))
+        self.assertEqual(kwargs["output_path"], str((repo_root / "tests/tmp/local_mineru_debug/out.docx").resolve()))
+        self.assertEqual(kwargs["template_path"], str((repo_root / "resources/templates/default/datasheet_template.docx").resolve()))
+        self.assertEqual(kwargs["layout_config_path"], str((repo_root / "resources/template_configs/datasheet_template.yaml").resolve()))
+        self.assertEqual(kwargs["translation_mode"], "en2zh")
+        self.assertEqual(kwargs["translation_trace_output"], str((repo_root / "tests/tmp/local_mineru_debug/trace.json").resolve()))
+
+    def test_build_conversion_kwargs_keeps_absolute_mineru_asset_path(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            repo_root = Path(tmp_dir)
+            absolute_package = Path(tmp_dir) / "md2word_main" / "mineru_result" / "OPA228_P1.pdf-uuid"
+            config_path = repo_root / "local_mineru_debug_config.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "input_path": str(absolute_package),
+                        "output_path": "tests/tmp/out.docx",
+                        "document_language": "en",
+                        "translation_mode": "direct",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            kwargs = run_local_mineru_debug_config.build_conversion_kwargs(config_path, repo_root=repo_root)
+
+        self.assertEqual(kwargs["input_path"], str(absolute_package.resolve()))
+        self.assertEqual(kwargs["document_language"], "en")
+        self.assertEqual(kwargs["translation_mode"], "direct")
+
+    def test_unknown_config_key_fails_before_runtime_call(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "local_mineru_debug_config.json"
+            config_path.write_text(json.dumps({"input_path": "mineru", "surprise": True}), encoding="utf-8")
+
+            with self.assertRaises(ValueError):
+                run_local_mineru_debug_config.build_conversion_kwargs(config_path)
+
+    def test_main_calls_shared_runtime_runner_from_config(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "local_mineru_debug_config.json"
+            config_path.write_text(json.dumps({"input_path": "/tmp/mineru-package", "log_level": "DEBUG"}), encoding="utf-8")
+
+            with mock.patch.object(run_local_mineru_debug_config, "configure_logging") as configure_logging, mock.patch.object(
+                run_local_mineru_debug_config.runtime_runner,
+                "run_conversion",
+            ) as run_conversion:
+                run_local_mineru_debug_config.main(["--config", str(config_path)])
+
+        configure_logging.assert_called_once_with("DEBUG")
+        run_conversion.assert_called_once()
+        self.assertEqual(run_conversion.call_args.kwargs["input_path"], str(Path("/tmp/mineru-package").resolve()))
 
 
 class ConversionSandboxAuditTests(TestCase):
@@ -178,12 +259,15 @@ class Md2wordMainMigrationTests(TestCase):
                 apply=True,
             )
             readme = (sandbox / "README.md").read_text(encoding="utf-8")
+            entrypoint = (sandbox / "mineru_to_docx.py").read_text(encoding="utf-8")
 
             self.assertEqual(second_result.moved_paths, [])
             self.assertFalse((sandbox / "_legacy_duplicate_core" / "tests.2").exists())
-            self.assertIn("python3 mineru_to_docx.py\n", readme)
-            self.assertIn("--output out/smoke.docx", readme)
-            self.assertNotIn("python3 mineru_to_docx.py --output out/smoke.docx", readme)
+            self.assertIn("run_local_mineru_debug_config.py", readme)
+            self.assertIn("已标记为 deprecated", readme)
+            self.assertIn("已废弃", entrypoint)
+            self.assertIn("run_local_mineru_debug_config.py", entrypoint)
+            self.assertNotIn("run_local_mineru_conversion", entrypoint)
 
 
 class OfficialConversionRuntimeBindingTests(TestCase):

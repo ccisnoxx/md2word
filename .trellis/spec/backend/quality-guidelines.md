@@ -14,7 +14,7 @@ release-gate checks.
 The local backend release check documented in `README.md` is:
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_release.py
+.venv/bin/python scripts/ops/check_release.py
 ```
 
 Use narrower targeted tests first when working on a small area, then use the
@@ -381,7 +381,7 @@ Choose the smallest useful validation:
 - Focused test class or method:
   `python -m unittest tests.test_database_job_repository.PersistenceAdapterTests`
 - Release gate for backend/API contract changes:
-  `/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_release.py`
+  `.venv/bin/python scripts/ops/check_release.py`
 
 `scripts/ops/check_release.py` checks OpenAPI freshness, frontend contract
 needles, smoke mock contract needles, and a curated backend unittest target set.
@@ -500,6 +500,8 @@ release process calls for it.
 
 ### 2. Signatures
 
+- `python scripts/dev/run_local_mineru_debug_config.py [--config PATH]`
+- `scripts/dev/local_mineru_debug_config.json`
 - `python scripts/dev/run_local_mineru_conversion.py [input_path] [--output PATH]`
 - `python scripts/dev/audit_conversion_sandbox.py --sandbox-root PATH drift`
 - `python scripts/dev/audit_conversion_sandbox.py --sandbox-root PATH samples`
@@ -512,6 +514,15 @@ release process calls for it.
 - The local conversion CLI must call
   `app.conversion.runtime_runner.run_conversion`; it must not import or execute
   `md2word_main/mineru_to_docx.py`.
+- The PyCharm-friendly default entrypoint is
+  `scripts/dev/run_local_mineru_debug_config.py`, which reads
+  `scripts/dev/local_mineru_debug_config.json` by default and resolves relative
+  paths from the official repository root.
+- Absolute config paths may point at `md2word_main/mineru_result` because
+  `md2word_main` is now only a historical sample-asset source.
+- `md2word_main/mineru_to_docx.py` is deprecated. It must print a migration
+  message pointing to `run_local_mineru_debug_config.py`, exit non-zero, and
+  never proxy into `scripts.dev.run_local_mineru_conversion`.
 - `runtime_facade.load_pages()` and `runtime_runner.run_conversion()` must bind
   legacy runtime modules before calling `load_pages` or `build_document`.
 - Drift audits are read-only and compare relative paths such as
@@ -525,7 +536,11 @@ release process calls for it.
 
 ### 4. Validation & Error Matrix
 
-- Missing local conversion input -> CLI exits with an explicit input-path error.
+- Missing local conversion input -> CLI/config entry exits with an explicit
+  input-path error.
+- Unknown config keys -> config entry exits before calling runtime conversion.
+- Running `md2word_main/mineru_to_docx.py` -> deprecated message and non-zero
+  exit; no conversion output is produced.
 - Sandbox drift present -> drift command exits non-zero unless `--allow-drift`
   is provided.
 - Missing sandbox paths -> report one-sided files or empty inventories; do not
@@ -537,25 +552,36 @@ release process calls for it.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: a PyCharm run configuration points at `run_local_mineru_conversion.py`
-  and passes a MinerU result directory; output goes under `tests/tmp/`.
-- Base: `md2word_main` keeps historical sample assets while drift audits show
-  which copied core files differ from the official repository.
+- Good: a PyCharm run configuration points at
+  `scripts/dev/run_local_mineru_debug_config.py`, uses the project Python 3.11
+  interpreter, leaves parameters empty, and edits
+  `scripts/dev/local_mineru_debug_config.json` for input/output choices.
+- Base: `run_local_mineru_conversion.py` remains available for one-off shell
+  commands with explicit arguments.
+- Base: `md2word_main` keeps historical sample assets, but its runtime entrypoint
+  is deprecated and cannot execute conversion.
 - Base: a migrated `md2word_main` keeps `test_pdf/`, `mineru_result/`, and
   `out/`, while copied conversion code is isolated under `_legacy_duplicate_core/`.
 - Bad: copying `md2word_main/app/conversion` over this repository, or adding a
   second thick CLI that binds runtime modules independently.
+- Bad: regenerating a `md2word_main/mineru_to_docx.py` proxy that calls
+  `run_local_mineru_conversion`.
 
 ### 6. Tests Required
 
 - Unit tests assert the thin CLI builds `run_conversion` kwargs and can take
   input from `MD2WORD_LOCAL_MINERU_INPUT`.
+- Unit tests assert the PyCharm config entry reads JSON, resolves relative paths
+  from the official repo root, accepts absolute `md2word_main/mineru_result`
+  paths, rejects unknown config keys, and calls the shared runtime runner.
 - Unit tests assert drift classification for same, changed, official-only, and
   sandbox-only files.
 - Unit tests assert sample inventory detects PDFs and MinerU package evidence.
 - Unit tests assert the migration script archives duplicate active paths and
-  writes thin-shell files without deleting sample assets.
+  writes deprecated shell files without deleting sample assets.
 - Unit tests assert thin-shell audit blocks active duplicate source paths.
+- Unit tests assert `md2word_main/mineru_to_docx.py` does not mention or import
+  `run_local_mineru_conversion`.
 - Runtime binding tests assert `runtime_facade.load_pages()` works on a minimal
   MinerU v2 package without manual test-side binding.
 - A local smoke may run one real sandbox package to DOCX under `tests/tmp/`.
