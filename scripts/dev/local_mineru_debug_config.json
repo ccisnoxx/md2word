@@ -1,0 +1,20 @@
+{
+  "input_path": "/Users/sc/PycharmProjects/PythonProject/md2word_main/mineru_result/OPA228_P1.pdf-d1491424-9662-411d-8e39-fa6bcbd785a4",
+  "output_path": "tests/tmp/local_mineru_debug/OPA228_P1.docx",
+  "document_language": "en",
+  "translation_mode": "direct",
+  "template_path": "resources/templates/default/datasheet_template.docx",
+  "layout_config_path": "resources/template_configs/datasheet_template.yaml",
+  "subscript_config": "resources/term_rules/subscripts_dictionary.yaml",
+  "no_template": false,
+  "use_mineru_header_footer": false,
+  "translation_request_output": "",
+  "translation_response": "",
+  "translation_trace_output": "",
+  "translation_model": "deepseek-v4-flash",
+  "translation_api_key": "",
+  "translation_base_url": "",
+  "translation_max_pages": 20,
+  "translation_max_chars": 12000,
+  "log_level": "INFO"
+}
