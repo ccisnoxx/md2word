@@ -402,9 +402,17 @@ task explicitly promotes the behavior to the production rendering path.
 
 - Page size, margins, header distance, and footer distance must come from
   `resources/template_configs/datasheet_template.yaml` when that YAML provides
-  them. The DOCX template is only a source for page furniture such as header
-  logo/footer decoration; body typography should be controlled by runtime config
-  and language overrides.
+  them. PDF `page_size` is source-layout evidence for bbox/ratio estimates only;
+  it must not set Word section dimensions or orientation while configured page
+  size exists. The DOCX template is only a source for page furniture such as
+  header logo/footer decoration; body typography should be controlled by runtime
+  config and language overrides.
+- Runtime language overrides may choose the default font family for the detected
+  output language, but font size, line spacing, paragraph spacing, and table
+  sizing must remain controlled by the YAML style groups.
+- TOC pages are document front matter. When non-TOC content follows a detected
+  TOC page, insert a Word page break even if the final TOC page has enough blank
+  space for the next section.
 - Pagination is estimated before rendering. Keep the planner conservative:
   title anchors require room for at least two body lines, table anchors require
   caption plus header plus one data row, and figure/table captions and notes
@@ -412,6 +420,12 @@ task explicitly promotes the behavior to the production rendering path.
 - Treat tables estimated at more than two rendered pages as long tables. Tables
   estimated at two pages or less should keep the standard editable table path
   and may flow naturally.
+- Datasheet tables should render as plain editable tables by default. Header
+  text may be bold when the source or style calls for it, but do not add
+  decorative header fill unless the YAML table style explicitly opts in.
+- Numbered table captions that are actually section headings, such as
+  `6.4 Thermal Information: ...`, should use the matching heading style rather
+  than the centered `Caption` style.
 - Source-positioned two-column regions may be represented with hidden-border
   layout tables when MinerU bboxes already expose left/right columns. Do not
   add post-generation DOCX repair passes to hide pagination mistakes.
@@ -427,11 +441,13 @@ for region in regions:
 ```
 
 **Tests Required**: Add or update `unittest` characterization tests for config
-loading, section sizing, flow-plan page breaks, TOC/column detection, table
-threshold decisions, and table style tokens. For visual acceptance, generate
-representative local MinerU DOCX files, render them with the document renderer
-to PDF/PNG, and inspect page images for orphan headings, table-caption splits,
-header-only tables, separated figure captions, and avoidable large page gaps.
+loading, configured section sizing independent of source PDF page size,
+flow-plan page breaks, TOC/non-TOC separation, TOC/column detection, table
+threshold decisions, heading-like table captions, and table style tokens. For
+visual acceptance, generate representative local MinerU DOCX files, render them
+with the document renderer to PDF/PNG, and inspect page images for orphan
+headings, table-caption splits, header-only tables, separated figure captions,
+unwanted table header fills, and avoidable large page gaps.
 
 **Bad**: silently shrinking everything after DOCX generation, adding a second
 renderer path under `app/services/renderer/*`, or making LibreOffice/rendered
@@ -666,8 +682,8 @@ release process calls for it.
   legacy runtime modules before calling `load_pages` or `build_document`.
 - MinerU v2 input loading must accept `layout.json` or `*_layout.json` as the
   page metadata source when `middle.json` is absent, including
-  `pdf_info[*].page_size` so generated Word sections can preserve source page
-  dimensions such as Letter.
+  `pdf_info[*].page_size` so layout/bbox estimators can use source dimensions.
+  Generated Word section size remains governed by configured page setup.
 - Multiline table-of-contents paragraphs from `content_list_v2` that mostly
   contain dot-leader lines must be split into list entries and rendered with Word
   dot-leader tab stops, not flattened into one paragraph with literal dots.
@@ -712,7 +728,8 @@ release process calls for it.
 - Missing runtime binding -> regression tests must catch `PageData is not bound`
   or equivalent model-binding failures.
 - Missing `middle.json` with present `layout.json` -> local conversion still
-  loads page metadata and preserves page size; do not silently fall back to A4.
+  loads page metadata and keeps source page size available for layout estimates;
+  do not silently treat source dimensions as unknown.
 - TOC-like multiline paragraphs -> list entries with semantic page-number tab
   stops; do not emit a single paragraph of dot-leader text.
 - Caption/footnote inline formulas -> normalized formula text only; no visible
@@ -760,7 +777,8 @@ release process calls for it.
   collection skips structural `type` labels while normalizing inline formulas.
 - Text-rendering tests assert TOC page numbers use dot-leader tab stops and
   formula normalization removes raw `\overline{...}` and leading `^{...}` syntax.
-- Page-layout tests assert source PDF page sizes are used for Word section size.
+- Page-layout tests assert configured page setup is used for Word section size
+  while source PDF page sizes remain available only to layout estimates.
 - Page-layout and table-rendering tests assert dense visual pages can force a
   new top-level section page without forcing already-overflowing pages, and that
   local MinerU tables emit `w:tblHeader` / `w:cantSplit` pagination semantics.

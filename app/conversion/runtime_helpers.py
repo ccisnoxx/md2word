@@ -45,22 +45,6 @@ ENGLISH_STYLE_NAMES = {
     "TableNote",
     "TableContent",
 }
-ENGLISH_STYLE_COMPACT_OVERRIDES = {
-    "PartNumber": {"font_size": 20.0},
-    "Category": {"font_size": 10.5},
-    "Heading 1": {"font_size": 12.0, "line_spacing": 1.05},
-    "Heading 2": {"font_size": 10.0, "line_spacing": 1.0},
-    "Heading 3": {"font_size": 9.0, "line_spacing": 1.0},
-    "TocTitle": {"font_size": 11.0, "line_spacing": 1.0, "space_after": 4.0},
-    "TocLevel1": {"font_size": 8.8, "line_spacing": 1.0},
-    "TocLevel2": {"font_size": 8.2, "line_spacing": 1.0},
-    "TocLevel3": {"font_size": 8.0, "line_spacing": 1.0},
-    "Normal": {"font_size": 9.0, "line_spacing": 1.0, "space_after": 0.0},
-    "Caption": {"font_size": 8.0, "line_spacing": 1.0},
-    "LongTableCaption": {"font_size": 9.0, "line_spacing": 1.0},
-    "TableNote": {"font_size": 7.5, "line_spacing": 1.0},
-    "TableContent": {"font_size": 8.0, "line_spacing": 1.0},
-}
 DEFAULT_CJK_FIRST_LINE_INDENT_PT = 21.0
 DEFAULT_LAYOUT_CONFIG_CANDIDATES = (
     Path("resources/template_configs/datasheet_template.yaml"),
@@ -216,11 +200,6 @@ def apply_document_language_overrides(render_config: RenderConfig, document_lang
             or abs(style_config.first_line_indent_pt - DEFAULT_CJK_FIRST_LINE_INDENT_PT) < 0.01
         ):
             overrides["first_line_indent_pt"] = 0.0
-        compact_overrides = ENGLISH_STYLE_COMPACT_OVERRIDES.get(style_name, {})
-        for field_name, compact_value in compact_overrides.items():
-            current_value = getattr(style_config, field_name)
-            if current_value is None or float(current_value) > compact_value:
-                overrides[field_name] = compact_value
         paragraph_styles[style_name] = replace(style_config, **overrides) if overrides else style_config
 
     return replace(render_config, paragraph_styles=paragraph_styles)

@@ -8,8 +8,8 @@ output_filename: datasheet_template.docx
 
 # 页面设置：控制整份 Word 的页边距、页眉页脚距离。
 page_setup:
-  page_width_cm: 21.59    # 页面宽度，单位 cm；本地 datasheet 样本按 Letter 版面接近原 PDF。
-  page_height_cm: 27.94   # 页面高度，单位 cm；分页预算与 Word section 尺寸以本配置为准。
+  page_width_cm: 21.00    # 页面宽度，单位 cm；显式按模板 A4 控制，不依赖 Word/PDF 默认页型。
+  page_height_cm: 29.70   # 页面高度，单位 cm；PDF page_size 只用于 bbox/比例估算。
   top_margin: 2.46        # 页边距-上，单位 cm；略收紧顶部空白，更接近中文器件手册版芯。
   bottom_margin: 1.30     # 页边距-下，单位 cm；本地 datasheet 首页双栏需更多正文高度，页脚由模板装饰保留。
   left_margin: 1.46       # 页边距-左，单位 cm；中文正文每行不宜过长，适度保守。
@@ -149,7 +149,6 @@ table_content:
 # 表格框线与表头底色：P0 Word 渲染器使用该段生成可编辑基础表格。
 table_style:
   style_name: Table Grid
-  header_fill: EEF3F8
   border_color: C7CDD4
 
 # 表格注释：表格下方的“注：”“说明：”等表注文字。

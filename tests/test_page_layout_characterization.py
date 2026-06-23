@@ -83,14 +83,14 @@ class PageLayoutCharacterizationTests(__import__("unittest").TestCase):
         self.assertEqual([block.type for block in page_number_blocks], ["page_number"])
         self.assertEqual([block.type for block in body_blocks], ["paragraph"])
 
-    def test_configure_section_uses_source_pdf_page_size(self):
+    def test_configure_section_uses_default_word_page_size_not_source_pdf_page_size(self):
         section = FakeSection()
         render_config = self.make_render_config()
 
         self.module.configure_section(section, (612.0, 792.0), render_config.section_layout)
 
-        self.assertEqual(section.page_width, self.module.Pt(612.0))
-        self.assertEqual(section.page_height, self.module.Pt(792.0))
+        self.assertEqual(section.page_width, self.module.A4_WIDTH)
+        self.assertEqual(section.page_height, self.module.A4_HEIGHT)
         self.assertEqual(section.orientation, self.module.WD_ORIENTATION.PORTRAIT)
 
     def test_configure_section_prefers_yaml_page_size_over_source_pdf_page_size(self):
@@ -231,6 +231,7 @@ class PageLayoutCharacterizationTests(__import__("unittest").TestCase):
         with (
             mock.patch.object(self.module, "render_toc_page") as render_toc_page,
             mock.patch.object(self.module, "render_page_body") as render_page_body,
+            mock.patch.object(self.module, "insert_page_break") as insert_page_break,
         ):
             self.module.render_document_page_body(
                 document,
@@ -241,6 +242,7 @@ class PageLayoutCharacterizationTests(__import__("unittest").TestCase):
             )
 
         render_toc_page.assert_called_once()
+        insert_page_break.assert_called_once_with(document)
         render_page_body.assert_called_once()
         self.assertEqual(render_page_body.call_args.args[1][0].text, "4 Revision History")
 
@@ -359,12 +361,14 @@ class PageLayoutCharacterizationTests(__import__("unittest").TestCase):
             )
         )
 
-    def test_should_start_new_section_true_for_orientation_change(self):
+    def test_should_start_new_section_ignores_source_orientation_when_word_page_size_is_configured(self):
         render_config = self.make_render_config()
+        render_config.section_layout.page_width = self.module.A4_WIDTH
+        render_config.section_layout.page_height = self.module.A4_HEIGHT
         previous_page = self.module.PageData(page_idx=0, blocks=[], page_size=(800, 1000))
         current_page = self.module.PageData(page_idx=1, blocks=[], page_size=(1000, 800))
 
-        self.assertTrue(
+        self.assertFalse(
             self.module.should_start_new_section(
                 current_page,
                 previous_page,

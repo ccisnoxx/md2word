@@ -42,8 +42,8 @@ class RenderConfigCharacterizationTests(unittest.TestCase):
                 "page_setup": {
                     "top_margin": 2.0,
                     "header_distance": 1.2,
-                    "page_width_cm": 21.59,
-                    "page_height_cm": 27.94,
+                    "page_width_cm": 21.0,
+                    "page_height_cm": 29.7,
                 }
             },
         ):
@@ -55,8 +55,8 @@ class RenderConfigCharacterizationTests(unittest.TestCase):
         self.assertEqual(layout.left_margin, 333)
         self.assertEqual(layout.right_margin, 444)
         self.assertEqual(layout.footer_distance, 666)
-        self.assertEqual(layout.page_width, self.module.Mm(215.9))
-        self.assertEqual(layout.page_height, self.module.Mm(279.4))
+        self.assertEqual(layout.page_width, self.module.Mm(210.0))
+        self.assertEqual(layout.page_height, self.module.Mm(297.0))
 
     def test_load_section_layout_falls_back_to_default_layout_without_template_or_config(self):
         layout = self.module.load_section_layout(template_document=None, config_path=None)
@@ -67,6 +67,8 @@ class RenderConfigCharacterizationTests(unittest.TestCase):
         self.assertEqual(layout.right_margin, self.module.PAGE_MARGIN)
         self.assertEqual(layout.header_distance, self.module.Mm(8))
         self.assertEqual(layout.footer_distance, self.module.Mm(8))
+        self.assertEqual(layout.page_width, self.module.Mm(210))
+        self.assertEqual(layout.page_height, self.module.Mm(297))
 
     def test_load_paragraph_styles_maps_yaml_keys_to_word_styles(self):
         config_path = Path(__file__)
@@ -246,15 +248,15 @@ class RenderConfigCharacterizationTests(unittest.TestCase):
 
         self.assertEqual(self.module.resolve_document_language(pages, preferred="en"), "en")
 
-    def test_apply_document_language_overrides_uses_english_font_and_indent(self):
+    def test_apply_document_language_overrides_uses_english_font_without_changing_config_sizes(self):
         render_config = self.module.RenderConfig(
             section_layout=self.module.SectionLayout(1, 2, 3, 4, 5, 6),
             use_mineru_header_footer=False,
             terminology=None,
             paragraph_styles={
-                "Normal": self.module.ParagraphStyleConfig(font_name="宋体", first_line_indent_pt=21.0),
-                "Heading 1": self.module.ParagraphStyleConfig(font_name="宋体", bold=True),
-                "Caption": self.module.ParagraphStyleConfig(font_name="宋体"),
+                "Normal": self.module.ParagraphStyleConfig(font_name="宋体", font_size=10.5, line_spacing=1.2, first_line_indent_pt=21.0),
+                "Heading 1": self.module.ParagraphStyleConfig(font_name="宋体", font_size=13.0, bold=True),
+                "Caption": self.module.ParagraphStyleConfig(font_name="宋体", font_size=9.0),
                 "TableContent": self.module.ParagraphStyleConfig(font_name="宋体", font_size=9.0),
                 "TocLevel1": self.module.ParagraphStyleConfig(font_name="宋体", font_size=11.0),
             },
@@ -264,12 +266,14 @@ class RenderConfigCharacterizationTests(unittest.TestCase):
 
         self.assertEqual(adapted.paragraph_styles["Normal"].font_name, "Arial")
         self.assertEqual(adapted.paragraph_styles["Normal"].first_line_indent_pt, 0.0)
-        self.assertEqual(adapted.paragraph_styles["Normal"].font_size, 9.0)
-        self.assertEqual(adapted.paragraph_styles["Normal"].line_spacing, 1.0)
+        self.assertEqual(adapted.paragraph_styles["Normal"].font_size, 10.5)
+        self.assertEqual(adapted.paragraph_styles["Normal"].line_spacing, 1.2)
         self.assertEqual(adapted.paragraph_styles["Heading 1"].font_name, "Arial")
+        self.assertEqual(adapted.paragraph_styles["Heading 1"].font_size, 13.0)
         self.assertEqual(adapted.paragraph_styles["Caption"].font_name, "Arial")
-        self.assertEqual(adapted.paragraph_styles["TableContent"].font_size, 8.0)
-        self.assertEqual(adapted.paragraph_styles["TocLevel1"].font_size, 8.8)
+        self.assertEqual(adapted.paragraph_styles["Caption"].font_size, 9.0)
+        self.assertEqual(adapted.paragraph_styles["TableContent"].font_size, 9.0)
+        self.assertEqual(adapted.paragraph_styles["TocLevel1"].font_size, 11.0)
 
     def test_apply_document_language_overrides_keeps_non_english_config_unchanged(self):
         normal_style = self.module.ParagraphStyleConfig(font_name="宋体", first_line_indent_pt=21.0)
