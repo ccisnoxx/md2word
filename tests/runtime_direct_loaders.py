@@ -363,6 +363,7 @@ def load_render_table_module():
     module.render_inline_html_into_paragraph = text_module.render_inline_html_into_paragraph
     module.fill_table_cell_impl = table_runtime.fill_table_cell_impl
     module.compute_table_column_widths = table_runtime.compute_table_column_widths
+    module.render_large_table_if_needed_impl = table_runtime.render_large_table_if_needed_impl
     module.normalize_formula_text = text_module.normalize_formula_text
     module.append_text_run = text_module.append_text_run
     module.render_inline_markup_fragment = text_module.render_inline_markup_fragment
@@ -512,7 +513,7 @@ def load_render_table_module():
             compact=compact,
         )
         if is_header:
-            module.apply_table_header_cell_style(cell)
+            module.apply_table_header_cell_style(cell, render_config)
 
     def compute_visual_width(block, page_width, usable_width):
         ratio = min(max(block.width / max(page_width, 1.0), 0.45), 1.0)
@@ -520,7 +521,9 @@ def load_render_table_module():
         min_width = int(module.Emu(module.MIN_VISUAL_WIDTH))
         return min(max(width_by_ratio, min_width), int(usable_width))
 
-    def remove_table_borders(table):
+    def remove_table_borders(table, render_config=None):
+        table_style = getattr(render_config, "table_style", None)
+        border_color = str(getattr(table_style, "border_color", module.TABLE_BORDER_COLOR) or module.TABLE_BORDER_COLOR).strip().lstrip("#").upper()
         table_element = table._tbl
         table_properties = table_element.tblPr
         borders = table_properties.find(module.qn("w:tblBorders"))
@@ -533,19 +536,28 @@ def load_render_table_module():
             element.set(module.qn("w:val"), "single")
             element.set(module.qn("w:sz"), module.TABLE_OUTER_BORDER_SZ)
             element.set(module.qn("w:space"), "0")
-            element.set(module.qn("w:color"), module.TABLE_BORDER_COLOR)
+            element.set(module.qn("w:color"), border_color)
             borders.append(element)
         for edge in ("insideH", "insideV"):
             element = module.OxmlElement(f"w:{edge}")
             element.set(module.qn("w:val"), "single")
             element.set(module.qn("w:sz"), module.TABLE_INNER_BORDER_SZ)
             element.set(module.qn("w:space"), "0")
-            element.set(module.qn("w:color"), module.TABLE_BORDER_COLOR)
+            element.set(module.qn("w:color"), border_color)
             borders.append(element)
         table_properties.append(borders)
 
-    def apply_table_header_cell_style(_cell):
-        return
+    def apply_table_header_cell_style(cell, render_config=None):
+        table_style = getattr(render_config, "table_style", None)
+        header_fill = str(getattr(table_style, "header_fill", module.TABLE_HEADER_FILL) or module.TABLE_HEADER_FILL).strip().lstrip("#").upper()
+        if not header_fill:
+            return
+        cell_properties = cell._tc.get_or_add_tcPr()
+        shading = cell_properties.find(module.qn("w:shd"))
+        if shading is None:
+            shading = module.OxmlElement("w:shd")
+            cell_properties.append(shading)
+        shading.set(module.qn("w:fill"), header_fill)
 
     def render_table_from_html(container, block, usable_width, render_config):
         module.logger.debug(

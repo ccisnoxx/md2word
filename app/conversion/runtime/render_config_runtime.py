@@ -231,6 +231,8 @@ def load_section_layout(
             right_margin=section.right_margin,
             header_distance=section.header_distance,
             footer_distance=section.footer_distance,
+            page_width=getattr(section, "page_width", None),
+            page_height=getattr(section, "page_height", None),
         )
 
     if not config_path or not config_path.exists():
@@ -247,6 +249,13 @@ def load_section_layout(
             return fallback
         return mm_fn(float(value) * 10.0)
 
+    def resolve_page_dimension(*names: str, fallback: Any) -> Any:
+        for name in names:
+            value = page_setup.get(name)
+            if value is not None:
+                return mm_fn(float(value) * 10.0)
+        return fallback
+
     return section_layout_cls(
         top_margin=resolve_margin("top_margin", base_layout.top_margin),
         bottom_margin=resolve_margin("bottom_margin", base_layout.bottom_margin),
@@ -254,6 +263,8 @@ def load_section_layout(
         right_margin=resolve_margin("right_margin", base_layout.right_margin),
         header_distance=resolve_margin("header_distance", base_layout.header_distance),
         footer_distance=resolve_margin("footer_distance", base_layout.footer_distance),
+        page_width=resolve_page_dimension("page_width_cm", "page_width", fallback=getattr(base_layout, "page_width", None)),
+        page_height=resolve_page_dimension("page_height_cm", "page_height", fallback=getattr(base_layout, "page_height", None)),
     )
 
 
@@ -321,6 +332,8 @@ def load_table_style(
 
     return table_style_config_cls(
         header_bold=bool(value.get("header_bold", True)),
+        header_fill=str(value.get("header_fill", "") or "").strip().lstrip("#").upper(),
+        border_color=str(value.get("border_color", "C7CDD4") or "C7CDD4").strip().lstrip("#").upper(),
     )
 
 

@@ -389,6 +389,54 @@ Frontend contract needles should cover every frontend-consumed API surface that
 has a stable wrapper, including path availability, required schema fields, and
 request body field names that differ from page-local form names.
 
+### Convention: Local MinerU Runtime Layout Tuning
+
+**What**: First-stage PDF-to-DOCX layout tuning for local MinerU samples belongs
+in the legacy/local conversion runtime (`app/conversion/runtime_*`,
+`app/conversion/runtime_rendering_api.py`, `app/conversion/runtime_helpers.py`,
+and local template config/resources) plus focused characterization tests.
+Do not change the formal renderer under `app/services/renderer/*` unless the
+task explicitly promotes the behavior to the production rendering path.
+
+**Contracts**:
+
+- Page size, margins, header distance, and footer distance must come from
+  `resources/template_configs/datasheet_template.yaml` when that YAML provides
+  them. The DOCX template is only a source for page furniture such as header
+  logo/footer decoration; body typography should be controlled by runtime config
+  and language overrides.
+- Pagination is estimated before rendering. Keep the planner conservative:
+  title anchors require room for at least two body lines, table anchors require
+  caption plus header plus one data row, and figure/table captions and notes
+  should move with their visual block when possible.
+- Treat tables estimated at more than two rendered pages as long tables. Tables
+  estimated at two pages or less should keep the standard editable table path
+  and may flow naturally.
+- Source-positioned two-column regions may be represented with hidden-border
+  layout tables when MinerU bboxes already expose left/right columns. Do not
+  add post-generation DOCX repair passes to hide pagination mistakes.
+
+**Example**:
+
+```python
+flow_plan = build_page_flow_plan(regions, render_config, page_width, usable_width)
+for region in regions:
+    if flow_plan.should_break_before_region(region):
+        insert_page_break(document)
+    render_region(region)
+```
+
+**Tests Required**: Add or update `unittest` characterization tests for config
+loading, section sizing, flow-plan page breaks, TOC/column detection, table
+threshold decisions, and table style tokens. For visual acceptance, generate
+representative local MinerU DOCX files, render them with the document renderer
+to PDF/PNG, and inspect page images for orphan headings, table-caption splits,
+header-only tables, separated figure captions, and avoidable large page gaps.
+
+**Bad**: silently shrinking everything after DOCX generation, adding a second
+renderer path under `app/services/renderer/*`, or making LibreOffice/rendered
+PNG artifacts part of committed runtime resources.
+
 ## Scenario: Safe Document File Summaries For Job-Facing APIs
 
 ### 1. Scope / Trigger

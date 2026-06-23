@@ -11,6 +11,7 @@ from docx.oxml.ns import qn
 from docx.shared import Emu, Mm
 
 from app.conversion.runtime_models import Block, RenderConfig
+from app.conversion.runtime.page_flow_runtime import estimate_table_page_count
 from app.conversion.runtime.page_layout_runtime import render_visual_block
 from app.conversion.runtime.render_config_runtime import TerminologyReplacer
 from app.conversion.runtime.table_html_parser import HtmlCell, HtmlTable, parse_html_table
@@ -246,6 +247,8 @@ def render_large_table_if_needed(
         render_long_simple_table_fn=render_long_simple_table_adapter,
         render_large_table_fallback_fn=render_large_table_fallback,
         logger=logger,
+        estimated_page_count=estimate_table_page_count(block, table_model, render_config, usable_width),
+        long_table_page_threshold=2,
     )
 
 
@@ -308,7 +311,7 @@ def fill_table_cell(
         compact=compact,
     )
     if is_header:
-        apply_table_header_cell_style(cell)
+        apply_table_header_cell_style(cell, render_config)
 
 
 def compute_visual_width(block: Block, page_width: float, usable_width: int) -> int:
@@ -318,7 +321,9 @@ def compute_visual_width(block: Block, page_width: float, usable_width: int) -> 
     return min(max(width_by_ratio, min_width), int(usable_width))
 
 
-def remove_table_borders(table: Any) -> None:
+def remove_table_borders(table: Any, render_config: RenderConfig | None = None) -> None:
+    table_style = getattr(render_config, "table_style", None)
+    border_color = str(getattr(table_style, "border_color", TABLE_BORDER_COLOR) or TABLE_BORDER_COLOR).strip().lstrip("#").upper()
     table_element = table._tbl
     table_properties = table_element.tblPr
     borders = table_properties.find(qn("w:tblBorders"))
@@ -331,18 +336,26 @@ def remove_table_borders(table: Any) -> None:
         element.set(qn("w:val"), "single")
         element.set(qn("w:sz"), TABLE_OUTER_BORDER_SZ)
         element.set(qn("w:space"), "0")
-        element.set(qn("w:color"), TABLE_BORDER_COLOR)
+        element.set(qn("w:color"), border_color)
         borders.append(element)
     for edge in ("insideH", "insideV"):
         element = OxmlElement(f"w:{edge}")
         element.set(qn("w:val"), "single")
         element.set(qn("w:sz"), TABLE_INNER_BORDER_SZ)
         element.set(qn("w:space"), "0")
-        element.set(qn("w:color"), TABLE_BORDER_COLOR)
+        element.set(qn("w:color"), border_color)
         borders.append(element)
     table_properties.append(borders)
 
 
-def apply_table_header_cell_style(cell: Any) -> None:
-    """Keep header cells visually plain; bold text is handled during cell fill."""
-    return
+def apply_table_header_cell_style(cell: Any, render_config: RenderConfig | None = None) -> None:
+    table_style = getattr(render_config, "table_style", None)
+    header_fill = str(getattr(table_style, "header_fill", TABLE_HEADER_FILL) or TABLE_HEADER_FILL).strip().lstrip("#").upper()
+    if not header_fill:
+        return
+    cell_properties = cell._tc.get_or_add_tcPr()
+    shading = cell_properties.find(qn("w:shd"))
+    if shading is None:
+        shading = OxmlElement("w:shd")
+        cell_properties.append(shading)
+    shading.set(qn("w:fill"), header_fill)

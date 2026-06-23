@@ -93,6 +93,25 @@ class PageLayoutCharacterizationTests(__import__("unittest").TestCase):
         self.assertEqual(section.page_height, self.module.Pt(792.0))
         self.assertEqual(section.orientation, self.module.WD_ORIENTATION.PORTRAIT)
 
+    def test_configure_section_prefers_yaml_page_size_over_source_pdf_page_size(self):
+        section = FakeSection()
+        layout = SimpleNamespace(
+            top_margin=1,
+            bottom_margin=2,
+            left_margin=3,
+            right_margin=4,
+            header_distance=5,
+            footer_distance=6,
+            page_width=self.module.Pt(612.0),
+            page_height=self.module.Pt(792.0),
+        )
+
+        self.module.configure_section(section, (1000.0, 500.0), layout)
+
+        self.assertEqual(section.page_width, self.module.Pt(612.0))
+        self.assertEqual(section.page_height, self.module.Pt(792.0))
+        self.assertEqual(section.orientation, self.module.WD_ORIENTATION.PORTRAIT)
+
     def test_is_toc_page_true_for_explicit_directory_title(self):
         body_blocks = [
             self.make_block("title", (0, 0, 50, 10), text="目录"),
@@ -160,6 +179,46 @@ class PageLayoutCharacterizationTests(__import__("unittest").TestCase):
         self.assertEqual([block.text for block in toc_blocks if block.type == "title"], ["Table of Contents"])
         self.assertEqual(body_blocks[0].text, "4 Revision History")
 
+    def test_split_toc_column_blocks_uses_source_left_and_right_toc_columns(self):
+        blocks = [
+            self.make_block("title", (413, 103, 581, 119), text="Table of Contents"),
+            self.make_block(
+                "list",
+                (89, 128, 485, 375),
+                items=["1 Features... 1", "2 Applications... 1", "3 Description... 1"],
+            ),
+            self.make_block(
+                "list",
+                (526, 128, 906, 332),
+                items=[
+                    "7.3 Feature Description.. .17",
+                    "8 Application and Implementation.. 25",
+                    "9 Device and Documentation Support.. 31",
+                ],
+            ),
+            self.make_block("paragraph", (511, 334, 906, 359), text="10 Mechanical, Packaging, and Orderable Information.. 32"),
+        ]
+
+        columns = self.module.split_toc_column_blocks(blocks, page_width=906)
+
+        self.assertIsNotNone(columns)
+        title_blocks, left_blocks, right_blocks = columns
+        self.assertEqual([block.text for block in title_blocks], ["Table of Contents"])
+        self.assertEqual(left_blocks[0].items[0], "1 Features... 1")
+        self.assertEqual(right_blocks[-1].text, "10 Mechanical, Packaging, and Orderable Information.. 32")
+
+    def test_split_toc_column_blocks_rejects_single_column_toc(self):
+        blocks = [
+            self.make_block("title", (0, 0, 100, 20), text="Table of Contents"),
+            self.make_block(
+                "list",
+                (0, 30, 500, 200),
+                items=["1 Features... 1", "2 Applications... 1", "3 Description... 1"],
+            ),
+        ]
+
+        self.assertIsNone(self.module.split_toc_column_blocks(blocks, page_width=500))
+
     def test_render_document_page_body_renders_mixed_toc_remainder_as_body(self):
         document = FakeDocument()
         render_config = self.make_render_config()
@@ -203,6 +262,34 @@ class PageLayoutCharacterizationTests(__import__("unittest").TestCase):
         render_one_col_region.assert_called_once()
         passed_blocks = render_one_col_region.call_args.args[1]
         self.assertEqual([block.text for block in passed_blocks], ["正文"])
+
+    def test_render_page_body_applies_flow_plan_break_before_region(self):
+        document = FakeDocument()
+        left = self.make_block("paragraph", (0, 0, 150, 40), text="L")
+        right = self.make_block("paragraph", (200, 0, 350, 40), text="R")
+        render_config = self.make_render_config()
+
+        class BreakBeforeFirstRegionPlan:
+            def __init__(self):
+                self.first_region = None
+
+            def should_break_before_region(self, region):
+                if self.first_region is None:
+                    self.first_region = region
+                    return True
+                return False
+
+        flow_plan = BreakBeforeFirstRegionPlan()
+        with (
+            mock.patch.object(self.module, "build_page_flow_plan", return_value=flow_plan),
+            mock.patch.object(self.module, "insert_page_break") as insert_page_break,
+            mock.patch.object(self.module, "render_one_col_region") as render_one_col_region,
+            mock.patch.object(self.module, "render_two_col_region") as render_two_col_region,
+        ):
+            self.module.render_page_body(document, [left, right], render_config, skip_product_title=False)
+
+        insert_page_break.assert_called_once_with(document)
+        self.assertEqual(render_two_col_region.call_count + render_one_col_region.call_count, 1)
 
     def test_render_block_into_container_disables_keep_with_next_before_visual_block(self):
         title = self.make_block("title", (0, 0, 100, 20), text="1.2 电气特性")

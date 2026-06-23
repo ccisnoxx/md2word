@@ -8,8 +8,10 @@ output_filename: datasheet_template.docx
 
 # 页面设置：控制整份 Word 的页边距、页眉页脚距离。
 page_setup:
+  page_width_cm: 21.59    # 页面宽度，单位 cm；本地 datasheet 样本按 Letter 版面接近原 PDF。
+  page_height_cm: 27.94   # 页面高度，单位 cm；分页预算与 Word section 尺寸以本配置为准。
   top_margin: 2.46        # 页边距-上，单位 cm；略收紧顶部空白，更接近中文器件手册版芯。
-  bottom_margin: 2.46     # 页边距-下，单位 cm；与上边距对称，兼顾页脚和正文高度。
+  bottom_margin: 1.30     # 页边距-下，单位 cm；本地 datasheet 首页双栏需更多正文高度，页脚由模板装饰保留。
   left_margin: 1.46       # 页边距-左，单位 cm；中文正文每行不宜过长，适度保守。
   right_margin: 1.46      # 页边距-右，单位 cm；与左边距对称，保持双侧平衡。
   header_distance: 1.50   # 正文到页眉的距离，单位 cm；避免页眉压正文。

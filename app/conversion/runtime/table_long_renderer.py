@@ -18,7 +18,7 @@ A4_HEIGHT = Mm(297)
 def is_long_simple_table(table_model: Any, max_complex_table_rows: int) -> bool:
     if table_model.max_columns != 3:
         return False
-    if len(table_model.rows) < max_complex_table_rows:
+    if max_complex_table_rows > 0 and len(table_model.rows) < max_complex_table_rows:
         return False
     for row in table_model.rows[: min(len(table_model.rows), 120)]:
         for cell in row:
@@ -330,7 +330,7 @@ def render_simple_table_chunk(
     table = container.add_table(rows=len(rows), cols=max_cols)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
-    remove_table_borders_fn(table)
+    remove_table_borders_fn(table, render_config)
     configure_table_rows(table, repeat_header=repeat_header)
 
     column_width = max(int(usable_width // max_cols), int(Emu(Mm(16))))
