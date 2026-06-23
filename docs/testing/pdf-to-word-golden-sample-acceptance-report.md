@@ -23,7 +23,7 @@ last_reviewed: 2026-06-17
 - 当前 4 个 canonical 样本的人工质量均未达到 P0。
 - P0 质量线要求接近原版排版，同时符合 Word 文档排版标准；heading、Word list、双栏/宽表布局、caption/table 顺序和公式/特殊符号仍存在缺口。
 
-失败分类结论为 `pipeline-parity-gap`：`md2word_main` / `app/conversion/runtime` 中已有部分 heading、list、formula、caption、table 和 layout 策略，但当前 API `document_jobs -> DocumentIR -> app/services/renderer` 链路没有接入这些 legacy runtime 策略。
+失败分类结论为 `pipeline-parity-gap`：官方 `app/conversion/runtime` 中已有部分 heading、list、formula、caption、table 和 layout 策略，但当前 API `document_jobs -> DocumentIR -> app/services/renderer` 链路没有接入这些 legacy runtime 策略。历史上这些策略曾复制到 `md2word_main`；2026-06-23 起 `md2word_main` 只作为薄调试壳，不再是修复入口。
 
 ## 已完成
 
@@ -151,7 +151,7 @@ last_reviewed: 2026-06-17
 | sample-sourcing | 当前正式 manifest 已收敛为 4 个 OPA228 canonical 样本；不再把 8 个占位 `missing_pdf` 作为 P0 缺口。 | 后续扩展样本另开 P1/P2 backlog |
 | document-ir-layout-risk | 双栏 block 分组、宽表分页/页面方向、caption 与表格/figure 的相对位置仍有风险。 | `document-ir-layout-risk-pass` |
 | word-renderer-editable-output | heading/list/formula/caption/table 样式策略没有同步到 API DocumentIR renderer。 | `word-renderer-editable-output-pass` |
-| pipeline-parity-gap | legacy runtime / `md2word_main` 已有部分修复，但线上 API DocumentIR renderer 未接入。 | 两个后续 feature 的共同前置判断 |
+| pipeline-parity-gap | 官方 `app/conversion/runtime` 已有部分 legacy 策略，但线上 API DocumentIR renderer 未接入；`md2word_main` 仅用于本地样例验证。 | 两个后续 feature 的共同前置判断 |
 
 后续约束：
 
