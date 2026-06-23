@@ -576,6 +576,78 @@ from app.conversion import runtime_runner
 runtime_runner.run_conversion(input_path=input_path, output_path=output_path, ...)
 ```
 
+## Scenario: Component PDF Regression Sample Governance
+
+### 1. Scope / Trigger
+
+- Trigger: local electronic component PDF work discovers a layout or conversion
+  issue that should be preserved as a repeatable regression sample.
+- This workflow is for local MinerU package regression and sample governance,
+  not for replacing the P0 Golden Sample release gate.
+
+### 2. Signatures
+
+- `tests/fixtures/component_pdf_samples/manifest.yaml`
+- `python scripts/dev/manage_component_pdf_samples.py validate`
+- `python scripts/dev/manage_component_pdf_samples.py add-mineru-sample ... [--apply]`
+- `python scripts/dev/run_component_pdf_regression.py [--sample-id ID]`
+
+### 3. Contracts
+
+- Samples are organized as
+  `tests/fixtures/component_pdf_samples/samples/<brand>/<category>/<sample-id>/mineru/`.
+- Manifest entries must include `id`, `brand`, `category`, `product`,
+  `source_pdf`, `mineru.package_path`, `tags`, `acceptance_focus`, and
+  `regression.enabled`.
+- The regression runner must call the official `app.conversion.runtime_runner`;
+  it must not import or execute `md2word_main/mineru_to_docx.py`.
+- Generated DOCX and reports belong under `tests/tmp/component_pdf_regression/`
+  or external evidence storage.
+
+### 4. Validation & Error Matrix
+
+- Missing or duplicate sample id -> manifest validation fails.
+- Missing brand/category/product/source metadata -> manifest validation fails.
+- Missing MinerU `*_content_list_v2.json` or `*_content_list.json` -> manifest
+  validation fails and the sample is not runnable.
+- Per-sample conversion exception -> regression report item `status=failed`
+  and non-zero CLI exit.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a local OPA228 wide-table issue is added under
+  `texas-instruments/op-amp/<sample-id>/mineru`, fixed in `app/conversion`,
+  and verified with `run_component_pdf_regression.py --sample-id <sample-id>`.
+- Base: proprietary PDFs stay outside the repo while a minimized public MinerU
+  package and manifest reference are committed.
+- Bad: adding a second copied conversion implementation under the sample tree,
+  committing generated DOCX outputs, or treating this suite as P0 release
+  signoff.
+
+### 6. Tests Required
+
+- Unit tests must validate manifest schema, brand/category path alignment, and
+  existence of committed runnable MinerU fixtures.
+- Unit tests must cover adding a MinerU sample into a temporary manifest.
+- Unit tests must run the minimal local regression entrypoint on at least one
+  committed sample and verify an openable DOCX/report is produced.
+
+### 7. Wrong vs Correct
+
+Wrong:
+
+```python
+from md2word_main.mineru_to_docx import main
+```
+
+Correct:
+
+```python
+from app.conversion import runtime_runner
+
+runtime_runner.run_conversion(input_path=package_path, output_path=docx_path)
+```
+
 ---
 
 ## Code Review Checklist
