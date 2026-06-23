@@ -1,4 +1,4 @@
-#!/Users/sc/miniconda3/envs/md2word/bin/python
+#!/usr/bin/env python3
 """Manage electronic component PDF regression sample metadata and fixtures."""
 
 from __future__ import annotations

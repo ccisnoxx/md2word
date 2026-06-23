@@ -1,4 +1,4 @@
-#!/Users/sc/miniconda3/envs/md2word/bin/python
+#!/usr/bin/env python3
 """Run one MinerU result package through the official md2word conversion runtime."""
 
 from __future__ import annotations

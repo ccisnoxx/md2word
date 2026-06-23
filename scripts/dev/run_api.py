@@ -1,4 +1,4 @@
-#!/Users/sc/miniconda3/envs/md2word/bin/python
+#!/usr/bin/env python3
 from __future__ import annotations
 
 # scripts/dev/run_api.py: PyCharm 友好的 FastAPI 本地直跑入口。

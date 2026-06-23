@@ -1,4 +1,4 @@
-#!/Users/sc/miniconda3/envs/md2word/bin/python
+#!/usr/bin/env python3
 """Inspect local conversion sandbox drift, sample assets, and thin-shell state."""
 
 from __future__ import annotations
