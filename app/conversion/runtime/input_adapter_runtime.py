@@ -27,6 +27,7 @@ from app.conversion.runtime.page_repair_runtime import (
 
 _RUNTIME_MODULE: Any | None = None
 DETAILS_BLOCK_RE = re.compile(r"<details\b[^>]*>.*?</details>", re.IGNORECASE | re.DOTALL)
+TOC_DOT_LEADER_LINE_RE = re.compile(r"\S.*(?:\.{2,}|·{2,}|…{2,})\s*\d+\s*$")
 
 
 def bind_runtime(module: Any) -> None:
@@ -209,15 +210,21 @@ def load_middle_pages(package_root: Path) -> dict[int, Any]:
     collect_middle_visual_blocks_fn = _runtime_value("collect_middle_visual_blocks", collect_middle_visual_blocks)
     middle_page_cls = _middle_page_cls()
 
-    middle_path = find_first_file_fn(
+    page_info_path = find_first_file_fn(
         package_root,
         exact_names=("middle.json",),
         suffixes=("_middle.json",),
     )
-    if not middle_path:
+    if not page_info_path:
+        page_info_path = find_first_file_fn(
+            package_root,
+            exact_names=("layout.json",),
+            suffixes=("_layout.json",),
+        )
+    if not page_info_path:
         return {}
 
-    raw_middle = json.loads(middle_path.read_text(encoding="utf-8"))
+    raw_middle = json.loads(page_info_path.read_text(encoding="utf-8"))
     pdf_info = raw_middle.get("pdf_info", []) if isinstance(raw_middle, dict) else []
     middle_pages: dict[int, Any] = {}
 
@@ -279,6 +286,7 @@ def parse_v2_text_block(
     block_idx: int,
 ) -> Any | None:
     join_text_fragments_fn = _runtime_value("join_text_fragments", join_text_fragments)
+    split_toc_like_lines_fn = _runtime_value("split_toc_like_lines", split_toc_like_lines)
     block_cls = _block_cls()
 
     if block_type == "title":
@@ -292,6 +300,16 @@ def parse_v2_text_block(
         )
 
     if block_type == "paragraph":
+        raw_text = join_text_fragments_fn(content.get("paragraph_content", []), clean=False)
+        toc_items = split_toc_like_lines_fn(raw_text)
+        if toc_items:
+            return block_cls(
+                type="list",
+                bbox=bbox,
+                items=toc_items,
+                page_idx=page_idx,
+                block_idx=block_idx,
+            )
         return block_cls(
             type="paragraph",
             bbox=bbox,
@@ -625,7 +643,7 @@ def parse_page_size(value: Any) -> tuple[float, float] | None:
     return None
 
 
-def join_text_fragments(nodes: list[dict[str, Any]]) -> str:
+def join_text_fragments(nodes: list[dict[str, Any]], *, clean: bool = True) -> str:
     clean_text_fn = _runtime_value("clean_text", clean_text)
     normalize_formula_text_fn = _runtime_value("normalize_formula_text", lambda text: text)
     parts: list[str] = []
@@ -637,11 +655,26 @@ def join_text_fragments(nodes: list[dict[str, Any]]) -> str:
             parts.append(f" {normalize_formula_text_fn(node['content'])} ")
         elif "content" in node and isinstance(node["content"], str):
             parts.append(node["content"])
-    return clean_text_fn("".join(parts))
+    text = "".join(parts)
+    return clean_text_fn(text) if clean else text
+
+
+def split_toc_like_lines(text: str) -> list[str]:
+    clean_text_fn = _runtime_value("clean_text", clean_text)
+    lines = [clean_text_fn(line) for line in str(text or "").splitlines()]
+    lines = [line for line in lines if line]
+    if len(lines) < 3:
+        return []
+
+    toc_like = sum(1 for line in lines if TOC_DOT_LEADER_LINE_RE.match(line))
+    if toc_like / len(lines) < 0.7:
+        return []
+    return lines
 
 
 def coerce_text_list(value: Any) -> list[str]:
     clean_text_fn = _runtime_value("clean_text", clean_text)
+    normalize_formula_text_fn = _runtime_value("normalize_formula_text", lambda text: text)
     looks_like_asset_path_fn = _runtime_value("looks_like_asset_path", looks_like_asset_path)
     looks_like_html_fn = _runtime_value("looks_like_html", looks_like_html)
     texts: list[str] = []
@@ -667,9 +700,14 @@ def coerce_text_list(value: Any) -> list[str]:
             if text:
                 texts.append(text)
             return texts
+        if node_type in {"equation_inline", "inline_formula"} and isinstance(value.get("content"), str):
+            text = clean_text_fn(normalize_formula_text_fn(value["content"]))
+            if text:
+                texts.append(text)
+            return texts
 
         for key, child in value.items():
-            if key in {"img_path", "image_path", "path"}:
+            if key in {"img_path", "image_path", "path", "type"}:
                 continue
             texts.extend(coerce_text_list(child))
         return texts

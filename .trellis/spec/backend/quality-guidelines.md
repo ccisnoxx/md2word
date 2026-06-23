@@ -608,11 +608,25 @@ release process calls for it.
   paths from the official repository root.
 - Absolute config paths may point at `md2word_main/mineru_result` because
   `md2word_main` is now only a historical sample-asset source.
+- Local PDF debugging must improve the shared parser/renderer in
+  `app/conversion` when a MinerU package exposes a reusable defect. Do not add a
+  one-sample debug config to compensate for a broken official conversion path.
 - `md2word_main/mineru_to_docx.py` is deprecated. It must print a migration
   message pointing to `run_local_mineru_debug_config.py`, exit non-zero, and
   never proxy into `scripts.dev.run_local_mineru_conversion`.
 - `runtime_facade.load_pages()` and `runtime_runner.run_conversion()` must bind
   legacy runtime modules before calling `load_pages` or `build_document`.
+- MinerU v2 input loading must accept `layout.json` or `*_layout.json` as the
+  page metadata source when `middle.json` is absent, including
+  `pdf_info[*].page_size` so generated Word sections can preserve source page
+  dimensions such as Letter.
+- Multiline table-of-contents paragraphs from `content_list_v2` that mostly
+  contain dot-leader lines must be split into list entries and rendered with Word
+  dot-leader tab stops, not flattened into one paragraph with literal dots.
+- Inline formula nodes collected from captions, footnotes, and paragraph
+  fragments must normalize their `content` only. Structural keys such as `type`
+  with value `equation_inline` must never become visible Word text, and common
+  TeX fragments such as `\overline{A}` or `^{(1)(2)}` must not leak raw syntax.
 - Drift audits are read-only and compare relative paths such as
   `app/conversion` and `resources`; they report drift instead of copying files.
 - Sample inventory audits are read-only and list `test_pdf/*.pdf` plus
@@ -637,6 +651,13 @@ release process calls for it.
   non-zero; do not treat archived duplicate code as importable runtime code.
 - Missing runtime binding -> regression tests must catch `PageData is not bound`
   or equivalent model-binding failures.
+- Missing `middle.json` with present `layout.json` -> local conversion still
+  loads page metadata and preserves page size; do not silently fall back to A4.
+- TOC-like multiline paragraphs -> list entries with semantic page-number tab
+  stops; do not emit a single paragraph of dot-leader text.
+- Caption/footnote inline formulas -> normalized formula text only; no visible
+  `equation_inline`, `inline_formula`, raw `\overline`, or raw leading `^{...}`
+  syntax.
 
 ### 5. Good/Base/Bad Cases
 
@@ -654,6 +675,8 @@ release process calls for it.
   second thick CLI that binds runtime modules independently.
 - Bad: regenerating a `md2word_main/mineru_to_docx.py` proxy that calls
   `run_local_mineru_conversion`.
+- Bad: adding a local config that special-cases one problematic PDF instead of
+  fixing the shared `app/conversion` parsing or rendering contract.
 
 ### 6. Tests Required
 
@@ -672,6 +695,12 @@ release process calls for it.
   `run_local_mineru_conversion`.
 - Runtime binding tests assert `runtime_facade.load_pages()` works on a minimal
   MinerU v2 package without manual test-side binding.
+- Runtime input-adapter tests assert `layout.json` page sizes are loaded,
+  TOC-like multiline paragraphs become list entries, and visual metadata
+  collection skips structural `type` labels while normalizing inline formulas.
+- Text-rendering tests assert TOC page numbers use dot-leader tab stops and
+  formula normalization removes raw `\overline{...}` and leading `^{...}` syntax.
+- Page-layout tests assert source PDF page sizes are used for Word section size.
 - A local smoke may run one real sandbox package to DOCX under `tests/tmp/`.
 
 ### 7. Wrong vs Correct

@@ -83,6 +83,16 @@ class PageLayoutCharacterizationTests(__import__("unittest").TestCase):
         self.assertEqual([block.type for block in page_number_blocks], ["page_number"])
         self.assertEqual([block.type for block in body_blocks], ["paragraph"])
 
+    def test_configure_section_uses_source_pdf_page_size(self):
+        section = FakeSection()
+        render_config = self.make_render_config()
+
+        self.module.configure_section(section, (612.0, 792.0), render_config.section_layout)
+
+        self.assertEqual(section.page_width, self.module.Pt(612.0))
+        self.assertEqual(section.page_height, self.module.Pt(792.0))
+        self.assertEqual(section.orientation, self.module.WD_ORIENTATION.PORTRAIT)
+
     def test_is_toc_page_true_for_explicit_directory_title(self):
         body_blocks = [
             self.make_block("title", (0, 0, 50, 10), text="目录"),
