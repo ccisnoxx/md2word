@@ -89,14 +89,14 @@ last_reviewed: 2026-06-17
 推荐验证：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python -m unittest tests.test_openapi_export
-/Users/sc/miniconda3/envs/md2word/bin/python -m unittest tests.test_fastapi_jobs_backend
+.venv/bin/python -m unittest tests.test_openapi_export
+.venv/bin/python -m unittest tests.test_fastapi_jobs_backend
 ```
 
 发布前聚合：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_release.py
+.venv/bin/python scripts/ops/check_release.py
 ```
 
 ## 4. 前端接入顺序
@@ -284,7 +284,7 @@ Mock smoke 通过标准：
 
 | 项目 | 结果 | 证据 |
 | --- | --- | --- |
-| OpenAPI snapshot | 通过 | `/Users/sc/miniconda3/envs/md2word/bin/python -m unittest tests.test_openapi_export`，3 tests passed；`scripts/ops/check_release.py` 报告 OpenAPI current，`changed: False`。 |
+| OpenAPI snapshot | 通过 | `.venv/bin/python -m unittest tests.test_openapi_export`，3 tests passed；`scripts/ops/check_release.py` 报告 OpenAPI current，`changed: False`。 |
 | Backend targeted tests | 通过 | `tests.test_fastapi_jobs_backend` 中 document job list/filter、available actions、clone、retry、cancel、archive、bulk、translation QA 等 13 个定向用例通过；`scripts/ops/check_release.py` 额外跑 28 个 targeted tests 通过。 |
 | Frontend build | 通过 | `npm --prefix frontend run build` 通过；仅有 Rollup pure annotation 和 chunk size 警告。 |
 | Mock smoke `/login` | 通过 | Vite 指向本地 mock API；页面可加载，仅 favicon 404。 |

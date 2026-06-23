@@ -47,7 +47,7 @@ last_reviewed: 2026-05-28
 |---|---|---|---|---|---|---|
 | [x] | 必须 | 架构整理 | 删除或改写 docs / architecture 中所有旧本地入口表述 | `docs/dev/*.md`, `.codestable/architecture/*.md` | 文档只把 `app/main.py` 和 `app/conversion/` 作为后端 / 转换入口 | 搜索 docs 和 architecture，确认旧入口名和旧 IDE 入口名不再出现 |
 | [x] | 必须 | 架构整理 | 清理仍从旧根入口加载 runtime 的测试或说明 | `tests/test_render_table_from_html_characterization.py`, `tests/test_input_adapter_characterization.py` | 测试直接依赖 `app/conversion/runtime*` 或移除旧入口专属断言 | 搜索 tests 和 app，确认旧入口名不再出现 |
-| [x] | 必须 | 测试补齐 | 跑现有后端主测试，确认入口收口不影响 FastAPI | `tests/test_fastapi_jobs_backend.py`, `tests/test_job_workflow_policy.py`, `tests/test_job_artifact_contract.py`, `tests/test_database_job_repository.py` | 后端主链路测试仍通过 | `/Users/sc/miniconda3/envs/md2word/bin/python -m unittest tests.test_fastapi_jobs_backend tests.test_job_workflow_policy tests.test_job_artifact_contract tests.test_database_job_repository` |
+| [x] | 必须 | 测试补齐 | 跑现有后端主测试，确认入口收口不影响 FastAPI | `tests/test_fastapi_jobs_backend.py`, `tests/test_job_workflow_policy.py`, `tests/test_job_artifact_contract.py`, `tests/test_database_job_repository.py` | 后端主链路测试仍通过 | `.venv/bin/python -m unittest tests.test_fastapi_jobs_backend tests.test_job_workflow_policy tests.test_job_artifact_contract tests.test_database_job_repository` |
 | [x] | 应做 | 架构整理 | 更新后端文档索引，让新计划成为后续实施入口 | `docs/dev/backend-dev-docs-index.md` | 新人能从索引找到本计划 | 人工检查索引链接 |
 
 ## 阶段 1：API 错误与权限边界收口
@@ -59,7 +59,7 @@ last_reviewed: 2026-05-28
 | [x] | 必须 | 架构整理 | 新增统一异常映射模块 | `app/api/errors.py`, `app/main.py` | `JobWorkflowViolation`、`ConversionFailure`、artifact 下载错误有统一 HTTP 映射入口 | 新增异常映射单元测试 |
 | [x] | 必须 | 架构整理 | 将 router 内重复的 `try/except` 迁到统一异常层或保留最小边界转换 | `app/api/v1/routers/*.py` | router 更薄，错误响应格式更一致 | `rg "except .* as exc" app/api/v1/routers app/api` |
 | [x] | 必须 | 功能开发 | 收紧 job ops 权限策略 | `app/api/dependencies.py`, `app/api/v1/routers/jobs_ops.py`, `app/core/config.py` | `retry/cancel/cleanup-local-files` 可配置为 admin-only，不再默认和普通 jobs 查询同级 | API 测试覆盖无 token、jobs token、admin token 三种情况 |
-| [x] | 必须 | 测试补齐 | 固定错误响应和权限行为 | `tests/test_fastapi_jobs_backend.py` | 关键 400/403/409/503 响应稳定 | `/Users/sc/miniconda3/envs/md2word/bin/python -m unittest tests.test_fastapi_jobs_backend` |
+| [x] | 必须 | 测试补齐 | 固定错误响应和权限行为 | `tests/test_fastapi_jobs_backend.py` | 关键 400/403/409/503 响应稳定 | `.venv/bin/python -m unittest tests.test_fastapi_jobs_backend` |
 | [x] | 应做 | 部署支持 | 更新最小 `.env` 文档，明确生产不应使用 `JOBS_ACCESS_MODE=open` | `docs/dev/backend-local-minimal-env-and-commands.md`, `docs/runbooks/backend.md` | 本地和生产权限差异被写清 | 人工检查文档 |
 
 ## 阶段 2：Jobs workflow 与 stage driver 压薄
@@ -72,7 +72,7 @@ last_reviewed: 2026-05-28
 | [x] | 必须 | 架构整理 | 将 stage message 状态更新封装成更窄 helper | `app/domains/jobs/stage.py` | running/failed/delete 的写法更集中 | `tests.test_fastapi_jobs_backend` 通过 |
 | [x] | 必须 | 架构整理 | 将 MinerU submit / result download 调用拆成私有 provider handler | `app/domains/jobs/stage.py`, `app/clients/mineru_client.py` | `dispatch_message()` 只做分派，不直接堆 provider 细节 | PDF submit 和 callback 自动完成测试通过 |
 | [x] | 应做 | 架构整理 | 将 conversion stage 调用拆成私有 conversion handler | `app/domains/jobs/stage.py`, `app/conversion/entrypoint.py` | conversion 成功/失败路径更容易单测 | zip 上传、en2zh、失败 retry 测试通过 |
-| [x] | 必须 | 测试补齐 | 给 `job_workflow.py` 补齐新增或已遗漏的状态迁移测试 | `tests/test_job_workflow_policy.py` | workflow rule 变更不依赖 API 测试兜底 | `/Users/sc/miniconda3/envs/md2word/bin/python -m unittest tests.test_job_workflow_policy` |
+| [x] | 必须 | 测试补齐 | 给 `job_workflow.py` 补齐新增或已遗漏的状态迁移测试 | `tests/test_job_workflow_policy.py` | workflow rule 变更不依赖 API 测试兜底 | `.venv/bin/python -m unittest tests.test_job_workflow_policy` |
 
 ## 阶段 3：Repository 与 metadata 默认策略
 
@@ -83,7 +83,7 @@ last_reviewed: 2026-05-28
 | [x] | 必须 | 架构整理 | 明确 file backend 和 sqlite backend 的定位 | `docs/dev/backend-design-implementation-plan.md`, `docs/dev/backend-local-setup-and-architecture.md` | file 用于本地开发，sqlite 作为准生产 metadata store | 人工检查文档 |
 | [x] | 应做 | 功能开发 | 明确保留 file 为本地代码默认，sqlite 作为准生产推荐显式配置 | `app/core/config.py`, `docs/dev/backend-local-minimal-env-and-commands.md` | 默认策略明确，不再靠口头约定 | readiness 测试覆盖默认值 |
 | [x] | 必须 | 部署支持 | 补 metadata shadow copy / integrity check 的使用说明 | `scripts/ops/*`, `docs/runbooks/backend.md` | 从 file 迁到 sqlite 有可执行步骤 | 运行已有 metadata shadow copy 测试 |
-| [x] | 必须 | 测试补齐 | 保持 file/sqlite repository 合同一致性测试 | `tests/test_database_job_repository.py` | 两种 backend 对 jobs/files/events/stage messages 行为一致 | `/Users/sc/miniconda3/envs/md2word/bin/python -m unittest tests.test_database_job_repository` |
+| [x] | 必须 | 测试补齐 | 保持 file/sqlite repository 合同一致性测试 | `tests/test_database_job_repository.py` | 两种 backend 对 jobs/files/events/stage messages 行为一致 | `.venv/bin/python -m unittest tests.test_database_job_repository` |
 | [ ] | 后续优化 | 部署支持 | 若引入 PostgreSQL，再增加 Alembic | `alembic/`, `app/infrastructure/persistence/` | 有版本化 schema migration | Alembic upgrade/downgrade smoke |
 
 ## 阶段 4：Artifact storage 与文件生命周期
@@ -92,7 +92,7 @@ last_reviewed: 2026-05-28
 
 | Done | 优先级 | 类型 | 步骤 | 涉及文件 | 预期结果 | 验证方式 |
 |---|---|---|---|---|---|---|
-| [x] | 必须 | 架构整理 | 固定 artifact alias / file_type / media_type 合同 | `app/domains/jobs/artifacts.py`, `tests/test_job_artifact_contract.py` | `source-package`、`source-pdf`、`parsed-result-package`、`translation-request`、`result` 稳定 | `/Users/sc/miniconda3/envs/md2word/bin/python -m unittest tests.test_job_artifact_contract` |
+| [x] | 必须 | 架构整理 | 固定 artifact alias / file_type / media_type 合同 | `app/domains/jobs/artifacts.py`, `tests/test_job_artifact_contract.py` | `source-package`、`source-pdf`、`parsed-result-package`、`translation-request`、`result` 稳定 | `.venv/bin/python -m unittest tests.test_job_artifact_contract` |
 | [x] | 必须 | 功能开发 | 明确 `cleanup-local-files` 只清理 work dir，不删除唯一登记 artifact | `app/domains/jobs/lifecycle.py` | 清理动作不会造成结果丢失 | 对 cleanup 增加回归测试 |
 | [x] | 应做 | 部署支持 | 补 local object adapter 运维说明 | `app/domains/jobs/object_artifact_storage.py`, `docs/runbooks/backend.md` | `local_object` 模式如何启用和排障写清楚 | object storage switch 测试通过 |
 | [x] | 后续优化 | 功能开发 | 接入真正 S3-compatible adapter | `app/domains/jobs/artifact_storage.py`, `app/domains/jobs/object_artifact_storage.py` | `resolve_download()` 可返回 redirect 或 stream | stream/redirect API 测试通过 |

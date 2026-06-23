@@ -8,7 +8,7 @@ last_scanned: 2026-06-21
 openapi:
   doc_path: docs/api/openapi.json
   generated_by: scripts/ops/export_openapi.py
-  release_check: "/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_release.py"
+  release_check: ".venv/bin/python scripts/ops/check_release.py"
   status: current
   note: "提交版 OpenAPI JSON 快照；发布前检查必须与当前代码生成结果一致。"
 

@@ -124,8 +124,8 @@ curl -sS http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}/api/v1/health/metrics
 发布前检查在 hostdzire 执行：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_release.py
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_release.py \
+.venv/bin/python scripts/ops/check_release.py
+.venv/bin/python scripts/ops/check_release.py \
   --runtime-url http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000} \
   --golden-sample-preflight
 ```
@@ -158,7 +158,7 @@ curl -sS http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}/api/v1/health/metrics
 生成密码 hash：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python -c "from app.services.auth.service import hash_password; print(hash_password('change-me-password'))"
+.venv/bin/python -c "from app.services.auth.service import hash_password; print(hash_password('change-me-password'))"
 ```
 
 日常账号操作原则：

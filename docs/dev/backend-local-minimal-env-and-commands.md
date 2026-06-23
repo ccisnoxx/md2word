@@ -143,13 +143,13 @@ TEMPLATE_STATE_PATH=data/config/template_state.json
 优先使用当前 attention.md 里约定的 conda 环境：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python run_api.py
+.venv/bin/python run_api.py
 ```
 
 或者：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 如果使用独立 worker 模式，`.env` 里设置：
@@ -161,8 +161,8 @@ JOBS_WORKER_MODE=external
 然后分别启动 API 和 worker：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python run_api.py
-/Users/sc/miniconda3/envs/md2word/bin/python run_worker.py
+.venv/bin/python run_api.py
+.venv/bin/python run_worker.py
 ```
 
 ## 第一条检查命令

@@ -76,7 +76,7 @@ samples:
 签字后对同一个 run_dir 应用签字，不重新跑样本：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/run_golden_sample_regression.py \
+.venv/bin/python scripts/ops/run_golden_sample_regression.py \
   --apply-manual-signoff tests/tmp/golden_sample_runs/<run_id>
 ```
 

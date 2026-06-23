@@ -20,7 +20,7 @@ P2 入口是内部单租户规模化与外部化：不扩展为 SaaS 或泛 PDF�
 - 正式内部门户说明：[docs/runbooks/internal-portal.md](docs/runbooks/internal-portal.md)
 - P0 内部联调步骤：[docs/testing/pdf-to-word-p0-integration-guide.md](docs/testing/pdf-to-word-p0-integration-guide.md)
 - Golden Sample 状态：[docs/testing/pdf-to-word-golden-sample-acceptance-report.md](docs/testing/pdf-to-word-golden-sample-acceptance-report.md)
-- 本地 MinerU 结果包调试入口：[docs/dev/local-conversion-sandbox.md](docs/dev/local-conversion-sandbox.md)
+- 本地 MinerU PyCharm 配置调试入口：[docs/dev/local-conversion-sandbox.md](docs/dev/local-conversion-sandbox.md)
 - 电子元器件样例回归治理：[docs/dev/component-pdf-regression-governance.md](docs/dev/component-pdf-regression-governance.md)
 - API 清单：[docs/api/manifest.yaml](docs/api/manifest.yaml)
 - OpenAPI 快照：[docs/api/openapi.json](docs/api/openapi.json)
@@ -28,7 +28,7 @@ P2 入口是内部单租户规模化与外部化：不扩展为 SaaS 或泛 PDF�
 本地变更阶段只做不依赖真实服务的检查，不在本机启动前端、后端、MySQL、Redis/Celery 或 Playwright smoke：
 
 ```bash
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/check_release.py
+.venv/bin/python scripts/ops/check_release.py
 ```
 
 准生产/生产发布按线上优先验证流程执行：先把本地变更同步到 hostdzire，再对运行中的 API 执行 `check_release.py --runtime-url <api-base-url> --golden-sample-preflight`，随后运行 Golden Sample 真实回归并由 admin 签字。
@@ -39,7 +39,7 @@ P1 翻译 beta 在线验证使用独立脚本，不混入 P0 Golden Sample：
 P1_TRANSLATION_BASE_URL="http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}" \
 P1_TRANSLATION_USERNAME=admin \
 P1_TRANSLATION_PASSWORD='<admin-password>' \
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/run_p1_translation_regression.py --preflight
+.venv/bin/python scripts/ops/run_p1_translation_regression.py --preflight
 ```
 
 P2 内部单租户线上门禁在 hostdzire 执行：
@@ -49,7 +49,7 @@ P2_ONLINE_BASE_URL="http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}" \
 P2_ONLINE_PUBLIC_URL="https://md2word.962850.xyz" \
 P2_ONLINE_USERNAME=admin \
 P2_ONLINE_PASSWORD='<admin-password>' \
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/run_p2_online_gate.py
+.venv/bin/python scripts/ops/run_p2_online_gate.py
 ```
 
 前端工作台位于 `frontend/`。需要单独开发前端时可启动本地 dev server，但它不作为当前 P0 发布验收步骤：

@@ -16,7 +16,7 @@
 ```bash
 GOLDEN_SAMPLE_USERNAME=admin \
 GOLDEN_SAMPLE_PASSWORD='<admin-password>' \
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/run_golden_sample_regression.py \
+.venv/bin/python scripts/ops/run_golden_sample_regression.py \
   --preflight \
   --preflight-output tests/tmp/golden_sample_runs/preflight.json
 ```
@@ -26,7 +26,7 @@ GOLDEN_SAMPLE_PASSWORD='<admin-password>' \
 ```bash
 GOLDEN_SAMPLE_USERNAME=admin \
 GOLDEN_SAMPLE_PASSWORD='<admin-password>' \
-/Users/sc/miniconda3/envs/md2word/bin/python scripts/ops/run_golden_sample_regression.py
+.venv/bin/python scripts/ops/run_golden_sample_regression.py
 ```
 
 验收口径：
