@@ -213,6 +213,27 @@ class InputAdapterCharacterizationTests(__import__("unittest").TestCase):
 
         self.assertEqual(middle_pages, {})
 
+    def test_load_middle_pages_reads_layout_json_page_sizes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            package_root = Path(temp_dir)
+            (package_root / "layout.json").write_text(
+                json.dumps(
+                    {
+                        "pdf_info": [
+                            {"page_idx": 0, "page_size": [612, 792]},
+                            {"page_idx": 1, "page_size": [792, 612]},
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            middle_pages = self.module.load_middle_pages(package_root)
+
+        self.assertEqual(middle_pages[0].page_size, (612.0, 792.0))
+        self.assertEqual(middle_pages[1].page_size, (792.0, 612.0))
+
     def test_parse_v2_block_maps_title_paragraph_and_list(self):
         title_block = self.module.parse_v2_block(
             {
@@ -279,6 +300,41 @@ class InputAdapterCharacterizationTests(__import__("unittest").TestCase):
 
         self.assertEqual(paragraph_block.type, "paragraph")
         self.assertEqual(paragraph_block.text, "at R<sub>L</sub> = 10 kΩ connected to V<sub>S</sub> / 2")
+
+    def test_parse_v2_block_splits_toc_like_multiline_paragraph(self):
+        toc_block = self.module.parse_v2_block(
+            {
+                "type": "paragraph",
+                "bbox": [0, 10, 20, 20],
+                "content": {
+                    "paragraph_content": [
+                        {
+                            "type": "text",
+                            "content": (
+                                "1 FEATURES .... 1\n"
+                                "2 APPLICATIONS .... 1\n"
+                                "3 DESCRIPTION .... 1\n"
+                                "4 FUNCTION TABLE .... 1"
+                            ),
+                        }
+                    ]
+                },
+            },
+            Path("."),
+            page_idx=0,
+            block_idx=1,
+        )
+
+        self.assertEqual(toc_block.type, "list")
+        self.assertEqual(
+            toc_block.items,
+            [
+                "1 FEATURES .... 1",
+                "2 APPLICATIONS .... 1",
+                "3 DESCRIPTION .... 1",
+                "4 FUNCTION TABLE .... 1",
+            ],
+        )
 
     def test_parse_v2_block_keeps_spacing_around_inline_equation_fragments(self):
         paragraph_block = self.module.parse_v2_block(
@@ -404,7 +460,10 @@ class InputAdapterCharacterizationTests(__import__("unittest").TestCase):
                 (1.0, 2.0, 3.0, 4.0),
                 {
                     "img_path": "asset.png",
-                    "table_caption": [{"type": "text", "content": "Cap"}],
+                    "table_caption": [
+                        {"type": "text", "content": "Cap"},
+                        {"type": "equation_inline", "content": "V_{CC}"},
+                    ],
                     "table_footnote": [{"type": "text", "content": "Note"}],
                     "html": "<table><tr><td>A</td></tr></table>",
                     "description": "desc",
@@ -416,7 +475,7 @@ class InputAdapterCharacterizationTests(__import__("unittest").TestCase):
 
         self.assertEqual(block.type, "table")
         self.assertEqual(block.image_path, image_path.resolve())
-        self.assertEqual(block.captions, ["Cap"])
+        self.assertEqual(block.captions, ["Cap", "V<sub>CC</sub>"])
         self.assertEqual(block.footnotes, ["Note"])
         self.assertEqual(block.html, "<table><tr><td>A</td></tr></table>")
         self.assertEqual(block.text, "desc")

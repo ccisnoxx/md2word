@@ -34,8 +34,10 @@ TEXT_WRAPPER_START_RE = re.compile(r"\\(?:mathrm|mathsf|text)\s*\{")
 CONTROL_WORD_RE = re.compile(r"\\([A-Za-z]+)")
 SQRT_RE = re.compile(r"\\sqrt\s*\{([^{}]+)\}")
 DOUBLE_ESCAPED_TEX_COMMAND_RE = re.compile(
-    r"\\{2,}(?=(?:mathrm|mathsf|text|sqrt|Delta|delta|Theta|theta|mu|Omega|alpha|beta|gamma|lambda|rho|psi|phi|pm|circ|vee|to|max|min|typ|avg|rms|pk|pp)\b)"
+    r"\\{2,}(?=(?:mathrm|mathsf|text|sqrt|overline|Delta|delta|Theta|theta|mu|Omega|alpha|beta|gamma|lambda|rho|psi|phi|pm|circ|vee|to|max|min|typ|avg|rms|pk|pp)\b)"
 )
+OVERLINE_RE = re.compile(r"\\overline\s*\{([^{}]*)\}")
+TOC_ENTRY_PARTS_RE = re.compile(r"^(?P<title>.*?)(?:\s*(?:\.{2,}|·{2,}|…{2,})\s*)(?P<page>\d+)\s*$")
 LIST_MARKER_RE = re.compile(r"^\s*(?:[•■*]|[-–—])\s+")
 SIMPLE_EXPR_RE = re.compile(
     r"(?P<base>[A-Za-zΑ-Ωα-ωΔΨθρμπμΩ]+[A-Za-z0-9Α-Ωα-ωΔΨθρμπμΩ]*)"
@@ -46,6 +48,7 @@ SUP_ONLY_EXPR_RE = re.compile(
     r"(?P<base>[A-Za-zΑ-Ωα-ωΔΨθρμπμΩ]+[A-Za-z0-9Α-Ωα-ωΔΨθρμπμΩ]*)"
     r"\^(?P<sup>\([^)]+\)|[A-Za-z0-9()+/\-]+)"
 )
+LEADING_SUP_EXPR_RE = re.compile(r"\^(?:\{(?P<sup_braced>[^{}]+)\}|(?P<sup_plain>\([^)]+\)|[A-Za-z0-9()+/\-]+))")
 INLINE_MARKUP_SPLIT_RE = re.compile(r"(<[^>]+>)")
 SPACED_ALPHA_TOKEN_RE = re.compile(r"\b(?:[A-Za-z]\s+){1,}[A-Za-z]\b")
 SPACED_DIGIT_TOKEN_RE = re.compile(r"\b(?:\d\s+){1,}\d\b")
@@ -122,22 +125,44 @@ def normalize_toc_text(text: str) -> str:
     return cleaned.strip()
 
 
-def fill_toc_entry_paragraph(paragraph: Any, text: str, render_config: Any) -> None:
+def fill_toc_entry_paragraph(paragraph: Any, text: str, render_config: Any, usable_width: Any | None = None) -> None:
     paragraph.text = ""
     normalize_toc_text_fn = _runtime_value("normalize_toc_text", normalize_toc_text)
+    split_toc_entry_parts_fn = _runtime_value("split_toc_entry_parts", split_toc_entry_parts)
     infer_heading_level_fn = _runtime_value("infer_heading_level", infer_heading_level)
     get_toc_style_name_fn = _runtime_value("get_toc_style_name", get_toc_style_name)
     apply_named_style_config_fn = _runtime_value("apply_named_style_config", apply_named_style_config)
     fill_rich_text_fn = _runtime_value("fill_rich_text", fill_rich_text)
     prepare_text_fn = _runtime_value("prepare_text", prepare_text)
+    get_style_config_fn = _runtime_value("get_style_config", get_style_config)
+    apply_run_defaults_fn = _runtime_value("apply_run_defaults", apply_run_defaults)
 
-    level = infer_heading_level_fn(normalize_toc_text_fn(text))
+    title, page_number = split_toc_entry_parts_fn(text)
+    normalized_title = normalize_toc_text_fn(title)
+    level = infer_heading_level_fn(normalized_title)
     style_name = get_toc_style_name_fn(level)
     apply_named_style_config_fn(paragraph, render_config, style_name)
     paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
     paragraph.paragraph_format.first_line_indent = Pt(0)
-    paragraph.paragraph_format.left_indent = Pt(compute_toc_indent_pt(text, render_config))
-    fill_rich_text_fn(paragraph, prepare_text_fn(text, render_config), render_config=render_config, style_name=style_name)
+    paragraph.paragraph_format.left_indent = Pt(compute_toc_indent_pt(normalized_title, render_config))
+    if page_number:
+        add_toc_dot_leader_tab_stop(paragraph, usable_width)
+        fill_rich_text_fn(
+            paragraph,
+            prepare_text_fn(normalized_title, render_config),
+            render_config=render_config,
+            style_name=style_name,
+        )
+        page_run = paragraph.add_run(f"\t{page_number}")
+        apply_run_defaults_fn(page_run, get_style_config_fn(render_config, style_name))
+        return
+
+    fill_rich_text_fn(
+        paragraph,
+        prepare_text_fn(normalized_title, render_config),
+        render_config=render_config,
+        style_name=style_name,
+    )
 
 
 def fill_toc_title_paragraph(paragraph: Any, text: str, render_config: Any) -> None:
@@ -163,6 +188,35 @@ def compute_toc_indent_pt(text: str, render_config: Any) -> float:
     style = _runtime_value("get_style_config", get_style_config)(render_config, "Normal")
     font_size = style.font_size if style and style.font_size else 10.5
     return max(level - 1, 0) * font_size * 2
+
+
+def split_toc_entry_parts(text: str) -> tuple[str, str | None]:
+    cleaned = _clean_text(text)
+    match = TOC_ENTRY_PARTS_RE.match(cleaned)
+    if not match:
+        return cleaned, None
+    return _clean_text(match.group("title")), match.group("page")
+
+
+def add_toc_dot_leader_tab_stop(paragraph: Any, position: Any | None = None) -> None:
+    position = position or Pt(453.6)
+    paragraph_element = getattr(paragraph, "_p", None)
+    if paragraph_element is not None:
+        paragraph_properties = paragraph_element.get_or_add_pPr()
+        tabs = paragraph_properties.find(qn("w:tabs"))
+        if tabs is None:
+            tabs = OxmlElement("w:tabs")
+            paragraph_properties.append(tabs)
+        tab = OxmlElement("w:tab")
+        tab.set(qn("w:val"), "right")
+        tab.set(qn("w:leader"), "dot")
+        tab.set(qn("w:pos"), str(int(position) // 635))
+        tabs.append(tab)
+        return
+
+    tab_stops = getattr(getattr(paragraph, "paragraph_format", None), "tab_stops", None)
+    if tab_stops is not None and hasattr(tab_stops, "add_tab_stop"):
+        tab_stops.add_tab_stop(position)
 
 
 def normalize_formula_text(text: str) -> str:
@@ -195,6 +249,7 @@ def normalize_tex_text(text: str) -> str:
         prev = normalized
         normalized = SQRT_RE.sub(lambda match: f"√{compact_math_token_runs(match.group(1) or '')}", normalized)
         normalized = WRAPPER_RE.sub(lambda match: compact_math_token_runs(match.group(1) or ""), normalized)
+        normalized = OVERLINE_RE.sub(replace_overline_expr, normalized)
 
     normalized = CONTROL_WORD_RE.sub(replace_control_word, normalized)
     normalized = normalized.replace(r"\_", "_")
@@ -228,6 +283,10 @@ def convert_inline_tex_to_html(text: str) -> str:
     )
     converted = SUP_ONLY_EXPR_RE.sub(
         lambda match: convert_simple_tex_expr(match.group(0)),
+        converted,
+    )
+    converted = LEADING_SUP_EXPR_RE.sub(
+        lambda match: f"<sup>{clean_tex_fragment(match.group('sup_braced') or match.group('sup_plain') or '')}</sup>",
         converted,
     )
     return converted
@@ -328,6 +387,13 @@ def unwrap_tex_text_wrappers(text: str) -> str:
 
 def replace_control_word(match: re.Match[str]) -> str:
     return GREEK_AND_TEXT_COMMANDS.get(match.group(1), match.group(0))
+
+
+def replace_overline_expr(match: re.Match[str]) -> str:
+    content = clean_tex_fragment(match.group(1) or "")
+    if re.search(r"[=<>+\-*/]|\s", content):
+        return content
+    return "".join(f"{char}\u0305" for char in content)
 
 
 def prepare_text(text: str, render_config: Any | None) -> str:

@@ -45,6 +45,10 @@ class FakeParagraphFormat:
         self.first_line_indent = None
         self.left_indent = None
         self.right_indent = None
+        self.tab_stops = SimpleNamespace(calls=[], add_tab_stop=self._add_tab_stop)
+
+    def _add_tab_stop(self, *args):
+        self.tab_stops.calls.append(args)
 
 
 class FakeParagraph:
@@ -107,6 +111,30 @@ class TextRenderCharacterizationTests(unittest.TestCase):
         )
 
         self.assertEqual(normalized, "R<sub>L</sub> = 10 kΩ connected to V<sub>S</sub> / 2")
+
+    def test_normalize_formula_text_converts_overline_without_latex_residue(self):
+        self.assertEqual(self.module.normalize_formula_text(r"Y=\overline{A}"), "Y=A̅")
+        self.assertEqual(self.module.normalize_formula_text(r"\overline{Y = \overline{A}}"), "Y = A̅")
+
+    def test_normalize_formula_text_converts_leading_superscript_marker(self):
+        self.assertEqual(self.module.normalize_formula_text(r"^{(1)(2)}"), "<sup>(1)(2)</sup>")
+
+    def test_fill_toc_entry_paragraph_uses_dot_leader_tab_for_page_number(self):
+        paragraph = FakeParagraph()
+        render_config = self.make_render_config()
+
+        self.module.fill_toc_entry_paragraph(paragraph, "1 FEATURES .... 1", render_config)
+
+        self.assertEqual([run.text for run in paragraph.runs], ["1 FEATURES", "\t1"])
+        self.assertEqual(len(paragraph.paragraph_format.tab_stops.calls), 1)
+
+    def test_fill_toc_entry_paragraph_uses_supplied_usable_width_for_tab_stop(self):
+        paragraph = FakeParagraph()
+        render_config = self.make_render_config()
+
+        self.module.fill_toc_entry_paragraph(paragraph, "1 FEATURES .... 1", render_config, 123456)
+
+        self.assertEqual(paragraph.paragraph_format.tab_stops.calls[0], (123456,))
 
     def test_apply_named_style_config_updates_paragraph_format(self):
         paragraph = FakeParagraph()

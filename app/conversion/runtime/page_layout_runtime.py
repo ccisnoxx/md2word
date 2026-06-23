@@ -290,8 +290,12 @@ def render_document_page_body(
 def configure_section(section: Any, page_size: tuple[float, float] | None, layout: Any) -> None:
     landscape = bool(page_size and page_size[0] > page_size[1])
     section.orientation = WD_ORIENTATION.LANDSCAPE if landscape else WD_ORIENTATION.PORTRAIT
-    section.page_width = _runtime_value("A4_HEIGHT", None) if landscape else _runtime_value("A4_WIDTH", None)
-    section.page_height = _runtime_value("A4_WIDTH", None) if landscape else _runtime_value("A4_HEIGHT", None)
+    if page_size:
+        section.page_width = Pt(page_size[0])
+        section.page_height = Pt(page_size[1])
+    else:
+        section.page_width = _runtime_value("A4_HEIGHT", None) if landscape else _runtime_value("A4_WIDTH", None)
+        section.page_height = _runtime_value("A4_WIDTH", None) if landscape else _runtime_value("A4_HEIGHT", None)
     section.left_margin = layout.left_margin
     section.right_margin = layout.right_margin
     section.top_margin = layout.top_margin
@@ -591,18 +595,18 @@ def render_toc_page(
             if _toc_title_re().match(toc_text):
                 fill_toc_title_paragraph_fn(paragraph, toc_text, render_config)
             else:
-                fill_toc_entry_paragraph_fn(paragraph, toc_text, render_config)
+                fill_toc_entry_paragraph_fn(paragraph, toc_text, render_config, usable_width)
             continue
 
         if block.type == "list":
             for item in block.items:
                 paragraph = document.add_paragraph()
-                fill_toc_entry_paragraph_fn(paragraph, normalize_toc_text_fn(item), render_config)
+                fill_toc_entry_paragraph_fn(paragraph, item, render_config, usable_width)
             continue
 
         if block.type == "paragraph":
             paragraph = document.add_paragraph()
-            fill_toc_entry_paragraph_fn(paragraph, normalize_toc_text_fn(block.text), render_config)
+            fill_toc_entry_paragraph_fn(paragraph, block.text, render_config, usable_width)
             continue
 
         render_block_into_container_fn(document, block, page_width, usable_width, render_config)
