@@ -157,6 +157,7 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
     acceptance_latest_summary_path = paths.get("/api/v1/acceptance/runs/latest-summary", {}) if isinstance(paths, dict) else {}
     acceptance_run_path = paths.get("/api/v1/acceptance/runs/{run_id}", {}) if isinstance(paths, dict) else {}
     acceptance_review_path = paths.get("/api/v1/acceptance/runs/{run_id}/review", {}) if isinstance(paths, dict) else {}
+    ai_provider_config_path = paths.get("/api/v1/ai-provider-config", {}) if isinstance(paths, dict) else {}
     parameter_names = {
         parameter.get("name")
         for parameter in document_jobs_get.get("parameters", [])
@@ -239,6 +240,27 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
     for name in ("overall_status", "missing_tiers", "blocker_count", "warning_count", "latest_reviewed_run", "tiers", "generated_at"):
         if name not in acceptance_latest_properties:
             missing.append(f"OpenAPI AcceptanceLatestSummaryResponse field: {name}")
+    if "get" not in ai_provider_config_path or "put" not in ai_provider_config_path:
+        missing.append("OpenAPI /ai-provider-config get/update operations")
+    ai_provider_response_properties = schemas.get("AiProviderConfigResponse", {}).get("properties", {})
+    for name in (
+        "backend",
+        "base_url",
+        "model",
+        "timeout_seconds",
+        "max_output_tokens",
+        "api_key_configured",
+        "api_key_mask",
+        "source",
+        "updated_at",
+        "updated_by",
+    ):
+        if name not in ai_provider_response_properties:
+            missing.append(f"OpenAPI AiProviderConfigResponse field: {name}")
+    ai_provider_update_properties = schemas.get("AiProviderConfigUpdateRequest", {}).get("properties", {})
+    for name in ("backend", "base_url", "model", "timeout_seconds", "max_output_tokens", "api_key", "clear_api_key"):
+        if name not in ai_provider_update_properties:
+            missing.append(f"OpenAPI AiProviderConfigUpdateRequest field: {name}")
     term_rule_create_properties = schemas.get("TermRuleCreateRequest", {}).get("properties", {})
     term_rule_update_properties = schemas.get("TermRuleUpdateRequest", {}).get("properties", {})
     term_rule_draft_update_properties = schemas.get("TermRuleSetDraftUpdateRequest", {}).get("properties", {})
@@ -290,6 +312,8 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
         "export type AcceptanceRunUpsertRequest",
         "export type AcceptanceLatestSummaryResponse",
         "export type AcceptanceReviewRequest",
+        "export type AiProviderConfigResponse",
+        "export type AiProviderConfigUpdateRequest",
         'export type AcceptanceReviewDecision = "approved"',
         'export type AcceptanceRunStatus = "passed"',
         'export type AcceptanceLatestOverallStatus = "accepted"',
@@ -320,6 +344,25 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
     ):
         if needle not in acceptance_wrapper:
             missing.append(f"frontend acceptance wrapper missing: {needle}")
+
+    ai_provider_wrapper_path = REPO_ROOT / "frontend/src/api/aiProviderConfig.ts"
+    try:
+        ai_provider_wrapper = ai_provider_wrapper_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return ReleaseCheckItem(
+            name="frontend-contract",
+            ok=False,
+            summary=f"Cannot read frontend AI provider wrapper: {ai_provider_wrapper_path}",
+            details=str(exc),
+        )
+
+    for needle in (
+        'url: "/api/v1/ai-provider-config"',
+        "AiProviderConfigResponse",
+        "AiProviderConfigUpdateRequest",
+    ):
+        if needle not in ai_provider_wrapper:
+            missing.append(f"frontend AI provider wrapper missing: {needle}")
 
     return ReleaseCheckItem(
         name="frontend-contract",

@@ -3,9 +3,11 @@ from __future__ import annotations
 # app/domains/translation/provider.py: 定义可替换翻译 provider 端口和默认 OpenAI-compatible 适配器。
 
 import json
+from collections.abc import Callable
 from typing import Any, Protocol
 
 from app.core.config import Settings
+from app.domains.translation.provider_config import EffectiveAiProviderConfig
 from app.domains.translation.models import (
     TranslationProviderRequest,
     TranslationProviderResult,
@@ -30,13 +32,21 @@ class DisabledTranslationProvider:
 class OpenAICompatibleTranslationProvider:
     """OpenAI-compatible chat completion provider，后续可替换为私有化实现。"""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        config_resolver: Callable[[], EffectiveAiProviderConfig] | None = None,
+    ) -> None:
         self.settings = settings
+        self.config_resolver = config_resolver
 
     def translate(self, request: TranslationProviderRequest) -> TranslationProviderResult:
         """调用兼容 OpenAI SDK 的 chat completion 接口并解析 JSON 响应。"""
 
-        if not self.settings.openai_api_key:
+        config = self._effective_config()
+        if config.backend != "openai_compatible":
+            raise RuntimeError("翻译 provider 未启用。")
+        if not config.api_key:
             raise RuntimeError("OPENAI_API_KEY 未配置，无法调用翻译 provider。")
         try:
             from openai import OpenAI
@@ -44,23 +54,36 @@ class OpenAICompatibleTranslationProvider:
             raise RuntimeError("未安装 openai Python SDK，无法调用翻译 provider。") from exc
 
         client = OpenAI(
-            api_key=self.settings.openai_api_key,
-            base_url=self.settings.openai_base_url or None,
-            timeout=self.settings.translation_provider_timeout_seconds,
+            api_key=config.api_key,
+            base_url=config.base_url or None,
+            timeout=config.timeout_seconds,
         )
         response = client.chat.completions.create(
-            model=self.settings.openai_model,
+            model=config.model,
             messages=[
                 {"role": "system", "content": self._system_prompt(request)},
                 {"role": "user", "content": self._user_prompt(request)},
             ],
             stream=False,
-            max_tokens=self.settings.translation_provider_max_output_tokens,
+            max_tokens=config.max_output_tokens,
             extra_body={"thinking": {"type": "disabled"}},
         )
         content = self._extract_content(response)
         payload = self._parse_json_response(content)
         return TranslationProviderResult(items=self._parse_items(payload))
+
+    def _effective_config(self) -> EffectiveAiProviderConfig:
+        if self.config_resolver is not None:
+            return self.config_resolver()
+        return EffectiveAiProviderConfig(
+            backend=self.settings.translation_provider_backend,
+            base_url=self.settings.openai_base_url or None,
+            api_key=self.settings.openai_api_key or None,
+            model=self.settings.openai_model,
+            timeout_seconds=self.settings.translation_provider_timeout_seconds,
+            max_output_tokens=self.settings.translation_provider_max_output_tokens,
+            source="settings",
+        )
 
     def _system_prompt(self, request: TranslationProviderRequest) -> str:
         return (
@@ -122,9 +145,14 @@ class OpenAICompatibleTranslationProvider:
         return tuple(items)
 
 
-def build_translation_provider(settings: Settings) -> TranslationProvider:
+def build_translation_provider(
+    settings: Settings,
+    config_resolver: Callable[[], EffectiveAiProviderConfig] | None = None,
+) -> TranslationProvider:
     """按配置构建 translation provider。"""
 
+    if config_resolver is not None:
+        return OpenAICompatibleTranslationProvider(settings, config_resolver=config_resolver)
     if settings.translation_provider_backend == "openai_compatible":
         return OpenAICompatibleTranslationProvider(settings)
     return DisabledTranslationProvider()

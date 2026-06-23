@@ -27,6 +27,7 @@ from app.domains.document_jobs.repository import (
 )
 from app.domains.jobs.models import JobStageMessage
 from app.domains.resources.models import utc_now
+from app.domains.translation.provider_config import EffectiveAiProviderConfig
 from app.domains.jobs.repository import (
     JobSnapshotRepositoryProtocol,
     StageMessageStoreProtocol,
@@ -86,6 +87,7 @@ class HealthService:
         internal_user_repository: InternalUserRepositoryProtocol | None = None,
         resource_version_repository: ResourceVersionRepositoryProtocol | None = None,
         default_template_id_getter: Callable[[], str] | None = None,
+        ai_provider_config_service: Any | None = None,
     ) -> None:
         self.settings = settings
         self.stage_message_store = stage_message_store
@@ -100,6 +102,7 @@ class HealthService:
         self.internal_user_repository = internal_user_repository
         self.resource_version_repository = resource_version_repository
         self.default_template_id_getter = default_template_id_getter
+        self.ai_provider_config_service = ai_provider_config_service
         self.started_at = utc_now()
 
     def _is_writable(self, path: Path | None = None) -> bool:
@@ -118,10 +121,16 @@ class HealthService:
         layout_config_path = self.settings.layout_config_path
         subscript_config_path = self.settings.subscript_config_path
         translation_prompt_exists = llm_client.SYSTEM_PROMPT_PATH.exists()
+        ai_provider_config_error: str | None = None
+        try:
+            ai_provider_config = self._effective_ai_provider_config()
+        except RuntimeError:
+            ai_provider_config_error = "ai_provider_config_invalid"
+            ai_provider_config = self._settings_ai_provider_config()
         stage_spool_counts = self.stage_message_store.count_stage_messages_by_status()
         running_observation = self._build_running_stage_observation()
-        translation_provider_enabled = self.settings.translation_provider_backend == "openai_compatible"
-        translation_client_configured = bool(self.settings.openai_api_key) and llm_client.OpenAI is not None
+        translation_provider_enabled = ai_provider_config.backend == "openai_compatible"
+        translation_client_configured = bool(ai_provider_config.api_key) and llm_client.OpenAI is not None
         translation_available = translation_provider_enabled and translation_client_configured and translation_prompt_exists
         stage_spool_available = self.stage_message_store_backend in {"database", "mysql"} or self.settings.stage_messages_dir.exists()
         stage_spool_replayable_messages = (
@@ -193,10 +202,13 @@ class HealthService:
             "document_job_callback_ignored_messages": document_job_callback_observation["status_counts"].get("ignored", 0),
             "document_job_callback_replayable_messages": document_job_callback_observation["replayable_count"],
             "document_job_callback_oldest_replayable_age_seconds": document_job_callback_observation["oldest_replayable_age_seconds"],
-            "openai_api_key_configured": bool(self.settings.openai_api_key),
-            "openai_base_url_configured": bool(self.settings.openai_base_url),
-            "openai_model": self.settings.openai_model,
-            "translation_provider_backend": self.settings.translation_provider_backend,
+            "openai_api_key_configured": bool(ai_provider_config.api_key),
+            "openai_base_url_configured": bool(ai_provider_config.base_url),
+            "openai_model": ai_provider_config.model,
+            "translation_provider_backend": ai_provider_config.backend,
+            "ai_provider_config_source": ai_provider_config.source,
+            "ai_provider_config_updated_at": ai_provider_config.updated_at,
+            "ai_provider_config_error": ai_provider_config_error,
             "translation_debug_archive_enabled": self.settings.translation_debug_archive_enabled,
             "default_translation_mode": self.settings.default_translation_mode,
             "translation_required_for_default_mode": self.settings.default_translation_mode == "en2zh",
@@ -225,6 +237,8 @@ class HealthService:
             blockers.append("subscript_config_missing")
         if checks["translation_required_for_default_mode"] and not checks["translation_available"]:
             blockers.append("default_translation_unavailable")
+        if ai_provider_config_error is not None and checks["translation_required_for_default_mode"]:
+            blockers.append(ai_provider_config_error)
         if mineru_callback_url_configured and not mineru_uid_configured:
             blockers.append("mineru_uid_missing")
         blockers.extend(p0_document_jobs["blockers"])
@@ -237,6 +251,8 @@ class HealthService:
             warnings.append("mineru_callback_url_missing")
         if not checks["translation_available"] and not checks["translation_required_for_default_mode"]:
             warnings.append("translation_unavailable")
+        if ai_provider_config_error is not None and not checks["translation_required_for_default_mode"]:
+            warnings.append(ai_provider_config_error)
         if stage_spool_replayable_messages > 0:
             warnings.append("stage_spool_replayable_messages_present")
         if stage_spool_counts.get("failed", 0) > 0:
@@ -262,11 +278,29 @@ class HealthService:
         if not checks["translation_available"]:
             if not checks["openai_api_key_configured"]:
                 checks["translation_unavailable_reason"] = "OPENAI_API_KEY 未配置"
+            elif checks["ai_provider_config_error"]:
+                checks["translation_unavailable_reason"] = "AI provider 配置文件不可读取"
             elif llm_client.OpenAI is None:
                 checks["translation_unavailable_reason"] = "openai Python SDK 不可用"
             elif not checks["translation_prompt_exists"]:
                 checks["translation_unavailable_reason"] = "translation_en2zh prompt 文件缺失"
         return checks
+
+    def _effective_ai_provider_config(self) -> EffectiveAiProviderConfig:
+        if self.ai_provider_config_service is None:
+            return self._settings_ai_provider_config()
+        return self.ai_provider_config_service.get_effective_config()
+
+    def _settings_ai_provider_config(self) -> EffectiveAiProviderConfig:
+        return EffectiveAiProviderConfig(
+            backend=self.settings.translation_provider_backend,
+            base_url=self.settings.openai_base_url or None,
+            api_key=self.settings.openai_api_key or None,
+            model=self.settings.openai_model,
+            timeout_seconds=self.settings.translation_provider_timeout_seconds,
+            max_output_tokens=self.settings.translation_provider_max_output_tokens,
+            source="settings",
+        )
 
     def _build_p0_document_jobs_readiness(self) -> dict[str, Any]:
         """判断 P0 document_jobs 自动执行链路是否满足当前环境的发布门禁。"""

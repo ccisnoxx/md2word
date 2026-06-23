@@ -59,6 +59,7 @@ from app.domains.terminology.service import TerminologyReleaseService
 from app.domains.templates.read_service import TemplateReadService
 from app.domains.translation.audit import TranslationAuditService
 from app.domains.translation.document_ir_translator import DocumentIRTranslationService
+from app.domains.translation.provider_config import AiProviderConfigService
 from app.domains.translation.profiles_service import TranslationProfileVersionService
 from app.domains.translation.proposals_service import TranslationTermProposalService
 from app.domains.translation.provider import build_translation_provider
@@ -168,9 +169,17 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         retention_days_resolver=file_retention_policy_service.resolve_retention_days,
     )
     document_ir_service = MinerUToDocumentIRService()
-    translation_provider = build_translation_provider(resolved_settings)
+    ai_provider_config_service = AiProviderConfigService(resolved_settings)
+    translation_provider = build_translation_provider(
+        resolved_settings,
+        config_resolver=ai_provider_config_service.get_effective_config,
+    )
     document_ir_translation_service = DocumentIRTranslationService(translation_provider)
-    translation_audit_service = TranslationAuditService(resolved_settings, file_upload_service)
+    translation_audit_service = TranslationAuditService(
+        resolved_settings,
+        file_upload_service,
+        config_resolver=ai_provider_config_service.get_effective_config,
+    )
     term_version_service = TermVersionService(
         resolved_settings.translation_terms_file,
         default_term_version_id=resolved_settings.default_translation_term_version_id,
@@ -351,6 +360,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         audit_event_repository=audit_event_repository,
         resource_version_repository=resource_version_service.repository if resource_version_service is not None else None,
         default_template_id_getter=template_read_service.get_default_template_id,
+        ai_provider_config_service=ai_provider_config_service,
     )
     command_service = JobCommandService(
         resolved_settings,
@@ -400,6 +410,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         file_upload_service=file_upload_service,
         file_retention_policy_service=file_retention_policy_service,
         document_ir_service=document_ir_service,
+        ai_provider_config_service=ai_provider_config_service,
         translation_provider=translation_provider,
         document_ir_translation_service=document_ir_translation_service,
         translation_audit_service=translation_audit_service,

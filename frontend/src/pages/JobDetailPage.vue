@@ -1794,6 +1794,7 @@ function fileTypeText(fileType: string): string {
     mineru_raw_result: "MinerU 原始结果",
     document_ir: "DocumentIR",
     image_asset: "图片资产",
+    image_assets_archive: "图片资源包",
     ai_call_log: "AI 调用日志",
     ai_debug_archive: "AI 调试归档",
   };

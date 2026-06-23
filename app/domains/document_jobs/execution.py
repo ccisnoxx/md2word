@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import hashlib
+import io
 import json
 import secrets
 import tempfile
@@ -659,6 +660,7 @@ class DocumentJobExecutionService:
                 "mineru_batch_id": batch_id,
                 "mineru_data_id": data_id,
                 "full_zip_url": full_zip_url,
+                "retry_count": latest.retry_count,
             },
         )
         parsed = self.job_repository.update_document_job_if_current(
@@ -769,6 +771,7 @@ class DocumentJobExecutionService:
                     "source_path": image_asset.source_path,
                     "asset_id": image_asset.asset_id,
                     "block_id": image_asset.block_id,
+                    "retry_count": job.retry_count,
                 },
             )
             image_file_ids.append(image_file.id)
@@ -779,6 +782,12 @@ class DocumentJobExecutionService:
                     ir_asset.mime_type = image_file.mime_type
                     ir_asset.checksum_sha256 = image_file.checksum_sha256
                     break
+        image_archive_file = self._register_image_assets_archive(
+            job,
+            raw_file=raw_file,
+            image_assets=result.image_assets,
+            image_file_ids=image_file_ids,
+        )
 
         document_ir = result.document
         translation_metadata: dict[str, Any] = {"applied": False}
@@ -804,6 +813,8 @@ class DocumentJobExecutionService:
                 "source_file_id": job.source_file_id,
                 "mineru_raw_result_file_id": raw_file.id,
                 "image_asset_count": len(image_file_ids),
+                "image_assets_archive_file_id": image_archive_file.id if image_archive_file is not None else None,
+                "retry_count": job.retry_count,
                 "translation": translation_metadata,
                 **ir_layout_metadata,
             },
@@ -828,7 +839,24 @@ class DocumentJobExecutionService:
                 event_type="file_registered",
                 stage="ir_converting",
                 message="DocumentIR 图片资产已保存。",
-                payload={"file_ids": image_file_ids, "file_type": "image_asset"},
+                payload={
+                    "file_ids": image_file_ids,
+                    "file_type": "image_asset",
+                    "image_assets_archive_file_id": image_archive_file.id if image_archive_file is not None else None,
+                },
+                trace_id=trace_id,
+            )
+        if image_archive_file is not None:
+            self._record_event(
+                updated,
+                event_type="file_registered",
+                stage="ir_converting",
+                message="DocumentIR 图片资源包已保存。",
+                payload={
+                    "file_id": image_archive_file.id,
+                    "file_type": image_archive_file.file_type,
+                    "image_asset_count": len(image_file_ids),
+                },
                 trace_id=trace_id,
             )
         self._record_event(
@@ -849,7 +877,12 @@ class DocumentJobExecutionService:
             event_type="stage_succeeded",
             stage="ir_converting",
             message="DocumentIR 转换已完成，等待 Word 渲染。",
-            payload={"document_ir_file_id": ir_file.id, "image_asset_file_ids": image_file_ids, **ir_layout_metadata},
+            payload={
+                "document_ir_file_id": ir_file.id,
+                "image_asset_file_ids": image_file_ids,
+                "image_assets_archive_file_id": image_archive_file.id if image_archive_file is not None else None,
+                **ir_layout_metadata,
+            },
             trace_id=trace_id,
         )
         self.logger.info(
@@ -860,6 +893,59 @@ class DocumentJobExecutionService:
             len(image_file_ids),
         )
         return updated
+
+    def _register_image_assets_archive(
+        self,
+        job: DocumentJobRecord,
+        *,
+        raw_file: DocumentFileRecord,
+        image_assets: list[Any],
+        image_file_ids: list[str],
+    ) -> DocumentFileRecord | None:
+        """Package per-image render assets into one downloadable artifact for the job detail UI."""
+
+        if not image_assets:
+            return None
+        manifest = {
+            "schema_version": "document-image-assets-archive/v1",
+            "job_id": job.id,
+            "source_file_id": job.source_file_id,
+            "mineru_raw_result_file_id": raw_file.id,
+            "retry_count": job.retry_count,
+            "assets": [
+                {
+                    "asset_id": image_asset.asset_id,
+                    "block_id": image_asset.block_id,
+                    "source_path": image_asset.source_path,
+                    "file_id": image_file_id,
+                    "mime_type": image_asset.mime_type,
+                }
+                for image_asset, image_file_id in zip(image_assets, image_file_ids, strict=True)
+            ],
+        }
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+            for image_asset in image_assets:
+                source_name = Path(image_asset.source_path).name or f"{image_asset.asset_id}.bin"
+                archive.writestr(f"images/{image_asset.asset_id}_{source_name}", image_asset.content)
+        return self.file_service.register_generated_content(
+            tenant_id=job.tenant_id,
+            company_id=job.company_id,
+            job_id=job.id,
+            created_by=job.created_by,
+            file_type="image_assets_archive",
+            filename="image_assets.zip",
+            mime_type="application/zip",
+            content=buffer.getvalue(),
+            metadata={
+                "source_file_id": job.source_file_id,
+                "mineru_raw_result_file_id": raw_file.id,
+                "image_asset_count": len(image_assets),
+                "image_asset_file_ids": image_file_ids,
+                "retry_count": job.retry_count,
+            },
+        )
 
     def _translate_document_ir(
         self,
@@ -1070,6 +1156,7 @@ class DocumentJobExecutionService:
                 "template_version": template_selection.version,
                 "block_count": len(document_ir.blocks),
                 "image_asset_file_ids": uploading.image_asset_file_ids,
+                "retry_count": uploading.retry_count,
                 **renderer_metadata,
             },
         )

@@ -6,6 +6,9 @@ export function releaseGateRouteForCode(code: string): string {
   if (normalized.startsWith("document_jobs") || normalized === "p0_document_jobs_not_ready") {
     return "/system-status/ops-dashboard";
   }
+  if (normalized.includes("ai_provider") || normalized.includes("openai")) {
+    return "/settings/ai-provider";
+  }
   if (normalized.includes("translation_term") || normalized.includes("translation-term")) {
     return "/settings/translation-term-sets";
   }
@@ -36,6 +39,7 @@ export function releaseGateRouteLabel(route: string): string {
     "/settings/term-rule-sets": "术语规则",
     "/settings/translation-profiles": "翻译配置",
     "/settings/translation-term-sets": "翻译术语",
+    "/settings/ai-provider": "AI 配置",
   };
   return labels[route] || "配置详情";
 }

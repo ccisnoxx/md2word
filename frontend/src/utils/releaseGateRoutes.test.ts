@@ -16,4 +16,9 @@ describe("release gate route mapping", () => {
   it("routes document job readiness blockers to the ops dashboard", () => {
     expect(releaseGateRouteForCode("p0_document_jobs_not_ready")).toBe("/system-status/ops-dashboard");
   });
+
+  it("routes AI provider configuration findings to the AI config page", () => {
+    expect(releaseGateRouteForCode("ai_provider_config_invalid")).toBe("/settings/ai-provider");
+    expect(releaseGateRouteLabel("/settings/ai-provider")).toBe("AI 配置");
+  });
 });

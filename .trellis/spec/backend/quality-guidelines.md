@@ -475,6 +475,94 @@ return DocumentJobFileListResponse(
 )
 ```
 
+## Scenario: Runtime AI Provider Configuration
+
+### 1. Scope / Trigger
+
+- Trigger: admins need to change the translation AI provider without editing
+  environment files or restarting the API.
+- This is cross-layer work because `Settings`, runtime composition, provider
+  calls, health readiness, audit events, OpenAPI, frontend wrappers, and the
+  protected settings UI must use the same effective provider contract.
+
+### 2. Signatures
+
+- Setting: `AI_PROVIDER_CONFIG_PATH`, defaulting to
+  `var/config/ai_provider_config.json`.
+- Runtime service: `AiProviderConfigService.get_effective_config()`.
+- APIs:
+  - `GET /api/v1/ai-provider-config`
+  - `PUT /api/v1/ai-provider-config`
+- Frontend route: `/settings/ai-provider`, admin-only.
+
+### 3. Contracts
+
+- `AiProviderConfigUpdateRequest` fields:
+  `backend`, `base_url`, `model`, `timeout_seconds`, `max_output_tokens`,
+  `api_key`, and `clear_api_key`.
+- `AiProviderConfigResponse` fields:
+  `backend`, `base_url`, `model`, `timeout_seconds`, `max_output_tokens`,
+  `api_key_configured`, `api_key_mask`, `source`, `updated_at`, and
+  `updated_by`.
+- API responses and audit details must never include the raw `api_key`.
+- The persisted runtime config is an override over environment `Settings`; when
+  no runtime config exists, provider calls and health checks use `Settings`.
+- `HealthService.build_dependency_checks()` must report the effective
+  `translation_provider_backend`, `openai_model`,
+  `openai_api_key_configured`, `openai_base_url_configured`,
+  `ai_provider_config_source`, and `ai_provider_config_error`.
+- Runtime config files should be written with owner-only permissions where the
+  filesystem supports it.
+
+### 4. Validation & Error Matrix
+
+- Missing bearer token -> `401 unauthorized`.
+- Non-admin access to the AI config API -> `403 role_forbidden`.
+- Invalid request enum/ranges -> FastAPI/Pydantic `422 validation_error`.
+- Unreadable JSON or schema-invalid config file -> health dependency check
+  `ai_provider_config_error="ai_provider_config_invalid"`.
+- `default_translation_mode=en2zh` plus invalid AI config -> readiness blocker
+  includes `ai_provider_config_invalid`; direct mode treats it as a warning.
+
+### 5. Good/Base/Bad Cases
+
+- Good: admin saves `openai_compatible` config, response returns a masked key,
+  health uses the new model/base URL, and the audit event only records safe
+  fields.
+- Base: admin leaves `api_key` blank on update, preserving the existing runtime
+  secret; `clear_api_key=true` removes the saved runtime secret.
+- Base: provider calls resolve effective config at call time, so subsequent UI
+  saves affect new translation attempts without rebuilding the process.
+- Bad: reading `OPENAI_API_KEY` directly in translation code after runtime
+  config exists, exposing raw keys in API/audit/logs, or treating invalid config
+  as a silent success.
+
+### 6. Tests Required
+
+- API tests must cover admin update, non-admin rejection, masked response,
+  audit details without raw `api_key`, and health checks reading runtime config.
+- Health tests must cover schema-invalid config files returning
+  `ai_provider_config_invalid`.
+- Translation retry/provider tests should use fake providers or temp config
+  files and must not call real OpenAI-compatible endpoints.
+- OpenAPI export/check, frontend contract needles, and `npm run build` must pass
+  after changing this API or frontend wrapper.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```python
+client = OpenAI(api_key=settings.openai_api_key)
+```
+
+#### Correct
+
+```python
+config = ai_provider_config_service.get_effective_config()
+client = OpenAI(api_key=config.api_key, base_url=config.base_url or None)
+```
+
 ### Online And Golden Sample Validation
 
 Local code changes should not automatically run online validation. Production or

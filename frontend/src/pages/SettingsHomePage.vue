@@ -34,6 +34,15 @@
           <small>维护页边距、标题、目录、正文、表格和页眉页脚文字样式。</small>
         </span>
       </router-link>
+      <router-link class="word-config-entry app-entry-card" to="/settings/ai-provider">
+        <span class="settings-group-icon" aria-hidden="true">
+          <el-icon><Cpu /></el-icon>
+        </span>
+        <span>
+          <strong>AI 配置</strong>
+          <small>管理翻译 provider、Base URL、模型和运行时 API Key。</small>
+        </span>
+      </router-link>
     </section>
 
     <section v-if="summary" class="release-gate-workspace app-panel app-page-shell" aria-label="发布门禁处理队列">

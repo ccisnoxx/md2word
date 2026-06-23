@@ -23,6 +23,7 @@ from app.domains.term_rules.sets_router import router as term_rule_sets_router
 from app.domains.term_rules.router import router as term_rules_router
 from app.domains.terminology.router import router as terminology_releases_router
 from app.domains.templates.router import router as templates_router
+from app.domains.translation.provider_config_router import router as ai_provider_config_router
 from app.domains.translation.proposals_router import router as translation_term_proposals_router
 from app.domains.translation.sets_router import router as translation_term_sets_router
 from app.domains.translation.router import router as translation_profiles_router
@@ -42,6 +43,7 @@ router.include_router(mineru_callbacks_router)
 router.include_router(ops_router)
 router.include_router(saved_views_router)
 router.include_router(templates_router)
+router.include_router(ai_provider_config_router)
 router.include_router(term_rule_categories_router)
 router.include_router(term_rule_proposals_router)
 router.include_router(term_rule_reviews_router)

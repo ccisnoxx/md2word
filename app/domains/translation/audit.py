@@ -5,11 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import timedelta
+from collections.abc import Callable
 from uuid import uuid4
 
 from app.core.config import Settings
 from app.domains.document_jobs.models import DocumentJobRecord
 from app.domains.resources.models import utc_now
+from app.domains.translation.provider_config import EffectiveAiProviderConfig
 from app.domains.translation.models import (
     TermVersionSnapshot,
     TranslationProviderRequest,
@@ -32,6 +34,7 @@ class TranslationCallAuditRecorder:
         term_version: TermVersionSnapshot | None,
         trace_id: str | None,
         save_full_text: bool,
+        config_resolver: Callable[[], EffectiveAiProviderConfig] | None = None,
     ) -> None:
         self.settings = settings
         self.file_service = file_service
@@ -39,6 +42,7 @@ class TranslationCallAuditRecorder:
         self.term_version = term_version
         self.trace_id = trace_id
         self.save_full_text = save_full_text
+        self.config_resolver = config_resolver
         self.call_id = f"aicall_{uuid4().hex[:12]}"
         self.call_log_file_id: str | None = None
         self.debug_archive_file_id: str | None = None
@@ -93,16 +97,14 @@ class TranslationCallAuditRecorder:
         duration_ms: int,
         error: dict | None,
     ) -> None:
+        provider = self._provider_summary()
         payload = {
             "schema_version": "ai-call-log/v1",
             "call_id": self.call_id,
             "job_id": self.job.id,
             "trace_id": self.trace_id,
             "status": status,
-            "provider": {
-                "backend": self.settings.translation_provider_backend,
-                "model": self.settings.openai_model if self.settings.translation_provider_backend == "openai_compatible" else None,
-            },
+            "provider": provider,
             "language_pair": request.language_pair,
             "source_language": request.source_language,
             "target_language": request.target_language,
@@ -133,10 +135,11 @@ class TranslationCallAuditRecorder:
             metadata={
                 "call_id": self.call_id,
                 "status": status,
-                "provider_backend": self.settings.translation_provider_backend,
+                "provider_backend": provider["backend"],
                 "language_pair": request.language_pair,
                 "item_count": len(request.items),
                 "term_version_id": self.term_version.term_version_id if self.term_version is not None else None,
+                "retry_count": self.job.retry_count,
             },
         )
         self.call_log_file_id = record.id
@@ -150,15 +153,13 @@ class TranslationCallAuditRecorder:
     ) -> None:
         if not self.save_full_text:
             return
+        provider = self._provider_summary()
         payload = {
             "schema_version": "translation-debug-archive/v1",
             "call_id": self.call_id,
             "job_id": self.job.id,
             "trace_id": self.trace_id,
-            "provider": {
-                "backend": self.settings.translation_provider_backend,
-                "model": self.settings.openai_model if self.settings.translation_provider_backend == "openai_compatible" else None,
-            },
+            "provider": provider,
             "prompt": self._full_request_payload(request),
             "response": self._full_response_payload(result),
             "error": error,
@@ -176,10 +177,11 @@ class TranslationCallAuditRecorder:
             content=self._json_bytes(payload),
             metadata={
                 "call_id": self.call_id,
-                "provider_backend": self.settings.translation_provider_backend,
+                "provider_backend": provider["backend"],
                 "language_pair": request.language_pair,
                 "contains_full_text": True,
                 "retention_days": max(1, self.settings.translation_debug_archive_retention_days),
+                "retry_count": self.job.retry_count,
             },
             expires_at=expires_at,
         )
@@ -216,6 +218,15 @@ class TranslationCallAuditRecorder:
         if result is None:
             return None
         return {"items": [{"id": item.id, "text": item.text} for item in result.items]}
+
+    def _provider_summary(self) -> dict[str, str | None]:
+        if self.config_resolver is not None:
+            config = self.config_resolver()
+            return {"backend": config.backend, "model": config.model if config.backend == "openai_compatible" else None}
+        return {
+            "backend": self.settings.translation_provider_backend,
+            "model": self.settings.openai_model if self.settings.translation_provider_backend == "openai_compatible" else None,
+        }
 
     def _term_trace_summary(self, traces: tuple[TranslationTermMatchTraceRecord, ...]) -> list[dict]:
         return [
@@ -277,9 +288,15 @@ class TranslationCallAuditRecorder:
 class TranslationAuditService:
     """为 document_jobs 构建翻译调用审计 recorder。"""
 
-    def __init__(self, settings: Settings, file_service: FileUploadService) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        file_service: FileUploadService,
+        config_resolver: Callable[[], EffectiveAiProviderConfig] | None = None,
+    ) -> None:
         self.settings = settings
         self.file_service = file_service
+        self.config_resolver = config_resolver
 
     def build_recorder(
         self,
@@ -296,4 +313,5 @@ class TranslationAuditService:
             term_version=term_version,
             trace_id=trace_id,
             save_full_text=save_full_text,
+            config_resolver=self.config_resolver,
         )
