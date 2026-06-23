@@ -1,0 +1,50 @@
+[
+  [
+    {
+      "type": "title",
+      "bbox": [40, 40, 555, 82],
+      "content": {
+        "title_content": [
+          {"type": "text", "content": "OPA228 Precision Operational Amplifier"}
+        ],
+        "level": 1
+      }
+    },
+    {
+      "type": "paragraph",
+      "bbox": [40, 104, 555, 150],
+      "content": {
+        "paragraph_content": [
+          {"type": "text", "content": "Low-noise, high-speed operational amplifier for precision data acquisition."}
+        ]
+      }
+    },
+    {
+      "type": "list",
+      "bbox": [54, 170, 540, 235],
+      "content": {
+        "list_items": [
+          {
+            "item_content": [
+              {"type": "text", "content": "Input voltage noise: 3 nV/sqrt(Hz)"}
+            ]
+          },
+          {
+            "item_content": [
+              {"type": "text", "content": "Slew rate: 10 V/us"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "paragraph",
+      "bbox": [40, 258, 555, 310],
+      "content": {
+        "paragraph_content": [
+          {"type": "text", "content": "Acceptance focus: headings, bullets, and electrical units stay editable in Word."}
+        ]
+      }
+    }
+  ]
+]

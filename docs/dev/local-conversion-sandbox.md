@@ -103,6 +103,11 @@ Use this output to decide which assets should become formal regression samples.
 Generated DOCX, rendered PNG/PDF, and ad hoc output directories should remain in
 `tests/tmp/` or external artifacts, not in `resources/`.
 
+When a local package should become a durable brand/category regression sample,
+promote it through
+[component-pdf-regression-governance.md](/Users/sc/PycharmProjects/md2word/docs/dev/component-pdf-regression-governance.md)
+instead of keeping the evidence only in `md2word_main`.
+
 ## Phase 2 Thin-Shell Migration
 
 Convert `md2word_main` from a copied conversion implementation into a local

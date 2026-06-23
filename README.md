@@ -21,6 +21,7 @@ P2 入口是内部单租户规模化与外部化：不扩展为 SaaS 或泛 PDF�
 - P0 内部联调步骤：[docs/testing/pdf-to-word-p0-integration-guide.md](docs/testing/pdf-to-word-p0-integration-guide.md)
 - Golden Sample 状态：[docs/testing/pdf-to-word-golden-sample-acceptance-report.md](docs/testing/pdf-to-word-golden-sample-acceptance-report.md)
 - 本地 MinerU 结果包调试入口：[docs/dev/local-conversion-sandbox.md](docs/dev/local-conversion-sandbox.md)
+- 电子元器件样例回归治理：[docs/dev/component-pdf-regression-governance.md](docs/dev/component-pdf-regression-governance.md)
 - API 清单：[docs/api/manifest.yaml](docs/api/manifest.yaml)
 - OpenAPI 快照：[docs/api/openapi.json](docs/api/openapi.json)
 

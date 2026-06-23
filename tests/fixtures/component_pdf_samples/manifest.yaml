@@ -1,0 +1,49 @@
+# tests/fixtures/component_pdf_samples/manifest.yaml: electronic component PDF regression sample metadata.
+schema_version: 1
+sample_root: tests/fixtures/component_pdf_samples/samples
+default_document_language: en
+default_translation_mode: direct
+storage_policy:
+  commit_policy: commit only public or minimized MinerU packages
+  private_pdf_policy: keep proprietary/customer PDFs outside the repository and reference external evidence
+required_metadata:
+  - id
+  - brand
+  - category
+  - product
+  - source_pdf
+  - mineru.package_path
+  - tags
+  - acceptance_focus
+  - regression.enabled
+samples:
+  - id: ti-opamp-opa228-p1-smoke
+    brand: texas-instruments
+    category: op-amp
+    product: OPA228
+    title: OPA228 page 1 layout smoke
+    source_status: minimized_mineru_fixture
+    source_pdf:
+      reference: md2word_main:test_pdf/OPA228_P1.pdf
+      public: true
+      committed: false
+    mineru:
+      package_path: texas-instruments/op-amp/ti-opamp-opa228-p1-smoke/mineru
+      source: minimized_fixture
+    document_language: en
+    translation_mode: direct
+    tags:
+      - datasheet
+      - op_amp
+      - heading
+      - paragraph
+      - list
+      - smoke
+    acceptance_focus:
+      - Product heading remains readable and styled as a heading.
+      - Feature bullets remain in source order.
+      - Electrical parameter text keeps units such as nV/sqrt(Hz) readable.
+    regression:
+      enabled: true
+      expected_min_pages: 1
+      run_mode: local_mineru_to_docx
