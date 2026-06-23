@@ -788,3 +788,36 @@ Implemented local MinerU DOCX layout planning, YAML page sizing, TOC column pres
 ### Next Steps
 
 - None - task complete
+
+
+## Session 24: Local MinerU datasheet layout feedback fixes
+
+**Date**: 2026-06-23
+**Task**: Local MinerU datasheet layout feedback fixes
+**Branch**: `main`
+
+### Summary
+
+Addressed feedback on YAML-driven A4 Word page setup, preserving configured font sizes, TOC page separation, plain table headers, and numbered table captions rendered as headings.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3606de38` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
