@@ -621,3 +621,36 @@ Improved term rule governance workbench layout, diff pagination, Chinese-first c
 ### Next Steps
 
 - None - task complete
+
+
+## Session 19: Local conversion sandbox migration
+
+**Date**: 2026-06-23
+**Task**: Local conversion sandbox migration
+**Branch**: `main`
+
+### Summary
+
+Converted md2word_main into a thin local debug shell, added official md2word sandbox migration/audit tooling, documented the single conversion source workflow, and validated conversion tests plus release checks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `45d3aa19` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
