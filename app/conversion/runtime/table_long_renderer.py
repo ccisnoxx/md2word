@@ -331,8 +331,7 @@ def render_simple_table_chunk(
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
     remove_table_borders_fn(table)
-    if repeat_header and table.rows:
-        mark_table_header_row(table.rows[0])
+    configure_table_rows(table, repeat_header=repeat_header)
 
     column_width = max(int(usable_width // max_cols), int(Emu(Mm(16))))
     for col in table.columns:
@@ -346,10 +345,18 @@ def render_simple_table_chunk(
             cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
 
 
-def mark_table_header_row(row: Any) -> None:
-    row_properties = row._tr.get_or_add_trPr()
-    if row_properties.find(qn("w:tblHeader")) is not None:
-        return
-    table_header = OxmlElement("w:tblHeader")
-    table_header.set(qn("w:val"), "true")
-    row_properties.append(table_header)
+def configure_table_rows(table: Any, *, repeat_header: bool) -> None:
+    for row_idx, row in enumerate(table.rows):
+        row_properties = row._tr.get_or_add_trPr()
+        ensure_row_flag(row_properties, "w:cantSplit")
+        if repeat_header and row_idx == 0:
+            ensure_row_flag(row_properties, "w:tblHeader", value="true")
+
+
+def ensure_row_flag(row_properties: Any, tag: str, *, value: str | None = None) -> None:
+    element = row_properties.find(qn(tag))
+    if element is None:
+        element = OxmlElement(tag)
+        row_properties.append(element)
+    if value is not None:
+        element.set(qn("w:val"), value)

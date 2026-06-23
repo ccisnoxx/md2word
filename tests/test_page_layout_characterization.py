@@ -389,6 +389,84 @@ class PageLayoutCharacterizationTests(__import__("unittest").TestCase):
             )
         )
 
+    def test_should_start_new_section_true_for_top_level_title_after_dense_visual_page(self):
+        render_config = self.make_render_config()
+        previous_page = self.module.PageData(
+            page_idx=0,
+            blocks=[
+                self.make_block("table", (0, 80, 700, 760), html="<table></table>"),
+                self.make_block("image", (0, 770, 700, 970), image_path=None),
+            ],
+            page_size=(800, 1000),
+        )
+        current_page = self.module.PageData(
+            page_idx=1,
+            blocks=[self.make_block("title", (0, 80, 400, 120), text="10 Parameter Measurement Information")],
+            page_size=(800, 1000),
+        )
+
+        self.assertTrue(
+            self.module.should_start_new_section(
+                current_page,
+                previous_page,
+                render_config,
+                header_blocks=[],
+                footer_blocks=[],
+                page_number_blocks=[],
+            )
+        )
+
+    def test_should_start_new_section_false_for_top_level_title_after_short_visual_page(self):
+        render_config = self.make_render_config()
+        previous_page = self.module.PageData(
+            page_idx=0,
+            blocks=[self.make_block("table", (0, 80, 700, 500), html="<table></table>")],
+            page_size=(800, 1000),
+        )
+        current_page = self.module.PageData(
+            page_idx=1,
+            blocks=[self.make_block("title", (0, 80, 400, 120), text="10 Parameter Measurement Information")],
+            page_size=(800, 1000),
+        )
+
+        self.assertFalse(
+            self.module.should_start_new_section(
+                current_page,
+                previous_page,
+                render_config,
+                header_blocks=[],
+                footer_blocks=[],
+                page_number_blocks=[],
+            )
+        )
+
+    def test_should_start_new_section_false_when_previous_visual_page_already_overflows(self):
+        render_config = self.make_render_config()
+        previous_page = self.module.PageData(
+            page_idx=0,
+            blocks=[
+                self.make_block("image", (0, 80, 700, 700), image_path=None),
+                self.make_block("paragraph", (0, 930, 700, 1100), text="overflowing notes"),
+            ],
+            page_size=(800, 1000),
+        )
+        current_page = self.module.PageData(
+            page_idx=1,
+            blocks=[self.make_block("title", (0, 80, 400, 120), text="11 Package Outline Dimensions")],
+            page_size=(800, 1000),
+        )
+
+        self.assertFalse(
+            self.module.should_start_new_section(
+                current_page,
+                previous_page,
+                render_config,
+                header_blocks=[],
+                footer_blocks=[],
+                page_number_blocks=[],
+            )
+        )
+
     def test_build_document_reuses_single_section_for_same_orientation_flow_pages(self):
         render_config = self.make_render_config()
         document = FakeDocument()

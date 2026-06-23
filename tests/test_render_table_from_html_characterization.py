@@ -308,6 +308,21 @@ class RenderTableFromHtmlCharacterizationTests(unittest.TestCase):
         self.assertIn(("PARAMETER", True), seen)
         self.assertIn(("VALUE", True), seen)
 
+    def test_standard_table_marks_rows_for_word_pagination(self):
+        container = FakeContainer()
+        block = self.make_block(html="<table><tr><th>H</th></tr><tr><td>A</td></tr></table>")
+        render_config = self.make_render_config()
+
+        rendered = self.module.render_table_from_html(container, block, usable_width=8000, render_config=render_config)
+
+        self.assertTrue(rendered)
+        self.assertEqual(len(container.tables), 1)
+        first_row_properties = container.tables[0].rows[0]._tr.trPr
+        second_row_properties = container.tables[0].rows[1]._tr.trPr
+        self.assertIsNotNone(first_row_properties.find("w:tblHeader"))
+        self.assertIsNotNone(first_row_properties.find("w:cantSplit"))
+        self.assertIsNotNone(second_row_properties.find("w:cantSplit"))
+
     def test_large_simple_table_uses_chunk_renderer(self):
         container = FakeContainer()
         block = self.make_block()
@@ -391,6 +406,9 @@ class RenderTableFromHtmlCharacterizationTests(unittest.TestCase):
         self.assertEqual(len(container.tables[0].rows), 6)
         self.assertEqual([paragraph.rendered for paragraph in container.paragraphs], ["表 A.1", "注 1"])
         self.assertIsNotNone(container.tables[0].rows[0]._tr.trPr.find("w:tblHeader"))
+        self.assertTrue(
+            all(row._tr.trPr.find("w:cantSplit") is not None for row in container.tables[0].rows)
+        )
 
     def test_remove_table_borders_applies_printable_grid(self):
         table = FakeTable(rows=2, cols=2)

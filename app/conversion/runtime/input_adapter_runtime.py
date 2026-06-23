@@ -28,6 +28,12 @@ from app.conversion.runtime.page_repair_runtime import (
 _RUNTIME_MODULE: Any | None = None
 DETAILS_BLOCK_RE = re.compile(r"<details\b[^>]*>.*?</details>", re.IGNORECASE | re.DOTALL)
 TOC_DOT_LEADER_LINE_RE = re.compile(r"\S.*(?:\.{2,}|·{2,}|…{2,})\s*\d+\s*$")
+FOOTNOTE_START_RE = re.compile(
+    r"^\s*(?:\(?\d+\)|\[\d+\]|\d+[.)、]|[a-z][.)])\s+",
+    re.IGNORECASE,
+)
+FOOTNOTE_LABEL_RE = re.compile(r"^\s*(?:notes?|注|备注|说明)\s*[:：]", re.IGNORECASE)
+INLINE_FORMULA_MARKUP_RE = re.compile(r"</?(?:sub|sup)>", re.IGNORECASE)
 
 
 def bind_runtime(module: Any) -> None:
@@ -411,15 +417,17 @@ def collect_visual_block_metadata(
     parse_bbox_fn = _runtime_value("parse_bbox", parse_bbox)
     resolve_asset_path_fn = _runtime_value("resolve_asset_path", resolve_asset_path)
     collect_text_from_fields_fn = _runtime_value("collect_text_from_fields", collect_text_from_fields)
+    merge_footnote_fragments_fn = _runtime_value("merge_footnote_fragments", merge_footnote_fragments)
     extract_first_html_fn = _runtime_value("extract_first_html", extract_first_html)
 
+    footnotes = collect_text_from_fields_fn(payload, footnote_fields)
     raw_asset_path = extract_first_asset_path_fn(payload)
     return {
         "bbox": bbox if bbox is not None else parse_bbox_fn(payload.get("bbox")),
         "raw_asset_path": raw_asset_path,
         "image_path": resolve_asset_path_fn(package_root, raw_asset_path),
         "captions": collect_text_from_fields_fn(payload, caption_fields),
-        "footnotes": collect_text_from_fields_fn(payload, footnote_fields),
+        "footnotes": merge_footnote_fragments_fn(footnotes),
         "html": extract_first_html_fn(payload),
     }
 
@@ -727,6 +735,100 @@ def collect_text_from_fields(payload: dict[str, Any], field_names: tuple[str, ..
                     seen.add(text)
                     collected.append(text)
     return collected
+
+
+def merge_footnote_fragments(texts: list[str]) -> list[str]:
+    """Merge MinerU rich-text footnote fragments without collapsing independent notes."""
+    merged: list[str] = []
+    current = ""
+    current_has_marker = False
+
+    for text in texts:
+        fragment = str(text or "").strip()
+        if not fragment:
+            continue
+
+        starts_new_note = is_footnote_start(fragment)
+        if not current:
+            current = fragment
+            current_has_marker = starts_new_note
+            continue
+
+        if starts_new_note:
+            merged.append(current)
+            current = fragment
+            current_has_marker = True
+            continue
+
+        if current_has_marker or should_join_footnote_fragment(current, fragment):
+            current = append_footnote_fragment(current, fragment)
+            continue
+
+        merged.append(current)
+        current = fragment
+        current_has_marker = False
+
+    if current:
+        merged.append(current)
+    return merged
+
+
+def is_footnote_start(text: str) -> bool:
+    return bool(FOOTNOTE_START_RE.match(text) or FOOTNOTE_LABEL_RE.match(text))
+
+
+def should_join_footnote_fragment(previous: str, fragment: str) -> bool:
+    stripped_previous = previous.rstrip()
+    stripped_fragment = fragment.lstrip()
+    if not stripped_previous or not stripped_fragment:
+        return False
+    if stripped_fragment[0] in ",.;:，。；：)]}）】":
+        return True
+    if stripped_previous[-1] in ",;:([{（【/":
+        return True
+    if INLINE_FORMULA_MARKUP_RE.search(stripped_fragment) and not stripped_previous.endswith((".", "。", ";", "；")):
+        return True
+
+    lower_previous = stripped_previous.lower()
+    return lower_previous.endswith(
+        (
+            " of",
+            " and",
+            " or",
+            " with",
+            " from",
+            " to",
+            " is",
+            " are",
+            " by",
+            "为",
+            "是",
+            "由",
+            "和",
+            "与",
+            "的",
+        )
+    )
+
+
+def append_footnote_fragment(previous: str, fragment: str) -> str:
+    left = previous.rstrip()
+    right = fragment.lstrip()
+    if not left:
+        return right
+    if not right:
+        return left
+    if right[0] in ",.;:，。；：)]}）】":
+        return f"{left}{right}"
+    if left[-1] in "([{（【/":
+        return f"{left}{right}"
+    if is_cjk_char(left[-1]) or is_cjk_char(right[0]):
+        return f"{left}{right}"
+    return f"{left} {right}"
+
+
+def is_cjk_char(char: str) -> bool:
+    return "\u4e00" <= char <= "\u9fff"
 
 
 def find_values_by_key(node: Any, wanted_key: str) -> list[Any]:

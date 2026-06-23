@@ -627,6 +627,18 @@ release process calls for it.
   fragments must normalize their `content` only. Structural keys such as `type`
   with value `equation_inline` must never become visible Word text, and common
   TeX fragments such as `\overline{A}` or `^{(1)(2)}` must not leak raw syntax.
+- Visual footnotes parsed from rich MinerU node lists must merge inline formula,
+  punctuation, and connector fragments into the numbered note they belong to,
+  while preserving independent unnumbered notes as separate paragraphs.
+- Local MinerU table rendering must keep the Word table semantics used by the
+  service renderer: repeat the first row as the table header and mark rows with
+  `w:cantSplit` so Word moves oversized rows across pages instead of splitting a
+  row into unreadable fragments.
+- When a source page starts with a top-level numbered section title after a
+  dense visual/table page that reaches the page bottom, the renderer should
+  start a new Word page for that section. Do not force the break when the
+  previous source page already visibly overflows, because the continuation space
+  should be reused instead of creating mostly blank pages.
 - Drift audits are read-only and compare relative paths such as
   `app/conversion` and `resources`; they report drift instead of copying files.
 - Sample inventory audits are read-only and list `test_pdf/*.pdf` plus
@@ -701,6 +713,9 @@ release process calls for it.
 - Text-rendering tests assert TOC page numbers use dot-leader tab stops and
   formula normalization removes raw `\overline{...}` and leading `^{...}` syntax.
 - Page-layout tests assert source PDF page sizes are used for Word section size.
+- Page-layout and table-rendering tests assert dense visual pages can force a
+  new top-level section page without forcing already-overflowing pages, and that
+  local MinerU tables emit `w:tblHeader` / `w:cantSplit` pagination semantics.
 - A local smoke may run one real sandbox package to DOCX under `tests/tmp/`.
 
 ### 7. Wrong vs Correct
