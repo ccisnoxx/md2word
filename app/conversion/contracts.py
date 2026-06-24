@@ -12,7 +12,7 @@ from app.domains.translation.modes import DocumentLanguage, TranslationMode
 
 ConversionTranslationMode = TranslationMode
 ConversionDocumentLanguage = DocumentLanguage
-ResolvedDocumentLanguage = Literal["zh", "en"]
+ResolvedDocumentLanguage = Literal["zh", "en", "ru"]
 
 
 @dataclass(frozen=True, slots=True)

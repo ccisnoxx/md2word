@@ -886,6 +886,9 @@ release process calls for it.
   never proxy into `scripts.dev.run_local_mineru_conversion`.
 - `runtime_facade.load_pages()` and `runtime_runner.run_conversion()` must bind
   legacy runtime modules before calling `load_pages` or `build_document`.
+- Explicit local `document_language` overrides must preserve all supported
+  values (`zh`, `en`, and `ru`) instead of treating non-English languages as
+  auto-detect input. Translation modes still render the final document as `zh`.
 - MinerU v2 input loading must accept `layout.json` or `*_layout.json` as the
   page metadata source when `middle.json` is absent, including
   `pdf_info[*].page_size` so layout/bbox estimators can use source dimensions.

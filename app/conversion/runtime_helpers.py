@@ -156,7 +156,7 @@ def load_render_config(
 
 def resolve_document_language(pages: list[PageData], *, preferred: str = "auto") -> str:
     normalized = str(preferred or "auto").strip().lower()
-    if normalized in {"zh", "en"}:
+    if normalized in {"zh", "en", "ru"}:
         return normalized
     return detect_document_language(pages)
 
