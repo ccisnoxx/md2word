@@ -559,7 +559,7 @@ def build_visual_qa_evidence(output_path: Path, qa_dir: Path) -> dict[str, Any]:
             "figures_caption_position",
             "pagination_not_tail_cramped",
             "symbols_units_subscripts",
-            "direct_en2zh_structure_delta",
+            "direct_translation_structure_delta",
         ],
     }
 
@@ -698,7 +698,7 @@ def acceptance_layers() -> list[dict[str, str]]:
 def phase3_entry_criteria() -> list[str]:
     return [
         "OPA228_P1/P2/P6/P7 direct all succeed and have manual pass verdicts.",
-        "en2zh P0 samples are verified with offline response or controlled model batch and preserve structure.",
+        "Translation P0 samples are verified with offline response or controlled model batch and preserve structure.",
         "RS2G04 direct observation report is complete and all findings are graded.",
         "Every P0 result has DOCX, quality report, standard-render evidence, and manual signoff.",
         "No committed mineru_result, tests/tmp outputs, real PDFs, real keys, or full translation traces.",

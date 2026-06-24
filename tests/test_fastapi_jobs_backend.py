@@ -6875,7 +6875,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIsNotNone(stored_file)
         self.assertIsNone(stored_file.job_id)
 
-    def test_document_job_config_summary_hides_options_for_operator_and_lists_admin_options(self):
+    def test_document_job_config_summary_lists_options_for_operator_and_admin(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_mysql_test_runtime(
                 Path(temp_dir),
@@ -6926,7 +6926,18 @@ class FastAPIJobsBackendTests(TestCase):
             operator_payload["translation_defaults"]["ru2zh"]["translation_profile"]["label"],
             "electronics-ru2zh@1",
         )
-        self.assertEqual(operator_payload["options"]["templates"], [])
+        self.assertIn("default@1", [item["label"] for item in operator_payload["options"]["templates"]])
+        self.assertIn("electronics-default@1", [item["label"] for item in operator_payload["options"]["term_rule_sets"]])
+        self.assertIn(
+            "translation-terms-en2zh@v1",
+            [item["label"] for item in operator_payload["options"]["translation_term_sets"]],
+        )
+        self.assertIn(
+            f"translation-terms-ru2zh@{ru_translation_term_version}",
+            [item["label"] for item in operator_payload["options"]["translation_term_sets"]],
+        )
+        self.assertIn("electronics-en2zh@1", [item["label"] for item in operator_payload["options"]["translation_profiles"]])
+        self.assertIn("electronics-ru2zh@1", [item["label"] for item in operator_payload["options"]["translation_profiles"]])
         self.assertTrue(operator_payload["readiness"]["en2zh_available"])
         self.assertTrue(operator_payload["readiness"]["ru2zh_available"])
         self.assertTrue(operator_payload["readiness"]["translation_modes"]["ru2zh"])
@@ -6952,7 +6963,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIn("electronics-en2zh@1", [item["label"] for item in admin_payload["options"]["translation_profiles"]])
         self.assertIn("electronics-ru2zh@1", [item["label"] for item in admin_payload["options"]["translation_profiles"]])
 
-    def test_document_job_operator_cannot_select_explicit_resource_versions(self):
+    def test_document_job_operator_can_bind_explicit_create_resource_versions(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_mysql_test_runtime(
                 Path(temp_dir),
@@ -6960,6 +6971,20 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_internal_users_json=build_auth_users_json(),
             )
             publish_default_job_resources(runtime, include_translation=True)
+            publish_template_resource_version(runtime, version="2", content=b"template-v2", make_default=False)
+            publish_term_rule_resource_version(runtime, version="2", source_term="VTWO", make_default=False)
+            publish_translation_profile_resource_version(
+                runtime,
+                version="2",
+                model="snapshot-model-v2",
+                make_default=False,
+            )
+            translation_term_version = publish_translation_term_set_version(
+                runtime,
+                source_term="FPGA",
+                target_term="现场可编程门阵列",
+                make_default=False,
+            )
             app = create_app(runtime)
 
             with TestClient(app) as client:
@@ -6970,12 +6995,25 @@ class FastAPIJobsBackendTests(TestCase):
                     headers=headers,
                     json={
                         "source_file_id": source_file["id"],
-                        "template_version_id": "default@1",
+                        "mode": "en2zh_pdf_to_word",
+                        "document_language": "en",
+                        "template_version_id": "default@2",
+                        "term_rule_set_version": "2",
+                        "translation_term_version": translation_term_version,
+                        "translation_profile_version": "2",
                     },
                 )
 
-        self.assertEqual(create_response.status_code, 403)
-        self.assertIn("operator 不能选择任务资源版本", create_response.json()["detail"])
+        self.assertEqual(create_response.status_code, 201)
+        snapshot = create_response.json()["job"]["request_snapshot"]["resources"]
+        self.assertEqual(snapshot["template"]["resource_id"], "default")
+        self.assertEqual(snapshot["template"]["version"], "2")
+        self.assertEqual(snapshot["term_rule_set"]["resource_id"], "electronics-default")
+        self.assertEqual(snapshot["term_rule_set"]["version"], "2")
+        self.assertEqual(snapshot["translation_term_set"]["set_id"], "translation-terms-en2zh")
+        self.assertEqual(snapshot["translation_term_set"]["version"], translation_term_version)
+        self.assertEqual(snapshot["translation_profile"]["resource_id"], "electronics-en2zh")
+        self.assertEqual(snapshot["translation_profile"]["version"], "2")
 
     def test_document_job_admin_can_bind_explicit_create_resource_versions(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -7967,6 +8005,41 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(snapshot["translation_term_set"]["language_pair"], "ru2zh")
         self.assertEqual(snapshot["translation_term_set"]["version"], ru_term_version)
         self.assertEqual(snapshot["mineru"]["language"], "ru")
+
+    def test_document_job_create_rejects_translation_profile_language_pair_mismatch(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            publish_default_job_resources(runtime, include_translation=True)
+            publish_translation_term_set_version(
+                runtime,
+                source_term="Постоянное обратное напряжение диода",
+                target_term="反向直流电压",
+                make_default=True,
+                set_id=derive_translation_term_set_id("ru2zh"),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers, filename="ru-profile-mismatch.pdf")
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={
+                        "source_file_id": source_file["id"],
+                        "translation_mode": "ru2zh",
+                        "translation_profile_id": "electronics-en2zh",
+                        "translation_profile_version": "1",
+                    },
+                )
+
+        self.assertEqual(create_response.status_code, 400)
+        self.assertEqual(create_response.json()["error_code"], "translation_profile_language_pair_mismatch")
+        self.assertIn("expected=ru2zh actual=en2zh", create_response.json()["detail"])
 
     def test_document_job_create_enqueues_eager_worker_and_updates_status(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -61,7 +61,7 @@
       <div class="config-panel-header">
         <div>
           <strong>任务配置</strong>
-          <small>{{ isAdmin ? "默认配置，可按需指定 published 版本。" : "使用当前默认配置创建任务。" }}</small>
+          <small>默认使用当前 published 版本，也可为本次任务指定已发布配置。</small>
         </div>
         <div class="config-panel-actions">
           <el-tag size="small" effect="plain">{{ configSummary?.resource_mode || "unknown" }}</el-tag>
@@ -96,9 +96,9 @@
         </ul>
       </el-alert>
 
-      <div v-if="isAdmin" class="admin-config">
+      <div class="config-selection">
         <el-divider />
-        <div class="admin-config-grid">
+        <div class="config-selection-grid">
           <label>
             <span>模板版本</span>
             <el-select v-model="selectedTemplateVersion" clearable filterable placeholder="使用默认模板">
@@ -143,7 +143,7 @@
               />
             </el-select>
           </label>
-          <label v-if="selectedModeRequiresTranslationResources" class="switch-row">
+          <label v-if="isAdmin && selectedModeRequiresTranslationResources" class="switch-row">
             <span>全文调试归档</span>
             <el-switch v-model="debugFullText" active-text="开启" inactive-text="关闭" />
             <small>仅 P1 复核样本使用；归档会按后端保留期过期。</small>
@@ -373,22 +373,20 @@ async function submit(): Promise<void> {
       document_language: documentJobModeCreateLanguage(mode.value),
       debug_full_text: isAdmin.value && selectedModeRequiresTranslationResources.value && debugFullText.value,
     };
-    if (isAdmin.value) {
-      if (selectedTemplateOption.value) {
-        payload.template_version_id = configVersionId(selectedTemplateOption.value);
-      }
-      if (selectedTermRuleOption.value) {
-        payload.term_rule_set_id = selectedTermRuleOption.value.resource_id;
-        payload.term_rule_set_version = selectedTermRuleOption.value.version;
-      }
-      if (selectedModeRequiresTranslationResources.value && selectedTranslationTermOption.value) {
-        payload.translation_term_set_id = selectedTranslationTermOption.value.resource_id;
-        payload.translation_term_version = selectedTranslationTermOption.value.version;
-      }
-      if (selectedModeRequiresTranslationResources.value && selectedTranslationProfileOption.value) {
-        payload.translation_profile_id = selectedTranslationProfileOption.value.resource_id;
-        payload.translation_profile_version = selectedTranslationProfileOption.value.version;
-      }
+    if (selectedTemplateOption.value) {
+      payload.template_version_id = configVersionId(selectedTemplateOption.value);
+    }
+    if (selectedTermRuleOption.value) {
+      payload.term_rule_set_id = selectedTermRuleOption.value.resource_id;
+      payload.term_rule_set_version = selectedTermRuleOption.value.version;
+    }
+    if (selectedModeRequiresTranslationResources.value && selectedTranslationTermOption.value) {
+      payload.translation_term_set_id = selectedTranslationTermOption.value.resource_id;
+      payload.translation_term_version = selectedTranslationTermOption.value.version;
+    }
+    if (selectedModeRequiresTranslationResources.value && selectedTranslationProfileOption.value) {
+      payload.translation_profile_id = selectedTranslationProfileOption.value.resource_id;
+      payload.translation_profile_version = selectedTranslationProfileOption.value.version;
     }
     const response = await documentJobsApi.create(payload);
 
@@ -565,7 +563,7 @@ function filterConfigOptionsByLanguagePair<T extends { summary?: Record<string, 
 .config-panel-header small,
 .config-summary-item span,
 .config-summary-item b,
-.admin-config label span {
+.config-selection label span {
   display: block;
 }
 
@@ -576,13 +574,13 @@ function filterConfigOptionsByLanguagePair<T extends { summary?: Record<string, 
 
 .config-panel-header small,
 .config-summary-item span,
-.admin-config label span {
+.config-selection label span {
   color: var(--app-color-text-muted);
   font-size: 12px;
 }
 
 .config-summary-grid,
-.admin-config-grid {
+.config-selection-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
@@ -612,11 +610,11 @@ function filterConfigOptionsByLanguagePair<T extends { summary?: Record<string, 
   padding-left: 18px;
 }
 
-.admin-config :deep(.el-divider--horizontal) {
+.config-selection :deep(.el-divider--horizontal) {
   margin: 2px 0 12px;
 }
 
-.admin-config label {
+.config-selection label {
   display: grid;
   gap: 6px;
 }
@@ -642,7 +640,7 @@ function filterConfigOptionsByLanguagePair<T extends { summary?: Record<string, 
   }
 
   .config-summary-grid,
-  .admin-config-grid {
+  .config-selection-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -672,7 +670,7 @@ function filterConfigOptionsByLanguagePair<T extends { summary?: Record<string, 
 
   .config-panel-header small,
   .config-summary-item span,
-  .admin-config label span,
+  .config-selection label span,
   .switch-row small,
   .mode-label {
     color: var(--app-color-text-muted);

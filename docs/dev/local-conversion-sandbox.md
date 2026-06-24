@@ -30,10 +30,11 @@ last_reviewed: 2026-06-23
 /Users/sc/PycharmProjects/md2word
 ```
 
-仓库已提供两个可共享 Run Configuration：
+仓库已提供三个可共享 Run Configuration：
 
 - `Local MinerU Direct`
 - `Local MinerU En2Zh`
+- `Local MinerU Ru2Zh`
 
 如果 PyCharm 没有自动识别 `.run/` 下的配置，可以手动新建 Python Run Configuration：
 
@@ -43,6 +44,7 @@ last_reviewed: 2026-06-23
 - Parameters:
   - direct：`--config scripts/dev/local_mineru_debug_direct_config.json`
   - en2zh：`--config scripts/dev/local_mineru_debug_en2zh_config.json`
+  - ru2zh：`--config scripts/dev/local_mineru_debug_ru2zh_config.json`
 
 默认直接运行脚本时使用 direct 配置兼容文件：
 
@@ -89,8 +91,8 @@ app.conversion.runtime_runner.run_conversion(...)
 |---|---|
 | `input_path` | MinerU 结果目录或 zip，必填 |
 | `output_path` | 输出 DOCX 路径 |
-| `document_language` | `auto` / `zh` / `en` |
-| `translation_mode` | `direct` / `none` / `en2zh` / `llm_en_to_zh` |
+| `document_language` | `auto` / `zh` / `en` / `ru` |
+| `translation_mode` | `direct` / `none` / `en2zh` / `ru2zh` / `llm_en_to_zh` / `llm_ru_to_zh` |
 | `template_path` | Word 模板 |
 | `layout_config_path` | 版式 YAML |
 | `subscript_config` | 术语/上下标 YAML |
@@ -118,9 +120,10 @@ app.conversion.runtime_runner.run_conversion(...)
 .venv/bin/python scripts/dev/run_local_mineru_debug_config.py
 .venv/bin/python scripts/dev/run_local_mineru_debug_config.py --config scripts/dev/local_mineru_debug_direct_config.json
 .venv/bin/python scripts/dev/run_local_mineru_debug_config.py --config scripts/dev/local_mineru_debug_en2zh_config.json
+.venv/bin/python scripts/dev/run_local_mineru_debug_config.py --config scripts/dev/local_mineru_debug_ru2zh_config.json
 ```
 
-## direct 与 en2zh 配置
+## direct、en2zh 与 ru2zh 配置
 
 `scripts/dev/local_mineru_debug_direct_config.json` 用于原排版直出：
 
@@ -137,7 +140,16 @@ app.conversion.runtime_runner.run_conversion(...)
 - `translation_trace_output` 只在翻译响应成功应用后生成
 - `translation_api_key` 和 `translation_base_url` 默认留空，真实值从 `.env`、环境变量或 PyCharm 环境变量读取
 
-如果没有 `OPENAI_API_KEY` 且没有配置 `translation_response`，en2zh 会明确失败并提示缺少 key；这是预期行为，不会自动回退为 direct。需要离线调试时，先让脚本写出 `translation_request_output`，再把本地未提交的响应 JSON 填到 `translation_response`。
+`scripts/dev/local_mineru_debug_ru2zh_config.json` 用于俄文转中文后出 Word：
+
+- `translation_mode=ru2zh`
+- `document_language=auto`，转换后默认按中文排版覆盖处理
+- 输入样本固定为 `mineru_result/диод анод сверху.pdf-5a23152f-e597-40a4-98e8-585b78811b63`
+- `translation_request_output` 写到 `tests/tmp/local_mineru_debug/ru2zh/`
+- `translation_trace_output` 只在翻译响应成功应用后生成
+- `translation_response` 默认留空；离线调试时填入未提交的本地响应 JSON
+
+如果没有 `OPENAI_API_KEY` 且没有配置 `translation_response`，en2zh/ru2zh 会明确失败并提示缺少 key；这是预期行为，不会自动回退为 direct。需要离线调试时，先让脚本写出 `translation_request_output`，再把本地未提交的响应 JSON 填到 `translation_response`。
 
 ## 命令行临时入口
 
@@ -248,7 +260,16 @@ en2zh 可以单独运行：
   --translation-response-dir tests/tmp/local_mineru_debug/en2zh_responses
 ```
 
-如果没有本地 `translation_response` 且没有 `OPENAI_API_KEY`，en2zh 条目会被标记为 `blocked` / `translation_api_key_missing`，不会静默回退到 direct。
+ru2zh 验收样本可以单独运行：
+
+```bash
+.venv/bin/python scripts/dev/run_local_mineru_quality_matrix.py \
+  --sample-set ru2zh-acceptance \
+  --mode ru2zh \
+  --translation-response-dir tests/tmp/local_mineru_debug/ru2zh_responses
+```
+
+如果没有本地 `translation_response` 且没有 `OPENAI_API_KEY`，en2zh/ru2zh 条目会被标记为 `blocked` / `translation_api_key_missing`，不会静默回退到 direct。
 
 ## md2word_main 的状态
 
