@@ -11,6 +11,7 @@ from pathlib import Path
 
 from docx import Document
 from docx.enum.section import WD_ORIENTATION
+from docx.shared import Cm
 
 from app.services.document_ir.models import (
     DocumentIR,
@@ -21,7 +22,7 @@ from app.services.document_ir.models import (
     DocumentIRPage,
 )
 from app.services.renderer.layout_plan import build_layout_plan
-from app.services.renderer.word_renderer import DocumentIRWordRenderer
+from app.services.renderer.word_renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
 
 
 MINIMAL_PNG_BYTES = (
@@ -245,6 +246,49 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertIn('w:val="superscript"', xml)
         self.assertNotIn(r"\theta", xml)
         self.assertNotIn(r"\sqrt", xml)
+
+    def test_render_to_bytes_applies_subscript_config_to_formal_renderer_outputs(self) -> None:
+        renderer = DocumentIRWordRenderer()
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="docjob_terms", source_file_id="file_terms", document_language="en"),
+            blocks=[
+                DocumentIRBlock(id="block_text", type="paragraph", order=0, text="VOS and IOS are specified."),
+                DocumentIRBlock(
+                    id="block_table",
+                    type="table",
+                    order=1,
+                    html="<table><tr><th>Parameter</th></tr><tr><td>VOS</td></tr></table>",
+                    captions=["Table 1: VOS limits"],
+                ),
+            ],
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            subscript_config_path = Path(temp_dir) / "subscripts.yaml"
+            subscript_config_path.write_text(
+                "\n".join(
+                    [
+                        "subscript_rules:",
+                        "  electrical:",
+                        "    VOS: V<sub>OS</sub>",
+                        "    IOS: I<sub>OS</sub>",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            content = renderer.render_to_bytes(
+                document,
+                template_path=None,
+                config_path=None,
+                image_loader=lambda _asset: None,
+                options=DocumentIRRenderOptions(subscript_config_path=subscript_config_path, document_language="en"),
+            )
+
+        xml = self._document_xml(content)
+        self.assertGreaterEqual(xml.count('w:val="subscript"'), 4)
+        self.assertIn("V</w:t>", xml)
+        self.assertIn("OS", xml)
+        self.assertNotIn("&lt;sub&gt;", xml)
 
     def test_datasheet_five_column_table_widths_prioritize_description_column(self) -> None:
         renderer = DocumentIRWordRenderer()
@@ -594,6 +638,49 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertIn('w:val="ABCDEF"', xml)
         self.assertIn('w:fill="AABBCC"', xml)
         self.assertIn('w:color="123456"', xml)
+
+    def test_render_to_bytes_uses_configured_page_size_and_header_bold_flag(self) -> None:
+        renderer = DocumentIRWordRenderer()
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="docjob_page_config", source_file_id="file_page_config", document_language="en"),
+            pages=[DocumentIRPage(index=0, width=400.0, height=600.0)],
+            blocks=[
+                DocumentIRBlock(
+                    id="block_table",
+                    type="table",
+                    order=0,
+                    html="<table><tr><th>Parameter</th></tr><tr><td>Gain</td></tr></table>",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(72, 80, 300, 160), role="body"),
+                )
+            ],
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "template.yaml"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        "schema_version: template-config/v1",
+                        "page_setup:",
+                        "  page_width_cm: 10",
+                        "  page_height_cm: 20",
+                        "table_style:",
+                        "  header_bold: false",
+                        "  header_fill: ''",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            content = renderer.render_to_bytes(document, template_path=None, config_path=config_path, image_loader=lambda _asset: None)
+            rendered = Document(io.BytesIO(content))
+
+        xml = self._document_xml(content)
+        self.assertAlmostEqual(rendered.sections[0].page_width.cm, Cm(10).cm, places=1)
+        self.assertAlmostEqual(rendered.sections[0].page_height.cm, Cm(20).cm, places=1)
+        self.assertNotIn("<w:b/>", xml)
+        self.assertNotIn("<w:b ", xml)
+        self.assertNotIn("<w:shd", xml)
 
     def test_render_to_bytes_uses_configured_heading_word_style_when_available(self) -> None:
         renderer = DocumentIRWordRenderer()

@@ -11,7 +11,6 @@ from docx.image.exceptions import InvalidImageStreamError, UnexpectedEndOfFileEr
 from docx.shared import Cm
 
 from app.services.document_ir.models import DocumentIRAsset, DocumentIRBlock
-from app.services.renderer.semantic_text import normalize_formula_text
 from app.services.renderer.template_config import TemplateConfigPackage
 
 
@@ -37,7 +36,12 @@ class WordImageRendererMixin:
         paragraph = document.add_paragraph()
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         if not image_content:
-            self._fill_paragraph(paragraph, normalize_formula_text(self._image_fallback_text(block)), template_config.caption)
+            self._fill_paragraph(
+                paragraph,
+                self._image_fallback_text(block),
+                template_config.caption,
+                terminology=template_config.terminology,
+            )
             return
 
         try:
@@ -46,7 +50,12 @@ class WordImageRendererMixin:
             run.add_picture(io.BytesIO(image_content), width=available_width)
         except (InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError):
             paragraph.text = ""
-            self._fill_paragraph(paragraph, normalize_formula_text(self._image_fallback_text(block)), template_config.caption)
+            self._fill_paragraph(
+                paragraph,
+                self._image_fallback_text(block),
+                template_config.caption,
+                terminology=template_config.terminology,
+            )
 
         if annotations:
             paragraph.paragraph_format.keep_with_next = True
@@ -54,7 +63,12 @@ class WordImageRendererMixin:
             caption_paragraph = document.add_paragraph()
             if index < len(annotations) - 1:
                 caption_paragraph.paragraph_format.keep_with_next = True
-            self._fill_paragraph(caption_paragraph, normalize_formula_text(caption), template_config.caption)
+            self._fill_paragraph(
+                caption_paragraph,
+                caption,
+                template_config.caption,
+                terminology=template_config.terminology,
+            )
 
     def _available_width(
         self,

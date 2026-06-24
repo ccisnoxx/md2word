@@ -11,6 +11,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
+from app.conversion.docx_rules.terminology import TerminologyReplacer
 from app.services.renderer.semantic_text import (
     infer_heading_level,
     infer_list_item_level,
@@ -38,12 +39,13 @@ class WordTextRendererMixin:
         *,
         prefix: str = "",
         word_style_name: str | None = None,
+        terminology: TerminologyReplacer | None = None,
     ) -> None:
         """写入段落文本；支持 MinerU 常见的内联 HTML 标记。"""
 
         self._apply_named_style(paragraph, word_style_name or style.word_style_name)
         self._apply_paragraph_style(paragraph, style)
-        normalized_text = normalize_formula_text(text)
+        normalized_text = self._prepare_text_for_rendering(text, terminology)
         if self._looks_like_inline_markup(normalized_text):
             if prefix:
                 self._add_text_run(paragraph, prefix, style)
@@ -66,6 +68,7 @@ class WordTextRendererMixin:
             normalize_formula_text(text),
             style,
             word_style_name=template_config.heading_word_style_name_for_level(level),
+            terminology=template_config.terminology,
         )
 
     def _fill_list_paragraph(
@@ -75,7 +78,12 @@ class WordTextRendererMixin:
         template_config: TemplateConfigPackage,
     ) -> None:
         level = infer_list_item_level(text)
-        self._fill_paragraph(paragraph, normalize_formula_text(normalize_list_item(text)), template_config.normal)
+        self._fill_paragraph(
+            paragraph,
+            normalize_list_item(text),
+            template_config.normal,
+            terminology=template_config.terminology,
+        )
         self._apply_bullet_numbering(paragraph, level=level)
         paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
         paragraph_format = paragraph.paragraph_format
@@ -93,7 +101,12 @@ class WordTextRendererMixin:
         template_config: TemplateConfigPackage,
     ) -> None:
         if is_toc_title_text(text):
-            self._fill_paragraph(paragraph, normalize_formula_text(text), template_config.toc_title)
+            self._fill_paragraph(
+                paragraph,
+                text,
+                template_config.toc_title,
+                terminology=template_config.terminology,
+            )
             return
         if self._fill_toc_entry_if_needed(paragraph, text, template_config):
             return
@@ -103,7 +116,7 @@ class WordTextRendererMixin:
         if looks_like_heading_text(text):
             self._fill_heading_paragraph(paragraph, text, infer_heading_level(text), template_config)
             return
-        self._fill_paragraph(paragraph, text, template_config.normal)
+        self._fill_paragraph(paragraph, text, template_config.normal, terminology=template_config.terminology)
 
     def _fill_auto_list_item_paragraph(
         self,
@@ -112,7 +125,12 @@ class WordTextRendererMixin:
         template_config: TemplateConfigPackage,
     ) -> None:
         if is_toc_title_text(text):
-            self._fill_paragraph(paragraph, normalize_formula_text(text), template_config.toc_title)
+            self._fill_paragraph(
+                paragraph,
+                text,
+                template_config.toc_title,
+                terminology=template_config.terminology,
+            )
             return
         if self._fill_toc_entry_if_needed(paragraph, text, template_config):
             return
@@ -135,7 +153,7 @@ class WordTextRendererMixin:
         paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
         paragraph.paragraph_format.first_line_indent = Pt(0)
         paragraph.paragraph_format.tab_stops.add_tab_stop(Cm(15), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
-        self._render_inline_html(paragraph, normalize_formula_text(title), toc_style)
+        self._render_inline_html(paragraph, self._prepare_text_for_rendering(title, template_config.terminology), toc_style)
         paragraph.add_run("\t")
         page_run = paragraph.add_run(page_number)
         self._apply_run_style(page_run, toc_style)
@@ -147,7 +165,17 @@ class WordTextRendererMixin:
         text: str,
         template_config: TemplateConfigPackage,
     ) -> None:
-        self._fill_paragraph(paragraph, normalize_formula_text(text), template_config.normal)
+        self._fill_paragraph(paragraph, text, template_config.normal, terminology=template_config.terminology)
+
+    def _prepare_text_for_rendering(self, text: str, terminology: TerminologyReplacer | None) -> str:
+        """Normalize formula fragments and apply per-render terminology markup."""
+
+        normalized_text = normalize_formula_text(text)
+        if terminology is None:
+            return normalized_text
+        if self._looks_like_inline_markup(normalized_text):
+            return terminology.replace_html(normalized_text) or normalized_text
+        return terminology.replace_text(normalized_text)
 
     def _looks_like_inline_markup(self, text: str) -> bool:
         lowered = text.lower()

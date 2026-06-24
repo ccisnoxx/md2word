@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,7 @@ from docx.enum.section import WD_ORIENTATION, WD_SECTION_START
 from docx.image.exceptions import InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError
 from docx.shared import Cm, Mm
 
+from app.conversion.docx_rules.terminology import TerminologyReplacer
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset, DocumentIRBlock
 from app.services.renderer.image_renderer import WordImageRendererMixin
 from app.services.renderer.layout_plan import LayoutPage, LayoutRegion, build_layout_plan
@@ -25,6 +27,14 @@ A4_PORTRAIT_WIDTH = Mm(210)
 A4_PORTRAIT_HEIGHT = Mm(297)
 
 
+@dataclass(frozen=True, slots=True)
+class DocumentIRRenderOptions:
+    """Per-call renderer options supplied by the document_jobs formal pipeline."""
+
+    subscript_config_path: Path | None = None
+    document_language: str | None = None
+
+
 class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, WordImageRendererMixin):
     """P0 Word 渲染器：覆盖标题、段落、基础表格和图片。"""
 
@@ -35,10 +45,11 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         template_path: Path | None,
         config_path: Path | None,
         image_loader: ImageContentLoader,
+        options: DocumentIRRenderOptions | None = None,
     ) -> bytes:
         """按模板 DOCX 与配置包生成 Word 二进制。"""
 
-        template_config = TemplateConfigPackage.load(config_path)
+        template_config = self._load_template_config(document_ir, config_path, options)
         document = self._create_document(template_path)
         self._clear_body(document)
         self._apply_page_setup(document, template_config)
@@ -71,6 +82,25 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
             return Document(str(template_path))
         return Document()
 
+    def _load_template_config(
+        self,
+        document_ir: DocumentIR,
+        config_path: Path | None,
+        options: DocumentIRRenderOptions | None,
+    ) -> TemplateConfigPackage:
+        document_language = (
+            options.document_language
+            if options is not None and options.document_language
+            else document_ir.metadata.document_language
+        )
+        template_config = TemplateConfigPackage.load(config_path).for_document_language(document_language)
+        subscript_config_path = options.subscript_config_path if options is not None else None
+        if subscript_config_path is not None:
+            terminology = TerminologyReplacer(subscript_config_path)
+            if terminology.rules:
+                template_config.terminology = terminology
+        return template_config
+
     def _clear_body(self, document: Any) -> None:
         body = document._body._element
         sect_pr = body.sectPr
@@ -84,7 +114,12 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         for section in document.sections:
             self._apply_page_setup_to_section(section, setup)
 
-    def _apply_page_setup_to_section(self, section: Any, setup: Any) -> None:
+    def _apply_page_setup_to_section(self, section: Any, setup: Any, *, apply_page_size: bool = True) -> None:
+        if apply_page_size:
+            if setup.page_width_cm is not None:
+                section.page_width = Cm(setup.page_width_cm)
+            if setup.page_height_cm is not None:
+                section.page_height = Cm(setup.page_height_cm)
         if setup.top_margin is not None:
             section.top_margin = Cm(setup.top_margin)
         if setup.bottom_margin is not None:
@@ -110,9 +145,18 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
             return
         section = document.sections[-1]
         section.orientation = WD_ORIENTATION.LANDSCAPE if landscape else WD_ORIENTATION.PORTRAIT
-        section.page_width = A4_PORTRAIT_HEIGHT if landscape else A4_PORTRAIT_WIDTH
-        section.page_height = A4_PORTRAIT_WIDTH if landscape else A4_PORTRAIT_HEIGHT
-        self._apply_page_setup_to_section(section, template_config.page_setup)
+        portrait_width, portrait_height = self._portrait_page_dimensions(template_config)
+        short_side = min(portrait_width, portrait_height)
+        long_side = max(portrait_width, portrait_height)
+        section.page_width = long_side if landscape else short_side
+        section.page_height = short_side if landscape else long_side
+        self._apply_page_setup_to_section(section, template_config.page_setup, apply_page_size=False)
+
+    def _portrait_page_dimensions(self, template_config: TemplateConfigPackage) -> tuple[Any, Any]:
+        setup = template_config.page_setup
+        width = Cm(setup.page_width_cm) if setup.page_width_cm is not None else A4_PORTRAIT_WIDTH
+        height = Cm(setup.page_height_cm) if setup.page_height_cm is not None else A4_PORTRAIT_HEIGHT
+        return width, height
 
     def _layout_page_requires_landscape(self, page: LayoutPage) -> bool:
         if page.width is not None and page.height is not None and page.width > page.height:
@@ -227,12 +271,22 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         if template_config.header.enabled and page.header_blocks:
             paragraph = section.header.paragraphs[0] if section.header.paragraphs else section.header.add_paragraph()
             paragraph.text = ""
-            self._fill_paragraph(paragraph, " ".join(block.text or "" for block in page.header_blocks).strip(), template_config.normal)
+            self._fill_paragraph(
+                paragraph,
+                " ".join(block.text or "" for block in page.header_blocks).strip(),
+                template_config.normal,
+                terminology=template_config.terminology,
+            )
         footer_blocks = page.footer_blocks + page.page_number_blocks
         if template_config.footer.enabled and footer_blocks:
             paragraph = section.footer.paragraphs[0] if section.footer.paragraphs else section.footer.add_paragraph()
             paragraph.text = ""
-            self._fill_paragraph(paragraph, " ".join(block.text or "" for block in footer_blocks).strip(), template_config.normal)
+            self._fill_paragraph(
+                paragraph,
+                " ".join(block.text or "" for block in footer_blocks).strip(),
+                template_config.normal,
+                terminology=template_config.terminology,
+            )
 
     def _render_layout_region(
         self,

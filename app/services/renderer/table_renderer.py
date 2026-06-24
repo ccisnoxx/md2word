@@ -13,7 +13,6 @@ from docx.shared import Cm, Emu, Mm, Pt
 
 from app.conversion.runtime.table_html_parser import HtmlCell, HtmlTable, parse_html_table
 from app.services.document_ir.models import DocumentIRBlock
-from app.services.renderer.semantic_text import normalize_formula_text
 from app.services.renderer.template_config import TemplateConfigPackage
 
 
@@ -21,6 +20,7 @@ MAX_COMPLEX_TABLE_ROWS = 400
 MAX_COMPLEX_TABLE_HTML_LEN = 30000
 MIN_TABLE_COLUMN_WIDTH = Mm(16)
 LONG_TABLE_CAPTION_RE = re.compile(r"^(?:续表|continued\s+table|[A-Z]\.\d+(?:\.\d+)?)\b", re.IGNORECASE)
+TH_TAG_RE = re.compile(r"</?th\b[^>]*>", re.IGNORECASE)
 
 
 class WordTableRendererMixin:
@@ -37,11 +37,17 @@ class WordTableRendererMixin:
                 cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
 
     def _render_table(self, document: Any, block: DocumentIRBlock, template_config: TemplateConfigPackage) -> None:
-        table_model = parse_html_table(block.html)
+        table_html = self._prepare_table_html(block.html, template_config)
+        table_model = parse_html_table(table_html)
         self._render_table_captions(document, block, template_config)
         if table_model is None or not table_model.rows or table_model.max_columns <= 0:
             paragraph = document.add_paragraph()
-            self._fill_paragraph(paragraph, block.text or "", template_config.normal)
+            self._fill_paragraph(
+                paragraph,
+                block.text or "",
+                template_config.normal,
+                terminology=template_config.terminology,
+            )
             self._render_table_notes(document, block, template_config)
             return
 
@@ -156,7 +162,14 @@ class WordTableRendererMixin:
     ) -> None:
         cell.text = ""
         paragraph = cell.paragraphs[0]
-        self._fill_paragraph(paragraph, normalize_formula_text(cell_model.html or cell_model.text), template_config.table_content)
+        cell_content = self._table_cell_content(cell_model, is_header, template_config)
+        self._fill_paragraph(
+            paragraph,
+            cell_content,
+            template_config.table_content,
+            terminology=template_config.terminology,
+        )
+        self._apply_table_header_run_style(paragraph, is_header, template_config)
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER if is_header else WD_ALIGN_PARAGRAPH.LEFT
         paragraph.paragraph_format.space_before = Pt(0)
         paragraph.paragraph_format.space_after = Pt(0)
@@ -215,7 +228,12 @@ class WordTableRendererMixin:
         for text in self._unique_annotation_texts(block.captions):
             paragraph = document.add_paragraph()
             paragraph.paragraph_format.keep_with_next = True
-            self._fill_paragraph(paragraph, normalize_formula_text(text), self._caption_style_for_text(text, template_config))
+            self._fill_paragraph(
+                paragraph,
+                text,
+                self._caption_style_for_text(text, template_config),
+                terminology=template_config.terminology,
+            )
 
     def _render_table_notes(
         self,
@@ -225,7 +243,12 @@ class WordTableRendererMixin:
     ) -> None:
         for text in self._unique_annotation_texts(block.footnotes):
             paragraph = document.add_paragraph()
-            self._fill_paragraph(paragraph, normalize_formula_text(text), template_config.table_note)
+            self._fill_paragraph(
+                paragraph,
+                text,
+                template_config.table_note,
+                terminology=template_config.terminology,
+            )
 
     def _unique_annotation_texts(self, values: list[str]) -> list[str]:
         seen: set[str] = set()
@@ -239,6 +262,34 @@ class WordTableRendererMixin:
 
     def _is_large_table(self, block: DocumentIRBlock, table_model: HtmlTable) -> bool:
         return len(table_model.rows) > MAX_COMPLEX_TABLE_ROWS or len(block.html or "") > MAX_COMPLEX_TABLE_HTML_LEN
+
+    def _prepare_table_html(self, html: str | None, template_config: TemplateConfigPackage) -> str | None:
+        terminology = template_config.terminology
+        if terminology is None:
+            return html
+        return terminology.replace_html(html) or html
+
+    def _apply_table_header_run_style(
+        self,
+        paragraph: Any,
+        is_header: bool,
+        template_config: TemplateConfigPackage,
+    ) -> None:
+        if not is_header or not template_config.table_style.header_bold:
+            return
+        for run in paragraph.runs:
+            run.bold = True
+
+    def _table_cell_content(
+        self,
+        cell_model: HtmlCell,
+        is_header: bool,
+        template_config: TemplateConfigPackage,
+    ) -> str:
+        content = cell_model.html or cell_model.text
+        if is_header and not template_config.table_style.header_bold:
+            return TH_TAG_RE.sub("", content)
+        return content
 
     def _available_table_width(self, document: Any) -> int:
         sections = getattr(document, "sections", None)

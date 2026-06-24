@@ -869,6 +869,27 @@ def make_semantic_mineru_zip_bytes() -> bytes:
     return buffer.getvalue()
 
 
+def make_subscript_mineru_zip_bytes() -> bytes:
+    buffer = io.BytesIO()
+    blocks = [
+        {"type": "text", "text": "VOS and IOS are specified.", "page_idx": 0, "bbox": [72, 80, 360, 120]},
+        {
+            "type": "table",
+            "table_caption": "Table 1: VOS limits",
+            "table_body": "<table><tr><th>Parameter</th></tr><tr><td>VOS</td></tr></table>",
+            "page_idx": 0,
+            "bbox": [72, 150, 420, 260],
+        },
+    ]
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("content_list_v2.json", json.dumps(blocks, ensure_ascii=False))
+        archive.writestr(
+            "layout.json",
+            json.dumps({"pdf_info": [{"page_idx": 0, "page_size": [612, 792]}]}, ensure_ascii=False),
+        )
+    return buffer.getvalue()
+
+
 def make_pdf_bytes(page_count: int = 1) -> bytes:
     pages = "\n".join(
         f"{index} 0 obj << /Type /Page /Parent 0 0 R >> endobj"
@@ -9198,6 +9219,52 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertNotIn("• Low noise", document_xml)
         self.assertNotIn(r"\sqrt", document_xml)
         self.assertNotIn(r"\theta", document_xml)
+
+    def test_document_job_worker_passes_subscript_config_to_document_ir_renderer(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            runtime.settings.term_rules_runtime_yaml_file.write_text(
+                "\n".join(
+                    [
+                        "subscript_rules:",
+                        "  electrical:",
+                        "    VOS: V<sub>OS</sub>",
+                        "    IOS: I<sub>OS</sub>",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = make_subscript_mineru_zip_bytes()
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"], "document_language": "en"},
+                )
+                job_id = create_response.json()["job_id"]
+
+            stored_job = runtime.document_job_repository.get_document_job(job_id)
+            word_file = runtime.document_file_repository.get_document_file(stored_job.result_file_id)
+            word_bytes = runtime.file_upload_service.read_file_content(word_file)
+
+        with zipfile.ZipFile(io.BytesIO(word_bytes)) as archive:
+            document_xml = archive.read("word/document.xml").decode("utf-8")
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(stored_job.status, "succeeded")
+        self.assertEqual(word_file.file_type, "generated_word")
+        self.assertGreaterEqual(document_xml.count('w:val="subscript"'), 4)
+        self.assertNotIn("&lt;sub&gt;", document_xml)
 
     def test_document_job_en2zh_worker_translates_ir_and_saves_ai_audit_artifacts(self):
         with tempfile.TemporaryDirectory() as temp_dir:
