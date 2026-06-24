@@ -22,6 +22,8 @@ if VENDOR_DIR.exists():
         sys.path.insert(0, vendor_path)
 
 from fastapi.testclient import TestClient
+from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 from app.conversion.contracts import ArtifactDescriptor, ConversionFailure, ConversionResult
 from app.core.config import Settings
@@ -858,6 +860,39 @@ def make_semantic_mineru_zip_bytes() -> bytes:
             "table_footnote": r"Note: E=mc^2",
             "page_idx": 0,
             "bbox": [40, 240, 580, 330],
+        },
+    ]
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("content_list_v2.json", json.dumps(blocks, ensure_ascii=False))
+        archive.writestr(
+            "layout.json",
+            json.dumps({"pdf_info": [{"page_idx": 0, "page_size": [612, 792]}]}, ensure_ascii=False),
+        )
+    return buffer.getvalue()
+
+
+def make_portrait_wide_table_condition_mineru_zip_bytes() -> bytes:
+    condition = (
+        "at TA = +25°C, VS = ±5 V to ±15 V, VCM = VOUT = VS / 2, "
+        "and RL = 10 kΩ connected to VS / 2 (unless otherwise noted)"
+    )
+    headers = "".join(f"<th>PARAMETER {index}</th>" for index in range(1, 9))
+    values = "".join(f"<td>Value {index}</td>" for index in range(1, 9))
+    buffer = io.BytesIO()
+    blocks = [
+        {
+            "type": "title",
+            "text": "6.8 Electrical Characteristics",
+            "text_level": 2,
+            "page_idx": 0,
+            "bbox": [72, 80, 360, 105],
+        },
+        {
+            "type": "table",
+            "table_caption": [condition],
+            "table_body": f"<table><tr>{headers}</tr><tr>{values}</tr></table>",
+            "page_idx": 0,
+            "bbox": [40, 130, 580, 260],
         },
     ]
     with zipfile.ZipFile(buffer, "w") as archive:
@@ -9219,6 +9254,74 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertNotIn("• Low noise", document_xml)
         self.assertNotIn(r"\sqrt", document_xml)
         self.assertNotIn(r"\theta", document_xml)
+
+    def test_document_job_worker_keeps_portrait_wide_table_and_condition_context(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = (
+                make_portrait_wide_table_condition_mineru_zip_bytes()
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"], "document_language": "en"},
+                )
+                job_id = create_response.json()["job_id"]
+
+            stored_job = runtime.document_job_repository.get_document_job(job_id)
+            files = [
+                file
+                for file in runtime.document_file_repository.list_document_files()
+                if file.job_id == job_id
+            ]
+            files_by_type = {file.file_type: file for file in files}
+            word_file = files_by_type["generated_word"]
+            word_bytes = runtime.file_upload_service.read_file_content(word_file)
+            ir_payload = json.loads(
+                runtime.file_upload_service.read_file_content(files_by_type["document_ir"]).decode("utf-8")
+            )
+
+        with zipfile.ZipFile(io.BytesIO(word_bytes)) as archive:
+            document_xml = archive.read("word/document.xml").decode("utf-8")
+        rendered = Document(io.BytesIO(word_bytes))
+        table_index = document_xml.index("<w:tbl>")
+        condition_paragraph = next(
+            paragraph
+            for paragraph in rendered.paragraphs
+            if paragraph.text.startswith("at TA = +25°C")
+        )
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(stored_job.status, "succeeded")
+        self.assertEqual(word_file.file_type, "generated_word")
+        self.assertEqual(ir_payload["pages"][0]["metadata"]["orientation"], "portrait")
+        self.assertEqual([block["type"] for block in ir_payload["blocks"]], ["heading", "paragraph", "table"])
+        self.assertEqual(ir_payload["blocks"][1]["metadata"]["annotation_role"], "table_context")
+        self.assertEqual(ir_payload["blocks"][1]["metadata"]["source_block_id"], "block_0002")
+        self.assertTrue(ir_payload["blocks"][1]["text"].startswith("at TA = +25°C"))
+        self.assertEqual(ir_payload["blocks"][2]["captions"], [])
+        self.assertIn("layout_table_context_binding:block_0002", ir_payload["quality_flags"])
+        self.assertIn("layout_wide_table:block_0002", ir_payload["quality_flags"])
+        self.assertNotIn("layout_caption_binding:block_0002", ir_payload["quality_flags"])
+        self.assertEqual(word_file.metadata["docx_quality"]["landscape_sections"], 0)
+        self.assertGreaterEqual(word_file.metadata["docx_quality"]["wide_table_count"], 1)
+        self.assertTrue(word_file.metadata["docx_quality"]["editable_content_available"])
+        self.assertFalse(word_file.metadata["docx_quality"]["image_only_suspected"])
+        self.assertLess(document_xml.index("at TA = +25°C"), table_index)
+        self.assertNotIn('w:orient="landscape"', document_xml)
+        self.assertNotIn('<w:jc w:val="center"', document_xml[:table_index])
+        self.assertNotEqual(condition_paragraph.alignment, WD_ALIGN_PARAGRAPH.CENTER)
 
     def test_document_job_worker_passes_subscript_config_to_document_ir_renderer(self):
         with tempfile.TemporaryDirectory() as temp_dir:

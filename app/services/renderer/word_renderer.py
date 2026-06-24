@@ -159,13 +159,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         return width, height
 
     def _layout_page_requires_landscape(self, page: LayoutPage) -> bool:
-        if page.width is not None and page.height is not None and page.width > page.height:
-            return True
-        return any(
-            block.type == "table" and block.layout is not None and block.layout.column_hint == "wide"
-            for region in page.regions
-            for block in region.blocks
-        )
+        return page.width is not None and page.height is not None and page.width > page.height
 
     def _apply_header_footer(
         self,
@@ -230,6 +224,10 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
             return
         if block.type == "paragraph":
             paragraph = document.add_paragraph()
+            if block.metadata.get("annotation_role") == "table_context":
+                paragraph.paragraph_format.keep_with_next = True
+                self._fill_table_context_paragraph(paragraph, block.text or "", template_config)
+                return
             self._fill_auto_list_or_paragraph(paragraph, block.text or "", template_config)
             return
         if block.type == "list":

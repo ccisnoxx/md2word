@@ -35,6 +35,7 @@ from app.services.document_ir.models import (
     DocumentIRBlockType,
     DocumentIRMetadata,
 )
+from app.services.document_ir.table_annotations import split_table_annotation_texts
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,7 +119,12 @@ class MinerUToDocumentIRService:
             metadata = self._metadata_from_raw(raw_block, source_type)
             metadata.update(build_block_layout_metadata(layout, page_width=page_width))
             captions = self._captions(raw_block, source_type)
+            table_contexts: list[str] = []
+            if block_type == "table" and captions:
+                captions, table_contexts = split_table_annotation_texts(captions)
             footnotes = self._footnotes(raw_block, source_type)
+            if table_contexts:
+                quality_flags.append(f"layout_table_context_binding:{block_id}")
             if captions:
                 quality_flags.append(f"layout_caption_binding:{block_id}")
             if footnotes:
@@ -143,13 +149,33 @@ class MinerUToDocumentIRService:
                         )
                     )
                     ir_assets.append(DocumentIRAsset(id=asset_id, kind="image", source_path=source_path))
+            for context_index, context_text in enumerate(table_contexts):
+                context_metadata = dict(metadata)
+                context_metadata.update(
+                    {
+                        "source_type": "table_caption_context",
+                        "annotation_role": "table_context",
+                        "source_block_id": block_id,
+                    }
+                )
+                blocks.append(
+                    DocumentIRBlock(
+                        id=f"{block_id}_context_{context_index + 1:04d}",
+                        type="paragraph",
+                        order=index,
+                        page_index=page_index,
+                        text=context_text,
+                        layout=layout,
+                        metadata=context_metadata,
+                    )
+                )
             blocks.append(
                 DocumentIRBlock(
                     id=block_id,
                     type=block_type,
                     order=index,
                     page_index=page_index,
-                    text=self._text_for_block(raw_block, block_type),
+                    text=self._text_for_block(raw_block, block_type, captions=captions),
                     level=self._heading_level(raw_block) if block_type == "heading" else None,
                     html=self._table_html(raw_block) if block_type == "table" else None,
                     latex=self._formula_text(raw_block) if block_type == "formula" else None,
@@ -213,10 +239,15 @@ class MinerUToDocumentIRService:
             level = 1
         return min(max(level, 1), 6)
 
-    def _text_for_block(self, raw_block: dict[str, Any], block_type: str) -> str | None:
+    def _text_for_block(
+        self,
+        raw_block: dict[str, Any],
+        block_type: str,
+        *,
+        captions: list[str] | None = None,
+    ) -> str | None:
         if block_type == "table":
-            captions = self._captions(raw_block, str(raw_block.get("type") or raw_block.get("block_type") or "").strip().lower())
-            return captions[0] if captions else self._first_text_from_keys(raw_block, ("caption", "text"))
+            return captions[0] if captions else self._first_text_from_keys(raw_block, ("text",))
         if block_type == "image":
             captions = self._captions(raw_block, str(raw_block.get("type") or raw_block.get("block_type") or "").strip().lower())
             return captions[0] if captions else self._first_text_from_keys(raw_block, ("text", "caption"))

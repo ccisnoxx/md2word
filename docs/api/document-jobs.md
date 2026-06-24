@@ -194,7 +194,7 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 
 成功任务登记 `generated_word` 文件时，会在文件 metadata 中写入轻量 DOCX 结构证据；任务详情和下载签发响应只通过 `quality_evidence` 暴露白名单摘要。该字段是机器线索，不替代 admin 对最终 Word 排版质量的签字。
 
-`generated_word.metadata.quality_flags` 会从 `docx_quality` 派生明确风险项，例如 `docx_quality_unavailable`、`docx_analysis_error`、`docx_no_editable_content`、`docx_image_only_suspected`、`docx_latex_residue:{count}`、`docx_manual_list_markers:{count}`、`docx_plain_toc_entries:{count}`、`docx_unstyled_heading_candidates:{count}` 和 `docx_wide_table_without_landscape:{count}`。这些 flag 只用于让详情页进入“带自动标记的人工复核”状态，不会绕过或替代 admin manual sign-off。
+`generated_word.metadata.quality_flags` 会从 `docx_quality` 派生明确风险项，例如 `docx_quality_unavailable`、`docx_analysis_error`、`docx_no_editable_content`、`docx_image_only_suspected`、`docx_latex_residue:{count}`、`docx_manual_list_markers:{count}`、`docx_plain_toc_entries:{count}` 和 `docx_unstyled_heading_candidates:{count}`。`wide_table_count` 和 `landscape_sections` 仍作为结构证据暴露；portrait 源页上的宽表应保持 editable table 并适配 portrait 页面，不再因为没有 landscape section 而生成风险 flag。这些 flag 只用于让详情页进入“带自动标记的人工复核”状态，不会绕过或替代 admin manual sign-off。
 
 常用字段：
 
