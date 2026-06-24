@@ -6883,6 +6883,21 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_internal_users_json=build_auth_users_json(),
             )
             publish_default_job_resources(runtime, include_translation=True)
+            publish_translation_profile_resource_version(
+                runtime,
+                version="1",
+                model="snapshot-model-ru",
+                make_default=True,
+                translation_profile_id="electronics-ru2zh",
+                language_pair="ru2zh",
+            )
+            ru_translation_term_version = publish_translation_term_set_version(
+                runtime,
+                source_term="Постоянное обратное напряжение диода",
+                target_term="反向直流电压",
+                make_default=True,
+                set_id=derive_translation_term_set_id("ru2zh"),
+            )
             app = create_app(runtime)
 
             with TestClient(app) as client:
@@ -6899,8 +6914,22 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(operator_payload["defaults"]["term_rule_set"]["label"], "electronics-default@1")
         self.assertEqual(operator_payload["defaults"]["translation_term_set"]["label"], "translation-terms-en2zh@v1")
         self.assertEqual(operator_payload["defaults"]["translation_profile"]["label"], "electronics-en2zh@1")
+        self.assertEqual(
+            operator_payload["translation_defaults"]["en2zh"]["translation_term_set"]["label"],
+            "translation-terms-en2zh@v1",
+        )
+        self.assertEqual(
+            operator_payload["translation_defaults"]["ru2zh"]["translation_term_set"]["label"],
+            f"translation-terms-ru2zh@{ru_translation_term_version}",
+        )
+        self.assertEqual(
+            operator_payload["translation_defaults"]["ru2zh"]["translation_profile"]["label"],
+            "electronics-ru2zh@1",
+        )
         self.assertEqual(operator_payload["options"]["templates"], [])
         self.assertTrue(operator_payload["readiness"]["en2zh_available"])
+        self.assertTrue(operator_payload["readiness"]["ru2zh_available"])
+        self.assertTrue(operator_payload["readiness"]["translation_modes"]["ru2zh"])
         self.assertFalse(operator_payload["readiness"]["p0_document_jobs_required"])
         self.assertTrue(operator_payload["readiness"]["p0_document_jobs_ready"])
         self.assertEqual(operator_payload["readiness"]["document_jobs_worker_backend"], "disabled")
@@ -6916,7 +6945,12 @@ class FastAPIJobsBackendTests(TestCase):
             "translation-terms-en2zh@v1",
             [item["label"] for item in admin_payload["options"]["translation_term_sets"]],
         )
+        self.assertIn(
+            f"translation-terms-ru2zh@{ru_translation_term_version}",
+            [item["label"] for item in admin_payload["options"]["translation_term_sets"]],
+        )
         self.assertIn("electronics-en2zh@1", [item["label"] for item in admin_payload["options"]["translation_profiles"]])
+        self.assertIn("electronics-ru2zh@1", [item["label"] for item in admin_payload["options"]["translation_profiles"]])
 
     def test_document_job_operator_cannot_select_explicit_resource_versions(self):
         with tempfile.TemporaryDirectory() as temp_dir:

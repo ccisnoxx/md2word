@@ -642,6 +642,11 @@ return DocumentJobFileListResponse(
 - Runtime bootstrap:
   `TermVersionService.bootstrap_repository_from_csv_if_empty()` and
   `TranslationProfileVersionService.bootstrap_default_profiles_if_missing()`.
+- API config summary:
+  `GET /api/v1/document-jobs/config-summary` returns legacy
+  `defaults.translation_term_set` / `defaults.translation_profile` for en2zh
+  compatibility and `translation_defaults[language_pair]` for mode-specific
+  defaults.
 - UI readiness codes may include a language-pair suffix:
   `translation_term_set_default_missing:<language_pair>` and
   `translation_profile_default_missing:<language_pair>`.
@@ -656,6 +661,13 @@ return DocumentJobFileListResponse(
   supported default profile ID without overwriting an already configured default.
 - Config summary marks a translation mode available only when both the default
   Translation Term Set and Translation Profile are present and published.
+- Config summary must expose operator-visible defaults per language pair in
+  `translation_defaults`; operators cannot select explicit resource versions,
+  so the create UI must not infer ru2zh defaults from the legacy en2zh
+  `defaults.translation_*` fields.
+- `defaults.translation_term_set` and `defaults.translation_profile` remain
+  en2zh compatibility fields until legacy frontend/backend clients no longer
+  need them.
 - Frontend readiness text must parse suffixed codes and display the language
   pair using user-facing copy such as `ru2zh -> 俄译中`.
 
@@ -671,6 +683,9 @@ return DocumentJobFileListResponse(
 - Missing CSV rows for a newly supported language pair -> startup cannot create
   that term set, and readiness must stay unavailable rather than silently
   falling back to another language pair.
+- Missing `translation_defaults[language_pair]` in an older backend response ->
+  frontend may fall back to legacy defaults only for `en2zh`; other language
+  pairs must show unconfigured rather than displaying en2zh resources.
 
 ### 5. Good/Base/Bad Cases
 
@@ -678,6 +693,9 @@ return DocumentJobFileListResponse(
   defaults creates only the missing language pair defaults.
 - Base: frontend displays `默认翻译术语集未发布（俄译中）` instead of an unknown
   readiness-code message while the backend remains not ready for that mode.
+- Base: operator selects `ru2zh`; the UI shows `translation-terms-ru2zh@...`
+  and `electronics-ru2zh@...` from `translation_defaults.ru2zh` while still
+  omitting explicit resource-version fields from the create payload.
 - Bad: hard-coding ru2zh outside the mode registry, reusing en2zh term sets for
   ru2zh, or treating prompt existence alone as enough to enable the mode.
 
@@ -688,8 +706,13 @@ return DocumentJobFileListResponse(
   term set and profile are present.
 - Config summary/API tests must assert the mode is available only when both
   translation resources exist for the selected language pair.
+- Config summary/API tests must assert operator responses include
+  `translation_defaults` for every supported language pair and keep admin-only
+  `options` hidden from operators.
 - Frontend utility tests must assert suffixed readiness codes map to the correct
   Chinese message and settings route.
+- Frontend utility tests must assert selected-mode default resolution uses
+  `translation_defaults.ru2zh` instead of legacy en2zh defaults.
 - `scripts/ops/check_release.py` and `frontend` build must pass after changing
   mode metadata or readiness display behavior.
 
@@ -708,6 +731,18 @@ if repository.has_version("en2zh", "v1"):
 for language_pair in TRANSLATION_LANGUAGE_PAIRS:
     if not repository_has_default(language_pair):
         import_seed_entries_for(language_pair)
+```
+
+#### Wrong
+
+```typescript
+const value = summary.defaults.translation_term_set?.label;
+```
+
+#### Correct
+
+```typescript
+const value = summary.translation_defaults[translationMode]?.translation_term_set?.label;
 ```
 
 ## Scenario: Runtime AI Provider Configuration

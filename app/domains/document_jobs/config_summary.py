@@ -11,6 +11,7 @@ from app.domains.document_jobs.schemas import (
     DocumentJobConfigReadiness,
     DocumentJobConfigSummaryResponse,
     DocumentJobConfigVersionOption,
+    DocumentJobTranslationResourceDefaults,
 )
 from app.domains.term_rules.versioning_service import DEFAULT_TERM_RULE_SET_ID
 from app.domains.translation.modes import TRANSLATION_LANGUAGE_PAIRS, derive_translation_term_set_id, spec_for_language_pair
@@ -26,21 +27,15 @@ def build_document_job_config_summary(
 
     is_admin = user.role == "admin"
     warnings: list[str] = []
-    default_translation_term_set = _default_translation_term_set(runtime, warnings, language_pair="en2zh")
-    default_translation_profile = _default_translation_profile(runtime, warnings, language_pair="en2zh")
+    translation_defaults = _translation_defaults(runtime, warnings)
+    en2zh_defaults = translation_defaults.get("en2zh", DocumentJobTranslationResourceDefaults())
     defaults = DocumentJobConfigDefaults(
         template=_default_template(runtime, warnings),
         term_rule_set=_default_term_rule_set(runtime, warnings),
-        translation_term_set=default_translation_term_set,
-        translation_profile=default_translation_profile,
+        translation_term_set=en2zh_defaults.translation_term_set,
+        translation_profile=en2zh_defaults.translation_profile,
     )
-    translation_modes = _translation_mode_readiness(
-        runtime,
-        warnings,
-        precomputed={
-            "en2zh": (default_translation_term_set, default_translation_profile),
-        },
-    )
+    translation_modes = _translation_mode_readiness(translation_defaults)
     options = (
         DocumentJobConfigOptions(
             templates=_template_options(runtime, warnings),
@@ -56,6 +51,7 @@ def build_document_job_config_summary(
         role=user.role,
         resource_mode="versioned" if runtime.resource_version_service is not None else "legacy",
         defaults=defaults,
+        translation_defaults=translation_defaults,
         options=options,
         readiness=DocumentJobConfigReadiness(
             en2zh_available=translation_modes.get("en2zh", False),
@@ -191,20 +187,30 @@ def _term_rule_set_option(
     )
 
 
-def _translation_mode_readiness(
+def _translation_defaults(
     runtime: AppRuntime,
     warnings: list[str],
-    *,
-    precomputed: dict[str, tuple[DocumentJobConfigVersionOption | None, DocumentJobConfigVersionOption | None]],
+) -> dict[str, DocumentJobTranslationResourceDefaults]:
+    defaults: dict[str, DocumentJobTranslationResourceDefaults] = {}
+    for language_pair in TRANSLATION_LANGUAGE_PAIRS:
+        defaults[language_pair] = DocumentJobTranslationResourceDefaults(
+            translation_term_set=_default_translation_term_set(runtime, warnings, language_pair=language_pair),
+            translation_profile=_default_translation_profile(runtime, warnings, language_pair=language_pair),
+        )
+    return defaults
+
+
+def _translation_mode_readiness(
+    translation_defaults: dict[str, DocumentJobTranslationResourceDefaults],
 ) -> dict[str, bool]:
     readiness: dict[str, bool] = {}
     for language_pair in TRANSLATION_LANGUAGE_PAIRS:
-        if language_pair in precomputed:
-            term_set, profile = precomputed[language_pair]
-        else:
-            term_set = _default_translation_term_set(runtime, warnings, language_pair=language_pair)
-            profile = _default_translation_profile(runtime, warnings, language_pair=language_pair)
-        readiness[language_pair] = term_set is not None and profile is not None
+        defaults = translation_defaults.get(language_pair)
+        readiness[language_pair] = (
+            defaults is not None
+            and defaults.translation_term_set is not None
+            and defaults.translation_profile is not None
+        )
     return readiness
 
 

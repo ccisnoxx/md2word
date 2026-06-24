@@ -179,6 +179,7 @@ import { getMaxUploadBytes, uploadFileContent, validatePdfFile } from "@/utils/u
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { readinessCodeText } from "@/utils/displayText";
 import { configOptionKey, configVersionId, findConfigOption } from "@/utils/configOptions";
+import { translationResourceDefaultsForMode } from "@/utils/documentJobConfig";
 import {
   documentJobModeDefinitions,
   documentJobModeCreateLanguage,
@@ -237,6 +238,9 @@ const modeReadinessHint = computed(() => {
   }
   return `${documentJobModeDefinitions[mode.value].shortLabel} 需要默认翻译术语集和翻译配置发布后才能选择。`;
 });
+const selectedTranslationDefaults = computed(() =>
+  translationResourceDefaultsForMode(configSummary.value, selectedTranslationMode.value),
+);
 const defaultConfigItems = computed(() => {
   const defaults = configSummary.value?.defaults;
   const items = [
@@ -245,8 +249,16 @@ const defaultConfigItems = computed(() => {
   ];
   if (selectedModeRequiresTranslationResources.value) {
     items.push(
-      { key: "translation-term-set", label: "翻译术语集", value: defaults?.translation_term_set?.label || "未配置" },
-      { key: "translation-profile", label: "翻译配置", value: defaults?.translation_profile?.label || "未配置" },
+      {
+        key: "translation-term-set",
+        label: "翻译术语集",
+        value: selectedTranslationDefaults.value?.translation_term_set?.label || "未配置",
+      },
+      {
+        key: "translation-profile",
+        label: "翻译配置",
+        value: selectedTranslationDefaults.value?.translation_profile?.label || "未配置",
+      },
     );
   }
   return items;

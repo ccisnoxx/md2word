@@ -177,6 +177,14 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
         if name not in job_properties:
             missing.append(f"OpenAPI DocumentJobResponse field: {name}")
 
+    config_summary_properties = schemas.get("DocumentJobConfigSummaryResponse", {}).get("properties", {})
+    if "translation_defaults" not in config_summary_properties:
+        missing.append("OpenAPI DocumentJobConfigSummaryResponse field: translation_defaults")
+    translation_resource_defaults_properties = schemas.get("DocumentJobTranslationResourceDefaults", {}).get("properties", {})
+    for name in ("translation_term_set", "translation_profile"):
+        if name not in translation_resource_defaults_properties:
+            missing.append(f"OpenAPI DocumentJobTranslationResourceDefaults field: {name}")
+
     if not auth_change_password:
         missing.append("OpenAPI POST /auth/change-password")
     if "get" not in users_path or "post" not in users_path:
@@ -304,6 +312,8 @@ def check_frontend_contracts(openapi_path: Path) -> ReleaseCheckItem:
         "translation_qa_summary?: Partial<Record<TranslationQaStatus, number>>",
         "ai_debug_archive_expires_at: string | null",
         "debug_full_text_enabled: boolean",
+        "export type DocumentJobTranslationResourceDefaults",
+        "translation_defaults: Record<string, DocumentJobTranslationResourceDefaults>",
         "export type AuthChangePasswordRequest",
         "export type InternalUserResponse",
         "export type InternalUserResetPasswordRequest",
