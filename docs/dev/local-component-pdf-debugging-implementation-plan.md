@@ -119,6 +119,74 @@ OPENAI_API_KEY= .venv/bin/python scripts/dev/run_local_mineru_debug_config.py --
 3. 为 en2zh 增加可提交的脱敏 response fixture 或私有证据指针，让 CI 可以离线覆盖翻译后排版。
 4. 按品牌和分类逐步扩展到 ADI、onsemi、ST、NXP 等 datasheet。
 
+## 第二阶段质量硬化
+
+第二阶段不迁移正式链路，继续围绕本地 `app/conversion/runtime_*` 做质量硬化。目标是把第一阶段规则放到更多 datasheet/技术手册样本下验证，形成稳定的 direct/en2zh 对照报告、视觉 QA 证据和第三阶段迁移准入条件。
+
+### 目标边界
+
+- 做：本地 MinerU -> DOCX 矩阵运行、样本扩展、direct/en2zh 对比、DOCX 结构质量证据、标准渲染命令、人工验收模板和 P0/P1/P2 backlog。
+- 不做：迁移到 `app/services/renderer/*`、生成后自动二次修正、复杂双栏平衡重写、线上 API/worker 门禁变更、提交真实 PDF/trace/key/生成 DOCX。
+- 可复用：允许复用 `app.services.renderer.docx_quality` 提取 OOXML 结构证据，但不把本地渲染实现迁到正式 renderer。
+
+### 样本矩阵
+
+默认矩阵由 `scripts/dev/run_local_mineru_quality_matrix.py` 内置：
+
+| 等级 | 样本 | 关注点 |
+|---|---|---|
+| P0 | `OPA228_P1` | 双栏首页、标题/正文/图片/Device Information 表格 |
+| P0 | `OPA228_P2` | 目录、Revision History、双栏目录和列表 |
+| P0 | `OPA228_P6` | 多 Thermal Information 表、脚注、θ/ψ/°C/W |
+| P0 | `OPA228_P7` | Electrical Characteristics 宽表、单位、上下标和特殊符号 |
+| P1 | `RS2G04` | 13 页多图、多表、页眉页脚和分页观察样本 |
+
+新增样本先留在 `mineru_result/` 本地矩阵中观察。只有公开或可最小化、能暴露明确防回归风险、体积可控并且 metadata 完整的样本，才加入 `tests/fixtures/component_pdf_samples/`。
+
+### direct / en2zh 验证
+
+- direct：验证英文内容、阅读顺序、标题层级、列表、表格结构、图片位置、关键符号和 YAML 样式分组。
+- en2zh：验证翻译后 block 顺序、block 类型、图片引用、表格行列、公式/占位符不变，中文默认宋体，术语/单位/型号/数值保留。
+- en2zh 缺 `OPENAI_API_KEY` 且缺本地 response 时必须标记 `translation_api_key_missing`，不得回退 direct。
+
+### 自动化与人工验收分层
+
+- L0：runner 退出码、DOCX 存在、报告写出。
+- L1：DOCX 可打开、可编辑内容、表格/图片/heading/TOC/LaTeX 残留等 `docx_quality_flags`。
+- L2：按报告中的 `render_docx.py` 命令生成标准渲染 PNG/PDF。
+- L3：人工对照 PDF、DOCX 和 PNG/PDF 填写 `manual-signoff.yaml`。
+- L4：汇总 P0/P1/P2，P1/P2 进入 backlog，P0 必须清零。
+
+### 验证命令
+
+```bash
+.venv/bin/python -m unittest tests.test_conversion_sandbox_dev_tools
+.venv/bin/python -m unittest tests.test_component_pdf_sample_governance
+.venv/bin/python -m unittest tests.test_local_mineru_quality_matrix
+.venv/bin/python scripts/dev/manage_component_pdf_samples.py validate
+.venv/bin/python scripts/dev/run_local_mineru_quality_matrix.py --mode direct --sample-set phase2-core
+```
+
+en2zh 离线验证示例：
+
+```bash
+.venv/bin/python scripts/dev/run_local_mineru_quality_matrix.py \
+  --mode en2zh \
+  --sample-id OPA228_P1 \
+  --translation-response-dir tests/tmp/local_mineru_debug/en2zh_responses
+```
+
+标准视觉渲染使用 `report.md` 中每个样本的 `render_docx.py` 命令。Codex 受限沙箱内 LibreOffice 可能需要非沙箱权限；本机终端和 PyCharm 正常运行。
+
+### 第三阶段准入条件
+
+- `OPA228_P1/P2/P6/P7` direct 全部自动通过并由人工签 `pass`，无 P0。
+- en2zh 至少覆盖 P0 样本的离线 response 或受控模型批次，结构不变且无静默降级。
+- `RS2G04` direct 观察报告完整，问题均已分级，不存在影响 P0 的未知共性根因。
+- 每个 P0 都有 DOCX、`report.json` / `report.md`、标准渲染 PNG/PDF 和人工验收记录。
+- 没有提交 `mineru_result/`、`tests/tmp/`、真实 PDF、真实 key、真实 trace。
+- 第三阶段要迁移/对齐的 P1/P2 backlog 已明确列出。
+
 ## 风险和决策点
 
 - Proprietary PDF：默认不提交源 PDF，只提交公开或最小化 MinerU 包。

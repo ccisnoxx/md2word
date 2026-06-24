@@ -78,12 +78,36 @@ tests/fixtures/component_pdf_samples/
 
 默认情况下，生成的 DOCX 和报告会写入 `tests/tmp/component_pdf_regression/`。不要提交生成的 DOCX、渲染 PNG/PDF，或任何专有/客户 PDF。
 
+## 第二阶段样本矩阵与长期样例的边界
+
+第二阶段质量硬化先使用本地矩阵 runner 覆盖 `mineru_result/` 中的当前样本：
+
+```bash
+.venv/bin/python scripts/dev/run_local_mineru_quality_matrix.py --mode direct --sample-set phase2-core
+```
+
+该矩阵用于快速扩大观察面和生成 QA 报告，不要求所有样本都进入 `tests/fixtures/component_pdf_samples/`。只有满足以下条件的样本才沉淀为长期 fixture：
+
+- 来源公开，或已经最小化为不包含专有内容的 MinerU 包。
+- 暴露出一个明确且后续需要防回归的版式风险。
+- Manifest 能写清品牌、分类、产品型号、源 PDF 引用、标签和人工验收关注点。
+- 样本体积可控，优先单页或最小页组，不提交完整客户资料。
+
+新增样本优先补齐一个风险类型，例如长表、宽表、pinout/diagram、ordering info、复杂页眉页脚、中文技术手册或多页图文混排。不要一次把大量 PDF 加进 fixture；先在本地矩阵中观察并完成 P0/P1/P2 分级。
+
+## P0 / P1 / P2 分级
+
+- P0：DOCX 无法生成或打开、正文为空、疑似整页截图、OPA228 P0 任一核心焦点失败、关键表格不可读、关键图片缺失、direct/en2zh 结构顺序被破坏、en2zh 静默降级或泄露 key/trace。
+- P1：RS2G04 或新增观察样本出现明显版式偏差但不破坏 OPA228 P0；双栏、分页、宽表在边界样本中可读但明显不接近 PDF；自动 quality flags 需要人工解释放行。
+- P2：小范围 spacing、颜色、字号、caption 位置偏差；复杂双栏平衡和局部美观问题；报告 metadata、文档说明或样本治理改进。
+
 ## 针对性验证
 
 修改样例治理结构、manifest 或脚本时运行：
 
 ```bash
 .venv/bin/python -m unittest tests.test_component_pdf_sample_governance
+.venv/bin/python -m unittest tests.test_local_mineru_quality_matrix
 ```
 
 某个电子元器件样例暴露转换问题并完成修复后，运行对应样例回归：

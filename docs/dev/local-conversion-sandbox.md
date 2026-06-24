@@ -215,6 +215,41 @@ Codex 桌面沙箱注意点：
 
 视觉检查以 `page-*.png` 和可选的中间 PDF 为准。检查首页顶部 logo、页眉标题、产品标题、正文起始区域、表格边框、图片缩放、页脚页码和分页；如果 Word 实际打开结果与 Quick Look 不一致，以 Word 或标准 LibreOffice 渲染为准。
 
+## 第二阶段质量矩阵
+
+本地 MinerU 质量硬化使用专用矩阵 runner，覆盖 OPA228 P0 canonical suite 和 RS2G04 观察样本：
+
+```bash
+.venv/bin/python scripts/dev/run_local_mineru_quality_matrix.py \
+  --mode direct \
+  --sample-set phase2-core
+```
+
+矩阵包含：
+
+- P0：`OPA228_P1`、`OPA228_P2`、`OPA228_P6`、`OPA228_P7`
+- P1 观察：`RS2G04`
+
+输出目录默认是 `tests/tmp/local_mineru_quality/<run_id>/`，包括：
+
+- `docx/<mode>/<sample>.docx`
+- `report.json`
+- `report.md`
+- `manual-signoff-template.yaml`
+
+报告会记录 MinerU 页数、block 类型统计、图片数、DOCX hash、DOCX 可打开性、`docx_quality_flags`、P0/P1/P2 issue 分类，以及每个样本的标准渲染命令。runner 不会自动执行 LibreOffice 渲染；人工验收前按报告中的 `render_docx.py` 命令生成 PNG/PDF 证据。
+
+en2zh 可以单独运行：
+
+```bash
+.venv/bin/python scripts/dev/run_local_mineru_quality_matrix.py \
+  --mode en2zh \
+  --sample-id OPA228_P1 \
+  --translation-response-dir tests/tmp/local_mineru_debug/en2zh_responses
+```
+
+如果没有本地 `translation_response` 且没有 `OPENAI_API_KEY`，en2zh 条目会被标记为 `blocked` / `translation_api_key_missing`，不会静默回退到 direct。
+
 ## md2word_main 的状态
 
 `md2word_main/mineru_to_docx.py` 已 deprecated：
@@ -259,6 +294,7 @@ Codex 桌面沙箱注意点：
 
 ```bash
 .venv/bin/python -m unittest tests.test_conversion_sandbox_dev_tools
+.venv/bin/python -m unittest tests.test_local_mineru_quality_matrix
 ```
 
 电子元器件样例治理变更后运行：
