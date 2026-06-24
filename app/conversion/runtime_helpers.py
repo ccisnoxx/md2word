@@ -57,11 +57,13 @@ def build_translation_config(
     *,
     max_pages: int,
     max_chars: int,
+    language_pair: str = "en2zh",
     target_language: str = translation_runtime.DEFAULT_TARGET_LANGUAGE,
     domain: str = translation_runtime.DEFAULT_TRANSLATION_DOMAIN,
     prompt_version: str = translation_runtime.TRANSLATION_PROMPT_VERSION,
 ) -> translation_runtime.TranslationConfig:
     return translation_runtime.TranslationConfig(
+        language_pair=language_pair,
         target_language=target_language,
         domain=domain,
         max_pages_per_batch=max(int(max_pages), 1),

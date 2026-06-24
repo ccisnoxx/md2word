@@ -9,14 +9,16 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from app.domains.files.schemas import DocumentFileSummaryResponse
+from app.domains.translation.modes import DocumentJobMode, DocumentLanguage, TranslationMode
 
 DocumentJobActionId = Literal["download", "retry", "cancel", "archive", "unarchive", "clone", "delete"]
 
 
 class DocumentJobCreateRequest(BaseModel):
     source_file_id: str
-    mode: Literal["direct_pdf_to_word", "en2zh_pdf_to_word"] = "direct_pdf_to_word"
-    document_language: Literal["auto", "zh", "en"] = "auto"
+    mode: DocumentJobMode | None = None
+    translation_mode: TranslationMode | None = None
+    document_language: DocumentLanguage = "auto"
     template_version_id: str | None = None
     term_version_id: str | None = None
     term_rule_set_id: str | None = None
@@ -42,6 +44,7 @@ class DocumentJobResponse(BaseModel):
     source_file_id: str
     source_job_id: str | None = None
     mode: str
+    translation_mode: TranslationMode = "direct"
     document_language: str
     status: str
     stage: str
@@ -367,6 +370,8 @@ class DocumentJobConfigOptions(BaseModel):
 
 class DocumentJobConfigReadiness(BaseModel):
     en2zh_available: bool = False
+    ru2zh_available: bool = False
+    translation_modes: dict[str, bool] = Field(default_factory=dict)
     p0_document_jobs_required: bool = False
     p0_document_jobs_ready: bool = True
     document_jobs_worker_backend: str = "disabled"
@@ -404,7 +409,7 @@ class DocumentJobRetryRequest(BaseModel):
 class DocumentJobCloneRequest(BaseModel):
     reason: str | None = None
     config_strategy: Literal["keep_source_snapshot", "use_current_defaults", "select_published_versions"] = "keep_source_snapshot"
-    document_language: Literal["auto", "zh", "en"] | None = None
+    document_language: DocumentLanguage | None = None
     template_version_id: str | None = None
     term_version_id: str | None = None
     term_rule_set_id: str | None = None

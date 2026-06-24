@@ -42,6 +42,7 @@ from app.domains.translation.audit import (
     TranslationAuditService,
     TranslationCallAuditRecorder,
 )
+from app.domains.translation.modes import is_translation_document_job_mode, spec_for_document_job_mode
 from app.domains.translation.document_ir_translator import (
     DocumentIRTranslationError,
     DocumentIRTranslationService,
@@ -243,7 +244,7 @@ class DocumentJobExecutionService:
                     task_uuids=[data_id],
                     enable_formula=self.settings.mineru_enable_formula,
                     enable_table=self.settings.mineru_enable_table,
-                    language=self.settings.mineru_language,
+                    language=self._mineru_language_for_job(job),
                     callback=callback,
                     seed=callback_seed,
                 )
@@ -791,7 +792,7 @@ class DocumentJobExecutionService:
 
         document_ir = result.document
         translation_metadata: dict[str, Any] = {"applied": False}
-        if job.mode == "en2zh_pdf_to_word":
+        if is_translation_document_job_mode(job.mode):
             document_ir, translation_metadata = self._translate_document_ir(
                 job,
                 document_ir,
@@ -956,6 +957,9 @@ class DocumentJobExecutionService:
     ) -> tuple[DocumentIR, dict[str, Any]]:
         if self.document_ir_translation_service is None:
             raise DocumentIRTranslationError("DocumentIR 翻译服务未配置。")
+        spec = spec_for_document_job_mode(job.mode)
+        if spec.language_pair is None:
+            raise DocumentIRTranslationError("当前任务不是翻译任务。")
         try:
             term_version = self._resolve_term_version_for_job(job)
         except (FileNotFoundError, ValueError, RuntimeError) as exc:
@@ -971,7 +975,7 @@ class DocumentJobExecutionService:
             else None
         )
         payload = {
-            "language_pair": "en2zh",
+            "language_pair": spec.language_pair,
             "term_version_id": term_version.term_version_id if term_version is not None else job.term_version_id,
             "term_snapshot_hash": term_version.snapshot_hash if term_version is not None else None,
             "debug_full_text_enabled": job.debug_full_text_enabled,
@@ -988,7 +992,7 @@ class DocumentJobExecutionService:
             translated = self.document_ir_translation_service.translate(
                 document_ir,
                 term_version=term_version,
-                language_pair="en2zh",
+                language_pair=spec.language_pair,
                 call_recorder=recorder,
             )
         except DocumentIRTranslationError:
@@ -1009,7 +1013,7 @@ class DocumentJobExecutionService:
         )
         metadata = {
             "applied": True,
-            "language_pair": "en2zh",
+            "language_pair": spec.language_pair,
             "term_version_id": term_version.term_version_id if term_version is not None else job.term_version_id,
             "term_snapshot_hash": term_version.snapshot_hash if term_version is not None else None,
             "ai_call_log_file_id": recorder.call_log_file_id if recorder is not None else None,
@@ -1056,9 +1060,16 @@ class DocumentJobExecutionService:
     def _resolve_term_version_for_job(self, job: DocumentJobRecord):
         if self.term_version_service is None:
             return None
+        spec = spec_for_document_job_mode(job.mode)
+        if spec.language_pair is None:
+            return None
         if job.term_version_id:
-            return self.term_version_service.load_version(job.term_version_id, language_pair="en2zh")
-        return self.term_version_service.resolve_for_job(None, language_pair="en2zh")
+            return self.term_version_service.load_version(job.term_version_id, language_pair=spec.language_pair)
+        return self.term_version_service.resolve_for_job(None, language_pair=spec.language_pair)
+
+    def _mineru_language_for_job(self, job: DocumentJobRecord) -> str:
+        spec = spec_for_document_job_mode(job.mode)
+        return spec.mineru_language or self.settings.mineru_language
 
     def _render_and_save_word(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
         if job.result_file_id:

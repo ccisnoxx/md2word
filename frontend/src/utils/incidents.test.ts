@@ -22,6 +22,7 @@ function buildIncident(id: string, retryable: boolean, stalled = false, blocked 
       source_file_id: `${id}_source`,
       source_job_id: null,
       mode: "direct_pdf_to_word",
+      translation_mode: "direct",
       document_language: "auto",
       status: "failed",
       stage: "failed",

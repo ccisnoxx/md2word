@@ -91,7 +91,7 @@ class Settings(BaseSettings):
     auth_access_token_expire_minutes: int = 120
     auth_internal_users_file: str = ""
     auth_internal_users_json: str = ""
-    default_translation_mode: Literal["direct", "en2zh"] = "direct"
+    default_translation_mode: Literal["direct", "en2zh", "ru2zh"] = "direct"
     mineru_api_token: str = ""
     mineru_model_version: str = "vlm"
     mineru_language: str = "en"

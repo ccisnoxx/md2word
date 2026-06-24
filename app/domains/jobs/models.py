@@ -10,6 +10,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from app.domains.resources.models import ResolvedResourceVersion
+from app.domains.translation.modes import DocumentLanguage, TranslationMode
 
 JobStatus = Literal["uploaded", "queued", "submitting", "parsing", "parsed", "converting", "completed", "failed", "canceled"]
 JobLifecycleStatus = Literal["uploaded", "parsed", "completed", "failed", "canceled"]
@@ -66,8 +67,8 @@ class ConversionOptions(BaseModel):
     translation_term_version: str | None = None
     translation_profile_id: str | None = None
     translation_profile_version: str | None = None
-    translation_mode: Literal["direct", "en2zh"] = "direct"
-    document_language: Literal["auto", "zh", "en"] = "auto"
+    translation_mode: TranslationMode = "direct"
+    document_language: DocumentLanguage = "auto"
     use_mineru_header_footer: bool = False
 
 
@@ -114,8 +115,8 @@ class JobRecord(BaseModel):
     lifecycle_status: JobLifecycleStatus | None = None
     execution_status: JobExecutionStatus | None = None
     source_pdf_context: SourcePdfJobContext | None = None
-    translation_mode: Literal["direct", "en2zh"] = "direct"
-    document_language: Literal["auto", "zh", "en"] = "auto"
+    translation_mode: TranslationMode = "direct"
+    document_language: DocumentLanguage = "auto"
     use_mineru_header_footer: bool = False
     resolved_document_language: Literal["zh", "en"] | None = None
     template_id: str | None = None

@@ -13,8 +13,7 @@ from app.domains.document_jobs.schemas import (
     DocumentJobConfigVersionOption,
 )
 from app.domains.term_rules.versioning_service import DEFAULT_TERM_RULE_SET_ID
-from app.domains.translation.models import derive_translation_term_set_id
-from app.domains.translation.profiles_service import DEFAULT_TRANSLATION_PROFILE_ID
+from app.domains.translation.modes import TRANSLATION_LANGUAGE_PAIRS, derive_translation_term_set_id, spec_for_language_pair
 from app.services.auth.models import AuthenticatedUser
 
 
@@ -27,11 +26,20 @@ def build_document_job_config_summary(
 
     is_admin = user.role == "admin"
     warnings: list[str] = []
+    default_translation_term_set = _default_translation_term_set(runtime, warnings, language_pair="en2zh")
+    default_translation_profile = _default_translation_profile(runtime, warnings, language_pair="en2zh")
     defaults = DocumentJobConfigDefaults(
         template=_default_template(runtime, warnings),
         term_rule_set=_default_term_rule_set(runtime, warnings),
-        translation_term_set=_default_translation_term_set(runtime, warnings),
-        translation_profile=_default_translation_profile(runtime, warnings),
+        translation_term_set=default_translation_term_set,
+        translation_profile=default_translation_profile,
+    )
+    translation_modes = _translation_mode_readiness(
+        runtime,
+        warnings,
+        precomputed={
+            "en2zh": (default_translation_term_set, default_translation_profile),
+        },
     )
     options = (
         DocumentJobConfigOptions(
@@ -50,7 +58,9 @@ def build_document_job_config_summary(
         defaults=defaults,
         options=options,
         readiness=DocumentJobConfigReadiness(
-            en2zh_available=defaults.translation_term_set is not None and defaults.translation_profile is not None,
+            en2zh_available=translation_modes.get("en2zh", False),
+            ru2zh_available=translation_modes.get("ru2zh", False),
+            translation_modes=translation_modes,
             p0_document_jobs_required=bool(dependency_checks.get("p0_document_jobs_required")),
             p0_document_jobs_ready=bool(dependency_checks.get("p0_document_jobs_ready", True)),
             document_jobs_worker_backend=str(dependency_checks.get("document_jobs_worker_backend") or "disabled"),
@@ -181,19 +191,41 @@ def _term_rule_set_option(
     )
 
 
-def _default_translation_term_set(runtime: AppRuntime, warnings: list[str]) -> DocumentJobConfigVersionOption | None:
+def _translation_mode_readiness(
+    runtime: AppRuntime,
+    warnings: list[str],
+    *,
+    precomputed: dict[str, tuple[DocumentJobConfigVersionOption | None, DocumentJobConfigVersionOption | None]],
+) -> dict[str, bool]:
+    readiness: dict[str, bool] = {}
+    for language_pair in TRANSLATION_LANGUAGE_PAIRS:
+        if language_pair in precomputed:
+            term_set, profile = precomputed[language_pair]
+        else:
+            term_set = _default_translation_term_set(runtime, warnings, language_pair=language_pair)
+            profile = _default_translation_profile(runtime, warnings, language_pair=language_pair)
+        readiness[language_pair] = term_set is not None and profile is not None
+    return readiness
+
+
+def _default_translation_term_set(
+    runtime: AppRuntime,
+    warnings: list[str],
+    *,
+    language_pair: str,
+) -> DocumentJobConfigVersionOption | None:
     repository = runtime.persistence_adapters.translation_term_repository
     if repository is None:
         warnings.append("translation_term_repository_unavailable")
         return None
-    set_id = derive_translation_term_set_id("en2zh")
+    set_id = derive_translation_term_set_id(language_pair)
     term_set = repository.get_set(set_id)
     if term_set is None or term_set.default_version is None:
-        warnings.append("translation_term_set_default_missing")
+        warnings.append(f"translation_term_set_default_missing:{language_pair}")
         return None
     record = repository.get_version(term_set.set_id, term_set.default_version)
     if record is None or record.status != "published":
-        warnings.append("translation_term_set_default_unavailable")
+        warnings.append(f"translation_term_set_default_unavailable:{language_pair}")
         return None
     return _translation_term_set_option(record, default_version=term_set.default_version)
 
@@ -203,16 +235,14 @@ def _translation_term_set_options(runtime: AppRuntime, warnings: list[str]) -> l
     if repository is None:
         warnings.append("translation_term_repository_unavailable")
         return []
-    set_id = derive_translation_term_set_id("en2zh")
-    term_set = repository.get_set(set_id)
-    if term_set is None:
-        warnings.append("translation_term_set_default_missing")
-        return []
-    return [
-        _translation_term_set_option(record, default_version=term_set.default_version)
-        for record in repository.list_versions(set_id)
-        if record.status == "published"
-    ]
+    options: list[DocumentJobConfigVersionOption] = []
+    for term_set in repository.list_sets():
+        options.extend(
+            _translation_term_set_option(record, default_version=term_set.default_version)
+            for record in repository.list_versions(term_set.set_id)
+            if record.status == "published"
+        )
+    return options
 
 
 def _translation_term_set_option(record: Any, *, default_version: str | None) -> DocumentJobConfigVersionOption:
@@ -230,22 +260,32 @@ def _translation_term_set_option(record: Any, *, default_version: str | None) ->
     )
 
 
-def _default_translation_profile(runtime: AppRuntime, warnings: list[str]) -> DocumentJobConfigVersionOption | None:
+def _default_translation_profile(
+    runtime: AppRuntime,
+    warnings: list[str],
+    *,
+    language_pair: str,
+) -> DocumentJobConfigVersionOption | None:
     service = runtime.translation_profile_service
     if service is None:
         warnings.append("translation_profile_service_unavailable")
         return None
+    spec = spec_for_language_pair(language_pair)
+    profile_id = spec.default_profile_id
+    if profile_id is None:
+        warnings.append(f"translation_profile_default_missing:{language_pair}")
+        return None
     try:
-        detail = service.get_profile_detail(DEFAULT_TRANSLATION_PROFILE_ID)
+        detail = service.get_profile_detail(profile_id)
     except (FileNotFoundError, ValueError) as exc:
-        warnings.append(f"translation_profile_default_unavailable:{exc}")
+        warnings.append(f"translation_profile_default_unavailable:{language_pair}:{exc}")
         return None
     default_version = detail.default_version
     if default_version is None:
-        warnings.append("translation_profile_default_missing")
+        warnings.append(f"translation_profile_default_missing:{language_pair}")
         return None
     return _translation_profile_option(
-        DEFAULT_TRANSLATION_PROFILE_ID,
+        profile_id,
         next((item for item in detail.versions if item.version == default_version), None),
         default_version,
     )
@@ -298,6 +338,7 @@ def _translation_profile_summary(version_record: Any | None) -> dict[str, Any]:
         return {}
     return {
         "target_language": version_record.target_language,
+        "language_pair": version_record.language_pair,
         "domain": version_record.domain,
         "prompt_version": version_record.prompt_version,
         "model": version_record.model,

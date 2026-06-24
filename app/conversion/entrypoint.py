@@ -10,6 +10,7 @@ from app.core.config import Settings
 from app.domains.jobs.models import JobRecord
 from app.domains.jobs.paths import JobPaths
 from app.domains.translation.models import TermVersionSnapshot, TranslationProfileSnapshot
+from app.domains.translation.modes import is_translation_mode
 
 
 def build_job_conversion_request(
@@ -69,8 +70,8 @@ def build_job_conversion_request(
         ),
         translation_profile=translation_profile,
         translation_term_version=translation_term_version,
-        translation_request_output=job_paths.translation_request if job.translation_mode == "en2zh" else None,
-        translation_trace_output=job_paths.translation_trace if job.translation_mode == "en2zh" else None,
+        translation_request_output=job_paths.translation_request if is_translation_mode(job.translation_mode) else None,
+        translation_trace_output=job_paths.translation_trace if is_translation_mode(job.translation_mode) else None,
     )
 
 

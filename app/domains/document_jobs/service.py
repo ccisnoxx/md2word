@@ -47,6 +47,13 @@ from app.domains.files.repository import DocumentFileRepositoryProtocol
 from app.domains.jobs.models import ConversionOptions
 from app.domains.jobs.resource_snapshots import JobResourceSnapshotError
 from app.domains.resources.models import utc_now
+from app.domains.translation.modes import (
+    TranslationMode,
+    document_job_mode_for_translation_mode,
+    is_translation_document_job_mode,
+    spec_for_document_job_mode,
+    translation_mode_for_document_job_mode,
+)
 from app.domains.document_jobs.repository import (
     DocumentJobEventRepositoryProtocol,
     DocumentJobRepositoryProtocol,
@@ -175,7 +182,8 @@ class DocumentJobService:
         *,
         user: AuthenticatedUser,
         source_file_id: str,
-        mode: DocumentJobMode,
+        mode: DocumentJobMode | None,
+        translation_mode: TranslationMode | None,
         document_language: str,
         template_version_id: str | None,
         term_version_id: str | None,
@@ -191,6 +199,8 @@ class DocumentJobService:
         """创建待处理 document_job，并在启用 Worker 后按 job_id 投递。"""
 
         source_file = self._get_source_file_for_create(source_file_id, user)
+        mode = self._resolve_document_job_mode(mode=mode, translation_mode=translation_mode)
+        self._ensure_document_language_allowed(mode, document_language)
         self._ensure_resource_selection_allowed(
             user=user,
             template_version_id=template_version_id,
@@ -268,6 +278,7 @@ class DocumentJobService:
             payload={
                 "source_file_id": source_file.id,
                 "mode": mode,
+                "translation_mode": translation_mode_for_document_job_mode(mode),
                 "template_version_id": normalized_template_version_id,
                 "term_version_id": normalized_term_version_id,
                 "term_assets": request_snapshot.get("term_assets"),
@@ -334,7 +345,7 @@ class DocumentJobService:
             if self._matches_status_filter(job, status_filter=status_filter, status_group=status_group)
             and self._matches_document_job_query(job, normalized_q)
             and self._matches_created_range(job, created_from=created_from, created_to=created_to)
-            and job.mode == "en2zh_pdf_to_word"
+            and is_translation_document_job_mode(job.mode)
         ]
         filtered_jobs = [
             job
@@ -418,7 +429,7 @@ class DocumentJobService:
 
         job = self.get_job(job_id, user=user)
         qa = self._build_translation_qa_state(job)
-        if job.mode != "en2zh_pdf_to_word":
+        if not is_translation_document_job_mode(job.mode):
             return self._build_unavailable_translation_qa(job, qa, reason="unsupported_mode")
         self._ensure_file_reader_available()
 
@@ -498,8 +509,8 @@ class DocumentJobService:
         """保存任务级翻译 QA 结论，并只记录非敏感事件摘要。"""
 
         job = self.get_job(job_id, user=user)
-        if job.mode != "en2zh_pdf_to_word":
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "翻译 QA 仅支持 en2zh_pdf_to_word 任务。")
+        if not is_translation_document_job_mode(job.mode):
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "翻译 QA 仅支持翻译任务。")
         now = utc_now()
         normalized_note = self._normalize_optional_text(note)
         patch: dict[str, Any] = {
@@ -720,6 +731,7 @@ class DocumentJobService:
         now = utc_now()
         new_job_id = f"docjob_{uuid4().hex[:12]}"
         normalized_document_language = document_language or source_job.document_language
+        self._ensure_document_language_allowed(source_job.mode, normalized_document_language)
         clone_config = self._resolve_clone_config(
             source_job,
             source_file,
@@ -1789,8 +1801,8 @@ class DocumentJobService:
         if translation_qa_status is None:
             return True
         if translation_qa_status == "all":
-            return job.mode == "en2zh_pdf_to_word"
-        return job.mode == "en2zh_pdf_to_word" and job.translation_qa_status == translation_qa_status
+            return is_translation_document_job_mode(job.mode)
+        return is_translation_document_job_mode(job.mode) and job.translation_qa_status == translation_qa_status
 
     def _count_translation_qa_statuses(self, jobs: list[DocumentJobRecord]) -> dict[str, int]:
         counts = Counter(job.translation_qa_status for job in jobs)
@@ -1939,6 +1951,7 @@ class DocumentJobService:
                 "checksum_sha256": source_file.checksum_sha256,
             },
             "mode": mode,
+            "translation_mode": translation_mode_for_document_job_mode(mode),
             "document_language": document_language,
             "template_version_id": template_version_id,
             "term_version_id": term_version_id,
@@ -2158,7 +2171,7 @@ class DocumentJobService:
             translation_term_version=self._normalize_optional_text(translation_term_version),
             translation_profile_id=self._normalize_optional_text(translation_profile_id),
             translation_profile_version=self._normalize_optional_text(translation_profile_version),
-            translation_mode="en2zh" if mode == "en2zh_pdf_to_word" else "direct",
+            translation_mode=translation_mode_for_document_job_mode(mode),
             document_language=document_language,
         )
         try:
@@ -2258,20 +2271,61 @@ class DocumentJobService:
         raw = resource.get("version")
         return raw if isinstance(raw, str) else None
 
+    def _resolve_document_job_mode(
+        self,
+        *,
+        mode: DocumentJobMode | None,
+        translation_mode: TranslationMode | None,
+    ) -> DocumentJobMode:
+        if mode is None and translation_mode is None:
+            return "direct_pdf_to_word"
+        if mode is None:
+            try:
+                return document_job_mode_for_translation_mode(translation_mode)
+            except ValueError as exc:
+                raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", str(exc)) from exc
+        try:
+            resolved_translation_mode = translation_mode_for_document_job_mode(mode)
+        except ValueError as exc:
+            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", str(exc)) from exc
+        if translation_mode is not None and translation_mode != resolved_translation_mode:
+            raise ApiError(
+                status.HTTP_400_BAD_REQUEST,
+                "invalid_request",
+                f"translation_mode 与 mode 不一致: translation_mode={translation_mode} mode={mode}。",
+            )
+        return mode
+
+    def _ensure_document_language_allowed(self, mode: DocumentJobMode, document_language: str) -> None:
+        spec = spec_for_document_job_mode(mode)
+        if not spec.is_translation:
+            return
+        allowed = {"auto", spec.default_document_language}
+        if document_language not in allowed:
+            raise ApiError(
+                status.HTTP_400_BAD_REQUEST,
+                "invalid_request",
+                (
+                    f"{spec.translation_mode} 只支持 "
+                    f"document_language=auto 或 {spec.default_document_language}。"
+                ),
+            )
+
     def _legacy_translation_term_version_id(
         self,
         mode: DocumentJobMode,
         term_version_id: str | None,
         translation_term_version: str | None,
     ) -> str | None:
-        if mode != "en2zh_pdf_to_word":
+        if not is_translation_document_job_mode(mode):
             return term_version_id
         normalized_translation_term_version = self._normalize_optional_text(translation_term_version)
         if normalized_translation_term_version is None:
             return term_version_id
         if "@" in normalized_translation_term_version:
             return normalized_translation_term_version
-        return f"en2zh@{normalized_translation_term_version}"
+        spec = spec_for_document_job_mode(mode)
+        return f"{spec.language_pair}@{normalized_translation_term_version}"
 
     def _normalize_optional_text(self, value: str | None) -> str | None:
         if value is None:
@@ -2292,7 +2346,7 @@ class DocumentJobService:
     def _resolve_term_version_id(self, mode: DocumentJobMode, term_version_id: str | None) -> str | None:
         if self.term_version_service is None:
             return term_version_id
-        language_pair = "en2zh" if mode == "en2zh_pdf_to_word" else None
+        language_pair = spec_for_document_job_mode(mode).language_pair
         try:
             snapshot = self.term_version_service.resolve_for_job(term_version_id, language_pair=language_pair)
         except FileNotFoundError as exc:
@@ -2304,8 +2358,8 @@ class DocumentJobService:
     def _resolve_debug_full_text_enabled(self, mode: DocumentJobMode, debug_full_text: bool) -> bool:
         if not debug_full_text:
             return False
-        if mode != "en2zh_pdf_to_word":
-            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "debug_full_text 仅支持 en2zh_pdf_to_word。")
+        if not is_translation_document_job_mode(mode):
+            raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "debug_full_text 仅支持翻译任务。")
         if not self.settings.translation_debug_archive_enabled:
             raise ApiError(
                 status.HTTP_400_BAD_REQUEST,

@@ -1975,7 +1975,8 @@
                 "enum": [
                   "auto",
                   "zh",
-                  "en"
+                  "en",
+                  "ru"
                 ],
                 "type": "string"
               },
@@ -2239,6 +2240,18 @@
             "title": "P0 Document Jobs Required",
             "type": "boolean"
           },
+          "ru2zh_available": {
+            "default": false,
+            "title": "Ru2Zh Available",
+            "type": "boolean"
+          },
+          "translation_modes": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Translation Modes",
+            "type": "object"
+          },
           "warnings": {
             "items": {
               "type": "string"
@@ -2346,19 +2359,27 @@
             "enum": [
               "auto",
               "zh",
-              "en"
+              "en",
+              "ru"
             ],
             "title": "Document Language",
             "type": "string"
           },
           "mode": {
-            "default": "direct_pdf_to_word",
-            "enum": [
-              "direct_pdf_to_word",
-              "en2zh_pdf_to_word"
+            "anyOf": [
+              {
+                "enum": [
+                  "direct_pdf_to_word",
+                  "en2zh_pdf_to_word",
+                  "ru2zh_pdf_to_word"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Mode",
-            "type": "string"
+            "title": "Mode"
           },
           "source_file_id": {
             "title": "Source File Id",
@@ -2407,6 +2428,22 @@
               }
             ],
             "title": "Term Version Id"
+          },
+          "translation_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "direct",
+                  "en2zh",
+                  "ru2zh"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translation Mode"
           },
           "translation_profile_id": {
             "anyOf": [
@@ -3819,6 +3856,16 @@
               }
             ],
             "title": "Timeout At"
+          },
+          "translation_mode": {
+            "default": "direct",
+            "enum": [
+              "direct",
+              "en2zh",
+              "ru2zh"
+            ],
+            "title": "Translation Mode",
+            "type": "string"
           },
           "translation_qa_issue_type": {
             "anyOf": [
@@ -15003,6 +15050,10 @@
             "title": "Domain",
             "type": "string"
           },
+          "language_pair": {
+            "title": "Language Pair",
+            "type": "string"
+          },
           "max_chars_per_batch": {
             "title": "Max Chars Per Batch",
             "type": "integer"
@@ -15048,6 +15099,7 @@
         },
         "required": [
           "translation_profile_id",
+          "language_pair",
           "target_language",
           "domain",
           "prompt_version",
@@ -15065,6 +15117,19 @@
             "minLength": 1,
             "title": "Domain",
             "type": "string"
+          },
+          "language_pair": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language Pair"
           },
           "max_chars_per_batch": {
             "default": 60000,
@@ -15131,6 +15196,10 @@
             "title": "Id",
             "type": "string"
           },
+          "language_pair": {
+            "title": "Language Pair",
+            "type": "string"
+          },
           "max_chars_per_batch": {
             "title": "Max Chars Per Batch",
             "type": "integer"
@@ -15165,6 +15234,7 @@
         },
         "required": [
           "id",
+          "language_pair",
           "version_count",
           "target_language",
           "domain",
@@ -15225,6 +15295,10 @@
             "default": false,
             "title": "Is Default",
             "type": "boolean"
+          },
+          "language_pair": {
+            "title": "Language Pair",
+            "type": "string"
           },
           "max_chars_per_batch": {
             "title": "Max Chars Per Batch",
@@ -15291,6 +15365,7 @@
         },
         "required": [
           "translation_profile_id",
+          "language_pair",
           "version",
           "status",
           "target_language",

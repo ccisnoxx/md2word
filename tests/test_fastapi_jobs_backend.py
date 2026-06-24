@@ -79,6 +79,7 @@ from app.domains.templates.read_service import TemplateReadService
 from app.domains.translation.audit import TranslationAuditService
 from app.domains.translation.document_ir_translator import DocumentIRTranslationService
 from app.domains.translation.models import TranslationTermEntry, TranslationTermProposalChangeRecord
+from app.domains.translation.modes import derive_translation_term_set_id
 from app.domains.translation.provider_config import AiProviderConfigService
 from app.domains.translation.profiles_service import DEFAULT_TRANSLATION_PROFILE_ID, TranslationProfileVersionService
 from app.domains.translation.proposals_service import TranslationTermProposalService
@@ -190,6 +191,7 @@ class FakeConversionService:
                         "translation_profile": (
                             {
                                 "translation_profile_id": request.translation_profile.translation_profile_id,
+                                "language_pair": request.translation_profile.language_pair,
                                 "version": request.translation_profile.version,
                                 "snapshot_hash": request.translation_profile.snapshot_hash,
                             }
@@ -1045,12 +1047,14 @@ def publish_translation_profile_resource_version(
     model: str,
     make_default: bool,
     translation_profile_id: str = DEFAULT_TRANSLATION_PROFILE_ID,
+    language_pair: str = "en2zh",
 ) -> None:
     service = runtime.resource_version_service
     if service is None:
         raise AssertionError("resource_version_service is required for this test")
     payload = {
         "translation_profile_id": translation_profile_id,
+        "language_pair": language_pair,
         "version": version,
         "base_version": None,
         "target_language": "zh-CN",
@@ -7819,6 +7823,114 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(stored_job.term_version_id, "en2zh@v1")
         self.assertEqual(stored_job.request_snapshot["term_version_id"], "en2zh@v1")
         self.assertEqual(events_response.json()["items"][0]["payload"]["term_version_id"], "en2zh@v1")
+
+    def test_document_job_create_ru2zh_uses_translation_mode_and_binds_default_terms(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers, filename="ru-diode.pdf")
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={
+                        "source_file_id": source_file["id"],
+                        "translation_mode": "ru2zh",
+                        "document_language": "auto",
+                    },
+                )
+                job_id = create_response.json()["job_id"]
+                events_response = client.get(f"/api/v1/document-jobs/{job_id}/events", headers=headers)
+
+            stored_job = runtime.document_job_repository.get_document_job(job_id)
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.json()["job"]["mode"], "ru2zh_pdf_to_word")
+        self.assertEqual(create_response.json()["job"]["translation_mode"], "ru2zh")
+        self.assertEqual(create_response.json()["job"]["term_version_id"], "ru2zh@v1")
+        self.assertIsNotNone(stored_job)
+        self.assertEqual(stored_job.mode, "ru2zh_pdf_to_word")
+        self.assertEqual(stored_job.term_version_id, "ru2zh@v1")
+        self.assertEqual(stored_job.request_snapshot["translation_mode"], "ru2zh")
+        self.assertEqual(events_response.json()["items"][0]["payload"]["translation_mode"], "ru2zh")
+
+    def test_document_job_create_rejects_conflicting_mode_and_translation_mode(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers, filename="conflict.pdf")
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={
+                        "source_file_id": source_file["id"],
+                        "mode": "en2zh_pdf_to_word",
+                        "translation_mode": "ru2zh",
+                    },
+                )
+
+        self.assertEqual(create_response.status_code, 400)
+        self.assertEqual(create_response.json()["error_code"], "invalid_request")
+        self.assertIn("translation_mode 与 mode 不一致", create_response.json()["detail"])
+
+    def test_document_job_create_ru2zh_binds_language_pair_resources(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            publish_default_job_resources(runtime)
+            publish_translation_profile_resource_version(
+                runtime,
+                version="1",
+                model="snapshot-model-ru",
+                make_default=True,
+                translation_profile_id="electronics-ru2zh",
+                language_pair="ru2zh",
+            )
+            ru_term_version = publish_translation_term_set_version(
+                runtime,
+                source_term="Постоянное обратное напряжение диода",
+                target_term="反向直流电压",
+                make_default=True,
+                set_id=derive_translation_term_set_id("ru2zh"),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers, filename="ru-diode.pdf")
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={
+                        "source_file_id": source_file["id"],
+                        "translation_mode": "ru2zh",
+                    },
+                )
+
+        self.assertEqual(create_response.status_code, 201)
+        snapshot = create_response.json()["job"]["request_snapshot"]["resources"]
+        self.assertEqual(snapshot["translation_profile"]["resource_id"], "electronics-ru2zh")
+        self.assertEqual(snapshot["translation_profile"]["version"], "1")
+        self.assertEqual(snapshot["translation_term_set"]["set_id"], "translation-terms-ru2zh")
+        self.assertEqual(snapshot["translation_term_set"]["language_pair"], "ru2zh")
+        self.assertEqual(snapshot["translation_term_set"]["version"], ru_term_version)
+        self.assertEqual(snapshot["mineru"]["language"], "ru")
 
     def test_document_job_create_enqueues_eager_worker_and_updates_status(self):
         with tempfile.TemporaryDirectory() as temp_dir:

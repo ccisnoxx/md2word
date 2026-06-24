@@ -127,7 +127,7 @@ export function translationQaDebugArchiveHelper(qa?: DocumentJobTranslationQaRes
 
 export function translationQaAvailabilityReasonText(reason: string | null): string {
   const labels: Record<string, string> = {
-    unsupported_mode: "当前任务不是 en2zh_pdf_to_word，翻译 QA 不适用。",
+    unsupported_mode: "当前任务不是翻译任务，翻译 QA 不适用。",
     document_ir_missing: "任务缺少 DocumentIR 证据文件，无法展示最终文本片段。",
     document_ir_unreadable: "DocumentIR 证据文件不可读取。",
   };

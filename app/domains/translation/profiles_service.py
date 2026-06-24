@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-# app/domains/translation/profiles_service.py: 编排 Translation Profile 草稿、发布版本和默认指针。
+# app/domains/translation/profiles_service.py: Orchestrate Translation Profile drafts, published versions, and defaults.
 
 import hashlib
 import json
@@ -9,10 +9,12 @@ from datetime import timedelta, timezone
 from typing import Any
 
 from app.conversion.runtime import llm_client, translation_runtime
-from app.domains.audit.models import ActorContext
 from app.core.config import Settings
+from app.domains.audit.models import ActorContext
 from app.domains.resources.models import ResourceVersionRecord, utc_now
+from app.domains.resources.service import ResourceVersionService
 from app.domains.translation.models import TranslationProfileSnapshot
+from app.domains.translation.modes import TRANSLATION_MODE_SPECS, TRANSLATION_PROFILE_IDS, spec_for_language_pair
 from app.domains.translation.schemas import (
     TranslationProfileDetailResponse,
     TranslationProfileDraftResponse,
@@ -21,17 +23,30 @@ from app.domains.translation.schemas import (
     TranslationProfileListResponse,
     TranslationProfileVersionResponse,
 )
-from app.domains.resources.service import ResourceVersionService
 
 
 DEFAULT_TRANSLATION_PROFILE_ID = "electronics-en2zh"
+DEFAULT_TRANSLATION_PROFILE_IDS = {
+    spec.language_pair: spec.default_profile_id
+    for spec in TRANSLATION_MODE_SPECS.values()
+    if spec.language_pair is not None and spec.default_profile_id is not None
+}
 DRAFT_VERSION = "draft"
 TRANSLATION_PROFILE_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 SHANGHAI_TZ = timezone(timedelta(hours=8))
+PROFILE_LANGUAGE_PAIRS = {
+    spec.default_profile_id: spec.language_pair
+    for spec in TRANSLATION_MODE_SPECS.values()
+    if spec.language_pair is not None and spec.default_profile_id is not None
+}
+DEFAULT_PROMPT_VERSIONS = {
+    "en2zh": translation_runtime.TRANSLATION_PROMPT_VERSION,
+    "ru2zh": "ru2zh@v1",
+}
 
 
 class TranslationProfileVersionService:
-    """管理单实例 Translation Profile 的草稿、发布版本和默认指针。"""
+    """Manage built-in Translation Profiles by language pair."""
 
     def __init__(
         self,
@@ -44,15 +59,17 @@ class TranslationProfileVersionService:
         self.audit_service = audit_service
 
     def list_profiles(self) -> TranslationProfileListResponse:
-        """列出当前支持的 Translation Profile；MVP 只内置 electronics-en2zh。"""
+        """List the supported Translation Profiles and their published defaults."""
 
-        default_record = self._default_record(DEFAULT_TRANSLATION_PROFILE_ID)
-        version_records = self._version_records(DEFAULT_TRANSLATION_PROFILE_ID)
-        payload = default_record.payload if default_record is not None else self._default_payload(DEFAULT_TRANSLATION_PROFILE_ID)
-        return TranslationProfileListResponse(
-            items=[
+        items: list[TranslationProfileListItemResponse] = []
+        for profile_id in TRANSLATION_PROFILE_IDS:
+            default_record = self._default_record(profile_id)
+            version_records = self._version_records(profile_id)
+            payload = default_record.payload if default_record is not None else self._default_payload(profile_id)
+            items.append(
                 TranslationProfileListItemResponse(
-                    id=DEFAULT_TRANSLATION_PROFILE_ID,
+                    id=profile_id,
+                    language_pair=self._profile_language_pair(profile_id, payload),
                     default_version=default_record.version if default_record is not None else None,
                     version_count=len(version_records),
                     target_language=self._payload_text(payload, "target_language") or translation_runtime.DEFAULT_TARGET_LANGUAGE,
@@ -62,8 +79,8 @@ class TranslationProfileVersionService:
                     max_pages_per_batch=self._payload_int(payload, "max_pages_per_batch", self.settings.translation_max_pages),
                     max_chars_per_batch=self._payload_int(payload, "max_chars_per_batch", self.settings.translation_max_chars),
                 )
-            ]
-        )
+            )
+        return TranslationProfileListResponse(items=items)
 
     def get_profile_detail(self, translation_profile_id: str) -> TranslationProfileDetailResponse:
         normalized_id = self._require_known_profile_id(translation_profile_id)
@@ -98,6 +115,7 @@ class TranslationProfileVersionService:
             translation_profile_id=normalized_id,
             version=DRAFT_VERSION,
             base_version=base_version,
+            language_pair=self._request_language_pair(normalized_id, request.language_pair),
             target_language=request.target_language,
             domain=request.domain,
             prompt_version=request.prompt_version,
@@ -191,15 +209,17 @@ class TranslationProfileVersionService:
         )
         return self._version_response(record)
 
-    def resolve_default_snapshot(self) -> TranslationProfileSnapshot | None:
-        """返回当前默认已发布 Translation Profile；未发布时让调用方回退 settings。"""
+    def resolve_default_snapshot(self, language_pair: str = "en2zh") -> TranslationProfileSnapshot | None:
+        """Resolve the default published profile for a translation language pair."""
 
-        record = self._default_record(DEFAULT_TRANSLATION_PROFILE_ID)
+        profile_id = self._default_profile_id_for_language_pair(language_pair)
+        record = self._default_record(profile_id)
         if record is None:
             return None
         payload = record.payload or {}
         return TranslationProfileSnapshot(
             translation_profile_id=record.resource_id,
+            language_pair=self._profile_language_pair(record.resource_id, payload),
             version=record.version,
             snapshot_hash=record.snapshot_hash,
             target_language=self._payload_text(payload, "target_language") or translation_runtime.DEFAULT_TARGET_LANGUAGE,
@@ -234,13 +254,15 @@ class TranslationProfileVersionService:
         )
 
     def _default_payload(self, translation_profile_id: str) -> dict[str, Any]:
+        language_pair = self._profile_language_pair(translation_profile_id, None)
         return self._build_payload(
             translation_profile_id=translation_profile_id,
             version=DRAFT_VERSION,
             base_version=None,
+            language_pair=language_pair,
             target_language=translation_runtime.DEFAULT_TARGET_LANGUAGE,
             domain=translation_runtime.DEFAULT_TRANSLATION_DOMAIN,
-            prompt_version=translation_runtime.TRANSLATION_PROMPT_VERSION,
+            prompt_version=DEFAULT_PROMPT_VERSIONS.get(language_pair, translation_runtime.TRANSLATION_PROMPT_VERSION),
             model=self.settings.openai_model or llm_client.DEFAULT_MODEL,
             max_pages_per_batch=self.settings.translation_max_pages,
             max_chars_per_batch=self.settings.translation_max_chars,
@@ -296,6 +318,7 @@ class TranslationProfileVersionService:
             translation_profile_id=record.resource_id,
             version=version,
             base_version=base_version if base_version is not None else self._payload_text(payload, "base_version"),
+            language_pair=self._profile_language_pair(record.resource_id, payload),
             target_language=self._payload_text(payload, "target_language") or translation_runtime.DEFAULT_TARGET_LANGUAGE,
             domain=self._payload_text(payload, "domain") or translation_runtime.DEFAULT_TRANSLATION_DOMAIN,
             prompt_version=self._payload_text(payload, "prompt_version") or translation_runtime.TRANSLATION_PROMPT_VERSION,
@@ -311,6 +334,7 @@ class TranslationProfileVersionService:
         translation_profile_id: str,
         version: str,
         base_version: str | None,
+        language_pair: str,
         target_language: str,
         domain: str,
         prompt_version: str,
@@ -321,6 +345,7 @@ class TranslationProfileVersionService:
     ) -> dict[str, Any]:
         return {
             "translation_profile_id": translation_profile_id,
+            "language_pair": self._normalize_required_text(language_pair, "language_pair"),
             "version": version,
             "base_version": base_version,
             "target_language": self._normalize_required_text(target_language, "target_language"),
@@ -336,6 +361,7 @@ class TranslationProfileVersionService:
         payload = record.payload or {}
         return TranslationProfileDraftResponse(
             translation_profile_id=record.resource_id,
+            language_pair=self._profile_language_pair(record.resource_id, payload),
             base_version=self._payload_text(payload, "base_version"),
             target_language=self._payload_text(payload, "target_language") or translation_runtime.DEFAULT_TARGET_LANGUAGE,
             domain=self._payload_text(payload, "domain") or translation_runtime.DEFAULT_TRANSLATION_DOMAIN,
@@ -356,6 +382,7 @@ class TranslationProfileVersionService:
         default = default_record if default_record is not None else self._default_record(record.resource_id)
         return TranslationProfileVersionResponse(
             translation_profile_id=record.resource_id,
+            language_pair=self._profile_language_pair(record.resource_id, payload),
             version=record.version,
             status=record.status.value,
             snapshot_hash=record.snapshot_hash,
@@ -380,6 +407,31 @@ class TranslationProfileVersionService:
                 max_suffix = max(max_suffix, int(suffix))
         return f"{prefix}{max_suffix + 1}"
 
+    def _request_language_pair(self, translation_profile_id: str, requested_language_pair: str | None) -> str:
+        expected = self._profile_language_pair(translation_profile_id, None)
+        normalized = self._normalize_optional_text(requested_language_pair)
+        if normalized is None:
+            return expected
+        if normalized != expected:
+            raise ValueError(f"Translation Profile language_pair 不匹配: expected={expected} actual={normalized}")
+        return normalized
+
+    def _profile_language_pair(self, translation_profile_id: str, payload: dict[str, Any] | None) -> str:
+        payload_language_pair = self._payload_text(payload, "language_pair")
+        if payload_language_pair is not None:
+            spec_for_language_pair(payload_language_pair)
+            return payload_language_pair
+        language_pair = PROFILE_LANGUAGE_PAIRS.get(translation_profile_id)
+        if language_pair is None:
+            raise FileNotFoundError(f"Translation Profile 不存在: {translation_profile_id}")
+        return language_pair
+
+    def _default_profile_id_for_language_pair(self, language_pair: str) -> str:
+        spec = spec_for_language_pair(language_pair)
+        if spec.default_profile_id is None:
+            raise FileNotFoundError(f"Translation Profile 不存在: {language_pair}")
+        return spec.default_profile_id
+
     @staticmethod
     def _snapshot_hash(payload: dict[str, Any]) -> str:
         encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -391,8 +443,8 @@ class TranslationProfileVersionService:
         return value if isinstance(value, str) and value else None
 
     @staticmethod
-    def _payload_int(payload: dict[str, Any], key: str, default: int) -> int:
-        value = payload.get(key)
+    def _payload_int(payload: dict[str, Any] | None, key: str, default: int) -> int:
+        value = payload.get(key) if payload is not None else None
         return int(value) if isinstance(value, (int, str)) and str(value).isdigit() else max(int(default), 1)
 
     @staticmethod
@@ -414,6 +466,6 @@ class TranslationProfileVersionService:
         normalized = translation_profile_id.strip()
         if not TRANSLATION_PROFILE_ID_RE.match(normalized):
             raise ValueError("translation_profile_id 只能包含大小写字母、数字、下划线、短横线和英文句点，长度不超过 128。")
-        if normalized != DEFAULT_TRANSLATION_PROFILE_ID:
+        if normalized not in TRANSLATION_PROFILE_IDS:
             raise FileNotFoundError(f"Translation Profile 不存在: {normalized}")
         return normalized

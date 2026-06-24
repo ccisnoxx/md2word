@@ -34,6 +34,7 @@ class TranslationProfileSnapshot:
     """已发布 Translation Profile 的执行时快照，不包含任何 secret。"""
 
     translation_profile_id: str
+    language_pair: str
     version: str
     snapshot_hash: str
     target_language: str

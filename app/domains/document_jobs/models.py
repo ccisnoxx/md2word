@@ -8,9 +8,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from app.domains.resources.models import utc_now
+from app.domains.translation.modes import DocumentJobMode, DocumentLanguage
 
 
-DocumentJobMode = Literal["direct_pdf_to_word", "en2zh_pdf_to_word"]
 DocumentJobStatus = Literal["pending", "queued", "running", "succeeded", "failed", "canceled"]
 DocumentJobStage = Literal[
     "uploaded",
@@ -80,7 +80,7 @@ class DocumentJobRecord(BaseModel):
     source_file_id: str
     source_job_id: str | None = None
     mode: DocumentJobMode = "direct_pdf_to_word"
-    document_language: Literal["auto", "zh", "en"] = "auto"
+    document_language: DocumentLanguage = "auto"
     status: DocumentJobStatus = "pending"
     stage: DocumentJobStage = "uploaded"
     progress: int = Field(default=0, ge=0, le=100)

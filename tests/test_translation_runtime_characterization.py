@@ -137,8 +137,31 @@ class TranslationRuntimeCharacterizationTests(unittest.TestCase):
         )
 
         item = payload["batches"][0]["items"][0]
+        self.assertEqual(payload["language_pair"], "en2zh")
         self.assertEqual(set(item), {"id", "text"})
         self.assertEqual(payload["batches"][0]["page_range"], [1, 1])
+
+    def test_extract_translation_items_includes_cyrillic_text_for_ru2zh(self):
+        pages = [
+            self.make_page(
+                0,
+                [
+                    self.make_block(
+                        "paragraph",
+                        "Постоянное обратное напряжение диода",
+                        block_idx=1,
+                    ),
+                ],
+            )
+        ]
+
+        payload = self.translation.build_translation_request_payload(
+            pages,
+            self.translation.TranslationConfig(language_pair="ru2zh"),
+        )
+
+        self.assertEqual(payload["language_pair"], "ru2zh")
+        self.assertEqual(payload["batches"][0]["items"][0]["text"], "Постоянное обратное напряжение диода")
 
     def test_apply_translation_responses_restores_placeholders_and_rewrites_html_cells(self):
         pages = [

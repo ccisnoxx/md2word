@@ -29,6 +29,7 @@ from app.domains.document_jobs.schemas import (
 )
 from app.domains.files.models import DocumentFileRecord
 from app.domains.resources.models import utc_now
+from app.domains.translation.modes import is_translation_document_job_mode
 from app.services.auth.models import AuthenticatedUser
 
 
@@ -291,7 +292,7 @@ class DocumentJobIncidentService:
             return "artifact_missing"
         if job.translation_qa_status == "blocked":
             return "qa_unavailable"
-        if job.mode == "en2zh_pdf_to_word" and (
+        if is_translation_document_job_mode(job.mode) and (
             job.failed_stage == "ir_converting" or any(token in haystack for token in TRANSLATION_FAILURE_TOKENS)
         ):
             return "translation_failed"
@@ -316,7 +317,7 @@ class DocumentJobIncidentService:
             return True
         if job.status == "succeeded" and job.result_file_id is None:
             return True
-        if job.mode == "en2zh_pdf_to_word" and job.translation_qa_status == "blocked" and job.document_ir_file_id is None:
+        if is_translation_document_job_mode(job.mode) and job.translation_qa_status == "blocked" and job.document_ir_file_id is None:
             return True
         return any(token in haystack for token in ARTIFACT_MISSING_TOKENS)
 
@@ -473,7 +474,7 @@ class DocumentJobIncidentService:
                 helper="详情页文件区展示已登记产物。",
             ),
         ]
-        if job.mode == "en2zh_pdf_to_word":
+        if is_translation_document_job_mode(job.mode):
             links.append(
                 DocumentJobIncidentEvidenceLinkResponse(
                     kind="translation_qa",

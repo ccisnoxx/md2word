@@ -9,7 +9,7 @@
         <p class="section-subtitle mono">{{ jobId }}</p>
       </div>
       <div class="toolbar">
-        <el-button v-if="job?.mode === 'en2zh_pdf_to_word'" :icon="DataAnalysis" @click="openTranslationQa">
+        <el-button v-if="supportsJobTranslationQa(job)" :icon="DataAnalysis" @click="openTranslationQa">
           翻译 QA
         </el-button>
         <JobActions
@@ -106,7 +106,7 @@
 
             <el-descriptions :column="2" border>
               <el-descriptions-item label="模式">{{ jobModeText[job.mode] || job.mode }}</el-descriptions-item>
-              <el-descriptions-item v-if="job.mode === 'en2zh_pdf_to_word'" label="翻译 QA">
+              <el-descriptions-item v-if="supportsJobTranslationQa(job)" label="翻译 QA">
                 <span class="qa-summary">
                   <el-tag :type="translationQaStatusTagType(job.translation_qa_status)" effect="plain">
                     {{ translationQaStatusText[job.translation_qa_status] }}
@@ -131,7 +131,7 @@
               <el-descriptions-item label="取消时间">{{ formatDateTime(job.canceled_at) }}</el-descriptions-item>
               <el-descriptions-item label="归档时间">{{ formatDateTime(job.archived_at) }}</el-descriptions-item>
               <el-descriptions-item label="归档人">{{ job.archived_by || "-" }}</el-descriptions-item>
-              <el-descriptions-item v-if="job.mode === 'en2zh_pdf_to_word' && job.translation_qa_note" label="QA 备注">
+              <el-descriptions-item v-if="supportsJobTranslationQa(job) && job.translation_qa_note" label="QA 备注">
                 {{ job.translation_qa_note }}
               </el-descriptions-item>
             </el-descriptions>
@@ -359,7 +359,7 @@
               <div class="toolbar">
                 <el-button type="primary" :icon="EditPen" @click="openTermRuleProposal">提交术语规则建议</el-button>
                 <el-button
-                  v-if="job.mode === 'en2zh_pdf_to_word'"
+                  v-if="supportsJobTranslationQa(job)"
                   :icon="EditPen"
                   @click="openTranslationTermProposal"
                 >
@@ -371,7 +371,7 @@
               <el-descriptions-item label="来源任务">{{ job.id }}</el-descriptions-item>
               <el-descriptions-item label="来源文件">{{ job.source_file_id }}</el-descriptions-item>
               <el-descriptions-item label="当前术语规则集">{{ termRuleProposalVersionLabel }}</el-descriptions-item>
-              <el-descriptions-item v-if="job.mode === 'en2zh_pdf_to_word'" label="当前翻译术语集">
+              <el-descriptions-item v-if="supportsJobTranslationQa(job)" label="当前翻译术语集">
                 {{ translationTermProposalVersionLabel }}
               </el-descriptions-item>
             </el-descriptions>
@@ -514,7 +514,7 @@
                   />
                 </el-select>
               </el-form-item>
-              <el-form-item v-if="retryDialog.job?.mode === 'en2zh_pdf_to_word'" label="翻译术语集">
+              <el-form-item v-if="usesTranslationResources(retryDialog.job)" label="翻译术语集">
                 <el-select
                   v-model="retryDialog.translationTermVersion"
                   clearable
@@ -604,7 +604,7 @@
                   />
                 </el-select>
               </el-form-item>
-              <el-form-item v-if="cloneDialog.job?.mode === 'en2zh_pdf_to_word'" label="翻译术语集">
+              <el-form-item v-if="usesTranslationResources(cloneDialog.job)" label="翻译术语集">
                 <el-select
                   v-model="cloneDialog.translationTermVersion"
                   clearable
@@ -620,7 +620,7 @@
                   />
                 </el-select>
               </el-form-item>
-              <el-form-item v-if="cloneDialog.job?.mode === 'en2zh_pdf_to_word'" label="翻译配置">
+              <el-form-item v-if="usesTranslationResources(cloneDialog.job)" label="翻译配置">
                 <el-select
                   v-model="cloneDialog.translationProfileVersion"
                   clearable
@@ -689,6 +689,8 @@ import {
   getJobSourceFilename,
   documentJobActionDisabledReason,
   documentJobQualityFlagText,
+  documentJobModeRequiresTranslationResources,
+  documentJobModeSupportsTranslationQa,
   isActiveJobStatus,
   isDocumentJobActionEnabled,
   jobModeText,
@@ -746,6 +748,14 @@ type DiagnosticEvidenceItem = {
   helper: string;
   mono?: boolean;
 };
+
+function supportsJobTranslationQa(target: DocumentJobResponse | null | undefined): boolean {
+  return Boolean(target && documentJobModeSupportsTranslationQa(target.mode));
+}
+
+function usesTranslationResources(target: DocumentJobResponse | null | undefined): boolean {
+  return Boolean(target && documentJobModeRequiresTranslationResources(target.mode));
+}
 
 const retryDialog = reactive({
   job: null as DocumentJobResponse | null,
@@ -1677,7 +1687,7 @@ function buildRetryPayload(): DocumentJobRetryRequest {
     payload.term_rule_set_id = selectedRetryTermRuleOption.value.resource_id;
     payload.term_rule_set_version = selectedRetryTermRuleOption.value.version;
   }
-  if (retryDialog.job?.mode === "en2zh_pdf_to_word" && selectedRetryTranslationTermOption.value) {
+  if (usesTranslationResources(retryDialog.job) && selectedRetryTranslationTermOption.value) {
     payload.translation_term_set_id = selectedRetryTranslationTermOption.value.resource_id;
     payload.translation_term_version = selectedRetryTranslationTermOption.value.version;
   }
@@ -1699,11 +1709,11 @@ function buildClonePayload(): DocumentJobCloneRequest {
     payload.term_rule_set_id = selectedCloneTermRuleOption.value.resource_id;
     payload.term_rule_set_version = selectedCloneTermRuleOption.value.version;
   }
-  if (cloneDialog.job?.mode === "en2zh_pdf_to_word" && selectedCloneTranslationTermOption.value) {
+  if (usesTranslationResources(cloneDialog.job) && selectedCloneTranslationTermOption.value) {
     payload.translation_term_set_id = selectedCloneTranslationTermOption.value.resource_id;
     payload.translation_term_version = selectedCloneTranslationTermOption.value.version;
   }
-  if (cloneDialog.job?.mode === "en2zh_pdf_to_word" && selectedCloneTranslationProfileOption.value) {
+  if (usesTranslationResources(cloneDialog.job) && selectedCloneTranslationProfileOption.value) {
     payload.translation_profile_id = selectedCloneTranslationProfileOption.value.resource_id;
     payload.translation_profile_version = selectedCloneTranslationProfileOption.value.version;
   }

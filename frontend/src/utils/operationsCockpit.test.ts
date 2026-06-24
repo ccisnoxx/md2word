@@ -28,6 +28,7 @@ function buildJob(overrides: Partial<DocumentJobResponse> = {}): DocumentJobResp
     source_file_id: "file_source",
     source_job_id: null,
     mode: "en2zh_pdf_to_word",
+    translation_mode: "en2zh",
     document_language: "en",
     status: "succeeded",
     stage: "completed",

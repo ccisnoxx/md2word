@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.domains.translation.modes import TranslationMode
+
 
 class JobAcceptedResponse(BaseModel):
     job_id: str
@@ -22,7 +24,7 @@ class JobAcceptedResponse(BaseModel):
         "failed",
         "canceled",
     ]
-    translation_mode: Literal["direct", "en2zh"]
+    translation_mode: TranslationMode
     resource_snapshot: "JobResourceSnapshotResponse | None" = None
 
 

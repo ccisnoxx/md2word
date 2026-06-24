@@ -11,7 +11,7 @@
       <div class="toolbar">
         <el-button v-if="fromTranslationQaQueue" @click="openQaQueue">返回 QA 队列</el-button>
         <el-button @click="openJobDetail">任务详情</el-button>
-        <el-button :disabled="!job || job.mode !== 'en2zh_pdf_to_word'" @click="openTranslationTermProposal">
+        <el-button :disabled="!supportsJobTranslationQa(job)" @click="openTranslationTermProposal">
           提交翻译术语建议
         </el-button>
         <el-button :icon="Refresh" :loading="loading" @click="loadAll()">刷新</el-button>
@@ -126,7 +126,7 @@ import { documentJobsApi } from "@/api/documentJobs";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import JobStatusBadge from "@/components/JobStatusBadge.vue";
 import TranslationQaReviewPanel from "@/components/TranslationQaReviewPanel.vue";
-import { formatDateTime, jobModeText } from "@/utils/format";
+import { documentJobModeSupportsTranslationQa, formatDateTime, jobModeText } from "@/utils/format";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import type { TranslationQaReviewDraft } from "@/utils/translationQa";
 
@@ -259,17 +259,22 @@ function openJobDetail(): void {
 }
 
 function openTranslationTermProposal(): void {
-  if (!job.value || job.value.mode !== "en2zh_pdf_to_word") {
+  const currentJob = job.value;
+  if (!currentJob || !documentJobModeSupportsTranslationQa(currentJob.mode)) {
     return;
   }
   const query: Record<string, string> = {
     tab: "translation-new",
-    source_job_id: job.value.id,
-    source_file_id: job.value.source_file_id,
+    source_job_id: currentJob.id,
+    source_file_id: currentJob.source_file_id,
   };
   appendQueryValue(query, "observed_translation_term_set_id", observedTranslationTermSetId.value);
   appendQueryValue(query, "observed_translation_term_version", observedTranslationTermVersion.value);
   void router.push({ name: "term-proposals", query });
+}
+
+function supportsJobTranslationQa(target: DocumentJobResponse | null | undefined): boolean {
+  return Boolean(target && documentJobModeSupportsTranslationQa(target.mode));
 }
 
 async function loadAll(targetJobId = jobId.value): Promise<void> {
