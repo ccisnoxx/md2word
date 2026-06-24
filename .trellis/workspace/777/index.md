@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 26
+- **Total Sessions**: 27
 - **Last Active**: 2026-06-24
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~889 | Active |
+| `journal-1.md` | ~922 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 27 | 2026-06-24 | P0 Golden Sample layout fixes | `02e0077f` | `main` |
 | 26 | 2026-06-24 | P0 Golden Sample readiness | `32edca58` | `main` |
 | 25 | 2026-06-24 | ru2zh integration acceptance | `a6efb53c` | `main` |
 | 24 | 2026-06-23 | Local MinerU datasheet layout feedback fixes | `3606de38` | `main` |
