@@ -847,6 +847,97 @@ quasi-production validation follows the deployment docs and may include:
 Only run these when the task explicitly requires online/runtime evidence or the
 release process calls for it.
 
+## Scenario: Formal DocumentIR Renderer Parity Gate
+
+### 1. Scope / Trigger
+
+- Trigger: local MinerU-to-DOCX quality rules are migrated into the formal
+  `document_jobs -> DocumentIR -> app/services/renderer/*` path.
+- This gate proves implementation readiness locally, then hands off P0 Golden
+  Sample release evidence to hostdzire.
+
+### 2. Signatures
+
+- Formal conversion: `MinerUToDocumentIRService.convert_zip(...)`.
+- Formal render call:
+  `DocumentIRWordRenderer.render_to_bytes(document_ir, template_path, config_path, image_loader, options=DocumentIRRenderOptions(...))`.
+- Per-call renderer options: `DocumentIRRenderOptions(subscript_config_path, document_language)`.
+- P0 acceptance command: `python scripts/ops/run_golden_sample_regression.py`.
+
+### 3. Contracts
+
+- Shared pure rules that affect both local runtime and formal renderer belong
+  under `app/conversion/docx_rules/`; runtime modules may re-export those names
+  for compatibility but must not keep duplicate active implementations.
+- `DocumentIR` remains the interchange shape; only add fields when source facts
+  cannot fit existing page/block/layout/metadata/quality structures.
+- `DocumentJobExecutionService` must pass active subscript config and document
+  language into the formal renderer.
+- Generated Word metadata must continue surfacing `renderer_mode`,
+  `layout_quality_flags`, `docx_quality`, and `quality_flags`.
+- Golden Sample P0 still means the four canonical OPA228 samples only; do not
+  expand sample count as part of this gate.
+
+### 4. Validation & Error Matrix
+
+- Local targeted tests fail -> do not start hostdzire Golden Sample validation.
+- `check_release.py` fails locally -> resolve OpenAPI/contract/unit failures
+  before deployment.
+- Hostdzire preflight fails -> do not run real Golden Sample conversion; fix
+  readiness/auth/MySQL/Celery/MinerU blockers first.
+- Real Golden Sample succeeds without admin sign-off -> not release ready.
+- Admin signs `pass` with `docx_quality_flags` but no notes -> sign-off
+  validation must fail.
+
+### 5. Good/Base/Bad Cases
+
+- Good: converter, renderer, document_jobs worker, Golden Sample manifest, and
+  local release checks pass before deployment; hostdzire then produces a fresh
+  run with `p0_release_ready=true`.
+- Base: local checks pass but hostdzire is unavailable; record the external
+  gate as pending, not passed.
+- Bad: proving quality only through local sandbox output, reusing a historical
+  sign-off for a new code revision, or committing generated DOCX/PNG/PDF/key
+  evidence.
+
+### 6. Tests Required
+
+- Converter tests for nested v2 pages, legacy flat content, captions,
+  footnotes, visual assets, table continuations, and page orientation.
+- Renderer tests for heading, Word numbering, TOC tab leaders, formula/symbol
+  normalization, subscript config, caption/notes, editable tables, long/wide
+  tables, two-column regions, and landscape sections.
+- document_jobs tests proving the behavior through worker execution and
+  generated Word metadata, not only direct renderer calls.
+- Golden Sample manifest/sign-off tests for canonical sample inventory,
+  preflight contract, DOCX quality flags, and admin sign-off validation.
+- Local `scripts/ops/check_release.py` before deployment; hostdzire
+  `check_release.py --runtime-url ... --golden-sample-preflight` before real
+  Golden Sample conversion.
+
+### 7. Wrong vs Correct
+
+Wrong:
+
+```python
+word_content = local_sandbox_renderer.render(mineru_pages)
+```
+
+Correct:
+
+```python
+word_content = DocumentIRWordRenderer().render_to_bytes(
+    document_ir,
+    template_path=template_path,
+    config_path=config_path,
+    image_loader=image_loader,
+    options=DocumentIRRenderOptions(
+        subscript_config_path=settings.subscript_config_path,
+        document_language=document_ir.metadata.document_language,
+    ),
+)
+```
+
 ## Scenario: Local MinerU Conversion Sandbox Tools
 
 ### 1. Scope / Trigger

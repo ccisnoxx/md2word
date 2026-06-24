@@ -2,58 +2,119 @@
 doc_type: test-report
 slug: pdf-to-word-golden-sample-acceptance-report
 component: pdf-to-word-backend
-status: superseded
-summary: P0 Golden Sample 历史验收报告；2026-06-03 blocked 结论已被 2026-06-17 hostdzire admin signoff 证据取代。
+status: current
+summary: P0 Golden Sample 验收状态；2026-06-24 document-ir-renderer-parity 本地收口通过，最新 hostdzire 正式回归和 admin 签字待执行。
 tags: [testing, golden-sample, pdf, word, p0]
-last_reviewed: 2026-06-17
+last_reviewed: 2026-06-24
 ---
 
 # P0 Golden Sample 验收报告
 
 ## 当前结论
 
-2026-06-17 收口结论：本报告中 2026-06-03 的 `blocked` 判断是历史状态，已被 `.trellis/tasks/06-16-p0-word-delivery-quality-beta/artifacts/hostdzire-golden-sample-20260617T053003Z/report.md` 取代。新的权威证据显示 4 个 OPA228 canonical samples 自动链路 4/4 succeeded、DOCX quality evidence 可用、admin manual signoff valid，`p0_release_ready=true`。
+2026-06-24 收口结论：第三阶段 `document-ir-renderer-parity` 已完成本地实现收口和正式链路 targeted 验证，`pipeline-parity-gap` 的修复入口已从本地 sandbox 收敛到 `document_jobs -> DocumentIR -> app/services/renderer/*` 链路。
 
-以下内容保留为历史排障和质量演进记录，不再代表当前 P0 发布状态。
+本轮不能直接声明 `p0_release_ready=true`。最新 P0 Golden Sample 正式回归必须在 hostdzire 运行真实 API、Worker、MySQL、Redis/Celery 和 MinerU，并由 admin 对同一 run_dir 完成人工签字。2026-06-17 的 hostdzire admin signoff 是历史基线，只能证明当时发布通过，不能替代本轮 2026-06-24 变更后的发布证据。
 
-截至 2026-06-03，`tests/fixtures/golden_samples/pdfs/OPA228_P1.pdf`、`OPA228_P2.pdf`、`OPA228_P6.pdf` 和 `OPA228_P7.pdf` 已映射到 `manifest.yaml`，作为当前 P0 canonical suite。本轮已在 hostdzire 真实 API / Worker / MinerU 环境完成 4 个样本 live regression：主链路 4/4 succeeded，DOCX 包 4/4 openable。
+当前状态：`ready_for_hostdzire_validation`。本地 release check 通过；hostdzire Golden Sample preflight、真实 4 样本回归、标准渲染截图和 admin manual signoff 均为外部环境待执行。
 
-当前仍不能声明完成 P0 正式验收，原因是：
+## 第三阶段完成证据
 
-- 当前 4 个 canonical 样本的人工质量均未达到 P0。
-- P0 质量线要求接近原版排版，同时符合 Word 文档排版标准；heading、Word list、双栏/宽表布局、caption/table 顺序和公式/特殊符号仍存在缺口。
-
-失败分类结论为 `pipeline-parity-gap`：官方 `app/conversion/runtime` 中已有部分 heading、list、formula、caption、table 和 layout 策略，但当前 API `document_jobs -> DocumentIR -> app/services/renderer` 链路没有接入这些 legacy runtime 策略。历史上这些策略曾复制到 `md2word_main`；2026-06-23 起 `md2word_main` 只作为薄调试壳，不再是修复入口。
-
-## 已完成
-
-- 样本目录：`tests/fixtures/golden_samples/pdfs/`
-- 样本清单：`tests/fixtures/golden_samples/manifest.yaml`
-- 人工验收模板：`tests/fixtures/golden_samples/acceptance-record-template.md`
-- 批量回归脚本：`scripts/ops/run_golden_sample_regression.py`
-- 回归输出目录：`tests/tmp/golden_sample_runs/`
-- 样本映射：`OPA228_P1.pdf`、`OPA228_P2.pdf`、`OPA228_P6.pdf` 和 `OPA228_P7.pdf` 已分别作为 `gs-003`、`gs-004`、`gs-006` 和 `gs-008` 纳入正式 manifest。
-- 真实回归批次：`20260603T070724Z`，4 个 runnable 样本全部 succeeded，报告见 `.codestable/features/2026-06-03-golden-sample-live-regression-scale-up/live-regression-run.md`。
-- 人工质量记录：`docs/testing/pdf-to-word-golden-sample-manual-quality-records-20260603.md`。
-- 失败分类：`.codestable/features/2026-06-03-golden-sample-live-regression-scale-up/failure-classification.md`。
-- layout parity 实现记录：`.codestable/features/2026-06-03-document-ir-layout-risk-pass/layout-parity-audit.md` 和 `.codestable/features/2026-06-03-document-ir-layout-risk-pass/document-ir-layout-risk-pass-checklist.yaml`。
-
-## 当前执行状态
-
-| 项目 | 当前值 |
+| 证据项 | 当前结论 |
 |---|---|
-| 清单样本数 | 4 |
-| 正式匹配 PDF 数 | 4 |
-| Manifest 外 PDF 数 | 0 |
-| Manifest 外 PDF | none |
-| 可运行正式样本数 | 4 |
-| 主链路已执行正式样本数 | 4 |
-| 主链路成功数 | 4 |
-| 主链路失败数 | 0 |
-| 主链路成功率 | 100.00%（4/4，覆盖当前 P0 canonical suite） |
-| P0 目标 | 4 个 canonical 样本 4/4 主链路成功、4/4 Word 可打开可编辑、4/4 admin 人工质量通过 |
-| 人工质量状态 | 4/4 未通过 P0 版面与语义质量 |
-| 当前状态 | blocked: 主链路已在 4 个 canonical 样本上通过，但仍需修复 `pipeline-parity-gap` 暴露的 DocumentIR layout 与 renderer 可编辑输出质量 |
+| 共享规则源 | `app/conversion/docx_rules/` 承载 MinerU content、text/formula/list/heading/TOC semantics 和 terminology replacement；local runtime 与 formal renderer 使用同一套规则。 |
+| 正式链路 wiring | `DocumentJobExecutionService` 调用 `DocumentIRWordRenderer.render_to_bytes()` 时传入 `DocumentIRRenderOptions`，包含 active subscript config path 和 document language。 |
+| DocumentIR converter | 覆盖 legacy flat content list、nested MinerU v2 page list、rich content fields、caption/footnote merge、image asset path、table continuation 和 page orientation。 |
+| Formal renderer | 覆盖 Word heading、real numbering、TOC tab leaders、formula/symbol normalization、caption/notes、editable table、long table、wide table landscape、two-column regions 和 image/table binding。 |
+| Metadata evidence | document_jobs 回归覆盖 generated Word metadata 中的 `renderer_mode`、`layout_quality_flags`、`docx_quality` 和 `quality_flags`。 |
+| 非目标项 | 未改变 public HTTP API、数据库 schema、持久化 adapter、job workflow state、Golden Sample manifest 或 PDF 样本范围。 |
+
+本地验证命令和结果：
+
+| 命令 | 结果 |
+|---|---|
+| `.venv/bin/python -m unittest tests.test_document_ir_mineru_converter_layout` | 4 tests OK |
+| `.venv/bin/python -m unittest tests.test_document_ir_word_renderer_layout` | 25 tests OK |
+| `.venv/bin/python -m unittest tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_worker_saves_mineru_raw_ir_and_image_assets tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_worker_generated_word_keeps_renderer_ooxml_semantics tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_worker_passes_subscript_config_to_document_ir_renderer` | 3 tests OK |
+| `.venv/bin/python -m unittest tests.test_golden_sample_manifest tests.test_openapi_export.OpenAPIExportTests.test_golden_sample_preflight_release_check_requires_admin_and_p0_runtime` | 20 tests OK |
+| `git diff --check` | OK |
+| `.venv/bin/python scripts/ops/check_release.py` | `Release check report ok: True`，OpenAPI snapshot current，targeted unittest 168 tests OK |
+
+测试输出中只出现 FastAPI/Starlette deprecation warnings，不影响本轮 P0 renderer/document_jobs 验收判断。
+
+## 正式链路验收待执行
+
+正式 P0 验收只统计 `tests/fixtures/golden_samples/manifest.yaml` 中 4 个 canonical samples：`gs-003`、`gs-004`、`gs-006`、`gs-008`。不扩大样本范围，不新增 PDF。
+
+hostdzire 上先执行 runtime + Golden Sample preflight：
+
+```bash
+GOLDEN_SAMPLE_USERNAME=admin \
+GOLDEN_SAMPLE_PASSWORD='<admin-password>' \
+.venv/bin/python scripts/ops/check_release.py \
+  --runtime-url "http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}" \
+  --golden-sample-preflight \
+  --golden-sample-preflight-output tests/tmp/golden_sample_runs/preflight.json
+```
+
+预检必须同时满足：
+
+- `deployment_init_ready=true`
+- `p0_document_jobs_ready=true`
+- `effective_repository_backend=mysql`
+- `document_jobs_worker_backend=celery`
+- admin auth role 符合 `GOLDEN_SAMPLE_REQUIRED_ROLE=admin`
+- 4 个 canonical PDF 全部存在
+- 无未解释的 `readiness_blockers` 或 `p0_document_jobs_blockers`
+
+预检通过后执行真实 4 样本回归：
+
+```bash
+GOLDEN_SAMPLE_USERNAME=admin \
+GOLDEN_SAMPLE_PASSWORD='<admin-password>' \
+.venv/bin/python scripts/ops/run_golden_sample_regression.py
+```
+
+自动链路通过条件：
+
+- 4/4 job `succeeded`
+- 4/4 DOCX openable
+- 4/4 editable content evidence 可用
+- `docx_quality_flags` 为 `none`，或 admin 在签字 notes 中逐项说明非阻断依据
+- `report.json` / `report.md` 已落在本次 run_dir，且不覆盖失败证据
+
+## 标准渲染与签字
+
+Admin reviewer 需要打开本次 run_dir 下 4 个 DOCX，并按报告中的标准渲染命令生成 PNG/PDF 视觉证据。截图不提交仓库，但需要随 run_dir 保存并用于人工复核：
+
+| 样本 | 必查截图/区域 |
+|---|---|
+| `gs-003` | 首页双栏正文、Features/Applications/Description 阅读顺序、关键 figure、Device Information 表格。 |
+| `gs-004` | Table of Contents 点线/页码、Revision History、列表、页眉页脚边界。 |
+| `gs-006` | Thermal Information 多表、θ/ψ/°C/W、表格脚注和正文顺序。 |
+| `gs-008` | Electrical Characteristics 宽表全貌、landscape/page fit、VOS/PSRR/CMRR/nV/√Hz/µV/°C 等符号。 |
+
+签字流程固定为：
+
+```bash
+.venv/bin/python scripts/ops/run_golden_sample_regression.py \
+  --apply-manual-signoff tests/tmp/golden_sample_runs/<run_id>
+```
+
+只有 `manual-signoff.yaml` 校验通过、4 个样本 `verdict: pass`、`final_signoff: true` 且 reviewer role 为 `admin` 时，本次 `report.json` / `report.md` 才能作为发布证据并显示 `p0_release_ready=true`。
+
+## 剩余 P1/P2 Backlog
+
+| 等级 | 记录口径 | 当前处理 |
+|---|---|---|
+| P1 | 非 canonical datasheet 或 RS2G04 等观察样本出现明显版式偏差，但不破坏 4 个 OPA228 P0；P1 translation formal gate 需要补齐 3 个真实英文 datasheet 并设置 `P1_TRANSLATION_FORMAL=1`。 | 记录到 component PDF 或 P1 translation backlog；不并入 P0 Golden Sample 阻塞条件。 |
+| P2 | 小范围 spacing、颜色、字号、caption 美观、复杂双栏平衡、报告 metadata、Acceptance Center 自动导入或线上证据展示增强。 | 记录为治理/运维/体验改进；不影响 `p0_release_ready`，除非 admin 判定影响核心内容可读或 Word 标准结构。 |
+
+Backlog 条目必须包含 sample/run_id、job_id、截图路径、`docx_quality_flags`、人工结论和建议优先级；不得提交真实 key、真实 trace、生成 DOCX、PNG/PDF 或客户资料。
+
+## 历史记录
+
+以下内容保留为历史排障和质量演进记录，不代表本轮 2026-06-24 变更后的发布状态。
 
 ## 最近脚本验证
 

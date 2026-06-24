@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
+from app.conversion.docx_rules import mineru_content as _shared_mineru_content
 from app.conversion.runtime.page_repair_runtime import (
     attach_table_continuations,
     backfill_middle_visual_metadata,
@@ -1064,3 +1065,21 @@ def is_supported_input_path(path: Path) -> bool:
     if path.is_dir():
         return has_content_list_payload_fn(path)
     return path.is_file() and path.suffix.lower() == ".zip"
+
+
+clean_markdown_document = _shared_mineru_content.clean_markdown_document
+clean_text = _shared_mineru_content.clean_text
+join_text_fragments = _shared_mineru_content.join_text_fragments
+split_toc_like_lines = _shared_mineru_content.split_toc_like_lines
+coerce_text_list = _shared_mineru_content.coerce_text_list
+collect_text_from_fields = _shared_mineru_content.collect_text_from_fields
+merge_footnote_fragments = _shared_mineru_content.merge_footnote_fragments
+is_footnote_start = _shared_mineru_content.is_footnote_start
+should_join_footnote_fragment = _shared_mineru_content.should_join_footnote_fragment
+append_footnote_fragment = _shared_mineru_content.append_footnote_fragment
+is_cjk_char = _shared_mineru_content.is_cjk_char
+find_values_by_key = _shared_mineru_content.find_values_by_key
+extract_first_asset_path = _shared_mineru_content.extract_first_asset_path
+looks_like_asset_path = _shared_mineru_content.looks_like_asset_path
+looks_like_html = _shared_mineru_content.looks_like_html
+extract_first_html = _shared_mineru_content.extract_first_html

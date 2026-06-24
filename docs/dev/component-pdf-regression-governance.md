@@ -101,6 +101,18 @@ tests/fixtures/component_pdf_samples/
 - P1：RS2G04 或新增观察样本出现明显版式偏差但不破坏 OPA228 P0；双栏、分页、宽表在边界样本中可读但明显不接近 PDF；自动 quality flags 需要人工解释放行。
 - P2：小范围 spacing、颜色、字号、caption 位置偏差；复杂双栏平衡和局部美观问题；报告 metadata、文档说明或样本治理改进。
 
+## P1 / P2 Backlog 记录
+
+P0 Golden Sample 只使用 `gs-003`、`gs-004`、`gs-006`、`gs-008`，不因为后续观察样本而扩大阻塞范围。非 P0 问题进入 backlog 时，记录必须包含：
+
+- 样本或 run 引用：`sample_id` / run_id / job_id / source PDF 引用。
+- 证据路径：回归 `report.md`、标准渲染 PNG/PDF、人工截图或 QA 页面路径。
+- 自动证据：`docx_quality_flags`、DOCX openable/editable 结论、renderer metadata 摘要。
+- 人工结论：`pass` / `conditional` / `fail` / `blocked`，以及 P1/P2 判定理由。
+- 后续路由：新 task、现有 task、release note 或明确延期；不得提交真实 key、真实 trace、生成 DOCX、PNG/PDF 或客户资料。
+
+P1 backlog 默认用于明显质量差距或后续 formal beta gate；P2 backlog 默认用于治理、体验和非阻断排版细节。只有 admin 判断它影响 4 个 canonical sample 的核心内容可读性或 Word 标准结构时，才提升为 P0。
+
 ## 针对性验证
 
 修改样例治理结构、manifest 或脚本时运行：

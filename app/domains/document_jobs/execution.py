@@ -35,7 +35,7 @@ from app.domains.document_jobs.repository import (
     DocumentJobRepositoryProtocol,
 )
 from app.services.document_ir import MinerUToDocumentIRService
-from app.services.renderer import DocumentIRWordRenderer
+from app.services.renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
 from app.services.renderer.docx_quality import analyze_docx_quality_bytes, build_docx_quality_flags
 from app.services.renderer.layout_plan import LayoutPlan, build_layout_plan
 from app.domains.translation.audit import (
@@ -1112,6 +1112,10 @@ class DocumentJobExecutionService:
             template_path=template_selection.template_path,
             config_path=template_selection.layout_config_path,
             image_loader=self._build_image_loader(rendering),
+            options=DocumentIRRenderOptions(
+                subscript_config_path=self.settings.subscript_config_path,
+                document_language=document_ir.metadata.document_language,
+            ),
         )
         docx_quality = analyze_docx_quality_bytes(word_content)
         renderer_metadata["docx_quality"] = docx_quality

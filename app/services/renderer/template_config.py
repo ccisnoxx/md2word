@@ -3,7 +3,7 @@ from __future__ import annotations
 # app/services/renderer/template_config.py: 定义模板配置包 v1 的结构化配置模型。
 
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -20,6 +20,8 @@ class TemplatePageSetupConfig(BaseModel):
     right_margin: float | None = None
     header_distance: float | None = None
     footer_distance: float | None = None
+    page_width_cm: float | None = None
+    page_height_cm: float | None = None
 
 
 class TemplateParagraphStyleConfig(BaseModel):
@@ -72,6 +74,7 @@ class TemplateTableStyleConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     style_name: str = "Table Grid"
+    header_bold: bool = True
     header_fill: str | None = "EEF3F8"
     border_color: str | None = "C7CDD4"
 
@@ -79,7 +82,7 @@ class TemplateTableStyleConfig(BaseModel):
 class TemplateConfigPackage(BaseModel):
     """模板配置包 v1；兼容既有 datasheet_template.yaml 的扁平样式键。"""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", arbitrary_types_allowed=True)
 
     schema_version: Literal["template-config/v1"] = "template-config/v1"
     template_name: str = ""
@@ -102,6 +105,8 @@ class TemplateConfigPackage(BaseModel):
     table_note: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
     caption: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
     long_table_caption: TemplateParagraphStyleConfig = Field(default_factory=TemplateParagraphStyleConfig)
+    language_overrides: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    terminology: Any | None = Field(default=None, exclude=True)
 
     @classmethod
     def load(cls, config_path: Path | None) -> "TemplateConfigPackage":
@@ -134,3 +139,37 @@ class TemplateConfigPackage(BaseModel):
         if normalized_level == 2:
             return self.toc_level2
         return self.toc_level3
+
+    def for_document_language(self, document_language: str | None) -> "TemplateConfigPackage":
+        """Apply optional language-specific style overrides for a render call."""
+
+        language = (document_language or "").strip().lower()
+        if not language or not self.language_overrides:
+            return self
+        candidates = [language]
+        if "-" in language:
+            candidates.append(language.split("-", 1)[0])
+        if "_" in language:
+            candidates.append(language.split("_", 1)[0])
+
+        selected: dict[str, Any] | None = None
+        for candidate in candidates:
+            override = self.language_overrides.get(candidate)
+            if isinstance(override, dict):
+                selected = override
+                break
+        if not selected:
+            return self
+
+        raw = self.model_dump(mode="python", exclude={"terminology"})
+        return self.__class__.model_validate(_deep_merge_dicts(raw, selected))
+
+
+def _deep_merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge_dicts(merged[key], value)
+        else:
+            merged[key] = value
+    return merged

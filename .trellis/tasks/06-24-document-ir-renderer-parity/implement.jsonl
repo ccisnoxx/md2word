@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend guideline entrypoint for the formal document_jobs and renderer migration."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Renderer, DocumentIR, and domain execution changes must stay in the existing backend ownership boundaries."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Formal document job execution must expose failures explicitly and avoid silent fallbacks."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "The task extends Local MinerU phase-2 work into the formal renderer path and requires focused backend tests."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "The main implementation goal is eliminating duplicated local/runtime vs formal renderer rules."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "The migration spans MinerU input, DocumentIR, renderer metadata, and document_jobs regression tests."}
+{"file": ".trellis/tasks/06-24-document-ir-renderer-parity/research/parity-audit.md", "reason": "Summarizes the formal chain, local mature runtime rules, and migration boundary."}

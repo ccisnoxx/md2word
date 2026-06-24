@@ -8,6 +8,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from app.conversion.docx_rules.mineru_content import (
+    clean_markdown_document,
+    clean_text,
+    coerce_text_list,
+    collect_text_from_fields,
+    extract_first_asset_path,
+    extract_first_html,
+    join_text_fragments,
+    merge_footnote_fragments,
+    split_toc_like_lines,
+)
 from app.services.document_ir.layout_signals import (
     build_block_layout,
     build_block_layout_metadata,
@@ -179,9 +190,11 @@ class MinerUToDocumentIRService:
             return "table"
         if source_type in {"image", "figure"} or raw_block.get("img_path") or raw_block.get("image_path"):
             return "image"
-        if source_type in {"equation", "formula", "interline_equation", "inline_equation"}:
+        if source_type in {"equation", "formula", "interline_equation", "inline_equation", "equation_interline"}:
             return "formula"
-        if source_type in {"list"} or isinstance(raw_block.get("items"), list):
+        if source_type in {"list", "index"} or isinstance(raw_block.get("items"), list):
+            return "list"
+        if split_toc_like_lines(self._raw_text_preserving_lines(raw_block)):
             return "list"
         return "paragraph"
 
@@ -203,40 +216,45 @@ class MinerUToDocumentIRService:
     def _text_for_block(self, raw_block: dict[str, Any], block_type: str) -> str | None:
         if block_type == "table":
             captions = self._captions(raw_block, str(raw_block.get("type") or raw_block.get("block_type") or "").strip().lower())
-            return captions[0] if captions else self._string_or_none(raw_block.get("caption"))
+            return captions[0] if captions else self._first_text_from_keys(raw_block, ("caption", "text"))
         if block_type == "image":
             captions = self._captions(raw_block, str(raw_block.get("type") or raw_block.get("block_type") or "").strip().lower())
-            return captions[0] if captions else self._string_or_none(raw_block.get("text"))
+            return captions[0] if captions else self._first_text_from_keys(raw_block, ("text", "caption"))
         if block_type == "formula":
             return self._formula_text(raw_block)
         if block_type == "list":
             items = self._list_items(raw_block)
-            return "\n".join(items) if items else self._string_or_none(raw_block.get("text"))
-        return (
-            self._string_or_none(raw_block.get("text"))
-            or self._string_or_none(raw_block.get("content"))
-            or self._string_or_none(raw_block.get("caption"))
-        )
+            return "\n".join(items) if items else self._raw_text(raw_block)
+        return self._raw_text(raw_block) or self._first_text_from_keys(raw_block, ("caption",))
 
     def _table_html(self, raw_block: dict[str, Any]) -> str | None:
-        return (
-            self._string_or_none(raw_block.get("table_body"))
-            or self._string_or_none(raw_block.get("table_html"))
-            or self._string_or_none(raw_block.get("html"))
-        )
+        for key in ("table_body", "table_html", "html", "content"):
+            html = extract_first_html(raw_block.get(key))
+            if html:
+                return html
+        return extract_first_html(raw_block)
 
     def _formula_text(self, raw_block: dict[str, Any]) -> str | None:
-        return (
-            self._string_or_none(raw_block.get("latex"))
-            or self._string_or_none(raw_block.get("text"))
-            or self._string_or_none(raw_block.get("content"))
-        )
+        return self._first_text_from_keys(raw_block, ("latex", "text", "content"))
 
     def _list_items(self, raw_block: dict[str, Any]) -> list[str] | None:
         raw_items = raw_block.get("items", raw_block.get("list_items"))
-        if not isinstance(raw_items, list):
-            return None
-        items = [str(item).strip() for item in raw_items if str(item).strip()]
+        if isinstance(raw_items, list):
+            items = []
+            for item in raw_items:
+                if isinstance(item, dict):
+                    items.extend(coerce_text_list(item))
+                else:
+                    text = clean_text(str(item))
+                    if text:
+                        items.append(text)
+            return items or None
+
+        toc_items = split_toc_like_lines(self._raw_text_preserving_lines(raw_block))
+        if toc_items:
+            return toc_items
+
+        items = coerce_text_list(raw_block.get("content"))
         return items or None
 
     def _captions(self, raw_block: dict[str, Any], source_type: str) -> list[str]:
@@ -245,7 +263,7 @@ class MinerUToDocumentIRService:
             keys.insert(0, "table_caption")
         elif source_type in {"chart", "image", "figure"}:
             keys.insert(0, f"{source_type}_caption")
-        return self._text_list_from_keys(raw_block, keys)
+        return self._unique_texts(collect_text_from_fields(raw_block, tuple(keys)))
 
     def _footnotes(self, raw_block: dict[str, Any], source_type: str) -> list[str]:
         keys = ["footnote"]
@@ -253,26 +271,10 @@ class MinerUToDocumentIRService:
             keys.insert(0, "table_footnote")
         elif source_type in {"chart", "image", "figure"}:
             keys.insert(0, f"{source_type}_footnote")
-        return self._text_list_from_keys(raw_block, keys)
-
-    def _text_list_from_keys(self, raw_block: dict[str, Any], keys: list[str]) -> list[str]:
-        values: list[str] = []
-        for key in keys:
-            raw_value = raw_block.get(key)
-            if isinstance(raw_value, list):
-                values.extend(str(item).strip() for item in raw_value if str(item).strip())
-            elif raw_value is not None:
-                text = str(raw_value).strip()
-                if text:
-                    values.append(text)
-        return values
+        return self._unique_texts(merge_footnote_fragments(collect_text_from_fields(raw_block, tuple(keys))))
 
     def _resolve_image_path(self, raw_block: dict[str, Any], package_root: Path) -> Path | None:
-        raw_path = (
-            self._string_or_none(raw_block.get("img_path"))
-            or self._string_or_none(raw_block.get("image_path"))
-            or self._string_or_none(raw_block.get("path"))
-        )
+        raw_path = extract_first_asset_path(raw_block)
         if not raw_path:
             return None
         normalized = raw_path.strip().lstrip("./")
@@ -287,8 +289,45 @@ class MinerUToDocumentIRService:
                 return resolved_match
         return None
 
-    def _string_or_none(self, value: Any) -> str | None:
-        if value is None:
-            return None
-        text = str(value).strip()
-        return text or None
+    def _raw_text(self, raw_block: dict[str, Any]) -> str | None:
+        for key in ("text", "content"):
+            raw_value = raw_block.get(key)
+            if isinstance(raw_value, list) and all(isinstance(item, dict) for item in raw_value):
+                text = join_text_fragments(raw_value)
+            elif isinstance(raw_value, str):
+                text = clean_text(raw_value)
+            else:
+                texts = coerce_text_list(raw_value)
+                text = clean_text(" ".join(texts)) if texts else ""
+            if text:
+                return text
+        return None
+
+    def _raw_text_preserving_lines(self, raw_block: dict[str, Any]) -> str:
+        for key in ("text", "content"):
+            raw_value = raw_block.get(key)
+            if isinstance(raw_value, str):
+                return clean_markdown_document(raw_value)
+        return self._raw_text(raw_block) or ""
+
+    def _first_text_from_keys(self, raw_block: dict[str, Any], keys: tuple[str, ...]) -> str | None:
+        for key in keys:
+            texts = coerce_text_list(raw_block.get(key))
+            if texts:
+                return clean_text(" ".join(texts))
+            raw_value = raw_block.get(key)
+            if isinstance(raw_value, str):
+                text = clean_text(raw_value)
+                if text:
+                    return text
+        return None
+
+    def _unique_texts(self, values: list[str]) -> list[str]:
+        seen: set[str] = set()
+        texts: list[str] = []
+        for value in values:
+            text = clean_text(value)
+            if text and text not in seen:
+                seen.add(text)
+                texts.append(text)
+        return texts

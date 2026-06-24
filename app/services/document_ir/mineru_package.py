@@ -35,7 +35,7 @@ def find_content_list(package_root: Path) -> Path:
 
 
 def load_content_blocks(content_list_path: Path) -> list[dict[str, Any]]:
-    """读取当前 v1 扁平 content_list 块数组。"""
+    """读取 MinerU content_list，兼容扁平块数组和 v2 page-list 数组。"""
 
     payload = json.loads(content_list_path.read_text(encoding="utf-8"))
     if isinstance(payload, list):
@@ -44,4 +44,21 @@ def load_content_blocks(content_list_path: Path) -> list[dict[str, Any]]:
         blocks = payload["content_list"]
     else:
         raise ValueError("MinerU content_list 不是数组，也不包含 content_list 数组。")
-    return [block for block in blocks if isinstance(block, dict)]
+    return _flatten_content_blocks(blocks)
+
+
+def _flatten_content_blocks(blocks: list[Any]) -> list[dict[str, Any]]:
+    flattened: list[dict[str, Any]] = []
+    for page_index, item in enumerate(blocks):
+        if isinstance(item, dict):
+            flattened.append(item)
+            continue
+        if not isinstance(item, list):
+            continue
+        for block in item:
+            if not isinstance(block, dict):
+                continue
+            copied = dict(block)
+            copied.setdefault("page_idx", page_index)
+            flattened.append(copied)
+    return flattened

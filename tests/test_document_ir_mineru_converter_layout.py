@@ -7,6 +7,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from typing import Any
 
 from app.services.document_ir import MinerUToDocumentIRService
 
@@ -119,6 +120,77 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
         self.assertIn("table_continuation:block_0001", document.quality_flags)
         self.assertIn("layout_wide_table:block_0001", document.quality_flags)
 
+    def test_convert_zip_accepts_nested_v2_pages_and_rich_content_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "mineru.zip"
+            self._write_zip(
+                zip_path,
+                blocks=[
+                    [
+                        {
+                            "type": "text",
+                            "text": "1 Features........................ 1\n2 Specifications.................. 2\n3 Pins............................ 3",
+                            "bbox": [72, 80, 280, 160],
+                        },
+                        {
+                            "type": "equation_interline",
+                            "content": [{"type": "text", "content": r"V_{OS}"}],
+                            "bbox": [72, 180, 180, 210],
+                        },
+                    ],
+                    [
+                        {
+                            "type": "table",
+                            "content": [{"html": "<table><tr><td>VOS</td></tr></table>"}],
+                            "table_caption": [[{"type": "text", "content": "Electrical Characteristics"}]],
+                            "table_footnote": [
+                                {"type": "text", "content": "Note:"},
+                                {"type": "equation_inline", "content": r"V_{OS}"},
+                            ],
+                            "bbox": [72, 80, 540, 260],
+                        },
+                        {
+                            "type": "image",
+                            "content": [{"img_path": "images/chart.png"}],
+                            "caption": [{"type": "text", "content": "Figure 1. Noise"}],
+                            "bbox": [72, 300, 360, 480],
+                        },
+                    ],
+                ],
+                layout={
+                    "pdf_info": [
+                        {"page_idx": 0, "page_size": [612, 792]},
+                        {"page_idx": 1, "page_size": [612, 792]},
+                    ]
+                },
+            )
+
+            result = MinerUToDocumentIRService().convert_zip(
+                zip_path,
+                job_id="docjob_nested",
+                source_file_id="file_nested",
+                document_language="en",
+            )
+
+        document = result.document
+        self.assertEqual([page.index for page in document.pages], [0, 1])
+        self.assertEqual([block.page_index for block in document.blocks], [0, 0, 1, 1])
+        self.assertEqual(document.blocks[0].type, "list")
+        self.assertEqual(
+            document.blocks[0].list_items,
+            ["1 Features........................ 1", "2 Specifications.................. 2", "3 Pins............................ 3"],
+        )
+        self.assertEqual(document.blocks[1].type, "formula")
+        self.assertEqual(document.blocks[1].latex, "V_{OS}")
+        self.assertEqual(document.blocks[2].type, "table")
+        self.assertEqual(document.blocks[2].html, "<table><tr><td>VOS</td></tr></table>")
+        self.assertEqual(document.blocks[2].captions, ["Electrical Characteristics"])
+        self.assertEqual(document.blocks[2].footnotes, ["Note: V<sub>OS</sub>"])
+        self.assertEqual(document.blocks[2].layout.column_hint, "wide")
+        self.assertEqual(document.blocks[3].type, "image")
+        self.assertEqual(document.blocks[3].captions, ["Figure 1. Noise"])
+        self.assertEqual(result.image_assets[0].source_path, "images/chart.png")
+
     def test_convert_zip_records_missing_layout_source_and_bbox(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             zip_path = Path(temp_dir) / "mineru.zip"
@@ -136,7 +208,7 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
         self.assertIn("middle_json_missing", result.document.quality_flags)
         self.assertIn("layout_bbox_missing:block_0001", result.document.quality_flags)
 
-    def _write_zip(self, zip_path: Path, *, blocks: list[dict], layout: dict | None) -> None:
+    def _write_zip(self, zip_path: Path, *, blocks: list[Any], layout: dict | None) -> None:
         with zipfile.ZipFile(zip_path, "w") as archive:
             archive.writestr("content_list.json", json.dumps(blocks, ensure_ascii=False))
             if layout is not None:
