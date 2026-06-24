@@ -68,6 +68,7 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 |---|---|
 | `direct_pdf_to_word` | P0 默认路径，直接生成 Word。 |
 | `en2zh_pdf_to_word` | 实验能力，先翻译 DocumentIR 再生成 Word。 |
+| `ru2zh_pdf_to_word` | 俄译中能力，先翻译 DocumentIR 再生成 Word。 |
 
 ### 失败诊断字段
 
@@ -151,7 +152,7 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 | `page_size` | `20` | 当前限制 `1-100`。 |
 | `status` | 无 | 按任务状态过滤。 |
 | `status_group` | 无 | 状态组过滤；OpenAPI 枚举当前仅允许 `active`，等价于 `pending` / `queued` / `running`。不能与 `status` 同时使用。 |
-| `translation_qa_status` | 无 | 按翻译 QA 状态过滤；OpenAPI 枚举允许 `unreviewed` / `approved` / `needs_fix` / `blocked` / `all`，传 `all` 时返回全部 `en2zh_pdf_to_word` QA 任务。 |
+| `translation_qa_status` | 无 | 按翻译 QA 状态过滤；OpenAPI 枚举允许 `unreviewed` / `approved` / `needs_fix` / `blocked` / `all`，传 `all` 时返回全部 `en2zh_pdf_to_word` / `ru2zh_pdf_to_word` QA 任务。 |
 | `q` | 无 | 按任务 ID、源文件 ID、源文件名、错误码或错误信息搜索。 |
 | `sort` | `created_at_desc` | `created_at_desc` / `created_at_asc` / `updated_at_desc` / `updated_at_asc`。 |
 | `include_archived` | `false` | 是否包含已归档任务；已删除任务始终不进入列表。 |

@@ -247,6 +247,7 @@ class RenderConfigCharacterizationTests(unittest.TestCase):
         ]
 
         self.assertEqual(self.module.resolve_document_language(pages, preferred="en"), "en")
+        self.assertEqual(self.module.resolve_document_language(pages, preferred="ru"), "ru")
 
     def test_apply_document_language_overrides_uses_english_font_without_changing_config_sizes(self):
         render_config = self.module.RenderConfig(

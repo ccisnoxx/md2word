@@ -118,7 +118,7 @@ class JobRecord(BaseModel):
     translation_mode: TranslationMode = "direct"
     document_language: DocumentLanguage = "auto"
     use_mineru_header_footer: bool = False
-    resolved_document_language: Literal["zh", "en"] | None = None
+    resolved_document_language: Literal["zh", "en", "ru"] | None = None
     template_id: str | None = None
     resource_snapshot: JobResourceSnapshot | None = None
     # 下面这些 mineru_* 字段保留为兼容投影层。

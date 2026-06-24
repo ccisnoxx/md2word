@@ -7210,8 +7210,8 @@ class FastAPIJobsBackendTests(TestCase):
                     headers=headers,
                     json={
                         "source_file_id": running_source["id"],
-                        "mode": "en2zh_pdf_to_word",
-                        "document_language": "en",
+                        "translation_mode": "ru2zh",
+                        "document_language": "ru",
                     },
                 ).json()["job_id"]
                 archived_job_id = client.post(
@@ -7388,6 +7388,7 @@ class FastAPIJobsBackendTests(TestCase):
         )
         self.assertEqual(qa_all_response.status_code, 200)
         self.assertEqual([item["id"] for item in qa_all_response.json()["items"]], [running_job_id, queued_job_id, beta_job_id])
+        self.assertEqual(qa_all_response.json()["items"][0]["translation_mode"], "ru2zh")
         self.assertEqual(qa_all_response.json()["total"], 3)
         self.assertEqual(qa_all_response.json()["filtered_summary"], {"pending": 1, "queued": 1, "running": 1})
         self.assertEqual(qa_all_response.json()["translation_qa_summary"], expected_qa_summary)
