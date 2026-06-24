@@ -218,6 +218,91 @@ if user_repository.count_internal_users() == 0:
 user = user_repository.get_internal_user_by_username(username_key)
 ```
 
+#### Scenario: Local MinerU Phase-2 Quality Matrix
+
+##### 1. Scope / Trigger
+
+- Trigger: local-only MinerU PDF-to-Word quality hardening needs a repeatable
+  command that runs current `mineru_result/` samples, collects DOCX structure
+  evidence, and produces manual visual QA artifacts without changing online
+  APIs or the formal renderer path.
+- Keep this workflow under `scripts/dev/` and `tests/tmp/`; do not commit local
+  DOCX, PNG/PDF renders, full translation traces, API keys, or proprietary PDFs.
+
+##### 2. Signatures
+
+- Command:
+  `scripts/dev/run_local_mineru_quality_matrix.py`
+- Key args:
+  `--sample-set phase2-core`, repeated `--sample-id`, repeated `--mode direct|en2zh`,
+  `--translation-response-dir`, `--output-dir`, `--no-timestamp`, `--dry-run`,
+  and `--allow-blockers`.
+- Default output:
+  `tests/tmp/local_mineru_quality/<run_id>/report.json`, `report.md`,
+  `manual-signoff-template.yaml`, and `docx/<mode>/<sample>.docx`.
+
+##### 3. Contracts
+
+- `phase2-core` must cover `OPA228_P1`, `OPA228_P2`, `OPA228_P6`,
+  `OPA228_P7`, and `RS2G04`.
+- Direct mode uses the datasheet Word template, datasheet YAML layout config,
+  and subscript term rules from `resources/`.
+- En2zh mode requires either `OPENAI_API_KEY` or a matching local response file
+  under `--translation-response-dir`; it must not silently fall back to direct.
+- Reports must include sample metadata, MinerU page/block/image stats, DOCX
+  hash/openability, `docx_quality_flags`, P0/P1/P2 issues, standard render
+  commands, acceptance layers, and phase-3 entry blockers.
+
+##### 4. Validation & Error Matrix
+
+- Unknown sample id -> `ValueError`.
+- Missing local MinerU package -> per-entry `blocked` with
+  `sample_input_missing`.
+- En2zh without API key or response -> per-entry `blocked` with
+  `translation_api_key_missing`.
+- Runtime conversion exception -> per-entry `failed` with the exception class
+  name as `error_code`.
+- DOCX zip not openable -> quality issue `docx_not_openable`.
+
+##### 5. Good/Base/Bad Cases
+
+- Good: `--mode direct --sample-set phase2-core` writes five successful DOCX
+  entries and flags P1/P2 quality risks without marking generated outputs for
+  commit.
+- Base: en2zh without key/response records an environment blocker and does not
+  call the conversion runtime.
+- Bad: storing a real API key in JSON/report output, committing
+  `tests/tmp/local_mineru_quality`, importing the formal renderer as the
+  generation path, or treating manual visual QA as automated pass.
+
+##### 6. Tests Required
+
+- Unit tests must assert the `phase2-core` sample ids and P0 membership.
+- Unit tests must cover dry-run report generation, MinerU stats extraction,
+  en2zh missing-key blocker behavior, and successful DOCX quality extraction.
+- When the command or report contract changes, run
+  `tests.test_local_mineru_quality_matrix`,
+  `tests.test_component_pdf_sample_governance`, and
+  `tests.test_conversion_sandbox_dev_tools`.
+
+##### 7. Wrong vs Correct
+
+Wrong:
+
+```bash
+.venv/bin/python scripts/dev/run_local_mineru_debug_config.py --config local_en2zh.json || true
+```
+
+Correct:
+
+```bash
+.venv/bin/python scripts/dev/run_local_mineru_quality_matrix.py \
+  --mode en2zh \
+  --sample-id OPA228_P1 \
+  --translation-response-dir tests/tmp/local_mineru_debug/en2zh_responses \
+  --allow-blockers
+```
+
 #### Scenario: Acceptance Center Latest Evidence Summary
 
 ##### 1. Scope / Trigger
