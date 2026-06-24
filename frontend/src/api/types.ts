@@ -1925,6 +1925,11 @@ export type DocumentJobConfigDefaults = {
   translation_profile?: DocumentJobConfigVersionOption | null;
 };
 
+export type DocumentJobTranslationResourceDefaults = {
+  translation_term_set?: DocumentJobConfigVersionOption | null;
+  translation_profile?: DocumentJobConfigVersionOption | null;
+};
+
 export type DocumentJobConfigOptions = {
   templates: DocumentJobConfigVersionOption[];
   term_rule_sets: DocumentJobConfigVersionOption[];
@@ -1936,6 +1941,7 @@ export type DocumentJobConfigSummaryResponse = {
   role: string;
   resource_mode: "legacy" | "versioned";
   defaults: DocumentJobConfigDefaults;
+  translation_defaults: Record<string, DocumentJobTranslationResourceDefaults>;
   options: DocumentJobConfigOptions;
   readiness: {
     en2zh_available: boolean;

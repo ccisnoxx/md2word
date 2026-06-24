@@ -361,6 +361,13 @@ class DocumentJobConfigDefaults(BaseModel):
     translation_profile: DocumentJobConfigVersionOption | None = None
 
 
+class DocumentJobTranslationResourceDefaults(BaseModel):
+    """Default translation resources for one supported language pair."""
+
+    translation_term_set: DocumentJobConfigVersionOption | None = None
+    translation_profile: DocumentJobConfigVersionOption | None = None
+
+
 class DocumentJobConfigOptions(BaseModel):
     templates: list[DocumentJobConfigVersionOption] = Field(default_factory=list)
     term_rule_sets: list[DocumentJobConfigVersionOption] = Field(default_factory=list)
@@ -384,6 +391,7 @@ class DocumentJobConfigSummaryResponse(BaseModel):
     role: str
     resource_mode: Literal["legacy", "versioned"]
     defaults: DocumentJobConfigDefaults
+    translation_defaults: dict[str, DocumentJobTranslationResourceDefaults] = Field(default_factory=dict)
     options: DocumentJobConfigOptions
     readiness: DocumentJobConfigReadiness
 

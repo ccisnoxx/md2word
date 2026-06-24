@@ -2285,6 +2285,13 @@
           "role": {
             "title": "Role",
             "type": "string"
+          },
+          "translation_defaults": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/DocumentJobTranslationResourceDefaults"
+            },
+            "title": "Translation Defaults",
+            "type": "object"
           }
         },
         "required": [
@@ -4740,6 +4747,33 @@
           "job"
         ],
         "title": "DocumentJobTranslationQaUpdateResponse",
+        "type": "object"
+      },
+      "DocumentJobTranslationResourceDefaults": {
+        "description": "Default translation resources for one supported language pair.",
+        "properties": {
+          "translation_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentJobConfigVersionOption"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "translation_term_set": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentJobConfigVersionOption"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "DocumentJobTranslationResourceDefaults",
         "type": "object"
       },
       "DocumentJobUnarchiveResponse": {
