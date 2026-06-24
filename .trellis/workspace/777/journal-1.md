@@ -887,3 +887,36 @@ Aligned DocumentIR renderer parity, documented the formal P0 Golden Sample gate,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 27: P0 Golden Sample layout fixes
+
+**Date**: 2026-06-24
+**Task**: P0 Golden Sample layout fixes
+**Branch**: `main`
+
+### Summary
+
+Fixed formal DocumentIR Word rendering so portrait Golden Sample pages stay A4 portrait with editable wide tables, table condition annotations render as context text, and targeted renderer/converter/document-job tests plus docs/specs were updated.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `02e0077f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
