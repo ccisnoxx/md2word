@@ -50,15 +50,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--document-language",
-        choices=("auto", "zh", "en"),
+        choices=("auto", "zh", "en", "ru"),
         default="auto",
         help="Document language override. Defaults to auto detection.",
     )
     parser.add_argument(
         "--translation-mode",
-        choices=("direct", "en2zh", "none", "llm_en_to_zh"),
+        choices=("direct", "en2zh", "ru2zh", "none", "llm_en_to_zh", "llm_ru_to_zh"),
         default="direct",
-        help="direct/none generates the current language; en2zh/llm_en_to_zh translates first.",
+        help="direct/none generates the current language; en2zh/ru2zh translates first.",
     )
     parser.add_argument("--translation-request-output", help="Write the LLM translation request JSON.")
     parser.add_argument("--translation-response", help="Read an LLM translation response JSON.")
@@ -97,6 +97,8 @@ def normalize_translation_mode(mode: str | None) -> str:
         return "direct"
     if normalized in {"en2zh", "llm_en_to_zh", "en_to_zh"}:
         return "en2zh"
+    if normalized in {"ru2zh", "llm_ru_to_zh", "ru_to_zh"}:
+        return "ru2zh"
     raise ValueError(f"Unsupported translation_mode: {mode}")
 
 

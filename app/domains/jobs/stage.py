@@ -44,6 +44,7 @@ from app.domains.jobs.repository import (
 from app.domains.jobs.artifact_storage import ArtifactStorageProtocol
 from app.domains.jobs.resource_snapshots import JobResourceSnapshotError, JobResourceSnapshotService
 from app.domains.jobs.workflow_events import build_job_event_from_intent
+from app.domains.translation.modes import is_translation_mode, language_pair_for_translation_mode
 
 
 class JobStageService:
@@ -71,7 +72,7 @@ class JobStageService:
         resolve_template_path: Callable[[str | None], Path | None] | None = None,
         resolve_layout_config_path: Callable[[str | None], Path | None] | None = None,
         resolve_subscript_config_path: Callable[[], Path | None] | None = None,
-        resolve_translation_profile_snapshot: Callable[[], TranslationProfileSnapshot | None] | None = None,
+        resolve_translation_profile_snapshot: Callable[[str], TranslationProfileSnapshot | None] | None = None,
         resource_snapshot_service: JobResourceSnapshotService | None = None,
     ) -> None:
         self.settings = settings
@@ -87,7 +88,7 @@ class JobStageService:
         self.resolve_template_path = resolve_template_path or (lambda _template_id: self.settings.default_template_path)
         self.resolve_layout_config_path = resolve_layout_config_path or (lambda _template_id: self.settings.layout_config_path)
         self.resolve_subscript_config_path = resolve_subscript_config_path or (lambda: self.settings.subscript_config_path)
-        self.resolve_translation_profile_snapshot = resolve_translation_profile_snapshot or (lambda: None)
+        self.resolve_translation_profile_snapshot = resolve_translation_profile_snapshot or (lambda _language_pair: None)
         self.resource_snapshot_service = resource_snapshot_service
         self.logger = logging.getLogger("business")
 
@@ -370,7 +371,7 @@ class JobStageService:
             translation_profile = (
                 materialized_resources.translation_profile
                 if materialized_resources is not None
-                else self.resolve_translation_profile_snapshot() if job.translation_mode == "en2zh" else None
+                else self._resolve_default_translation_profile(job.translation_mode)
             )
             request = build_job_conversion_request(
                 job=job,
@@ -423,7 +424,7 @@ class JobStageService:
                 },
             )
             return
-        if job.translation_mode == "en2zh":
+        if is_translation_mode(job.translation_mode):
             self._append_intent_events(
                 job.id,
                 (build_translation_started_intent(translation_model=request.translation_model),),
@@ -473,7 +474,7 @@ class JobStageService:
                 job.id,
                 self.artifact_storage.build_registered_file("translation_trace", job_paths),
             )
-        if job.translation_mode == "en2zh":
+        if is_translation_mode(job.translation_mode):
             self._append_intent_events(
                 job.id,
                 (
@@ -521,6 +522,12 @@ class JobStageService:
             message.id,
             job_paths.result_docx,
         )
+
+    def _resolve_default_translation_profile(self, translation_mode: str) -> TranslationProfileSnapshot | None:
+        language_pair = language_pair_for_translation_mode(translation_mode)
+        if language_pair is None:
+            return None
+        return self.resolve_translation_profile_snapshot(language_pair)
 
     def _dispatch_convert_parsed_result(self, job: JobRecord, message: JobStageMessage) -> None:
         self._mark_stage_running(message)

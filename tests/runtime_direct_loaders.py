@@ -678,6 +678,8 @@ def load_input_adapter_module():
             return "direct"
         if normalized in {"en2zh", "llm_en_to_zh", "en_to_zh"}:
             return "en2zh"
+        if normalized in {"ru2zh", "llm_ru_to_zh", "ru_to_zh"}:
+            return "ru2zh"
         raise ValueError(f"不支持的 translation_mode: {mode}")
 
     def get_configured_input_path() -> Path | None:

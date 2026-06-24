@@ -21,6 +21,7 @@ from app.core.errors import ApiError
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.schemas import DocumentFileSummaryResponse
 from app.domains.resources.models import utc_now
+from app.domains.translation.modes import translation_mode_for_document_job_mode
 from app.core.runtime import AppRuntime
 from app.domains.document_jobs.schemas import (
     DocumentJobArchiveResponse,
@@ -97,6 +98,7 @@ def create_document_job(
         user=user,
         source_file_id=payload.source_file_id,
         mode=payload.mode,
+        translation_mode=payload.translation_mode,
         document_language=payload.document_language,
         template_version_id=payload.template_version_id,
         term_version_id=payload.term_version_id,
@@ -647,6 +649,7 @@ def _build_document_job_response(
 ) -> DocumentJobResponse:
     return DocumentJobResponse(
         **job.model_dump(mode="python"),
+        translation_mode=translation_mode_for_document_job_mode(job.mode),
         available_actions=runtime.document_job_service.build_available_actions(job, user=user),
     )
 

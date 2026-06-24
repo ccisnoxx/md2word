@@ -13,6 +13,7 @@ from app.domains.translation.models import (
     TranslationProviderResult,
     TranslationTextItem,
 )
+from app.domains.translation.modes import translation_prompt_path
 
 
 class TranslationProvider(Protocol):
@@ -86,11 +87,14 @@ class OpenAICompatibleTranslationProvider:
         )
 
     def _system_prompt(self, request: TranslationProviderRequest) -> str:
+        prompt_path = translation_prompt_path(self.settings.root_dir, request.language_pair)
+        if not prompt_path.exists():
+            raise RuntimeError(f"system prompt 文件不存在: {prompt_path}")
+        prompt = prompt_path.read_text(encoding="utf-8").strip()
         return (
-            "You are a technical document translation engine. "
-            f"Translate from {request.source_language} to {request.target_language}. "
-            "Return only JSON with an items array. Preserve every item id exactly. "
-            "Translate only the text value. Do not add, remove, merge, or split items."
+            f"{prompt}\n\n"
+            f"Language pair: {request.language_pair}; source={request.source_language}; target={request.target_language}. "
+            "Return only JSON with an items array. Preserve every item id exactly."
         )
 
     def _user_prompt(self, request: TranslationProviderRequest) -> str:

@@ -9,6 +9,7 @@ import type {
   DocumentJobResponse,
   DocumentJobStage,
   DocumentJobStatus,
+  TranslationMode,
   TranslationQaStatus,
 } from "@/api/types";
 
@@ -40,6 +41,7 @@ export type DocumentJobModeDefinition = {
   label: string;
   shortLabel: string;
   createDocumentLanguage: DocumentLanguage;
+  translationMode: TranslationMode;
   requiresTranslationResources: boolean;
   supportsTranslationQa: boolean;
 };
@@ -50,6 +52,7 @@ export const documentJobModeDefinitions: Record<DocumentJobMode, DocumentJobMode
     label: "PDF 直接转 Word",
     shortLabel: "直接转 Word",
     createDocumentLanguage: "auto",
+    translationMode: "direct",
     requiresTranslationResources: false,
     supportsTranslationQa: false,
   },
@@ -58,12 +61,22 @@ export const documentJobModeDefinitions: Record<DocumentJobMode, DocumentJobMode
     label: "英文 PDF 翻译转 Word",
     shortLabel: "英译中",
     createDocumentLanguage: "en",
+    translationMode: "en2zh",
+    requiresTranslationResources: true,
+    supportsTranslationQa: true,
+  },
+  ru2zh_pdf_to_word: {
+    mode: "ru2zh_pdf_to_word",
+    label: "俄文 PDF 翻译转 Word",
+    shortLabel: "俄译中",
+    createDocumentLanguage: "ru",
+    translationMode: "ru2zh",
     requiresTranslationResources: true,
     supportsTranslationQa: true,
   },
 };
 
-export const documentJobModeOrder: DocumentJobMode[] = ["direct_pdf_to_word", "en2zh_pdf_to_word"];
+export const documentJobModeOrder: DocumentJobMode[] = ["direct_pdf_to_word", "en2zh_pdf_to_word", "ru2zh_pdf_to_word"];
 
 export const documentJobModeOptions: DocumentJobModeDefinition[] = documentJobModeOrder.map(
   (mode) => documentJobModeDefinitions[mode],
@@ -72,6 +85,7 @@ export const documentJobModeOptions: DocumentJobModeDefinition[] = documentJobMo
 export const jobModeText: Record<string, string> = {
   direct_pdf_to_word: documentJobModeDefinitions.direct_pdf_to_word.label,
   en2zh_pdf_to_word: documentJobModeDefinitions.en2zh_pdf_to_word.label,
+  ru2zh_pdf_to_word: documentJobModeDefinitions.ru2zh_pdf_to_word.label,
 };
 
 export function documentJobModeCreateLanguage(mode: DocumentJobMode): DocumentLanguage {
@@ -80,6 +94,10 @@ export function documentJobModeCreateLanguage(mode: DocumentJobMode): DocumentLa
 
 export function documentJobModeRequiresTranslationResources(mode: DocumentJobMode): boolean {
   return documentJobModeDefinitions[mode].requiresTranslationResources;
+}
+
+export function documentJobModeTranslationMode(mode: DocumentJobMode): TranslationMode {
+  return documentJobModeDefinitions[mode].translationMode;
 }
 
 export function documentJobModeSupportsTranslationQa(mode: DocumentJobMode): boolean {

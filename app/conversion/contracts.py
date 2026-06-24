@@ -7,10 +7,11 @@ from pathlib import Path
 from typing import Literal, Protocol
 
 from app.domains.translation.models import TermVersionSnapshot, TranslationProfileSnapshot
+from app.domains.translation.modes import DocumentLanguage, TranslationMode
 
 
-ConversionTranslationMode = Literal["direct", "en2zh"]
-ConversionDocumentLanguage = Literal["auto", "zh", "en"]
+ConversionTranslationMode = TranslationMode
+ConversionDocumentLanguage = DocumentLanguage
 ResolvedDocumentLanguage = Literal["zh", "en"]
 
 

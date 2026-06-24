@@ -18,15 +18,17 @@ from app.domains.jobs.models import (
 from app.domains.jobs.paths import JobPaths
 from app.domains.resources.models import ResolvedResourceVersion, ResourceType, ResourceVersionRecord, ResourceVersionStatus
 from app.domains.term_rules.models import TermRulesStore
-from app.domains.translation.models import (
-    TermVersionSnapshot,
-    TranslationProfileSnapshot,
+from app.domains.translation.models import TermVersionSnapshot, TranslationProfileSnapshot
+from app.domains.translation.modes import (
+    TRANSLATION_MODE_SPECS,
     derive_translation_term_set_id,
+    is_translation_mode,
+    spec_for_language_pair,
+    spec_for_translation_mode,
 )
 from app.domains.resources.service import ResourceVersionService
 from app.domains.term_rules.yaml_codec import TermRuleYamlCodec
 from app.domains.term_rules.versioning_service import DEFAULT_TERM_RULE_SET_ID
-from app.domains.translation.profiles_service import DEFAULT_TRANSLATION_PROFILE_ID
 from app.domains.translation.repository import TranslationTermRepositoryProtocol
 
 
@@ -99,7 +101,7 @@ class JobResourceSnapshotService:
             term_rule_department_id=self._optional_text(options.term_rule_department_id),
             translation_term_set=translation_term_set,
             translation_profile=translation_profile,
-            mineru=self._build_mineru_snapshot(source_kind=source_kind, job_id=job_id),
+            mineru=self._build_mineru_snapshot(source_kind=source_kind, job_id=job_id, options=options),
             artifact_ids={"source": "source_pdf" if source_kind == "source_pdf" else "source_package"},
         )
 
@@ -183,25 +185,38 @@ class JobResourceSnapshotService:
         )
         translation_profile = (
             self._materialize_translation_profile(snapshot.translation_profile)
-            if job.translation_mode == "en2zh"
+            if is_translation_mode(job.translation_mode)
             else None
         )
         translation_term_version = (
             self._materialize_translation_term_set(snapshot.translation_term_set)
-            if job.translation_mode == "en2zh"
+            if is_translation_mode(job.translation_mode)
             else None
         )
-        if job.translation_mode == "en2zh" and translation_profile is None:
+        spec = spec_for_translation_mode(job.translation_mode)
+        if is_translation_mode(job.translation_mode) and translation_profile is None:
             raise JobResourceSnapshotError(
-                "en2zh 任务缺少 Translation Profile 快照。",
+                "翻译任务缺少 Translation Profile 快照。",
                 status_code=409,
                 code="resource_snapshot_missing_translation_profile",
             )
-        if job.translation_mode == "en2zh" and translation_term_version is None:
+        if is_translation_mode(job.translation_mode) and translation_term_version is None:
             raise JobResourceSnapshotError(
-                "en2zh 任务缺少 Translation Term Set 快照。",
+                "翻译任务缺少 Translation Term Set 快照。",
                 status_code=409,
                 code="resource_snapshot_missing_translation_term_set",
+            )
+        if spec.language_pair is not None and translation_profile is not None and translation_profile.language_pair != spec.language_pair:
+            raise JobResourceSnapshotError(
+                f"Translation Profile language_pair 不匹配: expected={spec.language_pair} actual={translation_profile.language_pair}",
+                status_code=400,
+                code="translation_profile_language_pair_mismatch",
+            )
+        if spec.language_pair is not None and translation_term_version is not None and translation_term_version.language_pair != spec.language_pair:
+            raise JobResourceSnapshotError(
+                f"Translation Term Set language_pair 不匹配: expected={spec.language_pair} actual={translation_term_version.language_pair}",
+                status_code=400,
+                code="translation_term_set_language_pair_mismatch",
             )
         return MaterializedJobResources(
             template_path=template_path,
@@ -216,11 +231,18 @@ class JobResourceSnapshotService:
             self._optional_text(value)
             for value in (options.translation_profile_id, options.translation_profile_version)
         )
-        if options.translation_mode != "en2zh":
+        spec = spec_for_translation_mode(options.translation_mode)
+        if not spec.is_translation:
             if has_translation_selection:
                 raise JobResourceSnapshotError("direct 任务不能绑定 Translation Profile。", status_code=400)
             return None
-        profile_id = self._optional_text(options.translation_profile_id) or DEFAULT_TRANSLATION_PROFILE_ID
+        profile_id = self._optional_text(options.translation_profile_id) or spec.default_profile_id
+        if profile_id is None:
+            raise JobResourceSnapshotError(
+                f"{options.translation_mode} 缺少默认 Translation Profile。",
+                status_code=409,
+                code="translation_profile_default_missing",
+            )
         return self._resolve_resource(
             resource_type="translation_profile",
             resource_id=profile_id,
@@ -235,17 +257,31 @@ class JobResourceSnapshotService:
         use_default_version: bool = False,
     ) -> ResolvedTranslationTermVersion | None:
         has_translation_term_selection = self._has_translation_term_selection(options)
-        if options.translation_mode != "en2zh":
+        spec = spec_for_translation_mode(options.translation_mode)
+        if not spec.is_translation:
             if has_translation_term_selection:
                 raise JobResourceSnapshotError("direct 任务不能绑定 Translation Term Set。", status_code=400)
             return None
-        set_id = self._optional_text(options.translation_term_set_id) or derive_translation_term_set_id("en2zh")
+        set_id = self._optional_text(options.translation_term_set_id) or spec.default_term_set_id
+        if set_id is None:
+            raise JobResourceSnapshotError(
+                f"{options.translation_mode} 缺少默认 Translation Term Set。",
+                status_code=409,
+                code="translation_term_set_default_missing",
+            )
         version = None if use_default_version else self._optional_text(options.translation_term_version)
-        return self._resolve_translation_term_version(
+        resolved = self._resolve_translation_term_version(
             set_id=set_id,
             version=version,
             default_missing_status=409,
         )
+        if spec.language_pair is not None and resolved.language_pair != spec.language_pair:
+            raise JobResourceSnapshotError(
+                f"Translation Term Set language_pair 不匹配: expected={spec.language_pair} actual={resolved.language_pair}",
+                status_code=400,
+                code="translation_term_set_language_pair_mismatch",
+            )
+        return resolved
 
     def _resolve_translation_term_version(
         self,
@@ -318,10 +354,17 @@ class JobResourceSnapshotService:
         except ValueError as exc:
             raise JobResourceSnapshotError(str(exc), status_code=400) from exc
 
-    def _build_mineru_snapshot(self, *, source_kind: SourceKind, job_id: str) -> JobMineruSnapshot:
+    def _build_mineru_snapshot(
+        self,
+        *,
+        source_kind: SourceKind,
+        job_id: str,
+        options: ConversionOptions,
+    ) -> JobMineruSnapshot:
+        spec = spec_for_translation_mode(options.translation_mode)
         return JobMineruSnapshot(
             model_version=self.settings.mineru_model_version if source_kind == "source_pdf" else None,
-            language=self.settings.mineru_language if source_kind == "source_pdf" else None,
+            language=(spec.mineru_language or self.settings.mineru_language) if source_kind == "source_pdf" else None,
             enable_formula=self.settings.mineru_enable_formula if source_kind == "source_pdf" else None,
             enable_table=self.settings.mineru_enable_table if source_kind == "source_pdf" else None,
             callback_enabled=source_kind == "source_pdf" and bool(self.settings.mineru_callback_url),
@@ -388,6 +431,7 @@ class JobResourceSnapshotService:
         payload = record.payload or {}
         return TranslationProfileSnapshot(
             translation_profile_id=record.resource_id,
+            language_pair=self._profile_language_pair(record.resource_id, payload),
             version=record.version,
             snapshot_hash=record.snapshot_hash,
             target_language=self._payload_text(payload, "target_language") or translation_runtime.DEFAULT_TARGET_LANGUAGE,
@@ -437,6 +481,16 @@ class JobResourceSnapshotService:
             snapshot_hash=snapshot.snapshot_hash,
             entries=tuple(entries),
         )
+
+    def _profile_language_pair(self, translation_profile_id: str, payload: dict[str, object]) -> str:
+        payload_language_pair = self._payload_text(payload, "language_pair")
+        if payload_language_pair is not None:
+            spec_for_language_pair(payload_language_pair)
+            return payload_language_pair
+        for spec in TRANSLATION_MODE_SPECS.values():
+            if spec.default_profile_id == translation_profile_id and spec.language_pair is not None:
+                return spec.language_pair
+        return "en2zh"
 
     def _load_snapshot_record(self, snapshot: ResolvedResourceVersion) -> ResourceVersionRecord:
         if self.resource_version_service is None:

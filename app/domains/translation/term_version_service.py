@@ -61,7 +61,12 @@ class TermVersionService:
         if normalized_id is None:
             if normalized_language_pair is None:
                 return None
-            normalized_id = self.default_term_version_id
+            default_pair, default_version = self._parse_term_version_id(self.default_term_version_id, language_pair=None)
+            normalized_id = (
+                self.default_term_version_id
+                if default_pair == normalized_language_pair
+                else self._term_version_id(normalized_language_pair, default_version)
+            )
         return self.load_version(normalized_id, language_pair=normalized_language_pair)
 
     def load_version(self, term_version_id: str, *, language_pair: str | None = None) -> TermVersionSnapshot:

@@ -23,6 +23,13 @@ class LocalMinerUQualityMatrixTests(TestCase):
         p0_ids = {sample.sample_id for sample in quality_matrix.PHASE2_CORE_SAMPLES if sample.priority == "P0"}
         self.assertEqual(p0_ids, {"OPA228_P1", "OPA228_P2", "OPA228_P6", "OPA228_P7"})
 
+    def test_ru2zh_acceptance_sample_set_targets_russian_mineru_package(self) -> None:
+        samples = quality_matrix.SAMPLE_SETS[quality_matrix.RU2ZH_ACCEPTANCE_SAMPLE_SET]
+
+        self.assertEqual([sample.sample_id for sample in samples], ["RU_DIODE_ANODE_TOP"])
+        self.assertEqual(samples[0].document_language, "ru")
+        self.assertIn("диод анод сверху", samples[0].input_glob)
+
     def test_dry_run_writes_report_with_mineru_stats_and_qa_command(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -75,6 +82,32 @@ class LocalMinerUQualityMatrixTests(TestCase):
             self.assertEqual(result["issues"][0]["severity"], "P1")
             self.assertEqual(report["summary"]["blocked"], 1)
             self.assertEqual(report["summary"]["phase3_entry_blocker"], "environment_or_input_blockers_must_be_resolved")
+            run_conversion.assert_not_called()
+
+    def test_ru2zh_without_key_or_response_is_reported_as_blocker(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            package = self._make_mineru_package(root)
+
+            with (
+                mock.patch.object(quality_matrix, "_find_sample_matches", return_value=[package]),
+                mock.patch.dict(os.environ, {quality_matrix.OPENAI_API_KEY_ENV: ""}, clear=False),
+                mock.patch.object(quality_matrix.runtime_runner, "run_conversion") as run_conversion,
+            ):
+                report = quality_matrix.run_matrix(
+                    quality_matrix.MatrixConfig(
+                        output_dir=root / "runs",
+                        sample_set=quality_matrix.RU2ZH_ACCEPTANCE_SAMPLE_SET,
+                        sample_ids=("RU_DIODE_ANODE_TOP",),
+                        modes=("ru2zh",),
+                        timestamped=False,
+                    )
+                )
+
+            result = report["results"][0]
+            self.assertEqual(result["status"], "blocked")
+            self.assertEqual(result["error_code"], "translation_api_key_missing")
+            self.assertIn("ru2zh requires", result["error_message"])
             run_conversion.assert_not_called()
 
     def test_successful_direct_run_records_docx_quality_flags(self) -> None:

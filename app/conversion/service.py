@@ -9,13 +9,14 @@ from app.conversion.contracts import (
     ConversionResult,
 )
 from app.conversion.runtime_facade import load_pages, materialize_input, resolve_document_language, run_conversion
+from app.domains.translation.modes import is_translation_mode
 
 
 class ConversionService:
     def convert(self, request: ConversionRequest) -> ConversionResult:
         try:
             preferred_document_language = request.document_language
-            if request.translation_mode == "en2zh" and preferred_document_language == "auto":
+            if is_translation_mode(request.translation_mode):
                 preferred_document_language = "zh"
 
             with materialize_input(request.package_path) as package_root:
@@ -53,6 +54,7 @@ class ConversionService:
                 translation_profile=(
                     {
                         "translation_profile_id": request.translation_profile.translation_profile_id,
+                        "language_pair": request.translation_profile.language_pair,
                         "version": request.translation_profile.version,
                         "snapshot_hash": request.translation_profile.snapshot_hash,
                     }

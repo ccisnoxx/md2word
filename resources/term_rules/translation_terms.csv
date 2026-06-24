@@ -4,3 +4,8 @@ en2zh,slew rate,压摆率,v1
 en2zh,power supply rejection ratio,电源抑制比,v1
 en2zh,common-mode rejection ratio,共模抑制比,v1
 en2zh,quiescent current,静态电流,v1
+ru2zh,Постоянное обратное напряжение диода,反向直流电压,v1
+ru2zh,Постоянное прямое напряжение,正向直流电压,v1
+ru2zh,Постоянный обратный ток,反向漏电流,v1
+ru2zh,Время обратного восстановления,反向恢复时间,v1
+ru2zh,Температура перехода,结温,v1

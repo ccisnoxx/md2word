@@ -33,6 +33,7 @@ from app.domains.jobs.repository import (
     StageMessageStoreProtocol,
 )
 from app.domains.resources.repository import ResourceVersionRepositoryProtocol
+from app.domains.translation.modes import TRANSLATION_LANGUAGE_PAIRS, is_translation_mode, translation_prompt_path
 from app.domains.users.repository import InternalUserRepositoryProtocol
 
 
@@ -120,7 +121,11 @@ class HealthService:
         template_path = self.settings.default_template_path
         layout_config_path = self.settings.layout_config_path
         subscript_config_path = self.settings.subscript_config_path
-        translation_prompt_exists = llm_client.SYSTEM_PROMPT_PATH.exists()
+        translation_prompt_exists_by_language_pair = {
+            language_pair: translation_prompt_path(self.settings.root_dir, language_pair).exists()
+            for language_pair in TRANSLATION_LANGUAGE_PAIRS
+        }
+        translation_prompt_exists = all(translation_prompt_exists_by_language_pair.values())
         ai_provider_config_error: str | None = None
         try:
             ai_provider_config = self._effective_ai_provider_config()
@@ -182,6 +187,7 @@ class HealthService:
             "layout_config_exists": layout_config_path is not None and layout_config_path.exists(),
             "subscript_config_exists": subscript_config_path is not None and subscript_config_path.exists(),
             "translation_prompt_exists": translation_prompt_exists,
+            "translation_prompt_exists_by_language_pair": translation_prompt_exists_by_language_pair,
             "mineru_api_token_configured": bool(self.settings.mineru_api_token),
             "mineru_callback_url_configured": mineru_callback_url_configured,
             "mineru_uid_configured": mineru_uid_configured,
@@ -211,7 +217,7 @@ class HealthService:
             "ai_provider_config_error": ai_provider_config_error,
             "translation_debug_archive_enabled": self.settings.translation_debug_archive_enabled,
             "default_translation_mode": self.settings.default_translation_mode,
-            "translation_required_for_default_mode": self.settings.default_translation_mode == "en2zh",
+            "translation_required_for_default_mode": is_translation_mode(self.settings.default_translation_mode),
             "translation_client_configured": translation_client_configured,
             "translation_available": translation_available,
             "default_template_version": resource_labels["template"],
@@ -283,7 +289,7 @@ class HealthService:
             elif llm_client.OpenAI is None:
                 checks["translation_unavailable_reason"] = "openai Python SDK 不可用"
             elif not checks["translation_prompt_exists"]:
-                checks["translation_unavailable_reason"] = "translation_en2zh prompt 文件缺失"
+                checks["translation_unavailable_reason"] = "翻译 prompt 文件缺失"
         return checks
 
     def _effective_ai_provider_config(self) -> EffectiveAiProviderConfig:

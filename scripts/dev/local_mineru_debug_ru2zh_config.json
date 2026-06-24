@@ -1,0 +1,20 @@
+{
+  "input_path": "mineru_result/диод анод сверху.pdf-5a23152f-e597-40a4-98e8-585b78811b63",
+  "output_path": "tests/tmp/local_mineru_debug/ru2zh/diode_ru2zh.zh.docx",
+  "template_path": "resources/templates/default/datasheet_template.docx",
+  "layout_config_path": "resources/template_configs/datasheet_template.yaml",
+  "subscript_config": "resources/term_rules/subscripts_dictionary.yaml",
+  "no_template": false,
+  "use_mineru_header_footer": false,
+  "document_language": "auto",
+  "translation_mode": "ru2zh",
+  "translation_request_output": "tests/tmp/local_mineru_debug/ru2zh/diode_ru2zh.translation-request.json",
+  "translation_response": "",
+  "translation_trace_output": "tests/tmp/local_mineru_debug/ru2zh/diode_ru2zh.translation-trace.json",
+  "translation_model": "deepseek-v4-flash",
+  "translation_api_key": "",
+  "translation_base_url": "",
+  "translation_max_pages": 20,
+  "translation_max_chars": 12000,
+  "log_level": "INFO"
+}

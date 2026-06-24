@@ -174,6 +174,7 @@
       <el-radio-group v-model="validationDialog.mode" class="form-gap">
         <el-radio-button value="direct_pdf_to_word">直接转 Word</el-radio-button>
         <el-radio-button value="en2zh_pdf_to_word">英译中</el-radio-button>
+        <el-radio-button value="ru2zh_pdf_to_word">俄译中</el-radio-button>
       </el-radio-group>
       <template #footer>
         <el-button @click="validationDialog.visible = false">取消</el-button>
@@ -233,6 +234,7 @@ import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import RoleGate from "@/components/RoleGate.vue";
 import { useAuthStore } from "@/stores/auth";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
+import { documentJobModeCreateLanguage, documentJobModeTranslationMode } from "@/utils/format";
 import { formatBytes, formatDateTime } from "@/utils/format";
 import { uploadFileContent, validatePdfFile } from "@/utils/upload";
 
@@ -421,8 +423,8 @@ async function createValidationJob(): Promise<void> {
     await uploadFileContent(authorization, validationDialog.file, auth.token);
     const response = await documentJobsApi.create({
       source_file_id: authorization.file_id,
-      mode: validationDialog.mode,
-      document_language: validationDialog.mode === "en2zh_pdf_to_word" ? "en" : "auto",
+      translation_mode: documentJobModeTranslationMode(validationDialog.mode),
+      document_language: documentJobModeCreateLanguage(validationDialog.mode),
       template_version_id: templateVersionId(validationDialog.version),
       debug_full_text: false,
     });

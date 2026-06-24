@@ -10,6 +10,7 @@ import {
   documentJobModeOptions,
   documentJobModeRequiresTranslationResources,
   documentJobModeSupportsTranslationQa,
+  documentJobModeTranslationMode,
   isDocumentJobActionEnabled,
   shouldShowDocumentJobAction,
 } from "@/utils/format";
@@ -26,6 +27,7 @@ function buildJob(
     source_file_id: "file_unit",
     source_job_id: null,
     mode: "direct_pdf_to_word",
+    translation_mode: "direct",
     document_language: "auto",
     status: "succeeded",
     stage: "completed",
@@ -185,15 +187,23 @@ describe("document job mode metadata", () => {
     expect(documentJobModeOptions.map((option) => option.mode)).toEqual([
       "direct_pdf_to_word",
       "en2zh_pdf_to_word",
+      "ru2zh_pdf_to_word",
     ]);
 
     expect(documentJobModeCreateLanguage("direct_pdf_to_word")).toBe("auto");
+    expect(documentJobModeTranslationMode("direct_pdf_to_word")).toBe("direct");
     expect(documentJobModeRequiresTranslationResources("direct_pdf_to_word")).toBe(false);
     expect(documentJobModeSupportsTranslationQa("direct_pdf_to_word")).toBe(false);
 
     expect(documentJobModeCreateLanguage("en2zh_pdf_to_word")).toBe("en");
+    expect(documentJobModeTranslationMode("en2zh_pdf_to_word")).toBe("en2zh");
     expect(documentJobModeRequiresTranslationResources("en2zh_pdf_to_word")).toBe(true);
     expect(documentJobModeSupportsTranslationQa("en2zh_pdf_to_word")).toBe(true);
+
+    expect(documentJobModeCreateLanguage("ru2zh_pdf_to_word")).toBe("ru");
+    expect(documentJobModeTranslationMode("ru2zh_pdf_to_word")).toBe("ru2zh");
+    expect(documentJobModeRequiresTranslationResources("ru2zh_pdf_to_word")).toBe(true);
+    expect(documentJobModeSupportsTranslationQa("ru2zh_pdf_to_word")).toBe(true);
   });
 });
 

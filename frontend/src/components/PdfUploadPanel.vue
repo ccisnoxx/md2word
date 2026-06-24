@@ -125,7 +125,7 @@
             <span>翻译术语集</span>
             <el-select v-model="selectedTranslationTermVersion" clearable filterable placeholder="使用默认翻译术语">
               <el-option
-                v-for="option in configSummary?.options.translation_term_sets || []"
+                v-for="option in filteredTranslationTermOptions"
                 :key="configOptionKey(option)"
                 :label="option.label"
                 :value="configOptionKey(option)"
@@ -136,7 +136,7 @@
             <span>翻译配置</span>
             <el-select v-model="selectedTranslationProfileVersion" clearable filterable placeholder="使用默认翻译配置">
               <el-option
-                v-for="option in configSummary?.options.translation_profiles || []"
+                v-for="option in filteredTranslationProfileOptions"
                 :key="configOptionKey(option)"
                 :label="option.label"
                 :value="configOptionKey(option)"
@@ -180,9 +180,11 @@ import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { readinessCodeText } from "@/utils/displayText";
 import { configOptionKey, configVersionId, findConfigOption } from "@/utils/configOptions";
 import {
+  documentJobModeDefinitions,
   documentJobModeCreateLanguage,
   documentJobModeOptions,
   documentJobModeRequiresTranslationResources,
+  documentJobModeTranslationMode,
 } from "@/utils/format";
 
 const emit = defineEmits<{
@@ -208,7 +210,7 @@ const debugFullText = ref(false);
 const maxUploadMb = computed(() => Math.round(getMaxUploadBytes() / 1024 / 1024));
 const isAdmin = computed(() => auth.user?.role === "admin");
 const configWarnings = computed(() => (configSummary.value?.readiness.warnings || []).map(readinessCodeText));
-const en2zhAvailable = computed(() => configSummary.value?.readiness.en2zh_available === true);
+const selectedTranslationMode = computed(() => documentJobModeTranslationMode(mode.value));
 const p0ReadinessBlockers = computed(() => configSummary.value?.readiness.blockers || []);
 const p0ExecutionBlocked = computed(() => Boolean(
   configSummary.value?.readiness.p0_document_jobs_required
@@ -220,20 +222,20 @@ const p0ReadinessMessages = computed(() => (
 const configUnavailable = computed(() => Boolean(configError.value || !configSummary.value));
 const selectableModeOptions = computed(() => documentJobModeOptions.map((option) => ({
   ...option,
-  disabled: documentJobModeRequiresTranslationResources(option.mode) && !en2zhAvailable.value,
+  disabled: documentJobModeRequiresTranslationResources(option.mode) && !isTranslationModeAvailable(documentJobModeTranslationMode(option.mode)),
 })));
 const selectedModeRequiresTranslationResources = computed(() => documentJobModeRequiresTranslationResources(mode.value));
 const selectedModeDisabled = computed(() =>
-  selectedModeRequiresTranslationResources.value && !en2zhAvailable.value,
+  selectedModeRequiresTranslationResources.value && !isTranslationModeAvailable(selectedTranslationMode.value),
 );
 const createDisabled = computed(() => (
   !selectedFile.value || configLoading.value || configUnavailable.value || p0ExecutionBlocked.value || selectedModeDisabled.value
 ));
 const modeReadinessHint = computed(() => {
-  if (!configSummary.value || en2zhAvailable.value) {
+  if (!configSummary.value || isTranslationModeAvailable(selectedTranslationMode.value)) {
     return "";
   }
-  return "英译中需要默认翻译术语集和翻译配置发布后才能选择。";
+  return `${documentJobModeDefinitions[mode.value].shortLabel} 需要默认翻译术语集和翻译配置发布后才能选择。`;
 });
 const defaultConfigItems = computed(() => {
   const defaults = configSummary.value?.defaults;
@@ -269,10 +271,17 @@ const selectedTermRuleOption = computed(() =>
   findConfigOption(configSummary.value?.options.term_rule_sets || [], selectedTermRuleVersion.value),
 );
 const selectedTranslationTermOption = computed(() =>
-  findConfigOption(configSummary.value?.options.translation_term_sets || [], selectedTranslationTermVersion.value),
+  findConfigOption(filteredTranslationTermOptions.value, selectedTranslationTermVersion.value),
 );
 const selectedTranslationProfileOption = computed(() =>
-  findConfigOption(configSummary.value?.options.translation_profiles || [], selectedTranslationProfileVersion.value),
+  findConfigOption(filteredTranslationProfileOptions.value, selectedTranslationProfileVersion.value),
+);
+
+const filteredTranslationTermOptions = computed(() =>
+  filterConfigOptionsByLanguagePair(configSummary.value?.options.translation_term_sets || [], selectedTranslationMode.value),
+);
+const filteredTranslationProfileOptions = computed(() =>
+  filterConfigOptionsByLanguagePair(configSummary.value?.options.translation_profiles || [], selectedTranslationMode.value),
 );
 
 async function loadConfigSummary(): Promise<void> {
@@ -348,7 +357,7 @@ async function submit(): Promise<void> {
     statusText.value = "正在创建转换任务。";
     const payload: DocumentJobCreateRequest = {
       source_file_id: authorization.file_id,
-      mode: mode.value,
+      translation_mode: selectedTranslationMode.value,
       document_language: documentJobModeCreateLanguage(mode.value),
       debug_full_text: isAdmin.value && selectedModeRequiresTranslationResources.value && debugFullText.value,
     };
@@ -391,7 +400,10 @@ watch(mode, (nextMode) => {
     selectedTranslationTermVersion.value = "";
     selectedTranslationProfileVersion.value = "";
     debugFullText.value = false;
+    return;
   }
+  selectedTranslationTermVersion.value = "";
+  selectedTranslationProfileVersion.value = "";
 });
 
 watch(selectedModeDisabled, (disabled) => {
@@ -403,6 +415,32 @@ watch(selectedModeDisabled, (disabled) => {
 onMounted(() => {
   void loadConfigSummary();
 });
+
+function isTranslationModeAvailable(translationMode: string): boolean {
+  if (translationMode === "direct") {
+    return true;
+  }
+  const readiness = configSummary.value?.readiness;
+  if (!readiness) {
+    return false;
+  }
+  return readiness.translation_modes?.[translationMode] ?? (
+    translationMode === "en2zh" ? readiness.en2zh_available : readiness.ru2zh_available
+  );
+}
+
+function filterConfigOptionsByLanguagePair<T extends { summary?: Record<string, unknown> }>(
+  options: T[],
+  languagePair: string,
+): T[] {
+  if (languagePair === "direct") {
+    return options;
+  }
+  return options.filter((option) => {
+    const optionLanguagePair = option.summary?.language_pair;
+    return typeof optionLanguagePair !== "string" || optionLanguagePair === languagePair;
+  });
+}
 </script>
 
 <style scoped lang="scss">

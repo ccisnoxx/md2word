@@ -17,6 +17,7 @@ from app.domains.jobs.models import ConversionOptions
 from app.core.runtime import AppRuntime
 from app.domains.files.validation import validate_pdf_upload
 from app.domains.jobs.schemas import JobAcceptedResponse
+from app.domains.translation.modes import normalize_translation_mode, spec_for_translation_mode, is_translation_mode
 
 
 router = APIRouter()
@@ -44,23 +45,27 @@ def _build_conversion_options(
     runtime: AppRuntime,
     actor: ActorContext,
 ) -> ConversionOptions:
-    normalized_translation_mode = (_normalize_optional_text(translation_mode) or runtime.settings.default_translation_mode).lower()
+    try:
+        normalized_translation_mode = normalize_translation_mode(
+            _normalize_optional_text(translation_mode) or runtime.settings.default_translation_mode
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="translation_mode 仅支持 direct、en2zh 或 ru2zh。",
+        ) from exc
     normalized_document_language = (_normalize_optional_text(document_language) or "auto").lower()
     try:
         normalized_template_id = runtime.template_read_service.resolve_selected_template_id(_normalize_optional_text(template_id))
     except ValueError as exc:
         raise bad_request_http_exception(exc) from exc
 
-    if normalized_translation_mode not in {"direct", "en2zh"}:
+    if normalized_document_language not in {"auto", "zh", "en", "ru"}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="translation_mode 仅支持 direct 或 en2zh。",
+            detail="document_language 仅支持 auto、zh、en、ru。",
         )
-    if normalized_document_language not in {"auto", "zh", "en"}:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="document_language 仅支持 auto、zh、en。",
-        )
+    _ensure_document_language_allowed(normalized_translation_mode, normalized_document_language)
 
     options = ConversionOptions(
         template_id=normalized_template_id,
@@ -99,8 +104,20 @@ def _ensure_term_asset_selection_allowed(options: ConversionOptions, actor: Acto
         )
 
 
+def _ensure_document_language_allowed(translation_mode: str, document_language: str) -> None:
+    spec = spec_for_translation_mode(translation_mode)
+    if not spec.is_translation:
+        return
+    allowed = {"auto", spec.default_document_language}
+    if document_language not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{translation_mode} 只支持 document_language=auto 或 {spec.default_document_language}。",
+        )
+
+
 def _ensure_translation_available(runtime: AppRuntime, options: ConversionOptions) -> None:
-    if options.translation_mode != "en2zh":
+    if not is_translation_mode(options.translation_mode):
         return
     dependency_checks = runtime.health_service.build_dependency_checks()
     if not dependency_checks["translation_available"]:

@@ -12,6 +12,7 @@ function buildJob(id: string, translationQaStatus: TranslationQaStatus): Documen
     source_file_id: `${id}_source`,
     source_job_id: null,
     mode: "en2zh_pdf_to_word",
+    translation_mode: "en2zh",
     document_language: "en",
     status: "succeeded",
     stage: "completed",

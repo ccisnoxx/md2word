@@ -15,6 +15,7 @@ from app.domains.jobs.models import (
     build_source_pdf_context_patch,
     project_job_status,
 )
+from app.domains.translation.modes import is_translation_mode
 
 
 class JobWorkflowViolation(ValueError):
@@ -309,7 +310,7 @@ def build_conversion_failed_transition(
     """返回 convert_package 失败时的统一 job patch 和事件意图。"""
 
     event_intents: list[WorkflowEventIntent] = []
-    if job.translation_mode == "en2zh" and error_code.startswith("translation_"):
+    if is_translation_mode(job.translation_mode) and error_code.startswith("translation_"):
         event_intents.append(
             WorkflowEventIntent(
                 kind="translation_failed",

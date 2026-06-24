@@ -49,9 +49,12 @@ RENDER_DOCX_SCRIPT = (
 )
 OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
 PHASE2_SAMPLE_SET = "phase2-core"
+RU2ZH_ACCEPTANCE_SAMPLE_SET = "ru2zh-acceptance"
 MODE_DIRECT = "direct"
 MODE_EN2ZH = "en2zh"
-ALL_MODES = (MODE_DIRECT, MODE_EN2ZH)
+MODE_RU2ZH = "ru2zh"
+TRANSLATION_MODES = (MODE_EN2ZH, MODE_RU2ZH)
+ALL_MODES = (MODE_DIRECT, *TRANSLATION_MODES)
 
 
 P0_BLOCKING_DOCX_FLAGS = {
@@ -187,7 +190,25 @@ PHASE2_CORE_SAMPLES: tuple[Phase2Sample, ...] = (
         ),
     ),
 )
-SAMPLE_SETS: dict[str, tuple[Phase2Sample, ...]] = {PHASE2_SAMPLE_SET: PHASE2_CORE_SAMPLES}
+RU2ZH_ACCEPTANCE_SAMPLES: tuple[Phase2Sample, ...] = (
+    Phase2Sample(
+        sample_id="RU_DIODE_ANODE_TOP",
+        title="俄文二极管样本",
+        priority="P0",
+        input_glob="mineru_result/диод анод сверху.pdf-5a23152f-e597-40a4-98e8-585b78811b63",
+        document_language="ru",
+        tags=("ru", "datasheet", "diode", "translation"),
+        acceptance_focus=(
+            "俄文西里尔文本进入 translation request。",
+            "ru2zh 输出中文，trace 记录 request/response 对齐证据。",
+            "翻译术语表按 ru2zh language_pair 绑定，不使用术语规则 YAML。",
+        ),
+    ),
+)
+SAMPLE_SETS: dict[str, tuple[Phase2Sample, ...]] = {
+    PHASE2_SAMPLE_SET: PHASE2_CORE_SAMPLES,
+    RU2ZH_ACCEPTANCE_SAMPLE_SET: RU2ZH_ACCEPTANCE_SAMPLES,
+}
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -265,7 +286,8 @@ def run_one_matrix_entry(sample: Phase2Sample, mode: str, run_dir: Path, config:
     started = time.monotonic()
     matches = _find_sample_matches(sample)
     selected_input = matches[0] if matches else None
-    output_path = run_dir / "docx" / mode / f"{sample.sample_id}{'.zh' if mode == MODE_EN2ZH else ''}.docx"
+    is_translation_mode = mode in TRANSLATION_MODES
+    output_path = run_dir / "docx" / mode / f"{sample.sample_id}{'.zh' if is_translation_mode else ''}.docx"
     qa_dir = run_dir / "visual_qa" / mode / sample.sample_id
     result = MatrixResult(
         sample_id=sample.sample_id,
@@ -296,21 +318,21 @@ def run_one_matrix_entry(sample: Phase2Sample, mode: str, run_dir: Path, config:
         result.issues = classify_result_issues(result, sample)
         return result
 
-    response_path = _translation_response_path(config.translation_response_dir, sample.sample_id) if mode == MODE_EN2ZH else None
+    response_path = _translation_response_path(config.translation_response_dir, sample.sample_id) if is_translation_mode else None
     api_key = config.translation_api_key or os.environ.get(OPENAI_API_KEY_ENV)
-    if mode == MODE_EN2ZH and response_path is None and not api_key:
+    if is_translation_mode and response_path is None and not api_key:
         return _finish_blocked_result(
             result,
             started,
             "translation_api_key_missing",
-            "en2zh requires OPENAI_API_KEY or a local translation response file",
+            f"{mode} requires OPENAI_API_KEY or a local translation response file",
             sample,
         )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     translation_request_output = None
     translation_trace_output = None
-    if mode == MODE_EN2ZH:
+    if is_translation_mode:
         trace_dir = run_dir / "translation" / sample.sample_id
         translation_request_output = trace_dir / f"{sample.sample_id}.translation-request.json"
         translation_trace_output = trace_dir / f"{sample.sample_id}.translation-trace.json"

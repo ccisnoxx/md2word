@@ -42,6 +42,22 @@ class LocalMinerUConversionCliTests(TestCase):
         self.assertEqual(kwargs["translation_mode"], "en2zh")
         self.assertEqual(kwargs["translation_trace_output"], "trace.json")
 
+    def test_build_conversion_kwargs_accepts_ru2zh_alias(self) -> None:
+        args = run_local_mineru_conversion.parse_args(
+            [
+                "--translation-mode",
+                "llm_ru_to_zh",
+                "--document-language",
+                "ru",
+                "mineru-package",
+            ]
+        )
+
+        kwargs = run_local_mineru_conversion.build_conversion_kwargs(args)
+
+        self.assertEqual(kwargs["translation_mode"], "ru2zh")
+        self.assertEqual(kwargs["document_language"], "ru")
+
     def test_build_conversion_kwargs_accepts_input_from_environment(self) -> None:
         args = run_local_mineru_conversion.parse_args([])
 
@@ -87,18 +103,28 @@ class LocalMinerUDebugConfigTests(TestCase):
             repo_root / "scripts/dev/local_mineru_debug_en2zh_config.json",
             repo_root=repo_root,
         )
+        ru2zh_kwargs = run_local_mineru_debug_config.build_conversion_kwargs(
+            repo_root / "scripts/dev/local_mineru_debug_ru2zh_config.json",
+            repo_root=repo_root,
+        )
 
         self.assertEqual(default_kwargs["translation_mode"], "direct")
         self.assertEqual(direct_kwargs["translation_mode"], "direct")
         self.assertEqual(en2zh_kwargs["translation_mode"], "en2zh")
+        self.assertEqual(ru2zh_kwargs["translation_mode"], "ru2zh")
         self.assertEqual(default_kwargs["input_path"], direct_kwargs["input_path"])
         self.assertEqual(Path(direct_kwargs["input_path"]).relative_to(repo_root).parts[0], "mineru_result")
         self.assertEqual(Path(en2zh_kwargs["input_path"]).relative_to(repo_root).parts[0], "mineru_result")
+        self.assertEqual(Path(ru2zh_kwargs["input_path"]).relative_to(repo_root).parts[0], "mineru_result")
         self.assertIn("tests/tmp/local_mineru_debug/direct", direct_kwargs["output_path"])
         self.assertIn("tests/tmp/local_mineru_debug/en2zh", en2zh_kwargs["output_path"])
+        self.assertIn("tests/tmp/local_mineru_debug/ru2zh", ru2zh_kwargs["output_path"])
         self.assertIsNone(en2zh_kwargs["translation_api_key"])
+        self.assertIsNone(ru2zh_kwargs["translation_api_key"])
         self.assertIsNotNone(en2zh_kwargs["translation_request_output"])
         self.assertIsNotNone(en2zh_kwargs["translation_trace_output"])
+        self.assertIsNotNone(ru2zh_kwargs["translation_request_output"])
+        self.assertIsNotNone(ru2zh_kwargs["translation_trace_output"])
 
     def test_pycharm_run_configs_reference_local_debug_configs(self) -> None:
         repo_root = Path.cwd()

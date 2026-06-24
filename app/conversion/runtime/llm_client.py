@@ -9,6 +9,7 @@ from typing import Any
 from loguru import logger
 
 from app.conversion.runtime_config import APP_CONFIG, ROOT_DIR
+from app.domains.translation.modes import translation_prompt_path
 
 
 try:
@@ -28,6 +29,7 @@ class LLMClientConfig:
     model: str = DEFAULT_MODEL
     api_key: str | None = None
     base_url: str | None = None
+    language_pair: str = "en2zh"
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
     max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS
     default_headers: dict[str, str] | None = None
@@ -70,7 +72,7 @@ def translate_batch(client: Any, batch: dict[str, Any], payload: dict[str, Any],
     messages = [
         {
             "role": "system",
-            "content": build_system_prompt(),
+            "content": build_system_prompt(config.language_pair),
         },
         {
             "role": "user",
@@ -141,8 +143,12 @@ def parse_json_response(content: str) -> dict[str, Any]:
     return json.loads(stripped[start : end + 1])
 
 
-def build_system_prompt() -> str:
-    return load_system_prompt_template()
+def build_system_prompt(language_pair: str = "en2zh") -> str:
+    return load_system_prompt_template(system_prompt_path(language_pair))
+
+
+def system_prompt_path(language_pair: str = "en2zh") -> Path:
+    return translation_prompt_path(ROOT_DIR, language_pair)
 
 
 def load_system_prompt_template(path: Path = SYSTEM_PROMPT_PATH) -> str:

@@ -34,6 +34,7 @@ from app.conversion.runtime_helpers import (
     resolve_template_path,
 )
 from app.conversion.runtime_config import APP_CONFIG
+from app.domains.translation.modes import is_translation_mode, language_pair_for_translation_mode
 
 
 DEFAULT_TEMPLATE_CANDIDATES = (
@@ -185,11 +186,12 @@ def run_conversion(
         translation_config = build_translation_config(
             max_pages=translation_max_pages,
             max_chars=translation_max_chars,
+            language_pair=language_pair_for_translation_mode(translation_mode) or "en2zh",
             target_language=translation_target_language,
             domain=translation_domain,
             prompt_version=translation_prompt_version,
         )
-        if translation_mode == "en2zh":
+        if is_translation_mode(translation_mode):
             if resolved_translation_request_output:
                 payload = translation_runtime.write_translation_request_file(pages, resolved_translation_request_output, translation_config)
                 logger.info(
@@ -221,6 +223,7 @@ def run_conversion(
                         model=translation_model,
                         api_key=translation_api_key,
                         base_url=translation_base_url,
+                        language_pair=translation_config.language_pair,
                     ),
                 )
                 translations = load_translations_from_payload(llm_response)
@@ -245,7 +248,7 @@ def run_conversion(
             logger.warning("translation_mode=direct 时忽略 translation_request_output / translation_response / translation_trace_output")
 
         preferred_document_language = document_language
-        if translation_mode == "en2zh" and document_language == "auto":
+        if is_translation_mode(translation_mode):
             preferred_document_language = "zh"
 
         resolved_document_language = resolve_document_language(pages, preferred=preferred_document_language)

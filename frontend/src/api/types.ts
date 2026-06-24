@@ -1343,8 +1343,9 @@ export type FileQuotaPolicyOpsSummaryResponse = {
   safety: FileQuotaPolicyOpsSafetyResponse;
 };
 
-export type DocumentJobMode = "direct_pdf_to_word" | "en2zh_pdf_to_word";
-export type DocumentLanguage = "auto" | "zh" | "en";
+export type TranslationMode = "direct" | "en2zh" | "ru2zh";
+export type DocumentJobMode = "direct_pdf_to_word" | "en2zh_pdf_to_word" | "ru2zh_pdf_to_word";
+export type DocumentLanguage = "auto" | "zh" | "en" | "ru";
 export type DocumentJobStatus = "pending" | "queued" | "running" | "succeeded" | "failed" | "canceled";
 export type DocumentJobStatusGroup = "active";
 export type DocumentJobListSort = "created_at_desc" | "created_at_asc" | "updated_at_desc" | "updated_at_asc";
@@ -1361,7 +1362,8 @@ export type DocumentJobStage =
 
 export type DocumentJobCreateRequest = {
   source_file_id: string;
-  mode: DocumentJobMode;
+  mode?: DocumentJobMode | null;
+  translation_mode?: TranslationMode | null;
   document_language: DocumentLanguage;
   template_version_id?: string | null;
   term_version_id?: string | null;
@@ -1449,6 +1451,7 @@ export type DocumentJobResponse = {
   source_file_id: string;
   source_job_id: string | null;
   mode: DocumentJobMode;
+  translation_mode: TranslationMode;
   document_language: string;
   status: DocumentJobStatus;
   stage: DocumentJobStage;
@@ -1936,6 +1939,8 @@ export type DocumentJobConfigSummaryResponse = {
   options: DocumentJobConfigOptions;
   readiness: {
     en2zh_available: boolean;
+    ru2zh_available: boolean;
+    translation_modes: Record<string, boolean>;
     p0_document_jobs_required: boolean;
     p0_document_jobs_ready: boolean;
     document_jobs_worker_backend: string;

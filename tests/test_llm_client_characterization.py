@@ -101,6 +101,13 @@ class LLMClientCharacterizationTests(unittest.TestCase):
 
         self.assertEqual(prompt, "固定英译中系统提示")
 
+    def test_build_system_prompt_selects_ru2zh_template(self):
+        with mock.patch.object(self.llm, "load_system_prompt_template", return_value="固定俄译中系统提示") as loader:
+            prompt = self.llm.build_system_prompt("ru2zh")
+
+        self.assertEqual(prompt, "固定俄译中系统提示")
+        self.assertTrue(str(loader.call_args.args[0]).endswith("resources/prompts/translation_ru2zh.md"))
+
 
 if __name__ == "__main__":
     unittest.main()

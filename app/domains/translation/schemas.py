@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 class TranslationProfileListItemResponse(BaseModel):
     id: str
+    language_pair: str
     default_version: str | None = None
     version_count: int
     target_language: str
@@ -27,6 +28,7 @@ class TranslationProfileListResponse(BaseModel):
 
 class TranslationProfileVersionResponse(BaseModel):
     translation_profile_id: str
+    language_pair: str
     version: str
     status: str
     snapshot_hash: str | None = None
@@ -48,6 +50,7 @@ class TranslationProfileDetailResponse(BaseModel):
 
 class TranslationProfileDraftResponse(BaseModel):
     translation_profile_id: str
+    language_pair: str
     base_version: str | None = None
     target_language: str
     domain: str
@@ -59,6 +62,7 @@ class TranslationProfileDraftResponse(BaseModel):
 
 
 class TranslationProfileDraftUpdateRequest(BaseModel):
+    language_pair: str | None = Field(default=None, min_length=1, max_length=32)
     target_language: str = Field(default="zh-CN", min_length=1, max_length=32)
     domain: str = Field(default="electronics engineering technical document", min_length=1, max_length=200)
     prompt_version: str = Field(default="translation-minimal-v1", min_length=1, max_length=128)

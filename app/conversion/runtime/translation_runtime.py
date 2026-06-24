@@ -18,7 +18,7 @@ TRANSLATION_PROMPT_VERSION = "translation-minimal-v1"
 DEFAULT_FRONT_SECTION = "front-matter"
 SKIPPED_BLOCK_TYPES = {"page_header", "page_footer", "page_number", "table_placeholder"}
 
-TRANSLATABLE_TEXT_RE = re.compile(r"[A-Za-z\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
+TRANSLATABLE_TEXT_RE = re.compile(r"[A-Za-z\u0400-\u04ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 PROTECTED_PATTERN_RE = re.compile(
     r"(?P<html_var>\b[A-Za-zΑ-Ωα-ω]+(?:<sub>[^<>]+</sub>|<sup>[^<>]+</sup>)+)"
     r"|(?P<value>\b\d+(?:\.\d+)?\s?(?:kΩ|MΩ|Ω|µV|uV|mV|V|µA|uA|mA|A|nA|pA|°C|MHz|kHz|Hz|dB|pF|nF|µF|uF|%)\b)"
@@ -29,6 +29,7 @@ PLACEHOLDER_RE = re.compile(r"\{\{PH_\d{3}\}\}")
 
 @dataclass(slots=True)
 class TranslationConfig:
+    language_pair: str = "en2zh"
     target_language: str = DEFAULT_TARGET_LANGUAGE
     domain: str = DEFAULT_TRANSLATION_DOMAIN
     max_pages_per_batch: int = DEFAULT_MAX_PAGES_PER_BATCH
@@ -81,6 +82,7 @@ def build_translation_request_payload(pages: list[Any], config: TranslationConfi
     items = extract_translation_items(pages)
     batches = build_translation_batches(items, total_pages=len(pages), config=config)
     return {
+        "language_pair": config.language_pair,
         "target_language": config.target_language,
         "domain": config.domain,
         "prompt_version": config.prompt_version,
@@ -91,6 +93,7 @@ def build_translation_request_payload(pages: list[Any], config: TranslationConfi
 def serialize_batch(batch: TranslationBatch, config: TranslationConfig) -> dict[str, Any]:
     return {
         "batch_id": batch.batch_id,
+        "language_pair": config.language_pair,
         "target_language": config.target_language,
         "domain": config.domain,
         "section": batch.section_title,

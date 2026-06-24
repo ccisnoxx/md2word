@@ -74,6 +74,18 @@ class RecordingTranslationCallRecorder:
         self.failure_requests.append(request)
 
 
+class EchoSingleItemTranslationProvider:
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.requests: list[TranslationProviderRequest] = []
+
+    def translate(self, request: TranslationProviderRequest) -> TranslationProviderResult:
+        self.requests.append(request)
+        return TranslationProviderResult(
+            items=tuple(TranslationTextItem(id=item.id, text=self.text) for item in request.items)
+        )
+
+
 class DocumentIRTranslationTests(unittest.TestCase):
     def test_term_version_service_loads_csv_and_builds_canonical_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -96,6 +108,23 @@ class DocumentIRTranslationTests(unittest.TestCase):
             [(entry.source_term, entry.target_term) for entry in snapshot.entries],
             [("input offset voltage", "输入失调电压"), ("slew rate", "压摆率")],
         )
+
+    def test_term_version_service_uses_current_language_pair_with_default_version(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            terms_path = Path(temp_dir) / "translation_terms.csv"
+            terms_path.write_text(
+                "language_pair,source_term,target_term,version\n"
+                "en2zh,input offset voltage,输入失调电压,v1\n"
+                "ru2zh,Постоянное обратное напряжение диода,反向直流电压,v1\n",
+                encoding="utf-8",
+            )
+            service = TermVersionService(terms_path, default_term_version_id="en2zh@v1")
+
+            snapshot = service.resolve_for_job(None, language_pair="ru2zh")
+
+        self.assertEqual(snapshot.term_version_id, "ru2zh@v1")
+        self.assertEqual(snapshot.language_pair, "ru2zh")
+        self.assertEqual(snapshot.entries[0].target_term, "反向直流电压")
 
     def test_term_version_service_rejects_duplicate_normalized_terms_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -174,6 +203,55 @@ class DocumentIRTranslationTests(unittest.TestCase):
         self.assertEqual(provider.requests[0].terms, terms.entries)
         self.assertEqual([trace.source_term for trace in provider.requests[0].term_traces], ["input offset voltage"])
         self.assertNotIn("block_0005", [item.id for item in provider.requests[0].items])
+
+    def test_document_ir_translation_supports_ru2zh_language_pair_and_terms(self) -> None:
+        provider = EchoSingleItemTranslationProvider("反向直流电压")
+        service = DocumentIRTranslationService(provider)
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="docjob_ru", source_file_id="file_ru", document_language="ru"),
+            pages=[DocumentIRPage(index=0, width=612.0, height=792.0)],
+            blocks=[
+                DocumentIRBlock(
+                    id="block_0001",
+                    type="paragraph",
+                    order=0,
+                    text="Постоянное обратное напряжение диода",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(72.0, 72.0, 540.0, 96.0), role="body"),
+                ),
+            ],
+            assets=[],
+        )
+        terms = TermVersionSnapshot(
+            term_version_id="ru2zh@v1",
+            language_pair="ru2zh",
+            version="v1",
+            snapshot_hash="sha256:" + "2" * 64,
+            entries=(
+                TranslationTermEntry(
+                    language_pair="ru2zh",
+                    source_term="Постоянное обратное напряжение диода",
+                    target_term="反向直流电压",
+                    version="v1",
+                ),
+                TranslationTermEntry(
+                    language_pair="en2zh",
+                    source_term="input offset voltage",
+                    target_term="输入失调电压",
+                    version="v1",
+                ),
+            ),
+        )
+
+        translated = service.translate(document, term_version=terms, language_pair="ru2zh")
+
+        self.assertEqual(translated.metadata.document_language, "zh")
+        self.assertEqual(translated.blocks[0].text, "反向直流电压")
+        request = provider.requests[0]
+        self.assertEqual(request.language_pair, "ru2zh")
+        self.assertEqual(request.source_language, "ru")
+        self.assertEqual(request.target_language, "zh")
+        self.assertEqual([term.language_pair for term in request.terms], ["ru2zh"])
 
     def test_document_ir_translation_injects_only_matched_terms_with_trace(self) -> None:
         provider = FakeTranslationProvider()
