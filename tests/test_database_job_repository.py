@@ -1480,6 +1480,11 @@ class PersistenceAdapterTests(TestCase):
             "en2zh,ADC,模数转换器,v1\n"
             "en2zh,DAC,数模转换器,v1\n"
         )
+        expanded_terms_csv = (
+            terms_csv
+            + "ru2zh,Постоянное обратное напряжение диода,反向直流电压,v1\n"
+            + "ru2zh,Постоянный обратный ток,反向漏电流,v1\n"
+        )
         with TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)
             seed_path = temp_root / "term_rules.v2.yaml"
@@ -1505,12 +1510,18 @@ class PersistenceAdapterTests(TestCase):
                 rogue_store = runtime.term_rule_set_version_service.yaml_codec.parse_yaml_text(changed_seed_yaml)
                 runtime.term_rule_service.repository.save(rogue_store)
                 seed_path.write_text(changed_seed_yaml, encoding="utf-8")
+                terms_path.write_text(expanded_terms_csv, encoding="utf-8")
                 fake_mysql.resource_default_versions.pop(("term_rule_set", "electronics-default"))
-                terms_path.unlink()
+                fake_mysql.resource_default_versions.pop(("translation_profile", "electronics-ru2zh"))
+                fake_mysql.resource_versions.pop(("translation_profile", "electronics-ru2zh", "seed"))
                 restarted_runtime = build_runtime(settings)
                 restarted_rule_terms = [rule.source_term for rule in restarted_runtime.term_rule_service.repository.load().rules]
                 restarted_runtime_yaml_text = restarted_runtime.settings.term_rules_runtime_yaml_file.read_text(encoding="utf-8")
                 snapshot = restarted_runtime.term_version_service.load_version("en2zh@v1", language_pair="en2zh")
+                ru_snapshot = restarted_runtime.term_version_service.load_version("ru2zh@v1", language_pair="ru2zh")
+                terms_path.unlink()
+                final_runtime = build_runtime(settings)
+                final_ru_snapshot = final_runtime.term_version_service.load_version("ru2zh@v1", language_pair="ru2zh")
 
         self.assertIsNotNone(runtime.term_rule_set_version_service)
         self.assertEqual(
@@ -1535,11 +1546,33 @@ class PersistenceAdapterTests(TestCase):
             "v1",
         )
         self.assertIn(("translation-terms-en2zh", "v1"), fake_mysql.translation_term_versions)
-        self.assertEqual(len(fake_mysql.translation_terms), 2)
+        self.assertEqual(len(fake_mysql.translation_terms), 4)
         self.assertEqual(len(snapshot.entries), 2)
         self.assertEqual([entry.source_term for entry in snapshot.entries], ["ADC", "DAC"])
         self.assertEqual(snapshot.entries[0].set_id, "translation-terms-en2zh")
         self.assertTrue(all(entry.normalized_source_term for entry in snapshot.entries))
+        self.assertEqual(
+            fake_mysql.translation_term_sets["translation-terms-ru2zh"]["default_version"],
+            "v1",
+        )
+        self.assertIn(("translation-terms-ru2zh", "v1"), fake_mysql.translation_term_versions)
+        self.assertEqual(
+            [entry.source_term for entry in ru_snapshot.entries],
+            ["Постоянное обратное напряжение диода", "Постоянный обратный ток"],
+        )
+        self.assertEqual([entry.target_term for entry in final_ru_snapshot.entries], ["反向直流电压", "反向漏电流"])
+        self.assertEqual(
+            fake_mysql.resource_default_versions[("translation_profile", "electronics-en2zh")]["version"],
+            "seed",
+        )
+        self.assertEqual(
+            fake_mysql.resource_default_versions[("translation_profile", "electronics-ru2zh")]["version"],
+            "seed",
+        )
+        self.assertEqual(
+            fake_mysql.resource_versions[("translation_profile", "electronics-ru2zh", "seed")]["status"],
+            "published",
+        )
 
     def test_mysql_translation_term_repository_supports_stage1_assets(self):
         fake_mysql = _FakeMysqlDatabase()

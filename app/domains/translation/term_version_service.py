@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Literal
 
 from app.domains.translation.models import TermVersionSnapshot, TranslationTermEntry, normalize_translation_source_term
+from app.domains.translation.modes import TRANSLATION_LANGUAGE_PAIRS
 from app.domains.translation.repository import TranslationTermRepositoryProtocol
 
 
@@ -86,21 +87,35 @@ class TermVersionService:
         )
 
     def bootstrap_repository_from_csv_if_empty(self) -> None:
-        """MySQL mode 下把 CSV seed 导入 SQL；已有默认版本时不再读取 CSV。"""
+        """MySQL mode 下把 CSV seed 导入 SQL，补齐新增 language_pair 的缺失默认版本。"""
 
         if self.repository is None:
             return
-        default_pair, default_version = self._parse_term_version_id(self.default_term_version_id, language_pair=None)
-        if self.repository.has_version(default_pair, default_version):
+        missing_default_pairs = [
+            language_pair
+            for language_pair in TRANSLATION_LANGUAGE_PAIRS
+            if not self._repository_has_default_version(language_pair)
+        ]
+        if not missing_default_pairs:
             return
         entries, _report = self.load_csv_entries_for_import(dedupe="reject")
         entries_by_version: dict[tuple[str, str], list[TranslationTermEntry]] = {}
         for entry in entries:
             entries_by_version.setdefault((entry.language_pair, entry.version), []).append(entry)
         for (language_pair, version), entries in entries_by_version.items():
+            if language_pair not in missing_default_pairs:
+                continue
             if self.repository.has_version(language_pair, version):
                 continue
             self.repository.replace_version(language_pair, version, entries, self._snapshot_hash(entries))
+
+    def _repository_has_default_version(self, language_pair: str) -> bool:
+        if self.repository is None:
+            return False
+        term_set = self.repository.get_set_by_language_pair(language_pair)
+        if term_set is None or not term_set.default_version:
+            return False
+        return self.repository.has_version(language_pair, term_set.default_version)
 
     def load_csv_entries_for_import(
         self,

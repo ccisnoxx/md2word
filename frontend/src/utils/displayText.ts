@@ -75,7 +75,21 @@ export function translationProposalActionText(action: string | null | undefined)
   return labels[raw] || unknownText(raw, "动作");
 }
 
+function readinessCodeParts(code: string): { baseCode: string; languagePair: string | null } {
+  const [baseCode, languagePair] = String(code || "").trim().split(":", 2);
+  return { baseCode, languagePair: languagePair || null };
+}
+
+function languagePairText(languagePair: string): string {
+  const labels: Record<string, string> = {
+    en2zh: "英译中",
+    ru2zh: "俄译中",
+  };
+  return labels[languagePair] || languagePair;
+}
+
 export function readinessCodeText(code: string): string {
+  const { baseCode, languagePair } = readinessCodeParts(code);
   const labels: Record<string, string> = {
     ai_provider_config_invalid: "AI provider 配置文件不可读取",
     auth_internal_users_source_missing: "内部账号来源未配置",
@@ -105,9 +119,17 @@ export function readinessCodeText(code: string): string {
     stage_spool_stale_running_messages_present: "存在过期运行中的阶段消息",
     subscript_config_missing: "下标配置文件缺失",
     tmp_dir_missing: "临时目录缺失",
+    translation_profile_default_missing: "默认翻译配置未发布",
+    translation_profile_default_unavailable: "默认翻译配置不可用",
+    translation_term_set_default_missing: "默认翻译术语集未发布",
+    translation_term_set_default_unavailable: "默认翻译术语集不可用",
     translation_unavailable: "翻译能力不可用",
   };
-  return labels[code] || `未识别的就绪检查项（${code}）`;
+  const label = labels[baseCode];
+  if (label) {
+    return languagePair ? `${label}（${languagePairText(languagePair)}）` : label;
+  }
+  return `未识别的就绪检查项（${code}）`;
 }
 
 export function healthLabelText(key: string): string {

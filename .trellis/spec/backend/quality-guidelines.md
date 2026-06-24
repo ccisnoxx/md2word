@@ -624,6 +624,92 @@ return DocumentJobFileListResponse(
 )
 ```
 
+## Scenario: Translation Language Pair Defaults
+
+### 1. Scope / Trigger
+
+- Trigger: a new translation language pair is added to document jobs, for example
+  `ru2zh` alongside `en2zh`.
+- This is cross-layer work because mode metadata, seed data, MySQL bootstrap,
+  resource snapshots, config-summary readiness, frontend display text, and
+  release checks must agree before the mode can be selected in the UI.
+
+### 2. Signatures
+
+- Mode registry: `app.domains.translation.modes.TRANSLATION_MODE_SPECS`.
+- Translation term seed: `resources/term_rules/translation_terms.csv` with
+  `language_pair,source_term,target_term,version`.
+- Runtime bootstrap:
+  `TermVersionService.bootstrap_repository_from_csv_if_empty()` and
+  `TranslationProfileVersionService.bootstrap_default_profiles_if_missing()`.
+- UI readiness codes may include a language-pair suffix:
+  `translation_term_set_default_missing:<language_pair>` and
+  `translation_profile_default_missing:<language_pair>`.
+
+### 3. Contracts
+
+- Every supported translation `language_pair` must have a default Translation
+  Term Set ID derived from `derive_translation_term_set_id(language_pair)`.
+- MySQL startup must import missing default term sets for newly supported
+  language pairs from the CSV seed without replacing existing defaults.
+- MySQL startup must seed a published/default Translation Profile for every
+  supported default profile ID without overwriting an already configured default.
+- Config summary marks a translation mode available only when both the default
+  Translation Term Set and Translation Profile are present and published.
+- Frontend readiness text must parse suffixed codes and display the language
+  pair using user-facing copy such as `ru2zh -> 俄译中`.
+
+### 4. Validation & Error Matrix
+
+- Missing Translation Term Set default -> config-summary warning
+  `translation_term_set_default_missing:<language_pair>` and the mode is not
+  selectable.
+- Missing Translation Profile default -> config-summary warning
+  `translation_profile_default_missing:<language_pair>` and the mode is not
+  selectable.
+- Existing published/default en2zh resources -> startup leaves them unchanged.
+- Missing CSV rows for a newly supported language pair -> startup cannot create
+  that term set, and readiness must stay unavailable rather than silently
+  falling back to another language pair.
+
+### 5. Good/Base/Bad Cases
+
+- Good: deploying a new language pair to a database that already has en2zh
+  defaults creates only the missing language pair defaults.
+- Base: frontend displays `默认翻译术语集未发布（俄译中）` instead of an unknown
+  readiness-code message while the backend remains not ready for that mode.
+- Bad: hard-coding ru2zh outside the mode registry, reusing en2zh term sets for
+  ru2zh, or treating prompt existence alone as enough to enable the mode.
+
+### 6. Tests Required
+
+- Backend bootstrap regression: start with existing en2zh term/profile defaults,
+  add a new language-pair CSV seed, rebuild runtime, and assert the new default
+  term set and profile are present.
+- Config summary/API tests must assert the mode is available only when both
+  translation resources exist for the selected language pair.
+- Frontend utility tests must assert suffixed readiness codes map to the correct
+  Chinese message and settings route.
+- `scripts/ops/check_release.py` and `frontend` build must pass after changing
+  mode metadata or readiness display behavior.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```python
+if repository.has_version("en2zh", "v1"):
+    return
+```
+
+#### Correct
+
+```python
+for language_pair in TRANSLATION_LANGUAGE_PAIRS:
+    if not repository_has_default(language_pair):
+        import_seed_entries_for(language_pair)
+```
+
 ## Scenario: Runtime AI Provider Configuration
 
 ### 1. Scope / Trigger
