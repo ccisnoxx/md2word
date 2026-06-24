@@ -821,3 +821,36 @@ Addressed feedback on YAML-driven A4 Word page setup, preserving configured font
 ### Next Steps
 
 - None - task complete
+
+
+## Session 25: ru2zh integration acceptance
+
+**Date**: 2026-06-24
+**Task**: ru2zh integration acceptance
+**Branch**: `main`
+
+### Summary
+
+Validated ru2zh document job integration, local MinerU ru2zh offline request/response/trace flow, added regression coverage, and synchronized API docs plus backend quality spec.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a6efb53c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

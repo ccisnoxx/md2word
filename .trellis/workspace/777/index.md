@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 24
-- **Last Active**: 2026-06-23
+- **Total Sessions**: 25
+- **Last Active**: 2026-06-24
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~823 | Active |
+| `journal-1.md` | ~856 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 25 | 2026-06-24 | ru2zh integration acceptance | `a6efb53c` | `main` |
 | 24 | 2026-06-23 | Local MinerU datasheet layout feedback fixes | `3606de38` | `main` |
 | 23 | 2026-06-23 | Local MinerU layout planning | `ee08cc5c` | `main` |
 | 22 | 2026-06-23 | Remove md2word_main runtime entrypoint | `d8f6de69`, `a944d6f3`, `f6869dea` | `main` |
