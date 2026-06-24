@@ -632,6 +632,8 @@ def build_test_runtime(
             settings.term_rules_seed_file,
             repository_backend="file",
         ).bootstrap()
+    if translation_profile_service is not None:
+        translation_profile_service.bootstrap_default_profiles_if_missing()
     template_read_service.get_default_template_id()
     conversion_service = FakeConversionService()
     artifact_service = JobArtifactService()
@@ -1970,7 +1972,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(payload["metadata_store"], "mysql")
         self.assertEqual(payload["resources"]["template_versions"], 1)
         self.assertEqual(payload["resources"]["term_rule_set_versions"], 2)
-        self.assertEqual(payload["resources"]["translation_profile_versions"], 1)
+        self.assertEqual(payload["resources"]["translation_profile_versions"], 2)
         self.assertEqual(payload["resources"]["default_template_version"], "default@1")
         self.assertEqual(payload["resources"]["default_term_rule_version"], "electronics-default@1")
         self.assertEqual(payload["resources"]["default_translation_profile_version"], "electronics-en2zh@1")

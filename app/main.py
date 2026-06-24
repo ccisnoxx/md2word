@@ -318,6 +318,8 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
             resolved_settings.term_rules_seed_file,
             repository_backend="file",
         ).bootstrap()
+    if translation_profile_service is not None:
+        translation_profile_service.bootstrap_default_profiles_if_missing()
     template_read_service.get_default_template_id()
     artifact_service = JobArtifactService()
     artifact_storage, artifact_storage_backend = _build_artifact_storage(resolved_settings, artifact_service)

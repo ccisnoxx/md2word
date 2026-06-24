@@ -11,7 +11,7 @@ from typing import Any
 from app.conversion.runtime import llm_client, translation_runtime
 from app.core.config import Settings
 from app.domains.audit.models import ActorContext
-from app.domains.resources.models import ResourceVersionRecord, utc_now
+from app.domains.resources.models import ResourceVersionRecord, ResourceVersionStatus, utc_now
 from app.domains.resources.service import ResourceVersionService
 from app.domains.translation.models import TranslationProfileSnapshot
 from app.domains.translation.modes import TRANSLATION_MODE_SPECS, TRANSLATION_PROFILE_IDS, spec_for_language_pair
@@ -43,6 +43,7 @@ DEFAULT_PROMPT_VERSIONS = {
     "en2zh": translation_runtime.TRANSLATION_PROMPT_VERSION,
     "ru2zh": "ru2zh@v1",
 }
+DEFAULT_SEED_PROFILE_VERSION = "seed"
 
 
 class TranslationProfileVersionService:
@@ -230,6 +231,50 @@ class TranslationProfileVersionService:
             max_chars_per_batch=self._payload_int(payload, "max_chars_per_batch", self.settings.translation_max_chars),
         )
 
+    def bootstrap_default_profiles_if_missing(self) -> list[TranslationProfileVersionResponse]:
+        """Seed published defaults for supported language pairs without replacing existing defaults."""
+
+        bootstrapped: list[TranslationProfileVersionResponse] = []
+        for profile_id in TRANSLATION_PROFILE_IDS:
+            if self._default_record(profile_id) is not None:
+                continue
+            record = self.resource_version_service.repository.get_resource_version(
+                "translation_profile",
+                profile_id,
+                DEFAULT_SEED_PROFILE_VERSION,
+            )
+            if record is None:
+                payload = self._default_payload(profile_id, version=DEFAULT_SEED_PROFILE_VERSION, published_at=utc_now())
+                draft = self.resource_version_service.create_or_update_draft(
+                    resource_type="translation_profile",
+                    resource_id=profile_id,
+                    version=DEFAULT_SEED_PROFILE_VERSION,
+                    snapshot_hash=self._snapshot_hash(payload),
+                    payload_ref=f"translation_profile:{profile_id}@{DEFAULT_SEED_PROFILE_VERSION}",
+                    payload=payload,
+                )
+                record = self.resource_version_service.publish(
+                    draft.resource_type,
+                    draft.resource_id,
+                    draft.version,
+                    make_default=True,
+                )
+            elif record.status == ResourceVersionStatus.DRAFT:
+                record = self.resource_version_service.publish(
+                    record.resource_type,
+                    record.resource_id,
+                    record.version,
+                    make_default=True,
+                )
+            elif record.status == ResourceVersionStatus.PUBLISHED:
+                self.resource_version_service.set_default(record.resource_type, record.resource_id, record.version)
+            else:
+                raise ValueError(
+                    f"Translation Profile seed 版本不可作为默认版本: {profile_id}@{DEFAULT_SEED_PROFILE_VERSION}"
+                )
+            bootstrapped.append(self._version_response(record, default_record=record))
+        return bootstrapped
+
     def _ensure_draft_record(self, translation_profile_id: str) -> ResourceVersionRecord:
         existing = self.resource_version_service.repository.get_resource_version(
             "translation_profile",
@@ -253,12 +298,19 @@ class TranslationProfileVersionService:
             payload=payload,
         )
 
-    def _default_payload(self, translation_profile_id: str) -> dict[str, Any]:
+    def _default_payload(
+        self,
+        translation_profile_id: str,
+        *,
+        version: str = DRAFT_VERSION,
+        base_version: str | None = None,
+        published_at: Any | None = None,
+    ) -> dict[str, Any]:
         language_pair = self._profile_language_pair(translation_profile_id, None)
         return self._build_payload(
             translation_profile_id=translation_profile_id,
-            version=DRAFT_VERSION,
-            base_version=None,
+            version=version,
+            base_version=base_version,
             language_pair=language_pair,
             target_language=translation_runtime.DEFAULT_TARGET_LANGUAGE,
             domain=translation_runtime.DEFAULT_TRANSLATION_DOMAIN,
@@ -266,6 +318,7 @@ class TranslationProfileVersionService:
             model=self.settings.openai_model or llm_client.DEFAULT_MODEL,
             max_pages_per_batch=self.settings.translation_max_pages,
             max_chars_per_batch=self.settings.translation_max_chars,
+            published_at=published_at,
         )
 
     def _version_records(self, translation_profile_id: str) -> list[ResourceVersionRecord]:
