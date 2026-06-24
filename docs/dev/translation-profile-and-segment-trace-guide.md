@@ -3,7 +3,7 @@ doc_type: dev-guide
 slug: translation-profile-and-segment-trace-guide
 component: translation-profile-and-segment-trace
 status: current
-summary: 面向集成方说明如何通过 Translation Profile API 管理翻译配置，并在 en2zh job 中读取 segment trace。
+summary: 面向集成方说明如何通过 Translation Profile API 管理翻译配置，并在翻译 job 中读取 segment trace。
 tags: [backend, translation, resource-versioning, jobs, audit]
 last_reviewed: 2026-05-29
 ---
@@ -12,7 +12,7 @@ last_reviewed: 2026-05-29
 
 ## 概述
 
-Translation Profile 把 `en2zh` 翻译配置从 settings-only 升级为“先改 draft，再发布 immutable version，最后通过默认指针影响后续翻译任务”。MySQL resource mode 下，job 创建会绑定不可变 Translation Profile 版本快照；Segment Trace 是 `en2zh` job 的 JSON 产物，用来追踪每个 segment 的原文、模型输入、AI 初译和最终渲染文本。
+Translation Profile 把翻译配置从 settings-only 升级为“先改 draft，再发布 immutable version，最后通过默认指针影响后续翻译任务”。MySQL resource mode 下，job 创建会按 `language_pair` 绑定不可变 Translation Profile 版本快照；Segment Trace 是翻译 job 的 JSON 产物，用来追踪每个 segment 的原文、模型输入、AI 初译和最终渲染文本。
 
 适用场景：
 
@@ -25,11 +25,11 @@ Translation Profile 把 `en2zh` 翻译配置从 settings-only 升级为“先改
 - 后端需要启用 `JOBS_REPOSITORY_BACKEND=mysql`
 - 写接口需要 `X-Admin-Token`
 - 写接口可选 `X-Actor-Id`，只作为已通过 admin token 请求的审计操作者标签
-- 当前默认 profile ID 是 `electronics-en2zh`
-- `en2zh` 任务仍需要翻译运行时配置可用：`OPENAI_API_KEY`、OpenAI SDK 和 `resources/prompts/translation_en2zh.md`
+- 当前默认 profile ID 按语言对区分：`electronics-en2zh`、`electronics-ru2zh`
+- 翻译任务仍需要翻译运行时配置可用：`OPENAI_API_KEY`、OpenAI SDK，以及对应 prompt：`resources/prompts/translation_en2zh.md` 或 `resources/prompts/translation_ru2zh.md`
 - 测试和本地验证使用 `.venv/bin/python`
 
-file / sqlite backend 下，`/api/v1/translation-profiles` 返回 `503`；未显式选择 profile 的 `en2zh` job 继续使用 settings / `.env` 兼容路径。MySQL resource mode 下，`en2zh` job 需要默认 published profile，或显式传入 published profile 版本。
+file / sqlite backend 下，`/api/v1/translation-profiles` 返回 `503`；未显式选择 profile 的翻译 job 继续使用 settings / `.env` 兼容路径。MySQL resource mode 下，每个翻译 `language_pair` 都需要默认 published profile，或显式传入同语言对的 published profile 版本。
 
 ## 快速上手
 
@@ -47,6 +47,7 @@ curl -sS -X PUT \
   -H 'Content-Type: application/json' \
   -H 'X-Admin-Token: <admin-token>' \
   -d '{
+    "language_pair": "en2zh",
     "target_language": "zh-CN",
     "domain": "electronics engineering technical document",
     "prompt_version": "translation-minimal-v1",
@@ -84,6 +85,18 @@ curl -sS -X POST \
 
 不传 `translation_profile_id` / `translation_profile_version` 时，MySQL resource mode 会绑定当前默认 published profile。
 
+提交 `ru2zh` job 时使用 `translation_mode=ru2zh` 或 `mode=ru2zh_pdf_to_word`，并绑定 `electronics-ru2zh`：
+
+```json
+{
+  "source_file_id": "file_uploaded_pdf",
+  "translation_mode": "ru2zh",
+  "document_language": "auto",
+  "translation_profile_id": "electronics-ru2zh",
+  "translation_profile_version": "seed"
+}
+```
+
 5. 查看翻译 QA 证据：
 
 ```bash
@@ -96,10 +109,10 @@ curl -sS \
 
 | 概念 | 说明 |
 |---|---|
-| Translation Profile | 一组可发布的翻译配置资源，当前只支持 `electronics-en2zh` |
+| Translation Profile | 一组可发布的翻译配置资源，当前按 `language_pair` 支持 `electronics-en2zh` 和 `electronics-ru2zh` |
 | draft | 可变草稿，更新后不影响已发布版本 |
 | published version | 不可变发布版本，写入 `resource_type=translation_profile` |
-| default version | 当前默认 published version，`en2zh` job 创建时会绑定它 |
+| default version | 当前默认 published version，翻译 job 创建时会按 `language_pair` 绑定它 |
 | Segment Trace | `translation_trace` job artifact，记录 segment 级翻译证据 |
 
 Translation Profile payload 只保存模型、目标语言、领域、prompt 版本和分批阈值，不保存 `OPENAI_API_KEY`、secret header 或完整 prompt 文本。
@@ -149,7 +162,7 @@ curl -sS -X POST \
   -H 'X-Admin-Token: <admin-token>'
 ```
 
-后续 `translation_mode=en2zh` job 会在创建时绑定新的默认版本。已经创建或完成的 job 不会被回写 profile 快照。
+后续同 `language_pair` 的翻译 job 会在创建时绑定新的默认版本。已经创建或完成的 job 不会被回写 profile 快照。
 
 ### 查看 trace 里的关键字段
 
@@ -181,7 +194,7 @@ curl -sS -X POST \
 
 ### legacy backend 下保持兼容路径
 
-如果使用 file / sqlite backend，`en2zh` job 会继续使用 settings / `.env` 的 `OPENAI_MODEL`、`OPENAI_BASE_URL`、`OPENAI_API_KEY` 和翻译分批配置。MySQL resource mode 不走这个 fallback；缺默认 profile 且没有显式版本选择时，job 创建会失败。
+如果使用 file / sqlite backend，翻译 job 会继续使用 settings / `.env` 的 `OPENAI_MODEL`、`OPENAI_BASE_URL`、`OPENAI_API_KEY` 和翻译分批配置。MySQL resource mode 不走这个 fallback；缺少对应 `language_pair` 的默认 profile 且没有显式版本选择时，job 创建会失败。
 
 ### 审计与 actor
 
@@ -202,7 +215,7 @@ curl -sS -X POST \
 - `JobRecord` 保存 `resource_snapshot`；trace 中记录本轮执行时物化的 profile 摘要，旧 job 不会被回填快照。
 - `translation_mode=direct` 不生成 `translation_trace`，也不解析默认 Translation Profile。
 - `translation_trace` 不保存完整 prompt 文本或 secret，不能单独作为完整 LLM 调用复现包。
-- 当前只支持 `electronics-en2zh`，不新增 `zh2en` / `zh2ru` 真实翻译路径。
+- 当前只支持 `en2zh` / `ru2zh`，不新增 `zh2en` / `zh2ru` 真实翻译路径。
 
 ## 相关文档
 

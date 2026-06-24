@@ -201,17 +201,6 @@ class DocumentJobService:
         source_file = self._get_source_file_for_create(source_file_id, user)
         mode = self._resolve_document_job_mode(mode=mode, translation_mode=translation_mode)
         self._ensure_document_language_allowed(mode, document_language)
-        self._ensure_resource_selection_allowed(
-            user=user,
-            template_version_id=template_version_id,
-            term_version_id=term_version_id,
-            term_rule_set_id=term_rule_set_id,
-            term_rule_set_version=term_rule_set_version,
-            translation_term_set_id=translation_term_set_id,
-            translation_term_version=translation_term_version,
-            translation_profile_id=translation_profile_id,
-            translation_profile_version=translation_profile_version,
-        )
         normalized_template_version_id = self._resolve_template_version_id(template_version_id)
         normalized_term_version_id = self._resolve_term_version_id(
             mode,

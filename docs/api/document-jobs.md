@@ -88,7 +88,7 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 | `needs_fix` | 需要修正或跟进。 |
 | `blocked` | 阻塞或无法判断。 |
 
-该状态只用于 `en2zh_pdf_to_word` 翻译 QA。列表筛选传 `translation_qa_status` 时，后端只返回 `en2zh_pdf_to_word` 且状态匹配的任务，避免把 direct 任务的默认值误当成翻译 QA 待办。
+该状态只用于翻译任务 QA。列表筛选传 `translation_qa_status` 时，后端只返回 `en2zh_pdf_to_word` / `ru2zh_pdf_to_word` 且状态匹配的任务，避免把 direct 任务的默认值误当成翻译 QA 待办。
 
 ## API 参考
 
@@ -100,22 +100,23 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 | 字段 | 必填 | 说明 |
 |---|---|---|
 | `source_file_id` | 是 | 来自 Files API 的 source PDF file id。 |
-| `mode` | 否 | 默认 `direct_pdf_to_word`。 |
-| `document_language` | 否 | `auto` / `zh` / `en`，默认 `auto`。 |
-| `template_version_id` | 否 | 模板版本选择。 |
+| `mode` | 否 | 默认 `direct_pdf_to_word`；兼容旧 `en2zh_pdf_to_word`，新调用优先传 `translation_mode`。 |
+| `translation_mode` | 否 | `direct` / `en2zh` / `ru2zh`。 |
+| `document_language` | 否 | `auto` / `zh` / `en` / `ru`，默认 `auto`。 |
+| `template_version_id` | 否 | 模板版本选择；创建任务时普通用户和 Admin 都可以绑定 published 版本。 |
 | `term_version_id` | 否 | 兼容术语版本字段。 |
 | `term_rule_set_id` | 否 | 术语规则集。 |
 | `term_rule_set_version` | 否 | 术语规则集版本。 |
 | `translation_term_set_id` | 否 | 翻译术语集。 |
 | `translation_term_version` | 否 | 翻译术语集版本。 |
-| `translation_profile_id` | 否 | 翻译配置 ID，仅 Admin 可显式选择。 |
-| `translation_profile_version` | 否 | 翻译配置版本，仅 Admin 可显式选择。 |
-| `debug_full_text` | 否 | 是否保留全文调试信息。仅 `en2zh_pdf_to_word` 支持，且只有 admin 可以开启；默认关闭。 |
+| `translation_profile_id` | 否 | 翻译配置 ID；创建任务时可显式选择 published 版本。 |
+| `translation_profile_version` | 否 | 翻译配置版本；创建任务时可显式选择 published 版本。 |
+| `debug_full_text` | 否 | 是否保留全文调试信息。仅翻译任务支持，且只有 admin 可以开启；默认关闭。 |
 
 - 响应：`201 Created`，包含 `job_id`、`status`、`stage`、`progress` 和完整 `job`。
 - 成功动作写入 `document_job.create` audit event。
 - Readiness gate：当 `p0_document_jobs_required=true` 且 `p0_document_jobs_ready=false` 时，返回 `503 document_jobs_not_ready`，不会创建 job，也不会把 source file 绑定到 job。
-- 权限：Operator 只能使用默认配置；显式传 `template_version_id`、`term_version_id`、术语资产、翻译术语资产或翻译配置选择字段会返回 `403`。Admin 可绑定 published 资源版本。
+- 权限：已登录创建用户可以在创建任务时绑定 published 资源版本；配置维护、发布、设默认仍走各资源管理接口权限。`debug_full_text` 只有 admin 可以开启。
 
 ### `GET /api/v1/document-jobs/config-summary`
 
@@ -124,10 +125,13 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 - 响应：
   - `role`
   - `resource_mode`：`legacy` / `versioned`
-  - `defaults`：默认 Template、Term Rule Set、Translation Term Set、Translation Profile 摘要
-  - `options`：Admin 可选 published 版本；Operator 返回空列表
+  - `defaults`：默认 Template、Term Rule Set、legacy `en2zh` Translation Term Set、legacy `en2zh` Translation Profile 摘要
+  - `translation_defaults`：按 `language_pair` 返回 `en2zh` / `ru2zh` 的默认 Translation Term Set 与 Translation Profile
+  - `options`：创建任务可绑定的 published 版本
   - `readiness`：创建任务前的只读配置状态
     - `en2zh_available`：默认翻译术语集和翻译配置是否可用。
+    - `ru2zh_available`：默认俄译中翻译术语集和翻译配置是否可用。
+    - `translation_modes`：按 `language_pair` 返回可用状态。
     - `p0_document_jobs_required`：当前环境是否要求 P0 document_jobs 自动执行链路通过门禁。
     - `p0_document_jobs_ready`：P0 document_jobs 自动执行链路是否通过门禁。
     - `document_jobs_worker_backend`：`disabled` / `celery` / `eager`。
@@ -214,7 +218,7 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 ### `GET /api/v1/document-jobs/{job_id}/translation-qa`
 
 - 用途：读取翻译结果 QA 证据摘要和任务级复核状态。
-- 支持范围：仅 `en2zh_pdf_to_word` 任务具备翻译 QA 证据；其他模式返回 `available=false` 和 `availability_reason=unsupported_mode`。
+- 支持范围：`en2zh_pdf_to_word` / `ru2zh_pdf_to_word` 任务具备翻译 QA 证据；其他模式返回 `available=false` 和 `availability_reason=unsupported_mode`。
 - 查询参数：
 
 | 参数 | 默认值 | 说明 |
@@ -233,7 +237,7 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 ### `PATCH /api/v1/document-jobs/{job_id}/translation-qa`
 
 - 用途：保存任务级翻译 QA 复核结论。
-- 支持范围：仅 `en2zh_pdf_to_word` 任务；其他模式返回 `409 conflict`。
+- 支持范围：`en2zh_pdf_to_word` / `ru2zh_pdf_to_word` 任务；其他模式返回 `409 conflict`。
 - 请求体：
 
 | 字段 | 必填 | 说明 |

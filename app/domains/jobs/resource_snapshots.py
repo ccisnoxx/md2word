@@ -243,12 +243,22 @@ class JobResourceSnapshotService:
                 status_code=409,
                 code="translation_profile_default_missing",
             )
-        return self._resolve_resource(
+        resolved = self._resolve_resource(
             resource_type="translation_profile",
             resource_id=profile_id,
             version=options.translation_profile_version,
             default_missing_status=409,
         )
+        if spec.language_pair is not None:
+            record = self._load_snapshot_record(resolved)
+            actual_language_pair = self._profile_language_pair(record.resource_id, record.payload or {})
+            if actual_language_pair != spec.language_pair:
+                raise JobResourceSnapshotError(
+                    f"Translation Profile language_pair 不匹配: expected={spec.language_pair} actual={actual_language_pair}",
+                    status_code=400,
+                    code="translation_profile_language_pair_mismatch",
+                )
+        return resolved
 
     def _resolve_translation_term_set(
         self,

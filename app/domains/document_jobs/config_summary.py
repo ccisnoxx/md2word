@@ -23,9 +23,8 @@ def build_document_job_config_summary(
     *,
     user: AuthenticatedUser,
 ) -> DocumentJobConfigSummaryResponse:
-    """返回任务创建 UI 所需的默认资源摘要；Admin 额外获得可选版本。"""
+    """返回任务创建 UI 所需的默认资源摘要和可绑定的 published 版本。"""
 
-    is_admin = user.role == "admin"
     warnings: list[str] = []
     translation_defaults = _translation_defaults(runtime, warnings)
     en2zh_defaults = translation_defaults.get("en2zh", DocumentJobTranslationResourceDefaults())
@@ -36,15 +35,11 @@ def build_document_job_config_summary(
         translation_profile=en2zh_defaults.translation_profile,
     )
     translation_modes = _translation_mode_readiness(translation_defaults)
-    options = (
-        DocumentJobConfigOptions(
-            templates=_template_options(runtime, warnings),
-            term_rule_sets=_term_rule_set_options(runtime, warnings),
-            translation_term_sets=_translation_term_set_options(runtime, warnings),
-            translation_profiles=_translation_profile_options(runtime, warnings),
-        )
-        if is_admin
-        else DocumentJobConfigOptions()
+    options = DocumentJobConfigOptions(
+        templates=_template_options(runtime, warnings),
+        term_rule_sets=_term_rule_set_options(runtime, warnings),
+        translation_term_sets=_translation_term_set_options(runtime, warnings),
+        translation_profiles=_translation_profile_options(runtime, warnings),
     )
     dependency_checks = runtime.health_service.build_dependency_checks()
     return DocumentJobConfigSummaryResponse(

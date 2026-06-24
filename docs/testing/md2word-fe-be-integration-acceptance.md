@@ -59,7 +59,7 @@ last_reviewed: 2026-06-17
 | `operator-failed-job` | failed 任务、retry/clone/archive、失败诊断和事件。 |
 | `operator-succeeded-job` | succeeded 任务、download-url、文件列表。 |
 | `operator-en2zh-qa` | translation QA 队列、QA 详情、PATCH 保存。 |
-| `admin-config-summary` | admin 可选 published versions。 |
+| `job-config-summary` | operator/admin 创建任务可选 published versions。 |
 | `admin-system-status` | readiness ok/watch/blocker、metrics、ops gate。 |
 | `admin-file-retention` | retention preview、cleanup plan、confirmation 文案。 |
 
@@ -68,7 +68,7 @@ last_reviewed: 2026-06-17
 - `available_actions` 必须覆盖启用和禁用两类。
 - 错误响应必须包含 `error_code`、`error.message` 和 `trace_id`。
 - QA mock 必须覆盖：
-  - supported `en2zh_pdf_to_word`
+  - supported `en2zh_pdf_to_word` / `ru2zh_pdf_to_word`
   - unsupported `direct_pdf_to_word`
   - artifact missing
   - debug archive disabled/expired
