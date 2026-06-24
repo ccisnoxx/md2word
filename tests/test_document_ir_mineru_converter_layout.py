@@ -120,6 +120,47 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
         self.assertIn("table_continuation:block_0001", document.quality_flags)
         self.assertIn("layout_wide_table:block_0001", document.quality_flags)
 
+    def test_convert_zip_demotes_table_condition_caption_to_context_paragraph(self) -> None:
+        condition = (
+            "at TA = +25°C, VS = ±5 V to ±15 V, VCM = VOUT = VS / 2, "
+            "and RL = 10 kΩ connected to VS / 2 (unless otherwise noted)"
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "mineru.zip"
+            self._write_zip(
+                zip_path,
+                blocks=[
+                    {
+                        "type": "table",
+                        "table_caption": [condition],
+                        "table_body": "<table><tr><th>PARAMETER</th><th>VALUE</th></tr></table>",
+                        "bbox": [40, 120, 572, 260],
+                        "page_idx": 0,
+                    }
+                ],
+                layout={"pdf_info": [{"page_idx": 0, "page_size": [612, 792]}]},
+            )
+
+            result = MinerUToDocumentIRService().convert_zip(
+                zip_path,
+                job_id="docjob_context",
+                source_file_id="file_context",
+                document_language="en",
+            )
+
+        document = result.document
+        self.assertEqual([block.type for block in document.blocks], ["paragraph", "table"])
+        self.assertEqual(document.blocks[0].id, "block_0001_context_0001")
+        self.assertEqual(document.blocks[0].text, condition)
+        self.assertEqual(document.blocks[0].metadata["annotation_role"], "table_context")
+        self.assertEqual(document.blocks[0].metadata["source_block_id"], "block_0001")
+        self.assertEqual(document.blocks[1].id, "block_0001")
+        self.assertEqual(document.blocks[1].captions, [])
+        self.assertIsNone(document.blocks[1].text)
+        self.assertIn("layout_table_context_binding:block_0001", document.quality_flags)
+        self.assertNotIn("layout_caption_binding:block_0001", document.quality_flags)
+        self.assertIn("layout_wide_table:block_0001", document.quality_flags)
+
     def test_convert_zip_accepts_nested_v2_pages_and_rich_content_fields(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             zip_path = Path(temp_dir) / "mineru.zip"

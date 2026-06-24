@@ -303,6 +303,93 @@ Correct:
   --allow-blockers
 ```
 
+#### Scenario: Formal DocumentIR Word Renderer Layout Contract
+
+##### 1. Scope / Trigger
+
+- Trigger: P0 Golden Sample output quality depends on the production
+  `document_jobs -> MinerUToDocumentIRService -> DocumentIRWordRenderer` path,
+  not on local debug converters or checked-in sample outputs.
+- The formal renderer must preserve source page orientation semantics while
+  keeping generated Word tables editable and visually reviewable.
+
+##### 2. Signatures
+
+- Conversion service:
+  `MinerUToDocumentIRService.convert_zip(...) -> MinerUToDocumentIRResult`
+- Renderer:
+  `DocumentIRWordRenderer.render_to_bytes(document, template_path, config_path, image_loader, ...) -> bytes`
+- Job path:
+  `POST /api/v1/document-jobs` with eager or worker execution must register
+  `document_ir` and `generated_word` files with renderer metadata.
+
+##### 3. Contracts
+
+- Source portrait page dimensions (`width <= height`) render to A4 portrait
+  sections, even when a table has `layout.column_hint == "wide"` or six or more
+  columns.
+- Source landscape page dimensions (`width > height`) may render landscape.
+- Wide tables remain editable Word tables. Fit them inside portrait usable width
+  through explicit table width, column widths, cell wrapping, compact table
+  font/spacing, and bounded portrait-safe compression; do not switch the page to
+  landscape solely because the table is wide.
+- Table annotations that are condition/context sentences, such as leading
+  `at/when/with/under/for` text containing assignments or "unless otherwise
+  noted", become paragraph blocks with
+  `metadata.annotation_role == "table_context"` and render left-aligned or
+  justified before the table.
+- Only source/layout/semantic-backed captions render with caption styling.
+  Context-like annotations must not be centered captions.
+
+##### 4. Validation & Error Matrix
+
+- Portrait source + wide table -> generated DOCX must have no
+  `w:orient="landscape"` section introduced for that table.
+- Landscape source -> generated DOCX may include landscape section geometry.
+- Context-like table annotation -> IR has a `table_context` paragraph before the
+  table, the table has no caption for that text, and `layout_caption_binding`
+  is not emitted for the table.
+- True table caption -> keep the caption on the table and keep
+  `layout_caption_binding`.
+
+##### 5. Good/Base/Bad Cases
+
+- Good: `gs-006`/`gs-008` portrait sources produce A4 portrait DOCX files with
+  editable wide tables that fit the portrait page.
+- Base: a real landscape PDF page renders landscape because the source page is
+  landscape, not because a table is wide.
+- Bad: using `wide_table` as a page-orientation trigger, demoting editable
+  tables to screenshots, or treating electrical-condition sentences as centered
+  table titles.
+
+##### 6. Tests Required
+
+- Renderer tests must assert portrait wide-table pages stay portrait, source
+  landscape pages stay landscape, and context-like table annotations are not
+  centered captions.
+- Converter tests must assert MinerU table condition annotations become
+  `table_context` paragraph blocks with stable metadata and quality flags.
+- Formal job tests must run through `POST /api/v1/document-jobs` with fake
+  MinerU output and assert registered `document_ir`, generated DOCX XML,
+  `docx_quality`, and quality flags.
+- Golden Sample regression must be prepared against the deployed hostdzire P0
+  stack; generated DOCX/PNG/PDF/report artifacts stay under ignored
+  `tests/tmp/` paths and are not committed.
+
+##### 7. Wrong vs Correct
+
+Wrong:
+
+```python
+return page.width > page.height or any(block.layout.column_hint == "wide" for block in blocks)
+```
+
+Correct:
+
+```python
+return page.width is not None and page.height is not None and page.width > page.height
+```
+
 #### Scenario: Acceptance Center Latest Evidence Summary
 
 ##### 1. Scope / Trigger

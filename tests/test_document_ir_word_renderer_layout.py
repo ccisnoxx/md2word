@@ -11,7 +11,8 @@ from pathlib import Path
 
 from docx import Document
 from docx.enum.section import WD_ORIENTATION
-from docx.shared import Cm
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Cm, Emu
 
 from app.services.document_ir.models import (
     DocumentIR,
@@ -718,7 +719,7 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
 
         self.assertEqual(rendered.paragraphs[0].style.name, "Title")
 
-    def test_render_to_bytes_uses_landscape_section_for_wide_table_page(self) -> None:
+    def test_render_to_bytes_preserves_portrait_section_for_wide_table_page(self) -> None:
         renderer = DocumentIRWordRenderer()
         wide_row = "".join(f"<th>H{index}</th>" for index in range(8))
         wide_values = "".join(f"<td>V{index}</td>" for index in range(8))
@@ -749,12 +750,90 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
 
         content = renderer.render_to_bytes(document, template_path=None, config_path=None, image_loader=lambda _asset: None)
         rendered = Document(io.BytesIO(content))
+        xml = self._document_xml(content)
+        grid_widths = [int(value) for value in re.findall(r'<w:gridCol w:w="(\d+)"', xml)]
+        available_width = Emu(
+            rendered.sections[-1].page_width
+            - rendered.sections[-1].left_margin
+            - rendered.sections[-1].right_margin
+        )
+        available_width_twips = available_width.twips
 
-        self.assertGreaterEqual(len(rendered.sections), 2)
+        self.assertGreaterEqual(len(rendered.sections), 1)
         self.assertEqual(rendered.sections[0].orientation, WD_ORIENTATION.PORTRAIT)
+        self.assertEqual(rendered.sections[-1].orientation, WD_ORIENTATION.PORTRAIT)
+        self.assertLess(rendered.sections[-1].page_width, rendered.sections[-1].page_height)
+        self.assertNotIn('w:orient="landscape"', xml)
+        self.assertEqual(len(rendered.tables[-1].columns), 8)
+        self.assertEqual(len(grid_widths), 8)
+        self.assertLessEqual(sum(grid_widths), available_width_twips + 8)
+
+    def test_render_to_bytes_keeps_source_landscape_page_landscape(self) -> None:
+        renderer = DocumentIRWordRenderer()
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="docjob_landscape", source_file_id="file_landscape", document_language="en"),
+            pages=[DocumentIRPage(index=0, width=792.0, height=612.0)],
+            blocks=[
+                DocumentIRBlock(
+                    id="block_body",
+                    type="paragraph",
+                    order=0,
+                    text="Landscape source content",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(72, 80, 400, 120), role="body"),
+                ),
+            ],
+        )
+
+        content = renderer.render_to_bytes(document, template_path=None, config_path=None, image_loader=lambda _asset: None)
+        rendered = Document(io.BytesIO(content))
+
         self.assertEqual(rendered.sections[-1].orientation, WD_ORIENTATION.LANDSCAPE)
         self.assertGreater(rendered.sections[-1].page_width, rendered.sections[-1].page_height)
-        self.assertEqual(len(rendered.tables[-1].columns), 8)
+
+    def test_render_to_bytes_renders_context_like_table_caption_as_body_text(self) -> None:
+        renderer = DocumentIRWordRenderer()
+        condition = (
+            "at TA = +25°C, VS = ±5 V to ±15 V, VCM = VOUT = VS / 2, "
+            "and RL = 10 kΩ connected to VS / 2 (unless otherwise noted)"
+        )
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="docjob_table_context", source_file_id="file_table_context", document_language="en"),
+            blocks=[
+                DocumentIRBlock(
+                    id="block_table",
+                    type="table",
+                    order=0,
+                    html="<table><tr><th>PARAMETER</th><th>VALUE</th></tr><tr><td>VOS</td><td>5</td></tr></table>",
+                    captions=[condition],
+                )
+            ],
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "template.yaml"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        "schema_version: template-config/v1",
+                        "normal:",
+                        "  alignment: left",
+                        "  first_line_indent_pt: 21",
+                        "caption:",
+                        "  alignment: center",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            content = renderer.render_to_bytes(document, template_path=None, config_path=config_path, image_loader=lambda _asset: None)
+            rendered = Document(io.BytesIO(content))
+
+        xml = self._document_xml(content)
+        before_table_xml = xml[: xml.index("<w:tbl>")]
+        self.assertEqual(rendered.paragraphs[0].text, condition)
+        self.assertEqual(rendered.paragraphs[0].alignment, WD_ALIGN_PARAGRAPH.LEFT)
+        self.assertIn('<w:jc w:val="left"', before_table_xml)
+        self.assertNotIn('<w:jc w:val="center"', before_table_xml)
 
     def _document_xml(self, content: bytes) -> str:
         with zipfile.ZipFile(io.BytesIO(content)) as docx_zip:

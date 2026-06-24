@@ -313,7 +313,6 @@ class GoldenSampleManifestTests(TestCase):
                             "docx_manual_list_markers:1",
                             "docx_plain_toc_entries:1",
                             "docx_unstyled_heading_candidates:1",
-                            "docx_wide_table_without_landscape:1",
                         ],
                     )
                 ],
@@ -351,7 +350,6 @@ class GoldenSampleManifestTests(TestCase):
                 "docx_manual_list_markers:1",
                 "docx_plain_toc_entries:1",
                 "docx_unstyled_heading_candidates:1",
-                "docx_wide_table_without_landscape:1",
             ],
         )
         self.assertEqual(summary["heading_like_unstyled_paragraphs_total"], 1)
@@ -574,7 +572,6 @@ class GoldenSampleManifestTests(TestCase):
                 "docx_manual_list_markers:1",
                 "docx_plain_toc_entries:1",
                 "docx_unstyled_heading_candidates:1",
-                "docx_wide_table_without_landscape:1",
             ],
         )
 

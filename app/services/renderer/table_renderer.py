@@ -13,12 +13,16 @@ from docx.shared import Cm, Emu, Mm, Pt
 
 from app.conversion.runtime.table_html_parser import HtmlCell, HtmlTable, parse_html_table
 from app.services.document_ir.models import DocumentIRBlock
-from app.services.renderer.template_config import TemplateConfigPackage
+from app.services.document_ir.table_annotations import is_table_context_annotation
+from app.services.renderer.template_config import TemplateConfigPackage, TemplateParagraphStyleConfig
 
 
 MAX_COMPLEX_TABLE_ROWS = 400
 MAX_COMPLEX_TABLE_HTML_LEN = 30000
 MIN_TABLE_COLUMN_WIDTH = Mm(16)
+WIDE_TABLE_COLUMN_COUNT = 6
+COMPACT_TABLE_FONT_SIZE = 8.0
+EXTRA_COMPACT_TABLE_FONT_SIZE = 7.0
 LONG_TABLE_CAPTION_RE = re.compile(r"^(?:续表|continued\s+table|[A-Z]\.\d+(?:\.\d+)?)\b", re.IGNORECASE)
 TH_TAG_RE = re.compile(r"</?th\b[^>]*>", re.IGNORECASE)
 
@@ -53,10 +57,11 @@ class WordTableRendererMixin:
 
         max_cols = table_model.max_columns
         usable_width = self._available_table_width(document)
+        table_template_config = self._template_config_for_table_columns(template_config, max_cols)
         if self._is_large_table(block, table_model):
-            self._render_expanded_table(document, table_model, max_cols, usable_width, template_config)
+            self._render_expanded_table(document, table_model, max_cols, usable_width, table_template_config)
         else:
-            self._render_standard_html_table(document, table_model, max_cols, usable_width, template_config)
+            self._render_standard_html_table(document, table_model, max_cols, usable_width, table_template_config)
         self._render_table_notes(document, block, template_config)
 
     def _render_standard_html_table(
@@ -129,6 +134,7 @@ class WordTableRendererMixin:
         table = document.add_table(rows=rows, cols=cols)
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
         table.autofit = False
+        self._set_table_width(table, usable_width)
         try:
             table.style = template_config.table_style.style_name
         except (KeyError, ValueError):
@@ -150,8 +156,22 @@ class WordTableRendererMixin:
             widths[1] += int(usable_width) - sum(widths)
             return widths
 
-        column_width = max(int(usable_width // cols), int(Emu(MIN_TABLE_COLUMN_WIDTH)))
-        return [column_width for _ in range(cols)]
+        if cols >= WIDE_TABLE_COLUMN_COUNT:
+            return self._equal_widths(cols, usable_width)
+
+        min_width = int(Emu(MIN_TABLE_COLUMN_WIDTH))
+        if min_width * cols <= usable_width:
+            column_width = max(int(usable_width // cols), min_width)
+            widths = [column_width for _ in range(cols)]
+            widths[-1] += int(usable_width) - sum(widths)
+            return widths
+        return self._equal_widths(cols, usable_width)
+
+    def _equal_widths(self, cols: int, usable_width: int) -> list[int]:
+        column_width = max(int(usable_width // cols), 1)
+        widths = [column_width for _ in range(cols)]
+        widths[-1] += int(usable_width) - sum(widths)
+        return widths
 
     def _fill_table_cell(
         self,
@@ -228,6 +248,9 @@ class WordTableRendererMixin:
         for text in self._unique_annotation_texts(block.captions):
             paragraph = document.add_paragraph()
             paragraph.paragraph_format.keep_with_next = True
+            if is_table_context_annotation(text):
+                self._fill_table_context_paragraph(paragraph, text, template_config)
+                continue
             self._fill_paragraph(
                 paragraph,
                 text,
@@ -298,6 +321,63 @@ class WordTableRendererMixin:
         section = sections[-1]
         width = section.page_width - section.left_margin - section.right_margin
         return int(width if width > 0 else Cm(14))
+
+    def _template_config_for_table_columns(
+        self,
+        template_config: TemplateConfigPackage,
+        max_cols: int,
+    ) -> TemplateConfigPackage:
+        if max_cols < WIDE_TABLE_COLUMN_COUNT:
+            return template_config
+        current_size = template_config.table_content.font_size or COMPACT_TABLE_FONT_SIZE
+        target_size = COMPACT_TABLE_FONT_SIZE if max_cols <= 8 else EXTRA_COMPACT_TABLE_FONT_SIZE
+        table_content = template_config.table_content.model_copy(
+            update={
+                "font_size": min(current_size, target_size),
+                "line_spacing": 1.0,
+                "space_before": 0,
+                "space_after": 0,
+                "first_line_indent_pt": 0,
+                "left_indent_pt": 0,
+                "right_indent_pt": 0,
+            }
+        )
+        return template_config.model_copy(update={"table_content": table_content})
+
+    def _fill_table_context_paragraph(
+        self,
+        paragraph: Any,
+        text: str,
+        template_config: TemplateConfigPackage,
+    ) -> None:
+        self._fill_paragraph(
+            paragraph,
+            text,
+            self._table_context_style(template_config),
+            terminology=template_config.terminology,
+        )
+
+    def _table_context_style(self, template_config: TemplateConfigPackage) -> TemplateParagraphStyleConfig:
+        alignment = template_config.normal.alignment
+        if alignment not in {"left", "justify"}:
+            alignment = "left"
+        return template_config.normal.model_copy(
+            update={
+                "alignment": alignment,
+                "first_line_indent_pt": 0,
+                "space_before": template_config.normal.space_before if template_config.normal.space_before is not None else 0,
+                "space_after": template_config.normal.space_after if template_config.normal.space_after is not None else 2,
+            }
+        )
+
+    def _set_table_width(self, table: Any, width: int) -> None:
+        table_properties = table._tbl.tblPr
+        table_width = table_properties.find(qn("w:tblW"))
+        if table_width is None:
+            table_width = OxmlElement("w:tblW")
+            table_properties.insert(0, table_width)
+        table_width.set(qn("w:type"), "dxa")
+        table_width.set(qn("w:w"), str(Emu(width).twips))
 
     def _set_cell_fill(self, cell: Any, fill: str) -> None:
         tc_pr = cell._tc.get_or_add_tcPr()

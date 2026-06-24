@@ -107,9 +107,6 @@ def build_docx_quality_flags(quality: Mapping[str, Any] | None) -> list[str]:
     if unstyled_heading_count > 0:
         flags.append(f"docx_unstyled_heading_candidates:{unstyled_heading_count}")
 
-    wide_table_count = _int_value(quality.get("wide_table_count"))
-    if wide_table_count > 0 and _int_value(quality.get("landscape_sections")) == 0:
-        flags.append(f"docx_wide_table_without_landscape:{wide_table_count}")
     return flags
 
 
