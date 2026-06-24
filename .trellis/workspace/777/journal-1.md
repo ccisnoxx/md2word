@@ -854,3 +854,36 @@ Validated ru2zh document job integration, local MinerU ru2zh offline request/res
 ### Next Steps
 
 - None - task complete
+
+
+## Session 26: P0 Golden Sample readiness
+
+**Date**: 2026-06-24
+**Task**: P0 Golden Sample readiness
+**Branch**: `main`
+
+### Summary
+
+Aligned DocumentIR renderer parity, documented the formal P0 Golden Sample gate, and marked hostdzire validation as the remaining external release step.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `32edca58` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
