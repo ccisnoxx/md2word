@@ -123,9 +123,9 @@ class TextRenderCharacterizationTests(unittest.TestCase):
         paragraph = FakeParagraph()
         render_config = self.make_render_config()
 
-        self.module.fill_toc_entry_paragraph(paragraph, "1 FEATURES .... 1", render_config)
+        self.module.fill_toc_entry_paragraph(paragraph, "特性 .... 1", render_config)
 
-        self.assertEqual([run.text for run in paragraph.runs], ["1 FEATURES", "\t1"])
+        self.assertEqual([run.text for run in paragraph.runs], ["特性", "\t1"])
         self.assertEqual(len(paragraph.paragraph_format.tab_stops.calls), 1)
 
     def test_fill_toc_entry_paragraph_uses_supplied_usable_width_for_tab_stop(self):

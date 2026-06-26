@@ -46,7 +46,8 @@ TOC_ENTRY_RE = re.compile(
     r"(?:table|figure)\s*[A-Z\d.\-]+|(?:chapter|section|part)\s+(?:[ivxlcdm]+|\d+))",
     re.IGNORECASE,
 )
-TOC_ENTRY_WITH_PAGE_RE = re.compile(r"^(?P<title>.+?)(?:[.\s·。…]{2,}|\s+)(?P<page>\d+)\s*$")
+TOC_EXPLICIT_LEADER_ENTRY_RE = re.compile(r"^(?P<title>.+?)(?:\s*[.·。…]{2,}\s*)(?P<page>\d+)\s*$")
+TOC_ENTRY_WITH_PAGE_RE = re.compile(r"^(?P<title>.+?)\s+(?P<page>\d+)\s*$")
 TRAILING_PAGE_NOISE_RE = re.compile(r"(?:[.\s·。…]{2,}|\s+)\d+\s*$")
 ENGLISH_HEADING_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9/&()\-]*")
 ENGLISH_HEADING_STOPWORDS = {
@@ -307,23 +308,35 @@ def infer_heading_level(text: str) -> int:
 
 def parse_toc_entry_text(text: str) -> tuple[str, str] | None:
     cleaned = " ".join((text or "").replace("\n", " ").split()).strip()
-    if not cleaned or TOC_TITLE_RE.match(cleaned):
+    if not cleaned:
         return None
-    match = TOC_ENTRY_WITH_PAGE_RE.match(cleaned)
-    if match is None:
+    parsed = _split_toc_entry_text(cleaned)
+    if parsed is None:
         return None
-    title = match.group("title").strip(" .·。…")
-    page = match.group("page").strip()
+    title, page, has_explicit_leader = parsed
     if not title or not page or len(title) > 120:
         return None
-    if not TOC_ENTRY_RE.match(title):
+    # Explicit dot leaders are the TOC signal for translated datasheet entries
+    # that no longer start with English numbering or Appendix/Table prefixes.
+    if not has_explicit_leader and not TOC_ENTRY_RE.match(title):
         return None
     return title, page
 
 
 def is_toc_title_text(text: str) -> bool:
     cleaned = " ".join((text or "").replace("\n", " ").split()).strip()
-    return bool(cleaned and TOC_TITLE_RE.match(cleaned))
+    return bool(cleaned and parse_toc_entry_text(cleaned) is None and TOC_TITLE_RE.match(cleaned))
+
+
+def _split_toc_entry_text(text: str) -> tuple[str, str, bool] | None:
+    explicit_match = TOC_EXPLICIT_LEADER_ENTRY_RE.match(text)
+    if explicit_match is not None:
+        return explicit_match.group("title").strip(" .·。…"), explicit_match.group("page").strip(), True
+
+    match = TOC_ENTRY_WITH_PAGE_RE.match(text)
+    if match is None:
+        return None
+    return match.group("title").strip(" .·。…"), match.group("page").strip(), False
 
 
 def looks_like_heading_text(text: str) -> bool:

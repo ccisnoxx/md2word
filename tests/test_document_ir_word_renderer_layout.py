@@ -537,13 +537,13 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         document = DocumentIR(
             metadata=DocumentIRMetadata(job_id="docjob_toc", source_file_id="file_toc", document_language="en"),
             blocks=[
-                DocumentIRBlock(id="block_toc_title", type="paragraph", order=0, text="Table of Contents"),
-                DocumentIRBlock(id="block_toc_entry", type="paragraph", order=1, text="1 Features........................ 1"),
+                DocumentIRBlock(id="block_toc_title", type="paragraph", order=0, text="目录"),
+                DocumentIRBlock(id="block_toc_entry", type="paragraph", order=1, text="Features........................ 1"),
                 DocumentIRBlock(
                     id="block_toc_list",
                     type="list",
                     order=2,
-                    list_items=["Appendix A Device Pinout 120", "• Updated numbering"],
+                    list_items=["特性 .... 1", "目录 .... 3", "Appendix A Device Pinout 120", "• Updated numbering"],
                 ),
             ],
         )
@@ -552,11 +552,13 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         rendered = Document(io.BytesIO(content))
         xml = self._document_xml(content)
 
-        self.assertEqual(rendered.paragraphs[1].text, "1 Features\t1")
-        self.assertEqual(rendered.paragraphs[2].text, "Appendix A Device Pinout\t120")
-        self.assertEqual(rendered.paragraphs[3].text, "Updated numbering")
-        self.assertGreaterEqual(xml.count("<w:tab/>"), 2)
-        self.assertGreaterEqual(xml.count('w:leader="dot"'), 2)
+        self.assertEqual(rendered.paragraphs[1].text, "Features\t1")
+        self.assertEqual(rendered.paragraphs[2].text, "特性\t1")
+        self.assertEqual(rendered.paragraphs[3].text, "目录\t3")
+        self.assertEqual(rendered.paragraphs[4].text, "Appendix A Device Pinout\t120")
+        self.assertEqual(rendered.paragraphs[5].text, "Updated numbering")
+        self.assertGreaterEqual(xml.count("<w:tab/>"), 4)
+        self.assertGreaterEqual(xml.count('w:leader="dot"'), 4)
         self.assertEqual(xml.count("<w:numPr>"), 1)
 
     def test_render_to_bytes_uses_configured_toc_styles(self) -> None:

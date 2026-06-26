@@ -38,6 +38,14 @@ Use focused tests matching the touched behavior:
 - OpenAPI/public response changes: update and check `tests/test_openapi_export.py` plus the OpenAPI snapshot flow.
 - Document IR/conversion/rendering behavior: use the existing characterization tests such as `tests/test_document_ir_word_renderer_layout.py`, `tests/test_text_render_characterization.py`, `tests/test_page_layout_characterization.py`, and related runtime characterization tests.
 
+### Scenario: Datasheet TOC Rendering Semantics
+
+- Trigger: changing TOC recognition, translation text replacement, list rendering, DOCX quality flags, or DocumentIR Word rendering.
+- Contract: explicit dot/ellipsis leaders plus a trailing page number are the TOC signal even when translation removes English numbering, Appendix, Table, or Figure prefixes. Examples such as `Features .... 1`, `特性 .... 1`, and `目录 .... 3` must render through the TOC paragraph path with a right-aligned dot leader tab.
+- Guardrail: whitespace-only page suffixes remain stricter and should still require a known TOC-style title prefix, so ordinary body text ending in a number is not promoted to TOC.
+- Tests required: add or update `tests/test_document_ir_word_renderer_layout.py` for rendered `w:leader="dot"` evidence, `tests/test_text_render_characterization.py` for shared legacy text rendering behavior, and DOCX quality tests so unformatted translated TOC entries still become `docx_plain_toc_entries:{count}`.
+- Entry check: when debugging local/online generation, include a worker or renderer assertion that portrait source pages with wide tables remain portrait unless the source page dimensions are actually landscape.
+
 Preferred targeted command shape:
 
 ```bash

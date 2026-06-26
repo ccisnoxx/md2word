@@ -554,6 +554,7 @@ class GoldenSampleManifestTests(TestCase):
                         "<w:p><w:r><w:t>6.5 Thermal Information</w:t></w:r></w:p>"
                         "<w:p><w:r><w:t>• Low noise</w:t></w:r></w:p>"
                         "<w:p><w:r><w:t>1 Features........................ 1</w:t></w:r></w:p>"
+                        "<w:p><w:r><w:t>特性 .... 1</w:t></w:r></w:p>"
                         f"<w:tbl><w:tr>{wide_cells}</w:tr></w:tbl>"
                         '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>'
                         "</w:body></w:document>"
@@ -564,13 +565,13 @@ class GoldenSampleManifestTests(TestCase):
 
         self.assertEqual(quality["heading_like_unstyled_paragraphs"], 1)
         self.assertEqual(quality["manual_list_marker_paragraphs"], 1)
-        self.assertEqual(quality["plain_toc_entry_paragraphs"], 1)
+        self.assertEqual(quality["plain_toc_entry_paragraphs"], 2)
         self.assertEqual(quality["wide_table_count"], 1)
         self.assertEqual(
             build_docx_quality_flags(quality),
             [
                 "docx_manual_list_markers:1",
-                "docx_plain_toc_entries:1",
+                "docx_plain_toc_entries:2",
                 "docx_unstyled_heading_candidates:1",
             ],
         )
