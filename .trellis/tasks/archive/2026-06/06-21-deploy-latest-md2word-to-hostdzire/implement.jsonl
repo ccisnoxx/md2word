@@ -1,4 +1,0 @@
-{"file": ".trellis/spec/guides/index.md", "reason": "Shared pre-modification thinking guide and cross-layer trigger reference."}
-{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Sensitive-data handling and deploy evidence logging constraints."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Release gate and deployment validation quality expectations."}
-{"file": ".trellis/tasks/06-21-deploy-latest-md2word-to-hostdzire/research/deploy-context.md", "reason": "Task-specific deployment topology and chosen rollout flow."}

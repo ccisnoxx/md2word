@@ -1,234 +1,102 @@
 # Directory Structure
 
-> Backend code organization conventions for this project.
+The backend is a single FastAPI application rooted at `app/`. There is no `src/` package wrapper.
 
----
+Evidence:
 
-## Overview
+- `docs/dev/backend-local-setup-and-architecture.md`
+- `app/main.py`
+- `app/api/v1/router.py`
+- `app/core/runtime.py`
+- `app/domains/document_jobs/router.py`
+- `app/domains/files/service.py`
+- `scripts/dev/run_api.py`
+- `scripts/dev/run_stage_worker.py`
 
-The backend is a FastAPI application with a domain-oriented structure. Keep new
-backend work inside the existing `app/` layers, and treat `app/main.py` as the
-composition root that wires repositories, services, workers, health checks, and
-routers together.
+## Runtime Composition
 
-The current backend architecture is documented in
-`docs/dev/backend-local-setup-and-architecture.md`; this Trellis spec captures
-the conventions that future code changes should follow.
+`app/main.py` is the composition root. It builds `Settings`, configures logging, builds persistence adapters, wires services, creates `AppRuntime`, registers error handlers, installs middleware, and includes the v1 API router.
 
----
+Follow this pattern for runtime dependencies:
 
-## Directory Layout
+- Construct shared services and adapters in `build_runtime()`.
+- Store shared dependencies on `AppRuntime` in `app/core/runtime.py`.
+- Read runtime dependencies in routers through `Depends(get_runtime)` from `app/api/dependencies.py`.
+- Avoid constructing repositories, clients, or services directly inside route handlers unless the existing route already owns a narrow local helper.
 
-```text
-app/
-  main.py                         # FastAPI app factory and runtime composition root
-  core/
-    config.py                     # Settings, environment variables, derived paths
-    errors.py                     # API error codes and ApiError
-    logging.py                    # access/business/system logging setup
-    runtime.py                    # AppRuntime dependency container
-  api/
-    dependencies.py               # FastAPI runtime, trace, auth, and actor dependencies
-    errors.py                     # exception handler registration and error response shape
-    v1/
-      router.py                   # /api/v1 route aggregator
-      routers/                    # API-owned health/auth routers
-  domains/
-    <domain>/
-      router.py                   # domain HTTP endpoints
-      schemas.py                  # request/response Pydantic models
-      models.py                   # domain records and value types
-      service.py                  # business/application service
-      repository.py               # repository Protocol ports, when the domain persists data
-      workflow.py                 # workflow policies/state transitions, when applicable
-  infrastructure/
-    persistence/
-      factory.py                  # selects file/sqlite/mysql adapter sets
-      file/                       # local JSON/JSONL metadata backend
-      sqlite/                     # sqlite metadata backend
-      mysql/                      # MySQL metadata backend
-  conversion/                     # conversion library and stable FastAPI-facing facade
-  workers/                        # stage/document worker process integrations
-scripts/
-  dev/                            # local entrypoints for API and workers
-  ops/                            # release gates, OpenAPI export, shadow copy tools
-resources/                        # versioned templates, term rules, prompts
-tests/                            # unittest-based backend and conversion tests
-var/                              # runtime data, not versioned application assets
-```
+`create_app()` registers `register_api_error_handlers(app)`, CORS, trace/access logging middleware, startup replay tasks, and `api_v1_router`. `app = LazyDefaultApp()` delays reading `.env` and connecting runtime dependencies until the ASGI app is actually called.
 
-Examples in the current tree:
+## API Layout
 
-- `app/domains/document_jobs/router.py` owns `/api/v1/document-jobs`.
-- `app/domains/files/service.py` owns file upload and file metadata business rules.
-- `app/infrastructure/persistence/factory.py` creates explicit adapter sets for
-  `file`, `database` (sqlite), and `mysql`.
-- `app/conversion/runtime_facade.py` is the stable import surface used by the
-  FastAPI side; avoid direct imports of legacy/root conversion scripts.
+`app/api/v1/router.py` owns the `/api/v1` prefix and aggregates business routers from `app/domains/**/router.py`.
 
----
+Current pattern:
 
-## Module Organization
+- API-owned auth/health routers live under `app/api/v1/routers/`.
+- Business routers live with their domain, for example `app/domains/document_jobs/router.py`, `app/domains/files/router.py`, `app/domains/saved_views/router.py`, and `app/domains/term_rules/sets_router.py`.
+- Router modules convert HTTP inputs to service calls, call FastAPI dependencies, map service results to response schemas, and write audit records for user actions.
+- Business request/response schemas usually live in the same domain's `schemas.py`.
 
-### Composition Root
+When adding a public v1 backend endpoint, add the router in the owning domain and include it from `app/api/v1/router.py`. Do not put new business endpoints under `app/api/v1/routers/` unless they are API shell concerns like current auth/health.
 
-`app/main.py` is where runtime dependencies are assembled. The current
-`build_runtime()` flow starts by resolving settings, configuring logging, and
-selecting persistence adapters:
+## Domain Layout
 
-```python
-resolved_settings = settings or Settings()
-configure_logging(resolved_settings.app_env, resolved_settings.log_format)
-persistence_adapters = build_persistence_adapters(resolved_settings)
-repository_backend = persistence_adapters.backend_name
-```
+Business domains live under `app/domains/<domain>/`. The exact file set varies by domain, but the common local pattern is:
 
-Do not construct a parallel runtime container in routers, services, or tests.
-If a new service/repository is needed at request time, add it to
-`build_runtime()` and `AppRuntime`.
-
-### API Routing
-
-The route tree is aggregated under `app/api/v1/router.py`:
-
-```python
-router = APIRouter(prefix="/api/v1")
-router.include_router(document_jobs_router)
-router.include_router(files_router)
-router.include_router(health_router)
-```
-
-Domain-owned endpoints live beside their domain code, not in
-`app/api/v1/routers/`, unless the endpoint is truly API-shell-owned like auth or
-health.
-
-### Router Responsibilities
-
-Routers should stay thin:
-
-- Declare FastAPI routes, dependencies, query/body constraints, and response models.
-- Read `runtime: AppRuntime = Depends(get_runtime)` and actor dependencies from
-  `app/api/dependencies.py`.
-- Call domain/application services.
-- Build response models through local `_build_*_response` helpers.
-- Record audit events at the API boundary when the operation represents a user action.
-
-`app/domains/document_jobs/router.py` is the best current example:
-
-```python
-@router.post("", response_model=DocumentJobCreateResponse, status_code=status.HTTP_201_CREATED)
-def create_document_job(payload, runtime, user, trace_id):
-    _ensure_document_job_creation_ready(runtime)
-    job = runtime.document_job_service.create_job(
-        user=user,
-        source_file_id=payload.source_file_id,
-        mode=payload.mode,
-        trace_id=trace_id,
-    )
-    runtime.audit_service.record(
-        actor=_actor_from_user(user),
-        action="document_job.create",
-        target_type="document_job",
-        target_id=job.id,
-        trace_id=trace_id,
-    )
-    return DocumentJobCreateResponse(job_id=job.id, status=job.status)
-```
-
-### Domain Responsibilities
-
-Domain packages own business rules and workflow invariants. For larger domains,
-split by responsibility rather than putting everything into `service.py`.
-Existing examples:
-
-- `app/domains/document_jobs/workflow.py` defines document job workflow groups
-  and allowed actions.
-- `app/domains/jobs/stage.py`, `dispatch.py`, and `lifecycle.py` split stage
-  processing, dispatching, and lifecycle operations.
-- `app/domains/files/retention_policy.py`, `cleanup_execution.py`, and
-  `quota_policy.py` isolate file governance concerns.
-
-### Persistence Boundaries
-
-Repository Protocols live in the domain package, while concrete adapters live
-under `app/infrastructure/persistence/<backend>/`.
+- `models.py` for Pydantic records and state literals.
+- `schemas.py` for API request/response models.
+- `router.py` or specialized routers such as `sets_router.py`, `review_router.py`, `ops_router.py`.
+- `service.py` for application behavior and business validation.
+- `repository.py` for `Protocol` ports used by services.
+- Focused helpers for workflow, execution, recovery, presenters, validation, or config summaries when a domain has real complexity.
 
 Examples:
 
-- `app/domains/jobs/repository.py` defines job/stage repository protocols.
-- `app/infrastructure/persistence/file/jobs.py`,
-  `app/infrastructure/persistence/sqlite/jobs.py`, and
-  `app/infrastructure/persistence/mysql/jobs.py` implement the same job ports.
-- `app/infrastructure/persistence/factory.py` is the only place that selects
-  which adapter set the runtime uses.
+- `app/domains/document_jobs/` has `models.py`, `schemas.py`, `router.py`, `service.py`, `repository.py`, `workflow.py`, `execution.py`, `recovery.py`, and incident routers.
+- `app/domains/jobs/` has separated command/query/stage/lifecycle/workflow modules for the legacy jobs workflow and stage message processing.
+- `app/domains/files/` splits upload service, retention, quota policy, cleanup, validation, repository, schemas, and router.
 
----
+当前未建立此约定：not every domain has the same file names or all of `model/schema/router/service/repository`. Match the nearest existing domain with the same kind of behavior instead of forcing a uniform template.
 
-## Naming Conventions
+## Core, Services, Conversion, And Workers
 
-- Python modules and packages use `snake_case`.
-- Domain package names are usually plural when the business area is plural in
-  product language: `document_jobs`, `term_rules`, `translation`, `files`.
-- Public classes use domain-specific names, for example `DocumentJobService`,
-  `FileUploadService`, `MysqlJobSnapshotRepository`.
-- Route response helpers use `_build_*_response`.
-- Validation/normalization helpers use `_ensure_*`, `_validate_*`, or
-  `_normalize_*`.
-- Constants that define API/business contracts use uppercase names near the
-  module that owns them, for example `DOCUMENT_JOB_BULK_LIMIT`.
-- Runtime data belongs under `var/` or `data/`; versioned defaults belong under
-  `resources/`.
+`app/core/` owns cross-cutting runtime primitives:
 
-Most backend files also use explicit module purpose comments. Keep those
-comments near the top of new non-trivial Python modules and state the file's
-actual responsibility, for example:
+- `config.py` defines `Settings` and path derivation.
+- `errors.py` defines `ApiError` and stable API error codes.
+- `logging.py` configures runtime logging.
+- `runtime.py` stores the process-wide `AppRuntime`.
 
-```python
-# File: app/infrastructure/persistence/factory.py
-# Purpose: Select metadata persistence adapters from runtime settings.
-```
+`app/services/` holds shared services that are not cleanly owned by one business domain, such as auth, health, Document IR conversion, and rendering.
 
-Follow this pattern for new non-trivial Python modules.
+`app/conversion/` is the conversion library boundary. `docs/dev/backend-local-setup-and-architecture.md` identifies `app/conversion/runtime_facade.py` and `app/conversion/runtime_runner.py` as the stable backend-facing runtime path. Backend code should use the conversion entrypoint/facade rather than importing historical root scripts.
 
----
+`app/workers/` owns worker implementations. Script entrypoints under `scripts/dev/` adapt them for local/PyCharm use:
 
-## Adding A Backend Feature
+- `scripts/dev/run_api.py` runs `uvicorn` against `app.main:app`.
+- `scripts/dev/run_stage_worker.py` builds runtime and runs `StageWorker`.
+- `scripts/dev/run_document_worker.py` is the Document Jobs worker entrypoint.
 
-1. Put domain logic under `app/domains/<domain>/`.
-2. Add or extend `schemas.py` for request/response models.
-3. Add repository Protocols in the domain package if persistence is needed.
-4. Implement backend-specific adapters under `app/infrastructure/persistence/`.
-5. Wire new runtime dependencies in `app/main.py` and `app/core/runtime.py`.
-6. Add the domain router to `app/api/v1/router.py`.
-7. Add unittest coverage under `tests/`, using fake providers/adapters when
-   external systems would otherwise be required.
-8. Update `docs/api/openapi.json` when API contracts change.
+## Infrastructure And Runtime Data
 
----
+`app/infrastructure/persistence/` owns metadata adapters:
 
-## Forbidden Patterns
+- `file/`
+- `sqlite/`
+- `mysql/`
+- `factory.py`
 
-- Do not put business rules only in routers when a service/domain boundary
-  already exists.
-- Do not import concrete persistence adapters directly from domain services.
-  Depend on domain repository protocols and let `build_runtime()` inject the
-  concrete implementation.
-- Do not introduce a second route aggregator outside `app/api/v1/router.py`.
-- Do not store generated runtime state or customer artifacts under `resources/`
-  or commit files from `var/`.
-- Do not start real MySQL, Redis/Celery, MinerU, OpenAI, or browser smoke tests
-  as part of ordinary local backend code changes unless the task explicitly
-  asks for online/integration validation.
+`resources/` contains versioned seed/config assets such as templates, template configs, prompts, and term rules. `var/` and `data/` are runtime data directories and are not the versioned source of truth.
 
----
+`docs/dev/backend-local-setup-and-architecture.md` documents the current runtime shape, including `var/jobs/{job_id}/job.json`, `files.json`, `events.jsonl`, `stage_messages/`, `tmp/`, and config state files.
 
-## Reference Examples
+## Tests And Scripts
 
-- Composition root: `app/main.py`
-- Runtime container: `app/core/runtime.py`
-- API dependency boundary: `app/api/dependencies.py`
-- API error boundary: `app/api/errors.py`
-- Domain router: `app/domains/document_jobs/router.py`
-- Domain service: `app/domains/document_jobs/service.py`
-- Persistence factory: `app/infrastructure/persistence/factory.py`
-- Backend release gate: `scripts/ops/check_release.py`
+Backend tests live under `tests/` as `unittest` test modules. Large contract coverage currently sits in `tests/test_fastapi_jobs_backend.py`, with focused tests such as `tests/test_database_job_repository.py`, `tests/test_backend_logging.py`, `tests/test_openapi_export.py`, and domain-specific tests.
+
+Operational and release scripts live under:
+
+- `scripts/dev/` for local development/debug entrypoints.
+- `scripts/ops/` for release, migration/shadow copy, Golden Sample, P1, and P2 checks.
+
+当前未建立此约定：there is no `pyproject.toml`, `pytest.ini`, checked-in lint config, or backend package manager metadata beyond `requirements.txt`.

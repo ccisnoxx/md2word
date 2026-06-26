@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 28
+- **Total Sessions**: 1
 - **Last Active**: 2026-06-26
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~962 | Active |
+| `journal-1.md` | ~40 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,34 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
-| 28 | 2026-06-26 | Translation provider batch recovery Phase 1 | `e6adfd696fc81bade8ee0a44e392bb37536f79db` | `main` |
-| 27 | 2026-06-24 | P0 Golden Sample layout fixes | `02e0077f` | `main` |
-| 26 | 2026-06-24 | P0 Golden Sample readiness | `32edca58` | `main` |
-| 25 | 2026-06-24 | ru2zh integration acceptance | `a6efb53c` | `main` |
-| 24 | 2026-06-23 | Local MinerU datasheet layout feedback fixes | `3606de38` | `main` |
-| 23 | 2026-06-23 | Local MinerU layout planning | `ee08cc5c` | `main` |
-| 22 | 2026-06-23 | Remove md2word_main runtime entrypoint | `d8f6de69`, `a944d6f3`, `f6869dea` | `main` |
-| 21 | 2026-06-23 | Localize component PDF governance docs | `d60ae8b6` | `main` |
-| 20 | 2026-06-23 | Component PDF regression governance | `274f0d70` | `main` |
-| 19 | 2026-06-23 | Local conversion sandbox migration | `45d3aa19` | `main` |
-| 18 | 2026-06-21 | Term rule governance workbench | `3f483a1c` | `main` |
-| 17 | 2026-06-21 | Production redeploy | `5fca4500` | `main` |
-| 16 | 2026-06-21 | Execute next-stage product plan P0 slice | `a0897014`, `7bfb9018`, `d9df20c8` | `main` |
-| 15 | 2026-06-21 | Execute next-stage product deepening plan | `7b265c6c`, `5c29111f`, `ab001397` | `main` |
-| 14 | 2026-06-21 | Deploy md2word to hostdzire | `8a5ec485` | `main` |
-| 13 | 2026-06-20 | terminology rule review flow mvp | `21c5183f` | `main` |
-| 12 | 2026-06-20 | Terminology governance package release | `f79acc4c` | `main` |
-| 11 | 2026-06-20 | Frontend diagnostic detail experience | `91c88d5b` | `main` |
-| 10 | 2026-06-20 | Frontend workbench table preferences | `b8f50926` | `main` |
-| 9 | 2026-06-20 | Frontend operations cockpit | `a154ca36` | `main` |
-| 8 | 2026-06-20 | Frontend saved views workbench | `83bc7422` | `main` |
-| 7 | 2026-06-20 | Redeploy hostdzire project | `bccebdc3` | `main` |
-| 6 | 2026-06-20 | Incident triage workbench | `bccebdc3` | `main` |
-| 5 | 2026-06-20 | Frontend QA review drawer | `3a9bcf29`, `9c737c24`, `c14a5394` | `main` |
-| 4 | 2026-06-20 | Bootstrap backend Trellis guidelines | `b2c435d3` | `main` |
-| 3 | 2026-06-20 | Frontend operations workbench redesign | `cd7c77da` | `main` |
-| 2 | 2026-06-20 | Frontend sidebar app shell redesign | `1499777b` | `main` |
-| 1 | 2026-06-19 | Amplify frontend visual hierarchy | `94dd3946` | `main` |
+| 1 | 2026-06-26 | Translation provider batch recovery Phase 1 | `e6adfd696fc81bade8ee0a44e392bb37536f79db` | `main` |
 <!-- @@@/auto:session-history -->
 
 ---

@@ -1,182 +1,99 @@
 # Logging Guidelines
 
-> Backend logging channels, format, levels, and sensitive-data rules.
+The FastAPI backend uses Python standard `logging` configured in `app/core/logging.py`. `loguru` is present in `requirements.txt`, but it is not the FastAPI runtime logging convention.
 
----
+Evidence:
 
-## Overview
+- `app/core/logging.py`
+- `app/main.py`
+- `app/domains/jobs/stage.py`
+- `app/workers/stage_worker.py`
+- `app/clients/mineru_client.py`
+- `docs/dev/runtime-observability-and-health.md`
+- `docs/runbooks/backend.md`
+- `tests/test_backend_logging.py`
+- `tests/test_internal_user_management.py`
 
-The backend uses Python standard `logging`, configured in
-`app/core/logging.py`. Although `loguru` is present in `requirements.txt`, the
-FastAPI backend convention is the stdlib logging setup installed by
-`configure_logging()`.
+## Logger Channels
 
-`build_runtime()` calls:
+`configure_logging()` configures three named runtime loggers:
 
-```python
-configure_logging(resolved_settings.app_env, resolved_settings.log_format)
-```
+- `access` for HTTP request access logs.
+- `business` for job, stage, worker, retry, cleanup, and other business-flow logs.
+- `system` for unexpected exceptions, third-party libraries, startup/runtime infrastructure, and logs without business context.
 
-The three project logger channels are:
+`app/main.py` calls `configure_logging()` during `build_runtime()`. Use `logging.getLogger("business")`, `logging.getLogger("system")`, or the existing local logger channel instead of creating unrelated logger naming schemes for backend runtime behavior.
 
-| Logger | Purpose | Typical source |
-| --- | --- | --- |
-| `access` | HTTP request access logs | `trace_logging_middleware` |
-| `business` | job/stage/workflow events with business context | stage dispatch, retry, cleanup |
-| `system` | runtime, library, and unexpected exception logs | uvicorn, httpx, startup, exception stacks |
+## Format And Levels
 
----
+`Settings.log_format` accepts `text` or `json`.
 
-## Format
-
-Default `LOG_FORMAT=text`:
+Text format:
 
 ```text
 {time} | {logger_name} | {level} | {message}
 ```
 
-`LOG_FORMAT=json` emits a single-line JSON record:
+JSON format is a single JSON object per line with at least:
 
 ```json
 {"time":"...","logger":"access","level":"INFO","message":"..."}
 ```
 
-The JSON formatter preserves non-standard log record fields and includes
-`exc_info`/`stack_info` when present. `tests/test_backend_logging.py` is the
-minimal contract for JSON logging behavior.
+`configure_logging()` sets `DEBUG` for `dev`, `local`, and `test`; otherwise it sets `INFO`. It also lowers noisy third-party logger verbosity for `httpx`, `httpcore`, `asyncio`, `uvicorn`, and `python_multipart`.
 
----
+当前未建立此约定：there is no per-domain log level map or structured logging library beyond `JsonLogFormatter`.
 
-## Log Levels
+## Required Context Fields
 
-`configure_logging()` sets the base level by environment:
+Messages use stable key/value fragments inside the message string so they can be grepped in text logs and parsed from JSON `message`.
 
-- `DEBUG` for `dev`, `local`, and `test`
-- `INFO` for other environments
-
-Use levels this way:
-
-- `debug`: local-only diagnostic details that are not needed for normal
-  operations.
-- `info`: expected lifecycle events, request access logs, successful stage
-  transitions, dry-run summaries.
-- `warning`: degraded but recoverable states, skipped optional checks, replay
-  candidates that need attention.
-- `error`/`exception`: failed operations, unexpected exceptions, provider
-  failures, and blocked release/readiness conditions.
-
-Do not rely on logger level changes to hide sensitive data. Sensitive values
-must not be logged at any level.
-
----
-
-## Structured Message Pattern
-
-Use stable `key=value` fields inside the log message so text and JSON logs carry
-the same searchable contract.
-
-Access logs currently use:
-
-```python
-access_logger.info(
-    "[trace_id=%s method=%s path=%s status_code=%s duration_ms=%.1f]",
-    trace_id,
-    request.method,
-    request.url.path,
-    response.status_code,
-    duration_ms,
-)
-```
-
-Business logs should include the relevant job/stage context when available:
+Access logs are emitted by `trace_logging_middleware` in `app/main.py`:
 
 ```text
-[trace_id=... job_id=... stage=convert_package message_id=... status=completed]
+[trace_id=... method=GET path=/api/v1/health/ready status_code=200 duration_ms=1.5]
 ```
 
-For document jobs, include stable identifiers such as `job_id`, `file_id`,
-`stage`, `status`, `message_id`, and `trace_id`; avoid full request payloads.
+Business stage logs should include the durable workflow identifiers available on that path:
 
----
+- `trace_id`
+- `job_id`
+- `stage`
+- `message_id`
+- `status`
+- `reason` or error summary when relevant
+
+`JobStageService._log_stage_failure()` and `_delete_if_stage_already_applied()` are the local examples. `StageWorker.run_forever()` logs `worker_id`, mode, and processed count.
 
 ## What To Log
 
-Log events that help operators and tests understand state transitions:
+Log durable operational facts, not raw payloads:
 
-- HTTP method/path/status/duration through the access middleware.
-- Stage dispatch start/completion/failure and replay decisions.
-- Document job creation, retry, cancel, archive, and recovery outcomes.
-- File retention cleanup preview/execute results.
-- Integration dry-run versus real execution outcomes.
-- Readiness blockers and warnings when an ops script or health path reports
-  them.
+- HTTP method/path/status/duration in access logs.
+- Stage enqueue, replay, skip, success, and failure context in business logs.
+- Worker loop startup and processed count in business logs.
+- Unexpected request exceptions in system logs.
+- External provider request summaries that do not reveal secret values, such as MinerU batch/file counts in `app/clients/mineru_client.py`.
 
-When a user action has audit significance, record it through `AuditService` in
-addition to logging. Logs are operational evidence; audit events are product
-records.
-
----
+For long-running job behavior, also record domain events through the owning service/repository. Logs are diagnostic output; `events` and audit records are the durable business history.
 
 ## What Not To Log
 
-Never log:
+Do not log secrets, raw tokens, passwords, password hashes, full customer file contents, or full external payload bodies.
 
-- `Authorization`, bearer tokens, admin/jobs tokens, JWTs, passwords, API keys,
-  webhook URLs, or resolved secret values.
-- Full uploaded documents, raw PDF contents, OCR payloads, full AI prompt/output
-  archives, or translation debug full text.
-- Presigned URLs or S3 credentials.
-- Complete third-party provider responses when they can include customer
-  content or credentials.
+Evidence of this boundary:
 
-Prefer IDs and counts over payloads. If a path or object key is necessary for a
-backend diagnostic, keep it out of API responses and avoid including customer
-filenames unless the existing operation explicitly requires them for local-only
-debugging.
+- `tests/test_internal_user_management.py` asserts user-management responses/audit details do not contain passwords or `pbkdf2_sha256`.
+- `docs/dev/runtime-observability-and-health.md` states `/health/metrics` must not expose token, payload, customer filename, or artifact local absolute path.
+- `app/api/dependencies.py` raises stable auth errors without logging provided token values.
 
----
+当前未建立此约定：there is no centralized redaction filter for arbitrary logger calls. Each caller must avoid passing sensitive values to logging or audit details.
 
-## Examples
+## Health And Metrics
 
-Logging setup:
+Health and metrics are part of observability but not log streams:
 
-```python
-for logger_name in ("access", "business", "system"):
-    logger = logging.getLogger(logger_name)
-    logger.handlers.clear()
-    logger.propagate = False
-    logger.setLevel(level)
-    logger.addHandler(handler)
-```
+- `/api/v1/health/ready` reports readiness checks, backend selection, worker mode, artifact storage, resource versions, deployment identity, and P0 blockers/warnings.
+- `/api/v1/health/metrics` returns JSON operational counts and is not Prometheus format.
 
-Unexpected exception logging:
-
-```python
-system_logger.exception(
-    "[trace_id=%s method=%s path=%s status=exception duration_ms=%.1f]",
-    trace_id,
-    request.method,
-    request.url.path,
-    duration_ms,
-)
-```
-
-JSON log contract test:
-
-```python
-payload = json.loads(formatter.format(record))
-self.assertEqual(payload["logger"], "access")
-self.assertEqual(payload["level"], "INFO")
-```
-
----
-
-## Common Mistakes
-
-- Creating new logger channels when `access`, `business`, or `system` already
-  fit.
-- Using `print()` in backend runtime code instead of stdlib logging.
-- Logging whole request/response bodies for convenience.
-- Logging secret references and resolved secret values together.
-- Adding log messages without stable keys, making them hard to grep or parse.
-- Reconfiguring logging outside `app/core/logging.py` or `build_runtime()`.
+Follow `docs/dev/runtime-observability-and-health.md` when adding readiness or metrics fields. Keep them non-sensitive and stable enough for scripts such as `scripts/ops/run_p2_online_gate.py`.
