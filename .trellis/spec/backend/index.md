@@ -1,52 +1,50 @@
 # Backend Development Guidelines
 
-> Best practices for backend development in this project.
+These guidelines describe the current `md2word` backend as it exists now. They are based on the repository's FastAPI code, backend docs, tests, and release scripts, not on a target architecture.
 
----
+Primary evidence:
 
-## Overview
-
-This directory contains the current backend development conventions for the
-FastAPI backend, domain services, metadata persistence adapters, runtime
-observability, and quality gates.
-
----
-
-## Guidelines Index
-
-| Guide | Description | Status |
-|-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | Filled |
-| [Database Guidelines](./database-guidelines.md) | Metadata backends, queries, schema bootstrap | Filled |
-| [Error Handling](./error-handling.md) | Error types, handling strategies, API error shape | Filled |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns, testing requirements | Filled |
-| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels, sensitive-data rules | Filled |
-
----
+- `README.md`
+- `docs/dev/backend-local-setup-and-architecture.md`
+- `docs/runbooks/backend.md`
+- `docs/dev/runtime-observability-and-health.md`
+- `app/main.py`
+- `app/core/config.py`
+- `app/core/runtime.py`
+- `app/api/errors.py`
+- `app/infrastructure/persistence/factory.py`
+- `tests/test_fastapi_jobs_backend.py`
+- `scripts/ops/check_release.py`
 
 ## Pre-Development Checklist
 
 Before backend changes:
 
-1. Read [Directory Structure](./directory-structure.md) to choose the correct
-   layer and ownership boundary.
-2. Read [Error Handling](./error-handling.md) for any API, service, or workflow
-   change that can fail.
-3. Read [Database Guidelines](./database-guidelines.md) for persistence,
-   repository, metadata, migration, or storage changes.
-4. Read [Logging Guidelines](./logging-guidelines.md) for runtime,
-   observability, worker, provider, or ops changes.
-5. Read [Quality Guidelines](./quality-guidelines.md) before tests, release
-   gates, or review.
+1. Read [Directory Structure](./directory-structure.md) for ownership boundaries and where files belong.
+2. Read [Error Handling](./error-handling.md) for API/service exception behavior.
+3. Read [Quality Guidelines](./quality-guidelines.md) for tests and release checks.
+4. If the change touches metadata, repositories, stage messages, schema bootstrap, or artifact storage, read [Database Guidelines](./database-guidelines.md).
+5. If the change emits logs, affects health/metrics, workers, callbacks, or long-running jobs, read [Logging Guidelines](./logging-guidelines.md).
 
-These guidelines document observed project conventions from the current codebase
-and existing dev docs. Update them when the implementation contract changes.
+Also read `.trellis/spec/guides/index.md` and the relevant thinking guide when the change crosses API, service, repository, worker, or runtime boundaries.
 
----
+## Guidelines Index
 
-**Language**: Backend code-spec documents should be written in **English** by
-default. User-facing dev guides, fixture README files, and manual acceptance
-templates should follow the user's requested language and the surrounding
-document language; when the user explicitly asks for Chinese, write those
-artifacts in Chinese while preserving machine-readable paths, command names,
-arguments, sample ids, and enum values.
+| Guide | What It Covers | Status |
+|---|---|---|
+| [Directory Structure](./directory-structure.md) | FastAPI composition root, domain layout, services, conversion, workers, resources, and tests | Current |
+| [Database Guidelines](./database-guidelines.md) | file/sqlite/MySQL metadata backends, schema bootstrap, adapter ports, payload storage, migration state | Current |
+| [Error Handling](./error-handling.md) | `ApiError`, unified API error responses, workflow errors, validation, trace IDs, bulk failures | Current |
+| [Logging Guidelines](./logging-guidelines.md) | `access` / `business` / `system` loggers, text/JSON format, trace/job context, sensitive data boundaries | Current |
+| [Quality Guidelines](./quality-guidelines.md) | `unittest` style, targeted checks, release gate, OpenAPI contract checks, local vs online validation | Current |
+
+## Quality Check
+
+Use the smallest check that covers the touched behavior first. Current project-level evidence points to these commands:
+
+```bash
+.venv/bin/python -m unittest <specific-test-targets>
+.venv/bin/python scripts/ops/check_release.py
+```
+
+`README.md` and `docs/runbooks/backend.md` state that local changes should not start frontend, backend, MySQL, Redis/Celery, workers, or Playwright smoke for P0 release evidence. Full API, worker, database, MinerU, and Golden Sample evidence is collected on hostdzire through the online-first workflow.

@@ -1,3 +1,0 @@
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Deployment validation depends on release gate, runtime readiness, and production guardrail expectations."}
-{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Deployment log review must avoid exposing secrets and should distinguish expected warnings from runtime failures."}
-{"file": ".trellis/tasks/06-21-deploy-latest-code-production/research/deploy-context.md", "reason": "Summarizes the approved hostdzire release process and documentation constraints."}
