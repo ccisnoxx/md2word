@@ -60,7 +60,11 @@
             <h2 class="section-title">任务处置</h2>
             <p class="section-subtitle">基于后端任务状态、事件、回调和文件记录汇总；动作可用性以后端返回为准。</p>
           </div>
-          <el-button :icon="Refresh" :loading="loading || eventsLoading || filesLoading || callbackSummaryLoading" @click="loadAll">
+          <el-button
+            :icon="Refresh"
+            :loading="loading || eventsLoading || filesLoading || callbackSummaryLoading || translationBatchesLoading"
+            @click="loadAll"
+          >
             刷新诊断
           </el-button>
         </div>
@@ -164,7 +168,7 @@
               </div>
               <el-button
                 :icon="Refresh"
-                :loading="loading || eventsLoading || filesLoading || callbackSummaryLoading"
+                :loading="loading || eventsLoading || filesLoading || callbackSummaryLoading || translationBatchesLoading"
                 @click="loadAll"
               >
                 刷新诊断
@@ -214,6 +218,95 @@
               </div>
             </section>
 
+            <section class="diagnostic-section-block" aria-label="Provider 批次">
+              <div class="diagnostic-section-heading">
+                <div>
+                  <h3>Provider 批次</h3>
+                  <p>Provider batch 摘要；AI 调用日志仅显示文件 ID，正文内容不进入此视图。</p>
+                </div>
+                <el-button text type="primary" :loading="translationBatchesLoading" @click="loadTranslationBatches()">
+                  刷新批次
+                </el-button>
+              </div>
+              <ApiErrorAlert
+                :error="translationBatchesError"
+                :diagnostic-context="jobErrorDiagnosticContext('document_jobs.translation_batches')"
+              />
+              <div v-if="translationBatches.length" class="translation-batch-summary-grid">
+                <div v-for="item in translationBatchSummaryItems" :key="item.label" class="translation-batch-summary-item">
+                  <span>{{ item.label }}</span>
+                  <strong class="mono">{{ item.value }}</strong>
+                </div>
+              </div>
+              <el-table
+                v-if="translationBatches.length"
+                v-loading="translationBatchesLoading"
+                class="translation-batch-table"
+                :data="translationBatches"
+                table-layout="fixed"
+                :row-class-name="translationBatchTableRowClassName"
+              >
+                <el-table-column label="状态" width="150">
+                  <template #default="{ row }">
+                    <div class="translation-batch-status">
+                      <el-tag size="small" :type="translationBatchStatusTagType(row)" effect="plain">
+                        {{ translationBatchStatusText(row.status) }}
+                      </el-tag>
+                      <div v-if="translationBatchFlagTexts(row).length" class="translation-batch-flags">
+                        <el-tag
+                          v-for="flag in translationBatchFlagTexts(row)"
+                          :key="flag"
+                          size="small"
+                          type="warning"
+                          effect="plain"
+                        >
+                          {{ flag }}
+                        </el-tag>
+                      </div>
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="批次" min-width="210" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    <div class="translation-batch-id mono">{{ row.batch_id }}</div>
+                    <div class="translation-batch-meta mono">
+                      root={{ row.root_batch_id }} · parent={{ row.parent_batch_id || "-" }} · level={{ row.split_level }}
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="页范围" width="110">
+                  <template #default="{ row }">{{ translationBatchPageRangeText(row) }}</template>
+                </el-table-column>
+                <el-table-column label="规模" width="150">
+                  <template #default="{ row }">{{ translationBatchScaleText(row) }}</template>
+                </el-table-column>
+                <el-table-column label="尝试" width="90">
+                  <template #default="{ row }">{{ translationBatchAttemptText(row) }}</template>
+                </el-table-column>
+                <el-table-column label="finish_reason" width="135" show-overflow-tooltip>
+                  <template #default="{ row }"><span class="mono">{{ row.finish_reason || "-" }}</span></template>
+                </el-table-column>
+                <el-table-column label="错误摘要" min-width="220" show-overflow-tooltip>
+                  <template #default="{ row }"><span class="mono">{{ translationBatchErrorSummaryText(row) }}</span></template>
+                </el-table-column>
+                <el-table-column label="AI 调用日志" min-width="220" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    <div>{{ translationBatchAiCallLogSummaryText(row) }}</div>
+                    <div class="translation-batch-meta mono">{{ translationBatchFileIdsText(row.ai_call_log_file_ids) }}</div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="更新时间" min-width="170">
+                  <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
+                </el-table-column>
+              </el-table>
+              <el-empty
+                v-else
+                v-loading="translationBatchesLoading"
+                class="compact-empty"
+                :description="supportsJobTranslationQa(job) ? '暂无 translation provider batch 记录' : '当前任务模式没有 provider batch 诊断'"
+              />
+            </section>
+
             <section class="diagnostic-section-block" aria-label="事件预览">
               <div class="diagnostic-section-heading">
                 <div>
@@ -252,6 +345,9 @@
                   刷新回调
                 </el-button>
                 <el-button v-if="eventsError" :loading="eventsLoading" @click="loadEvents()">刷新事件</el-button>
+                <el-button v-if="translationBatchesError" :loading="translationBatchesLoading" @click="loadTranslationBatches()">
+                  刷新 Provider 批次
+                </el-button>
               </div>
             </section>
           </el-card>
@@ -673,6 +769,7 @@ import type {
   DocumentJobRetryRequest,
   DocumentJobResponse,
   DocumentJobStage,
+  DocumentJobTranslationBatchSummaryResponse,
 } from "@/api/types";
 import { documentJobsApi } from "@/api/documentJobs";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
@@ -703,6 +800,19 @@ import {
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { copyDownloadLink, openDownloadLink, type DownloadLinkNotice } from "@/utils/download";
 import { configOptionKey, configVersionId, findConfigOption } from "@/utils/configOptions";
+import {
+  summarizeTranslationBatches,
+  translationBatchAiCallLogSummaryText,
+  translationBatchAttemptText,
+  translationBatchErrorSummaryText,
+  translationBatchFileIdsText,
+  translationBatchFlagTexts,
+  translationBatchPageRangeText,
+  translationBatchRowClassName,
+  translationBatchScaleText,
+  translationBatchStatusTagType,
+  translationBatchStatusText,
+} from "@/utils/translationBatches";
 
 const route = useRoute();
 const router = useRouter();
@@ -712,10 +822,13 @@ const job = ref<DocumentJobResponse | null>(null);
 const events = ref<DocumentJobEventResponse[]>([]);
 const files = ref<DocumentFileSummaryResponse[]>([]);
 const callbackSummary = ref<DocumentJobCallbackMessageSummaryResponse | null>(null);
+const translationBatches = ref<DocumentJobTranslationBatchSummaryResponse[]>([]);
+const translationBatchGeneration = ref<number | null>(null);
 const loading = ref(false);
 const eventsLoading = ref(false);
 const filesLoading = ref(false);
 const callbackSummaryLoading = ref(false);
+const translationBatchesLoading = ref(false);
 const downloadLoading = ref(false);
 const downloadingFileId = ref<string | null>(null);
 const retryLoading = ref(false);
@@ -733,6 +846,7 @@ const error = ref<ApiClientError | null>(null);
 const eventsError = ref<ApiClientError | null>(null);
 const filesError = ref<ApiClientError | null>(null);
 const callbackSummaryError = ref<ApiClientError | null>(null);
+const translationBatchesError = ref<ApiClientError | null>(null);
 const configError = ref<ApiClientError | null>(null);
 const configLoading = ref(false);
 const configSummary = ref<DocumentJobConfigSummaryResponse | null>(null);
@@ -899,6 +1013,37 @@ const filteredEvents = computed(() =>
     return true;
   }),
 );
+const translationBatchSummary = computed(() => summarizeTranslationBatches(translationBatches.value));
+const translationBatchSummaryItems = computed(() => [
+  { label: "总批次", value: String(translationBatchSummary.value.total) },
+  { label: "成功", value: String(translationBatchSummary.value.succeeded) },
+  { label: "运行中", value: String(translationBatchSummary.value.active) },
+  { label: "失败", value: String(translationBatchSummary.value.failed) },
+  { label: "已拆分", value: String(translationBatchSummary.value.split) },
+  { label: "需关注", value: String(translationBatchSummary.value.attention) },
+  { label: "items", value: String(translationBatchSummary.value.itemCount) },
+  { label: "AI logs", value: String(translationBatchSummary.value.aiCallLogCount) },
+  { label: "generation", value: translationBatchGeneration.value === null ? "-" : String(translationBatchGeneration.value) },
+  { label: "预算", value: translationBatchSummary.value.providerCallBudget === null ? "-" : String(translationBatchSummary.value.providerCallBudget) },
+]);
+const translationBatchHealthText = computed(() => {
+  if (!supportsJobTranslationQa(job.value)) {
+    return "不适用";
+  }
+  if (translationBatchesLoading.value) {
+    return "加载中";
+  }
+  if (translationBatchesError.value) {
+    return "加载失败";
+  }
+  if (!translationBatchSummary.value.total) {
+    return "暂无批次";
+  }
+  if (translationBatchSummary.value.failed || translationBatchSummary.value.attention) {
+    return `需关注 ${translationBatchSummary.value.attention} / ${translationBatchSummary.value.total}`;
+  }
+  return `成功 ${translationBatchSummary.value.succeeded} / ${translationBatchSummary.value.total}`;
+});
 const latestErrorEvent = computed(() => [...events.value].reverse().find((event) => event.level === "error") || null);
 const failureSummary = computed(() => {
   if (!job.value) {
@@ -1036,6 +1181,7 @@ const dispositionFacts = computed(() => {
     { label: "错误码", value: job.value.error_code || "-", mono: true },
     { label: "trace_id", value: latestTraceId.value, mono: true },
     { label: "回调", value: callbackHealthText.value },
+    { label: "Provider 批次", value: translationBatchHealthText.value },
     { label: "质量", value: qualityDispositionText.value },
     { label: "文件", value: fileAvailabilitySummary.value },
   ];
@@ -1184,6 +1330,7 @@ const diagnosticRecoveryItems = computed(() => [
   filesError.value ? "files" : "",
   callbackSummaryError.value ? "callback" : "",
   eventsError.value ? "events" : "",
+  translationBatchesError.value ? "translation_batches" : "",
 ].filter(Boolean));
 const qualityDispositionText = computed(() => {
   if (filesLoading.value) {
@@ -1324,6 +1471,35 @@ async function loadCallbackSummary(targetJobId = jobId.value): Promise<void> {
   }
 }
 
+async function loadTranslationBatches(targetJobId = jobId.value): Promise<void> {
+  if (!supportsJobTranslationQa(job.value)) {
+    if (targetJobId === jobId.value) {
+      translationBatches.value = [];
+      translationBatchGeneration.value = null;
+      translationBatchesError.value = null;
+      translationBatchesLoading.value = false;
+    }
+    return;
+  }
+  translationBatchesLoading.value = true;
+  translationBatchesError.value = null;
+  try {
+    const response = await documentJobsApi.listTranslationBatches(targetJobId);
+    if (targetJobId === jobId.value) {
+      translationBatches.value = response.items;
+      translationBatchGeneration.value = response.generation;
+    }
+  } catch (caught) {
+    if (targetJobId === jobId.value) {
+      translationBatchesError.value = normalizeApiError(caught);
+    }
+  } finally {
+    if (targetJobId === jobId.value) {
+      translationBatchesLoading.value = false;
+    }
+  }
+}
+
 type LoadAllOptions = {
   secondary?: "all" | "smart";
 };
@@ -1344,14 +1520,25 @@ async function loadAll(options: LoadAllOptions = {}): Promise<void> {
       }
       return;
     }
-    await Promise.all([loadFiles(targetJobId), loadCallbackSummary(targetJobId)]);
+    const secondaryLoads = [loadFiles(targetJobId), loadCallbackSummary(targetJobId)];
+    if (supportsJobTranslationQa(job.value)) {
+      secondaryLoads.push(loadTranslationBatches(targetJobId));
+    } else {
+      translationBatches.value = [];
+      translationBatchGeneration.value = null;
+      translationBatchesError.value = null;
+    }
+    await Promise.all(secondaryLoads);
   } else {
     events.value = [];
     files.value = [];
     callbackSummary.value = null;
+    translationBatches.value = [];
+    translationBatchGeneration.value = null;
     eventsError.value = null;
     filesError.value = null;
     callbackSummaryError.value = null;
+    translationBatchesError.value = null;
   }
 }
 
@@ -1760,10 +1947,13 @@ function resetPageStateForRouteChange(): void {
   events.value = [];
   files.value = [];
   callbackSummary.value = null;
+  translationBatches.value = [];
+  translationBatchGeneration.value = null;
   error.value = null;
   eventsError.value = null;
   filesError.value = null;
   callbackSummaryError.value = null;
+  translationBatchesError.value = null;
   configError.value = null;
   lastDownloadLink.value = null;
   retryDialogVisible.value = false;
@@ -1838,6 +2028,10 @@ function fileAvailabilityText(file: DocumentFileSummaryResponse): string {
     return "已过期";
   }
   return "可下载";
+}
+
+function translationBatchTableRowClassName({ row }: { row: DocumentJobTranslationBatchSummaryResponse }): string {
+  return translationBatchRowClassName(row);
 }
 
 watch(() => job.value?.status, syncPolling);
@@ -2084,6 +2278,79 @@ onBeforeUnmount(() => {
   overflow-wrap: anywhere;
 }
 
+.translation-batch-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.translation-batch-summary-item {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--app-radius-sm);
+  background: var(--app-color-surface-muted);
+}
+
+.translation-batch-summary-item span {
+  display: block;
+  color: var(--app-color-text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.translation-batch-summary-item strong {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--app-color-text);
+  font-size: 13px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.translation-batch-table {
+  width: 100%;
+}
+
+.translation-batch-status {
+  display: grid;
+  gap: 6px;
+  align-items: start;
+}
+
+.translation-batch-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.translation-batch-id,
+.translation-batch-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.translation-batch-meta {
+  margin-top: 3px;
+  color: var(--app-color-text-muted);
+  font-size: 12px;
+}
+
+.translation-batch-table :deep(.is-translation-batch-failed > td) {
+  background: var(--el-color-danger-light-9);
+}
+
+.translation-batch-table :deep(.is-translation-batch-warning > td) {
+  background: var(--el-color-warning-light-9);
+}
+
+.translation-batch-table :deep(.is-translation-batch-active > td) {
+  background: var(--el-color-primary-light-9);
+}
+
 .diagnostic-section-block {
   display: grid;
   gap: var(--app-space-2);
@@ -2296,6 +2563,7 @@ onBeforeUnmount(() => {
   .task-disposition-facts,
   .diagnostic-summary-grid,
   .diagnostic-evidence-grid,
+  .translation-batch-summary-grid,
   .quality-evidence-grid {
     grid-template-columns: 1fr;
   }

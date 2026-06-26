@@ -26,6 +26,7 @@ import type {
   DocumentJobResponse,
   DocumentJobRetryResponse,
   DocumentJobUnarchiveResponse,
+  DocumentJobTranslationBatchListResponse,
   DocumentJobTranslationQaResponse,
   DocumentJobTranslationQaUpdateRequest,
   DocumentJobTranslationQaUpdateResponse,
@@ -93,6 +94,13 @@ export const documentJobsApi = {
   getCallbackMessageSummary(jobId: string): Promise<DocumentJobCallbackMessageSummaryResponse> {
     return apiRequest<DocumentJobCallbackMessageSummaryResponse>({
       url: `/api/v1/document-jobs/${jobId}/callback-messages/summary`,
+      method: "GET",
+    });
+  },
+
+  listTranslationBatches(jobId: string): Promise<DocumentJobTranslationBatchListResponse> {
+    return apiRequest<DocumentJobTranslationBatchListResponse>({
+      url: `/api/v1/document-jobs/${jobId}/translation-batches`,
       method: "GET",
     });
   },

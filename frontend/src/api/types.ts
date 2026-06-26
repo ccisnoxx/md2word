@@ -1799,6 +1799,44 @@ export type DocumentJobCallbackMessageSummaryResponse = {
   recent_problem_messages: DocumentJobCallbackProblemSummaryResponse[];
 };
 
+export type DocumentJobTranslationBatchSummaryResponse = {
+  batch_id: string;
+  job_id: string;
+  generation: number;
+  root_batch_id: string;
+  parent_batch_id: string | null;
+  status: string;
+  page_start: number | null;
+  page_end: number | null;
+  item_count: number;
+  char_count: number;
+  split_level: number;
+  attempt_count: number;
+  max_attempts: number;
+  deterministic_batch_count: number;
+  provider_call_budget: number;
+  source_document_ir_file_id: string | null;
+  result_file_id: string | null;
+  ai_call_log_file_ids: string[];
+  debug_archive_file_ids: string[];
+  finish_reason: string | null;
+  usage: Record<string, unknown>;
+  response_id: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  retryable: boolean;
+  truncation_retry: boolean;
+  lease_expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DocumentJobTranslationBatchListResponse = {
+  job_id: string;
+  generation: number;
+  items: DocumentJobTranslationBatchSummaryResponse[];
+};
+
 export type TranslationQaStatus = "unreviewed" | "approved" | "needs_fix" | "blocked";
 export type TranslationQaIssueType =
   | "translation"
