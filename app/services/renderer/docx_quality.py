@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
 
+from app.conversion.docx_rules.text_semantics import parse_toc_entry_text
+
 
 EDITABLE_TEXT_MIN_CHARS = 20
 DOCX_XML_NS = {
@@ -20,12 +22,6 @@ LATEX_RESIDUE_RE = re.compile(
     r"(\$[^$]{1,160}\$|\\(?:sqrt|theta|mu|psi|circ|pm|Omega|alpha|beta|gamma|Delta|Sigma)\b|[_^]\{?\\?[A-Za-z0-9()+\-/]+\}?)"
 )
 MANUAL_LIST_MARKER_RE = re.compile(r"^\s*(?:[•■*]|[-–—])\s+")
-PLAIN_TOC_ENTRY_RE = re.compile(r"^(?P<title>.+?)(?:[.\s·。…]{2,}|\s+)(?P<page>\d{1,4})\s*$")
-TOC_ENTRY_TITLE_RE = re.compile(
-    r"^(?:\d+(?:\.\d+)*\s+|\d+[.、]|\d+\.\d+|附录\s*[A-Z\d.\-]+|appendix\s+[A-Z\d.\-]+|"
-    r"(?:table|figure)\s+[A-Z\d.\-]+|(?:chapter|section|part)\s+(?:[ivxlcdm]+|\d+))",
-    re.IGNORECASE,
-)
 NUMBERED_HEADING_RE = re.compile(r"^(?:\d+(?:\.\d+){0,5})\s+\S")
 HEADING_NUMBER_RE = re.compile(
     r"^(?:\d+[.、]|\d+\.\d+|附录[A-Z\d.\-]+|appendix\s+[A-Z\d.\-]+)",
@@ -284,12 +280,7 @@ def _table_column_count(table: ElementTree.Element) -> int:
 
 
 def _looks_like_plain_toc_entry(text: str) -> bool:
-    cleaned = " ".join((text or "").replace("\n", " ").split()).strip()
-    match = PLAIN_TOC_ENTRY_RE.match(cleaned)
-    if match is None:
-        return False
-    title = match.group("title").strip(" .·。…")
-    return bool(title and TOC_ENTRY_TITLE_RE.match(title))
+    return parse_toc_entry_text(text) is not None
 
 
 def _looks_like_heading_text(text: str) -> bool:

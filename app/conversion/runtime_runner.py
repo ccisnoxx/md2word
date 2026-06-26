@@ -54,7 +54,9 @@ A4_HEIGHT = Mm(297)
 HEADER_FOOTER_FONT = Pt(8.5)
 PRODUCT_TITLE_RE = re.compile(r"^(?P<part>[A-Z0-9xX,+/\- ]{3,})\s+(?P<category>.+)$")
 TOC_ENTRY_RE = re.compile(
-    r"^(?:(?:\d+[、.])|(?:\d+\.\d+)|(?:附录\s*[A-Z\d.\-]+)|(?:appendix\s+[A-Z\d.\-]+)|(?:(?:表|table|图|figure)\s*[A-Z\d.\-]+)|(?:chapter|section|part)\s+(?:[ivxlcdm]+|\d+)).*",
+    r"^(?:.+?[.·。…]{2,}\s*\d+\s*$|"
+    r"(?:(?:\d+[、.])|(?:\d+\.\d+)|(?:附录\s*[A-Z\d.\-]+)|(?:appendix\s+[A-Z\d.\-]+)|"
+    r"(?:(?:表|table|图|figure)\s*[A-Z\d.\-]+)|(?:chapter|section|part)\s+(?:[ivxlcdm]+|\d+)).*)",
     re.IGNORECASE,
 )
 _RUNTIME_BOUND = False
