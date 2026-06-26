@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.conversion import runtime_runner
+from scripts.dev import formal_mineru_conversion
 from scripts.dev.manage_component_pdf_samples import (
     DEFAULT_MANIFEST_PATH,
     load_manifest,
@@ -101,7 +101,7 @@ def run_one_sample(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     try:
-        runtime_runner.run_conversion(
+        formal_mineru_conversion.run_conversion(
             input_path=str(input_path),
             output_path=str(output_path),
             template_path=None,

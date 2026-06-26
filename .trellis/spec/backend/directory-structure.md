@@ -100,3 +100,63 @@ Operational and release scripts live under:
 - `scripts/ops/` for release, migration/shadow copy, Golden Sample, P1, and P2 checks.
 
 当前未建立此约定：there is no `pyproject.toml`, `pytest.ini`, checked-in lint config, or backend package manager metadata beyond `requirements.txt`.
+
+## Scenario: Local MinerU Debug Uses Formal Renderer Core
+
+### 1. Scope / Trigger
+
+- Trigger: changing local MinerU-to-DOCX scripts, PyCharm run configs, local quality matrix, or component PDF regression runner.
+- Purpose: local debugging must reproduce the formal Document Jobs renderer path so layout fixes do not drift between local tools and production conversion.
+
+### 2. Signatures
+
+- CLI: `.venv/bin/python scripts/dev/run_local_mineru_conversion.py <input_path> [--output <docx>] [--template <docx>] [--layout-config <yaml>] [--subscript-config <yaml>] [--translation-mode direct|en2zh|ru2zh|...]`
+- JSON/PyCharm: `.venv/bin/python scripts/dev/run_local_mineru_debug_config.py --config scripts/dev/local_mineru_debug_<mode>_config.json`
+- Matrix: `.venv/bin/python scripts/dev/run_local_mineru_quality_matrix.py --mode <direct|en2zh|ru2zh>`
+- Shared local adapter: `scripts.dev.formal_mineru_conversion.run_conversion(...)`
+
+### 3. Contracts
+
+- Local scripts pass MinerU zip/directory inputs to `formal_mineru_conversion`, not to `app.conversion.runtime_runner`.
+- The adapter must call `MinerUToDocumentIRService.convert_zip()` and `DocumentIRWordRenderer.render_to_bytes()`.
+- Layout fixes belong in `app/services/document_ir/*`, `app/services/renderer/*`, or shared DOCX rules under `app/conversion/docx_rules/*`.
+- `runtime_runner` remains a legacy `/api/v1/jobs` backing path and historical comparison point; it is not the default local debugging core.
+- Translation modes must not silently fall back to direct. Missing key/response should fail or be reported as blocked after writing any requested local translation request evidence.
+
+### 4. Validation & Error Matrix
+
+- Missing MinerU input -> explicit `FileNotFoundError`.
+- Missing explicit template/layout/translation response path -> explicit file-not-found error before rendering.
+- Translation mode with neither local response nor available API key -> explicit `OPENAI_API_KEY` provider error or matrix `translation_api_key_missing`.
+- Local response item ids do not match formal DocumentIR translation item ids -> explicit provider validation error.
+
+### 5. Good/Base/Bad Cases
+
+- Good: local CLI/config, quality matrix, and component PDF regression all use the shared formal adapter and write DOCX plus DocumentIR/quality evidence.
+- Base: a one-off debug script imports `formal_mineru_conversion.run_conversion()` and does no local OOXML/layout post-processing.
+- Bad: a script imports `runtime_runner`, applies a DOCX post-processing patch, or treats a legacy local output as proof that formal `document_jobs` output is fixed.
+
+### 6. Tests Required
+
+- `tests.test_conversion_sandbox_dev_tools`: CLI/config call the formal adapter; minimal MinerU package produces an openable DOCX; translation request is written before missing-key failure.
+- `tests.test_local_mineru_quality_matrix`: blocked translation entries do not call the adapter and still report `translation_api_key_missing`.
+- `tests.test_component_pdf_sample_governance`: committed component sample regression produces an openable DOCX through the formal adapter.
+- Renderer behavior changes still require `tests.test_document_ir_mineru_converter_layout` and `tests.test_document_ir_word_renderer_layout`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```python
+from app.conversion import runtime_runner
+
+runtime_runner.run_conversion(...)
+```
+
+#### Correct
+
+```python
+from scripts.dev import formal_mineru_conversion
+
+formal_mineru_conversion.run_conversion(...)
+```

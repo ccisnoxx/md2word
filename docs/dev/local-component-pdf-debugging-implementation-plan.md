@@ -5,14 +5,14 @@ component: conversion-runtime
 status: current
 summary: md2word 本地电子元器件 PDF direct/en2zh 调试第一阶段实施计划和运行闭环。
 tags: [conversion, mineru, regression, pycharm, translation]
-last_reviewed: 2026-06-23
+last_reviewed: 2026-06-26
 ---
 
 # 本地电子元器件 PDF 调试实施计划
 
 ## 当前阶段目标
 
-第一阶段只建立可重复使用的本地调试入口和文档闭环，不修改渲染、布局或翻译核心逻辑。
+当前本地调试入口已经收敛到正式 DocumentIR 转换与 Word renderer 核心。该文档描述本地样例、PyCharm 配置、质量矩阵和人工验收闭环；脚本层只做路径、离线翻译响应和报告适配，不写独立排版逻辑。
 
 正式项目 `/Users/sc/PycharmProjects/md2word` 是唯一运行入口。新的本地 MinerU 结果包先放在仓库根目录的 `mineru_result/`，再通过 PyCharm Run Configuration 或 JSON 配置运行 `scripts/dev/run_local_mineru_debug_config.py`。
 
@@ -39,10 +39,10 @@ last_reviewed: 2026-06-23
    - 人工检查必须对照 PDF，看标题、目录、表格、图片、页眉页脚、单位符号和翻译文本是否可读。
 5. 定位问题。
    - MinerU 包缺块或识别错：先记录为解析输入问题。
-   - MinerU 包内容正确但 DOCX 排版错：定位到 `app/conversion/runtime*`。
+   - MinerU 包内容正确但 DOCX 排版错：定位到 `app/services/document_ir/*`、`app/services/renderer/*` 或共享规则 `app/conversion/docx_rules/*`。
    - en2zh 文本错误：看 request/response/trace、prompt、术语和占位符。
 6. 修复与回归。
-   - 转换行为修复只进入正式项目 `app/conversion`。
+   - 转换行为修复只进入正式项目的 DocumentIR/renderer 核心或共享 DOCX 规则。
    - 可复现且后续需要防回归的案例，最小化后沉淀到 `tests/fixtures/component_pdf_samples/`。
 
 ## 样例治理
@@ -96,7 +96,7 @@ last_reviewed: 2026-06-23
 | DOCX 视觉验收 | `render_docx.py` 生成 `page-*.png` 和可选 PDF | 检查首页顶部、表格、图片、页脚和分页 | `tests/tmp/local_mineru_debug/visual_qa/standard_render/` |
 | 长期样例回归 | `run_component_pdf_regression.py` | 填人工验收记录 | `tests/tmp/component_pdf_regression/` |
 
-第一阶段改动验证命令：
+本地入口或样例治理改动验证命令：
 
 ```bash
 .venv/bin/python -m unittest tests.test_conversion_sandbox_dev_tools
@@ -119,15 +119,15 @@ OPENAI_API_KEY= .venv/bin/python scripts/dev/run_local_mineru_debug_config.py --
 3. 为 en2zh 增加可提交的脱敏 response fixture 或私有证据指针，让 CI 可以离线覆盖翻译后排版。
 4. 按品牌和分类逐步扩展到 ADI、onsemi、ST、NXP 等 datasheet。
 
-## 第二阶段质量硬化
+## 质量硬化
 
-第二阶段不迁移正式链路，继续围绕本地 `app/conversion/runtime_*` 做质量硬化。目标是把第一阶段规则放到更多 datasheet/技术手册样本下验证，形成稳定的 direct/en2zh 对照报告、视觉 QA 证据和第三阶段迁移准入条件。
+质量硬化围绕正式 DocumentIR/renderer 核心展开。目标是把更多 datasheet/技术手册样本放到 direct/en2zh 对照报告、视觉 QA 证据和人工验收闭环中验证，避免本地入口和线上正式转换出现逻辑漂移。
 
 ### 目标边界
 
 - 做：本地 MinerU -> DOCX 矩阵运行、样本扩展、direct/en2zh 对比、DOCX 结构质量证据、标准渲染命令、人工验收模板和 P0/P1/P2 backlog。
-- 不做：迁移到 `app/services/renderer/*`、生成后自动二次修正、复杂双栏平衡重写、线上 API/worker 门禁变更、提交真实 PDF/trace/key/生成 DOCX。
-- 可复用：允许复用 `app.services.renderer.docx_quality` 提取 OOXML 结构证据，但不把本地渲染实现迁到正式 renderer。
+- 不做：脚本层生成后自动二次修正、复杂双栏平衡重写、线上 API/worker 门禁变更、提交真实 PDF/trace/key/生成 DOCX。
+- 约束：排版规则只进入正式 DocumentIR/renderer 核心或共享 DOCX 规则；本地 runner 不持有第二套 OOXML/layout 实现。
 
 ### 样本矩阵
 

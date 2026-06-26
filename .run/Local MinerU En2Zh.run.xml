@@ -1,0 +1,12 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Local MinerU En2Zh" type="PythonConfigurationType" factoryName="Python">
+    <module name="md2word" />
+    <option name="SCRIPT_NAME" value="$PROJECT_DIR$/scripts/dev/run_local_mineru_debug_config.py" />
+    <option name="PARAMETERS" value="--config scripts/dev/local_mineru_debug_en2zh_config.json" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <option name="SDK_HOME" value="$PROJECT_DIR$/.venv/bin/python" />
+    <option name="ADD_CONTENT_ROOTS" value="true" />
+    <option name="ADD_SOURCE_ROOTS" value="true" />
+    <method v="2" />
+  </configuration>
+</component>

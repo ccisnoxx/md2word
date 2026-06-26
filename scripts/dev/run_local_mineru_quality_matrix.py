@@ -25,10 +25,10 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.conversion import runtime_runner
 from app.conversion.runtime import llm_client
 from app.conversion.runtime_config import APP_CONFIG
 from app.services.renderer.docx_quality import analyze_docx_quality_file, build_docx_quality_flags
+from scripts.dev import formal_mineru_conversion
 
 
 DEFAULT_RUNS_DIR = ROOT / "tests" / "tmp" / "local_mineru_quality"
@@ -337,7 +337,7 @@ def run_one_matrix_entry(sample: Phase2Sample, mode: str, run_dir: Path, config:
         translation_request_output = trace_dir / f"{sample.sample_id}.translation-request.json"
         translation_trace_output = trace_dir / f"{sample.sample_id}.translation-trace.json"
     try:
-        runtime_runner.run_conversion(
+        formal_mineru_conversion.run_conversion(
             input_path=str(selected_input),
             output_path=str(output_path),
             template_path=str(config.template_path),

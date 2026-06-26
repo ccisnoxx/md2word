@@ -65,7 +65,7 @@ class LocalMinerUQualityMatrixTests(TestCase):
             with (
                 mock.patch.object(quality_matrix, "_find_sample_matches", return_value=[package]),
                 mock.patch.dict(os.environ, {quality_matrix.OPENAI_API_KEY_ENV: ""}, clear=False),
-                mock.patch.object(quality_matrix.runtime_runner, "run_conversion") as run_conversion,
+                mock.patch.object(quality_matrix.formal_mineru_conversion, "run_conversion") as run_conversion,
             ):
                 report = quality_matrix.run_matrix(
                     quality_matrix.MatrixConfig(
@@ -92,7 +92,7 @@ class LocalMinerUQualityMatrixTests(TestCase):
             with (
                 mock.patch.object(quality_matrix, "_find_sample_matches", return_value=[package]),
                 mock.patch.dict(os.environ, {quality_matrix.OPENAI_API_KEY_ENV: ""}, clear=False),
-                mock.patch.object(quality_matrix.runtime_runner, "run_conversion") as run_conversion,
+                mock.patch.object(quality_matrix.formal_mineru_conversion, "run_conversion") as run_conversion,
             ):
                 report = quality_matrix.run_matrix(
                     quality_matrix.MatrixConfig(
@@ -130,7 +130,7 @@ class LocalMinerUQualityMatrixTests(TestCase):
 
             with (
                 mock.patch.object(quality_matrix, "_find_sample_matches", return_value=[package]),
-                mock.patch.object(quality_matrix.runtime_runner, "run_conversion", side_effect=fake_run_conversion),
+                mock.patch.object(quality_matrix.formal_mineru_conversion, "run_conversion", side_effect=fake_run_conversion),
             ):
                 report = quality_matrix.run_matrix(
                     quality_matrix.MatrixConfig(

@@ -5,14 +5,14 @@ component: conversion-runtime
 status: current
 summary: 电子元器件 PDF 的品牌/分类样例治理与本地回归流程。
 tags: [conversion, mineru, regression, samples, datasheet]
-last_reviewed: 2026-06-23
+last_reviewed: 2026-06-26
 ---
 
 # 电子元器件 PDF 样例回归治理
 
 ## 目的
 
-当本地电子元器件 PDF 暴露出转换排版问题，并且这个问题后续不应再回归时，使用这套流程沉淀样例和验收记录。正式转换代码源始终是 `app/conversion`；`md2word_main` 只作为历史样例资产来源，不再作为运行入口。
+当本地电子元器件 PDF 暴露出转换排版问题，并且这个问题后续不应再回归时，使用这套流程沉淀样例和验收记录。本地回归入口必须走正式 DocumentIR 转换与 Word renderer 核心；`md2word_main` 只作为历史样例资产来源，不再作为运行入口。
 
 这套样例体系独立于：
 
@@ -66,7 +66,7 @@ tests/fixtures/component_pdf_samples/
 
 1. 在正式项目 PyCharm 配置入口或 worktree 调试环境中发现本地问题，输入路径优先指向正式项目内 `mineru_result/`。
 2. 将最小化后的 MinerU 样例加入 `tests/fixtures/component_pdf_samples/`。
-3. 只在 `app/conversion` 中修复转换行为。
+3. 只在 `app/services/document_ir/*`、`app/services/renderer/*` 或共享规则 `app/conversion/docx_rules/*` 中修复转换行为。
 4. 运行电子元器件样例回归：
 
    ```bash

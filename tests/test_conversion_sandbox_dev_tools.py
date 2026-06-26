@@ -8,10 +8,14 @@ from unittest import TestCase, mock
 from xml.etree import ElementTree
 
 import json
+import os
+
+from docx import Document
 
 from app.conversion import runtime_facade
 from scripts.dev import (
     audit_conversion_sandbox,
+    formal_mineru_conversion,
     migrate_md2word_main_sandbox,
     run_local_mineru_conversion,
     run_local_mineru_debug_config,
@@ -74,9 +78,9 @@ class LocalMinerUConversionCliTests(TestCase):
         with self.assertRaises(ValueError):
             run_local_mineru_conversion.build_conversion_kwargs(args, environ={})
 
-    def test_main_calls_shared_runtime_runner(self) -> None:
+    def test_main_calls_formal_conversion_adapter(self) -> None:
         with mock.patch.object(run_local_mineru_conversion, "configure_logging") as configure_logging, mock.patch.object(
-            run_local_mineru_conversion.runtime_runner,
+            run_local_mineru_conversion.formal_mineru_conversion,
             "run_conversion",
         ) as run_conversion:
             run_local_mineru_conversion.main(["/tmp/mineru-package", "--document-language", "en"])
@@ -85,6 +89,71 @@ class LocalMinerUConversionCliTests(TestCase):
         run_conversion.assert_called_once()
         self.assertEqual(run_conversion.call_args.kwargs["input_path"], "/tmp/mineru-package")
         self.assertEqual(run_conversion.call_args.kwargs["document_language"], "en")
+
+    def test_formal_adapter_converts_minimal_mineru_package_to_openable_docx(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            package = root / "mineru-package"
+            package.mkdir()
+            (package / "sample_content_list_v2.json").write_text(
+                json.dumps(
+                    [
+                        {"type": "title", "text": "1 Features", "text_level": 1, "bbox": [72, 80, 180, 100], "page_idx": 0},
+                        {"type": "text", "text": "Low noise precision amplifier", "bbox": [72, 120, 260, 150], "page_idx": 0},
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            output_path = root / "out.docx"
+
+            result = formal_mineru_conversion.run_conversion(
+                input_path=str(package),
+                output_path=str(output_path),
+                template_path=None,
+                layout_config_path=None,
+                subscript_config=None,
+                no_template=True,
+                use_mineru_header_footer=False,
+                document_language="en",
+                translation_mode="direct",
+            )
+
+            self.assertTrue(output_path.exists())
+            self.assertTrue(result.document_ir_path.exists())
+            rendered = Document(output_path)
+            self.assertIn("Features", "\n".join(paragraph.text for paragraph in rendered.paragraphs))
+
+    def test_formal_adapter_writes_translation_request_before_missing_key_failure(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            package = root / "mineru-package"
+            package.mkdir()
+            (package / "sample_content_list_v2.json").write_text(
+                json.dumps([{"type": "text", "text": "Low noise amplifier", "bbox": [72, 80, 260, 110], "page_idx": 0}]),
+                encoding="utf-8",
+            )
+            request_path = root / "translation-request.json"
+
+            with mock.patch.dict(os.environ, {"OPENAI_API_KEY": ""}, clear=False):
+                with self.assertRaises(RuntimeError):
+                    formal_mineru_conversion.run_conversion(
+                        input_path=str(package),
+                        output_path=str(root / "out.docx"),
+                        template_path=None,
+                        layout_config_path=None,
+                        subscript_config=None,
+                        no_template=True,
+                        use_mineru_header_footer=False,
+                        document_language="en",
+                        translation_mode="en2zh",
+                        translation_request_output=str(request_path),
+                        translation_api_key="",
+                    )
+
+            payload = json.loads(request_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["schema_version"], "document-ir-local-translation-request/v1")
+            self.assertEqual(payload["language_pair"], "en2zh")
+            self.assertEqual(payload["items"][0]["text"], "Low noise amplifier")
 
 
 class LocalMinerUDebugConfigTests(TestCase):
@@ -201,13 +270,13 @@ class LocalMinerUDebugConfigTests(TestCase):
             with self.assertRaises(ValueError):
                 run_local_mineru_debug_config.build_conversion_kwargs(config_path)
 
-    def test_main_calls_shared_runtime_runner_from_config(self) -> None:
+    def test_main_calls_formal_conversion_adapter_from_config(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             config_path = Path(tmp_dir) / "local_mineru_debug_config.json"
             config_path.write_text(json.dumps({"input_path": "/tmp/mineru-package", "log_level": "DEBUG"}), encoding="utf-8")
 
             with mock.patch.object(run_local_mineru_debug_config, "configure_logging") as configure_logging, mock.patch.object(
-                run_local_mineru_debug_config.runtime_runner,
+                run_local_mineru_debug_config.formal_mineru_conversion,
                 "run_conversion",
             ) as run_conversion:
                 run_local_mineru_debug_config.main(["--config", str(config_path)])
