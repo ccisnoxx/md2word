@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 27
-- **Last Active**: 2026-06-24
+- **Total Sessions**: 28
+- **Last Active**: 2026-06-26
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~922 | Active |
+| `journal-1.md` | ~962 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 28 | 2026-06-26 | Translation provider batch recovery Phase 1 | `e6adfd696fc81bade8ee0a44e392bb37536f79db` | `main` |
 | 27 | 2026-06-24 | P0 Golden Sample layout fixes | `02e0077f` | `main` |
 | 26 | 2026-06-24 | P0 Golden Sample readiness | `32edca58` | `main` |
 | 25 | 2026-06-24 | ru2zh integration acceptance | `a6efb53c` | `main` |

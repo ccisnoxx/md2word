@@ -920,3 +920,42 @@ Fixed formal DocumentIR Word rendering so portrait Golden Sample pages stay A4 p
 ### Next Steps
 
 - None - task complete
+
+
+## Session 28: Translation provider batch recovery Phase 1
+
+**Date**: 2026-06-26
+**Task**: Translation provider batch recovery Phase 1
+**Branch**: `main`
+
+### Summary
+
+Completed Phase 1 backend batching validation: migrated stale repository tests to document-jobs, reran Phase 1 validation gates, committed backend batch recovery work, and archived the task.
+
+### Main Changes
+
+- Added persisted provider batch state, async batch execution hooks, retry/fan-in handling, audit fields, and OpenAPI updates.
+- Migrated 3 stale persistence tests from removed `/api/v1/jobs` routes to current `/api/v1/document-jobs` flows.
+- Recorded the residual legacy-test failure as resolved in the task implementation notes.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e6adfd69` | feat(document-jobs): add translation batch recovery |
+
+### Testing
+
+- [OK] `.venv/bin/python -m unittest tests.test_database_job_repository.PersistenceAdapterTests`
+- [OK] `.venv/bin/python -m unittest tests.test_document_ir_translation`
+- [OK] targeted `tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests` Phase 1 cases
+- [OK] `.venv/bin/python -m unittest tests.test_openapi_export`
+- [OK] `git diff --check`
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
