@@ -5,14 +5,16 @@ component: conversion-runtime
 status: current
 summary: 在正式项目中用 PyCharm 运行本地 MinerU 转 DOCX 调试。
 tags: [conversion, mineru, sandbox, regression, pycharm]
-last_reviewed: 2026-06-23
+last_reviewed: 2026-06-26
 ---
 
 # 本地 MinerU 转 DOCX 调试入口
 
 ## 当前决定
 
-`/Users/sc/PycharmProjects/md2word` 是唯一长期维护的转换代码源。所有本地 MinerU 结果包转 DOCX 调试，都在正式项目中运行 `app/conversion`。
+`/Users/sc/PycharmProjects/md2word` 是唯一长期维护的转换代码源。所有本地 MinerU 结果包转 DOCX 调试，都在正式项目中通过 `scripts.dev.formal_mineru_conversion` 进入正式 DocumentIR 转换与 Word renderer 核心。
+
+排版行为修复必须落到正式核心：`app/services/document_ir/*`、`app/services/renderer/*` 或共享规则 `app/conversion/docx_rules/*`。本地脚本只做路径、离线翻译响应和报告适配，不写独立排版逻辑。
 
 `/Users/sc/PycharmProjects/PythonProject/md2word_main` 不再作为运行入口。它只保留历史样例资产和输出资产，例如：
 
@@ -55,7 +57,7 @@ scripts/dev/local_mineru_debug_config.json
 点击运行后，脚本会读取该 JSON 配置，解析路径，然后调用：
 
 ```python
-app.conversion.runtime_runner.run_conversion(...)
+scripts.dev.formal_mineru_conversion.run_conversion(...)
 ```
 
 ## 配置文件
@@ -97,7 +99,7 @@ app.conversion.runtime_runner.run_conversion(...)
 | `layout_config_path` | 版式 YAML |
 | `subscript_config` | 术语/上下标 YAML |
 | `no_template` | 是否禁用模板 |
-| `use_mineru_header_footer` | 是否使用 MinerU 识别的页眉页脚 |
+| `use_mineru_header_footer` | 兼容字段；正式 renderer 行为以模板配置和 DocumentIR 布局事实为准 |
 | `translation_request_output` | 写出 LLM 请求 JSON |
 | `translation_response` | 读取 LLM 响应 JSON |
 | `translation_trace_output` | 写出翻译 trace JSON |
@@ -307,7 +309,7 @@ ru2zh 验收样本可以单独运行：
   samples --json
 ```
 
-不要通过复制 `md2word_main/app/conversion` 来解决差异。转换行为修复必须进入正式项目 `app/conversion`，并配套测试或样例回归。
+不要通过复制 `md2word_main/app/conversion` 来解决差异。转换行为修复必须进入正式项目的 DocumentIR/renderer 核心，并配套测试或样例回归。
 
 ## 验证
 
@@ -331,7 +333,7 @@ ru2zh 验收样本可以单独运行：
 - `md2word_main/resources/term_rules/term_rules.v2.yaml` 可能包含历史本地规则，但不能整包复制进正式项目；需要走术语规则流程。
 - 正式项目根目录的 `mineru_result/` 是本地 staging，已被 `.gitignore` 忽略。
 - 专有或客户 PDF 不应提交到正式项目；使用 manifest 指针或私有证据存储。
-- 如果本地历史输出看起来更好，要把最小行为差异沉淀到 `app/conversion` 并补测试，不能恢复 `md2word_main` 作为第二代码源。
+- 如果本地历史输出看起来更好，要把最小行为差异沉淀到 `app/services/document_ir/*`、`app/services/renderer/*` 或共享规则 `app/conversion/docx_rules/*` 并补测试，不能恢复 `md2word_main` 作为第二代码源。
 
 完整第一阶段计划和后续扩展路线见：
 

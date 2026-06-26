@@ -14,9 +14,9 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.conversion import runtime_runner
 from app.conversion.runtime import llm_client
 from app.conversion.runtime_config import APP_CONFIG
+from scripts.dev import formal_mineru_conversion
 from scripts.dev.run_local_mineru_conversion import configure_logging, normalize_translation_mode
 
 
@@ -140,7 +140,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     config_path = Path(args.config).expanduser().resolve()
     try:
         configure_logging(config_log_level(config_path))
-        runtime_runner.run_conversion(**build_conversion_kwargs(config_path))
+        formal_mineru_conversion.run_conversion(**build_conversion_kwargs(config_path))
     except (FileNotFoundError, ValueError) as exc:
         raise SystemExit(str(exc)) from exc
 

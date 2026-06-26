@@ -17,9 +17,9 @@ if root_path not in sys.path:
 
 from loguru import logger
 
-from app.conversion import runtime_runner
 from app.conversion.runtime import llm_client, translation_runtime
 from app.conversion.runtime_config import APP_CONFIG
+from scripts.dev import formal_mineru_conversion
 
 
 DEFAULT_INPUT_ENV = "MD2WORD_LOCAL_MINERU_INPUT"
@@ -152,7 +152,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
     configure_logging(args.log_level)
     try:
-        runtime_runner.run_conversion(**build_conversion_kwargs(args))
+        formal_mineru_conversion.run_conversion(**build_conversion_kwargs(args))
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 
