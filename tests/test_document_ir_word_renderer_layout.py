@@ -22,6 +22,7 @@ from app.services.document_ir.models import (
     DocumentIRMetadata,
     DocumentIRPage,
 )
+from app.services.renderer.evidence import build_renderer_evidence
 from app.services.renderer.layout_plan import build_layout_plan
 from app.services.renderer.word_renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
 
@@ -65,6 +66,42 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertEqual([block.text for block in plan.pages[0].regions[0].blocks], ["Left A", "Right A"])
         self.assertEqual([block.text for block in plan.pages[0].regions[1].blocks], ["Wide callout"])
         self.assertEqual([block.text for block in plan.pages[0].regions[2].blocks], ["Left B", "Right B"])
+
+    def test_renderer_evidence_summarizes_layout_and_docx_quality(self) -> None:
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="docjob_evidence", source_file_id="file_evidence", document_language="en"),
+            pages=[DocumentIRPage(index=0, width=400.0, height=600.0)],
+            blocks=[
+                DocumentIRBlock(
+                    id="block_0001",
+                    type="paragraph",
+                    order=0,
+                    page_index=0,
+                    text="Formal renderer evidence should remain editable in Word output.",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(72, 80, 320, 140), role="body"),
+                )
+            ],
+            quality_flags=["layout_sample:block_0001"],
+        )
+        layout_plan = build_layout_plan(document)
+        word_content = DocumentIRWordRenderer().render_to_bytes(
+            document,
+            template_path=None,
+            config_path=None,
+            image_loader=lambda _asset: None,
+        )
+
+        evidence = build_renderer_evidence(document, word_content, layout_plan)
+
+        self.assertEqual(evidence["schema_version"], "document-ir/v2")
+        self.assertEqual(evidence["renderer_mode"], "layout_v2")
+        self.assertEqual(evidence["layout_page_count"], 1)
+        self.assertEqual(evidence["layout_block_count"], 1)
+        self.assertEqual(evidence["layout_quality_flags"], ["layout_sample:block_0001"])
+        self.assertTrue(evidence["docx_quality"]["editable_content_available"])
+        self.assertFalse(evidence["docx_quality"]["image_only_suspected"])
+        self.assertEqual(evidence["quality_flags"], [])
 
     def test_render_to_bytes_uses_two_column_table_for_v2_region(self) -> None:
         renderer = DocumentIRWordRenderer()
