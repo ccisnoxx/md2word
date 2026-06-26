@@ -71,3 +71,36 @@ Implemented Phase 2 read-only translation provider batch diagnostics in Job Deta
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Formal local MinerU debug entrypoint
+
+**Date**: 2026-06-26
+**Task**: Formal local MinerU debug entrypoint
+**Branch**: `main`
+
+### Summary
+
+Routed local MinerU debug and regression scripts through the formal DocumentIR Word renderer adapter, updated tests/docs/specs, and verified targeted local/formal renderer checks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9ca73971` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
