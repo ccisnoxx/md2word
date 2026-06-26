@@ -46,6 +46,65 @@ Preferred targeted command shape:
 .venv/bin/python -m unittest tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.<test_name>
 ```
 
+## Scenario: Frontend Consumption Of Existing API Diagnostics
+
+### 1. Scope / Trigger
+
+- Trigger: adding frontend consumption for an existing backend/OpenAPI read endpoint, especially diagnostics such as document job events, files, callback summaries, translation QA, or translation batches.
+- This is cross-layer work even when backend code is unchanged: backend schema -> OpenAPI snapshot -> `frontend/src/api/types.ts` -> API wrapper -> page/helper display.
+
+### 2. Signatures
+
+- Frontend wrapper signature should match the backend path and response model:
+  ```typescript
+  documentJobsApi.listTranslationBatches(jobId: string): Promise<DocumentJobTranslationBatchListResponse>
+  ```
+- Page code should call the wrapper, not `apiRequest` directly, unless a local page already owns that narrow API pattern.
+
+### 3. Contracts
+
+- Add or update the response type in `frontend/src/api/types.ts` using the backend schema field names and nullability.
+- Add a wrapper in the owning frontend API module, for example `frontend/src/api/documentJobs.ts`.
+- Display code should consume typed helpers/projections for status labels, counts, and summaries; do not parse the same raw payload fields in multiple components.
+- If the backend contract is redacted or metadata-only, keep that boundary in the UI. Showing file IDs is acceptable; fetching or rendering raw prompt, response, source text, translated text, object keys, or signed URLs is not.
+
+### 4. Validation & Error Matrix
+
+- Wrapper path or method wrong -> focused frontend API unit test must fail.
+- Missing frontend type fields -> `npm run build` / `vue-tsc --noEmit` must fail when the page consumes the field.
+- Endpoint load failure -> page should show a scoped `ApiErrorAlert` and keep unrelated page sections usable.
+- Unsupported/empty data -> page should show a low-noise empty state, not an error.
+- Redaction boundary accidentally crossed -> code review and tests must reject raw content fetch/render paths.
+
+### 5. Good/Base/Bad Cases
+
+- Good: endpoint response gets a typed frontend model, a wrapper test, shared display helpers with unit tests, scoped loading/error state, and a docs update.
+- Base: a small read-only endpoint is exposed through a typed wrapper and rendered directly where no reusable display logic is needed.
+- Bad: a page calls `apiRequest` inline, casts `unknown` payload fields locally, duplicates status mapping in multiple places, or fetches artifact contents when the API contract only promised safe file IDs.
+
+### 6. Tests Required
+
+- Frontend API wrapper test: assert URL and HTTP method.
+- Helper/reducer test: assert status labels, warning/error classifications, empty/null formatting, and summary counts.
+- Build/type check: run `npm run build` for Vue template and TypeScript coverage.
+- For backend schema changes, also run `tests.test_openapi_export` and refresh `docs/api/openapi.json` through the export script.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+const response = await apiRequest<any>({ url: `/api/v1/document-jobs/${jobId}/translation-batches` });
+const status = (response.items[0] as { status?: string }).status || "unknown";
+```
+
+#### Correct
+
+```typescript
+const response = await documentJobsApi.listTranslationBatches(jobId);
+const summary = summarizeTranslationBatches(response.items);
+```
+
 ## Release Check
 
 `scripts/ops/check_release.py` is the local aggregate release gate cited by `README.md`. It checks:

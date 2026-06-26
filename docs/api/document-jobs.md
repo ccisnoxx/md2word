@@ -27,6 +27,7 @@ PUT /api/v1/files/{file_id}/content
 POST /api/v1/document-jobs
 GET /api/v1/document-jobs/{job_id}
 GET /api/v1/document-jobs/{job_id}/events
+GET /api/v1/document-jobs/{job_id}/translation-batches
 GET /api/v1/document-jobs/{job_id}/translation-qa
 PATCH /api/v1/document-jobs/{job_id}/translation-qa
 GET /api/v1/document-jobs/config-summary
@@ -215,6 +216,14 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 | `table_cell_zero_spacing_paragraphs` | 表格单元格内零段前后距段落数。 |
 | `landscape_sections` | 横向 section 数量。 |
 | `latex_residue_count` / `latex_residue_examples` | 可见文本中的疑似 LaTeX 残留计数和示例。 |
+
+### `GET /api/v1/document-jobs/{job_id}/translation-batches`
+
+- 用途：读取单个 document job 的 translation provider batch 只读诊断摘要，用于任务详情和运维排障。
+- 响应：`DocumentJobTranslationBatchListResponse`，包含 `job_id`、当前 `generation` 和 batch `items`。
+- 常用 batch 字段包括 `batch_id`、`status`、`page_start` / `page_end`、`item_count`、`char_count`、`attempt_count` / `max_attempts`、`split_level`、`parent_batch_id`、`root_batch_id`、`finish_reason`、`error_code`、`error_message`、`retryable`、`truncation_retry`、`result_file_id`、`ai_call_log_file_ids` 和 `updated_at`。
+- 该接口只返回摘要和文件 ID，不返回完整 prompt、provider response、source text、translated text、debug archive 内容、对象存储定位或签名 URL。
+- 该接口不提供批次级 retry、cancel、requeue 或 fan-in 写操作；任务级操作仍以 `available_actions` 和现有 document job action endpoint 为准。
 
 ### `GET /api/v1/document-jobs/{job_id}/translation-qa`
 
