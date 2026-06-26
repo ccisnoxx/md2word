@@ -432,7 +432,56 @@ curl -sS "http://127.0.0.1:8000/api/v1/document-jobs/{job_id}/download-url" \
   -H "Authorization: Bearer ${TOKEN}"
 ```
 
-## 3.1 历史 legacy jobs 入口
+## 3.1 翻译 Provider 批次诊断
+
+英译中 / 俄译中任务在 `ir_converting` 阶段会把 DocumentIR 文本拆成 provider batches。单任务诊断入口是内部工作台：
+
+```text
+/jobs/{job_id} -> 诊断 -> Provider 批次
+```
+
+也可以直接读取只读摘要接口：
+
+```bash
+curl -sS "http://127.0.0.1:8000/api/v1/document-jobs/{job_id}/translation-batches" \
+  -H "Authorization: Bearer ${TOKEN}"
+```
+
+该接口只返回 batch 元数据、错误摘要和文件 ID，不返回完整 prompt、provider response、source text、translated text、debug archive 内容、对象存储定位或签名 URL。
+
+常见判断口径：
+
+| 现象 | Provider 批次信号 | 处理建议 |
+|---|---|---|
+| 正常成功 | 当前 leaf batches 均为 `succeeded`，任务 `status=succeeded`，结果文件存在。 | 可进入下载、QA 或验收复核。 |
+| 截断自动恢复 | 父 batch 为 `split`，`finish_reason=length` 或 `truncation_retry=true`，子 batches 后续 `succeeded`。 | 这是预期恢复路径；记录 job id、batch id 和 AI call log file id 数量即可。 |
+| 批次失败且重试耗尽 | batch 为 `failed`，`retryable=false`，`attempt_count=max_attempts`，`error_code/error_message` 有摘要。 | 使用任务级 `retry`，或把 job id、batch id、页范围、attempt、finish_reason 和 error 摘要交给开发排查。 |
+| 批次仍在执行 | batch 为 `pending` / `queued` / `running`，任务仍在 `ir_converting`。 | 等待 bounded polling；若 `updated_at` 长时间不变，再检查 worker、Celery queue 和 lease 过期恢复。 |
+| 疑似 fan-in 卡住 | 当前 leaf batches 均已 `succeeded`，但任务没有推进到渲染/结果保存。 | 记录全部 leaf batch id、generation、job retry_count、最近事件和 trace_id，升级开发排查 finalizer。 |
+| 无 batch 记录 | 非翻译任务，或翻译任务尚未进入 provider batch 创建阶段。 | 先看任务 mode、stage、事件和 callback summary；不要把 direct PDF 任务视为异常。 |
+
+排查时优先记录这些字段：
+
+- `job_id`
+- `generation`
+- `batch_id`
+- `root_batch_id` / `parent_batch_id`
+- `status`
+- `page_start` / `page_end`
+- `item_count` / `char_count`
+- `attempt_count` / `max_attempts`
+- `finish_reason`
+- `truncation_retry`
+- `retryable`
+- `provider_call_budget`
+- `error_code` / `error_message`
+- `ai_call_log_file_ids` 的数量或 ID 摘要
+
+当前允许运维使用的动作仍是任务级动作：`retry`、`cancel`、`archive`、`unarchive`、`clone`、`download`，具体以任务详情返回的 `available_actions` 为准。当前没有批次级 `retry`、`cancel`、`requeue` 或强制 finalizer 写操作；不要通过数据库或队列手工改 batch 状态。
+
+长 PDF 英译中上线验证应在 hostdzire 或等价 staging 执行。若使用私有 32 页失败样本或等价长 PDF，报告只记录样本标识、页数、job id、部署版本、batch 摘要和结果，不提交 PDF、全文、prompt、provider response、密钥或签名 URL。
+
+## 3.2 历史 legacy jobs 入口
 
 旧 `/api/v1/jobs` 和 `/api/v1/jobs/pdf` 入口已从公开 v1 API 移除，仅作为历史排查背景保留；不要用于新开发、联调或 P0 验收。历史链路曾支持 MinerU zip 上传、原始 PDF 在线提交、本地 callback 回放和旧 `download/result` 下载，但当前主合同统一使用 Files + Document Jobs：
 

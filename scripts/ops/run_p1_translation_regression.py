@@ -28,6 +28,8 @@ from scripts.ops.run_golden_sample_regression import absolute_url, api_url, is_d
 DEFAULT_MANIFEST_PATH = REPO_ROOT / "tests" / "fixtures" / "p1_translation_samples" / "manifest.yaml"
 DEFAULT_RUNS_DIR = REPO_ROOT / "tests" / "tmp" / "p1_translation_runs"
 TERMINAL_STATUSES = {"succeeded", "failed", "canceled"}
+ACTIVE_TRANSLATION_BATCH_STATUSES = {"pending", "queued", "running"}
+TRANSLATION_BATCH_ERROR_MESSAGE_LIMIT = 240
 TRANSIENT_REQUEST_ERRORS = (
     requests.exceptions.ConnectionError,
     requests.exceptions.Timeout,
@@ -89,6 +91,12 @@ class P1SampleResult:
     debug_archive_contains_full_text: bool = False
     source_comparison_available: bool = False
     source_comparison_reason: str | None = None
+    translation_batch_diagnostics_available: bool = False
+    translation_batch_diagnostics_error: str | None = None
+    translation_batch_generation: int | None = None
+    translation_batch_summary: dict[str, Any] = field(default_factory=dict)
+    translation_batches: list[dict[str, Any]] = field(default_factory=list)
+    translation_batch_warnings: list[str] = field(default_factory=list)
 
 
 def main() -> None:
@@ -239,6 +247,7 @@ def run_one_sample(
         result.error_code = final_job.get("error_code")
         result.error_message = final_job.get("error_message")
         result.result_file_id = final_job.get("result_file_id")
+        read_translation_batch_diagnostics(config, session, result)
         if result.status == "succeeded":
             read_qa_evidence(config, session, result)
             docx_path = download_result_docx(config, session, run_dir, sample, result.job_id)
@@ -356,6 +365,148 @@ def read_qa_evidence(config: P1RegressionConfig, session: requests.Session, resu
     result.term_hit_rate = round(len(result.matched_terms) / len(expected), 4) if expected else 1.0
 
 
+def read_translation_batch_diagnostics(config: P1RegressionConfig, session: requests.Session, result: P1SampleResult) -> None:
+    if not result.job_id:
+        return
+    try:
+        response = get_with_transient_retries(
+            config,
+            session,
+            api_url(config, f"/api/v1/document-jobs/{result.job_id}/translation-batches"),
+        )
+        diagnostics = build_translation_batch_diagnostics(response.json())
+    except Exception as exc:  # noqa: BLE001 - diagnostics must not hide the job's terminal result.
+        record_translation_batch_diagnostics_unavailable(result, exc)
+        return
+    result.translation_batch_diagnostics_available = True
+    result.translation_batch_diagnostics_error = None
+    result.translation_batch_generation = diagnostics["generation"]
+    result.translation_batch_summary = diagnostics["summary"]
+    result.translation_batches = diagnostics["items"]
+    result.translation_batch_warnings = diagnostics["warnings"]
+
+
+def build_translation_batch_diagnostics(payload: dict[str, Any]) -> dict[str, Any]:
+    raw_items = payload.get("items") or []
+    items = [sanitize_translation_batch_item(item) for item in raw_items if isinstance(item, dict)]
+    status_counts: dict[str, int] = {}
+    for item in items:
+        status = item["status"]
+        status_counts[status] = status_counts.get(status, 0) + 1
+
+    parent_ids = {item["parent_batch_id"] for item in items if item["parent_batch_id"]}
+    leaf_items = [item for item in items if item["batch_id"] not in parent_ids]
+    provider_budgets = [item["provider_call_budget"] for item in items if item["provider_call_budget"] > 0]
+    deterministic_counts = [item["deterministic_batch_count"] for item in items if item["deterministic_batch_count"] > 0]
+    attention_count = sum(1 for item in items if is_translation_batch_attention(item))
+    truncation_observed = any(
+        item["truncation_retry"] or item["finish_reason"] == "length" or item["status"] == "split"
+        for item in items
+    )
+    warnings: list[str] = []
+    if not items:
+        warnings.append("translation_batches_empty")
+    if any(item["status"] == "failed" for item in items):
+        warnings.append("translation_batches_failed")
+    if any(item["status"] in ACTIVE_TRANSLATION_BATCH_STATUSES for item in items):
+        warnings.append("translation_batches_active")
+    if truncation_observed:
+        warnings.append("translation_batch_truncation_observed")
+
+    return {
+        "generation": read_optional_int(payload.get("generation")),
+        "summary": {
+            "total": len(items),
+            "status_counts": status_counts,
+            "succeeded": status_counts.get("succeeded", 0),
+            "failed": status_counts.get("failed", 0),
+            "split": status_counts.get("split", 0),
+            "active": sum(status_counts.get(status, 0) for status in ACTIVE_TRANSLATION_BATCH_STATUSES),
+            "attention": attention_count,
+            "leaf_total": len(leaf_items),
+            "leaf_succeeded": sum(1 for item in leaf_items if item["status"] == "succeeded"),
+            "leaf_failed": sum(1 for item in leaf_items if item["status"] == "failed"),
+            "leaf_active": sum(1 for item in leaf_items if item["status"] in ACTIVE_TRANSLATION_BATCH_STATUSES),
+            "item_count": sum(item["item_count"] for item in items),
+            "char_count": sum(item["char_count"] for item in items),
+            "ai_call_log_file_count": sum(item["ai_call_log_file_count"] for item in items),
+            "provider_call_budget": max(provider_budgets) if provider_budgets else None,
+            "deterministic_batch_count": max(deterministic_counts) if deterministic_counts else None,
+            "truncation_observed": truncation_observed,
+        },
+        "items": items,
+        "warnings": warnings,
+    }
+
+
+def sanitize_translation_batch_item(item: dict[str, Any]) -> dict[str, Any]:
+    ai_call_log_file_ids = item.get("ai_call_log_file_ids") if isinstance(item.get("ai_call_log_file_ids"), list) else []
+    return {
+        "batch_id": read_string(item.get("batch_id")) or "unknown",
+        "status": read_string(item.get("status")) or "unknown",
+        "page_start": read_optional_int(item.get("page_start")),
+        "page_end": read_optional_int(item.get("page_end")),
+        "item_count": read_int(item.get("item_count")),
+        "char_count": read_int(item.get("char_count")),
+        "attempt_count": read_int(item.get("attempt_count")),
+        "max_attempts": read_int(item.get("max_attempts")),
+        "split_level": read_int(item.get("split_level")),
+        "parent_batch_id": read_string(item.get("parent_batch_id")) or None,
+        "root_batch_id": read_string(item.get("root_batch_id")) or None,
+        "finish_reason": read_string(item.get("finish_reason")) or None,
+        "retryable": bool(item.get("retryable")),
+        "truncation_retry": bool(item.get("truncation_retry")),
+        "provider_call_budget": read_int(item.get("provider_call_budget")),
+        "deterministic_batch_count": read_int(item.get("deterministic_batch_count")),
+        "error_code": read_string(item.get("error_code")) or None,
+        "error_message": shorten_report_text(read_string(item.get("error_message"))),
+        "result_file_id": read_string(item.get("result_file_id")) or None,
+        "ai_call_log_file_count": len(ai_call_log_file_ids),
+        "updated_at": read_string(item.get("updated_at")) or None,
+    }
+
+
+def is_translation_batch_attention(item: dict[str, Any]) -> bool:
+    if item["status"] in {"failed", "split"}:
+        return True
+    return bool(item["truncation_retry"] or item["retryable"] or item["finish_reason"] == "length")
+
+
+def record_translation_batch_diagnostics_unavailable(result: P1SampleResult, exc: BaseException) -> None:
+    result.translation_batch_diagnostics_available = False
+    result.translation_batch_diagnostics_error = f"{exc.__class__.__name__}: {shorten_report_text(str(exc)) or '-'}"
+    result.translation_batch_generation = None
+    result.translation_batch_summary = {}
+    result.translation_batches = []
+    result.translation_batch_warnings = ["translation_batch_diagnostics_unavailable"]
+
+
+def read_string(value: Any) -> str:
+    return str(value).strip() if value is not None else ""
+
+
+def read_int(value: Any) -> int:
+    parsed = read_optional_int(value)
+    return parsed if parsed is not None else 0
+
+
+def read_optional_int(value: Any) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+
+def shorten_report_text(value: str, limit: int = TRANSLATION_BATCH_ERROR_MESSAGE_LIMIT) -> str:
+    text = value.strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3].rstrip() + "..."
+
+
 def download_result_docx(
     config: P1RegressionConfig,
     session: requests.Session,
@@ -396,6 +547,7 @@ def build_report(
     result_payloads = [asdict(item) for item in results]
     succeeded = [item for item in results if p1_automated_sample_passed(item, config)]
     failed = [item for item in results if item not in succeeded]
+    batch_diagnostics_summary = summarize_report_translation_batch_diagnostics(results)
     required_count = int(manifest.get("target_sample_count") or 3) if config.formal else 1
     automated_chain_met_target = len(results) >= required_count and not failed
     manual_quality = evaluate_manual_signoff(result_payloads, manual_signoff)
@@ -425,8 +577,46 @@ def build_report(
             "p1_beta_ready": p1_beta_ready,
             "p1_beta_blocker": p1_beta_blocker_for(config, automated_chain_met_target, manual_quality),
             "debug_full_text_requested": config.debug_full_text,
+            "translation_batch_diagnostics": batch_diagnostics_summary,
         },
         "results": result_payloads,
+    }
+
+
+def summarize_report_translation_batch_diagnostics(results: list[P1SampleResult]) -> dict[str, Any]:
+    jobs_with_ids = [item for item in results if item.job_id]
+    unavailable = [item for item in jobs_with_ids if not item.translation_batch_diagnostics_available]
+    empty = [
+        item
+        for item in jobs_with_ids
+        if item.translation_batch_diagnostics_available and not item.translation_batch_summary.get("total")
+    ]
+    truncation = [
+        item
+        for item in jobs_with_ids
+        if item.translation_batch_summary.get("truncation_observed") is True
+    ]
+    failed_batches = [
+        item
+        for item in jobs_with_ids
+        if int(item.translation_batch_summary.get("failed") or 0) > 0
+    ]
+    blockers: list[str] = []
+    if unavailable:
+        blockers.append("translation_batch_diagnostics_unavailable")
+    if empty:
+        blockers.append("translation_batch_diagnostics_empty")
+    if failed_batches:
+        blockers.append("translation_batches_failed")
+    return {
+        "jobs_checked": len(jobs_with_ids),
+        "available": len(jobs_with_ids) - len(unavailable),
+        "unavailable": len(unavailable),
+        "empty": len(empty),
+        "truncation_observed": len(truncation),
+        "jobs_with_failed_batches": len(failed_batches),
+        "blockers": blockers,
+        "warnings": ["translation_batch_truncation_not_observed"] if jobs_with_ids and not truncation else [],
     }
 
 
@@ -445,6 +635,8 @@ def p1_automated_sample_passed(result: P1SampleResult, config: P1RegressionConfi
         and result.docx_openable is True
         and result.qa_available
         and result.ai_call_count > 0
+        and result.translation_batch_diagnostics_available
+        and int(result.translation_batch_summary.get("total") or 0) > 0
         and result.term_hit_rate >= 1.0
         and debug_ok
     )
@@ -756,8 +948,48 @@ def format_markdown_report(report: dict[str, Any]) -> str:
                 f"- missing_terms: `{', '.join(item.get('missing_terms') or []) or 'none'}`",
                 f"- source_comparison_available: `{item.get('source_comparison_available')}`",
                 f"- debug_archive_expires_at: `{item.get('debug_archive_expires_at') or '-'}`",
+                format_translation_batch_markdown(item),
                 "",
             ]
+        )
+    return "\n".join(lines)
+
+
+def format_translation_batch_markdown(item: dict[str, Any]) -> str:
+    if not item.get("translation_batch_diagnostics_available"):
+        error = item.get("translation_batch_diagnostics_error") or "unavailable"
+        return f"- translation_batches: `unavailable` ({error})"
+    summary = item.get("translation_batch_summary") or {}
+    batches = item.get("translation_batches") or []
+    lines = [
+        (
+            "- translation_batches: "
+            f"`total={summary.get('total', 0)}, leaf={summary.get('leaf_succeeded', 0)}/{summary.get('leaf_total', 0)}, "
+            f"failed={summary.get('failed', 0)}, split={summary.get('split', 0)}, "
+            f"active={summary.get('active', 0)}, truncation_observed={summary.get('truncation_observed', False)}`"
+        ),
+        (
+            "- translation_batch_budget: "
+            f"`generation={item.get('translation_batch_generation')}, "
+            f"provider_call_budget={summary.get('provider_call_budget') or '-'}, "
+            f"deterministic_batch_count={summary.get('deterministic_batch_count') or '-'}`"
+        ),
+    ]
+    if item.get("translation_batch_warnings"):
+        lines.append(f"- translation_batch_warnings: `{', '.join(item.get('translation_batch_warnings') or [])}`")
+    for batch in batches:
+        error = ""
+        if batch.get("error_code") or batch.get("error_message"):
+            error = f", error={batch.get('error_code') or '-'}:{batch.get('error_message') or '-'}"
+        lines.append(
+            "  - "
+            f"`{batch.get('batch_id')}` "
+            f"status=`{batch.get('status')}` "
+            f"pages=`{batch.get('page_start') or '-'}-{batch.get('page_end') or '-'}` "
+            f"attempts=`{batch.get('attempt_count')}/{batch.get('max_attempts')}` "
+            f"finish_reason=`{batch.get('finish_reason') or '-'}` "
+            f"ai_logs=`{batch.get('ai_call_log_file_count', 0)}`"
+            f"{error}"
         )
     return "\n".join(lines)
 
