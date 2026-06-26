@@ -137,6 +137,77 @@ For P1 and P2, use the existing ops scripts when the task explicitly asks for th
 - `scripts/ops/run_p2_online_gate.py`
 - `scripts/ops/run_golden_sample_regression.py`
 
+## Scenario: P1 Translation Batch Diagnostics Evidence
+
+### 1. Scope / Trigger
+
+- Trigger: changing P1 translation regression reporting, provider batch diagnostics evidence, or release/acceptance proof for long PDF translation recovery.
+- The P1 script is an ops evidence contract: it is consumed by humans, runbooks, and Acceptance Center summaries, even though it is not a public API.
+
+### 2. Signatures
+
+- Command: `.venv/bin/python scripts/ops/run_p1_translation_regression.py`
+- Private long-PDF override: `P1_TRANSLATION_MANIFEST=/path/to/private-manifest.yaml`
+- Diagnostics read: `GET /api/v1/document-jobs/{job_id}/translation-batches`
+- Report outputs: `tests/tmp/p1_translation_runs/<run_id>/report.json` and `report.md`
+
+### 3. Contracts
+
+- The script should collect translation batch diagnostics after terminal job state for every translation sample with a `job_id`, including failed jobs.
+- `P1SampleResult` may include:
+  - `translation_batch_diagnostics_available`
+  - `translation_batch_diagnostics_error`
+  - `translation_batch_generation`
+  - `translation_batch_summary`
+  - `translation_batches`
+  - `translation_batch_warnings`
+- Batch report rows may include status, page range, item/char count, attempts, split/root/parent ids, `finish_reason`, `retryable`, `truncation_retry`, provider call budget, shortened error summary, result file id, and AI call log file count.
+- Report rows must not include full prompt, provider response body, source text, translated text, debug archive content, signed URLs, object storage locations, secrets, or AI call log file contents.
+- AI call log file ids are safe for the Job Detail UI, but P1 report rows should prefer counts over copying ids when cross-job evidence is enough.
+
+### 4. Validation & Error Matrix
+
+- Diagnostics endpoint succeeds with batch items -> summarize status counts, leaf counts, budget, truncation observation, and sanitized batch rows.
+- Diagnostics endpoint succeeds with no items for a translation job -> report `translation_batches_empty` / `translation_batch_diagnostics_empty`.
+- Diagnostics endpoint is unavailable -> keep the sample terminal result visible and record `translation_batch_diagnostics_unavailable`.
+- Any batch is `failed` -> report `translation_batches_failed` as an evidence blocker.
+- No live truncation is observed -> report a warning such as `translation_batch_truncation_not_observed`; cite existing automated split tests as complementary evidence.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a private long PDF succeeds with multiple bounded batches, all current leaf batches succeeded, and the report shows generation, budget, batch counts, page ranges, attempts, and AI log counts.
+- Base: a small P1 smoke PDF succeeds with one provider batch and still records diagnostics.
+- Bad: the report marks the job succeeded but omits translation batch diagnostics, stores full AI call logs, or hides diagnostics endpoint failure behind a generic sample failure.
+
+### 6. Tests Required
+
+- Unit test the pure diagnostics projection from representative `translation-batches` payloads.
+- Assert split parent/child batches produce correct leaf counts and truncation observation.
+- Assert failed batches become report blockers and long error messages are shortened.
+- Assert Markdown/JSON report rendering does not include AI call log file ids when only counts are required.
+- Keep tests local and mocked; do not require API, worker, MySQL, Redis/Celery, MinerU, browser, or real provider access.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```python
+payload = response.json()
+result.translation_batches = payload["items"]
+```
+
+This copies every backend field into release evidence, including fields that may become unsafe later.
+
+#### Correct
+
+```python
+diagnostics = build_translation_batch_diagnostics(response.json())
+result.translation_batch_summary = diagnostics["summary"]
+result.translation_batches = diagnostics["items"]
+```
+
+The report owns a sanitized projection and can enforce the redaction boundary in one place.
+
 ## Review Checklist
 
 Before finishing backend work, check the touched files against these current project contracts:
