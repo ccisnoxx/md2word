@@ -19,8 +19,7 @@ from app.domains.translation.provider_config import EffectiveAiProviderConfig
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset
 from app.services.renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
-from app.services.renderer.docx_quality import analyze_docx_quality_bytes, build_docx_quality_flags
-from app.services.renderer.layout_plan import LayoutPlan, build_layout_plan
+from app.services.renderer.evidence import build_renderer_evidence
 
 
 LOCAL_JOB_ID = "local_mineru_debug"
@@ -190,12 +189,9 @@ def convert_formal_mineru_package(request: FormalMinerUConversionRequest) -> For
         source_document_ir_path.write_text(source_document_ir.model_dump_json(indent=2), encoding="utf-8")
 
     request.output_path.write_bytes(word_content)
-    layout_plan = build_layout_plan(document_ir)
-    docx_quality = analyze_docx_quality_bytes(word_content)
-    quality_flags = build_docx_quality_flags(docx_quality)
-    renderer_metadata = _renderer_metadata(document_ir, layout_plan)
-    renderer_metadata["docx_quality"] = docx_quality
-    renderer_metadata["quality_flags"] = quality_flags
+    renderer_metadata = build_renderer_evidence(document_ir, word_content)
+    docx_quality = renderer_metadata["docx_quality"]
+    quality_flags = renderer_metadata["quality_flags"]
     return FormalMinerUConversionResult(
         source_path=request.input_path,
         output_docx_path=request.output_path,
@@ -365,17 +361,6 @@ def _validate_request_paths(request: FormalMinerUConversionRequest) -> None:
         raise FileNotFoundError(f"版式配置文件不存在: {request.layout_config_path}")
     if request.translation_response is not None and not request.translation_response.exists():
         raise FileNotFoundError(f"翻译响应文件不存在: {request.translation_response}")
-
-
-def _renderer_metadata(document_ir: DocumentIR, layout_plan: LayoutPlan) -> dict[str, Any]:
-    return {
-        "schema_version": document_ir.schema_version,
-        "renderer_mode": layout_plan.mode,
-        "layout_page_count": len(layout_plan.pages),
-        "layout_region_count": sum(len(page.regions) for page in layout_plan.pages),
-        "layout_block_count": sum(len(region.blocks) for page in layout_plan.pages for region in page.regions),
-        "layout_quality_flags": document_ir.quality_flags,
-    }
 
 
 def _document_ir_output_path(output_path: Path) -> Path:

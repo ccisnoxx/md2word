@@ -39,8 +39,8 @@ from app.domains.document_jobs.repository import (
 )
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
-from app.services.renderer.docx_quality import analyze_docx_quality_bytes, build_docx_quality_flags
-from app.services.renderer.layout_plan import LayoutPlan, build_layout_plan
+from app.services.renderer.evidence import build_renderer_evidence
+from app.services.renderer.layout_plan import build_layout_plan
 from app.domains.translation.audit import (
     TranslationAuditService,
     TranslationCallAuditRecorder,
@@ -2120,7 +2120,6 @@ class DocumentJobExecutionService:
         ir_file = self._get_document_ir_file(rendering)
         document_ir = DocumentIR.model_validate_json(self.file_service.read_file_content(ir_file))
         layout_plan = build_layout_plan(document_ir)
-        renderer_metadata = self._renderer_metadata(document_ir, layout_plan)
         template_selection = self.template_read_service.resolve_template_version(rendering.template_version_id)
         word_content = self.word_renderer.render_to_bytes(
             document_ir,
@@ -2132,9 +2131,7 @@ class DocumentJobExecutionService:
                 document_language=document_ir.metadata.document_language,
             ),
         )
-        docx_quality = analyze_docx_quality_bytes(word_content)
-        renderer_metadata["docx_quality"] = docx_quality
-        renderer_metadata["quality_flags"] = build_docx_quality_flags(docx_quality)
+        renderer_metadata = build_renderer_evidence(document_ir, word_content, layout_plan)
         uploading = self.job_repository.update_document_job_if_current(
             rendering.id,
             allowed_statuses={"running"},
@@ -2243,18 +2240,6 @@ class DocumentJobExecutionService:
             "block_count": len(document_ir.blocks),
             "layout_block_count": sum(1 for block in document_ir.blocks if block.layout is not None),
             "quality_flags": document_ir.quality_flags,
-        }
-
-    def _renderer_metadata(self, document_ir: DocumentIR, layout_plan: LayoutPlan) -> dict[str, Any]:
-        """生成 generated_word artifact 与渲染事件共用的 renderer 诊断摘要。"""
-
-        return {
-            "schema_version": document_ir.schema_version,
-            "renderer_mode": layout_plan.mode,
-            "layout_page_count": len(layout_plan.pages),
-            "layout_region_count": sum(len(page.regions) for page in layout_plan.pages),
-            "layout_block_count": sum(len(region.blocks) for page in layout_plan.pages for region in page.regions),
-            "layout_quality_flags": document_ir.quality_flags,
         }
 
     def _record_event(
