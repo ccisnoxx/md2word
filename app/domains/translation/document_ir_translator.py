@@ -26,6 +26,8 @@ from app.domains.translation.provider import TranslationProvider
 
 _TRACE_CONTEXT_RADIUS = 40
 _TRACE_CONTEXT_MAX_CHARS = 120
+DEFAULT_MAX_ITEMS_PER_PROVIDER_REQUEST = 300
+DEFAULT_MAX_CHARS_PER_PROVIDER_REQUEST = 8000
 
 
 class DocumentIRTranslationError(RuntimeError):
@@ -54,11 +56,29 @@ class TranslationCallRecorder(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
-class _TextTarget:
+class DocumentIRTranslationTarget:
+    """DocumentIR 内一个可翻译文本节点的位置。"""
+
     item_id: str
     block_id: str
     field: str
     index: int | None = None
+    page_number: int | None = None
+    order: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentIRTranslationBatchPlan:
+    """一次 provider batch task 的确定性输入边界。"""
+
+    batch_id: str
+    item_ids: tuple[str, ...]
+    page_start: int | None
+    page_end: int | None
+    item_count: int
+    char_count: int
+    split_level: int = 0
+    parent_batch_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,8 +99,16 @@ class _TermMatch:
 class DocumentIRTranslationService:
     """DocumentIR 文本翻译服务；不让 AI 接触结构、资产或样式信息。"""
 
-    def __init__(self, provider: TranslationProvider) -> None:
+    def __init__(
+        self,
+        provider: TranslationProvider,
+        *,
+        max_items_per_request: int = DEFAULT_MAX_ITEMS_PER_PROVIDER_REQUEST,
+        max_chars_per_request: int = DEFAULT_MAX_CHARS_PER_PROVIDER_REQUEST,
+    ) -> None:
         self.provider = provider
+        self.max_items_per_request = max(1, int(max_items_per_request))
+        self.max_chars_per_request = max(1, int(max_chars_per_request))
 
     def translate(
         self,
@@ -93,39 +121,164 @@ class DocumentIRTranslationService:
         """返回翻译后的 DocumentIR 副本；blocks/assets 数量和顺序保持不变。"""
 
         translated = document_ir.model_copy(deep=True)
-        targets, items = self._extract_items(translated)
+        targets, items = self.extract_translation_items(translated)
         if not items:
             return translated
+        replacements: dict[str, str] = {}
+        for batch_index, batch_items in enumerate(self._split_provider_batches(items), start=1):
+            request = self.build_provider_request(
+                document_ir,
+                batch_items,
+                term_version=term_version,
+                language_pair=language_pair,
+                batch_id=f"document_ir_provider_request_{batch_index:04d}",
+            )
+            started_at = time.perf_counter()
+            result: TranslationProviderResult | None = None
+            try:
+                result = self.provider.translate(request)
+                replacements.update(self.validate_result(batch_items, result))
+            except Exception as exc:
+                duration_ms = int((time.perf_counter() - started_at) * 1000)
+                if call_recorder is not None:
+                    call_recorder.record_failure(request, result, error=exc, duration_ms=duration_ms)
+                raise DocumentIRTranslationError(str(exc)) from exc
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            if call_recorder is not None:
+                call_recorder.record_success(request, result, duration_ms=duration_ms)
+        self.apply_replacements(translated, targets, replacements)
+        translated.metadata.document_language = self._target_document_language(language_pair)
+        return translated
+
+    def build_translation_plan(
+        self,
+        document_ir: DocumentIR,
+        *,
+        max_pages_per_batch: int,
+        max_chars_per_batch: int,
+        batch_id_prefix: str,
+    ) -> tuple[
+        list[DocumentIRTranslationTarget],
+        list[TranslationTextItem],
+        list[DocumentIRTranslationBatchPlan],
+    ]:
+        """按页数优先、字符数兜底生成 provider batch task 输入。"""
+
+        targets, items = self.extract_translation_items(document_ir)
+        if not items:
+            return targets, items, []
+        targets_by_id = {target.item_id: target for target in targets}
+        batches: list[DocumentIRTranslationBatchPlan] = []
+        current: list[TranslationTextItem] = []
+        current_chars = 0
+        current_page_start: int | None = None
+        current_page_end: int | None = None
+        max_pages = max(1, int(max_pages_per_batch))
+        max_chars = max(1, int(max_chars_per_batch))
+
+        def flush() -> None:
+            nonlocal current, current_chars, current_page_start, current_page_end
+            if not current:
+                return
+            batch_index = len(batches) + 1
+            batches.append(
+                DocumentIRTranslationBatchPlan(
+                    batch_id=f"{batch_id_prefix}_{batch_index:04d}",
+                    item_ids=tuple(item.id for item in current),
+                    page_start=current_page_start,
+                    page_end=current_page_end,
+                    item_count=len(current),
+                    char_count=current_chars,
+                )
+            )
+            current = []
+            current_chars = 0
+            current_page_start = None
+            current_page_end = None
+
+        for item in items:
+            target = targets_by_id[item.id]
+            item_chars = len(item.text)
+            item_page = target.page_number
+            next_page_start = current_page_start
+            next_page_end = current_page_end
+            if item_page is not None:
+                next_page_start = item_page if next_page_start is None else min(next_page_start, item_page)
+                next_page_end = item_page if next_page_end is None else max(next_page_end, item_page)
+            exceeds_pages = (
+                bool(current)
+                and next_page_start is not None
+                and next_page_end is not None
+                and next_page_end - next_page_start + 1 > max_pages
+            )
+            exceeds_chars = bool(current) and current_chars + item_chars > max_chars
+            exceeds_items = bool(current) and len(current) >= self.max_items_per_request
+            if exceeds_pages or exceeds_chars or exceeds_items:
+                flush()
+                next_page_start = item_page
+                next_page_end = item_page
+            current.append(item)
+            current_chars += item_chars
+            current_page_start = next_page_start
+            current_page_end = next_page_end
+        flush()
+        return targets, items, batches
+
+    def _split_provider_batches(self, items: list[TranslationTextItem]) -> list[list[TranslationTextItem]]:
+        batches: list[list[TranslationTextItem]] = []
+        current: list[TranslationTextItem] = []
+        current_chars = 0
+        for item in items:
+            item_chars = len(item.text)
+            should_flush = bool(current) and (
+                len(current) >= self.max_items_per_request
+                or current_chars + item_chars > self.max_chars_per_request
+            )
+            if should_flush:
+                batches.append(current)
+                current = []
+                current_chars = 0
+            current.append(item)
+            current_chars += item_chars
+        if current:
+            batches.append(current)
+        return batches
+
+    def build_provider_request(
+        self,
+        document_ir: DocumentIR,
+        items: list[TranslationTextItem],
+        *,
+        term_version: TermVersionSnapshot | None,
+        language_pair: str,
+        batch_id: str,
+        attempt: int | None = None,
+        split_level: int | None = None,
+        parent_batch_id: str | None = None,
+        page_start: int | None = None,
+        page_end: int | None = None,
+    ) -> TranslationProviderRequest:
         matched_terms, term_traces = self._match_request_terms(
             items=items,
             term_version=term_version,
             language_pair=language_pair,
             job_id=document_ir.metadata.job_id or "",
+            batch_id=batch_id,
         )
-        request = TranslationProviderRequest(
+        return TranslationProviderRequest(
             language_pair=language_pair,
             source_language=self._source_language(language_pair),
             target_language=self._target_language(language_pair),
             items=tuple(items),
             terms=matched_terms,
             term_traces=term_traces,
+            batch_id=batch_id,
+            attempt=attempt,
+            split_level=split_level,
+            parent_batch_id=parent_batch_id,
+            page_start=page_start,
+            page_end=page_end,
         )
-        started_at = time.perf_counter()
-        result: TranslationProviderResult | None = None
-        try:
-            result = self.provider.translate(request)
-            replacements = self._validate_result(items, result)
-            self._apply_replacements(translated, targets, replacements)
-        except Exception as exc:
-            duration_ms = int((time.perf_counter() - started_at) * 1000)
-            if call_recorder is not None:
-                call_recorder.record_failure(request, result, error=exc, duration_ms=duration_ms)
-            raise DocumentIRTranslationError(str(exc)) from exc
-        duration_ms = int((time.perf_counter() - started_at) * 1000)
-        if call_recorder is not None:
-            call_recorder.record_success(request, result, duration_ms=duration_ms)
-        translated.metadata.document_language = self._target_document_language(language_pair)
-        return translated
 
     def _match_request_terms(
         self,
@@ -134,6 +287,7 @@ class DocumentIRTranslationService:
         term_version: TermVersionSnapshot | None,
         language_pair: str,
         job_id: str,
+        batch_id: str,
     ) -> tuple[tuple[TranslationTermEntry, ...], tuple[TranslationTermMatchTraceRecord, ...]]:
         if term_version is None:
             return (), ()
@@ -169,6 +323,7 @@ class DocumentIRTranslationService:
                 match=match,
                 term_version=term_version,
                 job_id=job_id,
+                batch_id=batch_id,
                 sequence=index,
             )
             for index, match in enumerate(injected_matches, start=1)
@@ -206,6 +361,7 @@ class DocumentIRTranslationService:
         match: _TermMatch,
         term_version: TermVersionSnapshot,
         job_id: str,
+        batch_id: str,
         sequence: int,
     ) -> TranslationTermMatchTraceRecord:
         trace_key = "|".join(
@@ -225,7 +381,7 @@ class DocumentIRTranslationService:
             id=trace_id,
             job_id=job_id,
             segment_id=match.item_id,
-            batch_id="document_ir_provider_request_0001",
+            batch_id=batch_id,
             translation_term_set_id=match.entry.set_id,
             translation_term_version=term_version.version,
             source_term=match.entry.source_term,
@@ -269,8 +425,11 @@ class DocumentIRTranslationService:
             return snippet[: _TRACE_CONTEXT_MAX_CHARS - 3] + "..."
         return snippet
 
-    def _extract_items(self, document_ir: DocumentIR) -> tuple[list[_TextTarget], list[TranslationTextItem]]:
-        targets: list[_TextTarget] = []
+    def extract_translation_items(
+        self,
+        document_ir: DocumentIR,
+    ) -> tuple[list[DocumentIRTranslationTarget], list[TranslationTextItem]]:
+        targets: list[DocumentIRTranslationTarget] = []
         items: list[TranslationTextItem] = []
         for block in sorted(document_ir.blocks, key=lambda item: item.order):
             self._append_block_text(block, targets, items)
@@ -281,19 +440,27 @@ class DocumentIRTranslationService:
     def _append_block_text(
         self,
         block: DocumentIRBlock,
-        targets: list[_TextTarget],
+        targets: list[DocumentIRTranslationTarget],
         items: list[TranslationTextItem],
     ) -> None:
         if block.type in {"formula", "list"} or not self._has_text(block.text):
             return
         item_id = f"{block.id}.text"
-        targets.append(_TextTarget(item_id=item_id, block_id=block.id, field="text"))
+        targets.append(
+            DocumentIRTranslationTarget(
+                item_id=item_id,
+                block_id=block.id,
+                field="text",
+                page_number=self._block_page_number(block),
+                order=block.order,
+            )
+        )
         items.append(TranslationTextItem(id=item_id, text=block.text.strip()))
 
     def _append_list_items(
         self,
         block: DocumentIRBlock,
-        targets: list[_TextTarget],
+        targets: list[DocumentIRTranslationTarget],
         items: list[TranslationTextItem],
     ) -> None:
         if block.type != "list" or not block.list_items:
@@ -302,13 +469,22 @@ class DocumentIRTranslationService:
             if not self._has_text(item):
                 continue
             item_id = f"{block.id}.list_items.{index:04d}"
-            targets.append(_TextTarget(item_id=item_id, block_id=block.id, field="list_items", index=index))
+            targets.append(
+                DocumentIRTranslationTarget(
+                    item_id=item_id,
+                    block_id=block.id,
+                    field="list_items",
+                    index=index,
+                    page_number=self._block_page_number(block),
+                    order=block.order,
+                )
+            )
             items.append(TranslationTextItem(id=item_id, text=item.strip()))
 
     def _append_table_text_nodes(
         self,
         block: DocumentIRBlock,
-        targets: list[_TextTarget],
+        targets: list[DocumentIRTranslationTarget],
         items: list[TranslationTextItem],
     ) -> None:
         if block.type != "table" or not block.html:
@@ -320,11 +496,20 @@ class DocumentIRTranslationService:
             if not text:
                 continue
             item_id = f"{block.id}.html.{text_index:04d}"
-            targets.append(_TextTarget(item_id=item_id, block_id=block.id, field="html", index=text_index))
+            targets.append(
+                DocumentIRTranslationTarget(
+                    item_id=item_id,
+                    block_id=block.id,
+                    field="html",
+                    index=text_index,
+                    page_number=self._block_page_number(block),
+                    order=block.order,
+                )
+            )
             items.append(TranslationTextItem(id=item_id, text=text))
             text_index += 1
 
-    def _validate_result(
+    def validate_result(
         self,
         items: list[TranslationTextItem],
         result: TranslationProviderResult,
@@ -335,10 +520,10 @@ class DocumentIRTranslationService:
             raise ValueError("翻译 provider 返回的 item id 与请求不一致。")
         return {item.id: item.text for item in result.items}
 
-    def _apply_replacements(
+    def apply_replacements(
         self,
         document_ir: DocumentIR,
-        targets: list[_TextTarget],
+        targets: list[DocumentIRTranslationTarget],
         replacements: dict[str, str],
     ) -> None:
         blocks_by_id = {block.id: block for block in document_ir.blocks}
@@ -356,6 +541,13 @@ class DocumentIRTranslationService:
         for block_id, replacements_by_index in html_replacements.items():
             block = blocks_by_id[block_id]
             block.html = self._replace_html_text_nodes(block.html or "", replacements_by_index)
+
+    @staticmethod
+    def _block_page_number(block: DocumentIRBlock) -> int | None:
+        page_index = block.layout.page_index if block.layout is not None else block.page_index
+        if page_index is None:
+            return None
+        return page_index + 1
 
     def _replace_html_text_nodes(self, html: str, replacements: dict[int, str]) -> str:
         soup = BeautifulSoup(html, "html.parser")

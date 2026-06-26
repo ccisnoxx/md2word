@@ -202,6 +202,12 @@ class TranslationProviderRequest:
     items: tuple[TranslationTextItem, ...]
     terms: tuple[TranslationTermEntry, ...] = field(default_factory=tuple)
     term_traces: tuple[TranslationTermMatchTraceRecord, ...] = field(default_factory=tuple)
+    batch_id: str | None = None
+    attempt: int | None = None
+    split_level: int | None = None
+    parent_batch_id: str | None = None
+    page_start: int | None = None
+    page_end: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,3 +215,9 @@ class TranslationProviderResult:
     """translation provider 返回的结构化文本结果。"""
 
     items: tuple[TranslationTextItem, ...]
+    finish_reason: str | None = None
+    usage: dict[str, int] = field(default_factory=dict)
+    response_id: str | None = None
+    provider_trace_id: str | None = None
+    content_length: int | None = None
+    content_sha256: str | None = None

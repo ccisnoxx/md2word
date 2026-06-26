@@ -3,6 +3,7 @@ from __future__ import annotations
 # app/domains/translation/provider.py: 定义可替换翻译 provider 端口和默认 OpenAI-compatible 适配器。
 
 import json
+import hashlib
 from collections.abc import Callable
 from typing import Any, Protocol
 
@@ -14,6 +15,28 @@ from app.domains.translation.models import (
     TranslationTextItem,
 )
 from app.domains.translation.modes import translation_prompt_path
+
+
+class TranslationProviderResponseError(RuntimeError):
+    """Provider response could not be parsed or validated, with non-sensitive metadata."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        finish_reason: str | None = None,
+        usage: dict[str, int] | None = None,
+        response_id: str | None = None,
+        content: str = "",
+        suspected_truncation: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.finish_reason = finish_reason
+        self.usage = usage or {}
+        self.response_id = response_id
+        self.content_length = len(content)
+        self.content_sha256 = f"sha256:{hashlib.sha256(content.encode('utf-8')).hexdigest()}" if content else None
+        self.suspected_truncation = suspected_truncation
 
 
 class TranslationProvider(Protocol):
@@ -70,8 +93,24 @@ class OpenAICompatibleTranslationProvider:
             extra_body={"thinking": {"type": "disabled"}},
         )
         content = self._extract_content(response)
-        payload = self._parse_json_response(content)
-        return TranslationProviderResult(items=self._parse_items(payload))
+        finish_reason = self._extract_finish_reason(response)
+        usage = self._extract_usage(response)
+        response_id = self._extract_response_id(response)
+        payload = self._parse_json_response(
+            content,
+            finish_reason=finish_reason,
+            usage=usage,
+            response_id=response_id,
+        )
+        content_sha256 = f"sha256:{hashlib.sha256(content.encode('utf-8')).hexdigest()}" if content else None
+        return TranslationProviderResult(
+            items=self._parse_items(payload),
+            finish_reason=finish_reason,
+            usage=usage,
+            response_id=response_id,
+            content_length=len(content),
+            content_sha256=content_sha256,
+        )
 
     def _effective_config(self) -> EffectiveAiProviderConfig:
         if self.config_resolver is not None:
@@ -118,7 +157,45 @@ class OpenAICompatibleTranslationProvider:
         message = getattr(choices[0], "message", None)
         return str(getattr(message, "content", "") or "").strip()
 
-    def _parse_json_response(self, content: str) -> dict[str, Any]:
+    def _extract_finish_reason(self, response: Any) -> str | None:
+        choices = getattr(response, "choices", None) or []
+        if not choices:
+            return None
+        finish_reason = getattr(choices[0], "finish_reason", None)
+        return str(finish_reason) if finish_reason is not None else None
+
+    def _extract_response_id(self, response: Any) -> str | None:
+        response_id = getattr(response, "id", None)
+        return str(response_id) if response_id is not None else None
+
+    def _extract_usage(self, response: Any) -> dict[str, int]:
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            return {}
+        if hasattr(usage, "model_dump"):
+            raw_usage = usage.model_dump(mode="json")
+        elif isinstance(usage, dict):
+            raw_usage = usage
+        else:
+            raw_usage = {
+                key: getattr(usage, key)
+                for key in ("prompt_tokens", "completion_tokens", "total_tokens")
+                if getattr(usage, key, None) is not None
+            }
+        return {
+            str(key): int(value)
+            for key, value in raw_usage.items()
+            if isinstance(value, int) and not isinstance(value, bool)
+        }
+
+    def _parse_json_response(
+        self,
+        content: str,
+        *,
+        finish_reason: str | None,
+        usage: dict[str, int],
+        response_id: str | None,
+    ) -> dict[str, Any]:
         stripped = content.strip()
         if stripped.startswith("```"):
             lines = stripped.splitlines()
@@ -130,8 +207,33 @@ class OpenAICompatibleTranslationProvider:
         start = stripped.find("{")
         end = stripped.rfind("}")
         if start < 0 or end < start:
-            raise RuntimeError("翻译 provider 返回内容不是合法 JSON。")
-        return json.loads(stripped[start : end + 1])
+            raise TranslationProviderResponseError(
+                "翻译 provider 返回内容不是合法 JSON。",
+                finish_reason=finish_reason,
+                usage=usage,
+                response_id=response_id,
+                content=content,
+                suspected_truncation=self._looks_truncated(stripped, finish_reason=finish_reason),
+            )
+        try:
+            return json.loads(stripped[start : end + 1])
+        except json.JSONDecodeError as exc:
+            raise TranslationProviderResponseError(
+                f"翻译 provider 返回 JSON 解析失败: {exc.msg}",
+                finish_reason=finish_reason,
+                usage=usage,
+                response_id=response_id,
+                content=content,
+                suspected_truncation=self._looks_truncated(stripped, finish_reason=finish_reason),
+            ) from exc
+
+    def _looks_truncated(self, content: str, *, finish_reason: str | None) -> bool:
+        if finish_reason == "length":
+            return True
+        stripped = content.strip()
+        if not stripped:
+            return True
+        return stripped.count("{") > stripped.count("}") or stripped.count("[") > stripped.count("]")
 
     def _parse_items(self, payload: dict[str, Any]) -> tuple[TranslationTextItem, ...]:
         raw_items = payload.get("items")

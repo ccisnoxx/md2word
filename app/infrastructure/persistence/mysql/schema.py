@@ -412,6 +412,18 @@ MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
     """
+    CREATE TABLE IF NOT EXISTS document_job_translation_batches (
+        batch_id VARCHAR(128) PRIMARY KEY,
+        job_id VARCHAR(128) NOT NULL,
+        generation INT NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        payload LONGTEXT NOT NULL,
+        created_at VARCHAR(40) NOT NULL,
+        updated_at VARCHAR(40) NOT NULL,
+        KEY idx_document_job_translation_batches_job_generation (job_id, generation, status, created_at, batch_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
     CREATE TABLE IF NOT EXISTS saved_views (
         view_id VARCHAR(128) PRIMARY KEY,
         tenant_id VARCHAR(128) NOT NULL,

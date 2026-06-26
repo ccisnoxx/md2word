@@ -28,6 +28,12 @@ def create_celery_app(settings: Settings | None = None):
         task_soft_time_limit=resolved_settings.p0_document_job_timeout_seconds,
         task_time_limit=resolved_settings.p0_document_job_timeout_seconds + 60,
         task_default_queue=resolved_settings.document_jobs_celery_queue,
+        task_routes={
+            "document_jobs.run": {"queue": resolved_settings.document_jobs_celery_queue},
+            "document_jobs.translate_batch": {
+                "queue": resolved_settings.document_jobs_translation_batch_celery_queue,
+            },
+        },
         task_serializer="json",
         task_track_started=True,
         timezone="UTC",

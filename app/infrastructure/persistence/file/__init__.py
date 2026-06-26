@@ -12,6 +12,7 @@ from app.infrastructure.persistence.file.document_jobs import (
     FileDocumentJobCallbackMessageStore,
     FileDocumentJobEventRepository,
     FileDocumentJobRepository,
+    FileDocumentJobTranslationBatchRepository,
 )
 from app.infrastructure.persistence.file.files import FileDocumentFileRepository, FileJobFileRepository
 from app.infrastructure.persistence.file.internal_users import FileInternalUserRepository
@@ -28,6 +29,7 @@ __all__ = [
     "FileDocumentJobCallbackMessageStore",
     "FileDocumentJobEventRepository",
     "FileDocumentJobRepository",
+    "FileDocumentJobTranslationBatchRepository",
     "FileInternalUserRepository",
     "FileJobEventRepository",
     "FileJobFileRepository",

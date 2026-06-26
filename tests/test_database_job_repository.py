@@ -13,7 +13,12 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app.domains.acceptance.models import AcceptanceRunRecord
-from app.domains.document_jobs.models import DocumentJobCallbackMessage, DocumentJobEventRecord, DocumentJobRecord
+from app.domains.document_jobs.models import (
+    DocumentJobCallbackMessage,
+    DocumentJobEventRecord,
+    DocumentJobRecord,
+    DocumentJobTranslationBatchRecord,
+)
 from app.domains.saved_views.models import SavedViewRecord
 from app.domains.saved_views.repository import SavedViewScope
 from app.domains.jobs.models import (
@@ -45,15 +50,17 @@ from app.infrastructure.persistence import (
 )
 from app.services.auth import hash_password
 from app.infrastructure.persistence.file import FileJobSnapshotRepository
-from app.infrastructure.persistence.mysql import MysqlJobSnapshotRepository, MysqlPersistenceConfig
-from app.infrastructure.persistence.sqlite import SqliteJobSnapshotRepository
+from app.infrastructure.persistence.mysql import MysqlDocumentJobRepository, MysqlJobSnapshotRepository, MysqlPersistenceConfig
+from app.infrastructure.persistence.sqlite import SqliteDocumentJobRepository, SqliteJobSnapshotRepository
 from app.main import build_runtime, create_app
 from app.domains.jobs.query import JobQueryService
 from tests.test_fastapi_jobs_backend import (
+    build_auth_header,
+    build_auth_users_json,
     build_callback_checksum,
     build_callback_payload,
     build_test_runtime,
-    make_zip_bytes,
+    make_pdf_bytes,
     publish_default_job_resources,
 )
 
@@ -148,6 +155,7 @@ class _FakeMysqlDatabase:
         self.file_retention_cleanup_runs: dict[str, dict[str, Any]] = {}
         self.document_jobs: dict[str, dict[str, Any]] = {}
         self.document_job_callback_messages: dict[str, dict[str, Any]] = {}
+        self.document_job_translation_batches: dict[str, dict[str, Any]] = {}
         self.job_files: dict[tuple[str, str], dict[str, Any]] = {}
         self.stage_messages: dict[str, dict[str, Any]] = {}
         self.saved_views: dict[str, dict[str, Any]] = {}
@@ -238,6 +246,7 @@ class _FakeMysqlCursor:
                 "file_retention_cleanup_runs",
                 "document_jobs",
                 "document_job_callback_messages",
+                "document_job_translation_batches",
             ):
                 if f" {table} " in normalized:
                     self.database.created_tables.add(table)
@@ -570,6 +579,36 @@ class _FakeMysqlCursor:
                     self.database.document_jobs.values(),
                     key=lambda item: (item["created_at"], item["job_id"]),
                 )
+            ]
+            return
+        if normalized.startswith("insert into document_job_translation_batches"):
+            batch_id, job_id, generation, status, payload, created_at, updated_at = params
+            self.database.document_job_translation_batches[batch_id] = {
+                "batch_id": batch_id,
+                "job_id": job_id,
+                "generation": generation,
+                "status": status,
+                "payload": payload,
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+            self._rows = []
+            return
+        if normalized.startswith("select payload from document_job_translation_batches where batch_id"):
+            row = self.database.document_job_translation_batches.get(params[0])
+            self._rows = [{"payload": row["payload"]}] if row is not None else []
+            return
+        if normalized.startswith("select payload from document_job_translation_batches where job_id"):
+            rows = [
+                row
+                for row in self.database.document_job_translation_batches.values()
+                if row["job_id"] == params[0]
+            ]
+            if "and generation" in normalized:
+                rows = [row for row in rows if row["generation"] == params[1]]
+            self._rows = [
+                {"payload": row["payload"]}
+                for row in sorted(rows, key=lambda item: (item["created_at"], item["batch_id"]))
             ]
             return
         if normalized.startswith("insert ignore into document_job_callback_messages"):
@@ -1277,6 +1316,11 @@ class _FakeMysqlCursor:
         return list(self._rows)
 
 
+class _FakeDocumentJobWordRenderer:
+    def render_to_bytes(self, *args, **kwargs) -> bytes:
+        return b"fake-docx"
+
+
 class PersistenceAdapterTests(TestCase):
     def test_internal_user_repository_contract_matches_all_backends(self):
         for backend_name, build_adapters in (
@@ -1376,6 +1420,7 @@ class PersistenceAdapterTests(TestCase):
                 "file_retention_cleanup_runs",
                 "document_jobs",
                 "document_job_callback_messages",
+                "document_job_translation_batches",
             },
         )
 
@@ -1701,147 +1746,188 @@ class PersistenceAdapterTests(TestCase):
         self.assertEqual(persisted_job.id, job.id)
         self.assertEqual([event.stage for event in persisted_events], ["job_created"])
 
-    def test_jobs_api_pdf_callback_flow_uses_database_repository(self):
+    def test_document_jobs_api_pdf_callback_flow_uses_database_repository(self):
         with TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(
                 Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
                 mineru_api_token="token",
                 mineru_callback_url="https://example.com/api/v1/mineru-callbacks/result",
                 mineru_uid="mineru-user-1",
                 jobs_repository_backend="database",
+                document_jobs_worker_backend="eager",
             )
+            runtime.document_job_execution_service.fake_mineru_client.query_state = "running"
+            runtime.document_job_execution_service.fake_mineru_client.query_full_zip_url = None
+            runtime.document_job_execution_service.word_renderer = _FakeDocumentJobWordRenderer()
             app = create_app(runtime)
             with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
                 create_response = client.post(
-                    "/api/v1/jobs/pdf",
-                    files={"pdf": ("source.pdf", b"%PDF-1.4\n", "application/pdf")},
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
                 )
                 job_id = create_response.json()["job_id"]
-                detail = client.get(f"/api/v1/jobs/{job_id}").json()
-                callback_seed = runtime.job_repository.get_job(job_id).read_mineru_callback_seed()
+                waiting_job = runtime.document_job_repository.get_document_job(job_id)
                 callback_payload, content = build_callback_payload(
-                    batch_id="batch_test_001",
+                    batch_id=waiting_job.mineru_batch_id,
                     data_id=job_id,
                     state="done",
                     full_zip_url="https://mineru.net/result.zip",
                 )
                 callback_payload["checksum"] = build_callback_checksum(
                     uid="mineru-user-1",
-                    seed=callback_seed,
+                    seed=waiting_job.mineru_callback_seed,
                     content=content,
                 )
                 callback_response = client.post("/api/v1/mineru-callbacks/result", json=callback_payload)
-                detail_response = client.get(f"/api/v1/jobs/{job_id}")
+                worker_result = runtime.document_job_execution_service.execute_job(
+                    job_id,
+                    trace_id="trace_document_jobs_database_callback",
+                )
+                detail_response = client.get(f"/api/v1/document-jobs/{job_id}", headers=headers)
 
-            persisted_job = runtime.job_repository.get_job(job_id)
-            persisted_files = runtime.job_file_repository.list_files(job_id)
-            replayable_messages = runtime.stage_message_store.list_replayable_stage_messages()
+            persisted_job = runtime.document_job_repository.get_document_job(job_id)
+            persisted_files = runtime.document_file_repository.list_document_files()
+            replayable_messages = runtime.document_job_callback_message_store.list_replayable_callback_messages(job_id)
+            callback_counts = runtime.document_job_callback_message_store.count_callback_messages_by_status(job_id)
 
         self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.json()["status"], "running")
         self.assertEqual(callback_response.status_code, 200)
         self.assertEqual(detail_response.status_code, 200)
-        self.assertIsInstance(runtime.job_repository, SqliteJobSnapshotRepository)
-        self.assertIsNot(runtime.job_repository, runtime.stage_message_store)
-        self.assertEqual(detail_response.json()["status"], "completed")
-        self.assertEqual(persisted_job.status, "completed")
-        self.assertEqual(
-            {file.file_type for file in persisted_files},
-            {"source_pdf", "parsed_result_package", "result_docx"},
-        )
+        self.assertIsNotNone(worker_result)
+        self.assertEqual(worker_result.status, "succeeded")
+        self.assertIsInstance(runtime.document_job_repository, SqliteDocumentJobRepository)
+        self.assertIsNot(runtime.document_job_repository, runtime.document_job_callback_message_store)
+        self.assertEqual(detail_response.json()["status"], "succeeded")
+        self.assertEqual(persisted_job.status, "succeeded")
+        self.assertTrue({"source_pdf", "mineru_raw_result", "document_ir", "generated_word"}.issubset(
+            {file.file_type for file in persisted_files if file.job_id == job_id}
+        ))
         self.assertEqual(replayable_messages, [])
+        self.assertEqual(callback_counts["processed"], 1)
 
-    def test_jobs_api_pdf_callback_flow_uses_mysql_repository(self):
+    def test_document_jobs_api_pdf_callback_flow_uses_mysql_repository(self):
         with TemporaryDirectory() as temp_dir:
             fake_mysql = _FakeMysqlDatabase()
             runtime = build_test_runtime(
                 Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
                 mineru_api_token="token",
                 mineru_callback_url="https://example.com/api/v1/mineru-callbacks/result",
                 mineru_uid="mineru-user-1",
                 jobs_repository_backend="mysql",
+                document_jobs_worker_backend="eager",
                 repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
                     _mysql_config(),
                     connect_factory=fake_mysql.connect,
                 ),
             )
             publish_default_job_resources(runtime)
+            runtime.document_job_execution_service.fake_mineru_client.query_state = "running"
+            runtime.document_job_execution_service.fake_mineru_client.query_full_zip_url = None
+            runtime.document_job_execution_service.word_renderer = _FakeDocumentJobWordRenderer()
             app = create_app(runtime)
             with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
                 create_response = client.post(
-                    "/api/v1/jobs/pdf",
-                    files={"pdf": ("source.pdf", b"%PDF-1.4\n", "application/pdf")},
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
                 )
                 job_id = create_response.json()["job_id"]
-                detail = client.get(f"/api/v1/jobs/{job_id}").json()
-                callback_seed = runtime.job_repository.get_job(job_id).read_mineru_callback_seed()
+                waiting_job = runtime.document_job_repository.get_document_job(job_id)
                 callback_payload, content = build_callback_payload(
-                    batch_id="batch_test_001",
+                    batch_id=waiting_job.mineru_batch_id,
                     data_id=job_id,
                     state="done",
                     full_zip_url="https://mineru.net/result.zip",
                 )
                 callback_payload["checksum"] = build_callback_checksum(
                     uid="mineru-user-1",
-                    seed=callback_seed,
+                    seed=waiting_job.mineru_callback_seed,
                     content=content,
                 )
                 callback_response = client.post("/api/v1/mineru-callbacks/result", json=callback_payload)
-                detail_response = client.get(f"/api/v1/jobs/{job_id}")
+                worker_result = runtime.document_job_execution_service.execute_job(
+                    job_id,
+                    trace_id="trace_document_jobs_mysql_callback",
+                )
+                detail_response = client.get(f"/api/v1/document-jobs/{job_id}", headers=headers)
 
             checks = runtime.health_service.build_dependency_checks()
-            persisted_job = runtime.job_repository.get_job(job_id)
-            persisted_files = runtime.job_file_repository.list_files(job_id)
-            replayable_messages = runtime.stage_message_store.list_replayable_stage_messages()
+            persisted_job = runtime.document_job_repository.get_document_job(job_id)
+            persisted_files = runtime.document_file_repository.list_document_files()
+            replayable_messages = runtime.document_job_callback_message_store.list_replayable_callback_messages(job_id)
+            callback_counts = runtime.document_job_callback_message_store.count_callback_messages_by_status(job_id)
 
         self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.json()["status"], "running")
         self.assertEqual(callback_response.status_code, 200)
         self.assertEqual(detail_response.status_code, 200)
-        self.assertIsInstance(runtime.job_repository, MysqlJobSnapshotRepository)
-        self.assertIsNot(runtime.job_repository, runtime.stage_message_store)
-        self.assertEqual(detail_response.json()["status"], "completed")
-        self.assertEqual(persisted_job.status, "completed")
-        self.assertEqual(
-            {file.file_type for file in persisted_files},
-            {"source_pdf", "parsed_result_package", "result_docx"},
-        )
+        self.assertIsNotNone(worker_result)
+        self.assertEqual(worker_result.status, "succeeded")
+        self.assertIsInstance(runtime.document_job_repository, MysqlDocumentJobRepository)
+        self.assertIsNot(runtime.document_job_repository, runtime.document_job_callback_message_store)
+        self.assertEqual(detail_response.json()["status"], "succeeded")
+        self.assertEqual(persisted_job.status, "succeeded")
+        self.assertTrue({"source_pdf", "mineru_raw_result", "document_ir", "generated_word"}.issubset(
+            {file.file_type for file in persisted_files if file.job_id == job_id}
+        ))
         self.assertEqual(replayable_messages, [])
+        self.assertEqual(callback_counts["processed"], 1)
         self.assertEqual(checks["configured_repository_backend"], "mysql")
         self.assertEqual(checks["effective_repository_backend"], "mysql")
         self.assertEqual(checks["stage_message_store"], "mysql")
         self.assertTrue(checks["stage_spool_dir_exists"])
 
-    def test_jobs_api_retry_flow_uses_database_repository(self):
+    def test_document_jobs_api_retry_flow_uses_database_repository(self):
         with TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(
                 Path(temp_dir),
                 jobs_repository_backend="database",
-                admin_token="secret-admin",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
             )
-            runtime.stage_service.conversion_entrypoint.raise_error = True
+            runtime.document_job_execution_service.fake_mineru_client.raise_error = True
             app = create_app(runtime)
             with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
                 create_response = client.post(
-                    "/api/v1/jobs",
-                    files={"package": ("mineru-output.zip", make_zip_bytes(), "application/zip")},
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
                 )
                 job_id = create_response.json()["job_id"]
-                failed_detail = client.get(f"/api/v1/jobs/{job_id}").json()
+                failed_detail = client.get(f"/api/v1/document-jobs/{job_id}", headers=headers).json()
 
-                runtime.stage_service.conversion_entrypoint.raise_error = False
+                runtime.document_job_execution_service.fake_mineru_client.raise_error = False
                 retry_response = client.post(
-                    f"/api/v1/jobs/{job_id}/retry",
-                    data={"reason": "retry-database"},
-                    headers={"X-Admin-Token": "secret-admin"},
+                    f"/api/v1/document-jobs/{job_id}/retry",
+                    headers=headers,
+                    json={"reason": "retry-database"},
                 )
-                completed_detail = client.get(f"/api/v1/jobs/{job_id}").json()
+                completed_detail = client.get(f"/api/v1/document-jobs/{job_id}", headers=headers).json()
 
-            persisted_job = runtime.job_repository.get_job(job_id)
+            persisted_job = runtime.document_job_repository.get_document_job(job_id)
 
         self.assertEqual(create_response.status_code, 201)
         self.assertEqual(failed_detail["status"], "failed")
+        self.assertEqual(failed_detail["error_code"], "mineru_failed")
         self.assertEqual(retry_response.status_code, 200)
-        self.assertEqual(completed_detail["status"], "completed")
-        self.assertEqual(persisted_job.status, "completed")
+        self.assertEqual(retry_response.json()["status"], "succeeded")
+        self.assertEqual(retry_response.json()["retry_count"], 1)
+        self.assertEqual(completed_detail["status"], "succeeded")
+        self.assertIsInstance(runtime.document_job_repository, SqliteDocumentJobRepository)
+        self.assertEqual(persisted_job.status, "succeeded")
 
     def test_replay_pending_flow_uses_database_repository(self):
         with TemporaryDirectory() as temp_dir:
@@ -2332,6 +2418,76 @@ class PersistenceAdapterTests(TestCase):
         self.assertEqual(document_job_callback_message_store.count_callback_messages_by_status()["processed"], 1)
         self.assertEqual(document_job_callback_message_store.list_replayable_callback_messages(document_job.id), [])
 
+        translation_batch_repository = adapters.document_job_translation_batch_repository
+        translation_batch = DocumentJobTranslationBatchRecord(
+            id="batch_contract_001",
+            job_id=document_job.id,
+            job_retry_count=0,
+            generation=0,
+            root_batch_id="batch_contract_001",
+            status="pending",
+            page_start=1,
+            page_end=20,
+            item_ids=["block_0001.text", "block_0002.text"],
+            item_count=2,
+            char_count=42,
+            deterministic_batch_count=1,
+            provider_call_budget=12,
+            source_document_ir_file_id=document_file.id,
+            language_pair="en2zh",
+            term_version_id="en2zh@v1",
+            term_snapshot_hash="sha256:" + "1" * 64,
+        )
+        translation_batch_repository.create_translation_batch(translation_batch)
+        self.assertEqual(
+            [batch.id for batch in translation_batch_repository.list_translation_batches(document_job.id)],
+            ["batch_contract_001"],
+        )
+        self.assertEqual(
+            [batch.id for batch in translation_batch_repository.list_translation_batches(document_job.id, generation=0)],
+            ["batch_contract_001"],
+        )
+        running_batch = translation_batch_repository.update_translation_batch_if_current(
+            "batch_contract_001",
+            allowed_statuses={"pending"},
+            expected_generation=0,
+            status="running",
+            attempt_count=1,
+            lease_owner="worker",
+            leased_at=utc_now(),
+            lease_expires_at=utc_now() + timedelta(seconds=60),
+        )
+        self.assertIsNotNone(running_batch)
+        self.assertEqual(running_batch.status, "running")
+        skipped_batch_update = translation_batch_repository.update_translation_batch_if_current(
+            "batch_contract_001",
+            allowed_statuses={"pending"},
+            expected_generation=0,
+            status="succeeded",
+        )
+        self.assertIsNone(skipped_batch_update)
+        succeeded_batch = translation_batch_repository.update_translation_batch_if_current(
+            "batch_contract_001",
+            allowed_statuses={"running"},
+            expected_generation=0,
+            status="succeeded",
+            result_file_id="file_batch_result",
+            ai_call_log_file_ids=["file_ai_log"],
+            finish_reason="stop",
+            usage={"total_tokens": 100},
+            retryable=False,
+            lease_owner=None,
+            leased_at=None,
+            lease_expires_at=None,
+            updated_at=utc_now(),
+        )
+        self.assertIsNotNone(succeeded_batch)
+        self.assertEqual(succeeded_batch.status, "succeeded")
+        self.assertEqual(
+            translation_batch_repository.get_translation_batch("batch_contract_001").ai_call_log_file_ids,
+            ["file_ai_log"],
+        )
+
         pending = JobStageMessage(
             id="msg_pending",
             job_id=job.id,
@@ -2465,6 +2621,35 @@ class PersistenceAdapterTests(TestCase):
         self.assertEqual(total, 1)
         self.assertEqual([listed_job.id for listed_job in listed_jobs], [job.id])
         self.assertEqual(summary["parsed"], 1)
+
+    def _upload_source_pdf(
+        self,
+        client: TestClient,
+        headers: dict[str, str],
+        *,
+        filename: str = "source.pdf",
+    ) -> dict:
+        content = make_pdf_bytes(page_count=1)
+        authorize_response = client.post(
+            "/api/v1/files/upload-url",
+            headers=headers,
+            json={
+                "filename": filename,
+                "mime_type": "application/pdf",
+                "size_bytes": len(content),
+            },
+        )
+        if authorize_response.status_code != 201:
+            raise AssertionError(authorize_response.json())
+        upload_path = authorize_response.json()["upload_url"].replace("http://testserver", "")
+        upload_response = client.put(
+            upload_path,
+            headers={**headers, "Content-Type": "application/pdf"},
+            content=content,
+        )
+        if upload_response.status_code != 201:
+            raise AssertionError(upload_response.json())
+        return upload_response.json()["file"]
 
     def _build_source_pdf_job(self, job_id: str) -> JobRecord:
         return JobRecord(

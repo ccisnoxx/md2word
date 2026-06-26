@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     document_jobs_celery_broker_url: str = "redis://127.0.0.1:6379/0"
     document_jobs_celery_result_backend: str = ""
     document_jobs_celery_queue: str = "document-jobs"
+    document_jobs_translation_batch_celery_queue: str = "document-translation-batches"
+    translation_provider_batch_max_concurrency_per_job: int = 4
+    translation_provider_batch_lease_seconds: int = 900
+    translation_provider_batch_max_attempts: int = 2
     jobs_access_mode: Literal["open", "token", "admin"] = "open"
     jobs_access_token: str = ""
     jobs_ops_access_mode: Literal["jobs", "admin"] = "admin"

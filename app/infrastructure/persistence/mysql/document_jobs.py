@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.domains.document_jobs.models import DocumentJobCallbackMessage, DocumentJobEventRecord, DocumentJobRecord
+from app.domains.document_jobs.models import (
+    DocumentJobCallbackMessage,
+    DocumentJobEventRecord,
+    DocumentJobRecord,
+    DocumentJobTranslationBatchRecord,
+)
 from app.infrastructure.persistence.mysql.backend import MysqlPersistenceBackend
 
 
@@ -320,3 +325,114 @@ class MysqlDocumentJobCallbackMessageStore:
                     ),
                 )
         return updated
+
+
+class MysqlDocumentJobTranslationBatchRepository:
+    """用 MySQL backend 读写 provider translation batch 记录。"""
+
+    def __init__(self, backend: MysqlPersistenceBackend) -> None:
+        self.backend = backend
+
+    def create_translation_batch(self, record: DocumentJobTranslationBatchRecord) -> DocumentJobTranslationBatchRecord:
+        with self.backend.connect() as connection:
+            self._upsert_record(connection, record)
+        return record
+
+    def get_translation_batch(self, batch_id: str) -> DocumentJobTranslationBatchRecord | None:
+        with self.backend.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT payload FROM document_job_translation_batches WHERE batch_id = %s",
+                    (batch_id,),
+                )
+                row = cursor.fetchone()
+        if row is None:
+            return None
+        return DocumentJobTranslationBatchRecord.model_validate_json(row["payload"])
+
+    def list_translation_batches(
+        self,
+        job_id: str,
+        *,
+        generation: int | None = None,
+    ) -> list[DocumentJobTranslationBatchRecord]:
+        query = "SELECT payload FROM document_job_translation_batches WHERE job_id = %s"
+        params: list[str | int] = [job_id]
+        if generation is not None:
+            query += " AND generation = %s"
+            params.append(generation)
+        query += " ORDER BY created_at, batch_id"
+        with self.backend.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(query, tuple(params))
+                rows = cursor.fetchall()
+        return [DocumentJobTranslationBatchRecord.model_validate_json(row["payload"]) for row in rows]
+
+    def update_translation_batch(self, batch_id: str, **patch: Any) -> DocumentJobTranslationBatchRecord:
+        with self.backend.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT payload FROM document_job_translation_batches WHERE batch_id = %s",
+                    (batch_id,),
+                )
+                row = cursor.fetchone()
+            if row is None:
+                raise FileNotFoundError(f"translation batch 不存在: {batch_id}")
+            existing = DocumentJobTranslationBatchRecord.model_validate_json(row["payload"])
+            updated = DocumentJobTranslationBatchRecord.model_validate(
+                existing.model_copy(update=patch).model_dump(mode="python")
+            )
+            self._upsert_record(connection, updated)
+        return updated
+
+    def update_translation_batch_if_current(
+        self,
+        batch_id: str,
+        *,
+        allowed_statuses: set[str],
+        expected_generation: int,
+        **patch: Any,
+    ) -> DocumentJobTranslationBatchRecord | None:
+        with self.backend.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT payload FROM document_job_translation_batches WHERE batch_id = %s",
+                    (batch_id,),
+                )
+                row = cursor.fetchone()
+            if row is None:
+                raise FileNotFoundError(f"translation batch 不存在: {batch_id}")
+            existing = DocumentJobTranslationBatchRecord.model_validate_json(row["payload"])
+            if existing.generation != expected_generation or existing.status not in allowed_statuses:
+                return None
+            updated = DocumentJobTranslationBatchRecord.model_validate(
+                existing.model_copy(update=patch).model_dump(mode="python")
+            )
+            self._upsert_record(connection, updated)
+        return updated
+
+    def _upsert_record(self, connection: Any, record: DocumentJobTranslationBatchRecord) -> None:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO document_job_translation_batches
+                    (batch_id, job_id, generation, status, payload, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    job_id = VALUES(job_id),
+                    generation = VALUES(generation),
+                    status = VALUES(status),
+                    payload = VALUES(payload),
+                    created_at = VALUES(created_at),
+                    updated_at = VALUES(updated_at)
+                """,
+                (
+                    record.id,
+                    record.job_id,
+                    record.generation,
+                    record.status,
+                    self.backend.dump_payload(record),
+                    record.created_at.isoformat(),
+                    record.updated_at.isoformat(),
+                ),
+            )

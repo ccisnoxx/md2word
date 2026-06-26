@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from app.domains.document_jobs.models import DocumentJobCallbackMessage, DocumentJobEventRecord, DocumentJobRecord
+from app.domains.document_jobs.models import (
+    DocumentJobCallbackMessage,
+    DocumentJobEventRecord,
+    DocumentJobRecord,
+    DocumentJobTranslationBatchRecord,
+)
 
 
 class DocumentJobRepositoryProtocol(Protocol):
@@ -73,3 +78,25 @@ class DocumentJobCallbackMessageStoreProtocol(Protocol):
         updated_at: Any,
     ) -> DocumentJobCallbackMessage: ...
     def count_callback_messages_by_status(self, job_id: str | None = None) -> dict[str, int]: ...
+
+
+class DocumentJobTranslationBatchRepositoryProtocol(Protocol):
+    """Provider translation batch metadata contract."""
+
+    def create_translation_batch(self, record: DocumentJobTranslationBatchRecord) -> DocumentJobTranslationBatchRecord: ...
+    def get_translation_batch(self, batch_id: str) -> DocumentJobTranslationBatchRecord | None: ...
+    def list_translation_batches(
+        self,
+        job_id: str,
+        *,
+        generation: int | None = None,
+    ) -> list[DocumentJobTranslationBatchRecord]: ...
+    def update_translation_batch(self, batch_id: str, **patch: Any) -> DocumentJobTranslationBatchRecord: ...
+    def update_translation_batch_if_current(
+        self,
+        batch_id: str,
+        *,
+        allowed_statuses: set[str],
+        expected_generation: int,
+        **patch: Any,
+    ) -> DocumentJobTranslationBatchRecord | None: ...

@@ -53,6 +53,7 @@ class DocumentJobResponse(BaseModel):
     term_version_id: str | None = None
     result_file_id: str | None = None
     mineru_raw_result_file_id: str | None = None
+    source_document_ir_file_id: str | None = None
     document_ir_file_id: str | None = None
     image_asset_file_ids: list[str] = Field(default_factory=list)
     debug_full_text_enabled: bool = False
@@ -203,6 +204,46 @@ class DocumentJobFileListResponse(BaseModel):
 
     job_id: str
     files: list[DocumentFileSummaryResponse]
+
+
+class DocumentJobTranslationBatchSummaryResponse(BaseModel):
+    """翻译 provider batch 只读诊断摘要，不包含原文或译文内容。"""
+
+    batch_id: str
+    job_id: str
+    generation: int
+    root_batch_id: str
+    parent_batch_id: str | None = None
+    status: str
+    page_start: int | None = None
+    page_end: int | None = None
+    item_count: int = 0
+    char_count: int = 0
+    split_level: int = 0
+    attempt_count: int = 0
+    max_attempts: int = 0
+    deterministic_batch_count: int = 0
+    provider_call_budget: int = 0
+    source_document_ir_file_id: str | None = None
+    result_file_id: str | None = None
+    ai_call_log_file_ids: list[str] = Field(default_factory=list)
+    debug_archive_file_ids: list[str] = Field(default_factory=list)
+    finish_reason: str | None = None
+    usage: dict[str, Any] = Field(default_factory=dict)
+    response_id: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    retryable: bool = False
+    truncation_retry: bool = False
+    lease_expires_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class DocumentJobTranslationBatchListResponse(BaseModel):
+    job_id: str
+    generation: int
+    items: list[DocumentJobTranslationBatchSummaryResponse] = Field(default_factory=list)
 
 
 class DocumentJobCallbackProblemSummaryResponse(BaseModel):

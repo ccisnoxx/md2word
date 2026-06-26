@@ -3798,6 +3798,17 @@
             "title": "Retry Count",
             "type": "integer"
           },
+          "source_document_ir_file_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Document Ir File Id"
+          },
           "source_file_id": {
             "title": "Source File Id",
             "type": "string"
@@ -4064,6 +4075,252 @@
           "job"
         ],
         "title": "DocumentJobRetryResponse",
+        "type": "object"
+      },
+      "DocumentJobTranslationBatchListResponse": {
+        "properties": {
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentJobTranslationBatchSummaryResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "generation"
+        ],
+        "title": "DocumentJobTranslationBatchListResponse",
+        "type": "object"
+      },
+      "DocumentJobTranslationBatchSummaryResponse": {
+        "description": "翻译 provider batch 只读诊断摘要，不包含原文或译文内容。",
+        "properties": {
+          "ai_call_log_file_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ai Call Log File Ids",
+            "type": "array"
+          },
+          "attempt_count": {
+            "default": 0,
+            "title": "Attempt Count",
+            "type": "integer"
+          },
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "char_count": {
+            "default": 0,
+            "title": "Char Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "debug_archive_file_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Debug Archive File Ids",
+            "type": "array"
+          },
+          "deterministic_batch_count": {
+            "default": 0,
+            "title": "Deterministic Batch Count",
+            "type": "integer"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "finish_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finish Reason"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "item_count": {
+            "default": 0,
+            "title": "Item Count",
+            "type": "integer"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "lease_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lease Expires At"
+          },
+          "max_attempts": {
+            "default": 0,
+            "title": "Max Attempts",
+            "type": "integer"
+          },
+          "page_end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page End"
+          },
+          "page_start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Start"
+          },
+          "parent_batch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Batch Id"
+          },
+          "provider_call_budget": {
+            "default": 0,
+            "title": "Provider Call Budget",
+            "type": "integer"
+          },
+          "response_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Id"
+          },
+          "result_file_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result File Id"
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "root_batch_id": {
+            "title": "Root Batch Id",
+            "type": "string"
+          },
+          "source_document_ir_file_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Document Ir File Id"
+          },
+          "split_level": {
+            "default": 0,
+            "title": "Split Level",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "truncation_retry": {
+            "default": false,
+            "title": "Truncation Retry",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "usage": {
+            "additionalProperties": true,
+            "title": "Usage",
+            "type": "object"
+          }
+        },
+        "required": [
+          "batch_id",
+          "job_id",
+          "generation",
+          "root_batch_id",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DocumentJobTranslationBatchSummaryResponse",
         "type": "object"
       },
       "DocumentJobTranslationQaAiCallResponse": {
@@ -20308,6 +20565,64 @@
           }
         },
         "summary": "Retry Document Job",
+        "tags": [
+          "document-jobs"
+        ]
+      }
+    },
+    "/api/v1/document-jobs/{job_id}/translation-batches": {
+      "get": {
+        "operationId": "get_document_job_translation_batches_api_v1_document_jobs__job_id__translation_batches_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentJobTranslationBatchListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Document Job Translation Batches",
         "tags": [
           "document-jobs"
         ]

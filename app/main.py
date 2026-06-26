@@ -27,8 +27,10 @@ from app.domains.audit.service import AuditService
 from app.services.auth import AuthService
 from app.domains.document_jobs.execution import (
     CeleryDocumentJobTaskQueue,
+    CeleryDocumentTranslationBatchTaskQueue,
     DocumentJobExecutionService,
     EagerDocumentJobTaskQueue,
+    EagerDocumentTranslationBatchTaskQueue,
 )
 from app.domains.document_jobs.recovery import DocumentJobRecoveryService
 from app.domains.document_jobs.incidents import DocumentJobIncidentService
@@ -115,6 +117,19 @@ def _build_document_job_task_queue(
     return None
 
 
+def _build_document_translation_batch_task_queue(
+    settings: Settings,
+    execution_service: DocumentJobExecutionService,
+):
+    """按配置选择 translation provider batch task 投递端口。"""
+
+    if settings.document_jobs_worker_backend == "celery":
+        return CeleryDocumentTranslationBatchTaskQueue(settings)
+    if settings.document_jobs_worker_backend == "eager":
+        return EagerDocumentTranslationBatchTaskQueue(execution_service)
+    return None
+
+
 def _validate_runtime_guardrails(settings: Settings) -> None:
     """阻止近生产环境以 open jobs 访问模式启动。"""
 
@@ -149,6 +164,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
     document_job_repository = persistence_adapters.document_job_repository
     document_job_event_repository = persistence_adapters.document_job_event_repository
     document_job_callback_message_store = persistence_adapters.document_job_callback_message_store
+    document_job_translation_batch_repository = persistence_adapters.document_job_translation_batch_repository
     internal_user_repository = persistence_adapters.internal_user_repository
     saved_view_repository = persistence_adapters.saved_view_repository
     terminology_release_repository = persistence_adapters.terminology_release_repository
@@ -208,6 +224,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         document_job_repository,
         document_job_event_repository,
         document_job_callback_message_store,
+        document_job_translation_batch_repository,
         document_file_repository,
         file_upload_service,
         document_ir_service,
@@ -218,6 +235,11 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         translation_audit_service,
     )
     document_job_task_queue = _build_document_job_task_queue(resolved_settings, document_job_execution_service)
+    document_translation_batch_task_queue = _build_document_translation_batch_task_queue(
+        resolved_settings,
+        document_job_execution_service,
+    )
+    document_job_execution_service.set_translation_batch_task_queue(document_translation_batch_task_queue)
     document_job_recovery_service = DocumentJobRecoveryService(
         resolved_settings,
         document_job_repository,
@@ -234,6 +256,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         template_read_service,
         term_version_service,
         job_resource_snapshot_service,
+        document_job_translation_batch_repository=document_job_translation_batch_repository,
         file_upload_service=file_upload_service,
     )
     document_job_incident_service = DocumentJobIncidentService(document_job_service)
@@ -402,6 +425,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         document_job_repository=document_job_repository,
         document_job_event_repository=document_job_event_repository,
         document_job_callback_message_store=document_job_callback_message_store,
+        document_job_translation_batch_repository=document_job_translation_batch_repository,
         internal_user_repository=internal_user_repository,
         saved_view_repository=saved_view_repository,
         terminology_release_repository=terminology_release_repository,
