@@ -204,6 +204,80 @@ class DocumentIRTranslationTests(unittest.TestCase):
         self.assertEqual([trace.source_term for trace in provider.requests[0].term_traces], ["input offset voltage"])
         self.assertNotIn("block_0005", [item.id for item in provider.requests[0].items])
 
+    def test_document_ir_translation_batches_provider_requests_and_preserves_order(self) -> None:
+        provider = FakeTranslationProvider()
+        recorder = RecordingTranslationCallRecorder()
+        service = DocumentIRTranslationService(provider, max_items_per_request=3, max_chars_per_request=10_000)
+        document = self._make_document_ir()
+        terms = TermVersionSnapshot(
+            term_version_id="en2zh@v1",
+            language_pair="en2zh",
+            version="v1",
+            snapshot_hash="sha256:" + "0" * 64,
+            entries=(
+                TranslationTermEntry(
+                    language_pair="en2zh",
+                    source_term="input offset voltage",
+                    target_term="输入失调电压",
+                    version="v1",
+                ),
+                TranslationTermEntry(
+                    language_pair="en2zh",
+                    source_term="low noise",
+                    target_term="低噪声",
+                    version="v1",
+                ),
+            ),
+        )
+
+        translated = service.translate(document, term_version=terms, call_recorder=recorder)
+
+        self.assertEqual([len(request.items) for request in provider.requests], [3, 3, 2])
+        self.assertEqual(recorder.success_requests, provider.requests)
+        self.assertEqual(recorder.failure_requests, [])
+        self.assertEqual([request.items[0].id for request in provider.requests], ["block_0001.text", "block_0003.html.0000", "block_0004.list_items.0001"])
+        self.assertEqual([trace.batch_id for trace in provider.requests[0].term_traces], ["document_ir_provider_request_0001"])
+        self.assertEqual([trace.batch_id for trace in provider.requests[1].term_traces], ["document_ir_provider_request_0002"])
+        self.assertEqual(translated.blocks[0].text, "1 特性")
+        self.assertEqual(translated.blocks[1].text, "输入失调电压很低。")
+        self.assertEqual(translated.blocks[3].list_items, ["低噪声", "高压摆率"])
+
+    def test_document_ir_translation_plan_splits_by_page_window(self) -> None:
+        provider = FakeTranslationProvider()
+        service = DocumentIRTranslationService(provider, max_items_per_request=100)
+        document = self._make_document_ir()
+        document.pages.append(DocumentIRPage(index=1, width=612.0, height=792.0))
+        document.blocks[5].layout.page_index = 1
+
+        _targets, items, plans = service.build_translation_plan(
+            document,
+            max_pages_per_batch=1,
+            max_chars_per_batch=10_000,
+            batch_id_prefix="batch_page",
+        )
+
+        self.assertEqual(len(items), 8)
+        self.assertEqual([plan.batch_id for plan in plans], ["batch_page_0001", "batch_page_0002"])
+        self.assertEqual([(plan.page_start, plan.page_end) for plan in plans], [(1, 1), (2, 2)])
+        self.assertEqual(sum(plan.item_count for plan in plans), 8)
+
+    def test_document_ir_translation_plan_splits_by_char_limit(self) -> None:
+        provider = FakeTranslationProvider()
+        service = DocumentIRTranslationService(provider, max_items_per_request=100)
+        document = self._make_document_ir()
+
+        _targets, items, plans = service.build_translation_plan(
+            document,
+            max_pages_per_batch=20,
+            max_chars_per_batch=20,
+            batch_id_prefix="batch_chars",
+        )
+
+        self.assertEqual(len(items), 8)
+        self.assertGreater(len(plans), 1)
+        self.assertEqual(sum(plan.item_count for plan in plans), 8)
+        self.assertTrue(all(plan.char_count <= 20 or plan.item_count == 1 for plan in plans))
+
     def test_document_ir_translation_supports_ru2zh_language_pair_and_terms(self) -> None:
         provider = EchoSingleItemTranslationProvider("反向直流电压")
         service = DocumentIRTranslationService(provider)

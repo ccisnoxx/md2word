@@ -15,6 +15,7 @@ if TYPE_CHECKING:
         DocumentJobCallbackMessageStoreProtocol,
         DocumentJobEventRepositoryProtocol,
         DocumentJobRepositoryProtocol,
+        DocumentJobTranslationBatchRepositoryProtocol,
     )
     from app.domains.document_jobs.recovery import DocumentJobRecoveryService
     from app.domains.files.repository import DocumentFileRepositoryProtocol
@@ -49,6 +50,7 @@ class AppRuntime:
     document_job_repository: DocumentJobRepositoryProtocol
     document_job_event_repository: DocumentJobEventRepositoryProtocol
     document_job_callback_message_store: DocumentJobCallbackMessageStoreProtocol
+    document_job_translation_batch_repository: DocumentJobTranslationBatchRepositoryProtocol
     internal_user_repository: InternalUserRepositoryProtocol
     saved_view_repository: SavedViewRepositoryProtocol
     terminology_release_repository: Any

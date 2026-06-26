@@ -17,6 +17,7 @@ DocumentFileType = Literal[
     "image_asset",
     "image_assets_archive",
     "generated_word",
+    "translation_batch_result",
     "ai_call_log",
     "ai_debug_archive",
     "template_docx",

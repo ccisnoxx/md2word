@@ -23,6 +23,7 @@ from app.domains.document_jobs.models import (
     DocumentJobRecord,
     DocumentJobStage,
     DocumentJobStatus,
+    DocumentJobTranslationBatchRecord,
     DocumentJobTranslationQaIssueType,
     DocumentJobTranslationQaStatus,
 )
@@ -57,6 +58,7 @@ from app.domains.translation.modes import (
 from app.domains.document_jobs.repository import (
     DocumentJobEventRepositoryProtocol,
     DocumentJobRepositoryProtocol,
+    DocumentJobTranslationBatchRepositoryProtocol,
 )
 from app.domains.document_jobs.execution import DocumentJobTaskQueueProtocol
 from app.services.document_ir.models import DocumentIR
@@ -165,6 +167,7 @@ class DocumentJobService:
         template_read_service: Any | None = None,
         term_version_service: Any | None = None,
         job_resource_snapshot_service: Any | None = None,
+        document_job_translation_batch_repository: DocumentJobTranslationBatchRepositoryProtocol | None = None,
         file_upload_service: Any | None = None,
     ) -> None:
         self.settings = settings
@@ -175,6 +178,7 @@ class DocumentJobService:
         self.template_read_service = template_read_service
         self.term_version_service = term_version_service
         self.job_resource_snapshot_service = job_resource_snapshot_service
+        self.document_job_translation_batch_repository = document_job_translation_batch_repository
         self.file_upload_service = file_upload_service
 
     def create_job(
@@ -360,6 +364,22 @@ class DocumentJobService:
 
         self.get_job(job_id, user=user)
         return self.event_repository.list_document_job_events(job_id)
+
+    def list_translation_batches(
+        self,
+        job_id: str,
+        *,
+        user: AuthenticatedUser,
+    ) -> list[DocumentJobTranslationBatchRecord]:
+        """只读返回任务当前 retry_count generation 的翻译 provider 批次诊断。"""
+
+        job = self.get_job(job_id, user=user)
+        if self.document_job_translation_batch_repository is None:
+            raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "翻译批次诊断仓储未配置。")
+        return self.document_job_translation_batch_repository.list_translation_batches(
+            job.id,
+            generation=job.retry_count,
+        )
 
     def list_visible_jobs(
         self,
@@ -1574,8 +1594,10 @@ class DocumentJobService:
             return file.id == job.source_file_id
         if file.file_type == "mineru_raw_result" and file.id == job.mineru_raw_result_file_id:
             return True
-        if file.file_type == "document_ir" and file.id == job.document_ir_file_id:
-            return True
+        if file.file_type == "document_ir":
+            if file.id == job.document_ir_file_id:
+                return True
+            return job.document_ir_file_id is None and file.id == job.source_document_ir_file_id
         if file.file_type == "generated_word" and file.id == job.result_file_id:
             return True
         return self._file_matches_current_retry_count(job, file)

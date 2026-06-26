@@ -16,7 +16,11 @@ from fastapi.responses import FileResponse, RedirectResponse
 from app.api.dependencies import get_runtime, get_trace_id, require_admin_user, require_current_user
 from app.domains.audit.models import ActorContext
 from app.domains.document_jobs.config_summary import build_document_job_config_summary
-from app.domains.document_jobs.models import DocumentJobEventRecord, DocumentJobRecord
+from app.domains.document_jobs.models import (
+    DocumentJobEventRecord,
+    DocumentJobRecord,
+    DocumentJobTranslationBatchRecord,
+)
 from app.core.errors import ApiError
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.schemas import DocumentFileSummaryResponse
@@ -54,6 +58,8 @@ from app.domains.document_jobs.schemas import (
     DocumentJobTranslationQaStateResponse,
     DocumentJobTranslationQaUpdateRequest,
     DocumentJobTranslationQaUpdateResponse,
+    DocumentJobTranslationBatchListResponse,
+    DocumentJobTranslationBatchSummaryResponse,
 )
 from app.services.auth.models import AuthenticatedUser
 
@@ -330,6 +336,21 @@ def get_document_job_files(
     return DocumentJobFileListResponse(
         job_id=job_id,
         files=[_build_document_file_summary_response(file) for file in files],
+    )
+
+
+@router.get("/{job_id}/translation-batches", response_model=DocumentJobTranslationBatchListResponse)
+def get_document_job_translation_batches(
+    job_id: str,
+    runtime: AppRuntime = Depends(get_runtime),
+    user: AuthenticatedUser = Depends(require_current_user),
+) -> DocumentJobTranslationBatchListResponse:
+    batches = runtime.document_job_service.list_translation_batches(job_id, user=user)
+    generation = batches[0].generation if batches else runtime.document_job_service.get_job(job_id, user=user).retry_count
+    return DocumentJobTranslationBatchListResponse(
+        job_id=job_id,
+        generation=generation,
+        items=[_build_translation_batch_summary_response(batch) for batch in batches],
     )
 
 
@@ -704,6 +725,42 @@ def _build_document_file_summary_response(file: DocumentFileRecord) -> DocumentF
         created_at=file.created_at,
         updated_at=file.updated_at,
         quality_evidence=_build_document_file_quality_evidence(file),
+    )
+
+
+def _build_translation_batch_summary_response(
+    batch: DocumentJobTranslationBatchRecord,
+) -> DocumentJobTranslationBatchSummaryResponse:
+    return DocumentJobTranslationBatchSummaryResponse(
+        batch_id=batch.id,
+        job_id=batch.job_id,
+        generation=batch.generation,
+        root_batch_id=batch.root_batch_id,
+        parent_batch_id=batch.parent_batch_id,
+        status=batch.status,
+        page_start=batch.page_start,
+        page_end=batch.page_end,
+        item_count=batch.item_count,
+        char_count=batch.char_count,
+        split_level=batch.split_level,
+        attempt_count=batch.attempt_count,
+        max_attempts=batch.max_attempts,
+        deterministic_batch_count=batch.deterministic_batch_count,
+        provider_call_budget=batch.provider_call_budget,
+        source_document_ir_file_id=batch.source_document_ir_file_id,
+        result_file_id=batch.result_file_id,
+        ai_call_log_file_ids=batch.ai_call_log_file_ids,
+        debug_archive_file_ids=batch.debug_archive_file_ids,
+        finish_reason=batch.finish_reason,
+        usage=batch.usage,
+        response_id=batch.response_id,
+        error_code=batch.error_code,
+        error_message=batch.error_message,
+        retryable=batch.retryable,
+        truncation_retry=batch.truncation_retry,
+        lease_expires_at=batch.lease_expires_at,
+        created_at=batch.created_at,
+        updated_at=batch.updated_at,
     )
 
 

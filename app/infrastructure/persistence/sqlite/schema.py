@@ -177,6 +177,21 @@ SQLITE_SCHEMA_STATEMENTS: tuple[str, ...] = (
     ON document_job_callback_messages (job_id, status, created_at)
     """,
     """
+    CREATE TABLE IF NOT EXISTS document_job_translation_batches (
+        batch_id TEXT PRIMARY KEY,
+        job_id TEXT NOT NULL,
+        generation INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_document_job_translation_batches_job_generation
+    ON document_job_translation_batches (job_id, generation, status, created_at, batch_id)
+    """,
+    """
     CREATE TABLE IF NOT EXISTS saved_views (
         view_id TEXT PRIMARY KEY,
         tenant_id TEXT NOT NULL,

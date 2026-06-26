@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.domains.document_jobs.models import DocumentJobCallbackMessage, DocumentJobEventRecord, DocumentJobRecord
+from app.domains.document_jobs.models import (
+    DocumentJobCallbackMessage,
+    DocumentJobEventRecord,
+    DocumentJobRecord,
+    DocumentJobTranslationBatchRecord,
+)
 from app.infrastructure.persistence.file.backend import FilePersistenceBackend
 
 
@@ -230,3 +235,75 @@ class FileDocumentJobCallbackMessageStore:
 
     def _read_message(self, path) -> DocumentJobCallbackMessage:
         return DocumentJobCallbackMessage.model_validate(self.backend.read_json(path, {}))
+
+
+class FileDocumentJobTranslationBatchRepository:
+    """用 file backend 读写 provider translation batch 记录。"""
+
+    def __init__(self, backend: FilePersistenceBackend) -> None:
+        self.backend = backend
+
+    def create_translation_batch(self, record: DocumentJobTranslationBatchRecord) -> DocumentJobTranslationBatchRecord:
+        self._write_record(record)
+        return record
+
+    def get_translation_batch(self, batch_id: str) -> DocumentJobTranslationBatchRecord | None:
+        path = self.backend.document_job_translation_batches_dir / f"{batch_id}.json"
+        if not path.exists():
+            return None
+        return DocumentJobTranslationBatchRecord.model_validate(self.backend.read_json(path, {}))
+
+    def list_translation_batches(
+        self,
+        job_id: str,
+        *,
+        generation: int | None = None,
+    ) -> list[DocumentJobTranslationBatchRecord]:
+        records = [
+            self._read_record(path)
+            for path in sorted(self.backend.document_job_translation_batches_dir.glob("*.json"))
+        ]
+        filtered = [
+            record
+            for record in records
+            if record.job_id == job_id and (generation is None or record.generation == generation)
+        ]
+        return sorted(filtered, key=lambda item: (item.created_at, item.id))
+
+    def update_translation_batch(self, batch_id: str, **patch: Any) -> DocumentJobTranslationBatchRecord:
+        existing = self.get_translation_batch(batch_id)
+        if existing is None:
+            raise FileNotFoundError(f"translation batch 不存在: {batch_id}")
+        updated = DocumentJobTranslationBatchRecord.model_validate(
+            existing.model_copy(update=patch).model_dump(mode="python")
+        )
+        self._write_record(updated)
+        return updated
+
+    def update_translation_batch_if_current(
+        self,
+        batch_id: str,
+        *,
+        allowed_statuses: set[str],
+        expected_generation: int,
+        **patch: Any,
+    ) -> DocumentJobTranslationBatchRecord | None:
+        existing = self.get_translation_batch(batch_id)
+        if existing is None:
+            raise FileNotFoundError(f"translation batch 不存在: {batch_id}")
+        if existing.generation != expected_generation or existing.status not in allowed_statuses:
+            return None
+        updated = DocumentJobTranslationBatchRecord.model_validate(
+            existing.model_copy(update=patch).model_dump(mode="python")
+        )
+        self._write_record(updated)
+        return updated
+
+    def _write_record(self, record: DocumentJobTranslationBatchRecord) -> None:
+        self.backend.write_json(
+            self.backend.document_job_translation_batches_dir / f"{record.id}.json",
+            record.model_dump(mode="json"),
+        )
+
+    def _read_record(self, path) -> DocumentJobTranslationBatchRecord:
+        return DocumentJobTranslationBatchRecord.model_validate(self.backend.read_json(path, {}))

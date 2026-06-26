@@ -19,6 +19,7 @@ from app.domains.translation.models import (
     TranslationTermMatchTraceRecord,
     TranslationTextItem,
 )
+from app.domains.translation.provider import TranslationProviderResponseError
 from app.domains.files import FileUploadService
 
 
@@ -43,9 +44,11 @@ class TranslationCallAuditRecorder:
         self.trace_id = trace_id
         self.save_full_text = save_full_text
         self.config_resolver = config_resolver
-        self.call_id = f"aicall_{uuid4().hex[:12]}"
+        self.call_id: str | None = None
         self.call_log_file_id: str | None = None
+        self.call_log_file_ids: list[str] = []
         self.debug_archive_file_id: str | None = None
+        self.debug_archive_file_ids: list[str] = []
 
     def record_success(
         self,
@@ -56,14 +59,16 @@ class TranslationCallAuditRecorder:
     ) -> None:
         """保存成功调用的 metadata-only 审计记录，并按任务开关保存全文归档。"""
 
+        call_id = self._new_call_id()
         self._write_call_log(
+            call_id=call_id,
             request=request,
             result=result,
             status="succeeded",
             duration_ms=duration_ms,
             error=None,
         )
-        self._write_debug_archive(request=request, result=result, error=None)
+        self._write_debug_archive(call_id=call_id, request=request, result=result, error=None)
 
     def record_failure(
         self,
@@ -79,18 +84,37 @@ class TranslationCallAuditRecorder:
             "type": error.__class__.__name__,
             "message": self._redact_error_message(str(error)),
         }
+        if isinstance(error, TranslationProviderResponseError):
+            error_payload.update(
+                {
+                    "finish_reason": error.finish_reason,
+                    "usage": error.usage,
+                    "response_id": error.response_id,
+                    "content_length": error.content_length,
+                    "content_sha256": error.content_sha256,
+                    "suspected_truncation": error.suspected_truncation,
+                }
+            )
+        call_id = self._new_call_id()
         self._write_call_log(
+            call_id=call_id,
             request=request,
             result=result,
             status="failed",
             duration_ms=duration_ms,
             error=error_payload,
         )
-        self._write_debug_archive(request=request, result=result, error=error_payload)
+        self._write_debug_archive(call_id=call_id, request=request, result=result, error=error_payload)
+
+    def _new_call_id(self) -> str:
+        call_id = f"aicall_{uuid4().hex[:12]}"
+        self.call_id = call_id
+        return call_id
 
     def _write_call_log(
         self,
         *,
+        call_id: str,
         request: TranslationProviderRequest,
         result: TranslationProviderResult | None,
         status: str,
@@ -100,7 +124,7 @@ class TranslationCallAuditRecorder:
         provider = self._provider_summary()
         payload = {
             "schema_version": "ai-call-log/v1",
-            "call_id": self.call_id,
+            "call_id": call_id,
             "job_id": self.job.id,
             "trace_id": self.trace_id,
             "status": status,
@@ -112,6 +136,7 @@ class TranslationCallAuditRecorder:
             "term_snapshot_hash": self.term_version.snapshot_hash if self.term_version is not None else None,
             "term_count": len(request.terms),
             "glossary_trace": self._term_trace_summary(request.term_traces),
+            "batch": self._batch_summary(request),
             "request": {
                 "item_count": len(request.items),
                 "char_count": sum(len(item.text) for item in request.items),
@@ -129,24 +154,28 @@ class TranslationCallAuditRecorder:
             job_id=self.job.id,
             created_by=self.job.created_by,
             file_type="ai_call_log",
-            filename=f"{self.call_id}.json",
+            filename=f"{call_id}.json",
             mime_type="application/json",
             content=self._json_bytes(payload),
             metadata={
-                "call_id": self.call_id,
+                "call_id": call_id,
                 "status": status,
                 "provider_backend": provider["backend"],
                 "language_pair": request.language_pair,
+                "batch_id": request.batch_id,
+                "attempt": request.attempt,
                 "item_count": len(request.items),
                 "term_version_id": self.term_version.term_version_id if self.term_version is not None else None,
                 "retry_count": self.job.retry_count,
             },
         )
         self.call_log_file_id = record.id
+        self.call_log_file_ids.append(record.id)
 
     def _write_debug_archive(
         self,
         *,
+        call_id: str,
         request: TranslationProviderRequest,
         result: TranslationProviderResult | None,
         error: dict | None,
@@ -156,7 +185,7 @@ class TranslationCallAuditRecorder:
         provider = self._provider_summary()
         payload = {
             "schema_version": "translation-debug-archive/v1",
-            "call_id": self.call_id,
+            "call_id": call_id,
             "job_id": self.job.id,
             "trace_id": self.trace_id,
             "provider": provider,
@@ -172,13 +201,15 @@ class TranslationCallAuditRecorder:
             job_id=self.job.id,
             created_by=self.job.created_by,
             file_type="ai_debug_archive",
-            filename=f"{self.call_id}_debug.json",
+            filename=f"{call_id}_debug.json",
             mime_type="application/json",
             content=self._json_bytes(payload),
             metadata={
-                "call_id": self.call_id,
+                "call_id": call_id,
                 "provider_backend": provider["backend"],
                 "language_pair": request.language_pair,
+                "batch_id": request.batch_id,
+                "attempt": request.attempt,
                 "contains_full_text": True,
                 "retention_days": max(1, self.settings.translation_debug_archive_retention_days),
                 "retry_count": self.job.retry_count,
@@ -186,6 +217,7 @@ class TranslationCallAuditRecorder:
             expires_at=expires_at,
         )
         self.debug_archive_file_id = record.id
+        self.debug_archive_file_ids.append(record.id)
 
     def _response_summary(self, result: TranslationProviderResult | None) -> dict | None:
         if result is None:
@@ -195,6 +227,26 @@ class TranslationCallAuditRecorder:
             "char_count": sum(len(item.text) for item in result.items),
             "sha256": self._hash_json(self._full_response_payload(result)),
             "redacted_items": self._redacted_items_summary(result.items),
+            "finish_reason": result.finish_reason,
+            "usage": result.usage,
+            "response_id": result.response_id,
+            "provider_trace_id": result.provider_trace_id,
+            "content_length": result.content_length,
+            "content_sha256": result.content_sha256,
+        }
+
+    def _batch_summary(self, request: TranslationProviderRequest) -> dict | None:
+        if request.batch_id is None:
+            return None
+        return {
+            "batch_id": request.batch_id,
+            "attempt": request.attempt,
+            "split_level": request.split_level,
+            "parent_batch_id": request.parent_batch_id,
+            "page_start": request.page_start,
+            "page_end": request.page_end,
+            "item_count": len(request.items),
+            "char_count": sum(len(item.text) for item in request.items),
         }
 
     def _full_request_payload(self, request: TranslationProviderRequest) -> dict:

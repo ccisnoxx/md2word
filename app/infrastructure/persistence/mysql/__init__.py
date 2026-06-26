@@ -16,6 +16,7 @@ from app.infrastructure.persistence.mysql.document_jobs import (
     MysqlDocumentJobCallbackMessageStore,
     MysqlDocumentJobEventRepository,
     MysqlDocumentJobRepository,
+    MysqlDocumentJobTranslationBatchRepository,
 )
 from app.infrastructure.persistence.mysql.files import MysqlDocumentFileRepository, MysqlJobFileRepository
 from app.infrastructure.persistence.mysql.internal_users import MysqlInternalUserRepository
@@ -37,6 +38,7 @@ __all__ = [
     "MysqlDocumentJobCallbackMessageStore",
     "MysqlDocumentJobEventRepository",
     "MysqlDocumentJobRepository",
+    "MysqlDocumentJobTranslationBatchRepository",
     "MysqlInternalUserRepository",
     "MysqlJobEventRepository",
     "MysqlJobFileRepository",

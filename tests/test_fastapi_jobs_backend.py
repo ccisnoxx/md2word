@@ -46,7 +46,11 @@ from app.domains.audit.service import AuditService
 from app.domains.document_jobs.models import DocumentJobCallbackMessage, DocumentJobRecord
 from app.services.auth import AuthService, hash_password
 from app.domains.users.service import InternalUserManagementService
-from app.domains.document_jobs.execution import DocumentJobExecutionService, EagerDocumentJobTaskQueue
+from app.domains.document_jobs.execution import (
+    DocumentJobExecutionService,
+    EagerDocumentJobTaskQueue,
+    EagerDocumentTranslationBatchTaskQueue,
+)
 from app.domains.document_jobs.incidents import DocumentJobIncidentService
 from app.domains.document_jobs.recovery import DocumentJobRecoveryService
 from app.domains.document_jobs.service import DocumentJobService
@@ -85,7 +89,7 @@ from app.domains.translation.modes import derive_translation_term_set_id
 from app.domains.translation.provider_config import AiProviderConfigService
 from app.domains.translation.profiles_service import DEFAULT_TRANSLATION_PROFILE_ID, TranslationProfileVersionService
 from app.domains.translation.proposals_service import TranslationTermProposalService
-from app.domains.translation.provider import build_translation_provider
+from app.domains.translation.provider import TranslationProviderResponseError, build_translation_provider
 from app.domains.translation.term_set_version_service import TranslationTermSetVersionService
 from app.domains.translation.term_version_service import TermVersionService
 from app.workers.stage_worker import StageWorker
@@ -248,6 +252,26 @@ class FakeDocumentJobTranslationProvider:
                 for item in request.items
             )
         )
+
+
+class TruncatingOnceDocumentJobTranslationProvider(FakeDocumentJobTranslationProvider):
+    def __init__(self) -> None:
+        super().__init__(raise_error=False)
+        self.truncated_once = False
+
+    def translate(self, request):
+        if not self.truncated_once and len(request.items) > 1:
+            self.requests.append(request)
+            self.truncated_once = True
+            raise TranslationProviderResponseError(
+                "provider returned incomplete JSON",
+                finish_reason="length",
+                usage={"completion_tokens": 8192},
+                response_id="resp_truncated_once",
+                content='{"items": [',
+                suspected_truncation=True,
+            )
+        return super().translate(request)
 
 
 class FakeAlertDeliveryProvider:
@@ -460,6 +484,7 @@ def build_test_runtime(
     document_job_repository = persistence_adapters.document_job_repository
     document_job_event_repository = persistence_adapters.document_job_event_repository
     document_job_callback_message_store = persistence_adapters.document_job_callback_message_store
+    document_job_translation_batch_repository = persistence_adapters.document_job_translation_batch_repository
     internal_user_repository = persistence_adapters.internal_user_repository
     saved_view_repository = persistence_adapters.saved_view_repository
     stage_message_store = persistence_adapters.stage_message_store
@@ -519,6 +544,7 @@ def build_test_runtime(
         document_job_repository,
         document_job_event_repository,
         document_job_callback_message_store,
+        document_job_translation_batch_repository,
         document_file_repository,
         file_upload_service,
         document_ir_service,
@@ -535,6 +561,12 @@ def build_test_runtime(
         if document_jobs_worker_backend == "eager"
         else None
     )
+    document_translation_batch_task_queue = (
+        EagerDocumentTranslationBatchTaskQueue(document_job_execution_service)
+        if document_jobs_worker_backend == "eager"
+        else None
+    )
+    document_job_execution_service.set_translation_batch_task_queue(document_translation_batch_task_queue)
     document_job_recovery_service = DocumentJobRecoveryService(
         settings,
         document_job_repository,
@@ -551,6 +583,7 @@ def build_test_runtime(
         template_read_service,
         term_version_service,
         job_resource_snapshot_service,
+        document_job_translation_batch_repository=document_job_translation_batch_repository,
         file_upload_service=file_upload_service,
     )
     document_job_incident_service = DocumentJobIncidentService(document_job_service)
@@ -706,6 +739,7 @@ def build_test_runtime(
         document_job_repository=document_job_repository,
         document_job_event_repository=document_job_event_repository,
         document_job_callback_message_store=document_job_callback_message_store,
+        document_job_translation_batch_repository=document_job_translation_batch_repository,
         internal_user_repository=internal_user_repository,
         saved_view_repository=saved_view_repository,
         terminology_release_repository=persistence_adapters.terminology_release_repository,
@@ -9380,7 +9414,11 @@ class FastAPIJobsBackendTests(TestCase):
                 translation_debug_archive_enabled=True,
             )
             provider = FakeDocumentJobTranslationProvider()
-            runtime.document_ir_translation_service = DocumentIRTranslationService(provider)
+            runtime.document_ir_translation_service = DocumentIRTranslationService(
+                provider,
+                max_items_per_request=3,
+                max_chars_per_request=10_000,
+            )
             runtime.document_job_execution_service.document_ir_translation_service = runtime.document_ir_translation_service
             runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = make_english_mineru_zip_bytes()
             app = create_app(runtime)
@@ -9401,6 +9439,10 @@ class FastAPIJobsBackendTests(TestCase):
                 job_id = create_response.json()["job_id"]
                 events_response = client.get(f"/api/v1/document-jobs/{job_id}/events", headers=headers)
                 files_response = client.get(f"/api/v1/document-jobs/{job_id}/files", headers=headers)
+                batches_response = client.get(
+                    f"/api/v1/document-jobs/{job_id}/translation-batches",
+                    headers=headers,
+                )
 
             stored_job = runtime.document_job_repository.get_document_job(job_id)
             files = [
@@ -9409,38 +9451,64 @@ class FastAPIJobsBackendTests(TestCase):
                 if file.job_id == job_id
             ]
             files_by_type = {file.file_type: file for file in files}
+            ai_log_files = sorted(
+                [file for file in files if file.file_type == "ai_call_log"],
+                key=lambda item: (item.created_at, item.id),
+            )
+            debug_archive_files = sorted(
+                [file for file in files if file.file_type == "ai_debug_archive"],
+                key=lambda item: (item.created_at, item.id),
+            )
             ir_payload = json.loads(
                 runtime.file_upload_service.read_file_content(files_by_type["document_ir"]).decode("utf-8")
             )
-            ai_log_text = runtime.file_upload_service.read_file_content(files_by_type["ai_call_log"]).decode("utf-8")
-            ai_log_payload = json.loads(ai_log_text)
-            debug_text = runtime.file_upload_service.read_file_content(files_by_type["ai_debug_archive"]).decode("utf-8")
-            debug_payload = json.loads(debug_text)
+            ai_log_payloads = [
+                json.loads(runtime.file_upload_service.read_file_content(file).decode("utf-8"))
+                for file in ai_log_files
+            ]
+            ai_log_text = "\n".join(
+                runtime.file_upload_service.read_file_content(file).decode("utf-8")
+                for file in ai_log_files
+            )
+            debug_payloads = [
+                json.loads(runtime.file_upload_service.read_file_content(file).decode("utf-8"))
+                for file in debug_archive_files
+            ]
+            debug_text = "\n".join(
+                runtime.file_upload_service.read_file_content(file).decode("utf-8")
+                for file in debug_archive_files
+            )
+            batch_result_files = [file for file in files if file.file_type == "translation_batch_result"]
 
         self.assertEqual(create_response.status_code, 201)
         self.assertEqual(create_response.json()["status"], "succeeded")
         self.assertIsNotNone(stored_job)
         self.assertEqual(stored_job.term_version_id, "en2zh@v1")
         self.assertTrue(stored_job.debug_full_text_enabled)
-        self.assertEqual(len(provider.requests), 1)
+        self.assertEqual([len(request.items) for request in provider.requests], [3, 3, 2])
         self.assertEqual(ir_payload["metadata"]["document_language"], "zh")
         self.assertEqual(ir_payload["blocks"][0]["text"], "1 特性")
         self.assertEqual(ir_payload["blocks"][1]["text"], "输入失调电压很低。")
         self.assertIn("<th>参数</th>", ir_payload["blocks"][2]["html"])
         self.assertEqual(ir_payload["blocks"][4]["list_items"], ["低噪声", "高压摆率"])
         self.assertEqual(files_by_type["document_ir"].metadata["translation"]["applied"], True)
-        self.assertEqual(files_by_type["ai_call_log"].metadata["status"], "succeeded")
-        self.assertEqual(ai_log_payload["status"], "succeeded")
-        self.assertEqual(ai_log_payload["request"]["item_count"], 8)
-        self.assertIn("sha256:", ai_log_payload["request"]["redacted_items"][0]["sha256"])
+        self.assertEqual(len(ai_log_files), 3)
+        self.assertEqual(len(debug_archive_files), 3)
+        self.assertEqual(len(batch_result_files), 3)
+        self.assertTrue(all(file.metadata["status"] == "succeeded" for file in ai_log_files))
+        self.assertTrue(all(payload["status"] == "succeeded" for payload in ai_log_payloads))
+        self.assertEqual(sum(payload["request"]["item_count"] for payload in ai_log_payloads), 8)
+        self.assertIn("sha256:", ai_log_payloads[0]["request"]["redacted_items"][0]["sha256"])
         self.assertNotIn("The input offset voltage is low.", ai_log_text)
         self.assertIn("The input offset voltage is low.", debug_text)
         self.assertIn("输入失调电压很低。", debug_text)
-        self.assertEqual(debug_payload["schema_version"], "translation-debug-archive/v1")
-        self.assertEqual(files_by_type["ai_debug_archive"].metadata["contains_full_text"], True)
-        self.assertLessEqual(
-            files_by_type["ai_debug_archive"].expires_at - files_by_type["ai_debug_archive"].created_at,
-            timedelta(days=1, seconds=1),
+        self.assertTrue(all(payload["schema_version"] == "translation-debug-archive/v1" for payload in debug_payloads))
+        self.assertTrue(all(file.metadata["contains_full_text"] is True for file in debug_archive_files))
+        self.assertTrue(
+            all(
+                file.expires_at - file.created_at <= timedelta(days=1, seconds=1)
+                for file in debug_archive_files
+            )
         )
         event_types = [event["event_type"] for event in events_response.json()["items"]]
         self.assertIn("ai_call_logged", event_types)
@@ -9449,6 +9517,13 @@ class FastAPIJobsBackendTests(TestCase):
         file_types = [file["file_type"] for file in files_response.json()["files"]]
         self.assertIn("ai_call_log", file_types)
         self.assertIn("ai_debug_archive", file_types)
+        self.assertEqual(batches_response.status_code, 200)
+        batches_payload = batches_response.json()
+        self.assertEqual(len(batches_payload["items"]), 3)
+        self.assertEqual([item["status"] for item in batches_payload["items"]], ["succeeded", "succeeded", "succeeded"])
+        self.assertEqual(sum(item["item_count"] for item in batches_payload["items"]), 8)
+        self.assertTrue(all(item["result_file_id"] for item in batches_payload["items"]))
+        self.assertTrue(all(item["ai_call_log_file_ids"] for item in batches_payload["items"]))
 
     def test_document_job_en2zh_debug_full_text_is_admin_only(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -9640,17 +9715,87 @@ class FastAPIJobsBackendTests(TestCase):
             debug_archives = [file for file in files if file.file_type == "ai_debug_archive"]
             ai_log_text = runtime.file_upload_service.read_file_content(ai_logs[0]).decode("utf-8")
             ai_log_payload = json.loads(ai_log_text)
+            batches = runtime.document_job_translation_batch_repository.list_translation_batches(job_id)
 
         self.assertEqual(create_response.status_code, 201)
         self.assertEqual(create_response.json()["status"], "failed")
         self.assertIsNotNone(stored_job)
         self.assertEqual(stored_job.error_code, "translation_failed")
-        self.assertEqual(len(provider.requests), 1)
-        self.assertEqual(len(ai_logs), 1)
+        self.assertEqual(len(provider.requests), 2)
+        self.assertEqual(len(ai_logs), 2)
         self.assertEqual(debug_archives, [])
         self.assertEqual(ai_log_payload["status"], "failed")
         self.assertEqual(ai_log_payload["error"]["type"], "RuntimeError")
         self.assertNotIn("The input offset voltage is low.", ai_log_text)
+        self.assertEqual(len(batches), 1)
+        self.assertEqual(batches[0].status, "failed")
+        self.assertEqual(batches[0].attempt_count, 2)
+        self.assertFalse(batches[0].retryable)
+
+    def test_document_job_en2zh_truncated_batch_is_split_and_fanned_in(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            provider = TruncatingOnceDocumentJobTranslationProvider()
+            runtime.document_ir_translation_service = DocumentIRTranslationService(provider)
+            runtime.document_job_execution_service.document_ir_translation_service = runtime.document_ir_translation_service
+            runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = make_english_mineru_zip_bytes()
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers, filename="english-truncated.pdf")
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={
+                        "source_file_id": source_file["id"],
+                        "mode": "en2zh_pdf_to_word",
+                        "document_language": "en",
+                    },
+                )
+                job_id = create_response.json()["job_id"]
+                batches_response = client.get(
+                    f"/api/v1/document-jobs/{job_id}/translation-batches",
+                    headers=headers,
+                )
+
+            stored_job = runtime.document_job_repository.get_document_job(job_id)
+            files = [
+                file
+                for file in runtime.document_file_repository.list_document_files()
+                if file.job_id == job_id
+            ]
+            ir_file = next(file for file in files if file.id == stored_job.document_ir_file_id)
+            ir_payload = json.loads(runtime.file_upload_service.read_file_content(ir_file).decode("utf-8"))
+            batches = runtime.document_job_translation_batch_repository.list_translation_batches(job_id)
+            split_batches = [batch for batch in batches if batch.status == "split"]
+            succeeded_batches = [batch for batch in batches if batch.status == "succeeded"]
+            events = runtime.document_job_event_repository.list_document_job_events(job_id)
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.json()["status"], "succeeded")
+        self.assertIsNotNone(stored_job)
+        self.assertEqual(stored_job.status, "succeeded")
+        self.assertEqual(len(provider.requests), 3)
+        self.assertEqual(len(split_batches), 1)
+        self.assertEqual(split_batches[0].finish_reason, "length")
+        self.assertEqual(split_batches[0].error_code, "translation_provider_truncated")
+        self.assertEqual({batch.provider_call_budget for batch in batches}, {12})
+        self.assertEqual(len(succeeded_batches), 2)
+        self.assertEqual(sum(batch.item_count for batch in succeeded_batches), 8)
+        self.assertEqual(ir_payload["blocks"][1]["text"], "输入失调电压很低。")
+        self.assertEqual(batches_response.status_code, 200)
+        self.assertEqual(
+            sorted(item["status"] for item in batches_response.json()["items"]),
+            ["split", "succeeded", "succeeded"],
+        )
+        self.assertIn("translation_batch_split", [event.event_type for event in events])
 
     def test_document_job_retry_translation_failure_resumes_after_mineru_and_filters_old_files(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -9719,18 +9864,18 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(retry_response.status_code, 200)
         self.assertEqual(retry_response.json()["status"], "succeeded")
         self.assertEqual(retry_response.json()["retry_count"], 1)
-        self.assertEqual(len(provider.requests), 2)
+        self.assertEqual(len(provider.requests), 3)
         self.assertEqual(len(runtime.document_job_execution_service.fake_mineru_client.calls), 1)
         self.assertEqual(len(runtime.document_job_execution_service.fake_mineru_client.download_calls), 1)
         self.assertEqual(retry_events[-1].payload["resume_stage"], "parsed")
         self.assertEqual(old_log_download_response.status_code, 409)
 
         repository_file_types = [file.file_type for file in all_job_files]
-        self.assertEqual(repository_file_types.count("ai_call_log"), 2)
-        self.assertEqual(repository_file_types.count("image_assets_archive"), 2)
+        self.assertEqual(repository_file_types.count("ai_call_log"), 3)
+        self.assertEqual(repository_file_types.count("image_assets_archive"), 1)
         visible_file_types = [file["file_type"] for file in files_response.json()["files"]]
         self.assertEqual(visible_file_types.count("ai_call_log"), 1)
-        self.assertEqual(visible_file_types.count("image_assets_archive"), 1)
+        self.assertEqual(visible_file_types.count("image_assets_archive"), 0)
         self.assertIn("generated_word", visible_file_types)
         self.assertNotIn("image_asset", visible_file_types)
 
