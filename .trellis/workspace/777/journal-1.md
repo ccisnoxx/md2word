@@ -38,3 +38,36 @@ Completed Phase 1 backend batching validation: migrated stale repository tests t
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: Translation batch diagnostics UI
+
+**Date**: 2026-06-26
+**Task**: Translation batch diagnostics UI
+**Branch**: `main`
+
+### Summary
+
+Implemented Phase 2 read-only translation provider batch diagnostics in Job Detail, added frontend API/types/helpers/tests, documented the translation-batches API, and captured frontend API consumption guidance in Trellis specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ae7fb5e9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
