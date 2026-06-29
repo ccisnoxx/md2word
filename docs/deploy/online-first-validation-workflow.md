@@ -23,6 +23,38 @@ last_reviewed: 2026-06-29
 - P0 Golden Sample 只使用 `tests/fixtures/golden_samples/pdfs/` 下 4 个 OPA228 technical datasheet PDF，不扩展为 10-20 份样本作为 P0 阻塞条件。
 - 远程登录信息存放在私密文件 `/Users/sc/work_file/bak_file/VPS.txt`。不要把其中的账号、密码、密钥、IP 细节复制到仓库文档、任务记录或对话输出中。
 
+### Codex SSH profile 解析规则
+
+`VPS.txt` 使用显式 `CODEX_SSH_PROFILE` 块，Codex 自动连接时必须按 profile 块解析，不按 `hostdzire` 标签附近固定窗口截取。仓库只记录脱敏格式：
+
+```text
+--- CODEX_SSH_PROFILE_BEGIN ---
+name: hostdzire
+role: md2word-runtime
+host: <private-host-or-ip>
+port: <private-port>
+user: <private-user>
+md2word_release_root: /root/md2word-releases
+md2word_current_api_container: md2word-p0-api-1
+md2word_current_worker_container: md2word-p0-worker-1
+md2word_compose_project: md2word-p0
+md2word_internal_api_base_url: http://127.0.0.1:18000
+codex_probe: test -d /root/md2word-releases && docker inspect md2word-p0-api-1 >/dev/null 2>&1
+private_key: |
+  -----BEGIN ... PRIVATE KEY-----
+  <private-key-body>
+  -----END ... PRIVATE KEY-----
+--- CODEX_SSH_PROFILE_END ---
+```
+
+自动化连接要求：
+
+- 选择 `name: hostdzire`，完整读取 `private_key: |` 到 END 行。
+- 将 key 写入 `/private/tmp` 临时文件，`chmod 600`，使用后删除。
+- 用 `ssh -i <tmp-key> -p <port> <user>@<host> bash -s`，把 probe 或部署脚本通过 stdin 传给远端。
+- 不使用未引用的 `bash -lc <long command>`，避免管道、重定向、Go template 或引号在 SSH 参数层被拆坏。
+- 先跑 `codex_probe`，确认存在 `/root/md2word-releases` 且 `md2word-p0-api-1` 可 `docker inspect`，再继续部署。
+
 ## 本地阶段
 
 本地只负责编辑和不依赖真实服务的轻量检查。不要为了验收而在本地启动前端、后端、MySQL、Redis/Celery、Worker 或 Playwright smoke。

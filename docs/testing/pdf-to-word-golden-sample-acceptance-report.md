@@ -3,20 +3,36 @@ doc_type: test-report
 slug: pdf-to-word-golden-sample-acceptance-report
 component: pdf-to-word-backend
 status: current
-summary: P0 Golden Sample 验收状态；2026-06-24 document-ir-renderer-parity 本地收口通过，最新 hostdzire 正式回归和 admin 签字待执行。
+summary: P0 Golden Sample 验收状态；2026-06-29 hostdzire release 20d496e 的 4 个 canonical samples 自动回归和 admin 签字通过。
 tags: [testing, golden-sample, pdf, word, p0]
-last_reviewed: 2026-06-24
+last_reviewed: 2026-06-29
 ---
 
 # P0 Golden Sample 验收报告
 
 ## 当前结论
 
-2026-06-24 收口结论：第三阶段 `document-ir-renderer-parity` 已完成本地实现收口和正式链路 targeted 验证，`pipeline-parity-gap` 的修复入口已从本地 sandbox 收敛到 `document_jobs -> DocumentIR -> app/services/renderer/*` 链路。
+2026-06-29 正式结论：hostdzire release `20d496e` 已完成 P0 Golden Sample 正式回归和 admin manual signoff，`report.json` / `report.md` 显示 `p0_release_ready=true`。
 
-本轮不能直接声明 `p0_release_ready=true`。最新 P0 Golden Sample 正式回归必须在 hostdzire 运行真实 API、Worker、MySQL、Redis/Celery 和 MinerU，并由 admin 对同一 run_dir 完成人工签字。2026-06-17 的 hostdzire admin signoff 是历史基线，只能证明当时发布通过，不能替代本轮 2026-06-24 变更后的发布证据。
+本次发布证据来自 hostdzire 真实 API、Worker、MySQL、Redis/Celery 和 MinerU 链路；4 个 canonical OPA228 样本自动链路全部成功，admin 对同一 run_dir 完成签字。2026-06-17 的 hostdzire admin signoff 仍只保留为历史基线。
 
-当前状态：`ready_for_hostdzire_validation`。本地 release check 通过；hostdzire Golden Sample preflight、真实 4 样本回归、标准渲染截图和 admin manual signoff 均为外部环境待执行。
+当前状态：`p0_release_ready=true` for release `20d496e`。
+
+| 项目 | 结果 |
+|---|---|
+| release dir | `/root/md2word-releases/20d496e` |
+| commit | `20d496ed1df0c1d3eee94c0e6dfac0c0e6653ed3` |
+| deployment id | `hostdzire-20260629T070215Z-20d496e` |
+| run dir | `/root/md2word-releases/20d496e/tests/tmp/golden_sample_runs/20260629T070506Z` |
+| release check + preflight | 通过；173 tests OK；4 个 canonical PDF 齐全；无 readiness / P0 blocker |
+| 自动回归 | 4/4 succeeded；4/4 DOCX openable；pass rate 100% |
+| manual signoff | `reviewer_role=admin`，`final_signoff=true`，4 个样本 `verdict=pass` |
+| `gs-004` quality flags | `docx_manual_list_markers:10`、`docx_unstyled_heading_candidates:17`；admin notes 已说明为非阻断 |
+| 最终发布字段 | `p0_release_ready=true`，`p0_release_blocker=none` |
+
+## 2026-06-24 收口背景
+
+第三阶段 `document-ir-renderer-parity` 已完成本地实现收口和正式链路 targeted 验证，`pipeline-parity-gap` 的修复入口已从本地 sandbox 收敛到 `document_jobs -> DocumentIR -> app/services/renderer/*` 链路。
 
 ## 第三阶段完成证据
 
@@ -42,7 +58,7 @@ last_reviewed: 2026-06-24
 
 测试输出中只出现 FastAPI/Starlette deprecation warnings，不影响本轮 P0 renderer/document_jobs 验收判断。
 
-## 正式链路验收待执行
+## 正式链路验收流程
 
 正式 P0 验收只统计 `tests/fixtures/golden_samples/manifest.yaml` 中 4 个 canonical samples：`gs-003`、`gs-004`、`gs-006`、`gs-008`。不扩大样本范围，不新增 PDF。
 
