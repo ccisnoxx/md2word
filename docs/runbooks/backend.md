@@ -115,6 +115,7 @@ JOBS_REPOSITORY_BACKEND=mysql
 DOCUMENT_JOBS_WORKER_BACKEND=celery
 DOCUMENT_JOBS_CELERY_BROKER_URL=redis://redis:6379/0
 DOCUMENT_JOBS_CELERY_QUEUE=document-jobs
+DOCUMENT_JOBS_TRANSLATION_BATCH_CELERY_QUEUE=document-translation-batches
 ```
 
 启动 API 后另起 Document Jobs worker：
@@ -128,8 +129,8 @@ DOCUMENT_JOBS_CELERY_QUEUE=document-jobs
 - `/health/ready` 返回 `effective_repository_backend=mysql`
 - `/health/ready` 返回 `document_jobs_worker_backend=celery`
 - `/health/ready` 不出现 `document_jobs_metadata_store_not_mysql` 或 `document_jobs_worker_backend_eager_in_production`
-- `/health/ready` 不出现 `document_jobs_celery_broker_url_missing` 或 `document_jobs_celery_queue_missing`
-- 生产部署保持单 worker；多 worker 原子并发语义不是当前 P0 范围
+- `/health/ready` 不出现 `document_jobs_celery_broker_url_missing`、`document_jobs_celery_queue_missing` 或 `document_jobs_translation_batch_celery_queue_missing`
+- 生产部署默认保持单 worker，但该 worker 必须同时订阅 `document-jobs` 和 `document-translation-batches`，否则 P1 翻译任务会在 `ir_converting` 阶段留下 queued batch；多 worker 原子并发语义不是当前 P0 范围
 
 ## 2.1 legacy stage worker 模式
 
@@ -397,7 +398,7 @@ GOLDEN_SAMPLE_PASSWORD='<admin-password>' \
 - file -> MySQL metadata migration fake-MySQL smoke
 - job workflow policy tests
 - JSON logging tests
-- 可选 `--runtime-url` 真实 `/health/ready` 检查，要求 `deployment_init_ready=true`、`p0_document_jobs_ready=true`、`effective_repository_backend=mysql` 和 `document_jobs_worker_backend=celery`
+- 可选 `--runtime-url` 真实 `/health/ready` 检查，要求 `deployment_init_ready=true`、`p0_document_jobs_ready=true`、`effective_repository_backend=mysql`、`document_jobs_worker_backend=celery`，且 `document_jobs_translation_batch_celery_queue` 已配置
 - 可选 `--golden-sample-preflight`，只检查 4 个 canonical PDF、admin 登录角色和运行时门禁，不提交真实转换任务
 
 如果 OpenAPI 分项失败，说明当前代码生成的 OpenAPI 与 `docs/api/openapi.json` 不一致；先确认 API 变更是否预期，再重新导出并提交快照。无 `--runtime-url` 的本地 release check 不访问真实 MinerU、OpenAI 或公网；带 `--runtime-url` 的运行时门禁应在 hostdzire 执行。

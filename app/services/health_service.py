@@ -163,6 +163,7 @@ class HealthService:
             "worker_mode": self.settings.jobs_worker_mode,
             "document_jobs_worker_backend": self.settings.document_jobs_worker_backend,
             "document_jobs_celery_queue": self.settings.document_jobs_celery_queue,
+            "document_jobs_translation_batch_celery_queue": self.settings.document_jobs_translation_batch_celery_queue,
             "stage_dispatcher": self.stage_dispatcher_backend,
             "stage_message_store": self.stage_message_store_backend,
             "artifact_storage": self.artifact_storage_backend,
@@ -327,6 +328,8 @@ class HealthService:
                 blockers.append("document_jobs_celery_broker_url_missing")
             if not self.settings.document_jobs_celery_queue.strip():
                 blockers.append("document_jobs_celery_queue_missing")
+            if not self.settings.document_jobs_translation_batch_celery_queue.strip():
+                blockers.append("document_jobs_translation_batch_celery_queue_missing")
         elif worker_backend == "eager" and required:
             blockers.append("document_jobs_worker_backend_eager_in_production")
 

@@ -1,6 +1,6 @@
-# tests/fixtures/p1_translation_samples/manifest.yaml: P1 英译中实验链路和人工质量验收样本清单。
+# tests/fixtures/p1_translation_samples/manifest.yaml: P1 英译中正式样本和人工质量验收清单。
 schema_version: 1
-sample_root: tests/fixtures/p1_translation_samples/pdfs
+sample_root: tests/fixtures/golden_samples/pdfs
 default_mode: en2zh_pdf_to_word
 default_document_language: en
 default_term_version_id: en2zh@v1
@@ -13,40 +13,36 @@ required_checks:
   - manual_translation_quality
 samples:
   - id: p1-en-001
-    filename: en-datasheet-smoke.pdf
-    title: Synthetic English datasheet smoke
+    filename: OPA228_P1.pdf
+    title: OPA228 precision op amp datasheet page 1
     source_status: available
-    tags: [en, datasheet, smoke, headings, paragraph, parameter_table]
+    tags: [en, datasheet, opamp, headings, paragraph, parameter_table]
     expected_terms:
-      - input offset voltage
       - slew rate
+      - quiescent current
     acceptance_focus:
-      - 英文 PDF 可创建 en2zh_pdf_to_word 任务
+      - 真实英文 datasheet 可创建 en2zh_pdf_to_word 任务
       - 输出中文 DocumentIR 后 block 顺序和类型不变
       - AI 调用审计文件不包含完整原文
       - debug_full_text 开启时全文归档 1 天过期
   - id: p1-en-002
-    filename: en-typical-opamp-datasheet.pdf
-    title: Typical op amp datasheet
-    source_status: pending_pdf
+    filename: OPA228_P2.pdf
+    title: OPA228 precision op amp datasheet page 2
+    source_status: available
     tags: [en, datasheet, opamp, parameter_table, figures]
-    expected_terms:
-      - input offset voltage
-      - common-mode rejection ratio
-      - power supply rejection ratio
+    expected_terms: []
     acceptance_focus:
       - 术语表命中关键电气参数
       - 参数表结构和单位基本保留
       - 图片和图注引用不被翻译链路破坏
   - id: p1-en-003
-    filename: en-power-management-datasheet.pdf
-    title: Power management datasheet
-    source_status: pending_pdf
-    tags: [en, datasheet, power, long_table, mixed_layout]
+    filename: OPA228_P7.pdf
+    title: OPA228 precision op amp datasheet page 7
+    source_status: available
+    tags: [en, datasheet, opamp, electrical_characteristics, long_table, mixed_layout]
     expected_terms:
-      - quiescent current
-      - slew rate
+      - input offset voltage
     acceptance_focus:
-      - 长表格翻译后仍可编辑
+      - Electrical Characteristics 表格翻译后仍可编辑
       - 列表和正文顺序稳定
       - 人工记录翻译流畅性和术语一致性

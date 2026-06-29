@@ -60,6 +60,9 @@ Health API 当前有五条入口：
     "configured_repository_backend": "file",
     "effective_repository_backend": "file",
     "worker_mode": "in_process",
+    "document_jobs_worker_backend": "celery",
+    "document_jobs_celery_queue": "document-jobs",
+    "document_jobs_translation_batch_celery_queue": "document-translation-batches",
     "stage_dispatcher": "background_tasks",
     "stage_message_store": "file",
     "artifact_storage": "local_file",
@@ -204,6 +207,9 @@ Health API 当前有五条入口：
 | `configured_repository_backend` | 当前配置期望的 jobs metadata 后端；默认 `file`，可配置为 `database` 或 `mysql` |
 | `effective_repository_backend` | 当前真实接入的 jobs metadata 后端；应与运行时实际 repository adapter 一致 |
 | `worker_mode` | 当前 worker 模式；`in_process` 表示 API 同进程执行，`external` 表示独立 worker 消费 stage message |
+| `document_jobs_worker_backend` | Document Jobs 自动执行 backend；生产基线为 `celery` |
+| `document_jobs_celery_queue` | `document_jobs.run` 投递的 Celery 主任务队列；生产默认 `document-jobs` |
+| `document_jobs_translation_batch_celery_queue` | `document_jobs.translate_batch` 投递的翻译批次队列；生产默认 `document-translation-batches`，worker 必须订阅该队列 |
 | `stage_dispatcher` | 当前后台 stage 调度 adapter；`background_tasks` 或 `external_worker` |
 | `stage_message_store` | 当前 stage message store adapter；随 jobs metadata backend 为 `file`、`database` 或 `mysql` |
 | `artifact_storage` | 当前 artifact storage adapter；默认 `local_file`，可切换为 `local_object` 或 `s3` |

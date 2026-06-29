@@ -145,6 +145,78 @@ For P1 and P2, use the existing ops scripts when the task explicitly asks for th
 - `scripts/ops/run_p2_online_gate.py`
 - `scripts/ops/run_golden_sample_regression.py`
 
+## Scenario: P1 Formal Sample Manifest Gate
+
+### 1. Scope / Trigger
+
+- Trigger: changing `tests/fixtures/p1_translation_samples/manifest.yaml`, P1 sample documentation, or release evidence for `P1_TRANSLATION_FORMAL=1`.
+- The formal gate is for `mode=en2zh_pdf_to_word` English datasheets. Russian or other-language samples belong to separate language-direction evidence and must not be counted toward the en2zh formal sample target.
+
+### 2. Signatures
+
+- Formal preflight command:
+  ```bash
+  P1_TRANSLATION_FORMAL=1 .venv/bin/python scripts/ops/run_p1_translation_regression.py --preflight
+  ```
+- Formal regression command:
+  ```bash
+  P1_TRANSLATION_FORMAL=1 .venv/bin/python scripts/ops/run_p1_translation_regression.py
+  ```
+- Manifest contract: `tests/fixtures/p1_translation_samples/manifest.yaml` with `target_sample_count: 3`, `default_mode: en2zh_pdf_to_word`, and `source_status: available` for every formal sample.
+
+### 3. Contracts
+
+- Formal samples must be real English technical datasheet PDFs under a versioned fixture path or a private manifest passed through `P1_TRANSLATION_MANIFEST`.
+- `sample_root` may reference another versioned fixture directory when reusing existing real datasheets; do not copy binaries just to satisfy the P1 folder layout.
+- The committed default manifest must keep filenames basename-only because the P1 manifest test and report output use sample filenames as stable evidence labels.
+- `P1_TRANSLATION_FORMAL=1` changes the required sample count from smoke mode to `target_sample_count`.
+
+### 4. Validation & Error Matrix
+
+- Fewer available samples than `target_sample_count` -> `p1_available_sample_count_below_required`.
+- `source_status=available` but the PDF file is missing -> `p1_available_pdf_missing`.
+- Manifest check passes but no credential is provided -> `p1_auth_missing`; this does not invalidate sample readiness.
+- Runtime cannot be reached/authenticated -> `p1_runtime_unreachable`; rerun on hostdzire or staging with admin credentials.
+- Russian/ru2zh sample offered for this gate -> document it as out of scope for en2zh, not as a substitute formal sample.
+- Job remains `running` / `ir_converting` with translation batches stuck in `queued` -> verify the deployed worker command consumes `document_jobs_translation_batch_celery_queue` in addition to `document_jobs_celery_queue`.
+- Missing or blank `document_jobs_translation_batch_celery_queue` in Celery mode -> readiness/preflight must surface `document_jobs_translation_batch_celery_queue_missing`, not only a generic health failure.
+
+### 5. Good/Base/Bad Cases
+
+- Good: manifest exposes 3 available real English datasheet PDFs, formal preflight manifest check passes, then hostdzire regression records jobs, DOCX outputs, QA, batch diagnostics, and admin manual signoff.
+- Base: local formal preflight has no credentials, manifest check passes, and the report explicitly leaves auth/runtime as remaining blockers.
+- Bad: marking P1 beta ready from one smoke PDF, counting ru2zh evidence toward en2zh, hiding sample-count or queue-readiness failure behind a generic runtime blocker, or running only the document-job Celery queue when translation batches route to a separate queue.
+
+### 6. Tests Required
+
+- `tests.test_p1_translation_sample_manifest` must assert the formal manifest has exactly `target_sample_count` samples, all formal samples are `available`, filenames are unique basenames, and the referenced PDFs exist.
+- If the P1 regression script changes, keep `tests.test_p1_translation_batch_diagnostics` passing and add focused tests for any changed preflight/report projection behavior.
+- If the worker entrypoint or health readiness changes, keep `tests.test_document_worker_entrypoint` and the targeted health readiness tests passing.
+- Do not require local API, worker, MySQL, Redis/Celery, MinerU, browser, or real provider access for manifest-level validation.
+- Hostdzire/staging formal runs must record whether `document-translation-batches` is being consumed. If a temporary worker is used to complete evidence, record that as an operations follow-up rather than treating it as normal release posture. The expected durable fix is `scripts/dev/run_document_worker.py` subscribing to both configured queues, or a documented dedicated batch worker.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```yaml
+samples:
+  - id: p1-en-003
+    filename: diode-ru.pdf
+    source_status: available
+```
+
+#### Correct
+
+```yaml
+sample_root: tests/fixtures/golden_samples/pdfs
+target_sample_count: 3
+samples:
+  - id: p1-en-003
+    filename: OPA228_P7.pdf
+    source_status: available
+```
+
 ## Scenario: P1 Translation Batch Diagnostics Evidence
 
 ### 1. Scope / Trigger

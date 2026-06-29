@@ -7,6 +7,7 @@ from scripts.ops.run_p1_translation_regression import (
     P1RegressionConfig,
     P1SampleResult,
     build_report,
+    build_runtime_preflight_blockers,
     build_translation_batch_diagnostics,
     format_markdown_report,
     record_translation_batch_diagnostics_unavailable,
@@ -15,6 +16,27 @@ from scripts.ops.run_p1_translation_regression import (
 
 
 class P1TranslationBatchDiagnosticsTests(TestCase):
+    def test_runtime_preflight_blocks_missing_translation_batch_queue(self):
+        blockers = build_runtime_preflight_blockers(
+            ready_status_code=503,
+            checks={
+                "p0_document_jobs_blockers": ["document_jobs_translation_batch_celery_queue_missing"],
+                "effective_repository_backend": "mysql",
+                "document_jobs_worker_backend": "celery",
+                "document_jobs_celery_queue": "document-jobs",
+                "document_jobs_translation_batch_celery_queue": "",
+                "translation_provider_backend": "openai_compatible",
+                "translation_available": True,
+                "translation_debug_archive_enabled": True,
+            },
+            readiness={"en2zh_available": True},
+            debug_full_text=True,
+        )
+
+        self.assertIn("document_jobs_translation_batch_celery_queue_missing", blockers)
+        self.assertIn("p1_health_not_ready", blockers)
+        self.assertEqual(blockers.count("document_jobs_translation_batch_celery_queue_missing"), 1)
+
     def test_summarizes_split_children_without_storing_ai_log_ids(self):
         diagnostics = build_translation_batch_diagnostics(
             {

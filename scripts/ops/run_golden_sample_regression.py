@@ -359,6 +359,8 @@ def _build_runtime_preflight_check(config: RegressionConfig) -> dict[str, Any]:
         blockers.append("document_jobs_metadata_store_not_mysql")
     if checks.get("document_jobs_worker_backend") != "celery":
         blockers.append("document_jobs_worker_backend_not_celery")
+    if not str(checks.get("document_jobs_translation_batch_celery_queue") or "").strip():
+        blockers.append("document_jobs_translation_batch_celery_queue_missing")
     if response.status_code != 200:
         blockers.append("golden_sample_health_http_status_not_ok")
     blockers = list(dict.fromkeys(blockers))
@@ -373,6 +375,8 @@ def _build_runtime_preflight_check(config: RegressionConfig) -> dict[str, Any]:
             "p0_document_jobs_ready": checks.get("p0_document_jobs_ready"),
             "effective_repository_backend": checks.get("effective_repository_backend"),
             "document_jobs_worker_backend": checks.get("document_jobs_worker_backend"),
+            "document_jobs_celery_queue": checks.get("document_jobs_celery_queue"),
+            "document_jobs_translation_batch_celery_queue": checks.get("document_jobs_translation_batch_celery_queue"),
             "readiness_blockers": _string_list(checks.get("readiness_blockers")),
             "p0_document_jobs_blockers": _string_list(checks.get("p0_document_jobs_blockers")),
         },

@@ -728,6 +728,7 @@ READINESS_CODE_MESSAGES: dict[str, str] = {
     "default_translation_unavailable": "默认翻译模式依赖不可用。",
     "document_jobs_celery_broker_url_missing": "文档任务 Celery broker 未配置。",
     "document_jobs_celery_queue_missing": "文档任务 Celery 队列未配置。",
+    "document_jobs_translation_batch_celery_queue_missing": "文档翻译批次 Celery 队列未配置。",
     "document_jobs_metadata_store_not_mysql": "生产门禁下文档任务元数据存储必须使用 MySQL。",
     "document_jobs_stale_running_present": "存在长时间未更新的文档任务。",
     "document_jobs_timed_out_present": "存在已超时的文档任务。",

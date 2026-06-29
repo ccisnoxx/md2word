@@ -31,9 +31,9 @@ last_reviewed: 2026-05-30
 
 | 样本 ID | 文件名 | job_id | 状态 | 失败阶段/错误码 | 术语命中 | 结构不变性 | Word 可打开 | 可编辑 | AI 审计脱敏 | 调试归档过期 | 人工质量反馈 | 结论 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| p1-en-001 | en-datasheet-smoke.pdf |  |  |  |  |  |  |  |  |  |  |  |
-| p1-en-002 | en-typical-opamp-datasheet.pdf |  |  |  |  |  |  |  |  |  |  |  |
-| p1-en-003 | en-power-management-datasheet.pdf |  |  |  |  |  |  |  |  |  |  |  |
+| p1-en-001 | OPA228_P1.pdf |  |  |  |  |  |  |  |  |  |  |  |
+| p1-en-002 | OPA228_P2.pdf |  |  |  |  |  |  |  |  |  |  |  |
+| p1-en-003 | OPA228_P7.pdf |  |  |  |  |  |  |  |  |  |  |  |
 
 ## 判定规则
 

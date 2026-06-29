@@ -1,0 +1,7 @@
+# .gitattributes: control files exported into deployment archives.
+.agents/ export-ignore
+.codex/ export-ignore
+.idea/ export-ignore
+.run/ export-ignore
+.trellis/ export-ignore
+AGENTS.md export-ignore

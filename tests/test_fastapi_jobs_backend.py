@@ -375,6 +375,7 @@ def build_test_runtime(
     document_jobs_celery_broker_url: str = "redis://127.0.0.1:6379/0",
     document_jobs_celery_result_backend: str = "",
     document_jobs_celery_queue: str = "document-jobs",
+    document_jobs_translation_batch_celery_queue: str = "document-translation-batches",
     translation_debug_archive_enabled: bool = False,
     translation_debug_archive_retention_days: int = 1,
     templates_manifest_path: str | None = None,
@@ -445,6 +446,7 @@ def build_test_runtime(
         document_jobs_celery_broker_url=document_jobs_celery_broker_url,
         document_jobs_celery_result_backend=document_jobs_celery_result_backend,
         document_jobs_celery_queue=document_jobs_celery_queue,
+        document_jobs_translation_batch_celery_queue=document_jobs_translation_batch_celery_queue,
         translation_debug_archive_enabled=translation_debug_archive_enabled,
         translation_debug_archive_retention_days=translation_debug_archive_retention_days,
         **({"templates_manifest_path": templates_manifest_path} if templates_manifest_path else {}),
@@ -1407,6 +1409,10 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(payload["dependency_checks"]["worker_mode"], "in_process")
         self.assertEqual(payload["dependency_checks"]["document_jobs_worker_backend"], "disabled")
         self.assertEqual(payload["dependency_checks"]["document_jobs_celery_queue"], "document-jobs")
+        self.assertEqual(
+            payload["dependency_checks"]["document_jobs_translation_batch_celery_queue"],
+            "document-translation-batches",
+        )
         self.assertEqual(payload["dependency_checks"]["stage_dispatcher"], "background_tasks")
         self.assertEqual(payload["dependency_checks"]["stage_message_store"], "file")
         self.assertEqual(payload["dependency_checks"]["artifact_storage"], "local_file")
@@ -1595,6 +1601,34 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(checks["p0_document_jobs_blockers"], ["document_jobs_worker_backend_eager_in_production"])
         self.assertFalse(checks["deployment_init_ready"])
         self.assertIn("document_jobs_worker_backend_eager_in_production", checks["readiness_blockers"])
+
+    def test_health_ready_blocks_celery_when_translation_batch_queue_is_missing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(
+                Path(temp_dir),
+                app_env="prod",
+                document_jobs_worker_backend="celery",
+                document_jobs_celery_broker_url="redis://redis:6379/0",
+                document_jobs_celery_queue="document-jobs",
+                document_jobs_translation_batch_celery_queue="",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                mineru_api_token="token-123",
+                mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
+                mineru_uid="mineru-user-1",
+            )
+            checks = runtime.health_service.build_dependency_checks()
+
+        self.assertTrue(checks["p0_document_jobs_required"])
+        self.assertFalse(checks["p0_document_jobs_ready"])
+        self.assertEqual(
+            checks["p0_document_jobs_blockers"],
+            ["document_jobs_translation_batch_celery_queue_missing"],
+        )
+        self.assertIn(
+            "document_jobs_translation_batch_celery_queue_missing",
+            checks["readiness_blockers"],
+        )
 
     def test_health_ready_allows_p0_document_jobs_when_production_config_is_complete(self):
         with tempfile.TemporaryDirectory() as temp_dir:
