@@ -53,6 +53,38 @@ last_reviewed: 2026-06-29
 
 本节命令里的 `<hostdzire-ssh>` 是本机根据私密 VPS 文件临时组装的 SSH 目标，不要把真实地址、密钥或端口写入仓库。
 
+### Codex SSH profile 约定
+
+本机私密文件 `/Users/sc/work_file/bak_file/VPS.txt` 使用 `CODEX_SSH_PROFILE` 块保存 SSH 信息，避免 Codex 依赖“hostdzire 标签附近 N 行”这种不稳定截断解析。仓库文档只记录格式，不记录真实值。
+
+```text
+--- CODEX_SSH_PROFILE_BEGIN ---
+name: hostdzire
+role: md2word-runtime
+host: <private-host-or-ip>
+port: <private-port>
+user: <private-user>
+md2word_release_root: /root/md2word-releases
+md2word_current_api_container: md2word-p0-api-1
+md2word_current_worker_container: md2word-p0-worker-1
+md2word_compose_project: md2word-p0
+md2word_internal_api_base_url: http://127.0.0.1:18000
+codex_probe: test -d /root/md2word-releases && docker inspect md2word-p0-api-1 >/dev/null 2>&1
+private_key: |
+  -----BEGIN ... PRIVATE KEY-----
+  <private-key-body>
+  -----END ... PRIVATE KEY-----
+--- CODEX_SSH_PROFILE_END ---
+```
+
+Codex/自动化脚本应按以下规则连接：
+
+- 只解析 `--- CODEX_SSH_PROFILE_BEGIN ---` 到 `--- CODEX_SSH_PROFILE_END ---` 之间的块，按 `name: hostdzire` 精确选择 profile。
+- 不再按标签前后固定字符数截断；私钥必须从 `private_key: |` 读取到完整 `-----END ... PRIVATE KEY-----`。
+- 把私钥写入 `/private/tmp` 下的临时文件并 `chmod 600`，命令结束后删除。
+- 远端 probe 或部署脚本通过 `ssh ... bash -s` 的 stdin 传入，避免 `bash -lc <long command>` 因 Go template、管道或引号被拆坏。
+- 先执行 `codex_probe`，确认这是 md2word 的 hostdzire runtime，再执行 release 创建、build/up 和 preflight。
+
 本地：
 
 ```bash

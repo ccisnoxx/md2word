@@ -1,0 +1,28 @@
+{
+  "id": "acceptance-center-release-evidence-sync",
+  "name": "acceptance-center-release-evidence-sync",
+  "title": "Acceptance Center release evidence sync",
+  "description": "Make Acceptance Center reflect current P0/P1/P2 release evidence instead of relying on historical starter summaries.",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P0",
+  "creator": "777",
+  "assignee": "777",
+  "createdAt": "2026-06-29",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "06-29-next-stage-release-and-beta-closure",
+  "relatedFiles": [
+    ".trellis/tasks/06-29-acceptance-center-release-evidence-sync/acceptance-sync-audit.md"
+  ],
+  "notes": "",
+  "meta": {}
+}
