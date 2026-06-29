@@ -5,7 +5,7 @@ component: md2word-deploy-validation
 status: current
 summary: md2word 本地改写、上传 hostdzire、线上验证和 Golden Sample 签字的标准流程。
 tags: [deploy, validation, hostdzire, golden-sample, mysql, celery]
-last_reviewed: 2026-06-21
+last_reviewed: 2026-06-29
 ---
 
 # 线上优先验证流程
@@ -43,7 +43,7 @@ last_reviewed: 2026-06-21
 
 ## 发布到 hostdzire
 
-当前推荐路径是 GitHub release 目录发布，不再把 `/root/md2word` 作为普通 `git pull` 目标。`/root/md2word` 可能保留历史本地修改；不要为了上线直接在该目录 reset 或覆盖。
+当前推荐路径是 GitHub archive release 目录发布，不再把 `/root/md2word` 或 release 目录作为普通 `git pull` 目标。`/root/md2word` 可能保留历史本地修改；不要为了上线直接在该目录 reset 或覆盖。release 目录必须是导出的运行包，不包含 `.git`、`.idea`、`.codex`、`.agents`、`.trellis`、`.run` 等开发目录。
 
 本地先确认目标 commit 已经推到 GitHub：
 
@@ -53,20 +53,40 @@ git push origin main
 git ls-remote origin refs/heads/main
 ```
 
+注意：`.gitattributes` 里的 `export-ignore` 规则必须已经随目标 commit 提交并推送到 GitHub，hostdzire 对该目标 commit 执行 `git archive` 时才会排除 `.git`、`.idea`、`.codex`、`.agents`、`.trellis`、`.run` 等开发目录。如果目标 commit 早于这次规则变更，导出的 release 包仍可能包含这些已被 Git 跟踪的开发文件。
+
 在 hostdzire 上创建新 release。`VPS.txt` 只用于人工取得登录信息，命令里用 `<hostdzire-ssh>` 占位，例如 `root@<hostdzire>`：
 
 ```bash
+set -euo pipefail
+
 FULL_SHA="<target-full-sha>"
 SHORT_SHA="${FULL_SHA:0:7}"
 RELEASE_DIR="/root/md2word-releases/${SHORT_SHA}"
+SOURCE_REPO="/root/md2word-release-source.git"
 REPO_URL="git@github.com:ccisnoxx/md2word.git"
 
 CURRENT_ENV="$(docker inspect md2word-p0-api-1 \
   --format '{{ index .Config.Labels "com.docker.compose.project.environment_file" }}')"
 CURRENT_RELEASE="$(dirname "${CURRENT_ENV}")"
 
-git clone "${REPO_URL}" "${RELEASE_DIR}"
-git -C "${RELEASE_DIR}" checkout "${FULL_SHA}"
+if [ -e "${RELEASE_DIR}" ]; then
+  echo "release dir already exists: ${RELEASE_DIR}" >&2
+  exit 1
+fi
+if [ ! -d "${SOURCE_REPO}" ]; then
+  git clone --bare "${REPO_URL}" "${SOURCE_REPO}"
+fi
+git --git-dir="${SOURCE_REPO}" fetch --prune --tags origin \
+  "+refs/heads/main:refs/heads/main"
+git --git-dir="${SOURCE_REPO}" cat-file -e "${FULL_SHA}^{commit}"
+mkdir -p "${RELEASE_DIR}"
+git --git-dir="${SOURCE_REPO}" archive --format=tar "${FULL_SHA}" | \
+  tar --no-same-owner -x -C "${RELEASE_DIR}"
+for path in .git .idea .codex .agents .trellis .run; do
+  test ! -e "${RELEASE_DIR}/${path}"
+done
+
 cp "${CURRENT_RELEASE}/.env" "${RELEASE_DIR}/.env"
 cp "${CURRENT_RELEASE}/deploy/auth_internal_users.json" \
   "${RELEASE_DIR}/deploy/auth_internal_users.json"
@@ -87,7 +107,7 @@ else
 fi
 ```
 
-如果 `RELEASE_DIR` 已存在，先确认它的 `git rev-parse HEAD` 是否等于目标 `FULL_SHA`。不要直接覆盖已存在 release；重新部署同一 commit 时复用该目录 build/up 即可。
+如果 `RELEASE_DIR` 已存在，不要直接覆盖已存在 release；重新部署同一 commit 时复用该目录 build/up 即可。需要确认 release 来源时，以 `.env` 中的 `APP_VERSION` / `DEPLOYMENT_ID` 和部署记录为准，release 目录本身不保留 `.git` 元数据。
 
 ### rsync / tar fallback
 
@@ -100,6 +120,10 @@ fi
 ```bash
 rsync -azn \
   --exclude '.git/' \
+  --exclude '.agents/' \
+  --exclude '.codex/' \
+  --exclude '.run/' \
+  --exclude '.trellis/' \
   --exclude '.env' \
   --exclude 'deploy/auth_internal_users.json' \
   --exclude 'var/' \
@@ -112,6 +136,7 @@ rsync -azn \
   --exclude 'tmp/' \
   --exclude 'output/' \
   --exclude '.idea/' \
+  --exclude 'AGENTS.md' \
   ./ <hostdzire-ssh>:/root/md2word/
 ```
 
@@ -120,6 +145,10 @@ rsync -azn \
 ```bash
 rsync -az \
   --exclude '.git/' \
+  --exclude '.agents/' \
+  --exclude '.codex/' \
+  --exclude '.run/' \
+  --exclude '.trellis/' \
   --exclude '.env' \
   --exclude 'deploy/auth_internal_users.json' \
   --exclude 'var/' \
@@ -132,6 +161,7 @@ rsync -az \
   --exclude 'tmp/' \
   --exclude 'output/' \
   --exclude '.idea/' \
+  --exclude 'AGENTS.md' \
   ./ <hostdzire-ssh>:/root/md2word/
 ```
 
@@ -143,6 +173,10 @@ rsync -az \
 ssh <hostdzire-ssh> 'mkdir -p /root/md2word-backups && tar -czf /root/md2word-backups/md2word-pre-deploy-$(date -u +%Y%m%dT%H%M%SZ).tgz -C /root md2word'
 tar -czf /tmp/md2word-upload.tgz \
   --exclude './.git' \
+  --exclude './.agents' \
+  --exclude './.codex' \
+  --exclude './.run' \
+  --exclude './.trellis' \
   --exclude './.env' \
   --exclude './deploy/auth_internal_users.json' \
   --exclude './var' \
@@ -155,6 +189,7 @@ tar -czf /tmp/md2word-upload.tgz \
   --exclude './tmp' \
   --exclude './output' \
   --exclude './.idea' \
+  --exclude './AGENTS.md' \
   .
 scp /tmp/md2word-upload.tgz <hostdzire-ssh>:/root/md2word-upload.tgz
 ssh <hostdzire-ssh> 'mkdir -p /root/md2word && tar --no-same-owner -xzf /root/md2word-upload.tgz -C /root/md2word && rm -f /root/md2word-upload.tgz'
@@ -223,6 +258,7 @@ curl -fsS https://md2word.962850.xyz/api/v1/health/ready
 - `p0_document_jobs_ready=true`
 - `effective_repository_backend=mysql`
 - `document_jobs_worker_backend=celery`
+- `document_jobs_translation_batch_celery_queue` 已配置，且无 `document_jobs_translation_batch_celery_queue_missing`
 - 无未解释的 `p0_document_jobs_blockers`
 
 如果这里失败，不继续做 Golden Sample；先处理 `.env`、MySQL、Redis/Celery、Worker、MinerU token/callback/uid 或内部账号配置。

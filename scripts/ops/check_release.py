@@ -495,7 +495,9 @@ def check_runtime_readiness(runtime_url: str) -> ReleaseCheckItem:
     p0_ready = checks.get("p0_document_jobs_ready") is True
     metadata_store = checks.get("effective_repository_backend")
     worker_backend = checks.get("document_jobs_worker_backend")
-    production_baseline_ready = metadata_store == "mysql" and worker_backend == "celery"
+    translation_batch_queue = checks.get("document_jobs_translation_batch_celery_queue")
+    translation_batch_queue_ready = bool(str(translation_batch_queue or "").strip())
+    production_baseline_ready = metadata_store == "mysql" and worker_backend == "celery" and translation_batch_queue_ready
     ok = deployment_ready and p0_ready and production_baseline_ready
     details = {
         "url": ready_url,
@@ -503,6 +505,8 @@ def check_runtime_readiness(runtime_url: str) -> ReleaseCheckItem:
         "p0_document_jobs_ready": p0_ready,
         "effective_repository_backend": metadata_store,
         "document_jobs_worker_backend": worker_backend,
+        "document_jobs_celery_queue": checks.get("document_jobs_celery_queue"),
+        "document_jobs_translation_batch_celery_queue": translation_batch_queue,
         "readiness_blockers": blockers,
         "p0_document_jobs_blockers": p0_blockers,
     }
@@ -512,7 +516,7 @@ def check_runtime_readiness(runtime_url: str) -> ReleaseCheckItem:
         summary=(
             "Runtime readiness passed with MySQL + Celery P0 baseline"
             if ok
-            else "Runtime readiness failed P0 MySQL + Celery baseline"
+            else "Runtime readiness failed P0 MySQL + Celery queue baseline"
         ),
         details=json.dumps(details, ensure_ascii=False, indent=2),
     )

@@ -277,6 +277,8 @@ def build_summary(
     blockers.extend(public_checks.get("blockers") or [])
     if critical_alerts:
         blockers.append("ops_alerts_critical_present")
+    if not str(ready_checks.get("document_jobs_translation_batch_celery_queue") or "").strip():
+        blockers.append("document_jobs_translation_batch_celery_queue_missing")
     blockers = list(dict.fromkeys(str(blocker) for blocker in blockers if str(blocker).strip()))
     return {
         "p2_online_gate_ready": not blockers,
@@ -288,6 +290,8 @@ def build_summary(
             "p0_document_jobs_ready": ready_checks.get("p0_document_jobs_ready"),
             "effective_repository_backend": ready_checks.get("effective_repository_backend"),
             "document_jobs_worker_backend": ready_checks.get("document_jobs_worker_backend"),
+            "document_jobs_celery_queue": ready_checks.get("document_jobs_celery_queue"),
+            "document_jobs_translation_batch_celery_queue": ready_checks.get("document_jobs_translation_batch_celery_queue"),
             "translation_available": ready_checks.get("translation_available"),
             "readiness_blockers": ready_checks.get("readiness_blockers") or [],
             "readiness_warnings": ready_checks.get("readiness_warnings") or [],
@@ -364,6 +368,8 @@ def format_markdown_report(report: dict[str, Any]) -> str:
         f"- p0_document_jobs_ready: `{runtime.get('p0_document_jobs_ready')}`",
         f"- effective_repository_backend: `{runtime.get('effective_repository_backend')}`",
         f"- document_jobs_worker_backend: `{runtime.get('document_jobs_worker_backend')}`",
+        f"- document_jobs_celery_queue: `{runtime.get('document_jobs_celery_queue')}`",
+        f"- document_jobs_translation_batch_celery_queue: `{runtime.get('document_jobs_translation_batch_celery_queue')}`",
         f"- translation_available: `{runtime.get('translation_available')}`",
         f"- ops_alert_status: `{summary.get('ops_alert_status')}`",
         f"- critical_ops_alerts: `{', '.join(summary.get('critical_ops_alerts') or []) or 'none'}`",

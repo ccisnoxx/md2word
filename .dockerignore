@@ -1,6 +1,11 @@
 # .dockerignore: 控制 P0 Docker 镜像构建上下文，排除运行态和本地缓存。
 .git
 .gitignore
+.agents
+.codex
+.run
+.trellis
+AGENTS.md
 .mypy_cache
 .pytest_cache
 .ruff_cache

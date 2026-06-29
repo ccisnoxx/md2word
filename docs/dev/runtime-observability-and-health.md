@@ -111,6 +111,7 @@ access 日志字段约定：
 - `stage_spool_observation_status`
 - `document_jobs_worker_backend`
 - `document_jobs_celery_queue`
+- `document_jobs_translation_batch_celery_queue`
 - `p0_document_jobs_required`
 - `p0_document_jobs_ready`
 - `document_jobs_automatic_execution_enabled`

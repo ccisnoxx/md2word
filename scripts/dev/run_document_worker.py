@@ -22,17 +22,39 @@ from app.core.config import Settings
 from app.workers.celery_app import create_celery_app
 
 
+def _required_queue(name: str, value: str) -> str:
+    queue = value.strip()
+    if not queue:
+        raise RuntimeError(f"{name} must be configured before starting document worker.")
+    return queue
+
+
+def build_worker_main_args(settings: Settings) -> list[str]:
+    """Build Celery worker args for every queue used by document job execution."""
+
+    queues = list(
+        dict.fromkeys(
+            [
+                _required_queue("DOCUMENT_JOBS_CELERY_QUEUE", settings.document_jobs_celery_queue),
+                _required_queue(
+                    "DOCUMENT_JOBS_TRANSLATION_BATCH_CELERY_QUEUE",
+                    settings.document_jobs_translation_batch_celery_queue,
+                ),
+            ]
+        )
+    )
+    return [
+        "worker",
+        "--loglevel=INFO",
+        "-Q",
+        ",".join(queues),
+    ]
+
+
 def main() -> None:
     settings = Settings()
     celery_app = create_celery_app(settings)
-    celery_app.worker_main(
-        [
-            "worker",
-            "--loglevel=INFO",
-            "-Q",
-            settings.document_jobs_celery_queue,
-        ]
-    )
+    celery_app.worker_main(build_worker_main_args(settings))
 
 
 if __name__ == "__main__":

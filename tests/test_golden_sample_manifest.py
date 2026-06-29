@@ -154,6 +154,8 @@ class GoldenSampleManifestTests(TestCase):
                 "p0_document_jobs_ready": True,
                 "effective_repository_backend": "mysql",
                 "document_jobs_worker_backend": "celery",
+                "document_jobs_celery_queue": "document-jobs",
+                "document_jobs_translation_batch_celery_queue": "document-translation-batches",
                 "readiness_blockers": [],
                 "p0_document_jobs_blockers": [],
             }
@@ -182,6 +184,8 @@ class GoldenSampleManifestTests(TestCase):
                 "p0_document_jobs_ready": True,
                 "effective_repository_backend": "mysql",
                 "document_jobs_worker_backend": "celery",
+                "document_jobs_celery_queue": "document-jobs",
+                "document_jobs_translation_batch_celery_queue": "document-translation-batches",
                 "readiness_blockers": [],
                 "p0_document_jobs_blockers": [],
             },

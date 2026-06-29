@@ -22,12 +22,11 @@ class P1TranslationSampleManifestTests(TestCase):
         self.assertEqual(manifest["default_document_language"], "en")
         self.assertEqual(manifest["default_term_version_id"], "en2zh@v1")
         self.assertEqual(manifest["term_file"], "resources/term_rules/translation_terms.csv")
-        self.assertGreaterEqual(len(samples), 1)
-        self.assertLessEqual(len(samples), 3)
+        self.assertEqual(len(samples), manifest["target_sample_count"])
         self.assertIn("datasheet", all_tags)
         self.assertIn("parameter_table", all_tags)
 
-    def test_manifest_filenames_are_unique_and_available_samples_exist(self):
+    def test_manifest_filenames_are_unique_and_formal_samples_exist(self):
         manifest = yaml.safe_load(MANIFEST_PATH.read_text(encoding="utf-8"))
         sample_root = Path(manifest["sample_root"])
         filenames = [sample["filename"] for sample in manifest["samples"]]
@@ -36,7 +35,7 @@ class P1TranslationSampleManifestTests(TestCase):
         for filename in filenames:
             self.assertEqual(Path(filename).name, filename)
         available_samples = [sample for sample in manifest["samples"] if sample["source_status"] == "available"]
-        self.assertGreaterEqual(len(available_samples), 1)
+        self.assertEqual(len(available_samples), manifest["target_sample_count"])
         for sample in available_samples:
             pdf_path = sample_root / sample["filename"]
             self.assertTrue(pdf_path.exists())

@@ -5,7 +5,7 @@ component: pdf-to-word-backend
 status: current
 summary: P0 API 与 document_jobs Worker 共用镜像和根目录 .env 的 Docker Compose 部署说明。
 tags: [deploy, docker, api, worker, mysql, redis]
-last_reviewed: 2026-06-21
+last_reviewed: 2026-06-29
 ---
 
 # P0 Docker 部署说明
@@ -17,7 +17,7 @@ last_reviewed: 2026-06-21
 | 服务 | 作用 |
 |---|---|
 | `api` | FastAPI，监听容器内 `8000` |
-| `worker` | `scripts/dev/run_document_worker.py`，消费 `document-jobs` Celery 队列 |
+| `worker` | `scripts/dev/run_document_worker.py`，消费 `document-jobs` 和 `document-translation-batches` Celery 队列 |
 | `redis` | Celery broker/result backend |
 | `mysql` | document_files、document_jobs、events、audit metadata |
 
@@ -32,7 +32,7 @@ last_reviewed: 2026-06-21
 
 md2word 当前按 [线上优先验证流程](/Users/sc/PycharmProjects/md2word/docs/deploy/online-first-validation-workflow.md) 发布：本地负责改写和不依赖服务的检查，完整 API/Worker/MySQL/Redis/Celery/Golden Sample 验证在 `hostdzire` 执行。
 
-hostdzire 普通上线使用 `/root/md2word-releases/<short-sha>` 目录；每个 release 从 GitHub clone，复制上一版 `.env` 和内部账号 JSON 后 build/up。`/root/md2word` 是历史工作树，不作为默认上线目录。
+hostdzire 普通上线使用 `/root/md2word-releases/<short-sha>` 目录；每个 release 从 GitHub archive 导出运行包，复制上一版 `.env` 和内部账号 JSON 后 build/up。`/root/md2word` 是历史工作树，不作为默认上线目录。release 目录不应包含 `.git`、`.idea`、`.codex`、`.agents`、`.trellis`、`.run` 等开发目录。
 
 ## 环境变量
 

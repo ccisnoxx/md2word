@@ -5,7 +5,7 @@ component: pdf-to-word-backend
 status: current
 summary: md2word 在 dmit + WireGuard + hostdzire 结构下的实际部署和线上验证记录。
 tags: [deploy, nginx, docker, wireguard, hostdzire, dmit]
-last_reviewed: 2026-06-21
+last_reviewed: 2026-06-29
 ---
 
 # md2word 线上部署记录
@@ -33,7 +33,7 @@ last_reviewed: 2026-06-21
 
 `md2word-api.962850.xyz` 是早期错误域名，不作为线上入口使用。当前公开入口、CORS origin 和 MinerU callback URL 都应使用 `md2word.962850.xyz`。
 
-`/root/md2word` 是历史工作树，可能包含早期 rsync 或人工操作留下的本地修改；普通上线不要把它作为默认 `git pull` 目标，也不要为了上线直接在该目录执行 `git reset --hard`。当前实际发布路径以 `/root/md2word-releases/<short-sha>` 为准，每个 release 从 GitHub 干净 clone，复用上一版 release 的 `.env` 和内部账号 JSON。
+`/root/md2word` 是历史工作树，可能包含早期 rsync 或人工操作留下的本地修改；普通上线不要把它作为默认 `git pull` 目标，也不要为了上线直接在该目录执行 `git reset --hard`。当前实际发布路径以 `/root/md2word-releases/<short-sha>` 为准，每个 release 从 GitHub archive 导出运行包，复用上一版 release 的 `.env` 和内部账号 JSON。release 目录不保留 `.git`，也不包含 `.idea`、`.codex`、`.agents`、`.trellis`、`.run` 等开发目录。
 
 ## 标准迭代流程
 
@@ -42,7 +42,7 @@ last_reviewed: 2026-06-21
 1. 在本地完成代码或文档改写，跑不依赖真实服务的检查并提交。
 2. 推送 `main` 到 GitHub，确认 `git ls-remote origin refs/heads/main` 返回目标 commit。
 3. 用私密 VPS 登录信息 SSH 到 `hostdzire`；不要把 `/Users/sc/work_file/bak_file/VPS.txt` 的内容写入仓库、任务记录或对话。
-4. 在 `hostdzire` 新建 `/root/md2word-releases/<short-sha>`，从 `git@github.com:ccisnoxx/md2word.git` clone 并 checkout 目标 commit。
+4. 在 `hostdzire` 新建 `/root/md2word-releases/<short-sha>`，从 GitHub bare 源缓存 fetch 目标 commit，再用 `git archive` 导出运行包。
 5. 从当前运行 release 复制 `.env` 和 `deploy/auth_internal_users.json`，只更新非敏感的 `APP_VERSION` / `DEPLOYMENT_ID`。
 6. 在新 release 内 build/up Docker Compose，并检查 API、Worker、MySQL、Redis/Celery。
 7. 先跑 `/health/ready` 和 `check_release.py --runtime-url`，再按需求决定是否跑 Golden Sample 预检和真实 4 样本回归。
@@ -61,20 +61,40 @@ git push origin main
 git ls-remote origin refs/heads/main
 ```
 
+注意：`.gitattributes` 里的 `export-ignore` 规则必须已经随目标 commit 提交并推送到 GitHub，hostdzire 对该目标 commit 执行 `git archive` 时才会排除 `.git`、`.idea`、`.codex`、`.agents`、`.trellis`、`.run` 等开发目录。如果目标 commit 早于这次规则变更，导出的 release 包仍可能包含这些已被 Git 跟踪的开发文件。
+
 hostdzire：
 
 ```bash
+set -euo pipefail
+
 FULL_SHA="<target-full-sha>"
 SHORT_SHA="${FULL_SHA:0:7}"
 RELEASE_DIR="/root/md2word-releases/${SHORT_SHA}"
+SOURCE_REPO="/root/md2word-release-source.git"
 REPO_URL="git@github.com:ccisnoxx/md2word.git"
 
 CURRENT_ENV="$(docker inspect md2word-p0-api-1 \
   --format '{{ index .Config.Labels "com.docker.compose.project.environment_file" }}')"
 CURRENT_RELEASE="$(dirname "${CURRENT_ENV}")"
 
-git clone "${REPO_URL}" "${RELEASE_DIR}"
-git -C "${RELEASE_DIR}" checkout "${FULL_SHA}"
+if [ -e "${RELEASE_DIR}" ]; then
+  echo "release dir already exists: ${RELEASE_DIR}" >&2
+  exit 1
+fi
+if [ ! -d "${SOURCE_REPO}" ]; then
+  git clone --bare "${REPO_URL}" "${SOURCE_REPO}"
+fi
+git --git-dir="${SOURCE_REPO}" fetch --prune --tags origin \
+  "+refs/heads/main:refs/heads/main"
+git --git-dir="${SOURCE_REPO}" cat-file -e "${FULL_SHA}^{commit}"
+mkdir -p "${RELEASE_DIR}"
+git --git-dir="${SOURCE_REPO}" archive --format=tar "${FULL_SHA}" | \
+  tar --no-same-owner -x -C "${RELEASE_DIR}"
+for path in .git .idea .codex .agents .trellis .run; do
+  test ! -e "${RELEASE_DIR}/${path}"
+done
+
 cp "${CURRENT_RELEASE}/.env" "${RELEASE_DIR}/.env"
 cp "${CURRENT_RELEASE}/deploy/auth_internal_users.json" \
   "${RELEASE_DIR}/deploy/auth_internal_users.json"

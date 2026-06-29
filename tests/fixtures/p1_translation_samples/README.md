@@ -1,8 +1,8 @@
 # P1 Translation Acceptance Samples
 
-本目录用于 P1 英文 PDF 英译中实验链路和人工质量验收。`manifest.yaml` 维护样本清单，`pdfs/` 放英文 PDF，`acceptance-record-template.md` 记录术语命中、结构不变性和人工质量反馈。
+本目录用于 P1 英文 PDF 英译中实验链路和人工质量验收。`manifest.yaml` 维护样本清单，`acceptance-record-template.md` 记录术语命中、结构不变性和人工质量反馈。
 
-当前仓库内置 1 份合成 smoke PDF，用于验证上传、建任务和调试链路的文件合同；正式质量验收仍需要业务补充 1-3 份真实英文数据手册 PDF。
+当前正式样本集复用已版本化的真实英文 OPA228 datasheet PDF，来源为 `tests/fixtures/golden_samples/pdfs/`。`pdfs/en-datasheet-smoke.pdf` 仅保留为历史 smoke 文件，不属于当前 formal beta gate。
 
 默认执行参数：
 
@@ -28,7 +28,7 @@ P1_TRANSLATION_PASSWORD='<admin-password>' \
 .venv/bin/python scripts/ops/run_p1_translation_regression.py
 ```
 
-默认只运行 `source_status=available` 的样本。正式 beta gate 需要补齐 `target_sample_count=3` 个真实英文 datasheet，并设置 `P1_TRANSLATION_FORMAL=1`；脚本输出 `tests/tmp/p1_translation_runs/<run_id>/report.json`、`report.md` 和 `manual-signoff-template.yaml`。admin 填写 `manual-signoff.yaml` 后执行：
+默认只运行 `source_status=available` 的样本。正式 beta gate 需要 `target_sample_count=3` 个真实英文 datasheet，并设置 `P1_TRANSLATION_FORMAL=1`；脚本输出 `tests/tmp/p1_translation_runs/<run_id>/report.json`、`report.md` 和 `manual-signoff-template.yaml`。admin 填写 `manual-signoff.yaml` 后执行：
 
 ```bash
 .venv/bin/python scripts/ops/run_p1_translation_regression.py \

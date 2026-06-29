@@ -705,6 +705,42 @@ def build_auth_preflight_check(config: P1RegressionConfig) -> dict[str, Any]:
     }
 
 
+def string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if str(item).strip()]
+
+
+def build_runtime_preflight_blockers(
+    *,
+    ready_status_code: int,
+    checks: dict[str, Any],
+    readiness: dict[str, Any],
+    debug_full_text: bool,
+) -> list[str]:
+    """Return P1 runtime blockers from health/config-summary payloads."""
+
+    blockers: list[str] = []
+    blockers.extend(string_list(checks.get("p0_document_jobs_blockers")))
+    if ready_status_code != 200:
+        blockers.append("p1_health_not_ready")
+    if checks.get("effective_repository_backend") != "mysql":
+        blockers.append("document_jobs_metadata_store_not_mysql")
+    if checks.get("document_jobs_worker_backend") != "celery":
+        blockers.append("document_jobs_worker_backend_not_celery")
+    if not str(checks.get("document_jobs_translation_batch_celery_queue") or "").strip():
+        blockers.append("document_jobs_translation_batch_celery_queue_missing")
+    if checks.get("translation_provider_backend") != "openai_compatible":
+        blockers.append("translation_provider_backend_not_openai_compatible")
+    if checks.get("translation_available") is not True:
+        blockers.append("translation_not_available")
+    if debug_full_text and checks.get("translation_debug_archive_enabled") is not True:
+        blockers.append("translation_debug_archive_not_enabled")
+    if readiness.get("en2zh_available") is not True:
+        blockers.append("en2zh_not_available")
+    return list(dict.fromkeys(blockers))
+
+
 def build_runtime_preflight_check(config: P1RegressionConfig) -> dict[str, Any]:
     try:
         session = build_authenticated_session(config)
@@ -718,22 +754,13 @@ def build_runtime_preflight_check(config: P1RegressionConfig) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         return {"name": "runtime", "ok": False, "blockers": ["p1_runtime_unreachable"], "details": {"error": str(exc)}}
     checks = ready_payload.get("dependency_checks") or {}
-    blockers: list[str] = []
-    if ready.status_code != 200:
-        blockers.append("p1_health_not_ready")
-    if checks.get("effective_repository_backend") != "mysql":
-        blockers.append("document_jobs_metadata_store_not_mysql")
-    if checks.get("document_jobs_worker_backend") != "celery":
-        blockers.append("document_jobs_worker_backend_not_celery")
-    if checks.get("translation_provider_backend") != "openai_compatible":
-        blockers.append("translation_provider_backend_not_openai_compatible")
-    if checks.get("translation_available") is not True:
-        blockers.append("translation_not_available")
-    if config.debug_full_text and checks.get("translation_debug_archive_enabled") is not True:
-        blockers.append("translation_debug_archive_not_enabled")
     readiness = config_payload.get("readiness") or {}
-    if readiness.get("en2zh_available") is not True:
-        blockers.append("en2zh_not_available")
+    blockers = build_runtime_preflight_blockers(
+        ready_status_code=ready.status_code,
+        checks=checks,
+        readiness=readiness,
+        debug_full_text=config.debug_full_text,
+    )
     return {
         "name": "runtime",
         "ok": not blockers,
@@ -743,6 +770,10 @@ def build_runtime_preflight_check(config: P1RegressionConfig) -> dict[str, Any]:
             "config_summary_status_code": config_summary.status_code,
             "effective_repository_backend": checks.get("effective_repository_backend"),
             "document_jobs_worker_backend": checks.get("document_jobs_worker_backend"),
+            "document_jobs_celery_queue": checks.get("document_jobs_celery_queue"),
+            "document_jobs_translation_batch_celery_queue": checks.get("document_jobs_translation_batch_celery_queue"),
+            "p0_document_jobs_ready": checks.get("p0_document_jobs_ready"),
+            "p0_document_jobs_blockers": string_list(checks.get("p0_document_jobs_blockers")),
             "translation_provider_backend": checks.get("translation_provider_backend"),
             "translation_available": checks.get("translation_available"),
             "translation_debug_archive_enabled": checks.get("translation_debug_archive_enabled"),
