@@ -3,7 +3,7 @@
   "name": "dev-docs-and-trellis-hygiene",
   "title": "Dev docs and Trellis hygiene",
   "description": "Clean up developer documentation and Trellis task-state noise that affects future planning accuracy without changing product behavior.",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
