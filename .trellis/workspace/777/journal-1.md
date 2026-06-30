@@ -206,3 +206,36 @@ Completed P0 shell/token unification, added Playwright smoke runbook notes, veri
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: Core list workbench template unification
+
+**Date**: 2026-06-30
+**Task**: Core list workbench template unification
+**Branch**: `main`
+
+### Summary
+
+Unified Jobs, Incident Triage, and Translation QA list workbench skeletons around shared header, summary, section-header, and empty-state components; verified build, theme unit test, core-flow smoke, incident triage smoke, and workbench table preferences smoke; then archived the child task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `96059313` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
