@@ -123,7 +123,7 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 ### `GET /api/v1/document-jobs/config-summary`
 
 - 用途：读取创建/重试任务所需的配置摘要。
-- 认证：Bearer JWT。
+- 认证：Bearer JWT；兼容 legacy `X-Admin-Token`，用于 P1/P2 只读预检脚本在没有内部账号密码时读取 runtime readiness。
 - 响应：
   - `role`
   - `resource_mode`：`legacy` / `versioned`

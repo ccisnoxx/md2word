@@ -11,6 +11,7 @@ from scripts.ops.run_p1_translation_regression import (
     P1SampleResult,
     build_auth_preflight_check,
     build_report,
+    build_runtime_preflight_check,
     build_runtime_preflight_blockers,
     build_translation_batch_diagnostics,
     format_markdown_report,
@@ -69,6 +70,62 @@ class P1TranslationBatchDiagnosticsTests(TestCase):
 
         self.assertTrue(check["ok"])
         self.assertEqual(check["details"]["role"], "admin")
+
+    def test_runtime_preflight_accepts_legacy_admin_token(self):
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):  # noqa: N802
+                if self.headers.get("X-Admin-Token") != "secret-admin":
+                    self.send_response(401)
+                    self.end_headers()
+                    return
+                if self.path == "/api/v1/health/ready":
+                    body = json.dumps(
+                        {
+                            "dependency_checks": {
+                                "p0_document_jobs_blockers": [],
+                                "effective_repository_backend": "mysql",
+                                "document_jobs_worker_backend": "celery",
+                                "document_jobs_celery_queue": "document-jobs",
+                                "document_jobs_translation_batch_celery_queue": "document-translation-batches",
+                                "translation_provider_backend": "openai_compatible",
+                                "translation_available": True,
+                                "translation_debug_archive_enabled": True,
+                            }
+                        }
+                    ).encode("utf-8")
+                elif self.path == "/api/v1/document-jobs/config-summary":
+                    body = json.dumps({"readiness": {"en2zh_available": True}}).encode("utf-8")
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format, *args):  # noqa: A002
+                return
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            check = build_runtime_preflight_check(
+                P1RegressionConfig(
+                    base_url=f"http://127.0.0.1:{server.server_port}",
+                    admin_token="secret-admin",
+                    request_timeout_seconds=2,
+                )
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+        self.assertTrue(check["ok"])
+        self.assertEqual(check["details"]["config_summary_status_code"], 200)
 
     def test_runtime_preflight_blocks_missing_translation_batch_queue(self):
         blockers = build_runtime_preflight_blockers(

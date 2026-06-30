@@ -292,7 +292,7 @@ The report owns a sanitized projection and can enforce the redaction boundary in
 
 ### 1. Scope / Trigger
 
-- Trigger: changing `scripts/ops/run_p2_online_gate.py`, Acceptance Center evidence sync, `/health/ops-alerts` gate auth, P0/P1 preflight auth checks, or P2 release evidence docs.
+- Trigger: changing `scripts/ops/run_p2_online_gate.py`, Acceptance Center evidence sync, `/health/ops-alerts` gate auth, `/document-jobs/config-summary` read auth, P0/P1 preflight auth checks, or P2 release evidence docs.
 - P2 online gate is an ops evidence contract. It may read live runtime health and write compact Acceptance Center metadata, but it must not execute conversion, provider calls, cleanup, S3 deletion, external alert delivery, or recovery actions.
 
 ### 2. Signatures
@@ -311,7 +311,8 @@ The report owns a sanitized projection and can enforce the redaction boundary in
 
 - `P2_ONLINE_ADMIN_TOKEN` uses `X-Admin-Token`, not `Authorization: Bearer`.
 - `/health/ops-alerts` and Acceptance Center must accept admin JWT or `X-Admin-Token` while preserving 401 for missing credentials and 403 for invalid or non-admin credentials.
-- P0/P1 preflight auth checks may validate `ADMIN_TOKEN` through a read-only admin endpoint, but full Golden Sample or P1 regression job creation still requires admin JWT/password.
+- P0/P1 preflight auth checks may validate `ADMIN_TOKEN` through read-only endpoints. P1 runtime preflight also reads `/document-jobs/config-summary`, so that endpoint must accept `X-Admin-Token` without broadening job creation permissions.
+- Full Golden Sample or P1 regression job creation still requires admin JWT/password.
 - Acceptance Center payload may include run id, title, tier, status, environment, source, `report.md` path, timestamps, summary, blockers, and warnings.
 - Acceptance Center payload must not include raw PDFs, DOCX binaries, signed URLs, object keys, local absolute artifact paths, full extracted text, prompts, provider responses, JWTs, passwords, bearer tokens, `ADMIN_TOKEN`, or full debug archive content.
 
@@ -335,7 +336,7 @@ The report owns a sanitized projection and can enforce the redaction boundary in
 - `tests.test_openapi_export` must cover successful P2 gate collection, Acceptance Center sync, and ops-alerts error payloads without `alerts`.
 - `tests.test_acceptance_center_api` must cover legacy `X-Admin-Token` upsert/review and preserve missing/bad credential behavior.
 - `tests.test_fastapi_jobs_backend` must cover `/health/ops-alerts` JWT and legacy token access and read-only safety flags.
-- P0/P1 preflight tests must assert `ADMIN_TOKEN` can satisfy auth checks without creating jobs.
+- P0/P1 preflight tests must assert `ADMIN_TOKEN` can satisfy auth/runtime checks without creating jobs.
 - Run `scripts/ops/export_openapi.py` and `scripts/ops/check_release.py` after changing API dependencies or request headers.
 
 ### 7. Wrong vs Correct
