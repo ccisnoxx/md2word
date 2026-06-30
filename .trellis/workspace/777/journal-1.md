@@ -172,3 +172,37 @@ Confirmed Acceptance Center P2 evidence and latest-summary on hostdzire, recorde
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Frontend shell token unification
+
+**Date**: 2026-06-30
+**Task**: Frontend shell token unification
+**Branch**: `main`
+
+### Summary
+
+Completed P0 shell/token unification, added Playwright smoke runbook notes, verified build + theme unit test + shell smoke, and archived the child task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `17c2676e` | (see git log) |
+| `7b4adc55` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
