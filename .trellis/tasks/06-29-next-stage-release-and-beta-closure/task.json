@@ -3,7 +3,7 @@
   "name": "next-stage-release-and-beta-closure",
   "title": "Next-stage release and beta closure",
   "description": "Parent task for closing the next internal release evidence loop: P0 PDF-to-Word release proof, P1 translation beta proof, internal portal workflow evidence, ops readiness, and documentation hygiene.",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
