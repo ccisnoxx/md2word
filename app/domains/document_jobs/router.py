@@ -13,7 +13,13 @@ from urllib.parse import urlsplit, urlunsplit
 from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.responses import FileResponse, RedirectResponse
 
-from app.api.dependencies import get_runtime, get_trace_id, require_admin_user, require_current_user
+from app.api.dependencies import (
+    get_runtime,
+    get_trace_id,
+    require_admin_user,
+    require_current_user,
+    require_current_user_or_admin_token_user,
+)
 from app.domains.audit.models import ActorContext
 from app.domains.document_jobs.config_summary import build_document_job_config_summary
 from app.domains.document_jobs.models import (
@@ -204,7 +210,7 @@ def list_document_jobs(
 @router.get("/config-summary", response_model=DocumentJobConfigSummaryResponse)
 def get_document_job_config_summary(
     runtime: AppRuntime = Depends(get_runtime),
-    user: AuthenticatedUser = Depends(require_current_user),
+    user: AuthenticatedUser = Depends(require_current_user_or_admin_token_user),
 ) -> DocumentJobConfigSummaryResponse:
     return build_document_job_config_summary(runtime, user=user)
 

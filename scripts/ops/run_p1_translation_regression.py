@@ -708,8 +708,7 @@ def authenticate_for_preflight(config: P1RegressionConfig) -> dict[str, Any]:
     """Validate P1 preflight admin access without creating translation jobs."""
 
     if config.admin_token.strip() and not config.bearer_token.strip() and not config.password.strip():
-        session = requests.Session()
-        session.headers.update({"X-Admin-Token": config.admin_token.strip()})
+        session = build_readonly_preflight_session(config)
         response = session.get(api_url(config, "/api/v1/health/ops-alerts"), timeout=config.request_timeout_seconds)
         response.raise_for_status()
         return {"username": "admin", "role": "admin", "source": "admin_token"}
@@ -758,7 +757,7 @@ def build_runtime_preflight_blockers(
 
 def build_runtime_preflight_check(config: P1RegressionConfig) -> dict[str, Any]:
     try:
-        session = build_authenticated_session(config)
+        session = build_readonly_preflight_session(config)
         ready = session.get(api_url(config, "/api/v1/health/ready"), timeout=config.request_timeout_seconds)
         config_summary = session.get(
             api_url(config, "/api/v1/document-jobs/config-summary"),
@@ -795,6 +794,16 @@ def build_runtime_preflight_check(config: P1RegressionConfig) -> dict[str, Any]:
             "en2zh_available": readiness.get("en2zh_available"),
         },
     }
+
+
+def build_readonly_preflight_session(config: P1RegressionConfig) -> requests.Session:
+    """Build a session for P1 read-only preflight checks without creating jobs."""
+
+    if config.admin_token.strip() and not config.bearer_token.strip() and not config.password.strip():
+        session = requests.Session()
+        session.headers.update({"X-Admin-Token": config.admin_token.strip()})
+        return session
+    return build_authenticated_session(config)
 
 
 def load_manual_signoff(path: Path) -> dict[str, Any]:

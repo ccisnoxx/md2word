@@ -163,6 +163,30 @@ def require_current_user(
     return _required_jwt_user(runtime, authorization)
 
 
+def require_current_user_or_admin_token_user(
+    runtime: AppRuntime = Depends(get_runtime),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    x_actor_id: str | None = Header(default=None, alias="X-Actor-Id"),
+) -> AuthenticatedUser:
+    """允许内部用户 JWT 或 legacy admin token 读取用户形态的只读摘要。"""
+
+    jwt_user = _optional_jwt_user(runtime, authorization)
+    if jwt_user is not None:
+        return jwt_user
+
+    actor = require_admin_user_or_token_actor(runtime, None, x_admin_token, x_actor_id)
+    actor_id = actor.actor_id or "admin"
+    return AuthenticatedUser(
+        id=actor_id,
+        username=actor_id,
+        role="admin",
+        tenant_id="default",
+        company_id="default",
+        token_scopes=["admin_token"],
+    )
+
+
 def require_admin_user(
     user: AuthenticatedUser = Depends(require_current_user),
 ) -> AuthenticatedUser:

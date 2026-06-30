@@ -7027,6 +7027,7 @@ class FastAPIJobsBackendTests(TestCase):
                 Path(temp_dir),
                 auth_jwt_secret_key="test-jwt-secret",
                 auth_internal_users_json=build_auth_users_json(),
+                admin_token="secret-admin",
             )
             publish_default_job_resources(runtime, include_translation=True)
             publish_translation_profile_resource_version(
@@ -7051,6 +7052,10 @@ class FastAPIJobsBackendTests(TestCase):
                 admin_headers = build_auth_header(client, username="admin", password="admin-pass")
                 operator_response = client.get("/api/v1/document-jobs/config-summary", headers=operator_headers)
                 admin_response = client.get("/api/v1/document-jobs/config-summary", headers=admin_headers)
+                admin_token_response = client.get(
+                    "/api/v1/document-jobs/config-summary",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
 
         self.assertEqual(operator_response.status_code, 200)
         operator_payload = operator_response.json()
@@ -7108,6 +7113,10 @@ class FastAPIJobsBackendTests(TestCase):
         )
         self.assertIn("electronics-en2zh@1", [item["label"] for item in admin_payload["options"]["translation_profiles"]])
         self.assertIn("electronics-ru2zh@1", [item["label"] for item in admin_payload["options"]["translation_profiles"]])
+        self.assertEqual(admin_token_response.status_code, 200)
+        admin_token_payload = admin_token_response.json()
+        self.assertEqual(admin_token_payload["role"], "admin")
+        self.assertTrue(admin_token_payload["readiness"]["en2zh_available"])
 
     def test_document_job_operator_can_bind_explicit_create_resource_versions(self):
         with tempfile.TemporaryDirectory() as temp_dir:
