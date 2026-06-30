@@ -104,3 +104,38 @@ Routed local MinerU debug and regression scripts through the formal DocumentIR W
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: P2 online gate and ops token deployment
+
+**Date**: 2026-06-30
+**Task**: P2 online gate and ops token deployment
+**Branch**: `main`
+
+### Summary
+
+Implemented X-Admin-Token compatibility for P2 online gate and P1 runtime preflight, deployed hostdzire release a2bf3e1, reran P2 gate, and synced/approved acceptance_p2_online_gate_current.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `82e64373` | (see git log) |
+| `a2bf3e1d` | (see git log) |
+| `33e04f4c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
