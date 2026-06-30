@@ -338,3 +338,36 @@ Unified Operations Cockpit, System Status, Ops Dashboard, and Acceptance Center 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: Governance and configuration workbench template
+
+**Date**: 2026-06-30
+**Task**: Governance and configuration workbench template
+**Branch**: `main`
+
+### Summary
+
+Unified SettingsHome, TermProposals, TranslationTermSet, and WordPageStyleDetail around shared governance headers, compact governance metric strips, and panel-card shells; verified build, a new governance workbench smoke, and the existing Word page style editing smoke; then archived the child task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fff7e5a3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
