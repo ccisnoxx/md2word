@@ -404,3 +404,37 @@ Converged the first batch of low-frequency admin/config pages onto shared workbe
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: Next-stage release and beta closure
+
+**Date**: 2026-06-30
+**Task**: Next-stage release and beta closure
+**Branch**: `main`
+
+### Summary
+
+Closed the remaining docs hygiene and provider batch Phase 3 evidence gaps, archived the finished child tasks, finalized the parent release-closure PRD to 7/7 complete, and archived the parent task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9955fe6c` | (see git log) |
+| `3c96d9d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
