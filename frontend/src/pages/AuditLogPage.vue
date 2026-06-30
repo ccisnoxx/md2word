@@ -2,13 +2,14 @@
 <!-- Purpose: Render the Admin-only audit event search, structured details display, current-page CSV export, and governed filtered export. -->
 <template>
   <main class="audit-log-page app-page" aria-labelledby="audit-log-title">
-    <section class="page-heading app-page-header app-page-shell">
-      <div>
-        <p class="page-kicker">Audit</p>
-        <h1 id="audit-log-title" class="page-title">审计日志</h1>
-        <p class="page-description">只读查询已记录的高风险成功操作。</p>
-      </div>
-      <div class="heading-actions">
+    <WorkbenchPageHeader
+      title-id="audit-log-title"
+      kicker="Audit"
+      title="审计日志"
+      description="只读查询已记录的高风险成功操作。"
+    >
+      <template #actions>
+        <div class="heading-actions">
         <el-button :icon="Download" :disabled="total === 0" :loading="exportingAll" @click="exportFilteredCsv">
           导出筛选结果
         </el-button>
@@ -16,12 +17,18 @@
           导出当前页
         </el-button>
         <el-button :icon="Refresh" :loading="loading" @click="loadEvents">刷新</el-button>
-      </div>
-    </section>
+        </div>
+      </template>
+    </WorkbenchPageHeader>
 
     <ApiErrorAlert class="app-page-shell" :error="error" />
 
-    <section class="filter-section app-filter-panel app-page-shell" aria-label="审计日志筛选">
+    <section class="app-page-shell" aria-label="审计日志筛选">
+      <WorkbenchPanelCard
+        title="筛选条件"
+        subtitle="按 actor、action、target 和时间范围查询结构化审计事件。"
+        card-class="filter-section app-filter-panel"
+      >
       <el-form class="filter-form" label-position="top">
         <el-form-item label="搜索">
           <el-input
@@ -71,17 +78,17 @@
         <el-button @click="resetFilters">重置</el-button>
         <el-button type="primary" @click="applyFilters">查询</el-button>
       </div>
+      </WorkbenchPanelCard>
     </section>
 
-    <section class="audit-table-section app-filter-panel app-table-card app-page-shell" aria-label="审计事件列表">
-      <div class="section-header">
-        <div>
-          <h2 class="section-title">事件列表</h2>
-          <p class="section-subtitle">
-            共 {{ total }} 条<span v-if="loadedAt"> · 更新于 {{ formatDateTime(loadedAt) }}</span>
-          </p>
-        </div>
-        <el-pagination
+    <section class="app-page-shell" aria-label="审计事件列表">
+      <WorkbenchPanelCard
+        title="事件列表"
+        :subtitle="`共 ${total} 条${loadedAt ? ` · 更新于 ${formatDateTime(loadedAt)}` : ''}`"
+        card-class="audit-table-section app-filter-panel app-table-card"
+      >
+        <template #actions>
+          <el-pagination
           v-model:current-page="page"
           v-model:page-size="pageSize"
           :total="total"
@@ -92,9 +99,9 @@
           @current-change="loadEvents"
           @size-change="handlePageSizeChange"
         />
-      </div>
+        </template>
 
-      <el-table
+        <el-table
         v-loading="loading"
         :data="events"
         empty-text="暂无审计事件"
@@ -151,7 +158,8 @@
             <span class="mono">{{ row.audit_id }}</span>
           </template>
         </el-table-column>
-      </el-table>
+        </el-table>
+      </WorkbenchPanelCard>
     </section>
 
     <el-drawer v-model="detailsDrawer.visible" title="结构化审计详情" size="min(680px, 100vw)">
@@ -212,6 +220,8 @@ import type {
   AuditEventSort,
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
+import WorkbenchPageHeader from "@/components/WorkbenchPageHeader.vue";
+import WorkbenchPanelCard from "@/components/WorkbenchPanelCard.vue";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { formatDateTime } from "@/utils/format";
 

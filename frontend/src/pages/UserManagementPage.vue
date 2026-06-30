@@ -2,22 +2,29 @@
 <!-- Purpose: Render the Admin-only internal user management workbench. -->
 <template>
   <main class="user-management-page app-page" aria-labelledby="user-management-title">
-    <section class="page-heading app-page-header app-page-shell">
-      <div>
-        <p class="page-kicker">Users</p>
-        <h1 id="user-management-title" class="page-title">用户管理</h1>
-        <p class="page-description">管理内部账号、角色、启停状态和密码重置。</p>
-      </div>
-      <div class="heading-actions">
+    <WorkbenchPageHeader
+      title-id="user-management-title"
+      kicker="Users"
+      title="用户管理"
+      description="管理内部账号、角色、启停状态和密码重置。"
+    >
+      <template #actions>
+        <div class="heading-actions">
         <el-button :icon="Refresh" :loading="loading" @click="loadUsers">刷新</el-button>
         <el-button type="primary" :icon="Plus" @click="openCreateDialog">新建用户</el-button>
-      </div>
-    </section>
+        </div>
+      </template>
+    </WorkbenchPageHeader>
 
     <ApiErrorAlert class="app-page-shell" :error="error" />
     <ApiErrorAlert class="app-page-shell" :error="operationError" />
 
-    <section class="filter-section app-filter-panel app-page-shell" aria-label="用户筛选">
+    <section class="app-page-shell" aria-label="用户筛选">
+      <WorkbenchPanelCard
+        title="筛选条件"
+        subtitle="按用户名、角色和状态筛选内部账号。"
+        card-class="filter-section app-filter-panel"
+      >
       <el-form class="filter-form" label-position="top">
         <el-form-item label="搜索">
           <el-input v-model="filters.keyword" clearable placeholder="用户名 / 显示名 / 用户 ID" @keyup.enter="applyFilters" />
@@ -39,19 +46,16 @@
         <el-button @click="resetFilters">重置</el-button>
         <el-button type="primary" :icon="Search" @click="applyFilters">查询</el-button>
       </div>
+      </WorkbenchPanelCard>
     </section>
 
-    <section class="user-table-section app-filter-panel app-table-card app-page-shell" aria-label="内部用户列表">
-      <div class="section-header">
-        <div>
-          <h2 class="section-title">内部用户</h2>
-          <p class="section-subtitle">
-            共 {{ total }} 个账号<span v-if="loadedAt"> · 更新于 {{ formatDateTime(loadedAt) }}</span>
-          </p>
-        </div>
-      </div>
-
-      <el-table v-loading="loading" :data="users" empty-text="暂无用户" table-layout="fixed" class="user-table">
+    <section class="app-page-shell" aria-label="内部用户列表">
+      <WorkbenchPanelCard
+        title="内部用户"
+        :subtitle="`共 ${total} 个账号${loadedAt ? ` · 更新于 ${formatDateTime(loadedAt)}` : ''}`"
+        card-class="user-table-section app-filter-panel app-table-card"
+      >
+        <el-table v-loading="loading" :data="users" empty-text="暂无用户" table-layout="fixed" class="user-table">
         <el-table-column label="用户名" min-width="180">
           <template #default="{ row }">
             <div class="identity-cell">
@@ -96,7 +100,8 @@
             </div>
           </template>
         </el-table-column>
-      </el-table>
+        </el-table>
+      </WorkbenchPanelCard>
     </section>
 
     <el-dialog
@@ -235,6 +240,8 @@ import type {
   InternalUserUpdateRequest,
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
+import WorkbenchPageHeader from "@/components/WorkbenchPageHeader.vue";
+import WorkbenchPanelCard from "@/components/WorkbenchPanelCard.vue";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { formatDateTime } from "@/utils/format";
 

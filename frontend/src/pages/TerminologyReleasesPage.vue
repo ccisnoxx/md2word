@@ -2,26 +2,30 @@
 <!-- Purpose: Manage terminology governance package releases across term sets, rules, and applicability scopes. -->
 <template>
   <main class="terminology-releases-page app-page" aria-labelledby="terminology-releases-title">
-    <section class="page-heading app-page-header app-page-shell app-page-shell--wide">
-      <div>
-        <p class="page-kicker">术语发布</p>
-        <h1 id="terminology-releases-title" class="page-title">术语发布</h1>
-        <p class="page-description">发布“术语集 + 规则配置 + 适用范围”的治理包，统一管理版本、范围和发布前校验。</p>
-      </div>
-      <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
-    </section>
+    <WorkbenchPageHeader
+      title-id="terminology-releases-title"
+      kicker="术语发布"
+      title="术语发布"
+      description="发布“术语集 + 规则配置 + 适用范围”的治理包，统一管理版本、范围和发布前校验。"
+      wide
+      section-class="page-heading app-page-header"
+    >
+      <template #actions>
+        <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
+      </template>
+    </WorkbenchPageHeader>
 
     <ApiErrorAlert class="app-page-shell app-page-shell--wide" :error="error" />
 
     <section class="release-grid app-page-shell app-page-shell--wide">
-      <el-card class="app-panel-card app-table-card" shadow="never">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">发布列表</h2>
-            <p class="section-subtitle">每条记录对应一个治理包版本；回滚只关闭当前生效版本。</p>
-          </div>
+      <WorkbenchPanelCard
+        title="发布列表"
+        subtitle="每条记录对应一个治理包版本；回滚只关闭当前生效版本。"
+        card-class="app-table-card"
+      >
+        <template #actions>
           <el-tag effect="plain">共 {{ releases.length }} 条</el-tag>
-        </div>
+        </template>
         <el-table :data="releases" :loading="loading" empty-text="暂无术语发布">
           <el-table-column label="治理包" min-width="220" show-overflow-tooltip>
             <template #default="{ row }">
@@ -49,15 +53,13 @@
             </template>
           </el-table-column>
         </el-table>
-      </el-card>
+      </WorkbenchPanelCard>
 
-      <el-card class="app-panel-card" shadow="never">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">当前生效范围</h2>
-            <p class="section-subtitle">按项目、语言对和内容类型查看当前 active 治理包。</p>
-          </div>
-        </div>
+      <WorkbenchPanelCard
+        title="当前生效范围"
+        subtitle="按项目、语言对和内容类型查看当前 active 治理包。"
+        card-class="active-scope-card"
+      >
         <el-empty v-if="!activeReleases.length" description="暂无生效范围" :image-size="90" />
         <div v-else class="active-scope-list">
           <button
@@ -72,16 +74,15 @@
             <small>术语 {{ assetLabel(item.translation_term_set) }} · 规则 {{ assetLabel(item.term_rule_set) }}</small>
           </button>
         </div>
-      </el-card>
+      </WorkbenchPanelCard>
     </section>
 
-    <el-card class="app-panel-card app-page-shell app-page-shell--wide release-wizard" shadow="never">
-      <div class="section-header">
-        <div>
-          <h2 class="section-title">新增发布向导</h2>
-          <p class="section-subtitle">按步骤选择术语集版本、规则配置、适用范围并完成发布前校验。</p>
-        </div>
-      </div>
+    <section class="app-page-shell app-page-shell--wide">
+      <WorkbenchPanelCard
+        title="新增发布向导"
+        subtitle="按步骤选择术语集版本、规则配置、适用范围并完成发布前校验。"
+        card-class="release-wizard"
+      >
 
       <el-steps :active="wizardStep" finish-status="success" simple>
         <el-step title="选择术语集版本" />
@@ -186,7 +187,8 @@
           确认发布
         </el-button>
       </div>
-    </el-card>
+      </WorkbenchPanelCard>
+    </section>
 
     <el-drawer v-model="detailDrawer.visible" title="术语发布详情" size="620px">
       <template v-if="detailDrawer.release">
@@ -234,6 +236,8 @@ import type {
   TranslationTermSetListItemResponse,
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
+import WorkbenchPageHeader from "@/components/WorkbenchPageHeader.vue";
+import WorkbenchPanelCard from "@/components/WorkbenchPanelCard.vue";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { formatDateTime } from "@/utils/format";
 

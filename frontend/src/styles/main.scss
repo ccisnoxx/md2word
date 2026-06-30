@@ -438,6 +438,8 @@ button:disabled,
 .app-page {
   isolation: isolate;
   position: relative;
+  width: 100%;
+  min-width: 0;
   min-height: calc(100vh - var(--app-header-height) - 56px);
   color: var(--app-color-text);
   animation: app-page-enter var(--app-motion-base) var(--app-ease-out) both;

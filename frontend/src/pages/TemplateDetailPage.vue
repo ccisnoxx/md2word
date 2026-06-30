@@ -1,29 +1,32 @@
 <!-- frontend/src/pages/TemplateDetailPage.vue: Word template document file and version lifecycle page. -->
 <template>
   <main class="template-detail-page app-page" aria-labelledby="template-title">
-    <section class="page-heading app-page-header app-page-shell app-page-shell--wide">
-      <div>
-        <p class="page-kicker">Word 模板文档</p>
-        <h1 id="template-title" class="page-title">Word 模板文档</h1>
-        <p class="page-description">{{ template?.name || templateId }}：管理 DOCX 模板文件、默认页眉内容、公司 Logo 和模板版本发布流程。</p>
-      </div>
-      <div class="toolbar">
+    <WorkbenchPageHeader
+      title-id="template-title"
+      kicker="Word 模板文档"
+      title="Word 模板文档"
+      :description="`${template?.name || templateId}：管理 DOCX 模板文件、默认页眉内容、公司 Logo 和模板版本发布流程。`"
+      wide
+      section-class="page-heading app-page-header"
+      actions-class="toolbar"
+    >
+      <template #actions>
         <el-button :icon="Brush" @click="openStyleConfig">页面样式配置</el-button>
         <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
-      </div>
-    </section>
+      </template>
+    </WorkbenchPageHeader>
 
     <ApiErrorAlert class="app-page-shell app-page-shell--wide" :error="error" />
 
     <section v-if="template" class="document-grid app-page-shell app-page-shell--wide">
-      <el-card class="app-panel-card document-summary-card" shadow="never">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">模板文件</h2>
-            <p class="section-subtitle">DOCX 文件决定默认页眉、Logo、基础版式骨架和可下载模板资产。</p>
-          </div>
+      <WorkbenchPanelCard
+        title="模板文件"
+        subtitle="DOCX 文件决定默认页眉、Logo、基础版式骨架和可下载模板资产。"
+        card-class="document-summary-card"
+      >
+        <template #actions>
           <el-tag v-if="template.is_default" type="success" effect="plain">当前默认模板</el-tag>
-        </div>
+        </template>
         <dl class="meta-list">
           <div><dt>模板 ID</dt><dd class="mono">{{ template.id }}</dd></div>
           <div><dt>当前版本</dt><dd>{{ template.version }}</dd></div>
@@ -34,15 +37,13 @@
           <el-button :icon="Download" :disabled="!template.downloadable" @click="downloadTemplate">下载模板</el-button>
           <el-button :icon="Brush" type="primary" plain @click="openStyleConfig">配置页面样式</el-button>
         </div>
-      </el-card>
+      </WorkbenchPanelCard>
 
-      <el-card class="app-panel-card boundary-card" shadow="never">
-        <div class="section-header compact">
-          <div>
-            <h2 class="section-title">职责边界</h2>
-            <p class="section-subtitle">模板文档和页面样式配置分开维护，发布后通过同一 Template Version 生效。</p>
-          </div>
-        </div>
+      <WorkbenchPanelCard
+        title="职责边界"
+        subtitle="模板文档和页面样式配置分开维护，发布后通过同一 Template Version 生效。"
+        card-class="boundary-card"
+      >
         <div class="boundary-list">
           <article>
             <strong>模板文档负责</strong>
@@ -53,16 +54,14 @@
             <span>页边距、标题、目录、正文、表格、页眉/页脚文字样式等输出格式。</span>
           </article>
         </div>
-      </el-card>
+      </WorkbenchPanelCard>
 
       <RoleGate>
-        <el-card class="app-panel-card upload-card" shadow="never">
-          <div class="section-header">
-            <div>
-              <h2 class="section-title">上传模板 draft</h2>
-              <p class="section-subtitle">只上传 .docx。新版本需创建验证任务、发布并设为默认后才会影响后续 Word 生成。</p>
-            </div>
-          </div>
+        <WorkbenchPanelCard
+          title="上传模板 draft"
+          subtitle="只上传 .docx。新版本需创建验证任务、发布并设为默认后才会影响后续 Word 生成。"
+          card-class="upload-card"
+        >
           <el-upload
             ref="uploadRef"
             action=""
@@ -87,19 +86,17 @@
           <el-button type="primary" :loading="uploading" :disabled="!draftFile" @click="uploadDraftVersion">
             上传 draft
           </el-button>
-        </el-card>
+        </WorkbenchPanelCard>
       </RoleGate>
     </section>
 
-    <el-card class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
-      <div class="section-header">
-        <div>
-          <h2 class="section-title">版本列表</h2>
-          <p class="section-subtitle">publish 和 set-default 是两个显式动作；页面样式 draft 也会出现在这里。</p>
-        </div>
-      </div>
-
-      <el-table :data="versions" :loading="loading" empty-text="暂无版本">
+    <section class="app-page-shell app-page-shell--wide">
+      <WorkbenchPanelCard
+        title="版本列表"
+        subtitle="publish 和 set-default 是两个显式动作；页面样式 draft 也会出现在这里。"
+        card-class="app-table-card"
+      >
+        <el-table :data="versions" :loading="loading" empty-text="暂无版本">
         <el-table-column prop="version" label="版本" width="90" />
         <el-table-column label="状态" width="130">
           <template #default="{ row }">
@@ -150,8 +147,9 @@
             </RoleGate>
           </template>
         </el-table-column>
-      </el-table>
-    </el-card>
+        </el-table>
+      </WorkbenchPanelCard>
+    </section>
 
     <el-dialog v-model="validationDialog.visible" title="创建模板验证任务" width="560px">
       <p class="dialog-note">
@@ -232,6 +230,8 @@ import type {
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import RoleGate from "@/components/RoleGate.vue";
+import WorkbenchPageHeader from "@/components/WorkbenchPageHeader.vue";
+import WorkbenchPanelCard from "@/components/WorkbenchPanelCard.vue";
 import { useAuthStore } from "@/stores/auth";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { documentJobModeCreateLanguage, documentJobModeTranslationMode } from "@/utils/format";
