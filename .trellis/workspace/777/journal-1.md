@@ -305,3 +305,36 @@ Added shared smoke accessibility helpers, centralized 375/768/1024/1440 viewport
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: Dashboard and system workbench template
+
+**Date**: 2026-06-30
+**Task**: Dashboard and system workbench template
+**Branch**: `main`
+
+### Summary
+
+Unified Operations Cockpit, System Status, Ops Dashboard, and Acceptance Center around shared page headers, metric strips, and panel cards; verified build and the key cockpit, acceptance, and admin dashboard smoke suites; then archived the child task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `beed7aa9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
