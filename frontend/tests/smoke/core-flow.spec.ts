@@ -2,6 +2,8 @@
 // Purpose: Browser smoke coverage for the internal portal's core operator workflows.
 import { expect, test, type Page } from "@playwright/test";
 
+const adminOnlyDeleteReason = "只有 admin 可以删除文档任务。";
+
 const actionStates = {
   download: { enabled: true, disabled_reason: null, retryable: false },
   retry: { enabled: false, disabled_reason: "只有 failed 文档任务允许重试。", retryable: false },
@@ -9,7 +11,7 @@ const actionStates = {
   archive: { enabled: true, disabled_reason: null, retryable: false },
   unarchive: { enabled: false, disabled_reason: "任务未归档。", retryable: false },
   clone: { enabled: true, disabled_reason: null, retryable: false },
-  delete: { enabled: true, disabled_reason: null, retryable: false },
+  delete: { enabled: false, disabled_reason: adminOnlyDeleteReason, retryable: false },
 };
 
 const activeActionStates = {
@@ -280,6 +282,7 @@ type MockApiOptions = {
 type DocumentJobCreatePayload = {
   source_file_id?: string;
   mode?: string;
+  translation_mode?: string;
   document_language?: string;
 };
 
@@ -525,6 +528,26 @@ const healthMetrics = {
     translation_profile_versions: 1,
   },
   audit_events: { total: 3 },
+};
+
+const auditEventList = {
+  items: [
+    {
+      audit_id: "audit_smoke_delete_denied",
+      actor_id: "user_operator",
+      actor_role: "operator",
+      action: "document_job.delete_denied",
+      target_type: "document_job",
+      target_id: "docjob_smoke_001",
+      reason: "只有 admin 可以删除文档任务。",
+      details: { role: "operator", source: "core-flow-smoke" },
+      trace_id: "trace_audit_smoke",
+      created_at: "2026-06-11T00:05:00Z",
+    },
+  ],
+  page: 1,
+  page_size: 25,
+  total: 1,
 };
 
 const activeOpsAlert = {
@@ -1018,6 +1041,33 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
   await page.route("**/api/v1/health/metrics", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(healthMetrics) });
   });
+  await page.route("**/api/v1/audit-events**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/export")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          manifest: {
+            exported_at: "2026-06-11T00:05:00Z",
+            requested_by: "user_admin",
+            actor_role: "admin",
+            sort: "created_at_desc",
+            filters: {},
+            matched_count: 1,
+            exported_count: 1,
+            max_rows: 5000,
+            truncated: false,
+            columns: ["created_at", "actor_role", "actor_id", "action", "target_type", "target_id", "reason", "trace_id"],
+            audit_id: "audit_export_smoke",
+          },
+          csv_text: "created_at,actor_role,actor_id,action,target_type,target_id,reason,trace_id\n",
+        }),
+      });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(auditEventList) });
+  });
   await page.route("**/api/v1/health/ops-alerts", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(opsAlerts) });
   });
@@ -1266,6 +1316,20 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
             ? null
             : { label: "translation-profile-default", resource_id: "translation_profile_default", version: "1" },
         },
+        translation_defaults: {
+          en2zh: {
+            translation_term_set: options.en2zhAvailable === false
+              ? null
+              : { label: "translation-term-default", resource_id: "translation_term_default", version: "1" },
+            translation_profile: options.en2zhAvailable === false
+              ? null
+              : { label: "translation-profile-default", resource_id: "translation_profile_default", version: "1" },
+          },
+          ru2zh: {
+            translation_term_set: null,
+            translation_profile: null,
+          },
+        },
         options: {
           templates: [],
           term_rule_sets: [],
@@ -1274,6 +1338,11 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
         },
         readiness: {
           en2zh_available: options.en2zhAvailable !== false,
+          ru2zh_available: false,
+          translation_modes: {
+            en2zh: options.en2zhAvailable !== false,
+            ru2zh: false,
+          },
           p0_document_jobs_required: true,
           p0_document_jobs_ready: true,
           document_jobs_worker_backend: "external",
@@ -1593,8 +1662,10 @@ async function expectLocatorInViewport(page: Page, selector: string): Promise<vo
 }
 
 test("operations redesign renders verified desktop, tablet, and mobile screenshots", async ({ browser }, testInfo) => {
+  test.setTimeout(60_000);
   const viewports = [
     { name: "desktop", width: 1440, height: 900 },
+    { name: "laptop", width: 1024, height: 768 },
     { name: "tablet", width: 768, height: 1024 },
     { name: "mobile", width: 375, height: 812 },
   ];
@@ -1618,6 +1689,10 @@ test("operations redesign renders verified desktop, tablet, and mobile screensho
     await expect(page.locator(".work-queue-strip").getByRole("button", { name: /失败任务/ })).toBeVisible();
     await expect(page.getByText("smoke.pdf")).toBeVisible();
     await expectNoPageHorizontalOverflow(page);
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("link", { name: "跳到主内容" })).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe("app-main-content");
     await settleWorkbenchScreenshot(page);
     await page.screenshot({ path: testInfo.outputPath(`ops-jobs-${viewport.name}.png`) });
 
@@ -1635,11 +1710,11 @@ test("operations redesign renders verified desktop, tablet, and mobile screensho
     await page.goto("/jobs?sort=created_at_desc&include_archived=false&page=1");
     await expect(page.getByRole("heading", { name: "任务列表" })).toBeVisible();
 
-    if (viewport.name === "desktop") {
+    if (viewport.width > 980) {
       await expect(page.locator(".app-sidebar-shell")).toBeVisible();
       await expect(page.locator(".app-sidebar-shell").getByText("运营工作台")).toBeVisible();
       await expect(page.locator(".app-sidebar-shell").getByRole("link", { name: "任务工作台" })).toHaveAttribute("aria-current", "page");
-      await page.screenshot({ path: testInfo.outputPath("app-shell-expanded-desktop.png") });
+      await page.screenshot({ path: testInfo.outputPath(`app-shell-expanded-${viewport.name}.png`) });
 
       await page.getByRole("button", { name: "收起侧边栏" }).click();
       await expect.poll(() => page.evaluate(() => window.localStorage.getItem("md2word.sidebar.collapsed"))).toBe("true");
@@ -1648,7 +1723,7 @@ test("operations redesign renders verified desktop, tablet, and mobile screensho
       await expect(page.locator(".app-sidebar-shell .sidebar-link-label")).toHaveCount(0);
       await expectNoPageHorizontalOverflow(page);
       await settleWorkbenchScreenshot(page);
-      await page.screenshot({ path: testInfo.outputPath("app-shell-collapsed-desktop.png") });
+      await page.screenshot({ path: testInfo.outputPath(`app-shell-collapsed-${viewport.name}.png`) });
     } else {
       await expect(page.locator(".app-sidebar-shell")).toBeHidden();
       await page.getByRole("button", { name: "打开导航" }).click();
@@ -1660,6 +1735,7 @@ test("operations redesign renders verified desktop, tablet, and mobile screensho
       await page.screenshot({ path: testInfo.outputPath(`app-shell-drawer-${viewport.name}.png`) });
       await page.keyboard.press("Escape");
       await expect(page.locator(".app-mobile-drawer")).toBeHidden();
+      await expect(page.getByRole("button", { name: "打开导航" })).toBeFocused();
     }
 
     await page.locator(".jobs-table-card .el-table__body-wrapper .el-checkbox").first().click();
@@ -1713,6 +1789,8 @@ test("operator can log in and inspect the document job workbench", async ({ page
   await page.goto("/jobs?sort=created_at_desc&include_archived=false&page=1");
   await expect(page.getByRole("heading", { name: "任务列表" })).toBeVisible();
   await expect(page.getByText("smoke.pdf")).toBeVisible();
+  await page.locator(".job-table .more-action").first().click();
+  await expect(page.locator(".el-dropdown-menu:visible").getByText("删除", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "处理中", exact: true }).click();
   await expect(page).toHaveURL(/status_group=active/);
   await expect(page.getByText("active-smoke.pdf")).toBeVisible();
@@ -1724,6 +1802,7 @@ test("operator can log in and inspect the document job workbench", async ({ page
   await expect(page.getByRole("heading", { name: "任务详情" })).toBeVisible();
   await expect(page.getByText("结果文件 ID")).toBeVisible();
   await expect(page.getByRole("button", { name: "下载" })).toBeEnabled();
+  await expect(page.locator(".job-actions").getByRole("button", { name: "删除" })).toHaveCount(0);
   await page.getByRole("button", { name: "下载" }).click();
   await expect(page.getByText("下载链接已生成")).toBeVisible();
 });
@@ -1789,7 +1868,7 @@ test("operator can create an English to Chinese document job from the mode selec
   await expect.poll(() => controls.createdDocumentJobPayloads().length).toBe(1);
   expect(controls.createdDocumentJobPayloads()[0]).toMatchObject({
     source_file_id: "file_upload_smoke",
-    mode: "en2zh_pdf_to_word",
+    translation_mode: "en2zh",
     document_language: "en",
   });
 });
@@ -1805,7 +1884,7 @@ test("operator sees unavailable English to Chinese mode disabled while direct mo
 
   await page.goto("/jobs/new");
   await expect(page.getByRole("heading", { name: "创建转换任务" })).toBeVisible();
-  await expect(page.getByText("英译中需要默认翻译术语集和翻译配置发布后才能选择。")).toBeVisible();
+  await expect(page.getByText(/英译中\s*需要默认翻译术语集和翻译配置发布后才能选择。/)).toBeVisible();
   await expect(page.getByRole("radio", { name: "英译中" })).toBeDisabled();
   await page.locator("input[type='file']").setInputFiles({
     name: "smoke.pdf",
@@ -1817,7 +1896,7 @@ test("operator sees unavailable English to Chinese mode disabled while direct mo
   await expect.poll(() => controls.createdDocumentJobPayloads().length).toBe(1);
   expect(controls.createdDocumentJobPayloads()[0]).toMatchObject({
     source_file_id: "file_upload_smoke",
-    mode: "direct_pdf_to_word",
+    translation_mode: "direct",
     document_language: "auto",
   });
 });
@@ -1864,7 +1943,7 @@ test("admin can edit Word page styles and save a draft version", async ({ page }
 
   await page.goto("/settings/word-page-styles");
   await expect(page.getByRole("heading", { name: "Word 页面样式配置", level: 1 })).toBeVisible();
-  await page.getByRole("button", { name: "配置页面样式" }).click();
+  await page.getByRole("button", { name: "配置样式" }).click();
   await expect(page).toHaveURL(/\/settings\/word-page-styles\/default$/);
   await expect(page.getByText("公司 Logo、默认页眉内容和 DOCX 文件由 Word 模板文档维护")).toBeVisible();
   await expect(page.getByLabel("Word 页面样式编辑器").getByText("Logo 路径")).not.toBeVisible();
@@ -2000,7 +2079,7 @@ test("operator sees unavailable translation QA as readonly and cannot submit rev
   expect(controls.translationQaPatchCount()).toBe(0);
 });
 
-test("admin can inspect status, ops gates, and file retention workspaces", async ({ page }) => {
+test("admin can inspect status, audit, ops gates, and file retention workspaces", async ({ page }) => {
   await mockApi(page);
 
   await page.goto("/login");
@@ -2013,6 +2092,11 @@ test("admin can inspect status, ops gates, and file retention workspaces", async
   await expect(page.getByRole("heading", { name: "系统状态", level: 1 })).toBeVisible();
   await expect(page.getByText("md2word").first()).toBeVisible();
   await expect(page.getByLabel("任务和资源状态").getByRole("link", { name: "运维看板" })).toBeVisible();
+
+  await page.goto("/system-status/audit-events");
+  await expect(page.getByRole("heading", { name: "审计日志", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "事件列表" })).toBeVisible();
+  await expect(page.getByText("document_job.delete_denied")).toBeVisible();
 
   await page.goto("/system-status/ops-dashboard");
   await expect(page.getByRole("heading", { name: "运维看板", level: 1 })).toBeVisible();

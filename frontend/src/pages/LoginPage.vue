@@ -264,7 +264,7 @@ async function submit(): Promise<void> {
   position: absolute;
   top: 18px;
   right: 18px;
-  z-index: 2;
+  z-index: var(--app-layer-topbar);
 }
 
 .login-page::after {
@@ -320,8 +320,10 @@ async function submit(): Promise<void> {
 
 .brand-name {
   color: var(--login-text);
+  font-family: var(--app-font-heading);
   font-size: 14px;
   font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .login-eyebrow,
@@ -336,8 +338,10 @@ async function submit(): Promise<void> {
   max-width: 620px;
   margin: 0 0 14px;
   color: var(--login-text);
+  font-family: var(--app-font-heading);
   font-size: clamp(32px, 4vw, 44px);
   font-weight: 760;
+  letter-spacing: -0.02em;
   line-height: 1.14;
 }
 
@@ -542,8 +546,10 @@ async function submit(): Promise<void> {
 
 .signal-item strong {
   color: var(--login-text);
+  font-family: var(--app-font-heading);
   font-size: 18px;
   font-weight: 760;
+  letter-spacing: -0.01em;
 }
 
 .login-card {
@@ -573,8 +579,10 @@ async function submit(): Promise<void> {
 .login-card-header h2 {
   margin: 0 0 8px;
   color: var(--login-text);
+  font-family: var(--app-font-heading);
   font-size: 24px;
   font-weight: 760;
+  letter-spacing: -0.01em;
 }
 
 .login-card-header p {

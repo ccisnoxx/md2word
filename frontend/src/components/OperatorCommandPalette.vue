@@ -258,7 +258,7 @@ defineExpose({ show });
 .command-palette-overlay {
   position: fixed;
   inset: 0;
-  z-index: 3000;
+  z-index: var(--app-layer-command-palette);
   display: grid;
   align-items: start;
   justify-items: center;
@@ -296,7 +296,9 @@ defineExpose({ show });
 }
 
 .command-palette-header h2 {
+  font-family: var(--app-font-heading);
   font-size: 20px;
+  letter-spacing: -0.01em;
 }
 
 .command-search-row {

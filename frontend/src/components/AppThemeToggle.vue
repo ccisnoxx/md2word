@@ -17,9 +17,8 @@
 import { computed, onMounted, ref, type Component } from "vue";
 import { Moon, Monitor, Sunny } from "@element-plus/icons-vue";
 
-type ThemeMode = "system" | "light" | "dark";
+import { applyThemeMode, getStoredThemeMode, persistThemeMode, type ThemeMode } from "@/utils/theme";
 
-const THEME_STORAGE_KEY = "md2word.theme.mode";
 const themeMode = ref<ThemeMode>(getStoredThemeMode());
 const themeOrder: ThemeMode[] = ["system", "dark", "light"];
 const themeLabels: Record<ThemeMode, string> = {
@@ -48,29 +47,6 @@ function cycleThemeMode(): void {
   const nextMode = themeOrder[(currentIndex + 1) % themeOrder.length] || "system";
   themeMode.value = nextMode;
   persistThemeMode(nextMode);
-}
-
-function getStoredThemeMode(): ThemeMode {
-  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-  if (stored === "light" || stored === "dark" || stored === "system") {
-    return stored;
-  }
-  return "system";
-}
-
-function persistThemeMode(mode: ThemeMode): void {
-  window.localStorage.setItem(THEME_STORAGE_KEY, mode);
-  applyThemeMode(mode);
-}
-
-function applyThemeMode(mode: ThemeMode): void {
-  const root = document.documentElement;
-  if (mode === "system") {
-    root.removeAttribute("data-theme");
-  } else {
-    root.dataset.theme = mode;
-  }
-  root.dataset.themeMode = mode;
 }
 </script>
 

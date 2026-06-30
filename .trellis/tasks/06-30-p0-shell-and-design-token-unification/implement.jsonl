@@ -1,0 +1,5 @@
+{"file":".trellis/tasks/06-30-frontend-workbench-ui-design-system-and-beautification-planning/prd.md","reason":"Parent task requirements and cross-child invariants for the frontend redesign planning tree."}
+{"file":".trellis/tasks/06-30-frontend-workbench-ui-design-system-and-beautification-planning/design.md","reason":"Parent-level design-system direction, form-table evaluation boundary, and rollout topology that this child must inherit."}
+{"file":".trellis/tasks/06-30-p0-shell-and-design-token-unification/prd.md","reason":"Authoritative requirements, scope boundary, resolved decisions, and acceptance criteria for shell/token unification."}
+{"file":".trellis/tasks/06-30-p0-shell-and-design-token-unification/design.md","reason":"Concrete token direction, shell ownership, layer rules, and migration strategy for later implementation work."}
+{"file":".trellis/tasks/06-30-p0-shell-and-design-token-unification/implement.md","reason":"Ordered planning checklist, implementation touchpoints, review gates, and minimum validation expectations for this child."}
