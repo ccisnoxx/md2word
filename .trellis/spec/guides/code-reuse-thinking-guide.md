@@ -110,6 +110,33 @@ extract section shell / drawer shell / technical key-value primitives. Do not
 collapse the domain logic into one generic diagnostic component unless the data
 contract is actually shared.
 
+### Pattern 2.7: Shared Dashboard Shell Before BI Flourishes
+
+**Bad**: Ops and admin dashboard pages all need KPI cards, blocker alerts, and
+evidence panels, but each page invents its own header/grid/card shell while the
+team debates charts.
+
+This usually causes:
+
+- first-screen hierarchy drifting between dashboard pages,
+- repeated panel header markup,
+- inconsistent freshness/severity placement,
+- chart pressure before evidence-first layout is stable.
+
+**Good**: Standardize the shell first, then keep page-specific modules local:
+
+```vue
+<WorkbenchPageHeader ... />
+<WorkbenchMetricStrip :items=\"overviewItems\" ... />
+<WorkbenchPanelCard title=\"Alert Delivery\" ...>
+  ...
+</WorkbenchPanelCard>
+```
+
+**Rule**: For dashboard/system pages, reuse shared header / metric-strip /
+panel-card primitives before adding charts or inventing page-specific KPI
+wrappers.
+
 ### Pattern 3: Repeated Constants
 
 **Bad**: Defining the same constant in multiple files

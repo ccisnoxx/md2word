@@ -2,56 +2,27 @@
 <!-- Purpose: Render the Admin-only overview for backend health, metrics, and storage operations. -->
 <template>
   <main class="system-status-page app-page" aria-labelledby="system-status-title">
-    <section class="page-heading app-page-header app-page-shell">
-      <div>
-        <p class="page-kicker">系统状态</p>
-        <h1 id="system-status-title" class="page-title">系统状态</h1>
-        <p class="page-description">只读查看后端就绪检查、任务工作进程、存储、队列和默认资源状态。</p>
-      </div>
-      <div class="heading-actions">
+    <WorkbenchPageHeader
+      title-id="system-status-title"
+      kicker="系统状态"
+      title="系统状态"
+      description="只读查看后端就绪检查、任务工作进程、存储、队列和默认资源状态。"
+      section-class="page-heading app-page-header"
+    >
+      <template #actions>
         <el-tag :type="readiness.tagType" effect="plain">{{ readiness.label }}</el-tag>
         <el-button :icon="Refresh" :loading="loading" @click="loadStatus">刷新状态</el-button>
-      </div>
-    </section>
+      </template>
+    </WorkbenchPageHeader>
 
     <ApiErrorAlert class="app-page-shell" :error="error" />
 
-    <section v-loading="loading" class="overview-grid app-metric-grid app-page-shell" aria-label="系统状态概览">
-      <article class="overview-card readiness-card app-metric-card app-status-card" :class="`is-${readiness.key}`">
-        <span class="status-dot app-status-dot" aria-hidden="true"></span>
-        <div>
-          <strong>{{ readiness.label }}</strong>
-          <small>{{ readiness.description }}</small>
-        </div>
-      </article>
-
-      <article class="overview-card app-metric-card">
-        <span>应用</span>
-        <strong>{{ appName }}</strong>
-        <small>版本: {{ deploymentVersion }} · 就绪接口: {{ endpointStatus(ready?.status) }}</small>
-      </article>
-
-      <article class="overview-card app-metric-card">
-        <span>部署</span>
-        <strong>{{ deploymentId }}</strong>
-        <small>{{ deploymentRuntimeLabel }}</small>
-      </article>
-
-      <article class="overview-card app-metric-card">
-        <span>指标时间</span>
-        <strong>{{ formatDateTime(metrics?.generated_at) }}</strong>
-        <small>页面刷新：{{ formatDateTime(refreshedAt) }}</small>
-      </article>
-
-      <article class="overview-card app-metric-card">
-        <span>审计事件</span>
-        <strong>{{ auditEventsTotal }}</strong>
-        <small>
-          来自 `/api/v1/health/metrics`
-          <router-link class="metric-link" to="/system-status/audit-events">查看日志</router-link>
-        </small>
-      </article>
-    </section>
+    <WorkbenchMetricStrip
+      v-loading="loading"
+      label="系统状态概览"
+      :items="overviewItems"
+      section-class="overview-grid"
+    />
 
     <section v-if="blockers.length || warnings.length" class="status-alerts app-alert-stack app-page-shell" aria-label="就绪检查阻断和告警">
       <el-alert v-if="blockers.length" type="error" title="就绪检查阻断" :closable="false" show-icon>
@@ -67,59 +38,55 @@
     </section>
 
     <section class="status-panels app-page-shell" aria-label="系统状态详情">
-      <el-card class="card-flat status-panel app-panel-card" shadow="never">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">后端</h2>
-            <p class="section-subtitle">后端运行态和元数据存储。</p>
-          </div>
-        </div>
+      <WorkbenchPanelCard
+        title="后端"
+        subtitle="后端运行态和元数据存储。"
+        card-class="status-panel"
+      >
         <el-descriptions :column="1" border size="small">
           <el-descriptions-item v-for="item in backendItems" :key="item.label" :label="item.label">
             <span class="mono">{{ item.value }}</span>
           </el-descriptions-item>
         </el-descriptions>
-      </el-card>
+      </WorkbenchPanelCard>
 
-      <el-card class="card-flat status-panel app-panel-card" shadow="never">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">工作进程</h2>
-            <p class="section-subtitle">任务执行模式、阶段调度器和队列存储。</p>
-          </div>
-        </div>
+      <WorkbenchPanelCard
+        title="工作进程"
+        subtitle="任务执行模式、阶段调度器和队列存储。"
+        card-class="status-panel"
+      >
         <el-descriptions :column="1" border size="small">
           <el-descriptions-item v-for="item in workerItems" :key="item.label" :label="item.label">
             <span class="mono">{{ item.value }}</span>
           </el-descriptions-item>
         </el-descriptions>
-      </el-card>
+      </WorkbenchPanelCard>
 
-      <el-card class="card-flat status-panel app-panel-card" shadow="never">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">存储</h2>
-            <p class="section-subtitle">产物存储、本地可写性和剩余空间。</p>
-          </div>
+      <WorkbenchPanelCard
+        title="存储"
+        subtitle="产物存储、本地可写性和剩余空间。"
+        card-class="status-panel"
+      >
+        <template #actions>
           <div class="toolbar">
             <router-link to="/system-status/file-retention">文件管理与清理</router-link>
           </div>
-        </div>
+        </template>
         <el-descriptions :column="1" border size="small">
           <el-descriptions-item v-for="item in storageItems" :key="item.label" :label="item.label">
             <span class="mono">{{ item.value }}</span>
           </el-descriptions-item>
         </el-descriptions>
-      </el-card>
+      </WorkbenchPanelCard>
     </section>
 
     <section class="status-panels status-panels-wide app-page-shell" aria-label="任务和资源状态">
-      <el-card class="card-flat status-panel app-panel-card" shadow="never">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">任务与队列</h2>
-            <p class="section-subtitle">任务状态和阶段消息计数。</p>
-          </div>
+      <WorkbenchPanelCard
+        title="任务与队列"
+        subtitle="任务状态和阶段消息计数。"
+        card-class="status-panel"
+      >
+        <template #actions>
           <div class="toolbar">
             <router-link to="/system-status/ops-dashboard">运维看板</router-link>
             <router-link :to="{ path: '/jobs', query: { status: 'failed', sort: 'updated_at_desc' } }">
@@ -129,7 +96,7 @@
               运行中任务
             </router-link>
           </div>
-        </div>
+        </template>
         <div class="metric-table app-key-value-list">
           <div v-for="item in jobMetricItems" :key="item.label" class="metric-row app-key-value-row">
             <span>{{ item.label }}</span>
@@ -150,21 +117,19 @@
             <strong>{{ item.value }}</strong>
           </div>
         </div>
-      </el-card>
+      </WorkbenchPanelCard>
 
-      <el-card class="card-flat status-panel app-panel-card" shadow="never">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">资源版本</h2>
-            <p class="section-subtitle">当前默认资源版本；未上报字段会明确标记。</p>
-          </div>
-        </div>
+      <WorkbenchPanelCard
+        title="资源版本"
+        subtitle="当前默认资源版本；未上报字段会明确标记。"
+        card-class="status-panel"
+      >
         <el-descriptions :column="1" border size="small">
           <el-descriptions-item v-for="item in resourceItems" :key="item.label" :label="item.label">
             <span class="mono">{{ item.value }}</span>
           </el-descriptions-item>
         </el-descriptions>
-      </el-card>
+      </WorkbenchPanelCard>
     </section>
   </main>
 </template>
@@ -176,6 +141,9 @@ import { Refresh } from "@element-plus/icons-vue";
 import { healthApi } from "@/api/health";
 import type { HealthMetricsResponse, HealthReadyResponse } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
+import WorkbenchMetricStrip, { type WorkbenchMetricItem } from "@/components/WorkbenchMetricStrip.vue";
+import WorkbenchPageHeader from "@/components/WorkbenchPageHeader.vue";
+import WorkbenchPanelCard from "@/components/WorkbenchPanelCard.vue";
 import { booleanText, commonValueText, healthLabelText, missingText, readinessCodeText } from "@/utils/displayText";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { formatBytes, formatDateTime, jobStatusText } from "@/utils/format";
@@ -262,6 +230,39 @@ const readiness = computed<ReadinessView>(() => {
     tagType: "info",
   };
 });
+const overviewItems = computed<WorkbenchMetricItem[]>(() => [
+  {
+    id: "readiness",
+    label: "整体状态",
+    value: readiness.value.label,
+    helper: readiness.value.description,
+    statusKey: readiness.value.key,
+  },
+  {
+    id: "app",
+    label: "应用",
+    value: appName.value,
+    helper: `版本: ${deploymentVersion.value} · 就绪接口: ${endpointStatus(ready.value?.status)}`,
+  },
+  {
+    id: "deployment",
+    label: "部署",
+    value: deploymentId.value,
+    helper: deploymentRuntimeLabel.value,
+  },
+  {
+    id: "metrics_at",
+    label: "指标时间",
+    value: formatDateTime(metrics.value?.generated_at),
+    helper: `页面刷新：${formatDateTime(refreshedAt.value)}`,
+  },
+  {
+    id: "audit_events",
+    label: "审计事件",
+    value: auditEventsTotal.value,
+    helper: "来自 /api/v1/health/metrics · 查看日志",
+  },
+]);
 
 const backendItems = computed<DetailItem[]>(() => [
   detailItem("app_name", appName.value),

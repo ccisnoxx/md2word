@@ -2,17 +2,19 @@
 <!-- Purpose: Render Admin-only operations status, fake controls, and dry-run safety panels. -->
 <template>
   <main class="ops-dashboard-page app-page" aria-labelledby="ops-dashboard-title">
-    <section class="page-heading app-page-header app-page-shell app-page-shell--wide">
-      <div>
-        <p class="page-kicker">Operations</p>
-        <h1 id="ops-dashboard-title" class="page-title">运维看板</h1>
-        <p class="page-description">汇总 worker、队列、readiness、存储和任务风险；任务恢复先做 registry preview，再复用既有任务动作处理。</p>
-      </div>
-      <div class="heading-actions">
+    <WorkbenchPageHeader
+      title-id="ops-dashboard-title"
+      kicker="Operations"
+      title="运维看板"
+      description="汇总 worker、队列、readiness、存储和任务风险；任务恢复先做 registry preview，再复用既有任务动作处理。"
+      wide
+      section-class="page-heading app-page-header"
+    >
+      <template #actions>
         <el-tag :type="opsStatus.tagType" effect="plain">{{ opsStatus.label }}</el-tag>
         <el-button :icon="Refresh" :loading="loading" @click="loadDashboard">刷新看板</el-button>
-      </div>
-    </section>
+      </template>
+    </WorkbenchPageHeader>
 
     <ApiErrorAlert class="app-page-shell app-page-shell--wide" :error="error" />
 
@@ -20,46 +22,13 @@
       此页面不会同步恢复 MinerU 结果、cleanup、真实 provider cancellation 或真实删除；文档任务 replay 只投递 Worker 或清理终态 callback。
     </el-alert>
 
-    <section v-loading="loading" class="summary-grid app-metric-grid app-page-shell app-page-shell--wide" aria-label="运维摘要">
-      <article class="summary-card status-card app-metric-card app-status-card" :class="`is-${opsStatus.key}`">
-        <span class="status-dot app-status-dot" aria-hidden="true"></span>
-        <div>
-          <span>整体状态</span>
-          <strong>{{ opsStatus.label }}</strong>
-          <small>{{ opsStatus.description }}</small>
-        </div>
-      </article>
-
-      <article class="summary-card app-metric-card">
-        <span>Worker</span>
-        <strong>{{ workerMode }}</strong>
-        <small>dispatcher: {{ stageDispatcher }}</small>
-      </article>
-
-      <article class="summary-card app-metric-card">
-        <span>P0 jobs</span>
-        <strong>{{ p0DocumentJobsLabel }}</strong>
-        <small>backend: {{ documentJobsWorkerBackend }} · required {{ booleanLabel(p0DocumentJobsRequired) }}</small>
-      </article>
-
-      <article class="summary-card app-metric-card">
-        <span>Stage queue</span>
-        <strong>{{ queuePressureLabel }}</strong>
-        <small>failed {{ stageFailedCount }} · stale {{ staleRunningCount }} · replayable {{ replayableCount }}</small>
-      </article>
-
-      <article class="summary-card app-metric-card">
-        <span>Callbacks</span>
-        <strong>{{ callbackPressureLabel }}</strong>
-        <small>failed {{ callbackFailedCount }} · replayable {{ callbackReplayableCount }}</small>
-      </article>
-
-      <article class="summary-card app-metric-card">
-        <span>Document jobs</span>
-        <strong>{{ failedJobsTotal }} / {{ runningJobsTotal }}</strong>
-        <small>失败 / 运行中样例来自 document-jobs 只读列表</small>
-      </article>
-    </section>
+    <WorkbenchMetricStrip
+      v-loading="loading"
+      label="运维摘要"
+      :items="overviewItems"
+      wide
+      section-class="summary-grid"
+    />
 
     <section v-if="alertItems.length" class="alert-grid app-alert-stack app-page-shell app-page-shell--wide" aria-label="运维告警和建议">
       <el-alert
@@ -76,12 +45,12 @@
     </section>
 
     <section class="integration-control-panel app-page-shell app-page-shell--wide" aria-label="真实集成控制面">
-      <el-card class="card-flat dashboard-panel app-panel-card app-table-card" shadow="never">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">Integration Control Plane</h2>
-            <p class="section-subtitle">真实外部/破坏性能力默认 blocked；此处只展示 gate，不提供执行控件。</p>
-          </div>
+      <WorkbenchPanelCard
+        title="Integration Control Plane"
+        subtitle="真实外部/破坏性能力默认 blocked；此处只展示 gate，不提供执行控件。"
+        card-class="dashboard-panel app-table-card"
+      >
+        <template #actions>
           <div class="toolbar">
             <el-tag :type="integrationOverallStatusTag" effect="plain">
               {{ integrationCapabilities?.overall_status || "not reported" }}
@@ -89,7 +58,7 @@
             <el-tag effect="plain">ready={{ readyIntegrationCapabilityCount }}</el-tag>
             <el-tag type="warning" effect="plain">blocked={{ blockedIntegrationCapabilityCount }}</el-tag>
           </div>
-        </div>
+        </template>
 
         <el-alert class="delivery-warning" type="warning" title="real integrations disabled by default" :closable="false" show-icon>
           Control plane 只读取 settings 和安全摘要；不会发送通知、调用 provider、执行 S3 delete、运行 scheduler、执行 quota enforcement 或写 audit。
@@ -134,16 +103,16 @@
             <span class="mono">{{ item.value }}</span>
           </el-descriptions-item>
         </el-descriptions>
-      </el-card>
+      </WorkbenchPanelCard>
     </section>
 
     <section class="alert-delivery-panel app-page-shell app-page-shell--wide" aria-label="告警 fake outbox 投递">
-      <el-card class="card-flat dashboard-panel app-panel-card app-table-card" shadow="never">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">Alert Delivery</h2>
-            <p class="section-subtitle">Fake outbox 保持本地 audit；Phase 7 pilot 只允许固定 Slack webhook target。</p>
-          </div>
+      <WorkbenchPanelCard
+        title="Alert Delivery"
+        subtitle="Fake outbox 保持本地 audit；Phase 7 pilot 只允许固定 Slack webhook target。"
+        card-class="dashboard-panel app-table-card"
+      >
+        <template #actions>
           <div class="toolbar">
             <el-tag effect="plain">active={{ activeOpsAlerts.length }}</el-tag>
             <el-tag effect="plain" type="info">selected={{ selectedActiveAlertCodes.length }}</el-tag>
@@ -151,7 +120,7 @@
               contract={{ alertDeliveryContract.contract_version }}
             </el-tag>
           </div>
-        </div>
+        </template>
 
         <el-alert class="delivery-warning" type="warning" title="fake delivery only" :closable="false" show-icon>
           Fake-send 会写入 <span class="mono">ops.alert_delivery_fake</span> audit；后端 safety metadata 会保持 external delivery 为 false。
@@ -427,7 +396,7 @@
             <el-table-column prop="reason" label="Reason" min-width="280" show-overflow-tooltip />
           </el-table>
         </section>
-      </el-card>
+      </WorkbenchPanelCard>
     </section>
 
     <section v-if="s3DeleteContract" class="s3-delete-contract-panel app-page-shell app-page-shell--wide" aria-label="S3 delete LocalStack fake parity contract">
@@ -1268,6 +1237,9 @@ import type {
   OpsS3DeleteAdapterContractResponse,
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
+import WorkbenchMetricStrip, { type WorkbenchMetricItem } from "@/components/WorkbenchMetricStrip.vue";
+import WorkbenchPageHeader from "@/components/WorkbenchPageHeader.vue";
+import WorkbenchPanelCard from "@/components/WorkbenchPanelCard.vue";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import {
   canArchiveDocumentJob,
@@ -1718,6 +1690,52 @@ const callbackPressureLabel = computed(() => {
   }
   return "clear";
 });
+const overviewItems = computed<WorkbenchMetricItem[]>(() => [
+  {
+    id: "overall_status",
+    label: "整体状态",
+    value: opsStatus.value.label,
+    helper: opsStatus.value.description,
+    statusKey:
+      opsStatus.value.key === "needs-attention"
+        ? "danger"
+        : opsStatus.value.key === "watch"
+          ? "warning"
+          : opsStatus.value.key === "ok"
+            ? "success"
+            : opsStatus.value.key,
+  },
+  {
+    id: "worker",
+    label: "Worker",
+    value: workerMode.value,
+    helper: `dispatcher: ${stageDispatcher.value}`,
+  },
+  {
+    id: "p0_jobs",
+    label: "P0 jobs",
+    value: p0DocumentJobsLabel.value,
+    helper: `backend: ${documentJobsWorkerBackend.value} · required ${booleanLabel(p0DocumentJobsRequired.value)}`,
+  },
+  {
+    id: "stage_queue",
+    label: "Stage queue",
+    value: queuePressureLabel.value,
+    helper: `failed ${stageFailedCount.value} · stale ${staleRunningCount.value} · replayable ${replayableCount.value}`,
+  },
+  {
+    id: "callbacks",
+    label: "Callbacks",
+    value: callbackPressureLabel.value,
+    helper: `failed ${callbackFailedCount.value} · replayable ${callbackReplayableCount.value}`,
+  },
+  {
+    id: "document_jobs",
+    label: "Document jobs",
+    value: `${failedJobsTotal.value} / ${runningJobsTotal.value}`,
+    helper: "失败 / 运行中样例来自 document-jobs 只读列表",
+  },
+]);
 
 const recoveryActionSummary = computed(() => {
   const available = recoveryActions.value.filter((item) => item.available).length;
