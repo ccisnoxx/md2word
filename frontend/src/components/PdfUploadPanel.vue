@@ -225,6 +225,9 @@ const selectableModeOptions = computed(() => documentJobModeOptions.map((option)
   ...option,
   disabled: documentJobModeRequiresTranslationResources(option.mode) && !isTranslationModeAvailable(documentJobModeTranslationMode(option.mode)),
 })));
+const firstUnavailableModeOption = computed(() =>
+  selectableModeOptions.value.find((option) => option.disabled),
+);
 const selectedModeRequiresTranslationResources = computed(() => documentJobModeRequiresTranslationResources(mode.value));
 const selectedModeDisabled = computed(() =>
   selectedModeRequiresTranslationResources.value && !isTranslationModeAvailable(selectedTranslationMode.value),
@@ -233,10 +236,15 @@ const createDisabled = computed(() => (
   !selectedFile.value || configLoading.value || configUnavailable.value || p0ExecutionBlocked.value || selectedModeDisabled.value
 ));
 const modeReadinessHint = computed(() => {
-  if (!configSummary.value || isTranslationModeAvailable(selectedTranslationMode.value)) {
+  if (!configSummary.value) {
     return "";
   }
-  return `${documentJobModeDefinitions[mode.value].shortLabel} 需要默认翻译术语集和翻译配置发布后才能选择。`;
+  const unavailableMode = selectedModeDisabled.value
+    ? mode.value
+    : firstUnavailableModeOption.value?.mode;
+  return unavailableMode
+    ? `${documentJobModeDefinitions[unavailableMode].shortLabel} 需要默认翻译术语集和翻译配置发布后才能选择。`
+    : "";
 });
 const selectedTranslationDefaults = computed(() =>
   translationResourceDefaultsForMode(configSummary.value, selectedTranslationMode.value),
