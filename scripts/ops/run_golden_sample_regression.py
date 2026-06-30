@@ -39,6 +39,7 @@ class RegressionConfig:
     username: str = os.environ.get("GOLDEN_SAMPLE_USERNAME", "admin")
     password: str = os.environ.get("GOLDEN_SAMPLE_PASSWORD", "")
     bearer_token: str = os.environ.get("GOLDEN_SAMPLE_BEARER_TOKEN", "")
+    admin_token: str = os.environ.get("GOLDEN_SAMPLE_ADMIN_TOKEN", os.environ.get("ADMIN_TOKEN", ""))
     required_role: str = os.environ.get("GOLDEN_SAMPLE_REQUIRED_ROLE", DEFAULT_REQUIRED_ROLE)
     manifest_path: Path = Path(os.environ.get("GOLDEN_SAMPLE_MANIFEST", str(DEFAULT_MANIFEST_PATH)))
     runs_dir: Path = Path(os.environ.get("GOLDEN_SAMPLE_RUNS_DIR", str(DEFAULT_RUNS_DIR)))
@@ -254,12 +255,13 @@ def _build_manifest_preflight_check(config: RegressionConfig) -> dict[str, Any]:
 
 
 def _build_auth_preflight_check(config: RegressionConfig) -> dict[str, Any]:
-    credential_available = bool(config.bearer_token.strip() or config.password.strip())
+    credential_available = bool(config.bearer_token.strip() or config.password.strip() or config.admin_token.strip())
     details: dict[str, Any] = {
         "username": config.username,
         "required_role": config.required_role,
         "password_configured": bool(config.password.strip()),
         "bearer_token_configured": bool(config.bearer_token.strip()),
+        "admin_token_configured": bool(config.admin_token.strip()),
     }
     if not credential_available:
         return {
@@ -303,6 +305,15 @@ def _authenticate_for_preflight(config: RegressionConfig) -> dict[str, Any]:
             "username": payload.get("username"),
             "role": payload.get("role"),
             "source": "bearer_token",
+        }
+    if config.admin_token.strip():
+        session.headers.update({"X-Admin-Token": config.admin_token.strip()})
+        response = session.get(api_url(config, "/api/v1/health/ops-alerts"), timeout=config.request_timeout_seconds)
+        response.raise_for_status()
+        return {
+            "username": "admin",
+            "role": "admin",
+            "source": "admin_token",
         }
 
     response = session.post(
@@ -644,6 +655,7 @@ def build_report(
             "runs_dir": str(config.runs_dir),
             "password": "***" if config.password else "",
             "bearer_token": "***" if config.bearer_token else "",
+            "admin_token": "***" if config.admin_token else "",
         },
         "summary": {
             "configured_samples": len(results),

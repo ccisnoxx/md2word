@@ -9,7 +9,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response, status
 
-from app.api.dependencies import get_runtime, get_trace_id, require_admin_user
+from app.api.dependencies import get_runtime, get_trace_id, require_admin_user_or_token_actor
 from app.core.runtime import AppRuntime
 from app.domains.acceptance.models import AcceptanceRunRecord, AcceptanceRunStatus, AcceptanceRunTier
 from app.domains.acceptance.schemas import (
@@ -21,7 +21,6 @@ from app.domains.acceptance.schemas import (
     AcceptanceRunUpsertRequest,
 )
 from app.domains.audit.models import ActorContext
-from app.services.auth.models import AuthenticatedUser
 
 
 router = APIRouter(prefix="/acceptance", tags=["acceptance"])
@@ -33,7 +32,7 @@ def list_acceptance_runs(
     status_value: Annotated[AcceptanceRunStatus | None, Query(alias="status")] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     runtime: AppRuntime = Depends(get_runtime),
-    _user: AuthenticatedUser = Depends(require_admin_user),
+    _actor: ActorContext = Depends(require_admin_user_or_token_actor),
 ) -> AcceptanceRunListResponse:
     """Return recent acceptance evidence runs for admin review."""
 
@@ -47,7 +46,7 @@ def upsert_acceptance_run(
     response: Response,
     runtime: AppRuntime = Depends(get_runtime),
     trace_id: str = Depends(get_trace_id),
-    user: AuthenticatedUser = Depends(require_admin_user),
+    actor: ActorContext = Depends(require_admin_user_or_token_actor),
 ) -> AcceptanceRunResponse:
     """Create or replace one admin-provided acceptance evidence summary."""
 
@@ -69,7 +68,7 @@ def upsert_acceptance_run(
     if existing is not None:
         response.status_code = status.HTTP_200_OK
     runtime.audit_service.record(
-        actor=_actor_from_user(user),
+        actor=actor,
         action="acceptance_run.upsert",
         target_type="acceptance_run",
         target_id=record.id,
@@ -90,7 +89,7 @@ def upsert_acceptance_run(
 @router.get("/runs/latest-summary", response_model=AcceptanceLatestSummaryResponse)
 def get_acceptance_latest_summary(
     runtime: AppRuntime = Depends(get_runtime),
-    _user: AuthenticatedUser = Depends(require_admin_user),
+    _actor: ActorContext = Depends(require_admin_user_or_token_actor),
 ) -> AcceptanceLatestSummaryResponse:
     """Return the derived latest P0/P1/P2 acceptance state for admin signoff."""
 
@@ -120,7 +119,7 @@ def get_acceptance_latest_summary(
 def get_acceptance_run(
     run_id: str,
     runtime: AppRuntime = Depends(get_runtime),
-    _user: AuthenticatedUser = Depends(require_admin_user),
+    _actor: ActorContext = Depends(require_admin_user_or_token_actor),
 ) -> AcceptanceRunResponse:
     """Return one acceptance evidence run by id."""
 
@@ -133,18 +132,18 @@ def review_acceptance_run(
     request: AcceptanceRunReviewRequest,
     runtime: AppRuntime = Depends(get_runtime),
     trace_id: str = Depends(get_trace_id),
-    user: AuthenticatedUser = Depends(require_admin_user),
+    actor: ActorContext = Depends(require_admin_user_or_token_actor),
 ) -> AcceptanceRunResponse:
     """Record an admin review decision without changing the run evidence status."""
 
     record = runtime.acceptance_run_service.review_run(
         run_id,
         decision=request.decision,
-        reviewer=user.id,
+        reviewer=actor.actor_id or "admin",
         review_note=request.review_note,
     )
     runtime.audit_service.record(
-        actor=_actor_from_user(user),
+        actor=actor,
         action="acceptance_run.review",
         target_type="acceptance_run",
         target_id=record.id,
@@ -181,7 +180,3 @@ def _build_run_response(record: AcceptanceRunRecord) -> AcceptanceRunResponse:
         review_note=record.review_note,
         updated_at=record.updated_at,
     )
-
-
-def _actor_from_user(user: AuthenticatedUser) -> ActorContext:
-    return ActorContext(actor_id=user.id, actor_role=user.role, source="jwt")

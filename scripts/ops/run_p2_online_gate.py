@@ -40,11 +40,17 @@ class P2OnlineGateConfig:
     username: str = os.environ.get("P2_ONLINE_USERNAME", "admin")
     password: str = os.environ.get("P2_ONLINE_PASSWORD", "")
     bearer_token: str = os.environ.get("P2_ONLINE_BEARER_TOKEN", "")
+    admin_token: str = os.environ.get("P2_ONLINE_ADMIN_TOKEN", os.environ.get("ADMIN_TOKEN", ""))
     runs_dir: Path = Path(os.environ.get("P2_ONLINE_RUNS_DIR", str(DEFAULT_RUNS_DIR)))
     request_timeout_seconds: int = int(os.environ.get("P2_ONLINE_REQUEST_TIMEOUT_SECONDS", "30"))
     run_release_check: bool = os.environ.get("P2_ONLINE_SKIP_RELEASE_CHECK", "0") != "1"
     run_p0_preflight: bool = os.environ.get("P2_ONLINE_SKIP_P0_PREFLIGHT", "0") != "1"
     run_p1_preflight: bool = os.environ.get("P2_ONLINE_SKIP_P1_PREFLIGHT", "0") != "1"
+    sync_acceptance: bool = os.environ.get("P2_ONLINE_SYNC_ACCEPTANCE", "0") == "1"
+    acceptance_run_id: str = os.environ.get("P2_ACCEPTANCE_RUN_ID", "acceptance_p2_online_gate_current")
+    acceptance_environment: str = os.environ.get("P2_ACCEPTANCE_ENVIRONMENT", "hostdzire")
+    acceptance_review_decision: str = os.environ.get("P2_ACCEPTANCE_REVIEW_DECISION", "")
+    acceptance_review_note: str = os.environ.get("P2_ACCEPTANCE_REVIEW_NOTE", "")
 
 
 def main() -> None:
@@ -60,6 +66,20 @@ def main() -> None:
         action="store_true",
         help="Run release check without targeted unittests. Use only for narrow script/debug checks.",
     )
+    parser.add_argument(
+        "--sync-acceptance",
+        action="store_true",
+        help="Upsert this P2 report into Acceptance Center after collecting the gate evidence.",
+    )
+    parser.add_argument("--acceptance-run-id", default="", help="Acceptance Center run id to upsert.")
+    parser.add_argument("--acceptance-environment", default="", help="Acceptance Center environment label.")
+    parser.add_argument(
+        "--acceptance-review-decision",
+        choices=["", "approved", "rejected", "needs_changes"],
+        default="",
+        help="Optional admin review decision to record after upsert.",
+    )
+    parser.add_argument("--acceptance-review-note", default="", help="Optional admin review note.")
     args = parser.parse_args()
 
     env_config = P2OnlineGateConfig()
@@ -69,16 +89,23 @@ def main() -> None:
         username=env_config.username,
         password=env_config.password,
         bearer_token=env_config.bearer_token,
+        admin_token=env_config.admin_token,
         runs_dir=Path(args.output_dir) if args.output_dir else env_config.runs_dir,
         request_timeout_seconds=env_config.request_timeout_seconds,
         run_release_check=env_config.run_release_check and not args.skip_release_check,
         run_p0_preflight=env_config.run_p0_preflight and not args.skip_p0_preflight,
         run_p1_preflight=env_config.run_p1_preflight and not args.skip_p1_preflight,
+        sync_acceptance=env_config.sync_acceptance or args.sync_acceptance,
+        acceptance_run_id=args.acceptance_run_id or env_config.acceptance_run_id,
+        acceptance_environment=args.acceptance_environment or env_config.acceptance_environment,
+        acceptance_review_decision=args.acceptance_review_decision or env_config.acceptance_review_decision,
+        acceptance_review_note=args.acceptance_review_note or env_config.acceptance_review_note,
     )
     unittest_targets: Sequence[str] = () if args.no_release_check_unittests else DEFAULT_UNITTEST_TARGETS
     report = run_p2_online_gate(config, release_check_unittest_targets=unittest_targets)
     print(format_console_report(report))
-    raise SystemExit(0 if report["summary"]["p2_online_gate_ready"] else 1)
+    acceptance_ok = not config.sync_acceptance or bool((report.get("acceptance_sync") or {}).get("ok"))
+    raise SystemExit(0 if report["summary"]["p2_online_gate_ready"] and acceptance_ok else 1)
 
 
 def run_p2_online_gate(
@@ -122,6 +149,9 @@ def run_p2_online_gate(
         },
     }
     write_report_files(run_dir, report)
+    if config.sync_acceptance:
+        report["acceptance_sync"] = sync_acceptance_run(config, session, report)
+        write_report_files(run_dir, report)
     return report
 
 
@@ -133,8 +163,13 @@ def create_run_dir(runs_dir: Path) -> Path:
 
 def build_authenticated_session(config: P2OnlineGateConfig) -> requests.Session:
     session = requests.Session()
-    token = config.bearer_token.strip() or login_for_token(config, session)
-    session.headers.update({"Authorization": f"Bearer {token}"})
+    if config.bearer_token.strip() or config.password.strip():
+        token = config.bearer_token.strip() or login_for_token(config, session)
+        session.headers.update({"Authorization": f"Bearer {token}"})
+    elif config.admin_token.strip():
+        session.headers.update({"X-Admin-Token": config.admin_token.strip()})
+    else:
+        raise RuntimeError("请设置 P2_ONLINE_PASSWORD、P2_ONLINE_BEARER_TOKEN 或 P2_ONLINE_ADMIN_TOKEN/ADMIN_TOKEN。")
     return session
 
 
@@ -224,6 +259,7 @@ def build_p0_preflight(config: P2OnlineGateConfig) -> dict[str, Any]:
         username=config.username,
         password=config.password,
         bearer_token=config.bearer_token,
+        admin_token=config.admin_token,
     )
     try:
         report = build_p0_preflight_report(p0_config)
@@ -238,6 +274,7 @@ def build_p1_preflight(config: P2OnlineGateConfig) -> dict[str, Any]:
         username=config.username,
         password=config.password,
         bearer_token=config.bearer_token,
+        admin_token=config.admin_token,
     )
     try:
         report = build_p1_preflight_report(p1_config)
@@ -268,6 +305,7 @@ def build_summary(
     deployment = ready_payload.get("deployment") if isinstance(ready_payload, dict) else {}
     deployment = deployment if isinstance(deployment, dict) else {}
     ops_alerts = ops_alerts_payload.get("alerts") if isinstance(ops_alerts_payload, dict) else []
+    ops_alerts = ops_alerts if isinstance(ops_alerts, list) else []
     critical_alerts = [
         item.get("code")
         for item in ops_alerts
@@ -308,6 +346,7 @@ def build_warnings(*, deployment: dict[str, Any], ops_alerts_payload: dict[str, 
     if not deployment.get("version") or deployment.get("version") == "dev":
         warnings.append("deployment_version_not_set")
     ops_alerts = ops_alerts_payload.get("alerts") if isinstance(ops_alerts_payload, dict) else []
+    ops_alerts = ops_alerts if isinstance(ops_alerts, list) else []
     warning_alerts = [
         item.get("code")
         for item in ops_alerts
@@ -322,7 +361,143 @@ def redacted_config(config: P2OnlineGateConfig) -> dict[str, Any]:
     payload["runs_dir"] = str(config.runs_dir)
     payload["password"] = "***" if config.password else ""
     payload["bearer_token"] = "***" if config.bearer_token else ""
+    payload["admin_token"] = "***" if config.admin_token else ""
+    payload["acceptance_review_note"] = "***" if config.acceptance_review_note else ""
     return payload
+
+
+def sync_acceptance_run(
+    config: P2OnlineGateConfig,
+    session: requests.Session,
+    report: dict[str, Any],
+) -> dict[str, Any]:
+    """Upsert the redacted P2 report summary into Acceptance Center."""
+
+    run_id = config.acceptance_run_id.strip() or "acceptance_p2_online_gate_current"
+    payload = build_acceptance_run_payload(config, report)
+    url = api_url(config.base_url, "/api/v1/acceptance/runs")
+    result: dict[str, Any] = {"run_id": run_id, "url": url, "ok": False, "blockers": []}
+    try:
+        response = session.post(url, json=payload, timeout=config.request_timeout_seconds)
+    except Exception as exc:  # noqa: BLE001 - release evidence should report sync failures.
+        result["blockers"] = ["acceptance_sync_request_failed"]
+        result["details"] = {"error": str(exc)}
+        return result
+
+    result["status_code"] = response.status_code
+    result["ok"] = response.status_code in {200, 201}
+    if not result["ok"]:
+        result["blockers"] = [f"acceptance_sync_http_{response.status_code}"]
+        result["details"] = _safe_response_details(response)
+        return result
+
+    result["run"] = _safe_response_json(response)
+    review_decision = config.acceptance_review_decision.strip()
+    if review_decision:
+        review_result = review_acceptance_run(config, session, run_id, review_decision)
+        result["review"] = review_result
+        result["ok"] = bool(review_result.get("ok"))
+        result["blockers"] = review_result.get("blockers") or []
+    return result
+
+
+def review_acceptance_run(
+    config: P2OnlineGateConfig,
+    session: requests.Session,
+    run_id: str,
+    decision: str,
+) -> dict[str, Any]:
+    """Record an optional Acceptance Center review after P2 evidence upsert."""
+
+    url = api_url(config.base_url, f"/api/v1/acceptance/runs/{run_id}/review")
+    payload = {"decision": decision}
+    note = config.acceptance_review_note.strip()
+    if note:
+        payload["review_note"] = note
+    result: dict[str, Any] = {"url": url, "ok": False, "blockers": []}
+    try:
+        response = session.post(url, json=payload, timeout=config.request_timeout_seconds)
+    except Exception as exc:  # noqa: BLE001
+        result["blockers"] = ["acceptance_review_request_failed"]
+        result["details"] = {"error": str(exc)}
+        return result
+    result["status_code"] = response.status_code
+    result["ok"] = response.status_code == 200
+    if result["ok"]:
+        result["run"] = _safe_response_json(response)
+    else:
+        result["blockers"] = [f"acceptance_review_http_{response.status_code}"]
+        result["details"] = _safe_response_details(response)
+    return result
+
+
+def build_acceptance_run_payload(config: P2OnlineGateConfig, report: dict[str, Any]) -> dict[str, Any]:
+    """Build the compact Acceptance Center payload from a P2 online gate report."""
+
+    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+    blockers = _string_list(summary.get("blockers"))
+    warnings = _string_list(summary.get("warnings"))
+    ready = bool(summary.get("p2_online_gate_ready")) and not blockers
+    deployment = summary.get("deployment") if isinstance(summary.get("deployment"), dict) else {}
+    runtime = summary.get("runtime") if isinstance(summary.get("runtime"), dict) else {}
+    title_suffix = deployment.get("deployment_id") or deployment.get("version") or "current"
+    generated_at = str(report.get("generated_at") or "")
+    return {
+        "id": config.acceptance_run_id.strip() or "acceptance_p2_online_gate_current",
+        "title": _truncate(f"P2 online gate - hostdzire {title_suffix}", 240),
+        "tier": "P2",
+        "status": "passed" if ready else "failed",
+        "environment": config.acceptance_environment.strip() or "hostdzire",
+        "source": "manual_import:p2_online_gate",
+        "report_path_or_url": str(Path(str(report.get("run_dir") or "")) / "report.md"),
+        "finished_at": generated_at or None,
+        "summary": _truncate(_build_acceptance_summary(summary, deployment, runtime), 4000),
+        "blockers": blockers,
+        "warnings": warnings,
+    }
+
+
+def _build_acceptance_summary(
+    summary: dict[str, Any],
+    deployment: dict[str, Any],
+    runtime: dict[str, Any],
+) -> str:
+    checks = [
+        f"p2_online_gate_ready={bool(summary.get('p2_online_gate_ready'))}",
+        f"deployment_id={deployment.get('deployment_id') or '-'}",
+        f"version={deployment.get('version') or '-'}",
+        f"repository={runtime.get('effective_repository_backend') or '-'}",
+        f"worker_backend={runtime.get('document_jobs_worker_backend') or '-'}",
+        f"document_jobs_queue={runtime.get('document_jobs_celery_queue') or '-'}",
+        f"translation_batch_queue={runtime.get('document_jobs_translation_batch_celery_queue') or '-'}",
+        f"translation_available={runtime.get('translation_available')}",
+        f"ops_alert_status={summary.get('ops_alert_status') or '-'}",
+    ]
+    return "P2 internal online gate evidence. " + "; ".join(checks) + "."
+
+
+def _string_list(values: Any) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    return [normalized for value in values if (normalized := str(value).strip())]
+
+
+def _truncate(value: str, limit: int) -> str:
+    return value if len(value) <= limit else value[: limit - 1] + "…"
+
+
+def _safe_response_json(response: requests.Response) -> Any:
+    try:
+        return response.json()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _safe_response_details(response: requests.Response) -> dict[str, Any]:
+    payload = _safe_response_json(response)
+    if payload is not None:
+        return {"response": payload}
+    return {"text": response.text[:1000]}
 
 
 def write_report_files(run_dir: Path, report: dict[str, Any]) -> None:
@@ -332,13 +507,17 @@ def write_report_files(run_dir: Path, report: dict[str, Any]) -> None:
 
 def format_console_report(report: dict[str, Any]) -> str:
     summary = report["summary"]
-    return (
+    lines = [
         "P2 online gate\n"
         f"run_dir: {report['run_dir']}\n"
         f"ready: {summary['p2_online_gate_ready']}\n"
         f"blockers: {', '.join(summary['blockers']) or 'none'}\n"
         f"warnings: {', '.join(summary['warnings']) or 'none'}"
-    )
+    ]
+    acceptance_sync = report.get("acceptance_sync")
+    if isinstance(acceptance_sync, dict):
+        lines.append(f"\nacceptance_sync: {acceptance_sync.get('ok')} run_id: {acceptance_sync.get('run_id')}")
+    return "".join(lines)
 
 
 def format_markdown_report(report: dict[str, Any]) -> str:
@@ -382,6 +561,19 @@ def format_markdown_report(report: dict[str, Any]) -> str:
             lines.append(f"- public: `{check.get('ok')}` enabled=`{check.get('enabled')}` blockers=`{', '.join(check.get('blockers') or []) or 'none'}`")
             continue
         lines.append(f"- {name}: `{check.get('ok')}` blockers=`{', '.join(check.get('blockers') or []) or 'none'}`")
+    acceptance_sync = report.get("acceptance_sync")
+    if isinstance(acceptance_sync, dict):
+        lines.extend(
+            [
+                "",
+                "## Acceptance Center Sync",
+                "",
+                f"- run_id: `{acceptance_sync.get('run_id') or '-'}`",
+                f"- ok: `{acceptance_sync.get('ok')}`",
+                f"- status_code: `{acceptance_sync.get('status_code') or '-'}`",
+                f"- blockers: `{', '.join(acceptance_sync.get('blockers') or []) or 'none'}`",
+            ]
+        )
     return "\n".join(lines) + "\n"
 
 

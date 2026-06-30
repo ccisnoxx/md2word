@@ -153,6 +153,51 @@ class AcceptanceCenterApiTests(TestCase):
         self.assertEqual(review_events[0].details["decision"], "approved")
         self.assertEqual(review_events[0].details["run_status"], "unknown")
 
+    def test_legacy_admin_token_can_upsert_and_review_acceptance_runs(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir)
+            runtime = build_test_runtime(data_dir, admin_token="secret-admin")
+            app = create_app(runtime)
+            base_time = utc_now()
+            payload = {
+                "id": "acceptance_p2_online_gate_current",
+                "title": "P2 Online Gate",
+                "tier": "P2",
+                "status": "passed",
+                "environment": "hostdzire",
+                "source": "manual_import:p2_online_gate",
+                "report_path_or_url": "tests/tmp/p2_online_runs/run-1/report.md",
+                "finished_at": base_time.isoformat(),
+                "summary": "P2 online gate passed.",
+                "blockers": [],
+                "warnings": [],
+            }
+
+            with TestClient(app) as client:
+                unauthenticated = client.post("/api/v1/acceptance/runs", json=payload)
+                bad_token = client.post("/api/v1/acceptance/runs", headers={"X-Admin-Token": "bad"}, json=payload)
+                create_response = client.post("/api/v1/acceptance/runs", headers={"X-Admin-Token": "secret-admin"}, json=payload)
+                review_response = client.post(
+                    "/api/v1/acceptance/runs/acceptance_p2_online_gate_current/review",
+                    headers={"X-Admin-Token": "secret-admin"},
+                    json={"decision": "approved", "review_note": "P2 gate approved."},
+                )
+
+            persisted = build_file_persistence_adapters(data_dir).acceptance_run_repository.get_acceptance_run(
+                "acceptance_p2_online_gate_current"
+            )
+            events = runtime.audit_event_repository.list_audit_events()
+
+        self.assertEqual(unauthenticated.status_code, 401)
+        self.assertEqual(bad_token.status_code, 403)
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(review_response.status_code, 200)
+        self.assertEqual(review_response.json()["reviewer"], "admin")
+        self.assertIsNotNone(persisted)
+        self.assertEqual(persisted.decision, "approved")
+        self.assertEqual([event.actor_id for event in events], ["admin", "admin"])
+        self.assertEqual([event.actor_role for event in events], ["admin", "admin"])
+
     def test_admin_upserts_acceptance_run_and_clears_stale_review(self) -> None:
         with TemporaryDirectory() as temp_dir:
             data_dir = Path(temp_dir)
