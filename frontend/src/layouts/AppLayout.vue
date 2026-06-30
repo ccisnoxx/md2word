@@ -1,6 +1,7 @@
 <!-- frontend/src/layouts/AppLayout.vue: Protected workbench shell with sidebar navigation and compact topbar. -->
 <template>
   <div class="app-layout" :class="{ 'is-sidebar-collapsed': sidebarCollapsed }">
+    <a class="app-skip-link" href="#app-main-content" @click.prevent="focusMainContent">跳到主内容</a>
     <aside class="app-sidebar-shell" aria-label="主导航">
       <AppSidebar
         :groups="navGroups"
@@ -18,8 +19,10 @@
       class="app-mobile-drawer"
       direction="ltr"
       size="304px"
+      :z-index="DRAWER_Z_INDEX"
       :append-to-body="true"
       :with-header="false"
+      @closed="restoreMobileDrawerFocus"
     >
       <AppSidebar
         :groups="navGroups"
@@ -58,7 +61,9 @@
       </header>
 
       <el-main class="app-main">
-        <router-view />
+        <div id="app-main-content" ref="mainContentRef" class="app-main-focus-target" tabindex="-1">
+          <router-view />
+        </div>
       </el-main>
     </div>
 
@@ -70,8 +75,10 @@
       width="min(520px, calc(100vw - 32px))"
       top="24px"
       class="password-dialog"
+      :z-index="DIALOG_Z_INDEX"
       append-to="body"
       :append-to-body="true"
+      @closed="restoreChangePasswordFocus"
     >
       <div class="password-dialog-scroll">
         <ApiErrorAlert :error="changePasswordError" />
@@ -111,7 +118,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from "vue";
+import { computed, nextTick, reactive, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { Lock, Menu, Search, SwitchButton } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
@@ -136,11 +143,16 @@ const commandPaletteRef = ref<InstanceType<typeof OperatorCommandPalette> | null
 const changePasswordDialogVisible = ref(false);
 const changingPassword = ref(false);
 const changePasswordError = ref<ApiClientError | null>(null);
+const mainContentRef = ref<HTMLElement | null>(null);
 const changePasswordForm = reactive({
   current_password: "",
   new_password: "",
   confirm_password: "",
 });
+const DRAWER_Z_INDEX = 40;
+const DIALOG_Z_INDEX = 60;
+let mobileDrawerTrigger: HTMLElement | null = null;
+let changePasswordTrigger: HTMLElement | null = null;
 
 const access = computed<AppAccessContext>(() => ({
   role: auth.user?.role ?? null,
@@ -165,12 +177,26 @@ function toggleSidebarCollapsed(): void {
   persistSidebarCollapsed(sidebarCollapsed.value);
 }
 
-function openMobileDrawer(): void {
+function focusMainContent(): void {
+  mainContentRef.value?.focus();
+}
+
+function openMobileDrawer(event: MouseEvent): void {
+  mobileDrawerTrigger = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
   mobileDrawerOpen.value = true;
 }
 
 function openCommandPalette(): void {
   commandPaletteRef.value?.show();
+}
+
+function restoreMobileDrawerFocus(): void {
+  if (!mobileDrawerTrigger) {
+    return;
+  }
+  const target = mobileDrawerTrigger;
+  mobileDrawerTrigger = null;
+  void nextTick(() => target.focus());
 }
 
 function handleSidebarNavigate(): void {
@@ -182,12 +208,22 @@ function handleLogout(): void {
   void router.push("/login");
 }
 
-function openChangePasswordDialog(): void {
+function openChangePasswordDialog(event: MouseEvent): void {
+  changePasswordTrigger = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
   changePasswordForm.current_password = "";
   changePasswordForm.new_password = "";
   changePasswordForm.confirm_password = "";
   changePasswordError.value = null;
   changePasswordDialogVisible.value = true;
+}
+
+function restoreChangePasswordFocus(): void {
+  if (!changePasswordTrigger) {
+    return;
+  }
+  const target = changePasswordTrigger;
+  changePasswordTrigger = null;
+  void nextTick(() => target.focus());
 }
 
 async function submitChangePassword(): Promise<void> {
@@ -233,10 +269,10 @@ async function submitChangePassword(): Promise<void> {
 .app-sidebar-shell {
   position: sticky;
   top: 0;
-  z-index: 30;
+  z-index: var(--app-layer-sidebar);
   height: 100vh;
   min-width: 0;
-  border-right: 1px solid color-mix(in srgb, #334155 72%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--app-color-border) 92%, transparent);
   box-shadow: 14px 0 34px rgba(15, 23, 42, 0.08);
 }
 
@@ -250,7 +286,7 @@ async function submitChangePassword(): Promise<void> {
 .app-topbar {
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: var(--app-layer-topbar);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -327,7 +363,9 @@ async function submitChangePassword(): Promise<void> {
 .topbar-page {
   overflow: hidden;
   color: var(--app-color-text);
+  font-family: var(--app-font-heading);
   font-size: 18px;
+  letter-spacing: -0.01em;
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -378,6 +416,19 @@ async function submitChangePassword(): Promise<void> {
   min-width: 0;
   width: 100%;
   padding: var(--app-space-6) var(--app-space-6) 40px;
+}
+
+.app-main-focus-target {
+  min-width: 0;
+}
+
+.app-main-focus-target:focus {
+  outline: none;
+}
+
+.app-main-focus-target:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--app-color-primary-border);
+  border-radius: var(--app-radius-lg);
 }
 
 :deep(.password-dialog) {

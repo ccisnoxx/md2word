@@ -172,9 +172,9 @@ function emitToggleCollapse(): void {
   min-height: 100vh;
   padding: var(--app-space-4) var(--app-space-3);
   background:
-    linear-gradient(180deg, color-mix(in srgb, #111827 88%, var(--app-color-primary)), #0f172a),
-    #0f172a;
-  color: #e5e7eb;
+    linear-gradient(180deg, color-mix(in srgb, #0f172a 88%, var(--app-color-primary)), #0b1220),
+    #0b1220;
+  color: #e2e8f0;
 }
 
 .app-sidebar.is-mobile {
@@ -209,9 +209,9 @@ function emitToggleCollapse(): void {
   width: 42px;
   height: 42px;
   place-items: center;
-  border: 1px solid rgba(167, 243, 208, 0.34);
+  border: 1px solid color-mix(in srgb, var(--app-color-primary-border) 68%, transparent);
   border-radius: var(--app-radius-md);
-  background: color-mix(in srgb, var(--app-color-primary) 76%, #0f172a);
+  background: linear-gradient(135deg, var(--app-color-primary), var(--app-color-accent-cyan) 60%, var(--app-color-accent-emerald));
   color: #ffffff;
   box-shadow: 0 10px 26px rgba(15, 23, 42, 0.34);
   font-size: 18px;
@@ -231,19 +231,21 @@ function emitToggleCollapse(): void {
 }
 
 .sidebar-brand-copy strong {
+  font-family: var(--app-font-heading);
   font-size: 17px;
+  letter-spacing: -0.01em;
   line-height: 1.1;
 }
 
 .sidebar-brand-copy small {
-  color: #a7b1c4;
+  color: #94a3b8;
   font-size: 12px;
   line-height: 1.2;
 }
 
 .sidebar-collapse-button {
   flex: 0 0 auto;
-  border-color: rgba(148, 163, 184, 0.28);
+  border-color: rgba(148, 163, 184, 0.32);
   background: rgba(15, 23, 42, 0.5);
   color: #dbeafe;
 }
@@ -274,7 +276,7 @@ function emitToggleCollapse(): void {
   border: 0;
   border-radius: var(--app-radius-sm);
   background: transparent;
-  color: #a7b1c4;
+  color: #94a3b8;
   font: inherit;
   font-size: 12px;
   font-weight: 760;
@@ -285,7 +287,7 @@ function emitToggleCollapse(): void {
 .sidebar-group-button:hover,
 .sidebar-group-button:focus-visible,
 .sidebar-group.is-active .sidebar-group-button {
-  background: rgba(99, 102, 241, 0.18);
+  background: rgba(37, 99, 235, 0.18);
   color: #ffffff;
 }
 
@@ -317,7 +319,7 @@ function emitToggleCollapse(): void {
 }
 
 .sidebar-group.is-active .sidebar-group-compact {
-  background: rgba(99, 102, 241, 0.18);
+  background: rgba(37, 99, 235, 0.18);
   color: #ffffff;
 }
 
@@ -348,15 +350,15 @@ function emitToggleCollapse(): void {
 
 .sidebar-link:hover,
 .sidebar-link:focus-visible {
-  border-color: rgba(199, 210, 254, 0.28);
-  background: rgba(99, 102, 241, 0.16);
+  border-color: rgba(147, 197, 253, 0.3);
+  background: rgba(37, 99, 235, 0.16);
   color: #ffffff;
 }
 
 .sidebar-link.is-active {
-  border-color: rgba(167, 243, 208, 0.38);
+  border-color: rgba(147, 197, 253, 0.38);
   background:
-    linear-gradient(90deg, rgba(99, 102, 241, 0.36), rgba(16, 185, 129, 0.18)),
+    linear-gradient(90deg, rgba(37, 99, 235, 0.34), rgba(14, 165, 233, 0.18)),
     rgba(15, 23, 42, 0.6);
   color: #ffffff;
 }
@@ -367,7 +369,7 @@ function emitToggleCollapse(): void {
   width: 3px;
   border-radius: 0 var(--app-radius-pill) var(--app-radius-pill) 0;
   content: "";
-  background: var(--app-color-accent-emerald);
+  background: var(--app-color-accent-cyan);
 }
 
 .sidebar-link-label {

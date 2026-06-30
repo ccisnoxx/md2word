@@ -58,6 +58,37 @@ grep -r "keyword" .
 
 **Good**: Single source of truth, import everywhere
 
+### Pattern 3.5: Duplicated Global UI State Owners
+
+**Bad**: A component redefines storage keys and DOM side effects for a
+cross-page UI state that already has a shared owner:
+
+```typescript
+const THEME_STORAGE_KEY = "md2word.theme.mode";
+
+function persistThemeMode(mode: ThemeMode): void {
+  window.localStorage.setItem(THEME_STORAGE_KEY, mode);
+  document.documentElement.dataset.theme = mode;
+}
+```
+
+This creates a second source of truth for:
+
+- persisted keys,
+- document-root attributes,
+- page-boot behavior.
+
+**Good**: Keep one utility as the owner of storage + DOM side effects, and make
+UI controls call that utility:
+
+```typescript
+import { getStoredThemeMode, persistThemeMode } from "@/utils/theme";
+```
+
+**Rule**: If a UI setting affects `localStorage`, `document.documentElement`, or
+cross-page shell behavior, one shared utility owns the contract. Components may
+render controls, but they must not clone the persistence/apply logic.
+
 ### Pattern 4: Repeated Payload Field Extraction
 
 **Bad**: Multiple consumers cast the same JSON/event fields locally:

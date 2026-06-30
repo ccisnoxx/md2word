@@ -1,0 +1,4 @@
+{"file":".trellis/tasks/06-30-frontend-workbench-ui-design-system-and-beautification-planning/prd.md","reason":"Parent requirements and child-task invariants that quality review must preserve when this child later starts execution."}
+{"file":".trellis/tasks/06-30-p0-shell-and-design-token-unification/prd.md","reason":"Acceptance criteria and scope boundaries that later review/check work must validate against."}
+{"file":".trellis/tasks/06-30-p0-shell-and-design-token-unification/design.md","reason":"Planned ownership boundaries, token decisions, and layer contracts that review must verify are implemented consistently."}
+{"file":".trellis/tasks/06-30-p0-shell-and-design-token-unification/implement.md","reason":"Review gates, validation commands, and expected implementation touchpoints for the shell/token execution phase."}

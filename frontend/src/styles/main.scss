@@ -1,33 +1,34 @@
 /* frontend/src/styles/main.scss: Global visual tokens and shell patterns for the workbench. */
 :root {
-  --app-font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --app-font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --app-font-sans: "Source Sans 3", "PingFang SC", "Noto Sans SC", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --app-font-heading: Lexend, "PingFang SC", "Noto Sans SC", sans-serif;
+  --app-font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
 
-  --app-color-bg: #f7f9fc;
-  --app-color-bg-subtle: #eef2f7;
+  --app-color-bg: #f8fafc;
+  --app-color-bg-subtle: #f1f5f9;
   --app-color-surface: #ffffff;
-  --app-color-surface-muted: #f8fafc;
-  --app-color-surface-elevated: rgba(255, 255, 255, 0.9);
-  --app-color-border: #d8e0ee;
-  --app-color-border-soft: #e7edf5;
-  --app-color-text: #1e1b4b;
-  --app-color-text-muted: #534f80;
-  --app-color-text-faint: #7570a3;
-  --app-color-primary: #6366f1;
-  --app-color-primary-hover: #4f46e5;
-  --app-color-primary-soft: #eef2ff;
-  --app-color-primary-border: #c7d2fe;
-  --app-color-primary-rail: #312e81;
-  --app-color-accent-emerald: #10b981;
+  --app-color-surface-muted: #f1f5f9;
+  --app-color-surface-elevated: rgba(255, 255, 255, 0.92);
+  --app-color-border: #d5e0ec;
+  --app-color-border-soft: #e5edf5;
+  --app-color-text: #1e293b;
+  --app-color-text-muted: #475569;
+  --app-color-text-faint: #64748b;
+  --app-color-primary: #2563eb;
+  --app-color-primary-hover: #1d4ed8;
+  --app-color-primary-soft: #dbeafe;
+  --app-color-primary-border: #93c5fd;
+  --app-color-primary-rail: #1e3a8a;
+  --app-color-accent-emerald: #059669;
   --app-color-accent-emerald-soft: #ecfdf5;
   --app-color-accent-emerald-border: #a7f3d0;
-  --app-color-accent-amber: var(--app-color-accent-emerald);
-  --app-color-accent-amber-soft: var(--app-color-accent-emerald-soft);
-  --app-color-accent-amber-border: var(--app-color-accent-emerald-border);
+  --app-color-accent-amber: #d97706;
+  --app-color-accent-amber-soft: #fff7ed;
+  --app-color-accent-amber-border: #fdba74;
   --app-color-accent-cyan: #0ea5e9;
   --app-color-accent-cyan-soft: #f0f9ff;
   --app-color-accent-cyan-border: #bae6fd;
-  --app-color-grid-line: rgba(99, 102, 241, 0.052);
+  --app-color-grid-line: rgba(37, 99, 235, 0.05);
   --app-color-success: #059669;
   --app-color-success-soft: #ecfdf5;
   --app-color-success-border: #a7f3d0;
@@ -41,19 +42,19 @@
   --app-color-info-soft: #f0f9ff;
   --app-color-info-border: #bae6fd;
   --app-color-scheme: light;
-  --app-color-glass: rgba(255, 255, 255, 0.74);
-  --app-color-glass-strong: rgba(255, 255, 255, 0.9);
-  --app-color-glass-muted: rgba(248, 247, 255, 0.74);
-  --app-color-overlay: rgba(15, 23, 42, 0.38);
-  --app-color-ambient-primary: rgba(99, 102, 241, 0.16);
+  --app-color-glass: rgba(255, 255, 255, 0.76);
+  --app-color-glass-strong: rgba(255, 255, 255, 0.92);
+  --app-color-glass-muted: rgba(241, 245, 249, 0.78);
+  --app-color-overlay: rgba(15, 23, 42, 0.42);
+  --app-color-ambient-primary: rgba(37, 99, 235, 0.14);
   --app-color-ambient-cyan: rgba(14, 165, 233, 0.1);
-  --app-color-ambient-amber: rgba(16, 185, 129, 0.1);
-  --app-color-stage-primary: rgba(99, 102, 241, 0.12);
+  --app-color-ambient-amber: rgba(217, 119, 6, 0.09);
+  --app-color-stage-primary: rgba(37, 99, 235, 0.1);
   --app-color-stage-cyan: rgba(14, 165, 233, 0.11);
   --app-color-stage-sheen: rgba(255, 255, 255, 0.55);
   --app-color-skeleton-base: rgba(226, 232, 240, 0.92);
   --app-color-skeleton-sheen: rgba(255, 255, 255, 0.86);
-  --app-gradient-page: linear-gradient(180deg, #ffffff 0%, var(--app-color-bg) 44%, #f1f5f9 100%);
+  --app-gradient-page: linear-gradient(180deg, #ffffff 0%, var(--app-color-bg) 44%, #edf3f9 100%);
   --app-gradient-ambient:
     linear-gradient(115deg, var(--app-color-ambient-primary), transparent 34%),
     linear-gradient(245deg, var(--app-color-ambient-cyan), transparent 36%),
@@ -63,7 +64,7 @@
   --app-gradient-panel-depth:
     linear-gradient(145deg, color-mix(in srgb, var(--app-color-surface) 88%, var(--app-color-primary-soft)), var(--app-color-glass-muted) 56%, color-mix(in srgb, var(--app-color-accent-cyan-soft) 78%, var(--app-color-surface)));
   --app-gradient-hero:
-    linear-gradient(135deg, color-mix(in srgb, var(--app-color-primary) 92%, #ffffff), color-mix(in srgb, var(--app-color-accent-cyan) 84%, var(--app-color-primary)) 54%, color-mix(in srgb, var(--app-color-accent-emerald) 86%, var(--app-color-accent-cyan)));
+    linear-gradient(135deg, color-mix(in srgb, var(--app-color-primary) 90%, #ffffff), color-mix(in srgb, var(--app-color-accent-cyan) 82%, var(--app-color-primary)) 54%, color-mix(in srgb, var(--app-color-accent-emerald) 82%, var(--app-color-accent-cyan)));
   --app-gradient-action:
     linear-gradient(135deg, var(--app-color-primary), var(--app-color-accent-cyan) 54%, var(--app-color-accent-emerald));
   --app-gradient-action-hover:
@@ -90,10 +91,10 @@
   --app-space-6: 24px;
   --app-space-7: 32px;
 
-  --app-shadow-subtle: 0 2px 8px rgba(30, 27, 75, 0.08);
-  --app-shadow-panel: 0 18px 48px rgba(30, 27, 75, 0.14);
-  --app-shadow-panel-hover: 0 24px 64px rgba(30, 27, 75, 0.18);
-  --app-shadow-focus: 0 0 0 3px rgba(99, 102, 241, 0.22);
+  --app-shadow-subtle: 0 2px 8px rgba(15, 23, 42, 0.08);
+  --app-shadow-panel: 0 18px 48px rgba(15, 23, 42, 0.12);
+  --app-shadow-panel-hover: 0 24px 64px rgba(15, 23, 42, 0.16);
+  --app-shadow-focus: 0 0 0 3px rgba(37, 99, 235, 0.2);
 
   --app-content-width: 1280px;
   --app-content-wide: 1440px;
@@ -101,6 +102,14 @@
   --app-header-height: 64px;
   --app-sidebar-width: 280px;
   --app-sidebar-collapsed-width: 76px;
+  --app-layer-content: 1;
+  --app-layer-topbar: 20;
+  --app-layer-sidebar: 30;
+  --app-layer-drawer: 40;
+  --app-layer-popover: 50;
+  --app-layer-dialog: 60;
+  --app-layer-command-palette: 70;
+  --app-layer-toast: 80;
 
   --el-color-primary: var(--app-color-primary-hover);
   --el-color-primary-light-3: var(--app-color-primary);
@@ -137,6 +146,7 @@
   --el-mask-color-extra-light: color-mix(in srgb, var(--app-color-overlay) 60%, transparent);
   --el-border-radius-base: var(--app-radius-md);
   --el-box-shadow-light: var(--app-shadow-panel);
+  --el-font-family: var(--app-font-sans);
 
   color: var(--app-color-text);
   color-scheme: var(--app-color-scheme);
@@ -175,7 +185,7 @@ body::before {
 
 #app {
   position: relative;
-  z-index: 1;
+  z-index: var(--app-layer-content);
   min-height: 100vh;
 }
 
@@ -195,6 +205,27 @@ button:focus-visible,
   border-radius: var(--app-radius-sm);
   outline: 2px solid var(--app-color-primary);
   outline-offset: 2px;
+}
+
+.app-skip-link {
+  position: fixed;
+  top: var(--app-space-3);
+  left: var(--app-space-3);
+  z-index: var(--app-layer-command-palette);
+  padding: var(--app-space-2) var(--app-space-3);
+  border-radius: var(--app-radius-md);
+  background: var(--app-color-surface);
+  color: var(--app-color-primary-hover);
+  box-shadow: var(--app-shadow-panel);
+  transform: translateY(calc(-100% - var(--app-space-3)));
+  transition:
+    transform var(--app-motion-fast) var(--app-ease-out),
+    box-shadow var(--app-motion-fast) ease-out;
+}
+
+.app-skip-link:focus-visible {
+  transform: translateY(0);
+  box-shadow: var(--app-shadow-focus), var(--app-shadow-panel);
 }
 
 button,
@@ -294,9 +325,19 @@ button:disabled,
 }
 
 .el-popper,
-.el-picker-panel,
+.el-picker-panel {
+  z-index: var(--app-layer-popover) !important;
+  border: 1px solid var(--app-color-border);
+  background: var(--app-color-surface-elevated);
+  color: var(--app-color-text);
+  box-shadow: var(--app-shadow-panel);
+  backdrop-filter: var(--app-backdrop-panel);
+  -webkit-backdrop-filter: var(--app-backdrop-panel);
+}
+
 .el-message-box,
 .el-dialog {
+  z-index: var(--app-layer-dialog);
   border: 1px solid var(--app-color-border);
   background: var(--app-color-surface-elevated);
   color: var(--app-color-text);
@@ -307,6 +348,11 @@ button:disabled,
 
 .el-overlay {
   background-color: var(--app-color-overlay);
+}
+
+.el-message,
+.el-notification {
+  z-index: var(--app-layer-toast) !important;
 }
 
 .el-loading-mask {
@@ -979,7 +1025,9 @@ button:disabled,
 .page-title {
   margin: 0;
   color: var(--app-color-text);
+  font-family: var(--app-font-heading);
   font-weight: 700;
+  letter-spacing: -0.01em;
   line-height: 1.25;
 }
 
@@ -1178,31 +1226,31 @@ button:disabled,
 }
 
 @mixin app-dark-theme-v2 {
-  --app-color-bg: #090b1a;
-  --app-color-bg-subtle: #11162d;
-  --app-color-surface: rgba(16, 20, 42, 0.94);
-  --app-color-surface-muted: rgba(24, 29, 58, 0.74);
-  --app-color-surface-elevated: rgba(13, 16, 34, 0.9);
-  --app-color-border: rgba(165, 180, 252, 0.24);
-  --app-color-border-soft: rgba(165, 180, 252, 0.15);
-  --app-color-text: #f8f7ff;
-  --app-color-text-muted: #c4c1e7;
-  --app-color-text-faint: #9690c4;
-  --app-color-primary: #a5b4fc;
-  --app-color-primary-hover: #c4b5fd;
-  --app-color-primary-soft: rgba(99, 102, 241, 0.2);
-  --app-color-primary-border: rgba(165, 180, 252, 0.36);
-  --app-color-primary-rail: #e0e7ff;
+  --app-color-bg: #0b1220;
+  --app-color-bg-subtle: #111827;
+  --app-color-surface: rgba(15, 23, 42, 0.94);
+  --app-color-surface-muted: rgba(30, 41, 59, 0.78);
+  --app-color-surface-elevated: rgba(11, 18, 32, 0.92);
+  --app-color-border: rgba(148, 163, 184, 0.24);
+  --app-color-border-soft: rgba(148, 163, 184, 0.16);
+  --app-color-text: #e2e8f0;
+  --app-color-text-muted: #cbd5e1;
+  --app-color-text-faint: #94a3b8;
+  --app-color-primary: #60a5fa;
+  --app-color-primary-hover: #93c5fd;
+  --app-color-primary-soft: rgba(37, 99, 235, 0.24);
+  --app-color-primary-border: rgba(96, 165, 250, 0.34);
+  --app-color-primary-rail: #dbeafe;
   --app-color-accent-emerald: #34d399;
   --app-color-accent-emerald-soft: rgba(52, 211, 153, 0.15);
   --app-color-accent-emerald-border: rgba(52, 211, 153, 0.32);
-  --app-color-accent-amber: var(--app-color-accent-emerald);
-  --app-color-accent-amber-soft: var(--app-color-accent-emerald-soft);
-  --app-color-accent-amber-border: var(--app-color-accent-emerald-border);
+  --app-color-accent-amber: #fbbf24;
+  --app-color-accent-amber-soft: rgba(251, 191, 36, 0.14);
+  --app-color-accent-amber-border: rgba(251, 191, 36, 0.3);
   --app-color-accent-cyan: #38bdf8;
   --app-color-accent-cyan-soft: rgba(56, 189, 248, 0.13);
   --app-color-accent-cyan-border: rgba(56, 189, 248, 0.3);
-  --app-color-grid-line: rgba(165, 180, 252, 0.062);
+  --app-color-grid-line: rgba(96, 165, 250, 0.06);
   --app-color-success: #34d399;
   --app-color-success-soft: rgba(52, 211, 153, 0.15);
   --app-color-success-border: rgba(52, 211, 153, 0.3);
@@ -1216,39 +1264,39 @@ button:disabled,
   --app-color-info-soft: rgba(56, 189, 248, 0.13);
   --app-color-info-border: rgba(56, 189, 248, 0.3);
   --app-color-scheme: dark;
-  --app-color-glass: rgba(16, 20, 42, 0.68);
-  --app-color-glass-strong: rgba(20, 25, 52, 0.88);
-  --app-color-glass-muted: rgba(31, 38, 77, 0.56);
+  --app-color-glass: rgba(15, 23, 42, 0.7);
+  --app-color-glass-strong: rgba(15, 23, 42, 0.9);
+  --app-color-glass-muted: rgba(30, 41, 59, 0.58);
   --app-color-overlay: rgba(0, 0, 0, 0.58);
-  --app-color-ambient-primary: rgba(129, 140, 248, 0.24);
+  --app-color-ambient-primary: rgba(96, 165, 250, 0.22);
   --app-color-ambient-cyan: rgba(56, 189, 248, 0.13);
-  --app-color-ambient-amber: rgba(52, 211, 153, 0.1);
-  --app-color-stage-primary: rgba(129, 140, 248, 0.12);
+  --app-color-ambient-amber: rgba(251, 191, 36, 0.1);
+  --app-color-stage-primary: rgba(96, 165, 250, 0.12);
   --app-color-stage-cyan: rgba(56, 189, 248, 0.12);
   --app-color-stage-sheen: rgba(8, 10, 24, 0.18);
   --app-color-skeleton-base: rgba(51, 65, 85, 0.62);
   --app-color-skeleton-sheen: rgba(148, 163, 184, 0.26);
-  --app-gradient-page: linear-gradient(180deg, #080a18 0%, var(--app-color-bg) 44%, #071923 100%);
+  --app-gradient-page: linear-gradient(180deg, #08111e 0%, var(--app-color-bg) 44%, #0a172a 100%);
   --app-gradient-ambient:
     linear-gradient(115deg, var(--app-color-ambient-primary), transparent 34%),
     linear-gradient(245deg, var(--app-color-ambient-cyan), transparent 36%),
     linear-gradient(180deg, transparent 0%, var(--app-color-ambient-amber) 100%);
   --app-gradient-glass:
-    linear-gradient(135deg, var(--app-color-glass-strong), var(--app-color-glass-muted) 58%, rgba(99, 102, 241, 0.18));
+    linear-gradient(135deg, var(--app-color-glass-strong), var(--app-color-glass-muted) 58%, rgba(37, 99, 235, 0.18));
   --app-gradient-panel-depth:
-    linear-gradient(145deg, rgba(20, 25, 52, 0.92), rgba(31, 38, 77, 0.66) 56%, rgba(56, 189, 248, 0.1));
+    linear-gradient(145deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.68) 56%, rgba(56, 189, 248, 0.1));
   --app-gradient-hero:
-    linear-gradient(135deg, #312e81, #0ea5e9 54%, #10b981);
+    linear-gradient(135deg, #1d4ed8, #0ea5e9 54%, #10b981);
   --app-gradient-action:
-    linear-gradient(135deg, #818cf8, var(--app-color-accent-cyan) 54%, var(--app-color-accent-emerald));
+    linear-gradient(135deg, #2563eb, var(--app-color-accent-cyan) 54%, var(--app-color-accent-emerald));
   --app-gradient-action-hover:
-    linear-gradient(135deg, var(--app-color-primary-hover), #818cf8 46%, var(--app-color-accent-emerald));
+    linear-gradient(135deg, var(--app-color-primary-hover), #2563eb 46%, var(--app-color-accent-emerald));
   --app-gradient-accent-line:
-    linear-gradient(90deg, #818cf8, var(--app-color-accent-cyan) 62%, var(--app-color-accent-emerald));
+    linear-gradient(90deg, #2563eb, var(--app-color-accent-cyan) 62%, var(--app-color-accent-emerald));
   --app-shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.24);
   --app-shadow-panel: 0 16px 42px rgba(0, 0, 0, 0.28);
   --app-shadow-panel-hover: 0 18px 48px rgba(0, 0, 0, 0.34);
-  --app-shadow-focus: 0 0 0 3px rgba(129, 140, 248, 0.28);
+  --app-shadow-focus: 0 0 0 3px rgba(96, 165, 250, 0.28);
 }
 
 :root[data-theme="dark"] {
