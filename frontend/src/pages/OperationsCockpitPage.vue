@@ -2,21 +2,23 @@
 <!-- Purpose: Personal operator cockpit that routes actionable work into existing queue pages. -->
 <template>
   <main class="operations-cockpit-page app-page" aria-labelledby="operations-cockpit-title">
-    <section class="cockpit-command-header app-page-shell app-page-shell--wide">
-      <div class="command-copy">
-        <p class="page-kicker">运营驾驶舱</p>
-        <h1 id="operations-cockpit-title" class="page-title">今日工作</h1>
-        <p class="page-description">聚合异常、翻译 QA、任务队列和个人视图，直接进入现有处理页面。</p>
-      </div>
-      <div class="command-actions">
+    <WorkbenchPageHeader
+      title-id="operations-cockpit-title"
+      kicker="运营驾驶舱"
+      title="今日工作"
+      description="聚合异常、翻译 QA、任务队列和个人视图，直接进入现有处理页面。"
+      wide
+      section-class="cockpit-command-header"
+    >
+      <template #actions>
         <div class="sync-pill" :class="{ 'is-loading': anyLoading }">
           <span aria-hidden="true"></span>
           <strong>{{ anyLoading ? "同步中" : "已同步" }}</strong>
           <small v-if="lastLoadedAt">{{ formatDateTime(lastLoadedAt) }}</small>
         </div>
         <el-button :icon="Refresh" :loading="anyLoading" @click="loadAll">刷新</el-button>
-      </div>
-    </section>
+      </template>
+    </WorkbenchPageHeader>
 
     <section v-if="!hasAccess" class="cockpit-empty-panel app-page-shell app-page-shell--wide" aria-label="无可用工作入口">
       <div>
@@ -43,17 +45,19 @@
         </RouterLink>
       </section>
 
-      <section class="cockpit-panel app-page-shell app-page-shell--wide" aria-label="保存视图入口">
-        <div class="section-header compact">
-          <div>
-            <p class="table-kicker page-kicker">保存视图</p>
-            <h2 class="section-title">个人入口</h2>
-          </div>
-          <el-button size="small" :icon="Refresh" :loading="savedViewsState.loading" @click="loadSavedViews">刷新视图</el-button>
-        </div>
+      <section class="app-page-shell app-page-shell--wide" aria-label="保存视图入口">
+        <WorkbenchPanelCard
+          title="个人入口"
+          kicker="保存视图"
+          card-class="cockpit-panel"
+          header-class="compact"
+        >
+          <template #actions>
+            <el-button size="small" :icon="Refresh" :loading="savedViewsState.loading" @click="loadSavedViews">刷新视图</el-button>
+          </template>
 
-        <div v-if="savedViewsState.loading && !savedViewEntries.length" class="compact-loading">保存视图加载中...</div>
-        <div v-else class="saved-view-grid">
+          <div v-if="savedViewsState.loading && !savedViewEntries.length" class="compact-loading">保存视图加载中...</div>
+          <div v-else class="saved-view-grid">
           <RouterLink
             v-for="entry in savedViewEntries"
             :key="`${entry.pageKey}:${entry.view.id}`"
@@ -64,61 +68,65 @@
             <strong>{{ entry.view.name }}</strong>
             <small>{{ entry.fallback ? "系统预设入口" : "个人默认视图" }}</small>
           </RouterLink>
-        </div>
-
-        <div v-if="savedViewErrorEntries.length" class="module-error-list" aria-label="保存视图错误">
-          <div v-for="[pageKey, error] in savedViewErrorEntries" :key="pageKey" class="module-error">
-            <span>{{ pageLabel(pageKey) }} 保存视图加载失败：{{ error.message }}</span>
-            <el-button size="small" text @click="loadSavedViews">重试</el-button>
           </div>
-        </div>
+
+          <div v-if="savedViewErrorEntries.length" class="module-error-list" aria-label="保存视图错误">
+            <div v-for="[pageKey, error] in savedViewErrorEntries" :key="pageKey" class="module-error">
+              <span>{{ pageLabel(pageKey) }} 保存视图加载失败：{{ error.message }}</span>
+              <el-button size="small" text @click="loadSavedViews">重试</el-button>
+            </div>
+          </div>
+        </WorkbenchPanelCard>
       </section>
 
-      <section class="cockpit-panel app-page-shell app-page-shell--wide" aria-label="下一步工作">
-        <div class="section-header compact">
-          <div>
-            <p class="table-kicker page-kicker">下一步工作</p>
-            <h2 class="section-title">优先处理项</h2>
-          </div>
-          <div class="module-refresh-actions">
-            <el-button v-if="sourceAccess.incidents" size="small" text :loading="incidentsState.loading" @click="loadIncidentsModule">异常</el-button>
-            <el-button v-if="sourceAccess.translation_qa" size="small" text :loading="qaState.loading" @click="loadQaModule">QA</el-button>
-            <el-button v-if="sourceAccess.jobs" size="small" text :loading="jobsState.loading" @click="loadJobsModule">任务</el-button>
-          </div>
-        </div>
-
-        <div v-if="moduleErrorEntries.length" class="module-error-list" aria-label="队列加载错误">
-          <div v-for="entry in moduleErrorEntries" :key="entry.id" class="module-error">
-            <span>{{ entry.label }}加载失败：{{ entry.error.message }}</span>
-            <el-button size="small" text @click="entry.retry">重试</el-button>
-          </div>
-        </div>
-
-        <div v-if="previewLoading && !previewRows.length" class="compact-loading">工作队列加载中...</div>
-        <div v-else-if="!previewRows.length" class="compact-empty">
-          <strong>暂无待处理工作</strong>
-          <span>可以通过上方保存视图进入现有页面继续巡检。</span>
-        </div>
-        <div v-else class="preview-table" role="table" aria-label="下一步工作列表">
-          <div class="preview-row preview-row-head" role="row">
-            <span>对象</span>
-            <span>状态</span>
-            <span>更新</span>
-            <span>建议动作</span>
-            <span>入口</span>
-          </div>
-          <div v-for="row in previewRows" :key="row.id" class="preview-row" role="row">
-            <div class="preview-identity">
-              <span class="source-chip" :class="`is-${row.tone}`">{{ row.sourceLabel }}</span>
-              <strong>{{ row.jobName }}</strong>
-              <small class="mono">{{ row.jobId }}</small>
+      <section class="app-page-shell app-page-shell--wide" aria-label="下一步工作">
+        <WorkbenchPanelCard
+          title="优先处理项"
+          kicker="下一步工作"
+          card-class="cockpit-panel"
+          header-class="compact"
+        >
+          <template #actions>
+            <div class="module-refresh-actions">
+              <el-button v-if="sourceAccess.incidents" size="small" text :loading="incidentsState.loading" @click="loadIncidentsModule">异常</el-button>
+              <el-button v-if="sourceAccess.translation_qa" size="small" text :loading="qaState.loading" @click="loadQaModule">QA</el-button>
+              <el-button v-if="sourceAccess.jobs" size="small" text :loading="jobsState.loading" @click="loadJobsModule">任务</el-button>
             </div>
-            <span class="status-text">{{ statusText(row) }}</span>
-            <span>{{ formatDateTime(row.updatedAt) }}</span>
-            <span>{{ row.suggestedAction }}</span>
-            <RouterLink class="row-action" :to="row.to">打开</RouterLink>
+          </template>
+
+          <div v-if="moduleErrorEntries.length" class="module-error-list" aria-label="队列加载错误">
+            <div v-for="entry in moduleErrorEntries" :key="entry.id" class="module-error">
+              <span>{{ entry.label }}加载失败：{{ entry.error.message }}</span>
+              <el-button size="small" text @click="entry.retry">重试</el-button>
+            </div>
           </div>
-        </div>
+
+          <div v-if="previewLoading && !previewRows.length" class="compact-loading">工作队列加载中...</div>
+          <div v-else-if="!previewRows.length" class="compact-empty">
+            <strong>暂无待处理工作</strong>
+            <span>可以通过上方保存视图进入现有页面继续巡检。</span>
+          </div>
+          <div v-else class="preview-table" role="table" aria-label="下一步工作列表">
+            <div class="preview-row preview-row-head" role="row">
+              <span>对象</span>
+              <span>状态</span>
+              <span>更新</span>
+              <span>建议动作</span>
+              <span>入口</span>
+            </div>
+            <div v-for="row in previewRows" :key="row.id" class="preview-row" role="row">
+              <div class="preview-identity">
+                <span class="source-chip" :class="`is-${row.tone}`">{{ row.sourceLabel }}</span>
+                <strong>{{ row.jobName }}</strong>
+                <small class="mono">{{ row.jobId }}</small>
+              </div>
+              <span class="status-text">{{ statusText(row) }}</span>
+              <span>{{ formatDateTime(row.updatedAt) }}</span>
+              <span>{{ row.suggestedAction }}</span>
+              <RouterLink class="row-action" :to="row.to">打开</RouterLink>
+            </div>
+          </div>
+        </WorkbenchPanelCard>
       </section>
     </template>
   </main>
@@ -131,6 +139,8 @@ import { Refresh } from "@element-plus/icons-vue";
 import { documentJobIncidentsApi } from "@/api/documentJobIncidents";
 import { documentJobsApi } from "@/api/documentJobs";
 import { savedViewsApi } from "@/api/savedViews";
+import WorkbenchPageHeader from "@/components/WorkbenchPageHeader.vue";
+import WorkbenchPanelCard from "@/components/WorkbenchPanelCard.vue";
 import type { DocumentJobIncidentSummaryResponse, DocumentJobResponse, SavedViewPageKey, SavedViewResponse, TranslationQaStatus } from "@/api/types";
 import { getDefaultProtectedRoute, type AppAccessContext } from "@/navigation/appShell";
 import { useAuthStore } from "@/stores/auth";
@@ -438,6 +448,9 @@ function statusText(row: OperationsPreviewRow): string {
   grid-auto-columns: minmax(160px, 1fr);
   grid-auto-flow: column;
   gap: var(--app-space-2);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   padding-bottom: 2px;
 }
 
@@ -561,6 +574,7 @@ function statusText(row: OperationsPreviewRow): string {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: var(--app-space-2);
+  width: 100%;
   min-width: 0;
 }
 
@@ -642,7 +656,9 @@ function statusText(row: OperationsPreviewRow): string {
 
 .preview-table {
   overflow-x: auto;
-  display: grid;
+  display: block;
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
   border: 1px solid var(--app-color-border-soft);
   border-radius: var(--app-radius-md);
@@ -745,7 +761,30 @@ function statusText(row: OperationsPreviewRow): string {
   }
 
   .priority-strip {
-    grid-auto-columns: minmax(150px, 70vw);
+    display: flex;
+  }
+
+  .priority-item {
+    flex: 0 0 min(70vw, 220px);
+  }
+
+  .preview-table {
+    overflow: visible;
+  }
+
+  .preview-row {
+    min-width: 0;
+    grid-template-columns: 1fr;
+    gap: var(--app-space-1);
+    align-items: start;
+  }
+
+  .preview-row-head {
+    display: none;
+  }
+
+  .row-action {
+    width: fit-content;
   }
 }
 

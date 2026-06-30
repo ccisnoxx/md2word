@@ -2,45 +2,30 @@
 <!-- Purpose: Render the Admin Acceptance Center for P0/P1/P2 delivery evidence and review decisions. -->
 <template>
   <main class="acceptance-center-page app-page" aria-labelledby="acceptance-center-title">
-    <section class="page-heading app-page-header app-page-shell app-page-shell--wide">
-      <div>
-        <p class="page-kicker">Acceptance</p>
-        <h1 id="acceptance-center-title" class="page-title">验收中心</h1>
-        <p class="page-description">查看 P0/P1/P2 交付证据、阻断风险、报告路径和最近复核结论。</p>
-      </div>
-      <div class="heading-actions">
+    <WorkbenchPageHeader
+      title-id="acceptance-center-title"
+      kicker="Acceptance"
+      title="验收中心"
+      description="查看 P0/P1/P2 交付证据、阻断风险、报告路径和最近复核结论。"
+      wide
+      section-class="page-heading app-page-header"
+    >
+      <template #actions>
         <el-tag :type="overallStatus.tagType" effect="plain">{{ overallStatus.label }}</el-tag>
         <el-button type="primary" :icon="Plus" @click="openRunDialog">登记运行</el-button>
         <el-button :icon="Refresh" :loading="loading" @click="loadRuns">刷新</el-button>
-      </div>
-    </section>
+      </template>
+    </WorkbenchPageHeader>
 
     <ApiErrorAlert class="app-page-shell app-page-shell--wide" :error="error" />
 
-    <section v-loading="loading" class="overview-grid app-metric-grid app-page-shell app-page-shell--wide" aria-label="验收概览">
-      <article class="overview-card app-metric-card app-status-card" :class="`is-${overallStatus.key}`">
-        <span class="status-dot app-status-dot" aria-hidden="true"></span>
-        <div>
-          <strong>{{ overallStatus.label }}</strong>
-          <small>{{ overallStatus.description }}</small>
-        </div>
-      </article>
-      <article class="overview-card app-metric-card">
-        <span>验收运行</span>
-        <strong>{{ total }}</strong>
-        <small>当前列表返回的证据总数</small>
-      </article>
-      <article class="overview-card app-metric-card">
-        <span>阻断 / 告警</span>
-        <strong>{{ blockerCount }} / {{ warningCount }}</strong>
-        <small>unknown 状态不会按通过处理</small>
-      </article>
-      <article class="overview-card app-metric-card">
-        <span>最近复核</span>
-        <strong>{{ latestReviewLabel }}</strong>
-        <small>{{ latestReviewMeta }}</small>
-      </article>
-    </section>
+    <WorkbenchMetricStrip
+      v-loading="loading"
+      label="验收概览"
+      :items="overviewItems"
+      wide
+      section-class="overview-grid"
+    />
 
     <section class="tier-strip app-page-shell app-page-shell--wide" aria-label="P0 P1 P2 验收证据">
       <button
@@ -61,16 +46,14 @@
       </button>
     </section>
 
-    <section class="run-list-panel app-filter-panel app-table-card app-page-shell app-page-shell--wide" aria-label="验收运行列表">
-      <div class="section-header">
-        <div>
-          <h2 class="section-title">验收运行</h2>
-          <p class="section-subtitle">选择一条运行查看详情并提交复核。</p>
-        </div>
-      </div>
-
-      <el-empty v-if="showEmptyState" description="暂无验收运行；后端返回 P0/P1/P2 证据后会显示在这里。" :image-size="96" />
-      <div v-else class="table-wrap">
+    <section class="app-page-shell app-page-shell--wide" aria-label="验收运行列表">
+      <WorkbenchPanelCard
+        title="验收运行"
+        subtitle="选择一条运行查看详情并提交复核。"
+        card-class="run-list-panel app-filter-panel app-table-card"
+      >
+        <el-empty v-if="showEmptyState" description="暂无验收运行；后端返回 P0/P1/P2 证据后会显示在这里。" :image-size="96" />
+        <div v-else class="table-wrap">
         <el-table
           v-loading="loading"
           :data="orderedRuns"
@@ -131,7 +114,8 @@
             </template>
           </el-table-column>
         </el-table>
-      </div>
+        </div>
+      </WorkbenchPanelCard>
     </section>
 
     <el-drawer
@@ -301,6 +285,9 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus, Refresh, View } from "@element-plus/icons-vue";
 
 import { acceptanceApi } from "@/api/acceptance";
+import WorkbenchMetricStrip, { type WorkbenchMetricItem } from "@/components/WorkbenchMetricStrip.vue";
+import WorkbenchPageHeader from "@/components/WorkbenchPageHeader.vue";
+import WorkbenchPanelCard from "@/components/WorkbenchPanelCard.vue";
 import type {
   AcceptanceLatestSummaryResponse,
   AcceptanceReviewDecision,
@@ -418,6 +405,33 @@ const latestReviewMeta = computed(() => {
   return `${run.reviewer || "未记录 reviewer"} · ${formatDateTime(run.reviewed_at)}`;
 });
 const selectedRunReportHref = computed(() => reportHref(selectedRun.value?.report_path_or_url));
+const overviewItems = computed<WorkbenchMetricItem[]>(() => [
+  {
+    id: "overall_status",
+    label: "整体状态",
+    value: overallStatus.value.label,
+    helper: overallStatus.value.description,
+    statusKey: overallStatus.value.key === "warning" ? "warning" : overallStatus.value.key === "danger" ? "danger" : overallStatus.value.key,
+  },
+  {
+    id: "runs_total",
+    label: "验收运行",
+    value: total.value,
+    helper: "当前列表返回的证据总数",
+  },
+  {
+    id: "risk_counts",
+    label: "阻断 / 告警",
+    value: `${blockerCount.value} / ${warningCount.value}`,
+    helper: "unknown 状态不会按通过处理",
+  },
+  {
+    id: "latest_review",
+    label: "最近复核",
+    value: latestReviewLabel.value,
+    helper: latestReviewMeta.value,
+  },
+]);
 
 const overallStatus = computed<StatusView>(() => {
   if (latestSummary.value) {
