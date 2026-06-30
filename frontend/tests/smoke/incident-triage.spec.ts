@@ -1,6 +1,7 @@
 // File: frontend/tests/smoke/incident-triage.spec.ts
 // Purpose: Browser smoke coverage for the lightweight incident triage workbench.
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { expectElementContentFitsViewportWidth, expectNoPageHorizontalOverflow } from "./support/accessibility";
 
 const TOKEN_STORAGE_KEY = "md2word.frontend.access_token";
 const ISO_NOW = "2026-06-20T04:00:00Z";
@@ -375,35 +376,8 @@ function mainRows(page: Page) {
   return page.locator(".incident-table .el-table__body-wrapper tbody tr");
 }
 
-async function expectNoPageHorizontalOverflow(page: Page): Promise<void> {
-  const sizes = await page.evaluate(() => ({
-    body: document.body.scrollWidth,
-    document: document.documentElement.scrollWidth,
-    viewport: window.innerWidth,
-  }));
-  expect(sizes.body, `body width ${sizes.body} exceeds viewport ${sizes.viewport}`).toBeLessThanOrEqual(sizes.viewport + 1);
-  expect(sizes.document, `document width ${sizes.document} exceeds viewport ${sizes.viewport}`).toBeLessThanOrEqual(
-    sizes.viewport + 1,
-  );
-}
-
 async function expectDrawerInsideViewport(page: Page): Promise<void> {
-  const viewport = page.viewportSize();
-  expect(viewport, "viewport should be available").not.toBeNull();
-  if (!viewport) {
-    return;
-  }
-  const drawerMetrics = await page.locator(".incident-diagnostic-drawer .diagnostic-panel").evaluate((node) => {
-    const element = node as HTMLElement;
-    return {
-      clientWidth: element.clientWidth,
-      scrollWidth: element.scrollWidth,
-    };
-  });
-  expect(drawerMetrics.clientWidth, "incident drawer panel should fit the viewport width").toBeLessThanOrEqual(viewport.width + 1);
-  expect(drawerMetrics.scrollWidth, "incident drawer panel content should not overflow horizontally").toBeLessThanOrEqual(
-    drawerMetrics.clientWidth + 1,
-  );
+  await expectElementContentFitsViewportWidth(page, page.locator(".incident-diagnostic-drawer .diagnostic-panel"));
 }
 
 async function selectIncidentRow(page: Page, filename: string): Promise<void> {
