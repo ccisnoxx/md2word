@@ -202,181 +202,67 @@
         </WorkbenchPanelCard>
       </el-tab-pane>
       <el-tab-pane v-if="isAdmin" label="待审核队列" name="review">
-        <section class="review-grid">
-          <div class="review-list-panel">
-            <WorkbenchPanelCard
-              title="批量审核"
-              subtitle="仅待审核建议可勾选；不提供批量发布。"
-              card-class="app-panel-card batch-review-card"
-              body-class="batch-review-body"
-            >
-              <template #actions>
-                <el-tag effect="plain">已选 {{ bulkSelectedCount }}</el-tag>
-              </template>
-              <el-input
-                v-model="bulkReviewComment"
-                class="review-comment"
-                type="textarea"
-                :rows="2"
-                placeholder="批量审核意见；拒绝必填，通过可选。"
-              />
-              <div class="toolbar app-action-row">
-                <el-button
-                  type="success"
-                  :loading="bulkReviewing"
-                  :disabled="!bulkSelectedCount || reviewing"
-                  @click="bulkApproveProposals"
-                >
-                  批量通过
-                </el-button>
-                <el-button
-                  type="danger"
-                  :loading="bulkReviewing"
-                  :disabled="!bulkSelectedCount || reviewing"
-                  @click="bulkRejectProposals"
-                >
-                  批量拒绝
-                </el-button>
-              </div>
-              <el-alert
-                v-if="bulkResult"
-                class="bulk-result-alert"
-                :type="bulkResult.failed ? 'warning' : 'success'"
-                :title="bulkResultTitle"
-                :closable="true"
-                show-icon
-                @close="bulkResult = null"
-              >
-                <ul v-if="bulkFailureItems.length" class="error-detail-list">
-                  <li v-for="item in bulkFailureItems" :key="item.proposal_id">
-                    {{ formatBulkFailureItem(item) }}
-                  </li>
-                </ul>
-              </el-alert>
-            </WorkbenchPanelCard>
-            <TermProposalTable
-              ref="termReviewTableRef"
-              :items="proposals"
-              :categories="categoryMap"
-              :loading="loading"
-              :selected-id="selectedTermProposalId"
-              selectable
-              @select="selectProposal"
-              @selection-change="handleTermBulkSelectionChange"
-            />
-          </div>
-          <WorkbenchPanelCard card-class="app-panel-card" body-class="review-detail-card-body">
-            <template v-if="selectedProposal">
-              <WorkbenchSectionHeader
-                title="审核详情"
-                subtitle="当前规则、提交时快照和提议变更并列展示。"
-              >
-                <template #extra>
-                  <el-tag :type="selectedProposal.status === 'pending_review' ? 'warning' : 'info'" effect="plain">
-                    {{ proposalStatusText(selectedProposal.status) }}
-                  </el-tag>
-                </template>
-              </WorkbenchSectionHeader>
-
-              <el-alert
-                v-if="snapshotConflict"
-                class="conflict-alert"
-                type="warning"
-                title="当前规则与提交时快照不一致，请人工判断后再审核；页面不会自动重定基线。"
-                :closable="false"
-                show-icon
-              >
-                <el-button class="alert-action" link type="primary" @click="openGovernanceForSelectedProposal">
-                  去术语规则集治理页处理
-                </el-button>
-              </el-alert>
-
-              <div class="review-panels app-review-grid">
-                <div>
-                  <h3>提议变更</h3>
-                  <p><b>类型：</b>{{ proposalIntentText(selectedProposal.intent) }}</p>
-                  <p><b>术语：</b>{{ selectedProposal.source_term }}</p>
-                  <p><b>分类：</b>{{ categoryName(selectedProposal.category_id) }}</p>
-                  <p><b>分段：</b><TermPreview :segments="selectedProposal.segments" /></p>
-                  <p><b>原因：</b>{{ selectedProposal.reason }}</p>
-                  <p>
-                    <b>来源任务：</b>
-                    <router-link
-                      v-if="selectedProposal.source_job_id"
-                      class="context-link"
-                      :to="{ name: 'job-detail', params: { jobId: selectedProposal.source_job_id } }"
-                    >
-                      {{ selectedProposal.source_job_id }}
-                    </router-link>
-                    <span v-else>-</span>
-                  </p>
-                  <p><b>来源文件：</b>{{ selectedProposal.source_file_id || "-" }}</p>
-                  <p><b>绑定版本：</b>{{ selectedTermRuleObservedVersionLabel }}</p>
-                  <el-button
-                    class="governance-link-button"
-                    type="primary"
-                    plain
-                    @click="openGovernanceForSelectedProposal"
-                  >
-                    打开术语规则治理上下文
-                  </el-button>
-                </div>
-                <div>
-                  <h3>当前规则</h3>
-                  <p>用于人工比对是否仍与提交时一致。</p>
-                  <el-collapse class="technical-collapse">
-                    <el-collapse-item title="查看技术字段">
-                      <pre class="app-technical-block">{{ currentRuleText }}</pre>
-                    </el-collapse-item>
-                  </el-collapse>
-                </div>
-                <div>
-                  <h3>提交时快照</h3>
-                  <p>后端审核时会用它识别过期修改。</p>
-                  <el-collapse class="technical-collapse">
-                    <el-collapse-item title="查看技术字段">
-                      <pre class="app-technical-block">{{ snapshotText }}</pre>
-                    </el-collapse-item>
-                  </el-collapse>
-                </div>
-              </div>
-
-              <el-input
-                v-model="reviewComment"
-                class="review-comment"
-                type="textarea"
-                :rows="3"
-                placeholder="审核意见；拒绝必填，通过可选。"
-              />
-              <div class="toolbar app-action-row">
-                <el-button
-                  type="success"
-                  :loading="reviewing"
-                  :disabled="selectedProposal.status !== 'pending_review'"
-                  @click="approveProposal"
-                >
-                  通过并合并草稿
-                </el-button>
-                <el-button
-                  type="primary"
-                  :loading="reviewing"
-                  :disabled="selectedProposal.status !== 'pending_review'"
-                  @click="approveAndPublishProposal"
-                >
-                  审核并发布默认版本
-                </el-button>
-                <el-button
-                  type="danger"
-                  :loading="reviewing"
-                  :disabled="selectedProposal.status !== 'pending_review'"
-                  @click="rejectProposal"
-                >
-                  拒绝
-                </el-button>
-              </div>
+        <section class="review-list-panel review-list-panel--full">
+          <WorkbenchPanelCard
+            title="批量审核"
+            subtitle="仅待审核建议可勾选；不提供批量发布。"
+            card-class="app-panel-card batch-review-card"
+            body-class="batch-review-body"
+          >
+            <template #actions>
+              <el-tag effect="plain">已选 {{ bulkSelectedCount }}</el-tag>
             </template>
-            <el-empty v-else description="请选择一条建议" :image-size="90" />
+            <el-input
+              v-model="bulkReviewComment"
+              class="review-comment"
+              type="textarea"
+              :rows="2"
+              placeholder="批量审核意见；拒绝必填，通过可选。"
+            />
+            <div class="toolbar app-action-row">
+              <el-button
+                type="success"
+                :loading="bulkReviewing"
+                :disabled="!bulkSelectedCount || reviewing"
+                @click="bulkApproveProposals"
+              >
+                批量通过
+              </el-button>
+              <el-button
+                type="danger"
+                :loading="bulkReviewing"
+                :disabled="!bulkSelectedCount || reviewing"
+                @click="bulkRejectProposals"
+              >
+                批量拒绝
+              </el-button>
+            </div>
+            <el-alert
+              v-if="bulkResult"
+              class="bulk-result-alert"
+              :type="bulkResult.failed ? 'warning' : 'success'"
+              :title="bulkResultTitle"
+              :closable="true"
+              show-icon
+              @close="bulkResult = null"
+            >
+              <ul v-if="bulkFailureItems.length" class="error-detail-list">
+                <li v-for="item in bulkFailureItems" :key="item.proposal_id">
+                  {{ formatBulkFailureItem(item) }}
+                </li>
+              </ul>
+            </el-alert>
           </WorkbenchPanelCard>
+          <TermProposalTable
+            ref="termReviewTableRef"
+            :items="proposals"
+            :categories="categoryMap"
+            :loading="loading"
+            :selected-id="selectedTermProposalId"
+            selectable
+            @select="selectProposal"
+            @selection-change="handleTermBulkSelectionChange"
+          />
         </section>
       </el-tab-pane>
       <el-tab-pane v-if="isAdmin" label="全部建议" name="all">
@@ -397,163 +283,66 @@
         />
       </el-tab-pane>
       <el-tab-pane v-if="isAdmin" label="翻译术语待审核" name="translation-review">
-        <section class="review-grid">
-          <div class="review-list-panel">
-            <WorkbenchPanelCard
-              title="批量审核"
-              subtitle="仅待审核翻译术语建议可勾选；不提供批量发布。"
-              card-class="app-panel-card batch-review-card"
-              body-class="batch-review-body"
-            >
-              <template #actions>
-                <el-tag effect="plain">已选 {{ translationBulkSelectedCount }}</el-tag>
-              </template>
-              <el-input
-                v-model="translationBulkReviewNote"
-                class="review-comment"
-                type="textarea"
-                :rows="2"
-                placeholder="批量审核意见；拒绝必填，通过可选。"
-              />
-              <div class="toolbar app-action-row">
-                <el-button
-                  type="success"
-                  :loading="bulkReviewing"
-                  :disabled="!translationBulkSelectedCount || reviewing"
-                  @click="bulkApproveTranslationProposals"
-                >
-                  批量通过
-                </el-button>
-                <el-button
-                  type="danger"
-                  :loading="bulkReviewing"
-                  :disabled="!translationBulkSelectedCount || reviewing"
-                  @click="bulkRejectTranslationProposals"
-                >
-                  批量拒绝
-                </el-button>
-              </div>
-              <el-alert
-                v-if="translationBulkResult"
-                class="bulk-result-alert"
-                :type="translationBulkResult.failed ? 'warning' : 'success'"
-                :title="translationBulkResultTitle"
-                :closable="true"
-                show-icon
-                @close="translationBulkResult = null"
-              >
-                <ul v-if="translationBulkFailureItems.length" class="error-detail-list">
-                  <li v-for="item in translationBulkFailureItems" :key="item.proposal_id">
-                    {{ formatTranslationBulkFailureItem(item) }}
-                  </li>
-                </ul>
-              </el-alert>
-            </WorkbenchPanelCard>
-            <TranslationTermProposalTable
-              ref="translationReviewTableRef"
-              :items="translationProposals"
-              :loading="loading"
-              :selected-id="selectedTranslationProposalId"
-              selectable
-              @select="selectTranslationProposal"
-              @selection-change="handleTranslationBulkSelectionChange"
-            />
-          </div>
-          <WorkbenchPanelCard card-class="app-panel-card" body-class="review-detail-card-body">
-            <template v-if="selectedTranslationProposal">
-              <WorkbenchSectionHeader
-                title="翻译术语审核详情"
-                subtitle="展示提交时绑定版本、提议变更和发布结果。"
-              >
-                <template #extra>
-                  <el-tag :type="selectedTranslationProposal.status === 'pending' ? 'warning' : 'info'" effect="plain">
-                    {{ proposalStatusText(selectedTranslationProposal.status) }}
-                  </el-tag>
-                </template>
-              </WorkbenchSectionHeader>
-
-              <div class="review-panels app-review-grid">
-                <div>
-                  <h3>提议变更</h3>
-                  <p><b>绑定版本：</b>{{ translationObservedVersionLabel }}</p>
-                  <p>
-                    <b>来源任务：</b>
-                    <router-link
-                      v-if="selectedTranslationProposal.source_job_id"
-                      class="context-link"
-                      :to="{ name: 'job-detail', params: { jobId: selectedTranslationProposal.source_job_id } }"
-                    >
-                      {{ selectedTranslationProposal.source_job_id }}
-                    </router-link>
-                    <span v-else>-</span>
-                  </p>
-                  <p><b>来源文件：</b>{{ selectedTranslationProposal.source_file_id || "-" }}</p>
-                  <ul class="change-list">
-                    <li v-for="(change, index) in selectedTranslationProposal.changes" :key="index">
-                      <b>{{ translationProposalActionText(change.action) }}</b>
-                      <span>{{ change.source_term || "-" }}</span>
-                      <span v-if="change.target_term">→ {{ change.target_term }}</span>
-                      <small v-if="change.note">{{ change.note }}</small>
-                    </li>
-                  </ul>
-                  <el-collapse class="technical-collapse">
-                    <el-collapse-item title="查看技术字段">
-                      <pre class="app-technical-block">{{ translationChangesText }}</pre>
-                    </el-collapse-item>
-                  </el-collapse>
-                  <el-button
-                    class="governance-link-button"
-                    type="primary"
-                    plain
-                    @click="openTranslationGovernanceForSelectedProposal"
-                  >
-                    打开翻译术语集治理上下文
-                  </el-button>
-                </div>
-                <div>
-                  <h3>发布结果</h3>
-                  <p><b>发布到术语集：</b>{{ selectedTranslationProposal.published_translation_term_set_id || "-" }}</p>
-                  <p><b>发布版本：</b>{{ selectedTranslationProposal.published_translation_term_version || "-" }}</p>
-                  <p><b>审核备注：</b>{{ selectedTranslationProposal.review_note || "-" }}</p>
-                </div>
-              </div>
-
-              <el-input
-                v-model="translationReviewNote"
-                class="review-comment"
-                type="textarea"
-                :rows="3"
-                placeholder="审核意见；拒绝必填，通过可选。"
-              />
-              <div class="toolbar app-action-row">
-                <el-button
-                  type="success"
-                  :loading="reviewing"
-                  :disabled="selectedTranslationProposal.status !== 'pending'"
-                  @click="approveTranslationProposal"
-                >
-                  通过并合并草稿
-                </el-button>
-                <el-button
-                  type="primary"
-                  :loading="reviewing"
-                  :disabled="selectedTranslationProposal.status !== 'pending'"
-                  @click="approveAndPublishTranslationProposal"
-                >
-                  审核并发布默认版本
-                </el-button>
-                <el-button
-                  type="danger"
-                  :loading="reviewing"
-                  :disabled="selectedTranslationProposal.status !== 'pending'"
-                  @click="rejectTranslationProposal"
-                >
-                  拒绝
-                </el-button>
-              </div>
+        <section class="review-list-panel review-list-panel--full">
+          <WorkbenchPanelCard
+            title="批量审核"
+            subtitle="仅待审核翻译术语建议可勾选；不提供批量发布。"
+            card-class="app-panel-card batch-review-card"
+            body-class="batch-review-body"
+          >
+            <template #actions>
+              <el-tag effect="plain">已选 {{ translationBulkSelectedCount }}</el-tag>
             </template>
-            <el-empty v-else description="请选择一条翻译术语建议" :image-size="90" />
+            <el-input
+              v-model="translationBulkReviewNote"
+              class="review-comment"
+              type="textarea"
+              :rows="2"
+              placeholder="批量审核意见；拒绝必填，通过可选。"
+            />
+            <div class="toolbar app-action-row">
+              <el-button
+                type="success"
+                :loading="bulkReviewing"
+                :disabled="!translationBulkSelectedCount || reviewing"
+                @click="bulkApproveTranslationProposals"
+              >
+                批量通过
+              </el-button>
+              <el-button
+                type="danger"
+                :loading="bulkReviewing"
+                :disabled="!translationBulkSelectedCount || reviewing"
+                @click="bulkRejectTranslationProposals"
+              >
+                批量拒绝
+              </el-button>
+            </div>
+            <el-alert
+              v-if="translationBulkResult"
+              class="bulk-result-alert"
+              :type="translationBulkResult.failed ? 'warning' : 'success'"
+              :title="translationBulkResultTitle"
+              :closable="true"
+              show-icon
+              @close="translationBulkResult = null"
+            >
+              <ul v-if="translationBulkFailureItems.length" class="error-detail-list">
+                <li v-for="item in translationBulkFailureItems" :key="item.proposal_id">
+                  {{ formatTranslationBulkFailureItem(item) }}
+                </li>
+              </ul>
+            </el-alert>
           </WorkbenchPanelCard>
+          <TranslationTermProposalTable
+            ref="translationReviewTableRef"
+            :items="translationProposals"
+            :loading="loading"
+            :selected-id="selectedTranslationProposalId"
+            selectable
+            @select="selectTranslationProposal"
+            @selection-change="handleTranslationBulkSelectionChange"
+          />
         </section>
       </el-tab-pane>
       <el-tab-pane v-if="isAdmin" label="翻译术语全部" name="translation-all">
@@ -565,6 +354,233 @@
         />
       </el-tab-pane>
     </el-tabs>
+
+    <el-dialog
+      v-model="termReviewDialogVisible"
+      title="审核详情"
+      width="min(1040px, calc(100vw - 32px))"
+      top="24px"
+      class="proposal-review-dialog"
+      append-to="body"
+      :append-to-body="true"
+      @closed="closeTermReviewDialog"
+    >
+      <div v-if="selectedProposal" class="proposal-review-dialog-scroll">
+        <WorkbenchSectionHeader
+          title="审核详情"
+          subtitle="当前规则、提交时快照和提议变更并列展示。"
+        >
+          <template #extra>
+            <el-tag :type="selectedProposal.status === 'pending_review' ? 'warning' : 'info'" effect="plain">
+              {{ proposalStatusText(selectedProposal.status) }}
+            </el-tag>
+          </template>
+        </WorkbenchSectionHeader>
+
+        <el-alert
+          v-if="snapshotConflict"
+          class="conflict-alert"
+          type="warning"
+          title="当前规则与提交时快照不一致，请人工判断后再审核；页面不会自动重定基线。"
+          :closable="false"
+          show-icon
+        >
+          <el-button class="alert-action" link type="primary" @click="openGovernanceForSelectedProposal">
+            去术语规则集治理页处理
+          </el-button>
+        </el-alert>
+
+        <div class="review-panels app-review-grid">
+          <div>
+            <h3>提议变更</h3>
+            <p><b>类型：</b>{{ proposalIntentText(selectedProposal.intent) }}</p>
+            <p><b>术语：</b>{{ selectedProposal.source_term }}</p>
+            <p><b>分类：</b>{{ categoryName(selectedProposal.category_id) }}</p>
+            <p><b>分段：</b><TermPreview :segments="selectedProposal.segments" /></p>
+            <p><b>原因：</b>{{ selectedProposal.reason }}</p>
+            <p>
+              <b>来源任务：</b>
+              <router-link
+                v-if="selectedProposal.source_job_id"
+                class="context-link"
+                :to="{ name: 'job-detail', params: { jobId: selectedProposal.source_job_id } }"
+              >
+                {{ selectedProposal.source_job_id }}
+              </router-link>
+              <span v-else>-</span>
+            </p>
+            <p><b>来源文件：</b>{{ selectedProposal.source_file_id || "-" }}</p>
+            <p><b>绑定版本：</b>{{ selectedTermRuleObservedVersionLabel }}</p>
+            <el-button
+              class="governance-link-button"
+              type="primary"
+              plain
+              @click="openGovernanceForSelectedProposal"
+            >
+              打开术语规则治理上下文
+            </el-button>
+          </div>
+          <div>
+            <h3>当前规则</h3>
+            <p>用于人工比对是否仍与提交时一致。</p>
+            <el-collapse class="technical-collapse">
+              <el-collapse-item title="查看技术字段">
+                <pre class="app-technical-block">{{ currentRuleText }}</pre>
+              </el-collapse-item>
+            </el-collapse>
+          </div>
+          <div>
+            <h3>提交时快照</h3>
+            <p>后端审核时会用它识别过期修改。</p>
+            <el-collapse class="technical-collapse">
+              <el-collapse-item title="查看技术字段">
+                <pre class="app-technical-block">{{ snapshotText }}</pre>
+              </el-collapse-item>
+            </el-collapse>
+          </div>
+        </div>
+
+        <el-input
+          v-model="reviewComment"
+          class="review-comment"
+          type="textarea"
+          :rows="3"
+          placeholder="审核意见；拒绝必填，通过可选。"
+        />
+      </div>
+      <template #footer>
+        <el-button @click="termReviewDialogVisible = false">关闭</el-button>
+        <el-button
+          type="success"
+          :loading="reviewing"
+          :disabled="!selectedProposal || selectedProposal.status !== 'pending_review'"
+          @click="approveProposal"
+        >
+          通过并合并草稿
+        </el-button>
+        <el-button
+          type="primary"
+          :loading="reviewing"
+          :disabled="!selectedProposal || selectedProposal.status !== 'pending_review'"
+          @click="approveAndPublishProposal"
+        >
+          审核并发布默认版本
+        </el-button>
+        <el-button
+          type="danger"
+          :loading="reviewing"
+          :disabled="!selectedProposal || selectedProposal.status !== 'pending_review'"
+          @click="rejectProposal"
+        >
+          拒绝
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="translationReviewDialogVisible"
+      title="翻译术语审核详情"
+      width="min(960px, calc(100vw - 32px))"
+      top="24px"
+      class="proposal-review-dialog"
+      append-to="body"
+      :append-to-body="true"
+      @closed="closeTranslationReviewDialog"
+    >
+      <div v-if="selectedTranslationProposal" class="proposal-review-dialog-scroll">
+        <WorkbenchSectionHeader
+          title="翻译术语审核详情"
+          subtitle="展示提交时绑定版本、提议变更和发布结果。"
+        >
+          <template #extra>
+            <el-tag :type="selectedTranslationProposal.status === 'pending' ? 'warning' : 'info'" effect="plain">
+              {{ proposalStatusText(selectedTranslationProposal.status) }}
+            </el-tag>
+          </template>
+        </WorkbenchSectionHeader>
+
+        <div class="review-panels app-review-grid">
+          <div>
+            <h3>提议变更</h3>
+            <p><b>绑定版本：</b>{{ translationObservedVersionLabel }}</p>
+            <p>
+              <b>来源任务：</b>
+              <router-link
+                v-if="selectedTranslationProposal.source_job_id"
+                class="context-link"
+                :to="{ name: 'job-detail', params: { jobId: selectedTranslationProposal.source_job_id } }"
+              >
+                {{ selectedTranslationProposal.source_job_id }}
+              </router-link>
+              <span v-else>-</span>
+            </p>
+            <p><b>来源文件：</b>{{ selectedTranslationProposal.source_file_id || "-" }}</p>
+            <ul class="change-list">
+              <li v-for="(change, index) in selectedTranslationProposal.changes" :key="index">
+                <b>{{ translationProposalActionText(change.action) }}</b>
+                <span>{{ change.source_term || "-" }}</span>
+                <span v-if="change.target_term">→ {{ change.target_term }}</span>
+                <small v-if="change.note">{{ change.note }}</small>
+              </li>
+            </ul>
+            <el-collapse class="technical-collapse">
+              <el-collapse-item title="查看技术字段">
+                <pre class="app-technical-block">{{ translationChangesText }}</pre>
+              </el-collapse-item>
+            </el-collapse>
+            <el-button
+              class="governance-link-button"
+              type="primary"
+              plain
+              @click="openTranslationGovernanceForSelectedProposal"
+            >
+              打开翻译术语集治理上下文
+            </el-button>
+          </div>
+          <div>
+            <h3>发布结果</h3>
+            <p><b>发布到术语集：</b>{{ selectedTranslationProposal.published_translation_term_set_id || "-" }}</p>
+            <p><b>发布版本：</b>{{ selectedTranslationProposal.published_translation_term_version || "-" }}</p>
+            <p><b>审核备注：</b>{{ selectedTranslationProposal.review_note || "-" }}</p>
+          </div>
+        </div>
+
+        <el-input
+          v-model="translationReviewNote"
+          class="review-comment"
+          type="textarea"
+          :rows="3"
+          placeholder="审核意见；拒绝必填，通过可选。"
+        />
+      </div>
+      <template #footer>
+        <el-button @click="translationReviewDialogVisible = false">关闭</el-button>
+        <el-button
+          type="success"
+          :loading="reviewing"
+          :disabled="!selectedTranslationProposal || selectedTranslationProposal.status !== 'pending'"
+          @click="approveTranslationProposal"
+        >
+          通过并合并草稿
+        </el-button>
+        <el-button
+          type="primary"
+          :loading="reviewing"
+          :disabled="!selectedTranslationProposal || selectedTranslationProposal.status !== 'pending'"
+          @click="approveAndPublishTranslationProposal"
+        >
+          审核并发布默认版本
+        </el-button>
+        <el-button
+          type="danger"
+          :loading="reviewing"
+          :disabled="!selectedTranslationProposal || selectedTranslationProposal.status !== 'pending'"
+          @click="rejectTranslationProposal"
+        >
+          拒绝
+        </el-button>
+      </template>
+    </el-dialog>
   </main>
 </template>
 
@@ -643,6 +659,8 @@ const selectedTermProposalId = ref("");
 const selectedTranslationProposalId = ref("");
 const selectedProposal = ref<TermRuleProposalResponse | null>(null);
 const selectedTranslationProposal = ref<TranslationTermProposalResponse | null>(null);
+const termReviewDialogVisible = ref(false);
+const translationReviewDialogVisible = ref(false);
 const currentRule = ref<TermRuleResponse | null>(null);
 const reviewComment = ref("");
 const bulkReviewComment = ref("");
@@ -918,6 +936,7 @@ function clearTermSelection(): void {
   selectedProposal.value = null;
   currentRule.value = null;
   reviewComment.value = "";
+  termReviewDialogVisible.value = false;
 }
 
 // 清理 Term Rule 批量勾选状态，避免刷新或切 tab 后保留过期选择。
@@ -936,6 +955,7 @@ function clearTranslationBulkSelection(): void {
 function clearTranslationSelection(): void {
   selectedTranslationProposal.value = null;
   translationReviewNote.value = "";
+  translationReviewDialogVisible.value = false;
 }
 
 // 从当前 term 列表中恢复选中项；找不到时只清空详情，不报错。
@@ -1447,6 +1467,7 @@ async function selectProposal(proposal: TermRuleProposalResponse): Promise<void>
   routeFocusProposalId.value = "";
   selectedTermProposalId.value = proposal.id;
   selectedProposal.value = proposal;
+  termReviewDialogVisible.value = true;
   reviewComment.value = proposal.review_comment || "";
   currentRule.value = null;
   if (proposal.target_rule_id) {
@@ -1456,6 +1477,11 @@ async function selectProposal(proposal: TermRuleProposalResponse): Promise<void>
       error.value = normalizeApiError(caught);
     }
   }
+}
+
+function closeTermReviewDialog(): void {
+  selectedTermProposalId.value = "";
+  clearTermSelection();
 }
 
 // 同步 Term Rule review tab 的批量勾选结果。
@@ -1682,7 +1708,13 @@ function selectTranslationProposal(proposal: TranslationTermProposalResponse): v
   routeFocusProposalId.value = "";
   selectedTranslationProposalId.value = proposal.id;
   selectedTranslationProposal.value = proposal;
+  translationReviewDialogVisible.value = true;
   translationReviewNote.value = proposal.review_note || "";
+}
+
+function closeTranslationReviewDialog(): void {
+  selectedTranslationProposalId.value = "";
+  clearTranslationSelection();
 }
 
 // 审核通过当前 Term Rule proposal，并清理已消费的 route focus。
@@ -1827,17 +1859,15 @@ watch(() => route.fullPath, () => {
   gap: var(--app-space-4);
 }
 
-.review-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 520px);
-  gap: var(--app-space-4);
-}
-
 .review-list-panel {
   display: grid;
   align-content: start;
   gap: var(--app-space-3);
   min-width: 0;
+}
+
+.review-list-panel--full {
+  width: 100%;
 }
 
 .batch-review-card {
@@ -1894,9 +1924,51 @@ watch(() => route.fullPath, () => {
   margin: 6px 0;
 }
 
-@media (max-width: 1100px) {
-  .review-grid {
-    grid-template-columns: 1fr;
+:global(.proposal-review-dialog) {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
+  margin-bottom: 24px;
+}
+
+:global(.proposal-review-dialog .el-dialog__header),
+:global(.proposal-review-dialog .el-dialog__footer) {
+  flex: 0 0 auto;
+}
+
+:global(.proposal-review-dialog .el-dialog__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.proposal-review-dialog-scroll {
+  display: grid;
+  gap: var(--app-space-3);
+  max-height: min(720px, calc(100vh - 220px));
+  max-height: min(720px, calc(100dvh - 220px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+}
+
+.change-list {
+  display: grid;
+  gap: 8px;
+  margin: var(--app-space-3) 0;
+  padding-left: 20px;
+}
+
+.change-list li {
+  display: grid;
+  gap: 4px;
+}
+
+@media (max-width: 760px) {
+  .proposal-review-dialog-scroll {
+    max-height: calc(100vh - 210px);
+    max-height: calc(100dvh - 210px);
   }
 }
 </style>
