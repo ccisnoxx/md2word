@@ -22,6 +22,13 @@ File retention cleanup run execution lives under `/api/v1/files/retention/cleanu
 
 Ops namespace APIs do not execute real provider calls, real external alert delivery, scheduler loops, physical deletion, S3 deletion, MinerU recovery, pdf-mineru parsing, translation providers, or Word generation. The integration control plane only reports disabled-by-default capability gates. The Files cleanup run contract may execute only guarded local physical deletion through the existing file-retention safety contract.
 
+P2 online gate evidence is collected by `scripts/ops/run_p2_online_gate.py`. When run with
+`--sync-acceptance`, the script registers the compact P2 summary in Acceptance Center as
+`acceptance_p2_online_gate_current`; Acceptance Center remains an evidence index and does not execute any
+ops, provider, cleanup, or conversion action.
+The script accepts an admin JWT through `P2_ONLINE_BEARER_TOKEN`, an admin password through
+`P2_ONLINE_PASSWORD`, or the legacy operations token through `P2_ONLINE_ADMIN_TOKEN` / `ADMIN_TOKEN`.
+
 ## Integration Control Plane
 
 ### `GET /api/v1/ops/integration-capabilities`

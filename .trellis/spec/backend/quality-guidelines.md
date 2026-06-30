@@ -288,6 +288,76 @@ result.translation_batches = diagnostics["items"]
 
 The report owns a sanitized projection and can enforce the redaction boundary in one place.
 
+## Scenario: P2 Online Gate Acceptance Sync
+
+### 1. Scope / Trigger
+
+- Trigger: changing `scripts/ops/run_p2_online_gate.py`, Acceptance Center evidence sync, `/health/ops-alerts` gate auth, P0/P1 preflight auth checks, or P2 release evidence docs.
+- P2 online gate is an ops evidence contract. It may read live runtime health and write compact Acceptance Center metadata, but it must not execute conversion, provider calls, cleanup, S3 deletion, external alert delivery, or recovery actions.
+
+### 2. Signatures
+
+- Command: `.venv/bin/python scripts/ops/run_p2_online_gate.py --sync-acceptance`
+- Optional review: `--acceptance-review-decision approved --acceptance-review-note '<note>'`
+- Environment auth inputs:
+  - `P2_ONLINE_BEARER_TOKEN`
+  - `P2_ONLINE_PASSWORD` with `P2_ONLINE_USERNAME`
+  - `P2_ONLINE_ADMIN_TOKEN` or fallback `ADMIN_TOKEN`
+- Acceptance run id: `acceptance_p2_online_gate_current`
+- API reads: `/api/v1/health/live`, `/api/v1/health/ready`, `/api/v1/health/metrics`, `/api/v1/health/ops-alerts`
+- API writes: `POST /api/v1/acceptance/runs`, optional `POST /api/v1/acceptance/runs/{run_id}/review`
+
+### 3. Contracts
+
+- `P2_ONLINE_ADMIN_TOKEN` uses `X-Admin-Token`, not `Authorization: Bearer`.
+- `/health/ops-alerts` and Acceptance Center must accept admin JWT or `X-Admin-Token` while preserving 401 for missing credentials and 403 for invalid or non-admin credentials.
+- P0/P1 preflight auth checks may validate `ADMIN_TOKEN` through a read-only admin endpoint, but full Golden Sample or P1 regression job creation still requires admin JWT/password.
+- Acceptance Center payload may include run id, title, tier, status, environment, source, `report.md` path, timestamps, summary, blockers, and warnings.
+- Acceptance Center payload must not include raw PDFs, DOCX binaries, signed URLs, object keys, local absolute artifact paths, full extracted text, prompts, provider responses, JWTs, passwords, bearer tokens, `ADMIN_TOKEN`, or full debug archive content.
+
+### 4. Validation & Error Matrix
+
+- Missing admin credential -> script fails before privileged reads with a clear credential error.
+- Bad `X-Admin-Token` -> `/health/ops-alerts` or Acceptance Center returns 403 and the P2 report records `ops_alerts_http_403` or `acceptance_sync_http_403`.
+- Deployed runtime still requires JWT on a changed endpoint -> report HTTP 401 blockers, not an exception.
+- Ops-alerts error payload has no list-valued `alerts` -> summarize blockers and use an empty alert list.
+- P2 blockers exist -> Acceptance payload status must not be `passed`.
+- Acceptance sync fails -> script exit code is non-zero even if runtime health checks were otherwise ready.
+
+### 5. Good/Base/Bad Cases
+
+- Good: hostdzire gate uses `ADMIN_TOKEN`, all runtime/preflight checks pass, Acceptance Center run `acceptance_p2_online_gate_current` is upserted with no blockers and optional admin review.
+- Base: gate runs with admin JWT/password instead of `ADMIN_TOKEN`; report and Acceptance Center payload remain the same compact evidence shape.
+- Bad: treating `ADMIN_TOKEN` as a Bearer JWT, storing token values in `report.json`, marking P2 as passed when Acceptance sync failed, or using legacy token support to create actual P0/P1 regression jobs.
+
+### 6. Tests Required
+
+- `tests.test_openapi_export` must cover successful P2 gate collection, Acceptance Center sync, and ops-alerts error payloads without `alerts`.
+- `tests.test_acceptance_center_api` must cover legacy `X-Admin-Token` upsert/review and preserve missing/bad credential behavior.
+- `tests.test_fastapi_jobs_backend` must cover `/health/ops-alerts` JWT and legacy token access and read-only safety flags.
+- P0/P1 preflight tests must assert `ADMIN_TOKEN` can satisfy auth checks without creating jobs.
+- Run `scripts/ops/export_openapi.py` and `scripts/ops/check_release.py` after changing API dependencies or request headers.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```bash
+P2_ONLINE_BEARER_TOKEN="${ADMIN_TOKEN}" \
+.venv/bin/python scripts/ops/run_p2_online_gate.py --sync-acceptance
+```
+
+This sends a legacy operations token as if it were a JWT and will fail against JWT-only dependencies.
+
+#### Correct
+
+```bash
+P2_ONLINE_ADMIN_TOKEN="${ADMIN_TOKEN}" \
+.venv/bin/python scripts/ops/run_p2_online_gate.py --sync-acceptance
+```
+
+The script sends `X-Admin-Token`, keeps the token out of reports, and only writes compact Acceptance Center metadata.
+
 ## Review Checklist
 
 Before finishing backend work, check the touched files against these current project contracts:

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from app.api.dependencies import get_runtime, require_admin_user
+from app.api.dependencies import get_runtime, require_admin_user_or_token_actor
 from app.api.v1.routers.health_schemas import (
     HealthLiveResponse,
     HealthMetricsResponse,
@@ -13,7 +13,6 @@ from app.api.v1.routers.health_schemas import (
     HealthReadyResponse,
 )
 from app.core.runtime import AppRuntime
-from app.services.auth.models import AuthenticatedUser
 
 
 router = APIRouter(prefix="/health", tags=["health"])
@@ -37,7 +36,7 @@ def get_health_metrics(runtime: AppRuntime = Depends(get_runtime)) -> HealthMetr
 @router.get("/ops-alerts", response_model=HealthOpsAlertsResponse)
 def get_health_ops_alerts(
     runtime: AppRuntime = Depends(get_runtime),
-    _user: AuthenticatedUser = Depends(require_admin_user),
+    _actor=Depends(require_admin_user_or_token_actor),
 ) -> HealthOpsAlertsResponse:
     """返回 Admin-only 只读运维告警 readiness，不执行恢复动作。"""
 

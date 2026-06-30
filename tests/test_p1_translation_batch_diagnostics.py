@@ -1,11 +1,15 @@
 """Tests for P1 translation regression provider batch diagnostics reporting."""
 
+import json
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from threading import Thread
 from unittest import TestCase
 
 from scripts.ops.run_p1_translation_regression import (
     P1RegressionConfig,
     P1SampleResult,
+    build_auth_preflight_check,
     build_report,
     build_runtime_preflight_blockers,
     build_translation_batch_diagnostics,
@@ -16,6 +20,56 @@ from scripts.ops.run_p1_translation_regression import (
 
 
 class P1TranslationBatchDiagnosticsTests(TestCase):
+    def test_auth_preflight_accepts_legacy_admin_token(self):
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):  # noqa: N802
+                if self.path != "/api/v1/health/ops-alerts":
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                body = json.dumps(
+                    {
+                        "status": "ok",
+                        "alerts": [],
+                        "summary": {},
+                        "safety": {
+                            "read_only": True,
+                            "writes_performed": False,
+                            "recovery_actions_executed": False,
+                            "provider_calls_executed": False,
+                            "notification_delivery_executed": False,
+                            "audit_events_written": False,
+                        },
+                    }
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format, *args):  # noqa: A002
+                return
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            check = build_auth_preflight_check(
+                P1RegressionConfig(
+                    base_url=f"http://127.0.0.1:{server.server_port}",
+                    admin_token="secret-admin",
+                    request_timeout_seconds=2,
+                )
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+        self.assertTrue(check["ok"])
+        self.assertEqual(check["details"]["role"], "admin")
+
     def test_runtime_preflight_blocks_missing_translation_batch_queue(self):
         blockers = build_runtime_preflight_blockers(
             ready_status_code=503,

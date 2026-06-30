@@ -139,6 +139,21 @@ def require_admin_actor(
     )
 
 
+def require_admin_user_or_token_actor(
+    runtime: AppRuntime = Depends(get_runtime),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    x_actor_id: str | None = Header(default=None, alias="X-Actor-Id"),
+) -> ActorContext:
+    """允许 admin JWT 或 legacy X-Admin-Token，并保留缺失凭据的 401 边界。"""
+
+    if _normalize_optional_text(authorization) is not None:
+        return require_admin_actor(runtime, authorization, None, x_actor_id)
+    if _normalize_optional_text(x_admin_token) is not None:
+        return require_admin_actor(runtime, None, x_admin_token, x_actor_id)
+    raise ApiError(status.HTTP_401_UNAUTHORIZED, "unauthorized", "缺少 Bearer token 或 X-Admin-Token。")
+
+
 def require_current_user(
     runtime: AppRuntime = Depends(get_runtime),
     authorization: str | None = Header(default=None, alias="Authorization"),

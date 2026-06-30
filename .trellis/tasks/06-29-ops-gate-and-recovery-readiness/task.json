@@ -3,7 +3,7 @@
   "name": "ops-gate-and-recovery-readiness",
   "title": "Ops gate and recovery readiness",
   "description": "Turn the P2 online gate, incident triage, recovery boundaries, and runbook into an executable operations readiness check.",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

@@ -177,6 +177,34 @@ class GoldenSampleManifestTests(TestCase):
         self.assertIn("Golden Sample preflight", formatted)
         self.assertIn("ok: True", formatted)
 
+    def test_preflight_accepts_legacy_admin_token_for_auth_check(self):
+        server, thread = _start_ready_server(
+            {
+                "deployment_init_ready": True,
+                "p0_document_jobs_ready": True,
+                "effective_repository_backend": "mysql",
+                "document_jobs_worker_backend": "celery",
+                "document_jobs_celery_queue": "document-jobs",
+                "document_jobs_translation_batch_celery_queue": "document-translation-batches",
+                "readiness_blockers": [],
+                "p0_document_jobs_blockers": [],
+            }
+        )
+        try:
+            config = RegressionConfig(
+                base_url=f"http://127.0.0.1:{server.server_port}",
+                admin_token="secret-admin",
+                request_timeout_seconds=2,
+            )
+
+            report = build_preflight_report(config)
+        finally:
+            _stop_ready_server(server, thread)
+
+        self.assertTrue(report["ok"])
+        self.assertEqual(report["checks"][1]["details"]["source"], "admin_token")
+        self.assertEqual(report["checks"][1]["details"]["role"], "admin")
+
     def test_preflight_blocks_non_admin_golden_sample_actor(self):
         server, thread = _start_ready_server(
             {
@@ -633,7 +661,20 @@ def _start_ready_server(
             "tenant_id": "tenant",
             "company_id": "company",
             "display_name": auth_username,
-        }
+        },
+        "/api/v1/health/ops-alerts": {
+            "status": "ok",
+            "alerts": [],
+            "summary": {},
+            "safety": {
+                "read_only": True,
+                "writes_performed": False,
+                "recovery_actions_executed": False,
+                "provider_calls_executed": False,
+                "notification_delivery_executed": False,
+                "audit_events_written": False,
+            },
+        },
     }
 
     class Handler(BaseHTTPRequestHandler):

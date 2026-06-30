@@ -2172,6 +2172,7 @@ class FastAPIJobsBackendTests(TestCase):
             runtime = build_test_runtime(
                 Path(temp_dir),
                 jobs_worker_mode="external",
+                admin_token="secret-admin",
                 auth_jwt_secret_key="test-jwt-secret",
                 auth_internal_users_json=build_auth_users_json(),
             )
@@ -2284,10 +2285,13 @@ class FastAPIJobsBackendTests(TestCase):
                 operator_headers = build_auth_header(client)
                 audit_actions_before = [event.action for event in runtime.audit_event_repository.list_audit_events()]
                 admin_response = client.get("/api/v1/health/ops-alerts", headers=admin_headers)
+                legacy_admin_response = client.get("/api/v1/health/ops-alerts", headers={"X-Admin-Token": "secret-admin"})
                 operator_response = client.get("/api/v1/health/ops-alerts", headers=operator_headers)
                 audit_actions_after = [event.action for event in runtime.audit_event_repository.list_audit_events()]
 
         self.assertEqual(admin_response.status_code, 200)
+        self.assertEqual(legacy_admin_response.status_code, 200)
+        self.assertEqual(legacy_admin_response.json()["safety"]["read_only"], True)
         payload = admin_response.json()
         self.assertEqual(payload["status"], "needs_attention")
         self.assertEqual(payload["summary"]["stage_failed_messages"], 1)

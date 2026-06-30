@@ -149,7 +149,7 @@ Health API 当前有五条入口：
 ### `GET /api/v1/health/ops-alerts`
 
 - 用途：返回 Ops Dashboard 使用的只读运维告警 readiness 合同。
-- 鉴权：Bearer JWT，必须是 `admin` 角色。
+- 鉴权：Bearer JWT，必须是 `admin` 角色；兼容 legacy `X-Admin-Token`，用于线上 gate 脚本读取只读告警证据。
 - 安全边界：不执行 retry、cancel、archive、replay、recover、cleanup、physical delete、provider call、notification delivery，也不默认写 audit event。
 - 响应示例：
 

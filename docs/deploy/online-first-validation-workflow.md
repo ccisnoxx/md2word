@@ -311,12 +311,20 @@ DEPLOYMENT_ID=hostdzire-20260617-p2
 ```bash
 P2_ONLINE_BASE_URL="http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}" \
 P2_ONLINE_PUBLIC_URL="https://md2word.962850.xyz" \
-P2_ONLINE_USERNAME=admin \
-P2_ONLINE_PASSWORD='<admin-password>' \
-.venv/bin/python scripts/ops/run_p2_online_gate.py
+P2_ONLINE_ADMIN_TOKEN="${ADMIN_TOKEN}" \
+.venv/bin/python scripts/ops/run_p2_online_gate.py --sync-acceptance
 ```
 
 报告输出到 `tests/tmp/p2_online_runs/<run_id>/report.json` 和 `report.md`。`p2_online_gate_ready=true` 表示本次内部单租户发布门禁通过；如果存在 critical ops alert、runtime blocker、release check 失败或 P0/P1 preflight 失败，应先处理或在任务验收证据中明确延期风险。
+
+开启 `--sync-acceptance` 后，脚本会把本次报告摘要写入 Acceptance Center 的
+`acceptance_p2_online_gate_current`。该同步只登记 `report.md` 路径、P2 状态、blockers、
+warnings 和非敏感运行摘要；PDF、DOCX、signed URL、object key、全文、prompt、provider
+响应、JWT、密码和 bearer token 不进入 Acceptance Center。需要同时记录 admin 复核时，可追加
+`--acceptance-review-decision approved --acceptance-review-note '<note>'`。
+如果需要使用内部账号密码或预生成 JWT，也可以改用 `P2_ONLINE_PASSWORD` 或
+`P2_ONLINE_BEARER_TOKEN`；`P2_ONLINE_ADMIN_TOKEN` 只用于只读 gate 和 Acceptance Center
+证据登记，不用于创建 P0/P1 真实回归任务。
 
 ## Golden Sample 线上验收
 

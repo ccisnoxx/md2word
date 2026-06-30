@@ -19,6 +19,7 @@ last_reviewed: 2026-06-21
 
 Acceptance API 挂在 `/api/v1/acceptance` 下，为内部 admin 提供小型验收证据索引。
 它只保存摘要、报告路径、阻断项、告警和复核结论；不保存 PDF、Word、二进制 artifact、JWT、secret、客户全文、完整 prompt 或 provider 响应。
+接口接受 admin Bearer JWT，也兼容 legacy `X-Admin-Token`，用于 P2 online gate 等运维脚本在没有内部账号密码时登记证据。
 
 运行时仓库为空时，服务会写入三条 starter summaries，分别指向 P0 Golden Sample、P1 translation 和 P2 online gate 证据来源。P0 starter summary 只是 2026-06-17 hostdzire admin signoff 的历史引导摘要；P1/P2 仍是 `unknown` 且带 blocker。starter summaries 不能直接当成下一次发布证据，发布前必须被最新脚本报告或人工导入摘要替换。
 
@@ -27,7 +28,7 @@ Acceptance API 挂在 `/api/v1/acceptance` 下，为内部 admin 提供小型验
 ### `GET /api/v1/acceptance/runs`
 
 - 用途：列出验收运行摘要。
-- 鉴权：Admin Bearer JWT。
+- 鉴权：Admin Bearer JWT，兼容 legacy `X-Admin-Token`。
 - Query：
   - `tier`: `P0`、`P1` 或 `P2`
   - `status`: `passed`、`failed` 或 `unknown`
@@ -67,7 +68,7 @@ Acceptance API 挂在 `/api/v1/acceptance` 下，为内部 admin 提供小型验
 ### `POST /api/v1/acceptance/runs`
 
 - 用途：由 admin 登记或替换一条验收运行摘要，把最新脚本报告或人工整理的验收结论写入 Acceptance Center。
-- 鉴权：Admin Bearer JWT。
+- 鉴权：Admin Bearer JWT，兼容 legacy `X-Admin-Token`。
 - 创建新 `id` 返回 `201`；覆盖已有 `id` 返回 `200`。
 - 同 `id` 覆盖表示新的验收证据替换旧证据，服务会清空旧 `reviewer`、`decision`、`reviewed_at` 和 `review_note`，需要 admin 重新复核。
 - 成功动作写入 `acceptance_run.upsert` audit event。
@@ -98,13 +99,13 @@ Acceptance API 挂在 `/api/v1/acceptance` 下，为内部 admin 提供小型验
 ### `GET /api/v1/acceptance/runs/{run_id}`
 
 - 用途：读取单条验收运行详情。
-- 鉴权：Admin Bearer JWT。
+- 鉴权：Admin Bearer JWT，兼容 legacy `X-Admin-Token`。
 - 缺失时返回 `404 not_found`。
 
 ### `GET /api/v1/acceptance/runs/latest-summary`
 
 - 用途：从当前 runs 派生 P0/P1/P2 最新验收状态，用于验收中心概览和发布签字判断。
-- 鉴权：Admin Bearer JWT。
+- 鉴权：Admin Bearer JWT，兼容 legacy `X-Admin-Token`。
 - 该接口不写入 metadata，不读取原始 PDF、Word、LLM prompt/response 或 provider payload。
 - `overall_status`：
   - `accepted`：P0/P1/P2 最新证据均存在，且没有 blocker、failed、unknown 或 warning。
@@ -161,7 +162,7 @@ Acceptance API 挂在 `/api/v1/acceptance` 下，为内部 admin 提供小型验
 ### `POST /api/v1/acceptance/runs/{run_id}/review`
 
 - 用途：记录 admin 复核结论。
-- 鉴权：Admin Bearer JWT。
+- 鉴权：Admin Bearer JWT，兼容 legacy `X-Admin-Token`。
 - 请求体：
 
 ```json

@@ -45,6 +45,7 @@ class P1RegressionConfig:
     username: str = os.environ.get("P1_TRANSLATION_USERNAME", "admin")
     password: str = os.environ.get("P1_TRANSLATION_PASSWORD", "")
     bearer_token: str = os.environ.get("P1_TRANSLATION_BEARER_TOKEN", "")
+    admin_token: str = os.environ.get("P1_TRANSLATION_ADMIN_TOKEN", os.environ.get("ADMIN_TOKEN", ""))
     manifest_path: Path = Path(os.environ.get("P1_TRANSLATION_MANIFEST", str(DEFAULT_MANIFEST_PATH)))
     runs_dir: Path = Path(os.environ.get("P1_TRANSLATION_RUNS_DIR", str(DEFAULT_RUNS_DIR)))
     request_timeout_seconds: int = int(os.environ.get("P1_TRANSLATION_REQUEST_TIMEOUT_SECONDS", "30"))
@@ -561,6 +562,7 @@ def build_report(
             "runs_dir": str(config.runs_dir),
             "password": "***" if config.password else "",
             "bearer_token": "***" if config.bearer_token else "",
+            "admin_token": "***" if config.admin_token else "",
         },
         "summary": {
             "configured_samples": len(manifest.get("samples") or []),
@@ -687,13 +689,10 @@ def build_manifest_preflight_check(config: P1RegressionConfig) -> dict[str, Any]
 
 
 def build_auth_preflight_check(config: P1RegressionConfig) -> dict[str, Any]:
-    if not config.bearer_token.strip() and not config.password.strip():
+    if not config.bearer_token.strip() and not config.password.strip() and not config.admin_token.strip():
         return {"name": "auth", "ok": False, "blockers": ["p1_auth_missing"], "details": {"username": config.username}}
     try:
-        session = build_authenticated_session(config)
-        response = session.get(api_url(config, "/api/v1/auth/me"), timeout=config.request_timeout_seconds)
-        response.raise_for_status()
-        user = response.json()
+        user = authenticate_for_preflight(config)
     except Exception as exc:  # noqa: BLE001
         return {"name": "auth", "ok": False, "blockers": ["p1_auth_unavailable"], "details": {"error": str(exc)}}
     role_ok = user.get("role") == "admin"
@@ -703,6 +702,22 @@ def build_auth_preflight_check(config: P1RegressionConfig) -> dict[str, Any]:
         "blockers": [] if role_ok else ["p1_auth_role_not_admin"],
         "details": {"username": user.get("username"), "role": user.get("role")},
     }
+
+
+def authenticate_for_preflight(config: P1RegressionConfig) -> dict[str, Any]:
+    """Validate P1 preflight admin access without creating translation jobs."""
+
+    if config.admin_token.strip() and not config.bearer_token.strip() and not config.password.strip():
+        session = requests.Session()
+        session.headers.update({"X-Admin-Token": config.admin_token.strip()})
+        response = session.get(api_url(config, "/api/v1/health/ops-alerts"), timeout=config.request_timeout_seconds)
+        response.raise_for_status()
+        return {"username": "admin", "role": "admin", "source": "admin_token"}
+    session = build_authenticated_session(config)
+    response = session.get(api_url(config, "/api/v1/auth/me"), timeout=config.request_timeout_seconds)
+    response.raise_for_status()
+    payload = response.json()
+    return {"username": payload.get("username"), "role": payload.get("role"), "source": "bearer_or_password"}
 
 
 def string_list(value: Any) -> list[str]:

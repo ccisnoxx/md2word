@@ -48,10 +48,12 @@ P2 内部单租户线上门禁在 hostdzire 执行：
 ```bash
 P2_ONLINE_BASE_URL="http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}" \
 P2_ONLINE_PUBLIC_URL="https://md2word.962850.xyz" \
-P2_ONLINE_USERNAME=admin \
-P2_ONLINE_PASSWORD='<admin-password>' \
-.venv/bin/python scripts/ops/run_p2_online_gate.py
+P2_ONLINE_ADMIN_TOKEN="${ADMIN_TOKEN}" \
+.venv/bin/python scripts/ops/run_p2_online_gate.py --sync-acceptance
 ```
+
+`--sync-acceptance` 会把本次 P2 gate 摘要写入 Acceptance Center 的
+`acceptance_p2_online_gate_current`，只保存报告路径、blockers、warnings 和运行摘要。
 
 前端工作台位于 `frontend/`。需要单独开发前端时可启动本地 dev server，但它不作为当前 P0 发布验收步骤：
 
