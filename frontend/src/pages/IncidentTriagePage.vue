@@ -266,16 +266,16 @@
       append-to-body
       @update:model-value="handleDrawerModelValue"
     >
-      <section class="diagnostic-panel" aria-label="异常诊断">
-        <header class="drawer-header">
-          <div>
-            <p class="page-kicker">异常诊断</p>
-            <h2>{{ diagnosticTitle }}</h2>
-            <p v-if="diagnostic?.item" class="drawer-subtitle">{{ diagnostic.item.suggested_action }}</p>
-          </div>
+      <WorkbenchDrawerSurface
+        label="异常诊断"
+        kicker="异常诊断"
+        :title="diagnosticTitle"
+        :subtitle="diagnostic?.item?.suggested_action || ''"
+        root-class="diagnostic-panel"
+      >
+        <template #actions>
           <el-button text @click="closeDiagnostic">关闭</el-button>
-        </header>
-
+        </template>
         <ApiErrorAlert :error="drawerError" :diagnostic-context="drawerErrorDiagnosticContext" />
         <section v-if="drawerError && !drawerLoading && !diagnostic" class="diagnostic-section diagnostic-recovery-state" aria-live="assertive">
           <h3>诊断加载失败</h3>
@@ -288,8 +288,7 @@
         </section>
         <div v-if="drawerLoading" class="drawer-loading">诊断加载中...</div>
         <template v-else-if="diagnostic">
-          <section class="diagnostic-section">
-            <h3>诊断摘要</h3>
+          <EvidenceSurfaceSection title="诊断摘要" root-class="diagnostic-section">
             <div class="diagnostic-summary">
               <div>
                 <span>失败类型</span>
@@ -308,10 +307,9 @@
                 <strong>{{ diagnostic.item.job.retry_count }}</strong>
               </div>
             </div>
-          </section>
+          </EvidenceSurfaceSection>
 
-          <section class="diagnostic-section">
-            <h3>下一步建议</h3>
+          <EvidenceSurfaceSection title="下一步建议" root-class="diagnostic-section">
             <el-alert
               v-if="incidentDiagnosticGuidance"
               class="incident-guidance-alert"
@@ -325,40 +323,25 @@
                 <li v-for="bullet in incidentDiagnosticGuidance.bullets" :key="bullet">{{ bullet }}</li>
               </ul>
             </el-alert>
-          </section>
+          </EvidenceSurfaceSection>
 
-          <section class="diagnostic-section">
-            <h3>关键证据</h3>
-            <dl class="evidence-list">
-              <div>
-                <dt>任务 ID</dt>
-                <dd class="mono">{{ diagnostic.item.job.id }}</dd>
-              </div>
-              <div>
-                <dt>文件</dt>
-                <dd>{{ getJobSourceFilename(diagnostic.item.job) }}</dd>
-              </div>
-              <div>
-                <dt>错误</dt>
-                <dd>{{ diagnostic.item.job.error_code || "-" }} · {{ diagnostic.item.job.error_message || "-" }}</dd>
-              </div>
-              <div>
-                <dt>时间</dt>
-                <dd>创建 {{ formatDateTime(diagnostic.item.job.created_at) }} · 更新 {{ formatDateTime(diagnostic.item.job.updated_at) }}</dd>
-              </div>
-              <div>
-                <dt>trace_id</dt>
-                <dd class="mono">{{ latestDiagnosticTraceId }}</dd>
-              </div>
-            </dl>
+          <EvidenceSurfaceSection
+            title="关键证据"
+            description="先看任务标识、错误摘要和 trace，再看后端证据标签。"
+            root-class="diagnostic-section"
+          >
+            <EvidenceKeyValueList class="evidence-list" :items="incidentKeyEvidenceItems" />
             <div class="evidence-chips">
               <el-tag v-for="entry in diagnostic.item.evidence_summary" :key="entry" effect="plain">{{ entry }}</el-tag>
               <el-tag v-if="!diagnostic.item.evidence_summary.length" effect="plain">暂无后端证据摘要</el-tag>
             </div>
-          </section>
+          </EvidenceSurfaceSection>
 
-          <section class="diagnostic-section">
-            <h3>事件时间线</h3>
+          <EvidenceSurfaceSection
+            title="事件时间线"
+            description="优先查看最近 warning / error 事件，确认失败发生点和 trace。"
+            root-class="diagnostic-section"
+          >
             <ol class="event-list">
               <li v-for="event in diagnostic.recent_events" :key="event.id" :class="`is-${event.level}`">
                 <span class="event-meta">{{ formatDateTime(event.created_at) }} · {{ event.level }} · {{ eventStageLabel(event.stage) }}</span>
@@ -368,10 +351,13 @@
               </li>
             </ol>
             <el-empty v-if="!diagnostic.recent_events.length" class="compact-diagnostic-empty" description="暂无最近事件；可刷新诊断或打开详情查看完整事件流" />
-          </section>
+          </EvidenceSurfaceSection>
 
-          <section class="diagnostic-section">
-            <h3>文件与入口</h3>
+          <EvidenceSurfaceSection
+            title="文件与入口"
+            description="抽屉只给出最短诊断路径；更深层内容跳转到完整详情页。"
+            root-class="diagnostic-section"
+          >
             <div class="evidence-links">
               <RouterLink
                 v-for="link in diagnostic.evidence_links"
@@ -393,10 +379,11 @@
               </div>
             </div>
             <el-empty v-if="!diagnostic.files.length" class="compact-diagnostic-empty" description="暂无文件摘要；可打开任务详情查看完整文件列表" />
-          </section>
+          </EvidenceSurfaceSection>
         </template>
 
-        <footer class="drawer-footer">
+        <template #footer>
+          <div class="drawer-footer">
           <div class="drawer-footer-copy">
             <strong>操作</strong>
             <ShortcutHintList :items="incidentDrawerShortcutHints" />
@@ -414,8 +401,9 @@
               重试
             </el-button>
           </div>
-        </footer>
-      </section>
+          </div>
+        </template>
+      </WorkbenchDrawerSurface>
     </el-drawer>
   </main>
 </template>
@@ -443,10 +431,13 @@ import type {
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import BatchResultStrip from "@/components/BatchResultStrip.vue";
+import EvidenceKeyValueList from "@/components/EvidenceKeyValueList.vue";
+import EvidenceSurfaceSection from "@/components/EvidenceSurfaceSection.vue";
 import JobStatusBadge from "@/components/JobStatusBadge.vue";
 import SavedViewStrip from "@/components/SavedViewStrip.vue";
 import ShortcutHintList from "@/components/ShortcutHintList.vue";
 import WorkbenchEmptyState from "@/components/WorkbenchEmptyState.vue";
+import WorkbenchDrawerSurface from "@/components/WorkbenchDrawerSurface.vue";
 import WorkbenchPageHeader from "@/components/WorkbenchPageHeader.vue";
 import WorkbenchSectionHeader from "@/components/WorkbenchSectionHeader.vue";
 import WorkbenchSummaryStrip from "@/components/WorkbenchSummaryStrip.vue";
@@ -474,6 +465,7 @@ import {
   isIncidentSort,
   shouldIgnoreIncidentShortcut,
 } from "@/utils/incidents";
+import type { EvidenceKeyValueItem } from "@/components/EvidenceKeyValueList.vue";
 import {
   activeSavedViewId,
   hasMeaningfulSavedViewQuery,
@@ -712,6 +704,24 @@ const incidentDiagnosticGuidance = computed(() =>
 const latestDiagnosticTraceId = computed(() =>
   [...(diagnostic.value?.recent_events || [])].reverse().find((event) => event.trace_id)?.trace_id || "-",
 );
+const incidentKeyEvidenceItems = computed<EvidenceKeyValueItem[]>(() => {
+  if (!diagnostic.value) {
+    return [];
+  }
+  return [
+    { label: "任务 ID", value: diagnostic.value.item.job.id, mono: true },
+    { label: "文件", value: getJobSourceFilename(diagnostic.value.item.job) },
+    {
+      label: "错误",
+      value: `${diagnostic.value.item.job.error_code || "-"} · ${diagnostic.value.item.job.error_message || "-"}`,
+    },
+    {
+      label: "时间",
+      value: `创建 ${formatDateTime(diagnostic.value.item.job.created_at)} · 更新 ${formatDateTime(diagnostic.value.item.job.updated_at)}`,
+    },
+    { label: "trace_id", value: latestDiagnosticTraceId.value, mono: true },
+  ];
+});
 
 async function loadIncidents(options: { background?: boolean; preserveError?: boolean } = {}): Promise<void> {
   if (loading.value || backgroundRefreshing.value) {
