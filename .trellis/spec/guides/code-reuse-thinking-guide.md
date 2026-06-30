@@ -52,6 +52,33 @@ grep -r "keyword" .
 
 **Good**: Extend existing component with props/variants
 
+### Pattern 2.5: Shared Workbench Zones Before Generic Pages
+
+**Bad**: Three list pages share the same header/summary/filter/table skeleton, but
+each page redefines the structure locally until someone proposes a giant
+`UniversalWorkbenchPage`.
+
+This usually causes:
+
+- duplicated responsive fixes,
+- duplicated empty-state markup,
+- page-specific divergence in table-settings placement,
+- pressure toward a generic component that also owns domain logic.
+
+**Good**: Extract the repeated *zones* first, and keep business behavior in the
+pages:
+
+```vue
+<WorkbenchPageHeader ... />
+<WorkbenchSummaryStrip ... />
+<WorkbenchSectionHeader ... />
+<WorkbenchEmptyState ... />
+```
+
+**Rule**: When multiple operator pages share the same workbench skeleton, reuse
+slot-based shell components for header / summary / empty-state zones before
+attempting a single all-purpose page component.
+
 ### Pattern 3: Repeated Constants
 
 **Bad**: Defining the same constant in multiple files

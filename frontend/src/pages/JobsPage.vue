@@ -2,13 +2,15 @@
 <!-- Purpose: Render the document job list workbench with filtering and batch actions. -->
 <template>
   <main class="jobs-page app-page" :class="{ 'has-bulk-actions': selectedJobs.length }" aria-labelledby="jobs-title">
-    <section class="jobs-command-header app-page-shell app-page-shell--wide">
-      <div class="command-copy">
-        <p class="page-kicker">任务工作台</p>
-        <h1 id="jobs-title" class="page-title">任务列表</h1>
-        <p class="page-description">按异常、停滞、待 QA 和阻塞状态优先处理 document_jobs。</p>
-      </div>
-      <div class="command-actions">
+    <WorkbenchPageHeader
+      title-id="jobs-title"
+      kicker="任务工作台"
+      title="任务列表"
+      description="按异常、停滞、待 QA 和阻塞状态优先处理 document_jobs。"
+      wide
+      section-class="jobs-command-header"
+    >
+      <template #actions>
         <div class="live-pill" :class="{ 'is-loading': loading }">
           <span aria-hidden="true"></span>
           <strong>{{ syncStatusText }}</strong>
@@ -25,25 +27,16 @@
           </el-button>
         </span>
         <el-button :icon="Refresh" :loading="loading" @click="() => loadJobs()">刷新</el-button>
-      </div>
-    </section>
+      </template>
+    </WorkbenchPageHeader>
 
-    <section class="work-queue-strip app-page-shell app-page-shell--wide" aria-label="优先工作队列">
-      <button
-        v-for="item in workQueueItems"
-        :key="item.kind"
-        type="button"
-        class="work-queue-item"
-        :class="[`is-${item.tone}`, { 'is-active': item.active }]"
-        @click="applyWorkQueueFilter(item.kind)"
-      >
-        <span class="queue-count">{{ item.count }}</span>
-        <span class="queue-copy">
-          <strong>{{ item.label }}</strong>
-          <small>{{ item.helper }}</small>
-        </span>
-      </button>
-    </section>
+    <WorkbenchSummaryStrip
+      label="优先工作队列"
+      :items="workQueueItems"
+      wide
+      section-class="work-queue-strip"
+      @select="handleWorkQueueSelect"
+    />
 
     <SavedViewStrip
       class="app-page-shell app-page-shell--wide"
@@ -61,13 +54,14 @@
     />
 
     <section class="jobs-list-panel app-filter-panel app-page-shell app-page-shell--wide" aria-label="任务列表">
-      <div class="section-header table-header">
-        <div>
-          <p class="table-kicker page-kicker">当前视图：{{ activeFilterLabel }}</p>
-          <h2 class="section-title">转换任务</h2>
-          <p class="section-subtitle">查看当前账号可见的 document_jobs。处理中任务会自动刷新。</p>
-        </div>
-        <div class="toolbar primary-toolbar">
+      <WorkbenchSectionHeader
+        :kicker="`当前视图：${activeFilterLabel}`"
+        title="转换任务"
+        subtitle="查看当前账号可见的 document_jobs。处理中任务会自动刷新。"
+        header-class="table-header"
+      >
+        <template #extra>
+          <div class="toolbar primary-toolbar">
           <el-input
             v-model="searchKeyword"
             class="search-input"
@@ -127,16 +121,17 @@
             @update:model-value="handleTablePreferencesUpdate"
             @reset="handleTablePreferencesReset"
           />
-        </div>
-      </div>
+          </div>
+        </template>
+      </WorkbenchSectionHeader>
 
-      <div class="quick-filter-row" aria-label="快捷筛选">
+      <div class="quick-filter-row app-quick-filter-row" aria-label="快捷筛选">
         <el-button :type="statusGroupFilter === 'active' ? 'primary' : undefined" @click="applyQuickFilter('active')">处理中</el-button>
         <el-button :type="statusFilter === 'failed' ? 'primary' : undefined" @click="applyQuickFilter('failed')">失败</el-button>
         <el-button :type="includeArchived ? 'primary' : undefined" @click="applyQuickFilter('archived')">含归档</el-button>
       </div>
 
-      <div v-if="activeFilterChips.length" class="active-filter-chips" aria-label="当前筛选条件">
+      <div v-if="activeFilterChips.length" class="active-filter-chips app-active-filter-chips" aria-label="当前筛选条件">
         <el-tag
           v-for="chip in activeFilterChips"
           :key="chip.key"
@@ -217,11 +212,14 @@
       </div>
 
       <el-card class="jobs-table-card card-flat app-panel app-table-card" shadow="never">
-        <div v-if="showEmptyState" class="empty-state" aria-live="polite">
-          <el-icon><Files /></el-icon>
-          <h3>{{ emptyStateTitle }}</h3>
-          <p>{{ emptyStateDescription }}</p>
-          <div class="empty-actions">
+        <WorkbenchEmptyState
+          v-if="showEmptyState"
+          root-class="empty-state"
+          :icon="Files"
+          :title="emptyStateTitle"
+          :description="emptyStateDescription"
+        >
+          <template #actions>
             <el-button v-if="hasActiveFilters" :icon="Filter" @click="clearAllFilters">清空筛选</el-button>
             <el-button
               v-if="canCreateJob"
@@ -231,8 +229,8 @@
             >
               创建任务
             </el-button>
-          </div>
-        </div>
+          </template>
+        </WorkbenchEmptyState>
         <JobTable
           ref="jobTableRef"
           :jobs="jobs"
@@ -256,12 +254,12 @@
       </el-card>
     </section>
 
-    <div v-if="selectedJobs.length" class="bulk-action-bar" aria-label="批量操作">
-      <div class="bulk-summary">
+    <div v-if="selectedJobs.length" class="bulk-action-bar app-bulk-action-bar" aria-label="批量操作">
+      <div class="bulk-summary app-bulk-summary">
         <strong>已选 {{ selectedJobs.length }} 个任务</strong>
         <span>可重试 {{ selectedRetryableJobs.length }} · 可取消 {{ selectedCancelableJobs.length }} · 可归档 {{ selectedArchivableJobs.length }}</span>
       </div>
-      <div class="bulk-actions">
+      <div class="bulk-actions app-bulk-actions">
         <el-button :disabled="!selectedRetryableJobs.length" :loading="batchLoading" @click="handleBatchRetry">
           批量重试
         </el-button>
@@ -299,6 +297,10 @@ import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import BatchResultStrip from "@/components/BatchResultStrip.vue";
 import JobTable from "@/components/JobTable.vue";
 import SavedViewStrip from "@/components/SavedViewStrip.vue";
+import WorkbenchEmptyState from "@/components/WorkbenchEmptyState.vue";
+import WorkbenchPageHeader from "@/components/WorkbenchPageHeader.vue";
+import WorkbenchSectionHeader from "@/components/WorkbenchSectionHeader.vue";
+import WorkbenchSummaryStrip from "@/components/WorkbenchSummaryStrip.vue";
 import WorkbenchTableSettings from "@/components/WorkbenchTableSettings.vue";
 import { useAuthStore } from "@/stores/auth";
 import { normalizeJobsBatchResult } from "@/utils/batchResults";
@@ -377,7 +379,7 @@ const sortOptions: Array<{ label: string; value: DocumentJobListSort }> = [
 type FilterChipKey = "status" | "status_group" | "translation_qa_status" | "q" | "sort" | "include_archived" | "created_range";
 type WorkQueueKind = "failed" | "stale" | "pending_qa" | "blocked_qa";
 type WorkQueueItem = {
-  kind: WorkQueueKind;
+  id: WorkQueueKind;
   label: string;
   helper: string;
   count: number;
@@ -500,7 +502,7 @@ const syncStatusText = computed(() => {
 const lastRefreshedLabel = computed(() => (lastRefreshedAt.value ? `最近 ${formatDateTime(lastRefreshedAt.value)}` : ""));
 const workQueueItems = computed<WorkQueueItem[]>(() => [
   {
-    kind: "failed",
+    id: "failed",
     label: "失败任务",
     helper: "进入失败处理视图",
     count: countByStatus("failed"),
@@ -508,7 +510,7 @@ const workQueueItems = computed<WorkQueueItem[]>(() => [
     active: statusFilter.value === "failed",
   },
   {
-    kind: "stale",
+    id: "stale",
     label: "停滞任务",
     helper: "按最久未更新排序",
     count: staleVisibleJobs.value.length,
@@ -516,7 +518,7 @@ const workQueueItems = computed<WorkQueueItem[]>(() => [
     active: statusGroupFilter.value === "active" && sortFilter.value === "updated_at_asc",
   },
   {
-    kind: "pending_qa",
+    id: "pending_qa",
     label: "待 QA",
     helper: "翻译复核入口",
     count: translationQaSummary.value.unreviewed,
@@ -524,7 +526,7 @@ const workQueueItems = computed<WorkQueueItem[]>(() => [
     active: qaStatusFilter.value === "unreviewed",
   },
   {
-    kind: "blocked_qa",
+    id: "blocked_qa",
     label: "QA 阻塞",
     helper: "优先解除阻塞",
     count: translationQaSummary.value.blocked,
@@ -974,6 +976,10 @@ function applyWorkQueueFilter(kind: WorkQueueKind): void {
     qaStatusFilter.value = "blocked";
   }
   handleFilter();
+}
+
+function handleWorkQueueSelect(kind: string): void {
+  applyWorkQueueFilter(kind as WorkQueueKind);
 }
 
 function resetAdvancedFilters(): void {
@@ -2018,6 +2024,13 @@ onBeforeUnmount(() => {
     justify-content: flex-start;
     width: 100%;
     max-width: none;
+  }
+}
+
+@media (max-width: 980px) {
+  .jobs-page {
+    margin: -16px -16px -36px;
+    padding: 24px 16px 36px;
   }
 }
 
