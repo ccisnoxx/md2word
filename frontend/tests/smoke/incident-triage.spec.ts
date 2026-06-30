@@ -388,15 +388,22 @@ async function expectNoPageHorizontalOverflow(page: Page): Promise<void> {
 }
 
 async function expectDrawerInsideViewport(page: Page): Promise<void> {
-  const box = await page.locator(".incident-diagnostic-drawer").boundingBox();
   const viewport = page.viewportSize();
-  expect(box, "incident drawer should have a rendered box").not.toBeNull();
   expect(viewport, "viewport should be available").not.toBeNull();
-  if (!box || !viewport) {
+  if (!viewport) {
     return;
   }
-  expect(box.x).toBeGreaterThanOrEqual(0);
-  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
+  const drawerMetrics = await page.locator(".incident-diagnostic-drawer .diagnostic-panel").evaluate((node) => {
+    const element = node as HTMLElement;
+    return {
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    };
+  });
+  expect(drawerMetrics.clientWidth, "incident drawer panel should fit the viewport width").toBeLessThanOrEqual(viewport.width + 1);
+  expect(drawerMetrics.scrollWidth, "incident drawer panel content should not overflow horizontally").toBeLessThanOrEqual(
+    drawerMetrics.clientWidth + 1,
+  );
 }
 
 async function selectIncidentRow(page: Page, filename: string): Promise<void> {

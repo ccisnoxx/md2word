@@ -2,34 +2,26 @@
 <!-- Purpose: Render the translation QA review queue backed by document_jobs list filtering. -->
 <template>
   <main class="translation-qa-queue-page app-page" aria-labelledby="translation-qa-queue-title">
-    <section class="page-heading app-page-shell">
-      <div>
-        <p class="page-kicker">翻译 QA</p>
-        <h1 id="translation-qa-queue-title" class="page-title">翻译 QA 队列</h1>
-        <p class="page-description">按待复核、需修正和阻塞状态处理 PDF 翻译任务。</p>
-      </div>
-      <div class="heading-actions">
+    <WorkbenchPageHeader
+      title-id="translation-qa-queue-title"
+      kicker="翻译 QA"
+      title="翻译 QA 队列"
+      description="按待复核、需修正和阻塞状态处理 PDF 翻译任务。"
+      section-class="page-heading"
+      actions-class="heading-actions"
+    >
+      <template #actions>
         <span class="queue-sync">当前视图：{{ activeFilterLabel }}</span>
         <el-button :icon="Refresh" :loading="loading" @click="loadJobs">刷新</el-button>
-      </div>
-    </section>
+      </template>
+    </WorkbenchPageHeader>
 
-    <section class="qa-inbox-strip app-page-shell" aria-label="翻译 QA 收件箱">
-      <button
-        v-for="item in qaInboxItems"
-        :key="item.status"
-        type="button"
-        class="qa-inbox-item"
-        :class="[`is-${item.tone}`, { 'is-active': item.active }]"
-        @click="applyInboxFilter(item.status)"
-      >
-        <span class="inbox-count">{{ item.count }}</span>
-        <span class="inbox-copy">
-          <strong>{{ item.label }}</strong>
-          <small>{{ item.helper }}</small>
-        </span>
-      </button>
-    </section>
+    <WorkbenchSummaryStrip
+      label="翻译 QA 收件箱"
+      :items="qaInboxItems"
+      section-class="qa-inbox-strip"
+      @select="handleQaInboxSelect"
+    />
 
     <SavedViewStrip
       class="app-page-shell"
@@ -48,12 +40,13 @@
 
     <section class="qa-workspace app-page-shell" aria-label="翻译 QA 工作区">
       <el-card class="card-flat queue-panel app-panel-card app-table-card" shadow="never">
-        <div class="section-header table-header">
-          <div>
-            <h2 class="section-title">复核收件箱</h2>
-            <p class="section-subtitle">列表复用 document-jobs 聚合结果；全文段落复核仍进入单任务 QA 页面。</p>
-          </div>
-          <div class="toolbar">
+        <WorkbenchSectionHeader
+          title="复核收件箱"
+          subtitle="列表复用 document-jobs 聚合结果；全文段落复核仍进入单任务 QA 页面。"
+          header-class="table-header"
+        >
+          <template #extra>
+            <div class="toolbar">
             <el-input
               v-model="searchKeyword"
               class="queue-search"
@@ -107,10 +100,11 @@
               @update:model-value="handleTablePreferencesUpdate"
               @reset="handleTablePreferencesReset"
             />
-          </div>
-        </div>
+            </div>
+          </template>
+        </WorkbenchSectionHeader>
 
-        <div v-if="activeFilterChips.length" class="active-filter-chips" aria-label="当前筛选条件">
+        <div v-if="activeFilterChips.length" class="active-filter-chips app-active-filter-chips" aria-label="当前筛选条件">
           <el-tag
             v-for="chip in activeFilterChips"
             :key="chip.key"
@@ -124,16 +118,19 @@
 
         <ApiErrorAlert :error="error" />
 
-        <div v-if="showEmptyState" class="queue-empty-state" aria-live="polite">
-          <h3>{{ emptyStateTitle }}</h3>
-          <p>{{ emptyStateDescription }}</p>
-          <div class="empty-actions">
+        <WorkbenchEmptyState
+          v-if="showEmptyState"
+          root-class="queue-empty-state"
+          :title="emptyStateTitle"
+          :description="emptyStateDescription"
+        >
+          <template #actions>
             <el-button v-if="hasActiveFilters" :icon="Filter" @click="clearQueueFilters">查看全部 QA</el-button>
             <el-button v-if="qaStatusFilter !== 'approved'" type="primary" @click="applyInboxFilter('approved')">
               查看已通过
             </el-button>
-          </div>
-        </div>
+          </template>
+        </WorkbenchEmptyState>
 
         <div class="table-scroll">
           <el-table
@@ -207,7 +204,7 @@
           </el-table>
         </div>
 
-        <div class="pagination-row">
+        <div class="pagination-row app-pagination-row">
           <el-pagination
             background
             layout="prev, pager, next, total"
@@ -279,6 +276,10 @@ import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import JobStatusBadge from "@/components/JobStatusBadge.vue";
 import SavedViewStrip from "@/components/SavedViewStrip.vue";
 import TranslationQaReviewPanel from "@/components/TranslationQaReviewPanel.vue";
+import WorkbenchEmptyState from "@/components/WorkbenchEmptyState.vue";
+import WorkbenchPageHeader from "@/components/WorkbenchPageHeader.vue";
+import WorkbenchSectionHeader from "@/components/WorkbenchSectionHeader.vue";
+import WorkbenchSummaryStrip from "@/components/WorkbenchSummaryStrip.vue";
 import WorkbenchTableSettings from "@/components/WorkbenchTableSettings.vue";
 import {
   formatDateTime,
@@ -351,7 +352,7 @@ const qaReviewForm = reactive<TranslationQaReviewDraft>({
 
 type QueueFilterChipKey = "translation_qa_status" | "status" | "q" | "sort" | "include_archived";
 type QaInboxItem = {
-  status: TranslationQaStatus;
+  id: TranslationQaStatus;
   label: string;
   helper: string;
   count: number;
@@ -423,7 +424,7 @@ const activeFilterChips = computed<Array<{ key: QueueFilterChipKey; label: strin
 });
 const qaInboxItems = computed<QaInboxItem[]>(() => [
   {
-    status: "unreviewed",
+    id: "unreviewed",
     label: "待复核",
     helper: "进入下一批 QA",
     count: countQaStatus("unreviewed"),
@@ -431,7 +432,7 @@ const qaInboxItems = computed<QaInboxItem[]>(() => [
     active: qaStatusFilter.value === "unreviewed",
   },
   {
-    status: "needs_fix",
+    id: "needs_fix",
     label: "需修正",
     helper: "交付前处理",
     count: countQaStatus("needs_fix"),
@@ -439,7 +440,7 @@ const qaInboxItems = computed<QaInboxItem[]>(() => [
     active: qaStatusFilter.value === "needs_fix",
   },
   {
-    status: "blocked",
+    id: "blocked",
     label: "阻塞",
     helper: "证据或判断不足",
     count: countQaStatus("blocked"),
@@ -447,7 +448,7 @@ const qaInboxItems = computed<QaInboxItem[]>(() => [
     active: qaStatusFilter.value === "blocked",
   },
   {
-    status: "approved",
+    id: "approved",
     label: "已通过",
     helper: "已清理队列",
     count: countQaStatus("approved"),
@@ -844,6 +845,10 @@ function clearQueueFilters(): void {
   sortFilter.value = "updated_at_desc";
   includeArchived.value = false;
   handleFilter();
+}
+
+function handleQaInboxSelect(status: string): void {
+  applyInboxFilter(status as TranslationQaStatus);
 }
 
 function removeFilter(key: QueueFilterChipKey): void {

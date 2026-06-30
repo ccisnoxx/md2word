@@ -2,13 +2,15 @@
 <!-- Purpose: Render the lightweight document_job incident triage queue and diagnostic drawer. -->
 <template>
   <main class="incident-page app-page" :class="{ 'has-bulk-actions': selectedItems.length }" aria-labelledby="incident-title">
-    <section class="incident-command-header app-page-shell app-page-shell--wide">
-      <div class="command-copy">
-        <p class="page-kicker">异常分诊</p>
-        <h1 id="incident-title" class="page-title">异常处理</h1>
-        <p class="page-description">集中处理失败、阻塞、可重试和长时间未更新的 document_jobs。</p>
-      </div>
-      <div class="command-actions">
+    <WorkbenchPageHeader
+      title-id="incident-title"
+      kicker="异常分诊"
+      title="异常处理"
+      description="集中处理失败、阻塞、可重试和长时间未更新的 document_jobs。"
+      wide
+      section-class="incident-command-header"
+    >
+      <template #actions>
         <div class="live-pill" :class="{ 'is-loading': loading || backgroundRefreshing }">
           <span aria-hidden="true"></span>
           <strong>{{ syncStatusText }}</strong>
@@ -17,31 +19,16 @@
         <el-tooltip content="快捷键 R" placement="bottom">
           <el-button :icon="Refresh" :loading="loading" @click="manualRefresh">刷新</el-button>
         </el-tooltip>
-      </div>
-    </section>
+      </template>
+    </WorkbenchPageHeader>
 
-    <section class="incident-summary-strip app-page-shell app-page-shell--wide" aria-label="异常队列汇总">
-      <button type="button" class="summary-item is-warning" :class="{ 'is-active': stalledMinutesFilter === DEFAULT_STALLED_FILTER }" @click="applySummaryFilter('stalled')">
-        <span>{{ summary?.stalled ?? 0 }}</span>
-        <strong>停滞/超时</strong>
-        <small>优先刷新状态</small>
-      </button>
-      <button type="button" class="summary-item is-danger" :class="{ 'is-active': statusFilter === 'failed' }" @click="applySummaryFilter('failed')">
-        <span>{{ summary?.failed ?? 0 }}</span>
-        <strong>失败任务</strong>
-        <small>按可重试性分流</small>
-      </button>
-      <button type="button" class="summary-item is-info" :class="{ 'is-active': retryableFilter === 'true' }" @click="applySummaryFilter('retryable')">
-        <span>{{ summary?.retryable ?? 0 }}</span>
-        <strong>可直接重试</strong>
-        <small>批量确认后执行</small>
-      </button>
-      <button type="button" class="summary-item is-danger" :class="{ 'is-active': failureTypeFilter === 'artifact_missing' }" @click="applySummaryFilter('artifact')">
-        <span>{{ summary?.by_failure_type?.artifact_missing ?? 0 }}</span>
-        <strong>产物缺失</strong>
-        <small>先看证据</small>
-      </button>
-    </section>
+    <WorkbenchSummaryStrip
+      label="异常队列汇总"
+      :items="incidentSummaryItems"
+      wide
+      section-class="incident-summary-strip"
+      @select="handleIncidentSummarySelect"
+    />
 
     <SavedViewStrip
       class="app-page-shell app-page-shell--wide"
@@ -59,14 +46,16 @@
     />
 
     <section class="incident-list-panel app-filter-panel app-page-shell app-page-shell--wide" aria-label="异常队列">
-      <div class="section-header table-header">
-        <div>
-          <p class="table-kicker page-kicker">当前视图：{{ activeFilterLabel }}</p>
-          <h2 class="section-title">异常队列</h2>
-          <p class="section-subtitle">默认按处理优先级排序；抽屉状态通过 <span class="mono">incident_job_id</span> 恢复。</p>
-        </div>
-        <ShortcutHintList :items="incidentListShortcutHints" />
-      </div>
+      <WorkbenchSectionHeader
+        :kicker="`当前视图：${activeFilterLabel}`"
+        title="异常队列"
+        subtitle="默认按处理优先级排序；抽屉状态通过 incident_job_id 恢复。"
+        header-class="table-header"
+      >
+        <template #extra>
+          <ShortcutHintList :items="incidentListShortcutHints" />
+        </template>
+      </WorkbenchSectionHeader>
 
       <div class="toolbar filter-toolbar">
         <el-input
@@ -131,7 +120,7 @@
         />
       </div>
 
-      <div v-if="activeFilterChips.length" class="active-filter-chips" aria-label="当前筛选条件">
+      <div v-if="activeFilterChips.length" class="active-filter-chips app-active-filter-chips" aria-label="当前筛选条件">
         <el-tag v-for="chip in activeFilterChips" :key="chip.key" closable effect="plain" @close="removeFilter(chip.key)">
           {{ chip.label }}
         </el-tag>
@@ -164,6 +153,17 @@
           @selection-change="handleSelectionChange"
           @row-click="openDiagnostic"
         >
+          <template #empty>
+            <WorkbenchEmptyState
+              :title="incidentEmptyStateTitle"
+              :description="incidentEmptyStateDescription"
+            >
+              <template #actions>
+                <el-button v-if="hasActiveFilters" :icon="Filter" @click="clearIncidentFilters">清空筛选</el-button>
+                <el-button :icon="Refresh" @click="manualRefresh">刷新队列</el-button>
+              </template>
+            </WorkbenchEmptyState>
+          </template>
           <el-table-column v-if="isTableColumnVisible('selection')" type="selection" width="44" />
           <el-table-column v-if="isTableColumnVisible('identity')" label="任务 / 证据" min-width="360">
             <template #default="{ row }">
@@ -232,7 +232,7 @@
         </el-table>
       </div>
 
-      <div class="pagination-row">
+      <div class="pagination-row app-pagination-row">
         <el-pagination
           background
           layout="prev, pager, next, total"
@@ -244,12 +244,12 @@
       </div>
     </section>
 
-    <div v-if="selectedItems.length" class="bulk-action-bar" aria-label="批量异常操作">
-      <div class="bulk-summary">
+    <div v-if="selectedItems.length" class="bulk-action-bar app-bulk-action-bar" aria-label="批量异常操作">
+      <div class="bulk-summary app-bulk-summary">
         <strong>已选 {{ selectedItems.length }} 个异常</strong>
         <span>可重试 {{ selectedRetryableCount }} · 将跳过 {{ selectedNonRetryableCount }}</span>
       </div>
-      <div class="bulk-actions">
+      <div class="bulk-actions app-bulk-actions">
         <el-button type="warning" :loading="batchLoading" @click="handleBatchRetry">批量重试</el-button>
         <el-button :loading="batchLoading" @click="handleBatchRefresh">批量刷新</el-button>
         <el-button text @click="clearSelection">清除选择</el-button>
@@ -446,6 +446,10 @@ import BatchResultStrip from "@/components/BatchResultStrip.vue";
 import JobStatusBadge from "@/components/JobStatusBadge.vue";
 import SavedViewStrip from "@/components/SavedViewStrip.vue";
 import ShortcutHintList from "@/components/ShortcutHintList.vue";
+import WorkbenchEmptyState from "@/components/WorkbenchEmptyState.vue";
+import WorkbenchPageHeader from "@/components/WorkbenchPageHeader.vue";
+import WorkbenchSectionHeader from "@/components/WorkbenchSectionHeader.vue";
+import WorkbenchSummaryStrip from "@/components/WorkbenchSummaryStrip.vue";
 import WorkbenchTableSettings from "@/components/WorkbenchTableSettings.vue";
 import { normalizeIncidentBatchResult } from "@/utils/batchResults";
 import { formatDateTime, getJobSourceFilename, jobStageText, jobStatusText } from "@/utils/format";
@@ -564,6 +568,18 @@ const activeFilterLabel = computed(() => {
   const retryText = retryableFilter.value === "true" ? "可重试" : retryableFilter.value === "false" ? "不可重试" : "全部重试性";
   return `${statusText} · ${failureText} · ${retryText}`;
 });
+const hasActiveFilters = computed(() =>
+  Boolean(
+    statusFilter.value ||
+      stageFilter.value ||
+      failureTypeFilter.value ||
+      retryableFilter.value ||
+      retryCountFilter.value ||
+      stalledMinutesFilter.value !== null ||
+      searchKeyword.value.trim() ||
+      sortFilter.value !== "priority",
+  ),
+);
 const advancedFilterCount = computed(() => {
   let count = 0;
   if (retryCountFilter.value) {
@@ -605,6 +621,46 @@ const activeFilterChips = computed<Array<{ key: FilterChipKey; label: string }>>
   }
   return chips;
 });
+const incidentSummaryItems = computed(() => [
+  {
+    id: "stalled",
+    label: "停滞/超时",
+    helper: "优先刷新状态",
+    count: summary.value?.stalled ?? 0,
+    tone: "warning" as const,
+    active: stalledMinutesFilter.value === DEFAULT_STALLED_FILTER,
+  },
+  {
+    id: "failed",
+    label: "失败任务",
+    helper: "按可重试性分流",
+    count: summary.value?.failed ?? 0,
+    tone: "danger" as const,
+    active: statusFilter.value === "failed",
+  },
+  {
+    id: "retryable",
+    label: "可直接重试",
+    helper: "批量确认后执行",
+    count: summary.value?.retryable ?? 0,
+    tone: "info" as const,
+    active: retryableFilter.value === "true",
+  },
+  {
+    id: "artifact",
+    label: "产物缺失",
+    helper: "先看证据",
+    count: summary.value?.by_failure_type?.artifact_missing ?? 0,
+    tone: "danger" as const,
+    active: failureTypeFilter.value === "artifact_missing",
+  },
+]);
+const incidentEmptyStateTitle = computed(() => (hasActiveFilters.value ? "当前筛选暂无异常任务" : "异常队列为空"));
+const incidentEmptyStateDescription = computed(() =>
+  hasActiveFilters.value
+    ? "可以清空筛选回到默认优先级视图，或刷新队列确认最新异常状态。"
+    : "当前没有需要优先分诊的异常 document_jobs。",
+);
 const incidentSystemSavedViews = systemSavedViews.incidents;
 const personalSavedViewItems = computed(() => savedViews.value.map(personalSavedViewToStripItem));
 const allSavedViewItems = computed(() => [...incidentSystemSavedViews, ...personalSavedViewItems.value]);
@@ -1067,9 +1123,25 @@ function applySummaryFilter(kind: SummaryFilter): void {
   handleFilter();
 }
 
+function handleIncidentSummarySelect(kind: string): void {
+  applySummaryFilter(kind as SummaryFilter);
+}
+
 function resetAdvancedFilters(): void {
   retryCountFilter.value = "";
   stalledMinutesFilter.value = null;
+  sortFilter.value = "priority";
+  handleFilter();
+}
+
+function clearIncidentFilters(): void {
+  statusFilter.value = "";
+  stageFilter.value = "";
+  failureTypeFilter.value = "";
+  retryableFilter.value = "";
+  retryCountFilter.value = "";
+  stalledMinutesFilter.value = null;
+  searchKeyword.value = "";
   sortFilter.value = "priority";
   handleFilter();
 }
