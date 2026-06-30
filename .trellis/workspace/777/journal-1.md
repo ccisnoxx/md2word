@@ -371,3 +371,36 @@ Unified SettingsHome, TermProposals, TranslationTermSet, and WordPageStyleDetail
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: Long-tail admin page convergence
+
+**Date**: 2026-06-30
+**Task**: Long-tail admin page convergence
+**Branch**: `main`
+
+### Summary
+
+Converged the first batch of low-frequency admin/config pages onto shared workbench header and panel shells, added long-tail admin smoke coverage, verified build plus the new long-tail smoke and the existing Word page style editing flow, then archived the child task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `35eebe92` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
