@@ -83,17 +83,15 @@
             >
               {{ primaryActionLabel(row) }}
             </el-button>
-            <el-dropdown trigger="click" @command="handleRowCommand(row, $event)">
-              <el-tooltip content="更多操作" placement="top">
-                <el-button
-                  size="small"
-                  text
-                  :icon="MoreFilled"
-                  class="more-action"
-                  aria-label="更多操作"
-                  title="更多操作"
-                />
-              </el-tooltip>
+            <el-dropdown trigger="click" placement="bottom-end" @command="handleRowCommand(row, $event)">
+              <el-button
+                size="small"
+                text
+                :icon="MoreFilled"
+                class="more-action"
+                aria-label="更多操作"
+                title="更多操作"
+              />
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="view">查看详情</el-dropdown-item>
