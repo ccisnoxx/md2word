@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Status: local implementation and contract validation complete; live hostdzire P2 gate run was attempted, but Acceptance Center sync is still blocked by deployed admin authentication state.
+Status: hostdzire P2 online gate passed on release `a2bf3e1`; Acceptance Center `acceptance_p2_online_gate_current` is synced and approved.
 
 P1 evidence was checked before entering P2. `.trellis/tasks/06-29-p1-translation-beta-formal-sample-gate/formal-sample-gate-audit.md` records `acceptance_p1_translation_current` with upsert HTTP `200`, review HTTP `200`, status `passed`, decision `approved`, and no P1 blockers. The remaining latest-summary blocker was expected because P2 had not yet been recorded.
 
@@ -79,7 +79,7 @@ The user pointed to `deploy/p0.env`, which contains the legacy `ADMIN_TOKEN` and
 1. `P2_ONLINE_ADMIN_TOKEN="${ADMIN_TOKEN}"` was rejected by the current deployed `/api/v1/health/ops-alerts` with HTTP `401`, because the deployed version still requires admin Bearer JWT on that endpoint.
 2. A short-lived admin JWT was generated locally from `AUTH_JWT_SECRET_KEY` and `deploy/auth_internal_users.json`, but the deployed `/api/v1/auth/me` also returned HTTP `401`. This indicates the live runtime's JWT secret, managed user record, or token version no longer matches the local deploy bootstrap files.
 
-Latest generated report:
+Latest generated report before deploying the `X-Admin-Token` compatibility changes:
 
 | Field | Result |
 | --- | --- |
@@ -96,23 +96,26 @@ Latest generated report:
 
 The report also surfaced a script bug where a non-200 ops-alerts payload without an `alerts` list could raise `TypeError`; this was fixed locally and covered by `test_p2_online_gate_summary_tolerates_ops_alert_error_payload`.
 
-Local code now supports `X-Admin-Token` for `/health/ops-alerts`, Acceptance Center, and P0/P1 preflight auth checks. The deployed service must be updated to this code, or a live admin password/current admin JWT must be provided, before the P2 gate can pass and sync `acceptance_p2_online_gate_current`.
+After deploying release `a2bf3e1`, the P2 gate was rerun on hostdzire with the production Docker image as a one-shot runner. The runner mounted an empty `/app/.env` for `check_release.py`, passed only the needed `P2_ONLINE_*` values, and used `P2_ONLINE_ADMIN_TOKEN` from the hostdzire `.env`.
 
-Run on hostdzire after the deployed service is updated or current admin JWT/password is available:
+Final evidence:
 
-```bash
-P2_ONLINE_BASE_URL="http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}" \
-P2_ONLINE_PUBLIC_URL="https://md2word.962850.xyz" \
-P2_ONLINE_ADMIN_TOKEN="${ADMIN_TOKEN}" \
-.venv/bin/python scripts/ops/run_p2_online_gate.py \
-  --sync-acceptance \
-  --acceptance-review-decision approved \
-  --acceptance-review-note 'P2 online gate passed for hostdzire release 20d496e.'
-```
+| Field | Result |
+| --- | --- |
+| Release dir | `/root/md2word-releases/a2bf3e1` |
+| Deployment id | `hostdzire-20260630T022658Z-a2bf3e1` |
+| Dry-run report | `/app/tests/tmp/p2_online_runs/20260630T022829Z/report.json` |
+| Synced report | `/app/tests/tmp/p2_online_runs/20260630T023020Z/report.json` |
+| `p2_online_gate_ready` | `true` |
+| Blockers | none |
+| Warnings | `document_jobs_failed_present` |
+| Live / ready / metrics / ops-alerts | passed |
+| Public ingress | passed |
+| Release check | passed |
+| P0 preflight | passed |
+| P1 preflight | passed |
+| Acceptance sync | `ok=true`, run id `acceptance_p2_online_gate_current` |
+| Acceptance detail | `status=passed`, `decision=approved`, reviewer `admin`, blockers none |
+| Latest summary | P2 `status=passed`, P2 `decision=approved`, overall blocker count `0`; overall status remains `needs_attention` because warnings are still present |
 
-Expected completion evidence:
-
-- Console shows `ready: True`.
-- `tests/tmp/p2_online_runs/<run_id>/report.md` includes `P2 online gate ready: true`.
-- Report `acceptance_sync.ok=true`.
-- Acceptance Center detail for `acceptance_p2_online_gate_current` shows `status=passed`, no blockers, and the recorded review decision if review was requested.
+The remaining `document_jobs_failed_present` warning reflects existing failed job history surfaced by ops alerts. It is not a P2 blocker and did not prevent Acceptance Center from recording the P2 evidence as passed.
