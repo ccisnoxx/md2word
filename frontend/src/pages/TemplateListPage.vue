@@ -1,17 +1,20 @@
 <!-- frontend/src/pages/TemplateListPage.vue: Word template document list. -->
 <template>
   <main class="template-list-page app-page" aria-labelledby="templates-title">
-    <section class="page-heading app-page-header app-page-shell app-page-shell--wide">
-      <div>
-        <p class="page-kicker">Word 模板文档</p>
-        <h1 id="templates-title" class="page-title">Word 模板文档</h1>
-        <p class="page-description">管理 DOCX 模板文件、默认页眉内容、公司 Logo、模板版本和发布流程。</p>
-      </div>
-      <div class="toolbar">
+    <WorkbenchPageHeader
+      title-id="templates-title"
+      kicker="Word 模板文档"
+      title="Word 模板文档"
+      description="管理 DOCX 模板文件、默认页眉内容、公司 Logo、模板版本和发布流程。"
+      wide
+      section-class="page-heading app-page-header"
+      actions-class="toolbar"
+    >
+      <template #actions>
         <el-button :icon="Brush" @click="$router.push('/settings/word-page-styles')">Word 页面样式配置</el-button>
         <el-button :icon="Refresh" :loading="loading" @click="loadTemplates">刷新</el-button>
-      </div>
-    </section>
+      </template>
+    </WorkbenchPageHeader>
 
     <ApiErrorAlert class="app-page-shell app-page-shell--wide" :error="error" />
 
@@ -23,39 +26,47 @@
       :closable="false"
     />
 
-    <el-card class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
-      <el-table :data="templates" :loading="loading" empty-text="暂无模板">
-        <el-table-column prop="id" label="模板 ID" min-width="180">
+    <section class="app-page-shell app-page-shell--wide">
+      <WorkbenchPanelCard
+        title="模板列表"
+        subtitle="查看模板文档、布局配置入口和默认版本状态。"
+        card-class="app-table-card"
+      >
+        <div class="table-wrap">
+        <el-table :data="templates" :loading="loading" empty-text="暂无模板" table-layout="fixed" class="template-table">
+          <el-table-column prop="id" label="模板 ID" min-width="140">
           <template #default="{ row }">
             <router-link :to="`/settings/templates/${row.id}`" class="mono">{{ row.id }}</router-link>
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="名称" min-width="180" />
-        <el-table-column prop="description" label="说明" min-width="220" show-overflow-tooltip />
-        <el-table-column prop="version" label="当前版本" width="110" />
-        <el-table-column label="默认" width="90">
+          <el-table-column prop="name" label="名称" min-width="150" />
+          <el-table-column prop="description" label="说明" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="version" label="当前版本" width="96" />
+          <el-table-column label="默认" width="80">
           <template #default="{ row }">
             <el-tag v-if="row.is_default" type="success" effect="plain">默认</el-tag>
             <span v-else class="muted">否</span>
           </template>
         </el-table-column>
-        <el-table-column label="模板文件" min-width="180">
+          <el-table-column label="模板文件" min-width="150">
           <template #default="{ row }">
             <span>{{ row.template.file_name || "-" }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="样式配置" min-width="180">
+          <el-table-column label="样式配置" min-width="150">
           <template #default="{ row }">
             <router-link :to="`/settings/word-page-styles/${row.id}`">{{ row.layout_config.file_name || "配置页面样式" }}</router-link>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="$router.push(`/settings/templates/${row.id}`)">管理文档</el-button>
           </template>
         </el-table-column>
-      </el-table>
-    </el-card>
+        </el-table>
+        </div>
+      </WorkbenchPanelCard>
+    </section>
   </main>
 </template>
 
@@ -66,6 +77,8 @@ import { Brush, Refresh } from "@element-plus/icons-vue";
 import { templatesApi } from "@/api/templates";
 import type { TemplateListItemResponse } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
+import WorkbenchPageHeader from "@/components/WorkbenchPageHeader.vue";
+import WorkbenchPanelCard from "@/components/WorkbenchPanelCard.vue";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 
 const templates = ref<TemplateListItemResponse[]>([]);
@@ -93,5 +106,22 @@ onMounted(() => {
 .template-list-page {
   display: grid;
   gap: var(--app-space-4);
+}
+
+.template-list-page > .app-page-shell {
+  width: 100%;
+  max-width: 100%;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.template-table {
+  width: 100%;
+  min-width: 920px;
 }
 </style>

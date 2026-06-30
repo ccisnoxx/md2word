@@ -1,14 +1,18 @@
 <!-- frontend/src/pages/TranslationProfilesPage.vue: Translation Profile list, draft basics and version actions. -->
 <template>
   <main class="translation-profiles-page app-page" aria-labelledby="translation-profiles-title">
-    <section class="page-heading app-page-header app-page-shell app-page-shell--wide">
-      <div>
-        <p class="page-kicker">翻译配置</p>
-        <h1 id="translation-profiles-title" class="page-title">翻译配置</h1>
-        <p class="page-description">只管理基础字段草稿、发布、设默认和回滚；不提供提示词正文编辑。</p>
-      </div>
-      <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
-    </section>
+    <WorkbenchPageHeader
+      title-id="translation-profiles-title"
+      kicker="翻译配置"
+      title="翻译配置"
+      description="只管理基础字段草稿、发布、设默认和回滚；不提供提示词正文编辑。"
+      wide
+      section-class="page-heading app-page-header"
+    >
+      <template #actions>
+        <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
+      </template>
+    </WorkbenchPageHeader>
 
     <ApiErrorAlert class="app-page-shell app-page-shell--wide" :error="error" />
 
@@ -22,31 +26,30 @@
     />
 
     <section v-else class="profile-grid app-page-shell app-page-shell--wide">
-      <el-card class="app-panel-card app-table-card" shadow="never">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">配置列表</h2>
-            <p class="section-subtitle">选择一个配置查看详情。</p>
-          </div>
-        </div>
+      <WorkbenchPanelCard
+        title="配置列表"
+        subtitle="选择一个配置查看详情。"
+        card-class="app-table-card"
+      >
         <el-table :data="profiles" :loading="loading" empty-text="暂无翻译配置" @row-click="selectProfile">
           <el-table-column prop="id" label="配置 ID" min-width="180" />
           <el-table-column prop="default_version" label="默认版本" width="120" />
           <el-table-column prop="target_language" label="目标语言" width="120" />
           <el-table-column prop="domain" label="领域" min-width="180" show-overflow-tooltip />
         </el-table>
-      </el-card>
+      </WorkbenchPanelCard>
 
-      <el-card class="app-panel-card" shadow="never">
-        <div class="section-header profile-draft-header">
-          <div>
-            <h2 class="section-title">草稿基础字段</h2>
-            <p class="section-subtitle">开放目标语言、领域、提示词版本、模型和批次限制。</p>
-          </div>
+      <WorkbenchPanelCard
+        title="草稿基础字段"
+        subtitle="开放目标语言、领域、提示词版本、模型和批次限制。"
+        card-class="profile-draft-card"
+        header-class="profile-draft-header"
+      >
+        <template #actions>
           <el-tag v-if="draft?.snapshot_hash" class="draft-hash-tag mono" effect="plain" :title="draft.snapshot_hash">
             {{ draft.snapshot_hash }}
           </el-tag>
-        </div>
+        </template>
         <el-empty v-if="!selectedProfileId" description="请选择翻译配置" :image-size="90" />
         <el-form v-else ref="draftFormRef" :model="draftForm" :rules="draftRules" label-width="160px">
           <el-form-item label="目标语言" prop="target_language">
@@ -74,17 +77,16 @@
             </el-form-item>
           </RoleGate>
         </el-form>
-      </el-card>
+      </WorkbenchPanelCard>
     </section>
 
-    <el-card v-if="!unavailable" class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
-      <div class="section-header">
-        <div>
-          <h2 class="section-title">已发布版本</h2>
-          <p class="section-subtitle">可查看版本并由管理员执行设默认或回滚。</p>
-        </div>
-      </div>
-      <el-table class="published-version-table" :data="detail?.versions || []" :loading="loading" empty-text="暂无已发布版本">
+    <section v-if="!unavailable" class="app-page-shell app-page-shell--wide">
+      <WorkbenchPanelCard
+        title="已发布版本"
+        subtitle="可查看版本并由管理员执行设默认或回滚。"
+        card-class="app-table-card"
+      >
+        <el-table class="published-version-table" :data="detail?.versions || []" :loading="loading" empty-text="暂无已发布版本">
         <el-table-column prop="version" label="版本" width="120" />
         <el-table-column label="默认" width="90">
           <template #default="{ row }">
@@ -109,8 +111,9 @@
             </RoleGate>
           </template>
         </el-table-column>
-      </el-table>
-    </el-card>
+        </el-table>
+      </WorkbenchPanelCard>
+    </section>
   </main>
 </template>
 
@@ -128,6 +131,8 @@ import type {
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import RoleGate from "@/components/RoleGate.vue";
+import WorkbenchPageHeader from "@/components/WorkbenchPageHeader.vue";
+import WorkbenchPanelCard from "@/components/WorkbenchPanelCard.vue";
 import { useAuthStore } from "@/stores/auth";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { formatDateTime } from "@/utils/format";

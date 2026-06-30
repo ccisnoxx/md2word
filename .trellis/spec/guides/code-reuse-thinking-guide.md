@@ -165,6 +165,27 @@ workflow local:
 severity placement, and panel headers before trying to unify the underlying
 edit/review logic.
 
+### Pattern 2.9: Long-Tail Convergence Uses Proven Shells
+
+**Bad**: Low-frequency admin pages get bespoke cleanup work one-by-one, even
+after shell, dashboard, and governance primitives already exist.
+
+This usually causes:
+
+- visual drift to return after every small admin change,
+- repeated low-signal CSS edits,
+- pressure to over-engineer pages that mostly need alignment.
+
+**Good**: Treat long-tail pages as downstream adopters of proven shells:
+
+```vue
+<WorkbenchPageHeader ... />
+<WorkbenchPanelCard ... />
+```
+
+**Rule**: For low-frequency admin/config pages, prefer attaching stabilized
+header/panel primitives over creating new page-specific layout patterns.
+
 ### Pattern 3: Repeated Constants
 
 **Bad**: Defining the same constant in multiple files

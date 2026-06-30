@@ -1914,7 +1914,7 @@ test("admin can edit Word page styles and save a draft version", async ({ page }
 
   await page.goto("/settings/templates");
   await expect(page.getByRole("heading", { name: "Word 模板文档", level: 1 })).toBeVisible();
-  await page.getByRole("button", { name: "管理文档" }).click();
+  await page.getByRole("link", { name: "default" }).click();
   await expect(page).toHaveURL(/\/settings\/templates\/default$/);
   await expect(page.getByRole("heading", { name: "Word 模板文档", level: 1 })).toBeVisible();
   await expect(page.getByText("模板文档负责")).toBeVisible();

@@ -1,32 +1,30 @@
 <!-- frontend/src/pages/AiProviderConfigPage.vue: Admin AI provider runtime configuration page. -->
 <template>
   <main class="ai-provider-page app-page" aria-labelledby="ai-provider-title">
-    <section class="app-page-header app-page-shell">
-      <div>
-        <p class="page-kicker">配置中心</p>
-        <h1 id="ai-provider-title" class="page-title">AI 配置</h1>
-        <p class="page-description">配置翻译链路使用的 OpenAI-compatible provider。</p>
-      </div>
-      <div class="header-actions">
+    <WorkbenchPageHeader
+      title-id="ai-provider-title"
+      kicker="配置中心"
+      title="AI 配置"
+      description="配置翻译链路使用的 OpenAI-compatible provider。"
+    >
+      <template #actions>
+        <div class="header-actions">
         <el-tag :type="config?.api_key_configured ? 'success' : 'warning'" effect="plain">
           key={{ config?.api_key_configured ? "configured" : "missing" }}
         </el-tag>
         <el-button :icon="Refresh" :loading="loading" @click="loadConfig">刷新</el-button>
-      </div>
-    </section>
+        </div>
+      </template>
+    </WorkbenchPageHeader>
 
     <ApiErrorAlert class="app-page-shell" :error="error" :diagnostic-context="errorDiagnosticContext" />
 
     <section class="config-grid app-page-shell">
-      <el-card class="app-panel" shadow="never">
-        <template #header>
-          <div class="section-header">
-            <div>
-              <h2 class="section-title">Provider</h2>
-              <p class="section-subtitle">当前来源：{{ sourceText }}</p>
-            </div>
-          </div>
-        </template>
+      <WorkbenchPanelCard
+        title="Provider"
+        :subtitle="`当前来源：${sourceText}`"
+        card-class="app-panel"
+      >
 
         <el-form label-position="top" class="provider-form" @submit.prevent="submit">
           <el-form-item label="Backend">
@@ -63,17 +61,13 @@
             <el-button type="primary" :icon="Check" :loading="saving" native-type="submit">保存配置</el-button>
           </div>
         </el-form>
-      </el-card>
+      </WorkbenchPanelCard>
 
-      <el-card class="app-panel" shadow="never">
-        <template #header>
-          <div class="section-header">
-            <div>
-              <h2 class="section-title">当前状态</h2>
-              <p class="section-subtitle">密钥只显示脱敏状态。</p>
-            </div>
-          </div>
-        </template>
+      <WorkbenchPanelCard
+        title="当前状态"
+        subtitle="密钥只显示脱敏状态。"
+        card-class="app-panel"
+      >
 
         <el-descriptions v-loading="loading" :column="1" border>
           <el-descriptions-item label="Backend">{{ config?.backend || "-" }}</el-descriptions-item>
@@ -85,7 +79,7 @@
           <el-descriptions-item label="更新时间">{{ formatDateTime(config?.updated_at || null) }}</el-descriptions-item>
           <el-descriptions-item label="更新人">{{ config?.updated_by || "-" }}</el-descriptions-item>
         </el-descriptions>
-      </el-card>
+      </WorkbenchPanelCard>
     </section>
   </main>
 </template>
@@ -101,6 +95,8 @@ import {
   type AiProviderConfigResponse,
 } from "@/api/aiProviderConfig";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
+import WorkbenchPageHeader from "@/components/WorkbenchPageHeader.vue";
+import WorkbenchPanelCard from "@/components/WorkbenchPanelCard.vue";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { formatDateTime } from "@/utils/format";
 

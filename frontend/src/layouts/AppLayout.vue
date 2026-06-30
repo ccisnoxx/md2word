@@ -420,6 +420,9 @@ async function submitChangePassword(): Promise<void> {
 
 .app-main-focus-target {
   min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 .app-main-focus-target:focus {
