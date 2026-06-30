@@ -272,3 +272,36 @@ Unified Job Detail diagnostics, Incident drawer, and Translation QA review panel
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: Accessibility and responsive regression gate
+
+**Date**: 2026-06-30
+**Task**: Accessibility and responsive regression gate
+**Branch**: `main`
+
+### Summary
+
+Added shared smoke accessibility helpers, centralized 375/768/1024/1440 viewport assertions, and created an explicit accessibility-responsive gate smoke covering skip-link, overlays, loading/empty/error/permission states; verified build, unit, and related smoke suites; then archived the child task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4f24b15` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
