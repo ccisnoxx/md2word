@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 8
+- **Total Sessions**: 9
 - **Last Active**: 2026-06-30
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~274 | Active |
+| `journal-1.md` | ~307 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 9 | 2026-06-30 | Accessibility and responsive regression gate | `4f24b15` | `main` |
 | 8 | 2026-06-30 | Diagnostic detail and drawer template | `3c804713` | `main` |
 | 7 | 2026-06-30 | Core list workbench template unification | `96059313` | `main` |
 | 6 | 2026-06-30 | Frontend shell token unification | `17c2676e`, `7b4adc55` | `main` |
