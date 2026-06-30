@@ -1,6 +1,7 @@
 // File: frontend/tests/smoke/workbench-table-preferences.spec.ts
 // Purpose: Browser smoke coverage for local-only table preferences on operations workbenches.
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
+import { expectElementContentFitsViewportWidth, expectNoPageHorizontalOverflow } from "./support/accessibility";
 
 const TOKEN_STORAGE_KEY = "md2word.frontend.access_token";
 const ISO_NOW = "2026-06-20T04:00:00Z";
@@ -228,26 +229,8 @@ async function chooseDensity(panel: Locator, label: string): Promise<void> {
   await panel.locator(".el-radio-button", { hasText: label }).click();
 }
 
-async function expectNoPageHorizontalOverflow(page: Page): Promise<void> {
-  const sizes = await page.evaluate(() => ({
-    body: document.body.scrollWidth,
-    document: document.documentElement.scrollWidth,
-    viewport: window.innerWidth,
-  }));
-  expect(sizes.body, `body width ${sizes.body} exceeds viewport ${sizes.viewport}`).toBeLessThanOrEqual(sizes.viewport + 1);
-  expect(sizes.document, `document width ${sizes.document} exceeds viewport ${sizes.viewport}`).toBeLessThanOrEqual(sizes.viewport + 1);
-}
-
 async function expectPanelInsideViewport(page: Page): Promise<void> {
-  const box = await page.getByLabel("表格设置面板").boundingBox();
-  const viewport = page.viewportSize();
-  expect(box, "settings panel should have a rendered box").not.toBeNull();
-  expect(viewport, "viewport should be available").not.toBeNull();
-  if (!box || !viewport) {
-    return;
-  }
-  expect(box.x).toBeGreaterThanOrEqual(0);
-  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
+  await expectElementContentFitsViewportWidth(page, page.getByLabel("表格设置面板"));
 }
 
 test("desktop workbench table preferences stay local to each page", async ({ page }) => {

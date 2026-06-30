@@ -1,6 +1,7 @@
 // File: frontend/tests/smoke/core-flow.spec.ts
 // Purpose: Browser smoke coverage for the internal portal's core operator workflows.
 import { expect, test, type Page } from "@playwright/test";
+import { activateSkipLink, expectNoPageHorizontalOverflow, WORKBENCH_VIEWPORTS } from "./support/accessibility";
 
 const adminOnlyDeleteReason = "只有 admin 可以删除文档任务。";
 
@@ -1632,18 +1633,6 @@ async function loginAsOperator(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/cockpit(\?|$)/);
 }
 
-async function expectNoPageHorizontalOverflow(page: Page): Promise<void> {
-  const sizes = await page.evaluate(() => ({
-    body: document.body.scrollWidth,
-    document: document.documentElement.scrollWidth,
-    viewport: window.innerWidth,
-  }));
-  expect(sizes.body, `body width ${sizes.body} exceeds viewport ${sizes.viewport}`).toBeLessThanOrEqual(sizes.viewport + 1);
-  expect(sizes.document, `document width ${sizes.document} exceeds viewport ${sizes.viewport}`).toBeLessThanOrEqual(
-    sizes.viewport + 1,
-  );
-}
-
 async function settleWorkbenchScreenshot(page: Page): Promise<void> {
   await expect(page.locator(".el-loading-mask")).toHaveCount(0);
   await page.waitForTimeout(350);
@@ -1663,14 +1652,7 @@ async function expectLocatorInViewport(page: Page, selector: string): Promise<vo
 
 test("operations redesign renders verified desktop, tablet, and mobile screenshots", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
-  const viewports = [
-    { name: "desktop", width: 1440, height: 900 },
-    { name: "laptop", width: 1024, height: 768 },
-    { name: "tablet", width: 768, height: 1024 },
-    { name: "mobile", width: 375, height: 812 },
-  ];
-
-  for (const viewport of viewports) {
+  for (const viewport of WORKBENCH_VIEWPORTS) {
     const context = await browser.newContext({
       viewport: { width: viewport.width, height: viewport.height },
     });
@@ -1689,10 +1671,7 @@ test("operations redesign renders verified desktop, tablet, and mobile screensho
     await expect(page.locator(".work-queue-strip").getByRole("button", { name: /失败任务/ })).toBeVisible();
     await expect(page.getByText("smoke.pdf")).toBeVisible();
     await expectNoPageHorizontalOverflow(page);
-    await page.keyboard.press("Tab");
-    await expect(page.getByRole("link", { name: "跳到主内容" })).toBeFocused();
-    await page.keyboard.press("Enter");
-    await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe("app-main-content");
+    await activateSkipLink(page);
     await settleWorkbenchScreenshot(page);
     await page.screenshot({ path: testInfo.outputPath(`ops-jobs-${viewport.name}.png`) });
 

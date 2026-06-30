@@ -147,6 +147,32 @@ import { getStoredThemeMode, persistThemeMode } from "@/utils/theme";
 cross-page shell behavior, one shared utility owns the contract. Components may
 render controls, but they must not clone the persistence/apply logic.
 
+### Pattern 3.6: Duplicated Smoke Assertions
+
+**Bad**: Every smoke file reimplements its own `no horizontal overflow`,
+`skip-link`, or `panel fits viewport` helper with slightly different semantics.
+
+This usually causes:
+
+- viewport gates drifting between pages,
+- false-positive layout regressions in one suite but not another,
+- repeated fixes when a shared overlay contract changes.
+
+**Good**: Put shared gate assertions in one smoke support module and reuse them:
+
+```typescript
+import {
+  WORKBENCH_VIEWPORTS,
+  expectNoPageHorizontalOverflow,
+  expectElementContentFitsViewportWidth,
+  activateSkipLink,
+} from "./support/accessibility";
+```
+
+**Rule**: When a smoke assertion encodes a cross-page non-functional contract
+(viewport widths, focus-return, skip-link, overlay fit), extract it before a
+third spec copies it.
+
 ### Pattern 4: Repeated Payload Field Extraction
 
 **Bad**: Multiple consumers cast the same JSON/event fields locally:
