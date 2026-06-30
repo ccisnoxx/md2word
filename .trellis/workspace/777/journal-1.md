@@ -239,3 +239,36 @@ Unified Jobs, Incident Triage, and Translation QA list workbench skeletons aroun
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: Diagnostic detail and drawer template
+
+**Date**: 2026-06-30
+**Task**: Diagnostic detail and drawer template
+**Branch**: `main`
+
+### Summary
+
+Unified Job Detail diagnostics, Incident drawer, and Translation QA review panel around shared evidence sections, technical key-value rows, and drawer shell; verified build, theme unit test, core-flow diagnostics/QA smoke, and incident triage smoke; then archived the child task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3c804713` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
