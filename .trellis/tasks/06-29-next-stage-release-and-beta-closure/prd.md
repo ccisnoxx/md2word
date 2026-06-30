@@ -36,16 +36,26 @@
 
 ## Cross-Task Acceptance Criteria
 
-- [ ] P0 release readiness can be judged from current Golden Sample evidence, admin signoff, and Acceptance Center latest summary.
-- [ ] P1 translation beta readiness can be judged from formal sample coverage, regression output, QA evidence, and any remaining blockers.
-- [ ] Operations readiness can be judged from online gate output, incident/recovery documentation, and explicit gated/deferred capabilities.
-- [ ] Internal portal workflows have evidence for operator/admin permissions, core task flow, QA, downloads, acceptance, and ops views.
-- [ ] Documentation and Trellis state no longer contain obvious empty/stale planning traps that would mislead the next development session.
-- [ ] No child implements out-of-scope batch-level write operations or destructive/external ops behavior without a separate user decision.
+- [x] P0 release readiness can be judged from current Golden Sample evidence, admin signoff, and Acceptance Center latest summary.
+- [x] P1 translation beta readiness can be judged from formal sample coverage, regression output, QA evidence, and any remaining blockers.
+- [x] Operations readiness can be judged from online gate output, incident/recovery documentation, and explicit gated/deferred capabilities.
+- [x] Internal portal workflows have evidence for operator/admin permissions, core task flow, QA, downloads, acceptance, and ops views.
+- [x] Documentation and Trellis state no longer contain obvious empty/stale planning traps that would mislead the next development session.
+- [x] No child implements out-of-scope batch-level write operations or destructive/external ops behavior without a separate user decision.
+
+## Progress Update 2026-06-30
+
+- Completed and archived children: `06-29-p0-golden-sample-release-evidence-closure`, `06-29-acceptance-center-release-evidence-sync`, `06-29-p1-translation-beta-formal-sample-gate`, `06-29-ops-gate-and-recovery-readiness`, `06-29-internal-portal-core-workflow-hardening`, `06-29-dev-docs-and-trellis-hygiene`, and `06-26-translation-provider-batching-recovery-phase-3`.
+- Current computed parent progress: 7/7 children done.
+- Remaining active children: none.
+- Release evidence status: P0, P1, and P2 current hostdzire evidence is synced into Acceptance Center; latest summary has no blockers and retains visible warnings for P1/P2.
+- Internal portal status: operator/admin workflow evidence passed local unit/build checks and relevant Playwright smoke coverage, including job lifecycle, QA, downloads, forbidden states, users, configuration, audit logs, file retention, Acceptance Center, system status, and ops dashboard.
+- Docs/Trellis hygiene status: empty `docs/dev` placeholders are now explicitly marked deferred, the backend dev-docs index uses repository-relative current links, and the stale `00-bootstrap-guidelines` task has been archived.
+- Provider batch Phase 3 status: batch-aware P1 reporting helpers, provider batch runbook guidance, and operations-entry evaluation are present in the repository; task scope remained read-only/reporting-only, with batch-level write operations still design-only and gated behind future user decisions.
 
 ## User Decisions Needed
 
-- Source and acceptability standard for the two missing P1 real English datasheet samples.
+- Resolved: source and acceptability standard for the two missing P1 real English datasheet samples.
 - Whether batch-level retry/cancel/requeue/finalizer write operations should enter a later implementation task.
 - Whether real S3 deletion, automatic cleanup scheduler, provider cancellation, or external alert delivery should move from gated/deferred to implementation scope.
 
