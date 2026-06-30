@@ -175,13 +175,12 @@
               </el-button>
             </div>
 
-            <section class="diagnostic-section-block" aria-label="下一步建议">
-              <div class="diagnostic-section-heading">
-                <div>
-                  <h3>下一步建议</h3>
-                  <p>只根据当前任务状态和后端动作可用性给出建议，不自动执行修复或重试。</p>
-                </div>
-              </div>
+            <EvidenceSurfaceSection
+              title="下一步建议"
+              description="只根据当前任务状态和后端动作可用性给出建议，不自动执行修复或重试。"
+              aria-label="下一步建议"
+              root-class="diagnostic-section-block"
+            >
               <el-alert
                 v-if="diagnosticRecommendation"
                 class="diagnostic-recommendation"
@@ -193,7 +192,7 @@
                 <p>{{ diagnosticRecommendation.description }}</p>
                 <strong>{{ diagnosticRecommendation.actionLabel }}</strong>
               </el-alert>
-            </section>
+            </EvidenceSurfaceSection>
 
             <div class="diagnostic-summary-grid" aria-label="当前诊断摘要">
               <div v-for="item in diagnosticSummaryFacts" :key="item.label" class="diagnostic-summary-item">
@@ -202,13 +201,12 @@
               </div>
             </div>
 
-            <section class="diagnostic-section-block" aria-label="关键证据">
-              <div class="diagnostic-section-heading">
-                <div>
-                  <h3>关键证据</h3>
-                  <p>区分源文件、结果、DocumentIR、回调和最近错误事件；原始 ID/错误码保持可复制。</p>
-                </div>
-              </div>
+            <EvidenceSurfaceSection
+              title="关键证据"
+              description="区分源文件、结果、DocumentIR、回调和最近错误事件；原始 ID/错误码保持可复制。"
+              aria-label="关键证据"
+              root-class="diagnostic-section-block"
+            >
               <div class="diagnostic-evidence-grid">
                 <article v-for="item in diagnosticEvidenceItems" :key="item.label" class="diagnostic-evidence-card">
                   <span>{{ item.label }}</span>
@@ -216,18 +214,19 @@
                   <small>{{ item.helper }}</small>
                 </article>
               </div>
-            </section>
+            </EvidenceSurfaceSection>
 
-            <section class="diagnostic-section-block" aria-label="Provider 批次">
-              <div class="diagnostic-section-heading">
-                <div>
-                  <h3>Provider 批次</h3>
-                  <p>Provider batch 摘要；AI 调用日志仅显示文件 ID，正文内容不进入此视图。</p>
-                </div>
+            <EvidenceSurfaceSection
+              title="Provider 批次"
+              description="Provider batch 摘要；AI 调用日志仅显示文件 ID，正文内容不进入此视图。"
+              aria-label="Provider 批次"
+              root-class="diagnostic-section-block"
+            >
+              <template #actions>
                 <el-button text type="primary" :loading="translationBatchesLoading" @click="loadTranslationBatches()">
                   刷新批次
                 </el-button>
-              </div>
+              </template>
               <ApiErrorAlert
                 :error="translationBatchesError"
                 :diagnostic-context="jobErrorDiagnosticContext('document_jobs.translation_batches')"
@@ -305,16 +304,17 @@
                 class="compact-empty"
                 :description="supportsJobTranslationQa(job) ? '暂无 translation provider batch 记录' : '当前任务模式没有 provider batch 诊断'"
               />
-            </section>
+            </EvidenceSurfaceSection>
 
-            <section class="diagnostic-section-block" aria-label="事件预览">
-              <div class="diagnostic-section-heading">
-                <div>
-                  <h3>事件预览</h3>
-                  <p>优先查看最近错误/警告（error/warning）；完整事件流仍在“事件”页签。</p>
-                </div>
+            <EvidenceSurfaceSection
+              title="事件预览"
+              description="优先查看最近错误/警告（error/warning）；完整事件流仍在“事件”页签。"
+              aria-label="事件预览"
+              root-class="diagnostic-section-block"
+            >
+              <template #actions>
                 <el-button text type="primary" @click="openEventsTab">查看完整事件流</el-button>
-              </div>
+              </template>
               <ApiErrorAlert :error="eventsError" :diagnostic-context="jobErrorDiagnosticContext('document_jobs.diagnostic_event_preview')" />
               <div v-if="eventsLoading && !events.length" class="diagnostic-loading">事件加载中...</div>
               <ol v-else-if="diagnosticPreviewEvents.length" class="diagnostic-event-preview">
@@ -330,15 +330,15 @@
                 </li>
               </ol>
               <el-empty v-else class="compact-empty" description="暂无事件证据；可刷新诊断或稍后查看事件流" />
-            </section>
+            </EvidenceSurfaceSection>
 
-            <section v-if="diagnosticRecoveryItems.length" class="diagnostic-section-block" aria-label="错误恢复路径">
-              <div class="diagnostic-section-heading">
-                <div>
-                  <h3>恢复路径</h3>
-                  <p>部分诊断数据加载失败时，可单独刷新对应证据。</p>
-                </div>
-              </div>
+            <EvidenceSurfaceSection
+              v-if="diagnosticRecoveryItems.length"
+              title="恢复路径"
+              description="部分诊断数据加载失败时，可单独刷新对应证据。"
+              aria-label="错误恢复路径"
+              root-class="diagnostic-section-block"
+            >
               <div class="diagnostic-recovery-actions">
                 <el-button v-if="filesError" :loading="filesLoading" @click="loadFiles()">刷新文件证据</el-button>
                 <el-button v-if="callbackSummaryError" :loading="callbackSummaryLoading" @click="loadCallbackSummary()">
@@ -349,7 +349,7 @@
                   刷新 Provider 批次
                 </el-button>
               </div>
-            </section>
+            </EvidenceSurfaceSection>
           </el-card>
 
           <el-card class="page-section card-flat" shadow="never">
@@ -773,6 +773,7 @@ import type {
 } from "@/api/types";
 import { documentJobsApi } from "@/api/documentJobs";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
+import EvidenceSurfaceSection from "@/components/EvidenceSurfaceSection.vue";
 import JobActions from "@/components/JobActions.vue";
 import JobEventTimeline from "@/components/JobEventTimeline.vue";
 import JobProgress from "@/components/JobProgress.vue";

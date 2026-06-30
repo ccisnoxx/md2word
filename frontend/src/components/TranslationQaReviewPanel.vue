@@ -1,13 +1,17 @@
 <!-- File: frontend/src/components/TranslationQaReviewPanel.vue -->
 <!-- Purpose: Shared dense Translation QA review panel for queue drawer and future detail-page reuse. -->
 <template>
-  <section class="translation-qa-review-panel" aria-label="翻译 QA 复核面板">
-    <header class="qa-review-header">
-      <div class="qa-review-identity">
-        <p class="page-kicker">翻译 QA 复核</p>
-        <h2>{{ displayJobId }}</h2>
-        <p :title="displayFilename">{{ displayFilename }}</p>
-      </div>
+  <WorkbenchDrawerSurface
+    label="翻译 QA 复核面板"
+    kicker="翻译 QA 复核"
+    :title="displayJobId"
+    :subtitle="displayFilename"
+    root-class="translation-qa-review-panel"
+    header-class="qa-review-header"
+    body-class="qa-review-body"
+    footer-class="qa-review-footer"
+  >
+    <template #actions>
       <div class="qa-review-header-actions">
         <el-tag v-if="qa" :type="translationQaStatusTagType(form.status)" effect="plain">
           {{ translationQaStatusText[form.status] }}
@@ -19,9 +23,8 @@
         </el-button>
         <el-button v-if="showClose" :icon="Close" text aria-label="关闭 QA 抽屉" @click="$emit('close')" />
       </div>
-    </header>
-
-    <div class="qa-review-body">
+    </template>
+    <div>
       <ApiErrorAlert :error="error" />
 
       <div v-if="queueCleared" class="qa-review-empty" aria-live="polite">
@@ -36,54 +39,67 @@
       <el-skeleton v-else-if="loading && !qa" :rows="8" animated />
 
       <template v-else>
-        <section class="qa-summary-strip" aria-label="QA 证据摘要">
-          <article v-for="metric in summaryMetrics" :key="metric.label" class="qa-summary-chip">
-            <span>{{ metric.label }}</span>
-            <strong>{{ metric.value }}</strong>
-            <small>{{ metric.helper }}</small>
-          </article>
-        </section>
-
-        <el-alert
-          class="qa-guidance-alert"
-          :type="qaEvidenceGuidance.type"
-          :closable="false"
-          show-icon
-          :title="qaEvidenceGuidance.title"
+        <EvidenceSurfaceSection
+          title="当前状态"
+          description="先看可复核性、对照证据、AI 调用与质量摘要，再决定是否进入片段级复核。"
+          aria-label="QA 当前状态"
+          root-class="qa-current-state-section"
         >
-          <p>{{ qaEvidenceGuidance.description }}</p>
-        </el-alert>
-        <el-alert
-          v-if="qa && qa.available && !qa.summary.source_comparison_available"
-          type="info"
-          :closable="false"
-          show-icon
-          :title="translationQaSourceComparisonReasonText(qa.summary.source_comparison_reason)"
-        />
+          <section class="qa-summary-strip" aria-label="QA 证据摘要">
+            <article v-for="metric in summaryMetrics" :key="metric.label" class="qa-summary-chip">
+              <span>{{ metric.label }}</span>
+              <strong>{{ metric.value }}</strong>
+              <small>{{ metric.helper }}</small>
+            </article>
+          </section>
+          <section class="qa-evidence-overview" aria-label="QA 状态和证据概览">
+            <article v-for="group in qaEvidenceGroups" :key="group.title" class="qa-evidence-group">
+              <h3>{{ group.title }}</h3>
+              <dl>
+                <div v-for="item in group.items" :key="item.label">
+                  <dt>{{ item.label }}</dt>
+                  <dd :class="{ mono: item.mono }">{{ item.value }}</dd>
+                </div>
+              </dl>
+            </article>
+          </section>
+        </EvidenceSurfaceSection>
 
-        <section class="qa-evidence-overview" aria-label="QA 状态和证据概览">
-          <article v-for="group in qaEvidenceGroups" :key="group.title" class="qa-evidence-group">
-            <h3>{{ group.title }}</h3>
-            <dl>
-              <div v-for="item in group.items" :key="item.label">
-                <dt>{{ item.label }}</dt>
-                <dd :class="{ mono: item.mono }">{{ item.value }}</dd>
-              </div>
-            </dl>
-          </article>
-        </section>
+        <EvidenceSurfaceSection
+          title="下一步建议"
+          description="只根据当前可复核性、问题归因和证据完整度给出建议，不替代人工判断。"
+          aria-label="QA 下一步建议"
+        >
+          <el-alert
+            class="qa-guidance-alert"
+            :type="qaEvidenceGuidance.type"
+            :closable="false"
+            show-icon
+            :title="qaEvidenceGuidance.title"
+          >
+            <p>{{ qaEvidenceGuidance.description }}</p>
+          </el-alert>
+          <el-alert
+            v-if="qa && qa.available && !qa.summary.source_comparison_available"
+            type="info"
+            :closable="false"
+            show-icon
+            :title="translationQaSourceComparisonReasonText(qa.summary.source_comparison_reason)"
+          />
+        </EvidenceSurfaceSection>
 
-        <section class="segment-review-surface" aria-label="片段对照">
-          <div class="segment-review-header">
-            <div>
-              <h3>片段对照</h3>
-              <p>{{ segmentCounterText }}</p>
-            </div>
+        <EvidenceSurfaceSection
+          title="片段对照"
+          :description="`当前片段：${segmentCounterText}`"
+          aria-label="片段对照"
+          root-class="segment-review-surface"
+        >
+          <template #actions>
             <div class="segment-nav">
               <el-button :icon="ArrowLeft" size="small" :disabled="!canMovePrevious" @click="moveSegment(-1)">上一段</el-button>
               <el-button :icon="ArrowRight" size="small" :disabled="!canMoveNext" @click="moveSegment(1)">下一段</el-button>
             </div>
-          </div>
+          </template>
 
           <article v-if="activeSegment" class="segment-comparison" :aria-label="`片段 ${activeSegment.id}`">
             <header class="segment-meta">
@@ -129,41 +145,27 @@
             <strong>暂无片段证据</strong>
             <p>{{ qa ? translationQaAvailabilityReasonText(qa.availability_reason) : "正在等待 QA 证据。" }}</p>
           </div>
-        </section>
+        </EvidenceSurfaceSection>
 
-        <section class="qa-evidence-summary" aria-label="关键证据">
-          <header class="qa-evidence-heading">
-            <h3>证据文件</h3>
-            <p>保留 DocumentIR、AI 调用日志和调试归档的原始文件 ID，便于排障复制。</p>
-          </header>
-          <div class="evidence-row">
-            <span>DocumentIR</span>
-            <strong class="mono">{{ qa?.artifacts.document_ir_file_id || "-" }}</strong>
-          </div>
-          <div class="evidence-row">
-            <span>AI 调用日志</span>
-            <strong class="mono">{{ joinIds(qa?.artifacts.ai_call_log_file_ids || []) }}</strong>
-          </div>
-          <div class="evidence-row">
-            <span>调试归档</span>
-            <strong class="mono">{{ joinIds(qa?.artifacts.ai_debug_archive_file_ids || []) }}</strong>
-          </div>
-          <div class="evidence-row">
-            <span>AI 调用</span>
-            <strong>{{ aiCallSummaryText }}</strong>
-          </div>
-          <div class="evidence-row">
+        <EvidenceSurfaceSection
+          title="关键证据"
+          description="保留 DocumentIR、AI 调用日志和调试归档的原始文件 ID，便于排障复制。"
+          aria-label="关键证据"
+          root-class="qa-evidence-summary"
+        >
+          <EvidenceKeyValueList class="evidence-row-list" :items="qaTechnicalEvidenceItems" />
+          <div class="evidence-row evidence-row-flags">
             <span>质量标记</span>
             <div class="flag-list">
               <el-tag v-for="flag in qa?.summary.quality_flags || []" :key="flag" size="small" effect="plain">{{ flag }}</el-tag>
               <strong v-if="!qa?.summary.quality_flags.length">-</strong>
             </div>
           </div>
-        </section>
+        </EvidenceSurfaceSection>
       </template>
     </div>
-
-    <footer class="qa-review-footer">
+    <template #footer>
+      <div>
       <el-form class="review-form" label-position="top" aria-label="QA 复核表单">
         <el-form-item label="状态">
           <el-select v-model="draftStatus" :disabled="!qaEditable" aria-label="QA 状态">
@@ -217,8 +219,9 @@
       <p class="review-meta">
         最近复核：{{ qa?.qa.reviewed_by || "-" }} · {{ formatDateTime(qa?.qa.reviewed_at) }}
       </p>
-    </footer>
-  </section>
+      </div>
+    </template>
+  </WorkbenchDrawerSurface>
 </template>
 
 <script setup lang="ts">
@@ -232,7 +235,10 @@ import type {
   TranslationQaStatus,
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
+import EvidenceKeyValueList from "@/components/EvidenceKeyValueList.vue";
+import EvidenceSurfaceSection from "@/components/EvidenceSurfaceSection.vue";
 import ShortcutHintList from "@/components/ShortcutHintList.vue";
+import WorkbenchDrawerSurface from "@/components/WorkbenchDrawerSurface.vue";
 import type { ShortcutHint } from "@/utils/keyboardShortcuts";
 import { formatDateTime, getJobSourceFilename, translationQaStatusTagType, translationQaStatusText } from "@/utils/format";
 import type { ApiClientError } from "@/utils/errors";
@@ -252,6 +258,7 @@ import {
   translationQaTermTraceRangeText,
   type TranslationQaReviewDraft,
 } from "@/utils/translationQa";
+import type { EvidenceKeyValueItem } from "@/components/EvidenceKeyValueList.vue";
 
 const qaReviewShortcutHints: ShortcutHint[] = [
   { keys: ["Esc"], label: "关闭" },
@@ -401,6 +408,12 @@ const summaryMetrics = computed(() => [
     value: translationQaDebugArchiveStateText(debugArchiveState.value),
     helper: translationQaDebugArchiveHelper(props.qa),
   },
+]);
+const qaTechnicalEvidenceItems = computed<EvidenceKeyValueItem[]>(() => [
+  { label: "DocumentIR", value: props.qa?.artifacts.document_ir_file_id || "-", mono: true },
+  { label: "AI 调用日志", value: joinIds(props.qa?.artifacts.ai_call_log_file_ids || []), mono: true },
+  { label: "调试归档", value: joinIds(props.qa?.artifacts.ai_debug_archive_file_ids || []), mono: true },
+  { label: "AI 调用", value: aiCallSummaryText.value },
 ]);
 
 const draftStatus = computed<TranslationQaStatus>({

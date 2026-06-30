@@ -79,6 +79,37 @@ pages:
 slot-based shell components for header / summary / empty-state zones before
 attempting a single all-purpose page component.
 
+### Pattern 2.6: Shared Evidence Sections Before Rewriting Diagnostics
+
+**Bad**: A detail page, a triage drawer, and a review drawer all show
+"current state / next action / evidence / history", but each surface redefines
+its own section wrappers, heading layout, and technical key-value rows.
+
+This usually causes:
+
+- inconsistent reading order,
+- duplicated drawer header/footer fixes,
+- technical IDs and traces rendered differently across surfaces,
+- fragile smoke selectors tied to one-off DOM structures.
+
+**Good**: Reuse shared evidence wrappers and keep each page's data model local:
+
+```vue
+<WorkbenchDrawerSurface ...>
+  <EvidenceSurfaceSection title="下一步建议">
+    ...
+  </EvidenceSurfaceSection>
+  <EvidenceSurfaceSection title="关键证据">
+    <EvidenceKeyValueList :items="technicalItems" />
+  </EvidenceSurfaceSection>
+</WorkbenchDrawerSurface>
+```
+
+**Rule**: When evidence-heavy surfaces share the same reading order, first
+extract section shell / drawer shell / technical key-value primitives. Do not
+collapse the domain logic into one generic diagnostic component unless the data
+contract is actually shared.
+
 ### Pattern 3: Repeated Constants
 
 **Bad**: Defining the same constant in multiple files
