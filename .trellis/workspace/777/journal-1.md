@@ -438,3 +438,36 @@ Closed the remaining docs hygiene and provider batch Phase 3 evidence gaps, arch
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: Deploy b167e61 to hostdzire
+
+**Date**: 2026-06-30
+**Task**: Deploy b167e61 to hostdzire
+**Branch**: `main`
+
+### Summary
+
+Released commit b167e61 to hostdzire via release dir flow; verified internal/public live and ready on the new deployment.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b167e614` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
