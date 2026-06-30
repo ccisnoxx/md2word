@@ -61,3 +61,16 @@ P2_ONLINE_ADMIN_TOKEN="${ADMIN_TOKEN}" \
 cd frontend
 npm run dev
 ```
+
+如果是前端本地 UI 任务，需要运行 Playwright smoke 做页面回归，当前项目在 Codex/受限终端环境里应使用**非沙箱方式**启动本机默认浏览器，而不是依赖受限环境内的浏览器启动。推荐命令：
+
+```bash
+cd frontend
+PW_CHROME_EXECUTABLE_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+npm run test:smoke -- --grep "operations redesign renders verified desktop, tablet, and mobile screenshots"
+```
+
+补充约束：
+
+- 多 viewport 截图 smoke 已按 `60s` 预算设计；不要再把该用例压回 `30s`，否则增加 `1024px` 等额外 viewport 后容易超时。
+- 这类本地 smoke 只用于前端改动回归，不作为 P0 发布证据；P0 发布仍按线上优先验证流程在 hostdzire 收集正式证据。

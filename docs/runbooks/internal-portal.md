@@ -196,3 +196,23 @@ curl -sS http://127.0.0.1:${MD2WORD_API_BIND_PORT:-18000}/api/v1/health/metrics
 - 文件清理必须保持 preview -> reason -> confirmation -> audit；任务级删除必须保持 preview -> confirm -> audit，不给 operator 开放入口。
 - `/health/ready` 不应出现未解释的 blocker；如有 MinerU、worker、MySQL、artifact storage blocker，先处理再开放使用。
 - `scripts/ops/check_release.py --runtime-url`、Golden Sample 预检、4 样本真实回归和 admin 签字通过后再发布。
+
+## 9. 前端 Smoke 运行约束
+
+前端工作台的本地 Playwright smoke 用于 UI 回归，不是 P0 发布证据。当前仓库在 Codex/受限终端环境里运行 smoke 时，浏览器进程应脱离受限沙箱启动，否则常见症状是：
+
+- `browserType.launch: Target page, context or browser has been closed`
+- 系统 Chrome / Playwright Chromium 在启动阶段直接 abort
+
+推荐运行方式：
+
+```bash
+cd frontend
+PW_CHROME_EXECUTABLE_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+npm run test:smoke -- --grep "operations redesign renders verified desktop, tablet, and mobile screenshots"
+```
+
+执行口径：
+
+- 对多 viewport 截图 smoke，保持单测级超时预算为 `60s`；新增 `1024px` 等 viewport 后，不要回退到 `30s`。
+- 本地 smoke 通过可以作为前端子任务的回归证据，但不能替代 hostdzire 上的线上优先发布证据。

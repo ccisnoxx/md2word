@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// In Codex/restricted terminal runs, prefer PW_CHROME_EXECUTABLE_PATH pointing
+// to the local Chrome binary and execute smoke outside the sandbox.
 const chromeExecutablePath = process.env.PW_CHROME_EXECUTABLE_PATH || "";
 
 export default defineConfig({
