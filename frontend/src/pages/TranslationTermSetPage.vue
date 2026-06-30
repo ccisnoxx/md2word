@@ -2,14 +2,18 @@
 <!-- Purpose: Provide the Admin Translation Term Set CSV import, export, default switching, and rollback page. -->
 <template>
   <main class="translation-term-set-page app-page" aria-labelledby="translation-term-set-title">
-    <section class="page-heading app-page-header app-page-shell app-page-shell--wide">
-      <div>
-        <p class="page-kicker">翻译术语集</p>
-        <h1 id="translation-term-set-title" class="page-title">翻译术语集</h1>
-        <p class="page-description">通过 CSV 管理草稿，查看版本并执行发布、设默认和回滚。</p>
-      </div>
-      <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
-    </section>
+    <WorkbenchPageHeader
+      title-id="translation-term-set-title"
+      kicker="翻译术语集"
+      title="翻译术语集"
+      description="通过 CSV 管理草稿，查看版本并执行发布、设默认和回滚。"
+      wide
+      section-class="page-heading app-page-header"
+    >
+      <template #actions>
+        <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
+      </template>
+    </WorkbenchPageHeader>
 
     <ApiErrorAlert class="app-page-shell app-page-shell--wide" :error="error" />
     <el-alert
@@ -48,38 +52,37 @@
     />
 
     <section v-else class="term-set-grid app-page-shell app-page-shell--wide">
-      <el-card class="app-panel-card app-table-card" shadow="never">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">术语集</h2>
-            <p class="section-subtitle">选择术语集查看草稿和已发布版本。</p>
-          </div>
-        </div>
+      <WorkbenchPanelCard
+        title="术语集"
+        subtitle="选择术语集查看草稿和已发布版本。"
+        card-class="app-table-card"
+      >
         <el-table :data="sets" :loading="loading" empty-text="暂无翻译术语集" @row-click="selectSet">
           <el-table-column prop="set_id" label="术语集 ID" min-width="210" show-overflow-tooltip />
           <el-table-column prop="language_pair" label="语言方向" width="110" />
           <el-table-column prop="default_version" label="默认版本" width="150" show-overflow-tooltip />
           <el-table-column prop="version_count" label="版本数" width="90" />
         </el-table>
-      </el-card>
+      </WorkbenchPanelCard>
 
-      <el-card class="app-panel-card" shadow="never">
-        <div class="section-header term-set-draft-header">
-          <div>
-            <h2 class="section-title">草稿摘要</h2>
-            <p class="section-subtitle">CSV 导入是本阶段唯一草稿修改入口。</p>
-          </div>
+      <WorkbenchPanelCard
+        title="草稿摘要"
+        subtitle="CSV 导入是本阶段唯一草稿修改入口。"
+        card-class="term-set-draft-card"
+        header-class="term-set-draft-header"
+      >
+        <template #actions>
           <el-tag v-if="draft?.snapshot_hash" class="draft-hash-tag mono" effect="plain" :title="draft.snapshot_hash">
             {{ draft.snapshot_hash }}
           </el-tag>
-        </div>
+        </template>
         <el-empty v-if="!selectedSetId" description="请选择术语集" :image-size="90" />
         <template v-else>
-          <dl class="summary-list">
-            <div><dt>基线版本</dt><dd>{{ draft?.base_version || "-" }}</dd></div>
-            <div><dt>术语数</dt><dd>{{ draft?.term_count ?? "-" }}</dd></div>
-            <div><dt>校验状态</dt><dd>{{ draft?.validation.valid ? "有效" : "无效" }}</dd></div>
-          </dl>
+          <WorkbenchGovernanceMetricStrip
+            label="草稿摘要"
+            section-class="summary-list-grid"
+            :items="draftSummaryItems"
+          />
           <RoleGate>
             <div class="action-row app-action-row">
               <el-button type="primary" :disabled="!selectedSetId" @click="openImportDialog">导入 CSV</el-button>
@@ -88,7 +91,7 @@
             </div>
           </RoleGate>
         </template>
-      </el-card>
+      </WorkbenchPanelCard>
     </section>
 
     <el-card v-if="!unavailable && lastImportReport" class="app-panel-card app-table-card app-page-shell app-page-shell--wide" shadow="never">
@@ -141,24 +144,11 @@
         <el-tag v-if="diff" effect="plain">{{ diff.base_version }} -> {{ diff.target_version }}</el-tag>
       </div>
 
-      <div class="governance-summary-grid app-governance-grid" aria-label="Translation Term Set diff summary">
-        <article class="summary-metric app-governance-metric">
-          <span>新增</span>
-          <strong>{{ diff?.summary.added ?? "-" }}</strong>
-        </article>
-        <article class="summary-metric app-governance-metric">
-          <span>移除</span>
-          <strong>{{ diff?.summary.removed ?? "-" }}</strong>
-        </article>
-        <article class="summary-metric app-governance-metric">
-          <span>变更</span>
-          <strong>{{ diff?.summary.changed ?? "-" }}</strong>
-        </article>
-        <article class="summary-metric app-governance-metric">
-          <span>未变</span>
-          <strong>{{ diff?.summary.unchanged ?? "-" }}</strong>
-        </article>
-      </div>
+      <WorkbenchGovernanceMetricStrip
+        label="Translation Term Set diff summary"
+        section-class="governance-summary-grid"
+        :items="diffSummaryItems"
+      />
 
       <el-alert
         v-if="preflight?.publish_blocked"
@@ -218,24 +208,11 @@
         </div>
       </div>
 
-      <div class="governance-summary-grid app-governance-grid" aria-label="Translation Term Proposal compatibility summary">
-        <article class="summary-metric app-governance-metric">
-          <span>总数</span>
-          <strong>{{ proposalCompatibility?.summary.total ?? "-" }}</strong>
-        </article>
-        <article class="summary-metric app-governance-metric">
-          <span>兼容</span>
-          <strong>{{ proposalCompatibility?.summary.compatible ?? "-" }}</strong>
-        </article>
-        <article class="summary-metric app-governance-metric">
-          <span>告警</span>
-          <strong>{{ proposalCompatibility?.summary.warning ?? "-" }}</strong>
-        </article>
-        <article class="summary-metric app-governance-metric">
-          <span>冲突</span>
-          <strong>{{ proposalCompatibility?.summary.conflict ?? "-" }}</strong>
-        </article>
-      </div>
+      <WorkbenchGovernanceMetricStrip
+        label="Translation Term Proposal compatibility summary"
+        section-class="governance-summary-grid"
+        :items="compatibilitySummaryItems"
+      />
 
       <el-alert
         v-if="proposalCompatibilityNotice"
@@ -528,6 +505,9 @@ import type {
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import RoleGate from "@/components/RoleGate.vue";
+import WorkbenchGovernanceMetricStrip, { type WorkbenchGovernanceMetricItem } from "@/components/WorkbenchGovernanceMetricStrip.vue";
+import WorkbenchPageHeader from "@/components/WorkbenchPageHeader.vue";
+import WorkbenchPanelCard from "@/components/WorkbenchPanelCard.vue";
 import { useAuthStore } from "@/stores/auth";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { formatDateTime } from "@/utils/format";
@@ -644,6 +624,40 @@ const dedupeHints: Record<DedupeMode, string> = {
 
 const dedupeHint = computed(() => dedupeHints[importDialog.form.dedupe]);
 const entryDialogTitle = computed(() => (entryDialog.mode === "add" ? "新增草稿术语" : "编辑草稿术语"));
+const draftSummaryItems = computed<WorkbenchGovernanceMetricItem[]>(() => [
+  {
+    id: "base_version",
+    label: "基线版本",
+    value: draft.value?.base_version || "-",
+    helper: "当前草稿的比较基线",
+    mono: true,
+  },
+  {
+    id: "term_count",
+    label: "术语数",
+    value: draft.value?.term_count ?? "-",
+    helper: "当前草稿总词条数",
+  },
+  {
+    id: "validation",
+    label: "校验状态",
+    value: draft.value?.validation.valid ? "有效" : "无效",
+    helper: draft.value?.validation.valid ? "当前可进入发布前检查" : "仍有错误会阻断发布",
+    tone: draft.value?.validation.valid ? "success" : "danger",
+  },
+]);
+const diffSummaryItems = computed<WorkbenchGovernanceMetricItem[]>(() => [
+  { id: "added", label: "新增", value: diff.value?.summary.added ?? "-", helper: "新增草稿词条" },
+  { id: "removed", label: "移除", value: diff.value?.summary.removed ?? "-", helper: "草稿删除词条" },
+  { id: "changed", label: "变更", value: diff.value?.summary.changed ?? "-", helper: "字段级差异" },
+  { id: "unchanged", label: "未变", value: diff.value?.summary.unchanged ?? "-", helper: "与基线一致" },
+]);
+const compatibilitySummaryItems = computed<WorkbenchGovernanceMetricItem[]>(() => [
+  { id: "total", label: "总数", value: proposalCompatibility.value?.summary.total ?? "-", helper: "待审核翻译术语建议" },
+  { id: "compatible", label: "兼容", value: proposalCompatibility.value?.summary.compatible ?? "-", helper: "可直接合并草稿", tone: "success" },
+  { id: "warning", label: "告警", value: proposalCompatibility.value?.summary.warning ?? "-", helper: "建议先人工复核", tone: "warning" },
+  { id: "conflict", label: "冲突", value: proposalCompatibility.value?.summary.conflict ?? "-", helper: "需先解决版本冲突", tone: "danger" },
+]);
 
 const proposalGovernanceContext = computed(() => {
   const proposalId = queryString("proposal_id");

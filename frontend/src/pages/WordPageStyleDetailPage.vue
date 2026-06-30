@@ -1,13 +1,16 @@
 <!-- frontend/src/pages/WordPageStyleDetailPage.vue: Visual editor for Word page style YAML groups. -->
 <template>
   <main class="word-style-page app-page" aria-labelledby="word-style-title">
-    <section class="style-hero app-page-header app-page-shell app-page-shell--wide">
-      <div>
-        <p class="page-kicker">Word 页面样式配置</p>
-        <h1 id="word-style-title" class="page-title">Word 页面样式配置</h1>
-        <p class="page-description">{{ template?.name || templateId }}：维护后续 Word 生成时应用的页面排版样式。</p>
-      </div>
-      <div class="style-actions app-action-row">
+    <WorkbenchPageHeader
+      title-id="word-style-title"
+      kicker="Word 页面样式配置"
+      title="Word 页面样式配置"
+      :description="`${template?.name || props.templateId}：维护后续 Word 生成时应用的页面排版样式。`"
+      wide
+      section-class="style-hero app-page-header"
+      actions-class="style-actions app-action-row"
+    >
+      <template #actions>
         <el-select
           v-model="selectedTemplateId"
           class="template-switcher"
@@ -22,34 +25,23 @@
             :value="item.id"
           />
         </el-select>
-        <el-button :icon="Document" @click="$router.push(`/settings/templates/${templateId}`)">模板文档</el-button>
+        <el-button :icon="Document" @click="$router.push(`/settings/templates/${props.templateId}`)">模板文档</el-button>
         <el-button :icon="Refresh" :loading="loading || layoutConfigLoading" @click="confirmReloadAll">刷新</el-button>
         <el-button :disabled="!isLayoutDirty || layoutConfigSaving" @click="resetLayoutConfigForm">撤销</el-button>
         <el-button type="primary" :loading="layoutConfigSaving" :disabled="!layoutConfig || !isLayoutDirty" @click="saveLayoutConfigVersion">
           保存为草稿版本
         </el-button>
-      </div>
-    </section>
+      </template>
+    </WorkbenchPageHeader>
 
     <ApiErrorAlert class="app-page-shell app-page-shell--wide" :error="error" />
 
-    <section class="style-status-grid app-metric-grid app-page-shell app-page-shell--wide" aria-label="样式配置状态">
-      <article class="app-metric-card">
-        <span>模板</span>
-        <strong>{{ template?.name || templateId }}</strong>
-        <small>{{ template?.is_default ? "当前默认模板" : "非默认模板" }}</small>
-      </article>
-      <article class="app-metric-card">
-        <span>配置分组</span>
-        <strong>{{ layoutGroupEntries.length || "-" }}</strong>
-        <small>按 datasheet_template.yaml 一级分类渲染</small>
-      </article>
-      <article class="app-metric-card">
-        <span>未保存</span>
-        <strong>{{ dirtyFieldCount }}</strong>
-        <small>{{ isLayoutDirty ? "保存后生成 draft version" : "当前无未保存改动" }}</small>
-      </article>
-    </section>
+    <WorkbenchMetricStrip
+      label="样式配置状态"
+      :items="overviewItems"
+      wide
+      section-class="style-status-grid"
+    />
 
     <el-alert
       class="app-page-shell app-page-shell--wide"
@@ -97,16 +89,17 @@
           </button>
         </aside>
 
-        <section class="style-editor-panel app-panel-card">
-          <header class="style-panel-header">
-            <div>
-              <h2>{{ activeCategory?.title || "样式分组" }}</h2>
-              <p>{{ activeCategory?.description || "选择一个分组开始编辑。" }}</p>
-            </div>
+        <WorkbenchPanelCard
+          :title="activeCategory?.title || '样式分组'"
+          :subtitle="activeCategory?.description || '选择一个分组开始编辑。'"
+          card-class="style-editor-panel"
+          body-class="style-editor-panel-body"
+        >
+          <template #actions>
             <el-tag v-if="activeCategoryDirtyCount > 0" type="warning" effect="plain">
               {{ activeCategoryDirtyCount }} 项未保存
             </el-tag>
-          </header>
+          </template>
 
           <div class="group-tabs" role="tablist" aria-label="样式分组">
             <button
@@ -192,13 +185,17 @@
               </div>
             </section>
           </el-form>
-        </section>
+        </WorkbenchPanelCard>
 
-        <aside class="change-panel app-panel-card" aria-label="配置变更摘要">
-          <div class="change-panel-heading">
-            <h2>变更摘要</h2>
-            <el-tag v-if="isLayoutDirty" type="warning" effect="plain">{{ dirtyFieldCount }}</el-tag>
-          </div>
+        <aside aria-label="配置变更摘要">
+          <WorkbenchPanelCard
+            title="变更摘要"
+            card-class="change-panel"
+            body-class="change-panel-body"
+          >
+            <template #actions>
+              <el-tag v-if="isLayoutDirty" type="warning" effect="plain">{{ dirtyFieldCount }}</el-tag>
+            </template>
           <p v-if="!isLayoutDirty">当前没有未保存改动。</p>
           <ul v-else>
             <li v-for="item in visibleDirtySummaries" :key="item.path">
@@ -212,6 +209,7 @@
           <div class="change-note">
             保存只创建 draft version；完成验证、发布并设为默认后，后续 Word 生成才会使用。
           </div>
+          </WorkbenchPanelCard>
         </aside>
       </section>
     </template>
@@ -232,6 +230,9 @@ import type {
   TemplateListItemResponse,
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
+import WorkbenchMetricStrip, { type WorkbenchMetricItem } from "@/components/WorkbenchMetricStrip.vue";
+import WorkbenchPageHeader from "@/components/WorkbenchPageHeader.vue";
+import WorkbenchPanelCard from "@/components/WorkbenchPanelCard.vue";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 
 type LayoutCategory = {
@@ -289,6 +290,27 @@ const dirtySummaries = computed(() => buildDirtySummaries());
 const visibleDirtySummaries = computed(() => dirtySummaries.value.slice(0, 10));
 const dirtyFieldCount = computed(() => dirtySummaries.value.length);
 const activeCategoryDirtyCount = computed(() => (activeCategory.value ? categoryDirtyCount(activeCategory.value.id) : 0));
+const overviewItems = computed<WorkbenchMetricItem[]>(() => [
+  {
+    id: "template",
+    label: "模板",
+    value: template.value?.name || props.templateId,
+    helper: template.value?.is_default ? "当前默认模板" : "非默认模板",
+  },
+  {
+    id: "group_count",
+    label: "配置分组",
+    value: layoutGroupEntries.value.length || "-",
+    helper: "按 datasheet_template.yaml 一级分类渲染",
+  },
+  {
+    id: "dirty_count",
+    label: "未保存",
+    value: dirtyFieldCount.value,
+    helper: isLayoutDirty.value ? "保存后生成 draft version" : "当前无未保存改动",
+    tone: isLayoutDirty.value ? "warning" : "success",
+  },
+]);
 const alignmentOptions = [
   { value: "left", label: "左对齐" },
   { value: "center", label: "居中" },

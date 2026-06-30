@@ -137,6 +137,34 @@ This usually causes:
 panel-card primitives before adding charts or inventing page-specific KPI
 wrappers.
 
+### Pattern 2.8: Shared Governance Shell Before CRUD Normalization
+
+**Bad**: Governance/configuration pages all need blocker context, draft summary,
+review detail, and controlled actions, but each page invents its own card
+headers and summary strips while people argue about “generic admin CRUD”.
+
+This usually causes:
+
+- blocked / warning / draft semantics drifting across pages,
+- repeated card-header and side-panel structure,
+- editor pages and review pages feeling unrelated,
+- pressure to flatten governance workflows into generic forms.
+
+**Good**: Reuse shared governance shells first, then keep each page’s domain
+workflow local:
+
+```vue
+<WorkbenchPageHeader ... />
+<WorkbenchGovernanceMetricStrip :items=\"summaryItems\" ... />
+<WorkbenchPanelCard title=\"草稿摘要\" ...>
+  ...
+</WorkbenchPanelCard>
+```
+
+**Rule**: For governance/configuration pages, standardize summary strips,
+severity placement, and panel headers before trying to unify the underlying
+edit/review logic.
+
 ### Pattern 3: Repeated Constants
 
 **Bad**: Defining the same constant in multiple files
