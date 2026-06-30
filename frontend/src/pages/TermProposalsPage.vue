@@ -2,14 +2,18 @@
 <!-- Purpose: Render operator proposal forms and admin review queues for term governance. -->
 <template>
   <main class="term-proposals-page app-page" aria-labelledby="term-proposals-title">
-    <section class="page-heading app-page-header app-page-shell app-page-shell--wide">
-      <div>
-        <p class="page-kicker">术语建议</p>
-        <h1 id="term-proposals-title" class="page-title">术语建议</h1>
-        <p class="page-description">操作员提交规则或翻译术语建议，管理员审核后合并到对应草稿。</p>
-      </div>
-      <el-button :icon="Refresh" :loading="loading" @click="loadActiveTab">刷新</el-button>
-    </section>
+    <WorkbenchPageHeader
+      title-id="term-proposals-title"
+      kicker="术语建议"
+      title="术语建议"
+      description="操作员提交规则或翻译术语建议，管理员审核后合并到对应草稿。"
+      wide
+      section-class="page-heading app-page-header"
+    >
+      <template #actions>
+        <el-button :icon="Refresh" :loading="loading" @click="loadActiveTab">刷新</el-button>
+      </template>
+    </WorkbenchPageHeader>
 
     <ApiErrorAlert class="app-page-shell app-page-shell--wide" :error="error" />
     <el-alert
@@ -46,7 +50,7 @@
         />
       </el-tab-pane>
       <el-tab-pane label="新建建议" name="new">
-        <el-card class="app-panel-card" shadow="never">
+        <WorkbenchPanelCard card-class="app-panel-card">
           <el-form ref="proposalFormRef" :model="proposalForm" :rules="proposalRules" label-width="110px">
             <el-alert
               v-if="termRuleSuggestionMode"
@@ -129,10 +133,10 @@
               <el-button type="primary" :loading="submitting" @click="submitProposal">提交建议</el-button>
             </el-form-item>
           </el-form>
-        </el-card>
+        </WorkbenchPanelCard>
       </el-tab-pane>
       <el-tab-pane label="翻译术语新建" name="translation-new">
-        <el-card class="app-panel-card" shadow="never">
+        <WorkbenchPanelCard card-class="app-panel-card">
           <el-form
             ref="translationProposalFormRef"
             :model="translationProposalForm"
@@ -195,19 +199,20 @@
               </el-button>
             </el-form-item>
           </el-form>
-        </el-card>
+        </WorkbenchPanelCard>
       </el-tab-pane>
       <el-tab-pane v-if="isAdmin" label="待审核队列" name="review">
         <section class="review-grid">
           <div class="review-list-panel">
-            <el-card class="app-panel-card batch-review-card" shadow="never">
-              <div class="batch-review-header">
-                <div>
-                  <h2 class="section-title">批量审核</h2>
-                  <p class="section-subtitle">仅待审核建议可勾选；不提供批量发布。</p>
-                </div>
+            <WorkbenchPanelCard
+              title="批量审核"
+              subtitle="仅待审核建议可勾选；不提供批量发布。"
+              card-class="app-panel-card batch-review-card"
+              body-class="batch-review-body"
+            >
+              <template #actions>
                 <el-tag effect="plain">已选 {{ bulkSelectedCount }}</el-tag>
-              </div>
+              </template>
               <el-input
                 v-model="bulkReviewComment"
                 class="review-comment"
@@ -248,7 +253,7 @@
                   </li>
                 </ul>
               </el-alert>
-            </el-card>
+            </WorkbenchPanelCard>
             <TermProposalTable
               ref="termReviewTableRef"
               :items="proposals"
@@ -260,17 +265,18 @@
               @selection-change="handleTermBulkSelectionChange"
             />
           </div>
-          <el-card class="app-panel-card" shadow="never">
+          <WorkbenchPanelCard card-class="app-panel-card" body-class="review-detail-card-body">
             <template v-if="selectedProposal">
-              <div class="section-header">
-                <div>
-                  <h2 class="section-title">审核详情</h2>
-                  <p class="section-subtitle">当前规则、提交时快照和提议变更并列展示。</p>
-                </div>
-                <el-tag :type="selectedProposal.status === 'pending_review' ? 'warning' : 'info'" effect="plain">
-                  {{ proposalStatusText(selectedProposal.status) }}
-                </el-tag>
-              </div>
+              <WorkbenchSectionHeader
+                title="审核详情"
+                subtitle="当前规则、提交时快照和提议变更并列展示。"
+              >
+                <template #extra>
+                  <el-tag :type="selectedProposal.status === 'pending_review' ? 'warning' : 'info'" effect="plain">
+                    {{ proposalStatusText(selectedProposal.status) }}
+                  </el-tag>
+                </template>
+              </WorkbenchSectionHeader>
 
               <el-alert
                 v-if="snapshotConflict"
@@ -370,7 +376,7 @@
               </div>
             </template>
             <el-empty v-else description="请选择一条建议" :image-size="90" />
-          </el-card>
+          </WorkbenchPanelCard>
         </section>
       </el-tab-pane>
       <el-tab-pane v-if="isAdmin" label="全部建议" name="all">
@@ -393,14 +399,15 @@
       <el-tab-pane v-if="isAdmin" label="翻译术语待审核" name="translation-review">
         <section class="review-grid">
           <div class="review-list-panel">
-            <el-card class="app-panel-card batch-review-card" shadow="never">
-              <div class="batch-review-header">
-                <div>
-                  <h2 class="section-title">批量审核</h2>
-                  <p class="section-subtitle">仅待审核翻译术语建议可勾选；不提供批量发布。</p>
-                </div>
+            <WorkbenchPanelCard
+              title="批量审核"
+              subtitle="仅待审核翻译术语建议可勾选；不提供批量发布。"
+              card-class="app-panel-card batch-review-card"
+              body-class="batch-review-body"
+            >
+              <template #actions>
                 <el-tag effect="plain">已选 {{ translationBulkSelectedCount }}</el-tag>
-              </div>
+              </template>
               <el-input
                 v-model="translationBulkReviewNote"
                 class="review-comment"
@@ -441,7 +448,7 @@
                   </li>
                 </ul>
               </el-alert>
-            </el-card>
+            </WorkbenchPanelCard>
             <TranslationTermProposalTable
               ref="translationReviewTableRef"
               :items="translationProposals"
@@ -452,17 +459,18 @@
               @selection-change="handleTranslationBulkSelectionChange"
             />
           </div>
-          <el-card class="app-panel-card" shadow="never">
+          <WorkbenchPanelCard card-class="app-panel-card" body-class="review-detail-card-body">
             <template v-if="selectedTranslationProposal">
-              <div class="section-header">
-                <div>
-                  <h2 class="section-title">翻译术语审核详情</h2>
-                  <p class="section-subtitle">展示提交时绑定版本、提议变更和发布结果。</p>
-                </div>
-                <el-tag :type="selectedTranslationProposal.status === 'pending' ? 'warning' : 'info'" effect="plain">
-                  {{ proposalStatusText(selectedTranslationProposal.status) }}
-                </el-tag>
-              </div>
+              <WorkbenchSectionHeader
+                title="翻译术语审核详情"
+                subtitle="展示提交时绑定版本、提议变更和发布结果。"
+              >
+                <template #extra>
+                  <el-tag :type="selectedTranslationProposal.status === 'pending' ? 'warning' : 'info'" effect="plain">
+                    {{ proposalStatusText(selectedTranslationProposal.status) }}
+                  </el-tag>
+                </template>
+              </WorkbenchSectionHeader>
 
               <div class="review-panels app-review-grid">
                 <div>
@@ -545,7 +553,7 @@
               </div>
             </template>
             <el-empty v-else description="请选择一条翻译术语建议" :image-size="90" />
-          </el-card>
+          </WorkbenchPanelCard>
         </section>
       </el-tab-pane>
       <el-tab-pane v-if="isAdmin" label="翻译术语全部" name="translation-all">
@@ -597,6 +605,9 @@ import TermPreview from "@/components/TermPreview.vue";
 import TermProposalTable from "@/components/TermProposalTable.vue";
 import TermSegmentEditor from "@/components/TermSegmentEditor.vue";
 import TranslationTermProposalTable from "@/components/TranslationTermProposalTable.vue";
+import WorkbenchPageHeader from "@/components/WorkbenchPageHeader.vue";
+import WorkbenchPanelCard from "@/components/WorkbenchPanelCard.vue";
+import WorkbenchSectionHeader from "@/components/WorkbenchSectionHeader.vue";
 import { useAuthStore } from "@/stores/auth";
 import { proposalIntentText, proposalStatusText, translationProposalActionText } from "@/utils/displayText";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";

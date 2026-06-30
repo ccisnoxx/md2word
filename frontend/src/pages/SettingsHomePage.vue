@@ -1,16 +1,19 @@
 <!-- frontend/src/pages/SettingsHomePage.vue: Configuration workbench landing page and release gate. -->
 <template>
   <main class="settings-page app-page" aria-labelledby="settings-title">
-    <section class="page-heading app-page-header app-page-shell">
-      <div>
-        <p class="page-kicker">配置中心</p>
-        <h1 id="settings-title" class="page-title">配置工作台</h1>
-        <p class="page-description">统一查看生产运行门禁、默认配置版本、草稿和待处理治理事项。</p>
-      </div>
-      <RoleGate>
-        <el-tag type="warning" effect="plain">管理员操作已启用</el-tag>
-      </RoleGate>
-    </section>
+    <WorkbenchPageHeader
+      title-id="settings-title"
+      kicker="配置中心"
+      title="配置工作台"
+      description="统一查看生产运行门禁、默认配置版本、草稿和待处理治理事项。"
+      section-class="page-heading app-page-header"
+    >
+      <template #actions>
+        <RoleGate>
+          <el-tag type="warning" effect="plain">管理员操作已启用</el-tag>
+        </RoleGate>
+      </template>
+    </WorkbenchPageHeader>
 
     <ConfigTodoSummary class="app-page-shell" :summary="summary" :loading="initialLoading" :error="error" @refresh="refreshSummary" />
     <div v-if="summary && refreshing" class="refresh-note app-page-shell">正在后台更新配置总览，当前页面保留上次结果。</div>
@@ -45,40 +48,29 @@
       </router-link>
     </section>
 
-    <section v-if="summary" class="release-gate-workspace app-panel app-page-shell" aria-label="发布门禁处理队列">
-      <div class="section-header">
-        <div>
-          <h2 class="section-title">发布门禁处理队列</h2>
-          <p class="section-subtitle">把 P0 document_jobs 门禁、阻断项和告警项收敛到可处理入口。</p>
-        </div>
-        <div class="gate-tags">
-          <el-tag :type="summary.release_gate.p0_document_jobs_ready ? 'success' : 'danger'" effect="plain">
-            p0={{ summary.release_gate.p0_document_jobs_ready ? "ready" : "blocked" }}
-          </el-tag>
-          <el-tag effect="plain">blockers={{ summary.release_gate.blockers.length }}</el-tag>
-          <el-tag effect="plain">warnings={{ summary.release_gate.warnings.length }}</el-tag>
-        </div>
-      </div>
+    <section v-if="summary" class="app-page-shell" aria-label="发布门禁处理队列">
+      <WorkbenchPanelCard
+        title="发布门禁处理队列"
+        subtitle="把 P0 document_jobs 门禁、阻断项和告警项收敛到可处理入口。"
+        card-class="release-gate-workspace app-panel"
+      >
+        <template #actions>
+          <div class="gate-tags">
+            <el-tag :type="summary.release_gate.p0_document_jobs_ready ? 'success' : 'danger'" effect="plain">
+              p0={{ summary.release_gate.p0_document_jobs_ready ? "ready" : "blocked" }}
+            </el-tag>
+            <el-tag effect="plain">blockers={{ summary.release_gate.blockers.length }}</el-tag>
+            <el-tag effect="plain">warnings={{ summary.release_gate.warnings.length }}</el-tag>
+          </div>
+        </template>
 
-      <div class="gate-status-grid">
-        <article>
-          <span>P0 document_jobs</span>
-          <strong>{{ summary.release_gate.p0_document_jobs_ready ? "就绪" : "阻断" }}</strong>
-          <small>{{ summary.release_gate.p0_document_jobs_required ? "当前环境强制门禁" : "当前环境观察门禁" }}</small>
-        </article>
-        <article>
-          <span>阻断项</span>
-          <strong>{{ summary.release_gate.blockers.length }}</strong>
-          <small>需要先处理再发布</small>
-        </article>
-        <article>
-          <span>告警项</span>
-          <strong>{{ summary.release_gate.warnings.length }}</strong>
-          <small>建议发布前确认</small>
-        </article>
-      </div>
+        <WorkbenchGovernanceMetricStrip
+          label="发布门禁摘要"
+          section-class="gate-status-grid"
+          :items="releaseGateMetricItems"
+        />
 
-      <div v-if="releaseGateItems.length" class="gate-action-list">
+        <div v-if="releaseGateItems.length" class="gate-action-list">
         <router-link v-for="item in releaseGateItems" :key="item.key" class="gate-action-item app-subpanel" :to="item.route">
           <el-tag size="small" :type="severityTagType(item.severity)" effect="plain">
             {{ configWorkbenchSeverityText(item.severity) }}
@@ -86,8 +78,9 @@
           <span>{{ item.message }}</span>
           <small>{{ item.routeLabel }}</small>
         </router-link>
-      </div>
-      <div v-else class="gate-empty">当前发布门禁没有待处理项。</div>
+        </div>
+        <div v-else class="gate-empty">当前发布门禁没有待处理项。</div>
+      </WorkbenchPanelCard>
     </section>
 
     <section v-if="summary" class="settings-groups app-page-shell" aria-label="配置治理状态">
@@ -183,6 +176,9 @@ import {
 } from "@/api/configSummary";
 import ConfigTodoSummary from "@/components/ConfigTodoSummary.vue";
 import RoleGate from "@/components/RoleGate.vue";
+import WorkbenchGovernanceMetricStrip, { type WorkbenchGovernanceMetricItem } from "@/components/WorkbenchGovernanceMetricStrip.vue";
+import WorkbenchPageHeader from "@/components/WorkbenchPageHeader.vue";
+import WorkbenchPanelCard from "@/components/WorkbenchPanelCard.vue";
 import {
   configWorkbenchDetailStatusText,
   configWorkbenchSeverityText,
@@ -228,6 +224,34 @@ const releaseGateItems = computed<ReleaseGateItem[]>(() => {
   return [
     ...releaseGateFindingItems("critical", summary.value.release_gate.blockers, summary.value.release_gate.blocker_findings),
     ...releaseGateFindingItems("warning", summary.value.release_gate.warnings, summary.value.release_gate.warning_findings),
+  ];
+});
+const releaseGateMetricItems = computed<WorkbenchGovernanceMetricItem[]>(() => {
+  if (!summary.value) {
+    return [];
+  }
+  return [
+    {
+      id: "p0_document_jobs",
+      label: "P0 document_jobs",
+      value: summary.value.release_gate.p0_document_jobs_ready ? "就绪" : "阻断",
+      helper: summary.value.release_gate.p0_document_jobs_required ? "当前环境强制门禁" : "当前环境观察门禁",
+      tone: summary.value.release_gate.p0_document_jobs_ready ? "success" : "danger",
+    },
+    {
+      id: "blockers",
+      label: "阻断项",
+      value: summary.value.release_gate.blockers.length,
+      helper: "需要先处理再发布",
+      tone: summary.value.release_gate.blockers.length ? "danger" : "success",
+    },
+    {
+      id: "warnings",
+      label: "告警项",
+      value: summary.value.release_gate.warnings.length,
+      helper: "建议发布前确认",
+      tone: summary.value.release_gate.warnings.length ? "warning" : "success",
+    },
   ];
 });
 
