@@ -1,5 +1,5 @@
-<!-- File: frontend/src/pages/TermProposalsPage.vue -->
-<!-- Purpose: Render operator proposal forms and admin review queues for term governance. -->
+<!-- 文件：frontend/src/pages/TermProposalsPage.vue -->
+<!-- 用途：展示术语治理的操作员提案表单和管理员审核队列。 -->
 <template>
   <main class="term-proposals-page app-page" aria-labelledby="term-proposals-title">
     <WorkbenchPageHeader
@@ -365,7 +365,7 @@
       :append-to-body="true"
       @closed="closeTermReviewDialog"
     >
-      <div v-if="selectedProposal" class="proposal-review-dialog-scroll">
+      <div v-if="selectedProposal" class="proposal-review-dialog-scroll app-scrollbar-persistent">
         <WorkbenchSectionHeader
           title="审核详情"
           subtitle="当前规则、提交时快照和提议变更并列展示。"
@@ -487,7 +487,7 @@
       :append-to-body="true"
       @closed="closeTranslationReviewDialog"
     >
-      <div v-if="selectedTranslationProposal" class="proposal-review-dialog-scroll">
+      <div v-if="selectedTranslationProposal" class="proposal-review-dialog-scroll app-scrollbar-persistent">
         <WorkbenchSectionHeader
           title="翻译术语审核详情"
           subtitle="展示提交时绑定版本、提议变更和发布结果。"

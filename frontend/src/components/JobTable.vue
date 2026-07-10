@@ -1,7 +1,7 @@
-<!-- File: frontend/src/components/JobTable.vue -->
-<!-- Purpose: 展示 document_jobs 分页表格、批量选择和任务级操作入口。 -->
+<!-- 文件：frontend/src/components/JobTable.vue -->
+<!-- 用途：展示 document_jobs 分页表格、批量选择和任务级操作入口。 -->
 <template>
-  <div class="job-table" :class="`is-${density}-density`">
+  <div class="job-table app-scrollbar-persistent" :class="`is-${density}-density`">
     <el-table
       ref="tableRef"
       v-loading="loading"

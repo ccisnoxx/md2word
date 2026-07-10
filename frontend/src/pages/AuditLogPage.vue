@@ -1,5 +1,5 @@
-<!-- File: frontend/src/pages/AuditLogPage.vue -->
-<!-- Purpose: Render the Admin-only audit event search, structured details display, current-page CSV export, and governed filtered export. -->
+<!-- 文件：frontend/src/pages/AuditLogPage.vue -->
+<!-- 用途：展示管理员审计事件检索、结构化详情、当前页 CSV 导出和受治理筛选导出。 -->
 <template>
   <main class="audit-log-page app-page" aria-labelledby="audit-log-title">
     <WorkbenchPageHeader
@@ -189,7 +189,7 @@
             </el-table-column>
             <el-table-column label="Value" min-width="320">
               <template #default="{ row }">
-                <pre class="details-value mono">{{ row.value }}</pre>
+                <pre class="details-value mono app-scrollbar-persistent">{{ row.value }}</pre>
               </template>
             </el-table-column>
           </el-table>
@@ -197,7 +197,7 @@
 
         <section class="details-section app-evidence-panel" aria-label="审计详情 JSON">
           <h2 class="details-section-title">JSON</h2>
-          <pre class="details-json mono">{{ selectedDetailsJson }}</pre>
+          <pre class="details-json mono app-scrollbar-persistent">{{ selectedDetailsJson }}</pre>
         </section>
       </section>
     </el-drawer>

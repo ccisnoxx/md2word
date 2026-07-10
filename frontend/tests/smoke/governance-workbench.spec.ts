@@ -1,5 +1,5 @@
-// File: frontend/tests/smoke/governance-workbench.spec.ts
-// Purpose: Browser smoke coverage for governance/configuration workbench templates.
+// 文件：frontend/tests/smoke/governance-workbench.spec.ts
+// 用途：覆盖治理与配置工作台模板的浏览器 smoke。
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 import { expectNoPageHorizontalOverflow } from "./support/accessibility";
@@ -504,7 +504,7 @@ test("governance review, diff, and editor panels expose the shared template hier
   await expect(page.getByRole("heading", { name: "术语建议" })).toBeVisible();
   await expect(page.getByText("批量审核").first()).toBeVisible();
   await page.getByRole("row", { name: /proposal_term_001/ }).getByRole("button", { name: "查看" }).click();
-  await expect(page.getByText("审核详情")).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "审核详情" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "提议变更" })).toBeVisible();
   await expectNoPageHorizontalOverflow(page);
 

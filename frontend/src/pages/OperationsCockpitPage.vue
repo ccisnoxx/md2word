@@ -1,5 +1,5 @@
-<!-- File: frontend/src/pages/OperationsCockpitPage.vue -->
-<!-- Purpose: Personal operator cockpit that routes actionable work into existing queue pages. -->
+<!-- 文件：frontend/src/pages/OperationsCockpitPage.vue -->
+<!-- 用途：展示个人操作驾驶舱，并把可处理工作路由到现有队列页面。 -->
 <template>
   <main class="operations-cockpit-page app-page" aria-labelledby="operations-cockpit-title">
     <WorkbenchPageHeader
@@ -29,7 +29,7 @@
     </section>
 
     <template v-else>
-      <section class="priority-strip app-page-shell app-page-shell--wide" aria-label="优先工作">
+      <section class="priority-strip app-page-shell app-page-shell--wide app-scrollbar-transient" aria-label="优先工作">
         <RouterLink
           v-for="item in priorityItems"
           :key="item.id"
@@ -106,7 +106,7 @@
             <strong>暂无待处理工作</strong>
             <span>可以通过上方保存视图进入现有页面继续巡检。</span>
           </div>
-          <div v-else class="preview-table" role="table" aria-label="下一步工作列表">
+          <div v-else class="preview-table app-scrollbar-persistent" role="table" aria-label="下一步工作列表">
             <div class="preview-row preview-row-head" role="row">
               <span>对象</span>
               <span>状态</span>

@@ -1,5 +1,5 @@
-<!-- File: frontend/src/components/WorkbenchTableSettings.vue -->
-<!-- Purpose: Reusable local table preference controls for operations workbenches. -->
+<!-- 文件：frontend/src/components/WorkbenchTableSettings.vue -->
+<!-- 用途：提供运维工作台可复用的本地表格偏好控件。 -->
 <template>
   <el-popover
     v-model:visible="panelVisible"
@@ -30,7 +30,7 @@
 
       <div class="settings-section">
         <p class="settings-label">显示列</p>
-        <div class="column-list">
+        <div class="column-list app-scrollbar-persistent">
           <el-checkbox
             v-for="column in columns"
             :key="column.id"

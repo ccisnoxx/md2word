@@ -1,5 +1,5 @@
-<!-- File: frontend/src/components/TermRuleDraftRuleDialog.vue -->
-<!-- Purpose: Render the draft term-rule edit dialog while the page owns mutation flow. -->
+<!-- 文件：frontend/src/components/TermRuleDraftRuleDialog.vue -->
+<!-- 用途：展示术语规则草稿编辑对话框，变更流程继续由页面层负责。 -->
 <template>
   <el-dialog
     v-model="visible"
@@ -10,7 +10,7 @@
     append-to="body"
     :append-to-body="true"
   >
-    <div class="rule-dialog-scroll">
+    <div class="rule-dialog-scroll app-scrollbar-persistent">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="130px">
         <el-form-item label="源术语" prop="source_term">
           <el-input v-model="form.source_term" placeholder="例如 VIN" />

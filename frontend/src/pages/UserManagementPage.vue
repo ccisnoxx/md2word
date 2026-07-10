@@ -1,5 +1,5 @@
-<!-- File: frontend/src/pages/UserManagementPage.vue -->
-<!-- Purpose: Render the Admin-only internal user management workbench. -->
+<!-- 文件：frontend/src/pages/UserManagementPage.vue -->
+<!-- 用途：展示仅管理员可用的内部用户管理工作台。 -->
 <template>
   <main class="user-management-page app-page" aria-labelledby="user-management-title">
     <WorkbenchPageHeader
@@ -53,7 +53,7 @@
       <WorkbenchPanelCard
         title="内部用户"
         :subtitle="`共 ${total} 个账号${loadedAt ? ` · 更新于 ${formatDateTime(loadedAt)}` : ''}`"
-        card-class="user-table-section app-filter-panel app-table-card"
+        card-class="user-table-section app-filter-panel app-table-card app-scrollbar-persistent"
       >
         <el-table v-loading="loading" :data="users" empty-text="暂无用户" table-layout="fixed" class="user-table">
         <el-table-column label="用户名" min-width="180">
@@ -113,7 +113,7 @@
       append-to="body"
       :append-to-body="true"
     >
-      <div class="user-dialog-scroll">
+      <div class="user-dialog-scroll app-scrollbar-persistent">
         <ApiErrorAlert :error="operationError" />
         <el-alert
           v-if="createForm.role === 'admin'"
@@ -159,7 +159,7 @@
       append-to="body"
       :append-to-body="true"
     >
-      <div class="user-dialog-scroll">
+      <div class="user-dialog-scroll app-scrollbar-persistent">
         <ApiErrorAlert :error="operationError" />
         <el-alert
           v-if="editRiskText"
@@ -199,7 +199,7 @@
       append-to="body"
       :append-to-body="true"
     >
-      <div class="user-dialog-scroll">
+      <div class="user-dialog-scroll app-scrollbar-persistent">
         <ApiErrorAlert :error="operationError" />
         <el-alert
           v-if="selectedUser"

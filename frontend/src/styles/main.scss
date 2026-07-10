@@ -1,4 +1,4 @@
-/* frontend/src/styles/main.scss: Global visual tokens and shell patterns for the workbench. */
+/* frontend/src/styles/main.scss：工作台全局视觉令牌与壳层模式。 */
 :root {
   --app-font-sans: "Source Sans 3", "PingFang SC", "Noto Sans SC", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --app-font-heading: Lexend, "PingFang SC", "Noto Sans SC", sans-serif;
@@ -95,6 +95,10 @@
   --app-shadow-panel: 0 18px 48px rgba(15, 23, 42, 0.12);
   --app-shadow-panel-hover: 0 24px 64px rgba(15, 23, 42, 0.16);
   --app-shadow-focus: 0 0 0 3px rgba(37, 99, 235, 0.2);
+  --app-scrollbar-size: 6px;
+  --app-scrollbar-thumb: rgba(100, 116, 139, 0.36);
+  --app-scrollbar-thumb-hover: rgba(71, 85, 105, 0.58);
+  --app-scrollbar-thumb-active: rgba(37, 99, 235, 0.7);
 
   --app-content-width: 1280px;
   --app-content-wide: 1440px;
@@ -181,6 +185,71 @@ body::before {
 ::selection {
   background: color-mix(in srgb, var(--app-color-primary) 24%, transparent);
   color: var(--app-color-text);
+}
+
+.app-scrollbar-transient,
+.app-scrollbar-persistent,
+.app-technical-block {
+  scrollbar-width: thin;
+}
+
+.app-scrollbar-transient {
+  scrollbar-color: transparent transparent;
+}
+
+.app-scrollbar-transient:hover,
+.app-scrollbar-transient:focus-within {
+  scrollbar-color: var(--app-scrollbar-thumb) transparent;
+}
+
+.app-scrollbar-persistent,
+.app-technical-block {
+  scrollbar-color: var(--app-scrollbar-thumb) transparent;
+}
+
+.app-scrollbar-transient::-webkit-scrollbar,
+.app-scrollbar-persistent::-webkit-scrollbar,
+.app-technical-block::-webkit-scrollbar {
+  width: var(--app-scrollbar-size);
+  height: var(--app-scrollbar-size);
+}
+
+.app-scrollbar-transient::-webkit-scrollbar-track,
+.app-scrollbar-persistent::-webkit-scrollbar-track,
+.app-technical-block::-webkit-scrollbar-track,
+.app-scrollbar-transient::-webkit-scrollbar-corner,
+.app-scrollbar-persistent::-webkit-scrollbar-corner,
+.app-technical-block::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.app-scrollbar-transient::-webkit-scrollbar-thumb,
+.app-scrollbar-persistent::-webkit-scrollbar-thumb,
+.app-technical-block::-webkit-scrollbar-thumb {
+  border-radius: var(--app-radius-pill);
+}
+
+.app-scrollbar-transient::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
+.app-scrollbar-transient:hover::-webkit-scrollbar-thumb,
+.app-scrollbar-transient:focus-within::-webkit-scrollbar-thumb,
+.app-scrollbar-persistent::-webkit-scrollbar-thumb,
+.app-technical-block::-webkit-scrollbar-thumb {
+  background: var(--app-scrollbar-thumb);
+}
+
+.app-scrollbar-transient::-webkit-scrollbar-thumb:hover,
+.app-scrollbar-persistent::-webkit-scrollbar-thumb:hover,
+.app-technical-block::-webkit-scrollbar-thumb:hover {
+  background: var(--app-scrollbar-thumb-hover);
+}
+
+.app-scrollbar-transient::-webkit-scrollbar-thumb:active,
+.app-scrollbar-persistent::-webkit-scrollbar-thumb:active,
+.app-technical-block::-webkit-scrollbar-thumb:active {
+  background: var(--app-scrollbar-thumb-active);
 }
 
 #app {
@@ -326,7 +395,7 @@ button:disabled,
 
 .el-popper,
 .el-picker-panel {
-  z-index: var(--app-layer-popover) !important;
+  /* 对话框内的下拉层依赖 Element Plus 运行时 z-index，不能被全局层级强制压低。 */
   border: 1px solid var(--app-color-border);
   background: var(--app-color-surface-elevated);
   color: var(--app-color-text);
@@ -481,7 +550,7 @@ button:disabled,
   border: 1px solid var(--app-color-border);
   border-radius: var(--app-radius-md);
   background: var(--app-gradient-panel-depth);
-  box-shadow: var(--app-shadow-panel);
+  box-shadow: var(--app-shadow-subtle);
   backdrop-filter: var(--app-backdrop-panel);
   -webkit-backdrop-filter: var(--app-backdrop-panel);
   transition:
@@ -537,7 +606,7 @@ button:disabled,
   border: 1px solid var(--app-color-border);
   border-radius: var(--app-radius-md);
   background: var(--app-gradient-panel-depth);
-  box-shadow: var(--app-shadow-panel);
+  box-shadow: var(--app-shadow-subtle);
   backdrop-filter: var(--app-backdrop-panel);
   -webkit-backdrop-filter: var(--app-backdrop-panel);
 }
@@ -548,7 +617,7 @@ button:disabled,
   border: 1px solid var(--app-color-border);
   border-radius: var(--app-radius-md);
   background: var(--app-gradient-panel-depth);
-  box-shadow: var(--app-shadow-panel);
+  box-shadow: var(--app-shadow-subtle);
   backdrop-filter: var(--app-backdrop-panel);
   -webkit-backdrop-filter: var(--app-backdrop-panel);
 }
@@ -669,15 +738,16 @@ button:disabled,
     transform var(--app-motion-fast) var(--app-ease-out);
 }
 
-.app-panel-card:hover,
-.app-page .el-card.card-flat:hover,
-.app-metric-card:hover,
-.app-compact-card:hover,
-.app-governance-metric:hover,
-.app-filter-panel:hover {
+button.app-metric-card:not(:disabled):hover,
+button.app-metric-card:not(:disabled):focus-visible,
+a.app-panel-card:hover,
+a.app-panel-card:focus-visible,
+.app-panel-card[role="button"]:hover,
+.app-panel-card[role="button"]:focus-visible {
   border-color: var(--app-color-primary-border);
-  box-shadow: var(--app-shadow-panel-hover);
-  transform: translateY(-2px);
+  box-shadow: var(--app-shadow-focus), var(--app-shadow-subtle);
+  transform: translateY(-1px);
+  outline: none;
 }
 
 .app-metric-card span,
@@ -721,8 +791,8 @@ button:disabled,
 .app-entry-card:focus-visible {
   border-color: var(--app-color-primary-border);
   color: var(--app-color-primary-hover);
-  box-shadow: var(--app-shadow-panel-hover);
-  transform: translateY(-3px);
+  box-shadow: var(--app-shadow-focus), var(--app-shadow-subtle);
+  transform: translateY(-1px);
   outline: none;
 }
 
@@ -1355,6 +1425,9 @@ button:disabled,
   --app-shadow-panel: 0 16px 42px rgba(0, 0, 0, 0.28);
   --app-shadow-panel-hover: 0 18px 48px rgba(0, 0, 0, 0.34);
   --app-shadow-focus: 0 0 0 3px rgba(96, 165, 250, 0.28);
+  --app-scrollbar-thumb: rgba(148, 163, 184, 0.4);
+  --app-scrollbar-thumb-hover: rgba(203, 213, 225, 0.62);
+  --app-scrollbar-thumb-active: rgba(96, 165, 250, 0.78);
 }
 
 :root[data-theme="dark"] {

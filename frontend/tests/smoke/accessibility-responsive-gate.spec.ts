@@ -1,5 +1,5 @@
-// File: frontend/tests/smoke/accessibility-responsive-gate.spec.ts
-// Purpose: Shared responsive, overlay, accessibility, and state-completeness gates for core workbench pages.
+// 文件：frontend/tests/smoke/accessibility-responsive-gate.spec.ts
+// 用途：守护核心工作台页面的响应式、覆盖层、可访问性和状态完整性合同。
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 import {
@@ -246,15 +246,32 @@ test("shell accessibility gate preserves skip link and overlay focus return", as
   await expect(page.getByRole("heading", { name: "修改密码" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(passwordButton).toBeFocused();
+  await expect(page.getByRole("button", { name: /打开用户菜单/ })).toBeHidden();
 
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("/jobs?sort=created_at_desc&include_archived=false&page=1");
+  const pageTitle = page.locator(".topbar-page");
+  await expect(pageTitle).toHaveText("任务工作台");
+  const pageTitleBox = await pageTitle.boundingBox();
+  expect(pageTitleBox?.width || 0).toBeGreaterThanOrEqual(72);
+
   const navButton = page.getByRole("button", { name: "打开导航" });
   await navButton.click();
   await expect(page.locator(".app-mobile-drawer")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.locator(".app-mobile-drawer")).toBeHidden();
   await expect(navButton).toBeFocused();
+
+  const userMenuButton = page.getByRole("button", { name: /打开用户菜单/ });
+  await userMenuButton.click();
+  await page.getByRole("menuitem", { name: "修改密码" }).click();
+  await expect(page.getByRole("heading", { name: "修改密码" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(userMenuButton).toBeFocused();
+
+  await userMenuButton.click();
+  await page.getByRole("menuitem", { name: "退出" }).click();
+  await expect(page).toHaveURL(/\/login$/);
 });
 
 test("core workbench routes stay overflow-safe across the unified gate viewports", async ({ page }) => {

@@ -1,14 +1,14 @@
-<!-- File: frontend/src/components/TranslationQaReviewPanel.vue -->
-<!-- Purpose: Shared dense Translation QA review panel for queue drawer and future detail-page reuse. -->
+<!-- 文件：frontend/src/components/TranslationQaReviewPanel.vue -->
+<!-- 用途：为队列抽屉和详情页复用提供紧凑的翻译 QA 复核面板。 -->
 <template>
   <WorkbenchDrawerSurface
     label="翻译 QA 复核面板"
     kicker="翻译 QA 复核"
     :title="displayJobId"
     :subtitle="displayFilename"
-    root-class="translation-qa-review-panel"
+    root-class="translation-qa-review-panel app-scrollbar-persistent"
     header-class="qa-review-header"
-    body-class="qa-review-body"
+    body-class="qa-review-body app-scrollbar-persistent"
     footer-class="qa-review-footer"
   >
     <template #actions>
@@ -452,7 +452,7 @@ function joinIds(ids: string[]): string {
   background: var(--app-color-surface);
 }
 
-.qa-review-header {
+:deep(.qa-review-header) {
   display: flex;
   flex-wrap: wrap;
   gap: var(--app-space-3);
@@ -502,7 +502,7 @@ function joinIds(ids: string[]): string {
   align-items: center;
 }
 
-.qa-review-body {
+:deep(.qa-review-body) {
   display: grid;
   align-content: start;
   gap: var(--app-space-3);
@@ -773,7 +773,7 @@ function joinIds(ids: string[]): string {
   font-size: 13px;
 }
 
-.qa-review-footer {
+:deep(.qa-review-footer) {
   display: grid;
   gap: var(--app-space-2);
   padding: var(--app-space-3) var(--app-space-4);
@@ -811,10 +811,30 @@ function joinIds(ids: string[]): string {
 }
 
 @media (max-width: 760px) {
-  .qa-review-header,
-  .qa-review-body,
-  .qa-review-footer {
+  .translation-qa-review-panel {
+    display: block;
+    height: 100%;
+    max-height: 100dvh;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0;
+  }
+
+  :deep(.qa-review-header),
+  :deep(.qa-review-body),
+  :deep(.qa-review-footer) {
     padding: var(--app-space-3);
+  }
+
+  :deep(.qa-review-body) {
+    min-height: auto;
+    overflow: visible;
+  }
+
+  :deep(.qa-review-footer) {
+    display: block;
+    padding-bottom: calc(var(--app-space-3) + env(safe-area-inset-bottom));
   }
 
   .qa-summary-strip,
@@ -833,10 +853,31 @@ function joinIds(ids: string[]): string {
     gap: 4px;
   }
 
-  .footer-command-row,
+  .footer-command-row {
+    position: sticky;
+    z-index: 1;
+    bottom: calc(-1 * var(--app-space-3) - env(safe-area-inset-bottom));
+    display: block;
+    margin: var(--app-space-3) calc(-1 * var(--app-space-3)) 0;
+    padding: var(--app-space-2) var(--app-space-3) calc(var(--app-space-2) + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--app-color-border);
+    background: var(--app-color-surface-elevated);
+  }
+
+  .footer-command-row :deep(.shortcut-hint-list) {
+    display: none;
+  }
+
   .review-actions {
-    align-items: stretch;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    width: 100%;
+  }
+
+  .review-actions :deep(.el-button) {
+    min-width: 0;
+    padding-inline: 6px;
   }
 
   .review-actions :deep(.el-button + .el-button) {
