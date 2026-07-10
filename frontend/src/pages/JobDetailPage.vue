@@ -1,5 +1,5 @@
-<!-- File: frontend/src/pages/JobDetailPage.vue -->
-<!-- Purpose: 展示单个 document_job 的详情、事件、文件、下载和重试入口。 -->
+<!-- 文件：frontend/src/pages/JobDetailPage.vue -->
+<!-- 用途：展示单个 document_job 的详情、事件、文件、下载和重试入口。 -->
 <template>
   <div class="job-detail-page app-page">
     <div class="section-header detail-header app-page-header app-page-shell">
@@ -482,7 +482,7 @@
             </div>
             <details class="snapshot-details">
               <summary>查看后端记录的非正文任务参数摘要</summary>
-              <pre class="snapshot">{{ requestSnapshotPreview }}</pre>
+              <pre class="snapshot app-scrollbar-persistent">{{ requestSnapshotPreview }}</pre>
             </details>
           </el-card>
         </el-tab-pane>
@@ -578,7 +578,7 @@
         append-to="body"
         :append-to-body="true"
       >
-        <div class="job-action-dialog-scroll">
+        <div class="job-action-dialog-scroll app-scrollbar-persistent">
           <el-form label-width="150px">
             <el-form-item label="任务 ID">
               <el-input :model-value="retryDialog.job?.id || ''" disabled />
@@ -652,7 +652,7 @@
         append-to="body"
         :append-to-body="true"
       >
-        <div class="job-action-dialog-scroll">
+        <div class="job-action-dialog-scroll app-scrollbar-persistent">
           <el-form label-width="150px">
             <el-form-item label="源任务 ID">
               <el-input :model-value="cloneDialog.job?.id || ''" disabled />

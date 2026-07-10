@@ -1,5 +1,5 @@
-<!-- File: frontend/src/components/OperatorCommandPalette.vue -->
-<!-- Purpose: Protected-app command palette for permission-filtered page and saved-view navigation. -->
+<!-- 文件：frontend/src/components/OperatorCommandPalette.vue -->
+<!-- 用途：为受保护工作台提供按权限筛选的页面与保存视图命令导航。 -->
 <template>
   <Teleport to="body">
     <div v-if="open" class="command-palette-overlay" @mousedown.self="closePalette(true)">
@@ -41,7 +41,7 @@
         <div
           v-if="groupedCommands.length"
           id="operator-command-list"
-          class="command-list"
+          class="command-list app-scrollbar-persistent"
           role="listbox"
           aria-label="命令列表"
         >

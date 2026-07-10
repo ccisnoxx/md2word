@@ -1,7 +1,7 @@
-<!-- File: frontend/src/components/TermProposalTable.vue -->
-<!-- Purpose: Render Term Rule proposal queues and highlight the selected proposal row. -->
+<!-- 文件：frontend/src/components/TermProposalTable.vue -->
+<!-- 用途：展示术语规则提案队列并高亮当前选中行。 -->
 <template>
-  <div class="proposal-table-wrap">
+  <div class="proposal-table-wrap app-scrollbar-persistent">
     <el-table
       ref="tableRef"
       :data="items"

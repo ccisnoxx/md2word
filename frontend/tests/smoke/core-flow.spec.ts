@@ -1,5 +1,5 @@
-// File: frontend/tests/smoke/core-flow.spec.ts
-// Purpose: Browser smoke coverage for the internal portal's core operator workflows.
+// 文件：frontend/tests/smoke/core-flow.spec.ts
+// 用途：覆盖内部工作台核心操作流程的浏览器 smoke。
 import { expect, test, type Page } from "@playwright/test";
 import { activateSkipLink, expectNoPageHorizontalOverflow, WORKBENCH_VIEWPORTS } from "./support/accessibility";
 
@@ -1658,9 +1658,17 @@ test("operations redesign renders verified desktop, tablet, and mobile screensho
     });
     const page = await context.newPage();
     await mockApi(page);
+    if (viewport.name === "laptop") {
+      await page.addInitScript(() => {
+        window.localStorage.setItem("md2word.theme.mode", "dark");
+      });
+    }
 
     await page.goto("/login");
     await expect(page.getByRole("heading", { name: "md2word 内部工作台" })).toBeVisible();
+    if (viewport.name === "laptop") {
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    }
     await expectNoPageHorizontalOverflow(page);
     await settleWorkbenchScreenshot(page);
     await page.screenshot({ path: testInfo.outputPath(`ops-login-${viewport.name}.png`) });
@@ -1749,6 +1757,44 @@ test("operations redesign renders verified desktop, tablet, and mobile screensho
     await expectNoPageHorizontalOverflow(page);
     const drawerBox = await page.locator(".translation-qa-review-drawer").boundingBox();
     expect(drawerBox?.width || 0).toBeLessThanOrEqual(viewport.width + 1);
+
+    if (viewport.width < 600) {
+      const qaScrollRoot = page.locator(".translation-qa-review-panel");
+      const mobileScrollContract = await qaScrollRoot.evaluate((element) => {
+        const body = element.querySelector<HTMLElement>(".qa-review-body");
+        return {
+          rootOverflowY: getComputedStyle(element).overflowY,
+          bodyOverflowY: body ? getComputedStyle(body).overflowY : "",
+          rootOwnsOverflow: element.scrollHeight > element.clientHeight,
+        };
+      });
+      expect(mobileScrollContract).toEqual({
+        rootOverflowY: "auto",
+        bodyOverflowY: "visible",
+        rootOwnsOverflow: true,
+      });
+      await expect(qaReviewPanel.getByLabel("快捷键提示")).toBeHidden();
+
+      await qaScrollRoot.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+      });
+      const actionBar = qaReviewPanel.locator(".footer-command-row");
+      const noteBox = await qaReviewPanel.getByLabel("QA 备注").boundingBox();
+      const actionBarBox = await actionBar.boundingBox();
+      expect(noteBox, "QA 备注应能滚动到操作栏上方").not.toBeNull();
+      expect(actionBarBox, "移动端操作栏应保持可见").not.toBeNull();
+      if (noteBox && actionBarBox) {
+        expect(noteBox.y + noteBox.height).toBeLessThanOrEqual(actionBarBox.y + 1);
+        expect(actionBarBox.y).toBeGreaterThanOrEqual(0);
+        expect(actionBarBox.y + actionBarBox.height).toBeLessThanOrEqual(viewport.height + 1);
+      }
+      for (const actionName of ["关闭", "仅保存", "保存并下一条"]) {
+        await expect(qaReviewPanel.getByRole("button", { name: actionName, exact: true })).toBeVisible();
+      }
+    } else {
+      await expect(qaReviewPanel.getByLabel("快捷键提示")).toBeVisible();
+    }
+
     await settleWorkbenchScreenshot(page);
     await page.screenshot({ path: testInfo.outputPath(`ops-qa-drawer-${viewport.name}.png`) });
 

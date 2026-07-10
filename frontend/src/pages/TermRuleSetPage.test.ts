@@ -19,7 +19,7 @@ describe("TermRuleSetPage draft-rule dialog", () => {
   it("keeps the long dialog mounted on body with an owned scroll container", () => {
     expect(source).toMatch(/<TermRuleDraftRuleDialog[\s\S]*v-model:visible="ruleDialog\.visible"[\s\S]*@save="saveRule"/);
     expect(dialogSource).toMatch(/<el-dialog[\s\S]*class="rule-dialog"[\s\S]*append-to="body"[\s\S]*:append-to-body="true"/);
-    expect(dialogSource).toContain('<div class="rule-dialog-scroll">');
+    expect(dialogSource).toContain('<div class="rule-dialog-scroll app-scrollbar-persistent">');
     expect(dialogSource).toMatch(/<template #footer>[\s\S]*保存[\s\S]*<\/template>/);
   });
 

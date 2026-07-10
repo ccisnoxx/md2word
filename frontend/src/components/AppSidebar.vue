@@ -1,4 +1,4 @@
-<!-- frontend/src/components/AppSidebar.vue: Workflow-based app shell sidebar navigation. -->
+<!-- frontend/src/components/AppSidebar.vue：工作流壳层的侧栏导航。 -->
 <template>
   <div class="app-sidebar" :class="{ 'is-collapsed': isCompact, 'is-mobile': mobile }">
     <div class="sidebar-brand-row">
@@ -17,7 +17,7 @@
       </el-tooltip>
     </div>
 
-    <nav class="sidebar-nav" aria-label="工作流导航">
+    <nav class="sidebar-nav app-scrollbar-transient" aria-label="工作流导航">
       <section
         v-for="group in groups"
         :key="group.id"

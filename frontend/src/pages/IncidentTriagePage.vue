@@ -1,5 +1,5 @@
-<!-- File: frontend/src/pages/IncidentTriagePage.vue -->
-<!-- Purpose: Render the lightweight document_job incident triage queue and diagnostic drawer. -->
+<!-- 文件：frontend/src/pages/IncidentTriagePage.vue -->
+<!-- 用途：展示轻量 document_job 异常分诊队列和诊断抽屉。 -->
 <template>
   <main class="incident-page app-page" :class="{ 'has-bulk-actions': selectedItems.length }" aria-labelledby="incident-title">
     <WorkbenchPageHeader
@@ -140,7 +140,7 @@
         </template>
       </BatchResultStrip>
 
-      <div class="incident-table-wrap">
+      <div class="incident-table-wrap app-scrollbar-persistent">
         <el-table
           ref="tableRef"
           v-loading="loading"

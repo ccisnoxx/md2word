@@ -1,4 +1,4 @@
-<!-- frontend/src/pages/TemplateListPage.vue: Word template document list. -->
+<!-- frontend/src/pages/TemplateListPage.vue：Word 模板文档列表。 -->
 <template>
   <main class="template-list-page app-page" aria-labelledby="templates-title">
     <WorkbenchPageHeader
@@ -32,7 +32,7 @@
         subtitle="查看模板文档、布局配置入口和默认版本状态。"
         card-class="app-table-card"
       >
-        <div class="table-wrap">
+        <div class="table-wrap app-scrollbar-persistent">
         <el-table :data="templates" :loading="loading" empty-text="暂无模板" table-layout="fixed" class="template-table">
           <el-table-column prop="id" label="模板 ID" min-width="140">
           <template #default="{ row }">

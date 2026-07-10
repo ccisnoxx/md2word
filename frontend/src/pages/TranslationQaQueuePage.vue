@@ -1,5 +1,5 @@
-<!-- File: frontend/src/pages/TranslationQaQueuePage.vue -->
-<!-- Purpose: Render the translation QA review queue backed by document_jobs list filtering. -->
+<!-- 文件：frontend/src/pages/TranslationQaQueuePage.vue -->
+<!-- 用途：展示由 document_jobs 列表筛选驱动的翻译 QA 复核队列。 -->
 <template>
   <main class="translation-qa-queue-page app-page" aria-labelledby="translation-qa-queue-title">
     <WorkbenchPageHeader
@@ -132,7 +132,7 @@
           </template>
         </WorkbenchEmptyState>
 
-        <div class="table-scroll">
+        <div class="table-scroll app-scrollbar-persistent">
           <el-table
             ref="tableRef"
             v-loading="loading"

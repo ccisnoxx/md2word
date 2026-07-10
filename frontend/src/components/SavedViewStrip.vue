@@ -1,7 +1,7 @@
-<!-- File: frontend/src/components/SavedViewStrip.vue -->
-<!-- Purpose: Render compact system presets and personal saved-view actions for operations workbenches. -->
+<!-- 文件：frontend/src/components/SavedViewStrip.vue -->
+<!-- 用途：展示运维工作台的紧凑系统预设和个人保存视图操作。 -->
 <template>
-  <section class="saved-view-strip" aria-label="保存视图">
+  <section class="saved-view-strip app-scrollbar-transient" aria-label="保存视图">
     <div class="saved-view-group">
       <button
         v-for="view in systemViews"

@@ -1,5 +1,5 @@
-// File: frontend/tests/smoke/term-rule-set-dialog.spec.ts
-// Purpose: Browser smoke coverage for the Term Rule Set draft-rule dialog viewport contract.
+// 文件：frontend/tests/smoke/term-rule-set-dialog.spec.ts
+// 用途：覆盖术语规则集草稿规则对话框的视口合同。
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 const TOKEN_STORAGE_KEY = "md2word.frontend.access_token";
@@ -274,10 +274,10 @@ test("term rule draft page exposes advanced rule creation", async ({ page }) => 
   await expect(page.getByRole("button", { name: "新增高级规则" })).toBeVisible();
   await page.getByRole("button", { name: "新增高级规则" }).click();
 
-  await expect(page.getByRole("dialog", { name: "新增高级 draft rule" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "新增高级草稿规则" })).toBeVisible();
   await expect(page.locator(".rule-dialog .segment-row")).toHaveCount(3);
-  await expect(page.locator(".rule-dialog").getByText("Custom markdown")).toBeVisible();
-  await expect(page.locator(".rule-dialog").getByText("Custom HTML")).toBeVisible();
+  await expect(page.locator(".rule-dialog").getByText("自定义 Markdown")).toBeVisible();
+  await expect(page.locator(".rule-dialog").getByText("自定义 HTML")).toBeVisible();
 });
 
 function draftResponse() {

@@ -1,5 +1,5 @@
-<!-- File: frontend/src/pages/AcceptanceCenterPage.vue -->
-<!-- Purpose: Render the Admin Acceptance Center for P0/P1/P2 delivery evidence and review decisions. -->
+<!-- 文件：frontend/src/pages/AcceptanceCenterPage.vue -->
+<!-- 用途：展示管理员验收中心的 P0/P1/P2 交付证据与复核决策。 -->
 <template>
   <main class="acceptance-center-page app-page" aria-labelledby="acceptance-center-title">
     <WorkbenchPageHeader
@@ -53,7 +53,7 @@
         card-class="run-list-panel app-filter-panel app-table-card"
       >
         <el-empty v-if="showEmptyState" description="暂无验收运行；后端返回 P0/P1/P2 证据后会显示在这里。" :image-size="96" />
-        <div v-else class="table-wrap">
+        <div v-else class="table-wrap app-scrollbar-persistent">
         <el-table
           v-loading="loading"
           :data="orderedRuns"
@@ -127,7 +127,7 @@
       append-to-body
       @close="clearSelectedRun"
     >
-      <div class="acceptance-drawer-scroll">
+      <div class="acceptance-drawer-scroll app-scrollbar-persistent">
         <ApiErrorAlert :error="detailError" />
         <ApiErrorAlert :error="operationError" />
 
@@ -1041,7 +1041,6 @@ onMounted(async () => {
 
 .tier-card:disabled {
   cursor: default;
-  opacity: 0.78;
   transform: none;
 }
 
@@ -1049,10 +1048,6 @@ onMounted(async () => {
   display: grid;
   gap: 4px;
   min-width: 0;
-}
-
-.run-list-panel {
-  overflow-x: auto;
 }
 
 .table-wrap {

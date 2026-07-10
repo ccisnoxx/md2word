@@ -1,4 +1,4 @@
-<!-- frontend/src/layouts/AppLayout.vue: Protected workbench shell with sidebar navigation and compact topbar. -->
+<!-- frontend/src/layouts/AppLayout.vue：带侧栏导航和紧凑顶栏的受保护工作台壳层。 -->
 <template>
   <div class="app-layout" :class="{ 'is-sidebar-collapsed': sidebarCollapsed }">
     <a class="app-skip-link" href="#app-main-content" @click.prevent="focusMainContent">跳到主内容</a>
@@ -51,12 +51,29 @@
             <kbd>Cmd/Ctrl+K</kbd>
           </el-button>
           <AppThemeToggle />
-          <span class="topbar-user" aria-label="当前用户">
+          <span class="topbar-user topbar-user-desktop" aria-label="当前用户">
             <span class="topbar-user-name">{{ userDisplayName }}</span>
             <span v-if="userRoleLabel" class="topbar-user-role">{{ userRoleLabel }}</span>
           </span>
-          <el-button class="topbar-change-password" :icon="Lock" text @click="openChangePasswordDialog">修改密码</el-button>
-          <el-button class="topbar-logout" :icon="SwitchButton" text @click="handleLogout">退出</el-button>
+          <el-button class="topbar-change-password topbar-desktop-action" :icon="Lock" text @click="openChangePasswordDialog">修改密码</el-button>
+          <el-button class="topbar-logout topbar-desktop-action" :icon="SwitchButton" text @click="handleLogout">退出</el-button>
+          <span ref="mobileUserMenuTriggerRef" class="topbar-user-menu">
+            <el-dropdown trigger="click" placement="bottom-end" @command="handleMobileUserCommand">
+              <el-button
+                class="topbar-user-menu-button"
+                :aria-label="`打开用户菜单，当前用户 ${userDisplayName}`"
+                circle
+              >
+                <span aria-hidden="true">{{ userInitial }}</span>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="change-password">修改密码</el-dropdown-item>
+                  <el-dropdown-item command="logout" divided>退出</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </span>
         </div>
       </header>
 
@@ -80,7 +97,7 @@
       :append-to-body="true"
       @closed="restoreChangePasswordFocus"
     >
-      <div class="password-dialog-scroll">
+      <div class="password-dialog-scroll app-scrollbar-persistent">
         <ApiErrorAlert :error="changePasswordError" />
         <el-form label-position="top">
           <el-form-item label="当前密码">
@@ -144,6 +161,7 @@ const changePasswordDialogVisible = ref(false);
 const changingPassword = ref(false);
 const changePasswordError = ref<ApiClientError | null>(null);
 const mainContentRef = ref<HTMLElement | null>(null);
+const mobileUserMenuTriggerRef = ref<HTMLSpanElement | null>(null);
 const changePasswordForm = reactive({
   current_password: "",
   new_password: "",
@@ -164,6 +182,7 @@ const routeContext = computed(() => getAppRouteContext(route, access.value));
 const defaultProtectedRoute = computed(() => getDefaultProtectedRoute(access.value));
 const userDisplayName = computed(() => auth.user?.display_name || auth.user?.username || "未命名用户");
 const userRoleLabel = computed(() => auth.user?.role || "");
+const userInitial = computed(() => userDisplayName.value.trim().slice(0, 1).toUpperCase() || "用");
 
 watch(
   () => route.fullPath,
@@ -208,13 +227,25 @@ function handleLogout(): void {
   void router.push("/login");
 }
 
-function openChangePasswordDialog(event: MouseEvent): void {
-  changePasswordTrigger = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+function showChangePasswordDialog(trigger: HTMLElement | null): void {
+  changePasswordTrigger = trigger;
   changePasswordForm.current_password = "";
   changePasswordForm.new_password = "";
   changePasswordForm.confirm_password = "";
   changePasswordError.value = null;
   changePasswordDialogVisible.value = true;
+}
+
+function openChangePasswordDialog(event: MouseEvent): void {
+  showChangePasswordDialog(event.currentTarget instanceof HTMLElement ? event.currentTarget : null);
+}
+
+function handleMobileUserCommand(command: unknown): void {
+  if (command === "change-password") {
+    showChangePasswordDialog(mobileUserMenuTriggerRef.value?.querySelector("button") ?? null);
+  } else if (command === "logout") {
+    handleLogout();
+  }
 }
 
 function restoreChangePasswordFocus(): void {
@@ -411,6 +442,18 @@ async function submitChangePassword(): Promise<void> {
   flex: 0 0 auto;
 }
 
+.topbar-user-menu {
+  display: none;
+}
+
+.topbar-user-menu-button {
+  border-color: var(--app-color-border-soft);
+  background: var(--app-color-surface);
+  color: var(--app-color-primary-hover);
+  font-size: 13px;
+  font-weight: 760;
+}
+
 .app-main {
   overflow: visible;
   min-width: 0;
@@ -505,15 +548,31 @@ async function submitChangePassword(): Promise<void> {
 
 @media (max-width: 640px) {
   .app-topbar {
-    gap: var(--app-space-3);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--app-space-2);
+    padding: var(--app-space-2) var(--app-space-3);
   }
 
   .topbar-context {
-    flex: 1 1 auto;
+    min-width: 0;
+    gap: var(--app-space-2);
   }
 
   .topbar-actions {
     gap: 6px;
+  }
+
+  .topbar-module,
+  .topbar-breadcrumb,
+  .topbar-user-desktop,
+  .topbar-desktop-action {
+    display: none;
+  }
+
+  .topbar-copy {
+    min-width: 0;
   }
 
   .topbar-command :deep(span),
@@ -521,15 +580,13 @@ async function submitChangePassword(): Promise<void> {
     display: none;
   }
 
-  .topbar-user {
-    max-width: 118px;
-    padding: 0 var(--app-space-2);
+  .topbar-user-menu {
+    display: inline-flex;
   }
 
-  .topbar-user-role,
-  .topbar-change-password :deep(span),
-  .topbar-logout :deep(span) {
-    display: none;
+  .topbar-user-menu-button {
+    width: 34px;
+    height: 34px;
   }
 
   .topbar-page {
@@ -538,8 +595,8 @@ async function submitChangePassword(): Promise<void> {
 }
 
 @media (max-width: 460px) {
-  .topbar-breadcrumb {
-    display: none;
+  .topbar-page {
+    font-size: 15px;
   }
 }
 </style>
