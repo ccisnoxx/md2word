@@ -140,7 +140,7 @@ class HealthService:
             mineru_config = self.mineru_config_service.get_effective_config()
         except MinerUConfigError:
             mineru_config_error = "mineru_config_invalid"
-            mineru_config = EffectiveMinerUConfig(api_token=None, source="runtime_config")
+            mineru_config = EffectiveMinerUConfig(api_token=None, uid=None, source="runtime_config")
         stage_spool_counts = self.stage_message_store.count_stage_messages_by_status()
         running_observation = self._build_running_stage_observation()
         translation_provider_enabled = ai_provider_config.backend == "openai_compatible"
@@ -159,9 +159,10 @@ class HealthService:
         artifact_root = self._artifact_root()
         resource_labels = self._build_default_resource_labels()
         mineru_callback_url_configured = bool(self.settings.mineru_callback_url)
-        mineru_uid_configured = bool(self.settings.mineru_uid)
+        mineru_uid_configured = mineru_config.uid_configured
         p0_document_jobs = self._build_p0_document_jobs_readiness(
             mineru_api_token_configured=mineru_config.api_token_configured,
+            mineru_uid_configured=mineru_uid_configured,
             mineru_config_error=mineru_config_error,
         )
         document_job_observation = self._build_document_job_observation()
@@ -261,7 +262,7 @@ class HealthService:
             blockers.append("default_translation_unavailable")
         if ai_provider_config_error is not None and checks["translation_required_for_default_mode"]:
             blockers.append(ai_provider_config_error)
-        if mineru_callback_url_configured and not mineru_uid_configured:
+        if mineru_config_error is None and mineru_callback_url_configured and not mineru_uid_configured:
             blockers.append("mineru_uid_missing")
         blockers.extend(p0_document_jobs["blockers"])
 
@@ -331,6 +332,7 @@ class HealthService:
         self,
         *,
         mineru_api_token_configured: bool,
+        mineru_uid_configured: bool,
         mineru_config_error: str | None,
     ) -> dict[str, Any]:
         """判断 P0 document_jobs 自动执行链路是否满足当前环境的发布门禁。"""
@@ -369,7 +371,11 @@ class HealthService:
                 blockers.append("mineru_api_token_missing")
             if not self.settings.mineru_callback_url.strip():
                 blockers.append("mineru_callback_url_missing")
-            if self.settings.mineru_callback_url.strip() and not self.settings.mineru_uid.strip():
+            if (
+                mineru_config_error is None
+                and self.settings.mineru_callback_url.strip()
+                and not mineru_uid_configured
+            ):
                 blockers.append("mineru_uid_missing")
 
         return {

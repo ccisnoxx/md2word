@@ -1,4 +1,4 @@
-// frontend/src/api/mineruConfig.ts: 管理员专用 MinerU 密钥配置 API。
+// frontend/src/api/mineruConfig.ts: 管理员专用 MinerU 账号与密钥配置 API。
 import { apiRequest } from "@/api/client";
 import type { MinerUConfigResponse, MinerUConfigUpdateRequest } from "@/api/types";
 

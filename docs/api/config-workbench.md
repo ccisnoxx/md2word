@@ -95,10 +95,10 @@ last_reviewed: 2026-06-10
 2. 对 `detail_status=deferred` 的分组再请求 `GET /groups/{group_id}?mode=full`。
 3. 若分组明细失败，只标记该分组的深度检查失败，不阻断其他分组展示。
 
-MinerU 密钥诊断路由约定：
+MinerU 账号与密钥诊断路由约定：
 
-- `mineru_api_token_missing` 和 `mineru_config_invalid` 指向 `/settings/mineru`。
-- `mineru_callback_url_missing` 与 `mineru_uid_missing` 仍指向系统状态，因为 MinerU 配置页当前只维护 API 密钥。
+- `mineru_api_token_missing`、`mineru_uid_missing` 和 `mineru_config_invalid` 指向 `/settings/mineru`。
+- `mineru_callback_url_missing` 仍指向系统状态，因为 MinerU 配置页不维护 callback URL。
 
 ## 状态语义
 

@@ -9,7 +9,11 @@ export function releaseGateRouteForCode(code: string): string {
   if (normalized.includes("ai_provider") || normalized.includes("openai")) {
     return "/settings/ai-provider";
   }
-  if (normalized.includes("mineru_api_token") || normalized.includes("mineru_config")) {
+  if (
+    normalized.includes("mineru_api_token") ||
+    normalized.includes("mineru_uid") ||
+    normalized.includes("mineru_config")
+  ) {
     return "/settings/mineru";
   }
   if (normalized.includes("translation_term") || normalized.includes("translation-term")) {

@@ -8400,7 +8400,7 @@
       },
       "JsonValue": {},
       "MinerUConfigResponse": {
-        "description": "不含密钥字符的 MinerU 配置安全摘要。",
+        "description": "不含 UID 或密钥字符的 MinerU 配置安全摘要。",
         "properties": {
           "api_token_configured": {
             "title": "Api Token Configured",
@@ -8413,6 +8413,10 @@
             ],
             "title": "Source",
             "type": "string"
+          },
+          "uid_configured": {
+            "title": "Uid Configured",
+            "type": "boolean"
           },
           "updated_at": {
             "anyOf": [
@@ -8440,6 +8444,7 @@
         },
         "required": [
           "api_token_configured",
+          "uid_configured",
           "source"
         ],
         "title": "MinerUConfigResponse",
@@ -8447,17 +8452,24 @@
       },
       "MinerUConfigUpdateRequest": {
         "additionalProperties": false,
-        "description": "只允许用新的非空密钥覆盖当前配置。",
+        "description": "只允许用新的完整非空账号与密钥绑定覆盖当前配置。",
         "properties": {
           "api_token": {
             "maxLength": 4096,
             "minLength": 1,
             "title": "Api Token",
             "type": "string"
+          },
+          "uid": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Uid",
+            "type": "string"
           }
         },
         "required": [
-          "api_token"
+          "api_token",
+          "uid"
         ],
         "title": "MinerUConfigUpdateRequest",
         "type": "object"
@@ -22913,7 +22925,7 @@
     },
     "/api/v1/mineru-config": {
       "get": {
-        "description": "返回当前 MinerU 密钥状态，不返回密钥原文或片段。",
+        "description": "返回当前 MinerU 绑定状态，不返回 UID、密钥原文或片段。",
         "operationId": "get_mineru_config_api_v1_mineru_config_get",
         "parameters": [
           {
@@ -22961,7 +22973,7 @@
         ]
       },
       "put": {
-        "description": "保存新密钥并记录不含密钥信息的审计事件。",
+        "description": "保存新绑定并记录不含 UID 或密钥信息的审计事件。",
         "operationId": "update_mineru_config_api_v1_mineru_config_put",
         "parameters": [
           {

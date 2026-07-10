@@ -754,7 +754,7 @@ READINESS_CODE_MESSAGES: dict[str, str] = {
 def _readiness_code_route(code: str) -> str:
     """把可由配置中心处理的 MinerU 密钥问题指向专用页面。"""
 
-    if code in {"mineru_api_token_missing", "mineru_config_invalid"}:
+    if code in {"mineru_api_token_missing", "mineru_uid_missing", "mineru_config_invalid"}:
         return "/settings/mineru"
     return "/system-status"
 

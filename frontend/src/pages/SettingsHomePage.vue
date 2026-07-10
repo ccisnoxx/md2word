@@ -52,7 +52,7 @@
         </span>
         <span>
           <strong>MinerU 配置</strong>
-          <small>安全轮换 PDF 解析使用的 MinerU API 密钥，并查看当前配置来源。</small>
+          <small>原子轮换 PDF 解析使用的 MinerU 账号 UID 与 API 密钥，并查看配置状态。</small>
         </span>
       </router-link>
     </section>

@@ -41,7 +41,7 @@ class OpenAPIExportTests(TestCase):
         mineru_response_properties = payload["components"]["schemas"]["MinerUConfigResponse"]["properties"]
         self.assertEqual(
             set(mineru_response_properties),
-            {"api_token_configured", "source", "updated_at", "updated_by"},
+            {"api_token_configured", "uid_configured", "source", "updated_at", "updated_by"},
         )
 
     def test_check_openapi_export_fails_when_snapshot_is_stale(self):

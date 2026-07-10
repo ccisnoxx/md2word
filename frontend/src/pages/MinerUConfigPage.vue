@@ -1,16 +1,16 @@
-<!-- frontend/src/pages/MinerUConfigPage.vue: 管理员轮换 MinerU API 密钥的独立配置页。 -->
+<!-- frontend/src/pages/MinerUConfigPage.vue: 管理员原子轮换 MinerU 账号 UID 与 API 密钥。 -->
 <template>
   <main class="mineru-config-page app-page" aria-labelledby="mineru-config-title">
     <WorkbenchPageHeader
       title-id="mineru-config-title"
       kicker="配置中心"
       title="MinerU 配置"
-      description="轮换 PDF 解析链路使用的 MinerU API 密钥，新请求无需重启即可生效。"
+      description="原子轮换 PDF 解析链路使用的 MinerU 账号 UID 与 API 密钥，新请求无需重启即可生效。"
     >
       <template #actions>
         <div class="header-actions">
           <el-tag :type="statusTagType" effect="plain">
-            key={{ statusText }}
+            key={{ apiTokenStatusText }} · uid={{ uidStatusText }}
           </el-tag>
           <el-button :icon="Refresh" :loading="loading" @click="loadConfig">刷新</el-button>
         </div>
@@ -21,11 +21,20 @@
 
     <section class="config-grid app-page-shell">
       <WorkbenchPanelCard
-        title="密钥轮换"
-        subtitle="保存时只校验非空，不调用 MinerU；新值会覆盖当前运行时配置。"
+        title="账号与密钥轮换"
+        subtitle="UID 与 API 密钥必须同时更新；保存只校验非空，不调用 MinerU。"
         card-class="app-panel"
       >
         <el-form label-position="top" class="token-form" @submit.prevent="submit">
+          <el-form-item label="账号 ID（UID）">
+            <el-input
+              v-model="form.uid"
+              name="mineru_uid"
+              autocomplete="off"
+              :maxlength="256"
+              placeholder="输入与 API 密钥绑定的 MinerU 账号 UID"
+            />
+          </el-form-item>
           <el-form-item label="新的 API 密钥">
             <el-input
               v-model="form.api_token"
@@ -38,7 +47,7 @@
           </el-form-item>
 
           <p class="security-note">
-            页面不会回显当前密钥，也不保留历史值。保存成功后输入框会立即清空。
+            页面不会回显当前 UID 或密钥，也不保留历史值。保存成功后两个输入框会立即清空。
           </p>
 
           <div class="form-actions">
@@ -49,7 +58,7 @@
               :disabled="submitDisabled"
               native-type="submit"
             >
-              更新密钥
+              更新配置
             </el-button>
           </div>
         </el-form>
@@ -57,13 +66,14 @@
 
       <WorkbenchPanelCard
         title="当前状态"
-        subtitle="仅展示配置状态和轮换元数据，不展示任何密钥字符。"
+        subtitle="仅展示配置状态和轮换元数据，不展示 UID 或密钥字符。"
         card-class="app-panel"
       >
         <el-descriptions v-loading="loading" :column="1" border>
           <el-descriptions-item label="API 密钥">
-            {{ statusText }}
+            {{ apiTokenStatusText }}
           </el-descriptions-item>
+          <el-descriptions-item label="账号 ID（UID）">{{ uidStatusText }}</el-descriptions-item>
           <el-descriptions-item label="配置来源">{{ sourceText }}</el-descriptions-item>
           <el-descriptions-item label="更新时间">{{ formatDateTime(config?.updated_at || null) }}</el-descriptions-item>
           <el-descriptions-item label="更新人">{{ config?.updated_by || "-" }}</el-descriptions-item>
@@ -90,26 +100,34 @@ const loading = ref(false);
 const saving = ref(false);
 const error = ref<ApiClientError | null>(null);
 const errorDiagnosticContext = { route: "/settings/mineru", operation: "mineru_config" };
-const form = reactive({ api_token: "" });
+const form = reactive({ api_token: "", uid: "" });
 
-const submitDisabled = computed(() => !form.api_token.trim());
-const statusText = computed(() => {
+const submitDisabled = computed(() => !form.api_token.trim() || !form.uid.trim());
+const apiTokenStatusText = computed(() => {
   if (!config.value) {
     return "unknown";
   }
   return config.value.api_token_configured ? "configured" : "missing";
 });
+const uidStatusText = computed(() => {
+  if (!config.value) {
+    return "unknown";
+  }
+  return config.value.uid_configured ? "configured" : "missing";
+});
 const statusTagType = computed(() => {
   if (!config.value) {
     return "info";
   }
-  return config.value.api_token_configured ? "success" : "warning";
+  return config.value.api_token_configured && config.value.uid_configured ? "success" : "warning";
 });
 const sourceText = computed(() => {
   if (!config.value) {
     return "-";
   }
-  return config.value.source === "runtime_config" ? "配置中心运行时文件" : "环境变量 MINERU_API_TOKEN";
+  return config.value.source === "runtime_config"
+    ? "配置中心运行时文件"
+    : "环境变量 MINERU_API_TOKEN + MINERU_UID";
 });
 
 async function loadConfig(): Promise<void> {
@@ -126,16 +144,18 @@ async function loadConfig(): Promise<void> {
 
 async function submit(): Promise<void> {
   const apiToken = form.api_token.trim();
-  if (!apiToken) {
-    ElMessage.warning("请输入非空的 MinerU API 密钥。");
+  const uid = form.uid.trim();
+  if (!apiToken || !uid) {
+    ElMessage.warning("请输入非空的 MinerU 账号 UID 与 API 密钥。");
     return;
   }
   saving.value = true;
   error.value = null;
   try {
-    config.value = await mineruConfigApi.update({ api_token: apiToken });
+    config.value = await mineruConfigApi.update({ api_token: apiToken, uid });
     form.api_token = "";
-    ElMessage.success("MinerU 密钥已更新，后续新请求将立即使用新配置。");
+    form.uid = "";
+    ElMessage.success("MinerU 账号与密钥已更新，后续新请求将立即使用新配置。");
   } catch (caught) {
     error.value = normalizeApiError(caught);
   } finally {

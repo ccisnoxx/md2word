@@ -799,7 +799,7 @@ class JobStageService:
         return MinerUClient(
             api_token=config.api_token,
             model_version=model_version or self.settings.mineru_model_version,
-            user_token=self.settings.mineru_uid,
+            user_token=config.uid or "",
         )
 
     def _create_mineru_client(self, *, model_version: str | None = None) -> MinerUClient:
