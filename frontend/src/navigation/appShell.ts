@@ -1,4 +1,4 @@
-// frontend/src/navigation/appShell.ts: App shell navigation IA, permission filtering, and route ownership.
+// frontend/src/navigation/appShell.ts: 维护应用导航信息架构、权限过滤和路由归属。
 import type { Component } from "vue";
 import type { RouteLocationNormalizedLoaded, RouteLocationRaw } from "vue-router";
 import {
@@ -10,6 +10,7 @@ import {
   DocumentChecked,
   Files,
   FolderOpened,
+  Key,
   Management,
   Monitor,
   Notebook,
@@ -37,6 +38,7 @@ export type AppNavItemId =
   | "translation-term-sets"
   | "settings"
   | "ai-provider"
+  | "mineru-config"
   | "templates"
   | "word-page-styles"
   | "translation-profiles"
@@ -177,6 +179,14 @@ const NAV_GROUP_DEFINITIONS: AppNavGroupDefinition[] = [
         roles: ["admin"],
         permissions: ["settings:write"],
       },
+      {
+        id: "mineru-config",
+        label: "MinerU 配置",
+        to: "/settings/mineru",
+        icon: Key,
+        roles: ["admin"],
+        permissions: ["settings:write"],
+      },
     ],
   },
   {
@@ -224,6 +234,7 @@ const ROUTE_OWNERS: Record<string, RouteOwnership> = {
   "settings-terminology-releases": { groupId: "quality", itemId: "terminology-releases", pageLabel: "术语发布" },
   "settings-translation-profiles": { groupId: "configuration", itemId: "translation-profiles", pageLabel: "翻译配置" },
   "settings-ai-provider": { groupId: "configuration", itemId: "ai-provider", pageLabel: "AI 配置" },
+  "settings-mineru": { groupId: "configuration", itemId: "mineru-config", pageLabel: "MinerU 配置" },
   "settings-translation-term-sets": { groupId: "quality", itemId: "translation-term-sets", pageLabel: "翻译术语集" },
   "term-proposals": { groupId: "quality", itemId: "term-proposals" },
   "system-status": { groupId: "system", itemId: "system-status", pageLabel: "系统状态" },
@@ -398,6 +409,11 @@ export function getBreadcrumbItems(route: RouteLocationNormalizedLoaded, access:
       return [
         { label: "配置中心", to: "/settings" },
         { label: "AI 配置" },
+      ];
+    case "settings-mineru":
+      return [
+        { label: "配置中心", to: "/settings" },
+        { label: "MinerU 配置" },
       ];
     case "settings-translation-term-sets":
       return [

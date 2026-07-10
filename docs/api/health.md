@@ -229,7 +229,10 @@ Health API 当前有五条入口：
 | `layout_config_exists` | 页面布局 YAML 是否可读 |
 | `subscript_config_exists` | 术语上下标 YAML 是否可读 |
 | `translation_prompt_exists` | `resources/prompts/translation_en2zh.md` 是否存在 |
-| `mineru_api_token_configured` | 是否配置 `MINERU_API_TOKEN` |
+| `mineru_api_token_configured` | 当前有效配置是否包含 MinerU API token；运行时文件优先，文件不存在时读取 `MINERU_API_TOKEN` |
+| `mineru_config_source` | 当前密钥来源：`settings` 或 `runtime_config` |
+| `mineru_config_updated_at` | 配置中心最近更新时间；环境变量来源时为 `null` |
+| `mineru_config_error` | 运行时文件损坏时为 `mineru_config_invalid`，正常时为 `null` |
 | `mineru_callback_url_configured` | 是否配置 `MINERU_CALLBACK_URL` |
 | `mineru_uid_configured` | 是否配置 `MINERU_UID`，用于 callback checksum 验签 |
 | `public_deployment_mode` | 当前公开部署模式；公开域名部署应为 `single_tenant_public` |
@@ -267,6 +270,8 @@ Health API 当前有五条入口：
   - 说明翻译 prompt 资源缺失，`en2zh` 会被预检拒绝。
 - `mineru_api_token_configured=false`
   - 说明依赖 MinerU 的 `/api/v1/document-jobs` 异步解析不可用，创建任务会被预检拒绝或停留在等待恢复状态。
+- `mineru_config_error=mineru_config_invalid`
+  - 说明共享运行时文件不可读取或格式非法。系统不会回退环境变量，应由管理员进入 `/settings/mineru` 覆盖修复。
 - `mineru_callback_url_missing`
   - 说明已配置 MinerU token 但未配置异步回调 URL，document_jobs 可能停在 `running/parsing` 等待重投递或人工恢复。
 - `mineru_uid_missing`

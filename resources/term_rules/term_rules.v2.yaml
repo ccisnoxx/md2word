@@ -7,6 +7,11 @@ categories:
     description: ''
 rules:
 - source_term: VIN
+  normalized_term: vin
+  scope_type: global
+  scope_id: null
+  current_version: 1
+  active: true
   category: voltage_terms
   segments:
   - segment_text: V

@@ -1,5 +1,5 @@
 // File: frontend/src/utils/displayText.ts
-// Purpose: Centralize Chinese display text for backend enums, codes, and diagnostic fields.
+// Purpose: 集中维护后端枚举、诊断码和字段的中文显示文本。
 
 export function unknownText(value: string | null | undefined, noun = "值"): string {
   const raw = String(value || "").trim();
@@ -110,6 +110,7 @@ export function readinessCodeText(code: string): string {
     health_service_unavailable: "健康检查服务不可用",
     layout_config_missing: "版式配置文件缺失",
     mineru_api_token_missing: "MinerU API token 未配置",
+    mineru_config_invalid: "MinerU 运行时配置文件不可读取",
     mineru_callback_url_missing: "MinerU callback URL 未配置",
     mineru_uid_missing: "MinerU UID 未配置",
     p0_document_jobs_not_ready: "P0 文档任务执行链路未就绪",

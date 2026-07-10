@@ -1,5 +1,5 @@
 // File: frontend/src/api/types.ts
-// Purpose: Define TypeScript contracts for backend v1 schemas, including Ops rollout requests.
+// Purpose: 定义后端 v1 schema 和运维请求对应的 TypeScript 合同。
 export type AuthLoginRequest = {
   username: string;
   password: string;
@@ -142,6 +142,17 @@ export type AiProviderConfigUpdateRequest = {
   max_output_tokens?: number | null;
   api_key?: string | null;
   clear_api_key?: boolean;
+};
+
+export type MinerUConfigResponse = {
+  api_token_configured: boolean;
+  source: "settings" | "runtime_config";
+  updated_at: string | null;
+  updated_by: string | null;
+};
+
+export type MinerUConfigUpdateRequest = {
+  api_token: string;
 };
 
 export type AcceptanceRunTier = "P0" | "P1" | "P2" | (string & {});

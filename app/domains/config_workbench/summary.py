@@ -99,7 +99,7 @@ def _build_release_gate(checks: dict[str, Any]) -> ConfigWorkbenchReleaseGate:
                 code=f"p0.{code}",
                 severity="critical",
                 message=_readiness_code_message(code),
-                route="/system-status",
+                route=_readiness_code_route(code),
             )
             for code in blockers
         ],
@@ -108,7 +108,7 @@ def _build_release_gate(checks: dict[str, Any]) -> ConfigWorkbenchReleaseGate:
                 code=f"p0.{code}",
                 severity="warning",
                 message=_readiness_code_message(code),
-                route="/system-status",
+                route=_readiness_code_route(code),
             )
             for code in warnings
         ],
@@ -123,7 +123,7 @@ def _build_runtime_readiness_group(checks: dict[str, Any]) -> ConfigWorkbenchGro
                 code=f"runtime.{code}",
                 severity="critical",
                 message=f"运行就绪检查阻断：{_readiness_code_message(code)}",
-                route="/system-status",
+                route=_readiness_code_route(code),
             )
         )
     for code in _unique_strings(checks.get("readiness_warnings", [])):
@@ -132,7 +132,7 @@ def _build_runtime_readiness_group(checks: dict[str, Any]) -> ConfigWorkbenchGro
                 code=f"runtime.{code}",
                 severity="warning",
                 message=f"运行就绪检查告警：{_readiness_code_message(code)}",
-                route="/system-status",
+                route=_readiness_code_route(code),
             )
         )
     default_label = ", ".join(
@@ -737,6 +737,7 @@ READINESS_CODE_MESSAGES: dict[str, str] = {
     "health_service_unavailable": "健康检查服务不可用。",
     "layout_config_missing": "版式配置文件缺失。",
     "mineru_api_token_missing": "MinerU API token 未配置。",
+    "mineru_config_invalid": "MinerU 运行时配置文件不可读取或格式非法。",
     "mineru_callback_url_missing": "MinerU callback URL 未配置。",
     "mineru_uid_missing": "MinerU UID 未配置。",
     "p0_document_jobs_not_ready": "P0 文档任务执行链路未就绪。",
@@ -748,6 +749,14 @@ READINESS_CODE_MESSAGES: dict[str, str] = {
     "tmp_dir_missing": "临时目录缺失。",
     "translation_unavailable": "翻译能力不可用。",
 }
+
+
+def _readiness_code_route(code: str) -> str:
+    """把可由配置中心处理的 MinerU 密钥问题指向专用页面。"""
+
+    if code in {"mineru_api_token_missing", "mineru_config_invalid"}:
+        return "/settings/mineru"
+    return "/system-status"
 
 
 def _readiness_code_message(code: str) -> str:

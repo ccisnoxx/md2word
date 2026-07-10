@@ -32,6 +32,7 @@ from app.domains.jobs.workflow import (
     describe_applied_stage,
 )
 from app.domains.jobs.models import ConversionOptions, JobRecord, JobStageMessage, JobStageName, utc_now
+from app.domains.mineru.config import EffectiveMinerUConfig
 from app.domains.jobs.paths import build_job_paths
 from app.domains.jobs.mineru_callback import validate_mineru_result_url
 from app.domains.translation.models import TranslationProfileSnapshot
@@ -67,6 +68,7 @@ class JobStageService:
         artifact_storage: ArtifactStorageProtocol,
         *,
         stage_message_store: StageMessageStoreProtocol,
+        mineru_config_resolver: Callable[[], EffectiveMinerUConfig],
         stage_worker_id: str = "in_process",
         mineru_client_factory: Callable[[], MinerUClient] | None = None,
         resolve_template_path: Callable[[str | None], Path | None] | None = None,
@@ -83,6 +85,7 @@ class JobStageService:
         self.stage_worker_id = stage_worker_id
         self.conversion_entrypoint = conversion_entrypoint
         self.artifact_storage = artifact_storage
+        self.mineru_config_resolver = mineru_config_resolver
         self._custom_mineru_client_factory = mineru_client_factory
         self.mineru_client_factory = mineru_client_factory or self._build_mineru_client
         self.resolve_template_path = resolve_template_path or (lambda _template_id: self.settings.default_template_path)
@@ -790,8 +793,11 @@ class JobStageService:
         )
 
     def _build_mineru_client(self, model_version: str | None = None) -> MinerUClient:
+        config = self.mineru_config_resolver()
+        if not config.api_token:
+            raise RuntimeError("MINERU_API_TOKEN 未配置，无法调用 MinerU。")
         return MinerUClient(
-            api_token=self.settings.mineru_api_token,
+            api_token=config.api_token,
             model_version=model_version or self.settings.mineru_model_version,
             user_token=self.settings.mineru_uid,
         )

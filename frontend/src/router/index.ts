@@ -1,5 +1,5 @@
 // File: frontend/src/router/index.ts
-// Purpose: Define static internal portal/Admin routes and the auth guard.
+// Purpose: 定义内部门户静态路由与认证守卫。
 import { createRouter, createWebHistory, type RouteLocationNormalized } from "vue-router";
 
 import { setUnauthorizedHandler } from "@/api/client";
@@ -14,6 +14,7 @@ import JobCreatePage from "@/pages/JobCreatePage.vue";
 import JobDetailPage from "@/pages/JobDetailPage.vue";
 import JobsPage from "@/pages/JobsPage.vue";
 import LoginPage from "@/pages/LoginPage.vue";
+import MinerUConfigPage from "@/pages/MinerUConfigPage.vue";
 import OpsDashboardPage from "@/pages/OpsDashboardPage.vue";
 import OperationsCockpitPage from "@/pages/OperationsCockpitPage.vue";
 import SettingsHomePage from "@/pages/SettingsHomePage.vue";
@@ -108,6 +109,12 @@ const router = createRouter({
           path: "settings/ai-provider",
           name: "settings-ai-provider",
           component: AiProviderConfigPage,
+          meta: { roles: ["admin"], permissions: ["settings:write"] },
+        },
+        {
+          path: "settings/mineru",
+          name: "settings-mineru",
+          component: MinerUConfigPage,
           meta: { roles: ["admin"], permissions: ["settings:write"] },
         },
         {

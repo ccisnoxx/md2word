@@ -11,6 +11,7 @@ from app.core.errors import ApiError, ApiErrorCode
 from app.domains.jobs.workflow import JobWorkflowViolation
 from app.domains.jobs.artifact_integrity import ArtifactFingerprintMismatch
 from app.domains.jobs.resource_snapshots import JobResourceSnapshotError
+from app.domains.mineru.config import MinerUConfigError, MinerUConfigWriteError
 
 
 _STATUS_ERROR_CODES: dict[int, ApiErrorCode] = {
@@ -72,6 +73,28 @@ async def _api_error_handler(request: Request, exc: ApiError) -> JSONResponse:
     return api_error_response(request, exc.status_code, exc.code, exc.message)
 
 
+async def _mineru_config_error_handler(request: Request, exc: MinerUConfigError) -> JSONResponse:
+    """把损坏的 MinerU 运行时配置暴露为稳定的就绪错误。"""
+
+    return api_error_response(
+        request,
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+        "mineru_config_invalid",
+        str(exc),
+    )
+
+
+async def _mineru_config_write_error_handler(request: Request, exc: MinerUConfigWriteError) -> JSONResponse:
+    """把 MinerU 配置持久化失败暴露为服务不可用。"""
+
+    return api_error_response(
+        request,
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+        "service_unavailable",
+        str(exc),
+    )
+
+
 async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     """为现有 HTTPException 统一补充 error_code，同时保留原 detail 兼容字段。"""
 
@@ -96,9 +119,21 @@ async def _request_validation_exception_handler(request: Request, exc: RequestVa
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             "validation_error",
             "请求参数校验失败。",
-            detail=exc.errors(),
+            detail=_validation_errors_for_response(request, exc),
         ),
     )
+
+
+def _validation_errors_for_response(
+    request: Request,
+    exc: RequestValidationError,
+) -> list[dict[str, object]]:
+    """MinerU 密钥接口移除原始输入，其余接口保持现有 422 合同。"""
+
+    errors = exc.errors()
+    if request.url.path.rstrip("/") != "/api/v1/mineru-config":
+        return errors
+    return [{key: value for key, value in error.items() if key != "input"} for error in errors]
 
 
 def api_error_response(
@@ -156,6 +191,8 @@ def register_api_error_handlers(app: FastAPI) -> None:
     """注册当前 API 认可的领域异常映射。"""
 
     app.add_exception_handler(ApiError, _api_error_handler)
+    app.add_exception_handler(MinerUConfigError, _mineru_config_error_handler)
+    app.add_exception_handler(MinerUConfigWriteError, _mineru_config_write_error_handler)
     app.add_exception_handler(HTTPException, _http_exception_handler)
     app.add_exception_handler(RequestValidationError, _request_validation_exception_handler)
     app.add_exception_handler(JobWorkflowViolation, _job_workflow_violation_handler)

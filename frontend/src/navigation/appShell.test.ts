@@ -1,3 +1,4 @@
+// frontend/src/navigation/appShell.test.ts: 验证导航权限过滤和路由归属。
 import { describe, expect, it } from "vitest";
 import type { RouteLocationNormalizedLoaded } from "vue-router";
 
@@ -22,6 +23,7 @@ const adminAccess: AppAccessContext = {
   permissions: [
     ...operatorAccess.permissions,
     "settings:read",
+    "settings:write",
     "system:read",
     "ops:read",
     "audit:read",
@@ -57,6 +59,7 @@ describe("app shell navigation", () => {
     expect(adminItemIds).toContain("ops-dashboard");
     expect(adminItemIds).toContain("acceptance-center");
     expect(adminItemIds).toContain("file-retention");
+    expect(adminItemIds).toContain("mineru-config");
   });
 
   it("shows the cockpit for any underlying source permission and keeps it first", () => {
@@ -130,5 +133,12 @@ describe("app shell navigation", () => {
     expect(context.groupId).toBe("system");
     expect(context.itemId).toBe("acceptance-center");
     expect(context.breadcrumbs.map((item) => item.label)).toEqual(["系统状态", "验收中心"]);
+  });
+
+  it("maps MinerU config into the configuration navigation context", () => {
+    const context = getAppRouteContext(routeFixture("settings-mineru"), adminAccess);
+    expect(context.groupId).toBe("configuration");
+    expect(context.itemId).toBe("mineru-config");
+    expect(context.breadcrumbs.map((item) => item.label)).toEqual(["配置中心", "MinerU 配置"]);
   });
 });

@@ -298,7 +298,7 @@ async def create_pdf_job(
     runtime: AppRuntime = Depends(get_runtime),
     trace_id: str = Depends(get_trace_id),
 ) -> JobAcceptedResponse:
-    if not runtime.settings.mineru_api_token:
+    if not runtime.mineru_config_service.get_effective_config().api_token_configured:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="MINERU_API_TOKEN 未配置，PDF 在线解析不可用。",

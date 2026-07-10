@@ -25,6 +25,7 @@ ApiErrorCode = Literal[
     "job_state_conflict",
     "conversion_failed",
     "document_jobs_not_ready",
+    "mineru_config_invalid",
     "resource_snapshot_error",
     "internal_error",
 ]

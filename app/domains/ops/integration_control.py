@@ -1,5 +1,5 @@
 # File: app/domains/ops/integration_control.py
-# Purpose: Build read-only real integration capability readiness and safety reports.
+# Purpose: 生成真实集成能力的只读就绪状态与安全报告。
 
 from __future__ import annotations
 
@@ -104,10 +104,11 @@ class OpsIntegrationControlPlaneReport:
 class OpsIntegrationControlPlaneService:
     """根据当前 settings 生成真实集成能力状态，不读取 secret 或调用外部系统。"""
 
-    def __init__(self, settings: Settings) -> None:
-        """保存运行配置；本服务只读取 settings 中的安全摘要字段。"""
+    def __init__(self, settings: Settings, *, mineru_api_token_configured: bool) -> None:
+        """保存运行配置和已脱敏的 MinerU 配置状态。"""
 
         self.settings = settings
+        self.mineru_api_token_configured = mineru_api_token_configured
 
     def build_report(self) -> OpsIntegrationControlPlaneReport:
         """构建所有真实外部/破坏性能力的只读 readiness 报告。"""
@@ -205,7 +206,7 @@ class OpsIntegrationControlPlaneService:
             enabled=enabled,
             dry_run_only=dry_run_only,
             kill_switch=kill_switch,
-            configured=bool(self.settings.mineru_api_token),
+            configured=self.mineru_api_token_configured,
             blocking_reasons=reasons,
             required_gates=[
                 "provider_semantics_verification",
@@ -217,7 +218,7 @@ class OpsIntegrationControlPlaneService:
             ],
             safe_config={
                 "provider": "mineru",
-                "mineru_api_token_configured": bool(self.settings.mineru_api_token),
+                "mineru_api_token_configured": self.mineru_api_token_configured,
                 "semantics_verification_status": PROVIDER_CANCELLATION_SEMANTICS_STATUS,
                 "semantics_decision": PROVIDER_CANCELLATION_SEMANTICS_DECISION,
                 "real_provider_cancel_supported": False,

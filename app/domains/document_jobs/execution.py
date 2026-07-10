@@ -30,6 +30,7 @@ from app.services.document_ir.models import DocumentIR, DocumentIRAsset
 from app.domains.files import FileUploadService
 from app.domains.files.models import DocumentFileRecord
 from app.domains.files.repository import DocumentFileRepositoryProtocol
+from app.domains.mineru.config import EffectiveMinerUConfig
 from app.domains.resources.models import utc_now
 from app.domains.document_jobs.repository import (
     DocumentJobCallbackMessageStoreProtocol,
@@ -88,6 +89,7 @@ class DocumentJobExecutionService:
         document_ir_service: MinerUToDocumentIRService,
         template_read_service: Any,
         word_renderer: DocumentIRWordRenderer,
+        mineru_config_resolver: Callable[[], EffectiveMinerUConfig],
         document_ir_translation_service: DocumentIRTranslationService | None = None,
         term_version_service: Any | None = None,
         translation_audit_service: TranslationAuditService | None = None,
@@ -104,6 +106,7 @@ class DocumentJobExecutionService:
         self.document_ir_service = document_ir_service
         self.template_read_service = template_read_service
         self.word_renderer = word_renderer
+        self.mineru_config_resolver = mineru_config_resolver
         self.document_ir_translation_service = document_ir_translation_service
         self.term_version_service = term_version_service
         self.translation_audit_service = translation_audit_service
@@ -2467,10 +2470,11 @@ class DocumentJobExecutionService:
         return "".join(secrets.choice(alphabet) for _ in range(length))
 
     def _build_mineru_client(self) -> MinerUClient:
-        if not self.settings.mineru_api_token:
+        config = self.mineru_config_resolver()
+        if not config.api_token:
             raise RuntimeError("MINERU_API_TOKEN 未配置，无法提交 MinerU。")
         return MinerUClient(
-            api_token=self.settings.mineru_api_token,
+            api_token=config.api_token,
             model_version=self.settings.mineru_model_version,
             user_token=self.settings.mineru_uid,
         )

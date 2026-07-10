@@ -13,6 +13,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any, Callable
 from unittest import TestCase
+from unittest.mock import patch
 
 import yaml
 
@@ -71,6 +72,7 @@ from app.domains.jobs.object_artifact_storage import ObjectArtifactStorageAdapte
 from app.domains.jobs.resource_snapshots import JobResourceSnapshotService
 from app.domains.jobs.query import JobQueryService
 from app.domains.jobs.stage import JobStageService
+from app.domains.mineru.config import MinerUConfigService
 from app.domains.ops.real_alert_delivery import RealAlertDeliveryProviderResult
 from app.services.renderer import DocumentIRWordRenderer
 from app.domains.resources.service import ResourceVersionService
@@ -507,6 +509,7 @@ def build_test_runtime(
     )
     document_ir_service = MinerUToDocumentIRService()
     ai_provider_config_service = AiProviderConfigService(settings)
+    mineru_config_service = MinerUConfigService(settings)
     translation_provider = build_translation_provider(
         settings,
         config_resolver=ai_provider_config_service.get_effective_config,
@@ -553,6 +556,7 @@ def build_test_runtime(
         document_ir_service,
         template_read_service,
         document_word_renderer,
+        mineru_config_service.get_effective_config,
         document_ir_translation_service,
         term_version_service,
         translation_audit_service,
@@ -605,6 +609,7 @@ def build_test_runtime(
         resource_version_repository=resource_version_service.repository if resource_version_service is not None else None,
         default_template_id_getter=template_read_service.get_default_template_id,
         ai_provider_config_service=ai_provider_config_service,
+        mineru_config_service=mineru_config_service,
     )
     term_rule_repository = FileTermRuleRepository(settings.term_rules_store_file)
     term_rule_service = TermRuleService(
@@ -688,6 +693,7 @@ def build_test_runtime(
         conversion_service,
         artifact_storage,
         stage_message_store=stage_message_store,
+        mineru_config_resolver=mineru_config_service.get_effective_config,
         stage_worker_id="md2word-worker" if jobs_worker_mode == "external" else "in_process",
         mineru_client_factory=lambda: fake_mineru_client,
         resolve_template_path=template_read_service.resolve_job_template_path,
@@ -754,6 +760,7 @@ def build_test_runtime(
         file_retention_policy_service=file_retention_policy_service,
         document_ir_service=document_ir_service,
         ai_provider_config_service=ai_provider_config_service,
+        mineru_config_service=mineru_config_service,
         translation_provider=translation_provider,
         document_ir_translation_service=document_ir_translation_service,
         translation_audit_service=translation_audit_service,
@@ -1524,6 +1531,186 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertTrue(matching_events[0].details["api_key_configured"])
         self.assertNotIn("sk-test-secret-123456", json.dumps(matching_events[0].details, ensure_ascii=False))
 
+    def test_mineru_config_api_updates_runtime_token_without_exposing_secret(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                mineru_api_token="old-env-token",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            old_stage_client = runtime.stage_service._build_mineru_client()
+            old_document_client = runtime.document_job_execution_service._build_mineru_client()
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                anonymous_get = client.get("/api/v1/mineru-config")
+                anonymous_put = client.put("/api/v1/mineru-config", json={"api_token": "anonymous-token"})
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                operator_get = client.get("/api/v1/mineru-config", headers=operator_headers)
+                operator_put = client.put(
+                    "/api/v1/mineru-config",
+                    headers=operator_headers,
+                    json={"api_token": "forbidden-token"},
+                )
+                initial_get = client.get("/api/v1/mineru-config", headers=admin_headers)
+                blank_update = client.put(
+                    "/api/v1/mineru-config",
+                    headers=admin_headers,
+                    json={"api_token": "   "},
+                )
+                blank_created_file = runtime.settings.mineru_config_file.exists()
+                oversized_token = "oversized-secret-" + ("x" * 4096)
+                oversized_update = client.put(
+                    "/api/v1/mineru-config",
+                    headers=admin_headers,
+                    json={"api_token": oversized_token},
+                )
+                update_response = client.put(
+                    "/api/v1/mineru-config",
+                    headers={**admin_headers, "X-Trace-Id": "trace_mineru_config_update"},
+                    json={"api_token": "  new-runtime-token  "},
+                )
+                get_response = client.get("/api/v1/mineru-config", headers=admin_headers)
+                health_response = client.get("/api/v1/health/ready")
+                integration_response = client.get(
+                    "/api/v1/ops/integration-capabilities",
+                    headers=admin_headers,
+                )
+
+            new_stage_client = runtime.stage_service._build_mineru_client()
+            new_document_client = runtime.document_job_execution_service._build_mineru_client()
+            config_payload = json.loads(runtime.settings.mineru_config_file.read_text(encoding="utf-8"))
+            audit_events = runtime.audit_event_repository.list_audit_events()
+
+        self.assertEqual(anonymous_get.status_code, 401)
+        self.assertEqual(anonymous_put.status_code, 401)
+        self.assertEqual(operator_get.status_code, 403)
+        self.assertEqual(operator_put.status_code, 403)
+        self.assertEqual(initial_get.status_code, 200)
+        self.assertEqual(
+            initial_get.json(),
+            {
+                "api_token_configured": True,
+                "source": "settings",
+                "updated_at": None,
+                "updated_by": None,
+            },
+        )
+        self.assertEqual(blank_update.status_code, 422)
+        self.assertFalse(blank_created_file)
+        self.assertEqual(oversized_update.status_code, 422)
+        self.assertNotIn(oversized_token, oversized_update.text)
+        self.assertNotIn("input", json.dumps(oversized_update.json()["detail"], ensure_ascii=False))
+        self.assertEqual(update_response.status_code, 200)
+        self.assertEqual(get_response.status_code, 200)
+        response_payload = update_response.json()
+        self.assertEqual(
+            set(response_payload),
+            {"api_token_configured", "source", "updated_at", "updated_by"},
+        )
+        self.assertTrue(response_payload["api_token_configured"])
+        self.assertEqual(response_payload["source"], "runtime_config")
+        self.assertEqual(response_payload["updated_by"], "user_admin")
+        self.assertNotIn("new-runtime-token", update_response.text)
+        self.assertEqual(get_response.json(), response_payload)
+        self.assertEqual(config_payload["api_token"], "new-runtime-token")
+
+        checks = health_response.json()["dependency_checks"]
+        self.assertTrue(checks["mineru_api_token_configured"])
+        self.assertTrue(checks["pdf_submission_available"])
+        self.assertEqual(checks["mineru_config_source"], "runtime_config")
+        self.assertIsNone(checks["mineru_config_error"])
+        self.assertEqual(old_stage_client.api_token, "old-env-token")
+        self.assertEqual(old_document_client.api_token, "old-env-token")
+        self.assertEqual(new_stage_client.api_token, "new-runtime-token")
+        self.assertEqual(new_document_client.api_token, "new-runtime-token")
+        self.assertEqual(integration_response.status_code, 200)
+        capabilities = {item["capability_id"]: item for item in integration_response.json()["capabilities"]}
+        provider_cancellation = capabilities["provider_cancellation"]
+        self.assertTrue(provider_cancellation["configured"])
+        self.assertTrue(provider_cancellation["safe_config"]["mineru_api_token_configured"])
+
+        matching_events = [event for event in audit_events if event.action == "mineru_config.update"]
+        self.assertEqual(len(matching_events), 1)
+        event = matching_events[0]
+        self.assertEqual(event.actor_id, "user_admin")
+        self.assertEqual(event.target_type, "mineru_config")
+        self.assertEqual(event.target_id, "default")
+        self.assertEqual(event.trace_id, "trace_mineru_config_update")
+        self.assertEqual(event.details, {"api_token_configured": True})
+        self.assertNotIn("new-runtime-token", event.model_dump_json())
+
+    def test_mineru_config_invalid_file_blocks_without_settings_fallback(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                mineru_api_token="valid-env-token",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            runtime.settings.mineru_config_file.parent.mkdir(parents=True, exist_ok=True)
+            runtime.settings.mineru_config_file.write_text('{"api_token":', encoding="utf-8")
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                get_response = client.get("/api/v1/mineru-config", headers=admin_headers)
+                health_before = client.get("/api/v1/health/ready")
+                with self.assertRaisesRegex(RuntimeError, "配置文件"):
+                    runtime.stage_service._build_mineru_client()
+                repair_response = client.put(
+                    "/api/v1/mineru-config",
+                    headers=admin_headers,
+                    json={"api_token": "repaired-token"},
+                )
+                health_after = client.get("/api/v1/health/ready")
+
+        self.assertEqual(get_response.status_code, 503)
+        self.assertEqual(get_response.json()["error_code"], "mineru_config_invalid")
+        before_checks = health_before.json()["dependency_checks"]
+        self.assertFalse(before_checks["mineru_api_token_configured"])
+        self.assertFalse(before_checks["pdf_submission_available"])
+        self.assertEqual(before_checks["mineru_config_source"], "runtime_config")
+        self.assertEqual(before_checks["mineru_config_error"], "mineru_config_invalid")
+        self.assertIn("mineru_config_invalid", before_checks["readiness_warnings"])
+        self.assertNotIn("mineru_api_token_missing", before_checks["readiness_warnings"])
+        self.assertEqual(repair_response.status_code, 200)
+        after_checks = health_after.json()["dependency_checks"]
+        self.assertTrue(after_checks["mineru_api_token_configured"])
+        self.assertIsNone(after_checks["mineru_config_error"])
+
+    def test_mineru_config_audit_failure_keeps_updated_token(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                mineru_api_token="old-token",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                with patch.object(runtime.audit_service, "record", side_effect=RuntimeError("audit unavailable")):
+                    update_response = client.put(
+                        "/api/v1/mineru-config",
+                        headers=admin_headers,
+                        json={"api_token": "new-token-after-audit-error"},
+                    )
+                get_response = client.get("/api/v1/mineru-config", headers=admin_headers)
+
+            effective = runtime.mineru_config_service.get_effective_config()
+
+        self.assertEqual(update_response.status_code, 503)
+        self.assertEqual(update_response.json()["error_code"], "service_unavailable")
+        self.assertIn("密钥已保存", update_response.json()["detail"])
+        self.assertNotIn("new-token-after-audit-error", update_response.text)
+        self.assertEqual(get_response.status_code, 200)
+        self.assertEqual(get_response.json()["source"], "runtime_config")
+        self.assertEqual(effective.api_token, "new-token-after-audit-error")
+
     def test_health_ready_reports_invalid_ai_provider_config_file(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(Path(temp_dir))
@@ -1738,6 +1925,8 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIn("p0.document_jobs_worker_backend_disabled", [item["code"] for item in blocker_findings])
         self.assertTrue(any("MySQL" in item["message"] for item in blocker_findings))
         self.assertTrue(any("文档任务执行器" in item["message"] for item in blocker_findings))
+        token_finding = next(item for item in blocker_findings if item["code"] == "p0.mineru_api_token_missing")
+        self.assertEqual(token_finding["route"], "/settings/mineru")
         self.assertEqual(groups["runtime_readiness"]["status"], "blocked")
         self.assertNotIn("test-jwt-secret", json.dumps(payload, ensure_ascii=False))
 

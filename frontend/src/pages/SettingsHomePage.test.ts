@@ -1,4 +1,4 @@
-// frontend/src/pages/SettingsHomePage.test.ts: Guard configuration workbench data-source boundaries.
+// frontend/src/pages/SettingsHomePage.test.ts: 守护配置工作台的数据源和入口边界。
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -23,5 +23,10 @@ describe("SettingsHomePage data-source boundary", () => {
     expect(source).toContain("loadDeferredGroupDetails(response.groups, requestSeq)");
     expect(source).toMatch(/if \(requestSeq !== summaryRequestSeq \|\| !summary\.value\)/);
     expect(source).toMatch(/\.settings-page \{[\s\S]*align-content: start;[\s\S]*grid-auto-rows: max-content;/);
+  });
+
+  it("exposes an independent MinerU configuration entry", () => {
+    expect(source).toContain('to="/settings/mineru"');
+    expect(source).toContain("<strong>MinerU 配置</strong>");
   });
 });

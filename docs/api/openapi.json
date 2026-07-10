@@ -8399,6 +8399,69 @@
         "type": "object"
       },
       "JsonValue": {},
+      "MinerUConfigResponse": {
+        "description": "不含密钥字符的 MinerU 配置安全摘要。",
+        "properties": {
+          "api_token_configured": {
+            "title": "Api Token Configured",
+            "type": "boolean"
+          },
+          "source": {
+            "enum": [
+              "settings",
+              "runtime_config"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "required": [
+          "api_token_configured",
+          "source"
+        ],
+        "title": "MinerUConfigResponse",
+        "type": "object"
+      },
+      "MinerUConfigUpdateRequest": {
+        "additionalProperties": false,
+        "description": "只允许用新的非空密钥覆盖当前配置。",
+        "properties": {
+          "api_token": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Api Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "api_token"
+        ],
+        "title": "MinerUConfigUpdateRequest",
+        "type": "object"
+      },
       "OpsAlertDeliveryAdapterContractResponse": {
         "description": "返回真实 alert delivery adapter 合同和 fake parity 证据。",
         "properties": {
@@ -22845,6 +22908,114 @@
         "summary": "Receive Mineru Callback",
         "tags": [
           "mineru-callbacks"
+        ]
+      }
+    },
+    "/api/v1/mineru-config": {
+      "get": {
+        "description": "返回当前 MinerU 密钥状态，不返回密钥原文或片段。",
+        "operationId": "get_mineru_config_api_v1_mineru_config_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MinerUConfigResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Mineru Config",
+        "tags": [
+          "mineru-config"
+        ]
+      },
+      "put": {
+        "description": "保存新密钥并记录不含密钥信息的审计事件。",
+        "operationId": "update_mineru_config_api_v1_mineru_config_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MinerUConfigUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MinerUConfigResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Mineru Config",
+        "tags": [
+          "mineru-config"
         ]
       }
     },
