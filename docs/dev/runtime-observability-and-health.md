@@ -83,6 +83,9 @@ access 日志字段约定：
 ### 翻译能力
 
 - `mineru_api_token_configured`
+- `mineru_config_source`
+- `mineru_config_updated_at`
+- `mineru_config_error`
 - `pdf_submission_available`
 - `openai_api_key_configured`
 - `translation_prompt_exists`
@@ -210,8 +213,9 @@ worker 仍按单 worker 进程设计，不把它们当成多 worker 抢占锁；
 优先看：
 
 - `mineru_api_token_configured`
+- `mineru_config_error`
 
-如果它是 `false`，说明当前实例根本不允许做 PDF 在线提交。当前公开入口是 Files + Document Jobs；legacy `/api/v1/jobs/pdf` 不再作为新联调路径。
+如果 token 状态是 `false` 且 error 为空，说明当前实例没有配置 MinerU 密钥；如果 error 为 `mineru_config_invalid`，说明共享运行时文件损坏且系统没有回退环境变量。管理员应进入 `/settings/mineru` 更新密钥。当前公开入口是 Files + Document Jobs；legacy `/api/v1/jobs/pdf` 不再作为新联调路径。
 
 ### 场景 3：`en2zh` 失败
 

@@ -1,0 +1,75 @@
+---
+doc_type: lib-api-ref
+entry: mineru-config
+category: endpoint
+status: current
+source_files:
+  - app/api/v1/router.py
+  - app/domains/mineru/config.py
+  - app/domains/mineru/router.py
+  - app/domains/mineru/schemas.py
+summary: 管理员读取 MinerU 密钥安全状态并轮换运行时密钥。
+tags: [config, mineru, secret, admin]
+last_reviewed: 2026-07-10
+---
+
+# MinerU Config API
+
+## 概述
+
+`/api/v1/mineru-config` 为配置中心提供 MinerU API 密钥轮换能力。接口只允许 admin Bearer JWT，不支持 legacy admin token、operator 或匿名访问。
+
+安全边界：
+
+- GET/PUT 响应不返回密钥原文、脱敏片段、长度或指纹。
+- 更新只允许非空覆盖，不支持清空、历史值或一键回滚。
+- 保存只做本地校验与私有文件写入，不调用 MinerU 验证。
+- 运行时文件以明文保存在共享 `DATA_DIR` 下，但使用原子替换并在支持的平台上限制为 `0600`。
+
+## `GET /api/v1/mineru-config`
+
+返回安全状态：
+
+```json
+{
+  "api_token_configured": true,
+  "source": "runtime_config",
+  "updated_at": "2026-07-10T00:00:00Z",
+  "updated_by": "user_admin"
+}
+```
+
+字段说明：
+
+| 字段 | 说明 |
+|---|---|
+| `api_token_configured` | 当前是否存在可供新 MinerU 请求使用的密钥 |
+| `source` | `settings` 表示环境变量，`runtime_config` 表示配置中心运行时文件 |
+| `updated_at` | 运行时文件更新时间；环境变量来源时为 `null` |
+| `updated_by` | 最近通过配置中心更新的管理员 ID；环境变量来源时为 `null` |
+
+运行时文件存在但损坏、格式非法或不可读时返回 HTTP 503、`error_code=mineru_config_invalid`，不会回退 `MINERU_API_TOKEN`。
+
+## `PUT /api/v1/mineru-config`
+
+请求：
+
+```json
+{"api_token": "new-token"}
+```
+
+`api_token` 会去除首尾空白，结果必须为 1 到 4096 个字符。缺失、空白、超长或额外字段返回 HTTP 422、`error_code=validation_error`，原配置不变。
+
+写入成功后：
+
+- 新发起的 MinerU 上传、查询、下载和恢复请求立即使用新密钥；已创建的客户端不切换。
+- 记录 `mineru_config.update` 审计，目标为 `mineru_config/default`，details 只有 `api_token_configured=true`。
+- 若配置文件已写入但审计仓储失败，返回 HTTP 503 并明确说明密钥已保存；新密钥保持生效，管理员应刷新 GET 状态并修复审计仓储。
+
+## 配置优先级
+
+1. `var/config/mineru_config.json` 存在且合法时始终优先。
+2. 文件不存在时使用 `MINERU_API_TOKEN`。
+3. 文件存在但非法时明确失败，不使用环境变量兜底。
+
+当前生产基线中 API 与 Worker 共享 `md2word-var:/app/var`。代码回滚到不识别运行时文件的版本前，必须确认 `.env` 中仍有有效 `MINERU_API_TOKEN`。

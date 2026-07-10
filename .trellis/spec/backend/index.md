@@ -25,6 +25,7 @@ Before backend changes:
 3. Read [Quality Guidelines](./quality-guidelines.md) for tests and release checks.
 4. If the change touches metadata, repositories, stage messages, schema bootstrap, or artifact storage, read [Database Guidelines](./database-guidelines.md).
 5. If the change emits logs, affects health/metrics, workers, callbacks, or long-running jobs, read [Logging Guidelines](./logging-guidelines.md).
+6. If the change touches MinerU 密钥、运行时配置文件或 `MINERU_API_TOKEN` 优先级，read [Runtime Configuration](./runtime-configuration.md).
 
 Also read `.trellis/spec/guides/index.md` and the relevant thinking guide when the change crosses API, service, repository, worker, or runtime boundaries.
 
@@ -36,6 +37,7 @@ Also read `.trellis/spec/guides/index.md` and the relevant thinking guide when t
 | [Database Guidelines](./database-guidelines.md) | file/sqlite/MySQL metadata backends, schema bootstrap, adapter ports, payload storage, migration state | Current |
 | [Error Handling](./error-handling.md) | `ApiError`, unified API error responses, workflow errors, validation, trace IDs, bulk failures | Current |
 | [Logging Guidelines](./logging-guidelines.md) | `access` / `business` / `system` loggers, text/JSON format, trace/job context, sensitive data boundaries | Current |
+| [Runtime Configuration](./runtime-configuration.md) | MinerU 密钥运行时文件、环境变量优先级、安全 API、审计和 Worker 即时生效合同 | Current |
 | [Quality Guidelines](./quality-guidelines.md) | `unittest` style, targeted checks, release gate, OpenAPI contract checks, local vs online validation | Current |
 
 ## Quality Check

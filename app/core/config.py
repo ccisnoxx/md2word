@@ -252,6 +252,12 @@ class Settings(BaseSettings):
         return self._resolve_runtime_data_path(self.ai_provider_config_path, "config/ai_provider_config.json")
 
     @property
+    def mineru_config_file(self) -> Path:
+        """返回 API 与 Worker 共享的 MinerU 运行时配置文件。"""
+
+        return self.data_path / "config" / "mineru_config.json"
+
+    @property
     def default_template_path(self) -> Path | None:
         for candidate in self.template_candidates:
             if candidate.exists():

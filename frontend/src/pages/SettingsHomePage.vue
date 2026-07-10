@@ -1,4 +1,4 @@
-<!-- frontend/src/pages/SettingsHomePage.vue: Configuration workbench landing page and release gate. -->
+<!-- frontend/src/pages/SettingsHomePage.vue: 配置工作台入口和发布门禁。 -->
 <template>
   <main class="settings-page app-page" aria-labelledby="settings-title">
     <WorkbenchPageHeader
@@ -18,7 +18,7 @@
     <ConfigTodoSummary class="app-page-shell" :summary="summary" :loading="initialLoading" :error="error" @refresh="refreshSummary" />
     <div v-if="summary && refreshing" class="refresh-note app-page-shell">正在后台更新配置总览，当前页面保留上次结果。</div>
 
-    <section class="word-config-entry-grid app-page-shell" aria-label="Word 配置入口">
+    <section class="word-config-entry-grid app-page-shell" aria-label="配置入口">
       <router-link class="word-config-entry app-entry-card" to="/settings/templates">
         <span class="settings-group-icon" aria-hidden="true">
           <el-icon><Document /></el-icon>
@@ -44,6 +44,15 @@
         <span>
           <strong>AI 配置</strong>
           <small>管理翻译 provider、Base URL、模型和运行时 API Key。</small>
+        </span>
+      </router-link>
+      <router-link class="word-config-entry app-entry-card" to="/settings/mineru">
+        <span class="settings-group-icon" aria-hidden="true">
+          <el-icon><Key /></el-icon>
+        </span>
+        <span>
+          <strong>MinerU 配置</strong>
+          <small>安全轮换 PDF 解析使用的 MinerU API 密钥，并查看当前配置来源。</small>
         </span>
       </router-link>
     </section>
@@ -163,6 +172,7 @@ import {
   Document,
   DocumentChecked,
   Files,
+  Key,
   Tickets,
 } from "@element-plus/icons-vue";
 

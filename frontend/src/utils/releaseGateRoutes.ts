@@ -1,5 +1,5 @@
 // File: frontend/src/utils/releaseGateRoutes.ts
-// Purpose: Map release gate finding codes to the most relevant workbench route.
+// Purpose: 将发布门禁诊断码映射到对应的处理页面。
 
 export function releaseGateRouteForCode(code: string): string {
   const normalized = code.toLowerCase();
@@ -8,6 +8,9 @@ export function releaseGateRouteForCode(code: string): string {
   }
   if (normalized.includes("ai_provider") || normalized.includes("openai")) {
     return "/settings/ai-provider";
+  }
+  if (normalized.includes("mineru_api_token") || normalized.includes("mineru_config")) {
+    return "/settings/mineru";
   }
   if (normalized.includes("translation_term") || normalized.includes("translation-term")) {
     return "/settings/translation-term-sets";
@@ -40,6 +43,7 @@ export function releaseGateRouteLabel(route: string): string {
     "/settings/translation-profiles": "翻译配置",
     "/settings/translation-term-sets": "翻译术语",
     "/settings/ai-provider": "AI 配置",
+    "/settings/mineru": "MinerU 配置",
   };
   return labels[route] || "配置详情";
 }

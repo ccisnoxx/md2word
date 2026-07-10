@@ -3,7 +3,7 @@ status: current
 project: md2word_file
 entry_type: endpoint
 source_root: app
-last_scanned: 2026-06-21
+last_scanned: 2026-07-10
 
 openapi:
   doc_path: docs/api/openapi.json
@@ -72,6 +72,18 @@ entries:
     doc_path: docs/api/config-workbench.md
     status: current
     note: "Admin-only 配置中心只读总览、发布门禁和按组深度检查入口。"
+  - entry: mineru-config
+    category: endpoint
+    source_files:
+      - app/api/v1/router.py
+      - app/domains/mineru/config.py
+      - app/domains/mineru/router.py
+      - app/domains/mineru/schemas.py
+      - app/services/health_service.py
+      - docs/api/openapi.json
+    doc_path: docs/api/mineru-config.md
+    status: current
+    note: "Admin-only MinerU 密钥状态和运行时轮换接口；响应与审计不包含密钥字符。"
   - entry: ops-recovery-actions
     category: endpoint
     source_files:

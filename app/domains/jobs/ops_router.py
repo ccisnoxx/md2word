@@ -146,7 +146,7 @@ def recover_mineru_result(
     trace_id: str = Depends(get_trace_id),
 ) -> JobOperationAcceptedResponse:
     del actor
-    if not runtime.settings.mineru_api_token:
+    if not runtime.mineru_config_service.get_effective_config().api_token_configured:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="MINERU_API_TOKEN 未配置，无法主动查询 MinerU 结果。",

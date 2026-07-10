@@ -1,5 +1,5 @@
 # File: app/domains/ops/router.py
-# Purpose: Expose Admin-only operations governance APIs and structured safety audit evidence.
+# Purpose: 提供管理员专用的运维治理接口和结构化安全审计证据。
 
 from __future__ import annotations
 
@@ -80,7 +80,11 @@ def get_ops_integration_capabilities(
 ) -> OpsIntegrationControlPlaneResponse:
     """读取真实集成控制面状态，不调用外部 provider 或执行任何动作。"""
 
-    report = OpsIntegrationControlPlaneService(runtime.settings).build_report()
+    mineru_config = runtime.mineru_config_service.get_effective_config()
+    report = OpsIntegrationControlPlaneService(
+        runtime.settings,
+        mineru_api_token_configured=mineru_config.api_token_configured,
+    ).build_report()
     return _build_integration_control_plane_response(report)
 
 

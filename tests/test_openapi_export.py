@@ -36,7 +36,13 @@ class OpenAPIExportTests(TestCase):
         self.assertNotIn("/api/v1/jobs", payload["paths"])
         self.assertNotIn("/api/v1/jobs/pdf", payload["paths"])
         self.assertIn("/api/v1/document-jobs", payload["paths"])
+        self.assertIn("/api/v1/mineru-config", payload["paths"])
         self.assertIn("DocumentJobResponse", payload["components"]["schemas"])
+        mineru_response_properties = payload["components"]["schemas"]["MinerUConfigResponse"]["properties"]
+        self.assertEqual(
+            set(mineru_response_properties),
+            {"api_token_configured", "source", "updated_at", "updated_by"},
+        )
 
     def test_check_openapi_export_fails_when_snapshot_is_stale(self):
         with TemporaryDirectory() as temp_dir:

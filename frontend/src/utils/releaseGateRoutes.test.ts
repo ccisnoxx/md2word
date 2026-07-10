@@ -1,3 +1,4 @@
+// frontend/src/utils/releaseGateRoutes.test.ts: 验证发布门禁诊断的处理入口。
 import { describe, expect, it } from "vitest";
 
 import { releaseGateRouteForCode, releaseGateRouteLabel } from "@/utils/releaseGateRoutes";
@@ -22,5 +23,12 @@ describe("release gate route mapping", () => {
   it("routes AI provider configuration findings to the AI config page", () => {
     expect(releaseGateRouteForCode("ai_provider_config_invalid")).toBe("/settings/ai-provider");
     expect(releaseGateRouteLabel("/settings/ai-provider")).toBe("AI 配置");
+  });
+
+  it("只把 MinerU 密钥配置问题路由到 MinerU 配置页", () => {
+    expect(releaseGateRouteForCode("mineru_api_token_missing")).toBe("/settings/mineru");
+    expect(releaseGateRouteForCode("runtime.mineru_config_invalid")).toBe("/settings/mineru");
+    expect(releaseGateRouteForCode("mineru_callback_url_missing")).toBe("/system-status");
+    expect(releaseGateRouteLabel("/settings/mineru")).toBe("MinerU 配置");
   });
 });

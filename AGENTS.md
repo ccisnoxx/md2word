@@ -19,3 +19,47 @@ If you're using Codex or another agent-capable tool, additional project-scoped h
 Managed by Trellis. Edits outside this block are preserved; edits inside may be overwritten by a future `trellis update`.
 
 <!-- TRELLIS:END -->
+
+## Project Overrides
+
+### Language
+
+- User-facing replies should default to Chinese.
+- AI-created or substantially changed code comments, docstrings, JSDoc/TSDoc, logs, exception messages, and print outputs should default to Chinese.
+- Keep machine-readable fields, protocol fields, config keys, API fields, error codes, structured log keys, code identifiers, and CLI/file path literals in their required original form.
+- Project documentation, Trellis specs, and task artifacts should default to Chinese. This project-specific rule overrides any generic Trellis template language notes that say documentation should or must be English, unless the target path already has a clear English convention, external publication requires English, or the user explicitly requests English.
+- Do not add comments for obvious code. Comments should explain non-obvious responsibilities, boundary conditions, side effects, business rules, exception branches, and important trade-offs.
+- When editing Python files, tests, scripts, or Trellis docs in this project, apply a touched-scope documentation pass: review newly added or materially changed modules, classes, functions, complex branches, exception paths, developer-visible output, and nearby touched comments/docstrings.
+- If touched code contains English comments, docstrings, JSDoc/TSDoc, logs, exception messages, or print output, translate or rewrite them into Chinese unless they are external protocol text, third-party/API field names, machine-readable values, test-contract literals, or explicitly requested English text.
+- Do not add comments to untouched legacy code only because the file currently has few or no comments; prefer updating the touched code and removing stale, misleading, or mechanical comments such as `START/END MODIFICATION`.
+- After non-trivial Python changes, the final reply should state whether comments/docstrings/developer-visible text were added, updated, or intentionally left unchanged.
+
+### Trellis Usage
+
+- For simple conversation, read-only investigation, small local fixes, or low-risk single-file changes, do not ask whether to create a Trellis task and do not create one unless the user explicitly asks for one. This project-specific rule overrides generic Trellis no-task triage prompts.
+- Use a Trellis task for cross-module changes, public API changes, data contract changes, configuration changes, database changes, permission changes, cache/state-sync changes, long-lived requirements, or work that needs explicit acceptance criteria.
+- Once a Trellis task exists, read `prd.md`, `design.md`, `implement.md`, and the relevant `.trellis/spec/` files before writing code.
+- For complex tasks, do not implement until `prd.md`, `design.md`, and `implement.md` are reviewable.
+
+### Engineering Constraints
+
+- Confirm the real implementation before editing. Do not add guessed compatibility fallbacks or silent defaults.
+- Default to the smallest sufficient solution. Do not introduce extra layers, factories, strategies, plugins, DDD, microservices, or generic frameworks for architectural appearance.
+- Introduce abstraction only when real duplication, a clear testing boundary, multiple concrete implementations, a stable ownership boundary, or proven change pressure exists.
+- Do not add thin wrappers that only forward fields, wrap one call, or rename another function.
+- Do not hardcode secrets, tokens, private config, or real credentials. Use the existing project configuration mechanism or environment variables.
+- Validate and sanitize external input at system boundaries. Use parameterized queries or existing safe project APIs for database access.
+
+### Validation
+
+- After code changes, run the smallest effective validation.
+- For Trellis tasks, validate according to `implement.md` and the relevant spec quality gates.
+- If heavier checks are skipped, state the reason, the substitute checks, and the remaining risk.
+
+### Git
+
+- Do not run `git reset --hard`, `git checkout -- <file>`, history rewrites, or broad deletion unless the user explicitly requests and confirms it.
+- Before committing work code, present a commit plan and get user confirmation.
+- Do not include unrecognized dirty files in commits.
+- Do not push automatically.
+- Before running `task.py archive` or `add_session.py`, explain if it may create Trellis bookkeeping commits.

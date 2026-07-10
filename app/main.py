@@ -1,5 +1,5 @@
 # File: app/main.py
-# Purpose: Assemble the FastAPI app and the current single-process runtime dependencies.
+# Purpose: 组装 FastAPI 应用及当前进程的运行时依赖。
 
 from __future__ import annotations
 
@@ -46,6 +46,7 @@ from app.domains.jobs.object_artifact_storage import ObjectArtifactStorageAdapte
 from app.domains.jobs.resource_snapshots import JobResourceSnapshotService
 from app.domains.jobs.query import JobQueryService
 from app.domains.jobs.stage import JobStageService
+from app.domains.mineru.config import MinerUConfigService
 from app.domains.ops.real_alert_delivery import EnvironmentSecretResolver, SlackWebhookAlertDeliveryProvider
 from app.services.renderer import DocumentIRWordRenderer
 from app.domains.resources.service import ResourceVersionService
@@ -186,6 +187,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
     )
     document_ir_service = MinerUToDocumentIRService()
     ai_provider_config_service = AiProviderConfigService(resolved_settings)
+    mineru_config_service = MinerUConfigService(resolved_settings)
     translation_provider = build_translation_provider(
         resolved_settings,
         config_resolver=ai_provider_config_service.get_effective_config,
@@ -230,6 +232,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         document_ir_service,
         template_read_service,
         document_word_renderer,
+        mineru_config_service.get_effective_config,
         document_ir_translation_service,
         term_version_service,
         translation_audit_service,
@@ -355,6 +358,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         conversion_entrypoint,
         artifact_storage,
         stage_message_store=stage_message_store,
+        mineru_config_resolver=mineru_config_service.get_effective_config,
         stage_worker_id=(
             resolved_settings.jobs_worker_id
             if resolved_settings.jobs_worker_mode == "external"
@@ -386,6 +390,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         resource_version_repository=resource_version_service.repository if resource_version_service is not None else None,
         default_template_id_getter=template_read_service.get_default_template_id,
         ai_provider_config_service=ai_provider_config_service,
+        mineru_config_service=mineru_config_service,
     )
     command_service = JobCommandService(
         resolved_settings,
@@ -437,6 +442,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         file_retention_policy_service=file_retention_policy_service,
         document_ir_service=document_ir_service,
         ai_provider_config_service=ai_provider_config_service,
+        mineru_config_service=mineru_config_service,
         translation_provider=translation_provider,
         document_ir_translation_service=document_ir_translation_service,
         translation_audit_service=translation_audit_service,

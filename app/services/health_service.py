@@ -1,5 +1,5 @@
 # File: app/services/health_service.py
-# Purpose: Aggregate backend readiness, metrics, and read-only operations alert signals.
+# Purpose: 聚合后端就绪状态、指标和只读运维告警信号。
 
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ from app.domains.document_jobs.repository import (
     DocumentJobRepositoryProtocol,
 )
 from app.domains.jobs.models import JobStageMessage
+from app.domains.mineru.config import EffectiveMinerUConfig, MinerUConfigError
 from app.domains.resources.models import utc_now
 from app.domains.translation.provider_config import EffectiveAiProviderConfig
 from app.domains.jobs.repository import (
@@ -89,6 +90,7 @@ class HealthService:
         resource_version_repository: ResourceVersionRepositoryProtocol | None = None,
         default_template_id_getter: Callable[[], str] | None = None,
         ai_provider_config_service: Any | None = None,
+        mineru_config_service: Any,
     ) -> None:
         self.settings = settings
         self.stage_message_store = stage_message_store
@@ -104,6 +106,7 @@ class HealthService:
         self.resource_version_repository = resource_version_repository
         self.default_template_id_getter = default_template_id_getter
         self.ai_provider_config_service = ai_provider_config_service
+        self.mineru_config_service = mineru_config_service
         self.started_at = utc_now()
 
     def _is_writable(self, path: Path | None = None) -> bool:
@@ -132,6 +135,12 @@ class HealthService:
         except RuntimeError:
             ai_provider_config_error = "ai_provider_config_invalid"
             ai_provider_config = self._settings_ai_provider_config()
+        mineru_config_error: str | None = None
+        try:
+            mineru_config = self.mineru_config_service.get_effective_config()
+        except MinerUConfigError:
+            mineru_config_error = "mineru_config_invalid"
+            mineru_config = EffectiveMinerUConfig(api_token=None, source="runtime_config")
         stage_spool_counts = self.stage_message_store.count_stage_messages_by_status()
         running_observation = self._build_running_stage_observation()
         translation_provider_enabled = ai_provider_config.backend == "openai_compatible"
@@ -146,12 +155,15 @@ class HealthService:
             stage_spool_counts.get("failed", 0) > 0
             or running_observation["stale_count"] > 0
         )
-        pdf_submission_available = bool(self.settings.mineru_api_token)
+        pdf_submission_available = mineru_config.api_token_configured
         artifact_root = self._artifact_root()
         resource_labels = self._build_default_resource_labels()
         mineru_callback_url_configured = bool(self.settings.mineru_callback_url)
         mineru_uid_configured = bool(self.settings.mineru_uid)
-        p0_document_jobs = self._build_p0_document_jobs_readiness()
+        p0_document_jobs = self._build_p0_document_jobs_readiness(
+            mineru_api_token_configured=mineru_config.api_token_configured,
+            mineru_config_error=mineru_config_error,
+        )
         document_job_observation = self._build_document_job_observation()
         document_job_callback_observation = self._build_document_job_callback_observation()
 
@@ -189,7 +201,10 @@ class HealthService:
             "subscript_config_exists": subscript_config_path is not None and subscript_config_path.exists(),
             "translation_prompt_exists": translation_prompt_exists,
             "translation_prompt_exists_by_language_pair": translation_prompt_exists_by_language_pair,
-            "mineru_api_token_configured": bool(self.settings.mineru_api_token),
+            "mineru_api_token_configured": mineru_config.api_token_configured,
+            "mineru_config_source": mineru_config.source,
+            "mineru_config_updated_at": mineru_config.updated_at,
+            "mineru_config_error": mineru_config_error,
             "mineru_callback_url_configured": mineru_callback_url_configured,
             "mineru_uid_configured": mineru_uid_configured,
             "pdf_submission_available": pdf_submission_available,
@@ -251,7 +266,10 @@ class HealthService:
         blockers.extend(p0_document_jobs["blockers"])
 
         warnings: list[str] = []
-        if not checks["pdf_submission_available"]:
+        if mineru_config_error is not None:
+            warnings.append(mineru_config_error)
+            checks["pdf_submission_unavailable_reason"] = "MinerU 运行时配置文件不可读取"
+        elif not checks["pdf_submission_available"]:
             warnings.append("mineru_api_token_missing")
             checks["pdf_submission_unavailable_reason"] = "MINERU_API_TOKEN 未配置"
         if checks["pdf_submission_available"] and not mineru_callback_url_configured:
@@ -309,7 +327,12 @@ class HealthService:
             source="settings",
         )
 
-    def _build_p0_document_jobs_readiness(self) -> dict[str, Any]:
+    def _build_p0_document_jobs_readiness(
+        self,
+        *,
+        mineru_api_token_configured: bool,
+        mineru_config_error: str | None,
+    ) -> dict[str, Any]:
         """判断 P0 document_jobs 自动执行链路是否满足当前环境的发布门禁。"""
 
         required = self._p0_document_jobs_required()
@@ -340,7 +363,9 @@ class HealthService:
                 blockers.append("auth_jwt_secret_key_missing")
             if not self._auth_users_source_configured():
                 blockers.append("auth_internal_users_source_missing")
-            if not self.settings.mineru_api_token.strip():
+            if mineru_config_error is not None:
+                blockers.append(mineru_config_error)
+            elif not mineru_api_token_configured:
                 blockers.append("mineru_api_token_missing")
             if not self.settings.mineru_callback_url.strip():
                 blockers.append("mineru_callback_url_missing")
