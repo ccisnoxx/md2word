@@ -505,3 +505,36 @@ Released commit b167e61 to hostdzire via release dir flow; verified internal/pub
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: 前端页面细节优化
+
+**Date**: 2026-07-10
+**Task**: 前端页面细节优化
+**Branch**: `codex/frontend-detail-polish`
+
+### Summary
+
+统一滚动条分级，修复移动端顶栏与翻译 QA 抽屉可达性，收敛卡片状态反馈并补齐前端规范与自动化门禁。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9e59b6cd` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
