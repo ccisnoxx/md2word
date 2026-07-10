@@ -471,3 +471,37 @@ Released commit b167e61 to hostdzire via release dir flow; verified internal/pub
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: MinerU 账号与密钥运行时配置
+
+**Date**: 2026-07-10
+**Task**: MinerU 账号与密钥运行时配置
+**Branch**: `main`
+
+### Summary
+
+新增管理员专用 MinerU 配置页面，将账号 UID 与 API 密钥作为完整绑定原子更新；统一 API、Worker、健康检查、callback 验签和诊断路由的运行时配置来源，并补齐安全审计、OpenAPI、部署文档和回归测试。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `43651774` | (see git log) |
+| `504b080c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

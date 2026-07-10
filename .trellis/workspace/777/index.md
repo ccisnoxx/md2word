@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 14
-- **Last Active**: 2026-06-30
+- **Total Sessions**: 15
+- **Last Active**: 2026-07-10
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~473 | Active |
+| `journal-1.md` | ~507 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 15 | 2026-07-10 | MinerU 账号与密钥运行时配置 | `43651774`, `504b080c` | `main` |
 | 14 | 2026-06-30 | Deploy b167e61 to hostdzire | `b167e614` | `main` |
 | 13 | 2026-06-30 | Next-stage release and beta closure | `9955fe6c`, `3c96d9d` | `main` |
 | 12 | 2026-06-30 | Long-tail admin page convergence | `35eebe92` | `main` |
