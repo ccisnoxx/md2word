@@ -1,4 +1,4 @@
-"""读取并更新 MinerU API 密钥的应用私有运行时配置。"""
+"""读取并更新 MinerU 账号 UID 与 API 密钥的应用私有运行时配置。"""
 
 from __future__ import annotations
 
@@ -19,6 +19,10 @@ MinerUApiToken = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=4096),
 ]
+MinerUUid = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=256),
+]
 MinerUConfigSource = Literal["settings", "runtime_config"]
 
 
@@ -31,20 +35,22 @@ class MinerUConfigWriteError(RuntimeError):
 
 
 class MinerUConfigRecord(BaseModel):
-    """配置中心写入磁盘的唯一 MinerU 密钥记录。"""
+    """配置中心写入磁盘的唯一 MinerU 账号与密钥记录。"""
 
     model_config = ConfigDict(extra="forbid")
 
     api_token: MinerUApiToken
+    uid: MinerUUid
     updated_at: datetime
     updated_by: str = Field(min_length=1, max_length=256)
 
 
 @dataclass(frozen=True, slots=True)
 class EffectiveMinerUConfig:
-    """合并运行时文件与启动配置后的 MinerU 密钥状态。"""
+    """合并运行时文件与启动配置后的 MinerU 账号与密钥状态。"""
 
     api_token: str | None
+    uid: str | None
     source: MinerUConfigSource
     updated_at: datetime | None = None
     updated_by: str | None = None
@@ -55,9 +61,15 @@ class EffectiveMinerUConfig:
 
         return bool(self.api_token)
 
+    @property
+    def uid_configured(self) -> bool:
+        """返回当前是否存在与密钥绑定的 MinerU 账号 UID。"""
+
+        return bool(self.uid)
+
 
 class MinerUConfigService:
-    """以共享私有文件为权威来源，按请求解析 MinerU 密钥。"""
+    """以共享私有文件为权威来源，按请求解析 MinerU 账号与密钥。"""
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -92,24 +104,28 @@ class MinerUConfigService:
         if record is not None:
             return EffectiveMinerUConfig(
                 api_token=record.api_token,
+                uid=record.uid,
                 source="runtime_config",
                 updated_at=record.updated_at,
                 updated_by=record.updated_by,
             )
         api_token = self.settings.mineru_api_token.strip() or None
-        return EffectiveMinerUConfig(api_token=api_token, source="settings")
+        uid = self.settings.mineru_uid.strip() or None
+        return EffectiveMinerUConfig(api_token=api_token, uid=uid, source="settings")
 
-    def update_api_token(self, *, api_token: str, updated_by: str) -> EffectiveMinerUConfig:
-        """用非空密钥覆盖运行时记录，不读取或保存历史值。"""
+    def update_credentials(self, *, api_token: str, uid: str, updated_by: str) -> EffectiveMinerUConfig:
+        """用完整非空绑定覆盖运行时记录，不读取或保存历史值。"""
 
         record = MinerUConfigRecord(
             api_token=api_token,
+            uid=uid,
             updated_at=utc_now(),
             updated_by=updated_by,
         )
         self._write_record(record)
         return EffectiveMinerUConfig(
             api_token=record.api_token,
+            uid=record.uid,
             source="runtime_config",
             updated_at=record.updated_at,
             updated_by=record.updated_by,

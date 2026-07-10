@@ -72,7 +72,8 @@ from app.domains.jobs.object_artifact_storage import ObjectArtifactStorageAdapte
 from app.domains.jobs.resource_snapshots import JobResourceSnapshotService
 from app.domains.jobs.query import JobQueryService
 from app.domains.jobs.stage import JobStageService
-from app.domains.mineru.config import MinerUConfigService
+from app.api.mineru_callback_guards import verify_mineru_callback_checksum_for_job
+from app.domains.mineru.config import MinerUConfigError, MinerUConfigService
 from app.domains.ops.real_alert_delivery import RealAlertDeliveryProviderResult
 from app.services.renderer import DocumentIRWordRenderer
 from app.domains.resources.service import ResourceVersionService
@@ -1536,6 +1537,7 @@ class FastAPIJobsBackendTests(TestCase):
             runtime = build_test_runtime(
                 Path(temp_dir),
                 mineru_api_token="old-env-token",
+                mineru_uid="old-env-uid",
                 auth_jwt_secret_key="test-jwt-secret",
                 auth_internal_users_json=build_auth_users_json(),
             )
@@ -1545,32 +1547,46 @@ class FastAPIJobsBackendTests(TestCase):
 
             with TestClient(app) as client:
                 anonymous_get = client.get("/api/v1/mineru-config")
-                anonymous_put = client.put("/api/v1/mineru-config", json={"api_token": "anonymous-token"})
+                anonymous_put = client.put(
+                    "/api/v1/mineru-config",
+                    json={"api_token": "anonymous-token", "uid": "anonymous-uid"},
+                )
                 operator_headers = build_auth_header(client)
                 admin_headers = build_auth_header(client, username="admin", password="admin-pass")
                 operator_get = client.get("/api/v1/mineru-config", headers=operator_headers)
                 operator_put = client.put(
                     "/api/v1/mineru-config",
                     headers=operator_headers,
-                    json={"api_token": "forbidden-token"},
+                    json={"api_token": "forbidden-token", "uid": "forbidden-uid"},
                 )
                 initial_get = client.get("/api/v1/mineru-config", headers=admin_headers)
                 blank_update = client.put(
                     "/api/v1/mineru-config",
                     headers=admin_headers,
-                    json={"api_token": "   "},
+                    json={"api_token": "   ", "uid": "new-uid"},
                 )
                 blank_created_file = runtime.settings.mineru_config_file.exists()
+                missing_uid_update = client.put(
+                    "/api/v1/mineru-config",
+                    headers=admin_headers,
+                    json={"api_token": "partial-token"},
+                )
                 oversized_token = "oversized-secret-" + ("x" * 4096)
                 oversized_update = client.put(
                     "/api/v1/mineru-config",
                     headers=admin_headers,
-                    json={"api_token": oversized_token},
+                    json={"api_token": oversized_token, "uid": "new-uid"},
+                )
+                oversized_uid = "oversized-uid-" + ("x" * 256)
+                oversized_uid_update = client.put(
+                    "/api/v1/mineru-config",
+                    headers=admin_headers,
+                    json={"api_token": "new-token", "uid": oversized_uid},
                 )
                 update_response = client.put(
                     "/api/v1/mineru-config",
                     headers={**admin_headers, "X-Trace-Id": "trace_mineru_config_update"},
-                    json={"api_token": "  new-runtime-token  "},
+                    json={"api_token": "  new-runtime-token  ", "uid": "  new-runtime-uid  "},
                 )
                 get_response = client.get("/api/v1/mineru-config", headers=admin_headers)
                 health_response = client.get("/api/v1/health/ready")
@@ -1581,6 +1597,26 @@ class FastAPIJobsBackendTests(TestCase):
 
             new_stage_client = runtime.stage_service._build_mineru_client()
             new_document_client = runtime.document_job_execution_service._build_mineru_client()
+            callback_seed = "runtime-config-uid-seed"
+            callback_content = "{}"
+            callback_job = JobRecord(
+                id="job_runtime_config_uid",
+                source_filename="source.pdf",
+                status="parsing",
+                mineru_callback_seed=callback_seed,
+            )
+            verify_mineru_callback_checksum_for_job(
+                {
+                    "content": callback_content,
+                    "checksum": build_callback_checksum(
+                        uid="new-runtime-uid",
+                        seed=callback_seed,
+                        content=callback_content,
+                    ),
+                },
+                callback_job,
+                runtime,
+            )
             config_payload = json.loads(runtime.settings.mineru_config_file.read_text(encoding="utf-8"))
             audit_events = runtime.audit_event_repository.list_audit_events()
 
@@ -1593,6 +1629,7 @@ class FastAPIJobsBackendTests(TestCase):
             initial_get.json(),
             {
                 "api_token_configured": True,
+                "uid_configured": True,
                 "source": "settings",
                 "updated_at": None,
                 "updated_by": None,
@@ -1600,32 +1637,43 @@ class FastAPIJobsBackendTests(TestCase):
         )
         self.assertEqual(blank_update.status_code, 422)
         self.assertFalse(blank_created_file)
+        self.assertEqual(missing_uid_update.status_code, 422)
         self.assertEqual(oversized_update.status_code, 422)
         self.assertNotIn(oversized_token, oversized_update.text)
         self.assertNotIn("input", json.dumps(oversized_update.json()["detail"], ensure_ascii=False))
+        self.assertEqual(oversized_uid_update.status_code, 422)
+        self.assertNotIn(oversized_uid, oversized_uid_update.text)
         self.assertEqual(update_response.status_code, 200)
         self.assertEqual(get_response.status_code, 200)
         response_payload = update_response.json()
         self.assertEqual(
             set(response_payload),
-            {"api_token_configured", "source", "updated_at", "updated_by"},
+            {"api_token_configured", "uid_configured", "source", "updated_at", "updated_by"},
         )
         self.assertTrue(response_payload["api_token_configured"])
+        self.assertTrue(response_payload["uid_configured"])
         self.assertEqual(response_payload["source"], "runtime_config")
         self.assertEqual(response_payload["updated_by"], "user_admin")
         self.assertNotIn("new-runtime-token", update_response.text)
+        self.assertNotIn("new-runtime-uid", update_response.text)
         self.assertEqual(get_response.json(), response_payload)
         self.assertEqual(config_payload["api_token"], "new-runtime-token")
+        self.assertEqual(config_payload["uid"], "new-runtime-uid")
 
         checks = health_response.json()["dependency_checks"]
         self.assertTrue(checks["mineru_api_token_configured"])
+        self.assertTrue(checks["mineru_uid_configured"])
         self.assertTrue(checks["pdf_submission_available"])
         self.assertEqual(checks["mineru_config_source"], "runtime_config")
         self.assertIsNone(checks["mineru_config_error"])
         self.assertEqual(old_stage_client.api_token, "old-env-token")
         self.assertEqual(old_document_client.api_token, "old-env-token")
+        self.assertEqual(old_stage_client.session.headers.get("token"), "old-env-uid")
+        self.assertEqual(old_document_client.session.headers.get("token"), "old-env-uid")
         self.assertEqual(new_stage_client.api_token, "new-runtime-token")
         self.assertEqual(new_document_client.api_token, "new-runtime-token")
+        self.assertEqual(new_stage_client.session.headers.get("token"), "new-runtime-uid")
+        self.assertEqual(new_document_client.session.headers.get("token"), "new-runtime-uid")
         self.assertEqual(integration_response.status_code, 200)
         capabilities = {item["capability_id"]: item for item in integration_response.json()["capabilities"]}
         provider_cancellation = capabilities["provider_cancellation"]
@@ -1639,14 +1687,16 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(event.target_type, "mineru_config")
         self.assertEqual(event.target_id, "default")
         self.assertEqual(event.trace_id, "trace_mineru_config_update")
-        self.assertEqual(event.details, {"api_token_configured": True})
+        self.assertEqual(event.details, {"api_token_configured": True, "uid_configured": True})
         self.assertNotIn("new-runtime-token", event.model_dump_json())
+        self.assertNotIn("new-runtime-uid", event.model_dump_json())
 
     def test_mineru_config_invalid_file_blocks_without_settings_fallback(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_test_runtime(
                 Path(temp_dir),
                 mineru_api_token="valid-env-token",
+                mineru_uid="valid-env-uid",
                 auth_jwt_secret_key="test-jwt-secret",
                 auth_internal_users_json=build_auth_users_json(),
             )
@@ -1658,12 +1708,32 @@ class FastAPIJobsBackendTests(TestCase):
                 admin_headers = build_auth_header(client, username="admin", password="admin-pass")
                 get_response = client.get("/api/v1/mineru-config", headers=admin_headers)
                 health_before = client.get("/api/v1/health/ready")
-                with self.assertRaisesRegex(RuntimeError, "配置文件"):
+                with self.assertRaisesRegex(MinerUConfigError, "配置文件"):
                     runtime.stage_service._build_mineru_client()
+                invalid_callback_job = JobRecord(
+                    id="job_invalid_runtime_config_uid",
+                    source_filename="source.pdf",
+                    status="parsing",
+                    mineru_callback_seed="invalid-runtime-seed",
+                )
+                with self.assertRaises(MinerUConfigError):
+                    verify_mineru_callback_checksum_for_job(
+                        {
+                            "uid": "payload-uid",
+                            "content": "{}",
+                            "checksum": build_callback_checksum(
+                                uid="payload-uid",
+                                seed="invalid-runtime-seed",
+                                content="{}",
+                            ),
+                        },
+                        invalid_callback_job,
+                        runtime,
+                    )
                 repair_response = client.put(
                     "/api/v1/mineru-config",
                     headers=admin_headers,
-                    json={"api_token": "repaired-token"},
+                    json={"api_token": "repaired-token", "uid": "repaired-uid"},
                 )
                 health_after = client.get("/api/v1/health/ready")
 
@@ -1671,6 +1741,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(get_response.json()["error_code"], "mineru_config_invalid")
         before_checks = health_before.json()["dependency_checks"]
         self.assertFalse(before_checks["mineru_api_token_configured"])
+        self.assertFalse(before_checks["mineru_uid_configured"])
         self.assertFalse(before_checks["pdf_submission_available"])
         self.assertEqual(before_checks["mineru_config_source"], "runtime_config")
         self.assertEqual(before_checks["mineru_config_error"], "mineru_config_invalid")
@@ -1679,6 +1750,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(repair_response.status_code, 200)
         after_checks = health_after.json()["dependency_checks"]
         self.assertTrue(after_checks["mineru_api_token_configured"])
+        self.assertTrue(after_checks["mineru_uid_configured"])
         self.assertIsNone(after_checks["mineru_config_error"])
 
     def test_mineru_config_audit_failure_keeps_updated_token(self):
@@ -1686,6 +1758,7 @@ class FastAPIJobsBackendTests(TestCase):
             runtime = build_test_runtime(
                 Path(temp_dir),
                 mineru_api_token="old-token",
+                mineru_uid="old-uid",
                 auth_jwt_secret_key="test-jwt-secret",
                 auth_internal_users_json=build_auth_users_json(),
             )
@@ -1697,7 +1770,10 @@ class FastAPIJobsBackendTests(TestCase):
                     update_response = client.put(
                         "/api/v1/mineru-config",
                         headers=admin_headers,
-                        json={"api_token": "new-token-after-audit-error"},
+                        json={
+                            "api_token": "new-token-after-audit-error",
+                            "uid": "new-uid-after-audit-error",
+                        },
                     )
                 get_response = client.get("/api/v1/mineru-config", headers=admin_headers)
 
@@ -1705,11 +1781,13 @@ class FastAPIJobsBackendTests(TestCase):
 
         self.assertEqual(update_response.status_code, 503)
         self.assertEqual(update_response.json()["error_code"], "service_unavailable")
-        self.assertIn("密钥已保存", update_response.json()["detail"])
+        self.assertIn("配置已保存", update_response.json()["detail"])
         self.assertNotIn("new-token-after-audit-error", update_response.text)
+        self.assertNotIn("new-uid-after-audit-error", update_response.text)
         self.assertEqual(get_response.status_code, 200)
         self.assertEqual(get_response.json()["source"], "runtime_config")
         self.assertEqual(effective.api_token, "new-token-after-audit-error")
+        self.assertEqual(effective.uid, "new-uid-after-audit-error")
 
     def test_health_ready_reports_invalid_ai_provider_config_file(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1903,6 +1981,7 @@ class FastAPIJobsBackendTests(TestCase):
                 app_env="prod",
                 auth_jwt_secret_key="test-jwt-secret",
                 auth_internal_users_json=build_auth_users_json(),
+                mineru_callback_url="https://md2word.example/api/v1/mineru-callbacks/result",
             )
             app = create_app(runtime)
             with TestClient(app) as client:
@@ -1919,7 +1998,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIn("document_jobs_metadata_store_not_mysql", blockers)
         self.assertIn("document_jobs_worker_backend_disabled", blockers)
         self.assertIn("mineru_api_token_missing", blockers)
-        self.assertIn("mineru_callback_url_missing", blockers)
+        self.assertIn("mineru_uid_missing", blockers)
         blocker_findings = payload["release_gate"]["blocker_findings"]
         self.assertIn("p0.document_jobs_metadata_store_not_mysql", [item["code"] for item in blocker_findings])
         self.assertIn("p0.document_jobs_worker_backend_disabled", [item["code"] for item in blocker_findings])
@@ -1927,6 +2006,8 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertTrue(any("文档任务执行器" in item["message"] for item in blocker_findings))
         token_finding = next(item for item in blocker_findings if item["code"] == "p0.mineru_api_token_missing")
         self.assertEqual(token_finding["route"], "/settings/mineru")
+        uid_finding = next(item for item in blocker_findings if item["code"] == "p0.mineru_uid_missing")
+        self.assertEqual(uid_finding["route"], "/settings/mineru")
         self.assertEqual(groups["runtime_readiness"]["status"], "blocked")
         self.assertNotIn("test-jwt-secret", json.dumps(payload, ensure_ascii=False))
 

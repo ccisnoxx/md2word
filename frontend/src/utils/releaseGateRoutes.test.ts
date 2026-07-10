@@ -25,8 +25,9 @@ describe("release gate route mapping", () => {
     expect(releaseGateRouteLabel("/settings/ai-provider")).toBe("AI 配置");
   });
 
-  it("只把 MinerU 密钥配置问题路由到 MinerU 配置页", () => {
+  it("只把 MinerU 账号、密钥和运行时文件问题路由到 MinerU 配置页", () => {
     expect(releaseGateRouteForCode("mineru_api_token_missing")).toBe("/settings/mineru");
+    expect(releaseGateRouteForCode("mineru_uid_missing")).toBe("/settings/mineru");
     expect(releaseGateRouteForCode("runtime.mineru_config_invalid")).toBe("/settings/mineru");
     expect(releaseGateRouteForCode("mineru_callback_url_missing")).toBe("/system-status");
     expect(releaseGateRouteLabel("/settings/mineru")).toBe("MinerU 配置");

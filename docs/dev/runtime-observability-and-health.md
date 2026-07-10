@@ -141,7 +141,7 @@ access 日志字段约定：
 - `DOCUMENT_JOBS_WORKER_BACKEND` 不能是 `eager`；P0 生产基线是 Celery + 单 worker。
 - `DOCUMENT_JOBS_WORKER_BACKEND=celery` 时必须配置 broker URL 和 queue。
 - `AUTH_JWT_SECRET_KEY` 和内部账号来源不能为空。
-- `MINERU_API_TOKEN`、`MINERU_CALLBACK_URL` 必须配置；callback URL 存在时 `MINERU_UID` 也必须配置。
+- MinerU 运行时绑定或环境变量中的 `MINERU_API_TOKEN`、`MINERU_UID` 必须配置，`MINERU_CALLBACK_URL` 仍由环境变量提供。
 
 开发态如果仍使用 `DOCUMENT_JOBS_WORKER_BACKEND=disabled`，会出现在 `p0_document_jobs_warnings` / `readiness_warnings`，但不会阻断 `deployment_init_ready`。
 `document_jobs_running_stale_count`、`document_jobs_timed_out_count` 只做只读观察，不会重投递、取消或恢复任务。
@@ -215,7 +215,7 @@ worker 仍按单 worker 进程设计，不把它们当成多 worker 抢占锁；
 - `mineru_api_token_configured`
 - `mineru_config_error`
 
-如果 token 状态是 `false` 且 error 为空，说明当前实例没有配置 MinerU 密钥；如果 error 为 `mineru_config_invalid`，说明共享运行时文件损坏且系统没有回退环境变量。管理员应进入 `/settings/mineru` 更新密钥。当前公开入口是 Files + Document Jobs；legacy `/api/v1/jobs/pdf` 不再作为新联调路径。
+如果 token 或 UID 状态是 `false` 且 error 为空，说明当前实例的 MinerU 环境变量绑定不完整；如果 error 为 `mineru_config_invalid`，说明共享运行时文件损坏或缺少绑定字段，系统不会回退或混用环境变量。管理员应进入 `/settings/mineru` 原子更新账号与密钥。当前公开入口是 Files + Document Jobs；legacy `/api/v1/jobs/pdf` 不再作为新联调路径。
 
 ### 场景 3：`en2zh` 失败
 

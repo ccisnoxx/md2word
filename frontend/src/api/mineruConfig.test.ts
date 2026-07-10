@@ -1,4 +1,4 @@
-// frontend/src/api/mineruConfig.test.ts: 验证 MinerU 配置 API 的请求合同。
+// frontend/src/api/mineruConfig.test.ts: 验证 MinerU 账号与密钥配置 API 的请求合同。
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { apiRequest } from "@/api/client";
@@ -11,6 +11,7 @@ vi.mock("@/api/client", () => ({
 
 const response: MinerUConfigResponse = {
   api_token_configured: true,
+  uid_configured: true,
   source: "runtime_config",
   updated_at: "2026-07-10T00:00:00Z",
   updated_by: "admin-1",
@@ -32,12 +33,12 @@ describe("MinerU config API", () => {
   });
 
   it("只提交新的非空密钥", async () => {
-    await mineruConfigApi.update({ api_token: "new-token" });
+    await mineruConfigApi.update({ api_token: "new-token", uid: "new-account-id" });
 
     expect(apiRequest).toHaveBeenCalledWith({
       url: "/api/v1/mineru-config",
       method: "PUT",
-      data: { api_token: "new-token" },
+      data: { api_token: "new-token", uid: "new-account-id" },
     });
   });
 });

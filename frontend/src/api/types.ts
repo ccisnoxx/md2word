@@ -146,6 +146,7 @@ export type AiProviderConfigUpdateRequest = {
 
 export type MinerUConfigResponse = {
   api_token_configured: boolean;
+  uid_configured: boolean;
   source: "settings" | "runtime_config";
   updated_at: string | null;
   updated_by: string | null;
@@ -153,6 +154,7 @@ export type MinerUConfigResponse = {
 
 export type MinerUConfigUpdateRequest = {
   api_token: string;
+  uid: string;
 };
 
 export type AcceptanceRunTier = "P0" | "P1" | "P2" | (string & {});

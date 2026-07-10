@@ -23,7 +23,7 @@ last_reviewed: 2026-06-29
 
 `api` 和 `worker` 使用同一个镜像 `md2word-p0:latest`，共享 `md2word-var` volume。P0 默认 artifact 使用 `local_object`，因此 API 上传的 PDF 和 Worker 生成的 Word 都在同一个 `/app/var/object_artifacts` 里。
 
-配置中心轮换 MinerU 密钥后会写入 `/app/var/config/mineru_config.json`，同一 volume 中的 API 与 Worker 后续请求立即读取新值。运行时文件不存在时仍使用 `.env` 的 `MINERU_API_TOKEN`；文件存在后始终优先，损坏时明确阻断而不会回退环境变量。
+配置中心原子轮换 MinerU 账号 UID 与 API 密钥后会写入 `/app/var/config/mineru_config.json`，同一 volume 中的 API 与 Worker 后续请求立即读取新绑定。运行时文件不存在时仍共同使用 `.env` 的 `MINERU_API_TOKEN` 与 `MINERU_UID`；文件存在后完整绑定始终优先，损坏或缺少任一字段时明确阻断而不会混用环境变量。
 
 建议的线上入口形态是：
 
@@ -141,7 +141,7 @@ docker compose --env-file .env -f docker/dev/docker-compose.yml up -d --build
 - 当前 compose 是单机 P0 部署，不包含 HTTPS、反向代理、对象存储生命周期规则和外部密钥系统。
 - `AUTH_INTERNAL_USERS_FILE` 和 `AUTH_INTERNAL_USERS_JSON` 都为空时，`/api/v1/auth/login` 会返回 `auth_unconfigured`。
 - `MINERU_API_TOKEN` 为空时，PDF 端到端解析不能完成。
-- 管理员首次通过 `/settings/mineru` 保存密钥后，运行时文件成为权威来源；只修改 `.env` 不会覆盖它。回滚到旧代码前应确认 `.env` 中仍有有效 token。
+- 管理员首次通过 `/settings/mineru` 保存账号与密钥后，运行时文件成为完整绑定的权威来源；只修改 `.env` 不会覆盖它。回滚到旧代码前应确认 `.env` 中仍有匹配的 token 与 UID。
 - `MINERU_CALLBACK_URL` 为空时，MinerU 异步完成不会主动推回；document_jobs 可能停在 `running/parsing` 等待后续重投递或人工排查。
 - `MINERU_UID` 为空且 callback payload 也不带 `uid` 时，ready health 会把 `mineru_uid_missing` 标为 blocker。
 - 如改用 S3/OSS，需要把 `JOBS_ARTIFACT_STORAGE_BACKEND` 改为 `s3` 并补齐 bucket、endpoint、access key、secret 和下载模式。

@@ -1,4 +1,4 @@
-"""提供管理员专用的 MinerU 密钥读取与轮换接口。"""
+"""提供管理员专用的 MinerU 账号与密钥读取及轮换接口。"""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def get_mineru_config(
     runtime: AppRuntime = Depends(get_runtime),
     _user: AuthenticatedUser = Depends(require_admin_user),
 ) -> MinerUConfigResponse:
-    """返回当前 MinerU 密钥状态，不返回密钥原文或片段。"""
+    """返回当前 MinerU 绑定状态，不返回 UID、密钥原文或片段。"""
 
     return _build_response(runtime.mineru_config_service.get_effective_config())
 
@@ -36,10 +36,11 @@ def update_mineru_config(
     user: AuthenticatedUser = Depends(require_admin_user),
     trace_id: str = Depends(get_trace_id),
 ) -> MinerUConfigResponse:
-    """保存新密钥并记录不含密钥信息的审计事件。"""
+    """保存新绑定并记录不含 UID 或密钥信息的审计事件。"""
 
-    effective = runtime.mineru_config_service.update_api_token(
+    effective = runtime.mineru_config_service.update_credentials(
         api_token=payload.api_token,
+        uid=payload.uid,
         updated_by=user.id,
     )
     try:
@@ -48,18 +49,18 @@ def update_mineru_config(
             action="mineru_config.update",
             target_type="mineru_config",
             target_id="default",
-            details={"api_token_configured": True},
+            details={"api_token_configured": True, "uid_configured": True},
             trace_id=trace_id,
         )
     except Exception as exc:
         logger.exception(
-            "[trace_id=%s action=mineru_config.update] MinerU 密钥已保存，但审计记录失败",
+            "[trace_id=%s action=mineru_config.update] MinerU 配置已保存，但审计记录失败",
             trace_id,
         )
         raise ApiError(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "service_unavailable",
-            "MinerU 密钥已保存，但审计记录失败，请刷新页面确认配置状态。",
+            "MinerU 配置已保存，但审计记录失败，请刷新页面确认配置状态。",
         ) from exc
     return _build_response(effective)
 
@@ -67,6 +68,7 @@ def update_mineru_config(
 def _build_response(config: EffectiveMinerUConfig) -> MinerUConfigResponse:
     return MinerUConfigResponse(
         api_token_configured=config.api_token_configured,
+        uid_configured=config.uid_configured,
         source=config.source,
         updated_at=config.updated_at,
         updated_by=config.updated_by,

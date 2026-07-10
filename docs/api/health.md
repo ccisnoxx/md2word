@@ -230,11 +230,11 @@ Health API 当前有五条入口：
 | `subscript_config_exists` | 术语上下标 YAML 是否可读 |
 | `translation_prompt_exists` | `resources/prompts/translation_en2zh.md` 是否存在 |
 | `mineru_api_token_configured` | 当前有效配置是否包含 MinerU API token；运行时文件优先，文件不存在时读取 `MINERU_API_TOKEN` |
-| `mineru_config_source` | 当前密钥来源：`settings` 或 `runtime_config` |
+| `mineru_config_source` | 当前账号与密钥绑定来源：`settings` 或 `runtime_config` |
 | `mineru_config_updated_at` | 配置中心最近更新时间；环境变量来源时为 `null` |
 | `mineru_config_error` | 运行时文件损坏时为 `mineru_config_invalid`，正常时为 `null` |
 | `mineru_callback_url_configured` | 是否配置 `MINERU_CALLBACK_URL` |
-| `mineru_uid_configured` | 是否配置 `MINERU_UID`，用于 callback checksum 验签 |
+| `mineru_uid_configured` | 当前有效配置是否包含 MinerU UID；运行时文件优先，用于请求头和 callback checksum 验签 |
 | `public_deployment_mode` | 当前公开部署模式；公开域名部署应为 `single_tenant_public` |
 | `openai_api_key_configured` | 是否配置 `OPENAI_API_KEY` |
 | `openai_base_url_configured` | 是否显式配置 `OPENAI_BASE_URL` |

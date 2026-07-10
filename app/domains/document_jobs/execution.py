@@ -2476,7 +2476,7 @@ class DocumentJobExecutionService:
         return MinerUClient(
             api_token=config.api_token,
             model_version=self.settings.mineru_model_version,
-            user_token=self.settings.mineru_uid,
+            user_token=config.uid or "",
         )
 
 
