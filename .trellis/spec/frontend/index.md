@@ -1,6 +1,6 @@
 # 前端开发规范
 
-本规范描述当前 `md2word` Vue 3 + Element Plus 工作台的实现合同。修改壳层、共享视觉样式、响应式布局、滚动容器或弹层时，先阅读 [界面质量规范](./ui-quality-guidelines.md)。
+本规范描述当前 `md2word` Vue 3 + Element Plus 工作台的实现合同。修改壳层、共享视觉样式、响应式布局、滚动容器或弹层时，先阅读 [界面质量规范](./ui-quality-guidelines.md)；修改 Word 样式管理页时同时阅读 [Schema 驱动的模板样式编辑器合同](./schema-driven-template-style-editor.md)。
 
 ## 开发前检查
 
@@ -14,6 +14,7 @@
 | 规范 | 覆盖范围 | 状态 |
 |---|---|---|
 | [界面质量规范](./ui-quality-guidelines.md) | 滚动条、移动端信息层级、抽屉滚动、Element Plus 弹层层级和卡片状态反馈 | 当前 |
+| [Schema 驱动的模板样式编辑器合同](./schema-driven-template-style-editor.md) | 后端 schema 驱动、dirty patch、并发冲突、近似预览和 admin 权限 | 当前 |
 
 ## 质量检查
 

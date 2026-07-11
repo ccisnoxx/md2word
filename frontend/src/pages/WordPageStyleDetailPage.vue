@@ -1,4 +1,4 @@
-<!-- frontend/src/pages/WordPageStyleDetailPage.vue: Visual editor for Word page style YAML groups. -->
+<!-- frontend/src/pages/WordPageStyleDetailPage.vue: 按后端白名单 schema 渲染 Word 页面样式配置。 -->
 <template>
   <main class="word-style-page app-page" aria-labelledby="word-style-title">
     <WorkbenchPageHeader
@@ -25,7 +25,21 @@
             :value="item.id"
           />
         </el-select>
+        <el-select
+          v-model="selectedVersion"
+          class="version-switcher"
+          aria-label="选择模板版本"
+          @change="changeVersion"
+        >
+          <el-option
+            v-for="item in templateVersions"
+            :key="item.template_version_id"
+            :label="`v${item.version} · ${versionStatusLabel(item.status)}${item.is_default ? '（默认）' : ''}`"
+            :value="item.version"
+          />
+        </el-select>
         <el-button :icon="Document" @click="$router.push(`/settings/templates/${props.templateId}`)">模板文档</el-button>
+        <el-button v-if="layoutConfig?.status === 'draft'" @click="openValidationFlow">创建验证任务</el-button>
         <el-button :icon="Refresh" :loading="loading || layoutConfigLoading" @click="confirmReloadAll">刷新</el-button>
         <el-button :disabled="!isLayoutDirty || layoutConfigSaving" @click="resetLayoutConfigForm">撤销</el-button>
         <el-button type="primary" :loading="layoutConfigSaving" :disabled="!layoutConfig || !isLayoutDirty" @click="saveLayoutConfigVersion">
@@ -148,8 +162,9 @@
                   <el-input-number
                     v-else-if="fieldSchema.type === 'number'"
                     v-model="layoutConfigForm[groupName][fieldName]"
-                    :min="numberMin(fieldName)"
-                    :step="numberStep(fieldName, fieldSchema.unit)"
+                    :min="fieldSchema.min"
+                    :max="fieldSchema.max"
+                    :step="fieldSchema.step ?? 1"
                     :disabled="Boolean(fieldSchema.readonly)"
                     controls-position="right"
                     @change="validateField(groupName, fieldName)"
@@ -157,7 +172,7 @@
                   <el-segmented
                     v-else-if="fieldSchema.type === 'alignment'"
                     v-model="layoutConfigForm[groupName][fieldName]"
-                    :options="alignmentOptions"
+                    :options="alignmentOptionsFor(fieldSchema)"
                     :disabled="Boolean(fieldSchema.readonly)"
                     @change="validateField(groupName, fieldName)"
                   />
@@ -176,11 +191,12 @@
                     />
                   </div>
                   <el-input
-                    v-else
+                    v-else-if="fieldSchema.type === 'text'"
                     v-model="layoutConfigForm[groupName][fieldName]"
                     :disabled="Boolean(fieldSchema.readonly)"
                     @blur="validateField(groupName, fieldName)"
                   />
+                  <el-alert v-else title="后端返回了当前页面不支持的字段类型，已阻止保存。" type="error" :closable="false" />
                 </el-form-item>
               </div>
             </section>
@@ -210,6 +226,23 @@
             保存只创建 draft version；完成验证、发布并设为默认后，后续 Word 生成才会使用。
           </div>
           </WorkbenchPanelCard>
+
+          <WorkbenchPanelCard
+            title="效果示意"
+            subtitle="浏览器近似展示不代表 Word 最终分页和字体替换结果。"
+            card-class="preview-panel"
+          >
+            <div class="preview-paper" :style="previewPageStyle">
+              <div v-if="previewHeaderEnabled" class="preview-header">{{ previewHeaderText }}</div>
+              <div v-if="activeLayoutGroup === 'table_style' || activeLayoutGroup === 'table_content'" class="preview-table">
+                <div :style="previewTableHeaderStyle">参数</div><div :style="previewTableHeaderStyle">典型值</div>
+                <div :style="previewTableCellStyle">输入电压</div><div :style="previewTableCellStyle">5 V</div>
+              </div>
+              <p v-else :style="previewTextStyle">{{ previewText }}</p>
+              <div v-if="previewFooterEnabled" class="preview-footer">1</div>
+            </div>
+            <p class="preview-disclaimer">效果示意，最终以该 draft 的真实 Word 验证任务为准。</p>
+          </WorkbenchPanelCard>
         </aside>
       </section>
     </template>
@@ -217,7 +250,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch, type CSSProperties } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Document, Refresh } from "@element-plus/icons-vue";
 import { onBeforeRouteLeave, useRouter } from "vue-router";
@@ -228,6 +261,7 @@ import type {
   TemplateLayoutConfigFieldSchema,
   TemplateLayoutConfigResponse,
   TemplateListItemResponse,
+  TemplateVersionResponse,
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import WorkbenchMetricStrip, { type WorkbenchMetricItem } from "@/components/WorkbenchMetricStrip.vue";
@@ -249,6 +283,8 @@ const props = defineProps<{
 const router = useRouter();
 const templates = ref<TemplateListItemResponse[]>([]);
 const selectedTemplateId = ref(props.templateId);
+const templateVersions = ref<TemplateVersionResponse[]>([]);
+const selectedVersion = ref<number | null>(null);
 const template = ref<TemplateDetailResponse | null>(null);
 const layoutConfig = ref<TemplateLayoutConfigResponse | null>(null);
 const layoutConfigForm = ref<Record<string, any>>({});
@@ -260,22 +296,22 @@ const loading = ref(false);
 const layoutConfigLoading = ref(false);
 const layoutConfigSaving = ref(false);
 const error = ref<ApiClientError | null>(null);
-
-const layoutCategories: LayoutCategory[] = [
-  { id: "page", title: "页面", description: "纸张边距、页眉页脚距离。", groups: ["page_setup"] },
-  { id: "cover", title: "首页", description: "首页型号行和品类行。", groups: ["part_number", "category"] },
-  { id: "headings", title: "标题", description: "一级、二级、三级标题层级。", groups: ["heading1", "heading2", "heading3"] },
-  { id: "toc", title: "目录", description: "目录标题和各级目录项。", groups: ["toc_title", "toc_level1", "toc_level2", "toc_level3"] },
-  { id: "body", title: "正文", description: "正文段落和表格注释。", groups: ["normal", "table_note", "caption", "long_table_caption"] },
-  { id: "table", title: "表格", description: "表格正文、表头底色和边框。", groups: ["table_content", "table_style"] },
-  { id: "header_footer", title: "页眉页脚", description: "页眉/页脚文字样式与开关。", groups: ["header", "footer"] },
-];
+let pageLoadSequence = 0;
+let layoutLoadSequence = 0;
 
 const layoutMetaEntries = computed(() => Object.entries(layoutConfig.value?.meta ?? {}));
 const layoutGroupEntries = computed(() => Object.entries(layoutConfig.value?.field_schema.groups ?? {}));
+const layoutCategories = computed<LayoutCategory[]>(() =>
+  (layoutConfig.value?.field_schema.categories ?? []).map((category) => ({
+    id: category.key,
+    title: category.label,
+    description: `管理${category.label}相关样式。`,
+    groups: category.groups,
+  })),
+);
 const availableCategories = computed(() => {
   const groups = layoutConfig.value?.field_schema.groups ?? {};
-  return layoutCategories.filter((category) => category.groups.some((groupName) => groupName in groups));
+  return layoutCategories.value.filter((category) => category.groups.some((groupName) => groupName in groups));
 });
 const activeCategory = computed(() => availableCategories.value.find((category) => category.id === activeCategoryId.value) || null);
 const activeCategoryGroups = computed(() => {
@@ -296,6 +332,13 @@ const overviewItems = computed<WorkbenchMetricItem[]>(() => [
     label: "模板",
     value: template.value?.name || props.templateId,
     helper: template.value?.is_default ? "当前默认模板" : "非默认模板",
+  },
+  {
+    id: "version",
+    label: "当前版本",
+    value: layoutConfig.value?.template_version_id || "-",
+    helper: layoutConfig.value?.status === "draft" ? "草稿，尚未影响生产生成" : "已发布版本",
+    tone: layoutConfig.value?.status === "draft" ? "warning" : "success",
   },
   {
     id: "group_count",
@@ -319,32 +362,87 @@ const alignmentOptions = [
 ];
 const colorPredefines = ["#000000", "#475569", "#2563EB", "#10B981", "#F97316", "#EEF3F8", "#C7CDD4"];
 const colorValueRe = /^#[0-9a-fA-F]{6}$/;
+const previewPageStyle = computed(() => {
+  const setup = layoutConfigForm.value.page_setup ?? {};
+  const width = Number(setup.page_width_cm || 21);
+  const height = Number(setup.page_height_cm || 29.7);
+  return {
+    aspectRatio: `${width} / ${height}`,
+    padding: `${Math.min(Number(setup.top_margin || 0) / height * 100, 30)}% ${Math.min(Number(setup.right_margin || 0) / width * 100, 30)}% ${Math.min(Number(setup.bottom_margin || 0) / height * 100, 30)}% ${Math.min(Number(setup.left_margin || 0) / width * 100, 30)}%`,
+  };
+});
+const previewTextStyle = computed<CSSProperties>(() => {
+  const style = layoutConfigForm.value[activeLayoutGroup.value] ?? layoutConfigForm.value.normal ?? {};
+  return {
+    fontFamily: String(style.font_name || "serif"),
+    fontSize: `${Math.max(Number(style.font_size || 10), 6) * 0.9}px`,
+    fontWeight: style.bold ? 700 : 400,
+    fontStyle: style.italic ? "italic" : "normal",
+    color: String(style.color || "#000000"),
+    textAlign: (style.alignment === "justify" ? "justify" : String(style.alignment || "left")) as CSSProperties["textAlign"],
+    lineHeight: String(style.line_spacing || 1.2),
+    marginTop: `${Number(style.space_before || 0) * 0.5}px`,
+    marginBottom: `${Number(style.space_after || 0) * 0.5}px`,
+    textIndent: `${Number(style.first_line_indent_pt || 0) * 0.4}px`,
+  };
+});
+const previewText = computed(() => previewTextForGroup(activeLayoutGroup.value));
+const previewHeaderEnabled = computed(() => Boolean(layoutConfigForm.value.header?.enabled));
+const previewFooterEnabled = computed(() => Boolean(layoutConfigForm.value.footer?.enabled));
+const previewHeaderText = computed(() => String(layoutConfigForm.value.header?.title_text || "数据手册"));
+const previewTableHeaderStyle = computed(() => ({
+  backgroundColor: String(layoutConfigForm.value.table_style?.header_fill || "#EEF3F8"),
+  borderColor: String(layoutConfigForm.value.table_style?.border_color || "#C7CDD4"),
+  fontWeight: 700,
+}));
+const previewTableCellStyle = computed(() => ({
+  borderColor: String(layoutConfigForm.value.table_style?.border_color || "#C7CDD4"),
+  fontFamily: String(layoutConfigForm.value.table_content?.font_name || "serif"),
+  fontSize: `${Math.max(Number(layoutConfigForm.value.table_content?.font_size || 9), 6) * 0.9}px`,
+  color: String(layoutConfigForm.value.table_content?.color || "#000000"),
+}));
 
 async function loadAll(): Promise<void> {
+  const requestSequence = ++pageLoadSequence;
+  const templateId = props.templateId;
   loading.value = true;
   error.value = null;
-  selectedTemplateId.value = props.templateId;
+  selectedTemplateId.value = templateId;
   try {
-    const [templateList, templateResponse] = await Promise.all([
+    const [templateList, templateResponse, versionResponse] = await Promise.all([
       templatesApi.list(),
-      templatesApi.get(props.templateId),
+      templatesApi.get(templateId),
+      templatesApi.listVersions(templateId),
     ]);
+    if (requestSequence !== pageLoadSequence) {
+      return;
+    }
     templates.value = templateList.items;
     template.value = templateResponse;
-    await loadLayoutConfig();
+    templateVersions.value = versionResponse.items;
+    await loadLayoutConfig(undefined, templateId);
   } catch (caught) {
-    error.value = normalizeApiError(caught);
+    if (requestSequence === pageLoadSequence) {
+      error.value = normalizeApiError(caught);
+    }
   } finally {
-    loading.value = false;
+    if (requestSequence === pageLoadSequence) {
+      loading.value = false;
+    }
   }
 }
 
-async function loadLayoutConfig(): Promise<void> {
+async function loadLayoutConfig(version?: number, templateId = props.templateId): Promise<void> {
+  const requestSequence = ++layoutLoadSequence;
   layoutConfigLoading.value = true;
   error.value = null;
   try {
-    const response = await templatesApi.getLayoutConfig(props.templateId);
+    const response = await templatesApi.getLayoutConfig(templateId, version);
+    if (requestSequence !== layoutLoadSequence || templateId !== props.templateId) {
+      return;
+    }
     layoutConfig.value = response;
+    selectedVersion.value = response.version;
     const form = cloneLayoutConfig(response.config);
     normalizeColorValues(form, response.field_schema.groups);
     layoutConfigForm.value = form;
@@ -352,6 +450,9 @@ async function loadLayoutConfig(): Promise<void> {
     layoutValidationErrors.value = {};
     activateFirstAvailableGroup(response.field_schema.groups);
   } catch (caught) {
+    if (requestSequence !== layoutLoadSequence || templateId !== props.templateId) {
+      return;
+    }
     layoutConfig.value = null;
     layoutConfigForm.value = {};
     sourceLayoutConfig.value = {};
@@ -359,12 +460,14 @@ async function loadLayoutConfig(): Promise<void> {
     activeLayoutGroup.value = "";
     error.value = normalizeApiError(caught);
   } finally {
-    layoutConfigLoading.value = false;
+    if (requestSequence === layoutLoadSequence) {
+      layoutConfigLoading.value = false;
+    }
   }
 }
 
 function activateFirstAvailableGroup(groups: TemplateLayoutConfigResponse["field_schema"]["groups"]): void {
-  const category = layoutCategories.find((item) => item.groups.some((groupName) => groupName in groups));
+  const category = layoutCategories.value.find((item) => item.groups.some((groupName) => groupName in groups));
   activeCategoryId.value = category?.id || "";
   activeLayoutGroup.value = category?.groups.find((groupName) => groupName in groups) || Object.keys(groups)[0] || "";
 }
@@ -388,6 +491,18 @@ async function changeTemplate(nextTemplateId: string | number | boolean | Record
   await router.push(`/settings/word-page-styles/${nextId}`);
 }
 
+async function changeVersion(nextVersion: string | number | boolean | Record<string, unknown>): Promise<void> {
+  const version = Number(nextVersion);
+  if (!Number.isInteger(version) || version < 1 || version === layoutConfig.value?.version) {
+    return;
+  }
+  if (!(await confirmDiscardDirty("切换版本会丢弃当前未保存改动。"))) {
+    selectedVersion.value = layoutConfig.value?.version ?? null;
+    return;
+  }
+  await loadLayoutConfig(version);
+}
+
 async function confirmDiscardDirty(message: string): Promise<boolean> {
   if (!isLayoutDirty.value) {
     return true;
@@ -408,6 +523,85 @@ function cloneLayoutConfig(config: Record<string, unknown>): Record<string, any>
   return JSON.parse(JSON.stringify(config));
 }
 
+function buildLayoutChanges(): Record<string, Record<string, unknown>> {
+  const changes: Record<string, Record<string, unknown>> = {};
+  const groups = layoutConfig.value?.field_schema.groups ?? {};
+  for (const [groupName, groupSchema] of Object.entries(groups)) {
+    for (const [fieldName, fieldSchema] of Object.entries(groupSchema)) {
+      if (fieldSchema.readonly) {
+        continue;
+      }
+      const before = sourceLayoutConfig.value[groupName]?.[fieldName];
+      const after = layoutConfigForm.value[groupName]?.[fieldName];
+      if (stableStringify(before) === stableStringify(after)) {
+        continue;
+      }
+      changes[groupName] ??= {};
+      changes[groupName][fieldName] = after;
+    }
+  }
+  return changes;
+}
+
+function openValidationFlow(): void {
+  if (!layoutConfig.value) {
+    return;
+  }
+  void router.push({
+    path: `/settings/templates/${props.templateId}`,
+    query: { validate_version: String(layoutConfig.value.version) },
+  });
+}
+
+function previewTextForGroup(groupName: string): string {
+  const samples = layoutConfig.value?.preview_samples ?? {};
+  const sampleKeys: Record<string, string> = {
+    part_number: "part_number",
+    category: "category",
+    heading1: "heading1_text",
+    heading2: "heading2_text",
+    heading3: "heading3_text",
+    normal: "normal_text",
+    table_note: "table_note_text",
+    caption: "caption_text",
+    long_table_caption: "caption_text",
+  };
+  if (groupName === "page_setup") {
+    return "A4 页面正文区域示意";
+  }
+  if (groupName.startsWith("toc_")) {
+    return groupName === "toc_title" ? "目录" : "1.1 产品概述 ........................ 3";
+  }
+  if (groupName === "header") {
+    return previewHeaderText.value;
+  }
+  if (groupName === "footer") {
+    return "页码示意";
+  }
+  const value = samples[sampleKeys[groupName] || "normal_text"];
+  return typeof value === "string" && value ? value : "模板样式效果示意文本";
+}
+
+function applyServerFieldErrors(raw: unknown): void {
+  if (!isRecord(raw) || !isRecord(raw.detail) || !Array.isArray(raw.detail.field_errors)) {
+    return;
+  }
+  const errors: Record<string, string> = {};
+  for (const item of raw.detail.field_errors) {
+    if (!isRecord(item) || typeof item.path !== "string" || typeof item.message !== "string") {
+      continue;
+    }
+    errors[item.path] = item.message;
+  }
+  if (Object.keys(errors).length > 0) {
+    layoutValidationErrors.value = errors;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return typeof value === "object" && value !== null;
+}
+
 async function saveLayoutConfigVersion(): Promise<void> {
   if (!layoutConfig.value) {
     return;
@@ -419,13 +613,19 @@ async function saveLayoutConfigVersion(): Promise<void> {
   layoutConfigSaving.value = true;
   error.value = null;
   try {
+    const changes = buildLayoutChanges();
     const version = await templatesApi.createLayoutConfigVersion(props.templateId, {
-      config: layoutConfigForm.value,
+      base_template_version_id: layoutConfig.value.template_version_id || `${props.templateId}@${layoutConfig.value.version}`,
+      expected_config_sha256: layoutConfig.value.config_sha256 || "",
+      expected_active_template_version_id: layoutConfig.value.active_template_version_id,
+      changes,
     });
+    templateVersions.value = [version, ...templateVersions.value.filter((item) => item.version !== version.version)];
     ElMessage.success(`已生成页面样式 draft version ${version.version}。完成验证、发布并设为默认后才会影响后续 Word 生成。`);
-    await loadAll();
+    await loadLayoutConfig(version.version);
   } catch (caught) {
     error.value = normalizeApiError(caught);
+    applyServerFieldErrors(error.value.raw);
   } finally {
     layoutConfigSaving.value = false;
   }
@@ -435,56 +635,25 @@ function layoutMetaLabel(fieldName: string): string {
   return layoutConfig.value?.field_schema.meta?.[fieldName]?.label || fieldName;
 }
 
+function versionStatusLabel(status: string): string {
+  return {
+    draft: "草稿",
+    published: "已发布",
+    disabled: "已禁用",
+    superseded: "已替代",
+  }[status] || status;
+}
+
 function fieldLabel(fieldName: string, fieldSchema: TemplateLayoutConfigFieldSchema): string {
   return fieldSchema.unit ? `${fieldSchema.label} (${fieldSchema.unit})` : fieldSchema.label || fieldName;
 }
 
 function layoutGroupTitle(groupName: string): string {
-  const titles: Record<string, string> = {
-    page_setup: "页面设置",
-    part_number: "首页型号行",
-    category: "首页品类行",
-    heading1: "一级标题",
-    heading2: "二级标题",
-    heading3: "三级标题",
-    toc_title: "目录标题",
-    toc_level1: "目录一级项",
-    toc_level2: "目录二级项",
-    toc_level3: "目录三级项",
-    normal: "正文",
-    table_content: "表格正文",
-    table_style: "表格样式",
-    table_note: "表格注释",
-    caption: "图注 / 表题",
-    long_table_caption: "续表标题",
-    header: "页眉",
-    footer: "页脚",
-  };
-  return titles[groupName] || groupName;
+  return layoutConfig.value?.field_schema.group_meta[groupName]?.label || groupName;
 }
 
 function layoutGroupDescription(groupName: string): string {
-  const descriptions: Record<string, string> = {
-    page_setup: "控制整份 Word 的页边距、页眉页脚距离。",
-    part_number: "控制首页型号行的字体、字号、颜色和段落间距。",
-    category: "控制首页品类行的字体、字号、颜色和段落间距。",
-    heading1: "控制一级标题的层级样式和段前段后间距。",
-    heading2: "控制二级标题的层级样式和段前段后间距。",
-    heading3: "控制三级标题的层级样式和段前段后间距。",
-    toc_title: "控制目录标题样式。",
-    toc_level1: "控制目录一级项样式。",
-    toc_level2: "控制目录二级项样式。",
-    toc_level3: "控制目录三级项样式。",
-    normal: "控制普通正文段落样式。",
-    table_content: "控制表格正文单元格文字样式。",
-    table_style: "控制可编辑表格的基础样式、表头底色和边框色。",
-    table_note: "控制表格注释文字样式。",
-    caption: "控制图注和表题样式。",
-    long_table_caption: "控制续表标题样式。",
-    header: "控制渲染器写入的页眉文字样式；公司 Logo 和默认页眉内容请在 Word 模板文档中维护。",
-    footer: "控制渲染器写入的页脚文字样式和页码设置；默认页脚内容请在 Word 模板文档中维护。",
-  };
-  return descriptions[groupName] || "维护该 Word 输出区域的字体、段落和颜色样式。";
+  return layoutConfig.value?.field_schema.group_meta[groupName]?.description || "维护该 Word 输出区域的样式。";
 }
 
 function displayedFieldEntries(
@@ -494,15 +663,9 @@ function displayedFieldEntries(
   return Object.entries(groupSchema).filter(([fieldName]) => !(groupName === "header" && fieldName === "logo_path"));
 }
 
-function numberStep(fieldName: string, unit?: string): number {
-  if (fieldName === "line_spacing") {
-    return 0.05;
-  }
-  return unit === "cm" ? 0.1 : 0.5;
-}
-
-function numberMin(fieldName: string): number {
-  return fieldName.endsWith("_indent_pt") ? -100 : 0;
+function alignmentOptionsFor(fieldSchema: TemplateLayoutConfigFieldSchema): Array<{ value: string; label: string }> {
+  const allowed = fieldSchema.options ?? alignmentOptions.map((option) => option.value);
+  return alignmentOptions.filter((option) => allowed.includes(option.value));
 }
 
 function fieldError(groupName: string, fieldName: string): string {
@@ -510,7 +673,7 @@ function fieldError(groupName: string, fieldName: string): string {
 }
 
 function groupHasErrors(groupName: string): boolean {
-  return Object.keys(layoutValidationErrors.value).some((path) => path.startsWith(`${groupName}.`));
+  return Object.keys(layoutValidationErrors.value).some((path) => path === groupName || path.startsWith(`${groupName}.`));
 }
 
 function groupDirtyCount(groupName: string): number {
@@ -518,7 +681,7 @@ function groupDirtyCount(groupName: string): number {
 }
 
 function categoryDirtyCount(categoryId: string): number {
-  const category = layoutCategories.find((item) => item.id === categoryId);
+  const category = layoutCategories.value.find((item) => item.id === categoryId);
   if (!category) {
     return 0;
   }
@@ -570,7 +733,18 @@ function validateLayoutConfigForm(): boolean {
       continue;
     }
     for (const [fieldName, fieldSchema] of Object.entries(groupSchema)) {
+      if (fieldSchema.readonly) {
+        continue;
+      }
       const path = `${groupName}.${fieldName}`;
+      const supportedType = ["number", "boolean", "alignment", "color", "text"].includes(fieldSchema.type);
+      if (!supportedType) {
+        errors[path] = `不支持字段类型 ${fieldSchema.type}。`;
+        continue;
+      }
+      if (stableStringify(sourceLayoutConfig.value[groupName]?.[fieldName]) === stableStringify(groupValue[fieldName])) {
+        continue;
+      }
       const errorMessage = validateFieldValue(path, groupValue[fieldName], fieldSchema);
       if (errorMessage) {
         errors[path] = errorMessage;
@@ -580,7 +754,7 @@ function validateLayoutConfigForm(): boolean {
   layoutValidationErrors.value = errors;
   if (Object.keys(errors).length > 0) {
     const firstErrorGroup = Object.keys(errors)[0].split(".")[0];
-    const firstCategory = layoutCategories.find((category) => category.groups.includes(firstErrorGroup));
+    const firstCategory = layoutCategories.value.find((category) => category.groups.includes(firstErrorGroup));
     activeCategoryId.value = firstCategory?.id || activeCategoryId.value;
     activeLayoutGroup.value = firstErrorGroup;
   }
@@ -592,20 +766,37 @@ function validateFieldValue(
   value: unknown,
   fieldSchema: TemplateLayoutConfigFieldSchema,
 ): string {
-  if (fieldSchema.type === "number" && (typeof value !== "number" || Number.isNaN(value))) {
+  if (!["number", "boolean", "alignment", "color", "text"].includes(fieldSchema.type)) {
+    return `不支持字段类型 ${fieldSchema.type}。`;
+  }
+  if (fieldSchema.type === "number" && (typeof value !== "number" || !Number.isFinite(value))) {
     return "请输入数字。";
+  }
+  if (fieldSchema.type === "number" && typeof value === "number" && fieldSchema.min !== undefined && value < fieldSchema.min) {
+    return `不能小于 ${fieldSchema.min}。`;
+  }
+  if (fieldSchema.type === "number" && typeof value === "number" && fieldSchema.max !== undefined && value > fieldSchema.max) {
+    return `不能大于 ${fieldSchema.max}。`;
   }
   if (fieldSchema.type === "boolean" && typeof value !== "boolean") {
     return "请选择开关状态。";
   }
-  if (fieldSchema.type === "alignment" && !alignmentOptions.some((option) => option.value === value)) {
+  if (fieldSchema.type === "alignment" && !alignmentOptionsFor(fieldSchema).some((option) => option.value === value)) {
     return "请选择有效对齐方式。";
   }
-  if (fieldSchema.type === "color" && (typeof value !== "string" || !colorValueRe.test(value))) {
+  if (fieldSchema.type === "color" && value !== null && value !== "" && (typeof value !== "string" || !colorValueRe.test(value))) {
     return "请输入 6 位 RGB 颜色。";
   }
   if (fieldSchema.type === "text" && typeof value !== "string") {
     return "请输入文本。";
+  }
+  if (
+    fieldSchema.type === "text"
+    && typeof value === "string"
+    && (path.endsWith("font_name") || path === "table_style.style_name")
+    && !value.trim()
+  ) {
+    return "该字段不能为空。";
   }
   if (path === "header.logo_path") {
     return "";
@@ -692,6 +883,8 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  pageLoadSequence += 1;
+  layoutLoadSequence += 1;
   window.removeEventListener("beforeunload", handleBeforeUnload);
 });
 </script>
@@ -726,6 +919,10 @@ onBeforeUnmount(() => {
 
 .template-switcher {
   width: 240px;
+}
+
+.version-switcher {
+  width: 180px;
 }
 
 .style-status-grid span,
@@ -773,9 +970,14 @@ onBeforeUnmount(() => {
 }
 
 .category-rail,
-.change-panel {
+.style-workbench > aside {
   position: sticky;
   top: 86px;
+}
+
+.style-workbench > aside {
+  display: grid;
+  gap: var(--app-space-4);
 }
 
 .category-rail {
@@ -969,12 +1171,60 @@ onBeforeUnmount(() => {
   line-height: 1.5;
 }
 
+.preview-paper {
+  position: relative;
+  display: grid;
+  align-content: center;
+  min-height: 260px;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #fff;
+  color: #111827;
+  box-shadow: var(--app-shadow-subtle);
+}
+
+.preview-header,
+.preview-footer {
+  position: absolute;
+  right: 10%;
+  left: 10%;
+  color: #64748b;
+  font-size: 9px;
+  text-align: center;
+}
+
+.preview-header {
+  top: 4%;
+}
+
+.preview-footer {
+  bottom: 4%;
+}
+
+.preview-table {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.preview-table > div {
+  padding: 6px;
+  border: 1px solid;
+}
+
+.preview-disclaimer {
+  margin: var(--app-space-2) 0 0;
+  color: var(--app-color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 @media (max-width: 1180px) {
   .style-workbench {
     grid-template-columns: 210px minmax(0, 1fr);
   }
 
-  .change-panel {
+  .style-workbench > aside {
     position: static;
     grid-column: 1 / -1;
   }
@@ -988,7 +1238,8 @@ onBeforeUnmount(() => {
   }
 
   .style-actions,
-  .template-switcher {
+  .template-switcher,
+  .version-switcher {
     width: 100%;
   }
 

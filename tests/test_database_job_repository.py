@@ -161,6 +161,7 @@ class _FakeMysqlDatabase:
         self.saved_views: dict[str, dict[str, Any]] = {}
         self.resource_versions: dict[tuple[str, str, str], dict[str, Any]] = {}
         self.resource_default_versions: dict[tuple[str, str], dict[str, Any]] = {}
+        self.resource_version_sequences: dict[tuple[str, str], dict[str, Any]] = {}
         self.term_rule_proposals: dict[str, dict[str, Any]] = {}
         self.term_rule_categories: dict[tuple[str, str, str], dict[str, Any]] = {}
         self.term_rules: dict[tuple[str, str, str], dict[str, Any]] = {}
@@ -223,6 +224,7 @@ class _FakeMysqlCursor:
                 "saved_views",
                 "resource_versions",
                 "resource_default_versions",
+                "resource_version_sequences",
                 "term_rule_proposals",
                 "term_rule_categories",
                 "term_rules",
@@ -771,6 +773,9 @@ class _FakeMysqlCursor:
             return
         if normalized.startswith("insert into resource_versions"):
             resource_type, resource_id, version, status, snapshot_hash, payload_ref, payload, created_at, updated_at = params
+            key = (resource_type, resource_id, version)
+            if key in self.database.resource_versions and "on duplicate key update" not in normalized:
+                raise ValueError(f"duplicate resource version: {key}")
             self.database.resource_versions[(resource_type, resource_id, version)] = {
                 "resource_type": resource_type,
                 "resource_id": resource_id,
@@ -780,6 +785,34 @@ class _FakeMysqlCursor:
                 "payload_ref": payload_ref,
                 "payload": payload,
                 "created_at": created_at,
+                "updated_at": updated_at,
+            }
+            self._rows = []
+            return
+        if normalized.startswith("insert into resource_version_sequences"):
+            resource_type, resource_id, minimum_next, updated_at = params
+            key = (resource_type, resource_id)
+            current = self.database.resource_version_sequences.get(key)
+            next_version = max(int(current["next_version"]), int(minimum_next)) if current else int(minimum_next)
+            self.database.resource_version_sequences[key] = {
+                "resource_type": resource_type,
+                "resource_id": resource_id,
+                "next_version": next_version,
+                "updated_at": updated_at,
+            }
+            self._rows = []
+            return
+        if "from resource_version_sequences" in normalized and "for update" in normalized:
+            resource_type, resource_id = params
+            row = self.database.resource_version_sequences.get((resource_type, resource_id))
+            self._rows = [row] if row is not None else []
+            return
+        if normalized.startswith("update resource_version_sequences"):
+            next_version, updated_at, resource_type, resource_id = params
+            self.database.resource_version_sequences[(resource_type, resource_id)] = {
+                "resource_type": resource_type,
+                "resource_id": resource_id,
+                "next_version": next_version,
                 "updated_at": updated_at,
             }
             self._rows = []
@@ -1397,6 +1430,7 @@ class PersistenceAdapterTests(TestCase):
                 "saved_views",
                 "resource_versions",
                 "resource_default_versions",
+                "resource_version_sequences",
                 "term_rule_proposals",
                 "term_rule_categories",
                 "term_rules",

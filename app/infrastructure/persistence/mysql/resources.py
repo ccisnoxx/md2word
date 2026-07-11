@@ -45,6 +45,70 @@ class MysqlResourceVersionRepository:
                 )
         return record
 
+    def create_resource_version(self, record: ResourceVersionRecord) -> ResourceVersionRecord:
+        """只插入新资源版本，数据库主键冲突必须向上游暴露。"""
+
+        with self.backend.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO resource_versions
+                        (resource_type, resource_id, version, status, snapshot_hash, payload_ref, payload, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        record.resource_type,
+                        record.resource_id,
+                        record.version,
+                        record.status.value,
+                        record.snapshot_hash,
+                        record.payload_ref,
+                        json.dumps(record.payload, ensure_ascii=False) if record.payload is not None else None,
+                        record.created_at.isoformat(),
+                        record.updated_at.isoformat(),
+                    ),
+                )
+        return record
+
+    def allocate_next_version(self, resource_type: ResourceType, resource_id: str, minimum_next: int) -> int:
+        """在同一事务内锁定并递增资源整数版本序列。"""
+
+        now = utc_now().isoformat()
+        with self.backend.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO resource_version_sequences (resource_type, resource_id, next_version, updated_at)
+                    VALUES (%s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        next_version = GREATEST(next_version, VALUES(next_version)),
+                        updated_at = VALUES(updated_at)
+                    """,
+                    (resource_type, resource_id, minimum_next, now),
+                )
+                cursor.execute(
+                    """
+                    SELECT next_version
+                    FROM resource_version_sequences
+                    WHERE resource_type = %s AND resource_id = %s
+                    FOR UPDATE
+                    """,
+                    (resource_type, resource_id),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise RuntimeError("资源版本序列初始化失败。")
+                allocated = int(row["next_version"])
+                cursor.execute(
+                    """
+                    UPDATE resource_version_sequences
+                    SET next_version = %s, updated_at = %s
+                    WHERE resource_type = %s AND resource_id = %s
+                    """,
+                    (allocated + 1, now, resource_type, resource_id),
+                )
+        return allocated
+
     def get_resource_version(
         self,
         resource_type: ResourceType,

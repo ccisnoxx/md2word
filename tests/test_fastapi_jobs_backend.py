@@ -1,5 +1,5 @@
-# File: tests/test_fastapi_jobs_backend.py
-# Purpose: 覆盖 FastAPI jobs/files API、ops governance、workflow 和 artifact 合同。
+# 文件：tests/test_fastapi_jobs_backend.py
+# 用途：覆盖 FastAPI jobs/files API、ops governance、workflow 和 artifact 合同。
 
 import ast
 import csv
@@ -7492,6 +7492,75 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(snapshot["translation_profile"]["resource_id"], "electronics-en2zh")
         self.assertEqual(snapshot["translation_profile"]["version"], "2")
 
+    def test_only_admin_can_create_validation_job_with_draft_template_version(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            publish_default_job_resources(runtime, include_translation=False)
+            service = runtime.resource_version_service
+            self.assertIsNotNone(service)
+            assert service is not None
+            template_path = runtime.settings.default_template_path
+            layout_path = runtime.settings.layout_config_path
+            self.assertIsNotNone(template_path)
+            self.assertIsNotNone(layout_path)
+            assert template_path is not None and layout_path is not None
+            payload = {
+                "template_id": "default",
+                "version": "2",
+                "name": "Draft Template 2",
+                "description": "admin validation draft",
+                "docx_path": str(template_path.resolve()),
+                "docx_sha256": f"sha256:{hashlib.sha256(template_path.read_bytes()).hexdigest()}",
+                "layout_config_path": str(layout_path.resolve()),
+                "layout_config_sha256": f"sha256:{hashlib.sha256(layout_path.read_bytes()).hexdigest()}",
+                "render_policy": {},
+            }
+            service.create_or_update_draft(
+                resource_type="template",
+                resource_id="default",
+                version="2",
+                snapshot_hash=resource_payload_hash(payload),
+                payload_ref="template:default@2",
+                payload=payload,
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                operator_source = self._upload_source_pdf(client, operator_headers)
+                operator_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=operator_headers,
+                    json={
+                        "source_file_id": operator_source["id"],
+                        "mode": "direct_pdf_to_word",
+                        "document_language": "en",
+                        "template_version_id": "default@2",
+                    },
+                )
+                admin_headers = build_auth_header(client, username="admin", password="admin-pass")
+                admin_source = self._upload_source_pdf(client, admin_headers)
+                admin_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=admin_headers,
+                    json={
+                        "source_file_id": admin_source["id"],
+                        "mode": "direct_pdf_to_word",
+                        "document_language": "en",
+                        "template_version_id": "default@2",
+                    },
+                )
+
+        self.assertEqual(operator_response.status_code, 400)
+        self.assertIn("draft", operator_response.json()["detail"])
+        self.assertEqual(admin_response.status_code, 201)
+        self.assertEqual(admin_response.json()["job"]["template_version_id"], "default@2")
+        self.assertEqual(admin_response.json()["job"]["request_snapshot"]["resources"]["template"]["status"], "draft")
+
     def test_document_job_retry_resource_selection_requires_admin_and_rebinds_term_assets(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = build_mysql_test_runtime(
@@ -10996,7 +11065,10 @@ class FastAPIJobsBackendTests(TestCase):
                 self.assertEqual(replace_response.json()["version"], 2)
 
                 download_response = client.get("/api/v1/templates/managed/download")
-                versions_response = client.get("/api/v1/templates/managed/versions")
+                versions_response = client.get(
+                    "/api/v1/templates/managed/versions",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
                 delete_response = client.delete(
                     "/api/v1/templates/managed",
                     headers={"X-Admin-Token": "secret-admin"},
@@ -11155,7 +11227,10 @@ class FastAPIJobsBackendTests(TestCase):
                     "/api/v1/templates/managed/versions/2/disable",
                     headers={"X-Admin-Token": "secret-admin"},
                 )
-                versions_response = client.get("/api/v1/templates/managed/versions")
+                versions_response = client.get(
+                    "/api/v1/templates/managed/versions",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
 
         self.assertEqual(invalid_publish_v2_response.status_code, 422)
         self.assertEqual(pending_job_publish_v2_response.status_code, 400)
@@ -11248,7 +11323,12 @@ class FastAPIJobsBackendTests(TestCase):
                 denied_read = client.get("/api/v1/templates/default/layout-config")
                 denied_write = client.post(
                     "/api/v1/templates/default/layout-config/versions",
-                    json={"config": {}},
+                    json={
+                        "base_template_version_id": "default@1",
+                        "expected_config_sha256": "sha256:" + "0" * 64,
+                        "expected_active_template_version_id": "default@1",
+                        "changes": {"normal": {"font_size": 11}},
+                    },
                 )
                 read_response = client.get(
                     "/api/v1/templates/default/layout-config",
@@ -11256,27 +11336,83 @@ class FastAPIJobsBackendTests(TestCase):
                 )
                 self.assertEqual(read_response.status_code, 200)
                 read_payload = read_response.json()
-                config = read_payload["config"]
-                config["page_setup"]["top_margin"] = 1.7
-                config["normal"]["font_size"] = 11
-
                 create_response = client.post(
                     "/api/v1/templates/default/layout-config/versions",
-                    json={"config": config},
+                    json={
+                        "base_template_version_id": read_payload["template_version_id"],
+                        "expected_config_sha256": read_payload["config_sha256"],
+                        "expected_active_template_version_id": read_payload["active_template_version_id"],
+                        "changes": {"page_setup": {"top_margin": 1.7}, "normal": {"font_size": 11}},
+                        "change_note": "调整页面与正文字号",
+                    },
                     headers={"X-Admin-Token": "secret-admin"},
                 )
-                invalid_config = json.loads(json.dumps(config))
-                invalid_config["sample_content"] = {"normal_text": "not supported"}
                 invalid_response = client.post(
                     "/api/v1/templates/default/layout-config/versions",
-                    json={"config": invalid_config},
+                    json={
+                        "base_template_version_id": read_payload["template_version_id"],
+                        "expected_config_sha256": read_payload["config_sha256"],
+                        "expected_active_template_version_id": read_payload["active_template_version_id"],
+                        "changes": {"sample_content": {"normal_text": "not supported"}},
+                    },
                     headers={"X-Admin-Token": "secret-admin"},
                 )
-                readonly_meta_config = json.loads(json.dumps(config))
-                readonly_meta_config["template_name"] = "bad client edit"
                 readonly_meta_response = client.post(
                     "/api/v1/templates/default/layout-config/versions",
-                    json={"config": readonly_meta_config},
+                    json={
+                        "base_template_version_id": read_payload["template_version_id"],
+                        "expected_config_sha256": read_payload["config_sha256"],
+                        "expected_active_template_version_id": read_payload["active_template_version_id"],
+                        "changes": {"page_setup": {"page_width_cm": 20}},
+                    },
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                conflict_response = client.post(
+                    "/api/v1/templates/default/layout-config/versions",
+                    json={
+                        "base_template_version_id": read_payload["template_version_id"],
+                        "expected_config_sha256": "sha256:" + "0" * 64,
+                        "expected_active_template_version_id": read_payload["active_template_version_id"],
+                        "changes": {"normal": {"font_size": 12}},
+                    },
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                unknown_word_style_response = client.post(
+                    "/api/v1/templates/default/layout-config/versions",
+                    json={
+                        "base_template_version_id": read_payload["template_version_id"],
+                        "expected_config_sha256": read_payload["config_sha256"],
+                        "expected_active_template_version_id": read_payload["active_template_version_id"],
+                        "changes": {"table_style": {"style_name": "Not A Real Table Style"}},
+                    },
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                draft_read_response = client.get(
+                    "/api/v1/templates/default/layout-config?version=2",
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                create_template_verification_job(
+                    runtime,
+                    job_id="docjob_layout_config_v2",
+                    template_version_id="default@2",
+                )
+                publish_response = client.post(
+                    "/api/v1/templates/default/versions/2/publish",
+                    json={
+                        "make_default": False,
+                        "publish_reason": "样式验证通过",
+                        "verification_job_id": "docjob_layout_config_v2",
+                        "verification_note": "真实 Word 样式检查通过",
+                    },
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                set_default_response = client.post(
+                    "/api/v1/templates/default/versions/2/set-default",
+                    json={"set_default_reason": "启用已验证样式"},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+                active_read_response = client.get(
+                    "/api/v1/templates/default/layout-config",
                     headers={"X-Admin-Token": "secret-admin"},
                 )
 
@@ -11288,23 +11424,50 @@ class FastAPIJobsBackendTests(TestCase):
             self.assertNotIn("template_name", read_payload["config"])
             self.assertNotIn("output_filename", read_payload["config"])
             self.assertNotIn("sample_content", read_payload["config"])
+            self.assertIn("normal_text", read_payload["preview_samples"])
             self.assertIn("page_setup", read_payload["field_schema"]["groups"])
             self.assertIn("top_margin", read_payload["field_schema"]["groups"]["page_setup"])
+            self.assertTrue(read_payload["field_schema"]["groups"]["page_setup"]["page_width_cm"]["readonly"])
             self.assertTrue(read_payload["field_schema"]["meta"]["template_name"]["readonly"])
+            self.assertFalse(Path(read_payload["source_path"]).is_absolute())
             self.assertEqual(create_response.status_code, 201)
             created_payload = create_response.json()
             self.assertEqual(created_payload["version"], 2)
             self.assertEqual(created_payload["status"], "draft")
             self.assertTrue(created_payload["layout_config"]["exists"])
-            self.assertEqual(invalid_response.status_code, 400)
-            self.assertIn("sample_content", invalid_response.json()["detail"])
-            self.assertEqual(readonly_meta_response.status_code, 400)
-            self.assertIn("只读", readonly_meta_response.json()["detail"])
+            self.assertEqual(invalid_response.status_code, 422)
+            self.assertIn("sample_content", invalid_response.json()["detail"]["message"])
+            self.assertEqual(invalid_response.json()["detail"]["field_errors"][0]["path"], "sample_content")
+            self.assertEqual(invalid_response.json()["detail"]["field_errors"][0]["code"], "unknown_group")
+            self.assertEqual(readonly_meta_response.status_code, 422)
+            self.assertIn("只读", readonly_meta_response.json()["detail"]["message"])
+            self.assertEqual(readonly_meta_response.json()["detail"]["field_errors"][0]["path"], "page_setup.page_width_cm")
+            self.assertEqual(conflict_response.status_code, 409)
+            self.assertEqual(conflict_response.json()["detail"]["active_template_version_id"], "default@1")
+            self.assertEqual(conflict_response.json()["detail"]["config_sha256"], read_payload["config_sha256"])
+            self.assertEqual(unknown_word_style_response.status_code, 422)
+            self.assertEqual(
+                unknown_word_style_response.json()["detail"]["field_errors"][0],
+                {
+                    "path": "table_style.style_name",
+                    "code": "unknown_word_style",
+                    "message": "table_style.style_name 在模板文档中不存在: Not A Real Table Style",
+                },
+            )
+            self.assertEqual(draft_read_response.status_code, 200)
+            self.assertEqual(draft_read_response.json()["status"], "draft")
+            self.assertFalse(draft_read_response.json()["is_default"])
+            self.assertEqual(publish_response.status_code, 200)
+            self.assertEqual(set_default_response.status_code, 200)
+            self.assertEqual(active_read_response.status_code, 200)
+            self.assertEqual(active_read_response.json()["template_version_id"], "default@2")
+            self.assertEqual(active_read_response.json()["config"]["normal"]["font_size"], 11)
             self.assertEqual(source_layout_path.read_text(encoding="utf-8"), original_source_text)
 
             record = runtime.resource_version_service.repository.get_resource_version("template", "default", "2")
             self.assertIsNotNone(record)
             layout_path = Path(record.payload["layout_config_path"])
+            self.assertEqual(runtime.template_read_service.resolve_template_version(None).layout_config_path, layout_path)
             self.assertTrue(layout_path.exists())
             written_config = yaml.safe_load(layout_path.read_text(encoding="utf-8"))
             self.assertEqual(written_config["schema_version"], "template-config/v1")
@@ -11312,11 +11475,71 @@ class FastAPIJobsBackendTests(TestCase):
             self.assertEqual(written_config["output_filename"], "datasheet_template.docx")
             self.assertEqual(written_config["page_setup"]["top_margin"], 1.7)
             self.assertEqual(written_config["normal"]["font_size"], 11)
+            self.assertEqual(written_config["page_setup"]["page_width_cm"], 21.0)
+            self.assertIn("sample_content", written_config)
             self.assertEqual(record.payload["layout_config_sha256"], f"sha256:{hashlib.sha256(layout_path.read_bytes()).hexdigest()}")
             self.assertTrue(Path(record.payload["docx_path"]).exists())
             audit_events = runtime.audit_event_repository.list_audit_events()
-            self.assertEqual([event.action for event in audit_events], ["template.layout_config_version_create"])
+            self.assertEqual(
+                [event.action for event in audit_events],
+                ["template.layout_config_version_create", "template.publish", "template.set_default"],
+            )
             self.assertEqual(audit_events[0].target_id, "default@2")
+
+    def test_template_layout_config_database_failure_removes_staged_version_directory(self):
+        """数据库拒绝创建 draft 时不得遗留可被误识别为版本的文件目录。"""
+
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            repo_root = Path(__file__).resolve().parents[1]
+            manifest_path = temp_root / "templates_manifest.yaml"
+            write_templates_manifest(
+                manifest_path,
+                [
+                    {
+                        "id": "default",
+                        "name": "Default Template",
+                        "description": "default",
+                        "enabled": True,
+                        "is_default_seed": True,
+                        "template_path": str((repo_root / "resources/templates/default/datasheet_template.docx").resolve()),
+                        "layout_config_path": str((repo_root / "resources/template_configs/datasheet_template.yaml").resolve()),
+                    }
+                ],
+            )
+            runtime = build_test_runtime(
+                temp_root,
+                admin_token="secret-admin",
+                jobs_repository_backend="mysql",
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=_FakeMysqlDatabase().connect,
+                ),
+                templates_manifest_path=str(manifest_path),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                read_payload = client.get(
+                    "/api/v1/templates/default/layout-config",
+                    headers={"X-Admin-Token": "secret-admin"},
+                ).json()
+                with patch.object(runtime.resource_version_service, "create_draft", side_effect=RuntimeError("db unavailable")):
+                    response = client.post(
+                        "/api/v1/templates/default/layout-config/versions",
+                        json={
+                            "base_template_version_id": read_payload["template_version_id"],
+                            "expected_config_sha256": read_payload["config_sha256"],
+                            "expected_active_template_version_id": read_payload["active_template_version_id"],
+                            "changes": {"normal": {"font_size": 11}},
+                        },
+                        headers={"X-Admin-Token": "secret-admin"},
+                    )
+
+            self.assertEqual(response.status_code, 503)
+            self.assertFalse((runtime.settings.templates_storage_dir / "default" / "v2").exists())
+            self.assertIsNone(runtime.resource_version_service.repository.get_resource_version("template", "default", "2"))
 
     def test_template_versioning_endpoints_require_mysql_resource_service(self):
         with tempfile.TemporaryDirectory() as temp_dir:

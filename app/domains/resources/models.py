@@ -50,11 +50,11 @@ class ResourceVersionRecord(BaseModel):
 
 
 class ResolvedResourceVersion(BaseModel):
-    """job 创建快照可消费的已发布资源版本。"""
+    """job 创建阶段已经授权并固化的资源版本。"""
 
     resource_type: ResourceType
     resource_id: str
     version: str
-    status: Literal["published"] = "published"
+    status: Literal["published", "draft"] = "published"
     snapshot_hash: str
     payload_ref: str | None = None

@@ -226,8 +226,12 @@ async function setupLongTailAdminApi(page: Page): Promise<void> {
       template_id: "default",
       template_version_id: "default@1",
       version: 1,
+      status: "published",
+      is_default: true,
+      active_template_version_id: "default@1",
       source_path: "resources/template_configs/datasheet_template.yaml",
       config_sha256: "sha256:layout",
+      snapshot_hash: "sha256:published",
       meta: {
         schema_version: "template-config/v1",
         template_name: "数据手册模板",
@@ -236,8 +240,14 @@ async function setupLongTailAdminApi(page: Page): Promise<void> {
       config: {
         heading1: { font_size: 13 },
       },
+      preview_samples: { heading1_text: "产品特性" },
       field_schema: {
+        schema_version: "template-layout-editor/v1",
         meta: {},
+        categories: [{ key: "heading", label: "标题", order: 0, groups: ["heading1"] }],
+        group_meta: {
+          heading1: { label: "一级标题", category: "标题", description: "维护一级标题样式。", order: 0 },
+        },
         groups: {
           heading1: { font_size: { type: "number", label: "字号", unit: "pt" } },
         },
