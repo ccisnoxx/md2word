@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 16
-- **Last Active**: 2026-07-10
+- **Total Sessions**: 17
+- **Last Active**: 2026-07-11
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~540 | Active |
+| `journal-1.md` | ~573 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 17 | 2026-07-11 | 上线 Word 模板样式配置管理 | `cc5896f0` | `codex/word-template-style-management` |
 | 16 | 2026-07-10 | 前端页面细节优化 | `9e59b6cd` | `codex/frontend-detail-polish` |
 | 15 | 2026-07-10 | MinerU 账号与密钥运行时配置 | `43651774`, `504b080c` | `main` |
 | 14 | 2026-06-30 | Deploy b167e61 to hostdzire | `b167e614` | `main` |
