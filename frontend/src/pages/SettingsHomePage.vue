@@ -19,6 +19,7 @@
     <div v-if="summary && refreshing" class="refresh-note app-page-shell">正在后台更新配置总览，当前页面保留上次结果。</div>
 
     <section class="word-config-entry-grid app-page-shell" aria-label="配置入口">
+      <RoleGate>
       <router-link class="word-config-entry app-entry-card" to="/settings/templates">
         <span class="settings-group-icon" aria-hidden="true">
           <el-icon><Document /></el-icon>
@@ -55,6 +56,7 @@
           <small>原子轮换 PDF 解析使用的 MinerU 账号 UID 与 API 密钥，并查看配置状态。</small>
         </span>
       </router-link>
+      </RoleGate>
     </section>
 
     <section v-if="summary" class="app-page-shell" aria-label="发布门禁处理队列">

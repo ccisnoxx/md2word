@@ -74,6 +74,7 @@ class JobResourceSnapshotService:
         options: ConversionOptions,
         source_kind: SourceKind,
         job_id: str,
+        allow_draft_template: bool = False,
     ) -> JobResourceSnapshot | None:
         if self.resource_version_service is None:
             self._ensure_no_versioned_selection(options)
@@ -85,6 +86,7 @@ class JobResourceSnapshotService:
             resource_id=template_id,
             version=options.template_version,
             default_missing_status=409,
+            allow_draft=allow_draft_template,
         )
         term_rule_set_id = self._optional_text(options.term_rule_set_id) or DEFAULT_TERM_RULE_SET_ID
         term_rule_set = self._resolve_resource(
@@ -350,13 +352,19 @@ class JobResourceSnapshotService:
         resource_id: str,
         version: str | None,
         default_missing_status: int,
+        allow_draft: bool = False,
     ) -> ResolvedResourceVersion:
         if self.resource_version_service is None:
             raise JobResourceSnapshotError("资源版本快照需要 JOBS_REPOSITORY_BACKEND=mysql。", status_code=503)
         normalized_version = self._optional_text(version)
         try:
             if normalized_version is not None:
-                return self.resource_version_service.resolve_version(resource_type, resource_id, normalized_version)
+                return self.resource_version_service.resolve_version(
+                    resource_type,
+                    resource_id,
+                    normalized_version,
+                    allow_draft=allow_draft,
+                )
             return self.resource_version_service.resolve_default(resource_type, resource_id)
         except FileNotFoundError as exc:
             status_code = 404 if normalized_version is not None else default_missing_status
@@ -516,7 +524,12 @@ class JobResourceSnapshotService:
                 status_code=409,
                 code="resource_snapshot_not_found",
             )
-        if record.status == ResourceVersionStatus.DRAFT:
+        draft_template_is_authorized = (
+            record.status == ResourceVersionStatus.DRAFT
+            and snapshot.resource_type == "template"
+            and snapshot.status == "draft"
+        )
+        if record.status == ResourceVersionStatus.DRAFT and not draft_template_is_authorized:
             raise JobResourceSnapshotError(
                 f"资源快照指向了 draft 版本: {snapshot.resource_type}/{snapshot.resource_id}@{snapshot.version}",
                 status_code=409,

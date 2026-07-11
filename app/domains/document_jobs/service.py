@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-# File: app/domains/document_jobs/service.py
-# Purpose: 创建、投递、查询 document_jobs 并记录任务事件。
+# 文件：app/domains/document_jobs/service.py
+# 用途：创建、投递、查询 document_jobs 并记录任务事件。
 
 import hashlib
 import json
@@ -205,7 +205,10 @@ class DocumentJobService:
         source_file = self._get_source_file_for_create(source_file_id, user)
         mode = self._resolve_document_job_mode(mode=mode, translation_mode=translation_mode)
         self._ensure_document_language_allowed(mode, document_language)
-        normalized_template_version_id = self._resolve_template_version_id(template_version_id)
+        normalized_template_version_id = self._resolve_template_version_id(
+            template_version_id,
+            allow_draft=user.role == "admin",
+        )
         normalized_term_version_id = self._resolve_term_version_id(
             mode,
             self._legacy_translation_term_version_id(mode, term_version_id, translation_term_version),
@@ -239,6 +242,7 @@ class DocumentJobService:
                 translation_term_version=translation_term_version,
                 translation_profile_id=translation_profile_id,
                 translation_profile_version=translation_profile_version,
+                allow_draft_template=user.role == "admin",
             ),
         )
         job = DocumentJobRecord(
@@ -2156,6 +2160,7 @@ class DocumentJobService:
         translation_profile_id: str | None,
         translation_profile_version: str | None,
         term_rule_department_id: str | None = None,
+        allow_draft_template: bool = False,
     ) -> dict | None:
         if self.job_resource_snapshot_service is None:
             return None
@@ -2190,6 +2195,7 @@ class DocumentJobService:
                 options=options,
                 source_kind="source_pdf",
                 job_id=job_id,
+                allow_draft_template=allow_draft_template,
             )
         except JobResourceSnapshotError as exc:
             if not has_explicit_selection:
@@ -2344,11 +2350,14 @@ class DocumentJobService:
         normalized = value.strip()
         return normalized or None
 
-    def _resolve_template_version_id(self, template_version_id: str | None) -> str:
+    def _resolve_template_version_id(self, template_version_id: str | None, *, allow_draft: bool = False) -> str:
         if self.template_read_service is None:
             return template_version_id or self.settings.default_template_id
         try:
-            return self.template_read_service.resolve_template_version(template_version_id).template_version_id
+            return self.template_read_service.resolve_template_version(
+                template_version_id,
+                allow_draft=allow_draft,
+            ).template_version_id
         except FileNotFoundError as exc:
             raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", str(exc)) from exc
         except ValueError as exc:

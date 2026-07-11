@@ -45,8 +45,12 @@ const templateLayoutConfig = {
   template_id: "default",
   template_version_id: "default@1",
   version: 1,
+  status: "published",
+  is_default: true,
+  active_template_version_id: "default@1",
   source_path: "resources/template_configs/datasheet_template.yaml",
   config_sha256: "sha256:layout",
+  snapshot_hash: "sha256:published",
   meta: {
     schema_version: "template-config/v1",
     template_name: "数据手册模板",
@@ -66,12 +70,29 @@ const templateLayoutConfig = {
     header: { enabled: false, logo_path: "assets/company_logo.png", title_text: "数据手册" },
     footer: { enabled: false, show_page_number: true, alignment: "center" },
   },
+  preview_samples: { heading1_text: "产品特性", normal_text: "正文效果示意文本。" },
   field_schema: {
+    schema_version: "template-layout-editor/v1",
     meta: {
       schema_version: { type: "text", label: "schema_version", readonly: true },
       template_name: { type: "text", label: "配置名称", readonly: true },
       output_filename: { type: "text", label: "输出文件名", readonly: true },
     },
+    categories: [
+      { key: "page", label: "页面", order: 0, groups: ["page_setup"] },
+      { key: "heading", label: "标题", order: 1, groups: ["heading1", "heading2", "heading3"] },
+      { key: "body", label: "正文", order: 2, groups: ["normal"] },
+      { key: "table", label: "表格与图注", order: 3, groups: ["table_content", "table_style", "table_note", "caption", "long_table_caption"] },
+      { key: "header_footer", label: "页眉页脚", order: 4, groups: ["header", "footer"] },
+    ],
+    group_meta: Object.fromEntries(
+      [
+        ["page_setup", "页面设置"], ["heading1", "一级标题"], ["heading2", "二级标题"],
+        ["heading3", "三级标题"], ["normal", "正文"], ["table_content", "表格正文"],
+        ["table_style", "表格样式"], ["table_note", "表格注释"], ["caption", "图注 / 表题"],
+        ["long_table_caption", "续表标题"], ["header", "页眉"], ["footer", "页脚"],
+      ].map(([key, label], order) => [key, { label, category: "", description: `维护${label}样式。`, order }]),
+    ),
     groups: {
       page_setup: { top_margin: { type: "number", label: "上边距", unit: "cm" } },
       heading1: {
@@ -465,6 +486,25 @@ async function setupGovernanceApi(page: Page): Promise<void> {
   });
   await page.route(/\/api\/v1\/templates\/default$/, async (route) => {
     await fulfillJson(route, templateDetail);
+  });
+  await page.route(/\/api\/v1\/templates\/default\/versions$/, async (route) => {
+    await fulfillJson(route, {
+      template_id: "default",
+      items: [
+        {
+          template_id: "default",
+          template_version_id: "default@1",
+          version: 1,
+          status: "published",
+          is_current: true,
+          is_default: true,
+          snapshot_hash: "sha256:published",
+          render_policy: {},
+          template: templateDetail.template_file,
+          layout_config: templateDetail.layout_config,
+        },
+      ],
+    });
   });
   await page.route(/\/api\/v1\/templates\/default\/layout-config$/, async (route) => {
     await fulfillJson(route, templateLayoutConfig);

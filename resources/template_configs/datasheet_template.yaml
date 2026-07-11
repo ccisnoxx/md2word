@@ -149,6 +149,7 @@ table_content:
 # 表格框线与表头底色：P0 Word 渲染器使用该段生成可编辑基础表格。
 table_style:
   style_name: Table Grid
+  header_fill: EEF3F8
   border_color: C7CDD4
 
 # 表格注释：表格下方的“注：”“说明：”等表注文字。

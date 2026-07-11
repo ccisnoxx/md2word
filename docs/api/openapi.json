@@ -11350,20 +11350,45 @@
       },
       "TemplateLayoutConfigDraftRequest": {
         "properties": {
-          "config": {
+          "base_template_version_id": {
+            "title": "Base Template Version Id",
+            "type": "string"
+          },
+          "change_note": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Change Note",
+            "type": "string"
+          },
+          "changes": {
             "additionalProperties": true,
-            "title": "Config",
+            "title": "Changes",
             "type": "object"
+          },
+          "expected_active_template_version_id": {
+            "title": "Expected Active Template Version Id",
+            "type": "string"
+          },
+          "expected_config_sha256": {
+            "title": "Expected Config Sha256",
+            "type": "string"
           }
         },
         "required": [
-          "config"
+          "base_template_version_id",
+          "expected_config_sha256",
+          "expected_active_template_version_id",
+          "changes"
         ],
         "title": "TemplateLayoutConfigDraftRequest",
         "type": "object"
       },
       "TemplateLayoutConfigResponse": {
         "properties": {
+          "active_template_version_id": {
+            "title": "Active Template Version Id",
+            "type": "string"
+          },
           "config": {
             "additionalProperties": true,
             "title": "Config",
@@ -11385,10 +11410,31 @@
             "title": "Field Schema",
             "type": "object"
           },
+          "is_default": {
+            "default": false,
+            "title": "Is Default",
+            "type": "boolean"
+          },
           "meta": {
             "additionalProperties": true,
             "title": "Meta",
             "type": "object"
+          },
+          "preview_samples": {
+            "additionalProperties": true,
+            "title": "Preview Samples",
+            "type": "object"
+          },
+          "snapshot_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Hash"
           },
           "source_path": {
             "anyOf": [
@@ -11400,6 +11446,10 @@
               }
             ],
             "title": "Source Path"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
           },
           "template_id": {
             "title": "Template Id",
@@ -11423,7 +11473,9 @@
         },
         "required": [
           "template_id",
-          "version"
+          "version",
+          "status",
+          "active_template_version_id"
         ],
         "title": "TemplateLayoutConfigResponse",
         "type": "object"
@@ -24699,6 +24751,22 @@
             }
           },
           {
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          },
+          {
             "in": "header",
             "name": "Authorization",
             "required": false,
@@ -24886,6 +24954,54 @@
             "schema": {
               "title": "Template Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
             }
           }
         ],

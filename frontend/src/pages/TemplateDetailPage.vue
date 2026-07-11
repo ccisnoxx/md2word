@@ -1,4 +1,4 @@
-<!-- frontend/src/pages/TemplateDetailPage.vue: Word template document file and version lifecycle page. -->
+<!-- frontend/src/pages/TemplateDetailPage.vue: Word 模板文件与版本生命周期管理页。 -->
 <template>
   <main class="template-detail-page app-page" aria-labelledby="template-title">
     <WorkbenchPageHeader
@@ -218,7 +218,7 @@
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type UploadFile, type UploadInstance, type UploadRawFile } from "element-plus";
 import { Brush, Download, Refresh, Upload } from "@element-plus/icons-vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 import { documentJobsApi } from "@/api/documentJobs";
 import { filesApi } from "@/api/files";
@@ -243,6 +243,7 @@ const props = defineProps<{
 }>();
 
 const router = useRouter();
+const route = useRoute();
 const auth = useAuthStore();
 const template = ref<TemplateDetailResponse | null>(null);
 const versions = ref<TemplateVersionResponse[]>([]);
@@ -536,7 +537,13 @@ function versionTagType(status: string): "success" | "info" | "warning" | "dange
 }
 
 onMounted(() => {
-  void loadAll();
+  void loadAll().then(() => {
+    const requestedVersion = Number(route.query.validate_version);
+    const version = versions.value.find((item) => item.version === requestedVersion && item.status === "draft");
+    if (version) {
+      openValidationDialog(version);
+    }
+  });
 });
 </script>
 

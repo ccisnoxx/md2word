@@ -26,6 +26,7 @@ Before backend changes:
 4. If the change touches metadata, repositories, stage messages, schema bootstrap, or artifact storage, read [Database Guidelines](./database-guidelines.md).
 5. If the change emits logs, affects health/metrics, workers, callbacks, or long-running jobs, read [Logging Guidelines](./logging-guidelines.md).
 6. 修改 MinerU 账号与密钥、运行时配置文件或环境变量优先级时，阅读 [Runtime Configuration](./runtime-configuration.md)。
+7. 修改 Word 模板样式 schema、版本 API、默认指针或 draft 验证权限时，阅读 [Word 模板样式配置合同](./template-layout-configuration.md)。
 
 Also read `.trellis/spec/guides/index.md` and the relevant thinking guide when the change crosses API, service, repository, worker, or runtime boundaries.
 
@@ -38,6 +39,7 @@ Also read `.trellis/spec/guides/index.md` and the relevant thinking guide when t
 | [Error Handling](./error-handling.md) | `ApiError`, unified API error responses, workflow errors, validation, trace IDs, bulk failures | Current |
 | [Logging Guidelines](./logging-guidelines.md) | `access` / `business` / `system` loggers, text/JSON format, trace/job context, sensitive data boundaries | Current |
 | [Runtime Configuration](./runtime-configuration.md) | MinerU 账号与密钥绑定、环境变量优先级、安全 API、审计和 Worker 即时生效合同 | Current |
+| [Word 模板样式配置合同](./template-layout-configuration.md) | Admin schema 编辑、CAS、原子持久化、版本默认指针和 draft 验证权限 | Current |
 | [Quality Guidelines](./quality-guidelines.md) | `unittest` style, targeted checks, release gate, OpenAPI contract checks, local vs online validation | Current |
 
 ## Quality Check
