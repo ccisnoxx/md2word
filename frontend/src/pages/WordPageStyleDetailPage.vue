@@ -344,7 +344,7 @@ const overviewItems = computed<WorkbenchMetricItem[]>(() => [
     id: "group_count",
     label: "配置分组",
     value: layoutGroupEntries.value.length || "-",
-    helper: "按 datasheet_template.yaml 一级分类渲染",
+    helper: "按版式配置一级分类渲染",
   },
   {
     id: "dirty_count",

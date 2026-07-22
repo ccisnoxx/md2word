@@ -2382,7 +2382,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["metadata_store"], "mysql")
-        self.assertEqual(payload["resources"]["template_versions"], 1)
+        self.assertEqual(payload["resources"]["template_versions"], 2)
         self.assertEqual(payload["resources"]["term_rule_set_versions"], 2)
         self.assertEqual(payload["resources"]["translation_profile_versions"], 2)
         self.assertEqual(payload["resources"]["default_template_version"], "default@1")
@@ -10980,8 +10980,90 @@ class FastAPIJobsBackendTests(TestCase):
                 self.assertEqual(detail["id"], "default")
                 self.assertEqual(detail["template"]["file_name"], "datasheet_template.docx")
                 self.assertIsNotNone(detail["template"]["sha256"])
-                self.assertEqual(detail["layout_config"]["file_name"], "datasheet_template.yaml")
+                self.assertEqual(detail["layout_config"]["file_name"], "datasheet_template_v2.yaml")
                 self.assertEqual(detail["subscript_config"]["file_name"], "runtime_subscripts_dictionary.yaml")
+
+    def test_bundled_v2_bootstrap_preserves_existing_v1_default(self):
+        """生产已存在 default@1 时只登记 v2，不隐式迁移默认指针。"""
+
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_repository_backend="mysql",
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=_FakeMysqlDatabase().connect,
+                ),
+            )
+            service = runtime.resource_version_service
+            self.assertIsNotNone(service)
+            assert service is not None
+            template_path = runtime.settings.default_template_path
+            self.assertIsNotNone(template_path)
+            assert template_path is not None
+            v1_layout_path = Path(__file__).resolve().parents[1] / "resources/template_configs/datasheet_template.yaml"
+            v1_payload = {
+                "template_id": "default",
+                "version": 1,
+                "name": "datasheet_template",
+                "description": "已发布 bundled v1",
+                "docx_path": str(template_path.resolve()),
+                "docx_sha256": f"sha256:{hashlib.sha256(template_path.read_bytes()).hexdigest()}",
+                "layout_config_path": "resources/template_configs/datasheet_template.yaml",
+                "layout_config_sha256": f"sha256:{hashlib.sha256(v1_layout_path.read_bytes()).hexdigest()}",
+                "render_policy": {},
+            }
+            service.create_or_update_draft(
+                resource_type="template",
+                resource_id="default",
+                version="1",
+                snapshot_hash=resource_payload_hash(v1_payload),
+                payload_ref="template:default@1",
+                payload=v1_payload,
+            )
+            service.publish("template", "default", "1", make_default=True)
+
+            create_app(runtime)
+
+            default_record = service.repository.get_default_resource_version("template", "default")
+            v2_record = service.repository.get_resource_version("template", "default", "2")
+            v1_selection = runtime.template_read_service.resolve_template_version("default@1")
+            self.assertIsNotNone(default_record)
+            assert default_record is not None
+            self.assertEqual(default_record.version, "1")
+            self.assertIsNotNone(v2_record)
+            assert v2_record is not None and v2_record.payload is not None
+            self.assertEqual(v2_record.status.value, "published")
+            self.assertEqual(v2_record.payload["layout_config_path"], "resources/template_configs/datasheet_template_v2.yaml")
+            self.assertEqual(v1_selection.layout_config_path, v1_layout_path.resolve())
+
+    def test_bundled_v2_bootstrap_sets_v2_default_in_empty_mysql_repository(self):
+        """空库继续把 manifest 声明的 bundled 版本设为初始默认。"""
+
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_repository_backend="mysql",
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(),
+                    connect_factory=_FakeMysqlDatabase().connect,
+                ),
+            )
+            create_app(runtime)
+
+            service = runtime.resource_version_service
+            self.assertIsNotNone(service)
+            assert service is not None
+            default_record = service.repository.get_default_resource_version("template", "default")
+            self.assertIsNotNone(default_record)
+            assert default_record is not None
+            self.assertEqual(default_record.version, "2")
+            self.assertIsNone(service.repository.get_resource_version("template", "default", "1"))
+            self.assertEqual(runtime.template_read_service.resolve_template_version(None).version, 2)
 
     def test_template_download_returns_docx(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -11291,7 +11373,7 @@ class FastAPIJobsBackendTests(TestCase):
             temp_root = Path(temp_dir)
             manifest_path = temp_root / "templates_manifest.yaml"
             repo_root = Path(__file__).resolve().parents[1]
-            seed_layout_path = repo_root / "resources" / "template_configs" / "datasheet_template.yaml"
+            seed_layout_path = repo_root / "resources" / "template_configs" / "datasheet_template_v2.yaml"
             legacy_layout = yaml.safe_load(seed_layout_path.read_text(encoding="utf-8"))
             text_style_groups = (
                 "part_number",

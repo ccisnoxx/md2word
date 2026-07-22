@@ -43,7 +43,7 @@ Template Version 的 publish / set-default / disable 和版式配置 draft 创�
   - 返回 manifest 中全部可见且启用的模板
   - 每项同时带出：
     - 模板文件元数据
-    - `datasheet_template.yaml` 元数据
+    - manifest 当前绑定的版式 YAML 元数据
     - 当前运行态术语 YAML 元数据
 
 - 响应关键字段：
@@ -140,7 +140,7 @@ Template Version 的 publish / set-default / disable 和版式配置 draft 创�
   - 在同文件系统 staging 目录复制 DOCX、写入并 fsync `layout_config.yaml`，校验成功后原子 rename
   - 通过 MySQL 序列分配不复用的整数版本，并以 create-only 语义写入 Resource Version draft
   - 创建 `TemplateVersionResponse(status="draft")`
-  - 不修改仓库内 `resources/template_configs/datasheet_template.yaml`
+  - 不修改 manifest 绑定的仓库内 seed YAML
   - 不自动发布，也不替换当前默认模板
 - 审计：成功后写 `template.layout_config_version_create`，`target_id={template_id}@{version}`。
 - 错误：

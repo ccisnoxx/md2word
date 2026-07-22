@@ -209,7 +209,7 @@ class Settings(BaseSettings):
     @property
     def layout_config_candidates(self) -> tuple[Path, ...]:
         return (
-            self.root_dir / "resources" / "template_configs" / "datasheet_template.yaml",
+            self.root_dir / "resources" / "template_configs" / "datasheet_template_v2.yaml",
         )
 
     @property

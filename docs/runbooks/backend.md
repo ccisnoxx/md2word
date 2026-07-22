@@ -505,7 +505,7 @@ curl -L "http://127.0.0.1:8000/api/v1/templates/default/download" -o template.do
 当前 `templates` 接口会返回：
 
 - 默认 DOCX 模板元数据
-- `datasheet_template.yaml` 元数据
+- manifest 当前绑定的版式 YAML 元数据
 - `subscripts_dictionary.yaml` 元数据
 - API 上传模板的当前版本号
 

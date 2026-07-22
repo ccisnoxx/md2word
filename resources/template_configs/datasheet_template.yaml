@@ -19,9 +19,7 @@ page_setup:
 
 # 首页型号行：通常是器件型号/料号，例如 OPA228。
 part_number:
-  font_name: Arial        # 型号行中文/东亚字体。
-  western_font_name: Arial # 型号行西文字体。
-  complex_script_font_name: Times New Roman # 型号行复杂文种字体。
+  font_name: Arial        # 型号行字体。
   font_size: 22           # 型号行字号，单位 pt；适度压小可降低首页占高。
   bold: true              # 型号行是否加粗。
   alignment: center       # 型号行段落对齐方式：left / center / right / justify。
@@ -29,9 +27,7 @@ part_number:
 
 # 首页品类行：通常是器件中文/英文品类描述。
 category:
-  font_name: 宋体         # 品类行中文/东亚字体。
-  western_font_name: Arial # 品类行西文字体。
-  complex_script_font_name: Times New Roman # 品类行复杂文种字体。
+  font_name: 宋体         # 品类行字体。
   font_size: 12           # 品类行字号，单位 pt。
   bold: true              # 品类行是否加粗。
   alignment: center       # 品类行段落对齐方式。
@@ -39,9 +35,7 @@ category:
 
 # 一级标题：例如“1 Features”“6 Specifications”。
 heading1:
-  font_name: 宋体      # 一级标题中文/东亚字体。
-  western_font_name: Arial # 一级标题西文字体。
-  complex_script_font_name: Times New Roman # 一级标题复杂文种字体。
+  font_name: 宋体      # 一级标题字体。
   font_size: 13           # 一级标题字号，单位 pt。
   bold: true              # 一级标题是否加粗。
   color: '#0c69b2'        # 一级标题字体颜色，十六进制 RGB。
@@ -55,9 +49,7 @@ heading1:
 
 # 二级标题：例如“6.1 Absolute Maximum Ratings”。
 heading2:
-  font_name: 宋体      # 二级标题中文/东亚字体。
-  western_font_name: Arial # 二级标题西文字体。
-  complex_script_font_name: Times New Roman # 二级标题复杂文种字体。
+  font_name: 宋体      # 二级标题字体。
   font_size: 11         # 二级标题字号，单位 pt。
   bold: true              # 二级标题是否加粗。
   color: '#000000'        # 二级标题字体颜色。
@@ -71,9 +63,7 @@ heading2:
 
 # 三级标题：例如“6.1.1 Input Characteristics”。
 heading3:
-  font_name: 宋体         # 三级标题中文/东亚字体。
-  western_font_name: Arial # 三级标题西文字体。
-  complex_script_font_name: Times New Roman # 三级标题复杂文种字体。
+  font_name: 宋体         # 三级标题字体。
   font_size: 10           # 三级标题字号，单位 pt。
   bold: true              # 三级标题是否加粗。
   color: '#000000'        # 三级标题字体颜色。
@@ -87,9 +77,7 @@ heading3:
 
 # 目录标题“目录”。
 toc_title:
-  font_name: 宋体      # 目录标题中文/东亚字体。
-  western_font_name: Arial # 目录标题西文字体。
-  complex_script_font_name: Times New Roman # 目录标题复杂文种字体。
+  font_name: 宋体      # 目录标题字体。
   font_size: 13           # 目录标题字号。
   bold: true              # 目录标题是否加粗。
   color: '#000000'        # 目录标题颜色。
@@ -100,9 +88,7 @@ toc_title:
 
 # 目录一级项，例如“1、产品介绍”。
 toc_level1:
-  font_name: 宋体               # 目录一级项中文/东亚字体。
-  western_font_name: Arial      # 目录一级项西文字体。
-  complex_script_font_name: Times New Roman # 目录一级项复杂文种字体。
+  font_name: 宋体
   font_size: 11
   bold: true
   color: '#000000'
@@ -113,9 +99,7 @@ toc_level1:
 
 # 目录二级项，例如“1.1 产品概述”。
 toc_level2:
-  font_name: 宋体               # 目录二级项中文/东亚字体。
-  western_font_name: Arial      # 目录二级项西文字体。
-  complex_script_font_name: Times New Roman # 目录二级项复杂文种字体。
+  font_name: 宋体
   font_size: 10.5
   bold: false
   color: '#000000'
@@ -126,9 +110,7 @@ toc_level2:
 
 # 目录三级项，例如“1.1.1 输入特性”。
 toc_level3:
-  font_name: 宋体               # 目录三级项中文/东亚字体。
-  western_font_name: Arial      # 目录三级项西文字体。
-  complex_script_font_name: Times New Roman # 目录三级项复杂文种字体。
+  font_name: 宋体
   font_size: 10
   bold: false
   color: '#000000'
@@ -139,9 +121,7 @@ toc_level3:
 
 # 正文段落：普通说明文字、段落描述、非列表文字。
 normal:
-  font_name: 宋体         # 正文中文/东亚字体。
-  western_font_name: Arial # 正文西文字体。
-  complex_script_font_name: Times New Roman # 正文复杂文种字体。
+  font_name: 宋体         # 正文字体。
   font_size: 10.5         # 正文字号，单位 pt。
   bold: false             # 正文默认是否加粗。
   line_spacing: 1.20      # 正文行距倍数；中文连续阅读比 1.15 更舒展。
@@ -155,9 +135,7 @@ normal:
 
 # 表格正文：表头、表格内容、单元格中的文字。
 table_content:
-  font_name: 宋体         # 表格文字中文/东亚字体。
-  western_font_name: Arial # 表格文字西文字体。
-  complex_script_font_name: Times New Roman # 表格文字复杂文种字体。
+  font_name: 宋体         # 表格文字字体。
   font_size: 9            # 表格正文常规用 9 号字，兼顾信息密度与可读性。
   color: '#000000'        # 表格文字颜色。
   alignment: left         # 表格正文左对齐，更符合常规文档表格排版。
@@ -176,9 +154,7 @@ table_style:
 
 # 表格注释：表格下方的“注：”“说明：”等表注文字。
 table_note:
-  font_name: 宋体         # 表注中文/东亚字体。
-  western_font_name: Arial # 表注西文字体。
-  complex_script_font_name: Times New Roman # 表注复杂文种字体。
+  font_name: 宋体         # 表注字体。
   font_size: 8.0          # 表注字号，单位 pt；中文表注可读性更稳妥。
   italic: false           # 表注是否斜体。
   alignment: left         # 表注左对齐。
@@ -192,9 +168,7 @@ table_note:
 
 # 图注 / 表题：图片标题、表格标题，例如“Figure 1.”、“Device Information”。
 caption:
-  font_name: 宋体         # 图注/表题中文/东亚字体。
-  western_font_name: Arial # 图注/表题西文字体。
-  complex_script_font_name: Times New Roman # 图注/表题复杂文种字体。
+  font_name: 宋体         # 图注/表题字体。
   font_size: 9            # 图注/表题字号，单位 pt。
   bold: false             # 图注/表题默认是否加粗。
   color: '#000000'        # 图注/表题颜色。
@@ -208,9 +182,7 @@ caption:
 
 # 超长续表标题：仅用于 A.1 / A.2 / A.3 这类拆分续表的标题行。
 long_table_caption:
-  font_name: 宋体         # 续表标题中文/东亚字体。
-  western_font_name: Arial # 续表标题西文字体。
-  complex_script_font_name: Times New Roman # 续表标题复杂文种字体。
+  font_name: 宋体         # 续表标题字体。
   font_size: 10.5         # 续表标题字号，单位 pt。
   bold: false             # 续表标题是否加粗。
   color: '#000000'        # 续表标题颜色，默认黑色。
@@ -228,9 +200,7 @@ header:
   logo_path: 'assets/company_logo.png' # 页眉 logo 路径，通常由模板文档实际承载。
   logo_height_cm: 2                # logo 高度，单位 cm。
   title_text: '数据手册'             # 页眉标题文字。
-  title_font_name: '微软雅黑'        # 页眉标题中文/东亚字体。
-  title_western_font_name: Arial    # 页眉标题西文字体。
-  title_complex_script_font_name: Times New Roman # 页眉标题复杂文种字体。
+  title_font_name: '微软雅黑'        # 页眉标题字体。
   title_font_size: 14              # 页眉标题字号，单位 pt。
   title_color: '#0c69b2'           # 页眉标题颜色。
 
@@ -238,9 +208,6 @@ header:
 footer:
   enabled: false            # 是否启用渲染器页脚覆盖。
   show_page_number: true    # 是否显示页码。
-  font_name: 宋体           # 页脚中文/东亚字体。
-  western_font_name: Arial  # 页脚西文字体。
-  complex_script_font_name: Times New Roman # 页脚复杂文种字体。
   alignment: center         # 页脚内容对齐方式。
 
 # 示例内容：仅用于模板演示，不参与真实生成逻辑。

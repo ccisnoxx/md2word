@@ -71,7 +71,7 @@ scripts.dev.formal_mineru_conversion.run_conversion(...)
   "document_language": "en",
   "translation_mode": "direct",
   "template_path": "resources/templates/default/datasheet_template.docx",
-  "layout_config_path": "resources/template_configs/datasheet_template.yaml",
+  "layout_config_path": "resources/template_configs/datasheet_template_v2.yaml",
   "subscript_config": "resources/term_rules/subscripts_dictionary.yaml",
   "no_template": false,
   "use_mineru_header_footer": false,

@@ -39,7 +39,7 @@ MINIMAL_PNG_BYTES = (
 class DocumentIRWordRendererLayoutTests(unittest.TestCase):
     def test_seed_config_declares_western_and_complex_fonts_for_all_text_groups(self) -> None:
         config = TemplateConfigPackage.load(
-            Path(__file__).resolve().parents[1] / "resources" / "template_configs" / "datasheet_template.yaml"
+            Path(__file__).resolve().parents[1] / "resources" / "template_configs" / "datasheet_template_v2.yaml"
         )
 
         for group_name in (

@@ -4,5 +4,6 @@ templates:
     description: 当前默认 DOCX 模板与绑定页面布局配置。
     enabled: true
     is_default_seed: true
+    version: 2
     template_path: resources/templates/default/datasheet_template.docx
-    layout_config_path: resources/template_configs/datasheet_template.yaml
+    layout_config_path: resources/template_configs/datasheet_template_v2.yaml
