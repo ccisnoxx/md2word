@@ -41,6 +41,21 @@ Managed by Trellis. Edits outside this block are preserved; edits inside may be 
 - Once a Trellis task exists, read `prd.md`, `design.md`, `implement.md`, and the relevant `.trellis/spec/` files before writing code.
 - For complex tasks, do not implement until `prd.md`, `design.md`, and `implement.md` are reviewable.
 
+### Trellis And Ponytail
+
+- Trellis is the authoritative owner of task classification, planning gates, task artifacts, context loading, project Specs, verification requirements, Spec updates, commits, and finish-work.
+- Outside an active Trellis task, follow the global and project `AGENTS.md` rules; Ponytail may constrain implementation choices but must not expand the requested scope.
+- When a Trellis task exists, its `prd.md`, `design.md`, `implement.md`, and relevant `.trellis/spec/` files override generic Ponytail minimization advice.
+- Ponytail governs implementation choices only after the scope and acceptance criteria are authorized. Prefer existing code, the standard library, native platform capabilities, installed dependencies, and then the minimum new code.
+- Required Trellis artifacts, project documentation, and Spec-defined checks are not optional boilerplate and must not be removed or weakened by Ponytail.
+- Ponytail may propose reducing scope, but implementation of the reduced scope must wait until the PRD and acceptance criteria are updated and confirmed.
+- Minimal code must not weaken correctness, security, data integrity, accessibility, public contracts, error handling, or explicit requirements.
+- Ponytail's minimum runnable check is a validation floor, not a replacement for tests, type checks, builds, smoke checks, or online validation required by `implement.md` or project Specs.
+- Project Specs override generic Ponytail advice when they establish a shared owner, reuse boundary, public contract, state model, or necessary abstraction.
+- `trellis-check` owns correctness, security, contract, and regression review. `ponytail-review` supplements it by identifying unnecessary complexity and does not replace it.
+- Ponytail's brevity guidance must not omit required reporting of changed scope, validation results, documentation status, or residual risk.
+- Ponytail `ultra` requires explicit user activation and is not the project default.
+
 ### Engineering Constraints
 
 - Confirm the real implementation before editing. Do not add guessed compatibility fallbacks or silent defaults.
