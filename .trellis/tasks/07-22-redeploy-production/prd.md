@@ -58,14 +58,14 @@
 
 ## Acceptance Criteria
 
-- [ ] 合并后的目标提交同时包含 `b249790d` 与 `06e2e7da`，远端 `main` 与部署 SHA 一致。
-- [ ] 远端严格模板样式治理合同保持有效，页面样式三类字体兼容扩展及 `Arial` / `Times New Roman` seed 默认值通过定向测试。
-- [ ] `default@1` 原始路径/hash 保持可读，manifest/bootstrap 发布独立的 `default@2`，且 bootstrap 不自动改写既有生产默认指针。
-- [ ] `/root/md2word-releases/<target-short-sha>` 由目标 GitHub commit 导出，API/Worker 运行该版本；前端 `current` 指向同批次静态 release。
-- [ ] Compose 状态、内网与公网 `live/ready`、运行时 release check 和 Golden Sample preflight 全部通过且无未解释 blocker。
-- [ ] 生产验证 v1、v2 后显式执行 `set-default default@2`；默认 layout-config 观察到中文、西文、复杂文种字体字段及内置默认值，公开配置中心前端可访问。
-- [ ] `deployment-audit.md` 记录版本、发布与验证结论且不含敏感信息。
-- [ ] 若上线门禁失败，旧后端镜像/服务与旧前端 symlink 均恢复并通过健康检查，或明确报告无法回滚的阻塞和当前生产状态。
+- [x] 合并后的目标提交同时包含 `b249790d` 与 `06e2e7da`，远端 `main` 与部署 SHA 一致。
+- [x] 远端严格模板样式治理合同保持有效，页面样式三类字体兼容扩展及 `Arial` / `Times New Roman` seed 默认值通过定向测试。
+- [x] `default@1` 原始路径/hash 保持可读，manifest/bootstrap 发布独立的 `default@2`，且 bootstrap 不自动改写既有生产默认指针。
+- [x] `/root/md2word-releases/<target-short-sha>` 由目标 GitHub commit 导出，API/Worker 运行该版本；前端 `current` 指向同批次静态 release。
+- [x] Compose 状态、内网与公网 `live/ready`、运行时 release check 和 Golden Sample preflight 全部通过且无未解释 blocker。
+- [x] 生产验证 v1、v2 后显式执行 `set-default default@2`；默认 layout-config 观察到中文、西文、复杂文种字体字段及内置默认值，公开配置中心前端可访问。
+- [x] `deployment-audit.md` 记录版本、发布与验证结论且不含敏感信息。
+- [x] 若上线门禁失败，旧后端镜像/服务与旧前端 symlink 均恢复并通过健康检查，或明确报告无法回滚的阻塞和当前生产状态。
 
 ## Out of Scope
 
