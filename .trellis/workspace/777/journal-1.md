@@ -39,7 +39,6 @@ Completed Phase 1 backend batching validation: migrated stale repository tests t
 
 - None - task complete
 
-
 ## Session 2: Translation batch diagnostics UI
 
 **Date**: 2026-06-26
@@ -540,7 +539,39 @@ Released commit b167e61 to hostdzire via release dir flow; verified internal/pub
 - None - task complete
 
 
-## Session 17: 完善页面格式多文种字体配置
+## Session 17: 上线 Word 模板样式配置管理
+
+**Date**: 2026-07-11
+**Task**: 上线 Word 模板样式配置管理
+**Branch**: `codex/word-template-style-management`
+
+### Summary
+
+完成 admin 可视化样式配置、严格 schema、版本治理和权限链路；推送 main 后在 hostdzire 备份数据、重建 API/Worker 与前端，并通过线上 readiness、release check 和 18 分组权限探针。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cc5896f0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+## Session 18: 完善页面格式多文种字体配置
 
 **Date**: 2026-07-22
 **Task**: 完善页面格式多文种字体配置

@@ -23,10 +23,24 @@ class _MemoryResourceVersionRepository:
     def __init__(self) -> None:
         self.records: dict[tuple[str, str, str], ResourceVersionRecord] = {}
         self.defaults: dict[tuple[str, str], str] = {}
+        self.next_versions: dict[tuple[str, str], int] = {}
 
     def save_resource_version(self, record: ResourceVersionRecord) -> ResourceVersionRecord:
         self.records[(record.resource_type, record.resource_id, record.version)] = record
         return record
+
+    def create_resource_version(self, record: ResourceVersionRecord) -> ResourceVersionRecord:
+        key = (record.resource_type, record.resource_id, record.version)
+        if key in self.records:
+            raise ValueError(f"资源版本已存在: {record.resource_type}/{record.resource_id}@{record.version}")
+        self.records[key] = record
+        return record
+
+    def allocate_next_version(self, resource_type: ResourceType, resource_id: str, minimum_next: int) -> int:
+        key = (resource_type, resource_id)
+        allocated = max(self.next_versions.get(key, minimum_next), minimum_next)
+        self.next_versions[key] = allocated + 1
+        return allocated
 
     def get_resource_version(
         self,
@@ -96,6 +110,27 @@ class ResourceVersionServiceTests(TestCase):
         stored = self.repository.get_resource_version("term_rule_set", "electronics-default", "2026.05.28-1")
         self.assertIsNotNone(stored)
         self.assertEqual(stored.snapshot_hash, HASH_V1)
+
+    def test_create_draft_is_create_only_and_integer_versions_are_not_reused(self):
+        created = self.service.create_draft(
+            resource_type="template",
+            resource_id="datasheet-default",
+            version="2",
+            snapshot_hash=HASH_V1,
+        )
+
+        with self.assertRaises(ValueError):
+            self.service.create_draft(
+                resource_type="template",
+                resource_id="datasheet-default",
+                version="2",
+                snapshot_hash=HASH_V2,
+            )
+
+        self.assertEqual(created.snapshot_hash, HASH_V1)
+        self.assertEqual(self.service.allocate_next_version("template", "datasheet-default", 3), 3)
+        self.assertEqual(self.service.allocate_next_version("template", "datasheet-default", 3), 4)
+        self.assertEqual(self.service.allocate_next_version("template", "datasheet-default", 10), 10)
 
     def test_default_pointer_only_accepts_published_versions(self):
         self.service.create_or_update_draft(
@@ -174,6 +209,37 @@ class MysqlResourceVersionRepositoryTests(TestCase):
         self.assertEqual(resolved.version, "1.0.0")
         self.assertEqual(len(versions), 1)
         self.assertEqual(versions[0].payload, {"layout": "default"})
+
+    def test_mysql_repository_allocates_monotonic_integer_versions_and_rejects_duplicate_create(self):
+        fake_mysql = _FakeMysqlDatabase()
+        repository = build_mysql_persistence_adapters(
+            _mysql_config(),
+            connect_factory=fake_mysql.connect,
+        ).resource_version_repository
+        service = ResourceVersionService(repository)
+
+        first = service.allocate_next_version("template", "datasheet-default", 2)
+        second = service.allocate_next_version("template", "datasheet-default", 2)
+        service.create_draft(
+            resource_type="template",
+            resource_id="datasheet-default",
+            version=str(first),
+            snapshot_hash=HASH_V1,
+        )
+
+        with self.assertRaises(ValueError):
+            service.create_draft(
+                resource_type="template",
+                resource_id="datasheet-default",
+                version=str(first),
+                snapshot_hash=HASH_V2,
+            )
+
+        self.assertEqual((first, second), (2, 3))
+        self.assertEqual(
+            repository.get_resource_version("template", "datasheet-default", str(first)).snapshot_hash,
+            HASH_V1,
+        )
 
     def test_mysql_runtime_exposes_resource_version_service(self):
         fake_mysql = _FakeMysqlDatabase()

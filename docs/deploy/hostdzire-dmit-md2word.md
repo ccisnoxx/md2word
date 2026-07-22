@@ -149,8 +149,11 @@ docker compose --env-file .env -f docker/prod/docker-compose.yml logs --tail=120
 
 ```bash
 cd /root/md2word-releases/<previous-short-sha>
+docker compose --env-file .env -f docker/prod/docker-compose.yml build
 docker compose --env-file .env -f docker/prod/docker-compose.yml up -d --force-recreate api worker
 ```
+
+新旧 release 共用 `md2word-p0:latest` 镜像标签，因此必须先在旧 release 重新构建，再强制重建 API/Worker；仅执行 `up` 可能继续运行新代码。回滚不执行 `down -v`，MySQL、Redis 和 Docker volumes 保持不变。
 
 ## 证书和入口
 

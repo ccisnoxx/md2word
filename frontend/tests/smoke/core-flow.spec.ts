@@ -290,7 +290,12 @@ type DocumentJobCreatePayload = {
 type MockApiControls = {
   createdDocumentJobPayloads: () => DocumentJobCreatePayload[];
   translationQaPatchCount: () => number;
-  layoutConfigDraftPayloads: () => Array<{ config: Record<string, unknown> }>;
+  layoutConfigDraftPayloads: () => Array<{
+    base_template_version_id: string;
+    expected_config_sha256: string;
+    expected_active_template_version_id: string;
+    changes: Record<string, unknown>;
+  }>;
 };
 
 type MockRole = "operator" | "admin";
@@ -359,8 +364,12 @@ const templateLayoutConfig = {
   template_id: "default",
   template_version_id: "default@1",
   version: 1,
+  status: "published",
+  is_default: true,
+  active_template_version_id: "default@1",
   source_path: "resources/template_configs/datasheet_template.yaml",
   config_sha256: "sha256:layout",
+  snapshot_hash: "sha256:published",
   meta: {
     schema_version: "template-config/v1",
     template_name: "数据手册模板",
@@ -408,12 +417,33 @@ const templateLayoutConfig = {
       alignment: "center",
     },
   },
+  preview_samples: { heading1_text: "产品特性", normal_text: "正文效果示意文本。" },
   field_schema: {
+    schema_version: "template-layout-editor/v1",
     meta: {
       schema_version: { type: "text", label: "schema_version", readonly: true },
       template_name: { type: "text", label: "配置名称", readonly: true },
       output_filename: { type: "text", label: "输出文件名", readonly: true },
     },
+    categories: [
+      { key: "page", label: "页面", order: 0, groups: ["page_setup"] },
+      { key: "cover", label: "首页", order: 1, groups: ["part_number", "category"] },
+      { key: "heading", label: "标题", order: 2, groups: ["heading1", "heading2", "heading3"] },
+      { key: "toc", label: "目录", order: 3, groups: ["toc_title", "toc_level1", "toc_level2", "toc_level3"] },
+      { key: "body", label: "正文", order: 4, groups: ["normal"] },
+      { key: "table", label: "表格与图注", order: 5, groups: ["table_content", "table_style", "table_note", "caption", "long_table_caption"] },
+      { key: "header_footer", label: "页眉页脚", order: 6, groups: ["header", "footer"] },
+    ],
+    group_meta: Object.fromEntries(
+      [
+        ["page_setup", "页面设置"], ["part_number", "首页型号行"], ["category", "首页品类行"],
+        ["heading1", "一级标题"], ["heading2", "二级标题"], ["heading3", "三级标题"],
+        ["toc_title", "目录标题"], ["toc_level1", "目录一级项"], ["toc_level2", "目录二级项"], ["toc_level3", "目录三级项"],
+        ["normal", "正文"], ["table_content", "表格正文"], ["table_style", "表格样式"],
+        ["table_note", "表格注释"], ["caption", "图注 / 表题"], ["long_table_caption", "续表标题"],
+        ["header", "页眉"], ["footer", "页脚"],
+      ].map(([key, label], order) => [key, { label, category: "", description: `维护${label}样式。`, order }]),
+    ),
     groups: {
       page_setup: { top_margin: { type: "number", label: "上边距", unit: "cm" } },
       part_number: { font_size: { type: "number", label: "字号", unit: "pt" } },
@@ -974,7 +1004,12 @@ const fileLibrarySearch = {
 async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockApiControls> {
   let currentRole: MockRole = "operator";
   const createdDocumentJobPayloads: DocumentJobCreatePayload[] = [];
-  const layoutConfigDraftPayloads: Array<{ config: Record<string, unknown> }> = [];
+  const layoutConfigDraftPayloads: Array<{
+    base_template_version_id: string;
+    expected_config_sha256: string;
+    expected_active_template_version_id: string;
+    changes: Record<string, unknown>;
+  }> = [];
   let translationQaPatchCount = 0;
 
   await page.route("**/api/v1/auth/login", async (route) => {
@@ -1385,7 +1420,12 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
     });
   });
   await page.route("**/api/v1/templates/default/layout-config/versions", async (route) => {
-    const payload = route.request().postDataJSON() as { config: Record<string, unknown> };
+    const payload = route.request().postDataJSON() as {
+      base_template_version_id: string;
+      expected_config_sha256: string;
+      expected_active_template_version_id: string;
+      changes: Record<string, unknown>;
+    };
     layoutConfigDraftPayloads.push(payload);
     await route.fulfill({
       status: 201,
@@ -1412,7 +1452,24 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
     });
   });
   await page.route("**/api/v1/templates/default/layout-config", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(templateLayoutConfig) });
+    const requestedVersion = new URL(route.request().url()).searchParams.get("version");
+    const draftChanges = layoutConfigDraftPayloads.at(-1)?.changes.heading1 as { font_size?: number } | undefined;
+    const response = requestedVersion === "2"
+      ? {
+          ...templateLayoutConfig,
+          template_version_id: "default@2",
+          version: 2,
+          status: "draft",
+          is_default: false,
+          config_sha256: "sha256:draft",
+          snapshot_hash: "sha256:draft",
+          config: {
+            ...templateLayoutConfig.config,
+            heading1: { ...templateLayoutConfig.config.heading1, ...draftChanges },
+          },
+        }
+      : templateLayoutConfig;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(response) });
   });
   await page.route("**/api/v1/templates/default/versions", async (route) => {
     await route.fulfill({
@@ -2001,7 +2058,9 @@ test("admin can edit Word page styles and save a draft version", async ({ page }
   await page.getByRole("button", { name: "配置样式" }).click();
   await expect(page).toHaveURL(/\/settings\/word-page-styles\/default$/);
   await expect(page.getByText("公司 Logo、默认页眉内容和 DOCX 文件由 Word 模板文档维护")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "选择模板版本" })).toBeVisible();
   await expect(page.getByLabel("Word 页面样式编辑器").getByText("Logo 路径")).not.toBeVisible();
+  await expect(page.getByText("效果示意，最终以该 draft 的真实 Word 验证任务为准。")).toBeVisible();
 
   await page.getByLabel("Word 页面样式编辑器").getByRole("button", { name: /^标题\s/ }).click();
   await page.getByRole("tab", { name: /一级标题/ }).click();
@@ -2014,10 +2073,16 @@ test("admin can edit Word page styles and save a draft version", async ({ page }
   await page.getByRole("button", { name: "保存为草稿版本" }).click();
 
   await expect.poll(() => controls.layoutConfigDraftPayloads().length).toBe(1);
-  expect((controls.layoutConfigDraftPayloads()[0].config.heading1 as { font_size: number }).font_size).toBe(14);
-  expect(controls.layoutConfigDraftPayloads()[0].config).not.toHaveProperty("sample_content");
-  expect(controls.layoutConfigDraftPayloads()[0].config).not.toHaveProperty("template_name");
+  expect(controls.layoutConfigDraftPayloads()[0]).toMatchObject({
+    base_template_version_id: "default@1",
+    expected_config_sha256: "sha256:layout",
+    expected_active_template_version_id: "default@1",
+  });
+  expect((controls.layoutConfigDraftPayloads()[0].changes.heading1 as { font_size: number }).font_size).toBe(14);
+  expect(controls.layoutConfigDraftPayloads()[0].changes).not.toHaveProperty("sample_content");
+  expect(controls.layoutConfigDraftPayloads()[0].changes).not.toHaveProperty("template_name");
   await expect(page.getByText("已生成页面样式 draft version 2")).toBeVisible();
+  await expect(page.getByRole("button", { name: "创建验证任务" })).toBeVisible();
 });
 
 test("operator can inspect the translation QA queue with backend all-status summary", async ({ page }) => {

@@ -1,5 +1,5 @@
-# File: app/infrastructure/persistence/mysql/schema.py
-# Purpose: 定义 MySQL metadata backend 的 schema bootstrap SQL。
+# 文件：app/infrastructure/persistence/mysql/schema.py
+# 用途：定义 MySQL metadata backend 的 schema bootstrap SQL。
 
 from __future__ import annotations
 
@@ -64,6 +64,15 @@ MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
         resource_type VARCHAR(64) NOT NULL,
         resource_id VARCHAR(128) NOT NULL,
         version VARCHAR(64) NOT NULL,
+        updated_at VARCHAR(40) NOT NULL,
+        PRIMARY KEY (resource_type, resource_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS resource_version_sequences (
+        resource_type VARCHAR(64) NOT NULL,
+        resource_id VARCHAR(128) NOT NULL,
+        next_version BIGINT UNSIGNED NOT NULL,
         updated_at VARCHAR(40) NOT NULL,
         PRIMARY KEY (resource_type, resource_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4

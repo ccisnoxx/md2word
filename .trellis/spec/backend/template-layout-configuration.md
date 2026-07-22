@@ -1,76 +1,91 @@
-# 模板版式配置合同
+# Word 模板样式配置合同
 
-本规范约束页面样式 YAML、配置中心 API、通用前端表单和 Word 渲染器之间的同一份配置合同。
-
-## 场景：多文种字体配置与草稿往返
+## Scenario：Admin 版本治理与多文种字体配置
 
 ### 1. Scope / Trigger
 
-- 修改 `TemplateConfigPackage`、legacy `RenderConfig`、页面样式 `field_schema`、版式 YAML 或 run 字体写入时适用。
-- 新增、删除或重命名页面样式字段时，必须从 YAML → GET → 表单 → POST 草稿 → 正式/legacy 渲染完整追踪。
-- 只改变 Word 内部排版但不经过页面样式配置的逻辑，不属于本合同。
+- 触发：修改 `template-config/v1`、页面样式字段、样式编辑 API、Template Version 默认指针、DOCX/YAML 绑定、验证任务权限或 Word 字体槽位。
+- 唯一结构 owner：`app/domains/templates/layout_config_schema.py`；renderer、管理 API 和前端表单不得各自维护字段集合或兼容规则。
+- 唯一 OOXML 字体写入 owner：`app/conversion/docx_rules/run_fonts.py`；正式 DocumentIR 和 legacy conversion 必须共同调用。
 
 ### 2. Signatures
 
-- 读取：`GET /api/v1/templates/{template_id}/layout-config`
-- 新建草稿：`POST /api/v1/templates/{template_id}/layout-config/versions`
-- 请求主体：`{"config": {<group>: {<field>: <value>}}}`
-- 段落类字体字段：
-  - `font_name: string`：中文/东亚字体。
-  - `western_font_name: string`：西文字体。
-  - `complex_script_font_name: string`：复杂文种字体。
-- 页眉使用 `title_font_name`、`title_western_font_name`、`title_complex_script_font_name`；页脚使用普通三字段。
-- 唯一 OOXML 写入入口：
+- `GET /api/v1/templates/{template_id}/layout-config?version={int}`：admin-only 读取默认或指定版本。
+- `POST /api/v1/templates/{template_id}/layout-config/versions`：admin-only 创建不可变 draft。
+- 保存请求：
 
-```python
-apply_run_fonts(
-    run,
-    *,
-    font_name: str | None,
-    western_font_name: str | None,
-    complex_script_font_name: str | None,
-) -> None
+```json
+{
+  "base_template_version_id": "default@1",
+  "expected_config_sha256": "sha256:...",
+  "expected_active_template_version_id": "default@1",
+  "changes": {"normal": {"western_font_name": "Arial"}},
+  "change_note": "调整正文西文字体"
+}
 ```
+
+- 字体字段：
+  - 段落类：`font_name`、`western_font_name`、`complex_script_font_name`。
+  - 页眉：`title_font_name`、`title_western_font_name`、`title_complex_script_font_name`。
+  - 页脚：`font_name`、`western_font_name`、`complex_script_font_name`。
+- `ResourceVersionRepositoryProtocol.create_resource_version(record)`：只插入，不覆盖。
+- `ResourceVersionRepositoryProtocol.allocate_next_version(type, id, minimum_next)`：MySQL 事务内分配不复用整数。
 
 ### 3. Contracts
 
-- `font_name` → `w:rFonts/@w:eastAsia`。
-- `western_font_name` → `run.font.name`、`w:rFonts/@w:ascii`、`@w:hAnsi`。
-- `complex_script_font_name` → `w:rFonts/@w:cs`。
-- 正式 DocumentIR 和 legacy conversion 必须调用同一个 `app/conversion/docx_rules/run_fonts.py`，不得各自重写槽位映射。
-- 字段缺失（模型值 `None`）时，西文和复杂文种沿用旧 `font_name`；显式空字符串表示继续继承 Word 模板，不能触发回退。
-- 配置 API 读取旧 YAML 时补齐新增字段，POST 后显式保存；不得原地修改源 YAML 或历史版本。
-- 页眉缺失新增字段时沿用 `title_font_name`；旧页脚没有字体字段时 API 补为空字符串。
-- `schema_version` 保持 `template-config/v1`；这是兼容字段扩展，不要求全量迁移。
-- 完整 GET→POST 必须保留 seed 已有 `page_width_cm`、`page_height_cm`，并包含严格 schema 要求的 `table_style.header_fill`，否则仅修改字体也可能丢页面尺寸或返回 400。
-- 内置 seed 的西文字体为 `Arial`，复杂文种字体为 `Times New Roman`；字体是否已安装由目标系统负责。
+#### 3.1 版本与权限
+
+- `changes` 只能出现编辑 schema 中 `readonly=false` 的叶子字段，服务从 exact base 合并后做完整严格模型校验。
+- `schema_version`、`template_name`、`output_filename`、`sample_content`、隐藏 renderer 字段和页面宽高不允许修改。
+- 保存只创建 draft；只有真实验证任务成功后才能 publish，只有 published 才能 set-default。
+- MySQL 模式下 `resource_default_versions` 是版本默认指针唯一来源；manifest 只登记 seed，`template_state.json` 只登记默认 template id。
+- Job 创建时固化 Template Version；普通用户只能选 published，admin 可显式创建 draft 验证任务，Worker 只消费已固化版本。
+- 版本 YAML 缺失、损坏、schema 不支持或 hash 不匹配时失败关闭，不回退其他 YAML 或 renderer 默认值。
+
+#### 3.2 多文种字体
+
+- `font_name` 写入 `w:rFonts/@w:eastAsia`。
+- `western_font_name` 写入 `run.font.name`、`w:rFonts/@w:ascii` 和 `@w:hAnsi`。
+- `complex_script_font_name` 写入 `w:rFonts/@w:cs`。
+- 旧段落配置缺少新增字段时，西文和复杂文种补为同组 `font_name`；页眉对应补为 `title_font_name`。
+- 旧页脚没有字体字段时补为三个空字符串，继续继承模板既有页脚字体。
+- 兼容补齐只检查字段是否存在；显式空字符串必须保留，不能使用 `value or font_name`。
+- 内置 seed 西文字体为 `Arial`，复杂文种字体为 `Times New Roman`；字体是否安装由目标系统负责。
+- `schema_version` 保持 `template-config/v1`，无需批量改写历史版本；读取和创建新 draft 时由唯一 schema owner 归一化缺失字体字段。
 
 ### 4. Validation & Error Matrix
 
-| 条件 | 行为 |
+| 条件 | 状态/行为 |
 |---|---|
-| 旧段落分组只有 `font_name` | GET 用该值补齐西文和复杂文种字段；渲染四槽位保持旧单字体行为 |
-| 新字段显式为 `""` | GET、POST 和渲染均保留空值，对应槽位继承模板 |
-| 页眉只有 `title_font_name` | 新增页眉字体字段补为该值 |
+| 非 admin 读取、列版本或保存 | `403`，前后端同时隐藏/拒绝 |
+| 模板或版本不存在 | `404`，不 fallback 到其他 YAML |
+| active version 或 base hash 变化 | `409`，返回当前 active version 与 config hash |
+| 未知、只读、类型、范围、边距或 Word 表格样式错误 | `422`，返回 `field_errors[].path/code/message` |
+| MySQL 版本服务或原子文件写入不可用 | `503`，不声明保存成功 |
+| 旧段落只有 `font_name` | GET 补齐两种新增字体；新 draft 显式保存补齐值 |
+| 新增字体字段显式为 `""` | GET、patch、保存和渲染均保留空值 |
+| 页眉只有 `title_font_name` | GET 和新 draft 补齐两种新增字体 |
 | 旧页脚没有字体字段 | API 返回三个空字符串，不改变模板继承 |
-| 请求缺少 schema 声明的字段/分组 | 返回 400，指出缺少项 |
-| 请求含未知字段/分组 | 返回 400，指出不支持项 |
-| 字体字段不是 string | 返回 400，指出字段必须是 string |
-| 目标系统未安装配置字体 | DOCX 仍写入配置值；Word 可自行替换，不伪造成功安装状态 |
+| 目标系统未安装配置字体 | DOCX 仍写入配置值，不伪造安装状态 |
 
 ### 5. Good / Base / Bad Cases
 
-- Good：同一段包含“中文 Latin العربية”，DOCX 同一 run 的 `eastAsia/ascii/hAnsi/cs` 分别等于配置值，配置草稿保存后可完整读回。
+- Good：从 `default@1` 只提交 `normal.western_font_name`，生成 `default@2` draft，seed YAML 与默认指针不变；真实 DOCX 的 `eastAsia/ascii/hAnsi/cs` 分别匹配三类字体。
 - Base：旧 YAML 只有 `font_name: 宋体`，无需迁移即可读取和生成，四个字体槽位继续使用宋体。
-- Bad：在两个 renderer 中分别调用 `rFonts.set()`，或用 `value or font_name` 处理新字段；前者会再次漂移，后者会把显式空字符串误当成缺失。
+- Base：历史 published 版本通过 set-default 回滚，只移动 DB 指针，不改历史内容。
+- Bad：提交完整 YAML、只读字段、未知字段或不存在的 Word table style。
+- Bad：普通用户通过 create/clone/retry 注入 draft version。
+- Bad：在 renderer 中再次直接写 `rFonts`，或用 truthy fallback 吞掉显式空字符串。
 
 ### 6. Tests Required
 
-- `tests.test_text_render_characterization`：断言正式三字体、旧单字体和显式空字符串的四槽位行为。
-- `tests.test_render_config_characterization`：断言 legacy YAML loader 读取新增字段，英文整文档覆盖不改写显式新字体。
-- `tests.test_document_ir_word_renderer_layout`：生成真实 DOCX，断言正文、页眉、页脚及装饰块的 OOXML 字体槽位；装饰块继续继承 `normal` 的非字体样式。
-- `tests.test_fastapi_jobs_backend`：用旧 YAML 验证 GET 补齐、空字符串保留、POST 草稿显式持久化且源文件不变。
-- 配置 API 或 schema 变化后运行前端构建；smoke mock 应至少验证三种字体标签可见。
+- `tests.test_template_layout_config_schema`：真实 seed、严格 schema、只读/未知/非有限数值/颜色/边距/Logo 路径、旧字体字段归一化和显式空字符串。
+- `tests.test_fastapi_jobs_backend`：admin 权限、指定 draft 读取、dirty patch、409 CAS、结构化 422、seed 不变、旧 YAML GET 补齐和新 draft 显式持久化。
+- `tests.test_text_render_characterization`：正式三字体、旧单字体和显式空字符串的四槽位行为。
+- `tests.test_render_config_characterization`：legacy YAML loader 与语言 override 不改写显式新字体。
+- `tests.test_document_ir_word_renderer_layout`：正文、页眉、页脚、装饰块和模板既有页码域的 OOXML 字体槽位。
+- 持久化测试：create-only 冲突、整数序列单调、DB 失败清理 staging/目标目录。
+- 配置 API/schema 变化后运行前端 unit/build；smoke mock 至少验证三种字体标签可见。
 
 ### 7. Wrong vs Correct
 
@@ -81,7 +96,7 @@ font = western_font_name or font_name
 run_fonts.set(qn("w:ascii"), font)
 ```
 
-显式空字符串会错误回退，而且另一条渲染链仍可能复制不同实现。
+显式空字符串会错误回退，且 renderer 重新拥有了字段映射。
 
 #### Correct
 
@@ -94,4 +109,4 @@ apply_run_fonts(
 )
 ```
 
-缺失和显式空值语义分开，最终槽位写入仍由一个共享函数负责。
+缺失与显式空值语义分开，结构、归一化和槽位写入各有唯一 owner。

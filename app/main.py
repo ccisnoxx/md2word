@@ -347,6 +347,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
     if translation_profile_service is not None:
         translation_profile_service.bootstrap_default_profiles_if_missing()
     template_read_service.get_default_template_id()
+    template_read_service.bootstrap_manifest_versions()
     artifact_service = JobArtifactService()
     artifact_storage, artifact_storage_backend = _build_artifact_storage(resolved_settings, artifact_service)
     conversion_entrypoint = create_conversion_entrypoint()
@@ -483,6 +484,8 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
 
 def create_app(runtime: AppRuntime | None = None) -> FastAPI:
     app_runtime = runtime or build_runtime()
+    # 测试和嵌入式调用可直接注入 runtime；应用边界仍需保证 seed 版本已完成幂等登记。
+    app_runtime.template_read_service.bootstrap_manifest_versions()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
