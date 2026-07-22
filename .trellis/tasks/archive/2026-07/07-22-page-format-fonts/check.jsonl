@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"检查定向 unittest、API 往返、DocumentIR OOXML 和 release gate 是否覆盖改动。"}
+{"file":".trellis/spec/backend/template-layout-configuration.md","reason":"检查字段缺失、显式空值、配置草稿往返与四个 OOXML 字体槽位符合合同。"}
+{"file":".trellis/spec/frontend/index.md","reason":"检查配置中心字段展示合同与前端构建门禁。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"复核所有字段从旧 YAML 到新草稿再到四个 OOXML 字体槽位均未丢失。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"检查字体映射只有一个权威实现，未产生重复常量或兼容分支。"}
