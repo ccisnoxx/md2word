@@ -47,8 +47,8 @@ ENGLISH_STYLE_NAMES = {
 }
 DEFAULT_CJK_FIRST_LINE_INDENT_PT = 21.0
 DEFAULT_LAYOUT_CONFIG_CANDIDATES = (
-    Path("resources/template_configs/datasheet_template.yaml"),
-    Path(__file__).resolve().parents[2] / "resources" / "template_configs" / "datasheet_template.yaml",
+    Path("resources/template_configs/datasheet_template_v2.yaml"),
+    Path(__file__).resolve().parents[2] / "resources" / "template_configs" / "datasheet_template_v2.yaml",
 )
 PAGE_MARGIN = Mm(15)
 

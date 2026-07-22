@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Run the phase-2 local MinerU quality matrix for datasheet DOCX hardening."""
+"""运行数据手册 DOCX 加固的第二阶段本地 MinerU 质量矩阵。"""
 
 from __future__ import annotations
 
-# scripts/dev/run_local_mineru_quality_matrix.py: local-only phase-2 MinerU QA runner.
+# scripts/dev/run_local_mineru_quality_matrix.py：仅供本地使用的第二阶段 MinerU 质量检查入口。
 
 import argparse
 import hashlib
@@ -33,7 +33,7 @@ from scripts.dev import formal_mineru_conversion
 
 DEFAULT_RUNS_DIR = ROOT / "tests" / "tmp" / "local_mineru_quality"
 DEFAULT_TEMPLATE_PATH = ROOT / "resources" / "templates" / "default" / "datasheet_template.docx"
-DEFAULT_LAYOUT_CONFIG_PATH = ROOT / "resources" / "template_configs" / "datasheet_template.yaml"
+DEFAULT_LAYOUT_CONFIG_PATH = ROOT / "resources" / "template_configs" / "datasheet_template_v2.yaml"
 DEFAULT_SUBSCRIPT_CONFIG_PATH = ROOT / "resources" / "term_rules" / "subscripts_dictionary.yaml"
 RENDER_DOCX_SCRIPT = (
     Path.home()

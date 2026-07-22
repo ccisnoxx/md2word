@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import tempfile
 from pathlib import Path
 from unittest import TestCase
@@ -17,10 +18,15 @@ from app.domains.templates.layout_config_schema import (
     validate_layout_config,
 )
 
+RESOURCE_DIR = Path(__file__).resolve().parents[1] / "resources" / "template_configs"
+PUBLISHED_V1_PATH = RESOURCE_DIR / "datasheet_template.yaml"
+CURRENT_V2_PATH = RESOURCE_DIR / "datasheet_template_v2.yaml"
+PUBLISHED_V1_SHA256 = "1a9ce13488a491367fbfde8d143d22b6cf7c0ce064c99c224ae09ef93f5b3818"
+
 
 class TemplateLayoutConfigSchemaTests(TestCase):
     def setUp(self) -> None:
-        self.path = Path(__file__).resolve().parents[1] / "resources" / "template_configs" / "datasheet_template.yaml"
+        self.path = CURRENT_V2_PATH
         self.raw = yaml.safe_load(self.path.read_text(encoding="utf-8"))
 
     def test_real_seed_matches_editor_and_renderer_contract(self) -> None:
@@ -59,6 +65,30 @@ class TemplateLayoutConfigSchemaTests(TestCase):
         self.assertIn("normal_text", preview_samples)
         self.assertTrue(schema["groups"]["page_setup"]["page_width_cm"]["readonly"])
         self.assertTrue(schema["groups"]["header"]["logo_path"]["readonly"])
+        self.assertEqual(package.normal.font_name, "宋体")
+        self.assertEqual(package.normal.western_font_name, "Arial")
+        self.assertEqual(package.normal.complex_script_font_name, "Times New Roman")
+        for group_name, fields in GROUP_FIELD_SCHEMA.items():
+            if group_name != "footer" and "font_name" in fields:
+                self.assertEqual(self.raw[group_name]["western_font_name"], "Arial", group_name)
+                self.assertEqual(self.raw[group_name]["complex_script_font_name"], "Times New Roman", group_name)
+        self.assertEqual(self.raw["header"]["title_western_font_name"], "Arial")
+        self.assertEqual(self.raw["header"]["title_complex_script_font_name"], "Times New Roman")
+        self.assertEqual(self.raw["footer"]["font_name"], "宋体")
+        self.assertEqual(self.raw["footer"]["western_font_name"], "Arial")
+        self.assertEqual(self.raw["footer"]["complex_script_font_name"], "Times New Roman")
+
+    def test_published_v1_hash_and_legacy_font_schema_remain_readable(self) -> None:
+        self.assertEqual(hashlib.sha256(PUBLISHED_V1_PATH.read_bytes()).hexdigest(), PUBLISHED_V1_SHA256)
+
+        package = validate_layout_config(yaml.safe_load(PUBLISHED_V1_PATH.read_text(encoding="utf-8")))
+
+        self.assertEqual(package.normal.western_font_name, package.normal.font_name)
+        self.assertEqual(package.normal.complex_script_font_name, package.normal.font_name)
+        self.assertEqual(package.header.title_western_font_name, package.header.title_font_name)
+        self.assertEqual(package.footer.font_name, "")
+        self.assertEqual(package.footer.western_font_name, "")
+        self.assertEqual(package.footer.complex_script_font_name, "")
 
     def test_changes_preserve_readonly_meta_samples_and_page_size(self) -> None:
         updated = apply_layout_changes(

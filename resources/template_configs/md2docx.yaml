@@ -1,8 +1,8 @@
-# Deprecated: 当前 `mineru_to_docx.py` 主流程不会读取本文件。
-# 保留它仅用于兼容旧实验记录；真实生效的版式配置入口是 `resources/template_configs/datasheet_template.yaml`。
+# 已弃用：当前 `mineru_to_docx.py` 主流程不会读取本文件。
+# 保留它仅用于兼容旧实验记录；当前内置版式配置入口是 `resources/template_configs/datasheet_template_v2.yaml`。
 # 如果后续恢复本文件接线，应先同步更新 `.codestable/architecture/ARCHITECTURE.md`。
 #
-# File: md2word_tool/resources/template_configs/md2docx.yaml
+# 文件：md2word_tool/resources/template_configs/md2docx.yaml
 
 # 基础配置
 output: output                    # 输出目录
