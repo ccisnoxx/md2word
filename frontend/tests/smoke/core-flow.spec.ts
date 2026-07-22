@@ -370,7 +370,15 @@ const templateLayoutConfig = {
     page_setup: { top_margin: 2.3 },
     part_number: { font_size: 22 },
     category: { font_size: 12 },
-    heading1: { font_name: "宋体", font_size: 13, bold: true, color: "#0c69b2", alignment: "left" },
+    heading1: {
+      font_name: "宋体",
+      western_font_name: "Arial",
+      complex_script_font_name: "Times New Roman",
+      font_size: 13,
+      bold: true,
+      color: "#0c69b2",
+      alignment: "left",
+    },
     heading2: { font_size: 11 },
     heading3: { font_size: 10 },
     toc_title: { font_size: 13 },
@@ -383,8 +391,22 @@ const templateLayoutConfig = {
     table_note: { font_size: 8, italic: false },
     caption: { font_size: 9 },
     long_table_caption: { font_size: 10.5 },
-    header: { enabled: false, logo_path: "assets/company_logo.png", title_text: "数据手册" },
-    footer: { enabled: false, show_page_number: true, alignment: "center" },
+    header: {
+      enabled: false,
+      logo_path: "assets/company_logo.png",
+      title_text: "数据手册",
+      title_font_name: "微软雅黑",
+      title_western_font_name: "Arial",
+      title_complex_script_font_name: "Times New Roman",
+    },
+    footer: {
+      enabled: false,
+      show_page_number: true,
+      font_name: "宋体",
+      western_font_name: "Arial",
+      complex_script_font_name: "Times New Roman",
+      alignment: "center",
+    },
   },
   field_schema: {
     meta: {
@@ -397,7 +419,9 @@ const templateLayoutConfig = {
       part_number: { font_size: { type: "number", label: "字号", unit: "pt" } },
       category: { font_size: { type: "number", label: "字号", unit: "pt" } },
       heading1: {
-        font_name: { type: "text", label: "字体" },
+        font_name: { type: "text", label: "中文字体" },
+        western_font_name: { type: "text", label: "西文字体" },
+        complex_script_font_name: { type: "text", label: "复杂文种字体" },
         font_size: { type: "number", label: "字号", unit: "pt" },
         bold: { type: "boolean", label: "加粗" },
         color: { type: "color", label: "颜色" },
@@ -430,10 +454,16 @@ const templateLayoutConfig = {
         enabled: { type: "boolean", label: "启用页眉覆盖" },
         logo_path: { type: "text", label: "Logo 路径", readonly: true },
         title_text: { type: "text", label: "页眉标题" },
+        title_font_name: { type: "text", label: "页眉中文字体" },
+        title_western_font_name: { type: "text", label: "页眉西文字体" },
+        title_complex_script_font_name: { type: "text", label: "页眉复杂文种字体" },
       },
       footer: {
         enabled: { type: "boolean", label: "启用页脚覆盖" },
         show_page_number: { type: "boolean", label: "显示页码" },
+        font_name: { type: "text", label: "页脚中文字体" },
+        western_font_name: { type: "text", label: "页脚西文字体" },
+        complex_script_font_name: { type: "text", label: "页脚复杂文种字体" },
         alignment: { type: "alignment", label: "页脚对齐" },
       },
     },
@@ -1975,6 +2005,9 @@ test("admin can edit Word page styles and save a draft version", async ({ page }
 
   await page.getByLabel("Word 页面样式编辑器").getByRole("button", { name: /^标题\s/ }).click();
   await page.getByRole("tab", { name: /一级标题/ }).click();
+  await expect(page.getByLabel("Word 页面样式编辑器").getByText("中文字体", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Word 页面样式编辑器").getByText("西文字体", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Word 页面样式编辑器").getByText("复杂文种字体", { exact: true })).toBeVisible();
   const headingFontSize = page.locator(".layout-section .el-form-item", { hasText: "字号" }).locator("input").first();
   await headingFontSize.fill("14");
   await expect(page.getByText("1 项未保存")).toBeVisible();

@@ -11,6 +11,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
+from app.conversion.docx_rules.run_fonts import apply_run_fonts
 from app.conversion.docx_rules.terminology import TerminologyReplacer
 from app.services.renderer.semantic_text import (
     infer_heading_level,
@@ -290,13 +291,12 @@ class WordTextRendererMixin:
             return
 
     def _apply_run_style(self, run: Any, style: TemplateParagraphStyleConfig) -> None:
-        if style.font_name:
-            run.font.name = style.font_name
-            r_fonts = run._element.rPr.rFonts if run._element.rPr is not None else None
-            if r_fonts is not None:
-                r_fonts.set(qn("w:eastAsia"), style.font_name)
-                r_fonts.set(qn("w:ascii"), style.font_name)
-                r_fonts.set(qn("w:hAnsi"), style.font_name)
+        apply_run_fonts(
+            run,
+            font_name=style.font_name,
+            western_font_name=style.western_font_name,
+            complex_script_font_name=style.complex_script_font_name,
+        )
         if style.font_size is not None:
             run.font.size = Pt(style.font_size)
         if style.bold is not None:

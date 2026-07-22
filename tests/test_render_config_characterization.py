@@ -79,6 +79,8 @@ class RenderConfigCharacterizationTests(unittest.TestCase):
             return_value={
                 "heading2": {
                     "font_name": "SimHei",
+                    "western_font_name": "Arial",
+                    "complex_script_font_name": "Times New Roman",
                     "font_size": 14,
                     "bold": True,
                     "alignment": "center",
@@ -100,6 +102,8 @@ class RenderConfigCharacterizationTests(unittest.TestCase):
             styles = self.module.load_paragraph_styles(config_path)
 
         self.assertEqual(styles["Heading 2"].font_name, "SimHei")
+        self.assertEqual(styles["Heading 2"].western_font_name, "Arial")
+        self.assertEqual(styles["Heading 2"].complex_script_font_name, "Times New Roman")
         self.assertEqual(styles["Heading 2"].font_size, 14.0)
         self.assertTrue(styles["Heading 2"].bold)
         self.assertEqual(styles["Heading 2"].alignment, "center")
@@ -289,6 +293,29 @@ class RenderConfigCharacterizationTests(unittest.TestCase):
 
         self.assertIs(adapted, render_config)
         self.assertIs(adapted.paragraph_styles["Normal"], normal_style)
+
+    def test_apply_document_language_overrides_preserves_explicit_new_font_fields(self):
+        render_config = self.module.RenderConfig(
+            section_layout=self.module.SectionLayout(1, 2, 3, 4, 5, 6),
+            use_mineru_header_footer=False,
+            terminology=None,
+            paragraph_styles={
+                "Normal": self.module.ParagraphStyleConfig(
+                    font_name="宋体",
+                    western_font_name="Calibri",
+                    complex_script_font_name="Times New Roman",
+                    first_line_indent_pt=21.0,
+                )
+            },
+        )
+
+        adapted = self.module.apply_document_language_overrides(render_config, "en")
+
+        normal = adapted.paragraph_styles["Normal"]
+        self.assertEqual(normal.font_name, "宋体")
+        self.assertEqual(normal.western_font_name, "Calibri")
+        self.assertEqual(normal.complex_script_font_name, "Times New Roman")
+        self.assertEqual(normal.first_line_indent_pt, 0.0)
 
 
 if __name__ == "__main__":

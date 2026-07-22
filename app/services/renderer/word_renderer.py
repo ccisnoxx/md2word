@@ -176,6 +176,8 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
             paragraph.text = ""
             header_style = TemplateParagraphStyleConfig(
                 font_name=template_config.header.title_font_name,
+                western_font_name=template_config.header.title_western_font_name,
+                complex_script_font_name=template_config.header.title_complex_script_font_name,
                 font_size=template_config.header.title_font_size,
                 color=template_config.header.title_color,
                 alignment="left",
@@ -192,11 +194,19 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                 run = paragraph.add_run(template_config.header.title_text)
                 self._apply_run_style(run, header_style)
 
-        if template_config.footer.enabled and template_config.footer.show_page_number:
+        if template_config.footer.enabled:
             paragraph = section.footer.paragraphs[0] if section.footer.paragraphs else section.footer.add_paragraph()
-            if not paragraph.text.strip():
+            if template_config.footer.show_page_number and not paragraph.text.strip() and not paragraph.runs:
                 paragraph.text = "第  页"
-            paragraph.alignment = self._parse_alignment(template_config.footer.alignment or "center")
+            footer_style = TemplateParagraphStyleConfig(
+                font_name=template_config.footer.font_name,
+                western_font_name=template_config.footer.western_font_name,
+                complex_script_font_name=template_config.footer.complex_script_font_name,
+            )
+            for footer_paragraph in section.footer.paragraphs:
+                footer_paragraph.alignment = self._parse_alignment(template_config.footer.alignment or "center")
+                for run in footer_paragraph.runs:
+                    self._apply_run_style(run, footer_style)
 
     def _resolve_asset_path(self, raw_path: str | None, config_path: Path | None) -> Path | None:
         if not raw_path:
@@ -269,22 +279,65 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         if template_config.header.enabled and page.header_blocks:
             paragraph = section.header.paragraphs[0] if section.header.paragraphs else section.header.add_paragraph()
             paragraph.text = ""
+            # 抽取装饰块历史上沿用正文排版，这里只用页眉/页脚配置覆盖字体。
+            header_font_name = template_config.header.title_font_name
+            header_style = template_config.normal.model_copy(
+                update={
+                    "font_name": template_config.normal.font_name if header_font_name is None else header_font_name,
+                    "western_font_name": self._resolve_decoration_font(
+                        template_config.header.title_western_font_name,
+                        header_font_name,
+                        template_config.normal.western_font_name,
+                    ),
+                    "complex_script_font_name": self._resolve_decoration_font(
+                        template_config.header.title_complex_script_font_name,
+                        header_font_name,
+                        template_config.normal.complex_script_font_name,
+                    ),
+                }
+            )
             self._fill_paragraph(
                 paragraph,
                 " ".join(block.text or "" for block in page.header_blocks).strip(),
-                template_config.normal,
+                header_style,
                 terminology=template_config.terminology,
             )
         footer_blocks = page.footer_blocks + page.page_number_blocks
         if template_config.footer.enabled and footer_blocks:
             paragraph = section.footer.paragraphs[0] if section.footer.paragraphs else section.footer.add_paragraph()
             paragraph.text = ""
+            footer_font_name = template_config.footer.font_name
+            footer_style = template_config.normal.model_copy(
+                update={
+                    "font_name": template_config.normal.font_name if footer_font_name is None else footer_font_name,
+                    "western_font_name": self._resolve_decoration_font(
+                        template_config.footer.western_font_name,
+                        footer_font_name,
+                        template_config.normal.western_font_name,
+                    ),
+                    "complex_script_font_name": self._resolve_decoration_font(
+                        template_config.footer.complex_script_font_name,
+                        footer_font_name,
+                        template_config.normal.complex_script_font_name,
+                    ),
+                }
+            )
             self._fill_paragraph(
                 paragraph,
                 " ".join(block.text or "" for block in footer_blocks).strip(),
-                template_config.normal,
+                footer_style,
                 terminology=template_config.terminology,
             )
+
+    @staticmethod
+    def _resolve_decoration_font(configured: str | None, legacy: str | None, inherited: str | None) -> str | None:
+        """字体字段缺失时依次沿用旧单字体和正文；显式空字符串不回退。"""
+
+        if configured is not None:
+            return configured
+        if legacy is not None:
+            return legacy
+        return inherited
 
     def _render_layout_region(
         self,

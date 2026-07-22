@@ -11216,7 +11216,39 @@ class FastAPIJobsBackendTests(TestCase):
             temp_root = Path(temp_dir)
             manifest_path = temp_root / "templates_manifest.yaml"
             repo_root = Path(__file__).resolve().parents[1]
-            source_layout_path = repo_root / "resources" / "template_configs" / "datasheet_template.yaml"
+            seed_layout_path = repo_root / "resources" / "template_configs" / "datasheet_template.yaml"
+            legacy_layout = yaml.safe_load(seed_layout_path.read_text(encoding="utf-8"))
+            text_style_groups = (
+                "part_number",
+                "category",
+                "heading1",
+                "heading2",
+                "heading3",
+                "toc_title",
+                "toc_level1",
+                "toc_level2",
+                "toc_level3",
+                "normal",
+                "table_content",
+                "table_note",
+                "caption",
+                "long_table_caption",
+            )
+            for group_name in text_style_groups:
+                legacy_layout[group_name].pop("western_font_name")
+                legacy_layout[group_name].pop("complex_script_font_name")
+            legacy_layout["caption"]["western_font_name"] = ""
+            legacy_layout["caption"]["complex_script_font_name"] = ""
+            legacy_layout["header"].pop("title_western_font_name")
+            legacy_layout["header"].pop("title_complex_script_font_name")
+            legacy_layout["footer"].pop("font_name")
+            legacy_layout["footer"].pop("western_font_name")
+            legacy_layout["footer"].pop("complex_script_font_name")
+            source_layout_path = temp_root / "legacy_layout_config.yaml"
+            source_layout_path.write_text(
+                yaml.safe_dump(legacy_layout, allow_unicode=True, sort_keys=False),
+                encoding="utf-8",
+            )
             original_source_text = source_layout_path.read_text(encoding="utf-8")
             write_templates_manifest(
                 manifest_path,
@@ -11259,6 +11291,8 @@ class FastAPIJobsBackendTests(TestCase):
                 config = read_payload["config"]
                 config["page_setup"]["top_margin"] = 1.7
                 config["normal"]["font_size"] = 11
+                config["normal"]["western_font_name"] = "Calibri"
+                config["normal"]["complex_script_font_name"] = "Arial"
 
                 create_response = client.post(
                     "/api/v1/templates/default/layout-config/versions",
@@ -11291,6 +11325,22 @@ class FastAPIJobsBackendTests(TestCase):
             self.assertIn("page_setup", read_payload["field_schema"]["groups"])
             self.assertIn("top_margin", read_payload["field_schema"]["groups"]["page_setup"])
             self.assertTrue(read_payload["field_schema"]["meta"]["template_name"]["readonly"])
+            for group_name in text_style_groups:
+                self.assertEqual(
+                    {"font_name", "western_font_name", "complex_script_font_name"},
+                    {"font_name", "western_font_name", "complex_script_font_name"}
+                    & set(read_payload["field_schema"]["groups"][group_name]),
+                )
+            self.assertEqual(read_payload["field_schema"]["groups"]["normal"]["font_name"]["label"], "中文字体")
+            self.assertEqual(config["heading1"]["western_font_name"], config["heading1"]["font_name"])
+            self.assertEqual(config["heading1"]["complex_script_font_name"], config["heading1"]["font_name"])
+            self.assertEqual(config["caption"]["western_font_name"], "")
+            self.assertEqual(config["caption"]["complex_script_font_name"], "")
+            self.assertEqual(config["header"]["title_western_font_name"], config["header"]["title_font_name"])
+            self.assertEqual(config["header"]["title_complex_script_font_name"], config["header"]["title_font_name"])
+            self.assertEqual(config["footer"]["font_name"], "")
+            self.assertEqual(config["footer"]["western_font_name"], "")
+            self.assertEqual(config["footer"]["complex_script_font_name"], "")
             self.assertEqual(create_response.status_code, 201)
             created_payload = create_response.json()
             self.assertEqual(created_payload["version"], 2)
@@ -11312,6 +11362,13 @@ class FastAPIJobsBackendTests(TestCase):
             self.assertEqual(written_config["output_filename"], "datasheet_template.docx")
             self.assertEqual(written_config["page_setup"]["top_margin"], 1.7)
             self.assertEqual(written_config["normal"]["font_size"], 11)
+            self.assertEqual(written_config["normal"]["western_font_name"], "Calibri")
+            self.assertEqual(written_config["normal"]["complex_script_font_name"], "Arial")
+            self.assertEqual(written_config["heading1"]["western_font_name"], written_config["heading1"]["font_name"])
+            self.assertEqual(written_config["caption"]["western_font_name"], "")
+            self.assertEqual(written_config["caption"]["complex_script_font_name"], "")
+            self.assertEqual(written_config["header"]["title_western_font_name"], written_config["header"]["title_font_name"])
+            self.assertEqual(written_config["footer"]["western_font_name"], "")
             self.assertEqual(record.payload["layout_config_sha256"], f"sha256:{hashlib.sha256(layout_path.read_bytes()).hexdigest()}")
             self.assertTrue(Path(record.payload["docx_path"]).exists())
             audit_events = runtime.audit_event_repository.list_audit_events()

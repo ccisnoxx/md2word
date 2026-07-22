@@ -168,6 +168,8 @@ def load_paragraph_styles(
             continue
         styles[style_name] = paragraph_style_config_cls(
             font_name=value.get("font_name"),
+            western_font_name=value.get("western_font_name"),
+            complex_script_font_name=value.get("complex_script_font_name"),
             font_size=float(value["font_size"]) if value.get("font_size") is not None else None,
             bold=value.get("bold"),
             italic=value.get("italic"),
