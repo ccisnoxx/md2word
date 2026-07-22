@@ -193,7 +193,7 @@ def apply_document_language_overrides(render_config: RenderConfig, document_lang
     paragraph_styles: dict[str, ParagraphStyleConfig] = {}
     for style_name, style_config in render_config.paragraph_styles.items():
         overrides: dict[str, Any] = {}
-        if style_name in ENGLISH_STYLE_NAMES and (
+        if style_name in ENGLISH_STYLE_NAMES and style_config.western_font_name is None and (
             style_config.font_name is None or style_config.font_name in CJK_STYLE_FONT_NAMES
         ):
             overrides["font_name"] = ENGLISH_STYLE_FONT

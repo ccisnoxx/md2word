@@ -63,7 +63,9 @@ LAYOUT_META_FIELD_SCHEMA: dict[str, dict[str, Any]] = {
 }
 
 PARAGRAPH_STYLE_FIELDS: dict[str, dict[str, Any]] = {
-    "font_name": {"type": "text", "label": "字体"},
+    "font_name": {"type": "text", "label": "中文字体"},
+    "western_font_name": {"type": "text", "label": "西文字体"},
+    "complex_script_font_name": {"type": "text", "label": "复杂文种字体"},
     "font_size": {"type": "number", "label": "字号", "unit": "pt"},
     "bold": {"type": "boolean", "label": "加粗"},
     "color": {"type": "color", "label": "颜色"},
@@ -77,6 +79,8 @@ PARAGRAPH_STYLE_FIELDS: dict[str, dict[str, Any]] = {
 }
 TEXT_STYLE_FIELDS: dict[str, dict[str, Any]] = {
     "font_name": PARAGRAPH_STYLE_FIELDS["font_name"],
+    "western_font_name": PARAGRAPH_STYLE_FIELDS["western_font_name"],
+    "complex_script_font_name": PARAGRAPH_STYLE_FIELDS["complex_script_font_name"],
     "font_size": PARAGRAPH_STYLE_FIELDS["font_size"],
     "bold": PARAGRAPH_STYLE_FIELDS["bold"],
     "alignment": PARAGRAPH_STYLE_FIELDS["alignment"],
@@ -85,6 +89,8 @@ TEXT_STYLE_FIELDS: dict[str, dict[str, Any]] = {
 
 LAYOUT_GROUP_FIELD_SCHEMA: dict[str, dict[str, dict[str, Any]]] = {
     "page_setup": {
+        "page_width_cm": {"type": "number", "label": "页面宽度", "unit": "cm"},
+        "page_height_cm": {"type": "number", "label": "页面高度", "unit": "cm"},
         "top_margin": {"type": "number", "label": "上边距", "unit": "cm"},
         "bottom_margin": {"type": "number", "label": "下边距", "unit": "cm"},
         "left_margin": {"type": "number", "label": "左边距", "unit": "cm"},
@@ -139,13 +145,18 @@ LAYOUT_GROUP_FIELD_SCHEMA: dict[str, dict[str, dict[str, Any]]] = {
         "logo_path": {"type": "text", "label": "Logo 路径", "readonly": True},
         "logo_height_cm": {"type": "number", "label": "Logo 高度", "unit": "cm"},
         "title_text": {"type": "text", "label": "页眉标题"},
-        "title_font_name": {"type": "text", "label": "页眉字体"},
+        "title_font_name": {"type": "text", "label": "页眉中文字体"},
+        "title_western_font_name": {"type": "text", "label": "页眉西文字体"},
+        "title_complex_script_font_name": {"type": "text", "label": "页眉复杂文种字体"},
         "title_font_size": {"type": "number", "label": "页眉字号", "unit": "pt"},
         "title_color": {"type": "color", "label": "页眉颜色"},
     },
     "footer": {
         "enabled": {"type": "boolean", "label": "启用页脚覆盖"},
         "show_page_number": {"type": "boolean", "label": "显示页码"},
+        "font_name": {"type": "text", "label": "页脚中文字体"},
+        "western_font_name": {"type": "text", "label": "页脚西文字体"},
+        "complex_script_font_name": {"type": "text", "label": "页脚复杂文种字体"},
         "alignment": {"type": "alignment", "label": "页脚对齐"},
     },
 }
@@ -1116,8 +1127,39 @@ class TemplateReadService:
         meta = {key: raw.get(key) for key in LAYOUT_META_FIELD_SCHEMA if key in raw}
         if "schema_version" not in meta:
             meta["schema_version"] = "template-config/v1"
-        config = {key: raw[key] for key in LAYOUT_GROUP_FIELD_SCHEMA if key in raw}
+        config = {
+            key: dict(raw[key]) if isinstance(raw[key], dict) else raw[key]
+            for key in LAYOUT_GROUP_FIELD_SCHEMA
+            if key in raw
+        }
+        self._complete_layout_font_fields(config)
         return meta, config
+
+    @staticmethod
+    def _complete_layout_font_fields(config: dict[str, Any]) -> None:
+        """补齐旧版字体字段供编辑和另存；显式空字符串保持模板继承语义。"""
+
+        for group_name, group_schema in LAYOUT_GROUP_FIELD_SCHEMA.items():
+            group_value = config.get(group_name)
+            if (
+                group_name != "footer"
+                and "font_name" in group_schema
+                and isinstance(group_value, dict)
+                and "font_name" in group_value
+            ):
+                group_value.setdefault("western_font_name", group_value["font_name"])
+                group_value.setdefault("complex_script_font_name", group_value["font_name"])
+
+        header = config.get("header")
+        if isinstance(header, dict) and "title_font_name" in header:
+            header.setdefault("title_western_font_name", header["title_font_name"])
+            header.setdefault("title_complex_script_font_name", header["title_font_name"])
+
+        footer = config.get("footer")
+        if isinstance(footer, dict):
+            footer.setdefault("font_name", "")
+            footer.setdefault("western_font_name", "")
+            footer.setdefault("complex_script_font_name", "")
 
     def _validate_layout_config(self, raw: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(raw, dict):

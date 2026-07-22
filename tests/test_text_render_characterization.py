@@ -20,6 +20,22 @@ class FakeRFonts:
         self.values[key] = value
 
 
+class FakeRunProperties:
+    def __init__(self):
+        self.rFonts = FakeRFonts()
+
+    def get_or_add_rFonts(self):
+        return self.rFonts
+
+
+class FakeRunElement:
+    def __init__(self):
+        self.rPr = FakeRunProperties()
+
+    def get_or_add_rPr(self):
+        return self.rPr
+
+
 class FakeRun:
     def __init__(self, text=""):
         self.text = text
@@ -32,7 +48,7 @@ class FakeRun:
             name=None,
             color=SimpleNamespace(rgb=None),
         )
-        self._element = SimpleNamespace(rPr=SimpleNamespace(rFonts=FakeRFonts()))
+        self._element = FakeRunElement()
 
 
 class FakeParagraphFormat:
@@ -63,6 +79,13 @@ class FakeParagraph:
         run = FakeRun(text)
         self.runs.append(run)
         return run
+
+
+def font_slot_values(run):
+    return {
+        key.rsplit("}", 1)[-1].rsplit(":", 1)[-1]: value
+        for key, value in run._element.rPr.rFonts.values.items()
+    }
 
 
 class TextRenderCharacterizationTests(unittest.TestCase):
@@ -194,6 +217,49 @@ class TextRenderCharacterizationTests(unittest.TestCase):
         self.assertFalse(paragraph.runs[0].font.superscript)
         self.assertEqual(paragraph.runs[0].font.name, "SimSun")
         self.assertEqual(paragraph.runs[0].font.size, self.module.Pt(10.5))
+
+    def test_apply_run_defaults_writes_independent_font_slots(self):
+        run = FakeRun("中文 Latin العربية")
+        style = self.module.ParagraphStyleConfig(
+            font_name="SimSun",
+            western_font_name="Arial",
+            complex_script_font_name="Times New Roman",
+        )
+
+        self.module.apply_run_defaults(run, style)
+
+        self.assertEqual(run.font.name, "Arial")
+        self.assertEqual(
+            font_slot_values(run),
+            {
+                "eastAsia": "SimSun",
+                "ascii": "Arial",
+                "hAnsi": "Arial",
+                "cs": "Times New Roman",
+            },
+        )
+
+    def test_apply_run_defaults_keeps_legacy_single_font_behavior(self):
+        run = FakeRun("中文 Latin العربية")
+
+        self.module.apply_run_defaults(run, self.module.ParagraphStyleConfig(font_name="SimSun"))
+
+        self.assertEqual(run.font.name, "SimSun")
+        self.assertEqual(set(font_slot_values(run).values()), {"SimSun"})
+        self.assertEqual(set(font_slot_values(run)), {"eastAsia", "ascii", "hAnsi", "cs"})
+
+    def test_apply_run_defaults_preserves_explicit_empty_font_inheritance(self):
+        run = FakeRun("中文 Latin العربية")
+        style = self.module.ParagraphStyleConfig(
+            font_name="SimSun",
+            western_font_name="",
+            complex_script_font_name="",
+        )
+
+        self.module.apply_run_defaults(run, style)
+
+        self.assertIsNone(run.font.name)
+        self.assertEqual(font_slot_values(run), {"eastAsia": "SimSun"})
 
     def test_fill_title_paragraph_uses_cover_title_style_on_first_page(self):
         paragraph = FakeParagraph()

@@ -12,6 +12,7 @@ from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 
 from app.conversion.docx_rules import text_semantics as _shared_text_semantics
+from app.conversion.docx_rules.run_fonts import apply_run_fonts
 
 
 BODY_FONT = Pt(10.5)
@@ -204,13 +205,13 @@ def get_style_config(render_config: Any | None, style_name: str | None) -> Any |
 
 
 def apply_run_defaults(run: Any, style_config: Any | None = None) -> None:
-    if style_config and style_config.font_name:
-        run.font.name = style_config.font_name
-        r_fonts = run._element.rPr.rFonts if run._element.rPr is not None else None
-        if r_fonts is not None:
-            r_fonts.set(qn("w:eastAsia"), style_config.font_name)
-            r_fonts.set(qn("w:ascii"), style_config.font_name)
-            r_fonts.set(qn("w:hAnsi"), style_config.font_name)
+    if style_config:
+        apply_run_fonts(
+            run,
+            font_name=style_config.font_name,
+            western_font_name=style_config.western_font_name,
+            complex_script_font_name=style_config.complex_script_font_name,
+        )
     if style_config and style_config.font_size is not None:
         run.font.size = Pt(style_config.font_size)
     elif run.font.size is None:

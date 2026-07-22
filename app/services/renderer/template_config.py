@@ -30,6 +30,8 @@ class TemplateParagraphStyleConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     font_name: str | None = None
+    western_font_name: str | None = None
+    complex_script_font_name: str | None = None
     font_size: float | None = None
     bold: bool | None = None
     italic: bool | None = None
@@ -54,17 +56,22 @@ class TemplateHeaderConfig(BaseModel):
     logo_height_cm: float | None = None
     title_text: str | None = None
     title_font_name: str | None = None
+    title_western_font_name: str | None = None
+    title_complex_script_font_name: str | None = None
     title_font_size: float | None = None
     title_color: str | None = None
 
 
 class TemplateFooterConfig(BaseModel):
-    """页脚配置；P0 只支持静态居中页脚文本和模板已有页脚保留。"""
+    """页脚配置；启用覆盖后可统一模板已有和新生成页脚的字体与对齐。"""
 
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool = False
     show_page_number: bool = False
+    font_name: str | None = None
+    western_font_name: str | None = None
+    complex_script_font_name: str | None = None
     alignment: Literal["left", "center", "right"] | None = "center"
 
 

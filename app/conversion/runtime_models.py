@@ -107,6 +107,8 @@ class TableStyleConfig:
 @dataclass(slots=True)
 class ParagraphStyleConfig:
     font_name: str | None = None
+    western_font_name: str | None = None
+    complex_script_font_name: str | None = None
     font_size: float | None = None
     bold: bool | None = None
     italic: bool | None = None

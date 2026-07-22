@@ -54,7 +54,15 @@ const templateLayoutConfig = {
   },
   config: {
     page_setup: { top_margin: 2.3 },
-    heading1: { font_name: "宋体", font_size: 13, bold: true, color: "#0c69b2", alignment: "left" },
+    heading1: {
+      font_name: "宋体",
+      western_font_name: "Arial",
+      complex_script_font_name: "Times New Roman",
+      font_size: 13,
+      bold: true,
+      color: "#0c69b2",
+      alignment: "left",
+    },
     heading2: { font_size: 11 },
     heading3: { font_size: 10 },
     normal: { font_size: 10.5, color: "#000000", alignment: "justify" },
@@ -75,7 +83,9 @@ const templateLayoutConfig = {
     groups: {
       page_setup: { top_margin: { type: "number", label: "上边距", unit: "cm" } },
       heading1: {
-        font_name: { type: "text", label: "字体" },
+        font_name: { type: "text", label: "中文字体" },
+        western_font_name: { type: "text", label: "西文字体" },
+        complex_script_font_name: { type: "text", label: "复杂文种字体" },
         font_size: { type: "number", label: "字号", unit: "pt" },
         bold: { type: "boolean", label: "加粗" },
         color: { type: "color", label: "颜色" },

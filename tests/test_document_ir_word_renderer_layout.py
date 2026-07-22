@@ -24,6 +24,7 @@ from app.services.document_ir.models import (
 )
 from app.services.renderer.evidence import build_renderer_evidence
 from app.services.renderer.layout_plan import build_layout_plan
+from app.services.renderer.template_config import TemplateConfigPackage
 from app.services.renderer.word_renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
 
 
@@ -36,6 +37,35 @@ MINIMAL_PNG_BYTES = (
 
 
 class DocumentIRWordRendererLayoutTests(unittest.TestCase):
+    def test_seed_config_declares_western_and_complex_fonts_for_all_text_groups(self) -> None:
+        config = TemplateConfigPackage.load(
+            Path(__file__).resolve().parents[1] / "resources" / "template_configs" / "datasheet_template.yaml"
+        )
+
+        for group_name in (
+            "part_number",
+            "category",
+            "heading1",
+            "heading2",
+            "heading3",
+            "toc_title",
+            "toc_level1",
+            "toc_level2",
+            "toc_level3",
+            "normal",
+            "table_content",
+            "table_note",
+            "caption",
+            "long_table_caption",
+        ):
+            style = getattr(config, group_name)
+            self.assertEqual(style.western_font_name, "Arial", group_name)
+            self.assertEqual(style.complex_script_font_name, "Times New Roman", group_name)
+        self.assertEqual(config.header.title_western_font_name, "Arial")
+        self.assertEqual(config.header.title_complex_script_font_name, "Times New Roman")
+        self.assertEqual(config.footer.western_font_name, "Arial")
+        self.assertEqual(config.footer.complex_script_font_name, "Times New Roman")
+
     def test_build_layout_plan_separates_decorations_and_two_column_regions(self) -> None:
         document = self._make_v2_two_column_document()
 
@@ -168,6 +198,138 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
 
         self.assertEqual(rendered.sections[0].header.paragraphs[0].text, "Template Header")
         self.assertEqual(rendered.sections[0].footer.paragraphs[0].text, "Template Footer")
+
+    def test_render_to_bytes_writes_configured_body_header_and_footer_font_slots(self) -> None:
+        renderer = DocumentIRWordRenderer()
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="docjob_fonts", source_file_id="file_fonts", document_language="zh"),
+            blocks=[
+                DocumentIRBlock(
+                    id="block_fonts",
+                    type="paragraph",
+                    order=0,
+                    text="中文 Latin العربية",
+                )
+            ],
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "template.yaml"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        "schema_version: template-config/v1",
+                        "normal:",
+                        "  font_name: SimSun",
+                        "  western_font_name: Arial",
+                        "  complex_script_font_name: Times New Roman",
+                        "header:",
+                        "  enabled: true",
+                        "  title_text: 中文 Header العربية",
+                        "  title_font_name: Microsoft YaHei",
+                        "  title_western_font_name: Calibri",
+                        "  title_complex_script_font_name: Arial",
+                        "footer:",
+                        "  enabled: true",
+                        "  show_page_number: true",
+                        "  font_name: FangSong",
+                        "  western_font_name: Arial",
+                        "  complex_script_font_name: Times New Roman",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            content = renderer.render_to_bytes(
+                document,
+                template_path=(
+                    Path(__file__).resolve().parents[1]
+                    / "resources"
+                    / "templates"
+                    / "default"
+                    / "datasheet_template.docx"
+                ),
+                config_path=config_path,
+                image_loader=lambda _asset: None,
+            )
+
+        footer_xml = self._related_xml(content, "word/footer")
+        self.assertIn("<w:fldChar", footer_xml)
+        expected_parts = (
+            (self._document_xml(content), ("SimSun", "Arial", "Times New Roman")),
+            (self._related_xml(content, "word/header"), ("Microsoft YaHei", "Calibri", "Arial")),
+            (footer_xml, ("FangSong", "Arial", "Times New Roman")),
+        )
+        for xml, (east_asia, western, complex_script) in expected_parts:
+            run_fonts = re.search(r"<w:rFonts\b[^>]*/>", xml)
+            self.assertIsNotNone(run_fonts)
+            font_attributes = run_fonts.group(0)
+            self.assertIn(f'w:eastAsia="{east_asia}"', font_attributes)
+            self.assertIn(f'w:ascii="{western}"', font_attributes)
+            self.assertIn(f'w:hAnsi="{western}"', font_attributes)
+            self.assertIn(f'w:cs="{complex_script}"', font_attributes)
+
+    def test_extracted_decorations_keep_normal_style_and_legacy_font_fallbacks(self) -> None:
+        renderer = DocumentIRWordRenderer()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "template.yaml"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        "schema_version: template-config/v1",
+                        "normal:",
+                        "  font_name: Normal East",
+                        "  western_font_name: Normal West",
+                        "  complex_script_font_name: Normal Complex",
+                        "  font_size: 12",
+                        "  bold: true",
+                        "  color: '#123456'",
+                        "  alignment: right",
+                        "  space_before: 2",
+                        "  space_after: 3",
+                        "header:",
+                        "  enabled: true",
+                        "  title_font_name: Header East",
+                        "footer:",
+                        "  enabled: true",
+                        "  show_page_number: false",
+                        "  alignment: center",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            content = renderer.render_to_bytes(
+                self._make_v2_two_column_document(),
+                template_path=None,
+                config_path=config_path,
+                image_loader=lambda _asset: None,
+            )
+            rendered = Document(io.BytesIO(content))
+
+        decoration_parts = (
+            (rendered.sections[0].header.paragraphs[0], ("Header East", "Header East", "Header East")),
+            (rendered.sections[0].footer.paragraphs[0], ("Normal East", "Normal West", "Normal Complex")),
+        )
+        for paragraph, (east_asia, western, complex_script) in decoration_parts:
+            run = next(item for item in paragraph.runs if item.text)
+            self.assertEqual(run.font.size.pt, 12)
+            self.assertTrue(run.bold)
+            self.assertEqual(str(run.font.color.rgb), "123456")
+            self.assertEqual(paragraph.alignment, WD_ALIGN_PARAGRAPH.RIGHT)
+            self.assertEqual(paragraph.paragraph_format.space_before.pt, 2)
+            self.assertEqual(paragraph.paragraph_format.space_after.pt, 3)
+            run_fonts = run._element.rPr.rFonts
+            self.assertEqual(run_fonts.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}eastAsia"), east_asia)
+            self.assertEqual(run_fonts.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}ascii"), western)
+            self.assertEqual(run_fonts.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}hAnsi"), western)
+            self.assertEqual(run_fonts.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}cs"), complex_script)
+
+    def test_decoration_font_resolution_preserves_explicit_empty_and_fallback_order(self) -> None:
+        resolve = DocumentIRWordRenderer._resolve_decoration_font
+
+        self.assertEqual(resolve("", "Legacy", "Normal"), "")
+        self.assertEqual(resolve(None, "Legacy", "Normal"), "Legacy")
+        self.assertEqual(resolve(None, None, "Normal"), "Normal")
 
     def test_render_to_bytes_keeps_v1_sequential_fallback(self) -> None:
         renderer = DocumentIRWordRenderer()
@@ -881,6 +1043,11 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
     def _numbering_xml(self, content: bytes) -> str:
         with zipfile.ZipFile(io.BytesIO(content)) as docx_zip:
             return docx_zip.read("word/numbering.xml").decode("utf-8")
+
+    def _related_xml(self, content: bytes, prefix: str) -> str:
+        with zipfile.ZipFile(io.BytesIO(content)) as docx_zip:
+            part_name = next(name for name in docx_zip.namelist() if name.startswith(prefix) and name.endswith(".xml"))
+            return docx_zip.read(part_name).decode("utf-8")
 
     def _make_v2_two_column_document(self) -> DocumentIR:
         return DocumentIR(
