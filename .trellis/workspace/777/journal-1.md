@@ -538,3 +538,37 @@ Released commit b167e61 to hostdzire via release dir flow; verified internal/pub
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: 完善页面格式多文种字体配置
+
+**Date**: 2026-07-22
+**Task**: 完善页面格式多文种字体配置
+**Branch**: `main`
+
+### Summary
+
+为页面样式补齐中文、西文和复杂文种字体字段，统一正式与 legacy DOCX 字体槽位映射，兼容旧配置并覆盖配置中心草稿往返；新增跨层 Spec，定向测试、前端构建和 release gate 均通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b249790d` | (see git log) |
+| `231d42ae` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
