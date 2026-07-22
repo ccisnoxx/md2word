@@ -25,6 +25,8 @@ from app.domains.templates.schemas import (
     TemplateVersionPublishRequest,
     TemplateVersionResponse,
 )
+from app.domains.templates.read_service import TemplateLayoutConfigConflict
+from app.domains.templates.layout_config_schema import TemplateLayoutValidationError
 
 
 router = APIRouter(prefix="/templates", tags=["templates"])
@@ -178,8 +180,10 @@ async def create_template_version(
 @router.get("/{template_id}/versions", response_model=TemplateVersionListResponse)
 def list_template_versions(
     template_id: str,
+    actor: ActorContext = Depends(require_admin_actor),
     runtime: AppRuntime = Depends(get_runtime),
 ) -> TemplateVersionListResponse:
+    del actor
     try:
         items = runtime.template_read_service.list_template_versions(template_id)
     except FileNotFoundError as exc:
@@ -192,12 +196,13 @@ def list_template_versions(
 @router.get("/{template_id}/layout-config", response_model=TemplateLayoutConfigResponse)
 def get_template_layout_config(
     template_id: str,
+    version: int | None = None,
     actor: ActorContext = Depends(require_admin_actor),
     runtime: AppRuntime = Depends(get_runtime),
 ) -> TemplateLayoutConfigResponse:
     del actor
     try:
-        return runtime.template_read_service.get_template_layout_config(template_id)
+        return runtime.template_read_service.get_template_layout_config(template_id, version=version)
     except FileNotFoundError as exc:
         raise not_found_http_exception(exc) from exc
     except ValueError as exc:
@@ -215,14 +220,37 @@ def create_template_layout_config_version(
     try:
         return runtime.template_read_service.create_template_layout_config_version(
             template_id,
-            config=payload.config,
+            base_template_version_id=payload.base_template_version_id,
+            expected_config_sha256=payload.expected_config_sha256,
+            expected_active_template_version_id=payload.expected_active_template_version_id,
+            changes=payload.changes,
+            change_note=payload.change_note,
             actor=actor,
             trace_id=trace_id,
         )
-    except RuntimeError as exc:
+    except TemplateLayoutConfigConflict as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "template_layout_config_conflict",
+                "message": str(exc),
+                "active_template_version_id": exc.active_template_version_id,
+                "config_sha256": exc.config_sha256,
+            },
+        ) from exc
+    except (OSError, RuntimeError) as exc:
         raise _template_versioning_unavailable_http_exception(exc) from exc
     except FileNotFoundError as exc:
         raise not_found_http_exception(exc) from exc
+    except TemplateLayoutValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "template_layout_validation_error",
+                "message": str(exc),
+                "field_errors": [{"path": exc.path, "code": exc.code, "message": str(exc)}],
+            },
+        ) from exc
     except ValueError as exc:
         raise bad_request_http_exception(exc) from exc
 
@@ -329,7 +357,7 @@ def download_template(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"模板文件不存在: {template_id}",
         )
-    path = runtime.template_read_service.get_template_path(template_id)
+    path = runtime.template_read_service.get_active_template_path(template_id)
     assert path is not None
     return FileResponse(
         path,

@@ -1,5 +1,5 @@
-// File: frontend/src/api/types.ts
-// Purpose: 定义后端 v1 schema 和运维请求对应的 TypeScript 合同。
+// 文件：frontend/src/api/types.ts
+// 用途：定义后端 v1 schema 和运维请求对应的 TypeScript 合同。
 export type AuthLoginRequest = {
   username: string;
   password: string;
@@ -2098,24 +2098,53 @@ export type TemplateLayoutConfigFieldSchema = {
   unit?: string;
   readonly?: boolean;
   options?: string[];
+  min?: number;
+  max?: number;
+  step?: number;
+};
+
+export type TemplateLayoutConfigCategorySchema = {
+  key: string;
+  label: string;
+  order: number;
+  groups: string[];
+};
+
+export type TemplateLayoutConfigGroupMeta = {
+  label: string;
+  category: string;
+  description: string;
+  order: number;
 };
 
 export type TemplateLayoutConfigResponse = {
   template_id: string;
   template_version_id: string | null;
   version: number;
+  status: TemplateVersionStatus;
+  is_default: boolean;
+  active_template_version_id: string;
   source_path: string | null;
   config_sha256: string | null;
+  snapshot_hash: string | null;
   meta: Record<string, unknown>;
   config: Record<string, unknown>;
+  preview_samples: Record<string, unknown>;
   field_schema: {
+    schema_version: string;
     meta: Record<string, TemplateLayoutConfigFieldSchema>;
+    categories: TemplateLayoutConfigCategorySchema[];
+    group_meta: Record<string, TemplateLayoutConfigGroupMeta>;
     groups: Record<string, Record<string, TemplateLayoutConfigFieldSchema>>;
   };
 };
 
 export type TemplateLayoutConfigDraftRequest = {
-  config: Record<string, unknown>;
+  base_template_version_id: string;
+  expected_config_sha256: string;
+  expected_active_template_version_id: string;
+  changes: Record<string, Record<string, unknown>>;
+  change_note?: string;
 };
 
 export type TemplateVersionPublishRequest = {

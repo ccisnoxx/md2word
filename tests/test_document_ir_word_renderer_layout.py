@@ -268,7 +268,7 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
             self.assertIn(f'w:hAnsi="{western}"', font_attributes)
             self.assertIn(f'w:cs="{complex_script}"', font_attributes)
 
-    def test_extracted_decorations_keep_normal_style_and_legacy_font_fallbacks(self) -> None:
+    def test_extracted_decorations_keep_normal_style_and_legacy_font_inheritance(self) -> None:
         renderer = DocumentIRWordRenderer()
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "template.yaml"
@@ -306,11 +306,9 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
             )
             rendered = Document(io.BytesIO(content))
 
-        decoration_parts = (
-            (rendered.sections[0].header.paragraphs[0], ("Header East", "Header East", "Header East")),
-            (rendered.sections[0].footer.paragraphs[0], ("Normal East", "Normal West", "Normal Complex")),
-        )
-        for paragraph, (east_asia, western, complex_script) in decoration_parts:
+        header_paragraph = rendered.sections[0].header.paragraphs[0]
+        footer_paragraph = rendered.sections[0].footer.paragraphs[0]
+        for paragraph in (header_paragraph, footer_paragraph):
             run = next(item for item in paragraph.runs if item.text)
             self.assertEqual(run.font.size.pt, 12)
             self.assertTrue(run.bold)
@@ -318,11 +316,14 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
             self.assertEqual(paragraph.alignment, WD_ALIGN_PARAGRAPH.RIGHT)
             self.assertEqual(paragraph.paragraph_format.space_before.pt, 2)
             self.assertEqual(paragraph.paragraph_format.space_after.pt, 3)
-            run_fonts = run._element.rPr.rFonts
-            self.assertEqual(run_fonts.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}eastAsia"), east_asia)
-            self.assertEqual(run_fonts.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}ascii"), western)
-            self.assertEqual(run_fonts.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}hAnsi"), western)
-            self.assertEqual(run_fonts.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}cs"), complex_script)
+
+        header_fonts = next(item for item in header_paragraph.runs if item.text)._element.rPr.rFonts
+        self.assertEqual(header_fonts.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}eastAsia"), "Header East")
+        self.assertEqual(header_fonts.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}ascii"), "Header East")
+        self.assertEqual(header_fonts.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}hAnsi"), "Header East")
+        self.assertEqual(header_fonts.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}cs"), "Header East")
+        footer_run = next(item for item in footer_paragraph.runs if item.text)
+        self.assertIsNone(footer_run._element.rPr.rFonts)
 
     def test_decoration_font_resolution_preserves_explicit_empty_and_fallback_order(self) -> None:
         resolve = DocumentIRWordRenderer._resolve_decoration_font

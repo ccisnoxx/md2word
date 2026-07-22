@@ -47,6 +47,42 @@ class ResourceVersionService:
         )
         return self.repository.save_resource_version(record)
 
+    def create_draft(
+        self,
+        *,
+        resource_type: ResourceType,
+        resource_id: str,
+        version: str,
+        snapshot_hash: str,
+        payload_ref: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> ResourceVersionRecord:
+        """创建不可变的新草稿版本，拒绝覆盖任何同版本记录。"""
+
+        if self.repository.get_resource_version(resource_type, resource_id, version) is not None:
+            raise ValueError(f"资源版本已存在: {resource_type}/{resource_id}@{version}")
+        now = utc_now()
+        return self.repository.create_resource_version(
+            ResourceVersionRecord(
+                resource_type=resource_type,
+                resource_id=resource_id,
+                version=version,
+                status=ResourceVersionStatus.DRAFT,
+                snapshot_hash=snapshot_hash,
+                payload_ref=payload_ref,
+                payload=payload,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+    def allocate_next_version(self, resource_type: ResourceType, resource_id: str, minimum_next: int) -> int:
+        """通过持久化层原子分配不复用的整数版本。"""
+
+        if minimum_next < 1:
+            raise ValueError("minimum_next 必须大于 0。")
+        return self.repository.allocate_next_version(resource_type, resource_id, minimum_next)
+
     def publish(
         self,
         resource_type: ResourceType,
@@ -106,9 +142,19 @@ class ResourceVersionService:
             raise ValueError("默认资源版本指针指向了非 published 版本。")
         return self._to_resolved(record)
 
-    def resolve_version(self, resource_type: ResourceType, resource_id: str, version: str) -> ResolvedResourceVersion:
+    def resolve_version(
+        self,
+        resource_type: ResourceType,
+        resource_id: str,
+        version: str,
+        *,
+        allow_draft: bool = False,
+    ) -> ResolvedResourceVersion:
         record = self._require_version(resource_type, resource_id, version)
-        if record.status != ResourceVersionStatus.PUBLISHED:
+        allowed_statuses = {ResourceVersionStatus.PUBLISHED}
+        if allow_draft:
+            allowed_statuses.add(ResourceVersionStatus.DRAFT)
+        if record.status not in allowed_statuses:
             raise ValueError("只能解析 published 资源版本。")
         return self._to_resolved(record)
 
@@ -128,6 +174,7 @@ class ResourceVersionService:
             resource_type=record.resource_type,
             resource_id=record.resource_id,
             version=record.version,
+            status=record.status.value,
             snapshot_hash=record.snapshot_hash,
             payload_ref=record.payload_ref,
         )

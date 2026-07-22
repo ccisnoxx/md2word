@@ -2123,7 +2123,19 @@ class DocumentJobExecutionService:
         ir_file = self._get_document_ir_file(rendering)
         document_ir = DocumentIR.model_validate_json(self.file_service.read_file_content(ir_file))
         layout_plan = build_layout_plan(document_ir)
-        template_selection = self.template_read_service.resolve_template_version(rendering.template_version_id)
+        snapshot_resources = rendering.request_snapshot.get("resources")
+        snapshot_template = snapshot_resources.get("template") if isinstance(snapshot_resources, dict) else None
+        draft_was_authorized_at_creation = (
+            isinstance(snapshot_template, dict)
+            and snapshot_template.get("status") == "draft"
+            and rendering.template_version_id
+            == f"{snapshot_template.get('resource_id')}@{snapshot_template.get('version')}"
+        )
+        # 仅允许执行创建阶段已固化 draft 快照的验证任务，legacy 或不一致记录继续按 published 校验。
+        template_selection = self.template_read_service.resolve_template_version(
+            rendering.template_version_id,
+            allow_draft=draft_was_authorized_at_creation,
+        )
         word_content = self.word_renderer.render_to_bytes(
             document_ir,
             template_path=template_selection.template_path,

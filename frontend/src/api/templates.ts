@@ -1,4 +1,4 @@
-// frontend/src/api/templates.ts: Template Profile API wrappers for V2.1 config management.
+// frontend/src/api/templates.ts: 模板文件、样式配置和版本治理 API 封装。
 import { apiRequest } from "@/api/client";
 import type {
   TemplateDetailResponse,
@@ -49,10 +49,11 @@ export const templatesApi = {
     });
   },
 
-  getLayoutConfig(templateId: string): Promise<TemplateLayoutConfigResponse> {
+  getLayoutConfig(templateId: string, version?: number): Promise<TemplateLayoutConfigResponse> {
     return apiRequest<TemplateLayoutConfigResponse>({
       url: `/api/v1/templates/${templateId}/layout-config`,
       method: "GET",
+      params: version ? { version } : undefined,
     });
   },
 

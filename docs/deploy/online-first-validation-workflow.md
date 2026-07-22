@@ -5,7 +5,7 @@ component: md2word-deploy-validation
 status: current
 summary: md2word 本地改写、上传 hostdzire、线上验证和 Golden Sample 签字的标准流程。
 tags: [deploy, validation, hostdzire, golden-sample, mysql, celery]
-last_reviewed: 2026-06-29
+last_reviewed: 2026-07-22
 ---
 
 # 线上优先验证流程
@@ -245,15 +245,34 @@ docker compose --env-file .env -f docker/prod/docker-compose.yml logs --tail=120
 
 ```bash
 RELEASE_DIR="/var/www/md2word-frontend/releases/<release-id>"
+PREVIOUS_FRONTEND_RELEASE="$(readlink -f /var/www/md2word-frontend/current)"
+NEXT_FRONTEND_LINK="/var/www/md2word-frontend/.current-<release-id>"
 mkdir -p "${RELEASE_DIR}"
 tar --no-same-owner -xzf /root/md2word-frontend-dist.tgz -C "${RELEASE_DIR}"
 chown -R root:root "${RELEASE_DIR}"
 find "${RELEASE_DIR}" -type d -exec chmod 755 {} +
 find "${RELEASE_DIR}" -type f -exec chmod 644 {} +
-ln -sfn "${RELEASE_DIR}" /var/www/md2word-frontend/current
+ln -s "${RELEASE_DIR}" "${NEXT_FRONTEND_LINK}"
+mv -Tf "${NEXT_FRONTEND_LINK}" /var/www/md2word-frontend/current
 nginx -t
 systemctl reload nginx
 ```
+
+发布前必须保存 `PREVIOUS_FRONTEND_RELEASE` 的实际值。若后端门禁、前端静态资源或公网检查失败，后端与前端分别按各自回滚点恢复：
+
+```bash
+cd /root/md2word-releases/<previous-short-sha>
+docker compose --env-file .env -f docker/prod/docker-compose.yml build
+docker compose --env-file .env -f docker/prod/docker-compose.yml up -d --force-recreate api worker
+
+ROLLBACK_FRONTEND_LINK="/var/www/md2word-frontend/.current-rollback-<release-id>"
+ln -s "${PREVIOUS_FRONTEND_RELEASE}" "${ROLLBACK_FRONTEND_LINK}"
+mv -Tf "${ROLLBACK_FRONTEND_LINK}" /var/www/md2word-frontend/current
+nginx -t
+systemctl reload nginx
+```
+
+后端 release 共用 `md2word-p0:latest` 镜像标签，旧 release 必须先重新构建才能恢复旧代码。回滚不得执行 `down -v`；恢复后重新检查内网和公网 `live/ready`。
 
 ## 线上运行时门禁
 

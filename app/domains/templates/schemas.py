@@ -104,15 +104,24 @@ class TemplateLayoutConfigResponse(BaseModel):
     template_id: str
     template_version_id: str | None = None
     version: int
+    status: str
+    is_default: bool = False
+    active_template_version_id: str
     source_path: str | None = None
     config_sha256: str | None = None
+    snapshot_hash: str | None = None
     meta: dict[str, Any] = Field(default_factory=dict)
     config: dict[str, Any] = Field(default_factory=dict)
+    preview_samples: dict[str, Any] = Field(default_factory=dict)
     field_schema: dict[str, Any] = Field(default_factory=dict)
 
 
 class TemplateLayoutConfigDraftRequest(BaseModel):
-    config: dict[str, Any]
+    base_template_version_id: str
+    expected_config_sha256: str
+    expected_active_template_version_id: str
+    changes: dict[str, Any]
+    change_note: str = Field(default="", max_length=500)
 
 
 class TemplateDeleteResponse(BaseModel):

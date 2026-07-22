@@ -1,0 +1,158 @@
+"""验证 Word 模板样式配置的单一 schema 与真实 seed 合同。"""
+
+from __future__ import annotations
+
+import tempfile
+from pathlib import Path
+from unittest import TestCase
+
+import yaml
+
+from app.domains.templates.layout_config_schema import (
+    GROUP_FIELD_SCHEMA,
+    TemplateConfigPackage,
+    apply_layout_changes,
+    editor_field_schema,
+    split_layout_config,
+    validate_layout_config,
+)
+
+
+class TemplateLayoutConfigSchemaTests(TestCase):
+    def setUp(self) -> None:
+        self.path = Path(__file__).resolve().parents[1] / "resources" / "template_configs" / "datasheet_template.yaml"
+        self.raw = yaml.safe_load(self.path.read_text(encoding="utf-8"))
+
+    def test_real_seed_matches_editor_and_renderer_contract(self) -> None:
+        package = validate_layout_config(self.raw)
+        schema = editor_field_schema()
+        meta, config, preview_samples = split_layout_config(self.raw)
+
+        self.assertEqual(package.schema_version, "template-config/v1")
+        self.assertEqual(list(schema["groups"]), list(GROUP_FIELD_SCHEMA))
+        self.assertEqual(len(schema["groups"]), 18)
+        self.assertEqual(set(config), set(schema["groups"]))
+        self.assertEqual(
+            {group: item["label"] for group, item in schema["group_meta"].items()},
+            {
+                "page_setup": "页面设置",
+                "part_number": "首页型号行",
+                "category": "首页品类行",
+                "heading1": "一级标题",
+                "heading2": "二级标题",
+                "heading3": "三级标题",
+                "toc_title": "目录标题",
+                "toc_level1": "目录一级项",
+                "toc_level2": "目录二级项",
+                "toc_level3": "目录三级项",
+                "normal": "正文",
+                "table_content": "表格正文",
+                "table_style": "表格样式",
+                "table_note": "表格注释",
+                "caption": "图注 / 表题",
+                "long_table_caption": "续表标题",
+                "header": "页眉",
+                "footer": "页脚",
+            },
+        )
+        self.assertEqual(meta["template_name"], "数据手册模板")
+        self.assertIn("normal_text", preview_samples)
+        self.assertTrue(schema["groups"]["page_setup"]["page_width_cm"]["readonly"])
+        self.assertTrue(schema["groups"]["header"]["logo_path"]["readonly"])
+
+    def test_changes_preserve_readonly_meta_samples_and_page_size(self) -> None:
+        updated = apply_layout_changes(
+            self.raw,
+            {
+                "normal": {"font_size": 11, "color": "#abcdef"},
+                "page_setup": {"top_margin": 2.2},
+            },
+        )
+
+        self.assertEqual(updated["schema_version"], self.raw["schema_version"])
+        self.assertEqual(updated["page_setup"]["page_width_cm"], 21.0)
+        self.assertEqual(updated["page_setup"]["page_height_cm"], 29.7)
+        self.assertEqual(updated["normal"]["font_size"], 11)
+        self.assertEqual(updated["normal"]["color"], "#ABCDEF")
+        self.assertEqual(updated["sample_content"], self.raw["sample_content"])
+
+    def test_legacy_font_fields_are_completed_without_overwriting_explicit_empty_values(self) -> None:
+        legacy = yaml.safe_load(yaml.safe_dump(self.raw))
+        text_groups = [
+            group_name
+            for group_name, fields in GROUP_FIELD_SCHEMA.items()
+            if group_name != "footer" and "font_name" in fields
+        ]
+        for group_name in text_groups:
+            legacy[group_name].pop("western_font_name")
+            legacy[group_name].pop("complex_script_font_name")
+        legacy["caption"]["western_font_name"] = ""
+        legacy["caption"]["complex_script_font_name"] = ""
+        legacy["header"].pop("title_western_font_name")
+        legacy["header"].pop("title_complex_script_font_name")
+        legacy["footer"].pop("font_name")
+        legacy["footer"].pop("western_font_name")
+        legacy["footer"].pop("complex_script_font_name")
+
+        _, config, _ = split_layout_config(legacy)
+        updated = apply_layout_changes(
+            legacy,
+            {"normal": {"western_font_name": "", "complex_script_font_name": ""}},
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            legacy_path = Path(temp_dir) / "legacy.yaml"
+            legacy_path.write_text(yaml.safe_dump(legacy, allow_unicode=True), encoding="utf-8")
+            loaded = TemplateConfigPackage.load(legacy_path)
+
+        self.assertEqual(config["heading1"]["western_font_name"], config["heading1"]["font_name"])
+        self.assertEqual(config["heading1"]["complex_script_font_name"], config["heading1"]["font_name"])
+        self.assertEqual(config["caption"]["western_font_name"], "")
+        self.assertEqual(config["caption"]["complex_script_font_name"], "")
+        self.assertEqual(config["header"]["title_western_font_name"], config["header"]["title_font_name"])
+        self.assertEqual(config["footer"]["font_name"], "")
+        self.assertEqual(config["footer"]["western_font_name"], "")
+        self.assertEqual(config["footer"]["complex_script_font_name"], "")
+        self.assertEqual(updated["normal"]["western_font_name"], "")
+        self.assertEqual(updated["normal"]["complex_script_font_name"], "")
+        self.assertEqual(loaded.heading1.western_font_name, loaded.heading1.font_name)
+        self.assertEqual(loaded.caption.western_font_name, "")
+        self.assertEqual(loaded.header.title_western_font_name, loaded.header.title_font_name)
+        self.assertEqual(loaded.footer.font_name, "")
+        self.assertEqual(loaded.footer.western_font_name, "")
+        self.assertEqual(loaded.footer.complex_script_font_name, "")
+
+    def test_readonly_unknown_and_non_finite_changes_are_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "只读"):
+            apply_layout_changes(self.raw, {"page_setup": {"page_width_cm": 20}})
+        with self.assertRaisesRegex(ValueError, "不支持字段"):
+            apply_layout_changes(self.raw, {"normal": {"unknown": 1}})
+        with self.assertRaisesRegex(ValueError, "有限"):
+            apply_layout_changes(self.raw, {"normal": {"font_size": float("inf")}})
+        with self.assertRaisesRegex(ValueError, "number"):
+            apply_layout_changes(self.raw, {"normal": {"font_size": "11"}})
+        with self.assertRaisesRegex(ValueError, "RGB"):
+            apply_layout_changes(self.raw, {"normal": {"color": "##AABBCC"}})
+
+    def test_renderer_rejects_unknown_fields_but_allows_partial_explicit_config(self) -> None:
+        package = TemplateConfigPackage.model_validate(
+            {"schema_version": "template-config/v1", "normal": {"font_size": 12}}
+        )
+        self.assertEqual(package.normal.font_size, 12)
+        with self.assertRaisesRegex(ValueError, "Extra"):
+            validate_layout_config({**self.raw, "unexpected": True})
+
+    def test_managed_config_rejects_corrupted_existing_values_and_unsafe_logo_path(self) -> None:
+        invalid_color = yaml.safe_load(yaml.safe_dump(self.raw))
+        invalid_color["normal"]["color"] = "not-a-color"
+        with self.assertRaisesRegex(ValueError, "RGB"):
+            validate_layout_config(invalid_color)
+
+        invalid_margin = yaml.safe_load(yaml.safe_dump(self.raw))
+        invalid_margin["page_setup"]["top_margin"] = -1
+        with self.assertRaisesRegex(ValueError, "不能小于"):
+            validate_layout_config(invalid_margin)
+
+        unsafe_logo = yaml.safe_load(yaml.safe_dump(self.raw))
+        unsafe_logo["header"]["logo_path"] = "../secret.png"
+        with self.assertRaisesRegex(ValueError, "相对路径"):
+            validate_layout_config(unsafe_logo)

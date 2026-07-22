@@ -4,19 +4,31 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import os
 import re
 import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
+from uuid import uuid4
 
 import yaml
+from docx import Document
+from docx.enum.style import WD_STYLE_TYPE
 
 from app.domains.audit.models import ActorContext
 from app.core.config import Settings
 from app.domains.document_jobs.repository import DocumentJobRepositoryProtocol
-from app.domains.resources.models import ResourceVersionRecord, utc_now
+from app.domains.resources.models import ResourceVersionRecord, ResourceVersionStatus, utc_now
+from app.domains.templates.layout_config_schema import (
+    TemplateLayoutValidationError,
+    apply_layout_changes,
+    editor_field_schema,
+    split_layout_config,
+    validate_layout_config,
+)
 from app.domains.templates.models import TemplateManifestItem, TemplateState, TemplatesManifest
 from app.domains.templates.schemas import (
     TemplateAssetResponse,
@@ -46,6 +58,21 @@ class TemplateVersionSelection:
     render_policy: dict[str, Any]
 
 
+class TemplateLayoutConfigConflict(RuntimeError):
+    """样式编辑基线或默认版本已经变化。"""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        active_template_version_id: str,
+        config_sha256: str | None,
+    ) -> None:
+        super().__init__(message)
+        self.active_template_version_id = active_template_version_id
+        self.config_sha256 = config_sha256
+
+
 ASSET_SPECS: tuple[AssetSpec, ...] = (
     AssetSpec(key="template", label="Word 模板", path_getter="default_template_path"),
     AssetSpec(key="layout_config", label="页面布局 YAML", path_getter="layout_config_path"),
@@ -53,118 +80,7 @@ ASSET_SPECS: tuple[AssetSpec, ...] = (
 )
 
 TEMPLATE_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
-HEX_COLOR_RE = re.compile(r"^#?[0-9a-fA-F]{6}$")
-ALIGNMENT_VALUES = ("left", "center", "right", "justify")
-
-LAYOUT_META_FIELD_SCHEMA: dict[str, dict[str, Any]] = {
-    "schema_version": {"type": "text", "label": "schema_version", "readonly": True},
-    "template_name": {"type": "text", "label": "配置名称", "readonly": True},
-    "output_filename": {"type": "text", "label": "输出文件名", "readonly": True},
-}
-
-PARAGRAPH_STYLE_FIELDS: dict[str, dict[str, Any]] = {
-    "font_name": {"type": "text", "label": "中文字体"},
-    "western_font_name": {"type": "text", "label": "西文字体"},
-    "complex_script_font_name": {"type": "text", "label": "复杂文种字体"},
-    "font_size": {"type": "number", "label": "字号", "unit": "pt"},
-    "bold": {"type": "boolean", "label": "加粗"},
-    "color": {"type": "color", "label": "颜色"},
-    "alignment": {"type": "alignment", "label": "对齐方式"},
-    "space_before": {"type": "number", "label": "段前间距", "unit": "pt"},
-    "space_after": {"type": "number", "label": "段后间距", "unit": "pt"},
-    "line_spacing": {"type": "number", "label": "行距"},
-    "first_line_indent_pt": {"type": "number", "label": "首行缩进", "unit": "pt"},
-    "left_indent_pt": {"type": "number", "label": "左缩进", "unit": "pt"},
-    "right_indent_pt": {"type": "number", "label": "右缩进", "unit": "pt"},
-}
-TEXT_STYLE_FIELDS: dict[str, dict[str, Any]] = {
-    "font_name": PARAGRAPH_STYLE_FIELDS["font_name"],
-    "western_font_name": PARAGRAPH_STYLE_FIELDS["western_font_name"],
-    "complex_script_font_name": PARAGRAPH_STYLE_FIELDS["complex_script_font_name"],
-    "font_size": PARAGRAPH_STYLE_FIELDS["font_size"],
-    "bold": PARAGRAPH_STYLE_FIELDS["bold"],
-    "alignment": PARAGRAPH_STYLE_FIELDS["alignment"],
-    "space_after": PARAGRAPH_STYLE_FIELDS["space_after"],
-}
-
-LAYOUT_GROUP_FIELD_SCHEMA: dict[str, dict[str, dict[str, Any]]] = {
-    "page_setup": {
-        "page_width_cm": {"type": "number", "label": "页面宽度", "unit": "cm"},
-        "page_height_cm": {"type": "number", "label": "页面高度", "unit": "cm"},
-        "top_margin": {"type": "number", "label": "上边距", "unit": "cm"},
-        "bottom_margin": {"type": "number", "label": "下边距", "unit": "cm"},
-        "left_margin": {"type": "number", "label": "左边距", "unit": "cm"},
-        "right_margin": {"type": "number", "label": "右边距", "unit": "cm"},
-        "header_distance": {"type": "number", "label": "页眉距离", "unit": "cm"},
-        "footer_distance": {"type": "number", "label": "页脚距离", "unit": "cm"},
-    },
-    "part_number": TEXT_STYLE_FIELDS,
-    "category": TEXT_STYLE_FIELDS,
-    "heading1": PARAGRAPH_STYLE_FIELDS,
-    "heading2": PARAGRAPH_STYLE_FIELDS,
-    "heading3": PARAGRAPH_STYLE_FIELDS,
-    "toc_title": {
-        key: value
-        for key, value in PARAGRAPH_STYLE_FIELDS.items()
-        if key not in {"first_line_indent_pt", "left_indent_pt", "right_indent_pt"}
-    },
-    "toc_level1": {
-        key: value
-        for key, value in PARAGRAPH_STYLE_FIELDS.items()
-        if key not in {"first_line_indent_pt", "left_indent_pt", "right_indent_pt"}
-    },
-    "toc_level2": {
-        key: value
-        for key, value in PARAGRAPH_STYLE_FIELDS.items()
-        if key not in {"first_line_indent_pt", "left_indent_pt", "right_indent_pt"}
-    },
-    "toc_level3": {
-        key: value
-        for key, value in PARAGRAPH_STYLE_FIELDS.items()
-        if key not in {"first_line_indent_pt", "left_indent_pt", "right_indent_pt"}
-    },
-    "normal": PARAGRAPH_STYLE_FIELDS,
-    "table_content": {
-        key: value
-        for key, value in PARAGRAPH_STYLE_FIELDS.items()
-        if key not in {"bold"}
-    },
-    "table_style": {
-        "style_name": {"type": "text", "label": "表格样式"},
-        "header_fill": {"type": "color", "label": "表头底色"},
-        "border_color": {"type": "color", "label": "边框颜色"},
-    },
-    "table_note": {
-        **{key: value for key, value in PARAGRAPH_STYLE_FIELDS.items() if key != "bold"},
-        "italic": {"type": "boolean", "label": "斜体"},
-    },
-    "caption": PARAGRAPH_STYLE_FIELDS,
-    "long_table_caption": PARAGRAPH_STYLE_FIELDS,
-    "header": {
-        "enabled": {"type": "boolean", "label": "启用页眉覆盖"},
-        "logo_path": {"type": "text", "label": "Logo 路径", "readonly": True},
-        "logo_height_cm": {"type": "number", "label": "Logo 高度", "unit": "cm"},
-        "title_text": {"type": "text", "label": "页眉标题"},
-        "title_font_name": {"type": "text", "label": "页眉中文字体"},
-        "title_western_font_name": {"type": "text", "label": "页眉西文字体"},
-        "title_complex_script_font_name": {"type": "text", "label": "页眉复杂文种字体"},
-        "title_font_size": {"type": "number", "label": "页眉字号", "unit": "pt"},
-        "title_color": {"type": "color", "label": "页眉颜色"},
-    },
-    "footer": {
-        "enabled": {"type": "boolean", "label": "启用页脚覆盖"},
-        "show_page_number": {"type": "boolean", "label": "显示页码"},
-        "font_name": {"type": "text", "label": "页脚中文字体"},
-        "western_font_name": {"type": "text", "label": "页脚西文字体"},
-        "complex_script_font_name": {"type": "text", "label": "页脚复杂文种字体"},
-        "alignment": {"type": "alignment", "label": "页脚对齐"},
-    },
-}
-
-LAYOUT_FIELD_SCHEMA: dict[str, Any] = {
-    "meta": LAYOUT_META_FIELD_SCHEMA,
-    "groups": LAYOUT_GROUP_FIELD_SCHEMA,
-}
+SYSTEM_LOGGER = logging.getLogger("system")
 
 
 class TemplateReadService:
@@ -184,6 +100,48 @@ class TemplateReadService:
     def list_templates(self, *, url_for: Callable[..., str] | None) -> list[TemplateListItemResponse]:
         return [self.get_template_detail(item.id, url_for=url_for).to_list_item() for item in self._visible_templates()]
 
+    def bootstrap_manifest_versions(self) -> None:
+        """把 seed manifest 幂等登记为 published，并只在缺省时建立默认指针。"""
+
+        service = self.resource_version_service
+        if service is None:
+            return
+        for template in self._visible_templates():
+            version = str(template.version)
+            existing = service.repository.get_resource_version("template", template.id, version)
+            template_path = self._resolve_manifest_path(template.template_path)
+            layout_path = self._resolve_manifest_path(template.layout_config_path) if template.layout_config_path else None
+            if not template_path.exists() or (layout_path is not None and not layout_path.exists()):
+                raise FileNotFoundError(f"模板 seed 资源不存在: {template.id}@{version}")
+            record = existing
+            if record is None:
+                payload = self._build_template_version_payload(
+                    template=template,
+                    version=template.version,
+                    template_path=template_path,
+                    layout_config_path=template.layout_config_path,
+                    render_policy=template.render_policy,
+                )
+                now = utc_now()
+                record = service.repository.create_resource_version(
+                    ResourceVersionRecord(
+                        resource_type="template",
+                        resource_id=template.id,
+                        version=version,
+                        status=ResourceVersionStatus.PUBLISHED,
+                        snapshot_hash=self._snapshot_hash(payload),
+                        payload_ref=f"template:{template.id}@{version}",
+                        payload=payload,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+            if (
+                record.status == ResourceVersionStatus.PUBLISHED
+                and service.repository.get_default_resource_version("template", template.id) is None
+            ):
+                service.repository.set_default_resource_version("template", template.id, version)
+
     def get_template_detail(
         self,
         template_id: str,
@@ -194,7 +152,10 @@ class TemplateReadService:
         if template is None or not template.enabled:
             return None
 
-        template_path = self.get_template_path(template_id)
+        active_version = self._resource_default_version(template.id) or template.version
+        active_record = self._resource_records_by_version(template.id).get(str(active_version))
+        active_payload = active_record.payload if active_record is not None else None
+        template_path = self._template_version_path(template, active_version, active_payload)
         template_asset = self._build_asset(
             path=template_path,
             label="Word 模板",
@@ -205,7 +166,7 @@ class TemplateReadService:
             ),
         )
         layout_asset = self._build_asset(
-            path=self._resolve_manifest_path(template.layout_config_path) if template.layout_config_path else None,
+            path=self._template_version_layout_config_path(template, active_payload),
             label="页面布局 YAML",
             download_url=None,
         )
@@ -221,7 +182,7 @@ class TemplateReadService:
             id=template.id,
             name=name,
             description=template.description,
-            version=template.version,
+            version=active_version,
             is_default=template.id == current_default_id,
             downloadable=template_asset.exists,
             download_url=template_asset.download_url,
@@ -581,31 +542,50 @@ class TemplateReadService:
             )
         return sorted(versions, key=lambda item: item.version, reverse=True)
 
-    def get_template_layout_config(self, template_id: str) -> TemplateLayoutConfigResponse:
-        """读取当前模板绑定的版式 YAML，并返回前端可渲染的字段合同。"""
+    def get_template_layout_config(self, template_id: str, *, version: int | None = None) -> TemplateLayoutConfigResponse:
+        """读取默认或指定模板版本的完整样式值与编辑合同。"""
 
         template = self._require_template_item(template_id)
-        layout_path = self._template_version_layout_config_path(template, None)
+        active_version = self._active_template_version(template)
+        selected_version = version or active_version
+        record = self._resource_records_by_version(template.id).get(str(selected_version))
+        if selected_version != template.version and record is None:
+            raise FileNotFoundError(f"模板版本不存在: {template.id}@{selected_version}")
+        payload = record.payload if record is not None else None
+        layout_path = self._template_version_layout_config_path(template, payload)
         if layout_path is None or not layout_path.exists():
-            raise FileNotFoundError(f"模板版式配置不存在: {template.id}")
+            raise FileNotFoundError(f"模板版式配置不存在: {template.id}@{selected_version}")
+        expected_hash = self._payload_text(payload, "layout_config_sha256")
+        actual_hash = self._sha256_prefixed(layout_path)
+        if expected_hash is not None and expected_hash != actual_hash:
+            raise ValueError(f"模板版式配置 hash 不匹配: {template.id}@{selected_version}")
         raw_config = self._load_supported_layout_config(layout_path)
-        meta, config = self._split_layout_config(raw_config)
+        meta, config, preview_samples = split_layout_config(raw_config)
         return TemplateLayoutConfigResponse(
             template_id=template.id,
-            template_version_id=self.build_template_version_id(template.id, template.version),
-            version=template.version,
-            source_path=self._to_repo_relative_path(layout_path),
-            config_sha256=self._sha256_prefixed(layout_path),
+            template_version_id=self.build_template_version_id(template.id, selected_version),
+            version=selected_version,
+            status=record.status.value if record is not None else "published",
+            is_default=selected_version == active_version,
+            active_template_version_id=self.build_template_version_id(template.id, active_version),
+            source_path=self._public_repo_relative_path(layout_path),
+            config_sha256=actual_hash,
+            snapshot_hash=record.snapshot_hash if record is not None else None,
             meta=meta,
             config=config,
-            field_schema=LAYOUT_FIELD_SCHEMA,
+            preview_samples=preview_samples,
+            field_schema=editor_field_schema(),
         )
 
     def create_template_layout_config_version(
         self,
         template_id: str,
         *,
-        config: dict[str, Any],
+        base_template_version_id: str,
+        expected_config_sha256: str,
+        expected_active_template_version_id: str,
+        changes: dict[str, Any],
+        change_note: str = "",
         actor: ActorContext | None = None,
         trace_id: str | None = None,
     ) -> TemplateVersionResponse:
@@ -613,43 +593,73 @@ class TemplateReadService:
 
         self._require_resource_version_service()
         template = self._require_template_item(template_id)
-        source_template_path = self.get_template_path(template.id)
+        base_template_id, base_version = self._parse_template_version_id(base_template_version_id)
+        if base_template_id != template.id or base_version is None:
+            raise ValueError("base_template_version_id 必须匹配当前模板并包含明确版本。")
+        active_version = self._active_template_version(template)
+        active_template_version_id = self.build_template_version_id(template.id, active_version)
+        if expected_active_template_version_id != active_template_version_id:
+            active_record = self._resource_records_by_version(template.id).get(str(active_version))
+            active_layout_path = self._template_version_layout_config_path(
+                template,
+                active_record.payload if active_record is not None else None,
+            )
+            raise TemplateLayoutConfigConflict(
+                f"模板默认版本已变化: expected={expected_active_template_version_id} actual={active_template_version_id}",
+                active_template_version_id=active_template_version_id,
+                config_sha256=(
+                    self._sha256_prefixed(active_layout_path)
+                    if active_layout_path is not None and active_layout_path.is_file()
+                    else None
+                ),
+            )
+        base_record = self._resource_records_by_version(template.id).get(str(base_version))
+        if base_version != template.version and base_record is None:
+            raise FileNotFoundError(f"模板版本不存在: {template.id}@{base_version}")
+        base_payload = base_record.payload if base_record is not None else None
+        source_template_path = self._template_version_path(template, base_version, base_payload)
         if source_template_path is None or not source_template_path.exists():
-            raise FileNotFoundError(f"模板文件不存在: {template.id}")
-        source_layout_path = self._template_version_layout_config_path(template, None)
+            raise FileNotFoundError(f"模板文件不存在: {template.id}@{base_version}")
+        source_layout_path = self._template_version_layout_config_path(template, base_payload)
         if source_layout_path is None or not source_layout_path.exists():
-            raise FileNotFoundError(f"模板版式配置不存在: {template.id}")
-        source_meta, _source_config = self._split_layout_config(self._load_supported_layout_config(source_layout_path))
-        validated_config = {
-            **source_meta,
-            **self._validate_layout_config(config),
-        }
+            raise FileNotFoundError(f"模板版式配置不存在: {template.id}@{base_version}")
+        actual_hash = self._sha256_prefixed(source_layout_path)
+        if expected_config_sha256 != actual_hash:
+            raise TemplateLayoutConfigConflict(
+                f"模板样式配置已变化: expected={expected_config_sha256} actual={actual_hash}",
+                active_template_version_id=active_template_version_id,
+                config_sha256=actual_hash,
+            )
+        validated_config = apply_layout_changes(self._load_supported_layout_config(source_layout_path), changes)
+        self._validate_table_style_name(source_template_path, validated_config["table_style"]["style_name"])
         next_version = self._next_template_version(template)
-        template_path = self._copy_versioned_template_file(
+        template_path, layout_path = self._stage_template_layout_version(
             template_id=template.id,
             version=next_version,
             source_path=source_template_path,
             source_filename=source_template_path.name,
-        )
-        layout_path = self._write_versioned_layout_config(
-            template_id=template.id,
-            version=next_version,
             config=validated_config,
         )
         layout_config_path = self._to_repo_relative_path(layout_path)
-        record = self._create_template_resource_draft(
-            template=template,
-            version=next_version,
-            template_path=template_path,
-            layout_config_path=layout_config_path,
-            render_policy=template.render_policy,
-            require_service=True,
-        )
+        try:
+            record = self._create_template_resource_draft(
+                template=template,
+                version=next_version,
+                template_path=template_path,
+                layout_config_path=layout_config_path,
+                render_policy=template.render_policy,
+                require_service=True,
+                create_only=True,
+            )
+        except Exception:
+            self._cleanup_staged_path(template_path.parent, template.id, next_version)
+            raise
         self._record_audit(
             actor=actor,
             action="template.layout_config_version_create",
             target_id=f"{template.id}@{next_version}",
             trace_id=trace_id,
+            reason=self._normalize_optional_text(change_note),
         )
         return self._build_template_version_response(
             template=template,
@@ -659,10 +669,22 @@ class TemplateReadService:
         )
 
     def get_template_path(self, template_id: str) -> Path | None:
+        """返回 manifest seed 文件；版本解析不得把它当作运行时默认指针。"""
+
         template = self._get_template_item(template_id)
         if template is None or not template.enabled:
             return None
         return self._resolve_manifest_path(template.template_path)
+
+    def get_active_template_path(self, template_id: str) -> Path | None:
+        """返回数据库默认指针对应的模板文件。"""
+
+        template = self._get_template_item(template_id)
+        if template is None or not template.enabled:
+            return None
+        active_version = self._active_template_version(template)
+        record = self._resource_records_by_version(template.id).get(str(active_version))
+        return self._template_version_path(template, active_version, record.payload if record is not None else None)
 
     def get_default_template_id(self) -> str:
         state = self._load_state()
@@ -693,7 +715,7 @@ class TemplateReadService:
 
     def resolve_job_template_path(self, template_id: str | None) -> Path:
         resolved_id = self.resolve_selected_template_id(template_id)
-        path = self.get_template_path(resolved_id)
+        path = self.get_active_template_path(resolved_id)
         if path is None or not path.exists():
             raise FileNotFoundError(f"模板文件不存在: {resolved_id}")
         return path
@@ -703,15 +725,24 @@ class TemplateReadService:
 
         resolved_id = self.resolve_selected_template_id(template_id)
         template = self._get_template_item(resolved_id)
-        if template is None or not template.layout_config_path:
+        if template is None:
             return None
-        path = self._resolve_manifest_path(template.layout_config_path)
+        active_version = self._active_template_version(template)
+        record = self._resource_records_by_version(template.id).get(str(active_version))
+        path = self._template_version_layout_config_path(template, record.payload if record is not None else None)
+        if path is None:
+            return None
         if not path.exists() or not path.is_file():
             raise FileNotFoundError(f"模板版式配置不存在: {resolved_id}")
         return path
 
-    def resolve_template_version(self, template_version_id: str | None) -> TemplateVersionSelection:
-        """把任务入参解析到具体模板版本文件和配置包。"""
+    def resolve_template_version(
+        self,
+        template_version_id: str | None,
+        *,
+        allow_draft: bool = False,
+    ) -> TemplateVersionSelection:
+        """按调用意图解析 published 生产版本或 admin 验证 draft。"""
 
         template_id, version = self._parse_template_version_id(template_version_id)
         if template_id is None:
@@ -719,16 +750,29 @@ class TemplateReadService:
         template = self._require_template_item(template_id)
         if not template.enabled:
             raise FileNotFoundError(f"模板未启用: {template.id}")
-        selected_version = version or template.version
+        selected_version = version or self._active_template_version(template)
         if selected_version in template.disabled_versions:
             raise FileNotFoundError(f"模板版本已禁用: {template.id}@{selected_version}")
 
         record = self._resource_records_by_version(template.id).get(str(selected_version))
+        if self.resource_version_service is not None and record is None:
+            raise FileNotFoundError(f"模板版本记录不存在: {template.id}@{selected_version}")
+        if record is not None:
+            if record.status == ResourceVersionStatus.DRAFT and not allow_draft:
+                raise ValueError(f"普通任务不能使用 draft 模板版本: {template.id}@{selected_version}")
+            if record.status not in {ResourceVersionStatus.PUBLISHED, ResourceVersionStatus.DRAFT}:
+                raise ValueError(f"模板版本状态不可用于生成: {template.id}@{selected_version} status={record.status.value}")
         payload = record.payload if record is not None else None
         template_path = self._template_version_path(template, selected_version, payload)
         if template_path is None or not template_path.exists():
             raise FileNotFoundError(f"模板版本文件不存在: {template.id}@{selected_version}")
         layout_config_path = self._template_version_layout_config_path(template, payload)
+        if layout_config_path is not None:
+            if not layout_config_path.exists() or not layout_config_path.is_file():
+                raise FileNotFoundError(f"模板版式配置不存在: {template.id}@{selected_version}")
+            expected_hash = self._payload_text(payload, "layout_config_sha256")
+            if expected_hash is not None and expected_hash != self._sha256_prefixed(layout_config_path):
+                raise ValueError(f"模板版式配置 hash 不匹配: {template.id}@{selected_version}")
         render_policy = self._payload_dict(payload, "render_policy") or template.render_policy
         return TemplateVersionSelection(
             template_id=template.id,
@@ -828,13 +872,23 @@ class TemplateReadService:
 
     def _next_template_version(self, template: TemplateManifestItem) -> int:
         existing_versions = [template.version]
+        for raw_version in self._resource_records_by_version(template.id):
+            try:
+                existing_versions.append(int(raw_version))
+            except ValueError:
+                continue
         version_dir = self.settings.templates_storage_dir / template.id
         if version_dir.exists():
             for child in version_dir.iterdir():
                 version = self._parse_version_dir_name(child.name)
                 if version is not None:
                     existing_versions.append(version)
-        return max(existing_versions) + 1
+        minimum_next = max(existing_versions) + 1
+        return self._require_resource_version_service().allocate_next_version(
+            "template",
+            template.id,
+            minimum_next,
+        )
 
     def _require_resource_version_service(self) -> Any:
         if self.resource_version_service is None:
@@ -850,6 +904,7 @@ class TemplateReadService:
         layout_config_path: str | None,
         render_policy: dict[str, Any],
         require_service: bool,
+        create_only: bool = False,
     ) -> ResourceVersionRecord | None:
         service = self.resource_version_service
         if service is None:
@@ -863,7 +918,8 @@ class TemplateReadService:
             layout_config_path=layout_config_path,
             render_policy=render_policy,
         )
-        return service.create_or_update_draft(
+        create_draft = service.create_draft if create_only else service.create_or_update_draft
+        return create_draft(
             resource_type="template",
             resource_id=template.id,
             version=str(version),
@@ -903,18 +959,9 @@ class TemplateReadService:
         path = self._template_version_path(template, version, payload)
         if path is None or not path.exists():
             raise FileNotFoundError(f"模板版本文件不存在: {template.id}@{version}")
-        layout_config_path = self._payload_text(payload, "layout_config_path")
-        render_policy = self._payload_dict(payload, "render_policy") or template.render_policy
-        self._replace_template_item(
-            template.model_copy(
-                update={
-                    "version": version,
-                    "template_path": self._to_repo_relative_path(path),
-                    "layout_config_path": layout_config_path,
-                    "render_policy": render_policy,
-                }
-            )
-        )
+        layout_path = self._template_version_layout_config_path(template, payload)
+        if layout_path is not None and not layout_path.exists():
+            raise FileNotFoundError(f"模板版式配置不存在: {template.id}@{version}")
         self._write_state(TemplateState(default_template_id=template.id))
 
     def _build_template_version_response(
@@ -945,7 +992,7 @@ class TemplateReadService:
             template_version_id=self.build_template_version_id(template.id, version),
             version=version,
             status=status,
-            is_current=version == template.version,
+            is_current=version == (self._resource_default_version(template.id) or template.version),
             is_default=is_default,
             snapshot_hash=record.snapshot_hash if record is not None else None,
             render_policy=render_policy,
@@ -987,6 +1034,22 @@ class TemplateReadService:
             return int(record.version)
         except ValueError:
             return None
+
+    def _active_template_version(self, template: TemplateManifestItem) -> int:
+        """在版本治理启用时只接受数据库中的 published 默认指针。"""
+
+        service = self.resource_version_service
+        if service is None:
+            return template.version
+        record = service.repository.get_default_resource_version("template", template.id)
+        if record is None:
+            raise FileNotFoundError(f"模板默认版本不存在: {template.id}")
+        if record.status != ResourceVersionStatus.PUBLISHED:
+            raise ValueError(f"模板默认版本必须是 published: {template.id}@{record.version}")
+        try:
+            return int(record.version)
+        except ValueError as exc:
+            raise ValueError(f"模板默认版本号必须是整数: {template.id}@{record.version}") from exc
 
     def _template_version_layout_config_path(
         self,
@@ -1076,161 +1139,85 @@ class TemplateReadService:
         shutil.move(str(source_path), str(destination))
         return destination.resolve()
 
-    def _copy_versioned_template_file(
+    def _stage_template_layout_version(
         self,
         *,
         template_id: str,
         version: int,
         source_path: Path,
         source_filename: str,
-    ) -> Path:
+        config: dict[str, Any],
+    ) -> tuple[Path, Path]:
+        """在同一文件系统完整写入版本目录，再一次性对 Worker 可见。"""
+
         if not source_path.exists() or not source_path.is_file():
             raise FileNotFoundError(f"模板文件不存在: {source_path}")
         safe_name = self._safe_template_filename(source_filename, template_id)
-        destination_dir = self.settings.templates_storage_dir / template_id / f"v{version}"
-        destination_dir.mkdir(parents=True, exist_ok=True)
-        destination = destination_dir / safe_name
-        shutil.copy2(str(source_path), str(destination))
-        return destination.resolve()
+        template_root = self.settings.templates_storage_dir / template_id
+        template_root.mkdir(parents=True, exist_ok=True)
+        destination_dir = template_root / f"v{version}"
+        if destination_dir.exists():
+            raise FileExistsError(f"模板版本目录已存在: {template_id}@{version}")
+        staging_dir = template_root / f".v{version}.{uuid4().hex}.tmp"
+        staging_dir.mkdir()
+        staged_template = staging_dir / safe_name
+        staged_layout = staging_dir / "layout_config.yaml"
+        try:
+            shutil.copy2(str(source_path), str(staged_template))
+            with staged_template.open("rb") as handle:
+                os.fsync(handle.fileno())
+            with staged_layout.open("w", encoding="utf-8") as handle:
+                handle.write(yaml.safe_dump(config, allow_unicode=True, sort_keys=False))
+                handle.flush()
+                os.fsync(handle.fileno())
+            self._load_supported_layout_config(staged_layout)
+            staging_dir.replace(destination_dir)
+            directory_fd = os.open(template_root, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        except Exception:
+            self._cleanup_staged_path(staging_dir, template_id, version)
+            self._cleanup_staged_path(destination_dir, template_id, version)
+            raise
+        return (destination_dir / safe_name).resolve(), (destination_dir / "layout_config.yaml").resolve()
 
-    def _write_versioned_layout_config(
-        self,
-        *,
-        template_id: str,
-        version: int,
-        config: dict[str, Any],
-    ) -> Path:
-        destination_dir = self.settings.templates_storage_dir / template_id / f"v{version}"
-        destination_dir.mkdir(parents=True, exist_ok=True)
-        destination = destination_dir / "layout_config.yaml"
-        temp_path = destination.with_suffix(destination.suffix + ".tmp")
-        temp_path.write_text(
-            yaml.safe_dump(config, allow_unicode=True, sort_keys=False),
-            encoding="utf-8",
-        )
-        temp_path.replace(destination)
-        return destination.resolve()
+    @staticmethod
+    def _cleanup_staged_path(path: Path, template_id: str, version: int) -> None:
+        """清理本次失败写入并记录无法自动修复的孤儿目录。"""
+
+        try:
+            shutil.rmtree(path)
+        except FileNotFoundError:
+            return
+        except OSError:
+            SYSTEM_LOGGER.exception(
+                "[template_id=%s version=%s path=%s status=cleanup_failed] 模板版本失败目录清理失败",
+                template_id,
+                version,
+                path,
+            )
+
+    @staticmethod
+    def _validate_table_style_name(template_path: Path, style_name: str) -> None:
+        """只允许选择 base DOCX 中真实存在的表格样式，避免 renderer 静默回退。"""
+
+        document = Document(str(template_path))
+        table_styles = {style.name for style in document.styles if style.type == WD_STYLE_TYPE.TABLE}
+        if style_name not in table_styles:
+            raise TemplateLayoutValidationError(
+                f"table_style.style_name 在模板文档中不存在: {style_name}",
+                path="table_style.style_name",
+                code="unknown_word_style",
+            )
 
     def _load_supported_layout_config(self, path: Path) -> dict[str, Any]:
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         if not isinstance(raw, dict):
             raise ValueError("模板版式配置必须是 YAML object。")
-        return {
-            key: value
-            for key, value in raw.items()
-            if key != "sample_content"
-        }
-
-    def _split_layout_config(self, raw: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-        """把只读元信息和页面可编辑分组拆开，避免前端提交元字段。"""
-
-        meta = {key: raw.get(key) for key in LAYOUT_META_FIELD_SCHEMA if key in raw}
-        if "schema_version" not in meta:
-            meta["schema_version"] = "template-config/v1"
-        config = {
-            key: dict(raw[key]) if isinstance(raw[key], dict) else raw[key]
-            for key in LAYOUT_GROUP_FIELD_SCHEMA
-            if key in raw
-        }
-        self._complete_layout_font_fields(config)
-        return meta, config
-
-    @staticmethod
-    def _complete_layout_font_fields(config: dict[str, Any]) -> None:
-        """补齐旧版字体字段供编辑和另存；显式空字符串保持模板继承语义。"""
-
-        for group_name, group_schema in LAYOUT_GROUP_FIELD_SCHEMA.items():
-            group_value = config.get(group_name)
-            if (
-                group_name != "footer"
-                and "font_name" in group_schema
-                and isinstance(group_value, dict)
-                and "font_name" in group_value
-            ):
-                group_value.setdefault("western_font_name", group_value["font_name"])
-                group_value.setdefault("complex_script_font_name", group_value["font_name"])
-
-        header = config.get("header")
-        if isinstance(header, dict) and "title_font_name" in header:
-            header.setdefault("title_western_font_name", header["title_font_name"])
-            header.setdefault("title_complex_script_font_name", header["title_font_name"])
-
-        footer = config.get("footer")
-        if isinstance(footer, dict):
-            footer.setdefault("font_name", "")
-            footer.setdefault("western_font_name", "")
-            footer.setdefault("complex_script_font_name", "")
-
-    def _validate_layout_config(self, raw: dict[str, Any]) -> dict[str, Any]:
-        if not isinstance(raw, dict):
-            raise ValueError("config 必须是 object。")
-        readonly_keys = sorted(set(raw) & set(LAYOUT_META_FIELD_SCHEMA))
-        if readonly_keys:
-            raise ValueError(f"模板配置元信息为只读字段，不允许提交: {', '.join(readonly_keys)}")
-        allowed_top_level = set(LAYOUT_GROUP_FIELD_SCHEMA)
-        unknown_keys = sorted(set(raw) - allowed_top_level)
-        if "sample_content" in raw:
-            unknown_keys.append("sample_content")
-        if unknown_keys:
-            raise ValueError(f"不支持的模板配置分组: {', '.join(dict.fromkeys(unknown_keys))}")
-        missing_keys = [key for key in allowed_top_level if key not in raw]
-        if missing_keys:
-            raise ValueError(f"模板配置缺少分组: {', '.join(sorted(missing_keys))}")
-
-        validated: dict[str, Any] = {}
-        for group_name, group_schema in LAYOUT_GROUP_FIELD_SCHEMA.items():
-            group_value = raw[group_name]
-            if not isinstance(group_value, dict):
-                raise ValueError(f"{group_name} 必须是 object。")
-            unknown_fields = sorted(set(group_value) - set(group_schema))
-            if unknown_fields:
-                raise ValueError(f"{group_name} 包含不支持字段: {', '.join(unknown_fields)}")
-            missing_fields = sorted(set(group_schema) - set(group_value))
-            if missing_fields:
-                raise ValueError(f"{group_name} 缺少字段: {', '.join(missing_fields)}")
-            validated[group_name] = {
-                field_name: self._validate_layout_value(
-                    group_value[field_name],
-                    field_schema=field_schema,
-                    path=f"{group_name}.{field_name}",
-                )
-                for field_name, field_schema in group_schema.items()
-            }
-        return validated
-
-    @staticmethod
-    def _validate_layout_value(value: Any, *, field_schema: dict[str, Any], path: str) -> Any:
-        field_type = field_schema["type"]
-        if field_schema.get("readonly") and path != "header.logo_path":
-            raise ValueError(f"{path} 是只读字段。")
-        if field_type == "boolean":
-            if not isinstance(value, bool):
-                raise ValueError(f"{path} 必须是 boolean。")
-            return value
-        if field_type == "number":
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                raise ValueError(f"{path} 必须是 number。")
-            if value < 0 and not path.endswith("_indent_pt"):
-                raise ValueError(f"{path} 不能小于 0。")
-            return value
-        if field_type == "alignment":
-            if value not in ALIGNMENT_VALUES:
-                raise ValueError(f"{path} 必须是 {'/'.join(ALIGNMENT_VALUES)}。")
-            return value
-        if field_type == "color":
-            if not isinstance(value, str) or not HEX_COLOR_RE.match(value):
-                raise ValueError(f"{path} 必须是 6 位 RGB 颜色。")
-            return value
-        if field_type == "text":
-            if not isinstance(value, str):
-                raise ValueError(f"{path} 必须是 string。")
-            normalized = value.strip()
-            if path == "header.logo_path":
-                candidate = Path(normalized)
-                if candidate.is_absolute() or ".." in candidate.parts:
-                    raise ValueError("header.logo_path 只能是模板配置目录下的相对路径。")
-            return normalized
-        raise ValueError(f"{path} 字段类型不受支持: {field_type}")
+        validate_layout_config(raw)
+        return raw
 
     def _load_state(self) -> TemplateState:
         path = self.settings.template_state_file
@@ -1241,7 +1228,15 @@ class TemplateReadService:
     def _write_state(self, state: TemplateState) -> None:
         path = self.settings.template_state_file
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(state.model_dump_json(indent=2), encoding="utf-8")
+        temp_path = path.with_suffix(path.suffix + f".{uuid4().hex}.tmp")
+        try:
+            with temp_path.open("w", encoding="utf-8") as handle:
+                handle.write(state.model_dump_json(indent=2))
+                handle.flush()
+                os.fsync(handle.fileno())
+            temp_path.replace(path)
+        finally:
+            temp_path.unlink(missing_ok=True)
 
     def _resolve_manifest_path(self, raw_path: str) -> Path:
         path = Path(raw_path)
@@ -1254,6 +1249,14 @@ class TemplateReadService:
             return str(path.resolve().relative_to(self.settings.root_dir))
         except ValueError:
             return str(path.resolve())
+
+    def _public_repo_relative_path(self, path: Path) -> str | None:
+        """只向管理 API 暴露仓库内相对路径，避免泄露服务器绝对路径。"""
+
+        try:
+            return str(path.resolve().relative_to(self.settings.root_dir))
+        except ValueError:
+            return None
 
     @staticmethod
     def _validate_template_id(template_id: str) -> str:
