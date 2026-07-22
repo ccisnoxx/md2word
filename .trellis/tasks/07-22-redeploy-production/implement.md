@@ -82,17 +82,17 @@ git diff --check
 
 ## Phase H：第二次 Git 门禁
 
-- [ ] 展示 seed v2 修复和 Trellis 文档的 commit 范围，取得用户确认后提交；不得混入未识别 dirty 文件。
-- [ ] 提交后取得 push 授权或由用户手动 push，再用 `git ls-remote` 锁定新的 `origin/main` 完整 SHA。
+- [x] 展示 seed v2 修复和 Trellis 文档的 commit 范围，取得用户确认后提交；不得混入未识别 dirty 文件。
+- [x] 提交后取得 push 授权或由用户手动 push，再用 `git ls-remote` 锁定新的 `origin/main` 完整 SHA。
 
 ## Phase I：第二次发布、显式迁移与最终门禁
 
-- [ ] 为新 SHA 创建全新的后端和前端 release；不得覆盖第一次失败 release 或其审计证据。
-- [ ] 构建并启动后端，完成 Compose、日志、内外网健康、runtime release check 和 Golden Sample preflight。
-- [ ] 使用 admin 只读检查显式 `default@1` 与 `default@2`：v1 hash/内容合同保持有效，v2 已发布且字体默认值为 `Arial` / `Times New Roman`。
-- [ ] 其余后端门禁全部通过后，使用既有 admin API 执行 `set-default default@2`，理由记录为“启用多文种字体内置默认配置”；读回默认版本确认指针和字体合同。
-- [ ] 原子切换同 SHA 前端 release，执行 nginx、首页、静态资源、配置中心路由及公网健康检查。
-- [ ] 在 `deployment-audit.md` 追加第二次目标 SHA、release、v1/v2 验证、默认迁移和最终门禁结论，不记录凭据。
+- [x] 为新 SHA 创建全新的后端和前端 release；不得覆盖第一次失败 release 或其审计证据。
+- [x] 构建并启动后端，完成 Compose、日志、内外网健康、runtime release check 和 Golden Sample preflight。
+- [x] 使用 admin 只读检查显式 `default@1` 与 `default@2`：v1 hash/内容合同保持有效，v2 已发布且字体默认值为 `Arial` / `Times New Roman`。
+- [x] 其余后端门禁全部通过后，使用既有 admin API 执行 `set-default default@2`，理由记录为“启用多文种字体内置默认配置”；读回默认版本确认指针和字体合同。
+- [x] 原子切换同 SHA 前端 release，执行 nginx、首页、静态资源、配置中心路由及公网健康检查。
+- [x] 在 `deployment-audit.md` 追加第二次目标 SHA、release、v1/v2 验证、默认迁移和最终门禁结论，不记录凭据。
 
 ## Phase J：第二次发布回滚
 
