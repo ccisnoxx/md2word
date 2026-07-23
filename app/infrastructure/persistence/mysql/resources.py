@@ -45,6 +45,46 @@ class MysqlResourceVersionRepository:
                 )
         return record
 
+    def update_resource_version_if_current(
+        self,
+        record: ResourceVersionRecord,
+        *,
+        expected_snapshot_hash: str,
+    ) -> ResourceVersionRecord | None:
+        """以 snapshot_hash 为条件原子更新草稿，过期写入返回 None。"""
+
+        with self.backend.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE resource_versions
+                    SET snapshot_hash = %s,
+                        payload_ref = %s,
+                        payload = %s,
+                        updated_at = %s
+                    WHERE resource_type = %s
+                      AND resource_id = %s
+                      AND version = %s
+                      AND status = %s
+                      AND snapshot_hash = %s
+                    """,
+                    (
+                        record.snapshot_hash,
+                        record.payload_ref,
+                        json.dumps(record.payload, ensure_ascii=False)
+                        if record.payload is not None
+                        else None,
+                        record.updated_at.isoformat(),
+                        record.resource_type,
+                        record.resource_id,
+                        record.version,
+                        record.status.value,
+                        expected_snapshot_hash,
+                    ),
+                )
+                updated = cursor.rowcount == 1
+        return record if updated else None
+
     def create_resource_version(self, record: ResourceVersionRecord) -> ResourceVersionRecord:
         """只插入新资源版本，数据库主键冲突必须向上游暴露。"""
 

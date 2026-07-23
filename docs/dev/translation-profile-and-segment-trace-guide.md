@@ -5,7 +5,7 @@ component: translation-profile-and-segment-trace
 status: current
 summary: 面向集成方说明如何通过 Translation Profile API 管理翻译配置，并在翻译 job 中读取 segment trace。
 tags: [backend, translation, resource-versioning, jobs, audit]
-last_reviewed: 2026-05-29
+last_reviewed: 2026-07-23
 ---
 
 # Translation Profile 与 Segment Trace 指南
@@ -16,7 +16,7 @@ Translation Profile 把翻译配置从 settings-only 升级为“先改 draft，
 
 适用场景：
 
-- 后台管理脚本维护默认翻译模型、prompt 版本和分批阈值
+- 后台管理脚本维护默认翻译模型、命名 Prompt 方案和分批阈值
 - 前端管理页接入翻译配置发布流程
 - 集成方排查某个 job 的翻译输入、AI 输出和最终渲染文本
 
@@ -25,8 +25,8 @@ Translation Profile 把翻译配置从 settings-only 升级为“先改 draft，
 - 后端需要启用 `JOBS_REPOSITORY_BACKEND=mysql`
 - 写接口需要 `X-Admin-Token`
 - 写接口可选 `X-Actor-Id`，只作为已通过 admin token 请求的审计操作者标签
-- 当前默认 profile ID 按语言对区分：`electronics-en2zh`、`electronics-ru2zh`
-- 翻译任务仍需要翻译运行时配置可用：`OPENAI_API_KEY`、OpenAI SDK，以及对应 prompt：`resources/prompts/translation_en2zh.md` 或 `resources/prompts/translation_ru2zh.md`
+- 当前默认 profile ID 按语言对区分：`electronics-en2zh`、`electronics-ru2zh`、`electronics-zh2en`、`electronics-zh2ru`
+- 翻译任务仍需要翻译运行时配置可用：`OPENAI_API_KEY` 和 OpenAI SDK。MySQL resource mode 从任务绑定的不可变 profile 读取 Prompt Markdown；`resources/prompts/translation_*.md` 只作为内置 seed 和旧 profile/file/sqlite 兼容来源。
 - 测试和本地验证使用 `.venv/bin/python`
 
 file / sqlite backend 下，`/api/v1/translation-profiles` 返回 `503`；未显式选择 profile 的翻译 job 继续使用 settings / `.env` 兼容路径。MySQL resource mode 下，每个翻译 `language_pair` 都需要默认 published profile，或显式传入同语言对的 published profile 版本。
@@ -36,7 +36,8 @@ file / sqlite backend 下，`/api/v1/translation-profiles` 返回 `503`；未显
 1. 查看当前 Translation Profile：
 
 ```bash
-curl -sS http://127.0.0.1:8000/api/v1/translation-profiles
+curl -sS http://127.0.0.1:8000/api/v1/translation-profiles \
+  -H "Authorization: Bearer ${TOKEN}"
 ```
 
 2. 更新 draft：
@@ -50,10 +51,10 @@ curl -sS -X PUT \
     "language_pair": "en2zh",
     "target_language": "zh-CN",
     "domain": "electronics engineering technical document",
-    "prompt_version": "translation-minimal-v1",
     "model": "deepseek-v4-flash",
     "max_pages_per_batch": 20,
-    "max_chars_per_batch": 60000
+    "max_chars_per_batch": 60000,
+    "expected_snapshot_hash": "<GET draft 返回的 snapshot_hash>"
   }'
 ```
 
@@ -85,7 +86,7 @@ curl -sS -X POST \
 
 不传 `translation_profile_id` / `translation_profile_version` 时，MySQL resource mode 会绑定当前默认 published profile。
 
-提交 `ru2zh` job 时使用 `translation_mode=ru2zh` 或 `mode=ru2zh_pdf_to_word`，并绑定 `electronics-ru2zh`：
+提交其他语言方向时使用对应规范值和 profile。俄译中示例：
 
 ```json
 {
@@ -96,6 +97,8 @@ curl -sS -X POST \
   "translation_profile_version": "seed"
 }
 ```
+
+中译英使用 `translation_mode=zh2en`、`document_language=zh`、`electronics-zh2en`；中译俄使用 `translation_mode=zh2ru`、`document_language=zh`、`electronics-zh2ru`。
 
 5. 查看翻译 QA 证据：
 
@@ -109,13 +112,13 @@ curl -sS \
 
 | 概念 | 说明 |
 |---|---|
-| Translation Profile | 一组可发布的翻译配置资源，当前按 `language_pair` 支持 `electronics-en2zh` 和 `electronics-ru2zh` |
+| Translation Profile | 一组可发布的翻译配置资源，当前按四个 `language_pair` 分别使用 `electronics-en2zh`、`electronics-ru2zh`、`electronics-zh2en`、`electronics-zh2ru` |
 | draft | 可变草稿，更新后不影响已发布版本 |
 | published version | 不可变发布版本，写入 `resource_type=translation_profile` |
 | default version | 当前默认 published version，翻译 job 创建时会按 `language_pair` 绑定它 |
 | Segment Trace | `translation_trace` job artifact，记录 segment 级翻译证据 |
 
-Translation Profile payload 只保存模型、目标语言、领域、prompt 版本和分批阈值，不保存 `OPENAI_API_KEY`、secret header 或完整 prompt 文本。
+Translation Profile payload 保存模型、目标语言、领域、分批阈值及多个命名 Prompt 的 Markdown；`prompt_version` 是唯一当前 Prompt ID 指针。payload 不保存 `OPENAI_API_KEY` 或 secret header。
 
 ## 接口参考
 
@@ -129,6 +132,10 @@ Translation Profile payload 只保存模型、目标语言、领域、prompt 版
 | `GET` | `/api/v1/translation-profiles/{profile_id}` | 查看 published versions 和默认指针 |
 | `GET` | `/api/v1/translation-profiles/{profile_id}/draft` | 查看或初始化 draft |
 | `PUT` | `/api/v1/translation-profiles/{profile_id}/draft` | 更新 draft payload |
+| `POST` | `/api/v1/translation-profiles/{profile_id}/draft/prompts` | 复制并新建命名 Prompt |
+| `PUT` | `/api/v1/translation-profiles/{profile_id}/draft/prompts/{prompt_id}` | 保存 Prompt 名称和 Markdown |
+| `POST` | `/api/v1/translation-profiles/{profile_id}/draft/prompts/{prompt_id}/activate` | 设为草稿当前 Prompt |
+| `DELETE` | `/api/v1/translation-profiles/{profile_id}/draft/prompts/{prompt_id}` | 受控删除未发布自定义 Prompt |
 | `POST` | `/api/v1/translation-profiles/{profile_id}/publish` | 发布 draft |
 | `POST` | `/api/v1/translation-profiles/{profile_id}/versions/{version}/set-default` | 切默认版本 |
 | `POST` | `/api/v1/translation-profiles/{profile_id}/rollback` | 回滚默认版本 |
@@ -202,6 +209,7 @@ curl -sS -X POST \
 
 | 动作 | audit action | target |
 |---|---|---|
+| 新建/保存/启用/删除 Prompt | `translation_profile.prompt_*` | `{profile_id}/{prompt_id}` |
 | 发布 draft | `translation_profile.publish` | `{profile_id}@{version}` |
 | 切默认版本 | `translation_profile.set_default` | `{profile_id}@{version}` |
 | 回滚默认指针 | `translation_profile.rollback` | `{profile_id}@{version}` |
@@ -214,8 +222,9 @@ curl -sS -X POST \
 - file / sqlite backend 下，显式传 `translation_profile_id` 或 `translation_profile_version` 会返回 `503`，未显式选择时继续 settings / `.env` 兼容路径。
 - `JobRecord` 保存 `resource_snapshot`；trace 中记录本轮执行时物化的 profile 摘要，旧 job 不会被回填快照。
 - `translation_mode=direct` 不生成 `translation_trace`，也不解析默认 Translation Profile。
-- `translation_trace` 不保存完整 prompt 文本或 secret，不能单独作为完整 LLM 调用复现包。
-- 当前只支持 `en2zh` / `ru2zh`，不新增 `zh2en` / `zh2ru` 真实翻译路径。
+- 一个 profile draft 可包含多个命名 Prompt，但 `prompt_version` 始终只指向一个当前方案；Prompt 修改只在发布后影响后续任务。
+- `translation_trace`、job response、普通日志和 debug archive 不保存 system Prompt Markdown；正文保留在不可变 published profile payload 中。
+- 当前支持 `en2zh` / `ru2zh` / `zh2en` / `zh2ru` 四种真实翻译路径。
 
 ## 相关文档
 

@@ -76,6 +76,46 @@ class ResourceVersionService:
             )
         )
 
+    def update_draft_if_current(
+        self,
+        *,
+        resource_type: ResourceType,
+        resource_id: str,
+        version: str,
+        expected_snapshot_hash: str,
+        snapshot_hash: str,
+        payload_ref: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> ResourceVersionRecord | None:
+        """仅在 snapshot hash 未变化时原子更新现有草稿。"""
+
+        existing = self.repository.get_resource_version(
+            resource_type,
+            resource_id,
+            version,
+        )
+        if existing is None:
+            raise FileNotFoundError(
+                f"资源版本不存在: {resource_type}/{resource_id}@{version}"
+            )
+        if existing.status != ResourceVersionStatus.DRAFT:
+            raise ValueError("只有 draft 资源版本可以通过 CAS 更新。")
+        record = ResourceVersionRecord(
+            resource_type=resource_type,
+            resource_id=resource_id,
+            version=version,
+            status=ResourceVersionStatus.DRAFT,
+            snapshot_hash=snapshot_hash,
+            payload_ref=payload_ref,
+            payload=payload,
+            created_at=existing.created_at,
+            updated_at=utc_now(),
+        )
+        return self.repository.update_resource_version_if_current(
+            record,
+            expected_snapshot_hash=expected_snapshot_hash,
+        )
+
     def allocate_next_version(self, resource_type: ResourceType, resource_id: str, minimum_next: int) -> int:
         """通过持久化层原子分配不复用的整数版本。"""
 

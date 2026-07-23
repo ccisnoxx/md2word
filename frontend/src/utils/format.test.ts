@@ -188,6 +188,8 @@ describe("document job mode metadata", () => {
       "direct_pdf_to_word",
       "en2zh_pdf_to_word",
       "ru2zh_pdf_to_word",
+      "zh2en_pdf_to_word",
+      "zh2ru_pdf_to_word",
     ]);
 
     expect(documentJobModeCreateLanguage("direct_pdf_to_word")).toBe("auto");
@@ -204,6 +206,18 @@ describe("document job mode metadata", () => {
     expect(documentJobModeTranslationMode("ru2zh_pdf_to_word")).toBe("ru2zh");
     expect(documentJobModeRequiresTranslationResources("ru2zh_pdf_to_word")).toBe(true);
     expect(documentJobModeSupportsTranslationQa("ru2zh_pdf_to_word")).toBe(true);
+
+    expect(documentJobModeCreateLanguage("zh2en_pdf_to_word")).toBe("zh");
+    expect(documentJobModeTranslationMode("zh2en_pdf_to_word")).toBe("zh2en");
+    expect(documentJobModeRequiresTranslationResources("zh2en_pdf_to_word")).toBe(true);
+    expect(documentJobModeSupportsTranslationQa("zh2en_pdf_to_word")).toBe(true);
+    expect(documentJobModeOptions.find((option) => option.mode === "zh2en_pdf_to_word")?.shortLabel).toBe("中译英");
+
+    expect(documentJobModeCreateLanguage("zh2ru_pdf_to_word")).toBe("zh");
+    expect(documentJobModeTranslationMode("zh2ru_pdf_to_word")).toBe("zh2ru");
+    expect(documentJobModeRequiresTranslationResources("zh2ru_pdf_to_word")).toBe(true);
+    expect(documentJobModeSupportsTranslationQa("zh2ru_pdf_to_word")).toBe(true);
+    expect(documentJobModeOptions.find((option) => option.mode === "zh2ru_pdf_to_word")?.shortLabel).toBe("中译俄");
   });
 });
 

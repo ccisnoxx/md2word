@@ -14,6 +14,7 @@ from bs4.element import NavigableString
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock
 from app.domains.translation.models import (
     TermVersionSnapshot,
+    TranslationPromptSnapshot,
     TranslationTermEntry,
     TranslationTermMatchTraceRecord,
     TranslationProviderRequest,
@@ -116,6 +117,7 @@ class DocumentIRTranslationService:
         *,
         term_version: TermVersionSnapshot | None,
         language_pair: str = "en2zh",
+        prompt: TranslationPromptSnapshot | None = None,
         call_recorder: TranslationCallRecorder | None = None,
     ) -> DocumentIR:
         """返回翻译后的 DocumentIR 副本；blocks/assets 数量和顺序保持不变。"""
@@ -131,6 +133,7 @@ class DocumentIRTranslationService:
                 batch_items,
                 term_version=term_version,
                 language_pair=language_pair,
+                prompt=prompt,
                 batch_id=f"document_ir_provider_request_{batch_index:04d}",
             )
             started_at = time.perf_counter()
@@ -251,6 +254,7 @@ class DocumentIRTranslationService:
         *,
         term_version: TermVersionSnapshot | None,
         language_pair: str,
+        prompt: TranslationPromptSnapshot | None = None,
         batch_id: str,
         attempt: int | None = None,
         split_level: int | None = None,
@@ -270,6 +274,9 @@ class DocumentIRTranslationService:
             source_language=self._source_language(language_pair),
             target_language=self._target_language(language_pair),
             items=tuple(items),
+            prompt_id=prompt.id if prompt is not None else None,
+            prompt_content_hash=prompt.content_hash if prompt is not None else None,
+            system_prompt_markdown=prompt.markdown if prompt is not None else None,
             terms=matched_terms,
             term_traces=term_traces,
             batch_id=batch_id,

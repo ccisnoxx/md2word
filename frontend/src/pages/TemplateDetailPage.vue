@@ -169,10 +169,14 @@
           <div class="el-upload__tip">已选择：{{ validationDialog.file?.name || "无" }}</div>
         </template>
       </el-upload>
-      <el-radio-group v-model="validationDialog.mode" class="form-gap">
-        <el-radio-button value="direct_pdf_to_word">直接转 Word</el-radio-button>
-        <el-radio-button value="en2zh_pdf_to_word">英译中</el-radio-button>
-        <el-radio-button value="ru2zh_pdf_to_word">俄译中</el-radio-button>
+      <el-radio-group v-model="validationDialog.mode" class="form-gap validation-mode-options">
+        <el-radio-button
+          v-for="option in documentJobModeOptions"
+          :key="option.mode"
+          :value="option.mode"
+        >
+          {{ option.shortLabel }}
+        </el-radio-button>
       </el-radio-group>
       <template #footer>
         <el-button @click="validationDialog.visible = false">取消</el-button>
@@ -234,8 +238,13 @@ import WorkbenchPageHeader from "@/components/WorkbenchPageHeader.vue";
 import WorkbenchPanelCard from "@/components/WorkbenchPanelCard.vue";
 import { useAuthStore } from "@/stores/auth";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
-import { documentJobModeCreateLanguage, documentJobModeTranslationMode } from "@/utils/format";
-import { formatBytes, formatDateTime } from "@/utils/format";
+import {
+  documentJobModeCreateLanguage,
+  documentJobModeOptions,
+  documentJobModeTranslationMode,
+  formatBytes,
+  formatDateTime,
+} from "@/utils/format";
 import { uploadFileContent, validatePdfFile } from "@/utils/upload";
 
 const props = defineProps<{
@@ -626,6 +635,11 @@ onMounted(() => {
 
 .form-gap {
   margin-top: 12px;
+}
+
+.validation-mode-options {
+  display: flex;
+  flex-wrap: wrap;
 }
 
 .evidence {

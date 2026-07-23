@@ -2266,6 +2266,14 @@ class DocumentJobService:
             preserved["template"] = previous_resources["template"]
         if isinstance(previous_resources.get("translation_profile"), dict):
             preserved["translation_profile"] = previous_resources["translation_profile"]
+            for key in (
+                "translation_prompt_id",
+                "translation_prompt_content_hash",
+            ):
+                if key in previous_resources:
+                    preserved[key] = previous_resources[key]
+                else:
+                    preserved.pop(key, None)
         return preserved
 
     def _snapshot_resource_id(self, request_snapshot: dict, key: str) -> str | None:

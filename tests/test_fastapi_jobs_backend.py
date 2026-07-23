@@ -89,7 +89,10 @@ from app.domains.templates.read_service import TemplateReadService
 from app.domains.translation.audit import TranslationAuditService
 from app.domains.translation.document_ir_translator import DocumentIRTranslationService
 from app.domains.translation.models import TranslationTermEntry, TranslationTermProposalChangeRecord
-from app.domains.translation.modes import derive_translation_term_set_id
+from app.domains.translation.modes import (
+    derive_translation_term_set_id,
+    spec_for_document_job_mode,
+)
 from app.domains.translation.provider_config import AiProviderConfigService
 from app.domains.translation.profiles_service import DEFAULT_TRANSLATION_PROFILE_ID, TranslationProfileVersionService
 from app.domains.translation.proposals_service import TranslationTermProposalService
@@ -561,6 +564,7 @@ def build_test_runtime(
         document_ir_translation_service,
         term_version_service,
         translation_audit_service,
+        job_resource_snapshot_service,
         mineru_client_factory=lambda: document_job_mineru_client,
     )
     document_job_execution_service.fake_mineru_client = document_job_mineru_client
@@ -7604,6 +7608,16 @@ class FastAPIJobsBackendTests(TestCase):
                         "document_language": "en",
                     },
                 ).json()["job_id"]
+                legacy_job = runtime.document_job_repository.get_document_job(latest_job_id)
+                legacy_request_snapshot = dict(legacy_job.request_snapshot)
+                legacy_resources = dict(legacy_request_snapshot["resources"])
+                legacy_resources.pop("translation_prompt_id")
+                legacy_resources.pop("translation_prompt_content_hash")
+                legacy_request_snapshot["resources"] = legacy_resources
+                runtime.document_job_repository.update_document_job(
+                    latest_job_id,
+                    request_snapshot=legacy_request_snapshot,
+                )
                 for job_id in (operator_job_id, latest_job_id, explicit_job_id):
                     runtime.document_job_repository.update_document_job(
                         job_id,
@@ -7648,6 +7662,11 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(latest_snapshot["resources"]["term_rule_set"]["version"], "2")
         self.assertEqual(latest_snapshot["resources"]["translation_term_set"]["version"], latest_translation_term_version)
         self.assertEqual(latest_snapshot["resources"]["translation_profile"]["version"], "1")
+        self.assertNotIn("translation_prompt_id", latest_snapshot["resources"])
+        self.assertNotIn(
+            "translation_prompt_content_hash",
+            latest_snapshot["resources"],
+        )
         self.assertEqual(explicit_retry_response.status_code, 200)
         explicit_snapshot = explicit_retry_response.json()["job"]["request_snapshot"]
         self.assertEqual(explicit_snapshot["term_assets"]["term_rule_set_version"], "1")
@@ -8428,6 +8447,68 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(stored_job.term_version_id, "ru2zh@v1")
         self.assertEqual(stored_job.request_snapshot["translation_mode"], "ru2zh")
         self.assertEqual(events_response.json()["items"][0]["payload"]["translation_mode"], "ru2zh")
+
+    def test_document_job_create_zh_translation_modes_bind_language_pair_resources(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+            )
+            publish_default_job_resources(runtime)
+            app = create_app(runtime)
+
+            responses = {}
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                for language_pair in ("zh2en", "zh2ru"):
+                    source_file = self._upload_source_pdf(
+                        client,
+                        headers,
+                        filename=f"{language_pair}.pdf",
+                    )
+                    responses[language_pair] = client.post(
+                        "/api/v1/document-jobs",
+                        headers=headers,
+                        json={
+                            "source_file_id": source_file["id"],
+                            "translation_mode": language_pair,
+                            "document_language": "zh",
+                        },
+                    )
+
+        for language_pair, target_language in (("zh2en", "en"), ("zh2ru", "ru")):
+            with self.subTest(language_pair=language_pair):
+                response = responses[language_pair]
+                self.assertEqual(response.status_code, 201)
+                payload = response.json()["job"]
+                resources = payload["request_snapshot"]["resources"]
+                self.assertEqual(payload["mode"], f"{language_pair}_pdf_to_word")
+                self.assertEqual(payload["translation_mode"], language_pair)
+                self.assertEqual(
+                    resources["translation_term_set"]["set_id"],
+                    f"translation-terms-{language_pair}",
+                )
+                self.assertEqual(
+                    resources["translation_profile"]["resource_id"],
+                    f"electronics-{language_pair}",
+                )
+                self.assertEqual(
+                    resources["translation_prompt_id"],
+                    f"{language_pair}@v1",
+                )
+                self.assertTrue(
+                    resources["translation_prompt_content_hash"].startswith("sha256:")
+                )
+                self.assertEqual(
+                    resources["mineru"]["language"],
+                    "zh",
+                )
+                self.assertNotIn("markdown", json.dumps(resources))
+                self.assertEqual(
+                    spec_for_document_job_mode(payload["mode"]).target_document_language,
+                    target_language,
+                )
 
     def test_document_job_create_rejects_conflicting_mode_and_translation_mode(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -9928,6 +10009,119 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(sum(item["item_count"] for item in batches_payload["items"]), 8)
         self.assertTrue(all(item["result_file_id"] for item in batches_payload["items"]))
         self.assertTrue(all(item["ai_call_log_file_ids"] for item in batches_payload["items"]))
+
+    def test_document_job_uses_bound_profile_prompt_without_public_or_audit_leak(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(
+                Path(temp_dir),
+                jobs_artifact_storage_backend="local_object",
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+                translation_debug_archive_enabled=True,
+            )
+            publish_default_job_resources(runtime)
+            template_path = runtime.settings.default_template_path
+            self.assertIsNotNone(template_path)
+            publish_template_resource_version(
+                runtime,
+                version="2",
+                content=template_path.read_bytes(),
+                make_default=True,
+            )
+            profile_service = runtime.translation_profile_service
+            self.assertIsNotNone(profile_service)
+            draft = profile_service.get_draft("electronics-en2zh")
+            created = profile_service.create_prompt(
+                "electronics-en2zh",
+                name="任务绑定方案",
+                source_prompt_id=draft.prompt_version,
+                expected_snapshot_hash=draft.snapshot_hash,
+            )
+            custom = next(
+                prompt for prompt in created.prompt_schemes if not prompt.built_in
+            )
+            marker = "# bound-profile-prompt-marker\n仅用于验证不可变正文绑定。"
+            updated = profile_service.update_prompt(
+                "electronics-en2zh",
+                custom.id,
+                name=custom.name,
+                markdown=marker,
+                expected_snapshot_hash=created.snapshot_hash,
+            )
+            activated = profile_service.activate_prompt(
+                "electronics-en2zh",
+                custom.id,
+                expected_snapshot_hash=updated.snapshot_hash,
+            )
+            profile_service.publish_draft(
+                "electronics-en2zh",
+                make_default=True,
+            )
+
+            provider = FakeDocumentJobTranslationProvider()
+            runtime.document_ir_translation_service = DocumentIRTranslationService(
+                provider,
+                max_items_per_request=3,
+                max_chars_per_request=10_000,
+            )
+            runtime.document_job_execution_service.document_ir_translation_service = (
+                runtime.document_ir_translation_service
+            )
+            runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = (
+                make_english_mineru_zip_bytes()
+            )
+            app = create_app(runtime)
+
+            with TestClient(app) as client:
+                headers = build_auth_header(
+                    client,
+                    username="admin",
+                    password="admin-pass",
+                )
+                source_file = self._upload_source_pdf(
+                    client,
+                    headers,
+                    filename="bound-prompt.pdf",
+                )
+                create_response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={
+                        "source_file_id": source_file["id"],
+                        "mode": "en2zh_pdf_to_word",
+                        "document_language": "en",
+                        "debug_full_text": True,
+                    },
+                )
+
+            job_id = create_response.json()["job_id"]
+            audit_files = [
+                file
+                for file in runtime.document_file_repository.list_document_files()
+                if file.job_id == job_id
+                and file.file_type in {"ai_call_log", "ai_debug_archive"}
+            ]
+            audit_text = "\n".join(
+                runtime.file_upload_service.read_file_content(file).decode("utf-8")
+                for file in audit_files
+            )
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.json()["status"], "succeeded")
+        self.assertEqual(activated.prompt_version, custom.id)
+        self.assertTrue(provider.requests)
+        self.assertTrue(
+            all(request.prompt_id == custom.id for request in provider.requests)
+        )
+        self.assertTrue(
+            all(
+                request.system_prompt_markdown == marker
+                for request in provider.requests
+            )
+        )
+        self.assertNotIn(marker, json.dumps(create_response.json(), ensure_ascii=False))
+        self.assertNotIn(marker, audit_text)
 
     def test_document_job_en2zh_debug_full_text_is_admin_only(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -15317,6 +15511,136 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIn("translation_term_set.publish", audit_actions)
 
 
+
+    def test_translation_profile_prompt_crud_and_permissions(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_mysql_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                admin_token="secret-admin",
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                operator_headers = build_auth_header(client)
+                admin_headers = build_auth_header(
+                    client,
+                    username="admin",
+                    password="admin-pass",
+                )
+                anonymous_response = client.get(
+                    "/api/v1/translation-profiles/electronics-en2zh/draft"
+                )
+                draft_response = client.get(
+                    "/api/v1/translation-profiles/electronics-en2zh/draft",
+                    headers=operator_headers,
+                )
+                draft = draft_response.json()
+                built_in_id = draft["prompt_version"]
+                create_payload = {
+                    "name": "精简方案",
+                    "source_prompt_id": built_in_id,
+                    "expected_snapshot_hash": draft["snapshot_hash"],
+                }
+                operator_create_response = client.post(
+                    "/api/v1/translation-profiles/electronics-en2zh/draft/prompts",
+                    headers=operator_headers,
+                    json=create_payload,
+                )
+                create_response = client.post(
+                    "/api/v1/translation-profiles/electronics-en2zh/draft/prompts",
+                    headers=admin_headers,
+                    json=create_payload,
+                )
+                created = create_response.json()
+                custom = next(
+                    prompt
+                    for prompt in created["prompt_schemes"]
+                    if not prompt["built_in"]
+                )
+                stale_response = client.post(
+                    "/api/v1/translation-profiles/electronics-en2zh/draft/prompts",
+                    headers=admin_headers,
+                    json={**create_payload, "name": "过期方案"},
+                )
+                marker = "# prompt-api-secret-marker"
+                update_response = client.put(
+                    (
+                        "/api/v1/translation-profiles/electronics-en2zh/"
+                        f"draft/prompts/{custom['id']}"
+                    ),
+                    headers=admin_headers,
+                    json={
+                        "name": "精简方案 v2",
+                        "markdown": marker,
+                        "expected_snapshot_hash": created["snapshot_hash"],
+                    },
+                )
+                updated = update_response.json()
+                activate_response = client.post(
+                    (
+                        "/api/v1/translation-profiles/electronics-en2zh/"
+                        f"draft/prompts/{custom['id']}/activate"
+                    ),
+                    headers=admin_headers,
+                    json={"expected_snapshot_hash": updated["snapshot_hash"]},
+                )
+                active = activate_response.json()
+                protected_delete_response = client.request(
+                    "DELETE",
+                    (
+                        "/api/v1/translation-profiles/electronics-en2zh/"
+                        f"draft/prompts/{custom['id']}"
+                    ),
+                    headers=admin_headers,
+                    json={"expected_snapshot_hash": active["snapshot_hash"]},
+                )
+                switch_response = client.post(
+                    (
+                        "/api/v1/translation-profiles/electronics-en2zh/"
+                        f"draft/prompts/{built_in_id}/activate"
+                    ),
+                    headers=admin_headers,
+                    json={"expected_snapshot_hash": active["snapshot_hash"]},
+                )
+                delete_response = client.request(
+                    "DELETE",
+                    (
+                        "/api/v1/translation-profiles/electronics-en2zh/"
+                        f"draft/prompts/{custom['id']}"
+                    ),
+                    headers=admin_headers,
+                    json={
+                        "expected_snapshot_hash": (
+                            switch_response.json()["snapshot_hash"]
+                        )
+                    },
+                )
+
+        self.assertEqual(anonymous_response.status_code, 403)
+        self.assertEqual(draft_response.status_code, 200)
+        self.assertEqual(operator_create_response.status_code, 403)
+        self.assertEqual(create_response.status_code, 200)
+        self.assertEqual(stale_response.status_code, 409)
+        self.assertEqual(stale_response.json()["error_code"], "draft_snapshot_conflict")
+        self.assertEqual(update_response.status_code, 200)
+        self.assertEqual(activate_response.status_code, 200)
+        self.assertEqual(activate_response.json()["prompt_version"], custom["id"])
+        self.assertEqual(protected_delete_response.status_code, 400)
+        self.assertIn("当前启用", protected_delete_response.json()["detail"])
+        self.assertEqual(delete_response.status_code, 200)
+        self.assertNotIn(
+            custom["id"],
+            [prompt["id"] for prompt in delete_response.json()["prompt_schemes"]],
+        )
+        audit_text = json.dumps(
+            [
+                event.model_dump(mode="json")
+                for event in runtime.audit_event_repository.list_audit_events()
+            ],
+            ensure_ascii=False,
+        )
+        self.assertNotIn(marker, audit_text)
 
     def test_translation_profile_rollback_writes_audit_event(self):
         with tempfile.TemporaryDirectory() as temp_dir:

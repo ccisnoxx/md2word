@@ -74,9 +74,33 @@ export const documentJobModeDefinitions: Record<DocumentJobMode, DocumentJobMode
     requiresTranslationResources: true,
     supportsTranslationQa: true,
   },
+  zh2en_pdf_to_word: {
+    mode: "zh2en_pdf_to_word",
+    label: "中文 PDF 翻译为英文 Word",
+    shortLabel: "中译英",
+    createDocumentLanguage: "zh",
+    translationMode: "zh2en",
+    requiresTranslationResources: true,
+    supportsTranslationQa: true,
+  },
+  zh2ru_pdf_to_word: {
+    mode: "zh2ru_pdf_to_word",
+    label: "中文 PDF 翻译为俄文 Word",
+    shortLabel: "中译俄",
+    createDocumentLanguage: "zh",
+    translationMode: "zh2ru",
+    requiresTranslationResources: true,
+    supportsTranslationQa: true,
+  },
 };
 
-export const documentJobModeOrder: DocumentJobMode[] = ["direct_pdf_to_word", "en2zh_pdf_to_word", "ru2zh_pdf_to_word"];
+export const documentJobModeOrder: DocumentJobMode[] = [
+  "direct_pdf_to_word",
+  "en2zh_pdf_to_word",
+  "ru2zh_pdf_to_word",
+  "zh2en_pdf_to_word",
+  "zh2ru_pdf_to_word",
+];
 
 export const documentJobModeOptions: DocumentJobModeDefinition[] = documentJobModeOrder.map(
   (mode) => documentJobModeDefinitions[mode],
@@ -86,6 +110,8 @@ export const jobModeText: Record<string, string> = {
   direct_pdf_to_word: documentJobModeDefinitions.direct_pdf_to_word.label,
   en2zh_pdf_to_word: documentJobModeDefinitions.en2zh_pdf_to_word.label,
   ru2zh_pdf_to_word: documentJobModeDefinitions.ru2zh_pdf_to_word.label,
+  zh2en_pdf_to_word: documentJobModeDefinitions.zh2en_pdf_to_word.label,
+  zh2ru_pdf_to_word: documentJobModeDefinitions.zh2ru_pdf_to_word.label,
 };
 
 export function documentJobModeCreateLanguage(mode: DocumentJobMode): DocumentLanguage {

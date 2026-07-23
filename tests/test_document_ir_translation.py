@@ -16,6 +16,7 @@ from app.services.document_ir.models import (
 )
 from app.domains.translation.models import (
     TermVersionSnapshot,
+    TranslationPromptSnapshot,
     TranslationProviderRequest,
     TranslationProviderResult,
     TranslationTermEntry,
@@ -125,6 +126,32 @@ class DocumentIRTranslationTests(unittest.TestCase):
         self.assertEqual(snapshot.term_version_id, "ru2zh@v1")
         self.assertEqual(snapshot.language_pair, "ru2zh")
         self.assertEqual(snapshot.entries[0].target_term, "反向直流电压")
+
+    def test_zh2en_provider_request_carries_bound_prompt_and_language_direction(self) -> None:
+        provider = FakeTranslationProvider()
+        service = DocumentIRTranslationService(provider)
+        prompt = TranslationPromptSnapshot(
+            id="zh2en@v1",
+            name="中译英",
+            markdown="# bound-zh2en",
+            content_hash="sha256:bound",
+            built_in=True,
+        )
+
+        request = service.build_provider_request(
+            self._make_document_ir(),
+            [TranslationTextItem(id="item-1", text="输入失调电压")],
+            term_version=None,
+            language_pair="zh2en",
+            prompt=prompt,
+            batch_id="batch-1",
+        )
+
+        self.assertEqual(request.source_language, "zh")
+        self.assertEqual(request.target_language, "en")
+        self.assertEqual(request.prompt_id, prompt.id)
+        self.assertEqual(request.prompt_content_hash, prompt.content_hash)
+        self.assertEqual(request.system_prompt_markdown, prompt.markdown)
 
     def test_term_version_service_rejects_duplicate_normalized_terms_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

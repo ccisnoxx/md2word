@@ -18,7 +18,7 @@ from app.domains.translation.modes import translation_prompt_path
 
 
 class TranslationProviderResponseError(RuntimeError):
-    """Provider response could not be parsed or validated, with non-sensitive metadata."""
+    """Provider 响应无法解析或校验，仅携带非敏感诊断元数据。"""
 
     def __init__(
         self,
@@ -126,10 +126,29 @@ class OpenAICompatibleTranslationProvider:
         )
 
     def _system_prompt(self, request: TranslationProviderRequest) -> str:
-        prompt_path = translation_prompt_path(self.settings.root_dir, request.language_pair)
-        if not prompt_path.exists():
-            raise RuntimeError(f"system prompt 文件不存在: {prompt_path}")
-        prompt = prompt_path.read_text(encoding="utf-8").strip()
+        bound_fields = (
+            request.prompt_id,
+            request.prompt_content_hash,
+            request.system_prompt_markdown,
+        )
+        if any(value is not None for value in bound_fields):
+            if any(value is None for value in bound_fields):
+                raise RuntimeError("任务绑定的 system Prompt 快照不完整。")
+            prompt = str(request.system_prompt_markdown)
+            if not prompt.strip():
+                raise RuntimeError("任务绑定的 system Prompt 正文为空。")
+            content_hash = f"sha256:{hashlib.sha256(prompt.encode('utf-8')).hexdigest()}"
+            if content_hash != request.prompt_content_hash:
+                raise RuntimeError("任务绑定的 system Prompt 正文 hash 不匹配。")
+        else:
+            # file/sqlite legacy mode 没有版本化 Profile，继续读取固定 seed。
+            prompt_path = translation_prompt_path(
+                self.settings.root_dir,
+                request.language_pair,
+            )
+            if not prompt_path.exists():
+                raise RuntimeError(f"system prompt 文件不存在: {prompt_path}")
+            prompt = prompt_path.read_text(encoding="utf-8").strip()
         return (
             f"{prompt}\n\n"
             f"Language pair: {request.language_pair}; source={request.source_language}; target={request.target_language}. "

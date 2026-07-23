@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "检查定向 unittest、OpenAPI 快照和 release contract gate。"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "检查新增模式缺资源、非法语言和 provider 失败没有 silent fallback。"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "检查所有 Literal 分支、重复常量和第二事实源。"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查模式值从 UI 到渲染和 QA 的完整跨层传递。"}
+{"file": ".trellis/spec/frontend/ui-quality-guidelines.md", "reason": "检查新增单选入口没有破坏既有可用性与可读性。"}

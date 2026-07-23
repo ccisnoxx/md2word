@@ -2378,7 +2378,9 @@
                 "enum": [
                   "direct_pdf_to_word",
                   "en2zh_pdf_to_word",
-                  "ru2zh_pdf_to_word"
+                  "ru2zh_pdf_to_word",
+                  "zh2en_pdf_to_word",
+                  "zh2ru_pdf_to_word"
                 ],
                 "type": "string"
               },
@@ -2442,7 +2444,9 @@
                 "enum": [
                   "direct",
                   "en2zh",
-                  "ru2zh"
+                  "ru2zh",
+                  "zh2en",
+                  "zh2ru"
                 ],
                 "type": "string"
               },
@@ -3880,7 +3884,9 @@
             "enum": [
               "direct",
               "en2zh",
-              "ru2zh"
+              "ru2zh",
+              "zh2en",
+              "zh2ru"
             ],
             "title": "Translation Mode",
             "type": "string"
@@ -15491,6 +15497,13 @@
             ],
             "title": "Model"
           },
+          "prompt_schemes": {
+            "items": {
+              "$ref": "#/components/schemas/TranslationProfilePromptSchemeResponse"
+            },
+            "title": "Prompt Schemes",
+            "type": "array"
+          },
           "prompt_version": {
             "title": "Prompt Version",
             "type": "string"
@@ -15521,6 +15534,7 @@
           "target_language",
           "domain",
           "prompt_version",
+          "prompt_schemes",
           "max_pages_per_batch",
           "max_chars_per_batch"
         ],
@@ -15535,6 +15549,19 @@
             "minLength": 1,
             "title": "Domain",
             "type": "string"
+          },
+          "expected_snapshot_hash": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Snapshot Hash"
           },
           "language_pair": {
             "anyOf": [
@@ -15574,13 +15601,6 @@
               }
             ],
             "title": "Model"
-          },
-          "prompt_version": {
-            "default": "translation-minimal-v1",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Prompt Version",
-            "type": "string"
           },
           "target_language": {
             "default": "zh-CN",
@@ -15637,6 +15657,10 @@
             ],
             "title": "Model"
           },
+          "prompt_content_hash": {
+            "title": "Prompt Content Hash",
+            "type": "string"
+          },
           "prompt_version": {
             "title": "Prompt Version",
             "type": "string"
@@ -15657,6 +15681,7 @@
           "target_language",
           "domain",
           "prompt_version",
+          "prompt_content_hash",
           "max_pages_per_batch",
           "max_chars_per_batch"
         ],
@@ -15677,6 +15702,134 @@
           "items"
         ],
         "title": "TranslationProfileListResponse",
+        "type": "object"
+      },
+      "TranslationProfilePromptCreateRequest": {
+        "properties": {
+          "expected_snapshot_hash": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Expected Snapshot Hash",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "source_prompt_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Source Prompt Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "source_prompt_id",
+          "expected_snapshot_hash"
+        ],
+        "title": "TranslationProfilePromptCreateRequest",
+        "type": "object"
+      },
+      "TranslationProfilePromptMutationRequest": {
+        "properties": {
+          "expected_snapshot_hash": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Expected Snapshot Hash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_snapshot_hash"
+        ],
+        "title": "TranslationProfilePromptMutationRequest",
+        "type": "object"
+      },
+      "TranslationProfilePromptSchemeResponse": {
+        "description": "Translation Profile 草稿中的单个 Prompt 方案。",
+        "properties": {
+          "built_in": {
+            "title": "Built In",
+            "type": "boolean"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "deletable": {
+            "title": "Deletable",
+            "type": "boolean"
+          },
+          "delete_disabled_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delete Disabled Reason"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "markdown": {
+            "title": "Markdown",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "markdown",
+          "content_hash",
+          "built_in",
+          "is_active",
+          "deletable"
+        ],
+        "title": "TranslationProfilePromptSchemeResponse",
+        "type": "object"
+      },
+      "TranslationProfilePromptUpdateRequest": {
+        "properties": {
+          "expected_snapshot_hash": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Expected Snapshot Hash",
+            "type": "string"
+          },
+          "markdown": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "title": "Markdown",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "markdown",
+          "expected_snapshot_hash"
+        ],
+        "title": "TranslationProfilePromptUpdateRequest",
         "type": "object"
       },
       "TranslationProfilePublishRequest": {
@@ -15737,6 +15890,10 @@
             ],
             "title": "Model"
           },
+          "prompt_content_hash": {
+            "title": "Prompt Content Hash",
+            "type": "string"
+          },
           "prompt_version": {
             "title": "Prompt Version",
             "type": "string"
@@ -15789,6 +15946,7 @@
           "target_language",
           "domain",
           "prompt_version",
+          "prompt_content_hash",
           "max_pages_per_batch",
           "max_chars_per_batch"
         ],
@@ -29824,6 +29982,40 @@
     "/api/v1/translation-profiles": {
       "get": {
         "operationId": "list_translation_profiles_api_v1_translation_profiles_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -29834,6 +30026,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List Translation Profiles",
@@ -29853,6 +30055,38 @@
             "schema": {
               "title": "Profile Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
             }
           }
         ],
@@ -29895,6 +30129,38 @@
             "schema": {
               "title": "Profile Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
             }
           }
         ],
@@ -30003,6 +30269,431 @@
           }
         },
         "summary": "Update Translation Profile Draft",
+        "tags": [
+          "translation-profiles"
+        ]
+      }
+    },
+    "/api/v1/translation-profiles/{profile_id}/draft/prompts": {
+      "post": {
+        "operationId": "create_translation_profile_prompt_api_v1_translation_profiles__profile_id__draft_prompts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "title": "Profile Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranslationProfilePromptCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationProfileDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Translation Profile Prompt",
+        "tags": [
+          "translation-profiles"
+        ]
+      }
+    },
+    "/api/v1/translation-profiles/{profile_id}/draft/prompts/{prompt_id}": {
+      "delete": {
+        "operationId": "delete_translation_profile_prompt_api_v1_translation_profiles__profile_id__draft_prompts__prompt_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "title": "Profile Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "prompt_id",
+            "required": true,
+            "schema": {
+              "title": "Prompt Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranslationProfilePromptMutationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationProfileDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Translation Profile Prompt",
+        "tags": [
+          "translation-profiles"
+        ]
+      },
+      "put": {
+        "operationId": "update_translation_profile_prompt_api_v1_translation_profiles__profile_id__draft_prompts__prompt_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "title": "Profile Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "prompt_id",
+            "required": true,
+            "schema": {
+              "title": "Prompt Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranslationProfilePromptUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationProfileDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Translation Profile Prompt",
+        "tags": [
+          "translation-profiles"
+        ]
+      }
+    },
+    "/api/v1/translation-profiles/{profile_id}/draft/prompts/{prompt_id}/activate": {
+      "post": {
+        "operationId": "activate_translation_profile_prompt_api_v1_translation_profiles__profile_id__draft_prompts__prompt_id__activate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "title": "Profile Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "prompt_id",
+            "required": true,
+            "schema": {
+              "title": "Prompt Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranslationProfilePromptMutationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationProfileDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Activate Translation Profile Prompt",
         "tags": [
           "translation-profiles"
         ]

@@ -1356,8 +1356,14 @@ export type FileQuotaPolicyOpsSummaryResponse = {
   safety: FileQuotaPolicyOpsSafetyResponse;
 };
 
-export type TranslationMode = "direct" | "en2zh" | "ru2zh";
-export type DocumentJobMode = "direct_pdf_to_word" | "en2zh_pdf_to_word" | "ru2zh_pdf_to_word";
+export type TranslationMode = "direct" | "en2zh" | "ru2zh" | "zh2en" | "zh2ru";
+export type TranslationLanguagePair = Exclude<TranslationMode, "direct">;
+export type DocumentJobMode =
+  | "direct_pdf_to_word"
+  | "en2zh_pdf_to_word"
+  | "ru2zh_pdf_to_word"
+  | "zh2en_pdf_to_word"
+  | "zh2ru_pdf_to_word";
 export type DocumentLanguage = "auto" | "zh" | "en" | "ru";
 export type DocumentJobStatus = "pending" | "queued" | "running" | "succeeded" | "failed" | "canceled";
 export type DocumentJobStatusGroup = "active";
@@ -1452,6 +1458,8 @@ export type DocumentJobResourceSnapshot = {
   term_rule_set?: BoundResourceVersion | null;
   translation_term_set?: BoundTranslationTermVersion | null;
   translation_profile?: BoundResourceVersion | null;
+  translation_prompt_id?: string | null;
+  translation_prompt_content_hash?: string | null;
   mineru?: Record<string, unknown>;
   artifact_ids?: Record<string, string>;
 };
@@ -2708,11 +2716,13 @@ export type TerminologyReleaseCopyResponse = {
 
 export type TranslationProfileListItemResponse = {
   id: string;
+  language_pair: TranslationLanguagePair;
   default_version: string | null;
   version_count: number;
   target_language: string;
   domain: string;
   prompt_version: string;
+  prompt_content_hash: string;
   model: string | null;
   max_pages_per_batch: number;
   max_chars_per_batch: number;
@@ -2724,6 +2734,7 @@ export type TranslationProfileListResponse = {
 
 export type TranslationProfileVersionResponse = {
   translation_profile_id: string;
+  language_pair: TranslationLanguagePair;
   version: string;
   status: string;
   snapshot_hash: string | null;
@@ -2731,6 +2742,7 @@ export type TranslationProfileVersionResponse = {
   target_language: string;
   domain: string;
   prompt_version: string;
+  prompt_content_hash: string;
   model: string | null;
   max_pages_per_batch: number;
   max_chars_per_batch: number;
@@ -2743,12 +2755,25 @@ export type TranslationProfileDetailResponse = {
   versions: TranslationProfileVersionResponse[];
 };
 
+export type TranslationProfilePromptSchemeResponse = {
+  id: string;
+  name: string;
+  markdown: string;
+  content_hash: string;
+  built_in: boolean;
+  is_active: boolean;
+  deletable: boolean;
+  delete_disabled_reason: string | null;
+};
+
 export type TranslationProfileDraftResponse = {
   translation_profile_id: string;
+  language_pair: TranslationLanguagePair;
   base_version: string | null;
   target_language: string;
   domain: string;
   prompt_version: string;
+  prompt_schemes: TranslationProfilePromptSchemeResponse[];
   model: string | null;
   max_pages_per_batch: number;
   max_chars_per_batch: number;
@@ -2756,12 +2781,29 @@ export type TranslationProfileDraftResponse = {
 };
 
 export type TranslationProfileDraftUpdateRequest = {
+  language_pair?: TranslationLanguagePair | null;
   target_language: string;
   domain: string;
-  prompt_version: string;
   model: string | null;
   max_pages_per_batch: number;
   max_chars_per_batch: number;
+  expected_snapshot_hash?: string | null;
+};
+
+export type TranslationProfilePromptCreateRequest = {
+  name: string;
+  source_prompt_id: string;
+  expected_snapshot_hash: string;
+};
+
+export type TranslationProfilePromptUpdateRequest = {
+  name: string;
+  markdown: string;
+  expected_snapshot_hash: string;
+};
+
+export type TranslationProfilePromptMutationRequest = {
+  expected_snapshot_hash: string;
 };
 
 export type TranslationProfilePublishRequest = {
