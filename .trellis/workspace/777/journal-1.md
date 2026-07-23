@@ -638,3 +638,36 @@ Released commit b167e61 to hostdzire via release dir flow; verified internal/pub
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: 扩展翻译模式与 Prompt 编辑工作区并部署生产
+
+**Date**: 2026-07-23
+**Task**: 扩展翻译模式与 Prompt 编辑工作区并部署生产
+**Branch**: `main`
+
+### Summary
+
+新增中译英、中译俄与多命名 Prompt Markdown 编辑、启用和受控删除；完成合同、运行时绑定、测试与文档，并将 6399ee1 部署到 hostdzire，内外网健康、生产 release check、Golden Sample preflight 和四语言方向只读合同均通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6399ee1d` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
