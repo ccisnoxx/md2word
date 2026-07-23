@@ -901,6 +901,7 @@ onBeforeUnmount(() => {
 .translation-profiles-page {
   display: grid;
   align-content: start;
+  grid-template-columns: minmax(0, 1fr);
   grid-auto-rows: max-content;
   gap: var(--app-space-4);
 }
