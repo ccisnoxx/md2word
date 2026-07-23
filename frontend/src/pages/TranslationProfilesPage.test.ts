@@ -53,6 +53,7 @@ describe("TranslationProfilesPage Prompt workspace", () => {
     expect(source).toContain("selectedPrompt.value?.delete_disabled_reason");
     expect(source).toContain(':disabled="!isAdmin || promptBusy"');
     expect(source).toContain("expected_snapshot_hash: draft.value.snapshot_hash");
+    expect(source).toMatch(/\.translation-profiles-page \{[\s\S]*grid-template-columns: minmax\(0, 1fr\);/);
     expect(source).toMatch(/@media \(max-width: 1024px\) \{[\s\S]*\.prompt-workspace,[\s\S]*grid-template-columns: 1fr;/);
     expect(source).not.toContain('v-model="draftForm.prompt_version"');
   });
