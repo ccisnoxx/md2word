@@ -8,9 +8,15 @@ from pathlib import Path
 from typing import Literal
 
 
-TranslationMode = Literal["direct", "en2zh", "ru2zh"]
-TranslationLanguagePair = Literal["en2zh", "ru2zh"]
-DocumentJobMode = Literal["direct_pdf_to_word", "en2zh_pdf_to_word", "ru2zh_pdf_to_word"]
+TranslationMode = Literal["direct", "en2zh", "ru2zh", "zh2en", "zh2ru"]
+TranslationLanguagePair = Literal["en2zh", "ru2zh", "zh2en", "zh2ru"]
+DocumentJobMode = Literal[
+    "direct_pdf_to_word",
+    "en2zh_pdf_to_word",
+    "ru2zh_pdf_to_word",
+    "zh2en_pdf_to_word",
+    "zh2ru_pdf_to_word",
+]
 DocumentLanguage = Literal["auto", "zh", "en", "ru"]
 
 
@@ -75,10 +81,38 @@ TRANSLATION_MODE_SPECS: dict[TranslationMode, TranslationModeSpec] = {
         default_profile_id="electronics-ru2zh",
         default_prompt_file="translation_ru2zh.md",
     ),
+    "zh2en": TranslationModeSpec(
+        translation_mode="zh2en",
+        document_job_mode="zh2en_pdf_to_word",
+        language_pair="zh2en",
+        source_language="zh",
+        target_language="en",
+        default_document_language="zh",
+        target_document_language="en",
+        mineru_language="zh",
+        default_profile_id="electronics-zh2en",
+        default_prompt_file="translation_zh2en.md",
+    ),
+    "zh2ru": TranslationModeSpec(
+        translation_mode="zh2ru",
+        document_job_mode="zh2ru_pdf_to_word",
+        language_pair="zh2ru",
+        source_language="zh",
+        target_language="ru",
+        default_document_language="zh",
+        target_document_language="ru",
+        mineru_language="zh",
+        default_profile_id="electronics-zh2ru",
+        default_prompt_file="translation_zh2ru.md",
+    ),
 }
 
 TRANSLATION_MODES: tuple[TranslationMode, ...] = tuple(TRANSLATION_MODE_SPECS)
-TRANSLATION_LANGUAGE_PAIRS: tuple[TranslationLanguagePair, ...] = ("en2zh", "ru2zh")
+TRANSLATION_LANGUAGE_PAIRS: tuple[TranslationLanguagePair, ...] = tuple(
+    spec.language_pair
+    for spec in TRANSLATION_MODE_SPECS.values()
+    if spec.language_pair is not None
+)
 DOCUMENT_JOB_MODES: tuple[DocumentJobMode, ...] = tuple(
     spec.document_job_mode for spec in TRANSLATION_MODE_SPECS.values()
 )

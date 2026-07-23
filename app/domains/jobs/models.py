@@ -102,6 +102,8 @@ class JobResourceSnapshot(BaseModel):
     term_rule_department_id: str | None = None
     translation_term_set: ResolvedTranslationTermVersion | None = None
     translation_profile: ResolvedResourceVersion | None = None
+    translation_prompt_id: str | None = None
+    translation_prompt_content_hash: str | None = None
     mineru: JobMineruSnapshot = Field(default_factory=JobMineruSnapshot)
     artifact_ids: dict[str, str] = Field(default_factory=dict)
 

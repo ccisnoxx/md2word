@@ -30,6 +30,17 @@ def normalize_translation_source_term(source_term: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class TranslationPromptSnapshot:
+    """任务执行时使用的不可变 Prompt；正文只在内部 provider 链路中传递。"""
+
+    id: str
+    name: str
+    markdown: str
+    content_hash: str
+    built_in: bool
+
+
+@dataclass(frozen=True, slots=True)
 class TranslationProfileSnapshot:
     """已发布 Translation Profile 的执行时快照，不包含任何 secret。"""
 
@@ -43,6 +54,7 @@ class TranslationProfileSnapshot:
     model: str | None
     max_pages_per_batch: int
     max_chars_per_batch: int
+    prompt: TranslationPromptSnapshot
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,6 +212,9 @@ class TranslationProviderRequest:
     source_language: str
     target_language: str
     items: tuple[TranslationTextItem, ...]
+    prompt_id: str | None = None
+    prompt_content_hash: str | None = None
+    system_prompt_markdown: str | None = None
     terms: tuple[TranslationTermEntry, ...] = field(default_factory=tuple)
     term_traces: tuple[TranslationTermMatchTraceRecord, ...] = field(default_factory=tuple)
     batch_id: str | None = None

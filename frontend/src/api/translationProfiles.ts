@@ -1,10 +1,13 @@
-// frontend/src/api/translationProfiles.ts: Translation Profile version-management API wrappers.
+// Translation Profile、命名 Prompt 与版本管理 API 封装。
 import { apiRequest } from "@/api/client";
 import type {
   TranslationProfileDetailResponse,
   TranslationProfileDraftResponse,
   TranslationProfileDraftUpdateRequest,
   TranslationProfileListResponse,
+  TranslationProfilePromptCreateRequest,
+  TranslationProfilePromptMutationRequest,
+  TranslationProfilePromptUpdateRequest,
   TranslationProfilePublishRequest,
   TranslationProfileRollbackRequest,
   TranslationProfileVersionResponse,
@@ -39,6 +42,53 @@ export const translationProfilesApi = {
     return apiRequest<TranslationProfileDraftResponse>({
       url: `/api/v1/translation-profiles/${profileId}/draft`,
       method: "PUT",
+      data: payload,
+    });
+  },
+
+  createPrompt(
+    profileId: string,
+    payload: TranslationProfilePromptCreateRequest,
+  ): Promise<TranslationProfileDraftResponse> {
+    return apiRequest<TranslationProfileDraftResponse>({
+      url: `/api/v1/translation-profiles/${profileId}/draft/prompts`,
+      method: "POST",
+      data: payload,
+    });
+  },
+
+  updatePrompt(
+    profileId: string,
+    promptId: string,
+    payload: TranslationProfilePromptUpdateRequest,
+  ): Promise<TranslationProfileDraftResponse> {
+    return apiRequest<TranslationProfileDraftResponse>({
+      url: `/api/v1/translation-profiles/${profileId}/draft/prompts/${promptId}`,
+      method: "PUT",
+      data: payload,
+    });
+  },
+
+  activatePrompt(
+    profileId: string,
+    promptId: string,
+    payload: TranslationProfilePromptMutationRequest,
+  ): Promise<TranslationProfileDraftResponse> {
+    return apiRequest<TranslationProfileDraftResponse>({
+      url: `/api/v1/translation-profiles/${profileId}/draft/prompts/${promptId}/activate`,
+      method: "POST",
+      data: payload,
+    });
+  },
+
+  deletePrompt(
+    profileId: string,
+    promptId: string,
+    payload: TranslationProfilePromptMutationRequest,
+  ): Promise<TranslationProfileDraftResponse> {
+    return apiRequest<TranslationProfileDraftResponse>({
+      url: `/api/v1/translation-profiles/${profileId}/draft/prompts/${promptId}`,
+      method: "DELETE",
       data: payload,
     });
   },

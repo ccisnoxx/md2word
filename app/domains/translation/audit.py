@@ -82,7 +82,10 @@ class TranslationCallAuditRecorder:
 
         error_payload = {
             "type": error.__class__.__name__,
-            "message": self._redact_error_message(str(error)),
+            "message": self._redact_error_message(
+                str(error),
+                sensitive_text=request.system_prompt_markdown,
+            ),
         }
         if isinstance(error, TranslationProviderResponseError):
             error_payload.update(
@@ -132,6 +135,7 @@ class TranslationCallAuditRecorder:
             "language_pair": request.language_pair,
             "source_language": request.source_language,
             "target_language": request.target_language,
+            "system_prompt": self._system_prompt_summary(request),
             "term_version_id": self.term_version.term_version_id if self.term_version is not None else None,
             "term_snapshot_hash": self.term_version.snapshot_hash if self.term_version is not None else None,
             "term_count": len(request.terms),
@@ -189,6 +193,7 @@ class TranslationCallAuditRecorder:
             "job_id": self.job.id,
             "trace_id": self.trace_id,
             "provider": provider,
+            "system_prompt": self._system_prompt_summary(request),
             "prompt": self._full_request_payload(request),
             "response": self._full_response_payload(result),
             "error": error,
@@ -271,6 +276,17 @@ class TranslationCallAuditRecorder:
             return None
         return {"items": [{"id": item.id, "text": item.text} for item in result.items]}
 
+    @staticmethod
+    def _system_prompt_summary(
+        request: TranslationProviderRequest,
+    ) -> dict[str, str | None]:
+        """只记录绑定 Prompt 的稳定标识，禁止写入正文。"""
+
+        return {
+            "id": request.prompt_id,
+            "content_hash": request.prompt_content_hash,
+        }
+
     def _provider_summary(self) -> dict[str, str | None]:
         if self.config_resolver is not None:
             config = self.config_resolver()
@@ -330,7 +346,16 @@ class TranslationCallAuditRecorder:
     def _json_bytes(self, payload: dict) -> bytes:
         return json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
 
-    def _redact_error_message(self, message: str) -> str:
+    def _redact_error_message(
+        self,
+        message: str,
+        *,
+        sensitive_text: str | None = None,
+    ) -> str:
+        if sensitive_text:
+            message = message.replace(sensitive_text, "[system_prompt_redacted]")
+            escaped = json.dumps(sensitive_text, ensure_ascii=False)[1:-1]
+            message = message.replace(escaped, "[system_prompt_redacted]")
         normalized = " ".join(message.split())
         if len(normalized) <= 500:
             return normalized

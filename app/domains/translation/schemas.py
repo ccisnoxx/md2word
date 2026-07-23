@@ -1,12 +1,28 @@
-from __future__ import annotations
+"""定义 Translation Profile、Prompt、术语提案和术语集 API 合同。"""
 
-# File: app/domains/translation/schemas.py
-# Purpose: 定义 Translation Profile、Translation Term Proposal 和 Translation Term Set API 的 v1 请求/响应模型。
+from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+
+PROMPT_NAME_MAX_LENGTH = 100
+PROMPT_MARKDOWN_MAX_LENGTH = 100_000
+
+
+class TranslationProfilePromptSchemeResponse(BaseModel):
+    """Translation Profile 草稿中的单个 Prompt 方案。"""
+
+    id: str
+    name: str
+    markdown: str
+    content_hash: str
+    built_in: bool
+    is_active: bool
+    deletable: bool
+    delete_disabled_reason: str | None = None
 
 
 class TranslationProfileListItemResponse(BaseModel):
@@ -17,6 +33,7 @@ class TranslationProfileListItemResponse(BaseModel):
     target_language: str
     domain: str
     prompt_version: str
+    prompt_content_hash: str
     model: str | None = None
     max_pages_per_batch: int
     max_chars_per_batch: int
@@ -36,6 +53,7 @@ class TranslationProfileVersionResponse(BaseModel):
     target_language: str
     domain: str
     prompt_version: str
+    prompt_content_hash: str
     model: str | None = None
     max_pages_per_batch: int
     max_chars_per_batch: int
@@ -55,6 +73,7 @@ class TranslationProfileDraftResponse(BaseModel):
     target_language: str
     domain: str
     prompt_version: str
+    prompt_schemes: list[TranslationProfilePromptSchemeResponse]
     model: str | None = None
     max_pages_per_batch: int
     max_chars_per_batch: int
@@ -65,10 +84,26 @@ class TranslationProfileDraftUpdateRequest(BaseModel):
     language_pair: str | None = Field(default=None, min_length=1, max_length=32)
     target_language: str = Field(default="zh-CN", min_length=1, max_length=32)
     domain: str = Field(default="electronics engineering technical document", min_length=1, max_length=200)
-    prompt_version: str = Field(default="translation-minimal-v1", min_length=1, max_length=128)
     model: str | None = Field(default=None, max_length=128)
     max_pages_per_batch: int = Field(default=20, ge=1, le=500)
     max_chars_per_batch: int = Field(default=60000, ge=1, le=500000)
+    expected_snapshot_hash: str | None = Field(default=None, min_length=1, max_length=80)
+
+
+class TranslationProfilePromptCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=PROMPT_NAME_MAX_LENGTH)
+    source_prompt_id: str = Field(min_length=1, max_length=128)
+    expected_snapshot_hash: str = Field(min_length=1, max_length=80)
+
+
+class TranslationProfilePromptUpdateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=PROMPT_NAME_MAX_LENGTH)
+    markdown: str = Field(min_length=1, max_length=PROMPT_MARKDOWN_MAX_LENGTH)
+    expected_snapshot_hash: str = Field(min_length=1, max_length=80)
+
+
+class TranslationProfilePromptMutationRequest(BaseModel):
+    expected_snapshot_hash: str = Field(min_length=1, max_length=80)
 
 
 class TranslationProfilePublishRequest(BaseModel):

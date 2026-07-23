@@ -12,7 +12,7 @@ source_files:
   - app/domains/document_jobs/execution.py
 summary: Document Jobs API 提供 P0 PDF -> Word 任务创建、查询、事件、重试、clone、取消、归档、删除和下载入口。
 tags: [document-jobs, api, pdf, word]
-last_reviewed: 2026-06-09
+last_reviewed: 2026-07-23
 ---
 
 ## 概述
@@ -70,6 +70,8 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 | `direct_pdf_to_word` | P0 默认路径，直接生成 Word。 |
 | `en2zh_pdf_to_word` | 实验能力，先翻译 DocumentIR 再生成 Word。 |
 | `ru2zh_pdf_to_word` | 俄译中能力，先翻译 DocumentIR 再生成 Word。 |
+| `zh2en_pdf_to_word` | 中译英能力，先翻译 DocumentIR 再生成 Word。 |
+| `zh2ru_pdf_to_word` | 中译俄能力，先翻译 DocumentIR 再生成 Word。 |
 
 ### 失败诊断字段
 
@@ -90,7 +92,7 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 | `needs_fix` | 需要修正或跟进。 |
 | `blocked` | 阻塞或无法判断。 |
 
-该状态只用于翻译任务 QA。列表筛选传 `translation_qa_status` 时，后端只返回 `en2zh_pdf_to_word` / `ru2zh_pdf_to_word` 且状态匹配的任务，避免把 direct 任务的默认值误当成翻译 QA 待办。
+该状态只用于四种翻译任务 QA。列表筛选传 `translation_qa_status` 时，后端只返回翻译模式且状态匹配的任务，避免把 direct 任务的默认值误当成翻译 QA 待办。
 
 ## API 参考
 
@@ -102,8 +104,8 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 | 字段 | 必填 | 说明 |
 |---|---|---|
 | `source_file_id` | 是 | 来自 Files API 的 source PDF file id。 |
-| `mode` | 否 | 默认 `direct_pdf_to_word`；兼容旧 `en2zh_pdf_to_word`，新调用优先传 `translation_mode`。 |
-| `translation_mode` | 否 | `direct` / `en2zh` / `ru2zh`。 |
+| `mode` | 否 | 默认 `direct_pdf_to_word`；翻译模式还包括 `en2zh_pdf_to_word` / `ru2zh_pdf_to_word` / `zh2en_pdf_to_word` / `zh2ru_pdf_to_word`，新调用优先传 `translation_mode`。 |
+| `translation_mode` | 否 | `direct` / `en2zh` / `ru2zh` / `zh2en` / `zh2ru`。 |
 | `document_language` | 否 | `auto` / `zh` / `en` / `ru`，默认 `auto`。 |
 | `template_version_id` | 否 | 模板版本选择；创建任务时普通用户和 Admin 都可以绑定 published 版本。 |
 | `term_version_id` | 否 | 兼容术语版本字段。 |
@@ -128,12 +130,12 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
   - `role`
   - `resource_mode`：`legacy` / `versioned`
   - `defaults`：默认 Template、Term Rule Set、legacy `en2zh` Translation Term Set、legacy `en2zh` Translation Profile 摘要
-  - `translation_defaults`：按 `language_pair` 返回 `en2zh` / `ru2zh` 的默认 Translation Term Set 与 Translation Profile
+  - `translation_defaults`：按 `language_pair` 返回 `en2zh` / `ru2zh` / `zh2en` / `zh2ru` 的默认 Translation Term Set 与 Translation Profile
   - `options`：创建任务可绑定的 published 版本
   - `readiness`：创建任务前的只读配置状态
     - `en2zh_available`：默认翻译术语集和翻译配置是否可用。
     - `ru2zh_available`：默认俄译中翻译术语集和翻译配置是否可用。
-    - `translation_modes`：按 `language_pair` 返回可用状态。
+    - `translation_modes`：按四种 `language_pair` 返回可用状态；`zh2en` / `zh2ru` 缺失时应视为不可用，不得复用旧专用布尔字段。
     - `p0_document_jobs_required`：当前环境是否要求 P0 document_jobs 自动执行链路通过门禁。
     - `p0_document_jobs_ready`：P0 document_jobs 自动执行链路是否通过门禁。
     - `document_jobs_worker_backend`：`disabled` / `celery` / `eager`。
@@ -153,7 +155,7 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 | `page_size` | `20` | 当前限制 `1-100`。 |
 | `status` | 无 | 按任务状态过滤。 |
 | `status_group` | 无 | 状态组过滤；OpenAPI 枚举当前仅允许 `active`，等价于 `pending` / `queued` / `running`。不能与 `status` 同时使用。 |
-| `translation_qa_status` | 无 | 按翻译 QA 状态过滤；OpenAPI 枚举允许 `unreviewed` / `approved` / `needs_fix` / `blocked` / `all`，传 `all` 时返回全部 `en2zh_pdf_to_word` / `ru2zh_pdf_to_word` QA 任务。 |
+| `translation_qa_status` | 无 | 按翻译 QA 状态过滤；OpenAPI 枚举允许 `unreviewed` / `approved` / `needs_fix` / `blocked` / `all`，传 `all` 时返回全部翻译模式 QA 任务。 |
 | `q` | 无 | 按任务 ID、源文件 ID、源文件名、错误码或错误信息搜索。 |
 | `sort` | `created_at_desc` | `created_at_desc` / `created_at_asc` / `updated_at_desc` / `updated_at_asc`。 |
 | `include_archived` | `false` | 是否包含已归档任务；已删除任务始终不进入列表。 |
@@ -228,7 +230,7 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 ### `GET /api/v1/document-jobs/{job_id}/translation-qa`
 
 - 用途：读取翻译结果 QA 证据摘要和任务级复核状态。
-- 支持范围：`en2zh_pdf_to_word` / `ru2zh_pdf_to_word` 任务具备翻译 QA 证据；其他模式返回 `available=false` 和 `availability_reason=unsupported_mode`。
+- 支持范围：`en2zh_pdf_to_word` / `ru2zh_pdf_to_word` / `zh2en_pdf_to_word` / `zh2ru_pdf_to_word` 任务具备翻译 QA 证据；其他模式返回 `available=false` 和 `availability_reason=unsupported_mode`。
 - 查询参数：
 
 | 参数 | 默认值 | 说明 |
@@ -247,7 +249,7 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 ### `PATCH /api/v1/document-jobs/{job_id}/translation-qa`
 
 - 用途：保存任务级翻译 QA 复核结论。
-- 支持范围：`en2zh_pdf_to_word` / `ru2zh_pdf_to_word` 任务；其他模式返回 `409 conflict`。
+- 支持范围：四种翻译任务模式；其他模式返回 `409 conflict`。
 - 请求体：
 
 | 字段 | 必填 | 说明 |

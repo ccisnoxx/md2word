@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from app.conversion.runtime import translation_runtime
 from app.core.config import Settings
 from app.domains.jobs.models import (
     ConversionOptions,
@@ -30,6 +29,9 @@ from app.domains.resources.service import ResourceVersionService
 from app.domains.term_rules.yaml_codec import TermRuleYamlCodec
 from app.domains.term_rules.versioning_service import DEFAULT_TERM_RULE_SET_ID
 from app.domains.translation.repository import TranslationTermRepositoryProtocol
+from app.domains.translation.profiles_service import (
+    translation_profile_snapshot_from_record,
+)
 
 
 SourceKind = Literal["mineru_package", "source_pdf"]
@@ -97,12 +99,25 @@ class JobResourceSnapshotService:
         )
         translation_term_set = self._resolve_translation_term_set(options)
         translation_profile = self._resolve_translation_profile(options)
+        translation_profile_snapshot = self._materialize_translation_profile(
+            translation_profile
+        )
         return JobResourceSnapshot(
             template=template,
             term_rule_set=term_rule_set,
             term_rule_department_id=self._optional_text(options.term_rule_department_id),
             translation_term_set=translation_term_set,
             translation_profile=translation_profile,
+            translation_prompt_id=(
+                translation_profile_snapshot.prompt.id
+                if translation_profile_snapshot is not None
+                else None
+            ),
+            translation_prompt_content_hash=(
+                translation_profile_snapshot.prompt.content_hash
+                if translation_profile_snapshot is not None
+                else None
+            ),
             mineru=self._build_mineru_snapshot(source_kind=source_kind, job_id=job_id, options=options),
             artifact_ids={"source": "source_pdf" if source_kind == "source_pdf" else "source_package"},
         )
@@ -214,6 +229,23 @@ class JobResourceSnapshotService:
                 status_code=400,
                 code="translation_profile_language_pair_mismatch",
             )
+        if translation_profile is not None and any(
+            value is not None
+            for value in (
+                snapshot.translation_prompt_id,
+                snapshot.translation_prompt_content_hash,
+            )
+        ):
+            if (
+                snapshot.translation_prompt_id != translation_profile.prompt.id
+                or snapshot.translation_prompt_content_hash
+                != translation_profile.prompt.content_hash
+            ):
+                raise JobResourceSnapshotError(
+                    "Translation Profile Prompt 快照元数据不匹配。",
+                    status_code=409,
+                    code="translation_profile_prompt_snapshot_mismatch",
+                )
         if spec.language_pair is not None and translation_term_version is not None and translation_term_version.language_pair != spec.language_pair:
             raise JobResourceSnapshotError(
                 f"Translation Term Set language_pair 不匹配: expected={spec.language_pair} actual={translation_term_version.language_pair}",
@@ -446,19 +478,29 @@ class JobResourceSnapshotService:
         if snapshot is None:
             return None
         record = self._load_snapshot_record(snapshot)
-        payload = record.payload or {}
-        return TranslationProfileSnapshot(
-            translation_profile_id=record.resource_id,
-            language_pair=self._profile_language_pair(record.resource_id, payload),
-            version=record.version,
-            snapshot_hash=record.snapshot_hash,
-            target_language=self._payload_text(payload, "target_language") or translation_runtime.DEFAULT_TARGET_LANGUAGE,
-            domain=self._payload_text(payload, "domain") or translation_runtime.DEFAULT_TRANSLATION_DOMAIN,
-            prompt_version=self._payload_text(payload, "prompt_version") or translation_runtime.TRANSLATION_PROMPT_VERSION,
-            model=self._payload_text(payload, "model"),
-            max_pages_per_batch=self._payload_int(payload, "max_pages_per_batch", self.settings.translation_max_pages),
-            max_chars_per_batch=self._payload_int(payload, "max_chars_per_batch", self.settings.translation_max_chars),
-        )
+        try:
+            return translation_profile_snapshot_from_record(self.settings, record)
+        except (FileNotFoundError, ValueError) as exc:
+            raise JobResourceSnapshotError(
+                f"Translation Profile payload 非法: {exc}",
+                status_code=409,
+                code="translation_profile_payload_invalid",
+            ) from exc
+
+    def materialize_translation_profile(
+        self,
+        snapshot: ResolvedResourceVersion,
+    ) -> TranslationProfileSnapshot:
+        """按任务绑定的资源 ID/version/hash 读取不可变 Profile Prompt。"""
+
+        materialized = self._materialize_translation_profile(snapshot)
+        if materialized is None:
+            raise JobResourceSnapshotError(
+                "任务绑定的 Translation Profile 为空。",
+                status_code=409,
+                code="resource_snapshot_missing_translation_profile",
+            )
+        return materialized
 
     def _materialize_translation_term_set(
         self,
@@ -508,7 +550,11 @@ class JobResourceSnapshotService:
         for spec in TRANSLATION_MODE_SPECS.values():
             if spec.default_profile_id == translation_profile_id and spec.language_pair is not None:
                 return spec.language_pair
-        return "en2zh"
+        raise JobResourceSnapshotError(
+            f"Translation Profile language_pair 无法从绑定资源推断: {translation_profile_id}",
+            status_code=409,
+            code="translation_profile_language_pair_missing",
+        )
 
     def _load_snapshot_record(self, snapshot: ResolvedResourceVersion) -> ResourceVersionRecord:
         if self.resource_version_service is None:

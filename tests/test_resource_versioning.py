@@ -29,6 +29,23 @@ class _MemoryResourceVersionRepository:
         self.records[(record.resource_type, record.resource_id, record.version)] = record
         return record
 
+    def update_resource_version_if_current(
+        self,
+        record: ResourceVersionRecord,
+        *,
+        expected_snapshot_hash: str,
+    ) -> ResourceVersionRecord | None:
+        key = (record.resource_type, record.resource_id, record.version)
+        existing = self.records.get(key)
+        if (
+            existing is None
+            or existing.status != ResourceVersionStatus.DRAFT
+            or existing.snapshot_hash != expected_snapshot_hash
+        ):
+            return None
+        self.records[key] = record
+        return record
+
     def create_resource_version(self, record: ResourceVersionRecord) -> ResourceVersionRecord:
         key = (record.resource_type, record.resource_id, record.version)
         if key in self.records:
@@ -145,6 +162,42 @@ class ResourceVersionServiceTests(TestCase):
 
         self.assertIsNone(self.repository.get_default_resource_version("translation_profile", "direct-default"))
 
+    def test_update_draft_if_current_rejects_stale_snapshot(self):
+        self.service.create_draft(
+            resource_type="translation_profile",
+            resource_id="electronics-en2zh",
+            version="draft",
+            snapshot_hash=HASH_V1,
+            payload={"value": 1},
+        )
+
+        updated = self.service.update_draft_if_current(
+            resource_type="translation_profile",
+            resource_id="electronics-en2zh",
+            version="draft",
+            expected_snapshot_hash=HASH_V1,
+            snapshot_hash=HASH_V2,
+            payload={"value": 2},
+        )
+        stale = self.service.update_draft_if_current(
+            resource_type="translation_profile",
+            resource_id="electronics-en2zh",
+            version="draft",
+            expected_snapshot_hash=HASH_V1,
+            snapshot_hash=HASH_V1,
+            payload={"value": 3},
+        )
+
+        self.assertIsNotNone(updated)
+        self.assertIsNone(stale)
+        stored = self.repository.get_resource_version(
+            "translation_profile",
+            "electronics-en2zh",
+            "draft",
+        )
+        self.assertEqual(stored.snapshot_hash, HASH_V2)
+        self.assertEqual(stored.payload, {"value": 2})
+
     def test_default_version_must_be_switched_before_disable_or_supersede(self):
         for version, snapshot_hash in (("1.0.0", HASH_V1), ("1.1.0", HASH_V2)):
             self.service.create_or_update_draft(
@@ -240,6 +293,48 @@ class MysqlResourceVersionRepositoryTests(TestCase):
             repository.get_resource_version("template", "datasheet-default", str(first)).snapshot_hash,
             HASH_V1,
         )
+
+    def test_mysql_repository_compare_and_set_preserves_newer_draft(self):
+        fake_mysql = _FakeMysqlDatabase()
+        repository = build_mysql_persistence_adapters(
+            _mysql_config(),
+            connect_factory=fake_mysql.connect,
+        ).resource_version_repository
+        service = ResourceVersionService(repository)
+        service.create_draft(
+            resource_type="translation_profile",
+            resource_id="electronics-en2zh",
+            version="draft",
+            snapshot_hash=HASH_V1,
+            payload={"value": 1},
+        )
+
+        updated = service.update_draft_if_current(
+            resource_type="translation_profile",
+            resource_id="electronics-en2zh",
+            version="draft",
+            expected_snapshot_hash=HASH_V1,
+            snapshot_hash=HASH_V2,
+            payload={"value": 2},
+        )
+        stale = service.update_draft_if_current(
+            resource_type="translation_profile",
+            resource_id="electronics-en2zh",
+            version="draft",
+            expected_snapshot_hash=HASH_V1,
+            snapshot_hash=HASH_V1,
+            payload={"value": 3},
+        )
+
+        self.assertIsNotNone(updated)
+        self.assertIsNone(stale)
+        stored = repository.get_resource_version(
+            "translation_profile",
+            "electronics-en2zh",
+            "draft",
+        )
+        self.assertEqual(stored.snapshot_hash, HASH_V2)
+        self.assertEqual(stored.payload, {"value": 2})
 
     def test_mysql_runtime_exposes_resource_version_service(self):
         fake_mysql = _FakeMysqlDatabase()

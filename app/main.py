@@ -236,6 +236,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
         document_ir_translation_service,
         term_version_service,
         translation_audit_service,
+        job_resource_snapshot_service,
     )
     document_job_task_queue = _build_document_job_task_queue(resolved_settings, document_job_execution_service)
     document_translation_batch_task_queue = _build_document_translation_batch_task_queue(

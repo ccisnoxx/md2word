@@ -789,6 +789,36 @@ class _FakeMysqlCursor:
             }
             self._rows = []
             return
+        if normalized.startswith("update resource_versions set snapshot_hash"):
+            (
+                snapshot_hash,
+                payload_ref,
+                payload,
+                updated_at,
+                resource_type,
+                resource_id,
+                version,
+                status,
+                expected_snapshot_hash,
+            ) = params
+            key = (resource_type, resource_id, version)
+            row = self.database.resource_versions.get(key)
+            if (
+                row is not None
+                and row["status"] == status
+                and row["snapshot_hash"] == expected_snapshot_hash
+            ):
+                row.update(
+                    {
+                        "snapshot_hash": snapshot_hash,
+                        "payload_ref": payload_ref,
+                        "payload": payload,
+                        "updated_at": updated_at,
+                    }
+                )
+                self.rowcount = 1
+            self._rows = []
+            return
         if normalized.startswith("insert into resource_version_sequences"):
             resource_type, resource_id, minimum_next, updated_at = params
             key = (resource_type, resource_id)
@@ -1563,6 +1593,8 @@ class PersistenceAdapterTests(TestCase):
             terms_csv
             + "ru2zh,Постоянное обратное напряжение диода,反向直流电压,v1\n"
             + "ru2zh,Постоянный обратный ток,反向漏电流,v1\n"
+            + "zh2en,模数转换器,ADC,v1\n"
+            + "zh2ru,数模转换器,ЦАП,v1\n"
         )
         with TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)
@@ -1625,7 +1657,7 @@ class PersistenceAdapterTests(TestCase):
             "v1",
         )
         self.assertIn(("translation-terms-en2zh", "v1"), fake_mysql.translation_term_versions)
-        self.assertEqual(len(fake_mysql.translation_terms), 4)
+        self.assertEqual(len(fake_mysql.translation_terms), 6)
         self.assertEqual(len(snapshot.entries), 2)
         self.assertEqual([entry.source_term for entry in snapshot.entries], ["ADC", "DAC"])
         self.assertEqual(snapshot.entries[0].set_id, "translation-terms-en2zh")

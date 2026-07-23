@@ -17,6 +17,11 @@ from uuid import uuid4
 
 from app.clients.mineru_client import MinerUClient, MinerUError
 from app.core.config import Settings
+from app.domains.jobs.models import JobResourceSnapshot
+from app.domains.jobs.resource_snapshots import (
+    JobResourceSnapshotError,
+    JobResourceSnapshotService,
+)
 from app.domains.document_jobs.models import (
     DocumentJobCallbackMessage,
     DocumentJobEventRecord,
@@ -52,7 +57,10 @@ from app.domains.translation.document_ir_translator import (
     DocumentIRTranslationService,
     DocumentIRTranslationTarget,
 )
-from app.domains.translation.models import TranslationProviderResult
+from app.domains.translation.models import (
+    TranslationProfileSnapshot,
+    TranslationProviderResult,
+)
 from app.domains.translation.provider import TranslationProviderResponseError
 
 
@@ -93,6 +101,7 @@ class DocumentJobExecutionService:
         document_ir_translation_service: DocumentIRTranslationService | None = None,
         term_version_service: Any | None = None,
         translation_audit_service: TranslationAuditService | None = None,
+        job_resource_snapshot_service: JobResourceSnapshotService | None = None,
         translation_batch_task_queue: DocumentTranslationBatchTaskQueueProtocol | None = None,
         mineru_client_factory: Callable[[], Any] | None = None,
     ) -> None:
@@ -110,6 +119,7 @@ class DocumentJobExecutionService:
         self.document_ir_translation_service = document_ir_translation_service
         self.term_version_service = term_version_service
         self.translation_audit_service = translation_audit_service
+        self.job_resource_snapshot_service = job_resource_snapshot_service
         self.translation_batch_task_queue = translation_batch_task_queue
         self.mineru_client_factory = mineru_client_factory or self._build_mineru_client
         self.logger = logging.getLogger("business")
@@ -1081,7 +1091,13 @@ class DocumentJobExecutionService:
         generation: int,
         trace_id: str | None,
     ) -> list[DocumentJobTranslationBatchRecord]:
-        max_pages, max_chars = self._translation_profile_batch_limits(job)
+        translation_profile = self._translation_profile_for_job(
+            job,
+            language_pair=language_pair,
+        )
+        max_pages, max_chars = self._translation_profile_batch_limits(
+            translation_profile
+        )
         term_version = self._resolve_term_version_for_job(job)
         _targets, _items, plans = self.document_ir_translation_service.build_translation_plan(
             source_document_ir,
@@ -1165,6 +1181,10 @@ class DocumentJobExecutionService:
             items_by_id = {item.id: item for item in items}
             batch_items = [items_by_id[item_id] for item_id in claimed.item_ids]
             term_version = self._resolve_term_version_for_job(job)
+            translation_profile = self._translation_profile_for_job(
+                job,
+                language_pair=claimed.language_pair,
+            )
             recorder = (
                 self.translation_audit_service.build_recorder(
                     job=job,
@@ -1180,6 +1200,11 @@ class DocumentJobExecutionService:
                 batch_items,
                 term_version=term_version,
                 language_pair=claimed.language_pair,
+                prompt=(
+                    translation_profile.prompt
+                    if translation_profile is not None
+                    else None
+                ),
                 batch_id=claimed.id,
                 attempt=claimed.attempt_count,
                 split_level=claimed.split_level,
@@ -1852,28 +1877,69 @@ class DocumentJobExecutionService:
             return "translation_provider_invalid_response"
         return "translation_provider_failed"
 
-    def _translation_profile_batch_limits(self, job: DocumentJobRecord) -> tuple[int, int]:
-        profile = None
-        resources = job.request_snapshot.get("resources")
-        if isinstance(resources, dict):
-            profile = resources.get("translation_profile")
-        payload = profile.get("payload") if isinstance(profile, dict) else None
-        max_pages = self._positive_int_from_mapping(payload, "max_pages_per_batch") or self.settings.translation_max_pages
-        max_chars = self._positive_int_from_mapping(payload, "max_chars_per_batch") or self.settings.translation_max_chars
-        return max(1, int(max_pages)), max(1, int(max_chars))
+    def _translation_profile_batch_limits(
+        self,
+        profile: TranslationProfileSnapshot | None,
+    ) -> tuple[int, int]:
+        if profile is None:
+            return (
+                max(1, int(self.settings.translation_max_pages)),
+                max(1, int(self.settings.translation_max_chars)),
+            )
+        return (
+            max(1, int(profile.max_pages_per_batch)),
+            max(1, int(profile.max_chars_per_batch)),
+        )
 
-    @staticmethod
-    def _positive_int_from_mapping(mapping: Any, key: str) -> int | None:
-        if not isinstance(mapping, dict):
+    def _translation_profile_for_job(
+        self,
+        job: DocumentJobRecord,
+        *,
+        language_pair: str,
+    ) -> TranslationProfileSnapshot | None:
+        """读取任务绑定的不可变 Profile；无资源快照仅表示 legacy mode。"""
+
+        resources = job.request_snapshot.get("resources")
+        if resources is None:
             return None
-        value = mapping.get(key)
-        if isinstance(value, bool):
-            return None
-        if isinstance(value, int) and value > 0:
-            return value
-        if isinstance(value, str) and value.isdigit() and int(value) > 0:
-            return int(value)
-        return None
+        if not isinstance(resources, dict):
+            raise DocumentIRTranslationError("任务资源快照格式非法。")
+        try:
+            snapshot = JobResourceSnapshot.model_validate(resources)
+        except ValueError as exc:
+            raise DocumentIRTranslationError(f"任务资源快照格式非法: {exc}") from exc
+        if snapshot.translation_profile is None:
+            raise DocumentIRTranslationError("翻译任务缺少绑定的 Translation Profile。")
+        if self.job_resource_snapshot_service is None:
+            raise DocumentIRTranslationError(
+                "当前 Worker 缺少 resource snapshot service。"
+            )
+        try:
+            profile = self.job_resource_snapshot_service.materialize_translation_profile(
+                snapshot.translation_profile
+            )
+        except (JobResourceSnapshotError, FileNotFoundError, ValueError) as exc:
+            raise DocumentIRTranslationError(str(exc)) from exc
+        if profile.language_pair != language_pair:
+            raise DocumentIRTranslationError(
+                "任务绑定的 Translation Profile 语言方向不匹配: "
+                f"expected={language_pair} actual={profile.language_pair}"
+            )
+
+        prompt_metadata = (
+            snapshot.translation_prompt_id,
+            snapshot.translation_prompt_content_hash,
+        )
+        if any(value is not None for value in prompt_metadata):
+            if (
+                snapshot.translation_prompt_id != profile.prompt.id
+                or snapshot.translation_prompt_content_hash
+                != profile.prompt.content_hash
+            ):
+                raise DocumentIRTranslationError(
+                    "任务绑定的 Translation Profile Prompt 元数据不匹配。"
+                )
+        return profile
 
     @staticmethod
     def _page_range_for_item_ids(
@@ -1956,6 +2022,10 @@ class DocumentJobExecutionService:
             raise DocumentIRTranslationError("当前任务不是翻译任务。")
         try:
             term_version = self._resolve_term_version_for_job(job)
+            translation_profile = self._translation_profile_for_job(
+                job,
+                language_pair=spec.language_pair,
+            )
         except (FileNotFoundError, ValueError, RuntimeError) as exc:
             raise DocumentIRTranslationError(str(exc)) from exc
         recorder = (
@@ -1972,6 +2042,16 @@ class DocumentJobExecutionService:
             "language_pair": spec.language_pair,
             "term_version_id": term_version.term_version_id if term_version is not None else job.term_version_id,
             "term_snapshot_hash": term_version.snapshot_hash if term_version is not None else None,
+            "prompt_id": (
+                translation_profile.prompt.id
+                if translation_profile is not None
+                else None
+            ),
+            "prompt_content_hash": (
+                translation_profile.prompt.content_hash
+                if translation_profile is not None
+                else None
+            ),
             "debug_full_text_enabled": job.debug_full_text_enabled,
         }
         self._record_event(
@@ -1987,6 +2067,11 @@ class DocumentJobExecutionService:
                 document_ir,
                 term_version=term_version,
                 language_pair=spec.language_pair,
+                prompt=(
+                    translation_profile.prompt
+                    if translation_profile is not None
+                    else None
+                ),
                 call_recorder=recorder,
             )
         except DocumentIRTranslationError:

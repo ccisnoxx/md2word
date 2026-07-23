@@ -179,7 +179,7 @@ import { getMaxUploadBytes, uploadFileContent, validatePdfFile } from "@/utils/u
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { readinessCodeText } from "@/utils/displayText";
 import { configOptionKey, configVersionId, findConfigOption } from "@/utils/configOptions";
-import { translationResourceDefaultsForMode } from "@/utils/documentJobConfig";
+import { isTranslationModeAvailable, translationResourceDefaultsForMode } from "@/utils/documentJobConfig";
 import {
   documentJobModeDefinitions,
   documentJobModeCreateLanguage,
@@ -223,14 +223,16 @@ const p0ReadinessMessages = computed(() => (
 const configUnavailable = computed(() => Boolean(configError.value || !configSummary.value));
 const selectableModeOptions = computed(() => documentJobModeOptions.map((option) => ({
   ...option,
-  disabled: documentJobModeRequiresTranslationResources(option.mode) && !isTranslationModeAvailable(documentJobModeTranslationMode(option.mode)),
+  disabled: documentJobModeRequiresTranslationResources(option.mode)
+    && !isTranslationModeAvailable(configSummary.value, documentJobModeTranslationMode(option.mode)),
 })));
 const firstUnavailableModeOption = computed(() =>
   selectableModeOptions.value.find((option) => option.disabled),
 );
 const selectedModeRequiresTranslationResources = computed(() => documentJobModeRequiresTranslationResources(mode.value));
 const selectedModeDisabled = computed(() =>
-  selectedModeRequiresTranslationResources.value && !isTranslationModeAvailable(selectedTranslationMode.value),
+  selectedModeRequiresTranslationResources.value
+  && !isTranslationModeAvailable(configSummary.value, selectedTranslationMode.value),
 );
 const createDisabled = computed(() => (
   !selectedFile.value || configLoading.value || configUnavailable.value || p0ExecutionBlocked.value || selectedModeDisabled.value
@@ -433,19 +435,6 @@ watch(selectedModeDisabled, (disabled) => {
 onMounted(() => {
   void loadConfigSummary();
 });
-
-function isTranslationModeAvailable(translationMode: string): boolean {
-  if (translationMode === "direct") {
-    return true;
-  }
-  const readiness = configSummary.value?.readiness;
-  if (!readiness) {
-    return false;
-  }
-  return readiness.translation_modes?.[translationMode] ?? (
-    translationMode === "en2zh" ? readiness.en2zh_available : readiness.ru2zh_available
-  );
-}
 
 function filterConfigOptionsByLanguagePair<T extends { summary?: Record<string, unknown> }>(
   options: T[],
