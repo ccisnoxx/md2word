@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "后端规范索引，确认转换渲染任务适用的项目约束。"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "实现阶段遵守后端质量与测试入口；当前规范占位，仍需结合 AGENTS.md。"}
+{"file": ".trellis/tasks/08-18-fix-layout-formula-image-caption/research/sc2167-analysis.md", "reason": "包含样本事实、根因、代码锚点与最小修复边界。"}
+{"file": ".trellis/tasks/08-18-fix-layout-formula-image-caption/research/caption-reassociation.md", "reason": "图注错配的严格重配守卫、SC2167 block 映射与 converter owner。"}
+{"file": ".trellis/tasks/08-18-fix-layout-formula-image-caption/research/omml-extended-tex.md", "reason": "六类真实公式输入、最小 OMML 映射和共用文本路径。"}
+{"file": ".trellis/tasks/08-18-fix-layout-formula-image-caption/research/blank-pages-word.md", "reason": "空续表与物理页硬分页根因、跨渲染器空白页验收口径。"}
+{"file": ".trellis/tasks/08-18-fix-layout-formula-image-caption/research/configurable-footer.md", "reason": "页脚配置单一 schema、前后端数据流和原生 ptab 结构。"}
+{"file": ".trellis/tasks/08-18-fix-layout-formula-image-caption/research/final-promotional-page-filter.md", "reason": "末页推广封底的 MinerU 信号、正式与兼容边界、全量守卫、误删风险和正负验收用例。"}
