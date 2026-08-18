@@ -739,3 +739,37 @@ Released commit b167e61 to hostdzire via release dir flow; verified internal/pub
 ### Next Steps
 
 - None - task complete
+
+
+## Session 23: 固化 Word 生成规则
+
+**Date**: 2026-08-18
+**Task**: 固化 Word 生成规则
+**Branch**: `main`
+
+### Summary
+
+建立正式 MinerU→DocumentIR→Word 权威规范，归档 39 条规则、冲突与回归矩阵、legacy 非权威差异和当前产品缺口；未修改产品代码。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ffc0404e` | (see git log) |
+| `e2e46183` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
