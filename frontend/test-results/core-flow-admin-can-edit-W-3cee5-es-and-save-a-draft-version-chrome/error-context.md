@@ -1,0 +1,124 @@
+# Page snapshot
+
+```yaml
+- link "跳到主内容":
+  - /url: "#app-main-content"
+- complementary "主导航":
+  - link "md2word 运营工作台":
+    - /url: /cockpit
+    - strong: md2word
+    - text: 运营工作台
+  - button "收起侧边栏":
+    - img
+  - navigation "工作流导航":
+    - button "处理队列" [expanded]
+    - link "今日工作":
+      - /url: /cockpit
+    - link "任务工作台":
+      - /url: /jobs
+    - link "异常处理":
+      - /url: /incidents
+    - link "创建任务":
+      - /url: /jobs/new
+    - button "质量治理" [expanded]
+    - link "翻译 QA":
+      - /url: /translation-qa
+    - link "术语建议":
+      - /url: /term-proposals
+    - link "翻译术语集":
+      - /url: /settings/translation-term-sets
+    - link "术语规则":
+      - /url: /settings/term-rules
+    - link "术语发布":
+      - /url: /settings/terminology-releases
+    - button "配置发布" [expanded]
+    - link "配置中心":
+      - /url: /settings
+    - link "Word 模板":
+      - /url: /settings/templates
+    - link "页面样式":
+      - /url: /settings/word-page-styles
+    - link "翻译配置":
+      - /url: /settings/translation-profiles
+    - button "系统运维" [expanded]
+    - link "系统状态":
+      - /url: /system-status
+    - link "审计日志":
+      - /url: /system-status/audit-events
+    - link "文件保留":
+      - /url: /system-status/file-retention
+    - link "运维看板":
+      - /url: /system-status/ops-dashboard
+    - link "验收中心":
+      - /url: /system-status/acceptance
+- banner:
+  - text: 配置发布
+  - strong: 页面样式详情
+  - navigation "面包屑":
+    - link "配置中心"
+    - text: /
+    - link "Word 页面样式配置"
+    - text: /
+    - link "default"
+  - button "打开命令面板":
+    - img
+    - text: 搜索 Cmd/Ctrl+K
+  - button "当前：跟随系统主题。点击切换主题。":
+    - img
+  - text: Admin admin
+  - button "修改密码":
+    - img
+    - text: 修改密码
+  - button "退出":
+    - img
+    - text: 退出
+- main:
+  - main "Word 页面样式配置":
+    - region "Word 页面样式配置":
+      - paragraph: Word 页面样式配置
+      - heading "Word 页面样式配置" [level=1]
+      - paragraph: 数据手册模板：维护后续 Word 生成时应用的页面排版样式。
+      - combobox "选择模板"
+      - text: 数据手册模板（默认）
+      - img
+      - combobox "选择模板版本"
+      - text: v1 · 已发布（默认）
+      - img
+      - button "模板文档":
+        - img
+        - text: 模板文档
+      - button "刷新":
+        - img
+        - text: 刷新
+      - button "撤销" [disabled]
+      - button "保存为草稿版本" [disabled]
+    - alert:
+      - img
+      - text: 请求失败，请稍后重试。
+      - paragraph:
+        - text: 状态码 500
+        - button "复制诊断"
+    - region "样式配置状态":
+      - article:
+        - text: 模板
+        - strong: 数据手册模板
+        - text: 当前默认模板
+      - article:
+        - text: 当前版本
+        - strong: "-"
+        - text: 已发布版本
+      - article:
+        - text: 配置分组
+        - strong: "-"
+        - text: 按版式配置一级分类渲染
+      - article:
+        - text: 未保存
+        - strong: "0"
+        - text: 当前无未保存改动
+    - alert:
+      - img
+      - text: 公司 Logo、默认页眉内容和 DOCX 文件由 Word 模板文档维护；启用页脚覆盖后，可在这里配置左右静态文字和居中页码。
+    - alert:
+      - img
+      - text: 未加载到模板页面样式配置
+```

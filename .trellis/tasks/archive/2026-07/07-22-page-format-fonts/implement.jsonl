@@ -1,6 +1,0 @@
-{"file":".trellis/spec/backend/directory-structure.md","reason":"确认正式 DocumentIR renderer、legacy conversion 与共享 DOCX rules 的所有权边界。"}
-{"file":".trellis/spec/backend/quality-guidelines.md","reason":"确定配置 API 和两条 Word 渲染链的最小测试及本地验证边界。"}
-{"file":".trellis/spec/backend/template-layout-configuration.md","reason":"遵守页面样式三字体字段、旧配置补齐和四个 OOXML 字体槽位的跨层合同。"}
-{"file":".trellis/spec/frontend/index.md","reason":"确认配置中心前端构建门禁及 schema 驱动页面的现有规范。"}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"约束 YAML、API、通用表单、模型和 OOXML 的完整数据流合同。"}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"避免两条渲染链继续复制字体槽位映射和字段定义。"}

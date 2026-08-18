@@ -1,6 +1,0 @@
-{"file": ".trellis/spec/backend/directory-structure.md", "reason": "确认翻译领域、resources、Document Jobs 与测试的所有权边界。"}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "保持 DocumentIR provider 失败、API 校验和显式错误合同。"}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "按公共 API、DocumentIR 与 OpenAPI 契约选择实施验证。"}
-{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "扩展 Literal 时审计所有分支，并复用中央模式规格。"}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "覆盖前端、API、资源快照、翻译执行和渲染之间的数据流。"}
-{"file": ".trellis/spec/frontend/ui-quality-guidelines.md", "reason": "新增可见模式入口时保持既有交互和可访问性合同。"}

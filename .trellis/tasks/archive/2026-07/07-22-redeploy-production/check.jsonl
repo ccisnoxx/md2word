@@ -1,3 +1,0 @@
-{"file": ".trellis/spec/backend/template-layout-configuration.md", "reason": "复核唯一 schema、兼容语义和 OOXML 字体槽位"}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "复核测试范围和线上发布门禁"}
-{"file": ".trellis/tasks/07-22-redeploy-production/research/deployment-evidence.md", "reason": "复核目标版本、部署步骤和回滚证据"}

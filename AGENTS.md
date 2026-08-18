@@ -20,6 +20,7 @@ Managed by Trellis. Edits outside this block are preserved; edits inside may be 
 
 <!-- TRELLIS:END -->
 
+
 ## Project Overrides
 
 ### Language
@@ -41,21 +42,6 @@ Managed by Trellis. Edits outside this block are preserved; edits inside may be 
 - Once a Trellis task exists, read `prd.md`, `design.md`, `implement.md`, and the relevant `.trellis/spec/` files before writing code.
 - For complex tasks, do not implement until `prd.md`, `design.md`, and `implement.md` are reviewable.
 
-### Trellis And Ponytail
-
-- Trellis is the authoritative owner of task classification, planning gates, task artifacts, context loading, project Specs, verification requirements, Spec updates, commits, and finish-work.
-- Outside an active Trellis task, follow the global and project `AGENTS.md` rules; Ponytail may constrain implementation choices but must not expand the requested scope.
-- When a Trellis task exists, its `prd.md`, `design.md`, `implement.md`, and relevant `.trellis/spec/` files override generic Ponytail minimization advice.
-- Ponytail governs implementation choices only after the scope and acceptance criteria are authorized. Prefer existing code, the standard library, native platform capabilities, installed dependencies, and then the minimum new code.
-- Required Trellis artifacts, project documentation, and Spec-defined checks are not optional boilerplate and must not be removed or weakened by Ponytail.
-- Ponytail may propose reducing scope, but implementation of the reduced scope must wait until the PRD and acceptance criteria are updated and confirmed.
-- Minimal code must not weaken correctness, security, data integrity, accessibility, public contracts, error handling, or explicit requirements.
-- Ponytail's minimum runnable check is a validation floor, not a replacement for tests, type checks, builds, smoke checks, or online validation required by `implement.md` or project Specs.
-- Project Specs override generic Ponytail advice when they establish a shared owner, reuse boundary, public contract, state model, or necessary abstraction.
-- `trellis-check` owns correctness, security, contract, and regression review. `ponytail-review` supplements it by identifying unnecessary complexity and does not replace it.
-- Ponytail's brevity guidance must not omit required reporting of changed scope, validation results, documentation status, or residual risk.
-- Ponytail `ultra` requires explicit user activation and is not the project default.
-
 ### Engineering Constraints
 
 - Confirm the real implementation before editing. Do not add guessed compatibility fallbacks or silent defaults.
@@ -67,14 +53,40 @@ Managed by Trellis. Edits outside this block are preserved; edits inside may be 
 
 ### Validation
 
-- After code changes, run the smallest effective validation.
-- For Trellis tasks, validate according to `implement.md` and the relevant spec quality gates.
+- After code changes, select the highest-value validation for the affected behavior and risk; do not treat every available check as a required sequence.
+- For Trellis tasks, `implement.md` must separate required validation from optional full-suite validation and list the exact commands for each. Relevant spec quality gates remain authoritative.
+- Required validation should directly cover the changed behavior or boundary. Full backend or frontend suites, complete builds, E2E runs, and other repository-wide checks are optional unless the change affects shared contracts, database behavior, permissions, state transitions, core common modules, release readiness, or the user explicitly requests them.
+- Apply the global failure-attribution and repair-loop rules to every failed check. An optional full-suite failure does not become part of the current task unless evidence ties it to the current change and requested scope.
 - If heavier checks are skipped, state the reason, the substitute checks, and the remaining risk.
+
+### Browser Automation
+
+- Use the project-installed `playwright-cli` skill for temporary interactive browser diagnostics.
+- When an existing Playwright test covers the requested behavior, use the Playwright Test Runner instead of creating an ad hoc `playwright-cli` flow.
+- Use `playwright-cli` only for temporary browser workflows that require interactive inspection or human/agent judgment.
+- Every task must use its own explicitly named `playwright-cli` session; never use the `default` session.
+- Before the final reply, close every `playwright-cli` session created by the current task and verify that none remains open.
+- Do not run `playwright-cli close-all` or `playwright-cli kill-all` during ordinary tasks.
+- Use `playwright-cli kill-all` only for manual recovery after the user confirms that no other Playwright or browser-automation task is running.
+- Convert a verified CLI workflow into a Playwright test when it becomes repeatable or is needed as a regression check.
+- Use Chrome DevTools CLI only when Playwright does not cover the required diagnostic, such as Lighthouse, deep performance profiling, or heap snapshots.
+- Use `@Chrome` only when the user explicitly requests it or the interaction depends on browser state that Playwright cannot represent reliably.
 
 ### Git
 
+- The current development phase uses a single-branch workflow on `main`. Do not create `codex/*`, `agent/*`, `feature/*`, or other development branches unless the user explicitly requests one. Commit routine changes directly to `main` in the primary working directory.
+- Detached worktrees created automatically by the platform are for execution isolation only and are not delivery branches. After completion, commit the validated changes to `main` in the primary working directory; do not leave deliverables on a temporary branch or stale worktree.
+- Before starting new work, confirm that the primary working directory is on `main` and clean. If the remote must be synchronized, run `git pull --ff-only origin main` only from a clean working tree.
+- If the user explicitly approves a temporary branch, delete its local and remote copies after the work is complete and merged into `main` so that it does not become a second development line.
 - Do not run `git reset --hard`, `git checkout -- <file>`, history rewrites, or broad deletion unless the user explicitly requests and confirms it.
 - Before committing work code, present a commit plan and get user confirmation.
 - Do not include unrecognized dirty files in commits.
 - Do not push automatically.
 - Before running `task.py archive` or `add_session.py`, explain if it may create Trellis bookkeeping commits.
+
+### Documentation Maintenance
+
+- When functionality, business rules, permissions, data models, APIs, configuration, or deployment behavior changes, update the corresponding authoritative documentation in the same task.
+- Design documents must describe only the currently implemented or explicitly approved design. Remove or rewrite obsolete designs that conflict with the implementation, and preserve the decision history in archived Trellis tasks.
+- Avoid maintaining the same fact in multiple places: `contracts/openapi.yaml` is authoritative for APIs, `contracts/database.md` for the database, `.trellis/spec/` for stable development constraints, and design documents under `docs/` for relationships between the business and the system.
+- Before completing or archiving a task, verify that the code, contracts, tests, and design documents are consistent. If no documentation update is needed, state why in the closeout summary.

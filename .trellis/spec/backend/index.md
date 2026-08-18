@@ -1,54 +1,38 @@
 # Backend Development Guidelines
 
-These guidelines describe the current `md2word` backend as it exists now. They are based on the repository's FastAPI code, backend docs, tests, and release scripts, not on a target architecture.
+> Best practices for backend development in this project.
 
-Primary evidence:
+---
 
-- `README.md`
-- `docs/dev/backend-local-setup-and-architecture.md`
-- `docs/runbooks/backend.md`
-- `docs/dev/runtime-observability-and-health.md`
-- `app/main.py`
-- `app/core/config.py`
-- `app/core/runtime.py`
-- `app/api/errors.py`
-- `app/infrastructure/persistence/factory.py`
-- `tests/test_fastapi_jobs_backend.py`
-- `scripts/ops/check_release.py`
+## Overview
 
-## Pre-Development Checklist
+This directory contains guidelines for backend development. Fill in each file with your project's specific conventions.
 
-Before backend changes:
-
-1. Read [Directory Structure](./directory-structure.md) for ownership boundaries and where files belong.
-2. Read [Error Handling](./error-handling.md) for API/service exception behavior.
-3. Read [Quality Guidelines](./quality-guidelines.md) for tests and release checks.
-4. If the change touches metadata, repositories, stage messages, schema bootstrap, or artifact storage, read [Database Guidelines](./database-guidelines.md).
-5. If the change emits logs, affects health/metrics, workers, callbacks, or long-running jobs, read [Logging Guidelines](./logging-guidelines.md).
-6. 修改 MinerU 账号与密钥、运行时配置文件或环境变量优先级时，阅读 [Runtime Configuration](./runtime-configuration.md)。
-7. 修改 Word 模板样式 schema、版本 API、默认指针、draft 验证权限或多文种字体槽位时，阅读 [Word 模板样式配置合同](./template-layout-configuration.md)。
-
-Also read `.trellis/spec/guides/index.md` and the relevant thinking guide when the change crosses API, service, repository, worker, or runtime boundaries.
+---
 
 ## Guidelines Index
 
-| Guide | What It Covers | Status |
-|---|---|---|
-| [Directory Structure](./directory-structure.md) | FastAPI composition root, domain layout, services, conversion, workers, resources, and tests | Current |
-| [Database Guidelines](./database-guidelines.md) | file/sqlite/MySQL metadata backends, schema bootstrap, adapter ports, payload storage, migration state | Current |
-| [Error Handling](./error-handling.md) | `ApiError`, unified API error responses, workflow errors, validation, trace IDs, bulk failures | Current |
-| [Logging Guidelines](./logging-guidelines.md) | `access` / `business` / `system` loggers, text/JSON format, trace/job context, sensitive data boundaries | Current |
-| [Runtime Configuration](./runtime-configuration.md) | MinerU 账号与密钥绑定、环境变量优先级、安全 API、审计和 Worker 即时生效合同 | Current |
-| [Word 模板样式配置合同](./template-layout-configuration.md) | Admin schema、版本治理、旧配置兼容和多文种 OOXML 字体槽位 | Current |
-| [Quality Guidelines](./quality-guidelines.md) | `unittest` style, targeted checks, release gate, OpenAPI contract checks, local vs online validation | Current |
+| Guide | Description | Status |
+|-------|-------------|--------|
+| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
+| [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
+| [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
+| [Quality Guidelines](./quality-guidelines.md) | DOCX 原生结构与渲染验收约束 | Partial |
+| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
 
-## Quality Check
+---
 
-Use the smallest check that covers the touched behavior first. Current project-level evidence points to these commands:
+## How to Fill These Guidelines
 
-```bash
-.venv/bin/python -m unittest <specific-test-targets>
-.venv/bin/python scripts/ops/check_release.py
-```
+For each guideline file:
 
-`README.md` and `docs/runbooks/backend.md` state that local changes should not start frontend, backend, MySQL, Redis/Celery, workers, or Playwright smoke for P0 release evidence. Full API, worker, database, MinerU, and Golden Sample evidence is collected on hostdzire through the online-first workflow.
+1. Document your project's **actual conventions** (not ideals)
+2. Include **code examples** from your codebase
+3. List **forbidden patterns** and why
+4. Add **common mistakes** your team has made
+
+The goal is to help AI assistants and new team members understand how YOUR project works.
+
+---
+
+**Language**: All documentation should be written in **English**.

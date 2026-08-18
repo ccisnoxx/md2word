@@ -1,3 +1,0 @@
-{"file": ".trellis/spec/backend/template-layout-configuration.md", "reason": "整合严格模板版本治理与多文种字体配置合同"}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "确定定向测试、前端构建与 release check 门禁"}
-{"file": ".trellis/tasks/07-22-redeploy-production/research/deployment-evidence.md", "reason": "提供分支冲突、部署拓扑、前端发布和回滚证据"}
