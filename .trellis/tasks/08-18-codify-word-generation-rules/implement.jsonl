@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "定义正式 MinerU→DocumentIR→Word 调试入口和产品代码归属边界。"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "规则规范需要完整追踪 MinerU→DocumentIR→layout→renderer→DOCX 的跨层所有权和冲突。"}
+{"file": ".trellis/tasks/08-18-codify-word-generation-rules/research/rule-source-audit.md", "reason": "汇总正式 owner、历史取代关系、冲突域、样本证据和当前缺口。"}
