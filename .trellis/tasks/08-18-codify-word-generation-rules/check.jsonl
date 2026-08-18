@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "检查主规则只约束正式 DocumentIR renderer 链路，没有把 legacy runtime 当成权威。"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查规则的输入、owner、消费者和验证证据是否跨层闭环。"}
+{"file": ".trellis/tasks/08-18-codify-word-generation-rules/research/rule-source-audit.md", "reason": "核对正式链路、历史非权威边界、冲突矩阵和样本状态没有被误写。"}
+{"file": ".trellis/spec/backend/word-generation-rules.md", "reason": "检查权威规则的状态、owner、冲突、证据矩阵和 legacy 非权威附录。"}
