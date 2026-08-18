@@ -7,6 +7,7 @@
 - 触发：修改 `template-config/v1`、页面样式字段、样式编辑 API、Template Version 默认指针、DOCX/YAML 绑定、验证任务权限或 Word 字体槽位。
 - 唯一结构 owner：`app/domains/templates/layout_config_schema.py`；renderer、管理 API 和前端表单不得各自维护字段集合或兼容规则。
 - 唯一 OOXML 字体写入 owner：`app/conversion/docx_rules/run_fonts.py`；正式 DocumentIR 和 legacy conversion 必须共同调用。
+- 模板配置进入正式 DOCX 后与源页面、分栏、分页、页眉页脚发生冲突时，以 [Word 生成规则](./word-generation-rules.md) 为输出行为权威；本文继续只拥有 API、schema、版本和字体字段合同。
 
 ### 2. Signatures
 
