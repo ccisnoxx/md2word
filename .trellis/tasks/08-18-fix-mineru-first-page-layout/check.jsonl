@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "复核原生分栏、页面方向、分页和视觉验收约束。"}
+{"file": ".trellis/tasks/08-18-fix-mineru-first-page-layout/research/cm4112-first-page-diagnosis.md", "reason": "按真实样本证据核对四项缺陷是否闭环且无样本特例。"}
+{"file": ".trellis/tasks/08-18-fix-mineru-first-page-layout/research/cm4112-pagination-formula-regression.md", "reason": "复核分页修复不恢复空白页，并按真实语料与支持矩阵检查 OMML 覆盖和失败合同。"}
