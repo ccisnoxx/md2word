@@ -101,6 +101,34 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertEqual([block.text for block in plan.pages[0].regions[1].blocks], ["Wide callout"])
         self.assertEqual([block.text for block in plan.pages[0].regions[2].blocks], ["Left B", "Right B"])
 
+    def test_build_layout_plan_keeps_single_column_gap_between_real_two_column_bands(self) -> None:
+        def block(block_id: str, text: str, bbox: tuple[float, float, float, float], hint: str) -> DocumentIRBlock:
+            return DocumentIRBlock(
+                id=block_id,
+                type="paragraph",
+                order=len(text),
+                text=text,
+                layout=DocumentIRBlockLayout(page_index=0, bbox=bbox, role="body", column_hint=hint),
+            )
+
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="docjob_local_bands", source_file_id="file_local_bands", document_language="en"),
+            pages=[DocumentIRPage(index=0, width=400.0, height=600.0)],
+            blocks=[
+                block("upper_left", "Upper left", (0, 60, 170, 120), "left"),
+                block("upper_right", "Upper right", (220, 65, 390, 125), "right"),
+                block("middle_left", "Middle only", (0, 170, 170, 230), "left"),
+                block("lower_left", "Lower left", (0, 310, 170, 400), "left"),
+                block("lower_right", "Lower right", (220, 315, 390, 400), "right"),
+            ],
+        )
+
+        plan = build_layout_plan(document)
+
+        self.assertEqual([region.kind for region in plan.pages[0].regions], ["two_col", "one_col", "two_col"])
+        self.assertEqual([block.text for block in plan.pages[0].regions[1].blocks], ["Middle only"])
+
     def test_renderer_evidence_summarizes_layout_and_docx_quality(self) -> None:
         document = DocumentIR(
             schema_version="document-ir/v2",
@@ -288,7 +316,80 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
 
         self.assertEqual(rendered.sections[-1].start_type, WD_SECTION_START.CONTINUOUS)
         self.assertNotIn('<w:br w:type="page"', xml)
+        self.assertIn("<w:pageBreakBefore/>", xml)
         self.assertTrue(any(paragraph.text == "Next source page" for paragraph in rendered.paragraphs))
+
+    def test_render_to_bytes_anchors_semantic_page_breaks_to_real_content(self) -> None:
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="docjob_semantic_pages", source_file_id="file_semantic_pages", document_language="zh"),
+            pages=[DocumentIRPage(index=index, width=400.0, height=600.0) for index in range(5)],
+            blocks=[
+                DocumentIRBlock(
+                    id="intro",
+                    type="paragraph",
+                    order=0,
+                    text="Intro",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(0, 60, 400, 100), role="body", column_hint="wide"),
+                ),
+                DocumentIRBlock(
+                    id="working_principle",
+                    type="heading",
+                    order=1,
+                    level=2,
+                    text="工作原理",
+                    layout=DocumentIRBlockLayout(page_index=1, bbox=(0, 60, 400, 100), role="body", column_hint="wide"),
+                ),
+                DocumentIRBlock(
+                    id="captioned_table",
+                    type="table",
+                    order=2,
+                    captions=["绝对最大额定值"],
+                    html="<table><tr><th>参数</th></tr><tr><td>值</td></tr></table>",
+                    layout=DocumentIRBlockLayout(page_index=2, bbox=(0, 80, 400, 180), role="body", column_hint="wide"),
+                ),
+                DocumentIRBlock(
+                    id="table_context",
+                    type="paragraph",
+                    order=3,
+                    text="默认测试条件：VS = ±18V、VCM = 0V、TA = 25°C。",
+                    metadata={"annotation_role": "table_context", "source_block_id": "context_table"},
+                    layout=DocumentIRBlockLayout(page_index=3, bbox=(0, 60, 400, 80), role="body", column_hint="wide"),
+                ),
+                DocumentIRBlock(
+                    id="context_table",
+                    type="table",
+                    order=4,
+                    html="<table><tr><th>参数</th></tr><tr><td>值</td></tr></table>",
+                    layout=DocumentIRBlockLayout(page_index=3, bbox=(0, 90, 400, 190), role="body", column_hint="wide"),
+                ),
+                DocumentIRBlock(
+                    id="flowing_page",
+                    type="paragraph",
+                    order=5,
+                    text="Natural continuation",
+                    layout=DocumentIRBlockLayout(page_index=4, bbox=(0, 60, 400, 100), role="body", column_hint="wide"),
+                ),
+            ],
+        )
+
+        content = DocumentIRWordRenderer().render_to_bytes(
+            document,
+            template_path=None,
+            config_path=None,
+            image_loader=lambda _asset: None,
+        )
+        rendered = Document(io.BytesIO(content))
+        xml = self._document_xml(content)
+        paragraphs = {paragraph.text: paragraph for paragraph in rendered.paragraphs if paragraph.text}
+
+        self.assertTrue(paragraphs["工作原理"].paragraph_format.page_break_before)
+        self.assertTrue(paragraphs["工作原理"].paragraph_format.keep_with_next)
+        self.assertTrue(paragraphs["绝对最大额定值"].paragraph_format.page_break_before)
+        self.assertTrue(paragraphs["默认测试条件：VS = ±18V、VCM = 0V、TA = 25°C。"].paragraph_format.page_break_before)
+        self.assertIsNone(paragraphs["Natural continuation"].paragraph_format.page_break_before)
+        self.assertEqual(xml.count("<w:pageBreakBefore/>"), 3)
+        self.assertNotIn('<w:br w:type="page"', xml)
 
     def test_render_to_bytes_keeps_continuous_restore_when_wide_content_follows_columns(self) -> None:
         document = self._make_v2_two_column_document()
@@ -758,6 +859,76 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertIn('w:vertAlign w:val="subscript"', xml)
         self.assertNotIn("&lt;/td&gt;", xml)
         for residue in (r"\overline", r"\mathbf", r"\bigotimes", r"\boxed", "_{DD}", "_{TRACK}"):
+            self.assertNotIn(residue, xml)
+        self.assertEqual(analyze_docx_quality_bytes(content)["latex_residue_count"], 0)
+
+    def test_render_to_bytes_preprocesses_cm4112_formulas_without_tex_residue(self) -> None:
+        fraction = r"\frac {\left(V _ {I N} - V _ {S}\right)}{R _ {S} + 5 0 0 \Omega} \leq 5 \mathrm{mA}"
+        total_delay = (
+            r"\mathrm{总} t _ {s} = \sqrt {\left(t _ {s , C M 7 5 0 1}\right) ^ {2} + "
+            r"\left(t _ {s , C M 4 1 1 X}\right) ^ {2}}"
+        )
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="docjob_cm4112_math", source_file_id="file_cm4112_math", document_language="zh"),
+            blocks=[
+                DocumentIRBlock(id="fraction", type="formula", order=0, latex=fraction),
+                DocumentIRBlock(id="delay", type="formula", order=1, latex=total_delay),
+            ],
+        )
+
+        content = DocumentIRWordRenderer().render_to_bytes(
+            document,
+            template_path=None,
+            config_path=None,
+            image_loader=lambda _asset: None,
+        )
+        xml = self._document_xml(content)
+        visible_text = self._document_text(content)
+
+        self.assertIn("<m:f>", xml)
+        self.assertIn("<m:rad>", xml)
+        self.assertIn('<m:degHide m:val="1"/>', xml)
+        self.assertGreaterEqual(xml.count("<m:sSub>"), 6)
+        self.assertGreaterEqual(xml.count("<m:sSup>"), 2)
+        for expected in ("≤", "Ω", "总", "CM7501", "CM411X"):
+            self.assertIn(expected, visible_text)
+        for residue in (r"\frac", r"\left", r"\right", r"\leq", "I N", "5 0 0", "C M 7 5 0 1"):
+            self.assertNotIn(residue, xml)
+        self.assertEqual(analyze_docx_quality_bytes(content)["latex_residue_count"], 0)
+
+    def test_render_to_bytes_supports_datasheet_tex_matrix_in_all_math_entries(self) -> None:
+        expression = (
+            r"\dfrac{\mathbf{V}_{I N}^{2}}{\sqrt[3]{\mathit{x}}} + "
+            r"\left(\boldsymbol{\Phi} \approx \varphi\right) + \text{总} + "
+            r"\pm + \mu + \circ + \times + \theta + \Omega + \Delta + \leq + \sim + \ldots + \rightarrow \tag{1}"
+        )
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="docjob_tex_matrix", source_file_id="file_tex_matrix", document_language="zh"),
+            blocks=[
+                DocumentIRBlock(id="formula", type="formula", order=0, latex=expression),
+                DocumentIRBlock(id="inline", type="paragraph", order=1, text=f"正文 ${expression}$"),
+                DocumentIRBlock(id="table", type="table", order=2, html=f"<table><tr><td>${expression}$</td></tr></table>"),
+            ],
+        )
+
+        content = DocumentIRWordRenderer().render_to_bytes(
+            document,
+            template_path=None,
+            config_path=None,
+            image_loader=lambda _asset: None,
+        )
+        xml = self._document_xml(content)
+        visible_text = self._document_text(content)
+
+        self.assertGreaterEqual(xml.count("<m:f>"), 3)
+        self.assertGreaterEqual(xml.count("<m:rad>"), 3)
+        self.assertGreaterEqual(xml.count("<m:deg>"), 3)
+        self.assertNotIn("<m:degHide", xml)
+        self.assertGreaterEqual(xml.count("<m:sSub>"), 3)
+        self.assertGreaterEqual(xml.count("<m:sSup>"), 3)
+        for expected in ("VIN", "Φ", "≈", "ϕ", "总", "±", "μ", "°", "×", "θ", "Ω", "Δ", "≤", "∼", "…", "→"):
+            self.assertIn(expected, visible_text)
+        for residue in (r"\dfrac", r"\sqrt", r"\left", r"\right", r"\boldsymbol", r"\tag"):
             self.assertNotIn(residue, xml)
         self.assertEqual(analyze_docx_quality_bytes(content)["latex_residue_count"], 0)
 

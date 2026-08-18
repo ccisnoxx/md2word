@@ -406,6 +406,9 @@ class TextRenderCharacterizationTests(unittest.TestCase):
             with self.subTest(raw=raw):
                 self.assertEqual(self.module.normalize_formula_text(raw), expected)
 
+    def test_normalize_formula_text_preserves_double_backslashes_outside_supported_tex(self):
+        self.assertEqual(self.module.normalize_formula_text(r"共享路径 \\server\datasheet"), r"共享路径 \\server\datasheet")
+
     def test_normalize_list_item_keeps_negative_temperature_text(self):
         self.assertEqual(self.module.normalize_list_item("• Low noise"), "Low noise")
         self.assertEqual(self.module.normalize_list_item("-40°C operation"), "-40°C operation")

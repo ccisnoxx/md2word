@@ -19,6 +19,7 @@ from app.conversion.docx_rules.mineru_content import (
     find_final_promotional_page,
     join_text_fragments,
     merge_footnote_fragments,
+    split_multiline_list_items,
     split_toc_like_lines,
 )
 from app.services.document_ir.layout_signals import (
@@ -242,6 +243,8 @@ class MinerUToDocumentIRService:
             return "formula"
         if source_type in {"list", "index"} or isinstance(raw_block.get("items"), list):
             return "list"
+        if split_multiline_list_items(self._raw_text_preserving_lines(raw_block)):
+            return "list"
         if split_toc_like_lines(self._raw_text_preserving_lines(raw_block)):
             return "list"
         return "paragraph"
@@ -352,7 +355,13 @@ class MinerUToDocumentIRService:
         return extract_first_html(raw_block)
 
     def _formula_text(self, raw_block: dict[str, Any]) -> str | None:
-        return self._first_text_from_keys(raw_block, ("latex", "text", "content"))
+        content = raw_block.get("content")
+        if isinstance(content, dict) and any(key in content for key in ("math_content", "math_type", "image_source")):
+            math_content = content.get("math_content")
+            if not isinstance(math_content, str):
+                return None
+            return math_content.strip() or None
+        return self._first_text_from_keys(raw_block, ("latex", "math_content", "equation_content", "text", "content"))
 
     def _list_items(self, raw_block: dict[str, Any]) -> list[str] | None:
         raw_items = raw_block.get("items", raw_block.get("list_items"))
@@ -367,7 +376,21 @@ class MinerUToDocumentIRService:
                         items.append(text)
             return items or None
 
-        toc_items = split_toc_like_lines(self._raw_text_preserving_lines(raw_block))
+        content = raw_block.get("content")
+        if isinstance(content, dict) and isinstance(content.get("list_items"), list):
+            items = [
+                join_text_fragments(item.get("item_content", []))
+                for item in content["list_items"]
+                if isinstance(item, dict) and isinstance(item.get("item_content"), list)
+            ]
+            return [item for item in items if item] or None
+
+        raw_text = self._raw_text_preserving_lines(raw_block)
+        multiline_items = split_multiline_list_items(raw_text)
+        if multiline_items:
+            return multiline_items
+
+        toc_items = split_toc_like_lines(raw_text)
         if toc_items:
             return toc_items
 
@@ -407,25 +430,38 @@ class MinerUToDocumentIRService:
         return None
 
     def _raw_text(self, raw_block: dict[str, Any]) -> str | None:
-        for key in ("text", "content"):
-            raw_value = raw_block.get(key)
-            if isinstance(raw_value, list) and all(isinstance(item, dict) for item in raw_value):
-                text = join_text_fragments(raw_value)
-            elif isinstance(raw_value, str):
-                text = clean_text(raw_value)
-            else:
-                texts = coerce_text_list(raw_value)
-                text = clean_text(" ".join(texts)) if texts else ""
-            if text:
-                return text
-        return None
+        text = clean_text(self._raw_text_preserving_lines(raw_block))
+        return text or None
 
     def _raw_text_preserving_lines(self, raw_block: dict[str, Any]) -> str:
         for key in ("text", "content"):
             raw_value = raw_block.get(key)
             if isinstance(raw_value, str):
                 return clean_markdown_document(raw_value)
-        return self._raw_text(raw_block) or ""
+            nodes = self._rich_text_nodes(raw_value)
+            if nodes is not None:
+                return join_text_fragments(nodes, clean=False)
+            texts = coerce_text_list(raw_value)
+            if texts:
+                return "\n".join(texts)
+        return ""
+
+    def _rich_text_nodes(self, raw_value: Any) -> list[dict[str, Any]] | None:
+        if isinstance(raw_value, list) and all(isinstance(item, dict) for item in raw_value):
+            return raw_value
+        if not isinstance(raw_value, dict):
+            return None
+        for field_name in (
+            "title_content",
+            "paragraph_content",
+            "page_header_content",
+            "page_footer_content",
+            "page_number_content",
+        ):
+            nodes = raw_value.get(field_name)
+            if isinstance(nodes, list) and all(isinstance(item, dict) for item in nodes):
+                return nodes
+        return None
 
     def _first_text_from_keys(self, raw_block: dict[str, Any], keys: tuple[str, ...]) -> str | None:
         for key in keys:

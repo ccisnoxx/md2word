@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from app.conversion.docx_rules.text_semantics import normalize_formula_text
+from app.conversion.docx_rules.text_semantics import is_list_item_text, normalize_formula_text
 
 
 DETAILS_BLOCK_RE = re.compile(r"<details\b[^>]*>.*?</details>", re.IGNORECASE | re.DOTALL)
@@ -59,11 +59,28 @@ def join_text_fragments(nodes: list[dict[str, Any]], *, clean: bool = True) -> s
         if node_type == "text":
             parts.append(str(node.get("content", "")))
         elif node_type in {"equation_inline", "inline_formula"} and isinstance(node.get("content"), str):
-            parts.append(f" {normalize_formula_text(node['content'])} ")
+            parts.append(f" ${node['content']}$ ")
         elif "content" in node and isinstance(node["content"], str):
             parts.append(node["content"])
     text = "".join(parts)
     return clean_text(text) if clean else text
+
+
+def split_multiline_list_items(text: str) -> list[str]:
+    """仅在首行有明确列表标记时拆分多行列表，并把无标记行保留为续行。"""
+
+    lines = [clean_text(line) for line in clean_markdown_document(text).splitlines()]
+    lines = [line for line in lines if line]
+    if len(lines) < 2 or not is_list_item_text(lines[0]):
+        return []
+
+    items: list[str] = []
+    for line in lines:
+        if is_list_item_text(line):
+            items.append(line)
+        else:
+            items[-1] = f"{items[-1]}\n{line}"
+    return items
 
 
 def split_toc_like_lines(text: str) -> list[str]:

@@ -79,9 +79,12 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
             previous_page_landscape = False
             for page_index, page in enumerate(layout_plan.pages):
                 page_landscape = self._layout_page_requires_landscape(page)
+                page_break_before_block_id = None
                 if page_index > 0:
                     if page_landscape != previous_page_landscape:
                         document.add_section(WD_SECTION_START.NEW_PAGE)
+                    else:
+                        page_break_before_block_id = self._semantic_page_break_block_id(page)
                 self._configure_layout_page_section(document, page, template_config, landscape=page_landscape)
                 self._render_layout_page(
                     document,
@@ -90,6 +93,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                     template_config,
                     image_loader,
                     render_context,
+                    page_break_before_block_id=page_break_before_block_id,
                 )
                 previous_page_landscape = page_landscape
 
@@ -324,10 +328,14 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         render_context: _RenderContext,
         *,
         page_width: float | None = None,
+        page_break_before: bool = False,
     ) -> None:
         if block.type == "heading":
             paragraph = document.add_paragraph()
             self._fill_heading_paragraph(paragraph, block.text or "", block.level, template_config)
+            paragraph.paragraph_format.keep_with_next = True
+            if page_break_before:
+                paragraph.paragraph_format.page_break_before = True
             return
         if block.type == "paragraph":
             text = block.text or ""
@@ -338,6 +346,8 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
             paragraph = document.add_paragraph()
             if block.metadata.get("annotation_role") == "table_context":
                 paragraph.paragraph_format.keep_with_next = True
+                if page_break_before:
+                    paragraph.paragraph_format.page_break_before = True
                 self._fill_table_context_paragraph(paragraph, text, template_config)
                 return
             self._fill_auto_list_or_paragraph(
@@ -372,6 +382,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                 template_config,
                 caption_bookmarks=render_context.caption_bookmarks,
                 reference_bookmarks=render_context.caption_bookmarks,
+                page_break_before=page_break_before,
             )
             return
         if block.type == "image":
@@ -393,6 +404,8 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         template_config: TemplateConfigPackage,
         image_loader: ImageContentLoader,
         render_context: _RenderContext,
+        *,
+        page_break_before_block_id: str | None = None,
     ) -> None:
         self._render_page_decorations(document, page, template_config)
         for region in page.regions:
@@ -404,7 +417,20 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                 image_loader,
                 render_context,
                 page_width=page.width,
+                page_break_before_block_id=page_break_before_block_id,
             )
+
+    def _semantic_page_break_block_id(self, page: LayoutPage) -> str | None:
+        first_block = next((block for region in page.regions for block in region.blocks), None)
+        if first_block is None:
+            return None
+        if first_block.type == "heading":
+            return first_block.id
+        if first_block.type == "table" and first_block.captions:
+            return first_block.id
+        if first_block.type == "paragraph" and first_block.metadata.get("annotation_role") == "table_context":
+            return first_block.id
+        return None
 
     def _render_page_decorations(
         self,
@@ -489,6 +515,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         render_context: _RenderContext,
         *,
         page_width: float | None = None,
+        page_break_before_block_id: str | None = None,
     ) -> None:
         if region.kind != "two_col":
             for block in region.blocks:
@@ -500,6 +527,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                     image_loader,
                     render_context,
                     page_width=page_width,
+                    page_break_before=block.id == page_break_before_block_id,
                 )
             return
 
@@ -531,6 +559,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                 image_loader,
                 render_context,
                 page_width=page_width,
+                page_break_before=block.id == page_break_before_block_id,
             )
         column_break = document.add_paragraph()
         column_break.add_run().add_break(WD_BREAK.COLUMN)
@@ -543,6 +572,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                 image_loader,
                 render_context,
                 page_width=page_width,
+                page_break_before=block.id == page_break_before_block_id,
             )
         one_column_section = document.add_section(WD_SECTION_START.CONTINUOUS)
         self._set_section_columns(one_column_section, 1)

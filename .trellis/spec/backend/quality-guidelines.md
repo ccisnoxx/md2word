@@ -51,6 +51,62 @@ Questions to answer:
 - 每个 published bundled seed 都必须有固定 SHA-256 回归；当前 `default@2` 的 `datasheet_template_v2.yaml` 固定为 `132d0bb76e71c807912031199e894dfc0e3d50bd7534180f8ceaba7a5fa20b4d`。发布门禁不得只锁定 v1 而遗漏当前默认版本。
 - hash 不匹配必须继续失败关闭；不得更新生产数据库 hash、放松读取校验或增加备用路径来掩盖 seed 被改写。
 
+## Scenario: MinerU v2 公式输入与 TeX 预处理
+
+### 1. Scope / Trigger
+
+- 修改 MinerU 公式提取、普通文本/内联公式归一化或 OMML 解析前预处理时，必须同时保护 v2 元数据边界和普通正文反斜杠。
+
+### 2. Signatures
+
+- `MinerUToDocumentIRService._formula_text(raw_block: dict[str, Any]) -> str | None`
+- `collapse_double_escaped_tex_commands(text: str) -> str`
+
+### 3. Contracts
+
+- v2 `equation_interline.content` 只接受非空字符串 `math_content` 作为公式正文；`math_type`、`image_source` 和其他元数据不得参与文本回退。
+- v2 形状存在但 `math_content` 缺失、为空或类型非法时返回 `None`，不得再递归扫描 `content`。
+- 双反斜杠只对 `GREEK_AND_TEXT_COMMANDS` 或 `STRUCTURAL_TEX_COMMANDS` 中已支持的 TeX 命令收敛；未知命令和普通 UNC 路径保持原字节语义。
+
+### 4. Validation & Error Matrix
+
+- `content.math_content` 为非空字符串 -> 去除首尾空白后进入 DocumentIR `latex`。
+- `content.math_content` 缺失、为空或非字符串 -> 返回 `None`，不从元数据推导正文。
+- `\\\\frac`、`\\\\Omega` 等已支持双转义命令 -> 收敛为单个 TeX 控制符后解析。
+- `\\\\server\\datasheet` 或未知双转义控制词 -> 原样保留。
+
+### 5. Good/Base/Bad Cases
+
+- Good：`{"math_content": "\\\\frac{1}{2}", "math_type": "latex"}` 只产生分式正文。
+- Base：legacy block 继续按顶层 `latex/math_content/equation_content/text/content` 明确字段回退。
+- Bad：把整个 v2 `content` 递归拼接成 `"\\frac{1}{2} latex images/a.png"`，或用任意字母控制词正则改写 UNC 路径。
+
+### 6. Tests Required
+
+- MinerU converter：断言合法 v2 `math_content` 精确保真，缺失/非法值不会生成 `latex`、`math_type` 或图片路径正文。
+- 文本归一化：同时覆盖已支持双转义 TeX 命令和 `\\\\server\\datasheet` 保真。
+- Renderer：公式 block、inline 和 HTML table cell 共享 OMML 入口，并断言未知/畸形输入仍可见且产生既有 LaTeX residue 质量证据。
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```python
+formula = collect_all_strings(raw_block["content"])
+text = re.sub(r"\\\\\\\\([A-Za-z]+)", r"\\\\\1", text)
+```
+
+#### Correct
+
+```python
+formula = content.get("math_content")
+if not isinstance(formula, str):
+    return None
+
+if command in GREEK_AND_TEXT_COMMANDS or command in STRUCTURAL_TEX_COMMANDS:
+    return f"\\\\{command}"
+```
+
 ## Scenario: 模板页脚左右静态文字
 
 ### 1. Scope / Trigger

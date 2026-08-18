@@ -14,6 +14,170 @@ from app.services.document_ir import MinerUToDocumentIRService
 
 
 class MinerUToDocumentIRLayoutTests(unittest.TestCase):
+    def test_convert_zip_prefers_v2_content_and_keeps_legacy_only_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            both_path = temp_path / "both.zip"
+            self._write_zip(
+                both_path,
+                blocks=[{"type": "text", "text": "legacy content", "page_idx": 0}],
+                v2_blocks=[
+                    [
+                        {
+                            "type": "paragraph",
+                            "content": {"paragraph_content": [{"type": "text", "content": "v2 content"}]},
+                            "bbox": [10, 10, 100, 30],
+                        }
+                    ]
+                ],
+                layout={"pdf_info": [{"page_idx": 0, "page_size": [200, 300]}]},
+            )
+            legacy_path = temp_path / "legacy.zip"
+            self._write_zip(
+                legacy_path,
+                blocks=[{"type": "text", "text": "legacy content", "page_idx": 0}],
+                layout={"pdf_info": [{"page_idx": 0, "page_size": [200, 300]}]},
+            )
+
+            both = MinerUToDocumentIRService().convert_zip(
+                both_path,
+                job_id="docjob_v2_priority",
+                source_file_id="file_v2_priority",
+                document_language="en",
+            )
+            legacy = MinerUToDocumentIRService().convert_zip(
+                legacy_path,
+                job_id="docjob_legacy_fallback",
+                source_file_id="file_legacy_fallback",
+                document_language="en",
+            )
+
+        self.assertEqual([block.text for block in both.document.blocks], ["v2 content"])
+        self.assertEqual([block.text for block in legacy.document.blocks], ["legacy content"])
+
+    def test_convert_zip_scales_physical_page_size_uniformly_to_cover_bbox(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "mineru.zip"
+            self._write_zip(
+                zip_path,
+                blocks=[{"type": "text", "text": "Portrait", "bbox": [0, 0, 942, 879], "page_idx": 0}],
+                layout={"pdf_info": [{"page_idx": 0, "page_size": [595, 841]}]},
+            )
+
+            result = MinerUToDocumentIRService().convert_zip(
+                zip_path,
+                job_id="docjob_scaled_portrait",
+                source_file_id="file_scaled_portrait",
+                document_language="en",
+            )
+
+        page = result.document.pages[0]
+        self.assertEqual(page.width, 942)
+        self.assertAlmostEqual(page.height, 841 * (942 / 595))
+        self.assertAlmostEqual(page.width / page.height, 595 / 841)
+        self.assertGreaterEqual(page.height, 879)
+        self.assertEqual(page.metadata["orientation"], "portrait")
+
+    def test_convert_zip_structures_v2_multiline_lists_and_preserves_math_sources(self) -> None:
+        fraction = r"\frac {\left(V _ {I N} - V _ {S}\right)}{R _ {S} + 5 0 0 \Omega} \leq 5 \mathrm{mA}"
+        total_delay = r"\mathrm{总} t _ {s} = \sqrt {\left(t _ {s , C M 7 5 0 1}\right) ^ {2}}"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "mineru.zip"
+            self._write_zip(
+                zip_path,
+                blocks=[],
+                v2_blocks=[
+                    [
+                        {
+                            "type": "paragraph",
+                            "content": {
+                                "paragraph_content": [
+                                    {"type": "text", "content": "- Low offset "},
+                                    {"type": "equation_inline", "content": r"12\mu \mathrm{V}"},
+                                    {"type": "text", "content": "\n- Low noise\n- Stable output"},
+                                ]
+                            },
+                            "bbox": [10, 20, 180, 90],
+                        },
+                        {
+                            "type": "paragraph",
+                            "content": {
+                                "paragraph_content": [
+                                    {"type": "text", "content": "■ Sensors\nThermocouple\nRTD"}
+                                ]
+                            },
+                            "bbox": [10, 100, 180, 150],
+                        },
+                        {
+                            "type": "paragraph",
+                            "content": {"paragraph_content": [{"type": "text", "content": "ordinary\nbody"}]},
+                            "bbox": [10, 160, 180, 190],
+                        },
+                        {
+                            "type": "paragraph",
+                            "content": {
+                                "paragraph_content": [
+                                    {"type": "text", "content": "Input "},
+                                    {"type": "equation_inline", "content": r"V _ {I N}"},
+                                    {"type": "text", "content": " stays visible"},
+                                ]
+                            },
+                            "bbox": [10, 200, 180, 230],
+                        },
+                        {
+                            "type": "list",
+                            "content": {
+                                "list_items": [
+                                    {
+                                        "item_content": [
+                                            {"type": "text", "content": "Limit "},
+                                            {"type": "equation_inline", "content": r"I _ {O U T}"},
+                                        ]
+                                    }
+                                ]
+                            },
+                            "bbox": [10, 232, 180, 238],
+                        },
+                        {
+                            "type": "equation_interline",
+                            "content": {"math_content": fraction, "math_type": "latex", "image_source": {"path": "images/a.png"}},
+                            "bbox": [10, 240, 180, 270],
+                        },
+                        {
+                            "type": "equation_interline",
+                            "content": {"math_content": total_delay, "math_type": "latex"},
+                            "bbox": [10, 280, 180, 310],
+                        },
+                        {
+                            "type": "equation_interline",
+                            "content": {"math_type": "latex", "image_source": {"path": "images/missing.png"}},
+                            "bbox": [10, 320, 180, 350],
+                        },
+                    ]
+                ],
+                layout={"pdf_info": [{"page_idx": 0, "page_size": [200, 400]}]},
+            )
+
+            result = MinerUToDocumentIRService().convert_zip(
+                zip_path,
+                job_id="docjob_v2_rich_text",
+                source_file_id="file_v2_rich_text",
+                document_language="en",
+            )
+
+        blocks = result.document.blocks
+        self.assertEqual(blocks[0].type, "list")
+        self.assertEqual(blocks[0].list_items, [r"- Low offset $12\mu \mathrm{V}$", "- Low noise", "- Stable output"])
+        self.assertEqual(blocks[1].list_items, ["■ Sensors\nThermocouple\nRTD"])
+        self.assertEqual(blocks[2].type, "paragraph")
+        self.assertEqual(blocks[2].text, "ordinary body")
+        self.assertEqual(blocks[3].text, r"Input $V _ {I N}$ stays visible")
+        self.assertEqual(blocks[4].list_items, [r"Limit $I _ {O U T}$"])
+        self.assertEqual(blocks[5].latex, fraction)
+        self.assertEqual(blocks[6].latex, total_delay)
+        self.assertIsNone(blocks[7].latex)
+        self.assertIsNone(blocks[7].text)
+
     def test_shared_final_promotional_page_rule_is_conservative(self) -> None:
         image = {"type": "image", "img_path": "images/qr.png", "bbox": [100, 100, 300, 300], "page_idx": 2}
         positive = [
@@ -506,11 +670,14 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
         zip_path: Path,
         *,
         blocks: list[Any],
+        v2_blocks: list[Any] | None = None,
         layout: dict | None,
         images: dict[str, bytes] | None = None,
     ) -> None:
         with zipfile.ZipFile(zip_path, "w") as archive:
             archive.writestr("content_list.json", json.dumps(blocks, ensure_ascii=False))
+            if v2_blocks is not None:
+                archive.writestr("nested/result_content_list_v2.json", json.dumps(v2_blocks, ensure_ascii=False))
             if layout is not None:
                 archive.writestr("layout.json", json.dumps(layout, ensure_ascii=False))
             for image_path, content in (images or {"images/chart.png": b"fake-image"}).items():

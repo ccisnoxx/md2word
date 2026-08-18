@@ -20,7 +20,7 @@ def extract_zip(zip_path: Path, target_dir: Path) -> None:
 
 
 def find_content_list(package_root: Path) -> Path:
-    """查找 MinerU content_list 文件，优先选择路径最短的候选。"""
+    """查找 MinerU content_list 文件，优先选择 v2，再按路径确定性排序。"""
 
     candidates = []
     for path in package_root.rglob("*.json"):
@@ -31,7 +31,10 @@ def find_content_list(package_root: Path) -> Path:
             candidates.append(path)
     if not candidates:
         raise FileNotFoundError("MinerU 结果包缺少 content_list_v2.json 或 content_list.json。")
-    return sorted(candidates, key=lambda item: (len(item.parts), item.as_posix()))[0]
+    return sorted(
+        candidates,
+        key=lambda item: (0 if item.name.endswith("content_list_v2.json") else 1, len(item.parts), item.as_posix()),
+    )[0]
 
 
 def load_content_blocks(content_list_path: Path) -> list[dict[str, Any]]:
