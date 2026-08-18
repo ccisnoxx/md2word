@@ -127,7 +127,9 @@ def _detect_two_col_bands(body_blocks: list[DocumentIRBlock], page_width: float)
         else:
             merged.append((top, bottom, label))
     interval_bands = [(top, bottom) for top, bottom, label in merged if label == "two_col"]
-    return _merge_bands([*interval_bands, *_detect_stable_two_col_bands(body_blocks, page_width)])
+    if interval_bands:
+        return _merge_bands(interval_bands)
+    return _merge_bands(_detect_stable_two_col_bands(body_blocks, page_width))
 
 
 def _classify_body_block(block: DocumentIRBlock, page_width: float) -> str:

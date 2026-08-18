@@ -38,10 +38,17 @@ class WordTableRendererMixin:
         *,
         caption_bookmarks: Any | None = None,
         reference_bookmarks: Any | None = None,
+        page_break_before: bool = False,
     ) -> None:
         table_html = self._prepare_table_html(block.html, template_config)
         table_model = parse_html_table(table_html)
-        self._render_table_captions(document, block, template_config, caption_bookmarks=caption_bookmarks)
+        self._render_table_captions(
+            document,
+            block,
+            template_config,
+            caption_bookmarks=caption_bookmarks,
+            page_break_before=page_break_before,
+        )
         if table_model is None or not table_model.rows or table_model.max_columns <= 0:
             paragraph = document.add_paragraph()
             self._fill_paragraph(
@@ -275,10 +282,13 @@ class WordTableRendererMixin:
         template_config: TemplateConfigPackage,
         *,
         caption_bookmarks: Any | None = None,
+        page_break_before: bool = False,
     ) -> None:
-        for text in self._unique_annotation_texts(block.captions):
+        for index, text in enumerate(self._unique_annotation_texts(block.captions)):
             paragraph = document.add_paragraph()
             paragraph.paragraph_format.keep_with_next = True
+            if page_break_before and index == 0:
+                paragraph.paragraph_format.page_break_before = True
             if is_table_context_annotation(text):
                 self._fill_table_context_paragraph(paragraph, text, template_config)
                 continue

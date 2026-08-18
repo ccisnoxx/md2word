@@ -15,7 +15,11 @@ from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 
 from app.conversion.docx_rules.run_fonts import apply_run_fonts
-from app.conversion.docx_rules.text_semantics import GREEK_AND_TEXT_COMMANDS, collapse_double_escaped_tex_commands
+from app.conversion.docx_rules.text_semantics import (
+    GREEK_AND_TEXT_COMMANDS,
+    collapse_double_escaped_tex_commands,
+    compact_math_token_runs,
+)
 from app.conversion.docx_rules.terminology import TerminologyReplacer
 from app.services.renderer.semantic_text import (
     infer_heading_level,
@@ -46,6 +50,7 @@ INLINE_MATH_RE = re.compile(r"\$(?P<dollar>[^$\n]+)\$|\\\((?P<paren>.*?)\\\)")
 TRAILING_MATH_BASE_RE = re.compile(
     r"(?is)(?P<prefix>.*?)(?P<base>(?:[A-Za-z0-9]+|<(?:sub|sup)>[A-Za-z0-9]+</(?:sub|sup)>)+)\s*$"
 )
+SPACED_FORMULA_ALNUM_RE = re.compile(r"\b(?:[A-Za-z0-9]\s+){1,}[A-Za-z0-9]\b")
 CaptionBookmarks = Mapping[tuple[str, int], tuple[str, int]]
 
 
@@ -57,7 +62,8 @@ class _OmmlParser:
         cleaned = re.sub(r"^<eq>\s*|\s*</eq>$", "", cleaned, flags=re.IGNORECASE)
         if cleaned.startswith(r"\(") and cleaned.endswith(r"\)"):
             cleaned = cleaned[2:-2]
-        self.source = cleaned.replace("$", "")
+        compacted = SPACED_FORMULA_ALNUM_RE.sub(lambda match: "".join(match.group(0).split()), cleaned.replace("$", ""))
+        self.source = compact_math_token_runs(compacted)
         self.position = 0
 
     def parse(self) -> Any | None:
@@ -130,7 +136,7 @@ class _OmmlParser:
         if not command:
             raise ValueError("TeX 命令为空")
         self._skip_spaces()
-        if command == "frac":
+        if command in {"frac", "dfrac", "tfrac"}:
             numerator = self._parse_required_group()
             self._skip_spaces()
             denominator = self._parse_required_group()
@@ -155,9 +161,18 @@ class _OmmlParser:
                 return wrapper
             return self._math_run(value)
         if command == "sqrt":
+            degree_children = self._parse_optional_bracket_group()
             group = self._parse_required_group()
             radical = OxmlElement("m:rad")
+            if not degree_children:
+                properties = OxmlElement("m:radPr")
+                degree_hidden = OxmlElement("m:degHide")
+                degree_hidden.set(qn("m:val"), "1")
+                properties.append(degree_hidden)
+                radical.append(properties)
             degree = OxmlElement("m:deg")
+            for child in degree_children:
+                degree.append(child)
             element = OxmlElement("m:e")
             for child in group:
                 element.append(child)
@@ -175,9 +190,9 @@ class _OmmlParser:
                 element.append(child)
             bar.extend((properties, element))
             return bar
-        if command == "mathbf":
+        if command in {"mathbf", "boldsymbol", "mathit"}:
             group = self._parse_required_group()
-            self._apply_math_style(group, "b")
+            self._apply_math_style(group, "i" if command == "mathit" else "b")
             if len(group) == 1:
                 return group[0]
             wrapper = OxmlElement("m:box")
@@ -194,6 +209,11 @@ class _OmmlParser:
                 element.append(child)
             border_box.append(element)
             return border_box
+        if command in {"left", "right"}:
+            return self._math_run("")
+        if command == "tag":
+            self._parse_required_group()
+            return self._math_run("")
         symbol = GREEK_AND_TEXT_COMMANDS.get(command)
         if symbol is None:
             raise ValueError(f"不支持的 TeX 命令: {command}")
@@ -205,6 +225,21 @@ class _OmmlParser:
             raise ValueError("缺少必需的 TeX 参数组")
         self.position += 1
         return self._parse_sequence(stop_at_brace=True)
+
+    def _parse_optional_bracket_group(self) -> list[Any]:
+        self._skip_spaces()
+        if self.position >= len(self.source) or self.source[self.position] != "[":
+            return []
+        end = self.source.find("]", self.position + 1)
+        if end < 0:
+            raise ValueError("根指数方括号未闭合")
+        parser = _OmmlParser(self.source[self.position + 1 : end])
+        children = parser._parse_sequence()
+        if parser.position != len(parser.source) or not children:
+            raise ValueError("根指数无效")
+        self.position = end + 1
+        self._skip_spaces()
+        return children
 
     def _parse_argument(self) -> list[Any]:
         self._skip_spaces()
@@ -505,7 +540,7 @@ class WordTextRendererMixin:
     ) -> bool:
         source = re.sub(r"^\s*<(?:td|th)\b[^>]*>", "", text, flags=re.IGNORECASE)
         source = re.sub(r"</(?:td|th)>\s*$", "", source, flags=re.IGNORECASE)
-        if r"\frac" in source:
+        if any(command in source for command in (r"\frac", r"\dfrac", r"\tfrac")):
             math = _OmmlParser(source).parse()
             if math is None:
                 return False

@@ -53,8 +53,17 @@ def build_pages(
     for page_index in sorted(page_indices):
         raw_size = page_sizes.get(page_index)
         max_width, max_height = bbox_extents.get(page_index, (None, None))
-        width = _max_optional(raw_size[0] if raw_size else None, max_width)
-        height = _max_optional(raw_size[1] if raw_size else None, max_height)
+        if raw_size is not None and raw_size[0] > 0 and raw_size[1] > 0:
+            scale = max(
+                1.0,
+                max_width / raw_size[0] if max_width is not None else 1.0,
+                max_height / raw_size[1] if max_height is not None else 1.0,
+            )
+            width = raw_size[0] * scale
+            height = raw_size[1] * scale
+        else:
+            width = max_width
+            height = max_height
         metadata: dict[str, Any] = {}
         if raw_size is not None:
             metadata["pdf_page_size"] = [raw_size[0], raw_size[1]]
@@ -316,11 +325,6 @@ def _bbox_extents_by_page(raw_blocks: list[dict[str, Any]]) -> dict[int, tuple[f
         current_width, current_height = extents.get(page_index, (0.0, 0.0))
         extents[page_index] = (max(current_width, bbox[2]), max(current_height, bbox[3]))
     return extents
-
-
-def _max_optional(left: float | None, right: float | None) -> float | None:
-    values = [value for value in (left, right) if value is not None]
-    return max(values) if values else None
 
 
 def _coerce_int(value: Any, *, fallback: int) -> int:

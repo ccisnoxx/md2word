@@ -14,9 +14,7 @@ TEXT_WRAPPER_START_RE = re.compile(r"\\(?:mathrm|mathsf|text)\s*\{")
 CONTROL_WORD_RE = re.compile(r"\\([A-Za-z]+)")
 SQRT_RE = re.compile(r"\\sqrt\s*\{([^{}]+)\}")
 OVERLINE_RE = re.compile(r"\\overline\s*\{([^{}]*)\}")
-DOUBLE_ESCAPED_TEX_COMMAND_RE = re.compile(
-    r"\\{2,}(?=(?:mathrm|mathsf|mathbf|text|sqrt|overline|boxed|bigotimes|Delta|delta|Theta|theta|mu|Omega|alpha|beta|gamma|lambda|rho|psi|phi|pm|times|circ|vee|to|max|min|typ|avg|rms|pk|pp)(?![A-Za-z]))"
-)
+DOUBLE_ESCAPED_TEX_COMMAND_RE = re.compile(r"\\{2,}(?P<command>[A-Za-z]+)")
 INLINE_TEX_RE = re.compile(r"\$(?P<dollar>[^$\n]+)\$|\\\((?P<paren>.*?)\\\)")
 SIMPLE_EXPR_RE = re.compile(
     r"(?P<base>[A-Za-zΑ-Ωα-ωΔΨθρμπμΩ]+[A-Za-z0-9Α-Ωα-ωΔΨθρμπμΩ]*)"
@@ -82,10 +80,33 @@ GREEK_AND_TEXT_COMMANDS = {
     "rho": "ρ",
     "psi": "ψ",
     "phi": "φ",
+    "varphi": "ϕ",
+    "Phi": "Φ",
     "pm": "±",
+    "mp": "∓",
     "times": "×",
+    "div": "÷",
+    "cdot": "·",
     "bigotimes": "⨂",
     "circ": "°",
+    "leq": "≤",
+    "le": "≤",
+    "geq": "≥",
+    "ge": "≥",
+    "neq": "≠",
+    "ne": "≠",
+    "approx": "≈",
+    "sim": "∼",
+    "equiv": "≡",
+    "infty": "∞",
+    "ldots": "…",
+    "cdots": "⋯",
+    "rightarrow": "→",
+    "leftarrow": "←",
+    "leftrightarrow": "↔",
+    "Rightarrow": "⇒",
+    "Leftarrow": "⇐",
+    "Leftrightarrow": "⇔",
     "vee": "V",
     "to": "to",
     "max": "max",
@@ -95,6 +116,23 @@ GREEK_AND_TEXT_COMMANDS = {
     "rms": "RMS",
     "pk": "pk",
     "pp": "pp",
+}
+STRUCTURAL_TEX_COMMANDS = {
+    "boldsymbol",
+    "boxed",
+    "dfrac",
+    "frac",
+    "left",
+    "mathbf",
+    "mathit",
+    "mathrm",
+    "mathsf",
+    "overline",
+    "right",
+    "sqrt",
+    "tag",
+    "text",
+    "tfrac",
 }
 
 
@@ -223,7 +261,13 @@ def compact_math_token_runs(text: str) -> str:
 
 
 def collapse_double_escaped_tex_commands(text: str) -> str:
-    return DOUBLE_ESCAPED_TEX_COMMAND_RE.sub(r"\\", text)
+    def replace(match: re.Match[str]) -> str:
+        command = match.group("command")
+        if command not in GREEK_AND_TEXT_COMMANDS and command not in STRUCTURAL_TEX_COMMANDS:
+            return match.group(0)
+        return f"\\{command}"
+
+    return DOUBLE_ESCAPED_TEX_COMMAND_RE.sub(replace, text)
 
 
 def unwrap_tex_text_wrappers(text: str) -> str:
