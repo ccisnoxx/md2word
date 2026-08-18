@@ -24,6 +24,7 @@ from app.conversion.runtime.page_repair_runtime import (
     merge_page_with_middle,
     repair_and_sort_pages,
 )
+from app.services.document_ir.layout_signals import find_final_source_page_index
 
 
 _RUNTIME_MODULE: Any | None = None
@@ -35,6 +36,7 @@ FOOTNOTE_START_RE = re.compile(
 )
 FOOTNOTE_LABEL_RE = re.compile(r"^\s*(?:notes?|注|备注|说明)\s*[:：]", re.IGNORECASE)
 INLINE_FORMULA_MARKUP_RE = re.compile(r"</?(?:sub|sup)>", re.IGNORECASE)
+is_empty_table_placeholder = _shared_mineru_content.is_empty_table_placeholder
 
 
 def bind_runtime(module: Any) -> None:
@@ -165,6 +167,9 @@ def load_content_pages(package_root: Path) -> tuple[list[Any], Path]:
     )
     if v2_path:
         raw_pages = json.loads(v2_path.read_text(encoding="utf-8"))
+        promotional_page_index = _find_final_promotional_v2_page(raw_pages, package_root)
+        if promotional_page_index is not None:
+            raw_pages = [page for page_index, page in enumerate(raw_pages) if page_index != promotional_page_index]
         return build_v2_pages_fn(raw_pages, package_root), v2_path
 
     legacy_path = find_first_file_fn(
@@ -174,9 +179,40 @@ def load_content_pages(package_root: Path) -> tuple[list[Any], Path]:
     )
     if legacy_path:
         raw_items = json.loads(legacy_path.read_text(encoding="utf-8"))
+        promotional_page_index = _shared_mineru_content.find_final_promotional_page(
+            raw_items,
+            final_page_index=find_final_source_page_index(raw_items, package_root),
+        )
+        if promotional_page_index is not None:
+            raw_items = [item for item in raw_items if _raw_page_index(item) != promotional_page_index]
         return build_legacy_pages_fn(raw_items, package_root), legacy_path
 
     raise FileNotFoundError(build_missing_content_list_message_fn(package_root))
+
+
+def _find_final_promotional_v2_page(raw_pages: list[Any], package_root: Path) -> int | None:
+    raw_blocks: list[dict[str, Any]] = []
+    for page_index, page in enumerate(raw_pages):
+        if not isinstance(page, list):
+            continue
+        for item in page:
+            if not isinstance(item, dict):
+                continue
+            copied = dict(item)
+            copied.setdefault("page_idx", page_index)
+            raw_blocks.append(copied)
+    return _shared_mineru_content.find_final_promotional_page(
+        raw_blocks,
+        final_page_index=find_final_source_page_index(raw_blocks, package_root),
+    )
+
+
+def _raw_page_index(raw_block: dict[str, Any]) -> int | None:
+    raw_page_index = raw_block.get("page_idx", raw_block.get("page_index"))
+    try:
+        return int(raw_page_index)
+    except (TypeError, ValueError):
+        return None
 
 
 def build_v2_pages(raw_pages: list[Any], package_root: Path) -> list[Any]:
@@ -522,32 +558,6 @@ def parse_visual_block(
     return block
 
 
-def is_empty_table_placeholder(
-    *,
-    block_type: str,
-    raw_asset_path: str | None,
-    image_path: Path | None,
-    captions: list[str],
-    html: str | None,
-    text_candidates: list[str],
-    bbox: tuple[float, float, float, float],
-) -> bool:
-    if block_type != "table":
-        return False
-    if html:
-        return False
-    if captions:
-        return False
-    if text_candidates:
-        return False
-
-    raw = (raw_asset_path or "").strip().lower()
-    if raw in {"images", "images/", "./images", "./images/"}:
-        return True
-
-    return image_path is not None and bbox[0] <= 130 and bbox[1] <= 100 and bbox[2] >= 860 and bbox[3] >= 880
-
-
 def normalize_visual_key(block_type: str) -> str:
     if block_type == "equation_interline":
         return "equation"
@@ -739,7 +749,7 @@ def collect_text_from_fields(payload: dict[str, Any], field_names: tuple[str, ..
 
 
 def merge_footnote_fragments(texts: list[str]) -> list[str]:
-    """Merge MinerU rich-text footnote fragments without collapsing independent notes."""
+    """合并 MinerU 富文本脚注片段，同时保留相互独立的脚注。"""
     merged: list[str] = []
     current = ""
     current_has_marker = False

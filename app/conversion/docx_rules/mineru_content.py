@@ -1,9 +1,9 @@
-"""Shared MinerU content extraction helpers for runtime and DocumentIR paths."""
+"""供兼容运行时与 DocumentIR 路径复用的 MinerU 内容抽取规则。"""
 
 from __future__ import annotations
 
-# File: app/conversion/docx_rules/mineru_content.py
-# Purpose: Normalize MinerU text, captions, footnotes, HTML, and asset paths without renderer dependencies.
+# 文件：app/conversion/docx_rules/mineru_content.py
+# 用途：在不依赖渲染器的前提下归一化 MinerU 文本、题注、表注、HTML 和资产路径。
 
 import re
 from pathlib import Path
@@ -20,10 +20,27 @@ FOOTNOTE_START_RE = re.compile(
 )
 FOOTNOTE_LABEL_RE = re.compile(r"^\s*(?:notes?|注|备注|说明)\s*[:：]", re.IGNORECASE)
 INLINE_FORMULA_MARKUP_RE = re.compile(r"</?(?:sub|sup)>", re.IGNORECASE)
+NUMBERED_HEADING_RE = re.compile(
+    r"^\s*(?:第\s*[一二三四五六七八九十百千万零〇0-9]+\s*[章节篇部]|"
+    r"(?:chapter|section|part)\s+\d+|\d+(?:[.．]\d+)*[、.．\s]+\S)",
+    re.IGNORECASE,
+)
+NUMBERED_CAPTION_RE = re.compile(r"^\s*(?:图|表|figure|table)\s*\d+", re.IGNORECASE)
+PROMOTIONAL_BODY_TEXT_LIMIT = 160
+PAGE_DECORATION_TYPES = {"header", "footer", "page_header", "page_footer", "page_number"}
+FORMULA_TYPES = {
+    "equation",
+    "formula",
+    "interline_equation",
+    "inline_equation",
+    "equation_inline",
+    "equation_interline",
+    "inline_formula",
+}
 
 
 def clean_markdown_document(text: str) -> str:
-    """Remove non-body details blocks while preserving useful markdown text."""
+    """删除非正文 details 块，同时保留有效 Markdown 文本。"""
 
     normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
     cleaned = DETAILS_BLOCK_RE.sub("", normalized)
@@ -111,8 +128,94 @@ def collect_text_from_fields(payload: dict[str, Any], field_names: tuple[str, ..
     return collected
 
 
+def find_final_promotional_page(
+    raw_blocks: list[dict[str, Any]],
+    *,
+    final_page_index: int | None = None,
+) -> int | None:
+    """只在证据完整且无实质内容时识别最后物理页的推广封底。"""
+
+    resolved_final_index = final_page_index
+    if resolved_final_index is None:
+        page_indices = [page_index for block in raw_blocks if (page_index := _raw_page_index(block)) is not None]
+        resolved_final_index = max(page_indices, default=None)
+    if resolved_final_index is None:
+        return None
+
+    page_blocks = [block for block in raw_blocks if _raw_page_index(block) == resolved_final_index]
+    body_blocks = [block for block in page_blocks if _source_type(block) not in PAGE_DECORATION_TYPES]
+    if not body_blocks or not _has_promotional_cta(_body_text(body_blocks)):
+        return None
+    if not any(
+        _source_type(block) in {"image", "figure"} and extract_first_asset_path(block)
+        for block in body_blocks
+    ):
+        return None
+    if _has_substantive_structure(body_blocks):
+        return None
+    return resolved_final_index
+
+
+def _has_promotional_cta(text: str) -> bool:
+    normalized = re.sub(r"\s+", "", text).lower()
+    scan = any(token in normalized for token in ("扫码", "扫描", "扫一扫"))
+    action = any(token in normalized for token in ("进入", "打开", "关注"))
+    return any(
+        (
+            "微信" in normalized and scan and action,
+            "小程序" in normalized and any(token in normalized for token in ("进入", "打开", "扫码")),
+            "长按" in normalized and "识别" in normalized and "二维码" in normalized,
+            "扫一扫" in normalized and any(token in normalized for token in ("进入", "打开")),
+        )
+    )
+
+
+def _has_substantive_structure(blocks: list[dict[str, Any]]) -> bool:
+    if len(re.sub(r"\s+", "", _body_text(blocks))) > PROMOTIONAL_BODY_TEXT_LIMIT:
+        return True
+
+    for block in blocks:
+        source_type = _source_type(block)
+        nested_types = {str(value).strip().lower() for value in find_values_by_key(block, "type")}
+        if source_type == "table" and extract_first_html(block):
+            return True
+        if source_type in FORMULA_TYPES or nested_types & FORMULA_TYPES:
+            return True
+        if source_type in {"list", "index"}:
+            return True
+
+        texts = coerce_text_list(block)
+        if (source_type in {"title", "heading"} or block.get("text_level") is not None) and any(
+            NUMBERED_HEADING_RE.match(text) for text in texts
+        ):
+            return True
+        captions = collect_text_from_fields(
+            block,
+            ("caption", "captions", "image_caption", "figure_caption", "table_caption", "chart_caption"),
+        )
+        if any(NUMBERED_CAPTION_RE.match(caption) for caption in captions):
+            return True
+    return False
+
+
+def _body_text(blocks: list[dict[str, Any]]) -> str:
+    return " ".join(text for block in blocks for text in coerce_text_list(block))
+
+
+def _source_type(block: dict[str, Any]) -> str:
+    return str(block.get("type") or block.get("block_type") or "").strip().lower()
+
+
+def _raw_page_index(block: dict[str, Any]) -> int | None:
+    raw_page_index = block.get("page_idx", block.get("page_index"))
+    try:
+        return int(raw_page_index)
+    except (TypeError, ValueError):
+        return None
+
+
 def merge_footnote_fragments(texts: list[str]) -> list[str]:
-    """Merge MinerU rich-text footnote fragments without collapsing independent notes."""
+    """合并 MinerU 富文本脚注片段，同时保留相互独立的脚注。"""
 
     merged: list[str] = []
     current = ""
@@ -279,3 +382,27 @@ def extract_first_html(node: Any) -> str | None:
             if html:
                 return html
     return None
+
+
+def is_empty_table_placeholder(
+    *,
+    block_type: str,
+    raw_asset_path: str | None,
+    image_path: Path | None,
+    captions: list[str],
+    html: str | None,
+    text_candidates: list[str],
+    bbox: tuple[float, float, float, float],
+) -> bool:
+    """识别 MinerU 用空表资产表示的续表占位块。"""
+
+    if block_type != "table" or html or captions or text_candidates:
+        return False
+
+    raw = (raw_asset_path or "").strip().lower()
+    if raw_asset_path is not None and not raw:
+        return True
+    if raw in {"images", "images/", "./images", "./images/"}:
+        return True
+
+    return image_path is not None and bbox[0] <= 130 and bbox[1] <= 100 and bbox[2] >= 860 and bbox[3] >= 880

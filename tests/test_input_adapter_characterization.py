@@ -138,6 +138,106 @@ class InputAdapterCharacterizationTests(__import__("unittest").TestCase):
         self.assertEqual(pages[0].blocks[0].type, "title")
         self.assertEqual(pages[0].blocks[0].text, "Legacy")
 
+    def test_load_content_pages_reuses_shared_final_promotional_page_rule(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            package_root = Path(temp_dir)
+            images_dir = package_root / "images"
+            images_dir.mkdir()
+            (images_dir / "qr.png").write_bytes(b"qr-image")
+            (package_root / "sample_content_list_v2.json").write_text(
+                json.dumps(
+                    [
+                        [
+                            {
+                                "type": "paragraph",
+                                "bbox": [0, 10, 20, 20],
+                                "content": {"paragraph_content": [{"type": "text", "content": "正文"}]},
+                            }
+                        ],
+                        [
+                            {
+                                "type": "paragraph",
+                                "bbox": [0, 10, 20, 20],
+                                "content": {
+                                    "paragraph_content": [
+                                        {"type": "text", "content": "微信扫码进入芯片助手小程序"}
+                                    ]
+                                },
+                            },
+                            {
+                                "type": "image",
+                                "bbox": [100, 100, 300, 300],
+                                "content": {"image_source": {"path": "images/qr.png"}},
+                            },
+                        ],
+                    ],
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (package_root / "layout.json").write_text(
+                json.dumps(
+                    {
+                        "pdf_info": [
+                            {"page_idx": 0, "page_size": [612, 792]},
+                            {"page_idx": 1, "page_size": [612, 792]},
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            pages, _source_path = self.module.load_content_pages(package_root)
+
+        self.assertEqual([page.page_idx for page in pages], [0])
+        self.assertEqual([block.text for block in pages[0].blocks], ["正文"])
+
+    def test_load_content_pages_reuses_final_promotional_page_rule_for_legacy(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            package_root = Path(temp_dir)
+            images_dir = package_root / "images"
+            images_dir.mkdir()
+            (images_dir / "qr.png").write_bytes(b"qr-image")
+            (package_root / "sample_content_list.json").write_text(
+                json.dumps(
+                    [
+                        {"type": "text", "text": "正文", "bbox": [0, 10, 20, 20], "page_idx": 0},
+                        {
+                            "type": "text",
+                            "text": "微信扫码进入芯片助手小程序",
+                            "bbox": [0, 10, 20, 20],
+                            "page_idx": 1,
+                        },
+                        {
+                            "type": "image",
+                            "img_path": "images/qr.png",
+                            "bbox": [100, 100, 300, 300],
+                            "page_idx": 1,
+                        },
+                    ],
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (package_root / "layout.json").write_text(
+                json.dumps(
+                    {
+                        "pdf_info": [
+                            {"page_idx": 0, "page_size": [612, 792]},
+                            {"page_idx": 1, "page_size": [612, 792]},
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            pages, _source_path = self.module.load_content_pages(package_root)
+
+        self.assertEqual([page.page_idx for page in pages], [0])
+        self.assertEqual([block.text for block in pages[0].blocks], ["正文"])
+
     def test_load_content_pages_error_points_to_nearby_mineru_output_directory(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)

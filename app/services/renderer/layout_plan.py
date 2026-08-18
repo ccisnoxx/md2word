@@ -151,8 +151,14 @@ def _detect_stable_two_col_bands(
     right_blocks = [block for block in body_blocks if _classify_body_block(block, page_width) == "right" and _bbox(block)]
     if len(left_blocks) < 2 or len(right_blocks) < 2:
         return []
-    top = min(_bbox(block)[1] for block in [*left_blocks, *right_blocks] if _bbox(block) is not None)
-    bottom = max(_bbox(block)[3] for block in [*left_blocks, *right_blocks] if _bbox(block) is not None)
+    top = max(
+        min(_bbox(block)[1] for block in blocks if _bbox(block) is not None)
+        for blocks in (left_blocks, right_blocks)
+    )
+    bottom = min(
+        max(_bbox(block)[3] for block in blocks if _bbox(block) is not None)
+        for blocks in (left_blocks, right_blocks)
+    )
     return [(top, bottom)] if bottom - top >= 120 else []
 
 

@@ -9765,9 +9765,9 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIn("<w:pStyle", document_xml[: document_xml.index("6.5 Thermal Information")])
         self.assertIn("<w:numPr>", document_xml)
         self.assertIn('w:val="bullet"', numbering_xml)
-        self.assertIn('w:val="subscript"', document_xml)
-        self.assertIn('w:val="superscript"', document_xml)
-        self.assertLess(document_xml.index("Table 1: Electrical Characteristics"), table_index)
+        self.assertIn("<m:sSub>", document_xml)
+        self.assertIn("<m:sSup>", document_xml)
+        self.assertLess(document_xml.index(" SEQ Table "), table_index)
         self.assertLess(table_index, document_xml.index("Note: E=mc"))
         self.assertIn("<w:keepNext/>", document_xml[:table_index])
         self.assertNotIn("• Low noise", document_xml)
@@ -11658,6 +11658,11 @@ class FastAPIJobsBackendTests(TestCase):
                                 "western_font_name": "Calibri",
                                 "complex_script_font_name": "Arial",
                             },
+                            "footer": {
+                                "enabled": True,
+                                "left_text": "V1.1",
+                                "right_text": "www.example.com",
+                            },
                         },
                         "change_note": "调整页面与正文字号",
                     },
@@ -11752,6 +11757,8 @@ class FastAPIJobsBackendTests(TestCase):
                     & set(read_payload["field_schema"]["groups"][group_name]),
                 )
             self.assertEqual(read_payload["field_schema"]["groups"]["normal"]["font_name"]["label"], "中文字体")
+            self.assertEqual(read_payload["field_schema"]["groups"]["footer"]["left_text"]["type"], "text")
+            self.assertEqual(read_payload["field_schema"]["groups"]["footer"]["right_text"]["type"], "text")
             self.assertEqual(config["heading1"]["western_font_name"], config["heading1"]["font_name"])
             self.assertEqual(config["heading1"]["complex_script_font_name"], config["heading1"]["font_name"])
             self.assertEqual(config["caption"]["western_font_name"], "")
@@ -11794,6 +11801,8 @@ class FastAPIJobsBackendTests(TestCase):
             self.assertEqual(active_read_response.status_code, 200)
             self.assertEqual(active_read_response.json()["template_version_id"], "default@2")
             self.assertEqual(active_read_response.json()["config"]["normal"]["font_size"], 11)
+            self.assertEqual(active_read_response.json()["config"]["footer"]["left_text"], "V1.1")
+            self.assertEqual(active_read_response.json()["config"]["footer"]["right_text"], "www.example.com")
             self.assertEqual(source_layout_path.read_text(encoding="utf-8"), original_source_text)
 
             record = runtime.resource_version_service.repository.get_resource_version("template", "default", "2")
@@ -11814,6 +11823,8 @@ class FastAPIJobsBackendTests(TestCase):
             self.assertEqual(written_config["caption"]["complex_script_font_name"], "")
             self.assertEqual(written_config["header"]["title_western_font_name"], written_config["header"]["title_font_name"])
             self.assertEqual(written_config["footer"]["western_font_name"], "")
+            self.assertEqual(written_config["footer"]["left_text"], "V1.1")
+            self.assertEqual(written_config["footer"]["right_text"], "www.example.com")
             self.assertEqual(written_config["page_setup"]["page_width_cm"], 21.0)
             self.assertIn("sample_content", written_config)
             self.assertEqual(record.payload["layout_config_sha256"], f"sha256:{hashlib.sha256(layout_path.read_bytes()).hexdigest()}")

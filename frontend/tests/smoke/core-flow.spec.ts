@@ -410,6 +410,8 @@ const templateLayoutConfig = {
     },
     footer: {
       enabled: false,
+      left_text: "",
+      right_text: "",
       show_page_number: true,
       font_name: "宋体",
       western_font_name: "Arial",
@@ -490,6 +492,8 @@ const templateLayoutConfig = {
       },
       footer: {
         enabled: { type: "boolean", label: "启用页脚覆盖" },
+        left_text: { type: "text", label: "页脚左侧文字" },
+        right_text: { type: "text", label: "页脚右侧文字" },
         show_page_number: { type: "boolean", label: "显示页码" },
         font_name: { type: "text", label: "页脚中文字体" },
         western_font_name: { type: "text", label: "页脚西文字体" },
@@ -2061,6 +2065,11 @@ test("admin can edit Word page styles and save a draft version", async ({ page }
   await expect(page.getByRole("combobox", { name: "选择模板版本" })).toBeVisible();
   await expect(page.getByLabel("Word 页面样式编辑器").getByText("Logo 路径")).not.toBeVisible();
   await expect(page.getByText("效果示意，最终以该 draft 的真实 Word 验证任务为准。")).toBeVisible();
+
+  await page.getByLabel("Word 页面样式编辑器").getByRole("button", { name: /^页眉页脚\s/ }).click();
+  await page.getByRole("tab", { name: /页脚/ }).click();
+  await expect(page.getByLabel("Word 页面样式编辑器").getByText("页脚左侧文字", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Word 页面样式编辑器").getByText("页脚右侧文字", { exact: true })).toBeVisible();
 
   await page.getByLabel("Word 页面样式编辑器").getByRole("button", { name: /^标题\s/ }).click();
   await page.getByRole("tab", { name: /一级标题/ }).click();
