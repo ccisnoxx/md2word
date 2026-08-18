@@ -22,6 +22,7 @@ RESOURCE_DIR = Path(__file__).resolve().parents[1] / "resources" / "template_con
 PUBLISHED_V1_PATH = RESOURCE_DIR / "datasheet_template.yaml"
 CURRENT_V2_PATH = RESOURCE_DIR / "datasheet_template_v2.yaml"
 PUBLISHED_V1_SHA256 = "1a9ce13488a491367fbfde8d143d22b6cf7c0ce064c99c224ae09ef93f5b3818"
+PUBLISHED_V2_SHA256 = "132d0bb76e71c807912031199e894dfc0e3d50bd7534180f8ceaba7a5fa20b4d"
 
 
 class TemplateLayoutConfigSchemaTests(TestCase):
@@ -93,6 +94,9 @@ class TemplateLayoutConfigSchemaTests(TestCase):
         self.assertEqual(package.footer.complex_script_font_name, "")
         self.assertEqual(package.footer.left_text, "")
         self.assertEqual(package.footer.right_text, "")
+
+    def test_published_v2_hash_is_immutable(self) -> None:
+        self.assertEqual(hashlib.sha256(CURRENT_V2_PATH.read_bytes()).hexdigest(), PUBLISHED_V2_SHA256)
 
     def test_footer_text_changes_use_shared_text_validation(self) -> None:
         updated = apply_layout_changes(
