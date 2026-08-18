@@ -27,6 +27,7 @@ Before backend changes:
 5. If the change emits logs, affects health/metrics, workers, callbacks, or long-running jobs, read [Logging Guidelines](./logging-guidelines.md).
 6. 修改 MinerU 账号与密钥、运行时配置文件或环境变量优先级时，阅读 [Runtime Configuration](./runtime-configuration.md)。
 7. 修改 Word 模板样式 schema、版本 API、默认指针、draft 验证权限或多文种字体槽位时，阅读 [Word 模板样式配置合同](./template-layout-configuration.md)。
+8. 修改 MinerU content list、DocumentIR、页面/分栏规划、Word renderer、DOCX 字段或输出质量门禁时，必须阅读 [Word 生成规则](./word-generation-rules.md)。
 
 Also read `.trellis/spec/guides/index.md` and the relevant thinking guide when the change crosses API, service, repository, worker, or runtime boundaries.
 
@@ -40,6 +41,7 @@ Also read `.trellis/spec/guides/index.md` and the relevant thinking guide when t
 | [Logging Guidelines](./logging-guidelines.md) | `access` / `business` / `system` loggers, text/JSON format, trace/job context, sensitive data boundaries | Current |
 | [Runtime Configuration](./runtime-configuration.md) | MinerU 账号与密钥绑定、环境变量优先级、安全 API、审计和 Worker 即时生效合同 | Current |
 | [Word 模板样式配置合同](./template-layout-configuration.md) | Admin schema、版本治理、旧配置兼容和多文种 OOXML 字体槽位 | Current |
+| [Word 生成规则](./word-generation-rules.md) | 正式 MinerU→DocumentIR→Word 输出行为、冲突优先级、回归证据和 legacy 差异 | Current |
 | [Quality Guidelines](./quality-guidelines.md) | `unittest` style, targeted checks, release gate, OpenAPI contract checks, local vs online validation | Current |
 
 ## Quality Check
