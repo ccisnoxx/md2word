@@ -237,8 +237,6 @@ header:
 # 页脚配置：默认保留模板文档自带页脚；显式启用后才允许渲染器覆盖。
 footer:
   enabled: false            # 是否启用渲染器页脚覆盖。
-  left_text: ''             # 左侧静态文字，例如版本号；非空时启用原生左/中/右页脚。
-  right_text: ''            # 右侧静态文字，例如官网域名；不会自动转换为超链接。
   show_page_number: true    # 是否显示页码。
   font_name: 宋体           # 页脚中文/东亚字体。
   western_font_name: Arial  # 页脚西文字体。
