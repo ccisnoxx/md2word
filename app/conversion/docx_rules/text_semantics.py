@@ -1,9 +1,9 @@
-"""Shared text, formula, heading, list, and TOC semantics for DOCX rendering."""
+"""集中维护 DOCX 渲染共用的文本、公式、标题、列表和目录语义。"""
 
 from __future__ import annotations
 
-# File: app/conversion/docx_rules/text_semantics.py
-# Purpose: Keep local runtime and formal DocumentIR renderer text semantics aligned.
+# 文件：app/conversion/docx_rules/text_semantics.py
+# 用途：保持本地运行时与正式 DocumentIR 渲染器的文本语义一致。
 
 import re
 from html import unescape
@@ -15,7 +15,7 @@ CONTROL_WORD_RE = re.compile(r"\\([A-Za-z]+)")
 SQRT_RE = re.compile(r"\\sqrt\s*\{([^{}]+)\}")
 OVERLINE_RE = re.compile(r"\\overline\s*\{([^{}]*)\}")
 DOUBLE_ESCAPED_TEX_COMMAND_RE = re.compile(
-    r"\\{2,}(?=(?:mathrm|mathsf|text|sqrt|overline|Delta|delta|Theta|theta|mu|Omega|alpha|beta|gamma|lambda|rho|psi|phi|pm|circ|vee|to|max|min|typ|avg|rms|pk|pp)\b)"
+    r"\\{2,}(?=(?:mathrm|mathsf|mathbf|text|sqrt|overline|boxed|bigotimes|Delta|delta|Theta|theta|mu|Omega|alpha|beta|gamma|lambda|rho|psi|phi|pm|times|circ|vee|to|max|min|typ|avg|rms|pk|pp)(?![A-Za-z]))"
 )
 INLINE_TEX_RE = re.compile(r"\$(?P<dollar>[^$\n]+)\$|\\\((?P<paren>.*?)\\\)")
 SIMPLE_EXPR_RE = re.compile(
@@ -83,6 +83,8 @@ GREEK_AND_TEXT_COMMANDS = {
     "psi": "ψ",
     "phi": "φ",
     "pm": "±",
+    "times": "×",
+    "bigotimes": "⨂",
     "circ": "°",
     "vee": "V",
     "to": "to",
@@ -97,7 +99,7 @@ GREEK_AND_TEXT_COMMANDS = {
 
 
 def normalize_formula_text(text: str) -> str:
-    """Convert common MinerU/TeX fragments to safe inline HTML-like markup."""
+    """把常见 MinerU/TeX 片段转换为安全的内联类 HTML 标记。"""
 
     if not text:
         return ""
@@ -316,8 +318,8 @@ def parse_toc_entry_text(text: str) -> tuple[str, str] | None:
     title, page, has_explicit_leader = parsed
     if not title or not page or len(title) > 120:
         return None
-    # Explicit dot leaders are the TOC signal for translated datasheet entries
-    # that no longer start with English numbering or Appendix/Table prefixes.
+    # 对于翻译后不再以英文编号或 Appendix/Table 前缀开头的数据手册条目，
+    # 显式点引导符是识别目录项的依据。
     if not has_explicit_leader and not TOC_ENTRY_RE.match(title):
         return None
     return title, page

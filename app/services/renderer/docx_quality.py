@@ -16,10 +16,11 @@ from app.conversion.docx_rules.text_semantics import parse_toc_entry_text
 EDITABLE_TEXT_MIN_CHARS = 20
 DOCX_XML_NS = {
     "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+    "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",
     "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
 }
 LATEX_RESIDUE_RE = re.compile(
-    r"(\$[^$]{1,160}\$|\\(?:sqrt|theta|mu|psi|circ|pm|Omega|alpha|beta|gamma|Delta|Sigma)\b|[_^]\{?\\?[A-Za-z0-9()+\-/]+\}?)"
+    r"(\$[^$]{1,160}\$|\\[A-Za-z]+\b|[_^]\{?\\?[A-Za-z0-9()+\-/]+\}?)"
 )
 MANUAL_LIST_MARKER_RE = re.compile(r"^\s*(?:[•■*]|[-–—])\s+")
 NUMBERED_HEADING_RE = re.compile(r"^(?:\d+(?:\.\d+){0,5})\s+\S")
@@ -211,7 +212,8 @@ def _int_value(value: Any) -> int:
 
 
 def _paragraph_text(paragraph: ElementTree.Element) -> str:
-    return "".join(text.text or "" for text in paragraph.findall(".//w:t", DOCX_XML_NS)).strip()
+    text_tags = {f"{{{DOCX_XML_NS['w']}}}t", f"{{{DOCX_XML_NS['m']}}}t"}
+    return "".join(element.text or "" for element in paragraph.iter() if element.tag in text_tags).strip()
 
 
 def _paragraph_style(paragraph: ElementTree.Element) -> str:

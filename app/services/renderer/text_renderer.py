@@ -2,16 +2,20 @@ from __future__ import annotations
 
 # app/services/renderer/text_renderer.py: 提供 DocumentIR Word 渲染器的段落与 run 样式 helper。
 
+import re
+from collections.abc import Mapping
 from typing import Any
 
 from bs4 import BeautifulSoup, NavigableString, Tag
 
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING, WD_TAB_ALIGNMENT, WD_TAB_LEADER
+from docx.enum.style import WD_STYLE_TYPE
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Cm, Pt, RGBColor
+from docx.shared import Pt, RGBColor
 
 from app.conversion.docx_rules.run_fonts import apply_run_fonts
+from app.conversion.docx_rules.text_semantics import GREEK_AND_TEXT_COMMANDS, collapse_double_escaped_tex_commands
 from app.conversion.docx_rules.terminology import TerminologyReplacer
 from app.services.renderer.semantic_text import (
     infer_heading_level,
@@ -27,6 +31,250 @@ from app.services.renderer.template_config import TemplateConfigPackage, Templat
 
 
 MD2WORD_RENDERER_BULLET_NUM_ID_ATTR = "_md2word_renderer_bullet_num_id"
+CAPTION_NUMBER_PATTERN = r"(?P<number>\d+)(?![A-Za-z0-9]|[.．]\d|[-–—][A-Za-z0-9])"
+CAPTION_RE = re.compile(
+    r"^(?P<prefix>\s*)(?P<label>图|表|Figure|Table)(?P<spacing>\s*)"
+    + CAPTION_NUMBER_PATTERN
+    + r"(?P<tail>.*)$",
+    re.IGNORECASE,
+)
+REFERENCE_RE = re.compile(
+    r"(?P<label>图|表|Figure|Table)(?P<spacing>\s*)" + CAPTION_NUMBER_PATTERN,
+    re.IGNORECASE,
+)
+INLINE_MATH_RE = re.compile(r"\$(?P<dollar>[^$\n]+)\$|\\\((?P<paren>.*?)\\\)")
+TRAILING_MATH_BASE_RE = re.compile(
+    r"(?is)(?P<prefix>.*?)(?P<base>(?:[A-Za-z0-9]+|<(?:sub|sup)>[A-Za-z0-9]+</(?:sub|sup)>)+)\s*$"
+)
+CaptionBookmarks = Mapping[tuple[str, int], tuple[str, int]]
+
+
+class _OmmlParser:
+    """把当前合同允许的 TeX 子集直接构造成可编辑 OMML。"""
+
+    def __init__(self, source: str) -> None:
+        cleaned = collapse_double_escaped_tex_commands(source.strip())
+        cleaned = re.sub(r"^<eq>\s*|\s*</eq>$", "", cleaned, flags=re.IGNORECASE)
+        if cleaned.startswith(r"\(") and cleaned.endswith(r"\)"):
+            cleaned = cleaned[2:-2]
+        self.source = cleaned.replace("$", "")
+        self.position = 0
+
+    def parse(self) -> Any | None:
+        try:
+            children = self._parse_sequence()
+            if self.position != len(self.source) or not children:
+                return None
+        except ValueError:
+            return None
+        math = OxmlElement("m:oMath")
+        for child in children:
+            math.append(child)
+        return math
+
+    def _parse_sequence(self, *, stop_at_brace: bool = False) -> list[Any]:
+        children: list[Any] = []
+        text: list[str] = []
+
+        def flush_text() -> None:
+            if text:
+                children.append(self._math_run("".join(text)))
+                text.clear()
+
+        while self.position < len(self.source):
+            char = self.source[self.position]
+            if char.isspace():
+                next_position = self.position
+                while next_position < len(self.source) and self.source[next_position].isspace():
+                    next_position += 1
+                if next_position < len(self.source) and self.source[next_position] in {"^", "_"}:
+                    self.position = next_position
+                    continue
+            if char == "}":
+                if not stop_at_brace:
+                    raise ValueError("出现意外的右花括号")
+                flush_text()
+                self.position += 1
+                return children
+            if char == "{":
+                flush_text()
+                self.position += 1
+                children.extend(self._parse_sequence(stop_at_brace=True))
+                continue
+            if char == "\\":
+                flush_text()
+                children.append(self._parse_command())
+                continue
+            if char in {"^", "_"}:
+                flush_text()
+                if not children:
+                    raise ValueError("上下标缺少基底")
+                self.position += 1
+                argument = self._parse_argument()
+                children.append(self._script(char, children.pop(), argument))
+                continue
+            text.append(char)
+            self.position += 1
+
+        if stop_at_brace:
+            raise ValueError("花括号未闭合")
+        flush_text()
+        return children
+
+    def _parse_command(self) -> Any:
+        self.position += 1
+        start = self.position
+        while self.position < len(self.source) and self.source[self.position].isalpha():
+            self.position += 1
+        command = self.source[start : self.position]
+        if not command:
+            raise ValueError("TeX 命令为空")
+        self._skip_spaces()
+        if command == "frac":
+            numerator = self._parse_required_group()
+            self._skip_spaces()
+            denominator = self._parse_required_group()
+            fraction = OxmlElement("m:f")
+            num = OxmlElement("m:num")
+            den = OxmlElement("m:den")
+            for child in numerator:
+                num.append(child)
+            for child in denominator:
+                den.append(child)
+            fraction.extend((num, den))
+            return fraction
+        if command in {"mathrm", "mathsf", "text"}:
+            group = self._parse_required_group()
+            value = "".join(node.find(qn("m:t")).text or "" for node in group if node.tag == qn("m:r"))
+            if len(group) != 1 or not value:
+                wrapper = OxmlElement("m:box")
+                element = OxmlElement("m:e")
+                for child in group:
+                    element.append(child)
+                wrapper.append(element)
+                return wrapper
+            return self._math_run(value)
+        if command == "sqrt":
+            group = self._parse_required_group()
+            radical = OxmlElement("m:rad")
+            degree = OxmlElement("m:deg")
+            element = OxmlElement("m:e")
+            for child in group:
+                element.append(child)
+            radical.extend((degree, element))
+            return radical
+        if command == "overline":
+            group = self._parse_required_group()
+            bar = OxmlElement("m:bar")
+            properties = OxmlElement("m:barPr")
+            position = OxmlElement("m:pos")
+            position.set(qn("m:val"), "top")
+            properties.append(position)
+            element = OxmlElement("m:e")
+            for child in group:
+                element.append(child)
+            bar.extend((properties, element))
+            return bar
+        if command == "mathbf":
+            group = self._parse_required_group()
+            self._apply_math_style(group, "b")
+            if len(group) == 1:
+                return group[0]
+            wrapper = OxmlElement("m:box")
+            element = OxmlElement("m:e")
+            for child in group:
+                element.append(child)
+            wrapper.append(element)
+            return wrapper
+        if command == "boxed":
+            group = self._parse_required_group()
+            border_box = OxmlElement("m:borderBox")
+            element = OxmlElement("m:e")
+            for child in group:
+                element.append(child)
+            border_box.append(element)
+            return border_box
+        symbol = GREEK_AND_TEXT_COMMANDS.get(command)
+        if symbol is None:
+            raise ValueError(f"不支持的 TeX 命令: {command}")
+        return self._math_run(symbol)
+
+    def _parse_required_group(self) -> list[Any]:
+        self._skip_spaces()
+        if self.position >= len(self.source) or self.source[self.position] != "{":
+            raise ValueError("缺少必需的 TeX 参数组")
+        self.position += 1
+        return self._parse_sequence(stop_at_brace=True)
+
+    def _parse_argument(self) -> list[Any]:
+        self._skip_spaces()
+        if self.position >= len(self.source):
+            raise ValueError("缺少上下标参数")
+        if self.source[self.position] == "{":
+            self.position += 1
+            return self._compact_plain_script_argument(self._parse_sequence(stop_at_brace=True))
+        if self.source[self.position] == "\\":
+            return [self._parse_command()]
+
+        start = self.position
+        while self.position < len(self.source) and (
+            self.source[self.position].isalnum() or self.source[self.position] in "()+-/"
+        ):
+            self.position += 1
+        if self.position == start:
+            self.position += 1
+        return [self._math_run(self.source[start : self.position])]
+
+    def _compact_plain_script_argument(self, argument: list[Any]) -> list[Any]:
+        values: list[str] = []
+        for node in argument:
+            if node.tag != qn("m:r"):
+                return argument
+            value = node.find(qn("m:t"))
+            if value is None:
+                return argument
+            values.append(value.text or "")
+        combined = "".join(values)
+        if not re.fullmatch(r"[A-Za-z0-9\s]+", combined):
+            return argument
+        return [self._math_run("".join(combined.split()))]
+
+    def _skip_spaces(self) -> None:
+        while self.position < len(self.source) and self.source[self.position].isspace():
+            self.position += 1
+
+    def _script(self, marker: str, base: Any, argument: list[Any]) -> Any:
+        script = OxmlElement("m:sSup" if marker == "^" else "m:sSub")
+        base_element = OxmlElement("m:e")
+        base_element.append(base)
+        argument_element = OxmlElement("m:sup" if marker == "^" else "m:sub")
+        for child in argument:
+            argument_element.append(child)
+        script.extend((base_element, argument_element))
+        return script
+
+    @staticmethod
+    def _apply_math_style(group: list[Any], value: str) -> None:
+        for child in group:
+            for run in child.iter(qn("m:r")):
+                properties = run.find(qn("m:rPr"))
+                if properties is None:
+                    properties = OxmlElement("m:rPr")
+                    run.insert(0, properties)
+                style = properties.find(qn("m:sty"))
+                if style is None:
+                    style = OxmlElement("m:sty")
+                    properties.append(style)
+                style.set(qn("m:val"), value)
+
+    @staticmethod
+    def _math_run(text: str) -> Any:
+        run = OxmlElement("m:r")
+        value = OxmlElement("m:t")
+        value.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+        value.text = text
+        run.append(value)
+        return run
 
 
 class WordTextRendererMixin:
@@ -41,20 +289,22 @@ class WordTextRendererMixin:
         prefix: str = "",
         word_style_name: str | None = None,
         terminology: TerminologyReplacer | None = None,
+        reference_bookmarks: CaptionBookmarks | None = None,
     ) -> None:
         """写入段落文本；支持 MinerU 常见的内联 HTML 标记。"""
 
         self._apply_named_style(paragraph, word_style_name or style.word_style_name)
         self._apply_paragraph_style(paragraph, style)
+        if self._render_mixed_math(paragraph, text, style, terminology, reference_bookmarks):
+            return
         normalized_text = self._prepare_text_for_rendering(text, terminology)
         if self._looks_like_inline_markup(normalized_text):
             if prefix:
                 self._add_text_run(paragraph, prefix, style)
-            self._render_inline_html(paragraph, normalized_text, style)
+            self._render_inline_html(paragraph, normalized_text, style, reference_bookmarks=reference_bookmarks)
             return
 
-        run = paragraph.add_run(f"{prefix}{normalized_text}")
-        self._apply_run_style(run, style)
+        self._add_text_run(paragraph, f"{prefix}{normalized_text}", style, reference_bookmarks=reference_bookmarks)
 
     def _fill_heading_paragraph(
         self,
@@ -66,7 +316,7 @@ class WordTextRendererMixin:
         style = template_config.heading_style_for_level(level)
         self._fill_paragraph(
             paragraph,
-            normalize_formula_text(text),
+            text,
             style,
             word_style_name=template_config.heading_word_style_name_for_level(level),
             terminology=template_config.terminology,
@@ -77,6 +327,8 @@ class WordTextRendererMixin:
         paragraph: Any,
         text: str,
         template_config: TemplateConfigPackage,
+        *,
+        reference_bookmarks: CaptionBookmarks | None = None,
     ) -> None:
         level = infer_list_item_level(text)
         self._fill_paragraph(
@@ -84,6 +336,7 @@ class WordTextRendererMixin:
             normalize_list_item(text),
             template_config.normal,
             terminology=template_config.terminology,
+            reference_bookmarks=reference_bookmarks,
         )
         self._apply_bullet_numbering(paragraph, level=level)
         paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
@@ -100,6 +353,8 @@ class WordTextRendererMixin:
         paragraph: Any,
         text: str,
         template_config: TemplateConfigPackage,
+        *,
+        reference_bookmarks: CaptionBookmarks | None = None,
     ) -> None:
         if is_toc_title_text(text):
             self._fill_paragraph(
@@ -107,23 +362,37 @@ class WordTextRendererMixin:
                 text,
                 template_config.toc_title,
                 terminology=template_config.terminology,
+                reference_bookmarks=reference_bookmarks,
             )
             return
         if self._fill_toc_entry_if_needed(paragraph, text, template_config):
             return
         if is_list_item_text(text):
-            self._fill_list_paragraph(paragraph, text, template_config)
+            self._fill_list_paragraph(
+                paragraph,
+                text,
+                template_config,
+                reference_bookmarks=reference_bookmarks,
+            )
             return
         if looks_like_heading_text(text):
             self._fill_heading_paragraph(paragraph, text, infer_heading_level(text), template_config)
             return
-        self._fill_paragraph(paragraph, text, template_config.normal, terminology=template_config.terminology)
+        self._fill_paragraph(
+            paragraph,
+            text,
+            template_config.normal,
+            terminology=template_config.terminology,
+            reference_bookmarks=reference_bookmarks,
+        )
 
     def _fill_auto_list_item_paragraph(
         self,
         paragraph: Any,
         text: str,
         template_config: TemplateConfigPackage,
+        *,
+        reference_bookmarks: CaptionBookmarks | None = None,
     ) -> None:
         if is_toc_title_text(text):
             self._fill_paragraph(
@@ -131,11 +400,17 @@ class WordTextRendererMixin:
                 text,
                 template_config.toc_title,
                 terminology=template_config.terminology,
+                reference_bookmarks=reference_bookmarks,
             )
             return
         if self._fill_toc_entry_if_needed(paragraph, text, template_config):
             return
-        self._fill_list_paragraph(paragraph, text, template_config)
+        self._fill_list_paragraph(
+            paragraph,
+            text,
+            template_config,
+            reference_bookmarks=reference_bookmarks,
+        )
 
     def _fill_toc_entry_if_needed(
         self,
@@ -147,17 +422,14 @@ class WordTextRendererMixin:
         if parsed is None:
             return False
 
-        title, page_number = parsed
+        title, _page_number = parsed
         toc_style = template_config.toc_style_for_level(infer_heading_level(title))
+        self._configure_toc_styles(paragraph.part.styles, template_config)
         self._apply_named_style(paragraph, toc_style.word_style_name)
         self._apply_paragraph_style(paragraph, toc_style)
         paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
         paragraph.paragraph_format.first_line_indent = Pt(0)
-        paragraph.paragraph_format.tab_stops.add_tab_stop(Cm(15), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
-        self._render_inline_html(paragraph, self._prepare_text_for_rendering(title, template_config.terminology), toc_style)
-        paragraph.add_run("\t")
-        page_run = paragraph.add_run(page_number)
-        self._apply_run_style(page_run, toc_style)
+        self._add_complex_field(paragraph, r' TOC \o "1-3" \h \z \u ', "更新目录", toc_style)
         return True
 
     def _fill_formula_paragraph(
@@ -166,10 +438,163 @@ class WordTextRendererMixin:
         text: str,
         template_config: TemplateConfigPackage,
     ) -> None:
+        self._apply_named_style(paragraph, template_config.normal.word_style_name)
+        self._apply_paragraph_style(paragraph, template_config.normal)
+        math = _OmmlParser(text).parse()
+        if math is not None:
+            paragraph._p.append(math)
+            return
         self._fill_paragraph(paragraph, text, template_config.normal, terminology=template_config.terminology)
 
+    def _parse_caption_text(self, text: str) -> tuple[str, str, str, int, str] | None:
+        match = CAPTION_RE.match(text or "")
+        if match is None:
+            return None
+        return (
+            match.group("prefix"),
+            match.group("label"),
+            match.group("spacing"),
+            int(match.group("number")),
+            match.group("tail"),
+        )
+
+    def _fill_caption_paragraph(
+        self,
+        paragraph: Any,
+        text: str,
+        style: TemplateParagraphStyleConfig,
+        *,
+        terminology: TerminologyReplacer | None = None,
+        caption_bookmarks: CaptionBookmarks | None = None,
+    ) -> bool:
+        prepared = self._prepare_text_for_rendering(text, terminology)
+        parsed = self._parse_caption_text(prepared)
+        if parsed is None:
+            return False
+
+        prefix, label, spacing, source_number, tail = parsed
+        kind = "figure" if label.lower() == "figure" or label == "图" else "table"
+        self._apply_named_style(paragraph, style.word_style_name)
+        self._apply_paragraph_style(paragraph, style)
+        self._add_text_run(paragraph, f"{prefix}{label}{spacing}", style)
+        bookmark = caption_bookmarks.get((kind, source_number)) if caption_bookmarks else None
+        if bookmark is not None:
+            bookmark_start = OxmlElement("w:bookmarkStart")
+            bookmark_start.set(qn("w:id"), str(bookmark[1]))
+            bookmark_start.set(qn("w:name"), bookmark[0])
+            paragraph._p.append(bookmark_start)
+        sequence_name = label if label in {"图", "表"} else ("Figure" if kind == "figure" else "Table")
+        self._add_complex_field(paragraph, f" SEQ {sequence_name} \\* ARABIC ", str(source_number), style)
+        if bookmark is not None:
+            bookmark_end = OxmlElement("w:bookmarkEnd")
+            bookmark_end.set(qn("w:id"), str(bookmark[1]))
+            paragraph._p.append(bookmark_end)
+        if self._looks_like_inline_markup(tail):
+            self._render_inline_html(paragraph, tail, style)
+        else:
+            self._add_text_run(paragraph, tail, style)
+        return True
+
+    def _render_mixed_math(
+        self,
+        paragraph: Any,
+        text: str,
+        style: TemplateParagraphStyleConfig,
+        terminology: TerminologyReplacer | None,
+        reference_bookmarks: CaptionBookmarks | None,
+    ) -> bool:
+        source = re.sub(r"^\s*<(?:td|th)\b[^>]*>", "", text, flags=re.IGNORECASE)
+        source = re.sub(r"</(?:td|th)>\s*$", "", source, flags=re.IGNORECASE)
+        if r"\frac" in source:
+            math = _OmmlParser(source).parse()
+            if math is None:
+                return False
+            paragraph._p.append(math)
+            return True
+
+        matches = list(INLINE_MATH_RE.finditer(source))
+        if not matches:
+            return False
+        position = 0
+        for match in matches:
+            plain_text = source[position : match.start()]
+            expression = match.group("dollar") if match.group("dollar") is not None else match.group("paren")
+            stripped_expression = (expression or "").lstrip()
+            if stripped_expression.startswith(("_", "^")):
+                base_match = TRAILING_MATH_BASE_RE.search(plain_text)
+                if base_match is not None:
+                    base = BeautifulSoup(base_match.group("base"), "html.parser").get_text()
+                    plain_text = base_match.group("prefix")
+                    expression = f"{base}{stripped_expression}"
+            self._add_prepared_text(
+                paragraph,
+                plain_text,
+                style,
+                terminology,
+                reference_bookmarks,
+            )
+            math = _OmmlParser(expression or "").parse()
+            if math is None:
+                self._add_prepared_text(paragraph, match.group(0), style, terminology, reference_bookmarks)
+            else:
+                paragraph._p.append(math)
+            position = match.end()
+        self._add_prepared_text(paragraph, source[position:], style, terminology, reference_bookmarks)
+        return True
+
+    def _add_prepared_text(
+        self,
+        paragraph: Any,
+        text: str,
+        style: TemplateParagraphStyleConfig,
+        terminology: TerminologyReplacer | None,
+        reference_bookmarks: CaptionBookmarks | None,
+    ) -> None:
+        if not text:
+            return
+        leading_space = " " if text[0].isspace() else ""
+        trailing_space = " " if text[-1].isspace() else ""
+        prepared = self._prepare_text_for_rendering(text, terminology)
+        prepared = f"{leading_space}{prepared}{trailing_space}"
+        if self._looks_like_inline_markup(prepared):
+            self._render_inline_html(paragraph, prepared, style, reference_bookmarks=reference_bookmarks)
+            return
+        self._add_text_run(paragraph, prepared, style, reference_bookmarks=reference_bookmarks)
+
+    def _add_complex_field(
+        self,
+        paragraph: Any,
+        instruction: str,
+        result: str,
+        style: TemplateParagraphStyleConfig,
+    ) -> Any:
+        begin_run = paragraph.add_run()
+        begin = OxmlElement("w:fldChar")
+        begin.set(qn("w:fldCharType"), "begin")
+        begin_run._r.append(begin)
+
+        instruction_run = paragraph.add_run()
+        instruction_text = OxmlElement("w:instrText")
+        instruction_text.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+        instruction_text.text = instruction
+        instruction_run._r.append(instruction_text)
+
+        separate_run = paragraph.add_run()
+        separate = OxmlElement("w:fldChar")
+        separate.set(qn("w:fldCharType"), "separate")
+        separate_run._r.append(separate)
+
+        result_run = paragraph.add_run(result)
+        self._apply_run_style(result_run, style)
+
+        end_run = paragraph.add_run()
+        end = OxmlElement("w:fldChar")
+        end.set(qn("w:fldCharType"), "end")
+        end_run._r.append(end)
+        return result_run
+
     def _prepare_text_for_rendering(self, text: str, terminology: TerminologyReplacer | None) -> str:
-        """Normalize formula fragments and apply per-render terminology markup."""
+        """归一化公式片段，并应用本次渲染的术语标记。"""
 
         normalized_text = normalize_formula_text(text)
         if terminology is None:
@@ -190,6 +615,8 @@ class WordTextRendererMixin:
         paragraph: Any,
         text_or_html: str,
         style: TemplateParagraphStyleConfig,
+        *,
+        reference_bookmarks: CaptionBookmarks | None = None,
     ) -> None:
         """将安全的内联 HTML 转为多个 Word run，保留下标、上标、粗斜体和换行。"""
 
@@ -198,7 +625,7 @@ class WordTextRendererMixin:
         if root is None:
             self._add_text_run(paragraph, text_or_html, style)
             return
-        self._render_inline_children(root, paragraph, style)
+        self._render_inline_children(root, paragraph, style, reference_bookmarks=reference_bookmarks)
 
     def _render_inline_children(
         self,
@@ -210,6 +637,7 @@ class WordTextRendererMixin:
         italic: bool = False,
         subscript: bool = False,
         superscript: bool = False,
+        reference_bookmarks: CaptionBookmarks | None = None,
     ) -> None:
         for child in parent.children:
             if isinstance(child, NavigableString):
@@ -221,6 +649,7 @@ class WordTextRendererMixin:
                     italic=italic,
                     subscript=subscript,
                     superscript=superscript,
+                    reference_bookmarks=reference_bookmarks,
                 )
                 continue
             if not isinstance(child, Tag):
@@ -238,6 +667,7 @@ class WordTextRendererMixin:
                 italic=italic or tag_name in {"i", "em"},
                 subscript=subscript or tag_name == "sub",
                 superscript=superscript or tag_name == "sup",
+                reference_bookmarks=reference_bookmarks,
             )
 
     def _add_text_run(
@@ -250,9 +680,44 @@ class WordTextRendererMixin:
         italic: bool = False,
         subscript: bool = False,
         superscript: bool = False,
+        reference_bookmarks: CaptionBookmarks | None = None,
     ) -> None:
         if not text:
             return
+        if reference_bookmarks:
+            position = 0
+            for match in REFERENCE_RE.finditer(text):
+                label = match.group("label")
+                kind = "figure" if label.lower() == "figure" or label == "图" else "table"
+                bookmark = reference_bookmarks.get((kind, int(match.group("number"))))
+                if bookmark is None:
+                    continue
+                self._add_text_run(
+                    paragraph,
+                    text[position : match.start()] + label + match.group("spacing"),
+                    style,
+                    bold=bold,
+                    italic=italic,
+                    subscript=subscript,
+                    superscript=superscript,
+                )
+                field_run = self._add_complex_field(paragraph, f" REF {bookmark[0]} \\h ", match.group("number"), style)
+                field_run.bold = bold or None
+                field_run.italic = italic or None
+                field_run.font.subscript = subscript or None
+                field_run.font.superscript = superscript or None
+                position = match.end()
+            if position:
+                self._add_text_run(
+                    paragraph,
+                    text[position:],
+                    style,
+                    bold=bold,
+                    italic=italic,
+                    subscript=subscript,
+                    superscript=superscript,
+                )
+                return
         run = paragraph.add_run(text)
         self._apply_run_style(run, style)
         if bold:
@@ -289,6 +754,51 @@ class WordTextRendererMixin:
             paragraph.style = style_name
         except (KeyError, ValueError):
             return
+
+    def _configure_toc_styles(self, styles: Any, template_config: TemplateConfigPackage) -> None:
+        for level in range(1, 4):
+            style_id = f"TOC{level}"
+            word_style = next((style for style in styles if style.style_id == style_id), None)
+            if word_style is None:
+                word_style = styles.add_style(f"TOC {level}", WD_STYLE_TYPE.PARAGRAPH, builtin=True)
+
+            config = template_config.toc_style_for_level(level)
+            if config.word_style_name and config.word_style_name != word_style.name:
+                try:
+                    word_style.base_style = styles[config.word_style_name]
+                except KeyError:
+                    pass
+            apply_run_fonts(
+                word_style,
+                font_name=config.font_name,
+                western_font_name=config.western_font_name,
+                complex_script_font_name=config.complex_script_font_name,
+            )
+            if config.font_size is not None:
+                word_style.font.size = Pt(config.font_size)
+            if config.bold is not None:
+                word_style.font.bold = config.bold
+            if config.italic is not None:
+                word_style.font.italic = config.italic
+            if config.color:
+                word_style.font.color.rgb = self._parse_color(config.color)
+
+            paragraph_format = word_style.paragraph_format
+            if config.alignment:
+                paragraph_format.alignment = self._parse_alignment(config.alignment)
+            if config.space_before is not None:
+                paragraph_format.space_before = Pt(config.space_before)
+            if config.space_after is not None:
+                paragraph_format.space_after = Pt(config.space_after)
+            if config.line_spacing is not None:
+                paragraph_format.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
+                paragraph_format.line_spacing = config.line_spacing
+            if config.first_line_indent_pt is not None:
+                paragraph_format.first_line_indent = Pt(config.first_line_indent_pt)
+            if config.left_indent_pt is not None:
+                paragraph_format.left_indent = Pt(config.left_indent_pt)
+            if config.right_indent_pt is not None:
+                paragraph_format.right_indent = Pt(config.right_indent_pt)
 
     def _apply_run_style(self, run: Any, style: TemplateParagraphStyleConfig) -> None:
         apply_run_fonts(

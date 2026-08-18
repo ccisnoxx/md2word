@@ -8,9 +8,10 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from xml.etree import ElementTree
 
 from docx import Document
-from docx.enum.section import WD_ORIENTATION
+from docx.enum.section import WD_ORIENTATION, WD_SECTION_START
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Cm, Emu
 
@@ -23,6 +24,7 @@ from app.services.document_ir.models import (
     DocumentIRPage,
 )
 from app.services.renderer.evidence import build_renderer_evidence
+from app.services.renderer.docx_quality import analyze_docx_quality_bytes
 from app.services.renderer.layout_plan import build_layout_plan
 from app.services.renderer.template_config import TemplateConfigPackage
 from app.services.renderer.word_renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
@@ -83,8 +85,10 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         plan = build_layout_plan(document)
 
         self.assertEqual(plan.mode, "layout_v2")
-        self.assertEqual([region.kind for region in plan.pages[0].regions], ["two_col", "one_col"])
-        self.assertEqual([block.text for block in plan.pages[0].regions[0].blocks], ["Left A", "Right A", "Left B", "Right B"])
+        self.assertEqual([region.kind for region in plan.pages[0].regions], ["one_col", "two_col", "one_col"])
+        self.assertEqual([block.text for block in plan.pages[0].regions[0].blocks], ["Left A"])
+        self.assertEqual([block.text for block in plan.pages[0].regions[1].blocks], ["Right A", "Left B"])
+        self.assertEqual([block.text for block in plan.pages[0].regions[2].blocks], ["Right B", "Wide after hints"])
 
     def test_build_layout_plan_keeps_explicit_wide_blocks_out_of_stable_two_column_regions(self) -> None:
         document = self._make_v2_wide_between_columns_document()
@@ -133,7 +137,7 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertFalse(evidence["docx_quality"]["image_only_suspected"])
         self.assertEqual(evidence["quality_flags"], [])
 
-    def test_render_to_bytes_uses_two_column_table_for_v2_region(self) -> None:
+    def test_render_to_bytes_uses_native_columns_for_v2_region(self) -> None:
         renderer = DocumentIRWordRenderer()
 
         content = renderer.render_to_bytes(
@@ -145,14 +149,18 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         rendered = Document(io.BytesIO(content))
         xml = self._document_xml(content)
 
-        self.assertGreaterEqual(len(rendered.tables), 1)
-        self.assertIn("Left column", rendered.tables[0].cell(0, 0).text)
-        self.assertIn("Right column", rendered.tables[0].cell(0, 1).text)
+        self.assertEqual(len(rendered.tables), 0)
+        self.assertTrue(any(paragraph.text == "Left column" for paragraph in rendered.paragraphs))
+        self.assertTrue(any(paragraph.text == "Right column" for paragraph in rendered.paragraphs))
         self.assertTrue(any(paragraph.text == "Wide block" for paragraph in rendered.paragraphs))
-        for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
-            self.assertIn(f'<w:{edge} w:val="none"', xml)
+        self.assertIn('<w:cols w:space="720" w:num="2"', xml)
+        self.assertIn('<w:br w:type="column"', xml)
+        self.assertGreaterEqual(xml.count('<w:type w:val="continuous"'), 2)
+        self.assertEqual(rendered.sections[0].page_width, rendered.sections[1].page_width)
+        self.assertEqual(rendered.sections[0].left_margin, rendered.sections[1].left_margin)
+        self.assertTrue(rendered.sections[1].header.is_linked_to_previous)
 
-    def test_render_to_bytes_prefers_column_hint_when_splitting_two_column_cells(self) -> None:
+    def test_render_to_bytes_prefers_column_hint_when_ordering_native_columns(self) -> None:
         renderer = DocumentIRWordRenderer()
 
         content = renderer.render_to_bytes(
@@ -163,9 +171,190 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         )
         rendered = Document(io.BytesIO(content))
 
-        self.assertGreaterEqual(len(rendered.tables), 1)
-        self.assertIn("Left by hint", rendered.tables[0].cell(0, 0).text)
-        self.assertIn("Right by hint", rendered.tables[0].cell(0, 1).text)
+        self.assertEqual(len(rendered.tables), 0)
+        visible_paragraphs = [paragraph.text for paragraph in rendered.paragraphs if paragraph.text]
+        self.assertEqual(visible_paragraphs, ["Left by hint", "Right by hint"])
+        self.assertIn('<w:br w:type="column"', self._document_xml(content))
+        self.assertEqual(rendered.sections[-1].start_type, WD_SECTION_START.CONTINUOUS)
+        self.assertNotIn('<w:br w:type="page"', self._document_xml(content))
+
+    def test_render_to_bytes_keeps_paired_image_caption_fields_in_row_order(self) -> None:
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="docjob_image_rows", source_file_id="file_image_rows", document_language="en"),
+            pages=[DocumentIRPage(index=0, width=400.0, height=600.0)],
+            assets=[DocumentIRAsset(id="asset_chart", kind="image", source_path="images/chart.png")],
+            blocks=[
+                DocumentIRBlock(
+                    id=f"block_{index}",
+                    type="image",
+                    order=index,
+                    asset_ref="asset_chart",
+                    captions=[f"Figure {index}: {tail}"],
+                    layout=DocumentIRBlockLayout(
+                        page_index=0,
+                        bbox=bbox,
+                        role="body",
+                        column_hint="left" if index % 2 else "right",
+                    ),
+                )
+                for index, tail, bbox in (
+                    (1, "Left first", (10, 80, 170, 180)),
+                    (2, "Right first", (220, 82, 380, 180)),
+                    (3, "Left second", (10, 220, 170, 320)),
+                    (4, "Right second", (220, 218, 380, 320)),
+                )
+            ],
+        )
+
+        content = DocumentIRWordRenderer().render_to_bytes(
+            document,
+            template_path=None,
+            config_path=None,
+            image_loader=lambda _asset: MINIMAL_PNG_BYTES,
+        )
+        xml = self._document_xml(content)
+
+        self.assertLess(xml.index("Left first"), xml.index("Right first"))
+        self.assertLess(xml.index("Right first"), xml.index("Left second"))
+        self.assertLess(xml.index("Left second"), xml.index("Right second"))
+        self.assertNotIn('<w:br w:type="column"', xml)
+        self.assertEqual(len(Document(io.BytesIO(content)).sections), 1)
+        self.assertEqual(xml.count('<w:tabs>'), 4)
+        self.assertEqual(xml.count('w:val="center"'), 8)
+        self.assertGreaterEqual(xml.count("<w:keepNext/>"), 3)
+        self.assertEqual(xml.count(" SEQ Figure \\* ARABIC "), 4)
+
+    def test_render_to_bytes_keeps_multi_annotation_images_in_native_columns(self) -> None:
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="docjob_image_notes", source_file_id="file_image_notes", document_language="en"),
+            pages=[DocumentIRPage(index=0, width=400.0, height=600.0)],
+            assets=[DocumentIRAsset(id="asset_chart", kind="image", source_path="images/chart.png")],
+            blocks=[
+                DocumentIRBlock(
+                    id=f"block_{index}",
+                    type="image",
+                    order=index,
+                    asset_ref="asset_chart",
+                    captions=[f"Figure {index}: chart"],
+                    footnotes=["Source note"] if index == 1 else [],
+                    layout=DocumentIRBlockLayout(
+                        page_index=0,
+                        bbox=bbox,
+                        role="body",
+                        column_hint="left" if index == 1 else "right",
+                    ),
+                )
+                for index, bbox in ((1, (10, 80, 170, 180)), (2, (220, 82, 380, 180)))
+            ],
+        )
+
+        content = DocumentIRWordRenderer().render_to_bytes(
+            document,
+            template_path=None,
+            config_path=None,
+            image_loader=lambda _asset: MINIMAL_PNG_BYTES,
+        )
+        xml = self._document_xml(content)
+
+        self.assertIn('<w:cols w:space="720" w:num="2"', xml)
+        self.assertIn('<w:br w:type="column"', xml)
+        self.assertIn("Source note", xml)
+        self.assertNotIn("<w:tabs>", xml)
+
+    def test_render_to_bytes_does_not_force_break_between_same_orientation_source_pages(self) -> None:
+        document = self._make_v2_hint_override_document()
+        document.pages.append(DocumentIRPage(index=1, width=400.0, height=600.0))
+        document.blocks.append(
+            DocumentIRBlock(
+                id="block_next_page",
+                type="heading",
+                order=2,
+                level=2,
+                text="Next source page",
+                layout=DocumentIRBlockLayout(page_index=1, bbox=(0, 60, 400, 100), role="body", column_hint="wide"),
+            )
+        )
+
+        content = DocumentIRWordRenderer().render_to_bytes(
+            document,
+            template_path=None,
+            config_path=None,
+            image_loader=lambda _asset: None,
+        )
+        rendered = Document(io.BytesIO(content))
+        xml = self._document_xml(content)
+
+        self.assertEqual(rendered.sections[-1].start_type, WD_SECTION_START.CONTINUOUS)
+        self.assertNotIn('<w:br w:type="page"', xml)
+        self.assertTrue(any(paragraph.text == "Next source page" for paragraph in rendered.paragraphs))
+
+    def test_render_to_bytes_keeps_continuous_restore_when_wide_content_follows_columns(self) -> None:
+        document = self._make_v2_two_column_document()
+        document.pages.append(DocumentIRPage(index=1, width=400.0, height=600.0))
+        document.blocks.append(
+            DocumentIRBlock(
+                id="block_next_page",
+                type="heading",
+                order=5,
+                level=2,
+                text="Next source page",
+                layout=DocumentIRBlockLayout(page_index=1, bbox=(0, 60, 400, 100), role="body", column_hint="wide"),
+            )
+        )
+
+        content = DocumentIRWordRenderer().render_to_bytes(
+            document,
+            template_path=None,
+            config_path=None,
+            image_loader=lambda _asset: None,
+        )
+        rendered = Document(io.BytesIO(content))
+        xml = self._document_xml(content)
+
+        self.assertEqual(rendered.sections[-1].start_type, WD_SECTION_START.CONTINUOUS)
+        self.assertTrue(any(section.start_type == WD_SECTION_START.CONTINUOUS for section in rendered.sections))
+        self.assertNotIn('<w:br w:type="page"', xml)
+        self.assertTrue(any(paragraph.text == "Wide block" for paragraph in rendered.paragraphs))
+
+    def test_render_to_bytes_starts_new_section_when_page_orientation_changes(self) -> None:
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="docjob_orientation", source_file_id="file_orientation", document_language="en"),
+            pages=[
+                DocumentIRPage(index=0, width=612.0, height=792.0),
+                DocumentIRPage(index=1, width=792.0, height=612.0),
+            ],
+            blocks=[
+                DocumentIRBlock(
+                    id="block_portrait",
+                    type="paragraph",
+                    order=0,
+                    text="Portrait",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(72, 80, 300, 120), role="body"),
+                ),
+                DocumentIRBlock(
+                    id="block_landscape",
+                    type="paragraph",
+                    order=1,
+                    text="Landscape",
+                    layout=DocumentIRBlockLayout(page_index=1, bbox=(72, 80, 300, 120), role="body"),
+                ),
+            ],
+        )
+
+        content = DocumentIRWordRenderer().render_to_bytes(
+            document,
+            template_path=None,
+            config_path=None,
+            image_loader=lambda _asset: None,
+        )
+        rendered = Document(io.BytesIO(content))
+
+        self.assertEqual(rendered.sections[-1].start_type, WD_SECTION_START.NEW_PAGE)
+        self.assertEqual(rendered.sections[-1].orientation, WD_ORIENTATION.LANDSCAPE)
+        self.assertNotIn('<w:br w:type="page"', self._document_xml(content))
 
     def test_render_to_bytes_preserves_template_decorations_when_config_disabled(self) -> None:
         renderer = DocumentIRWordRenderer()
@@ -198,6 +387,11 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
 
         self.assertEqual(rendered.sections[0].header.paragraphs[0].text, "Template Header")
         self.assertEqual(rendered.sections[0].footer.paragraphs[0].text, "Template Footer")
+        xml = self._document_xml(content)
+        self.assertEqual(xml.count("<w:headerReference"), 1)
+        self.assertEqual(xml.count("<w:footerReference"), 1)
+        self.assertTrue(all(section.header.is_linked_to_previous for section in rendered.sections[1:]))
+        self.assertTrue(all(section.footer.is_linked_to_previous for section in rendered.sections[1:]))
 
     def test_render_to_bytes_writes_configured_body_header_and_footer_font_slots(self) -> None:
         renderer = DocumentIRWordRenderer()
@@ -267,6 +461,45 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
             self.assertIn(f'w:ascii="{western}"', font_attributes)
             self.assertIn(f'w:hAnsi="{western}"', font_attributes)
             self.assertIn(f'w:cs="{complex_script}"', font_attributes)
+
+    def test_render_to_bytes_writes_native_custom_footer_and_ignores_source_footer(self) -> None:
+        renderer = DocumentIRWordRenderer()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "template.yaml"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        "schema_version: template-config/v1",
+                        "footer:",
+                        "  enabled: true",
+                        "  left_text: V1.1",
+                        "  right_text: www.example.com",
+                        "  show_page_number: true",
+                        "  font_name: FangSong",
+                        "  western_font_name: Arial",
+                        "  complex_script_font_name: Times New Roman",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            content = renderer.render_to_bytes(
+                self._make_v2_two_column_document(),
+                template_path=None,
+                config_path=config_path,
+                image_loader=lambda _asset: None,
+            )
+
+        rendered = Document(io.BytesIO(content))
+        footer_xml = self._related_xml(content, "word/footer")
+        self.assertIn("V1.1", footer_xml)
+        self.assertIn("www.example.com", footer_xml)
+        self.assertIn(" PAGE ", footer_xml)
+        self.assertNotIn("Footer", footer_xml)
+        self.assertNotIn("<w:tbl", footer_xml)
+        self.assertIn('w:ptab w:alignment="center" w:relativeTo="margin" w:leader="none"', footer_xml)
+        self.assertIn('w:ptab w:alignment="right" w:relativeTo="margin" w:leader="none"', footer_xml)
+        self.assertTrue(all(section.footer.is_linked_to_previous for section in rendered.sections[1:]))
 
     def test_extracted_decorations_keep_normal_style_and_legacy_font_inheritance(self) -> None:
         renderer = DocumentIRWordRenderer()
@@ -385,11 +618,148 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertIn('<w:jc w:val="center"', xml)
         self.assertIn('<w:jc w:val="left"', xml)
         self.assertIn('<w:spacing w:before="0" w:after="0"', xml)
-        self.assertLess(xml.index("Table 1: merged cells"), xml.index("<w:tbl>"))
+        self.assertLess(xml.index(" SEQ Table "), xml.index("<w:tbl>"))
         self.assertLess(xml.index("<w:tbl>"), xml.index("Note: kept editable"))
         self.assertIn("<w:keepNext/>", xml[: xml.index("<w:tbl>")])
         self.assertTrue(any(paragraph.text == "Table 1: merged cells" for paragraph in rendered.paragraphs))
         self.assertTrue(any(paragraph.text == "Note: kept editable" for paragraph in rendered.paragraphs))
+
+    def test_render_to_bytes_writes_fraction_omml_in_formula_and_table_cells(self) -> None:
+        formula = (
+            r"\mathrm{激励频率} = \frac {(\mathrm{FCW} \times \mathrm{f} _ {\mathrm{CLKIN}})}"
+            r"{2 ^ {1 5}}"
+        )
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="docjob_fraction", source_file_id="file_fraction", document_language="zh"),
+            blocks=[
+                DocumentIRBlock(id="block_formula", type="formula", order=0, latex=formula),
+                DocumentIRBlock(
+                    id="block_table",
+                    type="table",
+                    order=1,
+                    html=f"<table><tr><td>{formula}</td></tr></table>",
+                ),
+                DocumentIRBlock(id="block_inline_times", type="paragraph", order=2, text=r"A \times B"),
+            ],
+        )
+
+        content = DocumentIRWordRenderer().render_to_bytes(
+            document,
+            template_path=None,
+            config_path=None,
+            image_loader=lambda _asset: None,
+        )
+        xml = self._document_xml(content)
+        visible_text = self._document_text(content)
+        root = ElementTree.fromstring(xml)
+        math_namespace = {"m": "http://schemas.openxmlformats.org/officeDocument/2006/math"}
+
+        def script_text(element: ElementTree.Element, name: str) -> str:
+            script_part = element.find(f"m:{name}", math_namespace)
+            self.assertIsNotNone(script_part)
+            return "".join(script_part.itertext())
+
+        superscripts = [
+            (script_text(element, "e"), script_text(element, "sup"))
+            for element in root.findall(".//m:sSup", math_namespace)
+        ]
+        subscripts = [
+            (script_text(element, "e"), script_text(element, "sub"))
+            for element in root.findall(".//m:sSub", math_namespace)
+        ]
+
+        self.assertGreaterEqual(xml.count("<m:oMath>"), 2)
+        self.assertGreaterEqual(xml.count("<m:f>"), 2)
+        self.assertGreaterEqual(xml.count("<m:sSup>"), 2)
+        self.assertGreaterEqual(xml.count("<m:sSub>"), 2)
+        self.assertGreaterEqual(superscripts.count(("2", "15")), 2)
+        self.assertGreaterEqual(subscripts.count(("f", "CLKIN")), 2)
+        self.assertIn("FCW ×fCLKIN", visible_text)
+        self.assertIn("215", visible_text)
+        self.assertIn("A × B", visible_text)
+        self.assertNotIn(r"\frac", xml)
+        self.assertNotIn(r"\times", xml)
+
+    def test_malformed_fraction_remains_visible_and_is_reported_as_latex_residue(self) -> None:
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="docjob_bad_fraction", source_file_id="file_bad_fraction", document_language="en"),
+            blocks=[DocumentIRBlock(id="block_formula", type="formula", order=0, latex=r"\frac{1}{2")],
+        )
+
+        content = DocumentIRWordRenderer().render_to_bytes(
+            document,
+            template_path=None,
+            config_path=None,
+            image_loader=lambda _asset: None,
+        )
+        quality = analyze_docx_quality_bytes(content)
+
+        self.assertIn(r"\frac", self._document_xml(content))
+        self.assertEqual(quality["latex_residue_count"], 1)
+
+    def test_render_to_bytes_writes_extended_omml_in_all_shared_text_paths(self) -> None:
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="docjob_extended_omml", source_file_id="file_extended_omml", document_language="zh"),
+            blocks=[
+                DocumentIRBlock(
+                    id="block_formula",
+                    type="formula",
+                    order=0,
+                    latex=r"\overline{\mathbf{SOE}} + \boxed{\mathrm{X}} + \bigotimes + \mathbf{t}_{\text{TRACK}}",
+                ),
+                DocumentIRBlock(
+                    id="block_heading",
+                    type="heading",
+                    order=1,
+                    level=2,
+                    text=r"状态 $\overline{\mathbf{SAMPLE}}$",
+                ),
+                DocumentIRBlock(
+                    id="block_text",
+                    type="paragraph",
+                    order=2,
+                    text=r"电源 AV $_{DD}$ 与 $\bigotimes$",
+                ),
+                DocumentIRBlock(
+                    id="block_table",
+                    type="table",
+                    order=3,
+                    html=r"<table><tr><td>V<sub>OS</sub>，A<sub>V</sub> $_{DD}$，DV $_{DD}$ 与 $\boxed{\mathrm{X}}$</td></tr></table>",
+                ),
+            ],
+        )
+
+        content = DocumentIRWordRenderer().render_to_bytes(
+            document,
+            template_path=None,
+            config_path=None,
+            image_loader=lambda _asset: None,
+        )
+        xml = self._document_xml(content)
+        root = ElementTree.fromstring(xml)
+        namespace = {"m": "http://schemas.openxmlformats.org/officeDocument/2006/math"}
+
+        def script_text(element: ElementTree.Element, name: str) -> str:
+            part = element.find(f"m:{name}", namespace)
+            self.assertIsNotNone(part)
+            return "".join(part.itertext())
+
+        subscripts = [
+            (script_text(element, "e"), script_text(element, "sub"))
+            for element in root.findall(".//m:sSub", namespace)
+        ]
+        self.assertGreaterEqual(len(root.findall(".//m:bar", namespace)), 2)
+        self.assertTrue(all(item.get("{http://schemas.openxmlformats.org/officeDocument/2006/math}val") == "top" for item in root.findall(".//m:barPr/m:pos", namespace)))
+        self.assertGreaterEqual(len(root.findall(".//m:rPr/m:sty", namespace)), 3)
+        self.assertGreaterEqual(len(root.findall(".//m:borderBox", namespace)), 2)
+        self.assertGreaterEqual(self._document_text(content).count("⨂"), 2)
+        self.assertTrue({("t", "TRACK"), ("AV", "DD"), ("DV", "DD")} <= set(subscripts))
+        self.assertGreaterEqual(subscripts.count(("AV", "DD")), 2)
+        self.assertIn('w:vertAlign w:val="subscript"', xml)
+        self.assertNotIn("&lt;/td&gt;", xml)
+        for residue in (r"\overline", r"\mathbf", r"\bigotimes", r"\boxed", "_{DD}", "_{TRACK}"):
+            self.assertNotIn(residue, xml)
+        self.assertEqual(analyze_docx_quality_bytes(content)["latex_residue_count"], 0)
 
     def test_render_to_bytes_styles_later_th_cells_as_table_headers(self) -> None:
         renderer = DocumentIRWordRenderer()
@@ -437,12 +807,16 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
 
         content = renderer.render_to_bytes(document, template_path=None, config_path=None, image_loader=lambda _asset: None)
         xml = self._document_xml(content)
+        visible_text = self._document_text(content)
 
-        self.assertIn("R</w:t>", xml)
-        self.assertIn("θJA", xml)
-        self.assertIn("Table 1: R", xml)
-        self.assertIn("nV/√Hz", xml)
-        self.assertIn("Note: E=mc", xml)
+        self.assertIn("R", visible_text)
+        self.assertIn("θJA", visible_text)
+        self.assertIn("Table 1: RθJA formulas", visible_text)
+        self.assertIn("nV/√Hz", visible_text)
+        self.assertIn("Note: E=mc2", visible_text)
+        self.assertIn(" SEQ Table ", xml)
+        self.assertIn("<m:oMath>", xml)
+        self.assertIn("<m:sSub>", xml)
         self.assertIn('w:val="subscript"', xml)
         self.assertIn('w:val="superscript"', xml)
         self.assertNotIn(r"\theta", xml)
@@ -516,12 +890,11 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
 
         content = renderer.render_to_bytes(document, template_path=None, config_path=None, image_loader=lambda _asset: None)
         xml = self._document_xml(content)
+        visible_text = self._document_text(content)
 
-        self.assertIn("T", xml)
-        self.assertIn("A</w:t>", xml)
-        self.assertIn("+25°C", xml)
-        self.assertIn("5 μs", xml)
-        self.assertIn('w:val="subscript"', xml)
+        self.assertIn("TA = +25°C, 5 μs", visible_text)
+        self.assertIn("<m:oMath>", xml)
+        self.assertIn("<m:sSub>", xml)
         self.assertNotIn("^°", xml)
         self.assertNotIn(r"\circ", xml)
         self.assertNotIn(r"\mu", xml)
@@ -547,21 +920,13 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
 
         content = renderer.render_to_bytes(document, template_path=None, config_path=None, image_loader=lambda _asset: None)
         xml = self._document_xml(content)
+        visible_text = " ".join(self._document_text(content).split())
 
-        self.assertIn("√Hz", xml)
-        self.assertIn("5 μs", xml)
-        self.assertIn("PACKAGE", xml)
-        self.assertIn("-40°C", xml)
-        self.assertIn("θJC(top)", xml)
-        self.assertIn("ψ", xml)
-        self.assertIn("±5", xml)
-        self.assertIn("CM", xml)
-        self.assertIn("R", xml)
-        self.assertIn("L", xml)
-        self.assertIn("nV/√Hz", xml)
-        self.assertIn("μV/°C", xml)
-        self.assertIn('w:val="subscript"', xml)
-        self.assertIn('w:val="superscript"', xml)
+        for expected in ("Hz", "5 μs", "PACKAGE", "-40°C", "θJC(top)", "ψJT", "±5", "CM", "nV/√Hz", "μV / ° C"):
+            self.assertIn(expected, visible_text)
+        self.assertIn("<m:sSub>", xml)
+        self.assertIn("<m:sSup>", xml)
+        self.assertIn("<m:rad>", xml)
         self.assertNotIn(r"\mathrm", xml)
         self.assertNotIn(r"\sqrt", xml)
         self.assertNotIn(r"\theta", xml)
@@ -599,18 +964,20 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         )
         rendered = Document(io.BytesIO(content))
         xml = self._document_xml(content)
+        settings_xml = self._settings_xml(content)
         extent_match = re.search(r'<wp:extent cx="(\d+)" cy="(\d+)"', xml)
 
         self.assertIsNotNone(extent_match)
-        self.assertLess(int(extent_match.group(1)), 3_000_000)
+        self.assertLess(int(extent_match.group(1)), 1_500_000)
         self.assertLess(xml.index("<w:keepNext/>"), xml.index("<w:drawing>"))
-        self.assertLess(xml.index("<w:drawing>"), xml.index("Figure 1: V"))
-        self.assertLess(xml.index("Figure 1: V"), xml.index("Source: 5 μs MinerU"))
+        self.assertLess(xml.index("<w:drawing>"), xml.index(" SEQ Figure "))
         self.assertGreaterEqual(xml.count("<w:keepNext/>"), 2)
         self.assertIn('w:val="subscript"', xml)
         self.assertNotIn(r"\mu", xml)
         self.assertTrue(any(paragraph.text == "Figure 1: VOS bbox-sized chart" for paragraph in rendered.paragraphs))
-        self.assertTrue(any(paragraph.text == "Source: 5 μs MinerU" for paragraph in rendered.paragraphs))
+        self.assertIn("Source: 5 μs MinerU", self._document_text(content))
+        self.assertIn('<w:doNotAutoCompressPictures w:val="true"', settings_xml)
+        self.assertEqual(self._first_media_bytes(content), MINIMAL_PNG_BYTES)
 
     def test_render_to_bytes_preserves_inline_rich_text_markup(self) -> None:
         renderer = DocumentIRWordRenderer()
@@ -670,9 +1037,10 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertIn('w:val="Heading2"', xml)
         self.assertIn("<w:numPr>", xml)
         self.assertIn('w:val="bullet"', numbering_xml)
-        self.assertIn('w:val="subscript"', xml)
-        self.assertIn('w:val="superscript"', xml)
-        self.assertIn("nV/√Hz", xml)
+        self.assertIn("<m:sSub>", xml)
+        self.assertIn("<m:sSup>", xml)
+        self.assertIn("<m:rad>", xml)
+        self.assertIn("nV/", xml)
         self.assertNotIn("• Low noise", xml)
         self.assertNotIn(r"\sqrt", xml)
 
@@ -732,7 +1100,7 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertEqual(rendered.paragraphs[2].style.name, "Normal")
         self.assertGreaterEqual(xml.count('w:val="Heading2"'), 2)
 
-    def test_render_to_bytes_uses_tab_leaders_for_toc_like_entries(self) -> None:
+    def test_render_to_bytes_uses_one_native_toc_field_for_toc_like_entries(self) -> None:
         renderer = DocumentIRWordRenderer()
         document = DocumentIR(
             metadata=DocumentIRMetadata(job_id="docjob_toc", source_file_id="file_toc", document_language="en"),
@@ -752,14 +1120,136 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         rendered = Document(io.BytesIO(content))
         xml = self._document_xml(content)
 
-        self.assertEqual(rendered.paragraphs[1].text, "Features\t1")
-        self.assertEqual(rendered.paragraphs[2].text, "特性\t1")
-        self.assertEqual(rendered.paragraphs[3].text, "目录\t3")
-        self.assertEqual(rendered.paragraphs[4].text, "Appendix A Device Pinout\t120")
-        self.assertEqual(rendered.paragraphs[5].text, "Updated numbering")
-        self.assertGreaterEqual(xml.count("<w:tab/>"), 4)
-        self.assertGreaterEqual(xml.count('w:leader="dot"'), 4)
+        self.assertEqual([paragraph.text for paragraph in rendered.paragraphs], ["目录", "更新目录", "Updated numbering"])
+        self.assertEqual(xml.count(" TOC \\o"), 1)
+        self.assertNotIn("Features", xml)
+        self.assertNotIn("Appendix A Device Pinout", xml)
+        self.assertNotIn("<w:tab/>", xml)
         self.assertEqual(xml.count("<w:numPr>"), 1)
+        self.assertIn('<w:updateFields w:val="true"', self._settings_xml(content))
+
+    def test_render_to_bytes_links_unique_caption_references_with_native_fields(self) -> None:
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="docjob_refs", source_file_id="file_refs", document_language="zh"),
+            assets=[DocumentIRAsset(id="asset_figure", kind="image", source_path="figure.png")],
+            blocks=[
+                DocumentIRBlock(id="block_ref", type="paragraph", order=0, text="参见图 3、表 2；图 99 保持原文，表 7 也保持原文。"),
+                DocumentIRBlock(
+                    id="block_figure",
+                    type="image",
+                    order=1,
+                    asset_ref="asset_figure",
+                    captions=["图 3. 典型波形"],
+                    footnotes=["测试条件说明"],
+                ),
+                DocumentIRBlock(
+                    id="block_table",
+                    type="table",
+                    order=2,
+                    html="<table><tr><td>见图 3</td></tr></table>",
+                    captions=["表 2 参数"],
+                ),
+                DocumentIRBlock(
+                    id="block_duplicate_a",
+                    type="table",
+                    order=3,
+                    html="<table><tr><td>A</td></tr></table>",
+                    captions=["Table 7: duplicate A"],
+                ),
+                DocumentIRBlock(
+                    id="block_duplicate_b",
+                    type="table",
+                    order=4,
+                    html="<table><tr><td>B</td></tr></table>",
+                    captions=["Table 7: duplicate B"],
+                ),
+            ],
+        )
+
+        content = DocumentIRWordRenderer().render_to_bytes(
+            document,
+            template_path=None,
+            config_path=None,
+            image_loader=lambda _asset: MINIMAL_PNG_BYTES,
+        )
+        xml = self._document_xml(content)
+
+        self.assertIn(" SEQ 图 \\* ARABIC ", xml)
+        self.assertIn(" SEQ 表 \\* ARABIC ", xml)
+        self.assertEqual(xml.count(" SEQ Table \\* ARABIC "), 2)
+        self.assertIn('w:name="_md2word_figure_3"', xml)
+        self.assertIn('w:name="_md2word_table_2"', xml)
+        self.assertGreaterEqual(xml.count(" REF _md2word_figure_3 \\h "), 2)
+        self.assertIn(" REF _md2word_table_2 \\h ", xml)
+        self.assertNotIn("REF _md2word_figure_99", xml)
+        self.assertNotIn("REF _md2word_table_7", xml)
+        self.assertNotIn('w:name="_md2word_table_7"', xml)
+        self.assertIn("测试条件说明", xml)
+        self.assertIn('<w:updateFields w:val="true"', self._settings_xml(content))
+
+    def test_render_to_bytes_keeps_compound_caption_numbers_as_plain_text(self) -> None:
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(
+                job_id="docjob_compound_captions",
+                source_file_id="file_compound_captions",
+                document_language="zh",
+            ),
+            blocks=[
+                DocumentIRBlock(id="block_refs", type="paragraph", order=0, text="参见表1-1、表 1.1、表1–1、Figure 1A，以及表 1。"),
+                DocumentIRBlock(
+                    id="block_valid",
+                    type="table",
+                    order=1,
+                    html="<table><tr><td>valid</td></tr></table>",
+                    captions=["表 1 有效题注"],
+                ),
+                DocumentIRBlock(
+                    id="block_hyphen",
+                    type="table",
+                    order=2,
+                    html="<table><tr><td>hyphen</td></tr></table>",
+                    captions=["表1-1 复合编号"],
+                ),
+                DocumentIRBlock(
+                    id="block_decimal",
+                    type="table",
+                    order=3,
+                    html="<table><tr><td>decimal</td></tr></table>",
+                    captions=["表 1.1 复合编号"],
+                ),
+                DocumentIRBlock(
+                    id="block_en_dash",
+                    type="table",
+                    order=4,
+                    html="<table><tr><td>en dash</td></tr></table>",
+                    captions=["表1–1 复合编号"],
+                ),
+                DocumentIRBlock(
+                    id="block_suffix",
+                    type="table",
+                    order=5,
+                    html="<table><tr><td>suffix</td></tr></table>",
+                    captions=["Figure 1A compound number"],
+                ),
+            ],
+        )
+
+        content = DocumentIRWordRenderer().render_to_bytes(
+            document,
+            template_path=None,
+            config_path=None,
+            image_loader=lambda _asset: None,
+        )
+        xml = self._document_xml(content)
+        visible_text = self._document_text(content)
+
+        self.assertEqual(xml.count(" SEQ 表 \\* ARABIC "), 1)
+        self.assertNotIn(" SEQ Figure ", xml)
+        self.assertEqual(xml.count(" REF _md2word_table_1 \\h "), 1)
+        self.assertIn("表1-1", visible_text)
+        self.assertIn("表 1.1", visible_text)
+        self.assertIn("表1–1", visible_text)
+        self.assertIn("Figure 1A", visible_text)
 
     def test_render_to_bytes_uses_configured_toc_styles(self) -> None:
         renderer = DocumentIRWordRenderer()
@@ -786,9 +1276,24 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
                         "  color: '#445566'",
                         "  alignment: left",
                         "toc_level2:",
+                        "  font_name: SimSun",
+                        "  western_font_name: Arial",
+                        "  complex_script_font_name: Noto Sans Arabic",
                         "  font_size: 10",
+                        "  bold: true",
+                        "  italic: true",
                         "  color: '#778899'",
-                        "  alignment: left",
+                        "  alignment: right",
+                        "  line_spacing: 1.2",
+                        "  space_before: 2",
+                        "  space_after: 3",
+                        "  first_line_indent_pt: 4",
+                        "  left_indent_pt: 5",
+                        "  right_indent_pt: 6",
+                        "toc_level3:",
+                        "  font_size: 9",
+                        "  color: '#AABBCC'",
+                        "  alignment: justify",
                     ]
                 ),
                 encoding="utf-8",
@@ -797,10 +1302,32 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
             content = renderer.render_to_bytes(document, template_path=None, config_path=config_path, image_loader=lambda _asset: None)
 
         xml = self._document_xml(content)
+        styles_root = ElementTree.fromstring(self._styles_xml(content))
+        word_ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+        toc2 = styles_root.find(f".//{word_ns}style[@{word_ns}styleId='TOC2']")
+        toc3 = styles_root.find(f".//{word_ns}style[@{word_ns}styleId='TOC3']")
+
+        self.assertIsNotNone(toc2)
+        self.assertIsNotNone(toc3)
+        assert toc2 is not None
+        assert toc3 is not None
+        toc2_fonts = toc2.find(f"./{word_ns}rPr/{word_ns}rFonts")
+        self.assertIsNotNone(toc2_fonts)
+        assert toc2_fonts is not None
         self.assertIn('w:val="112233"', xml)
         self.assertIn('w:val="445566"', xml)
-        self.assertIn('w:val="778899"', xml)
-        self.assertGreaterEqual(xml.count('w:leader="dot"'), 2)
+        self.assertEqual(toc2_fonts.get(f"{word_ns}eastAsia"), "SimSun")
+        self.assertEqual(toc2_fonts.get(f"{word_ns}ascii"), "Arial")
+        self.assertEqual(toc2_fonts.get(f"{word_ns}hAnsi"), "Arial")
+        self.assertEqual(toc2_fonts.get(f"{word_ns}cs"), "Noto Sans Arabic")
+        self.assertEqual(toc2.find(f"./{word_ns}rPr/{word_ns}color").get(f"{word_ns}val"), "778899")
+        self.assertIsNotNone(toc2.find(f"./{word_ns}rPr/{word_ns}b"))
+        self.assertIsNotNone(toc2.find(f"./{word_ns}rPr/{word_ns}i"))
+        self.assertEqual(toc2.find(f"./{word_ns}pPr/{word_ns}jc").get(f"{word_ns}val"), "right")
+        self.assertEqual(toc2.find(f"./{word_ns}pPr/{word_ns}ind").get(f"{word_ns}left"), "100")
+        self.assertEqual(toc3.find(f"./{word_ns}rPr/{word_ns}color").get(f"{word_ns}val"), "AABBCC")
+        self.assertEqual(toc3.find(f"./{word_ns}pPr/{word_ns}jc").get(f"{word_ns}val"), "both")
+        self.assertEqual(xml.count(" TOC \\o"), 1)
 
     def test_render_to_bytes_uses_configured_long_table_caption_and_border_color(self) -> None:
         renderer = DocumentIRWordRenderer()
@@ -961,7 +1488,7 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         )
         available_width_twips = available_width.twips
 
-        self.assertGreaterEqual(len(rendered.sections), 1)
+        self.assertEqual(len(rendered.sections), 1)
         self.assertEqual(rendered.sections[0].orientation, WD_ORIENTATION.PORTRAIT)
         self.assertEqual(rendered.sections[-1].orientation, WD_ORIENTATION.PORTRAIT)
         self.assertLess(rendered.sections[-1].page_width, rendered.sections[-1].page_height)
@@ -1044,6 +1571,23 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
     def _numbering_xml(self, content: bytes) -> str:
         with zipfile.ZipFile(io.BytesIO(content)) as docx_zip:
             return docx_zip.read("word/numbering.xml").decode("utf-8")
+
+    def _settings_xml(self, content: bytes) -> str:
+        with zipfile.ZipFile(io.BytesIO(content)) as docx_zip:
+            return docx_zip.read("word/settings.xml").decode("utf-8")
+
+    def _styles_xml(self, content: bytes) -> str:
+        with zipfile.ZipFile(io.BytesIO(content)) as docx_zip:
+            return docx_zip.read("word/styles.xml").decode("utf-8")
+
+    def _first_media_bytes(self, content: bytes) -> bytes:
+        with zipfile.ZipFile(io.BytesIO(content)) as docx_zip:
+            media_name = next(name for name in docx_zip.namelist() if name.startswith("word/media/"))
+            return docx_zip.read(media_name)
+
+    def _document_text(self, content: bytes) -> str:
+        root = ElementTree.fromstring(self._document_xml(content))
+        return "".join(element.text or "" for element in root.iter() if element.tag.endswith("}t"))
 
     def _related_xml(self, content: bytes, prefix: str) -> str:
         with zipfile.ZipFile(io.BytesIO(content)) as docx_zip:

@@ -77,6 +77,8 @@ class TemplateLayoutConfigSchemaTests(TestCase):
         self.assertEqual(self.raw["footer"]["font_name"], "宋体")
         self.assertEqual(self.raw["footer"]["western_font_name"], "Arial")
         self.assertEqual(self.raw["footer"]["complex_script_font_name"], "Times New Roman")
+        self.assertEqual(schema["groups"]["footer"]["left_text"]["type"], "text")
+        self.assertEqual(schema["groups"]["footer"]["right_text"]["type"], "text")
 
     def test_published_v1_hash_and_legacy_font_schema_remain_readable(self) -> None:
         self.assertEqual(hashlib.sha256(PUBLISHED_V1_PATH.read_bytes()).hexdigest(), PUBLISHED_V1_SHA256)
@@ -89,6 +91,19 @@ class TemplateLayoutConfigSchemaTests(TestCase):
         self.assertEqual(package.footer.font_name, "")
         self.assertEqual(package.footer.western_font_name, "")
         self.assertEqual(package.footer.complex_script_font_name, "")
+        self.assertEqual(package.footer.left_text, "")
+        self.assertEqual(package.footer.right_text, "")
+
+    def test_footer_text_changes_use_shared_text_validation(self) -> None:
+        updated = apply_layout_changes(
+            self.raw,
+            {"footer": {"left_text": " V1.1 ", "right_text": " www.example.com "}},
+        )
+
+        self.assertEqual(updated["footer"]["left_text"], "V1.1")
+        self.assertEqual(updated["footer"]["right_text"], "www.example.com")
+        with self.assertRaisesRegex(ValueError, "128"):
+            apply_layout_changes(self.raw, {"footer": {"left_text": "x" * 129}})
 
     def test_changes_preserve_readonly_meta_samples_and_page_size(self) -> None:
         updated = apply_layout_changes(

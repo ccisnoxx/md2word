@@ -9,7 +9,7 @@ from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Cm, Emu, Mm, Pt
+from docx.shared import Emu, Mm, Pt
 
 from app.conversion.runtime.table_html_parser import HtmlCell, HtmlTable, parse_html_table
 from app.services.document_ir.models import DocumentIRBlock
@@ -30,20 +30,18 @@ TH_TAG_RE = re.compile(r"</?th\b[^>]*>", re.IGNORECASE)
 class WordTableRendererMixin:
     """封装可编辑 HTML 表格、合并单元格和表注渲染逻辑。"""
 
-    def _configure_layout_table(self, table: Any) -> None:
-        """把仅用于版面承载的 Word 表格配置为无边框容器。"""
-
-        table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        table.autofit = False
-        self._clear_table_borders(table)
-        for row in table.rows:
-            for cell in row.cells:
-                cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
-
-    def _render_table(self, document: Any, block: DocumentIRBlock, template_config: TemplateConfigPackage) -> None:
+    def _render_table(
+        self,
+        document: Any,
+        block: DocumentIRBlock,
+        template_config: TemplateConfigPackage,
+        *,
+        caption_bookmarks: Any | None = None,
+        reference_bookmarks: Any | None = None,
+    ) -> None:
         table_html = self._prepare_table_html(block.html, template_config)
         table_model = parse_html_table(table_html)
-        self._render_table_captions(document, block, template_config)
+        self._render_table_captions(document, block, template_config, caption_bookmarks=caption_bookmarks)
         if table_model is None or not table_model.rows or table_model.max_columns <= 0:
             paragraph = document.add_paragraph()
             self._fill_paragraph(
@@ -51,6 +49,7 @@ class WordTableRendererMixin:
                 block.text or "",
                 template_config.normal,
                 terminology=template_config.terminology,
+                reference_bookmarks=reference_bookmarks,
             )
             self._render_table_notes(document, block, template_config)
             return
@@ -59,9 +58,23 @@ class WordTableRendererMixin:
         usable_width = self._available_table_width(document)
         table_template_config = self._template_config_for_table_columns(template_config, max_cols)
         if self._is_large_table(block, table_model):
-            self._render_expanded_table(document, table_model, max_cols, usable_width, table_template_config)
+            self._render_expanded_table(
+                document,
+                table_model,
+                max_cols,
+                usable_width,
+                table_template_config,
+                reference_bookmarks=reference_bookmarks,
+            )
         else:
-            self._render_standard_html_table(document, table_model, max_cols, usable_width, table_template_config)
+            self._render_standard_html_table(
+                document,
+                table_model,
+                max_cols,
+                usable_width,
+                table_template_config,
+                reference_bookmarks=reference_bookmarks,
+            )
         self._render_table_notes(document, block, template_config)
 
     def _render_standard_html_table(
@@ -71,6 +84,8 @@ class WordTableRendererMixin:
         max_cols: int,
         usable_width: int,
         template_config: TemplateConfigPackage,
+        *,
+        reference_bookmarks: Any | None = None,
     ) -> None:
         """渲染常规 HTML table，保留 rowspan/colspan 合并结构。"""
 
@@ -92,7 +107,13 @@ class WordTableRendererMixin:
                 if end_row != row_index or end_col != col_index:
                     merged_cell = base_cell.merge(table.cell(end_row, end_col))
                 merged_cell.width = sum(column_widths[col_index : end_col + 1])
-                self._fill_table_cell(merged_cell, cell_model, row_index == 0 or cell_model.is_header, template_config)
+                self._fill_table_cell(
+                    merged_cell,
+                    cell_model,
+                    row_index == 0 or cell_model.is_header,
+                    template_config,
+                    reference_bookmarks=reference_bookmarks,
+                )
 
                 for occupied_row in range(row_index, end_row + 1):
                     for occupied_col in range(col_index, end_col + 1):
@@ -106,8 +127,10 @@ class WordTableRendererMixin:
         max_cols: int,
         usable_width: int,
         template_config: TemplateConfigPackage,
+        *,
+        reference_bookmarks: Any | None = None,
     ) -> None:
-        """大表 fallback：展开跨行跨列，避免巨大复杂表合并导致渲染失败。"""
+        """大表回退策略：展开跨行跨列，避免巨大复杂表合并导致渲染失败。"""
 
         rows = self._expand_table_rows(table_model, max_cols)
         table = self._add_configured_table(document, len(rows), max_cols, usable_width, template_config)
@@ -121,6 +144,7 @@ class WordTableRendererMixin:
                     HtmlCell(text=text, html=text),
                     row_index == 0,
                     template_config,
+                    reference_bookmarks=reference_bookmarks,
                 )
 
     def _add_configured_table(
@@ -179,6 +203,8 @@ class WordTableRendererMixin:
         cell_model: HtmlCell,
         is_header: bool,
         template_config: TemplateConfigPackage,
+        *,
+        reference_bookmarks: Any | None = None,
     ) -> None:
         cell.text = ""
         paragraph = cell.paragraphs[0]
@@ -188,6 +214,7 @@ class WordTableRendererMixin:
             cell_content,
             template_config.table_content,
             terminology=template_config.terminology,
+            reference_bookmarks=reference_bookmarks,
         )
         self._apply_table_header_run_style(paragraph, is_header, template_config)
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER if is_header else WD_ALIGN_PARAGRAPH.LEFT
@@ -235,8 +262,10 @@ class WordTableRendererMixin:
         document: Any,
         block: DocumentIRBlock,
         template_config: TemplateConfigPackage,
+        *,
+        caption_bookmarks: Any | None = None,
     ) -> None:
-        self._render_table_captions(document, block, template_config)
+        self._render_table_captions(document, block, template_config, caption_bookmarks=caption_bookmarks)
         self._render_table_notes(document, block, template_config)
 
     def _render_table_captions(
@@ -244,6 +273,8 @@ class WordTableRendererMixin:
         document: Any,
         block: DocumentIRBlock,
         template_config: TemplateConfigPackage,
+        *,
+        caption_bookmarks: Any | None = None,
     ) -> None:
         for text in self._unique_annotation_texts(block.captions):
             paragraph = document.add_paragraph()
@@ -251,12 +282,20 @@ class WordTableRendererMixin:
             if is_table_context_annotation(text):
                 self._fill_table_context_paragraph(paragraph, text, template_config)
                 continue
-            self._fill_paragraph(
+            style = self._caption_style_for_text(text, template_config)
+            if not self._fill_caption_paragraph(
                 paragraph,
                 text,
-                self._caption_style_for_text(text, template_config),
+                style,
                 terminology=template_config.terminology,
-            )
+                caption_bookmarks=caption_bookmarks,
+            ):
+                self._fill_paragraph(
+                    paragraph,
+                    text,
+                    style,
+                    terminology=template_config.terminology,
+                )
 
     def _render_table_notes(
         self,
@@ -315,12 +354,7 @@ class WordTableRendererMixin:
         return content
 
     def _available_table_width(self, document: Any) -> int:
-        sections = getattr(document, "sections", None)
-        if not sections:
-            return int(Cm(14))
-        section = sections[-1]
-        width = section.page_width - section.left_margin - section.right_margin
-        return int(width if width > 0 else Cm(14))
+        return self._content_width_and_columns(document)[0]
 
     def _template_config_for_table_columns(
         self,
@@ -408,22 +442,6 @@ class WordTableRendererMixin:
             element.set(qn("w:sz"), "4")
             element.set(qn("w:space"), "0")
             element.set(qn("w:color"), normalized_color)
-
-    def _clear_table_borders(self, table: Any) -> None:
-        table_properties = table._tbl.tblPr
-        borders = table_properties.find(qn("w:tblBorders"))
-        if borders is None:
-            borders = OxmlElement("w:tblBorders")
-            table_properties.append(borders)
-        for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
-            element = borders.find(qn(f"w:{edge}"))
-            if element is None:
-                element = OxmlElement(f"w:{edge}")
-                borders.append(element)
-            element.set(qn("w:val"), "none")
-            element.set(qn("w:sz"), "0")
-            element.set(qn("w:space"), "0")
-            element.set(qn("w:color"), "auto")
 
     def _configure_data_table_rows(self, table: Any) -> None:
         for row_index, row in enumerate(table.rows):

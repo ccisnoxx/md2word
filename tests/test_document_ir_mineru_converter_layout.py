@@ -9,10 +9,155 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+from app.conversion.docx_rules.mineru_content import find_final_promotional_page
 from app.services.document_ir import MinerUToDocumentIRService
 
 
 class MinerUToDocumentIRLayoutTests(unittest.TestCase):
+    def test_shared_final_promotional_page_rule_is_conservative(self) -> None:
+        image = {"type": "image", "img_path": "images/qr.png", "bbox": [100, 100, 300, 300], "page_idx": 2}
+        positive = [
+            {"type": "text", "text": "可使用微信扫码进入芯片助手小程序", "page_idx": 2},
+            image,
+        ]
+        self.assertEqual(find_final_promotional_page(positive), 2)
+
+        cases = {
+            "单个关键词": [{"type": "text", "text": "微信公众号", "page_idx": 2}, image],
+            "无资产": [{"type": "text", "text": "微信扫码进入小程序", "page_idx": 2}],
+            "方形技术图": [{"type": "text", "text": "产品封装图", "page_idx": 2}, image],
+            "免责声明": [
+                {"type": "text", "text": "微信扫码进入小程序" + "本资料仅供技术开发人员参考。" * 20, "page_idx": 2},
+                image,
+            ],
+            "版本表": [
+                {"type": "text", "text": "微信扫码进入小程序", "page_idx": 2},
+                {"type": "table", "table_body": "<table><tr><td>V1</td></tr></table>", "page_idx": 2},
+                image,
+            ],
+            "编号标题": [
+                {"type": "title", "text": "7 Version update 微信扫码进入小程序", "page_idx": 2},
+                image,
+            ],
+            "编号题注": [
+                {"type": "text", "text": "微信扫码进入小程序", "page_idx": 2},
+                {**image, "image_caption": ["图 8 技术框图"]},
+            ],
+            "公式": [
+                {"type": "text", "text": "微信扫码进入小程序", "page_idx": 2},
+                {"type": "equation", "latex": "V=IR", "page_idx": 2},
+                image,
+            ],
+            "列表": [
+                {"type": "text", "text": "微信扫码进入小程序", "page_idx": 2},
+                {"type": "list", "list_items": ["技术参数"], "page_idx": 2},
+                image,
+            ],
+            "非最后页": [
+                {"type": "text", "text": "微信扫码进入小程序", "page_idx": 1},
+                {**image, "page_idx": 1},
+                {"type": "text", "text": "最后一页技术正文", "page_idx": 2},
+            ],
+        }
+        for label, blocks in cases.items():
+            with self.subTest(label=label):
+                self.assertIsNone(find_final_promotional_page(blocks))
+
+    def test_convert_zip_removes_final_promotional_page_blocks_pages_and_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "mineru.zip"
+            self._write_zip(
+                zip_path,
+                blocks=[
+                    {"type": "text", "text": "正文", "bbox": [72, 80, 200, 100], "page_idx": 0},
+                    {
+                        "type": "image",
+                        "img_path": "images/chart.png",
+                        "image_caption": ["图 1 正文图片"],
+                        "bbox": [72, 120, 300, 300],
+                        "page_idx": 0,
+                    },
+                    {"type": "text", "text": "可使用微信扫码进入芯片助手小程序", "bbox": [72, 80, 300, 120], "page_idx": 1},
+                    {
+                        "type": "image",
+                        "img_path": "images/qr.png",
+                        "bbox": [150, 180, 350, 380],
+                        "page_idx": 1,
+                    },
+                    {"type": "footer", "text": "www.example.com", "bbox": [72, 740, 300, 760], "page_idx": 1},
+                ],
+                layout={
+                    "pdf_info": [
+                        {"page_idx": 0, "page_size": [612, 792]},
+                        {"page_idx": 1, "page_size": [612, 792]},
+                    ]
+                },
+                images={"images/chart.png": b"body-image", "images/qr.png": b"qr-image"},
+            )
+
+            result = MinerUToDocumentIRService().convert_zip(
+                zip_path,
+                job_id="docjob_promo",
+                source_file_id="file_promo",
+                document_language="zh",
+            )
+
+        self.assertEqual([page.index for page in result.document.pages], [0])
+        self.assertEqual({block.page_index for block in result.document.blocks}, {0})
+        self.assertEqual([asset.source_path for asset in result.document.assets], ["images/chart.png"])
+        self.assertEqual([asset.source_path for asset in result.image_assets], ["images/chart.png"])
+        self.assertIn("final_promotional_page_filtered:1", result.document.quality_flags)
+
+    def test_convert_zip_uses_physical_final_page_from_layout_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "mineru.zip"
+            self._write_zip(
+                zip_path,
+                blocks=[
+                    {"type": "text", "text": "微信扫码进入小程序", "page_idx": 1},
+                    {"type": "image", "img_path": "images/qr.png", "page_idx": 1},
+                ],
+                layout={"pdf_info": [{"page_idx": index, "page_size": [612, 792]} for index in range(3)]},
+                images={"images/qr.png": b"qr-image"},
+            )
+
+            result = MinerUToDocumentIRService().convert_zip(
+                zip_path,
+                job_id="docjob_non_final_promo",
+                source_file_id="file_non_final_promo",
+                document_language="zh",
+            )
+
+        self.assertEqual([page.index for page in result.document.pages], [0, 1, 2])
+        self.assertNotIn("final_promotional_page_filtered:1", result.document.quality_flags)
+        self.assertEqual(len(result.image_assets), 1)
+
+    def test_convert_zip_filters_final_promotional_page_without_layout_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "mineru.zip"
+            self._write_zip(
+                zip_path,
+                blocks=[
+                    {"type": "text", "text": "微信扫码进入小程序", "page_idx": 3},
+                    {"type": "image", "img_path": "images/qr.png", "page_idx": 3},
+                ],
+                layout=None,
+                images={"images/qr.png": b"qr-image"},
+            )
+
+            result = MinerUToDocumentIRService().convert_zip(
+                zip_path,
+                job_id="docjob_promo_without_layout",
+                source_file_id="file_promo_without_layout",
+                document_language="zh",
+            )
+
+        self.assertEqual(result.document.pages, [])
+        self.assertEqual(result.document.blocks, [])
+        self.assertEqual(result.document.assets, [])
+        self.assertEqual(result.image_assets, [])
+        self.assertIn("final_promotional_page_filtered:3", result.document.quality_flags)
+
     def test_convert_zip_outputs_v2_pages_layout_roles_and_annotations(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             zip_path = Path(temp_dir) / "mineru.zip"
@@ -119,6 +264,113 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
         self.assertEqual(document.blocks[0].layout.continuation_heights, [200.0])
         self.assertIn("table_continuation:block_0001", document.quality_flags)
         self.assertIn("layout_wide_table:block_0001", document.quality_flags)
+
+    def test_convert_zip_merges_real_mineru_empty_table_continuations(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "mineru.zip"
+            self._write_zip(
+                zip_path,
+                blocks=[
+                    {
+                        "type": "table",
+                        "table_body": "<table><tr><td>Part</td></tr></table>",
+                        "bbox": [72, 120, 540, 300],
+                        "page_idx": 0,
+                    },
+                    {
+                        "type": "table",
+                        "img_path": "",
+                        "html": "",
+                        "bbox": [72, 50, 540, 250],
+                        "page_idx": 1,
+                    },
+                    {
+                        "type": "table",
+                        "html": "",
+                        "image_source": {"path": "images/"},
+                        "bbox": [72, 40, 540, 280],
+                        "page_idx": 2,
+                    },
+                ],
+                layout={
+                    "pdf_info": [
+                        {"page_idx": 0, "page_size": [612, 792]},
+                        {"page_idx": 1, "page_size": [612, 792]},
+                        {"page_idx": 2, "page_size": [612, 792]},
+                    ]
+                },
+            )
+
+            result = MinerUToDocumentIRService().convert_zip(
+                zip_path,
+                job_id="docjob_real_continuation",
+                source_file_id="file_real_continuation",
+                document_language="en",
+            )
+
+        self.assertEqual(len(result.document.blocks), 1)
+        self.assertEqual(result.document.blocks[0].type, "table")
+        self.assertEqual(result.document.blocks[0].layout.continuation_heights, [200.0, 240.0])
+
+    def test_convert_zip_reassociates_only_strict_numbered_image_groups(self) -> None:
+        blocks = [
+            {"type": "chart", "img_path": "images/chart.png", "chart_caption": [], "bbox": [10, 10, 90, 90], "page_idx": 0},
+            {
+                "type": "chart",
+                "img_path": "images/chart.png",
+                "chart_caption": ["图 3 响应", "图 5 响应"],
+                "bbox": [110, 10, 190, 90],
+                "page_idx": 0,
+            },
+            {
+                "type": "chart",
+                "img_path": "images/chart.png",
+                "chart_caption": ["图 4 响应"],
+                "bbox": [10, 110, 90, 190],
+                "page_idx": 0,
+            },
+            {
+                "type": "chart",
+                "img_path": "images/chart.png",
+                "chart_caption": ["图 6 响应"],
+                "bbox": [110, 110, 190, 190],
+                "page_idx": 0,
+            },
+            {"type": "chart", "img_path": "images/chart.png", "chart_caption": ["图 7 正确"], "bbox": [10, 10, 90, 90], "page_idx": 1},
+            {"type": "chart", "img_path": "images/chart.png", "chart_caption": ["图 8 正确"], "bbox": [110, 10, 190, 90], "page_idx": 1},
+            {"type": "chart", "img_path": "images/chart.png", "chart_caption": [], "bbox": [10, 10, 90, 90], "page_idx": 2},
+            {"type": "chart", "img_path": "images/chart.png", "chart_caption": ["图 9 数量不足"], "bbox": [110, 10, 190, 90], "page_idx": 2},
+            {"type": "chart", "img_path": "images/chart.png", "chart_caption": [], "bbox": [10, 10, 90, 90], "page_idx": 3},
+            {
+                "type": "chart",
+                "img_path": "images/chart.png",
+                "chart_caption": ["图 11 不连续", "图 13 不连续"],
+                "bbox": [110, 10, 190, 90],
+                "page_idx": 3,
+            },
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "mineru.zip"
+            self._write_zip(
+                zip_path,
+                blocks=blocks,
+                layout={"pdf_info": [{"page_idx": index, "page_size": [200, 300]} for index in range(4)]},
+            )
+            result = MinerUToDocumentIRService().convert_zip(
+                zip_path,
+                job_id="docjob_captions",
+                source_file_id="file_captions",
+                document_language="zh",
+            )
+
+        captions_by_page = {
+            page_index: [block.captions for block in result.document.blocks if block.page_index == page_index]
+            for page_index in range(4)
+        }
+        self.assertEqual(captions_by_page[0], [["图 3 响应"], ["图 4 响应"], ["图 5 响应"], ["图 6 响应"]])
+        self.assertEqual(captions_by_page[1], [["图 7 正确"], ["图 8 正确"]])
+        self.assertEqual(captions_by_page[2], [[], ["图 9 数量不足"]])
+        self.assertEqual(captions_by_page[3], [[], ["图 11 不连续", "图 13 不连续"]])
 
     def test_convert_zip_demotes_table_condition_caption_to_context_paragraph(self) -> None:
         condition = (
@@ -249,12 +501,20 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
         self.assertIn("middle_json_missing", result.document.quality_flags)
         self.assertIn("layout_bbox_missing:block_0001", result.document.quality_flags)
 
-    def _write_zip(self, zip_path: Path, *, blocks: list[Any], layout: dict | None) -> None:
+    def _write_zip(
+        self,
+        zip_path: Path,
+        *,
+        blocks: list[Any],
+        layout: dict | None,
+        images: dict[str, bytes] | None = None,
+    ) -> None:
         with zipfile.ZipFile(zip_path, "w") as archive:
             archive.writestr("content_list.json", json.dumps(blocks, ensure_ascii=False))
             if layout is not None:
                 archive.writestr("layout.json", json.dumps(layout, ensure_ascii=False))
-            archive.writestr("images/chart.png", b"fake-image")
+            for image_path, content in (images or {"images/chart.png": b"fake-image"}).items():
+                archive.writestr(image_path, content)
 
 
 if __name__ == "__main__":

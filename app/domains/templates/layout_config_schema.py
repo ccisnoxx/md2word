@@ -83,6 +83,8 @@ class TemplateFooterConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     enabled: bool = False
+    left_text: str = ""
+    right_text: str = ""
     show_page_number: bool = False
     font_name: str | None = None
     western_font_name: str | None = None
@@ -299,6 +301,8 @@ GROUP_FIELD_SCHEMA: dict[str, dict[str, dict[str, Any]]] = {
     },
     "footer": {
         "enabled": _field("boolean", "启用页脚覆盖"),
+        "left_text": _field("text", "页脚左侧文字"),
+        "right_text": _field("text", "页脚右侧文字"),
         "show_page_number": _field("boolean", "显示页码"),
         "font_name": _field("text", "页脚中文字体"),
         "western_font_name": _field("text", "页脚西文字体"),

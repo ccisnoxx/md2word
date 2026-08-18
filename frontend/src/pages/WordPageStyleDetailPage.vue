@@ -59,7 +59,7 @@
 
     <el-alert
       class="app-page-shell app-page-shell--wide"
-      title="公司 Logo、默认页眉内容和 DOCX 文件由 Word 模板文档维护；这里保留页眉/页脚文字样式、对齐和开关等排版设置。"
+      title="公司 Logo、默认页眉内容和 DOCX 文件由 Word 模板文档维护；启用页脚覆盖后，可在这里配置左右静态文字和居中页码。"
       type="info"
       show-icon
       :closable="false"
@@ -239,7 +239,11 @@
                 <div :style="previewTableCellStyle">输入电压</div><div :style="previewTableCellStyle">5 V</div>
               </div>
               <p v-else :style="previewTextStyle">{{ previewText }}</p>
-              <div v-if="previewFooterEnabled" class="preview-footer">1</div>
+              <div v-if="previewFooterEnabled" class="preview-footer">
+                <span>{{ previewFooterLeftText }}</span>
+                <span>{{ previewFooterShowPageNumber ? "1" : "" }}</span>
+                <span>{{ previewFooterRightText }}</span>
+              </div>
             </div>
             <p class="preview-disclaimer">效果示意，最终以该 draft 的真实 Word 验证任务为准。</p>
           </WorkbenchPanelCard>
@@ -390,6 +394,9 @@ const previewText = computed(() => previewTextForGroup(activeLayoutGroup.value))
 const previewHeaderEnabled = computed(() => Boolean(layoutConfigForm.value.header?.enabled));
 const previewFooterEnabled = computed(() => Boolean(layoutConfigForm.value.footer?.enabled));
 const previewHeaderText = computed(() => String(layoutConfigForm.value.header?.title_text || "数据手册"));
+const previewFooterLeftText = computed(() => String(layoutConfigForm.value.footer?.left_text || ""));
+const previewFooterRightText = computed(() => String(layoutConfigForm.value.footer?.right_text || ""));
+const previewFooterShowPageNumber = computed(() => Boolean(layoutConfigForm.value.footer?.show_page_number));
 const previewTableHeaderStyle = computed(() => ({
   backgroundColor: String(layoutConfigForm.value.table_style?.header_fill || "#EEF3F8"),
   borderColor: String(layoutConfigForm.value.table_style?.border_color || "#C7CDD4"),
@@ -1200,6 +1207,18 @@ onBeforeUnmount(() => {
 
 .preview-footer {
   bottom: 4%;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 4px;
+  text-align: left;
+}
+
+.preview-footer span:nth-child(2) {
+  text-align: center;
+}
+
+.preview-footer span:last-child {
+  text-align: right;
 }
 
 .preview-table {

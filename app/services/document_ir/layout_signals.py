@@ -6,6 +6,12 @@ import json
 from pathlib import Path
 from typing import Any
 
+from app.conversion.docx_rules.mineru_content import (
+    collect_text_from_fields,
+    extract_first_asset_path,
+    extract_first_html,
+    is_empty_table_placeholder,
+)
 from app.services.document_ir.models import (
     DocumentIRBlockLayout,
     DocumentIRBlockRole,
@@ -27,6 +33,8 @@ def build_pages(
     raw_blocks: list[dict[str, Any]],
     package_root: Path,
     quality_flags: list[str],
+    *,
+    excluded_page_indices: set[int] | None = None,
 ) -> list[DocumentIRPage]:
     """构造 v2 页记录；优先读取 layout/middle 页尺寸，再对齐 content bbox 坐标空间。"""
 
@@ -36,8 +44,9 @@ def build_pages(
 
     page_indices = set(page_sizes)
     page_indices.update(page_index for block in raw_blocks if (page_index := parse_page_index(block)) is not None)
-    if not page_indices:
+    if not page_indices and not excluded_page_indices:
         page_indices.add(0)
+    page_indices.difference_update(excluded_page_indices or set())
 
     bbox_extents = _bbox_extents_by_page(raw_blocks)
     pages: list[DocumentIRPage] = []
@@ -56,6 +65,27 @@ def build_pages(
             metadata["orientation"] = "landscape" if width > height else "portrait"
         pages.append(DocumentIRPage(index=page_index, width=width, height=height, metadata=metadata))
     return pages
+
+
+def find_final_source_page_index(
+    raw_blocks: list[dict[str, Any]],
+    package_root: Path,
+) -> int | None:
+    """优先按 MinerU 物理页元数据确定最后源页，缺失时回退到内容块页号。"""
+
+    pdf_info, _source_name = _load_pdf_info(package_root)
+    if pdf_info:
+        page_indices = [
+            _coerce_int(page_info.get("page_idx"), fallback=fallback_index)
+            for fallback_index, page_info in enumerate(pdf_info)
+            if isinstance(page_info, dict)
+        ]
+        if page_indices:
+            return max(page_indices)
+    return max(
+        (page_index for block in raw_blocks if (page_index := parse_page_index(block)) is not None),
+        default=None,
+    )
 
 
 def build_block_layout(
@@ -112,13 +142,14 @@ def build_block_layout_metadata(
 
 
 def merge_table_placeholder_continuations(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """把连续 table_placeholder 高度并入前一张真实表，保持 DocumentIR 不输出占位块。"""
+    """把显式或 MinerU 空表续页高度并入前一张真实表。"""
 
     merged: list[dict[str, Any]] = []
     pending_table: dict[str, Any] | None = None
     for raw_block in raw_blocks:
         source_type = _source_type(raw_block)
-        if source_type == "table_placeholder" and pending_table is not None:
+        is_placeholder = source_type == "table_placeholder" or _is_mineru_empty_table_placeholder(raw_block)
+        if is_placeholder and pending_table is not None:
             placeholder_height = _placeholder_height(raw_block)
             if placeholder_height is not None:
                 continuation_heights = _parse_float_list(
@@ -174,6 +205,15 @@ def _load_page_sizes(package_root: Path) -> tuple[dict[int, tuple[float, float]]
         if page_sizes:
             return page_sizes, path.name
     return {}, None
+
+
+def _load_pdf_info(package_root: Path) -> tuple[list[Any], str | None]:
+    for path in _layout_info_candidates(package_root):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        pdf_info = payload.get("pdf_info", []) if isinstance(payload, dict) else []
+        if isinstance(pdf_info, list) and pdf_info:
+            return pdf_info, path.name
+    return [], None
 
 
 def _layout_info_candidates(package_root: Path) -> list[Path]:
@@ -246,6 +286,24 @@ def _source_type(raw_block: dict[str, Any]) -> str:
 def _is_table_block(raw_block: dict[str, Any]) -> bool:
     source_type = _source_type(raw_block)
     return source_type == "table" or bool(raw_block.get("table_body") or raw_block.get("table_html"))
+
+
+def _is_mineru_empty_table_placeholder(raw_block: dict[str, Any]) -> bool:
+    bbox = parse_bbox(raw_block.get("bbox")) or (0.0, 0.0, 0.0, 0.0)
+    direct_asset_path = raw_block.get("img_path", raw_block.get("image_path"))
+    raw_asset_path = direct_asset_path if isinstance(direct_asset_path, str) else extract_first_asset_path(raw_block)
+    return is_empty_table_placeholder(
+        block_type=_source_type(raw_block),
+        raw_asset_path=raw_asset_path,
+        image_path=None,
+        captions=collect_text_from_fields(raw_block, ("table_caption", "caption", "captions")),
+        html=extract_first_html(raw_block),
+        text_candidates=collect_text_from_fields(
+            raw_block,
+            ("text", "content", "equation_content", "math_content", "latex", "alt", "description"),
+        ),
+        bbox=bbox,
+    )
 
 
 def _bbox_extents_by_page(raw_blocks: list[dict[str, Any]]) -> dict[int, tuple[float, float]]:

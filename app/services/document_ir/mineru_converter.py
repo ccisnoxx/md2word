@@ -3,6 +3,7 @@ from __future__ import annotations
 # app/services/document_ir/mineru_converter.py: 将 MinerU 原始结果包转换为 DocumentIR v2。
 
 import mimetypes
+import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +16,7 @@ from app.conversion.docx_rules.mineru_content import (
     collect_text_from_fields,
     extract_first_asset_path,
     extract_first_html,
+    find_final_promotional_page,
     join_text_fragments,
     merge_footnote_fragments,
     split_toc_like_lines,
@@ -23,6 +25,7 @@ from app.services.document_ir.layout_signals import (
     build_block_layout,
     build_block_layout_metadata,
     build_pages,
+    find_final_source_page_index,
     merge_table_placeholder_continuations,
     parse_page_index,
     role_for_source_type,
@@ -36,6 +39,12 @@ from app.services.document_ir.models import (
     DocumentIRMetadata,
 )
 from app.services.document_ir.table_annotations import split_table_annotation_texts
+
+
+NUMBERED_FIGURE_CAPTION_RE = re.compile(
+    r"^\s*(?P<label>图|Figure)\s*(?P<number>\d+)(?![A-Za-z0-9]|[.．]\d|[-–—][A-Za-z0-9])",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,8 +104,21 @@ class MinerUToDocumentIRService:
         ir_assets: list[DocumentIRAsset] = []
         quality_flags: list[str] = []
         unsupported_types: set[str] = set()
+        filtered_page_index = find_final_promotional_page(
+            raw_blocks,
+            final_page_index=find_final_source_page_index(raw_blocks, package_root),
+        )
+        if filtered_page_index is not None:
+            raw_blocks = [block for block in raw_blocks if parse_page_index(block) != filtered_page_index]
+            quality_flags.append(f"final_promotional_page_filtered:{filtered_page_index}")
+        raw_blocks = self._reassociate_numbered_image_captions(raw_blocks)
         raw_blocks = merge_table_placeholder_continuations(raw_blocks)
-        pages = build_pages(raw_blocks, package_root, quality_flags)
+        pages = build_pages(
+            raw_blocks,
+            package_root,
+            quality_flags,
+            excluded_page_indices={filtered_page_index} if filtered_page_index is not None else None,
+        )
         page_width_by_index = {page.index: page.width for page in pages}
 
         for index, raw_block in enumerate(raw_blocks):
@@ -223,6 +245,70 @@ class MinerUToDocumentIRService:
         if split_toc_like_lines(self._raw_text_preserving_lines(raw_block)):
             return "list"
         return "paragraph"
+
+    def _reassociate_numbered_image_captions(
+        self,
+        raw_blocks: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """在严格可判定时修复同页连续图片组的 MinerU 图注错配。"""
+
+        normalized: list[dict[str, Any]] = []
+        index = 0
+        while index < len(raw_blocks):
+            first = raw_blocks[index]
+            page_index = parse_page_index(first)
+            if page_index is None or not self._is_image_source_block(first):
+                normalized.append(first)
+                index += 1
+                continue
+
+            end = index + 1
+            while (
+                end < len(raw_blocks)
+                and parse_page_index(raw_blocks[end]) == page_index
+                and self._is_image_source_block(raw_blocks[end])
+            ):
+                end += 1
+            normalized.extend(self._reassociate_image_group(raw_blocks[index:end]))
+            index = end
+        return normalized
+
+    def _reassociate_image_group(self, group: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        captions_by_block = [self._captions(block, self._source_type(block)) for block in group]
+        if not any(len(captions) != 1 for captions in captions_by_block):
+            return group
+
+        parsed_captions: list[tuple[str, int, str]] = []
+        for caption in (caption for captions in captions_by_block for caption in captions):
+            match = NUMBERED_FIGURE_CAPTION_RE.match(caption)
+            if match is None:
+                return group
+            parsed_captions.append((match.group("label").lower(), int(match.group("number")), caption))
+
+        if len(parsed_captions) != len(group):
+            return group
+        labels = {label for label, _number, _caption in parsed_captions}
+        numbers = [number for _label, number, _caption in parsed_captions]
+        if len(labels) != 1 or len(set(numbers)) != len(numbers):
+            return group
+        ordered = sorted(parsed_captions, key=lambda item: item[1])
+        if [number for _label, number, _caption in ordered] != list(range(ordered[0][1], ordered[0][1] + len(group))):
+            return group
+
+        reassociated: list[dict[str, Any]] = []
+        for block, (_label, _number, caption) in zip(group, ordered, strict=True):
+            copied = dict(block)
+            source_type = self._source_type(copied)
+            copied.pop("caption", None)
+            copied[f"{source_type}_caption"] = [caption]
+            reassociated.append(copied)
+        return reassociated
+
+    def _is_image_source_block(self, raw_block: dict[str, Any]) -> bool:
+        return self._source_type(raw_block) in {"chart", "image", "figure"}
+
+    def _source_type(self, raw_block: dict[str, Any]) -> str:
+        return str(raw_block.get("type") or raw_block.get("block_type") or "").strip().lower()
 
     def _metadata_from_raw(self, raw_block: dict[str, Any], source_type: str) -> dict[str, Any]:
         metadata: dict[str, Any] = {"source_type": source_type}
