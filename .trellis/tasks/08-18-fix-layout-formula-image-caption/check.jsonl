@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "复核转换渲染变更的项目范围和规范索引。"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "复核测试、回归与禁止模式；当前规范占位，需以 AGENTS.md 为主。"}
+{"file": ".trellis/tasks/08-18-fix-layout-formula-image-caption/research/sc2167-analysis.md", "reason": "按已验证根因和样本基线检查版面、公式、图片、题注及编号联动缺陷。"}
+{"file": ".trellis/tasks/08-18-fix-layout-formula-image-caption/research/caption-reassociation.md", "reason": "复核图注重配只在严格条件成立时执行且真样本映射正确。"}
+{"file": ".trellis/tasks/08-18-fix-layout-formula-image-caption/research/omml-extended-tex.md", "reason": "复核六类结构的 OOXML、可见结果与残留质量证据。"}
+{"file": ".trellis/tasks/08-18-fix-layout-formula-image-caption/research/blank-pages-word.md", "reason": "复核空续表、同方向分页合同及排除页眉页脚后的正文空白页。"}
+{"file": ".trellis/tasks/08-18-fix-layout-formula-image-caption/research/configurable-footer.md", "reason": "复核配置兼容、管理/前端链路、ptab/PAGE 和分节继承。"}
+{"file": ".trellis/tasks/08-18-fix-layout-formula-image-caption/research/final-promotional-page-filter.md", "reason": "复核末页过滤只在全部守卫成立时执行，page/blocks/assets 同步删除，且合法封底负样本保持。"}
