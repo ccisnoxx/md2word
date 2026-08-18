@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 21
+- **Total Sessions**: 22
 - **Last Active**: 2026-08-18
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~708 | Active |
+| `journal-1.md` | ~741 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 22 | 2026-08-18 | 修复 MinerU 布局、分页与公式转换 | `674ce937` | `main` |
 | 21 | 2026-08-18 | 完成 Word 原生化与 MinerU 清洗 | `5d4a02d`, `69e0f6e` | `codex/frontend-v2-publication-workspace-core` |
 | 20 | 2026-07-23 | 扩展翻译模式与 Prompt 编辑工作区并部署生产 | `6399ee1d` | `main` |
 | 19 | 2026-07-22 | 整合多文种字体并部署 default@2 | `08068324`, `13b6a65b`, `d6c2cea2` | `main` |

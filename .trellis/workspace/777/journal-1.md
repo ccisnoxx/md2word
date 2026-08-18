@@ -706,3 +706,36 @@ Released commit b167e61 to hostdzire via release dir flow; verified internal/pub
 ### Next Steps
 
 - 重新部署生产环境并完成线上健康检查。
+
+
+## Session 22: 修复 MinerU 布局、分页与公式转换
+
+**Date**: 2026-08-18
+**Task**: 修复 MinerU 布局、分页与公式转换
+**Branch**: `main`
+
+### Summary
+
+优先使用 MinerU v2，修复页面坐标、列表换行、局部双栏和语义分页；扩充共享 OMML 公式预处理与高频 TeX 子集，并通过 CM4112 正式样本及发布门禁验证。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `674ce937` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
