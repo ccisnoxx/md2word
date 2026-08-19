@@ -806,3 +806,32 @@ Released commit b167e61 to hostdzire via release dir flow; verified internal/pub
 ### Next Steps
 
 - None - task complete
+
+
+## Session 25: 取消 Word 原生公式默认斜体
+
+**Date**: 2026-08-19
+**Task**: 取消 Word 原生公式默认斜体
+**Branch**: `main`
+
+### Summary
+
+为普通 OMML 公式字符写入直立样式，并保留显式 mathit 斜体。
+
+### Main Changes
+
+- 统一在共享 OMML math run owner 写入 m:sty=p，并同步 MATH-002 规范。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bb11f02` | (see git log) |
+
+### Testing
+
+- [OK] DocumentIRWordRendererLayoutTests 51 项及正式本地转换定向测试通过。
+
+### Status
+
+[OK] **Completed**
