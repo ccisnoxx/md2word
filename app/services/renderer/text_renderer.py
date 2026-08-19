@@ -309,6 +309,7 @@ class _OmmlParser:
         value.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
         value.text = text
         run.append(value)
+        _OmmlParser._apply_math_style([run], "p")
         return run
 
 

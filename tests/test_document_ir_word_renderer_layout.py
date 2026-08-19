@@ -820,6 +820,12 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
             (script_text(element, "e"), script_text(element, "sub"))
             for element in root.findall(".//m:sSub", math_namespace)
         ]
+        math_runs = root.findall(".//m:r", math_namespace)
+        math_style_values = [
+            style.get("{http://schemas.openxmlformats.org/officeDocument/2006/math}val") if style is not None else None
+            for run in math_runs
+            for style in [run.find("m:rPr/m:sty", math_namespace)]
+        ]
 
         self.assertGreaterEqual(xml.count("<m:oMath>"), 2)
         self.assertGreaterEqual(xml.count("<m:f>"), 2)
@@ -827,6 +833,8 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertGreaterEqual(xml.count("<m:sSub>"), 2)
         self.assertGreaterEqual(superscripts.count(("2", "15")), 2)
         self.assertGreaterEqual(subscripts.count(("f", "CLKIN")), 2)
+        self.assertTrue(math_runs)
+        self.assertEqual(math_style_values, ["p"] * len(math_runs))
         self.assertIn("FCW ×fCLKIN", visible_text)
         self.assertIn("215", visible_text)
         self.assertIn("A × B", visible_text)

@@ -432,7 +432,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 状态：`implemented-gap`
 - 输入信号：公式 block、正文 inline math、表格 cell/notes 中的 TeX；支持分式、根式、上下标、常用符号、文本/样式 wrapper、overline、boxed 和 left/right 等当前解析子集。
 - 正式 owner：`app/services/renderer/text_renderer.py::_OmmlParser`、`WordTextRendererMixin._render_mixed_math`、`._fill_formula_paragraph`；`app/conversion/docx_rules/text_semantics.py::normalize_formula_text`、`::collapse_double_escaped_tex_commands`。
-- 预期输出：支持的数学结构写为原生 OMML；正文、独立公式、表格 cell 和 note 共用同一归一化/解析路径；只折叠已知 TeX command 的双反斜杠，保留普通 UNC/路径文本。
+- 预期输出：支持的数学结构写为原生 OMML；普通公式字符显式使用直立体，只有 `\\mathit` 等源公式明确要求时才使用斜体；正文、独立公式、表格 cell 和 note 共用同一归一化/解析路径；只折叠已知 TeX command 的双反斜杠，保留普通 UNC/路径文本。
 - 冲突/例外：不是完整 TeX 引擎；matrix/cases/align、自定义 macro 等未实现结构不得写成“全部公式已支持”。当前 `\\tag{...}` 会被识别但不生成可见公式编号，现有公式矩阵只证明命令残留被移除，不能证明编号保真。
 - 禁止：每遇到一个公式就在调用者加特例；全局删除反斜杠；仅在正文修复而遗漏表格/题注路径；声称支持任意 LaTeX。
 - 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_writes_fraction_omml_in_formula_and_table_cells`、`.test_render_to_bytes_writes_extended_omml_in_all_shared_text_paths`、`.test_render_to_bytes_preprocesses_cm4112_formulas_without_tex_residue`、`.test_render_to_bytes_supports_datasheet_tex_matrix_in_all_math_entries`、`.test_render_to_bytes_normalizes_formula_text_in_table_cells_and_notes`、`.test_render_to_bytes_normalizes_manual_quality_record_formula_residue`。
