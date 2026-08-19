@@ -104,7 +104,43 @@ def _build_regions(body_blocks: list[DocumentIRBlock], page_width: float | None)
             regions[-1].blocks.append(block)
         else:
             regions.append(LayoutRegion(kind=kind, blocks=[block]))
-    return regions
+    return _merge_single_column_tails(regions, page_width)
+
+
+def _merge_single_column_tails(regions: list[LayoutRegion], page_width: float) -> list[LayoutRegion]:
+    """把有充分栏位证据的同侧正文尾部留在前一双栏流中。"""
+
+    merged: list[LayoutRegion] = []
+    index = 0
+    while index < len(regions):
+        region = regions[index]
+        tail = regions[index + 1] if index + 1 < len(regions) else None
+        later_regions = regions[index + 2 :]
+        if (
+            region.kind == "two_col"
+            and not _is_image_only_region(region)
+            and tail is not None
+            and tail.kind == "one_col"
+            and _is_single_side_text_tail(tail, page_width)
+            and all(candidate.kind == "two_col" and _is_image_only_region(candidate) for candidate in later_regions)
+        ):
+            merged.append(LayoutRegion(kind="two_col", blocks=[*region.blocks, *tail.blocks]))
+            index += 2
+            continue
+        merged.append(region)
+        index += 1
+    return merged
+
+
+def _is_single_side_text_tail(region: LayoutRegion, page_width: float) -> bool:
+    if not region.blocks or any(block.type == "image" or _bbox(block) is None for block in region.blocks):
+        return False
+    classes = {_classify_body_block(block, page_width) for block in region.blocks}
+    return classes in ({"left"}, {"right"})
+
+
+def _is_image_only_region(region: LayoutRegion) -> bool:
+    return bool(region.blocks) and all(block.type == "image" for block in region.blocks)
 
 
 def _detect_two_col_bands(body_blocks: list[DocumentIRBlock], page_width: float) -> list[tuple[float, float]]:

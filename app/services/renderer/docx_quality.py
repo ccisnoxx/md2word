@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
 
-from app.conversion.docx_rules.text_semantics import parse_toc_entry_text
+from app.conversion.docx_rules.text_semantics import looks_like_heading_text, parse_toc_entry_text
 
 
 EDITABLE_TEXT_MIN_CHARS = 20
@@ -23,30 +23,6 @@ LATEX_RESIDUE_RE = re.compile(
     r"(\$[^$]{1,160}\$|\\[A-Za-z]+\b|[_^]\{?\\?[A-Za-z0-9()+\-/]+\}?)"
 )
 MANUAL_LIST_MARKER_RE = re.compile(r"^\s*(?:[•■*]|[-–—])\s+")
-NUMBERED_HEADING_RE = re.compile(r"^(?:\d+(?:\.\d+){0,5})\s+\S")
-HEADING_NUMBER_RE = re.compile(
-    r"^(?:\d+[.、]|\d+\.\d+|附录[A-Z\d.\-]+|appendix\s+[A-Z\d.\-]+)",
-    re.IGNORECASE,
-)
-ENGLISH_HEADING_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9/&()\-]*")
-ENGLISH_HEADING_STOPWORDS = {
-    "a",
-    "an",
-    "and",
-    "as",
-    "at",
-    "by",
-    "for",
-    "from",
-    "in",
-    "of",
-    "on",
-    "or",
-    "the",
-    "to",
-    "with",
-    "vs",
-}
 WIDE_TABLE_MIN_COLUMNS = 6
 
 
@@ -131,6 +107,7 @@ def _analyze_docx_package(package: zipfile.ZipFile) -> dict[str, Any]:
         paragraph
         for paragraph in body_paragraphs
         if paragraph.find("./w:pPr/w:numPr", DOCX_XML_NS) is None
+        and not _paragraph_has_dot_tab_leader(paragraph)
     ]
     semantic_body_paragraph_texts = [_paragraph_text(paragraph) for paragraph in semantic_body_paragraphs]
     joined_text = "\n".join(text for text in paragraph_texts if text)
@@ -152,11 +129,11 @@ def _analyze_docx_package(package: zipfile.ZipFile) -> dict[str, Any]:
         "media_count": media_count,
         "inline_shape_count": inline_shape_count,
         "heading_paragraphs": heading_paragraphs,
-        "heading_like_paragraphs": sum(1 for text in semantic_body_paragraph_texts if _looks_like_heading_text(text)),
+        "heading_like_paragraphs": sum(1 for text in semantic_body_paragraph_texts if looks_like_heading_text(text)),
         "heading_like_unstyled_paragraphs": sum(
             1
             for paragraph, text in zip(semantic_body_paragraphs, semantic_body_paragraph_texts, strict=True)
-            if _looks_like_heading_text(text) and not _paragraph_has_heading_style(paragraph, heading_style_ids)
+            if looks_like_heading_text(text) and not _paragraph_has_heading_style(paragraph, heading_style_ids)
         ),
         "numbering_paragraphs": sum(1 for paragraph in paragraphs if paragraph.find("./w:pPr/w:numPr", DOCX_XML_NS) is not None),
         "manual_list_marker_paragraphs": sum(1 for text in body_paragraph_texts if MANUAL_LIST_MARKER_RE.match(text)),
@@ -283,45 +260,6 @@ def _table_column_count(table: ElementTree.Element) -> int:
 
 def _looks_like_plain_toc_entry(text: str) -> bool:
     return parse_toc_entry_text(text) is not None
-
-
-def _looks_like_heading_text(text: str) -> bool:
-    cleaned = " ".join((text or "").replace("\n", " ").split()).strip()
-    cleaned = re.sub(r"(?:[.\s·。…]{2,}|\s+)\d+\s*$", "", cleaned)
-    if len(cleaned) > 80 or not cleaned or cleaned[-1:] in ".!?;:":
-        return False
-    if MANUAL_LIST_MARKER_RE.match(cleaned) or _looks_like_plain_toc_entry(text):
-        return False
-    if re.search(r"[$\\{}=<>/√±°µμθψΩ]", cleaned):
-        return False
-    if re.match(r"^(?:table|figure)\b", cleaned, re.IGNORECASE):
-        return False
-    if re.match(r"^\d+\.[A-Z]", cleaned):
-        return False
-    if NUMBERED_HEADING_RE.match(cleaned) or HEADING_NUMBER_RE.match(cleaned):
-        return True
-    return _looks_like_english_heading_text(cleaned)
-
-
-def _looks_like_english_heading_text(text: str) -> bool:
-    stripped = text.strip()
-    tokens = ENGLISH_HEADING_TOKEN_RE.findall(stripped)
-    if not 1 <= len(tokens) <= 8:
-        return False
-    if len(tokens) == 1 and not tokens[0].isupper():
-        return False
-
-    significant_chars = sum(1 for char in stripped if char.isalpha() or char.isdigit())
-    token_chars = sum(len(token) for token in tokens)
-    if token_chars < significant_chars * 0.7:
-        return False
-
-    acceptable = 0
-    for token in tokens:
-        lowered = token.lower()
-        if lowered in ENGLISH_HEADING_STOPWORDS or token.isupper() or token[0].isupper():
-            acceptable += 1
-    return acceptable >= max(len(tokens) - 1, 1)
 
 
 def _unique_latex_residue(text: str) -> list[str]:

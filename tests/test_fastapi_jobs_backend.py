@@ -58,6 +58,7 @@ from app.domains.document_jobs.recovery import DocumentJobRecoveryService
 from app.domains.document_jobs.service import DocumentJobService
 from app.domains.saved_views.service import SavedViewService
 from app.services.document_ir import MinerUToDocumentIRService
+from app.services.document_ir.integrity import DocumentIntegrityError
 from app.domains.files import FileRetentionPolicyService, FileUploadService
 from app.domains.files.cleanup_lock import FileRetentionCleanupLockService
 from app.domains.files.models import DocumentFileRecord
@@ -10888,6 +10889,75 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(oss_failed_job["status"], "failed")
         self.assertEqual(oss_failed_job["failed_stage"], "uploading")
         self.assertEqual(oss_failed_job["error_code"], "oss_failed")
+
+    def test_document_job_integrity_gates_fail_before_ir_or_word_publication(self):
+        class BlockingDocumentIRService:
+            def convert_zip(self, *args, **kwargs):
+                raise DocumentIntegrityError(
+                    "MinerU→DocumentIR",
+                    {"blocking_quality_flags": ["source_ir_integrity:payload_missing:chart"]},
+                )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            runtime.document_job_execution_service.document_ir_service = BlockingDocumentIRService()
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = response.json()["job_id"]
+            job_files = [
+                file for file in runtime.document_file_repository.list_document_files() if file.job_id == job_id
+            ]
+
+        failed_job = response.json()["job"]
+        self.assertEqual(failed_job["failed_stage"], "ir_converting")
+        self.assertEqual(failed_job["error_code"], "document_ir_failed")
+        self.assertNotIn("document_ir", {file.file_type for file in job_files})
+        self.assertNotIn("generated_word", {file.file_type for file in job_files})
+
+        blocking_error = DocumentIntegrityError(
+            "DocumentIR→DOCX",
+            {"blocking_quality_flags": ["ir_docx_integrity:inline_shape_count_mismatch"]},
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(),
+                document_jobs_worker_backend="eager",
+            )
+            app = create_app(runtime)
+            with patch(
+                "app.domains.document_jobs.execution.ensure_renderer_integrity",
+                side_effect=blocking_error,
+            ), TestClient(app) as client:
+                headers = build_auth_header(client)
+                source_file = self._upload_source_pdf(client, headers)
+                response = client.post(
+                    "/api/v1/document-jobs",
+                    headers=headers,
+                    json={"source_file_id": source_file["id"]},
+                )
+                job_id = response.json()["job_id"]
+            job_files = [
+                file for file in runtime.document_file_repository.list_document_files() if file.job_id == job_id
+            ]
+
+        failed_job = response.json()["job"]
+        self.assertEqual(failed_job["failed_stage"], "rendering")
+        self.assertEqual(failed_job["error_code"], "render_failed")
+        self.assertNotIn("generated_word", {file.file_type for file in job_files})
 
     def test_document_job_retry_requeues_failed_job_and_writes_audit(self):
         with tempfile.TemporaryDirectory() as temp_dir:

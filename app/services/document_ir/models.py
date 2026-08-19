@@ -22,6 +22,8 @@ class DocumentIRMetadata(BaseModel):
     document_language: str
     parser: str = "mineru"
     parser_version: str | None = None
+    source_block_count: int | None = None
+    source_type_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class DocumentIRAsset(BaseModel):

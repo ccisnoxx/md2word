@@ -107,6 +107,8 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 样本证据：OPA228 最小 fixture 有列表，但 runner 尚未断言 manifest 的列表验收焦点。
 - 来源/取代：归档任务 `08-18-fix-mineru-first-page-layout`；取代把列表换行全部压平的行为。
 
+富文本 caption 的逻辑分组不由本规则的通用文本拍平函数推断，单独受 TEXT-004 约束。
+
 ## 3. DocumentIR、页面与正文流
 
 ### IR-001 DocumentIR 是内容与版式事实的正式边界
@@ -135,15 +137,27 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 ### IR-003 v2 block 不得因缺少页索引而静默丢失
 
-- 状态：`planned`
+- 状态：`enforced-tested`
 - 输入信号：v2 IR 已有 pages/部分 layout，但某个可见 block 的 `layout.page_index` 与 `block.page_index` 均为 `None`。
-- 正式 owner：当前缺口位于 `app/services/renderer/layout_plan.py::build_layout_plan`；尚无满足合同的正式 owner。
-- 预期输出：后续实现必须在 IR 边界显式报错/标记，或在有证据的归属规则下保留 block；不能让可见内容无声消失。
+- 正式 owner：布局归属由 `app/services/renderer/layout_plan.py::build_layout_plan` 负责；期望/实际对账和阻断由 `app/services/renderer/evidence.py::build_renderer_evidence`、`::ensure_renderer_integrity` 负责。
+- 预期输出：可见 block 无法进入 layout 时记录 expected/actual/差值和稳定 `ir_layout_integrity:missing_blocks`，正式本地与线上边界在发布 DOCX 前失败关闭，不能让可见内容无声消失。
 - 冲突/例外：整个文档无 layout 时按 PIPE-002 顺序回退；不能把单个 block 的缺页索引等同于全局无 layout。
 - 禁止：继续用 `sorted(index for index in page_indices if index is not None)` 后忽略未归页 block；猜测任意页面而不留证据。
-- 自动验证：无；现有 `test_convert_zip_records_missing_layout_source_and_bbox` 只证明 flag，不证明 renderer 保留内容。
-- 样本证据：无；需要最小正式 IR 回归。
+- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_renderer_evidence_blocks_missing_layout_drawing_and_table`；本地/线上阻断见 QUALITY-004。
+- 样本证据：当前证据为合成 IR；尚无 committed 真样本专门构造缺页索引。
 - 来源/取代：当前正式代码审计发现；不是 legacy 待迁移项。
+
+### IR-004 v2 声明结构必须携带源清单并完成映射对账
+
+- 状态：`enforced-tested`
+- 输入信号：完成末页过滤、题注重关联和续表归一化后的 MinerU v2 blocks，及 converter 生成的主 DocumentIR blocks/assets。
+- 正式 owner：`app/services/document_ir/mineru_converter.py::MinerUToDocumentIRService._convert_blocks`；完整性证据与阻断由 `app/services/document_ir/integrity.py` 唯一负责。
+- 预期输出：DocumentIR metadata 记录归一化后的 source block 总数和按 source type 计数；每个主 block 通过既有 `metadata.source_type` 对账。`chart/image/figure` 必须生成带有效 `asset_ref` 的 `image`，table/formula/heading/list 必须生成对应显式类型和必要 payload；确定性缺失以稳定 flag 失败关闭。
+- 冲突/例外：旧 IR 没有 source inventory 时跳过无法证明的 source→IR 对账，但仍执行 IR→layout/DOCX 对账；table context 等合成辅助 block 不计为主 block；不新增第二套 MinerU JSON parser。
+- 禁止：把 `chart` 降级为 paragraph；只记录 `unsupported_block_type` 后继续成功；用媒体文件数替代一个 image block 对应一个 drawing 的合同。
+- 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_maps_nested_v2_chart_to_image_and_records_source_inventory`、`.test_convert_zip_fails_closed_when_declared_formula_payload_is_missing`；`tests.test_document_ir_layout_contract.DocumentIRLayoutContractTests.test_v1_payload_defaults_layout_fields_to_empty`。
+- 样本证据：CM4112 当前 external 样本对账为 196 个归一化 source blocks，其中 38 chart + 15 image → 53 image blocks/assets；最终 DOCX 为 53 drawings，阻断标记为空。完整记录见本任务 `research/cm4112-validation.md`。
+- 来源/取代：任务 `08-18-fix-formal-word-structural-regressions`；补足 IR-001 与 IMAGE-001 未覆盖的跨边界完整性合同。
 
 ### PAGE-001 模板绝对页面设置与源方向分工
 
@@ -212,11 +226,11 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 状态：`enforced-tested`
 - 输入信号：同一页 body block 的 bbox、page width、显式 `column_hint`、实际纵向重叠和 wide block。
 - 正式 owner：`app/services/renderer/layout_plan.py::_build_regions`、`::_detect_two_col_bands`、`::_detect_stable_two_col_bands`、`::_classify_body_block`。
-- 预期输出：优先使用真实左右栏纵向重叠 band；只有没有真实 band 时才使用稳定非重叠提示；宽度至少页宽 60% 或显式 wide 的 block 保持单栏，局部单栏间隙不被吞入双栏。
+- 预期输出：优先使用真实左右栏纵向重叠 band；只有没有真实 band 时才使用稳定非重叠提示；宽度至少页宽 60% 或显式 wide 的 block 保持单栏，局部单栏间隙不被吞入双栏。真实双栏流结束后、同侧且证据完整的正文尾部可并入前一双栏区域，直到 wide block、真实单栏间隙或新的左右正文流；严格图片对仍保持独立区域。
 - 冲突/例外：严格成对图片行由 COL-003 例外渲染；缺页面宽度时不猜双栏。
 - 禁止：整页只因出现左右 block 就全页双栏；把 wide 表格放入一栏；按固定 x 像素适配某型号。
-- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_build_layout_plan_separates_decorations_and_two_column_regions`、`.test_build_layout_plan_prefers_column_hint_for_stable_non_overlapping_regions`、`.test_build_layout_plan_keeps_explicit_wide_blocks_out_of_stable_two_column_regions`、`.test_build_layout_plan_keeps_single_column_gap_between_real_two_column_bands`。
-- 样本证据：OPA228 P1/P2 manifest 声明双栏焦点但当前 Golden 未实际运行；CM4112 首页为 external negative evidence。
+- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_build_layout_plan_separates_decorations_and_two_column_regions`、`.test_build_layout_plan_prefers_column_hint_for_stable_non_overlapping_regions`、`.test_build_layout_plan_keeps_explicit_wide_blocks_out_of_stable_two_column_regions`、`.test_build_layout_plan_keeps_single_column_gap_between_real_two_column_bands`、`.test_layout_merges_single_side_tail_before_paired_images_into_one_column_flow`。
+- 样本证据：OPA228 P1/P2 manifest 声明双栏焦点但当前 Golden 未实际运行；CM4112 当前 external 样本首页单侧栏尾已并入前一双栏区域，LibreOffice/WPS 均观察到概述与引脚图可见；客户端栏平衡仍归 QUALITY-003 人工判断。
 - 来源/取代：归档任务 `08-18-fix-mineru-first-page-layout`；取代全页宽松双栏判定。
 
 ### COL-002 Word 原生栏与阅读顺序
@@ -245,14 +259,14 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 ### TEXT-001 原生标题语义与内容组保持
 
-- 状态：`implemented-gap`
-- 输入信号：IR heading、heading-like paragraph、配置的 heading Word style 和层级。
+- 状态：`enforced-tested`
+- 输入信号：IR schema version、显式 IR heading、v1 heading-like paragraph、配置的 heading Word style 和层级。
 - 正式 owner：`app/services/renderer/word_renderer.py::_render_block`；`app/services/renderer/text_renderer.py::_fill_heading_paragraph`；`app/conversion/docx_rules/text_semantics.py::infer_heading_level`。
-- 预期输出：显式 heading 使用 Word heading 样式并 `keep_with_next`；可靠推断的 heading-like paragraph 使用 heading 样式。配置存在时使用配置的 named style；普通英文句子不升级为标题。
-- 冲突/例外：页顶分页由 FLOW-002；当前推断得到的 heading-like paragraph 不设置 `keep_with_next`，也不能触发 FLOW-002，是已确认缺口。标题识别不能只靠字体/bbox 或某个 PDF 文本。
+- 预期输出：显式 heading 使用 Word heading 样式并 `keep_with_next`；`document-ir/v2` paragraph 不根据文本升级 heading，`document-ir/v1` 顺序兼容才允许可靠 heading-like 推断。编号图/表题注和正文引用不属于 heading-like。配置存在时使用配置的 named style。
+- 冲突/例外：页顶分页由 FLOW-002；v1 推断得到的 heading-like paragraph 不设置 `keep_with_next`，也不能触发 FLOW-002。v2 paragraph 仍保留 TOC/list/bullet 识别，不因禁止标题推断而降级这些显式或可靠语义。
 - 禁止：只加粗/放大而不使用标题语义；所有短句均升级；按“工作原理”等具体标题硬编码。
-- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_writes_heading_list_and_formula_ooxml_semantics`、`.test_render_to_bytes_promotes_heading_like_paragraphs_to_word_headings`、`.test_render_to_bytes_uses_configured_heading_word_style_when_available`。
-- 样本证据：OPA228 最小 fixture 包含 heading，但 runner 只断言标题文本可见；CM4112 章节起页为 external evidence。
+- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_writes_heading_list_and_formula_ooxml_semantics`、`.test_render_to_bytes_keeps_v1_heading_like_paragraph_compatibility`、`.test_render_to_bytes_uses_explicit_v2_semantics_without_heading_guessing`、`.test_render_to_bytes_uses_configured_heading_word_style_when_available`；图/表反例见 `tests.test_text_render_characterization.TextRenderingCharacterizationTests.test_looks_like_heading_text_rejects_english_sentence`。
+- 样本证据：OPA228 最小 fixture 包含 heading，但 runner 只断言标题文本可见；CM4112 当前 external 样本显式 heading 为 18，DOCX heading 段落为 18；WPS 实际观察“工作原理”从新页开始。
 - 来源/取代：commit `32edca58` 正式 renderer 语义化。
 
 ### TEXT-002 列表必须使用原生编号且保留续行
@@ -278,6 +292,18 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_inline_rich_text_markup`、`.test_render_to_bytes_applies_subscript_config_to_formal_renderer_outputs`。
 - 样本证据：无当前 committed 富文本真样本。
 - 来源/取代：commit `32edca58` 和 `674ce937` 的共享文本路径。
+
+### TEXT-004 富文本题注节点不得拆成多条题注
+
+- 状态：`enforced-tested`
+- 输入信号：v2 table/image/figure/chart caption 字段中的 flat inline-node list，或 legacy string list/多个 nested rich-node groups。
+- 正式 owner：`app/services/document_ir/mineru_converter.py::MinerUToDocumentIRService._captions`；现有文本/公式清理 helper 只作为片段归一化依赖。
+- 预期输出：一个 flat `text/equation_inline/text` 节点数组形成一个完整 `DocumentIRBlock.captions` 元素，进入 Word 后只占一个题注段落；string list 和多个 nested rich groups 继续形成多条独立题注。可见 inline 语义、SEQ/bookmark、fallback、table context 和 COL-003 annotation 数量判断均基于完整逻辑题注。
+- 冲突/例外：footnote 继续按现有 marker/连续性规则合并；无可靠结构时保持原分组，不按图号、标点、页码或 bbox 猜测。renderer 继续坚持“一 caption 元素一段落”，不负责恢复 converter 已丢失的边界。
+- 禁止：用 `collect_text_from_fields()` 把 flat rich nodes 直接拍成多条 captions；在 image/table renderer 合并相邻题注；修改 continuous section 或 `pageBreakBefore` 掩盖孤立题注行。
+- 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_maps_nested_v2_chart_to_image_and_records_source_inventory`、`.test_convert_zip_preserves_multiple_logical_caption_groups`、`.test_rich_chart_captions_render_without_isolated_fragments_and_keep_paired_layout`、`.test_convert_zip_demotes_table_condition_caption_to_context_paragraph`。
+- 样本证据：CM4112 新候选的图 33 为单条 `['图 33 通道隔离度 (± 18V)']`，OOXML 不含仅为 `±`/`18V)` 的段落；WPS GUI 第 12 页实际包含图 31～33 及完整题注，第 13 页直接以“工作原理”起页，旧碎片极稀疏页消失。完整记录见当前任务 `research/cm4112-validation.md`。
+- 来源/取代：当前任务新增目标；取代把富文本 inline node 数量当作 annotation 数量的行为。
 
 ### TABLE-001 原生可编辑表格与 span 保真
 
@@ -395,7 +421,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 输入信号：v2 block 的 `content` dict 及 `math_content`/公式字段；legacy block 的历史字段。
 - 正式 owner：`app/services/document_ir/mineru_converter.py::_formula_text`、`::_text_for_block`。
 - 预期输出：v2 公式只从非空字符串数学字段读取，避免把元数据 dict 序列化为公式；legacy JSON 才使用其兼容字段。
-- 冲突/例外：缺失/无效 v2 math field 当前返回 `None`；尚没有专门的可见丢失 quality flag，是 QUALITY-004 缺口。
+- 冲突/例外：缺失/无效 v2 math field 会返回 `None`，并由 IR-004 的 source inventory 对账产生稳定 `source_ir_integrity:payload_missing:*` 阻断标记；不得降级成普通文本继续发布。
 - 禁止：对 v2 dict 执行 `str(content)`；因公式字段坏掉而回退读取 `full.md`；猜测任意 text 为公式。
 - 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_structures_v2_multiline_lists_and_preserves_math_sources`、`.test_convert_zip_accepts_nested_v2_pages_and_rich_content_fields`。
 - 样本证据：CM4112 公式为 external evidence；没有 committed MinerU 真公式 fixture。
@@ -463,6 +489,18 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 样本证据：无当前跨 Word/WPS 字体视觉基线。
 - 来源/取代：commit `5d4a02d7` 与模板 v2 合同。
 
+### STYLE-004 正式入口必须绑定明确模板配置
+
+- 状态：`enforced-tested`
+- 输入信号：本地正式 CLI/adapter 的显式 template/layout config、缺省参数与 `no_template`，以及线上已固化 Template Version。
+- 正式 owner：本地默认资源选择由 `scripts/dev/formal_mineru_conversion.py::run_conversion` 负责；默认路径来自 `app/core/config.py::Settings`；线上继续由 `TemplateReadService.resolve_template_version()` 与 `DocumentJobExecutionService._render_and_save_word()` 负责。
+- 预期输出：本地显式路径优先；省略时使用当前 `Settings.default_template_path/layout_config_path`，`no_template=true` 只禁用 DOCX 模板而不禁用 layout config。本地所需默认资源不存在时显式失败，不以空配置继续；共享 renderer 只消费调用者传入路径，线上版本缺失/损坏继续失败关闭，不回退 bundled 配置。
+- 冲突/例外：`DocumentIRWordRenderer` 的低层 `template_path=None/config_path=None` 仍表示无模板/空配置；字体安装由目标系统负责。可见 Word 文本受 STYLE-003 四槽约束，OMML 公式由独立 `m:mathFont` 控制。
+- 禁止：省略本地参数时静默使用空 `TemplateConfigPackage`；在 renderer 读取全局 Settings；以本机字体别名改写已发布 seed；把 OMML run 错计为缺少段落字体槽。
+- 自动验证：`tests.test_conversion_sandbox_dev_tools.LocalMinerUConversionCliTests.test_formal_adapter_converts_minimal_mineru_package_to_openable_docx`、`.test_formal_adapter_resolves_default_explicit_and_no_template_resources`；既有显式配置四槽测试继续保护 renderer。
+- 样本证据：CM4112 新候选省略 template/layout config 后，666/666 个可见 `w:t` run 写入 `宋体/Arial/Arial/Times New Roman`，OMML 仍独立；WPS GUI 选中标题时显示请求字体“宋体”，同时提示“缺失字体”，WPS CLI 仍有单位/公式替换字符。本机字体安装边界不改写配置。完整记录见当前任务 `research/cm4112-validation.md` 与 `research/font-config-root-cause.md`。
+- 来源/取代：模板布局配置合同中“本地当前内置配置指向 v2”的既有要求；补足正式 local adapter 的缺省绑定缺口。
+
 ### QUALITY-001 DOCX 结构证据与风险标记
 
 - 状态：`enforced-tested`
@@ -472,7 +510,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 冲突/例外：指标或 flag 只证明包内结构，不证明 Word 实际页数、溢出、栏平衡、表格不挤压或图片清晰；`wide_table_count`/`landscape_sections` 当前不会自动形成方向风险 flag。
 - 禁止：把 `quality_flags=[]` 当作视觉验收通过；把“可打开”当作质量通过；用 analyzer 指标替代真客户端排版。
 - 自动验证：`tests.test_golden_sample_manifest.GoldenSampleManifestTests.test_docx_quality_analysis_reads_ooxml_structure_without_python_docx`、`.test_docx_quality_flags_obvious_word_semantics_risks`、`.test_docx_quality_analysis_flags_image_only_docx`；`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_renderer_evidence_summarizes_layout_and_docx_quality`。
-- 样本证据：线上 worker 持久化 evidence；当前生产任务即使有 flags 仍可标记 succeeded，质量门禁见 QUALITY-003。
+- 样本证据：线上 worker 持久化 evidence；只有 `blocking_quality_flags` 触发失败关闭，既有非阻断 `quality_flags` 仍允许成功并进入人工复核。
 - 来源/取代：commit `32edca58` 的 OOXML evidence 合同。
 
 ### QUALITY-002 样本证据必须分层
@@ -496,19 +534,19 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 冲突/例外：不默认要求 PDF 与 Word 页数完全一致；但页数变化和内容溢出必须解释并人工判断，不可被局部 OOXML 断言掩盖。
 - 禁止：只凭一个新 PDF 或局部单测通过合并结构性布局变更；用 LibreOffice 单一结果替代 Word/WPS；旧验收记录跨 commit 复用。
 - 自动验证：当前无整文档分页/视觉自动门禁。Golden preflight/signoff 测试只验证治理协议，component runner 只验证可打开。
-- 样本证据：当前 CM4112 external negative evidence：源 PDF 21 页，最新候选在 LibreOffice 为 23 页且首页内容延续到第 2 页；SC2167 external evidence 同时保护无 blank body pages。
+- 样本证据：R6/R7 后 CM4112 候选经 LibreOffice 26.2.4.2 得到 23 页，图 33/“工作原理”分别位于第 14/15 页；WPS CLI 与 WPS 12.1.26055 GUI 均为 20 页，图 31～33 及完整题注位于第 12 页，“工作原理”直接从第 13 页开始，旧 `±/18V)` 碎片极稀疏页消失。WPS 仍提示“缺失字体”，CLI 仍存在单位/公式替换字符。由于 GUI 未逐页放大复核全部 20 页，且 LibreOffice/WPS 仍有 23/20 页客户端差异，本规则保持 `planned`，不能写成整文档视觉通过。完整边界见本任务 `research/cm4112-validation.md`。
 - 来源/取代：本任务 PRD；明确补上 `674ce937` 后局部测试通过但整文档负优化的缺口。
 
 ### QUALITY-004 输入丢失与质量 flag 不得伪装成功
 
-- 状态：`planned`
-- 输入信号：v2 公式字段无效、block 无页索引、图片/表格体缺失、或 `build_docx_quality_flags()` 返回非空。
-- 正式 owner：当前分散在 `app/services/document_ir/mineru_converter.py::_formula_text`、`app/services/renderer/layout_plan.py::build_layout_plan`、`app/services/renderer/docx_quality.py::build_docx_quality_flags` 和线上任务成功状态；尚无统一满足合同的 owner。
-- 预期输出：后续任务须为可见内容丢失建立明确 flag/error 和测试，并裁决哪些 quality flag 阻断生产成功、哪些只需人工签字；不得由本文猜测阈值。
-- 冲突/例外：解析失败保持原文的 MATH-003 已落实；本规则处理进入 renderer 前已丢失或只记录不治理的情况。
-- 禁止：静默丢内容；将存在 flags 的任务无条件解释为质量通过；为了成功状态吞掉异常。
-- 自动验证：无完整测试；现有测试分别证明 missing layout flag、latex residue flag 和线上 evidence 持久化，未证明阻断策略。
-- 样本证据：CM4112 当前负优化表明结构 flag 之外仍需整文档门禁。
+- 状态：`enforced-tested`
+- 输入信号：有 source inventory 的 v2 source→IR 对账，及任意 DocumentIR→layout→DOCX 渲染结果。
+- 正式 owner：source→IR 由 `app/services/document_ir/integrity.py`；IR→layout/DOCX evidence 由 `app/services/renderer/evidence.py`；发布边界由正式本地 adapter 和 `DocumentJobExecutionService` 负责。
+- 预期输出：evidence 同时记录 expected、actual、差值和稳定 `blocking_quality_flags`。可见 body block 必须且只能进入 layout 一次；每个可渲染 image/table 和 v2 显式 heading 必须分别对应一个 DOCX drawing/table/heading。确定性丢失失败关闭：source→IR 在线任务归类 `document_ir_failed`，IR→DOCX 归类 `render_failed`，本地不发布最终 DOCX。
+- 冲突/例外：LaTeX residue、实际分页、栏平衡、清晰度和其他现有 `quality_flags` 仍是非阻断人工复核风险；旧 IR 无 inventory 时只跳过 source 对账，不能跳过 IR→layout/DOCX 对账。
+- 禁止：把全部 quality flags 升级为 fatal；先写入/上传最终 DOCX 再检查；吞掉完整性异常或返回伪成功。
+- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_renderer_evidence_blocks_missing_layout_drawing_and_table`；`tests.test_conversion_sandbox_dev_tools.LocalMinerUConversionCliTests.test_formal_adapter_does_not_publish_docx_when_renderer_integrity_blocks`；`tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_integrity_gates_fail_before_ir_or_word_publication`。
+- 样本证据：CM4112 当前 external 样本 expected/actual 为 53/53 drawings、8/8 tables、18/18 headings，`blocking_quality_flags=[]`；旧候选 15 drawings 的确定性丢失现会被阻断。
 - 来源/取代：当前正式代码/调用链审计发现。
 
 ## 7. 冲突优先级矩阵
@@ -524,6 +562,8 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 | 模板/自定义 decoration vs 源 decoration | STYLE-002 | 配置禁用保留模板；显式自定义 footer 高于源 footer；同 section 逐页源 decoration 及源 header 覆盖配置 header 是已知缺口 | 模板继承、自定义 footer PAGE field、同向页不同 header 缺口样本 |
 | 可编辑结构 vs 源像素外观 | TABLE-001、FIELD-001、FIELD-002 | 原生 table/TOC/SEQ/REF 优先，但不得改变内容顺序或静默丢失 | OOXML 结构 + Word/WPS 视觉检查 |
 | 数学归一化 vs 普通正文保真 | TEXT-003 | 所有共享文本入口都会归一化，但只允许证据充分的 TeX 模式改写；OMML 限于数学边界/整段公式，普通路径/UNC 保持，失败按 MATH-003 可见 | CM4112 公式矩阵 + 普通反斜杠正文 |
+| 富文本题注 vs 多条真实 annotation | TEXT-004 | flat rich-node list 是一条逻辑题注；string list/多个 nested groups 保持多条，renderer 不重猜边界 | v2 rich chart/table caption + 多题注负例 + COL-003 + WPS 图 33 |
+| 正式入口默认配置 vs 版本化配置 | STYLE-004 | 本地 adapter 省略参数时使用 Settings 当前默认；线上只用固化 Template Version，renderer 无全局 fallback | local 缺省/显式/no-template + 线上模板版本 + STYLE-003 四槽 |
 | 尾页清理 vs 内容保真 | INPUT-003 | 实质内容保真优先；过滤必须同时满足末页、CTA、视觉资产和无实质结构 | 保守负例 + SC2167 external evidence |
 | OOXML 指标 vs 实际视觉质量 | QUALITY-001 | QUALITY-003 的当前 commit 真客户端验收决定视觉结论 | CM4112 21→23 页负例；表格/栏/图片实际排版 |
 
@@ -538,18 +578,19 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 | INPUT-002 | package extraction、formal adapter | 仅入口正常/缺路径 | OPA228 P1 正常包 | 无 | 无正式 ZIP traversal/坏 JSON 定向测试 |
 | INPUT-003 | shared content rule、converter | conservative/filter converter tests | 无 | SC2167 historical | 无 committed 宣传尾页包 |
 | IR-002、PAGE-001、PAGE-002 | layout signals、section setup | converter/renderer layout | OPA228 PDF 仅作为输入资产 | CM4112 external | 没有当前真实纵横向/页数视觉基线 |
-| IR-003、TABLE-004、QUALITY-004 | 当前缺口 | 无 | 无 | 无 | 静默丢 block、重复题注、输入丢失/flag 治理待实现 |
+| IR-003、IR-004、QUALITY-004 | integrity、converter、renderer evidence、正式发布边界 | converter/IR contract/renderer/formal adapter/document job | 无 | CM4112 当前 external 对账 | 无 committed 含 chart 的 MinerU fixture；实际分页不属于阻断计数 |
+| TABLE-004 | 当前缺口 | 无 | 无 | 无 | 无效 HTML/空有效表格的失败策略待实现 |
 | FLOW-001、FLOW-002 | renderer page loop、semantic break | renderer layout | 无 | SC2167、CM4112 external | 无实际落页和空白页自动断言；双栏重排可能使语义分页目标晚于左栏内容 |
 | FLOW-003、TABLE-001、TABLE-002、TABLE-003 | layout signals、table renderer | converter/renderer table tests | OPA228 P6/P7 PDF 未执行 | CM4112、SC2167 external | continuation height 无消费者；无表格挤压/跨页视觉门禁 |
-| COL-001、COL-002 | layout plan、renderer columns | renderer layout | OPA228 P1/P2 PDF 未执行 | CM4112、SC2167 external | 无 Word/WPS 栏平衡验证 |
+| COL-001、COL-002 | layout plan、renderer columns | renderer layout | OPA228 P1/P2 PDF 未执行 | CM4112 当前 LibreOffice/WPS、SC2167 external | 无自动 Word/WPS 栏平衡断言；WPS 分页仍与 LibreOffice 不同 |
 | COL-003、IMAGE-001、IMAGE-002 | image renderer、converter | renderer/converter image tests | 无真实图片 MinerU fixture | SC2167 external | 仅 1×1 PNG；无越界/重名绑定和损坏 fallback 定向测试；无 DPI/清晰度基线 |
-| TEXT-001、TEXT-002、TEXT-003 | text renderer、shared semantics | renderer layout | OPA228 P1 最小包 | OPA228 historical signoff | component runner 未断言 heading/list/unit focus |
+| TEXT-001、TEXT-002、TEXT-003、TEXT-004 | converter caption owner、text renderer、shared semantics | converter/renderer layout、shared text characterization | OPA228 P1 最小包 | CM4112 当前 heading 18/18；图 33 单题注与 WPS GUI 关键页；OPA228 historical signoff | component runner 未断言 heading/list/unit focus；无 committed 富文本 caption 包 |
 | FIELD-001、FIELD-002 | text renderer、render context | renderer layout | OPA228 P2 PDF 未执行 | SC2167 external | 字段更新和视觉仅客户端可确认；SEQ 更新可能重排非 1 起始/跳号编号 |
 | FIELD-003、STYLE-002 | renderer header/footer | custom footer/template tests（部分） | 无 | SC2167 historical | 纯页码无 PAGE field；同 section source header 覆盖；adapter 开关未消费 |
 | MATH-001、MATH-002、MATH-003 | converter、shared semantics、OMML parser | converter/renderer formula matrix | 无 MinerU 公式 fixture | CM4112、RS2G04 external | 非完整 TeX；`\\tag` 不生成可见编号；无真实输入包；预 renderer 降级可能漏 flag |
-| STYLE-001、STYLE-003 | renderer/template config/fonts | template schema、renderer layout | 模板 seed 与 OPA228 PDF | Golden old-commit signoff | 无当前模板组合/客户端字体视觉基线 |
+| STYLE-001、STYLE-003、STYLE-004 | formal adapter、renderer/template config/fonts | template schema、formal adapter、renderer layout | 模板 seed 与 OPA228 PDF | CM4112 当前四槽与 WPS 请求字体/缺失字体边界；Golden old-commit signoff | 目标系统未安装精确宋体/Cambria Math；OMML 字体独立 |
 | QUALITY-001、QUALITY-002 | analyzer/evidence、sample governance | Golden/component governance | 4 个 OPA228 PDF + 1 个最小 MinerU 包 | 历史/外部样本分层 | Analyzer 不测实际分页；Golden 当前不离线 deterministic；外部/历史层级未自动强制 |
-| QUALITY-003 | 尚无 | 无整文档视觉自动门禁 | 仅输入资产 | CM4112 current negative evidence | 页数、空白页、挤压、栏平衡、清晰度需建立当前记录 |
+| QUALITY-003 | 尚无 | 无整文档视觉自动门禁 | 仅输入资产 | CM4112 当前 LibreOffice/WPS 有界记录 | 图 33 碎片稀疏页已消失；仍无 WPS GUI 全 20 页、自动栏平衡/清晰度门禁，LibreOffice 与 WPS 为 23/20 页 |
 
 ## 9. 规则变更流程
 
@@ -580,12 +621,10 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 ## 11. 已确认但本任务不修复的产品缺口
 
 - `DocumentIRBlockLayout.continuation_heights` 在正式转换中写入，但 renderer 没有消费者；不能证明续表高度已影响分页。
-- v2 layout plan 会忽略 page index 为 `None` 的 block，存在可见内容静默丢失风险。
 - 同方向源页共享一个 section；反复写源页 header/footer 会覆盖为该 section 最后一次内容，源 header 也会覆盖同 section 中先写入的配置 header 文本。
 - `FormalMinerUConversionRequest.use_mineru_header_footer` 当前未被 `_render_document` 消费。
 - footer 仅启用页码、没有左右文字时，当前输出静态“第  页”而不是 `PAGE` field。
 - 无效/缺失 table HTML 且 `block.text` 与 caption 相同时，当前会重复输出题注。
-- v2 公式缺失/无效数学字段时可能在进入 renderer 前失去可见内容，且没有专门质量 flag。
 - 多套 MinerU 结果共存时，content list 与 layout JSON 没有绑定同一结果根目录；basename 重名图片也可能选中错误资产。
 - heading-like paragraph 的样式推断不会获得显式 heading 的 `keep_with_next` 和页顶语义分页。
 - 双栏页的语义分页目标在栏重排前选取；目标位于右栏时，`pageBreakBefore` 可能出现在已渲染的左栏内容之后。

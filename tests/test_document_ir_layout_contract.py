@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 
+from app.services.document_ir.integrity import build_source_integrity
 from app.services.document_ir.models import (
     DocumentIR,
     DocumentIRBlock,
@@ -41,6 +42,11 @@ class DocumentIRLayoutContractTests(unittest.TestCase):
         self.assertIsNone(document.blocks[0].layout)
         self.assertEqual(document.blocks[0].captions, [])
         self.assertEqual(document.blocks[0].footnotes, [])
+        self.assertIsNone(document.metadata.source_block_count)
+        self.assertEqual(document.metadata.source_type_counts, {})
+
+        evidence = build_source_integrity(document)
+        self.assertEqual(evidence["blocking_quality_flags"], [])
 
     def test_v2_payload_round_trips_page_and_block_layout(self) -> None:
         document = DocumentIR(
@@ -49,6 +55,8 @@ class DocumentIRLayoutContractTests(unittest.TestCase):
                 job_id="docjob_v2",
                 source_file_id="file_v2",
                 document_language="en",
+                source_block_count=1,
+                source_type_counts={"table": 1},
             ),
             pages=[
                 DocumentIRPage(index=0, width=612.0, height=792.0, metadata={"orientation": "portrait"}),
@@ -85,6 +93,8 @@ class DocumentIRLayoutContractTests(unittest.TestCase):
 
         self.assertEqual(decoded.schema_version, "document-ir/v2")
         self.assertEqual(decoded.pages[0].width, 612.0)
+        self.assertEqual(decoded.metadata.source_block_count, 1)
+        self.assertEqual(decoded.metadata.source_type_counts, {"table": 1})
         self.assertEqual(decoded.pages[0].metadata["orientation"], "portrait")
         self.assertEqual(decoded.blocks[0].layout.bbox, (72.0, 120.0, 540.0, 240.0))
         self.assertEqual(decoded.blocks[0].layout.continuation_heights, [100.0])

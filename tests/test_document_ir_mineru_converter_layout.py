@@ -2,15 +2,29 @@ from __future__ import annotations
 
 # tests/test_document_ir_mineru_converter_layout.py: 覆盖 MinerU -> DocumentIR v2 layout signal 提取。
 
+import io
 import json
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
 from typing import Any
+from xml.etree import ElementTree
+
+from docx import Document
 
 from app.conversion.docx_rules.mineru_content import find_final_promotional_page
+from app.services.document_ir.integrity import DocumentIntegrityError
 from app.services.document_ir import MinerUToDocumentIRService
+from app.services.renderer import DocumentIRWordRenderer
+
+
+MINIMAL_PNG_BYTES = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+    b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+    b"\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01"
+    b"\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+)
 
 
 class MinerUToDocumentIRLayoutTests(unittest.TestCase):
@@ -148,11 +162,6 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
                             "content": {"math_content": total_delay, "math_type": "latex"},
                             "bbox": [10, 280, 180, 310],
                         },
-                        {
-                            "type": "equation_interline",
-                            "content": {"math_type": "latex", "image_source": {"path": "images/missing.png"}},
-                            "bbox": [10, 320, 180, 350],
-                        },
                     ]
                 ],
                 layout={"pdf_info": [{"page_idx": 0, "page_size": [200, 400]}]},
@@ -175,8 +184,201 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
         self.assertEqual(blocks[4].list_items, [r"Limit $I _ {O U T}$"])
         self.assertEqual(blocks[5].latex, fraction)
         self.assertEqual(blocks[6].latex, total_delay)
-        self.assertIsNone(blocks[7].latex)
-        self.assertIsNone(blocks[7].text)
+
+    def test_convert_zip_maps_nested_v2_chart_to_image_and_records_source_inventory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "mineru.zip"
+            self._write_zip(
+                zip_path,
+                blocks=[],
+                v2_blocks=[
+                    [
+                        {
+                            "type": "chart",
+                            "content": {
+                                "image_source": {"path": "images/chart.png"},
+                                "content": "",
+                                "chart_caption": [
+                                    {"type": "text", "content": "图 1 输出 "},
+                                    {"type": "equation_inline", "content": r"V _ {O U T}"},
+                                ],
+                                "chart_footnote": [{"type": "text", "content": "测试条件：25°C"}],
+                            },
+                            "bbox": [10, 20, 180, 160],
+                        }
+                    ]
+                ],
+                layout={"pdf_info": [{"page_idx": 0, "page_size": [200, 300]}]},
+                images={"images/chart.png": b"chart-bytes"},
+            )
+
+            result = MinerUToDocumentIRService().convert_zip(
+                zip_path,
+                job_id="docjob_nested_chart",
+                source_file_id="file_nested_chart",
+                document_language="zh",
+            )
+
+        block = result.document.blocks[0]
+        self.assertEqual(block.type, "image")
+        self.assertEqual(block.metadata["source_type"], "chart")
+        self.assertEqual(block.asset_ref, result.document.assets[0].id)
+        self.assertEqual(result.image_assets[0].content, b"chart-bytes")
+        self.assertEqual(block.captions, ["图 1 输出V<sub>OUT</sub>"])
+        self.assertEqual(block.footnotes, ["测试条件：25°C"])
+        self.assertEqual(result.document.metadata.source_block_count, 1)
+        self.assertEqual(result.document.metadata.source_type_counts, {"chart": 1})
+        self.assertNotIn("unsupported_block_type:chart", result.document.quality_flags)
+
+    def test_convert_zip_preserves_multiple_logical_caption_groups(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "mineru.zip"
+            self._write_zip(
+                zip_path,
+                blocks=[],
+                v2_blocks=[
+                    [
+                        {
+                            "type": "chart",
+                            "content": {
+                                "image_source": {"path": "images/strings.png"},
+                                "chart_caption": ["图 1 第一条", "图 2 第二条"],
+                            },
+                            "bbox": [10, 20, 180, 160],
+                        }
+                    ],
+                    [
+                        {
+                            "type": "chart",
+                            "content": {
+                                "image_source": {"path": "images/groups.png"},
+                                "chart_caption": [
+                                    [{"type": "text", "content": "图 3 第三条"}],
+                                    [
+                                        {"type": "text", "content": "图 4 输出 "},
+                                        {"type": "equation_inline", "content": r"V _ {O U T}"},
+                                    ],
+                                ],
+                            },
+                            "bbox": [10, 20, 180, 160],
+                        }
+                    ],
+                ],
+                layout={
+                    "pdf_info": [
+                        {"page_idx": 0, "page_size": [200, 300]},
+                        {"page_idx": 1, "page_size": [200, 300]},
+                    ]
+                },
+                images={"images/strings.png": MINIMAL_PNG_BYTES, "images/groups.png": MINIMAL_PNG_BYTES},
+            )
+
+            result = MinerUToDocumentIRService().convert_zip(
+                zip_path,
+                job_id="docjob_caption_groups",
+                source_file_id="file_caption_groups",
+                document_language="zh",
+            )
+
+        self.assertEqual(result.document.blocks[0].captions, ["图 1 第一条", "图 2 第二条"])
+        self.assertEqual(result.document.blocks[1].captions, ["图 3 第三条", "图 4 输出V<sub>OUT</sub>"])
+
+    def test_rich_chart_captions_render_without_isolated_fragments_and_keep_paired_layout(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "mineru.zip"
+            self._write_zip(
+                zip_path,
+                blocks=[],
+                v2_blocks=[
+                    [
+                        {
+                            "type": "chart",
+                            "content": {
+                                "image_source": {"path": "images/left.png"},
+                                "chart_caption": [
+                                    {"type": "text", "content": "图 33 通道隔离度 (  "},
+                                    {"type": "equation_inline", "content": r"\pm"},
+                                    {"type": "text", "content": " 18V)"},
+                                ],
+                            },
+                            "bbox": [10, 80, 170, 220],
+                        },
+                        {
+                            "type": "chart",
+                            "content": {
+                                "image_source": {"path": "images/right.png"},
+                                "chart_caption": [
+                                    {"type": "text", "content": "图 34 输出摆幅 (  "},
+                                    {"type": "equation_inline", "content": r"\pm"},
+                                    {"type": "text", "content": " 15V)"},
+                                ],
+                            },
+                            "bbox": [220, 82, 380, 220],
+                        },
+                    ]
+                ],
+                layout={"pdf_info": [{"page_idx": 0, "page_size": [400, 600]}]},
+                images={"images/left.png": MINIMAL_PNG_BYTES, "images/right.png": MINIMAL_PNG_BYTES},
+            )
+            result = MinerUToDocumentIRService().convert_zip(
+                zip_path,
+                job_id="docjob_rich_caption_pair",
+                source_file_id="file_rich_caption_pair",
+                document_language="zh",
+            )
+            image_bytes = {asset.asset_id: asset.content for asset in result.image_assets}
+            content = DocumentIRWordRenderer().render_to_bytes(
+                result.document,
+                template_path=None,
+                config_path=None,
+                image_loader=lambda asset: image_bytes.get(asset.id),
+            )
+
+        self.assertEqual(result.document.blocks[0].captions, ["图 33 通道隔离度 (± 18V)"])
+        rendered = Document(io.BytesIO(content))
+        self.assertNotIn("±", [paragraph.text.strip() for paragraph in rendered.paragraphs])
+        self.assertNotIn("18V)", [paragraph.text.strip() for paragraph in rendered.paragraphs])
+        with zipfile.ZipFile(io.BytesIO(content)) as docx_zip:
+            document_xml = docx_zip.read("word/document.xml")
+        root = ElementTree.fromstring(document_xml)
+        word_ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+        paragraph_texts = [
+            "".join(node.text or "" for node in paragraph.iter(f"{word_ns}t"))
+            for paragraph in root.iter(f"{word_ns}p")
+        ]
+        figure_33_paragraph = next(text for text in paragraph_texts if "通道隔离度" in text)
+        self.assertIn("±", figure_33_paragraph)
+        self.assertIn("18V)", figure_33_paragraph)
+        xml = document_xml.decode("utf-8")
+        self.assertNotIn('<w:br w:type="column"', xml)
+        self.assertIn("<w:tabs>", xml)
+        self.assertEqual(xml.count(" SEQ 图 \\* ARABIC "), 2)
+
+    def test_convert_zip_fails_closed_when_declared_formula_payload_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "mineru.zip"
+            self._write_zip(
+                zip_path,
+                blocks=[],
+                v2_blocks=[
+                    [
+                        {
+                            "type": "equation_interline",
+                            "content": {"math_type": "latex", "image_source": {"path": "images/missing.png"}},
+                            "bbox": [10, 20, 180, 60],
+                        }
+                    ]
+                ],
+                layout={"pdf_info": [{"page_idx": 0, "page_size": [200, 300]}]},
+            )
+
+            with self.assertRaisesRegex(DocumentIntegrityError, "payload_missing:equation_interline"):
+                MinerUToDocumentIRService().convert_zip(
+                    zip_path,
+                    job_id="docjob_missing_formula",
+                    source_file_id="file_missing_formula",
+                    document_language="zh",
+                )
 
     def test_shared_final_promotional_page_rule_is_conservative(self) -> None:
         image = {"type": "image", "img_path": "images/qr.png", "bbox": [100, 100, 300, 300], "page_idx": 2}
@@ -548,7 +750,10 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
                 blocks=[
                     {
                         "type": "table",
-                        "table_caption": [condition],
+                        "table_caption": [
+                            {"type": "text", "content": condition[:64]},
+                            {"type": "text", "content": condition[64:]},
+                        ],
                         "table_body": "<table><tr><th>PARAMETER</th><th>VALUE</th></tr></table>",
                         "bbox": [40, 120, 572, 260],
                         "page_idx": 0,

@@ -19,7 +19,7 @@ from app.domains.translation.provider_config import EffectiveAiProviderConfig
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset
 from app.services.renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
-from app.services.renderer.evidence import build_renderer_evidence
+from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
 
 
 LOCAL_JOB_ID = "local_mineru_debug"
@@ -136,13 +136,24 @@ def run_conversion(
     job_id: str | None = None,
     **_ignored: Any,
 ) -> FormalMinerUConversionResult:
-    """Compatibility-shaped local entrypoint backed by the formal renderer."""
+    """以兼容参数形状调用正式 DocumentIR renderer 的本地入口。"""
 
+    settings = Settings()
+    resolved_template_path = _resolve_optional_path(template_path)
+    resolved_layout_config_path = _resolve_optional_path(layout_config_path)
+    if not no_template and resolved_template_path is None:
+        resolved_template_path = settings.default_template_path
+        if resolved_template_path is None:
+            raise FileNotFoundError("默认 Word 模板不存在。")
+    if resolved_layout_config_path is None:
+        resolved_layout_config_path = settings.layout_config_path
+        if resolved_layout_config_path is None:
+            raise FileNotFoundError("默认版式配置文件不存在。")
     request = FormalMinerUConversionRequest(
         input_path=Path(input_path).expanduser().resolve(),
         output_path=_resolve_output_path(input_path, output_path),
-        template_path=_resolve_optional_path(template_path),
-        layout_config_path=_resolve_optional_path(layout_config_path),
+        template_path=resolved_template_path if not no_template else None,
+        layout_config_path=resolved_layout_config_path,
         subscript_config_path=_resolve_optional_path(subscript_config),
         no_template=bool(no_template),
         use_mineru_header_footer=bool(use_mineru_header_footer),
@@ -162,7 +173,7 @@ def run_conversion(
 
 
 def convert_formal_mineru_package(request: FormalMinerUConversionRequest) -> FormalMinerUConversionResult:
-    """Convert a local MinerU package with the same core services used by document_jobs."""
+    """使用 document_jobs 同一组核心服务转换本地 MinerU 结果包。"""
 
     _validate_request_paths(request)
     request.output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -181,6 +192,8 @@ def convert_formal_mineru_package(request: FormalMinerUConversionRequest) -> For
         document_ir = _translate_if_needed(source_document_ir, request)
         word_content = _render_document(document_ir, result.image_assets, request)
 
+    renderer_metadata = build_renderer_evidence(document_ir, word_content)
+    ensure_renderer_integrity(renderer_metadata)
     document_ir_path = _document_ir_output_path(request.output_path)
     document_ir_path.write_text(document_ir.model_dump_json(indent=2), encoding="utf-8")
     source_document_ir_path = None
@@ -189,7 +202,6 @@ def convert_formal_mineru_package(request: FormalMinerUConversionRequest) -> For
         source_document_ir_path.write_text(source_document_ir.model_dump_json(indent=2), encoding="utf-8")
 
     request.output_path.write_bytes(word_content)
-    renderer_metadata = build_renderer_evidence(document_ir, word_content)
     docx_quality = renderer_metadata["docx_quality"]
     quality_flags = renderer_metadata["quality_flags"]
     return FormalMinerUConversionResult(

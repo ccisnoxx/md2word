@@ -1,0 +1,8 @@
+{"file":".trellis/spec/backend/word-generation-rules.md","reason":"正式 MinerU→DocumentIR→Word 的唯一行为规范；实现前必须按 IR/IMAGE/TEXT/COL/QUALITY 规则和冲突矩阵修改。"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"约束 DOCX 结构证据、正式链路专项回归和真客户端验证。"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"约束 DocumentIR/rendering 失败关闭时沿用现有 job stage/error 合同且不得伪成功。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"本任务跨 MinerU 输入、IR、layout、renderer、evidence 和 job 状态，需要保持单一验证 owner。"}
+{"file":".trellis/tasks/08-18-fix-formal-word-structural-regressions/research/current-chain-audit.md","reason":"提供 CM4112 真实负例、当前代码 owner、计数和最小设计证据。"}
+{"file":".trellis/spec/backend/template-layout-configuration.md","reason":"约束本地内置 v2 配置、线上版本化配置、四字体槽和目标系统字体安装责任。"}
+{"file":".trellis/tasks/08-18-fix-formal-word-structural-regressions/research/rich-caption-root-cause.md","reason":"提供富文本 caption 原始分组、IR 拍平、独立 Word 段落和最小 converter owner 证据。"}
+{"file":".trellis/tasks/08-18-fix-formal-word-structural-regressions/research/font-config-root-cause.md","reason":"提供本地 formal adapter 空配置、当前 DOCX OOXML、线上版本边界和字体安装差异证据。"}
