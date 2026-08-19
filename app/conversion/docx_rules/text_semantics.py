@@ -35,9 +35,10 @@ CHAPTER_HEADING_RE = re.compile(
     re.IGNORECASE,
 )
 HEADING_NUMBER_RE = re.compile(
-    r"^(?:\d+[.、]|\d+\.\d+|附录[A-Z\d.\-]+|appendix\s+[A-Z\d.\-]+|(?:表|table|图|figure)\s*[A-Z\d.\-]+)",
+    r"^(?:\d+[.、]|\d+\.\d+|附录[A-Z\d.\-]+|appendix\s+[A-Z\d.\-]+)",
     re.IGNORECASE,
 )
+FIGURE_TABLE_PREFIX_RE = re.compile(r"^(?:图|表|figure|table)\s*[A-Z\d]", re.IGNORECASE)
 TOC_TITLE_RE = re.compile(r"^(目录|table of contents|contents)\b", re.IGNORECASE)
 TOC_ENTRY_RE = re.compile(
     r"^(?:\d+(?:\.\d+)*\s+|\d+[.、]|\d+\.\d+|附录\s*[A-Z\d.\-]+|appendix\s+[A-Z\d.\-]+|"
@@ -386,8 +387,15 @@ def _split_toc_entry_text(text: str) -> tuple[str, str, bool] | None:
 
 
 def looks_like_heading_text(text: str) -> bool:
+    raw_cleaned = " ".join((text or "").replace("\n", " ").split()).strip()
+    if FIGURE_TABLE_PREFIX_RE.match(raw_cleaned):
+        return False
     cleaned = normalize_heading_probe_text(text)
-    if len(cleaned) > 80:
+    if not cleaned or len(cleaned) > 80 or cleaned[-1:] in ".!?;:":
+        return False
+    if LIST_MARKER_RE.match(cleaned) or is_toc_title_text(text) or parse_toc_entry_text(text) is not None:
+        return False
+    if re.search(r"[$\\{}=<>/√±°µμθψΩ]", cleaned):
         return False
     if re.match(r"^\d+\.[A-Z]", cleaned):
         return False

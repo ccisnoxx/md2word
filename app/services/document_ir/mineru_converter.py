@@ -5,17 +5,20 @@ from __future__ import annotations
 import mimetypes
 import re
 import tempfile
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from app.conversion.docx_rules.mineru_content import (
+    append_footnote_fragment,
     clean_markdown_document,
     clean_text,
     coerce_text_list,
     collect_text_from_fields,
     extract_first_asset_path,
     extract_first_html,
+    find_values_by_key,
     find_final_promotional_page,
     join_text_fragments,
     merge_footnote_fragments,
@@ -31,6 +34,7 @@ from app.services.document_ir.layout_signals import (
     parse_page_index,
     role_for_source_type,
 )
+from app.services.document_ir.integrity import build_source_integrity, ensure_integrity
 from app.services.document_ir.mineru_package import extract_zip, find_content_list, load_content_blocks
 from app.services.document_ir.models import (
     DocumentIR,
@@ -114,6 +118,7 @@ class MinerUToDocumentIRService:
             quality_flags.append(f"final_promotional_page_filtered:{filtered_page_index}")
         raw_blocks = self._reassociate_numbered_image_captions(raw_blocks)
         raw_blocks = merge_table_placeholder_continuations(raw_blocks)
+        source_type_counts = Counter(self._source_type(block) or "text" for block in raw_blocks)
         pages = build_pages(
             raw_blocks,
             package_root,
@@ -222,12 +227,15 @@ class MinerUToDocumentIRService:
                 job_id=job_id,
                 source_file_id=source_file_id,
                 document_language=document_language,
+                source_block_count=len(raw_blocks),
+                source_type_counts=dict(sorted(source_type_counts.items())),
             ),
             pages=pages,
             blocks=blocks,
             assets=ir_assets,
             quality_flags=quality_flags,
         )
+        ensure_integrity("MinerU→DocumentIR", build_source_integrity(document))
         return MinerUToDocumentIRResult(document=document, image_assets=image_assets)
 
     def _map_block_type(self, raw_block: dict[str, Any], source_type: str) -> DocumentIRBlockType:
@@ -237,7 +245,7 @@ class MinerUToDocumentIRService:
             return "heading"
         if source_type in {"table"} or raw_block.get("table_body") or raw_block.get("table_html"):
             return "table"
-        if source_type in {"image", "figure"} or raw_block.get("img_path") or raw_block.get("image_path"):
+        if source_type in {"chart", "image", "figure"} or raw_block.get("img_path") or raw_block.get("image_path"):
             return "image"
         if source_type in {"equation", "formula", "interline_equation", "inline_equation", "equation_interline"}:
             return "formula"
@@ -403,7 +411,32 @@ class MinerUToDocumentIRService:
             keys.insert(0, "table_caption")
         elif source_type in {"chart", "image", "figure"}:
             keys.insert(0, f"{source_type}_caption")
-        return self._unique_texts(collect_text_from_fields(raw_block, tuple(keys)))
+        captions = [
+            caption
+            for key in keys
+            for value in find_values_by_key(raw_block, key)
+            for caption in self._caption_texts(value)
+        ]
+        return self._unique_texts(captions)
+
+    def _caption_texts(self, value: Any) -> list[str]:
+        """按 MinerU 数组层级保留题注逻辑分组。"""
+
+        if isinstance(value, list):
+            if value and all(self._is_caption_inline_node(item) for item in value):
+                caption = ""
+                for fragment in coerce_text_list(value):
+                    caption = append_footnote_fragment(caption, fragment)
+                return [caption] if caption else []
+            return [caption for item in value for caption in self._caption_texts(item)]
+        return coerce_text_list(value)
+
+    def _is_caption_inline_node(self, value: Any) -> bool:
+        return (
+            isinstance(value, dict)
+            and isinstance(value.get("type"), str)
+            and isinstance(value.get("content"), str)
+        )
 
     def _footnotes(self, raw_block: dict[str, Any], source_type: str) -> list[str]:
         keys = ["footnote"]

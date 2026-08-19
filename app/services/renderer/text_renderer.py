@@ -390,6 +390,7 @@ class WordTextRendererMixin:
         template_config: TemplateConfigPackage,
         *,
         reference_bookmarks: CaptionBookmarks | None = None,
+        allow_heading_inference: bool = True,
     ) -> None:
         if is_toc_title_text(text):
             self._fill_paragraph(
@@ -410,7 +411,7 @@ class WordTextRendererMixin:
                 reference_bookmarks=reference_bookmarks,
             )
             return
-        if looks_like_heading_text(text):
+        if allow_heading_inference and looks_like_heading_text(text):
             self._fill_heading_paragraph(paragraph, text, infer_heading_level(text), template_config)
             return
         self._fill_paragraph(

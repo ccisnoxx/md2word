@@ -45,6 +45,7 @@ class _RenderContext:
     """单次渲染的字段目标；不得存到可并发复用的 renderer 实例。"""
 
     caption_bookmarks: dict[tuple[str, int], tuple[str, int]]
+    allow_heading_inference: bool
     toc_written: bool = False
 
 
@@ -153,7 +154,10 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                 continue
             kind, source_number = key
             bookmarks[key] = (f"_md2word_{kind}_{source_number}", len(bookmarks) + 1)
-        return _RenderContext(caption_bookmarks=bookmarks)
+        return _RenderContext(
+            caption_bookmarks=bookmarks,
+            allow_heading_inference=document_ir.schema_version == "document-ir/v1",
+        )
 
     def _create_document(self, template_path: Path | None) -> Any:
         if template_path is not None and template_path.exists():
@@ -355,6 +359,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                 text,
                 template_config,
                 reference_bookmarks=render_context.caption_bookmarks,
+                allow_heading_inference=render_context.allow_heading_inference,
             )
             return
         if block.type == "list":

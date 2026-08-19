@@ -422,10 +422,17 @@ class TextRenderCharacterizationTests(unittest.TestCase):
 
     def test_looks_like_heading_text_accepts_title_case_english_heading(self):
         self.assertTrue(self.module.looks_like_heading_text("Absolute Maximum Ratings"))
+        self.assertTrue(self.module.looks_like_heading_text("Overview"))
 
     def test_looks_like_heading_text_rejects_english_sentence(self):
         self.assertFalse(self.module.looks_like_heading_text("This section describes the device behavior"))
         self.assertFalse(self.module.looks_like_heading_text("1.A is not a numbered section heading"))
+        self.assertFalse(self.module.looks_like_heading_text("图 13 显示了输出响应"))
+        self.assertFalse(self.module.looks_like_heading_text("表 1"))
+        self.assertFalse(self.module.looks_like_heading_text("Figure 3 Output Response"))
+        self.assertFalse(self.module.looks_like_heading_text("• Low noise"))
+        self.assertFalse(self.module.looks_like_heading_text("Contents"))
+        self.assertFalse(self.module.looks_like_heading_text("Note: E=mc²"))
 
     def test_is_cover_title_rejects_english_contents_heading(self):
         block = self.module.Block(

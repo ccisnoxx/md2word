@@ -23,7 +23,8 @@ from app.services.document_ir.models import (
     DocumentIRMetadata,
     DocumentIRPage,
 )
-from app.services.renderer.evidence import build_renderer_evidence
+from app.services.document_ir.integrity import DocumentIntegrityError
+from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
 from app.services.renderer.docx_quality import analyze_docx_quality_bytes
 from app.services.renderer.layout_plan import build_layout_plan
 from app.services.renderer.template_config import TemplateConfigPackage
@@ -160,10 +161,61 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertEqual(evidence["renderer_mode"], "layout_v2")
         self.assertEqual(evidence["layout_page_count"], 1)
         self.assertEqual(evidence["layout_block_count"], 1)
+        self.assertEqual(evidence["expected_layout_block_count"], 1)
+        self.assertEqual(evidence["layout_block_count_delta"], 0)
         self.assertEqual(evidence["layout_quality_flags"], ["layout_sample:block_0001"])
         self.assertTrue(evidence["docx_quality"]["editable_content_available"])
         self.assertFalse(evidence["docx_quality"]["image_only_suspected"])
         self.assertEqual(evidence["quality_flags"], [])
+        self.assertEqual(evidence["blocking_quality_flags"], [])
+
+    def test_renderer_evidence_blocks_missing_layout_drawing_and_table(self) -> None:
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="docjob_blocking", source_file_id="file_blocking", document_language="zh"),
+            pages=[DocumentIRPage(index=0, width=400.0, height=600.0)],
+            assets=[DocumentIRAsset(id="asset_chart", kind="image", source_path="chart.png")],
+            blocks=[
+                DocumentIRBlock(id="missing_page", type="paragraph", order=0, text="不应静默丢失的正文"),
+                DocumentIRBlock(
+                    id="missing_drawing",
+                    type="image",
+                    order=1,
+                    asset_ref="asset_chart",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(10, 80, 180, 180), role="body"),
+                ),
+                DocumentIRBlock(
+                    id="missing_table",
+                    type="table",
+                    order=2,
+                    html="not-a-table",
+                    text="表格回退文本",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(10, 200, 390, 300), role="body"),
+                ),
+            ],
+        )
+        word_content = DocumentIRWordRenderer().render_to_bytes(
+            document,
+            template_path=None,
+            config_path=None,
+            image_loader=lambda _asset: None,
+        )
+
+        evidence = build_renderer_evidence(document, word_content)
+
+        self.assertEqual(evidence["expected_layout_block_count"], 3)
+        self.assertEqual(evidence["layout_block_count"], 2)
+        self.assertEqual(evidence["expected_inline_shape_count"], 1)
+        self.assertEqual(evidence["inline_shape_count"], 0)
+        self.assertEqual(evidence["expected_table_count"], 1)
+        self.assertEqual(evidence["table_count"], 0)
+        self.assertIn("ir_layout_integrity:missing_blocks", evidence["blocking_quality_flags"])
+        self.assertIn("ir_docx_integrity:inline_shape_count_mismatch", evidence["blocking_quality_flags"])
+        self.assertIn("ir_docx_integrity:table_count_mismatch", evidence["blocking_quality_flags"])
+        with self.assertRaises(DocumentIntegrityError) as raised:
+            ensure_renderer_integrity(evidence)
+        self.assertIn("expected_inline_shape_count=1", str(raised.exception))
+        self.assertIn("inline_shape_count=0", str(raised.exception))
 
     def test_render_to_bytes_uses_native_columns_for_v2_region(self) -> None:
         renderer = DocumentIRWordRenderer()
@@ -1241,7 +1293,7 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertNotIn("- Nested paragraph bullet", xml)
         self.assertIn("-40°C operation", xml)
 
-    def test_render_to_bytes_promotes_heading_like_paragraphs_to_word_headings(self) -> None:
+    def test_render_to_bytes_keeps_v1_heading_like_paragraph_compatibility(self) -> None:
         renderer = DocumentIRWordRenderer()
         document = DocumentIR(
             metadata=DocumentIRMetadata(job_id="docjob_auto_heading", source_file_id="file_auto_heading", document_language="en"),
@@ -1270,6 +1322,167 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertEqual(rendered.paragraphs[1].style.name, "Heading 2")
         self.assertEqual(rendered.paragraphs[2].style.name, "Normal")
         self.assertGreaterEqual(xml.count('w:val="Heading2"'), 2)
+
+    def test_render_to_bytes_uses_explicit_v2_semantics_without_heading_guessing(self) -> None:
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="docjob_v2_semantics", source_file_id="file_v2_semantics", document_language="zh"),
+            pages=[DocumentIRPage(index=0, width=400.0, height=600.0)],
+            blocks=[
+                DocumentIRBlock(
+                    id="caption",
+                    type="paragraph",
+                    order=0,
+                    text="图 1 输出电压",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(10, 30, 180, 55), role="body"),
+                ),
+                DocumentIRBlock(
+                    id="reference",
+                    type="paragraph",
+                    order=1,
+                    text="图 13 显示了输出响应",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(10, 65, 180, 90), role="body"),
+                ),
+                DocumentIRBlock(
+                    id="explicit_heading",
+                    type="heading",
+                    order=2,
+                    level=1,
+                    text="工作原理",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(10, 100, 390, 130), role="body", column_hint="wide"),
+                ),
+                DocumentIRBlock(
+                    id="bullet",
+                    type="paragraph",
+                    order=3,
+                    text="• 应用说明",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(10, 140, 180, 165), role="body"),
+                ),
+                DocumentIRBlock(
+                    id="toc",
+                    type="paragraph",
+                    order=4,
+                    text="工作原理 .... 10",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(10, 175, 180, 200), role="body"),
+                ),
+            ],
+        )
+
+        content = DocumentIRWordRenderer().render_to_bytes(
+            document,
+            template_path=None,
+            config_path=None,
+            image_loader=lambda _asset: None,
+        )
+        rendered = Document(io.BytesIO(content))
+        paragraphs = {paragraph.text: paragraph for paragraph in rendered.paragraphs if paragraph.text}
+
+        self.assertEqual(paragraphs["图 1 输出电压"].style.name, "Normal")
+        self.assertEqual(paragraphs["图 13 显示了输出响应"].style.name, "Normal")
+        self.assertEqual(paragraphs["工作原理"].style.name, "Heading 1")
+        self.assertIn("应用说明", paragraphs)
+        self.assertIn("更新目录", paragraphs)
+        self.assertEqual(self._document_xml(content).count(" TOC \\o"), 1)
+
+    def test_layout_merges_single_side_tail_before_paired_images_into_one_column_flow(self) -> None:
+        def body(
+            block_id: str,
+            block_type: str,
+            text: str | None,
+            bbox: tuple[float, float, float, float],
+            hint: str,
+            *,
+            asset_ref: str | None = None,
+        ) -> DocumentIRBlock:
+            return DocumentIRBlock(
+                id=block_id,
+                type=block_type,
+                order=len(block_id),
+                text=text,
+                asset_ref=asset_ref,
+                layout=DocumentIRBlockLayout(page_index=0, bbox=bbox, role="body", column_hint=hint),
+            )
+
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="docjob_tail", source_file_id="file_tail", document_language="zh"),
+            pages=[DocumentIRPage(index=0, width=400.0, height=600.0)],
+            assets=[
+                DocumentIRAsset(id="asset_left", kind="image", source_path="left.png"),
+                DocumentIRAsset(id="asset_right", kind="image", source_path="right.png"),
+            ],
+            blocks=[
+                body("left", "paragraph", "左栏正文", (10, 50, 180, 100), "left"),
+                body("right", "paragraph", "右栏正文", (220, 50, 390, 100), "right"),
+                body("tail", "paragraph", "左栏尾部", (10, 120, 180, 155), "left"),
+                body("image_left", "image", None, (10, 220, 180, 330), "left", asset_ref="asset_left"),
+                body("image_right", "image", None, (220, 220, 390, 330), "right", asset_ref="asset_right"),
+            ],
+        )
+
+        plan = build_layout_plan(document)
+        self.assertEqual([region.kind for region in plan.pages[0].regions], ["two_col", "two_col"])
+        self.assertEqual([block.id for block in plan.pages[0].regions[0].blocks], ["left", "right", "tail"])
+
+        content = DocumentIRWordRenderer().render_to_bytes(
+            document,
+            template_path=None,
+            config_path=None,
+            image_loader=lambda _asset: MINIMAL_PNG_BYTES,
+        )
+        xml = self._document_xml(content)
+        self.assertEqual(xml.count('w:num="2"'), 1)
+        self.assertEqual(analyze_docx_quality_bytes(content)["inline_shape_count"], 2)
+
+    def test_layout_keeps_text_after_image_only_region_outside_image_flow(self) -> None:
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="docjob_image_tail", source_file_id="file_image_tail", document_language="zh"),
+            pages=[DocumentIRPage(index=0, width=400.0, height=600.0)],
+            blocks=[
+                DocumentIRBlock(
+                    id="image_left",
+                    type="image",
+                    order=0,
+                    asset_ref="asset_left",
+                    layout=DocumentIRBlockLayout(
+                        page_index=0,
+                        bbox=(10, 50, 180, 180),
+                        role="body",
+                        column_hint="left",
+                    ),
+                ),
+                DocumentIRBlock(
+                    id="image_right",
+                    type="image",
+                    order=1,
+                    asset_ref="asset_right",
+                    layout=DocumentIRBlockLayout(
+                        page_index=0,
+                        bbox=(220, 50, 390, 180),
+                        role="body",
+                        column_hint="right",
+                    ),
+                ),
+                DocumentIRBlock(
+                    id="text_tail",
+                    type="paragraph",
+                    order=2,
+                    text="下一段正文",
+                    layout=DocumentIRBlockLayout(
+                        page_index=0,
+                        bbox=(10, 220, 180, 260),
+                        role="body",
+                        column_hint="left",
+                    ),
+                ),
+            ],
+        )
+
+        plan = build_layout_plan(document)
+
+        self.assertEqual([region.kind for region in plan.pages[0].regions], ["two_col", "one_col"])
+        self.assertEqual([block.id for block in plan.pages[0].regions[1].blocks], ["text_tail"])
 
     def test_render_to_bytes_uses_one_native_toc_field_for_toc_like_entries(self) -> None:
         renderer = DocumentIRWordRenderer()

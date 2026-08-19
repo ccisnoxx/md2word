@@ -45,7 +45,7 @@ from app.domains.document_jobs.repository import (
 )
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
-from app.services.renderer.evidence import build_renderer_evidence
+from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
 from app.services.renderer.layout_plan import build_layout_plan
 from app.domains.translation.audit import (
     TranslationAuditService,
@@ -2232,6 +2232,7 @@ class DocumentJobExecutionService:
             ),
         )
         renderer_metadata = build_renderer_evidence(document_ir, word_content, layout_plan)
+        ensure_renderer_integrity(renderer_metadata)
         uploading = self.job_repository.update_document_job_if_current(
             rendering.id,
             allowed_statuses={"running"},

@@ -1,0 +1,10 @@
+{"file":".trellis/spec/backend/word-generation-rules.md","reason":"逐条检查四项修复是否满足正式规则、冲突矩阵、样本层级和 legacy 非权威边界。"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"检查结构断言、可见内容、WPS/LibreOffice 证据和 release gate 是否真实执行。"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"检查 source→IR 与 IR→DOCX 阻断分别落到 document_ir_failed/render_failed，且无成功 artifact/event。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"检查是否复用了现有 asset extractor、image renderer、paired-image tabs 和 evidence owner，避免第二套规则。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"核对 source inventory、IR、layout、OOXML evidence 与 job 状态的端到端数据流。"}
+{"file":".trellis/tasks/08-18-fix-formal-word-structural-regressions/research/current-chain-audit.md","reason":"复核真实负例计数、代码定位和实现后 CM4112 对照结论。"}
+{"file":".trellis/tasks/08-18-fix-formal-word-structural-regressions/research/cm4112-validation.md","reason":"复核候选 hash、source/IR/DOCX 对账，以及 LibreOffice/WPS 已完成和未完成边界。"}
+{"file":".trellis/spec/backend/template-layout-configuration.md","reason":"检查本地默认资源修复没有破坏线上固化版本、seed 不可变性、显式空字体和 OMML 独立边界。"}
+{"file":".trellis/tasks/08-18-fix-formal-word-structural-regressions/research/rich-caption-root-cause.md","reason":"复核一条 rich caption 与多条真实 annotation 的结构边界、OOXML 和 WPS 验收结论。"}
+{"file":".trellis/tasks/08-18-fix-formal-word-structural-regressions/research/font-config-root-cause.md","reason":"复核缺省/显式/no-template 配置来源、可见 Word run 四槽和客户端缺字体风险分层。"}

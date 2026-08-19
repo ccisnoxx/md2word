@@ -9,10 +9,12 @@ from xml.etree import ElementTree
 
 import json
 import os
+import zipfile
 
 from docx import Document
 
 from app.conversion import runtime_facade
+from app.services.document_ir.integrity import DocumentIntegrityError
 from scripts.dev import (
     audit_conversion_sandbox,
     formal_mineru_conversion,
@@ -100,6 +102,14 @@ class LocalMinerUConversionCliTests(TestCase):
                     [
                         {"type": "title", "text": "1 Features", "text_level": 1, "bbox": [72, 80, 180, 100], "page_idx": 0},
                         {"type": "text", "text": "Low noise precision amplifier", "bbox": [72, 120, 260, 150], "page_idx": 0},
+                        {
+                            "type": "table",
+                            "table_caption": ["Table 1 Electrical characteristics"],
+                            "table_body": "<table><tr><th>PARAMETER</th></tr><tr><td>VOS</td></tr></table>",
+                            "bbox": [72, 170, 540, 260],
+                            "page_idx": 0,
+                        },
+                        {"type": "equation", "latex": r"V_{OUT}=1", "bbox": [72, 280, 260, 310], "page_idx": 0},
                     ]
                 ),
                 encoding="utf-8",
@@ -120,8 +130,140 @@ class LocalMinerUConversionCliTests(TestCase):
 
             self.assertTrue(output_path.exists())
             self.assertTrue(result.document_ir_path.exists())
+            self.assertEqual(result.renderer_metadata["blocking_quality_flags"], [])
+            self.assertEqual(result.renderer_metadata["expected_layout_block_count"], 4)
+            self.assertEqual(result.renderer_metadata["layout_block_count"], 4)
             rendered = Document(output_path)
             self.assertIn("Features", "\n".join(paragraph.text for paragraph in rendered.paragraphs))
+            with zipfile.ZipFile(output_path) as docx_zip:
+                document_xml = ElementTree.fromstring(docx_zip.read("word/document.xml"))
+            word_ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+            math_ns = "{http://schemas.openxmlformats.org/officeDocument/2006/math}"
+            visible_runs = [run for run in document_xml.iter(f"{word_ns}r") if run.find(f".//{word_ns}t") is not None]
+            self.assertTrue(visible_runs)
+            for run in visible_runs:
+                fonts = run.find(f"./{word_ns}rPr/{word_ns}rFonts")
+                self.assertIsNotNone(fonts)
+                self.assertEqual(fonts.get(f"{word_ns}eastAsia"), "宋体")
+                self.assertEqual(fonts.get(f"{word_ns}ascii"), "Arial")
+                self.assertEqual(fonts.get(f"{word_ns}hAnsi"), "Arial")
+                self.assertEqual(fonts.get(f"{word_ns}cs"), "Times New Roman")
+            math_runs = list(document_xml.iter(f"{math_ns}r"))
+            self.assertTrue(math_runs)
+            self.assertTrue(all(run.find(f".//{word_ns}rFonts") is None for run in math_runs))
+
+    def test_formal_adapter_resolves_default_explicit_and_no_template_resources(self) -> None:
+        default_template = Path("/tmp/default-template.docx")
+        default_layout = Path("/tmp/default-layout.yaml")
+        explicit_template = Path("/tmp/explicit-template.docx")
+        explicit_layout = Path("/tmp/explicit-layout.yaml")
+        converted = object()
+        settings = mock.Mock(default_template_path=default_template, layout_config_path=default_layout)
+
+        with mock.patch.object(formal_mineru_conversion, "Settings", return_value=settings), mock.patch.object(
+            formal_mineru_conversion,
+            "convert_formal_mineru_package",
+            return_value=converted,
+        ) as convert:
+            default_result = formal_mineru_conversion.run_conversion(
+                input_path="mineru-package",
+                output_path="out.docx",
+                template_path=None,
+                layout_config_path=None,
+                subscript_config=None,
+                no_template=False,
+                use_mineru_header_footer=False,
+            )
+            explicit_result = formal_mineru_conversion.run_conversion(
+                input_path="mineru-package",
+                output_path="out.docx",
+                template_path=str(explicit_template),
+                layout_config_path=str(explicit_layout),
+                subscript_config=None,
+                no_template=False,
+                use_mineru_header_footer=False,
+            )
+            no_template_result = formal_mineru_conversion.run_conversion(
+                input_path="mineru-package",
+                output_path="out.docx",
+                template_path=str(explicit_template),
+                layout_config_path=None,
+                subscript_config=None,
+                no_template=True,
+                use_mineru_header_footer=False,
+            )
+
+        self.assertIs(default_result, converted)
+        self.assertIs(explicit_result, converted)
+        self.assertIs(no_template_result, converted)
+        default_request, explicit_request, no_template_request = [call.args[0] for call in convert.call_args_list]
+        self.assertEqual(default_request.template_path, default_template)
+        self.assertEqual(default_request.layout_config_path, default_layout)
+        self.assertEqual(explicit_request.template_path, explicit_template.resolve())
+        self.assertEqual(explicit_request.layout_config_path, explicit_layout.resolve())
+        self.assertIsNone(no_template_request.template_path)
+        self.assertEqual(no_template_request.layout_config_path, default_layout)
+
+        missing_template_settings = mock.Mock(default_template_path=None, layout_config_path=default_layout)
+        with mock.patch.object(formal_mineru_conversion, "Settings", return_value=missing_template_settings):
+            with self.assertRaisesRegex(FileNotFoundError, "默认 Word 模板不存在"):
+                formal_mineru_conversion.run_conversion(
+                    input_path="mineru-package",
+                    output_path="out.docx",
+                    template_path=None,
+                    layout_config_path=None,
+                    subscript_config=None,
+                    no_template=False,
+                    use_mineru_header_footer=False,
+                )
+
+        missing_settings = mock.Mock(default_template_path=None, layout_config_path=None)
+        with mock.patch.object(formal_mineru_conversion, "Settings", return_value=missing_settings):
+            with self.assertRaisesRegex(FileNotFoundError, "默认版式配置文件不存在"):
+                formal_mineru_conversion.run_conversion(
+                    input_path="mineru-package",
+                    output_path="out.docx",
+                    template_path=None,
+                    layout_config_path=None,
+                    subscript_config=None,
+                    no_template=True,
+                    use_mineru_header_footer=False,
+                )
+
+    def test_formal_adapter_does_not_publish_docx_when_renderer_integrity_blocks(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            package = root / "mineru-package"
+            package.mkdir()
+            (package / "sample_content_list_v2.json").write_text(
+                json.dumps([{"type": "text", "text": "Visible body", "bbox": [10, 20, 180, 60], "page_idx": 0}]),
+                encoding="utf-8",
+            )
+            output_path = root / "blocked.docx"
+            blocking_evidence = {
+                "blocking_quality_flags": ["ir_docx_integrity:inline_shape_count_mismatch"],
+                "docx_quality": {},
+                "quality_flags": [],
+            }
+
+            with mock.patch.object(
+                formal_mineru_conversion,
+                "build_renderer_evidence",
+                return_value=blocking_evidence,
+            ), self.assertRaises(DocumentIntegrityError):
+                formal_mineru_conversion.run_conversion(
+                    input_path=str(package),
+                    output_path=str(output_path),
+                    template_path=None,
+                    layout_config_path=None,
+                    subscript_config=None,
+                    no_template=True,
+                    use_mineru_header_footer=False,
+                    document_language="en",
+                    translation_mode="direct",
+                )
+
+            self.assertFalse(output_path.exists())
 
     def test_formal_adapter_writes_translation_request_before_missing_key_failure(self) -> None:
         with TemporaryDirectory() as tmp_dir:
