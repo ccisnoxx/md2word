@@ -773,3 +773,36 @@ Released commit b167e61 to hostdzire via release dir flow; verified internal/pub
 ### Next Steps
 
 - None - task complete
+
+
+## Session 24: 修复正式 Word 链路结构性回退
+
+**Date**: 2026-08-19
+**Task**: 修复正式 Word 链路结构性回退
+**Branch**: `main`
+
+### Summary
+
+修复 v2 chart 与源数据完整性失败关闭、段落语义和双栏尾部归属，恢复富文本图注逻辑分组及本地正式入口默认字体配置；更新 Word 生成规则并完成 CM4112 的 OOXML、LibreOffice 与 WPS 关键页验证。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `13111fcb` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
