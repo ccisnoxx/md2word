@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 25
-- **Last Active**: 2026-08-19
+- **Total Sessions**: 26
+- **Last Active**: 2026-08-20
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~837 | Active |
+| `journal-1.md` | ~859 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 26 | 2026-08-20 | 修复 MinerU 空表占位符并完成线上重试验证 | `d8b81963`, `38903e84` | `main` |
 | 25 | 2026-08-19 | 取消 Word 原生公式默认斜体 | `bb11f02` | `main` |
 | 24 | 2026-08-19 | 修复正式 Word 链路结构性回退 | `13111fcb` | `main` |
 | 23 | 2026-08-18 | 固化 Word 生成规则 | `ffc0404e`, `e2e46183` | `main` |
