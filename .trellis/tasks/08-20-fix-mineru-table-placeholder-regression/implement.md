@@ -62,4 +62,5 @@ git diff --check
 - `INPUT-005` 已写入 Word 生成规范，完整性门禁和 `integrity.py` 未修改。
 - 两项关键回归、完整 converter 19 项测试、`compileall`、`git diff --check` 和 `scripts/ops/check_release.py` 均通过；release check 实际执行 202 项测试，OpenAPI、前端合同与 mock smoke 通过。
 - 旧线上 ZIP（SHA-256 `f60e2002654a873492c38d0c018e595cb44804f037a8adcc64973bea31452419`）已用当前修复临时转换成功：420 个归一化 source blocks、19 个 table、38 个图片资产、`blocking_quality_flags=[]`；临时文件已删除。
-- 待完成：任务 retry/clone、提交、推送和部署。
+- 工作提交 `d8b8196317fa936cf534042793156ab916ebf49e` 已推送并部署为 hostdzire release `d8b8196`，部署标识为 `hostdzire-20260820T014549Z-d8b8196`；API/Worker 容器健康，线上 `check_release.py --runtime-url` 通过，包含 202 项测试及 MySQL + Celery readiness。
+- 原任务 `docjob_cfcdfa737312` 通过正式 retry API 从 `previous_failed_stage=ir_converting` 恢复到 `resume_stage=parsed`，复用既有 `mineru_raw_result`；`retry_count=1`，最终状态为 `succeeded/completed`，并生成 `document_ir`、`generated_word` 和图片资产归档。
