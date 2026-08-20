@@ -835,3 +835,25 @@ Released commit b167e61 to hostdzire via release dir flow; verified internal/pub
 ### Status
 
 [OK] **Completed**
+
+
+## Session 26: 修复 MinerU 空表占位符并完成线上重试验证
+
+**Date**: 2026-08-20
+**Task**: 修复 MinerU 空表占位符并完成线上重试验证
+**Branch**: `main`
+
+### Summary
+
+修复 nested MinerU v2 空表续页占位符误判，补充 fail-closed 回归与规范；部署 hostdzire release d8b8196，原任务 docjob_cfcdfa737312 从 parsed 断点重试并成功生成 Word。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d8b81963` | (see git log) |
+| `38903e84` | (see git log) |
+
+### Status
+
+[OK] **Completed**
