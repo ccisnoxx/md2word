@@ -305,11 +305,14 @@ def _is_mineru_empty_table_placeholder(raw_block: dict[str, Any]) -> bool:
         block_type=_source_type(raw_block),
         raw_asset_path=raw_asset_path,
         image_path=None,
-        captions=collect_text_from_fields(raw_block, ("table_caption", "caption", "captions")),
+        captions=collect_text_from_fields(
+            raw_block,
+            ("table_caption", "caption", "captions", "table_footnote", "footnote", "footnotes"),
+        ),
         html=extract_first_html(raw_block),
         text_candidates=collect_text_from_fields(
             raw_block,
-            ("text", "content", "equation_content", "math_content", "latex", "alt", "description"),
+            ("text", "equation_content", "math_content", "latex", "alt", "description"),
         ),
         bbox=bbox,
     )

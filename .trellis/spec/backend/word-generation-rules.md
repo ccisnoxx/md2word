@@ -109,6 +109,18 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 富文本 caption 的逻辑分组不由本规则的通用文本拍平函数推断，单独受 TEXT-004 约束。
 
+### INPUT-005 空表续页占位符只按语义叶字段归一化
+
+- 状态：`enforced-tested`
+- 输入信号：MinerU table block 的 HTML、题注、脚注、明确正文叶字段，以及 `image_source.path="images/"`、`table_type`、`table_nest_level` 等结构元数据。
+- 正式 owner：`app/services/document_ir/layout_signals.py::_is_mineru_empty_table_placeholder`、`::merge_table_placeholder_continuations`；保守判定复用 `app/conversion/docx_rules/mineru_content.py::is_empty_table_placeholder`。
+- 预期输出：只有 HTML、题注、脚注和明确正文均为空，且资产标记满足既有空表证据的 table 才能在 source inventory 建立前并入上一真实表；通用 JSON 容器、schema 枚举、类型标签和资产路径不是正文证据。真实 HTML、题注、脚注或 `text`、`description` 等明确正文必须阻止合并。
+- 冲突/例外：没有前置真实表的孤立空 table 不得静默删除；未被确定归一化的 table 继续由 IR-004/QUALITY-004 以 `source_ir_integrity:payload_missing:table` 失败关闭。
+- 禁止：递归扫描整个 `content` 容器判断是否有正文；按 `simple_table`、任务 ID、页码或 PDF 型号写特例；放宽完整性门禁掩盖分类错误。
+- 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_merges_real_mineru_empty_table_continuations`、`.test_convert_zip_keeps_contentful_or_orphan_empty_tables_fail_closed`；nested 正例必须保留真实 MinerU v2 层级和结构元数据，负例必须证明明确正文及孤立空表不会被静默删除。
+- 样本证据：线上任务 `docjob_cfcdfa737312` 的失败包为 external evidence，不提交用户原始 ZIP；2026-08-20 使用当前修复对该 ZIP 做只读临时回归，归一化后 420 个 source blocks、19 个 table、38 个图片资产且 blocker 为空，临时文件已删除；自动测试只保留脱敏最小结构。
+- 来源/取代：任务 `08-20-fix-mineru-table-placeholder-regression`；补足只覆盖顶层简化字段、未覆盖 nested v2 结构元数据的历史测试缺口。
+
 ## 3. DocumentIR、页面与正文流
 
 ### IR-001 DocumentIR 是内容与版式事实的正式边界
@@ -574,6 +586,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 | 规则 | 正式 owner 层 | 自动测试层 | Committed 样本 | External/人工证据 | 当前缺口 |
 |---|---|---|---|---|---|
 | PIPE-001、INPUT-001、INPUT-004 | formal adapter、MinerU package/converter | conversion sandbox、converter layout、component runner | OPA228 P1 最小 MinerU v2 包 | 无 | fixture 不含表格/图片/公式/双栏；runner 只断言可打开 |
+| INPUT-005、FLOW-003 | layout signals、共享占位符规则、converter | converter layout | 无 | `docjob_cfcdfa737312` external failure ZIP | 无 committed 真 MinerU 包；原用户 ZIP 仅作临时只读回归 |
 | PIPE-002、IR-001 | models、layout plan、renderer | IR contract、converter/renderer layout | 无复杂 IR 基线 | 线上合成 worker | 无当前真样本 IR snapshot |
 | INPUT-002 | package extraction、formal adapter | 仅入口正常/缺路径 | OPA228 P1 正常包 | 无 | 无正式 ZIP traversal/坏 JSON 定向测试 |
 | INPUT-003 | shared content rule、converter | conservative/filter converter tests | 无 | SC2167 historical | 无 committed 宣传尾页包 |

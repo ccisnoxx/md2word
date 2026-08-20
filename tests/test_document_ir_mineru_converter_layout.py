@@ -652,9 +652,28 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
                     },
                     {
                         "type": "table",
-                        "html": "",
-                        "image_source": {"path": "images/"},
+                        "content": {
+                            "image_source": {"path": "images/"},
+                            "table_caption": [],
+                            "table_footnote": [],
+                            "html": "",
+                            "table_type": "simple_table",
+                            "table_nest_level": 1,
+                        },
                         "bbox": [72, 40, 540, 280],
+                        "page_idx": 2,
+                    },
+                    {
+                        "type": "table",
+                        "content": {
+                            "image_source": {"path": "images/"},
+                            "table_caption": [],
+                            "table_footnote": [],
+                            "html": "<table><tr><td>保留正文</td></tr></table>",
+                            "table_type": "simple_table",
+                            "table_nest_level": 1,
+                        },
+                        "bbox": [72, 300, 540, 480],
                         "page_idx": 2,
                     },
                 ],
@@ -674,9 +693,62 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
                 document_language="en",
             )
 
-        self.assertEqual(len(result.document.blocks), 1)
+        self.assertEqual(len(result.document.blocks), 2)
         self.assertEqual(result.document.blocks[0].type, "table")
         self.assertEqual(result.document.blocks[0].layout.continuation_heights, [200.0, 240.0])
+        self.assertEqual(result.document.blocks[1].html, "<table><tr><td>保留正文</td></tr></table>")
+        self.assertEqual(result.document.metadata.source_block_count, 2)
+        self.assertEqual(result.document.metadata.source_type_counts, {"table": 2})
+
+    def test_convert_zip_keeps_contentful_or_orphan_empty_tables_fail_closed(self) -> None:
+        real_table = {
+            "type": "table",
+            "table_body": "<table><tr><td>Part</td></tr></table>",
+            "bbox": [72, 120, 540, 300],
+            "page_idx": 0,
+        }
+
+        def nested_empty_table(**content: Any) -> dict[str, Any]:
+            return {
+                "type": "table",
+                "content": {
+                    "image_source": {"path": "images/"},
+                    "html": "",
+                    "table_type": "simple_table",
+                    **content,
+                },
+                "bbox": [72, 40, 540, 280],
+                "page_idx": 1,
+            }
+
+        cases = {
+            "明确 text": [real_table, nested_empty_table(text="表格正文仍需保留")],
+            "明确 description": [real_table, nested_empty_table(description="表格说明仍需保留")],
+            "明确题注": [real_table, nested_empty_table(table_caption=["表 1 参数"])],
+            "明确脚注": [real_table, nested_empty_table(table_footnote=["注：典型值"])],
+            "孤立空表": [{**nested_empty_table(), "page_idx": 0}],
+        }
+        for label, blocks in cases.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as temp_dir:
+                zip_path = Path(temp_dir) / "mineru.zip"
+                self._write_zip(
+                    zip_path,
+                    blocks=blocks,
+                    layout={
+                        "pdf_info": [
+                            {"page_idx": page_index, "page_size": [612, 792]}
+                            for page_index in range(max(block["page_idx"] for block in blocks) + 1)
+                        ]
+                    },
+                )
+
+                with self.assertRaisesRegex(DocumentIntegrityError, "payload_missing:table"):
+                    MinerUToDocumentIRService().convert_zip(
+                        zip_path,
+                        job_id="docjob_ambiguous_empty_table",
+                        source_file_id="file_ambiguous_empty_table",
+                        document_language="zh",
+                    )
 
     def test_convert_zip_reassociates_only_strict_numbered_image_groups(self) -> None:
         blocks = [

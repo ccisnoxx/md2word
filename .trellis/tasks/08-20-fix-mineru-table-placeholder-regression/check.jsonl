@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/word-generation-rules.md","reason":"检查结构元数据/正文边界、占位符合并顺序和完整性门禁是否满足正式合同。"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"检查正反例、正式 converter 回归、release gate 和线上验证是否真实执行。"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"确认未识别的真实空 table 仍以 document_ir_failed 显式失败，不出现伪成功。"}
+{"file":".trellis/tasks/08-20-fix-mineru-table-placeholder-regression/research/root-cause.md","reason":"复核修复是否对应已观测的 nested v2 payload，而非任务/值特例。"}
