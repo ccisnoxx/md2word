@@ -27,7 +27,7 @@
 - [x] 真实 table 的 HTML、题注、脚注或实质文本不会被占位符规则误删；缺少可渲染 payload 的真实 table 仍产生 `source_ir_integrity:payload_missing:table`。
 - [x] 最小定向单元测试覆盖共享分类器与转换器回归，相关既有测试及项目要求的发布检查通过。
 - [x] `.trellis/spec/backend/word-generation-rules.md` 记录 MinerU 结构元数据与正文内容的边界、占位符合并约束及对应验证要求。
-- [ ] 部署后原问题任务的重试/克隆不再停在 `ir_converting`；若后续阶段失败，保留独立失败证据，不把它归并为本缺陷已解决的证明。
+- [x] 部署后原问题任务的重试/克隆不再停在 `ir_converting`；若后续阶段失败，保留独立失败证据，不把它归并为本缺陷已解决的证明。
 
 ## Out of Scope
 
