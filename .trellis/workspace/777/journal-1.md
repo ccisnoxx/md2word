@@ -857,3 +857,26 @@ Released commit b167e61 to hostdzire via release dir flow; verified internal/pub
 ### Status
 
 [OK] **Completed**
+
+
+## Session 27: 完善 Word 生成规则与高保真布局
+
+**Date**: 2026-08-21
+**Task**: 完善 Word 生成规则与高保真布局
+**Branch**: `codex/refine-word-generation-rules`
+
+### Summary
+
+完成 R-01 至 R-10 与 D8 通用修复、Word/WPS 有界视觉复核、最终 release gate、规则同步和任务归档。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `57a80739` | (see git log) |
+| `e2cbf25d` | (see git log) |
+| `ec252f25` | (see git log) |
+
+### Status
+
+[OK] **Completed**
