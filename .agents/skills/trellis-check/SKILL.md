@@ -18,11 +18,7 @@ git status
 
 ## Step 2: Read Task Artifacts and Applicable Specs
 
-Read the current task artifacts in order:
-
-- `prd.md`
-- `design.md` if present
-- `implement.md` if present
+On first entry to the task, after a scope change, or when context is missing, read the current task artifacts in full and in this order: `prd.md`, `design.md` if present, then `implement.md` if present. During consecutive checks for small fixes in the same task, reuse already loaded or injected task context and reread only changed or directly relevant sections. A newly started check agent without complete hook-injected context counts as missing context.
 
 ```bash
 python3 ./.trellis/scripts/get_context.py --mode packages

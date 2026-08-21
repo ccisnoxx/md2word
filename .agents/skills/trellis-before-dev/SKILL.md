@@ -7,10 +7,10 @@ Read the relevant development guidelines before starting your task.
 
 Execute these steps:
 
-1. **Read current task artifacts**:
-   - `prd.md` for requirements and acceptance criteria
-   - `design.md` if present for technical design
-   - `implement.md` if present for execution order and validation plan
+1. **Resolve current task context**:
+   - On first entry to the task, after a scope change, or when context is missing, read `prd.md`, `design.md` if present, and `implement.md` if present in full.
+   - During consecutive small fixes in the same task, reuse already loaded or injected task context and reread only changed or directly relevant sections.
+   - A newly started sub-agent without complete hook-injected context counts as missing context and must perform the full read.
 
 2. **Discover packages and their spec layers**:
    ```bash

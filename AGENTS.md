@@ -38,8 +38,9 @@ Managed by Trellis. Edits outside this block are preserved; edits inside may be 
 
 - For simple conversation, read-only investigation, small local fixes, or low-risk single-file changes, do not ask whether to create a Trellis task and do not create one unless the user explicitly asks for one. This project-specific rule overrides generic Trellis no-task triage prompts.
 - Use a Trellis task for cross-module changes, public API changes, data contract changes, configuration changes, database changes, permission changes, cache/state-sync changes, long-lived requirements, or work that needs explicit acceptance criteria.
-- Once a Trellis task exists, read `prd.md`, `design.md`, `implement.md`, and the relevant `.trellis/spec/` files before writing code.
+- On first entry to a Trellis task, after a scope change, or when context is missing, read `prd.md`, `design.md`, `implement.md`, and the relevant `.trellis/spec/` files before writing code. During the same active task, reuse already loaded or injected context and reread only changed or directly relevant sections; do not reread unchanged foundational documents in every agent turn.
 - For complex tasks, do not implement until `prd.md`, `design.md`, and `implement.md` are reviewable.
+- The existence or age of a Trellis task does not by itself require the full implementation, review, or release workflow for every incremental fix.
 
 ### Trellis And Ponytail
 
@@ -70,6 +71,48 @@ Managed by Trellis. Edits outside this block are preserved; edits inside may be 
 - After code changes, run the smallest effective validation.
 - For Trellis tasks, validate according to `implement.md` and the relevant spec quality gates.
 - If heavier checks are skipped, state the reason, the substitute checks, and the remaining risk.
+
+### Incremental PDF/DOCX Fix Validation
+
+This project expects many incremental fixes discovered from different PDF datasheets. Select validation from the verified blast radius of the current change, not from the size or age of the active Trellis task. Start at the lowest sufficient level and escalate only when evidence requires it.
+
+#### Level A: Local Micro-Fix
+
+Use Level A when the change has one known owner, does not alter a public API, schema, configuration contract, or cross-module data flow, and one focused regression can prove the behavior.
+
+- The main agent may implement and check the fix directly; separate implementation and review agents are not required.
+- Run one to three focused tests or a minimal reproduction, plus `git diff --check`.
+- Do not run module-wide suites, release gates, Word/WPS checks, full sample conversions, or formal Spec updates by default.
+
+#### Level B: Shared Owner or Bounded Cross-Path Fix
+
+Use Level B when the change affects a shared parser, renderer, helper, integrity rule, or multiple known call paths, but remains bounded and does not change a public or release contract.
+
+- Run the failing regression and the affected module tests.
+- Use an independent review only when the change contains non-obvious judgment or creates a real shared-regression risk.
+- Do not run the release gate by default.
+- Run Word/WPS checks only when OOXML, fields, formulas, columns, pagination, or other client-visible layout behavior changes.
+- When practical, batch related micro-fixes into one client-validation candidate.
+
+#### Level C: Contract, Release, or High-Risk Change
+
+Use the full Trellis closure workflow only when at least one of these conditions applies:
+
+- A public API, DocumentIR/schema, template configuration, or versioned contract changes.
+- Section, column, pagination, table fallback, asset identity, or content-blocking rules change.
+- Word/WPS fields, OMML, or client compatibility changes.
+- The work is preparing a commit, release, archive, or milestone candidate.
+- Focused validation reveals an unexplained cross-module regression.
+
+Level C may require implementation and independent review agents, integration checks, Word/WPS validation, release gates, and Spec synchronization.
+
+#### Reuse and Escalation
+
+- Validation is monotonic: begin with the smallest sufficient check and escalate only after an observed failure or verified risk.
+- The implementation phase records checks already run; the review phase fills evidence gaps and does not blindly repeat broad suites.
+- Run a release gate once per candidate and rerun it only after a relevant code, configuration, or environment change.
+- Record ordinary fixes in the task status or problem matrix when needed. Update formal Specs only for stable general contracts, user-confirmed rules, or batch milestones.
+- Automated tests do not replace a necessary Word/WPS check, but unchanged client-visible behavior does not require one.
 
 ### Git
 
