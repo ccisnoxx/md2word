@@ -773,6 +773,9 @@ function validateFieldValue(
   value: unknown,
   fieldSchema: TemplateLayoutConfigFieldSchema,
 ): string {
+  if (fieldSchema.optional && (value === undefined || value === null || value === "")) {
+    return "";
+  }
   if (!["number", "boolean", "alignment", "color", "text"].includes(fieldSchema.type)) {
     return `不支持字段类型 ${fieldSchema.type}。`;
   }

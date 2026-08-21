@@ -24,6 +24,7 @@ from app.conversion.runtime import (
 from app.conversion.runtime.input_adapter_runtime import load_pages, materialize_input
 from app.conversion.runtime.page_layout_runtime import build_document
 
+from app.conversion.docx_rules.text_semantics import PRODUCT_TITLE_RE
 from app.conversion.runtime_helpers import (
     apply_document_language_overrides,
     build_translation_config,
@@ -52,7 +53,6 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", "
 A4_WIDTH = Mm(210)
 A4_HEIGHT = Mm(297)
 HEADER_FOOTER_FONT = Pt(8.5)
-PRODUCT_TITLE_RE = re.compile(r"^(?P<part>[A-Z0-9xX,+/\- ]{3,})\s+(?P<category>.+)$")
 TOC_ENTRY_RE = re.compile(
     r"^(?:.+?[.·。…]{2,}\s*\d+\s*$|"
     r"(?:(?:\d+[、.])|(?:\d+\.\d+)|(?:附录\s*[A-Z\d.\-]+)|(?:appendix\s+[A-Z\d.\-]+)|"

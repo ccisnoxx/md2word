@@ -44,7 +44,7 @@ from app.domains.document_jobs.repository import (
     DocumentJobTranslationBatchRepositoryProtocol,
 )
 from app.services.document_ir import MinerUToDocumentIRService
-from app.services.renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
+from app.services.renderer import DocumentIRRenderOptions, DocumentIRWordRenderer, resolve_template_config
 from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
 from app.services.renderer.layout_plan import build_layout_plan
 from app.domains.translation.audit import (
@@ -2207,7 +2207,6 @@ class DocumentJobExecutionService:
 
         ir_file = self._get_document_ir_file(rendering)
         document_ir = DocumentIR.model_validate_json(self.file_service.read_file_content(ir_file))
-        layout_plan = build_layout_plan(document_ir)
         snapshot_resources = rendering.request_snapshot.get("resources")
         snapshot_template = snapshot_resources.get("template") if isinstance(snapshot_resources, dict) else None
         draft_was_authorized_at_creation = (
@@ -2221,17 +2220,27 @@ class DocumentJobExecutionService:
             rendering.template_version_id,
             allow_draft=draft_was_authorized_at_creation,
         )
+        render_options = DocumentIRRenderOptions(
+            subscript_config_path=self.settings.subscript_config_path,
+            document_language=document_ir.metadata.document_language,
+        )
+        template_config = resolve_template_config(
+            document_ir,
+            template_selection.layout_config_path,
+            render_options,
+            template_path=template_selection.template_path,
+        )
+        layout_plan = build_layout_plan(document_ir, template_config)
         word_content = self.word_renderer.render_to_bytes(
             document_ir,
             template_path=template_selection.template_path,
             config_path=template_selection.layout_config_path,
             image_loader=self._build_image_loader(rendering),
-            options=DocumentIRRenderOptions(
-                subscript_config_path=self.settings.subscript_config_path,
-                document_language=document_ir.metadata.document_language,
-            ),
+            options=render_options,
+            layout_plan=layout_plan,
+            template_config=template_config,
         )
-        renderer_metadata = build_renderer_evidence(document_ir, word_content, layout_plan)
+        renderer_metadata = build_renderer_evidence(document_ir, word_content, layout_plan, template_config)
         ensure_renderer_integrity(renderer_metadata)
         uploading = self.job_repository.update_document_job_if_current(
             rendering.id,

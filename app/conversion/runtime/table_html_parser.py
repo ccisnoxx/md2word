@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
 
@@ -11,6 +12,7 @@ class HtmlCell:
     colspan: int = 1
     html: str | None = None
     is_header: bool = False
+    width_hint: float | None = None
 
 
 @dataclass(slots=True)
@@ -43,6 +45,7 @@ class SimpleTableHTMLParser(HTMLParser):
                 rowspan=safe_int(attrs_map.get("rowspan"), 1),
                 colspan=safe_int(attrs_map.get("colspan"), 1),
                 is_header=tag == "th",
+                width_hint=parse_width_hint(attrs_map),
             )
         elif self.current_cell is not None:
             self.current_cell_chunks.append(f"<{tag}{format_html_attrs(attrs)}>")
@@ -88,6 +91,23 @@ def safe_int(value: str | None, default: int) -> int:
         return max(int(value or default), 1)
     except (TypeError, ValueError):
         return default
+
+
+def parse_width_hint(attrs: dict[str, str | None]) -> float | None:
+    """读取 HTML cell 的相对宽度提示；单位只作为同表列权重，不映射为 Word 绝对值。"""
+
+    raw_width = attrs.get("width")
+    if not raw_width:
+        style = attrs.get("style") or ""
+        match = re.search(r"(?:^|;)\s*width\s*:\s*([0-9]+(?:\.[0-9]+)?)", style, re.IGNORECASE)
+        raw_width = match.group(1) if match is not None else None
+    if not raw_width:
+        return None
+    match = re.search(r"[0-9]+(?:\.[0-9]+)?", raw_width)
+    if match is None:
+        return None
+    value = float(match.group(0))
+    return value if value > 0 else None
 
 
 def format_html_attrs(attrs: list[tuple[str, str | None]]) -> str:

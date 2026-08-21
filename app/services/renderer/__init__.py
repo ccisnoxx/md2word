@@ -2,6 +2,11 @@ from __future__ import annotations
 
 # app/services/renderer/__init__.py: 导出 DocumentIR 到 Word 的渲染服务。
 
-from app.services.renderer.word_renderer import DocumentIRRenderOptions, DocumentIRWordRenderer, ImageContentLoader
+from app.services.renderer.word_renderer import (
+    DocumentIRRenderOptions,
+    DocumentIRWordRenderer,
+    ImageContentLoader,
+    resolve_template_config,
+)
 
-__all__ = ["DocumentIRRenderOptions", "DocumentIRWordRenderer", "ImageContentLoader"]
+__all__ = ["DocumentIRRenderOptions", "DocumentIRWordRenderer", "ImageContentLoader", "resolve_template_config"]

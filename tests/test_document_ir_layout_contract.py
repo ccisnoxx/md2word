@@ -7,6 +7,7 @@ import unittest
 from app.services.document_ir.integrity import build_source_integrity
 from app.services.document_ir.models import (
     DocumentIR,
+    DocumentIRAsset,
     DocumentIRBlock,
     DocumentIRBlockLayout,
     DocumentIRMetadata,
@@ -103,6 +104,141 @@ class DocumentIRLayoutContractTests(unittest.TestCase):
         self.assertEqual(decoded.blocks[0].footnotes, ["All values are typical."])
         self.assertEqual(decoded.blocks[0].metadata["layout_role_reason"], "column_hint=wide;source=bbox")
         self.assertIn("layout_wide_table:block_0001", decoded.quality_flags)
+
+    def test_source_integrity_accepts_explicit_toc_disposition_and_requires_complete_new_semantics(self) -> None:
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(
+                job_id="docjob_semantics",
+                source_file_id="file_semantics",
+                document_language="en",
+                source_block_count=2,
+                source_type_counts={"list": 1, "title": 1},
+            ),
+            blocks=[
+                DocumentIRBlock(
+                    id="title",
+                    type="paragraph",
+                    order=0,
+                    text="Table of Contents",
+                    layout=DocumentIRBlockLayout(role="body"),
+                    metadata={
+                        "source_type": "title",
+                        "annotation_role": "toc_title",
+                        "semantic_decision_reason": "toc_title_and_anchor",
+                    },
+                ),
+                DocumentIRBlock(
+                    id="anchor",
+                    type="paragraph",
+                    order=0,
+                    text="",
+                    layout=DocumentIRBlockLayout(role="body"),
+                    metadata={
+                        "source_type": "toc_anchor",
+                        "source_block_id": "title",
+                        "annotation_role": "toc_anchor",
+                        "semantic_decision_reason": "synthetic_toc_anchor",
+                    },
+                ),
+                DocumentIRBlock(
+                    id="entries",
+                    type="list",
+                    order=1,
+                    list_items=["Features................ 2"],
+                    layout=DocumentIRBlockLayout(role="toc_source"),
+                    metadata={
+                        "source_type": "list",
+                        "semantic_decision_reason": "explicit_toc_region_source",
+                    },
+                ),
+            ],
+        )
+
+        evidence = build_source_integrity(document)
+        self.assertEqual(evidence["blocking_quality_flags"], [])
+        document.blocks[1].metadata.pop("semantic_decision_reason")
+        self.assertEqual(build_source_integrity(document)["blocking_quality_flags"], [])
+        document.blocks[2].metadata.pop("semantic_decision_reason")
+        self.assertIn(
+            "source_ir_integrity:semantic_decision_missing:list",
+            build_source_integrity(document)["blocking_quality_flags"],
+        )
+
+    def test_source_integrity_requires_exact_visual_crop_complement(self) -> None:
+        normalization = {
+            "reason": "editable_table_extracted_from_containing_image",
+            "table_block_id": "table",
+            "image_block_id": "image",
+            "masked_rect": [0.3, 0.4, 0.7, 0.6],
+            "crop_fragment_count": 4,
+        }
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(
+                job_id="docjob_visual_crop",
+                source_file_id="file_visual_crop",
+                document_language="en",
+                source_block_count=2,
+                source_type_counts={"image": 1, "table": 1},
+            ),
+            assets=[DocumentIRAsset(id="asset_image", kind="image", source_path="drawing.png")],
+            blocks=[
+                DocumentIRBlock(
+                    id="table",
+                    type="table",
+                    order=0,
+                    html="<table><tr><td>DIM</td></tr></table>",
+                    layout=DocumentIRBlockLayout(role="body"),
+                    metadata={
+                        "source_type": "table",
+                        "semantic_decision_reason": "source_type_preserved",
+                        "visual_overlap_group_id": "visual_overlap:table:image",
+                        "visual_overlap_normalization": normalization,
+                    },
+                ),
+                DocumentIRBlock(
+                    id="image",
+                    type="image",
+                    order=1,
+                    asset_ref="asset_image",
+                    layout=DocumentIRBlockLayout(role="body"),
+                    metadata={
+                        "source_type": "image",
+                        "semantic_decision_reason": "source_type_preserved",
+                        "visual_overlap_group_id": "visual_overlap:table:image",
+                        "visual_overlap_normalization": normalization,
+                        "visual_crop_rects": [
+                            [0.0, 0.0, 0.3, 1.0],
+                            [0.3, 0.0, 0.7, 0.4],
+                            [0.7, 0.0, 1.0, 1.0],
+                            [0.3, 0.6, 0.7, 1.0],
+                        ],
+                    },
+                ),
+            ],
+        )
+
+        self.assertEqual(build_source_integrity(document)["blocking_quality_flags"], [])
+        document.blocks[1].metadata["visual_crop_rects"][0] = [0.0, 0.4, 0.3, 0.6]
+
+        self.assertIn(
+            "source_ir_integrity:visual_crop_coverage_mismatch:image",
+            build_source_integrity(document)["blocking_quality_flags"],
+        )
+
+        document.blocks[1].metadata["visual_crop_rects"] = [
+            [0.0, 0.0, 0.3, 1.0],
+            [0.3, 0.0, 0.7, 0.4],
+            [0.7, 0.0, 1.0, 1.0],
+            [0.3, 0.6, 0.7, 1.0],
+        ]
+        for block in document.blocks:
+            block.metadata.pop("visual_overlap_group_id")
+
+        flags = build_source_integrity(document)["blocking_quality_flags"]
+        self.assertIn("source_ir_integrity:visual_overlap_group_invalid:table", flags)
+        self.assertIn("source_ir_integrity:visual_overlap_group_invalid:image", flags)
 
 
 if __name__ == "__main__":

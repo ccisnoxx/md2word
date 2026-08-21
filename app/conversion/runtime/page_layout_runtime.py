@@ -13,6 +13,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Emu, Mm, Pt
 
+from app.conversion.docx_rules.text_semantics import PRODUCT_TITLE_RE
 from app.conversion.runtime.page_flow_runtime import PageFlowPlan, build_page_flow_plan
 
 
@@ -69,7 +70,7 @@ def _visual_types() -> set[str]:
 
 
 def _product_title_re() -> Any:
-    return _runtime_value("PRODUCT_TITLE_RE", re.compile(r"^(?P<part>[A-Z0-9xX,+/\- ]{3,})\s+(?P<category>.+)$"))
+    return _runtime_value("PRODUCT_TITLE_RE", PRODUCT_TITLE_RE)
 
 
 def _appendix_title_re() -> Any:

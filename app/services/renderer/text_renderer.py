@@ -3,6 +3,7 @@ from __future__ import annotations
 # app/services/renderer/text_renderer.py: 提供 DocumentIR Word 渲染器的段落与 run 样式 helper。
 
 import re
+import unicodedata
 from collections.abc import Mapping
 from typing import Any
 
@@ -19,6 +20,8 @@ from app.conversion.docx_rules.text_semantics import (
     GREEK_AND_TEXT_COMMANDS,
     collapse_double_escaped_tex_commands,
     compact_math_token_runs,
+    contains_inline_markup,
+    prepare_text_for_rendering,
 )
 from app.conversion.docx_rules.terminology import TerminologyReplacer
 from app.services.renderer.semantic_text import (
@@ -29,12 +32,17 @@ from app.services.renderer.semantic_text import (
     looks_like_heading_text,
     normalize_formula_text,
     normalize_list_item,
+    parse_decimal_list_marker,
     parse_toc_entry_text,
 )
 from app.services.renderer.template_config import TemplateConfigPackage, TemplateParagraphStyleConfig
 
 
 MD2WORD_RENDERER_BULLET_NUM_ID_ATTR = "_md2word_renderer_bullet_num_id"
+MD2WORD_RENDERER_DECIMAL_NUM_ID_ATTR = "_md2word_renderer_decimal_num_id"
+MD2WORD_RENDERER_DECIMAL_NUMBER_ATTR = "_md2word_renderer_decimal_number"
+MD2WORD_RENDERER_ROMAN_MATH_FONT_ATTR = "_md2word_renderer_roman_math_font_name"
+DEFAULT_MATH_FONT_NAME = "Cambria Math"
 CAPTION_NUMBER_PATTERN = r"(?P<number>\d+)(?![A-Za-z0-9]|[.．]\d|[-–—][A-Za-z0-9])"
 CAPTION_RE = re.compile(
     r"^(?P<prefix>\s*)(?P<label>图|表|Figure|Table)(?P<spacing>\s*)"
@@ -57,7 +65,7 @@ CaptionBookmarks = Mapping[tuple[str, int], tuple[str, int]]
 class _OmmlParser:
     """把当前合同允许的 TeX 子集直接构造成可编辑 OMML。"""
 
-    def __init__(self, source: str) -> None:
+    def __init__(self, source: str, *, roman_font_name: str | None = None) -> None:
         cleaned = collapse_double_escaped_tex_commands(source.strip())
         cleaned = re.sub(r"^<eq>\s*|\s*</eq>$", "", cleaned, flags=re.IGNORECASE)
         if cleaned.startswith(r"\(") and cleaned.endswith(r"\)"):
@@ -65,6 +73,7 @@ class _OmmlParser:
         compacted = SPACED_FORMULA_ALNUM_RE.sub(lambda match: "".join(match.group(0).split()), cleaned.replace("$", ""))
         self.source = compact_math_token_runs(compacted)
         self.position = 0
+        self.roman_font_name = roman_font_name
 
     def parse(self) -> Any | None:
         try:
@@ -84,7 +93,7 @@ class _OmmlParser:
 
         def flush_text() -> None:
             if text:
-                children.append(self._math_run("".join(text)))
+                children.extend(self._plain_math_runs("".join(text)))
                 text.clear()
 
         while self.position < len(self.source):
@@ -109,7 +118,8 @@ class _OmmlParser:
                 continue
             if char == "\\":
                 flush_text()
-                children.append(self._parse_command())
+                command_children = self._parse_command()
+                children.extend(command_children if isinstance(command_children, list) else [command_children])
                 continue
             if char in {"^", "_"}:
                 flush_text()
@@ -129,6 +139,9 @@ class _OmmlParser:
 
     def _parse_command(self) -> Any:
         self.position += 1
+        if self.position < len(self.source) and self.source[self.position] == ",":
+            self.position += 1
+            return self._math_run("\u2009")
         start = self.position
         while self.position < len(self.source) and self.source[self.position].isalpha():
             self.position += 1
@@ -153,13 +166,16 @@ class _OmmlParser:
             group = self._parse_required_group()
             value = "".join(node.find(qn("m:t")).text or "" for node in group if node.tag == qn("m:r"))
             if len(group) != 1 or not value:
+                self._apply_roman_style(group)
                 wrapper = OxmlElement("m:box")
                 element = OxmlElement("m:e")
                 for child in group:
                     element.append(child)
                 wrapper.append(element)
                 return wrapper
-            return self._math_run(value)
+            run = self._math_run(value)
+            self._apply_roman_style([run])
+            return run
         if command == "sqrt":
             degree_children = self._parse_optional_bracket_group()
             group = self._parse_required_group()
@@ -212,12 +228,18 @@ class _OmmlParser:
         if command in {"left", "right"}:
             return self._math_run("")
         if command == "tag":
-            self._parse_required_group()
-            return self._math_run("")
+            group = self._parse_required_group()
+            if not any((node.text or "").strip() for child in group for node in child.iter(qn("m:t"))):
+                raise ValueError("公式编号不能为空")
+            # OMML 没有 TeX tag 的等价布局；直接追加可见序列，保留参数内已解析的复杂数学节点。
+            return [self._upright_math_run("("), *group, self._upright_math_run(")")]
         symbol = GREEK_AND_TEXT_COMMANDS.get(command)
         if symbol is None:
             raise ValueError(f"不支持的 TeX 命令: {command}")
-        return self._math_run(symbol)
+        run = self._math_run(symbol)
+        if all(self._is_upright_math_character(char) for char in symbol):
+            self._apply_roman_style([run])
+        return run
 
     def _parse_required_group(self) -> list[Any]:
         self._skip_spaces()
@@ -233,7 +255,10 @@ class _OmmlParser:
         end = self.source.find("]", self.position + 1)
         if end < 0:
             raise ValueError("根指数方括号未闭合")
-        parser = _OmmlParser(self.source[self.position + 1 : end])
+        parser = _OmmlParser(
+            self.source[self.position + 1 : end],
+            roman_font_name=self.roman_font_name,
+        )
         children = parser._parse_sequence()
         if parser.position != len(parser.source) or not children:
             raise ValueError("根指数无效")
@@ -249,16 +274,12 @@ class _OmmlParser:
             self.position += 1
             return self._compact_plain_script_argument(self._parse_sequence(stop_at_brace=True))
         if self.source[self.position] == "\\":
-            return [self._parse_command()]
+            command_children = self._parse_command()
+            return command_children if isinstance(command_children, list) else [command_children]
 
-        start = self.position
-        while self.position < len(self.source) and (
-            self.source[self.position].isalnum() or self.source[self.position] in "()+-/"
-        ):
-            self.position += 1
-        if self.position == start:
-            self.position += 1
-        return [self._math_run(self.source[start : self.position])]
+        value = self.source[self.position]
+        self.position += 1
+        return self._plain_math_runs(value)
 
     def _compact_plain_script_argument(self, argument: list[Any]) -> list[Any]:
         values: list[str] = []
@@ -272,7 +293,7 @@ class _OmmlParser:
         combined = "".join(values)
         if not re.fullmatch(r"[A-Za-z0-9\s]+", combined):
             return argument
-        return [self._math_run("".join(combined.split()))]
+        return self._plain_math_runs("".join(combined.split()))
 
     def _skip_spaces(self) -> None:
         while self.position < len(self.source) and self.source[self.position].isspace():
@@ -301,16 +322,121 @@ class _OmmlParser:
                     style = OxmlElement("m:sty")
                     properties.append(style)
                 style.set(qn("m:val"), value)
+                word_properties = run.find(qn("w:rPr"))
+                fonts = word_properties.find(qn("w:rFonts")) if word_properties is not None else None
+                if fonts is not None:
+                    word_properties.remove(fonts)
+                if word_properties is not None and len(word_properties) == 0 and not word_properties.attrib:
+                    run.remove(word_properties)
+
+    def _apply_roman_style(self, group: list[Any]) -> None:
+        """按当前输出 settings 的数学字体，为显式直立命令补齐 WPS 所需属性。"""
+
+        if not self.roman_font_name:
+            return
+        for child in group:
+            for run in child.iter(qn("m:r")):
+                math_properties = run.find(qn("m:rPr"))
+                style = math_properties.find(qn("m:sty")) if math_properties is not None else None
+                if style is not None and style.get(qn("m:val")) in {"b", "i"}:
+                    continue
+                if math_properties is None:
+                    math_properties = OxmlElement("m:rPr")
+                    run.insert(0, math_properties)
+                if style is None:
+                    style = OxmlElement("m:sty")
+                    math_properties.append(style)
+                style.set(qn("m:val"), "p")
+                properties = run.find(qn("w:rPr"))
+                if properties is None:
+                    properties = OxmlElement("w:rPr")
+                    run.insert(run.index(math_properties) + 1, properties)
+                fonts = properties.find(qn("w:rFonts"))
+                if fonts is None:
+                    fonts = OxmlElement("w:rFonts")
+                    properties.insert(0, fonts)
+                fonts.set(qn("w:ascii"), self.roman_font_name)
+                fonts.set(qn("w:hAnsi"), self.roman_font_name)
+
+    def _plain_math_runs(self, text: str) -> list[Any]:
+        """按数学语义拆分变量与直立字符，避免 WPS 隐藏数字和运算符。"""
+
+        if not text:
+            return [self._math_run("")]
+        runs: list[Any] = []
+        start = 0
+        upright = self._is_upright_math_character(text[0])
+        for index, char in enumerate(text[1:], start=1):
+            next_upright = self._is_upright_math_character(char)
+            if next_upright == upright:
+                continue
+            token = text[start:index]
+            runs.append(self._upright_math_run(token) if upright else self._math_run(token))
+            start = index
+            upright = next_upright
+        token = text[start:]
+        runs.append(self._upright_math_run(token) if upright else self._math_run(token))
+        return runs
+
+    def _upright_math_run(self, text: str) -> Any:
+        run = self._math_run(text)
+        self._apply_roman_style([run])
+        return run
+
+    @staticmethod
+    def _is_upright_math_character(char: str) -> bool:
+        """数字、运算符和标点使用直立数学样式，字母变量保留客户端数学斜体。"""
+
+        return not char.isalpha() and not unicodedata.category(char).startswith("M")
 
     @staticmethod
     def _math_run(text: str) -> Any:
+        # 基础数学 run 继承当前输出 mathFont 和客户端默认数学样式；
+        # WPS 会隐藏仅强制 m:sty=p 的无字体 run。
         run = OxmlElement("m:r")
         value = OxmlElement("m:t")
         value.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
         value.text = text
         run.append(value)
-        _OmmlParser._apply_math_style([run], "p")
         return run
+
+
+def _parse_mixed_math_segments(
+    text: str,
+    *,
+    roman_font_name: str | None = None,
+) -> list[tuple[str, Any]] | None:
+    """按 renderer 实际规则拆分普通文本与可渲染 OMML，供写入和证据共用。"""
+
+    source = re.sub(r"^\s*<(?:td|th)\b[^>]*>", "", text, flags=re.IGNORECASE)
+    source = re.sub(r"</(?:td|th)>\s*$", "", source, flags=re.IGNORECASE)
+    if any(command in source for command in (r"\frac", r"\dfrac", r"\tfrac")):
+        math = _OmmlParser(source, roman_font_name=roman_font_name).parse()
+        return [("math", math)] if math is not None else None
+
+    matches = list(INLINE_MATH_RE.finditer(source))
+    if not matches:
+        return None
+    segments: list[tuple[str, Any]] = []
+    position = 0
+    for match in matches:
+        plain_text = source[position : match.start()]
+        expression = match.group("dollar") if match.group("dollar") is not None else match.group("paren")
+        stripped_expression = (expression or "").lstrip()
+        if stripped_expression.startswith(("_", "^")):
+            base_match = TRAILING_MATH_BASE_RE.search(plain_text)
+            if base_match is not None:
+                base = BeautifulSoup(base_match.group("base"), "html.parser").get_text()
+                plain_text = base_match.group("prefix")
+                expression = f"{base}{stripped_expression}"
+        if plain_text:
+            segments.append(("text", plain_text))
+        math = _OmmlParser(expression or "", roman_font_name=roman_font_name).parse()
+        segments.append(("math", math) if math is not None else ("text", match.group(0)))
+        position = match.end()
+    if source[position:]:
+        segments.append(("text", source[position:]))
+    return segments
 
 
 class WordTextRendererMixin:
@@ -366,6 +492,7 @@ class WordTextRendererMixin:
         *,
         reference_bookmarks: CaptionBookmarks | None = None,
     ) -> None:
+        decimal_item = parse_decimal_list_marker(text)
         level = infer_list_item_level(text)
         self._fill_paragraph(
             paragraph,
@@ -374,7 +501,10 @@ class WordTextRendererMixin:
             terminology=template_config.terminology,
             reference_bookmarks=reference_bookmarks,
         )
-        self._apply_bullet_numbering(paragraph, level=level)
+        if decimal_item is None:
+            self._apply_bullet_numbering(paragraph, level=level)
+        else:
+            self._apply_decimal_numbering(paragraph, source_number=decimal_item[0])
         paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
         paragraph_format = paragraph.paragraph_format
         paragraph_format.space_before = Pt(0)
@@ -392,8 +522,9 @@ class WordTextRendererMixin:
         *,
         reference_bookmarks: CaptionBookmarks | None = None,
         allow_heading_inference: bool = True,
+        allow_toc_inference: bool = True,
     ) -> None:
-        if is_toc_title_text(text):
+        if allow_toc_inference and is_toc_title_text(text):
             self._fill_paragraph(
                 paragraph,
                 text,
@@ -402,7 +533,7 @@ class WordTextRendererMixin:
                 reference_bookmarks=reference_bookmarks,
             )
             return
-        if self._fill_toc_entry_if_needed(paragraph, text, template_config):
+        if allow_toc_inference and self._fill_toc_entry_if_needed(paragraph, text, template_config):
             return
         if is_list_item_text(text):
             self._fill_list_paragraph(
@@ -430,8 +561,9 @@ class WordTextRendererMixin:
         template_config: TemplateConfigPackage,
         *,
         reference_bookmarks: CaptionBookmarks | None = None,
+        allow_toc_inference: bool = True,
     ) -> None:
-        if is_toc_title_text(text):
+        if allow_toc_inference and is_toc_title_text(text):
             self._fill_paragraph(
                 paragraph,
                 text,
@@ -440,7 +572,7 @@ class WordTextRendererMixin:
                 reference_bookmarks=reference_bookmarks,
             )
             return
-        if self._fill_toc_entry_if_needed(paragraph, text, template_config):
+        if allow_toc_inference and self._fill_toc_entry_if_needed(paragraph, text, template_config):
             return
         self._fill_list_paragraph(
             paragraph,
@@ -469,6 +601,22 @@ class WordTextRendererMixin:
         self._add_complex_field(paragraph, r' TOC \o "1-3" \h \z \u ', "更新目录", toc_style)
         return True
 
+    def _fill_toc_anchor(
+        self,
+        paragraph: Any,
+        headings: tuple[tuple[int, str], ...],
+        template_config: TemplateConfigPackage,
+    ) -> None:
+        """写入一个原生 TOC 字段，并用最终 IR 标题提供无源页码的可见缓存。"""
+
+        toc_style = template_config.toc_style_for_level(1)
+        self._configure_toc_styles(paragraph.part.styles, template_config)
+        self._apply_named_style(paragraph, toc_style.word_style_name)
+        self._apply_paragraph_style(paragraph, toc_style)
+        cache_lines = ["更新目录（在 Word/WPS 中更新字段以生成页码）"]
+        cache_lines.extend(f"{'    ' * max(level - 1, 0)}{text}" for level, text in headings if text.strip())
+        self._add_complex_field(paragraph, r' TOC \o "1-3" \h \z \u ', "\n".join(cache_lines), toc_style)
+
     def _fill_formula_paragraph(
         self,
         paragraph: Any,
@@ -477,7 +625,7 @@ class WordTextRendererMixin:
     ) -> None:
         self._apply_named_style(paragraph, template_config.normal.word_style_name)
         self._apply_paragraph_style(paragraph, template_config.normal)
-        math = _OmmlParser(text).parse()
+        math = _OmmlParser(text, roman_font_name=self._roman_math_font_name(paragraph)).parse()
         if math is not None:
             paragraph._p.append(math)
             return
@@ -504,8 +652,11 @@ class WordTextRendererMixin:
         terminology: TerminologyReplacer | None = None,
         caption_bookmarks: CaptionBookmarks | None = None,
     ) -> bool:
-        prepared = self._prepare_text_for_rendering(text, terminology)
-        parsed = self._parse_caption_text(prepared)
+        parsed = self._parse_caption_text(text)
+        tail_is_prepared = False
+        if parsed is None:
+            parsed = self._parse_caption_text(self._prepare_text_for_rendering(text, terminology))
+            tail_is_prepared = parsed is not None
         if parsed is None:
             return False
 
@@ -513,7 +664,12 @@ class WordTextRendererMixin:
         kind = "figure" if label.lower() == "figure" or label == "图" else "table"
         self._apply_named_style(paragraph, style.word_style_name)
         self._apply_paragraph_style(paragraph, style)
-        self._add_text_run(paragraph, f"{prefix}{label}{spacing}", style)
+        caption_label = (
+            f"{prefix}{label}{spacing}"
+            if tail_is_prepared
+            else f"{self._prepare_text_for_rendering(prefix + label, terminology)}{spacing}"
+        )
+        self._add_text_run(paragraph, caption_label, style)
         bookmark = caption_bookmarks.get((kind, source_number)) if caption_bookmarks else None
         if bookmark is not None:
             bookmark_start = OxmlElement("w:bookmarkStart")
@@ -521,15 +677,27 @@ class WordTextRendererMixin:
             bookmark_start.set(qn("w:name"), bookmark[0])
             paragraph._p.append(bookmark_start)
         sequence_name = label if label in {"图", "表"} else ("Figure" if kind == "figure" else "Table")
-        self._add_complex_field(paragraph, f" SEQ {sequence_name} \\* ARABIC ", str(source_number), style)
+        # 每个简单整数题注都从源编号重置，避免客户端更新字段时按出现顺序重排跳号或重复编号。
+        self._add_complex_field(
+            paragraph,
+            f" SEQ {sequence_name} \\r {source_number} \\* ARABIC ",
+            str(source_number),
+            style,
+        )
         if bookmark is not None:
             bookmark_end = OxmlElement("w:bookmarkEnd")
             bookmark_end.set(qn("w:id"), str(bookmark[1]))
             paragraph._p.append(bookmark_end)
-        if self._looks_like_inline_markup(tail):
-            self._render_inline_html(paragraph, tail, style)
+        if not tail_is_prepared:
+            if self._render_mixed_math(paragraph, tail, style, terminology, None):
+                return True
+            self._add_prepared_text(paragraph, tail, style, terminology, None)
+            return True
+        prepared_tail = tail
+        if self._looks_like_inline_markup(prepared_tail):
+            self._render_inline_html(paragraph, prepared_tail, style)
         else:
-            self._add_text_run(paragraph, tail, style)
+            self._add_text_run(paragraph, prepared_tail, style)
         return True
 
     def _render_mixed_math(
@@ -540,43 +708,17 @@ class WordTextRendererMixin:
         terminology: TerminologyReplacer | None,
         reference_bookmarks: CaptionBookmarks | None,
     ) -> bool:
-        source = re.sub(r"^\s*<(?:td|th)\b[^>]*>", "", text, flags=re.IGNORECASE)
-        source = re.sub(r"</(?:td|th)>\s*$", "", source, flags=re.IGNORECASE)
-        if any(command in source for command in (r"\frac", r"\dfrac", r"\tfrac")):
-            math = _OmmlParser(source).parse()
-            if math is None:
-                return False
-            paragraph._p.append(math)
-            return True
-
-        matches = list(INLINE_MATH_RE.finditer(source))
-        if not matches:
+        segments = _parse_mixed_math_segments(
+            text,
+            roman_font_name=self._roman_math_font_name(paragraph),
+        )
+        if segments is None:
             return False
-        position = 0
-        for match in matches:
-            plain_text = source[position : match.start()]
-            expression = match.group("dollar") if match.group("dollar") is not None else match.group("paren")
-            stripped_expression = (expression or "").lstrip()
-            if stripped_expression.startswith(("_", "^")):
-                base_match = TRAILING_MATH_BASE_RE.search(plain_text)
-                if base_match is not None:
-                    base = BeautifulSoup(base_match.group("base"), "html.parser").get_text()
-                    plain_text = base_match.group("prefix")
-                    expression = f"{base}{stripped_expression}"
-            self._add_prepared_text(
-                paragraph,
-                plain_text,
-                style,
-                terminology,
-                reference_bookmarks,
-            )
-            math = _OmmlParser(expression or "").parse()
-            if math is None:
-                self._add_prepared_text(paragraph, match.group(0), style, terminology, reference_bookmarks)
-            else:
-                paragraph._p.append(math)
-            position = match.end()
-        self._add_prepared_text(paragraph, source[position:], style, terminology, reference_bookmarks)
+        for kind, value in segments:
+            if kind == "math":
+                paragraph._p.append(value)
+                continue
+            self._add_prepared_text(paragraph, value, style, terminology, reference_bookmarks)
         return True
 
     def _add_prepared_text(
@@ -633,19 +775,10 @@ class WordTextRendererMixin:
     def _prepare_text_for_rendering(self, text: str, terminology: TerminologyReplacer | None) -> str:
         """归一化公式片段，并应用本次渲染的术语标记。"""
 
-        normalized_text = normalize_formula_text(text)
-        if terminology is None:
-            return normalized_text
-        if self._looks_like_inline_markup(normalized_text):
-            return terminology.replace_html(normalized_text) or normalized_text
-        return terminology.replace_text(normalized_text)
+        return prepare_text_for_rendering(text, terminology)
 
     def _looks_like_inline_markup(self, text: str) -> bool:
-        lowered = text.lower()
-        return any(
-            token in lowered
-            for token in ("<sub", "<sup", "<br", "<b", "<strong", "<i", "<em", "<td", "<th", "<span", "<p")
-        )
+        return contains_inline_markup(text)
 
     def _render_inline_html(
         self,
@@ -884,6 +1017,85 @@ class WordTextRendererMixin:
         self._set_numbering_child_value(num_properties, "w:ilvl", str(normalized_level))
         self._set_numbering_child_value(num_properties, "w:numId", str(num_id))
 
+    def _apply_decimal_numbering(self, paragraph: Any, *, source_number: int) -> None:
+        num_id = self._ensure_decimal_numbering(paragraph, source_number=source_number)
+        paragraph_properties = paragraph._p.get_or_add_pPr()
+        num_properties = paragraph_properties.find(qn("w:numPr"))
+        if num_properties is None:
+            num_properties = OxmlElement("w:numPr")
+            paragraph_properties.append(num_properties)
+
+        self._set_numbering_child_value(num_properties, "w:ilvl", "0")
+        self._set_numbering_child_value(num_properties, "w:numId", str(num_id))
+
+    def _ensure_decimal_numbering(self, paragraph: Any, *, source_number: int) -> str:
+        """连续序号复用 numId；重启、跳号或中断时按源序号创建新编号。"""
+
+        part = paragraph.part
+        cached_num_id = getattr(part, MD2WORD_RENDERER_DECIMAL_NUM_ID_ATTR, None)
+        previous_number = getattr(part, MD2WORD_RENDERER_DECIMAL_NUMBER_ATTR, None)
+        if (
+            cached_num_id is not None
+            and previous_number is not None
+            and source_number == previous_number + 1
+            and self._previous_paragraph_uses_num_id(paragraph, str(cached_num_id))
+        ):
+            setattr(part, MD2WORD_RENDERER_DECIMAL_NUMBER_ATTR, source_number)
+            return str(cached_num_id)
+
+        numbering = part.numbering_part.element
+        abstract_num_id = str(self._next_numbering_id(numbering, "w:abstractNum", "w:abstractNumId"))
+        num_id = str(self._next_numbering_id(numbering, "w:num", "w:numId"))
+        abstract_num = OxmlElement("w:abstractNum")
+        abstract_num.set(qn("w:abstractNumId"), abstract_num_id)
+        multi_level_type = OxmlElement("w:multiLevelType")
+        multi_level_type.set(qn("w:val"), "singleLevel")
+        abstract_num.append(multi_level_type)
+
+        level = OxmlElement("w:lvl")
+        level.set(qn("w:ilvl"), "0")
+        for tag, value in (
+            ("w:start", str(source_number)),
+            ("w:numFmt", "decimal"),
+            ("w:suff", "space"),
+            ("w:lvlText", "%1."),
+            ("w:lvlJc", "left"),
+        ):
+            child = OxmlElement(tag)
+            child.set(qn("w:val"), value)
+            level.append(child)
+        paragraph_properties = OxmlElement("w:pPr")
+        indent = OxmlElement("w:ind")
+        indent.set(qn("w:left"), "240")
+        indent.set(qn("w:hanging"), "180")
+        paragraph_properties.append(indent)
+        level.append(paragraph_properties)
+        abstract_num.append(level)
+
+        num = OxmlElement("w:num")
+        num.set(qn("w:numId"), num_id)
+        abstract_num_id_element = OxmlElement("w:abstractNumId")
+        abstract_num_id_element.set(qn("w:val"), abstract_num_id)
+        num.append(abstract_num_id_element)
+        numbering.append(abstract_num)
+        numbering.append(num)
+        setattr(part, MD2WORD_RENDERER_DECIMAL_NUM_ID_ATTR, num_id)
+        setattr(part, MD2WORD_RENDERER_DECIMAL_NUMBER_ATTR, source_number)
+        return num_id
+
+    def _previous_paragraph_uses_num_id(self, paragraph: Any, num_id: str) -> bool:
+        previous = paragraph._p.getprevious()
+        if previous is None or previous.tag != qn("w:p"):
+            return False
+        paragraph_properties = previous.find(qn("w:pPr"))
+        if paragraph_properties is None:
+            return False
+        num_properties = paragraph_properties.find(qn("w:numPr"))
+        if num_properties is None:
+            return False
+        previous_num_id = num_properties.find(qn("w:numId"))
+        return previous_num_id is not None and previous_num_id.get(qn("w:val")) == num_id
+
     def _ensure_bullet_numbering(self, paragraph: Any) -> str:
         part = paragraph.part
         cached_num_id = getattr(part, MD2WORD_RENDERER_BULLET_NUM_ID_ATTR, None)
@@ -945,3 +1157,24 @@ class WordTextRendererMixin:
             child = OxmlElement(tag)
             parent.append(child)
         child.set(qn("w:val"), value)
+
+    def _bind_math_font_context(self, document: Any) -> None:
+        """保留模板数学字体；缺失时只补当前输出默认值并绑定到文档 part。"""
+
+        math_properties = document.settings.element.find(qn("m:mathPr"))
+        if math_properties is None:
+            math_properties = OxmlElement("m:mathPr")
+            document.settings.element.append(math_properties)
+        math_font = math_properties.find(qn("m:mathFont"))
+        if math_font is None:
+            math_font = OxmlElement("m:mathFont")
+            math_properties.insert(0, math_font)
+        value = (math_font.get(qn("m:val")) or "").strip() if math_font is not None else ""
+        if not value:
+            value = DEFAULT_MATH_FONT_NAME
+            math_font.set(qn("m:val"), value)
+        setattr(document.part, MD2WORD_RENDERER_ROMAN_MATH_FONT_ATTR, value)
+
+    @staticmethod
+    def _roman_math_font_name(paragraph: Any) -> str | None:
+        return getattr(paragraph.part, MD2WORD_RENDERER_ROMAN_MATH_FONT_ATTR, None)

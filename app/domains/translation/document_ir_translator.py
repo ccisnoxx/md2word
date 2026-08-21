@@ -11,6 +11,7 @@ from typing import Protocol
 from bs4 import BeautifulSoup
 from bs4.element import NavigableString
 
+from app.conversion.docx_rules.text_semantics import split_mixed_math_segments
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock
 from app.domains.translation.models import (
     TermVersionSnapshot,
@@ -64,6 +65,7 @@ class DocumentIRTranslationTarget:
     block_id: str
     field: str
     index: int | None = None
+    segment_index: int | None = None
     page_number: int | None = None
     order: int = 0
 
@@ -442,6 +444,8 @@ class DocumentIRTranslationService:
             self._append_block_text(block, targets, items)
             self._append_list_items(block, targets, items)
             self._append_table_text_nodes(block, targets, items)
+            self._append_annotations(block, "captions", block.captions, targets, items)
+            self._append_annotations(block, "footnotes", block.footnotes, targets, items)
         return targets, items
 
     def _append_block_text(
@@ -452,17 +456,15 @@ class DocumentIRTranslationService:
     ) -> None:
         if block.type in {"formula", "list"} or not self._has_text(block.text):
             return
-        item_id = f"{block.id}.text"
-        targets.append(
-            DocumentIRTranslationTarget(
-                item_id=item_id,
-                block_id=block.id,
-                field="text",
-                page_number=self._block_page_number(block),
-                order=block.order,
-            )
+        self._append_translation_value(
+            block,
+            field="text",
+            index=None,
+            value=block.text or "",
+            item_id=f"{block.id}.text",
+            targets=targets,
+            items=items,
         )
-        items.append(TranslationTextItem(id=item_id, text=block.text.strip()))
 
     def _append_list_items(
         self,
@@ -475,18 +477,15 @@ class DocumentIRTranslationService:
         for index, item in enumerate(block.list_items):
             if not self._has_text(item):
                 continue
-            item_id = f"{block.id}.list_items.{index:04d}"
-            targets.append(
-                DocumentIRTranslationTarget(
-                    item_id=item_id,
-                    block_id=block.id,
-                    field="list_items",
-                    index=index,
-                    page_number=self._block_page_number(block),
-                    order=block.order,
-                )
+            self._append_translation_value(
+                block,
+                field="list_items",
+                index=index,
+                value=item,
+                item_id=f"{block.id}.list_items.{index:04d}",
+                targets=targets,
+                items=items,
             )
-            items.append(TranslationTextItem(id=item_id, text=item.strip()))
 
     def _append_table_text_nodes(
         self,
@@ -502,19 +501,67 @@ class DocumentIRTranslationService:
             text = str(node).strip()
             if not text:
                 continue
-            item_id = f"{block.id}.html.{text_index:04d}"
+            self._append_translation_value(
+                block,
+                field="html",
+                index=text_index,
+                value=text,
+                item_id=f"{block.id}.html.{text_index:04d}",
+                targets=targets,
+                items=items,
+            )
+            text_index += 1
+
+    def _append_annotations(
+        self,
+        block: DocumentIRBlock,
+        field: str,
+        values: list[str],
+        targets: list[DocumentIRTranslationTarget],
+        items: list[TranslationTextItem],
+    ) -> None:
+        for index, value in enumerate(values):
+            if not self._has_text(value):
+                continue
+            self._append_translation_value(
+                block,
+                field=field,
+                index=index,
+                value=value,
+                item_id=f"{block.id}.{field}.{index:04d}",
+                targets=targets,
+                items=items,
+            )
+
+    def _append_translation_value(
+        self,
+        block: DocumentIRBlock,
+        *,
+        field: str,
+        index: int | None,
+        value: str,
+        item_id: str,
+        targets: list[DocumentIRTranslationTarget],
+        items: list[TranslationTextItem],
+    ) -> None:
+        segments = split_mixed_math_segments(value)
+        has_math = any(kind == "math" for kind, _text in segments)
+        for segment_index, (kind, text) in enumerate(segments):
+            if kind != "text" or not self._has_text(text):
+                continue
+            segment_item_id = f"{item_id}.segment.{segment_index:04d}" if has_math else item_id
             targets.append(
                 DocumentIRTranslationTarget(
-                    item_id=item_id,
+                    item_id=segment_item_id,
                     block_id=block.id,
-                    field="html",
-                    index=text_index,
+                    field=field,
+                    index=index,
+                    segment_index=segment_index if has_math else None,
                     page_number=self._block_page_number(block),
                     order=block.order,
                 )
             )
-            items.append(TranslationTextItem(id=item_id, text=text))
-            text_index += 1
+            items.append(TranslationTextItem(id=segment_item_id, text=text.strip()))
 
     def validate_result(
         self,
@@ -534,20 +581,58 @@ class DocumentIRTranslationService:
         replacements: dict[str, str],
     ) -> None:
         blocks_by_id = {block.id: block for block in document_ir.blocks}
-        html_replacements: dict[str, dict[int, str]] = {}
+        direct_values: dict[tuple[str, str, int | None], str] = {}
+        segment_values: dict[tuple[str, str, int | None], dict[int, str]] = {}
         for target in targets:
-            block = blocks_by_id[target.block_id]
             translated_text = replacements[target.item_id]
-            if target.field == "text":
-                block.text = translated_text
-            elif target.field == "list_items" and block.list_items is not None and target.index is not None:
-                block.list_items[target.index] = translated_text
-            elif target.field == "html" and target.index is not None:
-                html_replacements.setdefault(block.id, {})[target.index] = translated_text
+            key = (target.block_id, target.field, target.index)
+            if target.segment_index is None:
+                direct_values[key] = translated_text
+            else:
+                segment_values.setdefault(key, {})[target.segment_index] = translated_text
 
+        for key, replacements_by_segment in segment_values.items():
+            block_id, field, index = key
+            original = self._read_target_value(blocks_by_id[block_id], field, index)
+            segments = split_mixed_math_segments(original)
+            for segment_index, translated_text in replacements_by_segment.items():
+                kind, source_text = segments[segment_index]
+                if kind != "text":
+                    raise ValueError("翻译片段目标指向了公式节点。")
+                leading = source_text[: len(source_text) - len(source_text.lstrip())]
+                trailing = source_text[len(source_text.rstrip()) :]
+                segments[segment_index] = ("text", f"{leading}{translated_text.strip()}{trailing}")
+            direct_values[key] = "".join(text for _kind, text in segments)
+
+        html_replacements: dict[str, dict[int, str]] = {}
+        for (block_id, field, index), translated_text in direct_values.items():
+            block = blocks_by_id[block_id]
+            if field == "text":
+                block.text = translated_text
+            elif field in {"list_items", "captions", "footnotes"} and index is not None:
+                values = getattr(block, field)
+                values[index] = translated_text
+            elif field == "html" and index is not None:
+                html_replacements.setdefault(block.id, {})[index] = translated_text
         for block_id, replacements_by_index in html_replacements.items():
             block = blocks_by_id[block_id]
             block.html = self._replace_html_text_nodes(block.html or "", replacements_by_index)
+
+    def _read_target_value(self, block: DocumentIRBlock, field: str, index: int | None) -> str:
+        if field == "text":
+            return block.text or ""
+        if field in {"list_items", "captions", "footnotes"} and index is not None:
+            values = getattr(block, field)
+            return values[index]
+        if field == "html" and index is not None:
+            values = self._html_text_node_values(block.html or "")
+            return values[index]
+        raise ValueError(f"不支持的 DocumentIR 翻译目标: {field}")
+
+    @staticmethod
+    def _html_text_node_values(html: str) -> list[str]:
+        soup = BeautifulSoup(html, "html.parser")
+        return [str(node).strip() for node in soup.find_all(string=True) if str(node).strip()]
 
     @staticmethod
     def _block_page_number(block: DocumentIRBlock) -> int | None:

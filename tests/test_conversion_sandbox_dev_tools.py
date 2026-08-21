@@ -25,6 +25,17 @@ from scripts.dev import (
 
 
 class LocalMinerUConversionCliTests(TestCase):
+    def test_formal_adapter_rejects_removed_mineru_header_footer_switch(self) -> None:
+        with self.assertRaises(TypeError):
+            formal_mineru_conversion.run_conversion(
+                input_path="mineru-package",
+                output_path="out.docx",
+                template_path=None,
+                subscript_config=None,
+                no_template=True,
+                use_mineru_header_footer=True,
+            )
+
     def test_build_conversion_kwargs_uses_official_runtime_contract(self) -> None:
         args = run_local_mineru_conversion.parse_args(
             [
@@ -123,7 +134,6 @@ class LocalMinerUConversionCliTests(TestCase):
                 layout_config_path=None,
                 subscript_config=None,
                 no_template=True,
-                use_mineru_header_footer=False,
                 document_language="en",
                 translation_mode="direct",
             )
@@ -133,6 +143,11 @@ class LocalMinerUConversionCliTests(TestCase):
             self.assertEqual(result.renderer_metadata["blocking_quality_flags"], [])
             self.assertEqual(result.renderer_metadata["expected_layout_block_count"], 4)
             self.assertEqual(result.renderer_metadata["layout_block_count"], 4)
+            self.assertEqual(len(result.renderer_metadata["table_fit_decisions"]), 1)
+            table_fit = result.renderer_metadata["table_fit_decisions"][0]
+            self.assertEqual(table_fit["container"], "full_width")
+            self.assertEqual(table_fit["selected_font_size"], 9)
+            self.assertEqual(result.renderer_metadata["table_fit_quality_flags"], [])
             rendered = Document(output_path)
             self.assertIn("Features", "\n".join(paragraph.text for paragraph in rendered.paragraphs))
             with zipfile.ZipFile(output_path) as docx_zip:
@@ -150,7 +165,15 @@ class LocalMinerUConversionCliTests(TestCase):
                 self.assertEqual(fonts.get(f"{word_ns}cs"), "Times New Roman")
             math_runs = list(document_xml.iter(f"{math_ns}r"))
             self.assertTrue(math_runs)
-            self.assertTrue(all(run.find(f".//{word_ns}rFonts") is None for run in math_runs))
+            for run in math_runs:
+                style = run.find(f"./{math_ns}rPr/{math_ns}sty")
+                fonts = run.find(f"./{word_ns}rPr/{word_ns}rFonts")
+                if style is not None and style.get(f"{math_ns}val") == "p":
+                    self.assertIsNotNone(fonts)
+                    self.assertEqual(fonts.get(f"{word_ns}ascii"), "Cambria Math")
+                    self.assertEqual(fonts.get(f"{word_ns}hAnsi"), "Cambria Math")
+                else:
+                    self.assertIsNone(fonts)
 
     def test_formal_adapter_resolves_default_explicit_and_no_template_resources(self) -> None:
         default_template = Path("/tmp/default-template.docx")
@@ -172,7 +195,6 @@ class LocalMinerUConversionCliTests(TestCase):
                 layout_config_path=None,
                 subscript_config=None,
                 no_template=False,
-                use_mineru_header_footer=False,
             )
             explicit_result = formal_mineru_conversion.run_conversion(
                 input_path="mineru-package",
@@ -181,7 +203,6 @@ class LocalMinerUConversionCliTests(TestCase):
                 layout_config_path=str(explicit_layout),
                 subscript_config=None,
                 no_template=False,
-                use_mineru_header_footer=False,
             )
             no_template_result = formal_mineru_conversion.run_conversion(
                 input_path="mineru-package",
@@ -190,7 +211,6 @@ class LocalMinerUConversionCliTests(TestCase):
                 layout_config_path=None,
                 subscript_config=None,
                 no_template=True,
-                use_mineru_header_footer=False,
             )
 
         self.assertIs(default_result, converted)
@@ -214,7 +234,6 @@ class LocalMinerUConversionCliTests(TestCase):
                     layout_config_path=None,
                     subscript_config=None,
                     no_template=False,
-                    use_mineru_header_footer=False,
                 )
 
         missing_settings = mock.Mock(default_template_path=None, layout_config_path=None)
@@ -227,7 +246,6 @@ class LocalMinerUConversionCliTests(TestCase):
                     layout_config_path=None,
                     subscript_config=None,
                     no_template=True,
-                    use_mineru_header_footer=False,
                 )
 
     def test_formal_adapter_does_not_publish_docx_when_renderer_integrity_blocks(self) -> None:
@@ -258,7 +276,6 @@ class LocalMinerUConversionCliTests(TestCase):
                     layout_config_path=None,
                     subscript_config=None,
                     no_template=True,
-                    use_mineru_header_footer=False,
                     document_language="en",
                     translation_mode="direct",
                 )
@@ -285,7 +302,6 @@ class LocalMinerUConversionCliTests(TestCase):
                         layout_config_path=None,
                         subscript_config=None,
                         no_template=True,
-                        use_mineru_header_footer=False,
                         document_language="en",
                         translation_mode="en2zh",
                         translation_request_output=str(request_path),

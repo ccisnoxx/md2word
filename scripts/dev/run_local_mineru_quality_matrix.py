@@ -344,7 +344,6 @@ def run_one_matrix_entry(sample: Phase2Sample, mode: str, run_dir: Path, config:
             layout_config_path=str(config.layout_config_path),
             subscript_config=str(config.subscript_config_path),
             no_template=False,
-            use_mineru_header_footer=False,
             document_language=sample.document_language if mode == MODE_DIRECT else "auto",
             translation_mode=mode,
             translation_request_output=str(translation_request_output) if translation_request_output else None,

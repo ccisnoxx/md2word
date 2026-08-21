@@ -11,18 +11,21 @@ from typing import Any
 
 from docx import Document
 from docx.enum.section import WD_ORIENTATION, WD_SECTION_START
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.image.exceptions import InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Mm, Twips
 
 from app.conversion.docx_rules.terminology import TerminologyReplacer
+from app.conversion.docx_rules.text_semantics import split_document_identity
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset, DocumentIRBlock
+from app.services.document_ir.table_annotations import is_table_context_annotation
 from app.services.renderer.image_renderer import WordImageRendererMixin
-from app.services.renderer.layout_plan import LayoutPage, LayoutRegion, build_layout_plan
+from app.services.renderer.layout_plan import LayoutPage, LayoutPlan, LayoutRegion, build_layout_plan
 from app.services.renderer.semantic_text import parse_toc_entry_text
 from app.services.renderer.table_renderer import WordTableRendererMixin
+from app.services.renderer.table_layout import TableFitDecision
 from app.services.renderer.template_config import TemplateConfigPackage, TemplateParagraphStyleConfig
 from app.services.renderer.text_renderer import WordTextRendererMixin
 
@@ -40,12 +43,65 @@ class DocumentIRRenderOptions:
     document_language: str | None = None
 
 
+def resolve_template_config(
+    document_ir: DocumentIR,
+    config_path: Path | None,
+    options: DocumentIRRenderOptions | None,
+    *,
+    template_path: Path | None = None,
+) -> TemplateConfigPackage:
+    """解析一次最终模板配置，供 LayoutPlan、renderer 和 evidence 共同消费。"""
+
+    document_language = (
+        options.document_language
+        if options is not None and options.document_language
+        else document_ir.metadata.document_language
+    )
+    template_config = TemplateConfigPackage.load(config_path).for_document_language(document_language)
+    subscript_config_path = options.subscript_config_path if options is not None else None
+    if subscript_config_path is not None:
+        terminology = TerminologyReplacer(subscript_config_path)
+        if terminology.rules:
+            template_config.terminology = terminology
+    return _apply_template_page_size_defaults(template_config, template_path)
+
+
+def _apply_template_page_size_defaults(
+    template_config: TemplateConfigPackage,
+    template_path: Path | None,
+) -> TemplateConfigPackage:
+    """配置未声明纸张尺寸时，从清空正文后仍保留的模板末节补齐。"""
+
+    setup = template_config.page_setup
+    has_explicit_page_size = setup.page_width_cm is not None and setup.page_height_cm is not None
+    if has_explicit_page_size or template_path is None or not template_path.is_file():
+        return template_config
+    template_document = Document(str(template_path))
+    if not template_document.sections:
+        return template_config
+    section = template_document.sections[-1]
+    page_width = section.page_width
+    page_height = section.page_height
+    if page_width is None or page_width <= 0 or page_height is None or page_height <= 0:
+        return template_config
+    short_side, long_side = sorted((page_width.cm, page_height.cm))
+    page_setup = setup.model_copy(
+        update={
+            "page_width_cm": setup.page_width_cm if setup.page_width_cm is not None else short_side,
+            "page_height_cm": setup.page_height_cm if setup.page_height_cm is not None else long_side,
+        }
+    )
+    return template_config.model_copy(update={"page_setup": page_setup})
+
+
 @dataclass(slots=True)
 class _RenderContext:
     """单次渲染的字段目标；不得存到可并发复用的 renderer 实例。"""
 
     caption_bookmarks: dict[tuple[str, int], tuple[str, int]]
     allow_heading_inference: bool
+    toc_headings: tuple[tuple[int, str], ...]
+    table_fit_decisions: dict[str, TableFitDecision]
     toc_written: bool = False
 
 
@@ -60,33 +116,51 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         config_path: Path | None,
         image_loader: ImageContentLoader,
         options: DocumentIRRenderOptions | None = None,
+        layout_plan: LayoutPlan | None = None,
+        template_config: TemplateConfigPackage | None = None,
     ) -> bytes:
         """按模板 DOCX 与配置包生成 Word 二进制。"""
 
-        template_config = self._load_template_config(document_ir, config_path, options)
+        template_config = template_config or resolve_template_config(
+            document_ir,
+            config_path,
+            options,
+            template_path=template_path,
+        )
         document = self._create_document(template_path)
+        self._bind_math_font_context(document)
         self._clear_body(document)
         self._apply_page_setup(document, template_config)
         self._apply_header_footer(document, template_config, config_path=config_path)
         self._apply_document_settings(document)
 
         assets_by_id = {asset.id: asset for asset in document_ir.assets}
-        render_context = self._build_render_context(document_ir)
-        layout_plan = build_layout_plan(document_ir)
-        if layout_plan.mode == "legacy_v1_fallback":
-            for block in layout_plan.pages[0].regions[0].blocks:
+        resolved_layout_plan = layout_plan or build_layout_plan(document_ir, template_config)
+        render_context = self._build_render_context(
+            document_ir,
+            resolved_layout_plan.table_fit_decisions,
+            template_config,
+        )
+        if resolved_layout_plan.mode == "legacy_v1_fallback":
+            for block in resolved_layout_plan.pages[0].regions[0].blocks:
                 self._render_block(document, block, assets_by_id, template_config, image_loader, render_context)
         else:
-            previous_page_landscape = False
-            for page_index, page in enumerate(layout_plan.pages):
+            # 只在真实内容即将使用时创建 section，避免横向表格降级前出现无内容的中间页。
+            current_section_landscape: bool | None = None
+            for page_index, page in enumerate(resolved_layout_plan.pages):
                 page_landscape = self._layout_page_requires_landscape(page)
-                page_break_before_block_id = None
-                if page_index > 0:
-                    if page_landscape != previous_page_landscape:
+                starts_with_landscape_table = bool(page.regions and page.regions[0].kind == "landscape_table")
+                if page_index == 0:
+                    self._configure_layout_page_section(
+                        document,
+                        page,
+                        template_config,
+                        landscape=starts_with_landscape_table or page_landscape,
+                    )
+                elif not starts_with_landscape_table:
+                    if page_landscape != current_section_landscape:
                         document.add_section(WD_SECTION_START.NEW_PAGE)
-                    else:
-                        page_break_before_block_id = self._semantic_page_break_block_id(page)
-                self._configure_layout_page_section(document, page, template_config, landscape=page_landscape)
+                    self._configure_layout_page_section(document, page, template_config, landscape=page_landscape)
                 self._render_layout_page(
                     document,
                     page,
@@ -94,9 +168,11 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                     template_config,
                     image_loader,
                     render_context,
-                    page_break_before_block_id=page_break_before_block_id,
+                    page_break_before_block_id=page.break_before_block_id,
+                    use_current_section_for_first_landscape=page_index == 0 and starts_with_landscape_table,
                 )
-                previous_page_landscape = page_landscape
+                if page.regions:
+                    current_section_landscape = page.regions[-1].kind == "landscape_table" or page_landscape
 
         buffer = io.BytesIO()
         document.save(buffer)
@@ -130,17 +206,34 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         available_width = total_width - Twips(column_space * (column_count - 1))
         return max(int(available_width / column_count), 1), column_count
 
-    def _build_render_context(self, document_ir: DocumentIR) -> _RenderContext:
+    def _build_render_context(
+        self,
+        document_ir: DocumentIR,
+        table_fit_decisions: dict[str, TableFitDecision],
+        template_config: TemplateConfigPackage,
+    ) -> _RenderContext:
+        """只为本次实际生成的唯一题注字段建立 bookmark 与 REF 目标。"""
+
         caption_keys: list[tuple[str, int]] = []
         for block in document_ir.blocks:
             if block.type == "table":
-                annotations = self._unique_annotation_texts(block.captions)
+                annotations = [
+                    annotation
+                    for annotation in self._unique_annotation_texts(block.captions)
+                    if not is_table_context_annotation(annotation)
+                ]
             elif block.type == "image":
                 annotations = self._image_annotation_texts(block)
+            elif block.type == "paragraph" and block.metadata.get("annotation_role") == "standalone_caption":
+                annotations = [block.text or ""] if (block.text or "").strip() else []
             else:
                 continue
             for annotation in annotations:
                 parsed = self._parse_caption_text(annotation.strip())
+                if parsed is None:
+                    parsed = self._parse_caption_text(
+                        self._prepare_text_for_rendering(annotation.strip(), template_config.terminology)
+                    )
                 if parsed is None:
                     continue
                 _prefix, label, _spacing, source_number, _tail = parsed
@@ -157,31 +250,20 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         return _RenderContext(
             caption_bookmarks=bookmarks,
             allow_heading_inference=document_ir.schema_version == "document-ir/v1",
+            toc_headings=tuple(
+                (block.level or 1, block.text or "")
+                for block in sorted(document_ir.blocks, key=lambda item: item.order)
+                if block.type == "heading"
+                and (block.layout is None or block.layout.role == "body")
+                and (block.text or "").strip()
+            ),
+            table_fit_decisions=table_fit_decisions,
         )
 
     def _create_document(self, template_path: Path | None) -> Any:
         if template_path is not None and template_path.exists():
             return Document(str(template_path))
         return Document()
-
-    def _load_template_config(
-        self,
-        document_ir: DocumentIR,
-        config_path: Path | None,
-        options: DocumentIRRenderOptions | None,
-    ) -> TemplateConfigPackage:
-        document_language = (
-            options.document_language
-            if options is not None and options.document_language
-            else document_ir.metadata.document_language
-        )
-        template_config = TemplateConfigPackage.load(config_path).for_document_language(document_language)
-        subscript_config_path = options.subscript_config_path if options is not None else None
-        if subscript_config_path is not None:
-            terminology = TerminologyReplacer(subscript_config_path)
-            if terminology.rules:
-                template_config.terminology = terminology
-        return template_config
 
     def _clear_body(self, document: Any) -> None:
         body = document._body._element
@@ -253,9 +335,13 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         if not document.sections:
             return
         section = document.sections[0]
-        if template_config.header.enabled:
-            paragraph = section.header.paragraphs[0] if section.header.paragraphs else section.header.add_paragraph()
-            paragraph.text = ""
+        logo_path = self._resolve_asset_path(template_config.header.logo_path, config_path)
+        has_header_content = bool(template_config.header.title_text or (logo_path is not None and logo_path.exists()))
+        if template_config.header.enabled and has_header_content:
+            header = section.header
+            for child in list(header._element):
+                header._element.remove(child)
+            paragraph = header.add_paragraph()
             header_style = TemplateParagraphStyleConfig(
                 font_name=template_config.header.title_font_name,
                 western_font_name=template_config.header.title_western_font_name,
@@ -264,7 +350,6 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                 color=template_config.header.title_color,
                 alignment="left",
             )
-            logo_path = self._resolve_asset_path(template_config.header.logo_path, config_path)
             if logo_path is not None and logo_path.exists():
                 run = paragraph.add_run()
                 try:
@@ -276,17 +361,22 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                 run = paragraph.add_run(template_config.header.title_text)
                 self._apply_run_style(run, header_style)
 
-        if template_config.footer.enabled:
+        has_footer_override = bool(
+            template_config.footer.left_text
+            or template_config.footer.right_text
+            or template_config.footer.show_page_number
+        )
+        if template_config.footer.enabled and has_footer_override:
             footer_style = TemplateParagraphStyleConfig(
                 font_name=template_config.footer.font_name,
                 western_font_name=template_config.footer.western_font_name,
                 complex_script_font_name=template_config.footer.complex_script_font_name,
             )
+            footer = section.footer
+            for child in list(footer._element):
+                footer._element.remove(child)
+            paragraph = footer.add_paragraph()
             if template_config.footer.left_text or template_config.footer.right_text:
-                footer = section.footer
-                for child in list(footer._element):
-                    footer._element.remove(child)
-                paragraph = footer.add_paragraph()
                 paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
                 self._add_text_run(paragraph, template_config.footer.left_text, footer_style)
                 self._add_positional_tab(paragraph, "center")
@@ -296,13 +386,9 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                 self._add_text_run(paragraph, template_config.footer.right_text, footer_style)
                 return
 
-            paragraph = section.footer.paragraphs[0] if section.footer.paragraphs else section.footer.add_paragraph()
-            if template_config.footer.show_page_number and not paragraph.text.strip() and not paragraph.runs:
-                paragraph.text = "第  页"
-            for footer_paragraph in section.footer.paragraphs:
-                footer_paragraph.alignment = self._parse_alignment(template_config.footer.alignment or "center")
-                for run in footer_paragraph.runs:
-                    self._apply_run_style(run, footer_style)
+            paragraph.alignment = self._parse_alignment(template_config.footer.alignment or "center")
+            if template_config.footer.show_page_number:
+                self._add_complex_field(paragraph, " PAGE ", "1", footer_style)
 
     def _add_positional_tab(self, paragraph: Any, alignment: str) -> None:
         run = paragraph.add_run()
@@ -332,26 +418,116 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         render_context: _RenderContext,
         *,
         page_width: float | None = None,
+        page_height: float | None = None,
         page_break_before: bool = False,
+        column_break_before: bool = False,
+        keep_with_next: bool = False,
     ) -> None:
         if block.type == "heading":
             paragraph = document.add_paragraph()
+            self._apply_paragraph_breaks(
+                paragraph,
+                page_break_before=page_break_before,
+                column_break_before=column_break_before,
+            )
             self._fill_heading_paragraph(paragraph, block.text or "", block.level, template_config)
             paragraph.paragraph_format.keep_with_next = True
-            if page_break_before:
-                paragraph.paragraph_format.page_break_before = True
             return
         if block.type == "paragraph":
             text = block.text or ""
-            if parse_toc_entry_text(text) is not None:
+            annotation_role = block.metadata.get("annotation_role")
+            if annotation_role == "document_identity":
+                identity = split_document_identity(text)
+                if identity is None:
+                    raise ValueError(f"文档身份文本无法拆分: {block.id}")
+                for index, (value, style) in enumerate(
+                    zip(identity, (template_config.part_number, template_config.category), strict=True)
+                ):
+                    paragraph = document.add_paragraph()
+                    self._apply_paragraph_breaks(
+                        paragraph,
+                        page_break_before=page_break_before and index == 0,
+                        column_break_before=column_break_before and index == 0,
+                    )
+                    self._fill_paragraph(paragraph, value, style, terminology=template_config.terminology)
+                    paragraph.paragraph_format.keep_with_next = index == 0
+                return
+            if annotation_role == "toc_anchor":
+                if render_context.toc_written:
+                    return
+                render_context.toc_written = True
+                paragraph = document.add_paragraph()
+                self._apply_paragraph_breaks(
+                    paragraph,
+                    page_break_before=page_break_before,
+                    column_break_before=column_break_before,
+                )
+                self._fill_toc_anchor(paragraph, render_context.toc_headings, template_config)
+                return
+            if annotation_role == "toc_title":
+                paragraph = document.add_paragraph()
+                self._apply_paragraph_breaks(
+                    paragraph,
+                    page_break_before=page_break_before,
+                    column_break_before=column_break_before,
+                )
+                self._fill_paragraph(
+                    paragraph,
+                    text,
+                    template_config.toc_title,
+                    terminology=template_config.terminology,
+                )
+                paragraph.paragraph_format.keep_with_next = True
+                return
+            if annotation_role == "standalone_caption":
+                paragraph = document.add_paragraph()
+                self._apply_paragraph_breaks(
+                    paragraph,
+                    page_break_before=page_break_before,
+                    column_break_before=column_break_before,
+                )
+                if not self._fill_caption_paragraph(
+                    paragraph,
+                    text,
+                    template_config.caption,
+                    terminology=template_config.terminology,
+                    caption_bookmarks=render_context.caption_bookmarks,
+                ):
+                    self._fill_paragraph(paragraph, text, template_config.caption, terminology=template_config.terminology)
+                return
+            if annotation_role == "group_label":
+                paragraph = document.add_paragraph()
+                self._apply_paragraph_breaks(
+                    paragraph,
+                    page_break_before=page_break_before,
+                    column_break_before=column_break_before,
+                )
+                self._fill_paragraph(paragraph, text, template_config.normal, terminology=template_config.terminology)
+                for run in paragraph.runs:
+                    run.bold = True
+                paragraph.paragraph_format.keep_with_next = True
+                return
+            if annotation_role == "page_note":
+                paragraph = document.add_paragraph()
+                self._apply_paragraph_breaks(
+                    paragraph,
+                    page_break_before=page_break_before,
+                    column_break_before=column_break_before,
+                )
+                self._fill_paragraph(paragraph, text, template_config.table_note, terminology=template_config.terminology)
+                return
+            if render_context.allow_heading_inference and parse_toc_entry_text(text) is not None:
                 if render_context.toc_written:
                     return
                 render_context.toc_written = True
             paragraph = document.add_paragraph()
+            self._apply_paragraph_breaks(
+                paragraph,
+                page_break_before=page_break_before,
+                column_break_before=column_break_before,
+            )
             if block.metadata.get("annotation_role") == "table_context":
                 paragraph.paragraph_format.keep_with_next = True
-                if page_break_before:
-                    paragraph.paragraph_format.page_break_before = True
                 self._fill_table_context_paragraph(paragraph, text, template_config)
                 return
             self._fill_auto_list_or_paragraph(
@@ -360,24 +536,38 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                 template_config,
                 reference_bookmarks=render_context.caption_bookmarks,
                 allow_heading_inference=render_context.allow_heading_inference,
+                allow_toc_inference=render_context.allow_heading_inference,
             )
+            if keep_with_next:
+                paragraph.paragraph_format.keep_with_next = True
             return
         if block.type == "list":
-            for item in block.list_items or []:
-                if parse_toc_entry_text(item) is not None:
+            for index, item in enumerate(block.list_items or []):
+                if render_context.allow_heading_inference and parse_toc_entry_text(item) is not None:
                     if render_context.toc_written:
                         continue
                     render_context.toc_written = True
                 paragraph = document.add_paragraph()
+                self._apply_paragraph_breaks(
+                    paragraph,
+                    page_break_before=page_break_before and index == 0,
+                    column_break_before=column_break_before and index == 0,
+                )
                 self._fill_auto_list_item_paragraph(
                     paragraph,
                     item,
                     template_config,
                     reference_bookmarks=render_context.caption_bookmarks,
+                    allow_toc_inference=render_context.allow_heading_inference,
                 )
             return
         if block.type == "formula":
             paragraph = document.add_paragraph()
+            self._apply_paragraph_breaks(
+                paragraph,
+                page_break_before=page_break_before,
+                column_break_before=column_break_before,
+            )
             self._fill_formula_paragraph(paragraph, block.latex or block.text or "", template_config)
             return
         if block.type == "table":
@@ -388,6 +578,8 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                 caption_bookmarks=render_context.caption_bookmarks,
                 reference_bookmarks=render_context.caption_bookmarks,
                 page_break_before=page_break_before,
+                column_break_before=column_break_before,
+                fit_decision=render_context.table_fit_decisions.get(block.id),
             )
             return
         if block.type == "image":
@@ -398,7 +590,10 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                 template_config,
                 image_loader,
                 page_width=page_width,
+                page_height=page_height,
                 caption_bookmarks=render_context.caption_bookmarks,
+                page_break_before=page_break_before,
+                column_break_before=column_break_before,
             )
 
     def _render_layout_page(
@@ -411,9 +606,9 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         render_context: _RenderContext,
         *,
         page_break_before_block_id: str | None = None,
+        use_current_section_for_first_landscape: bool = False,
     ) -> None:
-        self._render_page_decorations(document, page, template_config)
-        for region in page.regions:
+        for region_index, region in enumerate(page.regions):
             self._render_layout_region(
                 document,
                 region,
@@ -422,93 +617,12 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                 image_loader,
                 render_context,
                 page_width=page.width,
+                page_height=page.height,
                 page_break_before_block_id=page_break_before_block_id,
+                layout_page=page,
+                restore_after_landscape=region_index < len(page.regions) - 1,
+                use_current_section_for_landscape=use_current_section_for_first_landscape and region_index == 0,
             )
-
-    def _semantic_page_break_block_id(self, page: LayoutPage) -> str | None:
-        first_block = next((block for region in page.regions for block in region.blocks), None)
-        if first_block is None:
-            return None
-        if first_block.type == "heading":
-            return first_block.id
-        if first_block.type == "table" and first_block.captions:
-            return first_block.id
-        if first_block.type == "paragraph" and first_block.metadata.get("annotation_role") == "table_context":
-            return first_block.id
-        return None
-
-    def _render_page_decorations(
-        self,
-        document: Any,
-        page: LayoutPage,
-        template_config: TemplateConfigPackage,
-    ) -> None:
-        if not document.sections:
-            return
-        section = document.sections[-1]
-        if template_config.header.enabled and page.header_blocks:
-            paragraph = section.header.paragraphs[0] if section.header.paragraphs else section.header.add_paragraph()
-            paragraph.text = ""
-            # 抽取装饰块历史上沿用正文排版，这里只用页眉/页脚配置覆盖字体。
-            header_font_name = template_config.header.title_font_name
-            header_style = template_config.normal.model_copy(
-                update={
-                    "font_name": template_config.normal.font_name if header_font_name is None else header_font_name,
-                    "western_font_name": self._resolve_decoration_font(
-                        template_config.header.title_western_font_name,
-                        header_font_name,
-                        template_config.normal.western_font_name,
-                    ),
-                    "complex_script_font_name": self._resolve_decoration_font(
-                        template_config.header.title_complex_script_font_name,
-                        header_font_name,
-                        template_config.normal.complex_script_font_name,
-                    ),
-                }
-            )
-            self._fill_paragraph(
-                paragraph,
-                " ".join(block.text or "" for block in page.header_blocks).strip(),
-                header_style,
-                terminology=template_config.terminology,
-            )
-        footer_blocks = page.footer_blocks + page.page_number_blocks
-        custom_footer = bool(template_config.footer.left_text or template_config.footer.right_text)
-        if template_config.footer.enabled and footer_blocks and not custom_footer:
-            paragraph = section.footer.paragraphs[0] if section.footer.paragraphs else section.footer.add_paragraph()
-            paragraph.text = ""
-            footer_font_name = template_config.footer.font_name
-            footer_style = template_config.normal.model_copy(
-                update={
-                    "font_name": template_config.normal.font_name if footer_font_name is None else footer_font_name,
-                    "western_font_name": self._resolve_decoration_font(
-                        template_config.footer.western_font_name,
-                        footer_font_name,
-                        template_config.normal.western_font_name,
-                    ),
-                    "complex_script_font_name": self._resolve_decoration_font(
-                        template_config.footer.complex_script_font_name,
-                        footer_font_name,
-                        template_config.normal.complex_script_font_name,
-                    ),
-                }
-            )
-            self._fill_paragraph(
-                paragraph,
-                " ".join(block.text or "" for block in footer_blocks).strip(),
-                footer_style,
-                terminology=template_config.terminology,
-            )
-
-    @staticmethod
-    def _resolve_decoration_font(configured: str | None, legacy: str | None, inherited: str | None) -> str | None:
-        """字体字段缺失时依次沿用旧单字体和正文；显式空字符串不回退。"""
-
-        if configured is not None:
-            return configured
-        if legacy is not None:
-            return legacy
-        return inherited
 
     def _render_layout_region(
         self,
@@ -520,8 +634,92 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         render_context: _RenderContext,
         *,
         page_width: float | None = None,
+        page_height: float | None = None,
         page_break_before_block_id: str | None = None,
+        layout_page: LayoutPage | None = None,
+        restore_after_landscape: bool = False,
+        use_current_section_for_landscape: bool = False,
     ) -> None:
+        if region.kind == "landscape_table":
+            if layout_page is None:
+                raise ValueError("横向表格区域缺少页面计划")
+            if not use_current_section_for_landscape:
+                document.add_section(WD_SECTION_START.NEW_PAGE)
+            self._configure_layout_page_section(document, layout_page, template_config, landscape=True)
+            for block in region.blocks:
+                self._render_block(
+                    document,
+                    block,
+                    assets_by_id,
+                    template_config,
+                    image_loader,
+                    render_context,
+                    page_width=page_width,
+                    page_height=page_height,
+                )
+            if restore_after_landscape:
+                document.add_section(WD_SECTION_START.NEW_PAGE)
+                self._configure_layout_page_section(
+                    document,
+                    layout_page,
+                    template_config,
+                    landscape=self._layout_page_requires_landscape(layout_page),
+                )
+            return
+
+        if region.kind == "paired_visual_row":
+            if len(region.blocks) != 2:
+                raise ValueError("成对视觉行必须且只能包含左右两张图片")
+            self._render_paired_visual_row(
+                document,
+                region.blocks[0],
+                region.blocks[1],
+                assets_by_id,
+                template_config,
+                image_loader,
+                page_width=page_width,
+                page_height=page_height,
+                caption_bookmarks=render_context.caption_bookmarks,
+                page_break_before=region.blocks[0].id == page_break_before_block_id,
+            )
+            return
+
+        if region.kind == "visual_table_composite":
+            image_block = next((block for block in region.blocks if block.type == "image"), None)
+            table_block = next((block for block in region.blocks if block.type == "table"), None)
+            if image_block is None or table_block is None or len(region.blocks) != 2:
+                raise ValueError("表图复合区域必须且只能包含一张图片和一张表格")
+            self._render_visual_table_composite(
+                document,
+                image_block,
+                table_block,
+                assets_by_id,
+                template_config,
+                image_loader,
+                page_width=page_width,
+                caption_bookmarks=render_context.caption_bookmarks,
+                reference_bookmarks=render_context.caption_bookmarks,
+                fit_decision=render_context.table_fit_decisions.get(table_block.id),
+                page_break_before=any(block.id == page_break_before_block_id for block in region.blocks),
+            )
+            return
+
+        if region.kind == "visual_prelude":
+            for index, block in enumerate(region.blocks):
+                self._render_block(
+                    document,
+                    block,
+                    assets_by_id,
+                    template_config,
+                    image_loader,
+                    render_context,
+                    page_width=page_width,
+                    page_height=page_height,
+                    page_break_before=block.id == page_break_before_block_id,
+                    keep_with_next=index < len(region.blocks) - 1,
+                )
+            return
+
         if region.kind != "two_col":
             for block in region.blocks:
                 self._render_block(
@@ -532,27 +730,15 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                     image_loader,
                     render_context,
                     page_width=page_width,
+                    page_height=page_height,
                     page_break_before=block.id == page_break_before_block_id,
                 )
             return
 
-        image_rows = self._split_two_column_image_rows(region.blocks)
-        if image_rows is not None:
-            for row_index, (left, right) in enumerate(image_rows):
-                self._render_two_column_image_row(
-                    document,
-                    left,
-                    right,
-                    assets_by_id,
-                    template_config,
-                    image_loader,
-                    page_width=page_width,
-                    caption_bookmarks=render_context.caption_bookmarks,
-                    keep_with_next=row_index < len(image_rows) - 1,
-                )
-            return
-
-        left_blocks, right_blocks = self._split_two_col_blocks(region.blocks)
+        if region.column_break_index is None or not 0 < region.column_break_index < len(region.blocks):
+            raise ValueError("双栏区域缺少有效的最终栏断点")
+        left_blocks = region.blocks[: region.column_break_index]
+        right_blocks = region.blocks[region.column_break_index :]
         two_column_section = document.add_section(WD_SECTION_START.CONTINUOUS)
         self._set_section_columns(two_column_section, 2)
         for block in left_blocks:
@@ -564,11 +750,10 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                 image_loader,
                 render_context,
                 page_width=page_width,
+                page_height=page_height,
                 page_break_before=block.id == page_break_before_block_id,
             )
-        column_break = document.add_paragraph()
-        column_break.add_run().add_break(WD_BREAK.COLUMN)
-        for block in right_blocks:
+        for index, block in enumerate(right_blocks):
             self._render_block(
                 document,
                 block,
@@ -577,7 +762,9 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                 image_loader,
                 render_context,
                 page_width=page_width,
+                page_height=page_height,
                 page_break_before=block.id == page_break_before_block_id,
+                column_break_before=index == 0,
             )
         one_column_section = document.add_section(WD_SECTION_START.CONTINUOUS)
         self._set_section_columns(one_column_section, 1)
@@ -588,60 +775,3 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
             columns = OxmlElement("w:cols")
             section._sectPr.append(columns)
         columns.set(qn("w:num"), str(count))
-
-    def _split_two_col_blocks(
-        self,
-        blocks: list[DocumentIRBlock],
-    ) -> tuple[list[DocumentIRBlock], list[DocumentIRBlock]]:
-        left_blocks: list[DocumentIRBlock] = []
-        right_blocks: list[DocumentIRBlock] = []
-        for block in blocks:
-            column_hint = block.layout.column_hint if block.layout is not None else None
-            if column_hint == "left":
-                left_blocks.append(block)
-                continue
-            if column_hint == "right":
-                right_blocks.append(block)
-                continue
-            if column_hint == "wide":
-                left_blocks.append(block)
-                continue
-            bbox = block.layout.bbox if block.layout is not None else None
-            if bbox is None:
-                left_blocks.append(block)
-                continue
-            page_width = max((candidate.layout.bbox[2] for candidate in blocks if candidate.layout and candidate.layout.bbox), default=bbox[2])
-            center_x = (bbox[0] + bbox[2]) / 2
-            if center_x < page_width / 2:
-                left_blocks.append(block)
-            else:
-                right_blocks.append(block)
-        return left_blocks, right_blocks
-
-    def _split_two_column_image_rows(
-        self,
-        blocks: list[DocumentIRBlock],
-    ) -> list[tuple[DocumentIRBlock, DocumentIRBlock]] | None:
-        """把 bbox 明确成对的纯图片双栏区按行切分，保持题注字段的阅读顺序。"""
-
-        if (
-            len(blocks) < 2
-            or any(block.type != "image" for block in blocks)
-            or any(len(self._image_annotation_texts(block)) > 1 for block in blocks)
-        ):
-            return None
-        left_blocks, right_blocks = self._split_two_col_blocks(blocks)
-        if len(left_blocks) != len(right_blocks) or not left_blocks:
-            return None
-        left_blocks.sort(key=lambda block: block.layout.bbox[1] if block.layout and block.layout.bbox else float("inf"))
-        right_blocks.sort(key=lambda block: block.layout.bbox[1] if block.layout and block.layout.bbox else float("inf"))
-        rows: list[tuple[DocumentIRBlock, DocumentIRBlock]] = []
-        for left, right in zip(left_blocks, right_blocks, strict=True):
-            left_bbox = left.layout.bbox if left.layout is not None else None
-            right_bbox = right.layout.bbox if right.layout is not None else None
-            if left_bbox is None or right_bbox is None:
-                return None
-            if min(left_bbox[3], right_bbox[3]) <= max(left_bbox[1], right_bbox[1]):
-                return None
-            rows.append((left, right))
-        return rows

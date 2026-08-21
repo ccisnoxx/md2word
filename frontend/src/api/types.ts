@@ -2105,6 +2105,7 @@ export type TemplateLayoutConfigFieldSchema = {
   label: string;
   unit?: string;
   readonly?: boolean;
+  optional?: boolean;
   options?: string[];
   min?: number;
   max?: number;

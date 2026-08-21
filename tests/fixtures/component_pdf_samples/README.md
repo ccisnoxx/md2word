@@ -47,4 +47,12 @@ tests/fixtures/component_pdf_samples/
    .venv/bin/python scripts/dev/run_component_pdf_regression.py
    ```
 
-5. 使用 `acceptance-record-template.md` 记录人工验收结果，并将生成的 DOCX/报告保存在 `tests/tmp/` 或外部证据存储中。
+5. runner 会在批次目录生成 `manual-signoff-template.yaml`。复制为 `manual-signoff.yaml`，使用 Word 或 WPS 完成整文档检查并填写实际页数、空白页、关键内容组落页、表格挤压、栏平衡、图片清晰度和字体替换结论。LibreOffice 只能作为辅助证据。
+6. 将签字应用到同一批次；脚本会校验源码 commit/dirty 状态和 DOCX SHA-256，旧批次签字不能跨版本或跨产物复用：
+
+   ```bash
+   .venv/bin/python scripts/dev/run_component_pdf_regression.py \
+     --apply-manual-signoff tests/tmp/component_pdf_regression/<run_id>
+   ```
+
+`report.json` 中的自动回归 `summary.ok` 与 `manual_visual_acceptance` 分开记录：客户端视觉结论不会被伪装成确定性 OOXML blocker。生成的 DOCX、报告和签字保存在 `tests/tmp/` 或外部证据存储中，不提交客户 PDF 或大型产物。

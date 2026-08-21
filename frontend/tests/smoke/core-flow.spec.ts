@@ -470,7 +470,10 @@ const templateLayoutConfig = {
         color: { type: "color", label: "颜色" },
         alignment: { type: "alignment", label: "对齐方式" },
       },
-      table_content: { font_size: { type: "number", label: "字号", unit: "pt" } },
+      table_content: {
+        font_size: { type: "number", label: "字号", unit: "pt" },
+        min_font_size: { type: "number", label: "最小字号", unit: "pt", optional: true, min: 1, max: 200, step: 0.5 },
+      },
       table_style: {
         style_name: { type: "text", label: "表格样式" },
         header_fill: { type: "color", label: "表头底色" },
@@ -1455,9 +1458,12 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
       }),
     });
   });
-  await page.route("**/api/v1/templates/default/layout-config", async (route) => {
+  await page.route(/\/api\/v1\/templates\/default\/layout-config(?:\?.*)?$/, async (route) => {
     const requestedVersion = new URL(route.request().url()).searchParams.get("version");
     const draftChanges = layoutConfigDraftPayloads.at(-1)?.changes.heading1 as { font_size?: number } | undefined;
+    const tableDraftChanges = layoutConfigDraftPayloads.at(-1)?.changes.table_content as
+      | { min_font_size?: number }
+      | undefined;
     const response = requestedVersion === "2"
       ? {
           ...templateLayoutConfig,
@@ -1470,6 +1476,7 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
           config: {
             ...templateLayoutConfig.config,
             heading1: { ...templateLayoutConfig.config.heading1, ...draftChanges },
+            table_content: { ...templateLayoutConfig.config.table_content, ...tableDraftChanges },
           },
         }
       : templateLayoutConfig;
@@ -2066,6 +2073,12 @@ test("admin can edit Word page styles and save a draft version", async ({ page }
   await expect(page.getByLabel("Word 页面样式编辑器").getByText("Logo 路径")).not.toBeVisible();
   await expect(page.getByText("效果示意，最终以该 draft 的真实 Word 验证任务为准。")).toBeVisible();
 
+  await page.getByLabel("Word 页面样式编辑器").getByRole("button", { name: /^表格与图注\s/ }).click();
+  await page.getByRole("tab", { name: /表格正文/ }).click();
+  const minimumTableFontSize = page.locator(".layout-section .el-form-item", { hasText: "最小字号" }).locator("input").first();
+  await expect(minimumTableFontSize).toBeVisible();
+  await minimumTableFontSize.fill("7");
+
   await page.getByLabel("Word 页面样式编辑器").getByRole("button", { name: /^页眉页脚\s/ }).click();
   await page.getByRole("tab", { name: /页脚/ }).click();
   await expect(page.getByLabel("Word 页面样式编辑器").getByText("页脚左侧文字", { exact: true })).toBeVisible();
@@ -2078,7 +2091,7 @@ test("admin can edit Word page styles and save a draft version", async ({ page }
   await expect(page.getByLabel("Word 页面样式编辑器").getByText("复杂文种字体", { exact: true })).toBeVisible();
   const headingFontSize = page.locator(".layout-section .el-form-item", { hasText: "字号" }).locator("input").first();
   await headingFontSize.fill("14");
-  await expect(page.getByText("1 项未保存")).toBeVisible();
+  await expect(page.getByLabel("配置变更摘要").getByText("2", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "保存为草稿版本" }).click();
 
   await expect.poll(() => controls.layoutConfigDraftPayloads().length).toBe(1);
@@ -2088,6 +2101,7 @@ test("admin can edit Word page styles and save a draft version", async ({ page }
     expected_active_template_version_id: "default@1",
   });
   expect((controls.layoutConfigDraftPayloads()[0].changes.heading1 as { font_size: number }).font_size).toBe(14);
+  expect((controls.layoutConfigDraftPayloads()[0].changes.table_content as { min_font_size: number }).min_font_size).toBe(7);
   expect(controls.layoutConfigDraftPayloads()[0].changes).not.toHaveProperty("sample_content");
   expect(controls.layoutConfigDraftPayloads()[0].changes).not.toHaveProperty("template_name");
   await expect(page.getByText("已生成页面样式 draft version 2")).toBeVisible();

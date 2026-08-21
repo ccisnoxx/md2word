@@ -21,8 +21,11 @@ from app.domains.templates.layout_config_schema import (
 RESOURCE_DIR = Path(__file__).resolve().parents[1] / "resources" / "template_configs"
 PUBLISHED_V1_PATH = RESOURCE_DIR / "datasheet_template.yaml"
 CURRENT_V2_PATH = RESOURCE_DIR / "datasheet_template_v2.yaml"
+CANDIDATE_V3_PATH = RESOURCE_DIR / "datasheet_template_v3.yaml"
+MANIFEST_PATH = RESOURCE_DIR / "templates_manifest.yaml"
 PUBLISHED_V1_SHA256 = "1a9ce13488a491367fbfde8d143d22b6cf7c0ce064c99c224ae09ef93f5b3818"
 PUBLISHED_V2_SHA256 = "132d0bb76e71c807912031199e894dfc0e3d50bd7534180f8ceaba7a5fa20b4d"
+CANDIDATE_V3_SHA256 = "7e279d561688042330dfd8afab12e432df337680ac537df470f4832e577b366e"
 
 
 class TemplateLayoutConfigSchemaTests(TestCase):
@@ -80,6 +83,8 @@ class TemplateLayoutConfigSchemaTests(TestCase):
         self.assertEqual(self.raw["footer"]["complex_script_font_name"], "Times New Roman")
         self.assertEqual(schema["groups"]["footer"]["left_text"]["type"], "text")
         self.assertEqual(schema["groups"]["footer"]["right_text"]["type"], "text")
+        self.assertEqual(schema["groups"]["table_content"]["min_font_size"]["label"], "最小字号")
+        self.assertIsNone(package.table_content.min_font_size)
 
     def test_published_v1_hash_and_legacy_font_schema_remain_readable(self) -> None:
         self.assertEqual(hashlib.sha256(PUBLISHED_V1_PATH.read_bytes()).hexdigest(), PUBLISHED_V1_SHA256)
@@ -97,6 +102,34 @@ class TemplateLayoutConfigSchemaTests(TestCase):
 
     def test_published_v2_hash_is_immutable(self) -> None:
         self.assertEqual(hashlib.sha256(CURRENT_V2_PATH.read_bytes()).hexdigest(), PUBLISHED_V2_SHA256)
+
+    def test_candidate_v3_is_immutable_valid_and_not_registered_as_published_seed(self) -> None:
+        self.assertEqual(hashlib.sha256(CANDIDATE_V3_PATH.read_bytes()).hexdigest(), CANDIDATE_V3_SHA256)
+
+        package = validate_layout_config(yaml.safe_load(CANDIDATE_V3_PATH.read_text(encoding="utf-8")))
+        manifest = yaml.safe_load(MANIFEST_PATH.read_text(encoding="utf-8"))
+
+        self.assertEqual(package.table_content.font_size, 9)
+        self.assertEqual(package.table_content.min_font_size, 7)
+        self.assertEqual(manifest["templates"][0]["version"], 2)
+        self.assertEqual(
+            manifest["templates"][0]["layout_config_path"],
+            "resources/template_configs/datasheet_template_v2.yaml",
+        )
+
+    def test_table_min_font_size_is_editable_only_within_preferred_font_range(self) -> None:
+        updated = apply_layout_changes(self.raw, {"table_content": {"min_font_size": 7.5}})
+        self.assertEqual(updated["table_content"]["min_font_size"], 7.5)
+
+        invalid = yaml.safe_load(yaml.safe_dump(self.raw))
+        invalid["table_content"]["min_font_size"] = 10
+        with self.assertRaisesRegex(ValueError, "不能大于 font_size"):
+            validate_layout_config(invalid)
+        invalid["table_content"]["min_font_size"] = 0.5
+        with self.assertRaisesRegex(ValueError, "不能小于 1"):
+            validate_layout_config(invalid)
+        with self.assertRaisesRegex(ValueError, "不支持字段"):
+            apply_layout_changes(self.raw, {"normal": {"min_font_size": 7}})
 
     def test_footer_text_changes_use_shared_text_validation(self) -> None:
         updated = apply_layout_changes(

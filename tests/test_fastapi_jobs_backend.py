@@ -248,7 +248,9 @@ class FakeDocumentJobTranslationProvider:
             "block_0003.text": "电气特性",
             "block_0003.html.0000": "参数",
             "block_0003.html.0001": "输入电压",
+            "block_0003.captions.0000": "电气特性",
             "block_0004.text": "图 1. 引脚图",
+            "block_0004.captions.0000": "图 1. 引脚图",
             "block_0005.list_items.0000": "低噪声",
             "block_0005.list_items.0001": "高压摆率",
         }
@@ -9834,6 +9836,14 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIn("layout_table_context_binding:block_0002", ir_payload["quality_flags"])
         self.assertIn("layout_wide_table:block_0002", ir_payload["quality_flags"])
         self.assertNotIn("layout_caption_binding:block_0002", ir_payload["quality_flags"])
+        table_fit = next(
+            decision
+            for decision in word_file.metadata["table_fit_decisions"]
+            if decision["block_id"] == "block_0002"
+        )
+        self.assertEqual(table_fit["container"], "full_width")
+        self.assertEqual(table_fit["selected_font_size"], 9)
+        self.assertEqual(word_file.metadata["table_fit_quality_flags"], [])
         self.assertEqual(word_file.metadata["docx_quality"]["landscape_sections"], 0)
         self.assertGreaterEqual(word_file.metadata["docx_quality"]["wide_table_count"], 1)
         self.assertTrue(word_file.metadata["docx_quality"]["editable_content_available"])
@@ -9971,19 +9981,21 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIsNotNone(stored_job)
         self.assertEqual(stored_job.term_version_id, "en2zh@v1")
         self.assertTrue(stored_job.debug_full_text_enabled)
-        self.assertEqual([len(request.items) for request in provider.requests], [3, 3, 2])
+        self.assertEqual([len(request.items) for request in provider.requests], [3, 3, 3, 1])
         self.assertEqual(ir_payload["metadata"]["document_language"], "zh")
         self.assertEqual(ir_payload["blocks"][0]["text"], "1 特性")
         self.assertEqual(ir_payload["blocks"][1]["text"], "输入失调电压很低。")
         self.assertIn("<th>参数</th>", ir_payload["blocks"][2]["html"])
+        self.assertEqual(ir_payload["blocks"][2]["captions"], ["电气特性"])
+        self.assertEqual(ir_payload["blocks"][3]["captions"], ["图 1. 引脚图"])
         self.assertEqual(ir_payload["blocks"][4]["list_items"], ["低噪声", "高压摆率"])
         self.assertEqual(files_by_type["document_ir"].metadata["translation"]["applied"], True)
-        self.assertEqual(len(ai_log_files), 3)
-        self.assertEqual(len(debug_archive_files), 3)
-        self.assertEqual(len(batch_result_files), 3)
+        self.assertEqual(len(ai_log_files), 4)
+        self.assertEqual(len(debug_archive_files), 4)
+        self.assertEqual(len(batch_result_files), 4)
         self.assertTrue(all(file.metadata["status"] == "succeeded" for file in ai_log_files))
         self.assertTrue(all(payload["status"] == "succeeded" for payload in ai_log_payloads))
-        self.assertEqual(sum(payload["request"]["item_count"] for payload in ai_log_payloads), 8)
+        self.assertEqual(sum(payload["request"]["item_count"] for payload in ai_log_payloads), 10)
         self.assertIn("sha256:", ai_log_payloads[0]["request"]["redacted_items"][0]["sha256"])
         self.assertNotIn("The input offset voltage is low.", ai_log_text)
         self.assertIn("The input offset voltage is low.", debug_text)
@@ -10005,9 +10017,12 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIn("ai_debug_archive", file_types)
         self.assertEqual(batches_response.status_code, 200)
         batches_payload = batches_response.json()
-        self.assertEqual(len(batches_payload["items"]), 3)
-        self.assertEqual([item["status"] for item in batches_payload["items"]], ["succeeded", "succeeded", "succeeded"])
-        self.assertEqual(sum(item["item_count"] for item in batches_payload["items"]), 8)
+        self.assertEqual(len(batches_payload["items"]), 4)
+        self.assertEqual(
+            [item["status"] for item in batches_payload["items"]],
+            ["succeeded", "succeeded", "succeeded", "succeeded"],
+        )
+        self.assertEqual(sum(item["item_count"] for item in batches_payload["items"]), 10)
         self.assertTrue(all(item["result_file_id"] for item in batches_payload["items"]))
         self.assertTrue(all(item["ai_call_log_file_ids"] for item in batches_payload["items"]))
 
@@ -11728,6 +11743,7 @@ class FastAPIJobsBackendTests(TestCase):
                                 "western_font_name": "Calibri",
                                 "complex_script_font_name": "Arial",
                             },
+                            "table_content": {"min_font_size": 7.5},
                             "footer": {
                                 "enabled": True,
                                 "left_text": "V1.1",
@@ -11827,6 +11843,8 @@ class FastAPIJobsBackendTests(TestCase):
                     & set(read_payload["field_schema"]["groups"][group_name]),
                 )
             self.assertEqual(read_payload["field_schema"]["groups"]["normal"]["font_name"]["label"], "中文字体")
+            self.assertTrue(read_payload["field_schema"]["groups"]["table_content"]["min_font_size"]["optional"])
+            self.assertNotIn("min_font_size", config["table_content"])
             self.assertEqual(read_payload["field_schema"]["groups"]["footer"]["left_text"]["type"], "text")
             self.assertEqual(read_payload["field_schema"]["groups"]["footer"]["right_text"]["type"], "text")
             self.assertEqual(config["heading1"]["western_font_name"], config["heading1"]["font_name"])
@@ -11871,6 +11889,7 @@ class FastAPIJobsBackendTests(TestCase):
             self.assertEqual(active_read_response.status_code, 200)
             self.assertEqual(active_read_response.json()["template_version_id"], "default@2")
             self.assertEqual(active_read_response.json()["config"]["normal"]["font_size"], 11)
+            self.assertEqual(active_read_response.json()["config"]["table_content"]["min_font_size"], 7.5)
             self.assertEqual(active_read_response.json()["config"]["footer"]["left_text"], "V1.1")
             self.assertEqual(active_read_response.json()["config"]["footer"]["right_text"], "www.example.com")
             self.assertEqual(source_layout_path.read_text(encoding="utf-8"), original_source_text)
@@ -11888,6 +11907,7 @@ class FastAPIJobsBackendTests(TestCase):
             self.assertEqual(written_config["normal"]["font_size"], 11)
             self.assertEqual(written_config["normal"]["western_font_name"], "Calibri")
             self.assertEqual(written_config["normal"]["complex_script_font_name"], "Arial")
+            self.assertEqual(written_config["table_content"]["min_font_size"], 7.5)
             self.assertEqual(written_config["heading1"]["western_font_name"], written_config["heading1"]["font_name"])
             self.assertEqual(written_config["caption"]["western_font_name"], "")
             self.assertEqual(written_config["caption"]["complex_script_font_name"], "")

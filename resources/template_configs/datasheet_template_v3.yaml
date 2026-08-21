@@ -1,0 +1,256 @@
+schema_version: template-config/v1
+
+# 配置文件名称，仅用于说明用途，不参与版式计算。
+template_name: 数据手册模板
+
+# 模板文件名，仅用于标识默认模板，不直接影响正文排版。
+output_filename: datasheet_template.docx
+
+# 页面设置：控制整份 Word 的页边距、页眉页脚距离。
+page_setup:
+  page_width_cm: 21.00    # 页面宽度，单位 cm；显式按模板 A4 控制，不依赖 Word/PDF 默认页型。
+  page_height_cm: 29.70   # 页面高度，单位 cm；PDF page_size 只用于 bbox/比例估算。
+  top_margin: 2.46        # 页边距-上，单位 cm；略收紧顶部空白，更接近中文器件手册版芯。
+  bottom_margin: 1.30     # 页边距-下，单位 cm；本地 datasheet 首页双栏需更多正文高度，页脚由模板装饰保留。
+  left_margin: 1.46       # 页边距-左，单位 cm；中文正文每行不宜过长，适度保守。
+  right_margin: 1.46      # 页边距-右，单位 cm；与左边距对称，保持双侧平衡。
+  header_distance: 1.50   # 正文到页眉的距离，单位 cm；避免页眉压正文。
+  footer_distance: 1.40   # 正文到页脚的距离，单位 cm；页码区留够空间。
+
+# 首页型号行：通常是器件型号/料号，例如 OPA228。
+part_number:
+  font_name: Arial        # 型号行中文/东亚字体。
+  western_font_name: Arial # 型号行西文字体。
+  complex_script_font_name: Times New Roman # 型号行复杂文种字体。
+  font_size: 22           # 型号行字号，单位 pt；适度压小可降低首页占高。
+  bold: true              # 型号行是否加粗。
+  alignment: center       # 型号行段落对齐方式：left / center / right / justify。
+  space_after: 8          # 型号行段后间距，单位 pt；会影响型号和副标题之间的空白。
+
+# 首页品类行：通常是器件中文/英文品类描述。
+category:
+  font_name: 宋体         # 品类行中文/东亚字体。
+  western_font_name: Arial # 品类行西文字体。
+  complex_script_font_name: Times New Roman # 品类行复杂文种字体。
+  font_size: 12           # 品类行字号，单位 pt。
+  bold: true              # 品类行是否加粗。
+  alignment: center       # 品类行段落对齐方式。
+  space_after: 6          # 品类行段后间距，单位 pt；与封面正文拉开更自然。
+
+# 一级标题：例如“1 Features”“6 Specifications”。
+heading1:
+  font_name: 宋体      # 一级标题中文/东亚字体。
+  western_font_name: Arial # 一级标题西文字体。
+  complex_script_font_name: Times New Roman # 一级标题复杂文种字体。
+  font_size: 13           # 一级标题字号，单位 pt。
+  bold: true              # 一级标题是否加粗。
+  color: '#0c69b2'        # 一级标题字体颜色，十六进制 RGB。
+  alignment: left         # 一级标题左对齐，更接近常规技术文档排版。
+  space_before: 8         # 一级标题段前间距，单位 pt；一级节之间要明显拉开。
+  space_after: 6          # 一级标题段后间距，单位 pt；让标题与正文/下级标题呼吸更自然。
+  line_spacing: 1.2       # 一级标题行距倍数；中文器件手册标题通常偏紧凑而不是 1.5 倍。
+  first_line_indent_pt: 0 # 一级标题首行缩进，单位 pt；显式写 0，避免继承模板缩进。
+  left_indent_pt: 0       # 一级标题整体左缩进，单位 pt；显式写 0，避免模板样式残留。
+  right_indent_pt: 0      # 一级标题整体右缩进，单位 pt。
+
+# 二级标题：例如“6.1 Absolute Maximum Ratings”。
+heading2:
+  font_name: 宋体      # 二级标题中文/东亚字体。
+  western_font_name: Arial # 二级标题西文字体。
+  complex_script_font_name: Times New Roman # 二级标题复杂文种字体。
+  font_size: 11         # 二级标题字号，单位 pt。
+  bold: true              # 二级标题是否加粗。
+  color: '#000000'        # 二级标题字体颜色。
+  alignment: left         # 二级标题左对齐。
+  space_before: 6         # 二级标题段前间距，单位 pt；与上文拉开但弱于一级标题。
+  space_after: 4          # 二级标题段后间距，单位 pt；正文前保留适度留白。
+  line_spacing: 1.15      # 二级标题行距倍数；多行时比正文略疏。
+  first_line_indent_pt: 0 # 二级标题首行缩进，单位 pt。
+  left_indent_pt: 0       # 二级标题整体左缩进，单位 pt。
+  right_indent_pt: 0      # 二级标题整体右缩进，单位 pt。
+
+# 三级标题：例如“6.1.1 Input Characteristics”。
+heading3:
+  font_name: 宋体         # 三级标题中文/东亚字体。
+  western_font_name: Arial # 三级标题西文字体。
+  complex_script_font_name: Times New Roman # 三级标题复杂文种字体。
+  font_size: 10           # 三级标题字号，单位 pt。
+  bold: true              # 三级标题是否加粗。
+  color: '#000000'        # 三级标题字体颜色。
+  alignment: left         # 三级标题左对齐。
+  space_before: 4         # 三级标题段前间距，单位 pt；保持层次但不抢正文节奏。
+  space_after: 2          # 三级标题段后间距，单位 pt；避免三级标题紧贴正文。
+  line_spacing: 1.1       # 三级标题行距倍数；多行时略高于单倍行距即可。
+  first_line_indent_pt: 0 # 三级标题首行缩进，单位 pt。
+  left_indent_pt: 0       # 三级标题整体左缩进，单位 pt。
+  right_indent_pt: 0      # 三级标题整体右缩进，单位 pt。
+
+# 目录标题“目录”。
+toc_title:
+  font_name: 宋体      # 目录标题中文/东亚字体。
+  western_font_name: Arial # 目录标题西文字体。
+  complex_script_font_name: Times New Roman # 目录标题复杂文种字体。
+  font_size: 13           # 目录标题字号。
+  bold: true              # 目录标题是否加粗。
+  color: '#000000'        # 目录标题颜色。
+  alignment: center       # 目录标题居中。
+  space_before: 0         # 目录标题段前间距。
+  space_after: 8          # 目录标题段后间距；目录起始更明确。
+  line_spacing: 1.0       # 目录标题行距。
+
+# 目录一级项，例如“1、产品介绍”。
+toc_level1:
+  font_name: 宋体               # 目录一级项中文/东亚字体。
+  western_font_name: Arial      # 目录一级项西文字体。
+  complex_script_font_name: Times New Roman # 目录一级项复杂文种字体。
+  font_size: 11
+  bold: true
+  color: '#000000'
+  alignment: left
+  space_before: 0
+  space_after: 1
+  line_spacing: 1.0
+
+# 目录二级项，例如“1.1 产品概述”。
+toc_level2:
+  font_name: 宋体               # 目录二级项中文/东亚字体。
+  western_font_name: Arial      # 目录二级项西文字体。
+  complex_script_font_name: Times New Roman # 目录二级项复杂文种字体。
+  font_size: 10.5
+  bold: false
+  color: '#000000'
+  alignment: left
+  space_before: 0
+  space_after: 0
+  line_spacing: 1.0
+
+# 目录三级项，例如“1.1.1 输入特性”。
+toc_level3:
+  font_name: 宋体               # 目录三级项中文/东亚字体。
+  western_font_name: Arial      # 目录三级项西文字体。
+  complex_script_font_name: Times New Roman # 目录三级项复杂文种字体。
+  font_size: 10
+  bold: false
+  color: '#000000'
+  alignment: left
+  space_before: 0
+  space_after: 0
+  line_spacing: 1.0
+
+# 正文段落：普通说明文字、段落描述、非列表文字。
+normal:
+  font_name: 宋体         # 正文中文/东亚字体。
+  western_font_name: Arial # 正文西文字体。
+  complex_script_font_name: Times New Roman # 正文复杂文种字体。
+  font_size: 10.5         # 正文字号，单位 pt。
+  bold: false             # 正文默认是否加粗。
+  line_spacing: 1.20      # 正文行距倍数；中文连续阅读比 1.15 更舒展。
+  space_before: 0         # 正文段前间距，单位 pt。
+  space_after: 0          # 正文段后间距，单位 pt；段落之间额外空白。
+  color: '#000000'        # 正文字体颜色。
+  alignment: justify      # 正文对齐方式；justify 为两端对齐。
+  first_line_indent_pt: 21 # 正文首行缩进，约等于两个汉字。
+  left_indent_pt: 0       # 正文整体左缩进，单位 pt。
+  right_indent_pt: 0      # 正文整体右缩进，单位 pt。
+
+# 表格正文：表头、表格内容、单元格中的文字。
+table_content:
+  font_name: 宋体         # 表格文字中文/东亚字体。
+  western_font_name: Arial # 表格文字西文字体。
+  complex_script_font_name: Times New Roman # 表格文字复杂文种字体。
+  font_size: 9            # 表格正文常规用 9 号字，兼顾信息密度与可读性。
+  min_font_size: 7        # 候选最小字号；仅在内容适配需要时缩小，WPS 验收前不发布或设为默认。
+  color: '#000000'        # 表格文字颜色。
+  alignment: left         # 表格正文左对齐，更符合常规文档表格排版。
+  line_spacing: 1.0       # 表格文字行距倍数；复杂大表格建议保持 1.0。
+  space_before: 0         # 表格单元格段前间距，单位 pt。
+  space_after: 0          # 表格单元格段后间距，单位 pt；一般保持 0，避免单元格变高。
+  first_line_indent_pt: 0 # 表格单元格首行缩进，单位 pt。
+  left_indent_pt: 0       # 表格单元格整体左缩进，单位 pt。
+  right_indent_pt: 0      # 表格单元格整体右缩进，单位 pt。
+
+# 表格框线与表头底色：P0 Word 渲染器使用该段生成可编辑基础表格。
+table_style:
+  style_name: Table Grid
+  header_fill: EEF3F8
+  border_color: C7CDD4
+
+# 表格注释：表格下方的“注：”“说明：”等表注文字。
+table_note:
+  font_name: 宋体         # 表注中文/东亚字体。
+  western_font_name: Arial # 表注西文字体。
+  complex_script_font_name: Times New Roman # 表注复杂文种字体。
+  font_size: 8.0          # 表注字号，单位 pt；中文表注可读性更稳妥。
+  italic: false           # 表注是否斜体。
+  alignment: left         # 表注左对齐。
+  line_spacing: 1.0       # 表注行距倍数。
+  space_before: 1         # 表注段前间距；与表格底部轻微分离。
+  space_after: 3          # 表注段后间距，单位 pt；影响表注和后续内容的空白。
+  color: '#666666'        # 表注字体颜色。
+  first_line_indent_pt: 0 # 表注首行缩进。
+  left_indent_pt: 0       # 表注整体左缩进。
+  right_indent_pt: 0      # 表注整体右缩进。
+
+# 图注 / 表题：图片标题、表格标题，例如“Figure 1.”、“Device Information”。
+caption:
+  font_name: 宋体         # 图注/表题中文/东亚字体。
+  western_font_name: Arial # 图注/表题西文字体。
+  complex_script_font_name: Times New Roman # 图注/表题复杂文种字体。
+  font_size: 9            # 图注/表题字号，单位 pt。
+  bold: false             # 图注/表题默认是否加粗。
+  color: '#000000'        # 图注/表题颜色。
+  alignment: center       # 图注/表题对齐方式，常用 center。
+  line_spacing: 1.0       # 图注/表题行距。
+  space_after: 4          # 图注/表题段后间距，单位 pt。
+  space_before: 4         # 图注/表题段前间距，单位 pt；与图片/表格略拉开。
+  first_line_indent_pt: 0 # 图注/表题首行缩进。
+  left_indent_pt: 0       # 图注/表题整体左缩进。
+  right_indent_pt: 0      # 图注/表题整体右缩进。
+
+# 超长续表标题：仅用于 A.1 / A.2 / A.3 这类拆分续表的标题行。
+long_table_caption:
+  font_name: 宋体         # 续表标题中文/东亚字体。
+  western_font_name: Arial # 续表标题西文字体。
+  complex_script_font_name: Times New Roman # 续表标题复杂文种字体。
+  font_size: 10.5         # 续表标题字号，单位 pt。
+  bold: false             # 续表标题是否加粗。
+  color: '#000000'        # 续表标题颜色，默认黑色。
+  alignment: center       # 续表标题对齐方式。
+  line_spacing: 1.0       # 续表标题行距。
+  space_after: 3          # 续表标题段后间距。
+  space_before: 2         # 续表标题段前间距；与续表前文轻微分离。
+  first_line_indent_pt: 0 # 续表标题首行缩进。
+  left_indent_pt: 0       # 续表标题整体左缩进。
+  right_indent_pt: 0      # 续表标题整体右缩进。
+
+# 页眉配置：默认保留模板文档自带页眉；显式启用后才允许渲染器覆盖。
+header:
+  enabled: false                   # 是否启用渲染器页眉覆盖。
+  logo_path: 'assets/company_logo.png' # 页眉 logo 路径，通常由模板文档实际承载。
+  logo_height_cm: 2                # logo 高度，单位 cm。
+  title_text: '数据手册'             # 页眉标题文字。
+  title_font_name: '微软雅黑'        # 页眉标题中文/东亚字体。
+  title_western_font_name: Arial    # 页眉标题西文字体。
+  title_complex_script_font_name: Times New Roman # 页眉标题复杂文种字体。
+  title_font_size: 14              # 页眉标题字号，单位 pt。
+  title_color: '#0c69b2'           # 页眉标题颜色。
+
+# 页脚配置：默认保留模板文档自带页脚；显式启用后才允许渲染器覆盖。
+footer:
+  enabled: false            # 是否启用渲染器页脚覆盖。
+  show_page_number: true    # 是否显示页码。
+  font_name: 宋体           # 页脚中文/东亚字体。
+  western_font_name: Arial  # 页脚西文字体。
+  complex_script_font_name: Times New Roman # 页脚复杂文种字体。
+  alignment: center         # 页脚内容对齐方式。
+
+# 示例内容：仅用于模板演示，不参与真实生成逻辑。
+sample_content:
+  part_number: OPA544                           # 示例型号行文本。
+  category: 高压大电流运算放大器                 # 示例品类行文本。
+  heading1_text: 1. 产品特性                    # 示例一级标题文本。
+  heading2_text: 1.1 电气特性                   # 示例二级标题文本。
+  heading3_text: 1.1.1 输入特性                 # 示例三级标题文本。
+  normal_text: 这是正文示例。宋体 11 号字，行间距 1.5 倍。用于演示正文格式效果。支持中英文混排和数字 123456。 # 示例正文文本。
+  table_note_text: 注：(1) 测试条件为 TJ = 25°C；(2) 所有参数均在推荐工作条件下测量。 # 示例表注文本。
+  caption_text: 图1. 基本电路连接示意图         # 示例图注/表题文本。

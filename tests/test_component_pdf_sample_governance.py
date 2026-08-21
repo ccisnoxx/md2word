@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
@@ -182,3 +183,62 @@ class ComponentPdfRegressionRunnerTests(TestCase):
             self.assertTrue(Path(result["output_path"]).exists())
             self.assertTrue((output_dir / "report.json").exists())
             self.assertTrue((output_dir / "report.md").exists())
+            signoff_template = (output_dir / "manual-signoff-template.yaml").read_text(encoding="utf-8")
+            self.assertIn(report["source_revision"]["git_commit"], signoff_template)
+            self.assertIn(result["input_sha256"], signoff_template)
+            self.assertIn(result["docx_sha256"], signoff_template)
+            self.assertIn("unexpected_blank_pages", signoff_template)
+
+    def test_manual_visual_signoff_binds_revision_artifact_and_target_client(self) -> None:
+        report = {
+            "run_dir": "tests/tmp/component_pdf_regression/run",
+            "source_revision": {"git_commit": "abc123", "worktree_dirty": True},
+            "results": [
+                {
+                    "sample_id": "ti-opamp-opa228-p1-smoke",
+                    "status": "succeeded",
+                    "docx_openable": True,
+                    "input_sha256": "sha256:input",
+                    "docx_sha256": "sha256:docx",
+                }
+            ],
+        }
+        signoff = {
+            "schema_version": 1,
+            "source_revision": deepcopy(report["source_revision"]),
+            "reviewer": "XX",
+            "signed_at": "2026-08-21T12:00:00+08:00",
+            "final_signoff": True,
+            "samples": [
+                {
+                    "sample_id": "ti-opamp-opa228-p1-smoke",
+                    "input_sha256": "sha256:input",
+                    "docx_sha256": "sha256:docx",
+                    "client": "wps",
+                    "client_version": "12.1.26055",
+                    "actual_page_count": 1,
+                    "checks": {name: "pass" for name in run_component_pdf_regression.VISUAL_CHECKS},
+                    "verdict": "pass",
+                    "notes": "",
+                }
+            ],
+        }
+
+        accepted = run_component_pdf_regression.evaluate_manual_signoff(report, signoff)
+        stale = deepcopy(signoff)
+        stale["source_revision"]["git_commit"] = "old"
+        stale_result = run_component_pdf_regression.evaluate_manual_signoff(report, stale)
+        libreoffice_only = deepcopy(signoff)
+        libreoffice_only["samples"][0]["client"] = "libreoffice"
+        libreoffice_result = run_component_pdf_regression.evaluate_manual_signoff(report, libreoffice_only)
+        contradictory = deepcopy(signoff)
+        contradictory["samples"][0]["checks"]["image_clarity"] = "fail"
+        contradictory["samples"][0]["notes"] = "图片清晰度失败，不能签整体 pass。"
+        contradictory_result = run_component_pdf_regression.evaluate_manual_signoff(report, contradictory)
+
+        self.assertTrue(accepted["valid"])
+        self.assertTrue(accepted["accepted"])
+        self.assertEqual(accepted["conditional_sample_ids"], [])
+        self.assertIn("manual_visual_signoff_revision_mismatch", stale_result["blockers"])
+        self.assertIn("manual_visual_signoff_sample_incomplete", libreoffice_result["blockers"])
+        self.assertIn("manual_visual_signoff_sample_incomplete", contradictory_result["blockers"])

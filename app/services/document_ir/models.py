@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 DocumentIRBlockType = Literal["heading", "paragraph", "table", "image", "list", "formula"]
 DocumentIRAssetKind = Literal["image"]
 DocumentIRSchemaVersion = Literal["document-ir/v1", "document-ir/v2"]
-DocumentIRBlockRole = Literal["body", "page_header", "page_footer", "page_number"]
+DocumentIRBlockRole = Literal["body", "page_header", "page_footer", "page_number", "toc_source", "filtered"]
 DocumentIRColumnHint = Literal["left", "right", "wide"]
 
 

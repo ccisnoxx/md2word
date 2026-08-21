@@ -20,7 +20,7 @@ def extract_zip(zip_path: Path, target_dir: Path) -> None:
 
 
 def find_content_list(package_root: Path) -> Path:
-    """查找 MinerU content_list 文件，优先选择 v2，再按路径确定性排序。"""
+    """在唯一结果根中查找 content_list，同根优先选择 v2。"""
 
     candidates = []
     for path in package_root.rglob("*.json"):
@@ -31,10 +31,17 @@ def find_content_list(package_root: Path) -> Path:
             candidates.append(path)
     if not candidates:
         raise FileNotFoundError("MinerU 结果包缺少 content_list_v2.json 或 content_list.json。")
-    return sorted(
-        candidates,
-        key=lambda item: (0 if item.name.endswith("content_list_v2.json") else 1, len(item.parts), item.as_posix()),
-    )[0]
+    result_roots = {path.parent.resolve() for path in candidates}
+    if len(result_roots) != 1:
+        raise ValueError(
+            "MinerU 结果包包含多个 MinerU 结果根，无法唯一绑定 content list、layout 和资产。"
+        )
+
+    preferred = [path for path in candidates if path.name.endswith("content_list_v2.json")]
+    selected = preferred or candidates
+    if len(selected) != 1:
+        raise ValueError("MinerU 结果根包含多个同版本 content list，无法唯一确定输入。")
+    return selected[0]
 
 
 def load_content_blocks(content_list_path: Path) -> list[dict[str, Any]]:

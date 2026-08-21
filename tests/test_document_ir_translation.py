@@ -38,9 +38,12 @@ class FakeTranslationProvider:
             "block_0003.text": "电气特性",
             "block_0003.html.0000": "参数",
             "block_0003.html.0001": "输入电压",
+            "block_0003.captions.0000": "表 1. 电气特性",
+            "block_0003.footnotes.0000": "所有数值均为典型值。",
             "block_0004.list_items.0000": "低噪声",
             "block_0004.list_items.0001": "高压摆率",
             "block_0006.text": "图 1. 引脚图",
+            "block_0006.captions.0000": "图 1. 引脚图",
         }
         return TranslationProviderResult(
             items=tuple(
@@ -214,8 +217,8 @@ class DocumentIRTranslationTests(unittest.TestCase):
         self.assertEqual([block.id for block in translated.blocks], [block.id for block in document.blocks])
         self.assertEqual([block.type for block in translated.blocks], [block.type for block in document.blocks])
         self.assertEqual([block.layout for block in translated.blocks], [block.layout for block in document.blocks])
-        self.assertEqual([block.captions for block in translated.blocks], [block.captions for block in document.blocks])
-        self.assertEqual([block.footnotes for block in translated.blocks], [block.footnotes for block in document.blocks])
+        self.assertEqual([len(block.captions) for block in translated.blocks], [len(block.captions) for block in document.blocks])
+        self.assertEqual([len(block.footnotes) for block in translated.blocks], [len(block.footnotes) for block in document.blocks])
         self.assertEqual(translated.assets, document.assets)
         self.assertEqual(document.blocks[1].text, "The input offset voltage is low.")
         self.assertEqual(translated.metadata.document_language, "zh")
@@ -226,6 +229,9 @@ class DocumentIRTranslationTests(unittest.TestCase):
         self.assertEqual(translated.blocks[3].list_items, ["低噪声", "高压摆率"])
         self.assertEqual(translated.blocks[4].latex, "E=mc^2")
         self.assertEqual(translated.blocks[5].text, "图 1. 引脚图")
+        self.assertEqual(translated.blocks[2].captions, ["表 1. 电气特性"])
+        self.assertEqual(translated.blocks[2].footnotes, ["所有数值均为典型值。"])
+        self.assertEqual(translated.blocks[5].captions, ["图 1. 引脚图"])
         self.assertEqual(len(provider.requests), 1)
         self.assertEqual(provider.requests[0].terms, terms.entries)
         self.assertEqual([trace.source_term for trace in provider.requests[0].term_traces], ["input offset voltage"])
@@ -259,12 +265,15 @@ class DocumentIRTranslationTests(unittest.TestCase):
 
         translated = service.translate(document, term_version=terms, call_recorder=recorder)
 
-        self.assertEqual([len(request.items) for request in provider.requests], [3, 3, 2])
+        self.assertEqual([len(request.items) for request in provider.requests], [3, 3, 3, 2])
         self.assertEqual(recorder.success_requests, provider.requests)
         self.assertEqual(recorder.failure_requests, [])
-        self.assertEqual([request.items[0].id for request in provider.requests], ["block_0001.text", "block_0003.html.0000", "block_0004.list_items.0001"])
+        self.assertEqual(
+            [request.items[0].id for request in provider.requests],
+            ["block_0001.text", "block_0003.html.0000", "block_0003.footnotes.0000", "block_0006.text"],
+        )
         self.assertEqual([trace.batch_id for trace in provider.requests[0].term_traces], ["document_ir_provider_request_0001"])
-        self.assertEqual([trace.batch_id for trace in provider.requests[1].term_traces], ["document_ir_provider_request_0002"])
+        self.assertEqual([trace.batch_id for trace in provider.requests[2].term_traces], ["document_ir_provider_request_0003"])
         self.assertEqual(translated.blocks[0].text, "1 特性")
         self.assertEqual(translated.blocks[1].text, "输入失调电压很低。")
         self.assertEqual(translated.blocks[3].list_items, ["低噪声", "高压摆率"])
@@ -283,10 +292,10 @@ class DocumentIRTranslationTests(unittest.TestCase):
             batch_id_prefix="batch_page",
         )
 
-        self.assertEqual(len(items), 8)
+        self.assertEqual(len(items), 11)
         self.assertEqual([plan.batch_id for plan in plans], ["batch_page_0001", "batch_page_0002"])
         self.assertEqual([(plan.page_start, plan.page_end) for plan in plans], [(1, 1), (2, 2)])
-        self.assertEqual(sum(plan.item_count for plan in plans), 8)
+        self.assertEqual(sum(plan.item_count for plan in plans), 11)
 
     def test_document_ir_translation_plan_splits_by_char_limit(self) -> None:
         provider = FakeTranslationProvider()
@@ -300,9 +309,9 @@ class DocumentIRTranslationTests(unittest.TestCase):
             batch_id_prefix="batch_chars",
         )
 
-        self.assertEqual(len(items), 8)
+        self.assertEqual(len(items), 11)
         self.assertGreater(len(plans), 1)
-        self.assertEqual(sum(plan.item_count for plan in plans), 8)
+        self.assertEqual(sum(plan.item_count for plan in plans), 11)
         self.assertTrue(all(plan.char_count <= 20 or plan.item_count == 1 for plan in plans))
 
     def test_document_ir_translation_supports_ru2zh_language_pair_and_terms(self) -> None:
@@ -445,6 +454,42 @@ class DocumentIRTranslationTests(unittest.TestCase):
         self.assertNotEqual(input_trace.context_snippet, paragraph_text)
         self.assertEqual(recorder.success_requests, [request])
         self.assertEqual(recorder.failure_requests, [])
+
+    def test_translation_covers_captions_and_footnotes_without_sending_inline_math(self) -> None:
+        service = DocumentIRTranslationService(FakeTranslationProvider())
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="docjob_math", source_file_id="file_math", document_language="en"),
+            blocks=[
+                DocumentIRBlock(
+                    id="block_math",
+                    type="table",
+                    order=0,
+                    html="<table><tr><td>Gain $A_v$ value</td></tr></table>",
+                    captions=["Figure 1. Gain $A_v$ response"],
+                    footnotes=[r"At \(V_{CC}=5V\), typical."],
+                )
+            ],
+        )
+
+        targets, items = service.extract_translation_items(document)
+        replacements = {
+            item.id: {
+                "Gain": "增益",
+                "value": "值",
+                "Figure 1. Gain": "图 1. 增益",
+                "response": "响应",
+                "At": "在",
+                ", typical.": "时为典型值。",
+            }[item.text]
+            for item in items
+        }
+        service.apply_replacements(document, targets, replacements)
+
+        self.assertTrue(all("$A_v$" not in item.text and "V_{CC}" not in item.text for item in items))
+        self.assertIn("增益 $A_v$ 值", document.blocks[0].html or "")
+        self.assertEqual(document.blocks[0].captions, ["图 1. 增益 $A_v$ 响应"])
+        self.assertEqual(document.blocks[0].footnotes, [r"在 \(V_{CC}=5V\)时为典型值。"])
 
     def _make_document_ir(self) -> DocumentIR:
         return DocumentIR(

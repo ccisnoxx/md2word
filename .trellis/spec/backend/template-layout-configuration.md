@@ -28,11 +28,13 @@
 
 - 字体字段：
   - 段落类：`font_name`、`western_font_name`、`complex_script_font_name`。
+  - 仅 `table_content`：可选 `min_font_size`；缺失表示 renderer 不得把表体缩到首选 `font_size` 以下。
   - 页眉：`title_font_name`、`title_western_font_name`、`title_complex_script_font_name`。
   - 页脚：`font_name`、`western_font_name`、`complex_script_font_name`。
 - `ResourceVersionRepositoryProtocol.create_resource_version(record)`：只插入，不覆盖。
 - `ResourceVersionRepositoryProtocol.allocate_next_version(type, id, minimum_next)`：MySQL 事务内分配不复用整数。
 - bundled seed 清单：`default@2` 指向 `resources/template_configs/datasheet_template_v2.yaml`；已发布 `default@1` payload 继续指向 `resources/template_configs/datasheet_template.yaml`。
+- 未发布候选：`resources/template_configs/datasheet_template_v3.yaml` 仅增加 `table_content.min_font_size: 7`，不登记 manifest、不创建 published/default 行为；必须等待 Phase 5 Word/WPS 真样本验收后再按现有单 published seed 合同决定是否提升 manifest。
 
 ### 3. Contracts
 
@@ -64,6 +66,13 @@
 - `Settings.layout_config_path`、legacy runtime helper 和本地正式转换工具的“当前内置配置”路径指向 v2；显式 Resource Version 读取始终以其持久化 payload 为 owner。
 - 生产迁移必须先分别读取并验证 `default@1` 与 `default@2`，再显式调用 set-default；若后续发布门禁失败，必须在新后端仍在线时先把默认指针恢复到 v1，读回成功后才能回滚旧代码。
 
+#### 3.4 表格首选字号与最小字号
+
+- `table_content` 使用专属 `TemplateTableContentStyleConfig`；其他段落组不得接受 `min_font_size`。
+- `min_font_size` 为可选数值，必须不小于 1 且不大于同组 `font_size`；配置最小字号时必须同时配置首选字号。
+- v1/v2 历史 YAML 缺少该字段时保持有效，API 省略该值，renderer 只使用首选字号并在不可读时升级容器。
+- v3 候选的 7pt 是待 Word/WPS 验收的配置值，不是全局默认、硬编码字号或已发布结论。
+
 ### 4. Validation & Error Matrix
 
 | 条件 | 状态/行为 |
@@ -77,6 +86,9 @@
 | 新增字体字段显式为 `""` | GET、patch、保存和渲染均保留空值 |
 | 页眉只有 `title_font_name` | GET 和新 draft 补齐两种新增字体 |
 | 旧页脚没有字体字段 | API 返回三个空字符串，不改变模板继承 |
+| `table_content.min_font_size` 缺失 | 配置有效，renderer 禁止隐式缩字 |
+| `table_content.min_font_size < 1`、大于 `font_size` 或首选字号缺失 | `422`，返回对应字段校验错误 |
+| 其他样式组提交 `min_font_size` | `422 unknown_field` |
 | 目标系统未安装配置字体 | DOCX 仍写入配置值，不伪造安装状态 |
 | `default@1` payload/hash 与仓库 v1 文件一致 | 严格读取历史版本，不改默认指针 |
 | 已有 `default@1` 默认后启动 v2 manifest | 创建 published `default@2`，默认仍为 `default@1` |
@@ -101,9 +113,10 @@
 - `tests.test_fastapi_jobs_backend`：admin 权限、指定 draft 读取、dirty patch、409 CAS、结构化 422、seed 不变、旧 YAML GET 补齐和新 draft 显式持久化。
 - `tests.test_text_render_characterization`：正式三字体、旧单字体和显式空字符串的四槽位行为。
 - `tests.test_render_config_characterization`：legacy YAML loader 与语言 override 不改写显式新字体。
-- `tests.test_document_ir_word_renderer_layout`：正文、页眉、页脚、装饰块和模板既有页码域的 OOXML 字体槽位。
+- `tests.test_document_ir_word_renderer_layout`：正文、配置页眉/页脚、无覆盖内容时的模板 decoration 继承，以及原生 PAGE field 的 OOXML 字体槽位。
 - 持久化测试：create-only 冲突、整数序列单调、DB 失败清理 staging/目标目录。
 - bundled seed 测试：锁定 v1 固定 SHA-256 和旧字段兼容读取；严格校验 v2 显式三类字体；用 fake-MySQL adapter 覆盖“已有 v1 默认不迁移”和“空库默认 v2”。
+- v3 候选测试：锁定候选 SHA-256 `7e279d561688042330dfd8afab12e432df337680ac537df470f4832e577b366e`、校验 `min_font_size: 7`，同时证明 manifest 仍指向 v2 且 v1/v2 hash 未变化。
 - set-default 测试：只有 published 版本可切换，理由写入审计；发布回滚演练先恢复默认指针，再切换旧代码。
 - 配置 API/schema 变化后运行前端 unit/build；smoke mock 至少验证三种字体标签可见。
 

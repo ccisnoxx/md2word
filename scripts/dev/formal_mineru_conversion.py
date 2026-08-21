@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run local MinerU packages through the formal DocumentIR Word renderer."""
+"""通过正式 DocumentIR Word renderer 转换本地 MinerU 结果包。"""
 
 from __future__ import annotations
 
@@ -18,8 +18,10 @@ from app.domains.translation.provider import OpenAICompatibleTranslationProvider
 from app.domains.translation.provider_config import EffectiveAiProviderConfig
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset
-from app.services.renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
+from app.services.renderer import DocumentIRRenderOptions, DocumentIRWordRenderer, resolve_template_config
 from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
+from app.services.renderer.layout_plan import LayoutPlan, build_layout_plan
+from app.services.renderer.template_config import TemplateConfigPackage
 
 
 LOCAL_JOB_ID = "local_mineru_debug"
@@ -28,7 +30,7 @@ LOCAL_SOURCE_FILE_ID = "local_mineru_input"
 
 @dataclass(frozen=True, slots=True)
 class FormalMinerUConversionRequest:
-    """Local filesystem request for the formal DocumentIR conversion core."""
+    """正式 DocumentIR 转换核心的本地文件请求。"""
 
     input_path: Path
     output_path: Path
@@ -36,7 +38,6 @@ class FormalMinerUConversionRequest:
     layout_config_path: Path | None = None
     subscript_config_path: Path | None = None
     no_template: bool = False
-    use_mineru_header_footer: bool = False
     document_language: str = "auto"
     translation_mode: str = "direct"
     translation_request_output: Path | None = None
@@ -53,7 +54,7 @@ class FormalMinerUConversionRequest:
 
 @dataclass(frozen=True, slots=True)
 class FormalMinerUConversionResult:
-    """Local artifacts and diagnostics produced by the formal renderer path."""
+    """正式 renderer 路径生成的本地产物和诊断。"""
 
     source_path: Path
     output_docx_path: Path
@@ -121,7 +122,6 @@ def run_conversion(
     template_path: str | None,
     subscript_config: str | None,
     no_template: bool,
-    use_mineru_header_footer: bool,
     layout_config_path: str | None = None,
     document_language: str = "auto",
     translation_mode: str = "direct",
@@ -134,9 +134,8 @@ def run_conversion(
     translation_max_chars: int = 60_000,
     translation_trace_output: str | None = None,
     job_id: str | None = None,
-    **_ignored: Any,
 ) -> FormalMinerUConversionResult:
-    """以兼容参数形状调用正式 DocumentIR renderer 的本地入口。"""
+    """调用正式 DocumentIR renderer 的本地入口。"""
 
     settings = Settings()
     resolved_template_path = _resolve_optional_path(template_path)
@@ -156,7 +155,6 @@ def run_conversion(
         layout_config_path=resolved_layout_config_path,
         subscript_config_path=_resolve_optional_path(subscript_config),
         no_template=bool(no_template),
-        use_mineru_header_footer=bool(use_mineru_header_footer),
         document_language=str(document_language or "auto"),
         translation_mode=normalize_translation_mode(translation_mode),
         translation_request_output=_resolve_optional_path(translation_request_output),
@@ -190,9 +188,9 @@ def convert_formal_mineru_package(request: FormalMinerUConversionRequest) -> For
         )
         source_document_ir = result.document
         document_ir = _translate_if_needed(source_document_ir, request)
-        word_content = _render_document(document_ir, result.image_assets, request)
+        word_content, layout_plan, template_config = _render_document(document_ir, result.image_assets, request)
 
-    renderer_metadata = build_renderer_evidence(document_ir, word_content)
+    renderer_metadata = build_renderer_evidence(document_ir, word_content, layout_plan, template_config)
     ensure_renderer_integrity(renderer_metadata)
     document_ir_path = _document_ir_output_path(request.output_path)
     document_ir_path.write_text(document_ir.model_dump_json(indent=2), encoding="utf-8")
@@ -329,23 +327,34 @@ def _render_document(
     document_ir: DocumentIR,
     image_assets: list[Any],
     request: FormalMinerUConversionRequest,
-) -> bytes:
+) -> tuple[bytes, LayoutPlan, TemplateConfigPackage]:
     image_content_by_asset_id = {image_asset.asset_id: image_asset.content for image_asset in image_assets}
 
     def load_image(asset: DocumentIRAsset) -> bytes | None:
         return image_content_by_asset_id.get(asset.id)
 
     template_path = None if request.no_template else request.template_path
-    return DocumentIRWordRenderer().render_to_bytes(
+    options = DocumentIRRenderOptions(
+        subscript_config_path=request.subscript_config_path,
+        document_language=document_ir.metadata.document_language,
+    )
+    template_config = resolve_template_config(
+        document_ir,
+        request.layout_config_path,
+        options,
+        template_path=template_path,
+    )
+    layout_plan = build_layout_plan(document_ir, template_config)
+    word_content = DocumentIRWordRenderer().render_to_bytes(
         document_ir,
         template_path=template_path,
         config_path=request.layout_config_path,
         image_loader=load_image,
-        options=DocumentIRRenderOptions(
-            subscript_config_path=request.subscript_config_path,
-            document_language=document_ir.metadata.document_language,
-        ),
+        options=options,
+        layout_plan=layout_plan,
+        template_config=template_config,
     )
+    return word_content, layout_plan, template_config
 
 
 def _materialize_mineru_zip(input_path: Path, temp_dir: Path) -> Path:

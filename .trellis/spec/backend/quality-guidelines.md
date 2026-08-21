@@ -34,11 +34,16 @@ Questions to answer:
 
 - 正式 MinerU→DocumentIR→Word 的输入、分页、分栏、表格、图片、字段、公式、样式优先级和专项质量门禁只由 [Word 生成规则](./word-generation-rules.md) 定义；本文不复制具体输出行为。
 - 修改该链路时，先按规则 ID 核对唯一 owner、冲突矩阵、自动测试和样本证据，再应用本文件的通用测试与评审纪律。
+- 质量门禁固定区分两级：可证明的源内容缺失、重复、资产错配或不可见 payload 必须进入 `blocking_quality_flags` 并失败关闭；栏归属、分页、字体安装、客户端字段更新或版式证据不足时必须保留内容并安全降级，以非阻断质量信号交由 Word/WPS 验收。
+- IR→DOCX 阻断证据必须来自确定性包内关系：规范化可见文本、语义表格 cell、明确 TOC source/anchor/field/cache、drawing asset marker→relationship→media checksum，以及可解析 OMML 的可见数学文本；自然重复文字、仍可见的 LaTeX residue 和客户端排版不得仅凭启发式升级为阻断。
+- 正式本地与线上渲染必须把同一最终 `TemplateConfigPackage` 和 `LayoutPlan` 同时交给 renderer/evidence，并在最终 DOCX 发布或上传前执行同一 `ensure_renderer_integrity()`；不得维护第二套调用方门禁。
+- 新 converter 产物必须为每个主源块记录唯一语义裁决；旧 IR 不得伪造不存在的历史证据，但仍需执行其可证明的 IR→layout→DOCX 对账。
 
 ### 已发布模板 seed 不可变性
 
 - manifest 已登记并进入生产的模板版本，其版本号、资源路径和文件字节不可原地修改；新增可选 schema 字段应依靠模型默认值兼容旧 YAML，需要新的非默认内容时创建新版本。
 - 每个 published bundled seed 都必须有固定 SHA-256 回归；当前 `default@2` 的 `datasheet_template_v2.yaml` 固定为 `132d0bb76e71c807912031199e894dfc0e3d50bd7534180f8ceaba7a5fa20b4d`。发布门禁不得只锁定 v1 而遗漏当前默认版本。
+- 未登记 manifest 的 `datasheet_template_v3.yaml` 是 Word/WPS 验收候选，SHA-256 固定为 `7e279d561688042330dfd8afab12e432df337680ac537df470f4832e577b366e`；候选 hash 测试不得被解释为 published/default，验收前不得扩展 manifest 公共数据形状或提升版本。
 - hash 不匹配必须继续失败关闭；不得更新生产数据库 hash、放松读取校验或增加备用路径来掩盖 seed 被改写。
 
 ---

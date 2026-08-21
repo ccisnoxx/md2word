@@ -44,11 +44,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--subscript-config", help="Optional term/subscript YAML path.")
     parser.add_argument("--no-template", action="store_true", help="Generate without a Word template.")
     parser.add_argument(
-        "--use-mineru-header-footer",
-        action="store_true",
-        help="Use MinerU-detected headers and footers instead of template headers and footers.",
-    )
-    parser.add_argument(
         "--document-language",
         choices=("auto", "zh", "en", "ru"),
         default="auto",
@@ -118,7 +113,6 @@ def build_conversion_kwargs(args: argparse.Namespace, *, environ: dict[str, str]
         "layout_config_path": args.layout_config,
         "subscript_config": args.subscript_config,
         "no_template": bool(args.no_template),
-        "use_mineru_header_footer": bool(args.use_mineru_header_footer),
         "document_language": args.document_language,
         "translation_mode": normalize_translation_mode(args.translation_mode),
         "translation_request_output": args.translation_request_output,
