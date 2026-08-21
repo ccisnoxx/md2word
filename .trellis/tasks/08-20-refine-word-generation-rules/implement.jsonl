@@ -1,0 +1,7 @@
+{"file":".trellis/spec/backend/index.md","reason":"后端改造前置清单与 Word 规则 owner 路由。"}
+{"file":".trellis/spec/backend/word-generation-rules.md","reason":"正式 MinerU→DocumentIR→Word 输出合同、优先级和冲突矩阵。"}
+{"file":".trellis/spec/backend/template-layout-configuration.md","reason":"表格最小字号、模板版本和已发布 seed 不可变合同。"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"DOCX 定向测试、发布门禁与真客户端验收要求。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"保持 IR、模板配置、布局、renderer、worker 和 evidence 数据流一致。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"共享语义裁决和表格适配规则不得在 converter/renderer 重复。"}
+{"file":".trellis/tasks/08-20-refine-word-generation-rules/research/current-word-generation-audit.md","reason":"样本根因、正式代码路径和质量门禁盲区证据。"}

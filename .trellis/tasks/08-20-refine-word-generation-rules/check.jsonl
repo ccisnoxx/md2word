@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/word-generation-rules.md","reason":"检查 D1–D7、正式 owner、规则状态和实现没有漂移。"}
+{"file":".trellis/spec/backend/template-layout-configuration.md","reason":"检查可选最小字号、版本兼容和 seed 不可变性。"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"检查自动化、内容阻断和 Word/WPS 验收门禁。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查配置到正式本地/线上输出的跨层传播闭环。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"检查没有第二套语义、布局或表格适配实现。"}
+{"file":".trellis/tasks/08-20-refine-word-generation-rules/research/current-word-generation-audit.md","reason":"复核实现是否覆盖已确认样本根因和质量盲区。"}
