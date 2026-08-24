@@ -13,7 +13,10 @@ vi.mock("@/api/client", () => ({
 }));
 
 const source = readFileSync(fileURLToPath(new URL("./TranslationProfilesPage.vue", import.meta.url)), "utf8");
-const templateDetailSource = readFileSync(fileURLToPath(new URL("./TemplateDetailPage.vue", import.meta.url)), "utf8");
+const templateVersionActionsSource = readFileSync(
+  fileURLToPath(new URL("../components/TemplateVersionLifecycleActions.vue", import.meta.url)),
+  "utf8",
+);
 
 const draftResponse: TranslationProfileDraftResponse = {
   translation_profile_id: "electronics-zh2en",
@@ -69,10 +72,10 @@ describe("TranslationProfilesPage Prompt workspace", () => {
   });
 
   it("uses the shared five-mode definition in the template validation dialog", () => {
-    expect(templateDetailSource).toMatch(
+    expect(templateVersionActionsSource).toMatch(
       /v-for="option in documentJobModeOptions"[\s\S]*:value="option\.mode"[\s\S]*option\.shortLabel/,
     );
-    expect(templateDetailSource).toContain("validation-mode-options");
+    expect(templateVersionActionsSource).toContain("validation-mode-options");
   });
 });
 

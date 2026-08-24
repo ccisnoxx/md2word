@@ -19,7 +19,7 @@
 - 前端只维护控件类型映射：`boolean`、`number`、`alignment`、`color`、`text`。
 - baseline 包含 exact version/hash/active id；保存成功后必须加载新 draft 作为 baseline，不能回跳旧 published 值。
 - 浏览器预览读取当前表单与 `preview_samples`，必须显示“非 Word 权威结果”提示。
-- draft 页面提供“创建验证任务”跳转，发布、设默认和历史版本仍复用模板版本页状态机。
+- 页面样式详情与模板版本总览必须复用同一个 `TemplateVersionLifecycleActions` 状态机：当前版本为 `draft` 时显示创建验证任务和发布，为非默认 `published` 时显示设为默认，默认版本显示“当前默认”；模板版本总览继续承载全部历史版本管理。
 
 ### 4. Validation & Error Matrix
 
@@ -34,7 +34,7 @@
 
 ### 5. Good / Base / Bad Cases
 
-- Good：修改一级标题字号，只发送 `changes.heading1.font_size`，保存后显示 draft 状态和验证入口。
+- Good：修改一级标题字号，只发送 `changes.heading1.font_size`，保存后在当前页完成同版本验证、发布和设默认。
 - Base：撤销恢复当前加载版本 baseline，不创建版本。
 - Bad：前端硬编码字段范围、提交完整 config、编辑只读元信息或把浏览器预览当发布证据。
 

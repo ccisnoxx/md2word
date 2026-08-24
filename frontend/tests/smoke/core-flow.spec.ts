@@ -2070,6 +2070,7 @@ test("admin can edit Word page styles and save a draft version", async ({ page }
   await expect(page).toHaveURL(/\/settings\/word-page-styles\/default$/);
   await expect(page.getByText("公司 Logo、默认页眉内容和 DOCX 文件由 Word 模板文档维护")).toBeVisible();
   await expect(page.getByRole("combobox", { name: "选择模板版本" })).toBeVisible();
+  await expect(page.getByText("当前默认", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Word 页面样式编辑器").getByText("Logo 路径")).not.toBeVisible();
   await expect(page.getByText("效果示意，最终以该 draft 的真实 Word 验证任务为准。")).toBeVisible();
 
@@ -2106,6 +2107,14 @@ test("admin can edit Word page styles and save a draft version", async ({ page }
   expect(controls.layoutConfigDraftPayloads()[0].changes).not.toHaveProperty("template_name");
   await expect(page.getByText("已生成页面样式 draft version 2")).toBeVisible();
   await expect(page.getByRole("button", { name: "创建验证任务" })).toBeVisible();
+  await page.getByRole("button", { name: "发布", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "发布模板版本" })).toBeVisible();
+  await expect(page.getByText("只有状态为 succeeded 且绑定当前版本的验证任务才能发布。")).toBeVisible();
+  await expect(page).toHaveURL(/\/settings\/word-page-styles\/default$/);
+  await page.getByRole("dialog", { name: "发布模板版本" }).getByRole("button", { name: "取消" }).click();
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect(page.getByLabel("模板版本 2 操作").getByRole("button", { name: "发布", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
 });
 
 test("operator can inspect the translation QA queue with backend all-status summary", async ({ page }) => {

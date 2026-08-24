@@ -132,120 +132,41 @@
         <el-table-column label="admin 操作" width="330" fixed="right">
           <template #default="{ row }">
             <RoleGate>
-              <div class="row-actions app-action-row">
-                <el-button link type="primary" @click="openValidationDialog(row)">创建验证任务</el-button>
-                <el-button link type="success" :disabled="row.status === 'published'" @click="openPublishDialog(row)">
-                  发布
-                </el-button>
-                <el-button link type="warning" :disabled="row.is_default || row.status !== 'published'" @click="openDefaultDialog(row)">
-                  设默认
-                </el-button>
-                <el-button link type="danger" :disabled="row.is_default || row.status === 'disabled'" @click="disableVersion(row)">
-                  禁用
-                </el-button>
-              </div>
+              <TemplateVersionLifecycleActions
+                :template-id="props.templateId"
+                :version="row"
+                management
+                :auto-open-validation="requestedValidationVersion === row.version"
+                @changed="loadAll"
+                @failed="error = $event"
+              />
             </RoleGate>
           </template>
         </el-table-column>
         </el-table>
       </WorkbenchPanelCard>
     </section>
-
-    <el-dialog v-model="validationDialog.visible" title="创建模板验证任务" width="560px">
-      <p class="dialog-note">
-        将用 <span class="mono">{{ templateVersionId(validationDialog.version) }}</span> 创建 document job。
-      </p>
-      <el-upload
-        ref="validationUploadRef"
-        action=""
-        accept=".pdf,application/pdf"
-        :auto-upload="false"
-        :limit="1"
-        :on-change="handleValidationFileChange"
-        :on-remove="handleValidationFileRemove"
-      >
-        <el-button :icon="Upload">选择验证 PDF</el-button>
-        <template #tip>
-          <div class="el-upload__tip">已选择：{{ validationDialog.file?.name || "无" }}</div>
-        </template>
-      </el-upload>
-      <el-radio-group v-model="validationDialog.mode" class="form-gap validation-mode-options">
-        <el-radio-button
-          v-for="option in documentJobModeOptions"
-          :key="option.mode"
-          :value="option.mode"
-        >
-          {{ option.shortLabel }}
-        </el-radio-button>
-      </el-radio-group>
-      <template #footer>
-        <el-button @click="validationDialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="validationDialog.submitting" :disabled="!validationDialog.file" @click="createValidationJob">
-          创建任务
-        </el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog v-model="publishDialog.visible" title="发布模板版本" width="560px">
-      <el-form ref="publishFormRef" :model="publishDialog.form" :rules="publishRules" label-width="118px">
-        <el-form-item label="验证任务 ID" prop="verification_job_id">
-          <el-input v-model="publishDialog.form.verification_job_id" />
-        </el-form-item>
-        <el-form-item label="验证说明" prop="verification_note">
-          <el-input v-model="publishDialog.form.verification_note" type="textarea" :rows="3" />
-        </el-form-item>
-        <el-form-item label="发布原因" prop="publish_reason">
-          <el-input v-model="publishDialog.form.publish_reason" type="textarea" :rows="3" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="publishDialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="publishDialog.submitting" @click="publishVersion">发布</el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog v-model="defaultDialog.visible" title="设为默认模板版本" width="520px">
-      <el-form ref="defaultFormRef" :model="defaultDialog.form" :rules="defaultRules" label-width="100px">
-        <el-form-item label="切换原因" prop="set_default_reason">
-          <el-input v-model="defaultDialog.form.set_default_reason" type="textarea" :rows="3" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="defaultDialog.visible = false">取消</el-button>
-        <el-button type="warning" :loading="defaultDialog.submitting" @click="setDefaultVersion">设为默认</el-button>
-      </template>
-    </el-dialog>
   </main>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type UploadFile, type UploadInstance, type UploadRawFile } from "element-plus";
+import { computed, onMounted, ref } from "vue";
+import { ElMessage, type UploadFile, type UploadInstance, type UploadRawFile } from "element-plus";
 import { Brush, Download, Refresh, Upload } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 
-import { documentJobsApi } from "@/api/documentJobs";
-import { filesApi } from "@/api/files";
 import { templatesApi } from "@/api/templates";
 import type {
-  DocumentJobMode,
   TemplateDetailResponse,
   TemplateVersionResponse,
 } from "@/api/types";
 import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import RoleGate from "@/components/RoleGate.vue";
+import TemplateVersionLifecycleActions from "@/components/TemplateVersionLifecycleActions.vue";
 import WorkbenchPageHeader from "@/components/WorkbenchPageHeader.vue";
 import WorkbenchPanelCard from "@/components/WorkbenchPanelCard.vue";
-import { useAuthStore } from "@/stores/auth";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
-import {
-  documentJobModeCreateLanguage,
-  documentJobModeOptions,
-  documentJobModeTranslationMode,
-  formatBytes,
-  formatDateTime,
-} from "@/utils/format";
-import { uploadFileContent, validatePdfFile } from "@/utils/upload";
+import { formatBytes, formatDateTime } from "@/utils/format";
 
 const props = defineProps<{
   templateId: string;
@@ -253,7 +174,6 @@ const props = defineProps<{
 
 const router = useRouter();
 const route = useRoute();
-const auth = useAuthStore();
 const template = ref<TemplateDetailResponse | null>(null);
 const versions = ref<TemplateVersionResponse[]>([]);
 const loading = ref(false);
@@ -262,47 +182,7 @@ const error = ref<ApiClientError | null>(null);
 const draftFile = ref<File | null>(null);
 const renderPolicyJson = ref("{}");
 const uploadRef = ref<UploadInstance>();
-const validationUploadRef = ref<UploadInstance>();
-const publishFormRef = ref<FormInstance>();
-const defaultFormRef = ref<FormInstance>();
-
-const validationDialog = reactive({
-  visible: false,
-  version: null as TemplateVersionResponse | null,
-  file: null as File | null,
-  mode: "direct_pdf_to_word" as DocumentJobMode,
-  submitting: false,
-});
-
-const publishDialog = reactive({
-  visible: false,
-  version: null as TemplateVersionResponse | null,
-  submitting: false,
-  form: {
-    verification_job_id: "",
-    verification_note: "",
-    publish_reason: "",
-  },
-});
-
-const defaultDialog = reactive({
-  visible: false,
-  version: null as TemplateVersionResponse | null,
-  submitting: false,
-  form: {
-    set_default_reason: "",
-  },
-});
-
-const publishRules: FormRules = {
-  verification_job_id: [{ required: true, message: "请填写验证任务 ID", trigger: "blur" }],
-  verification_note: [{ required: true, message: "请填写验证说明", trigger: "blur" }],
-  publish_reason: [{ required: true, message: "请填写发布原因", trigger: "blur" }],
-};
-
-const defaultRules: FormRules = {
-  set_default_reason: [{ required: true, message: "请填写切换原因", trigger: "blur" }],
-};
+const requestedValidationVersion = computed(() => Number(route.query.validate_version));
 
 async function loadAll(): Promise<void> {
   loading.value = true;
@@ -383,155 +263,6 @@ async function downloadTemplate(): Promise<void> {
   }
 }
 
-function openValidationDialog(version: TemplateVersionResponse): void {
-  validationDialog.version = version;
-  validationDialog.file = null;
-  validationDialog.mode = "direct_pdf_to_word";
-  validationDialog.visible = true;
-  validationUploadRef.value?.clearFiles();
-}
-
-function handleValidationFileChange(uploadFile: UploadFile): void {
-  const rawFile = uploadFile.raw as UploadRawFile | undefined;
-  if (!rawFile) {
-    return;
-  }
-  const validationError = validatePdfFile(rawFile);
-  if (validationError) {
-    error.value = { message: validationError, raw: validationError };
-    validationUploadRef.value?.clearFiles();
-    validationDialog.file = null;
-    return;
-  }
-  validationDialog.file = rawFile;
-}
-
-function handleValidationFileRemove(): void {
-  validationDialog.file = null;
-}
-
-function templateVersionId(version: TemplateVersionResponse | null): string {
-  if (!version) {
-    return "-";
-  }
-  return version.template_version_id || `${props.templateId}@${version.version}`;
-}
-
-async function createValidationJob(): Promise<void> {
-  if (!validationDialog.file || !validationDialog.version) {
-    return;
-  }
-  validationDialog.submitting = true;
-  error.value = null;
-  try {
-    const authorization = await filesApi.createUploadUrl({
-      filename: validationDialog.file.name,
-      mime_type: validationDialog.file.type || "application/pdf",
-      size_bytes: validationDialog.file.size,
-      file_type: "source_pdf",
-    });
-    await uploadFileContent(authorization, validationDialog.file, auth.token);
-    const response = await documentJobsApi.create({
-      source_file_id: authorization.file_id,
-      translation_mode: documentJobModeTranslationMode(validationDialog.mode),
-      document_language: documentJobModeCreateLanguage(validationDialog.mode),
-      template_version_id: templateVersionId(validationDialog.version),
-      debug_full_text: false,
-    });
-    ElMessage.success(`验证任务已创建：${response.job_id}`);
-    validationDialog.visible = false;
-  } catch (caught) {
-    error.value = normalizeApiError(caught);
-  } finally {
-    validationDialog.submitting = false;
-  }
-}
-
-function openPublishDialog(version: TemplateVersionResponse): void {
-  publishDialog.version = version;
-  publishDialog.form.verification_job_id = version.verification_job_id || "";
-  publishDialog.form.verification_note = version.verification_note || "";
-  publishDialog.form.publish_reason = "";
-  publishDialog.visible = true;
-}
-
-async function publishVersion(): Promise<void> {
-  if (!publishDialog.version) {
-    return;
-  }
-  const valid = await publishFormRef.value?.validate().catch(() => false);
-  if (!valid) {
-    return;
-  }
-  publishDialog.submitting = true;
-  error.value = null;
-  try {
-    await templatesApi.publishVersion(props.templateId, publishDialog.version.version, {
-      make_default: false,
-      verification_job_id: publishDialog.form.verification_job_id,
-      verification_note: publishDialog.form.verification_note,
-      publish_reason: publishDialog.form.publish_reason,
-    });
-    ElMessage.success("模板版本已发布。");
-    publishDialog.visible = false;
-    await loadAll();
-  } catch (caught) {
-    error.value = normalizeApiError(caught);
-  } finally {
-    publishDialog.submitting = false;
-  }
-}
-
-function openDefaultDialog(version: TemplateVersionResponse): void {
-  defaultDialog.version = version;
-  defaultDialog.form.set_default_reason = "";
-  defaultDialog.visible = true;
-}
-
-async function setDefaultVersion(): Promise<void> {
-  if (!defaultDialog.version) {
-    return;
-  }
-  const valid = await defaultFormRef.value?.validate().catch(() => false);
-  if (!valid) {
-    return;
-  }
-  defaultDialog.submitting = true;
-  error.value = null;
-  try {
-    await templatesApi.setDefaultVersion(props.templateId, defaultDialog.version.version, {
-      set_default_reason: defaultDialog.form.set_default_reason,
-    });
-    ElMessage.success("默认模板版本已切换。");
-    defaultDialog.visible = false;
-    await loadAll();
-  } catch (caught) {
-    error.value = normalizeApiError(caught);
-  } finally {
-    defaultDialog.submitting = false;
-  }
-}
-
-async function disableVersion(version: TemplateVersionResponse): Promise<void> {
-  try {
-    await ElMessageBox.confirm("禁用后该版本不能作为后续默认版本使用，当前默认版本不可禁用。", `禁用版本 ${version.version}`, {
-      confirmButtonText: "禁用",
-      cancelButtonText: "取消",
-      type: "warning",
-    });
-  } catch {
-    return;
-  }
-  error.value = null;
-  try {
-    await templatesApi.disableVersion(props.templateId, version.version);
-    ElMessage.success("模板版本已禁用。");
-    await loadAll();
-  } catch (caught) {
-    error.value = normalizeApiError(caught);
-  }
-}
-
 function versionTagType(status: string): "success" | "info" | "warning" | "danger" {
   if (status === "published") {
     return "success";
@@ -545,15 +276,7 @@ function versionTagType(status: string): "success" | "info" | "warning" | "dange
   return "info";
 }
 
-onMounted(() => {
-  void loadAll().then(() => {
-    const requestedVersion = Number(route.query.validate_version);
-    const version = versions.value.find((item) => item.version === requestedVersion && item.status === "draft");
-    if (version) {
-      openValidationDialog(version);
-    }
-  });
-});
+onMounted(() => void loadAll());
 </script>
 
 <style scoped lang="scss">
@@ -628,8 +351,7 @@ onMounted(() => {
 }
 
 .boundary-list span,
-.evidence small,
-.dialog-note {
+.evidence small {
   color: var(--app-color-text-muted);
 }
 
@@ -637,20 +359,9 @@ onMounted(() => {
   margin-top: 12px;
 }
 
-.validation-mode-options {
-  display: flex;
-  flex-wrap: wrap;
-}
-
 .evidence {
   display: grid;
   gap: 4px;
-}
-
-.row-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
 }
 
 @media (max-width: 900px) {

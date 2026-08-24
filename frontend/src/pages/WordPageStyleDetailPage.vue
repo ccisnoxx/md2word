@@ -39,7 +39,13 @@
           />
         </el-select>
         <el-button :icon="Document" @click="$router.push(`/settings/templates/${props.templateId}`)">模板文档</el-button>
-        <el-button v-if="layoutConfig?.status === 'draft'" @click="openValidationFlow">创建验证任务</el-button>
+        <TemplateVersionLifecycleActions
+          v-if="currentTemplateVersion"
+          :template-id="props.templateId"
+          :version="currentTemplateVersion"
+          @changed="handleVersionLifecycleChanged"
+          @failed="error = $event"
+        />
         <el-button :icon="Refresh" :loading="loading || layoutConfigLoading" @click="confirmReloadAll">刷新</el-button>
         <el-button :disabled="!isLayoutDirty || layoutConfigSaving" @click="resetLayoutConfigForm">撤销</el-button>
         <el-button type="primary" :loading="layoutConfigSaving" :disabled="!layoutConfig || !isLayoutDirty" @click="saveLayoutConfigVersion">
@@ -271,6 +277,7 @@ import ApiErrorAlert from "@/components/ApiErrorAlert.vue";
 import WorkbenchMetricStrip, { type WorkbenchMetricItem } from "@/components/WorkbenchMetricStrip.vue";
 import WorkbenchPageHeader from "@/components/WorkbenchPageHeader.vue";
 import WorkbenchPanelCard from "@/components/WorkbenchPanelCard.vue";
+import TemplateVersionLifecycleActions from "@/components/TemplateVersionLifecycleActions.vue";
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 
 type LayoutCategory = {
@@ -317,6 +324,9 @@ const availableCategories = computed(() => {
   const groups = layoutConfig.value?.field_schema.groups ?? {};
   return layoutCategories.value.filter((category) => category.groups.some((groupName) => groupName in groups));
 });
+const currentTemplateVersion = computed(() =>
+  templateVersions.value.find((item) => item.version === layoutConfig.value?.version) || null,
+);
 const activeCategory = computed(() => availableCategories.value.find((category) => category.id === activeCategoryId.value) || null);
 const activeCategoryGroups = computed(() => {
   const groups = layoutConfig.value?.field_schema.groups ?? {};
@@ -550,14 +560,18 @@ function buildLayoutChanges(): Record<string, Record<string, unknown>> {
   return changes;
 }
 
-function openValidationFlow(): void {
-  if (!layoutConfig.value) {
-    return;
+async function handleVersionLifecycleChanged(version: TemplateVersionResponse): Promise<void> {
+  try {
+    const [templateResponse, versionResponse] = await Promise.all([
+      templatesApi.get(props.templateId),
+      templatesApi.listVersions(props.templateId),
+    ]);
+    template.value = templateResponse;
+    templateVersions.value = versionResponse.items;
+    await loadLayoutConfig(version.version);
+  } catch (caught) {
+    error.value = normalizeApiError(caught);
   }
-  void router.push({
-    path: `/settings/templates/${props.templateId}`,
-    query: { validate_version: String(layoutConfig.value.version) },
-  });
 }
 
 function previewTextForGroup(groupName: string): string {
