@@ -67,55 +67,55 @@ git diff --check
 - [x] 向用户展示精确 commit 计划并取得确认。建议两个提交：
   1. `feat(frontend): 统一模板版本生命周期操作入口`
   2. `chore(template): 重置默认模板开发基线为 V1`
-- [ ] 第二个提交包含基础 DOCX/YAML、V2/V3 删除、manifest/路径 owner、Spec/测试和本 Trellis 任务文件。
-- [ ] 不包含未识别 dirty 文件；提交后记录 commit SHA。
-- [ ] 不自动 push；取得单独 push 授权后执行并用 `git ls-remote` 锁定目标 SHA。
+- [x] 第二个提交包含基础 DOCX/YAML、V2/V3 删除、manifest/路径 owner、Spec/测试和本 Trellis 任务文件。
+- [x] 不包含未识别 dirty 文件；提交后记录 commit SHA。
+- [x] 不自动 push；取得单独 push 授权后执行并用 `git ls-remote` 锁定目标 SHA。
 
 ## Phase F：准备 hostdzire 新 release
 
-- [ ] 使用 SSH alias `hostdzire`；host-key conflict 立即停止。
-- [ ] 记录旧后端 release、旧前端 symlink、目标 SHA、Compose 状态和非敏感 deployment 标识。
-- [ ] 通过 bare repo + `git archive` 创建新后端 release，复用旧 `.env` 和内部账号文件，仅更新 APP_VERSION/DEPLOYMENT_ID。
-- [ ] 构建新后端镜像，但暂不切换正在运行的 API/Worker。
-- [ ] 从同一目标 commit 构建并上传新前端静态 release，暂不切换 symlink。
-- [ ] 在目标镜像中先运行不依赖生产版本状态的 release check；失败则停止，不执行重置。
+- [x] 使用 SSH alias `hostdzire`；host-key conflict 立即停止。
+- [x] 记录旧后端 release、旧前端 symlink、目标 SHA、Compose 状态和非敏感 deployment 标识。
+- [x] 通过 bare repo + `git archive` 创建新后端 release，复用旧 `.env` 和内部账号文件，仅更新 APP_VERSION/DEPLOYMENT_ID。
+- [x] 构建新后端镜像，但暂不切换正在运行的 API/Worker。
+- [x] 从同一目标 commit 构建并上传新前端静态 release，暂不切换 symlink。
+- [x] 在目标镜像中先运行不依赖生产版本状态的 release check；失败则停止，不执行重置。
 
 ## Phase G：停止服务并重置旧模板状态
 
-- [ ] 写操作前再次确认 `jobs=0`、旧版本/默认/序列/文件集合与规划一致。
-- [ ] 停止 API、Worker；确认两个容器不再运行，MySQL/Redis保持运行。
-- [ ] 在 MySQL 单一事务内：
+- [x] 写操作前再次确认 `jobs=0`、旧版本/默认/序列/文件集合与规划一致。
+- [x] 停止 API、Worker；确认两个容器不再运行，MySQL/Redis保持运行。
+- [x] 在 MySQL 单一事务内：
   - 锁定 `template/default` 的四条版本、默认指针、序列行。
   - 断言版本集合 `{1,2,3,4}`、默认 2、序列 5、jobs 0。
   - 删除四条 `resource_versions`，影响行数必须为 4。
   - 删除一条 `resource_default_versions`，影响行数必须为 1。
   - 删除一条 `resource_version_sequences`，影响行数必须为 1。
   - 任一断言不符则回滚并重新启动旧服务。
-- [ ] 事务提交后精确删除 `/app/var/config/templates/default/v3`、`v4`；不删除整个 `default`、共享 volume 或 audit events。
-- [ ] 记录脱敏重置证据到 `deployment-audit.md`。
+- [x] 事务提交后精确删除 `/app/var/config/templates/default/v3`、`v4`；不删除整个 `default`、共享 volume 或 audit events。
+- [x] 记录脱敏重置证据到 `deployment-audit.md`。
 
 ## Phase H：启动新 release 并核验新 V1
 
-- [ ] 使用新 release 启动 API、Worker，完成 Compose、启动日志、live/ready/metrics。
-- [ ] 读回 Template Version，必须只存在新的 `default@1`，状态 published、默认 true；V2-V4 均不存在。
-- [ ] 核对新 V1 payload 的 DOCX/YAML 路径和 SHA-256 与目标 commit 完全一致。
-- [ ] 核对 `resource_version_sequences` 尚无 `template/default` 行；通过定向服务检查证明下一 draft 将分配 V2，但不为此在线创建多余草稿。
-- [ ] 运行 runtime release check + Golden Sample preflight；失败进入 Phase K。
+- [x] 使用新 release 启动 API、Worker，完成 Compose、启动日志、live/ready/metrics。
+- [x] 读回 Template Version，必须只存在新的 `default@1`，状态 published、默认 true；V2-V4 均不存在。
+- [x] 核对新 V1 payload 的 DOCX/YAML 路径和 SHA-256 与目标 commit 完全一致。
+- [x] 核对 `resource_version_sequences` 尚无 `template/default` 行；通过定向服务检查证明下一 draft 将分配 V2，但不为此在线创建多余草稿。
+- [x] 运行 runtime release check + Golden Sample preflight；失败进入 Phase K。
 
 ## Phase I：真实默认 V1 验证
 
-- [ ] 使用 `tests/fixtures/golden_samples/pdfs/OPA228_P1.pdf` 创建 direct 任务，让默认配置解析并固化 `template_version_id=default@1`。
-- [ ] 等待任务 `succeeded`，核对资源快照和输出 metadata 均为新 V1。
-- [ ] 下载 DOCX并检查 OOXML：`v1.0`、`info@ichelps.com`、原生 `PAGE` field、positional tab 和字体槽位。
-- [ ] 使用 WPS/Word 打开产物，确认左/中/右页脚可见、页码正确、正文与页脚不重叠。
+- [x] 使用 `tests/fixtures/golden_samples/pdfs/OPA228_P1.pdf` 创建 direct 任务，让默认配置解析并固化 `template_version_id=default@1`。
+- [x] 等待任务 `succeeded`，核对资源快照和输出 metadata 均为新 V1。
+- [x] 下载 DOCX并检查 OOXML：`v1.0`、`info@ichelps.com`、原生 `PAGE` field、positional tab 和字体槽位。
+- [x] 使用 WPS/Word 打开产物，确认左/中/右页脚可见、页码正确、正文与页脚不重叠。
 - [ ] 任一验证失败不得切换前端；进入 Phase K或修复后创建新 release。
 
 ## Phase J：前端切换与最终门禁
 
-- [ ] 原子切换前端 `current` symlink，执行 `nginx -t` 和 reload。
-- [ ] 检查公网首页、静态资源、页面样式页、模板版本总览、live/ready。
-- [ ] 用安全已登录会话确认两处页面只显示新的 V1“当前默认”，生命周期入口行为正常。
-- [ ] 最终核对 release SHA、deployment id、V1 hash、默认任务、API/Worker 和无 blockers；补全 `deployment-audit.md`。
+- [x] 原子切换前端 `current` symlink，执行 `nginx -t` 和 reload。
+- [x] 检查公网首页、静态资源、页面样式/模板版本 API、live/ready。
+- [ ] 用安全已登录会话确认两处页面只显示新的 V1“当前默认”，生命周期入口行为正常；应用内浏览器无登录态，Chrome 又被扩展浮层阻断，未绕过安全边界。
+- [x] 最终核对 release SHA、deployment id、V1 hash、默认任务、API/Worker 和无 blockers；补全 `deployment-audit.md`。
 
 ## Phase K：失败回滚
 

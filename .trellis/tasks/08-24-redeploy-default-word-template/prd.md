@@ -59,16 +59,16 @@
 
 ## Acceptance Criteria
 
-- [ ] 仓库只保留基础 DOCX/YAML 作为当前 bundled seed；没有 V2、V3 或 V5 模板配置/文档资产。
-- [ ] manifest 为 `default@1`，所有当前内置配置 owner 指向 `datasheet_template.yaml`，不存在 V2 fallback。
-- [ ] 新基础 YAML schema 有效，页脚为左 `v1.0`、中原生页码、右 `info@ichelps.com`。
-- [ ] 旧的 V1-V4 resource version、旧默认指针、旧序列行和 V3/V4 运行时目录已删除。
-- [ ] 新 release 启动后只存在新的 `default@1`，状态为 `published` 且为默认；版本序列在首次新草稿前可不存在，下一次分配应为 V2。
-- [ ] 新默认 V1 的 DOCX/YAML hash 与目标 commit 中基础文件一致。
-- [ ] 真实验证任务为 `succeeded` 且固化 `default@1`；生成 DOCX 通过 OOXML 和 WPS/Word 页脚验收。
-- [ ] 页面样式页显示 V1“当前默认”，模板版本总览只显示新的 V1。
-- [ ] API/Worker、内外网 live/ready/metrics、runtime release check、Golden Sample preflight 和前端公网入口通过。
-- [ ] 部署审计记录重置前后状态与实际删除范围，不包含凭据。
+- [x] 仓库只保留基础 DOCX/YAML 作为当前 bundled seed；没有 V2、V3 或 V5 模板配置/文档资产。
+- [x] manifest 为 `default@1`，所有当前内置配置 owner 指向 `datasheet_template.yaml`，不存在 V2 fallback。
+- [x] 新基础 YAML schema 有效，页脚为左 `v1.0`、中原生页码、右 `info@ichelps.com`。
+- [x] 旧的 V1-V4 resource version、旧默认指针、旧序列行和 V3/V4 运行时目录已删除。
+- [x] 新 release 启动后只存在新的 `default@1`，状态为 `published` 且为默认；版本序列在首次新草稿前可不存在，下一次分配应为 V2。
+- [x] 新默认 V1 的 DOCX/YAML hash 与目标 commit 中基础文件一致。
+- [x] 真实验证任务为 `succeeded` 且固化 `default@1`；生成 DOCX 通过 OOXML 和 WPS/Word 页脚验收。
+- [ ] 页面样式页显示 V1“当前默认”，模板版本总览只显示新的 V1；线上 API 数据已核对，浏览器因扩展浮层阻断而未完成登录后视觉复核。
+- [x] API/Worker、内外网 live/ready/metrics、runtime release check、Golden Sample preflight 和前端公网入口通过。
+- [x] 部署审计记录重置前后状态与实际删除范围，不包含凭据。
 
 ## Out of Scope
 
