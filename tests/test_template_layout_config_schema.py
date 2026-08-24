@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import tempfile
+import zipfile
 from pathlib import Path
 from unittest import TestCase
 
@@ -19,18 +20,16 @@ from app.domains.templates.layout_config_schema import (
 )
 
 RESOURCE_DIR = Path(__file__).resolve().parents[1] / "resources" / "template_configs"
-PUBLISHED_V1_PATH = RESOURCE_DIR / "datasheet_template.yaml"
-CURRENT_V2_PATH = RESOURCE_DIR / "datasheet_template_v2.yaml"
-CANDIDATE_V3_PATH = RESOURCE_DIR / "datasheet_template_v3.yaml"
+BUNDLED_LAYOUT_PATH = RESOURCE_DIR / "datasheet_template.yaml"
+BUNDLED_TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "resources" / "templates" / "default" / "datasheet_template.docx"
 MANIFEST_PATH = RESOURCE_DIR / "templates_manifest.yaml"
-PUBLISHED_V1_SHA256 = "1a9ce13488a491367fbfde8d143d22b6cf7c0ce064c99c224ae09ef93f5b3818"
-PUBLISHED_V2_SHA256 = "132d0bb76e71c807912031199e894dfc0e3d50bd7534180f8ceaba7a5fa20b4d"
-CANDIDATE_V3_SHA256 = "7e279d561688042330dfd8afab12e432df337680ac537df470f4832e577b366e"
+BUNDLED_LAYOUT_SHA256 = "03281842a45506dd717558a9ab1121100b5e264cd5425671a4ff5f9641838b1c"
+BUNDLED_TEMPLATE_SHA256 = "b21448dbc10e7c7d5028490ddc079d784eb12a0360b35be2345fa0218aa12cfb"
 
 
 class TemplateLayoutConfigSchemaTests(TestCase):
     def setUp(self) -> None:
-        self.path = CURRENT_V2_PATH
+        self.path = BUNDLED_LAYOUT_PATH
         self.raw = yaml.safe_load(self.path.read_text(encoding="utf-8"))
 
     def test_real_seed_matches_editor_and_renderer_contract(self) -> None:
@@ -81,41 +80,34 @@ class TemplateLayoutConfigSchemaTests(TestCase):
         self.assertEqual(self.raw["footer"]["font_name"], "宋体")
         self.assertEqual(self.raw["footer"]["western_font_name"], "Arial")
         self.assertEqual(self.raw["footer"]["complex_script_font_name"], "Times New Roman")
+        self.assertTrue(package.footer.enabled)
+        self.assertEqual(package.footer.left_text, "v1.0")
+        self.assertEqual(package.footer.right_text, "info@ichelps.com")
+        self.assertTrue(package.footer.show_page_number)
         self.assertEqual(schema["groups"]["footer"]["left_text"]["type"], "text")
         self.assertEqual(schema["groups"]["footer"]["right_text"]["type"], "text")
         self.assertEqual(schema["groups"]["table_content"]["min_font_size"]["label"], "最小字号")
-        self.assertIsNone(package.table_content.min_font_size)
+        self.assertEqual(package.table_content.min_font_size, 7)
 
-    def test_published_v1_hash_and_legacy_font_schema_remain_readable(self) -> None:
-        self.assertEqual(hashlib.sha256(PUBLISHED_V1_PATH.read_bytes()).hexdigest(), PUBLISHED_V1_SHA256)
-
-        package = validate_layout_config(yaml.safe_load(PUBLISHED_V1_PATH.read_text(encoding="utf-8")))
-
-        self.assertEqual(package.normal.western_font_name, package.normal.font_name)
-        self.assertEqual(package.normal.complex_script_font_name, package.normal.font_name)
-        self.assertEqual(package.header.title_western_font_name, package.header.title_font_name)
-        self.assertEqual(package.footer.font_name, "")
-        self.assertEqual(package.footer.western_font_name, "")
-        self.assertEqual(package.footer.complex_script_font_name, "")
-        self.assertEqual(package.footer.left_text, "")
-        self.assertEqual(package.footer.right_text, "")
-
-    def test_published_v2_hash_is_immutable(self) -> None:
-        self.assertEqual(hashlib.sha256(CURRENT_V2_PATH.read_bytes()).hexdigest(), PUBLISHED_V2_SHA256)
-
-    def test_candidate_v3_is_immutable_valid_and_not_registered_as_published_seed(self) -> None:
-        self.assertEqual(hashlib.sha256(CANDIDATE_V3_PATH.read_bytes()).hexdigest(), CANDIDATE_V3_SHA256)
-
-        package = validate_layout_config(yaml.safe_load(CANDIDATE_V3_PATH.read_text(encoding="utf-8")))
+    def test_bundled_v1_hashes_manifest_and_docx_are_consistent(self) -> None:
         manifest = yaml.safe_load(MANIFEST_PATH.read_text(encoding="utf-8"))
 
-        self.assertEqual(package.table_content.font_size, 9)
-        self.assertEqual(package.table_content.min_font_size, 7)
-        self.assertEqual(manifest["templates"][0]["version"], 2)
+        self.assertEqual(hashlib.sha256(BUNDLED_LAYOUT_PATH.read_bytes()).hexdigest(), BUNDLED_LAYOUT_SHA256)
+        self.assertEqual(hashlib.sha256(BUNDLED_TEMPLATE_PATH.read_bytes()).hexdigest(), BUNDLED_TEMPLATE_SHA256)
+        with zipfile.ZipFile(BUNDLED_TEMPLATE_PATH) as archive:
+            self.assertIsNone(archive.testzip())
+            self.assertIn("word/document.xml", archive.namelist())
+        self.assertEqual(manifest["templates"][0]["version"], 1)
+        self.assertEqual(
+            manifest["templates"][0]["template_path"],
+            "resources/templates/default/datasheet_template.docx",
+        )
         self.assertEqual(
             manifest["templates"][0]["layout_config_path"],
-            "resources/template_configs/datasheet_template_v2.yaml",
+            "resources/template_configs/datasheet_template.yaml",
         )
+        self.assertFalse((RESOURCE_DIR / "datasheet_template_v2.yaml").exists())
+        self.assertFalse((RESOURCE_DIR / "datasheet_template_v3.yaml").exists())
 
     def test_table_min_font_size_is_editable_only_within_preferred_font_range(self) -> None:
         updated = apply_layout_changes(self.raw, {"table_content": {"min_font_size": 7.5}})

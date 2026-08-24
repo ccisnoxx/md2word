@@ -2389,7 +2389,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["metadata_store"], "mysql")
-        self.assertEqual(payload["resources"]["template_versions"], 2)
+        self.assertEqual(payload["resources"]["template_versions"], 1)
         self.assertEqual(payload["resources"]["term_rule_set_versions"], 2)
         self.assertEqual(payload["resources"]["translation_profile_versions"], 2)
         self.assertEqual(payload["resources"]["default_template_version"], "default@1")
@@ -11259,80 +11259,58 @@ class FastAPIJobsBackendTests(TestCase):
                 self.assertEqual(detail["id"], "default")
                 self.assertEqual(detail["template"]["file_name"], "datasheet_template.docx")
                 self.assertIsNotNone(detail["template"]["sha256"])
-                self.assertEqual(detail["layout_config"]["file_name"], "datasheet_template_v2.yaml")
+                self.assertEqual(detail["layout_config"]["file_name"], "datasheet_template.yaml")
                 self.assertEqual(detail["subscript_config"]["file_name"], "runtime_subscripts_dictionary.yaml")
 
-    def test_bundled_v2_bootstrap_preserves_existing_v1_default(self):
-        """生产已存在 default@1 时只登记 v2，不隐式迁移默认指针。"""
+    def test_bundled_v1_bootstrap_is_idempotent(self):
+        """重复启动只保留同一个 bundled V1 和默认指针。"""
 
         from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
 
         with tempfile.TemporaryDirectory() as temp_dir:
+            fake_mysql = _FakeMysqlDatabase()
             runtime = build_test_runtime(
                 Path(temp_dir),
                 jobs_repository_backend="mysql",
                 repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
                     _mysql_config(),
-                    connect_factory=_FakeMysqlDatabase().connect,
+                    connect_factory=fake_mysql.connect,
                 ),
             )
-            service = runtime.resource_version_service
-            self.assertIsNotNone(service)
-            assert service is not None
-            template_path = runtime.settings.default_template_path
-            self.assertIsNotNone(template_path)
-            assert template_path is not None
-            v1_layout_path = Path(__file__).resolve().parents[1] / "resources/template_configs/datasheet_template.yaml"
-            v1_payload = {
-                "template_id": "default",
-                "version": 1,
-                "name": "datasheet_template",
-                "description": "已发布 bundled v1",
-                "docx_path": str(template_path.resolve()),
-                "docx_sha256": f"sha256:{hashlib.sha256(template_path.read_bytes()).hexdigest()}",
-                "layout_config_path": "resources/template_configs/datasheet_template.yaml",
-                "layout_config_sha256": f"sha256:{hashlib.sha256(v1_layout_path.read_bytes()).hexdigest()}",
-                "render_policy": {},
-            }
-            service.create_or_update_draft(
-                resource_type="template",
-                resource_id="default",
-                version="1",
-                snapshot_hash=resource_payload_hash(v1_payload),
-                payload_ref="template:default@1",
-                payload=v1_payload,
-            )
-            service.publish("template", "default", "1", make_default=True)
-
+            create_app(runtime)
+            first = runtime.resource_version_service.repository.get_resource_version("template", "default", "1")
             create_app(runtime)
 
+            service = runtime.resource_version_service
+            self.assertIsNotNone(service)
+            assert service is not None and first is not None and first.payload is not None
             default_record = service.repository.get_default_resource_version("template", "default")
-            v2_record = service.repository.get_resource_version("template", "default", "2")
-            v1_selection = runtime.template_read_service.resolve_template_version("default@1")
+            records = service.repository.list_resource_versions("template", "default")
             self.assertIsNotNone(default_record)
             assert default_record is not None
             self.assertEqual(default_record.version, "1")
-            self.assertIsNotNone(v2_record)
-            assert v2_record is not None and v2_record.payload is not None
-            self.assertEqual(v2_record.status.value, "published")
-            self.assertEqual(v2_record.payload["layout_config_path"], "resources/template_configs/datasheet_template_v2.yaml")
-            self.assertEqual(v1_selection.layout_config_path, v1_layout_path.resolve())
+            self.assertEqual([record.version for record in records], ["1"])
+            self.assertEqual(records[0].snapshot_hash, first.snapshot_hash)
+            self.assertEqual(first.payload["layout_config_path"], "resources/template_configs/datasheet_template.yaml")
+            self.assertNotIn(("template", "default"), fake_mysql.resource_version_sequences)
 
-    def test_bundled_v2_bootstrap_sets_v2_default_in_empty_mysql_repository(self):
-        """空库继续把 manifest 声明的 bundled 版本设为初始默认。"""
+    def test_bundled_v1_bootstrap_sets_default_and_first_draft_is_v2(self):
+        """空库初始化 V1；第一次创建样式草稿分配 V2。"""
 
         from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
 
         with tempfile.TemporaryDirectory() as temp_dir:
+            fake_mysql = _FakeMysqlDatabase()
             runtime = build_test_runtime(
                 Path(temp_dir),
+                admin_token="secret-admin",
                 jobs_repository_backend="mysql",
                 repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
                     _mysql_config(),
-                    connect_factory=_FakeMysqlDatabase().connect,
+                    connect_factory=fake_mysql.connect,
                 ),
             )
-            create_app(runtime)
+            app = create_app(runtime)
 
             service = runtime.resource_version_service
             self.assertIsNotNone(service)
@@ -11340,9 +11318,31 @@ class FastAPIJobsBackendTests(TestCase):
             default_record = service.repository.get_default_resource_version("template", "default")
             self.assertIsNotNone(default_record)
             assert default_record is not None
-            self.assertEqual(default_record.version, "2")
-            self.assertIsNone(service.repository.get_resource_version("template", "default", "1"))
-            self.assertEqual(runtime.template_read_service.resolve_template_version(None).version, 2)
+            self.assertEqual(default_record.version, "1")
+            self.assertIsNone(service.repository.get_resource_version("template", "default", "2"))
+            self.assertEqual(runtime.template_read_service.resolve_template_version(None).version, 1)
+            self.assertNotIn(("template", "default"), fake_mysql.resource_version_sequences)
+
+            with TestClient(app) as client:
+                read_payload = client.get(
+                    "/api/v1/templates/default/layout-config",
+                    headers={"X-Admin-Token": "secret-admin"},
+                ).json()
+                create_response = client.post(
+                    "/api/v1/templates/default/layout-config/versions",
+                    json={
+                        "base_template_version_id": "default@1",
+                        "expected_config_sha256": read_payload["config_sha256"],
+                        "expected_active_template_version_id": "default@1",
+                        "changes": {"normal": {"font_size": 11}},
+                        "change_note": "验证新基线后的首个草稿版本号",
+                    },
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+
+            self.assertEqual(create_response.status_code, 201)
+            self.assertEqual(create_response.json()["version"], 2)
+            self.assertEqual(service.repository.get_resource_version("template", "default", "2").status.value, "draft")
 
     def test_template_download_returns_docx(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -11652,7 +11652,7 @@ class FastAPIJobsBackendTests(TestCase):
             temp_root = Path(temp_dir)
             manifest_path = temp_root / "templates_manifest.yaml"
             repo_root = Path(__file__).resolve().parents[1]
-            seed_layout_path = repo_root / "resources" / "template_configs" / "datasheet_template_v2.yaml"
+            seed_layout_path = repo_root / "resources" / "template_configs" / "datasheet_template.yaml"
             legacy_layout = yaml.safe_load(seed_layout_path.read_text(encoding="utf-8"))
             text_style_groups = (
                 "part_number",
@@ -11673,6 +11673,7 @@ class FastAPIJobsBackendTests(TestCase):
             for group_name in text_style_groups:
                 legacy_layout[group_name].pop("western_font_name")
                 legacy_layout[group_name].pop("complex_script_font_name")
+            legacy_layout["table_content"].pop("min_font_size")
             legacy_layout["caption"]["western_font_name"] = ""
             legacy_layout["caption"]["complex_script_font_name"] = ""
             legacy_layout["header"].pop("title_western_font_name")

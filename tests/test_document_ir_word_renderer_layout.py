@@ -56,7 +56,7 @@ MINIMAL_PNG_BYTES = (
 class DocumentIRWordRendererLayoutTests(unittest.TestCase):
     def test_seed_config_declares_western_and_complex_fonts_for_all_text_groups(self) -> None:
         config = TemplateConfigPackage.load(
-            Path(__file__).resolve().parents[1] / "resources" / "template_configs" / "datasheet_template_v2.yaml"
+            Path(__file__).resolve().parents[1] / "resources" / "template_configs" / "datasheet_template.yaml"
         )
 
         for group_name in (
@@ -490,7 +490,7 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
             ],
         )
         config = TemplateConfigPackage.load(
-            Path(__file__).resolve().parents[1] / "resources" / "template_configs" / "datasheet_template_v2.yaml"
+            Path(__file__).resolve().parents[1] / "resources" / "template_configs" / "datasheet_template.yaml"
         )
 
         plan = build_layout_plan(document, config)
@@ -1168,10 +1168,10 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertIn('<w:br w:type="column"', xml)
         self.assertEqual(analyze_docx_quality_bytes(content)["table_count"], 1)
 
-    def test_table_fit_uses_candidate_minimum_to_keep_right_column_membership(self) -> None:
+    def test_table_fit_uses_bundled_minimum_to_keep_right_column_membership(self) -> None:
         document = self._make_table_fit_two_column_document()
         config = TemplateConfigPackage.load(
-            Path(__file__).resolve().parents[1] / "resources" / "template_configs" / "datasheet_template_v3.yaml"
+            Path(__file__).resolve().parents[1] / "resources" / "template_configs" / "datasheet_template.yaml"
         )
 
         plan = build_layout_plan(document, config)
@@ -1186,7 +1186,10 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
     def test_table_fit_without_minimum_moves_bound_context_and_table_to_full_width(self) -> None:
         document = self._make_table_fit_two_column_document()
         config = TemplateConfigPackage.load(
-            Path(__file__).resolve().parents[1] / "resources" / "template_configs" / "datasheet_template_v2.yaml"
+            Path(__file__).resolve().parents[1] / "resources" / "template_configs" / "datasheet_template.yaml"
+        )
+        config = config.model_copy(
+            update={"table_content": config.table_content.model_copy(update={"min_font_size": None})}
         )
 
         plan = build_layout_plan(document, config)
@@ -1209,7 +1212,7 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
             "</tr></table>"
         )
         config = TemplateConfigPackage.load(
-            Path(__file__).resolve().parents[1] / "resources" / "template_configs" / "datasheet_template_v3.yaml"
+            Path(__file__).resolve().parents[1] / "resources" / "template_configs" / "datasheet_template.yaml"
         )
 
         plan = build_layout_plan(document, config)
@@ -1265,7 +1268,7 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
             ],
         )
         config = TemplateConfigPackage.load(
-            Path(__file__).resolve().parents[1] / "resources" / "template_configs" / "datasheet_template_v3.yaml"
+            Path(__file__).resolve().parents[1] / "resources" / "template_configs" / "datasheet_template.yaml"
         )
 
         plan = build_layout_plan(document, config)
@@ -1338,7 +1341,7 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
             ],
         )
         config = TemplateConfigPackage.load(
-            Path(__file__).resolve().parents[1] / "resources" / "template_configs" / "datasheet_template_v3.yaml"
+            Path(__file__).resolve().parents[1] / "resources" / "template_configs" / "datasheet_template.yaml"
         )
         plan = build_layout_plan(document, config)
 
@@ -1532,36 +1535,18 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
 
     def test_render_to_bytes_writes_native_custom_footer_and_ignores_source_footer(self) -> None:
         renderer = DocumentIRWordRenderer()
-        with tempfile.TemporaryDirectory() as temp_dir:
-            config_path = Path(temp_dir) / "template.yaml"
-            config_path.write_text(
-                "\n".join(
-                    [
-                        "schema_version: template-config/v1",
-                        "footer:",
-                        "  enabled: true",
-                        "  left_text: V1.1",
-                        "  right_text: www.example.com",
-                        "  show_page_number: true",
-                        "  font_name: FangSong",
-                        "  western_font_name: Arial",
-                        "  complex_script_font_name: Times New Roman",
-                    ]
-                ),
-                encoding="utf-8",
-            )
-
-            content = renderer.render_to_bytes(
-                self._make_v2_two_column_document(),
-                template_path=None,
-                config_path=config_path,
-                image_loader=lambda _asset: None,
-            )
+        repo_root = Path(__file__).resolve().parents[1]
+        content = renderer.render_to_bytes(
+            self._make_v2_two_column_document(),
+            template_path=repo_root / "resources" / "templates" / "default" / "datasheet_template.docx",
+            config_path=repo_root / "resources" / "template_configs" / "datasheet_template.yaml",
+            image_loader=lambda _asset: None,
+        )
 
         rendered = Document(io.BytesIO(content))
         footer_xml = self._related_xml(content, "word/footer")
-        self.assertIn("V1.1", footer_xml)
-        self.assertIn("www.example.com", footer_xml)
+        self.assertIn("v1.0", footer_xml)
+        self.assertIn("info@ichelps.com", footer_xml)
         self.assertIn(" PAGE ", footer_xml)
         self.assertNotIn("Footer", footer_xml)
         self.assertNotIn("<w:tbl", footer_xml)
@@ -2288,7 +2273,7 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
             ],
         )
         config = TemplateConfigPackage.load(
-            Path(__file__).resolve().parents[1] / "resources" / "template_configs" / "datasheet_template_v2.yaml"
+            Path(__file__).resolve().parents[1] / "resources" / "template_configs" / "datasheet_template.yaml"
         )
 
         content = DocumentIRWordRenderer().render_to_bytes(

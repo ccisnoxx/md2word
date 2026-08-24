@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"固定 V1/V2 hash、候选资产和 DOCX 验证门禁。"}
+{"file":".trellis/spec/backend/template-layout-configuration.md","reason":"检查版本单调性、payload hash、publish 和 set-default 约束。"}
+{"file":".trellis/tasks/08-24-redeploy-default-word-template/research/footer-validation-contract.md","reason":"检查页脚左右文字、原生 PAGE 字段及客户端风险。"}
+{"file":".trellis/spec/frontend/schema-driven-template-style-editor.md","reason":"检查共享 lifecycle 状态机和页面入口行为。"}
+{"file":".trellis/tasks/08-24-redeploy-default-word-template/research/production-baseline.md","reason":"检查开发重置严格限定 template/default V1-V4、默认指针和序列，且 jobs 仍为空。"}
+{"file":".trellis/tasks/08-24-redeploy-default-word-template/research/release-contract.md","reason":"检查部署门禁、默认指针恢复和后端/前端回滚。"}

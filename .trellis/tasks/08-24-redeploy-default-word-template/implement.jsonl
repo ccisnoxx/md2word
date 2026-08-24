@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/template-layout-configuration.md","reason":"模板版本、bundled seed 不可变性、验证发布和默认指针合同。"}
+{"file":".trellis/tasks/08-24-redeploy-default-word-template/research/footer-validation-contract.md","reason":"页脚覆盖、原生 PAGE 字段和 Word/WPS 客户端验收的聚焦合同。"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"生产 MySQL 参数化事务和 metadata 表边界。"}
+{"file":".trellis/spec/frontend/schema-driven-template-style-editor.md","reason":"页面样式页与模板总览共用 Template Version 生命周期入口。"}
+{"file":".trellis/tasks/08-24-redeploy-default-word-template/research/production-baseline.md","reason":"已核验的空 jobs、旧 V1-V4、默认/序列重置目标和本地新 V1资产。"}
+{"file":".trellis/tasks/08-24-redeploy-default-word-template/research/release-contract.md","reason":"hostdzire release、前端切换、凭据边界和回滚顺序。"}

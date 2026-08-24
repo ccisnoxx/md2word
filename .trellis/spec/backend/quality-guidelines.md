@@ -42,8 +42,8 @@ Questions to answer:
 ### 已发布模板 seed 不可变性
 
 - manifest 已登记并进入生产的模板版本，其版本号、资源路径和文件字节不可原地修改；新增可选 schema 字段应依靠模型默认值兼容旧 YAML，需要新的非默认内容时创建新版本。
-- 每个 published bundled seed 都必须有固定 SHA-256 回归；当前 `default@2` 的 `datasheet_template_v2.yaml` 固定为 `132d0bb76e71c807912031199e894dfc0e3d50bd7534180f8ceaba7a5fa20b4d`。发布门禁不得只锁定 v1 而遗漏当前默认版本。
-- 未登记 manifest 的 `datasheet_template_v3.yaml` 是 Word/WPS 验收候选，SHA-256 固定为 `7e279d561688042330dfd8afab12e432df337680ac537df470f4832e577b366e`；候选 hash 测试不得被解释为 published/default，验收前不得扩展 manifest 公共数据形状或提升版本。
+- 用户授权的 2026-08-24 开发阶段基线重置已退役旧 V1/V2/V3 合同；当前唯一 bundled seed 是 `default@1`，DOCX SHA-256 固定为 `b21448dbc10e7c7d5028490ddc079d784eb12a0360b35be2345fa0218aa12cfb`，YAML SHA-256 固定为 `03281842a45506dd717558a9ab1121100b5e264cd5425671a4ff5f9641838b1c`。
+- 本次一次性重置不是原地修改 published seed 的通用先例；新 V1 部署后再次改变 DOCX/YAML 内容必须创建 V2 并提升 manifest，不能重复重置编号或覆盖 V1。
 - hash 不匹配必须继续失败关闭；不得更新生产数据库 hash、放松读取校验或增加备用路径来掩盖 seed 被改写。
 
 ---

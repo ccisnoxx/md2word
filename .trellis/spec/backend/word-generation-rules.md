@@ -376,7 +376,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 预期输出：表头行标记 `tblHeader`，所有行标记 `cantSplit`；列宽由最终 cell 内容、不可断片段和 HTML 相对宽度提示分配。先在既定栏内选择不低于最小字号的最大可适配字号；缺少 `min_font_size` 表示不得隐式缩字。最小字号仍不可读时，按“当前栏→受控单栏全宽→横向”逐级安全降级，并在 LayoutPlan/evidence 记录稳定 reason 和非阻断 quality flag；绑定的 `table_context` 必须与表格整组迁移。应用配置边框与表头样式，题注和表注不随表体缩字。
 - 冲突/例外：字符宽度算法是无客户端依赖的保守估算，不承诺 Word/WPS 精确换行；`autofit=False` 不等于客户端不会重新分页或挤压。`source_width_ratio` 只记录源表在源栏/页面中的 bbox 占比证据，不证明单元格列宽，当前明确不参与 fit 或 Word 列宽计算。
 - 禁止：按 6/7/8 等列数硬压 8pt/7pt 或等宽；把 bbox 绝对坐标映射为 Word 列宽；绕过 LayoutPlan 在 renderer 再次提升表格容器；把 `cantSplit` 写成“表格不会挤压”的证明；为一个器件硬编码列宽。
-- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_html_table_spans_and_annotations`、`.test_render_to_bytes_styles_later_th_cells_as_table_headers`、`.test_datasheet_five_column_table_widths_prioritize_description_column`、`.test_short_six_column_table_keeps_preferred_font_size`、`.test_table_fit_uses_candidate_minimum_to_keep_right_column_membership`、`.test_table_fit_without_minimum_moves_bound_context_and_table_to_full_width`、`.test_landscape_fallback_moves_single_column_context_with_table`、`.test_two_column_landscape_fallback_keeps_context_bound_and_records_each_step`。
+- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_html_table_spans_and_annotations`、`.test_render_to_bytes_styles_later_th_cells_as_table_headers`、`.test_datasheet_five_column_table_widths_prioritize_description_column`、`.test_short_six_column_table_keeps_preferred_font_size`、`.test_table_fit_uses_bundled_minimum_to_keep_right_column_membership`、`.test_table_fit_without_minimum_moves_bound_context_and_table_to_full_width`、`.test_landscape_fallback_moves_single_column_context_with_table`、`.test_two_column_landscape_fallback_keeps_context_bound_and_records_each_step`。
 - 样本证据：OPA228 P6/P7 与 CM4112 均缺当前排版后的自动/人工闭环。
 - 来源/取代：任务 `08-20-refine-word-generation-rules`；取代按列数固定缩字/等宽策略，仍明确不继承 legacy 页高估算器。
 
@@ -535,7 +535,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 预期输出：renderer 清空模板 body 但保留 sectPr 和模板 header/footer，应用绑定版本的页面、段落、表格、字体及术语配置；发布版本不可变性不在本文重复定义。
 - 冲突/例外：模板决定 Word 样式和绝对页面设置，源 layout 决定内容顺序、分栏和方向；显式空字体值保留继承语义。
 - 禁止：为适配 PDF 修改已发布 seed；在 renderer 猜另一套 schema；让源 bbox 覆盖模板字体/边距。
-- 自动验证：`tests.test_template_layout_config_schema.TemplateLayoutConfigSchemaTests.test_real_seed_matches_editor_and_renderer_contract`、`.test_published_v2_hash_is_immutable`、`.test_legacy_font_fields_are_completed_without_overwriting_explicit_empty_values`；renderer 配置测试见 PAGE-001/TEXT-001。
+- 自动验证：`tests.test_template_layout_config_schema.TemplateLayoutConfigSchemaTests.test_real_seed_matches_editor_and_renderer_contract`、`.test_bundled_v1_hashes_manifest_and_docx_are_consistent`、`.test_legacy_font_fields_are_completed_without_overwriting_explicit_empty_values`；renderer 配置测试见 PAGE-001/TEXT-001。
 - 样本证据：Golden 历史验收绑定旧 commit，不能证明当前版本；当前无模板组合视觉基线。
 - 来源/取代：`template-layout-configuration.md` 和 commit `32edca58`。
 
@@ -573,7 +573,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 禁止：省略本地参数时静默使用空 `TemplateConfigPackage`；在 renderer 读取全局 Settings；以本机字体别名改写已发布 seed；把 OMML run 错计为缺少段落字体槽。
 - 自动验证：`tests.test_conversion_sandbox_dev_tools.LocalMinerUConversionCliTests.test_formal_adapter_converts_minimal_mineru_package_to_openable_docx`、`.test_formal_adapter_resolves_default_explicit_and_no_template_resources`；既有显式配置四槽测试继续保护 renderer。
 - 样本证据：CM4112 新候选省略 template/layout config 后，666/666 个可见 `w:t` run 写入 `宋体/Arial/Arial/Times New Roman`，OMML 仍独立；WPS GUI 选中标题时显示请求字体“宋体”，同时提示“缺失字体”，WPS CLI 仍有单位/公式替换字符。本机字体安装边界不改写配置。完整记录见当前任务 `research/cm4112-validation.md` 与 `research/font-config-root-cause.md`。
-- 来源/取代：模板布局配置合同中“本地当前内置配置指向 v2”的既有要求；补足正式 local adapter 的缺省绑定缺口。
+- 来源/取代：模板布局配置合同中“本地当前内置配置指向当前 bundled seed”的要求；补足正式 local adapter 的缺省绑定缺口。
 
 ### QUALITY-001 DOCX 结构证据与风险标记
 

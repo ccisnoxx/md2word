@@ -2,7 +2,7 @@
   "input_path": "mineru_result/диод анод сверху.pdf-5a23152f-e597-40a4-98e8-585b78811b63",
   "output_path": "tests/tmp/local_mineru_debug/ru2zh/diode_ru2zh.zh.docx",
   "template_path": "resources/templates/default/datasheet_template.docx",
-  "layout_config_path": "resources/template_configs/datasheet_template_v2.yaml",
+  "layout_config_path": "resources/template_configs/datasheet_template.yaml",
   "subscript_config": "resources/term_rules/subscripts_dictionary.yaml",
   "no_template": false,
   "document_language": "auto",
