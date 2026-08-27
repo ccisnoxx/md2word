@@ -16,7 +16,7 @@ from docx import Document
 
 from app.conversion.docx_rules.mineru_content import find_final_promotional_page
 from app.conversion.docx_rules.text_semantics import parse_decimal_list_marker
-from app.services.document_ir.integrity import DocumentIntegrityError
+from app.services.document_ir.integrity import DocumentIntegrityError, build_source_integrity
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.renderer import DocumentIRWordRenderer
 from app.services.renderer.evidence import build_renderer_evidence
@@ -1076,6 +1076,204 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
         self.assertEqual(captions_by_page[1], [["图 7 正确"], ["图 8 正确"]])
         self.assertEqual(captions_by_page[2], [[], ["图 9 数量不足"]])
         self.assertEqual(captions_by_page[3], [[], ["图 11 不连续", "图 13 不连续"]])
+
+    def test_convert_zip_normalizes_sparse_visual_tables_after_strict_caption_reassociation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "mineru.zip"
+            self._write_zip(
+                zip_path,
+                blocks=[],
+                v2_blocks=[
+                    [
+                        {
+                            "type": "table",
+                            "content": {
+                                "image_source": {"path": "images/figure-19.png"},
+                                "table_caption": [],
+                                "html": "<table><tr><td>A</td><td>B</td><td>C</td></tr></table>",
+                            },
+                            "bbox": [40, 80, 270, 240],
+                        },
+                        {
+                            "type": "table",
+                            "content": {
+                                "image_source": {"path": "images/figure-20.png"},
+                                "table_caption": [{"type": "text", "content": "图 20 第二张曲线"}],
+                                "html": "<table><tr><td>D</td><td>E</td><td>F</td></tr></table>",
+                            },
+                            "bbox": [310, 82, 540, 242],
+                        },
+                        {
+                            "type": "chart",
+                            "content": {
+                                "image_source": {"path": "images/figure-21.png"},
+                                "chart_caption": [
+                                    {"type": "text", "content": "图 19 第一张曲线"},
+                                    {"type": "text", "content": "图 21 第三张曲线"},
+                                ],
+                            },
+                            "bbox": [120, 280, 460, 460],
+                        },
+                    ]
+                ],
+                layout={"pdf_info": [{"page_idx": 0, "page_size": [600, 800]}]},
+                images={
+                    "images/figure-19.png": MINIMAL_PNG_BYTES,
+                    "images/figure-20.png": MINIMAL_PNG_BYTES,
+                    "images/figure-21.png": MINIMAL_PNG_BYTES,
+                },
+            )
+
+            result = MinerUToDocumentIRService().convert_zip(
+                zip_path,
+                job_id="docjob_sparse_visual_tables",
+                source_file_id="file_sparse_visual_tables",
+                document_language="zh",
+            )
+
+        self.assertEqual([block.type for block in result.document.blocks], ["image", "image", "image"])
+        self.assertEqual(
+            [block.captions for block in result.document.blocks],
+            [["图 19 第一张曲线"], ["图 20 第二张曲线"], ["图 21 第三张曲线"]],
+        )
+        self.assertEqual(result.document.metadata.source_type_counts, {"chart": 3})
+        self.assertEqual(
+            [asset.source_path for asset in result.image_assets],
+            ["images/figure-19.png", "images/figure-20.png", "images/figure-21.png"],
+        )
+        self.assertEqual(build_source_integrity(result.document)["blocking_quality_flags"], [])
+
+    def test_convert_zip_keeps_flat_rich_caption_group_for_plain_charts(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "mineru.zip"
+            self._write_zip(
+                zip_path,
+                blocks=[],
+                v2_blocks=[
+                    [
+                        {
+                            "type": "chart",
+                            "content": {
+                                "image_source": {"path": "images/left.png"},
+                                "chart_caption": [
+                                    {"type": "text", "content": "图 1 第一段"},
+                                    {"type": "text", "content": "图 2 第二段"},
+                                ],
+                            },
+                            "bbox": [40, 80, 270, 240],
+                        },
+                        {
+                            "type": "chart",
+                            "content": {
+                                "image_source": {"path": "images/right.png"},
+                                "chart_caption": [],
+                            },
+                            "bbox": [310, 82, 540, 242],
+                        },
+                    ]
+                ],
+                layout={"pdf_info": [{"page_idx": 0, "page_size": [600, 800]}]},
+                images={"images/left.png": MINIMAL_PNG_BYTES, "images/right.png": MINIMAL_PNG_BYTES},
+            )
+
+            result = MinerUToDocumentIRService().convert_zip(
+                zip_path,
+                job_id="docjob_plain_rich_caption_group",
+                source_file_id="file_plain_rich_caption_group",
+                document_language="zh",
+            )
+
+        self.assertEqual(
+            [block.captions for block in result.document.blocks],
+            [["图 1 第一段图 2 第二段"], []],
+        )
+
+    def test_convert_zip_does_not_normalize_unaligned_sparse_visual_tables(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "mineru.zip"
+            self._write_zip(
+                zip_path,
+                blocks=[],
+                v2_blocks=[
+                    [
+                        {
+                            "type": "table",
+                            "content": {
+                                "image_source": {"path": "images/left.png"},
+                                "table_caption": [],
+                                "html": "<table><tr><td>A</td><td>B</td></tr></table>",
+                            },
+                            "bbox": [40, 80, 270, 240],
+                        },
+                        {
+                            "type": "table",
+                            "content": {
+                                "image_source": {"path": "images/right.png"},
+                                "table_caption": [{"type": "text", "content": "图 2 第二张曲线"}],
+                                "html": "<table><tr><td>C</td><td>D</td></tr></table>",
+                            },
+                            "bbox": [310, 300, 540, 460],
+                        },
+                        {
+                            "type": "chart",
+                            "content": {
+                                "image_source": {"path": "images/bottom.png"},
+                                "chart_caption": [
+                                    {"type": "text", "content": "图 1 第一张曲线"},
+                                    {"type": "text", "content": "图 3 第三张曲线"},
+                                ],
+                            },
+                            "bbox": [120, 500, 460, 680],
+                        },
+                    ]
+                ],
+                layout={"pdf_info": [{"page_idx": 0, "page_size": [600, 800]}]},
+                images={
+                    "images/left.png": MINIMAL_PNG_BYTES,
+                    "images/right.png": MINIMAL_PNG_BYTES,
+                    "images/bottom.png": MINIMAL_PNG_BYTES,
+                },
+            )
+
+            with self.assertRaisesRegex(DocumentIntegrityError, "caption_subject_unresolved:block_0002"):
+                MinerUToDocumentIRService().convert_zip(
+                    zip_path,
+                    job_id="docjob_unaligned_sparse_visual_tables",
+                    source_file_id="file_unaligned_sparse_visual_tables",
+                    document_language="zh",
+                )
+
+    def test_convert_zip_keeps_real_single_row_table_with_image_source(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "mineru.zip"
+            self._write_zip(
+                zip_path,
+                blocks=[
+                    {
+                        "type": "table",
+                        "content": {
+                            "image_source": {"path": "images/table.png"},
+                            "table_caption": ["表 1 参数"],
+                            "html": "<table><tr><td>VIN</td><td>5V</td></tr></table>",
+                        },
+                        "bbox": [40, 80, 270, 160],
+                        "page_idx": 0,
+                    }
+                ],
+                layout={"pdf_info": [{"page_idx": 0, "page_size": [600, 800]}]},
+                images={"images/table.png": MINIMAL_PNG_BYTES},
+            )
+
+            result = MinerUToDocumentIRService().convert_zip(
+                zip_path,
+                job_id="docjob_real_single_row_table",
+                source_file_id="file_real_single_row_table",
+                document_language="zh",
+            )
+
+        self.assertEqual(result.document.blocks[0].type, "table")
+        self.assertEqual(result.document.blocks[0].captions, ["表 1 参数"])
+        self.assertEqual(result.document.metadata.source_type_counts, {"table": 1})
 
     def test_convert_zip_reassigns_figure_caption_from_table_to_unique_image_group(self) -> None:
         blocks = [

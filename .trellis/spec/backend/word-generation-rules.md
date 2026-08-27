@@ -324,11 +324,11 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：v2 table/image/figure/chart caption 字段中的 flat inline-node list，或 legacy string list/多个 nested rich-node groups。
-- 正式 owner：`app/services/document_ir/mineru_converter.py::MinerUToDocumentIRService._captions`；现有文本/公式清理 helper 只作为片段归一化依赖。
+- 正式 owner：通用分组由 `app/services/document_ir/mineru_converter.py::MinerUToDocumentIRService._captions` 负责；mixed visual run 的局部试算由 `::_reassociation_caption_candidates` 负责。现有文本/公式清理 helper 只作为片段归一化依赖。
 - 预期输出：一个 flat `text/equation_inline/text` 节点数组形成一个完整 `DocumentIRBlock.captions` 元素，进入 Word 后只占一个题注段落；string list 和多个 nested rich groups 继续形成多条独立题注。inline equation 保留 `$...$` 数学边界，供翻译分段和 OMML 共用；可见 inline 语义、SEQ/bookmark、fallback、table context 和 COL-003 annotation 数量判断均基于完整逻辑题注。
-- 冲突/例外：footnote 继续按现有 marker/连续性规则合并；无可靠结构时保持原分组，不按图号、标点、页码或 bbox 猜测。renderer 继续坚持“一 caption 元素一段落”，不负责恢复 converter 已丢失的边界。
-- 禁止：用 `collect_text_from_fields()` 把 flat rich nodes 直接拍成多条 captions；在 image/table renderer 合并相邻题注；修改 continuous section 或 `pageBreakBefore` 掩盖孤立题注行。
-- 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_maps_nested_v2_chart_to_image_and_records_source_inventory`、`.test_convert_zip_preserves_multiple_logical_caption_groups`、`.test_rich_chart_captions_render_without_isolated_fragments_and_keep_paired_layout`、`.test_convert_zip_demotes_table_condition_caption_to_context_paragraph`。
+- 冲突/例外：footnote 继续按现有 marker/连续性规则合并。唯一窄例外是 IMAGE-002 已识别含稀疏 table 的 mixed visual run 时，可把 flat rich nodes 中第二个明确编号 Figure/图 text node 作为候选边界；只有整组题注数量、label、编号唯一连续全部成立后才提交分界和类型归一化。纯 image/chart group、证据不足或未对齐时仍保持原分组或失败关闭。renderer 继续坚持“一 caption 元素一段落”，不负责恢复 converter 已丢失的边界。
+- 禁止：全局按图号、标点、页码或 bbox 拆 flat rich caption；用 `collect_text_from_fields()` 把 flat rich nodes 直接拍成多条 captions；在 image/table renderer 合并相邻题注；修改 continuous section 或 `pageBreakBefore` 掩盖孤立题注行。
+- 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_maps_nested_v2_chart_to_image_and_records_source_inventory`、`.test_convert_zip_preserves_multiple_logical_caption_groups`、`.test_rich_chart_captions_render_without_isolated_fragments_and_keep_paired_layout`、`.test_convert_zip_keeps_flat_rich_caption_group_for_plain_charts`、`.test_convert_zip_normalizes_sparse_visual_tables_after_strict_caption_reassociation`、`.test_convert_zip_demotes_table_condition_caption_to_context_paragraph`。
 - 样本证据：CM4112 的图 33 在 IR 中为保留数学边界的单条题注，Word 可见结果仍为完整 `图 33 通道隔离度 (± 18V)`，OOXML 不含仅为 `±`/`18V)` 的段落；既有 WPS GUI 第 12 页实际包含图 31～33 及完整题注，第 13 页直接以“工作原理”起页。该 GUI 记录早于本轮数学边界调整，不能替代当前整文档复验。完整历史见当前任务 `research/cm4112-validation.md`。
 - 来源/取代：当前任务新增目标；取代把富文本 inline node 数量当作 annotation 数量的行为。
 
@@ -407,13 +407,13 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 ### IMAGE-002 编号图片题注只做严格重关联
 
 - 状态：`enforced-tested`
-- 输入信号：同页连续 image group 的题注数量失衡，所有可识别题注具有相同 label、连续编号且数量与图片严格相等。
-- 正式 owner：`app/services/document_ir/mineru_converter.py::_reassociate_numbered_image_captions`、`::_reassociate_image_group`。
-- 预期输出：按连续编号为每张图分配唯一题注；原来已一图一题注或条件不完整时保持原关联。
-- 冲突/例外：此规则不通过视觉最近邻猜关联；多 annotation 渲染仍由 COL-002/IMAGE-001 保持。
-- 禁止：只按出现顺序重排任意题注；跨页关联；丢弃无法识别的原题注。
-- 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_reassociates_only_strict_numbered_image_groups`。
-- 样本证据：SC2167 为 external historical evidence；无 committed 图片组 fixture。
+- 输入信号：同页连续 image group 的题注数量失衡；或连续 mixed visual run 同时包含 image/chart 与严格水平对齐的稀疏 table pair。稀疏 table 必须有结果根内有效图片资产、可解析的单行且不超过三列 HTML、至少一个明确编号 Figure/图题注，并且不属于 IMAGE-004 表图复合或未决 overlap。
+- 正式 owner：`app/services/document_ir/mineru_converter.py::_reassociate_numbered_image_captions`、`::_sparse_visual_table_indices`、`::_reassociate_image_group`；HTML 结构继续复用 `app/conversion/runtime/table_html_parser.py::parse_html_table`。
+- 预期输出：只有整组题注数量等于视觉块数、label 相同、编号唯一且连续时，才按编号重分配题注，并把已证明误标的稀疏 table 转为 chart/image 语义和资产；普通 image group 的 flat rich caption 仍受 TEXT-004 约束。任一条件不足时不提交试算结果。
+- 冲突/例外：未对齐、数量不足、label 不一致、编号重复/不连续、真实单行表或主体不唯一时保持原类型和题注分组；既有 Figure-on-table 无唯一主体路径继续写入 `caption_owner_unresolved` 并失败关闭。此规则不通过视觉最近邻猜关联；多 annotation 渲染仍由 COL-002/IMAGE-001 保持。
+- 禁止：只凭 `simple_table`、`image_source`、单行 HTML 或 Figure 题注任一单条件把 table 转图片；只按出现顺序重排题注；在纯 image/chart group 拆 flat rich caption；跨页关联；丢弃无法识别的原题注。
+- 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_reassociates_only_strict_numbered_image_groups`、`.test_convert_zip_normalizes_sparse_visual_tables_after_strict_caption_reassociation`、`.test_convert_zip_does_not_normalize_unaligned_sparse_visual_tables`、`.test_convert_zip_keeps_real_single_row_table_with_image_source`、`.test_convert_zip_keeps_flat_rich_caption_group_for_plain_charts`。
+- 样本证据：2026-08-27 external CM4226 的同页三图被 MinerU 输出为 `table/table/chart`，且第三块 flat rich caption 同时包含图 19/21。当前规则恢复为三个 image asset 和图 19/20/21 独立题注；正式本地 source→IR、IR→DOCX 门禁为空，WPS 确认图 19/20 并排、图 21 位于下方且无重叠。SC2167 继续作为 historical evidence。
 - 来源/取代：归档任务 `08-18-fix-layout-formula-image-caption/research/caption-reassociation.md`。
 
 ### IMAGE-003 跨类型与共享图题只绑定唯一图片主体组

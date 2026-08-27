@@ -133,9 +133,9 @@ class MinerUToDocumentIRService:
         if filtered_page_index is not None:
             raw_blocks = [block for block in raw_blocks if parse_page_index(block) != filtered_page_index]
             quality_flags.append(f"final_promotional_page_filtered:{filtered_page_index}")
-        raw_blocks = self._reassociate_numbered_image_captions(raw_blocks)
         raw_blocks = merge_table_placeholder_continuations(raw_blocks)
         raw_blocks = self._normalize_contained_table_images(raw_blocks, package_root)
+        raw_blocks = self._reassociate_numbered_image_captions(raw_blocks, package_root)
         raw_blocks = self._reassociate_visual_group_captions(raw_blocks)
         source_type_counts = Counter(self._source_type(block) or "text" for block in raw_blocks)
         pages = build_pages(
@@ -385,15 +385,19 @@ class MinerUToDocumentIRService:
     def _reassociate_numbered_image_captions(
         self,
         raw_blocks: list[dict[str, Any]],
+        package_root: Path,
     ) -> list[dict[str, Any]]:
-        """在严格可判定时修复同页连续图片组的 MinerU 图注错配。"""
+        """在严格可判定时修复同页连续视觉组的 MinerU 图注错配。"""
 
+        sparse_table_indices = self._sparse_visual_table_indices(raw_blocks, package_root)
         normalized: list[dict[str, Any]] = []
         index = 0
         while index < len(raw_blocks):
             first = raw_blocks[index]
             page_index = parse_page_index(first)
-            if page_index is None or not self._is_image_source_block(first):
+            if page_index is None or not (
+                self._is_image_source_block(first) or index in sparse_table_indices
+            ):
                 normalized.append(first)
                 index += 1
                 continue
@@ -402,12 +406,61 @@ class MinerUToDocumentIRService:
             while (
                 end < len(raw_blocks)
                 and parse_page_index(raw_blocks[end]) == page_index
-                and self._is_image_source_block(raw_blocks[end])
+                and (
+                    self._is_image_source_block(raw_blocks[end])
+                    or end in sparse_table_indices
+                )
             ):
                 end += 1
-            normalized.extend(self._reassociate_image_group(raw_blocks[index:end]))
+            normalized.extend(
+                self._reassociate_image_group(
+                    raw_blocks[index:end],
+                    sparse_table_positions={
+                        position - index
+                        for position in sparse_table_indices
+                        if index <= position < end
+                    },
+                )
+            )
             index = end
         return normalized
+
+    def _sparse_visual_table_indices(
+        self,
+        raw_blocks: list[dict[str, Any]],
+        package_root: Path,
+    ) -> set[int]:
+        """只把有图题且与相邻稀疏表严格对齐的 table 纳入视觉组试算。"""
+
+        sparse_indices = {
+            index
+            for index, block in enumerate(raw_blocks)
+            if self._is_sparse_visual_table(block, package_root)
+        }
+        candidates: set[int] = set()
+        for index in sparse_indices:
+            captions = self._captions(raw_blocks[index], "table")
+            if len(captions) != 1 or NUMBERED_FIGURE_CAPTION_RE.match(captions[0]) is None:
+                continue
+            for neighbor in (index - 1, index + 1):
+                if (
+                    neighbor in sparse_indices
+                    and parse_page_index(raw_blocks[neighbor]) == parse_page_index(raw_blocks[index])
+                    and self._strictly_horizontally_aligned(raw_blocks[index], raw_blocks[neighbor])
+                ):
+                    candidates.update((index, neighbor))
+        return candidates
+
+    def _is_sparse_visual_table(self, raw_block: dict[str, Any], package_root: Path) -> bool:
+        if (
+            self._source_type(raw_block) != "table"
+            or raw_block.get(_VISUAL_OVERLAP_GROUP_KEY)
+            or raw_block.get(_VISUAL_OVERLAP_UNRESOLVED_KEY)
+            or self._resolve_image_path(raw_block, package_root) is None
+        ):
+            return False
+        table = parse_html_table(self._table_html(raw_block))
+        return table is not None and len(table.rows) == 1 and 0 < table.max_columns <= 3
 
     def _reassociate_visual_group_captions(
         self,
@@ -630,20 +683,31 @@ class MinerUToDocumentIRService:
         pairs: list[list[int]] = []
         for indices in indices_by_page.values():
             for left_position, left_index in enumerate(indices):
-                left_bbox = parse_bbox(raw_blocks[left_index].get("bbox"))
-                assert left_bbox is not None
                 matches: list[int] = []
                 for right_index in indices[left_position + 1 :]:
-                    right_bbox = parse_bbox(raw_blocks[right_index].get("bbox"))
-                    assert right_bbox is not None
-                    overlap = min(left_bbox[3], right_bbox[3]) - max(left_bbox[1], right_bbox[1])
-                    min_height = min(left_bbox[3] - left_bbox[1], right_bbox[3] - right_bbox[1])
-                    if overlap >= min_height * 0.8 and min(left_bbox[2], right_bbox[2]) <= max(left_bbox[0], right_bbox[0]):
+                    if self._strictly_horizontally_aligned(raw_blocks[left_index], raw_blocks[right_index]):
                         matches.append(right_index)
                 if len(matches) == 1:
                     pairs.append([left_index, matches[0]])
         pair_counts = Counter(index for pair in pairs for index in pair)
         return [pair for pair in pairs if all(pair_counts[index] == 1 for index in pair)]
+
+    def _strictly_horizontally_aligned(
+        self,
+        left: dict[str, Any],
+        right: dict[str, Any],
+    ) -> bool:
+        left_bbox = parse_bbox(left.get("bbox"))
+        right_bbox = parse_bbox(right.get("bbox"))
+        if left_bbox is None or right_bbox is None:
+            return False
+        overlap = min(left_bbox[3], right_bbox[3]) - max(left_bbox[1], right_bbox[1])
+        min_height = min(left_bbox[3] - left_bbox[1], right_bbox[3] - right_bbox[1])
+        return (
+            min_height > 0
+            and overlap >= min_height * 0.8
+            and min(left_bbox[2], right_bbox[2]) <= max(left_bbox[0], right_bbox[0])
+        )
 
     def _bind_group_caption(
         self,
@@ -755,9 +819,19 @@ class MinerUToDocumentIRService:
             subject_ids = ":".join(f"block_{int(index) + 1:04d}" for index in subject_indices)
             quality_flags.append(f"{item.get('reason')}:{subject_ids if placement == 'after' else owner_block_id}")
 
-    def _reassociate_image_group(self, group: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        captions_by_block = [self._captions(block, self._source_type(block)) for block in group]
-        if not any(len(captions) != 1 for captions in captions_by_block):
+    def _reassociate_image_group(
+        self,
+        group: list[dict[str, Any]],
+        *,
+        sparse_table_positions: set[int],
+    ) -> list[dict[str, Any]]:
+        captions_by_block = [
+            self._reassociation_caption_candidates(block)
+            if sparse_table_positions
+            else self._captions(block, self._source_type(block))
+            for block in group
+        ]
+        if not sparse_table_positions and not any(len(captions) != 1 for captions in captions_by_block):
             return group
 
         parsed_captions: list[tuple[str, int, str]] = []
@@ -778,13 +852,59 @@ class MinerUToDocumentIRService:
             return group
 
         reassociated: list[dict[str, Any]] = []
-        for block, (_label, _number, caption) in zip(group, ordered, strict=True):
-            copied = dict(block)
+        for position, (block, (_label, _number, caption)) in enumerate(zip(group, ordered, strict=True)):
+            copied = deepcopy(block)
             source_type = self._source_type(copied)
-            copied.pop("caption", None)
+            self._clear_annotation_fields(copied, captions=True, footnotes=False)
+            if position in sparse_table_positions:
+                footnotes = self._footnotes(copied, "table")
+                self._clear_annotation_fields(copied, captions=False, footnotes=True)
+                copied["type"] = "chart"
+                copied.pop("block_type", None)
+                copied.pop("table_body", None)
+                copied.pop("table_html", None)
+                source_type = "chart"
+                if footnotes:
+                    copied["chart_footnote"] = footnotes
             copied[f"{source_type}_caption"] = [caption]
             reassociated.append(copied)
         return reassociated
+
+    def _reassociation_caption_candidates(self, raw_block: dict[str, Any]) -> list[str]:
+        """仅为严格编号组试算拆出 flat rich caption 的第二个明确图号。"""
+
+        source_type = self._source_type(raw_block)
+        captions = self._captions(raw_block, source_type)
+        splits: list[tuple[str, list[str]]] = []
+        for value in self._caption_values(raw_block, source_type):
+            split = self._split_second_numbered_rich_caption(value)
+            if split is not None:
+                splits.append((join_text_fragments(value), split))
+        if len(splits) != 1:
+            return captions
+        original, split = splits[0]
+        if original not in captions:
+            return captions
+        index = captions.index(original)
+        return [*captions[:index], *split, *captions[index + 1 :]]
+
+    def _split_second_numbered_rich_caption(self, value: Any) -> list[str] | None:
+        if not (
+            isinstance(value, list)
+            and value
+            and all(self._is_caption_inline_node(item) for item in value)
+        ):
+            return None
+        starts = [
+            index
+            for index, node in enumerate(value)
+            if node.get("type") == "text"
+            and NUMBERED_FIGURE_CAPTION_RE.match(clean_text(node.get("content", "")))
+        ]
+        if len(starts) != 2 or starts[0] != 0:
+            return None
+        split = [join_text_fragments(value[: starts[1]]), join_text_fragments(value[starts[1] :])]
+        return split if all(NUMBERED_FIGURE_CAPTION_RE.match(caption) for caption in split) else None
 
     def _is_image_source_block(self, raw_block: dict[str, Any]) -> bool:
         return self._source_type(raw_block) in {"chart", "image", "figure"}
@@ -885,18 +1005,24 @@ class MinerUToDocumentIRService:
         return items or None
 
     def _captions(self, raw_block: dict[str, Any], source_type: str) -> list[str]:
+        captions = [
+            caption
+            for value in self._caption_values(raw_block, source_type)
+            for caption in self._caption_texts(value)
+        ]
+        return self._unique_texts(captions)
+
+    def _caption_values(self, raw_block: dict[str, Any], source_type: str) -> list[Any]:
         keys = ["caption"]
         if source_type == "table":
             keys.insert(0, "table_caption")
         elif source_type in {"chart", "image", "figure"}:
             keys.insert(0, f"{source_type}_caption")
-        captions = [
-            caption
+        return [
+            value
             for key in keys
             for value in find_values_by_key(raw_block, key)
-            for caption in self._caption_texts(value)
         ]
-        return self._unique_texts(captions)
 
     def _caption_texts(self, value: Any) -> list[str]:
         """按 MinerU 数组层级保留题注逻辑分组。"""
