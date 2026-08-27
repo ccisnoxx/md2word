@@ -42,9 +42,9 @@ Questions to answer:
 ### 已发布模板 seed 不可变性
 
 - manifest 已登记并进入生产的模板版本，其版本号、资源路径和文件字节不可原地修改；新增可选 schema 字段应依靠模型默认值兼容旧 YAML，需要新的非默认内容时创建新版本。
-- 用户授权的 2026-08-24 开发阶段基线重置已退役旧 V1/V2/V3 合同；当前唯一 bundled seed 是 `default@1`，DOCX SHA-256 固定为 `b21448dbc10e7c7d5028490ddc079d784eb12a0360b35be2345fa0218aa12cfb`，YAML SHA-256 固定为 `03281842a45506dd717558a9ab1121100b5e264cd5425671a4ff5f9641838b1c`。
-- 本次一次性重置不是原地修改 published seed 的通用先例；新 V1 部署后再次改变 DOCX/YAML 内容必须创建 V2 并提升 manifest，不能重复重置编号或覆盖 V1。
-- hash 不匹配必须继续失败关闭；不得更新生产数据库 hash、放松读取校验或增加备用路径来掩盖 seed 被改写。
+- 当前唯一 bundled seed 是 `default@1`，DOCX SHA-256 固定为 `b21448dbc10e7c7d5028490ddc079d784eb12a0360b35be2345fa0218aa12cfb`，YAML SHA-256 固定为 `e83a1e9f722074ecb69bbc66d7f19b21db4da284daa38688ec3fd0e7f8fa49a3`。
+- 2026-08-27 用户明确授权一次性原位覆盖开发环境 V1，现有任务引用不阻断重置。生产必须停 API、Worker，删除本轮 V2 草稿及 V1、默认指针、版本序列，再由新 release bootstrap V1；不得直接改旧 payload/hash，也不得扩大删除范围。
+- 本次授权不是修改 published seed 的通用先例；完成后再次改变 DOCX/YAML 内容必须创建新版本。hash 不匹配仍须失败关闭，不得放松读取校验或增加备用路径。
 
 ---
 

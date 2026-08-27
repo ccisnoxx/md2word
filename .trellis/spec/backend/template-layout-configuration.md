@@ -34,7 +34,7 @@
 - `ResourceVersionRepositoryProtocol.create_resource_version(record)`：只插入，不覆盖。
 - `ResourceVersionRepositoryProtocol.allocate_next_version(type, id, minimum_next)`：MySQL 事务内分配不复用整数。
 - bundled seed 清单：`default@1` 的 DOCX 指向 `resources/templates/default/datasheet_template.docx`，layout config 指向 `resources/template_configs/datasheet_template.yaml`；仓库不再保留 V2/V3 配置文件。
-- 当前 V1 配置包含 `table_content.min_font_size: 7`，页脚固定为左 `v1.0`、中原生 `PAGE` 字段、右 `info@ichelps.com`；最终视觉位置仍必须通过 Word/WPS 发布验收。
+- 当前 V1 配置包含 `table_content.min_font_size: 7`、`table_style.border_color: 7E7E7E`，页脚固定为左 `v1.0`、中原生 `PAGE` 字段、右 `info@ichelps.com`；最终视觉位置仍必须通过 Word/WPS 发布验收。
 
 ### 3. Contracts
 
@@ -60,11 +60,12 @@
 
 #### 3.3 Bundled seed 不可变性
 
-- 已发布 seed 的版本号、资源路径和文件字节共同构成不可变合同；当前重置后的 `default@1` DOCX SHA-256 为 `b21448dbc10e7c7d5028490ddc079d784eb12a0360b35be2345fa0218aa12cfb`，YAML SHA-256 为 `03281842a45506dd717558a9ab1121100b5e264cd5425671a4ff5f9641838b1c`。
-- 2026-08-24 的用户授权允许在无任务引用的开发环境删除旧 V1-V4 状态并用当前基础资产重新初始化 V1；该授权只适用于本次重置。新 V1 部署后，后续默认配置必须新建 V2 文件并提升 manifest，不得原地覆盖数据库 payload、放松 hash 校验或增加双路径 fallback。
+- 已发布 seed 的版本号、资源路径和文件字节共同构成不可变合同；当前 `default@1` DOCX SHA-256 为 `b21448dbc10e7c7d5028490ddc079d784eb12a0360b35be2345fa0218aa12cfb`，YAML SHA-256 为 `e83a1e9f722074ecb69bbc66d7f19b21db4da284daa38688ec3fd0e7f8fa49a3`。
+- 2026-08-27 用户明确授权一次性原位覆盖开发环境的 `default@1`，现有任务对同名 V1 的引用不作为阻断条件，并接受这些任务随后解析为新 V1 字节。生产必须先停止 API、Worker，精确删除新增的 V2 草稿以及 `template/default` 的 V1、默认指针和版本序列，再由新 release bootstrap V1；不得直接更新旧 V1 payload/hash，也不得删除其他资源。
+- 上述授权只适用于本次开发阶段重置；完成后再次改变 DOCX/YAML 内容必须创建新版本，不得放松 hash 校验或增加双路径 fallback。
 - `bootstrap_manifest_versions()` 只登记 manifest 中缺失的 published 版本；数据库已有默认指针时保持不变，空库才把 manifest 版本设为初始默认。
 - `Settings.layout_config_path`、legacy runtime helper 和本地正式转换工具的“当前内置配置”只指向基础 YAML；显式 Resource Version 读取始终以其持久化 payload 为 owner，不探测 V2/V3 备用路径。
-- 本次生产重置必须在 API/Worker 停止且 `jobs=0` 时精确删除旧 `template/default@1-4`、默认指针和序列行，再由新 release bootstrap V1；不得删除审计事件、其他资源或共享 volume。
+- 本次生产重置不以 `jobs=0` 为前提；API、Worker 停止后精确删除 `template/default@1-2`、默认指针和序列行，再由新 release bootstrap V1。V2 必须是本轮页面样式操作创建的草稿；目标集合不符时停止，不得扩大删除范围。
 
 #### 3.4 表格首选字号与最小字号
 

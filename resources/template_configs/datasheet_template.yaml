@@ -173,7 +173,7 @@ table_content:
 table_style:
   style_name: Table Grid
   header_fill: EEF3F8
-  border_color: C7CDD4
+  border_color: 7E7E7E
 
 # 表格注释：表格下方的“注：”“说明：”等表注文字。
 table_note:

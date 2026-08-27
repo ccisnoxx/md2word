@@ -23,7 +23,7 @@ RESOURCE_DIR = Path(__file__).resolve().parents[1] / "resources" / "template_con
 BUNDLED_LAYOUT_PATH = RESOURCE_DIR / "datasheet_template.yaml"
 BUNDLED_TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "resources" / "templates" / "default" / "datasheet_template.docx"
 MANIFEST_PATH = RESOURCE_DIR / "templates_manifest.yaml"
-BUNDLED_LAYOUT_SHA256 = "03281842a45506dd717558a9ab1121100b5e264cd5425671a4ff5f9641838b1c"
+BUNDLED_LAYOUT_SHA256 = "e83a1e9f722074ecb69bbc66d7f19b21db4da284daa38688ec3fd0e7f8fa49a3"
 BUNDLED_TEMPLATE_SHA256 = "b21448dbc10e7c7d5028490ddc079d784eb12a0360b35be2345fa0218aa12cfb"
 
 
@@ -88,6 +88,7 @@ class TemplateLayoutConfigSchemaTests(TestCase):
         self.assertEqual(schema["groups"]["footer"]["right_text"]["type"], "text")
         self.assertEqual(schema["groups"]["table_content"]["min_font_size"]["label"], "最小字号")
         self.assertEqual(package.table_content.min_font_size, 7)
+        self.assertEqual(package.table_style.border_color, "7E7E7E")
 
     def test_bundled_v1_hashes_manifest_and_docx_are_consistent(self) -> None:
         manifest = yaml.safe_load(MANIFEST_PATH.read_text(encoding="utf-8"))
