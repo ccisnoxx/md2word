@@ -787,6 +787,16 @@ def _build_document_file_quality_evidence(file: DocumentFileRecord) -> dict[str,
     layout_quality_flags = _read_string_list(metadata.get("layout_quality_flags"))
     if layout_quality_flags:
         evidence["layout_quality_flags"] = layout_quality_flags
+    review_issues = metadata.get("review_issues")
+    if isinstance(review_issues, list):
+        evidence["review_issues"] = [
+            {key: issue[key] for key in ("code", "source_page", "block_id", "message")}
+            for issue in review_issues
+            if isinstance(issue, dict)
+            and all(isinstance(issue.get(key), str) and issue[key].strip() for key in ("code", "block_id", "message"))
+            and "source_page" in issue
+            and (issue["source_page"] is None or (type(issue["source_page"]) is int and issue["source_page"] >= 1))
+        ]
     docx_quality = metadata.get("docx_quality")
     if isinstance(docx_quality, dict):
         safe_docx_quality = {

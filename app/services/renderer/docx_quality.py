@@ -140,7 +140,13 @@ def _analyze_docx_package(package: zipfile.ZipFile) -> dict[str, Any]:
     ]
     semantic_body_paragraph_texts = [_paragraph_text(paragraph) for paragraph in semantic_body_paragraphs]
     joined_text = "\n".join(text for text in paragraph_texts if text)
-    latex_matches = _unique_latex_residue(joined_text)
+    word_text_tag = f"{{{DOCX_XML_NS['w']}}}t"
+    latex_matches = _unique_latex_residue(
+        "\n".join(
+            "".join(element.text or "" for element in paragraph.iter(word_text_tag))
+            for paragraph in paragraphs
+        )
+    )
     text_chars = len(joined_text)
     table_count = len(semantic_tables)
     table_shapes = [_table_shape(table) for table in semantic_tables]

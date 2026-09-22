@@ -203,7 +203,7 @@ class Settings(BaseSettings):
     @property
     def template_candidates(self) -> tuple[Path, ...]:
         return (
-            self.root_dir / "resources" / "templates" / "default" / "datasheet_template.docx",
+            self.root_dir / "resources" / "templates" / "default" / "datasheet_template_v2.docx",
         )
 
     @property

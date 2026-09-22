@@ -101,11 +101,12 @@ class TemplateReadService:
         return [self.get_template_detail(item.id, url_for=url_for).to_list_item() for item in self._visible_templates()]
 
     def bootstrap_manifest_versions(self) -> None:
-        """把 seed manifest 幂等登记为 published，并只在缺省时建立默认指针。"""
+        """登记 manifest 中缺失的版本，并只在缺省时建立默认指针。"""
 
         service = self.resource_version_service
         if service is None:
             return
+        bundled_templates_dir = (self.settings.root_dir / "resources" / "templates").resolve()
         for template in self._visible_templates():
             version = str(template.version)
             existing = service.repository.get_resource_version("template", template.id, version)
@@ -113,15 +114,24 @@ class TemplateReadService:
             layout_path = self._resolve_manifest_path(template.layout_config_path) if template.layout_config_path else None
             if not template_path.exists() or (layout_path is not None and not layout_path.exists()):
                 raise FileNotFoundError(f"模板 seed 资源不存在: {template.id}@{version}")
+            payload = self._build_template_version_payload(
+                template=template,
+                version=template.version,
+                template_path=template_path,
+                layout_config_path=template.layout_config_path,
+                render_policy=template.render_policy,
+            )
+            snapshot_hash = self._snapshot_hash(payload)
             record = existing
+            resolved_template_path = template_path.resolve()
+            managed_version_dir = (self.settings.templates_storage_dir / template.id / f"v{version}").resolve()
+            is_bundled_seed = (
+                template.is_default_seed
+                and resolved_template_path.is_relative_to(bundled_templates_dir)
+                # 即使上传存储位于 resources/templates 内，其草稿也不是 bundled seed。
+                and not resolved_template_path.is_relative_to(managed_version_dir)
+            )
             if record is None:
-                payload = self._build_template_version_payload(
-                    template=template,
-                    version=template.version,
-                    template_path=template_path,
-                    layout_config_path=template.layout_config_path,
-                    render_policy=template.render_policy,
-                )
                 now = utc_now()
                 record = service.repository.create_resource_version(
                     ResourceVersionRecord(
@@ -129,13 +139,25 @@ class TemplateReadService:
                         resource_id=template.id,
                         version=version,
                         status=ResourceVersionStatus.PUBLISHED,
-                        snapshot_hash=self._snapshot_hash(payload),
+                        snapshot_hash=snapshot_hash,
                         payload_ref=f"template:{template.id}@{version}",
                         payload=payload,
                         created_at=now,
                         updated_at=now,
                     )
                 )
+            elif is_bundled_seed:
+                # manifest 元数据可独立编辑；已发布版本的 payload 才是历史渲染参数的 owner。
+                # 只核对 seed 的 DOCX 身份，避免重启时覆盖同号异内容版本。
+                registered_payload = record.payload or {}
+                if (
+                    record.status == ResourceVersionStatus.DRAFT
+                    or registered_payload.get("template_id") != template.id
+                    or str(registered_payload.get("version")) != version
+                    or any(registered_payload.get(key) != payload[key] for key in ("docx_path", "docx_sha256"))
+                    or record.snapshot_hash != self._snapshot_hash(registered_payload)
+                ):
+                    raise ValueError(f"模板 seed 版本与已登记资源冲突: {template.id}@{version}")
             if (
                 record.status == ResourceVersionStatus.PUBLISHED
                 and service.repository.get_default_resource_version("template", template.id) is None
@@ -528,14 +550,36 @@ class TemplateReadService:
                     )
                 )
 
-        current_path = self.get_template_path(template.id)
+        current_record = records_by_version.get(str(template.version))
+        current_path = self._template_version_path(
+            template,
+            template.version,
+            current_record.payload if current_record is not None else None,
+        )
         if current_path is not None and all(item.version != template.version for item in versions):
-            record = records_by_version.get(str(template.version))
             versions.append(
                 self._build_template_version_response(
                     template=template,
                     version=template.version,
                     template_path=current_path,
+                    record=current_record,
+                    default_version=default_version,
+                )
+            )
+        # 新 seed 进入 manifest 后，旧发布版本仍由持久化 payload 指向原文件，不能从版本列表消失。
+        listed_versions = {item.version for item in versions}
+        for raw_version, record in records_by_version.items():
+            try:
+                version = int(raw_version)
+            except ValueError:
+                continue
+            if version in listed_versions:
+                continue
+            versions.append(
+                self._build_template_version_response(
+                    template=template,
+                    version=version,
+                    template_path=self._template_version_path(template, version, record.payload),
                     record=record,
                     default_version=default_version,
                 )

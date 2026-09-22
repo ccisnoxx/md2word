@@ -117,7 +117,7 @@ def _build_legacy_plan(document_ir: DocumentIR) -> LayoutPlan:
 
 
 def _build_soft_page_groups(source_pages: list[LayoutPage]) -> list[LayoutPage]:
-    """把有明确续接证据的相邻源页合并，其他边界锚定到最终阅读顺序的首块。"""
+    """保留源页出处；同方向的物理页边界交给 Word 自然续排。"""
 
     groups: list[LayoutPage] = []
     for source_page in source_pages:
@@ -132,12 +132,17 @@ def _build_soft_page_groups(source_pages: list[LayoutPage]) -> list[LayoutPage]:
             groups[-1] = _merge_page_group(previous, source_page, continuation_reason)
             continue
 
-        break_reason = "source_page_boundary" if same_orientation else "orientation_change"
-        break_anchor = _first_rendered_block_id(source_page)
+        first_block = next((block for region in source_page.regions for block in region.blocks), None)
+        starts_toc = bool(
+            same_orientation
+            and first_block is not None
+            and first_block.metadata.get("annotation_role") == "toc_title"
+        )
+        break_reason = "toc_start" if starts_toc else "source_page_boundary" if same_orientation else "orientation_change"
         groups.append(
             replace(
                 source_page,
-                break_before_block_id=break_anchor if same_orientation else None,
+                break_before_block_id=first_block.id if starts_toc and first_block is not None else None,
                 break_reason=break_reason,
             )
         )
@@ -222,10 +227,6 @@ def _touches_source_page_edge(
         previous_bbox[3] >= previous_page.height * (1 - PAGE_EDGE_CONTINUATION_RATIO)
         and current_bbox[1] <= current_page.height * PAGE_EDGE_CONTINUATION_RATIO
     )
-
-
-def _first_rendered_block_id(page: LayoutPage) -> str | None:
-    return next((block.id for region in page.regions for block in region.blocks), None)
 
 
 def _is_landscape(page: LayoutPage) -> bool:

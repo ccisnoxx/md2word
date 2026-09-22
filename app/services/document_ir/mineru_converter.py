@@ -61,6 +61,7 @@ FIGURE_CAPTION_RE = re.compile(r"^\s*(?:Figure|Fig\.?|\u56fe)\s*\w", re.IGNORECA
 _GROUP_CAPTIONS_KEY = "_md2word_group_captions"
 _CONTENT_GROUP_KEY = "_md2word_content_group_id"
 _CAPTION_OWNER_UNRESOLVED_KEY = "_md2word_caption_owner_unresolved"
+_CAPTION_REASSOCIATED_KEY = "_md2word_caption_reassociated_from"
 _VISUAL_CROP_RECTS_KEY = "_md2word_visual_crop_rects"
 _VISUAL_OVERLAP_GROUP_KEY = "_md2word_visual_overlap_group_id"
 _VISUAL_OVERLAP_NORMALIZATION_KEY = "_md2word_visual_overlap_normalization"
@@ -136,6 +137,7 @@ class MinerUToDocumentIRService:
         raw_blocks = merge_table_placeholder_continuations(raw_blocks)
         raw_blocks = self._normalize_contained_table_images(raw_blocks, package_root)
         raw_blocks = self._reassociate_numbered_image_captions(raw_blocks, package_root)
+        raw_blocks = self._recover_displaced_figure_captions(raw_blocks, package_root)
         raw_blocks = self._reassociate_visual_group_captions(raw_blocks)
         source_type_counts = Counter(self._source_type(block) or "text" for block in raw_blocks)
         pages = build_pages(
@@ -208,6 +210,8 @@ class MinerUToDocumentIRService:
                 metadata["content_group_id"] = raw_block[_CONTENT_GROUP_KEY]
             if raw_block.get(_CAPTION_OWNER_UNRESOLVED_KEY):
                 metadata["caption_owner_unresolved"] = True
+            if raw_block.get(_CAPTION_REASSOCIATED_KEY):
+                metadata["caption_reassociated_from"] = raw_block[_CAPTION_REASSOCIATED_KEY]
             for raw_key, metadata_key in (
                 (_VISUAL_CROP_RECTS_KEY, "visual_crop_rects"),
                 (_VISUAL_OVERLAP_GROUP_KEY, "visual_overlap_group_id"),
@@ -461,6 +465,98 @@ class MinerUToDocumentIRService:
             return False
         table = parse_html_table(self._table_html(raw_block))
         return table is not None and len(table.rows) == 1 and 0 < table.max_columns <= 3
+
+    def _recover_displaced_figure_captions(
+        self, raw_blocks: list[dict[str, Any]], package_root: Path,
+    ) -> list[dict[str, Any]]:
+        """同页唯一缺题图由前后编号共同证明时，取回错挂于真表的图题。"""
+
+        normalized = deepcopy(raw_blocks)
+        pages: dict[int, list[int]] = {}
+        for index, block in enumerate(normalized):
+            page = parse_page_index(block)
+            if page is not None:
+                pages.setdefault(page, []).append(index)
+        for indices in pages.values():
+            images = [index for index in indices if self._is_image_source_block(normalized[index])]
+            missing = [index for index in images if not self._captions(normalized[index], self._source_type(normalized[index]))]
+            displaced: list[tuple[int, list[str], str]] = []
+            for index in indices:
+                block = normalized[index]
+                if self._source_type(block) != "table" or parse_html_table(self._table_html(block)) is None:
+                    continue
+                captions = self._displaced_table_caption_candidates(block)
+                figures = [caption for caption in captions if FIGURE_CAPTION_RE.match(caption)]
+                if len(figures) == 1:
+                    displaced.append((index, captions, figures[0]))
+                elif figures:
+                    # 一页多个待归属图题时不提交局部猜测。
+                    displaced.extend((index, captions, caption) for caption in figures)
+            if len(missing) != 1 or len(displaced) != 1:
+                continue
+            subject = missing[0]
+            owner, captions, figure = displaced[0]
+            position = images.index(subject)
+            if position == 0 or position == len(images) - 1:
+                continue
+            neighbors = [images[position - 1], images[position + 1]]
+            neighbor_captions = [self._captions(normalized[index], self._source_type(normalized[index])) for index in neighbors]
+            if any(len(values) != 1 for values in neighbor_captions):
+                continue
+            matches = [NUMBERED_FIGURE_CAPTION_RE.match(value) for value in (neighbor_captions[0][0], figure, neighbor_captions[1][0])]
+            if any(match is None for match in matches):
+                continue
+            labels = [match.group("label").lower() for match in matches if match is not None]
+            numbers = [int(match.group("number")) for match in matches if match is not None]
+            if len(set(labels)) != 1 or numbers != list(range(numbers[0], numbers[0] + 3)):
+                continue
+            # 重复编号不能证明唯一主体，即使相邻三项恰好连续。
+            page_numbers = [
+                (match.group("label").lower(), int(match.group("number")))
+                for index in indices
+                for caption in (
+                    self._displaced_table_caption_candidates(normalized[index])
+                    if self._source_type(normalized[index]) == "table"
+                    else self._captions(normalized[index], self._source_type(normalized[index]))
+                )
+                if (match := NUMBERED_FIGURE_CAPTION_RE.match(caption)) is not None
+            ]
+            if any(page_numbers.count((labels[0], number)) != 1 for number in numbers):
+                continue
+            related = [normalized[index] for index in (owner, subject, *neighbors)]
+            if any(
+                parse_bbox(block.get("bbox")) is None
+                or block.get(_CONTENT_GROUP_KEY)
+                or block.get(_VISUAL_OVERLAP_GROUP_KEY)
+                or block.get(_VISUAL_OVERLAP_UNRESOLVED_KEY)
+                for block in related
+            ) or self._resolve_image_path(normalized[subject], package_root) is None:
+                continue
+            self._clear_annotation_fields(normalized[owner], captions=True, footnotes=False)
+            normalized[owner]["table_caption"] = [caption for caption in captions if caption != figure]
+            self._bind_group_caption(
+                normalized, subject_indices=[subject], owner_index=subject,
+                text=figure, placement="after", reason="numbered_figure_caption_recovered",
+            )
+            normalized[subject][_CAPTION_REASSOCIATED_KEY] = f"block_{owner + 1:04d}"
+        return normalized
+
+    def _displaced_table_caption_candidates(self, block: dict[str, Any]) -> list[str]:
+        """只试算显式 Figure→Table 节点边界；内联公式仍随所在题注保留。"""
+
+        captions: list[str] = []
+        for value in self._caption_values(block, "table"):
+            if isinstance(value, list) and value and all(self._is_caption_inline_node(node) for node in value):
+                starts = [
+                    index for index, node in enumerate(value)
+                    if node.get("type") == "text"
+                    and re.match(r"^\s*(?:Table|表)\s*\d+", node.get("content", ""), re.IGNORECASE)
+                ]
+                if len(starts) == 1 and starts[0] > 0 and FIGURE_CAPTION_RE.match(join_text_fragments(value[:starts[0]])):
+                    captions.extend((join_text_fragments(value[:starts[0]]), join_text_fragments(value[starts[0]:])))
+                    continue
+            captions.extend(self._caption_texts(value))
+        return self._unique_texts(captions)
 
     def _reassociate_visual_group_captions(
         self,

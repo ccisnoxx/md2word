@@ -1,0 +1,29 @@
+WORKPLAN_EXECUTION_SUMMARY
+planner_version: 1.4.0
+plan_command: ["/Users/sc/.codex/skills/multi-agent-orchestration/bin/work-plan", "--agents-dir", "/Users/sc/.codex/agents", "plan", ".trellis/tasks/09-20-caption-recovery-review-warnings/review-plan.draft.json", "--output", ".trellis/tasks/09-20-caption-recovery-review-warnings/review-plan.json"]
+validate_command: ["/Users/sc/.codex/skills/multi-agent-orchestration/bin/work-plan", "--agents-dir", "/Users/sc/.codex/agents", "validate", ".trellis/tasks/09-20-caption-recovery-review-warnings/review-plan.json"]
+plan_id: caption-recovery-review
+validate_status: passed
+effective_capacity: 4
+open_workers_at_plan_time: 0
+available_slots_at_plan_time: 4
+waves:
+  - wave: 1
+    task_ids: ["independent-review"]
+ready_task_ids: ["independent-review"]
+executed_task_ids: ["independent-review"]
+not_executed_ready_task_ids: []
+superseded_worker_ids: []
+workers:
+  - task_id: independent-review
+    agent_type: critical_reviewer
+    worker_id: caption-review-worker
+    runtime_ref: unknown
+    runtime_ref_source: unknown
+    final_status: completed
+    active_after_close: false
+    retired_from_followup: false
+    retirement_source: unknown
+active_workers_after_execution: 0
+active_worker_ids_after_execution: []
+writes_observed: false

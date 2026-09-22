@@ -283,6 +283,14 @@ export type DocumentJobQualityEvidenceSummary = {
   description: string;
   flags: string[];
   evidenceItems: DocumentJobQualityEvidenceItem[];
+  reviewIssues: DocumentJobReviewIssue[];
+};
+
+export type DocumentJobReviewIssue = {
+  code: string;
+  source_page: number | null;
+  block_id: string;
+  message: string;
 };
 
 export type DocumentJobDiagnosticRecommendation = {
@@ -368,6 +376,9 @@ export function buildDocumentJobQualityEvidence(
   const documentIrFile = selectDocumentJobFile(files, "document_ir", job.document_ir_file_id);
   const flags = collectDocumentJobQualityFlags(files);
   const evidenceItems = buildDocumentJobQualityEvidenceItems(job, resultFile, documentIrFile);
+  const reviewIssues = readDocumentJobReviewIssues(
+    resultFile?.id === job.result_file_id ? resultFile : null,
+  );
 
   if (job.status !== "succeeded") {
     return {
@@ -377,6 +388,7 @@ export function buildDocumentJobQualityEvidence(
       description: "任务未完成时，Word 质量证据以最终生成文件和 DocumentIR metadata 为准。",
       flags,
       evidenceItems,
+      reviewIssues: [],
     };
   }
   if (!resultFile) {
@@ -387,16 +399,18 @@ export function buildDocumentJobQualityEvidence(
       description: "任务已完成但未找到 generated_word 文件记录，请先检查文件列表和事件流。",
       flags,
       evidenceItems,
+      reviewIssues: [],
     };
   }
-  if (flags.length) {
+  if (flags.length || reviewIssues.length) {
     return {
       status: "manual_review_required_with_flags",
       tagType: "warning",
-      title: `需要人工复核，自动标记 ${flags.length} 项`,
+      title: reviewIssues.length ? `Word 已生成，${reviewIssues.length} 处内容需要复核` : `需要人工复核，自动标记 ${flags.length} 项`,
       description: "后端已记录结构化质量标记，管理员复核 DOCX 时应优先检查这些版式和结构风险。",
       flags,
       evidenceItems,
+      reviewIssues,
     };
   }
   return {
@@ -406,7 +420,18 @@ export function buildDocumentJobQualityEvidence(
     description: "未发现自动质量标记；P0 Word 交付仍需管理员打开 DOCX 按 Golden Sample 标准签字。",
     flags,
     evidenceItems,
+    reviewIssues,
   };
+}
+
+function readDocumentJobReviewIssues(file: DocumentJobQualityFile | null): DocumentJobReviewIssue[] {
+  const value = file ? readFileQualityEvidence(file).review_issues : null;
+  if (!Array.isArray(value)) return [];
+  return value.filter((issue): issue is DocumentJobReviewIssue => {
+    if (!issue || typeof issue !== "object") return false;
+    return [issue.code, issue.block_id, issue.message].every((field) => typeof field === "string" && field.trim())
+      && (issue.source_page === null || (Number.isInteger(issue.source_page) && issue.source_page > 0));
+  });
 }
 
 export function collectDocumentJobQualityFlags(files: DocumentJobQualityFile[]): string[] {
@@ -443,6 +468,7 @@ export function documentJobQualityFlagText(flag: string): string {
     docx_manual_list_markers: "手写列表符号",
     docx_plain_toc_entries: "纯文本目录项",
     docx_unstyled_heading_candidates: "疑似标题未样式化",
+    manual_review: "需要人工复核",
     docx_wide_table_without_landscape: "宽表未横版",
   };
   return labels[code] ? `${labels[code]} · ${flag}` : flag;

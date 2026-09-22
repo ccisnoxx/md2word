@@ -1,0 +1,22 @@
+{
+  "version": 4,
+  "plan_id": "caption-recovery-review",
+  "max_concurrent_workers": 4,
+  "runtime_workers": [],
+  "prior_tasks": [{"task_id": "primary-candidate", "attempt": 1, "status": "accepted", "worker_id": null}],
+  "tasks": [{
+    "task_id": "independent-review",
+    "task_name": "复核题注恢复与非阻断复核合同",
+    "agent_type": "critical_reviewer",
+    "attempt": 1,
+    "depends_on": [],
+    "read_paths": ["app/services/document_ir", "app/services/renderer", "app/domains/document_jobs", "frontend/src", "scripts/dev/formal_mineru_conversion.py", "tests", ".trellis/spec/backend/word-generation-rules.md"],
+    "write_paths": [],
+    "independent_review": true,
+    "review_of_task_ids": ["primary-candidate"],
+    "reuse_worker_id": null,
+    "accounting_scope": "not_available",
+    "deliverable": "中文只读审查，报告可复现的合同与内容完整性风险、精确行号和修复方向。",
+    "acceptance_criteria": ["不按样本特判", "歧义保全但确定丢失仍阻断", "警告源页正确且不泄漏元数据", "不修改任何文件"]
+  }]
+}

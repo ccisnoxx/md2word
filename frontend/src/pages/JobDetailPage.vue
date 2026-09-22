@@ -371,6 +371,16 @@
               >
                 <p>{{ qualityEvidence.description }}</p>
               </el-alert>
+              <div v-if="qualityEvidence.reviewIssues.length" class="quality-review-list" aria-label="转换复核位置">
+                <p>以下页码为源 PDF 页码；Word 重新排版后的页码可能不同。内容已保留，可下载后人工调整。</p>
+                <ul>
+                  <li v-for="issue in qualityEvidence.reviewIssues" :key="`${issue.code}:${issue.block_id}`">
+                    <strong>{{ issue.source_page === null ? "源页未知" : `源 PDF 第 ${issue.source_page} 页` }}</strong>
+                    <span class="mono"> · {{ issue.block_id }}</span>
+                    <p>{{ issue.message }}</p>
+                  </li>
+                </ul>
+              </div>
               <div v-if="qualityEvidence.evidenceItems.length" class="quality-evidence-grid">
                 <div v-for="item in qualityEvidence.evidenceItems" :key="item.label" class="quality-evidence-item">
                   <span>{{ item.label }}</span>
@@ -1119,7 +1129,7 @@ const dispositionAlertType = computed<"success" | "warning" | "error" | "info">(
     return "error";
   }
   if (job.value?.status === "succeeded") {
-    return "success";
+    return qualityEvidence.value?.reviewIssues.length ? "warning" : "success";
   }
   if (job.value?.status === "canceled" || isJobStale.value) {
     return "warning";
@@ -1144,7 +1154,9 @@ const dispositionTitle = computed(() => {
     return "任务长时间未更新";
   }
   if (job.value.status === "succeeded") {
-    return "任务已完成，可获取下载链接";
+    return qualityEvidence.value?.reviewIssues.length
+      ? "任务已完成，部分内容需人工复核"
+      : "任务已完成，可获取下载链接";
   }
   if (job.value.status === "canceled") {
     return "任务已取消，文件和事件记录仍保留";
@@ -1162,7 +1174,9 @@ const dispositionDescription = computed(() => {
     return "该任务仍处于活跃状态，但更新时间已超过 10 分钟。请先刷新事件流和回调摘要，必要时联系技术运营。";
   }
   if (job.value.status === "succeeded") {
-    return "任务结果已登记。下载按钮会生成临时链接；链接失效后可以再次获取。";
+    return qualityEvidence.value?.reviewIssues.length
+      ? "Word 已生成且可下载。请在「诊断」页签的 Word 质量证据中查看源 PDF 页码与复核建议，下载后可人工调整。"
+      : "任务结果已登记。下载按钮会生成临时链接；链接失效后可以再次获取。";
   }
   if (job.value.status === "canceled") {
     return "取消不会删除源文件、结果文件或事件记录；如需复跑，请按后端返回的重新发起可用性处理。";
@@ -1344,6 +1358,9 @@ const qualityDispositionText = computed(() => {
     return "暂无";
   }
   if (qualityEvidence.value.status === "manual_review_required_with_flags") {
+    if (qualityEvidence.value.reviewIssues.length) {
+      return `${qualityEvidence.value.reviewIssues.length} 处需复核`;
+    }
     return `自动标记 ${qualityEvidence.value.flags.length} 项`;
   }
   if (qualityEvidence.value.status === "manual_review_required") {
@@ -2428,6 +2445,15 @@ onBeforeUnmount(() => {
 
 .quality-evidence-alert {
   margin-bottom: 14px;
+}
+
+.quality-review-list {
+  margin-bottom: 16px;
+  overflow-wrap: anywhere;
+}
+
+.quality-review-list li + li {
+  margin-top: 12px;
 }
 
 .quality-evidence-alert p {

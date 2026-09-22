@@ -296,6 +296,20 @@ describe("document job quality evidence", () => {
     expect(documentJobQualityFlagText("docx_wide_table_without_landscape:1")).toBe("宽表未横版 · docx_wide_table_without_landscape:1");
   });
 
+  it("shows source-page review issues only for the current result, without blocking download", () => {
+    const job = buildJob(defaultAvailableActions, { result_file_id: "current" });
+    const issue = { code: "caption_subject_unresolved", source_page: 21, block_id: "block_12", message: "请复核题注" };
+    const current = buildFile({ id: "current", file_type: "generated_word", metadata: { review_issues: [issue] } });
+    const stale = buildFile({ id: "old", file_type: "generated_word", metadata: { review_issues: [{ ...issue, source_page: 1 }] } });
+    const summary = buildDocumentJobQualityEvidence(job, [stale, current]);
+    expect(summary.reviewIssues).toEqual([issue]);
+    expect(summary.status).toBe("manual_review_required_with_flags");
+    expect(summary.title).toContain("Word 已生成");
+    expect(buildDocumentJobQualityEvidence(job, [stale]).reviewIssues).toEqual([]);
+    current.metadata = { review_issues: [null, { ...issue, source_page: 0 }, { ...issue, source_page: true }, { ...issue, source_page: null }] };
+    expect(buildDocumentJobQualityEvidence(job, [current]).reviewIssues).toEqual([{ ...issue, source_page: null }]);
+  });
+
   it("keeps successful output in manual review until an admin signs off outside automatic evidence", () => {
     const job = buildJob(defaultAvailableActions, { result_file_id: "file_word" });
     const summary = buildDocumentJobQualityEvidence(job, [

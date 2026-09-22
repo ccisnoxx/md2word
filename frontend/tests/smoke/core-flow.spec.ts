@@ -1930,6 +1930,44 @@ test("operator can log in and inspect the document job workbench", async ({ page
   await expect(page.getByText("下载链接已生成")).toBeVisible();
 });
 
+test("operator can inspect source-page review warnings and still download Word", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await mockApi(page);
+  await page.route("**/api/v1/document-jobs/docjob_smoke_001/files", async (route) => {
+    await route.fulfill({ json: {
+      job_id: documentJob.id,
+      files: [{
+        id: documentJob.result_file_id, file_type: "generated_word", original_filename: "review.docx",
+        status: "uploaded", size_bytes: 1024, created_at: documentJob.created_at,
+        quality_evidence: { review_issues: [{
+          code: "caption_subject_unresolved", source_page: 21, block_id: "block_0236",
+          message: "题注归属未确定，已按源解析结果保留，请核对图表与题注位置。",
+        }] },
+      }],
+    } });
+  });
+  await page.goto("/login");
+  await loginAsOperator(page);
+  await page.goto("/jobs/docjob_smoke_001");
+  await expect(page.getByRole("heading", { name: "任务详情" })).toBeVisible();
+  await expect(page.getByText("任务已完成，部分内容需人工复核")).toBeVisible();
+  await page.getByRole("tab", { name: "诊断", exact: true }).click();
+  const review = page.locator('[aria-label="转换复核位置"]');
+  await expect(review).toContainText("源 PDF 第 21 页");
+  await expect(review).toContainText("Word 重新排版后的页码可能不同");
+  await expect(page.getByText("Word 已生成，1 处内容需要复核")).toBeVisible();
+  for (const width of [1440, 375]) {
+    await page.setViewportSize({ width, height: 960 });
+    await review.scrollIntoViewIfNeeded();
+    await expectNoPageHorizontalOverflow(page);
+    await review.screenshot({ path: `/tmp/md2word-review-warning-${width}.png` });
+  }
+  await page.getByRole("button", { name: "下载", exact: true }).click();
+  await expect(page.getByText("下载链接已生成")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test("operator sees list action conflicts after the refresh completes", async ({ page }) => {
   await mockApi(page, { downloadConflict: true });
 

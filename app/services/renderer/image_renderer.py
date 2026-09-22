@@ -411,6 +411,9 @@ class WordImageRendererMixin:
                 page_break_before=page_break_before and index == 0,
                 column_break_before=column_break_before and index == 0,
             )
+            # 整行已经禁止拆分，单元格段落再逐段 keepNext 会让 WPS 连续图片行成组后整体后移。
+            for paragraph in cell.paragraphs:
+                paragraph.paragraph_format.keep_with_next = False
 
     def _mark_paired_visual_table(self, table: Any) -> None:
         description = OxmlElement("w:tblDescription")

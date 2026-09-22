@@ -33,7 +33,7 @@
   - 页脚：`font_name`、`western_font_name`、`complex_script_font_name`。
 - `ResourceVersionRepositoryProtocol.create_resource_version(record)`：只插入，不覆盖。
 - `ResourceVersionRepositoryProtocol.allocate_next_version(type, id, minimum_next)`：MySQL 事务内分配不复用整数。
-- bundled seed 清单：`default@1` 的 DOCX 指向 `resources/templates/default/datasheet_template.docx`，layout config 指向 `resources/template_configs/datasheet_template.yaml`；仓库不再保留 V2/V3 配置文件。
+- bundled seed 清单：历史 `default@1` 的 DOCX 保持 `resources/templates/default/datasheet_template.docx` 原字节；当前 manifest seed 为 `default@2`，DOCX 指向 `resources/templates/default/datasheet_template_v2.docx`，两版共用 `resources/template_configs/datasheet_template.yaml`；仓库不保留 V2/V3 配置 YAML。
 - 当前 V1 配置包含 `table_content.min_font_size: 7`、`table_style.border_color: 7E7E7E`，页脚固定为左 `v1.0`、中原生 `PAGE` 字段、右 `info@ichelps.com`；最终视觉位置仍必须通过 Word/WPS 发布验收。
 
 ### 3. Contracts
@@ -44,6 +44,7 @@
 - `schema_version`、`template_name`、`output_filename`、`sample_content`、隐藏 renderer 字段和页面宽高不允许修改。
 - 保存只创建 draft；只有真实验证任务成功后才能 publish，只有 published 才能 set-default。
 - MySQL 模式下 `resource_default_versions` 是版本默认指针唯一来源；manifest 只登记 seed，`template_state.json` 只登记默认 template id。
+- manifest 升到新 seed 后，版本列表仍须从既有持久化记录的 `docx_path` 列出旧 published 版本；不能只列当前 manifest 版本或运行目录，以免旧默认版本在任务配置选项中消失。
 - Job 创建时固化 Template Version；普通用户只能选 published，admin 可显式创建 draft 验证任务，Worker 只消费已固化版本。
 - 版本 YAML 缺失、损坏、schema 不支持或 hash 不匹配时失败关闭，不回退其他 YAML 或 renderer 默认值。
 
@@ -61,9 +62,10 @@
 #### 3.3 Bundled seed 不可变性
 
 - 已发布 seed 的版本号、资源路径和文件字节共同构成不可变合同；当前 `default@1` DOCX SHA-256 为 `b21448dbc10e7c7d5028490ddc079d784eb12a0360b35be2345fa0218aa12cfb`，YAML SHA-256 为 `e83a1e9f722074ecb69bbc66d7f19b21db4da284daa38688ec3fd0e7f8fa49a3`。
+- `default@2` 的 DOCX SHA-256 为 `b43f0515d707d2b86c3b15813fb655980b4153fcbfd0140bc2199f535760138d`，仅将默认 `w:cols/@w:space` 改为 720 twips；V1 文件和既有版本记录不改。当前本地缺省资源及新空库 manifest seed 指向 V2；已有生产库的默认指针仍由管理员在验证、发布后显式切换，不由 bootstrap 偷换。
 - 2026-08-27 用户明确授权一次性原位覆盖开发环境的 `default@1`，现有任务对同名 V1 的引用不作为阻断条件，并接受这些任务随后解析为新 V1 字节。生产必须先停止 API、Worker，精确删除新增的 V2 草稿以及 `template/default` 的 V1、默认指针和版本序列，再由新 release bootstrap V1；不得直接更新旧 V1 payload/hash，也不得删除其他资源。
 - 上述授权只适用于本次开发阶段重置；完成后再次改变 DOCX/YAML 内容必须创建新版本，不得放松 hash 校验或增加双路径 fallback。
-- `bootstrap_manifest_versions()` 只登记 manifest 中缺失的 published 版本；数据库已有默认指针时保持不变，空库才把 manifest 版本设为初始默认。
+- `bootstrap_manifest_versions()` 只登记 manifest 中缺失的 published 版本；数据库已有默认指针时保持不变，空库才把 manifest 版本设为初始默认。只有 `is_default_seed`、当前版本文件位于仓库 `resources/templates/`、且不位于该版本的可配置上传存储目录的 bundled 版本执行同号身份校验：持久化 snapshot 与 payload 自洽、DOCX 路径和字节 hash 与 bundled 资源一致；同号异文件或 draft 冲突时启动失败关闭。替换内置模板文件后 manifest 当前版本移入版本存储目录，正常生成的 draft 不误判为 bundled seed。允许已发布 seed 在切换默认版本后成为 disabled/superseded，且不重新设默认。manifest 中可变的名称、说明、版式元数据不重写历史 payload；非 seed 自定义模板的既有 draft 不由 bootstrap 擅自发布。
 - `Settings.layout_config_path`、legacy runtime helper 和本地正式转换工具的“当前内置配置”只指向基础 YAML；显式 Resource Version 读取始终以其持久化 payload 为 owner，不探测 V2/V3 备用路径。
 - 本次生产重置不以 `jobs=0` 为前提；API、Worker 停止后精确删除 `template/default@1-2`、默认指针和序列行，再由新 release bootstrap V1。V2 必须是本轮页面样式操作创建的草稿；目标集合不符时停止，不得扩大删除范围。
 
@@ -92,15 +94,19 @@
 | 其他样式组提交 `min_font_size` | `422 unknown_field` |
 | 目标系统未安装配置字体 | DOCX 仍写入配置值，不伪造安装状态 |
 | `default@1` payload/hash 与仓库 bundled 文件一致 | 严格读取当前初始版本，不改默认指针 |
-| 空 MySQL 资源库启动 V1 manifest | 创建并默认到 `default@1`，不创建版本序列 |
-| 新 V1 后首次创建 draft | 原子分配 `default@2` |
+| 空 MySQL 资源库启动当前 V2 manifest | 创建并默认到 `default@2`，不创建版本序列 |
+| 新 V2 后首次创建 draft | 原子分配 `default@3` |
+| 当前 V2 seed 与已登记 `default@2` DOCX 身份不一致，或该记录仍是 draft | 启动失败关闭；保留原记录和默认指针 |
+| 同内容 V2 已禁用且默认指针已切到 V3 | 重启保持禁用状态和 V3 指针，不重新发布 V2 |
+| 已有自定义模板的 draft | 重启保留 draft，不自动发布或设默认 |
+| 替换内置模板文件生成的新 draft | 重启保留 draft 和原默认指针，不当作 bundled seed 冲突 |
 | payload 的资源 hash 不匹配 | 明确失败，不探测 V2/V3 或其他路径 |
 | set-default 指向非 published 版本或理由为空 | 明确拒绝，不移动默认指针 |
 
 ### 5. Good / Base / Bad Cases
 
 - Good：从当前 `default@1` 只提交 `normal.western_font_name`，生成 `default@2` draft，seed YAML 与默认指针不变；真实 DOCX 的 `eastAsia/ascii/hAnsi/cs` 分别匹配三类字体。
-- Good：空资源库由 manifest 初始化并默认到新的 bundled V1，首次草稿从 V2 开始。
+- Good：空资源库由当前 manifest 初始化并默认到 bundled V2；已有生产库保留原默认指针，V2 启用须经过发布验收与显式切换。
 - Base：旧 YAML 只有 `font_name: 宋体`，无需迁移即可读取和生成，四个字体槽位继续使用宋体。
 - Base：历史 published 版本通过 set-default 回滚，只移动 DB 指针，不改历史内容。
 - Bad：提交完整 YAML、只读字段、未知字段或不存在的 Word table style。
@@ -116,7 +122,7 @@
 - `tests.test_render_config_characterization`：legacy YAML loader 与语言 override 不改写显式新字体。
 - `tests.test_document_ir_word_renderer_layout`：正文、配置页眉/页脚、无覆盖内容时的模板 decoration 继承，以及原生 PAGE field 的 OOXML 字体槽位。
 - 持久化测试：create-only 冲突、整数序列单调、DB 失败清理 staging/目标目录。
-- bundled seed 测试：锁定当前 V1 DOCX/YAML 的固定 SHA-256、ZIP/OOXML 完整性、显式三类字体、页脚内容和 `min_font_size: 7`；用 fake-MySQL adapter 覆盖空库默认 V1、重复 bootstrap 幂等和首次草稿分配 V2。
+- bundled seed 测试：锁定历史 V1 与当前 V2 DOCX 的固定 SHA-256、ZIP/OOXML 完整性及共用 YAML 的哈希，并验证 V2 默认栏距 720；用 fake-MySQL adapter 覆盖空库默认 seed、重复 bootstrap 幂等、既有默认指针不自动切换、同号 V2 冲突失败关闭。
 - set-default 测试：只有 published 版本可切换，理由写入审计；发布回滚演练先恢复默认指针，再切换旧代码。
 - 配置 API/schema 变化后运行前端 unit/build；smoke mock 至少验证三种字体标签可见。
 

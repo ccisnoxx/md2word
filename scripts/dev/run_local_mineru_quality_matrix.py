@@ -32,7 +32,7 @@ from scripts.dev import formal_mineru_conversion
 
 
 DEFAULT_RUNS_DIR = ROOT / "tests" / "tmp" / "local_mineru_quality"
-DEFAULT_TEMPLATE_PATH = ROOT / "resources" / "templates" / "default" / "datasheet_template.docx"
+DEFAULT_TEMPLATE_PATH = ROOT / "resources" / "templates" / "default" / "datasheet_template_v2.docx"
 DEFAULT_LAYOUT_CONFIG_PATH = ROOT / "resources" / "template_configs" / "datasheet_template.yaml"
 DEFAULT_SUBSCRIPT_CONFIG_PATH = ROOT / "resources" / "term_rules" / "subscripts_dictionary.yaml"
 RENDER_DOCX_SCRIPT = (

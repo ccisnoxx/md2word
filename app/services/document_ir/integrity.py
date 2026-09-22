@@ -81,10 +81,6 @@ def build_source_integrity(document_ir: DocumentIR) -> dict[str, Any]:
         role = block.layout.role if block.layout is not None else "body"
         if requires_semantic_decisions and not str(block.metadata.get("semantic_decision_reason") or "").strip():
             flags.append(f"source_ir_integrity:semantic_decision_missing:{source_type}")
-        if block.metadata.get("caption_owner_unresolved"):
-            flags.append(f"source_ir_integrity:caption_subject_unresolved:{block.id}")
-        if block.metadata.get("visual_overlap_unresolved"):
-            flags.append(f"source_ir_integrity:visual_overlap_unresolved:{block.id}")
         normalization = block.metadata.get("visual_overlap_normalization")
         group_id = block.metadata.get("visual_overlap_group_id")
         has_group_id = isinstance(group_id, str) and bool(group_id.strip())
@@ -155,6 +151,32 @@ def build_source_integrity(document_ir: DocumentIR) -> dict[str, Any]:
         "ir_source_type_counts": dict(sorted(actual_types.items())),
         "blocking_quality_flags": unique_flags,
     }
+
+
+def build_source_review_issues(document_ir: DocumentIR) -> list[dict[str, Any]]:
+    """归属/布局歧义保留内容，报告源页而不猜测 Word 实际页码。"""
+
+    issues: list[dict[str, Any]] = []
+    rules = (
+        ("caption_owner_unresolved", "caption_subject_unresolved", "题注归属未确定，已按源解析结果保留，请核对图表与题注位置。"),
+        ("visual_overlap_unresolved", "visual_overlap_unresolved", "表格与图片的重叠关系未确定，已保留两者，请核对是否重复及排版。"),
+        ("caption_reassociated_from", "caption_reassociated", "已按同页连续图号恢复错挂题注，请核对图题与图片对应关系。"),
+    )
+    for block in document_ir.blocks:
+        if block.metadata.get("source_block_id"):
+            continue
+        page = block.page_index
+        if page is None and block.layout is not None:
+            page = block.layout.page_index
+        for metadata_key, code, message in rules:
+            if block.metadata.get(metadata_key):
+                issues.append({
+                    "code": code,
+                    "source_page": page + 1 if page is not None else None,
+                    "block_id": block.id,
+                    "message": message,
+                })
+    return issues
 
 
 def ensure_integrity(boundary: str, evidence: Mapping[str, Any]) -> None:

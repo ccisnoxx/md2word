@@ -18,6 +18,7 @@ from app.conversion.docx_rules.terminology import TerminologyReplacer
 from app.conversion.runtime.table_html_parser import parse_html_table
 from app.services.document_ir.integrity import (
     build_source_integrity,
+    build_source_review_issues,
     drawingml_crop_offsets,
     ensure_integrity,
     expected_image_shape_count,
@@ -103,6 +104,7 @@ def build_renderer_metadata(document_ir: DocumentIR, layout_plan: LayoutPlan | N
             if block.type == "image" and isinstance(block.metadata.get("visual_overlap_normalization"), dict)
         ],
         "source_integrity": build_source_integrity(document_ir),
+        "review_issues": build_source_review_issues(document_ir),
     }
 
 
@@ -119,6 +121,9 @@ def build_renderer_evidence(
     docx_quality, content_evidence = analyze_docx_evidence_bytes(word_content)
     evidence["docx_quality"] = docx_quality
     evidence["quality_flags"] = build_docx_quality_flags(docx_quality)
+    evidence["quality_flags"].extend(
+        f"manual_review:{issue['code']}:{issue['block_id']}" for issue in evidence["review_issues"]
+    )
     body_blocks = [block for block in document_ir.blocks if is_visible_body_block(block)]
     expected_inline_shapes = sum(
         expected_image_shape_count(block) for block in body_blocks if block.type == "image"

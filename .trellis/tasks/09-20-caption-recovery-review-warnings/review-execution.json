@@ -1,0 +1,20 @@
+{
+  "version": 4,
+  "plan_id": "caption-recovery-review",
+  "plan_command": ["/Users/sc/.codex/skills/multi-agent-orchestration/bin/work-plan", "--agents-dir", "/Users/sc/.codex/agents", "plan", ".trellis/tasks/09-20-caption-recovery-review-warnings/review-plan.draft.json", "--output", ".trellis/tasks/09-20-caption-recovery-review-warnings/review-plan.json"],
+  "validate_command": ["/Users/sc/.codex/skills/multi-agent-orchestration/bin/work-plan", "--agents-dir", "/Users/sc/.codex/agents", "validate", ".trellis/tasks/09-20-caption-recovery-review-warnings/review-plan.json"],
+  "validate_status": "passed",
+  "workers": [{
+    "task_id": "independent-review",
+    "agent_type": "critical_reviewer",
+    "worker_id": "caption-review-worker",
+    "runtime_ref": null,
+    "runtime_ref_source": "unknown",
+    "final_status": "completed",
+    "active_after_close": false,
+    "retired_from_followup": false,
+    "retirement_source": "unknown"
+  }],
+  "active_worker_ids_after_execution": [],
+  "writes_observed": false
+}

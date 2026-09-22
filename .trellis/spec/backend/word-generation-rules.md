@@ -179,10 +179,10 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 状态：`enforced-tested`
 - 输入信号：MinerU source type、文本、页索引、bbox、物理页宽高、同文档重复文本、同页结构主体和明确 TOC 区域。
 - 正式 owner：`app/services/document_ir/semantic_normalization.py::normalize_semantics`；机械 schema 映射与裁决落盘由 `app/services/document_ir/mineru_converter.py::MinerUToDocumentIRService._convert_blocks` 负责。
-- 预期输出：每个新 converter 主块都携带唯一 `semantic_decision_reason`。`page_header/page_footer/page_number` 只作为候选：跨页重复且位置稳定的边缘行、通用日期/URL/页码标记或同页对齐的短顶带组可成为 decoration，并保留稳定原因；大图/表格主导页中与主体相连且没有在普通页重复的技术标签、长文本、主体区域文本、没有其他正文的页面候选及其他歧义候选提升为 body。歧义 body 记录 `semantic_decoration_ambiguous:*`，主体关系提升记录 `semantic_decoration_promoted:*`；不得把非阻断风险当作删除歧义文本的理由。`page_footnote` 成为可见 `page_note`。源 title 默认保留 heading，仅明确图表题、修订范围、局部分组标签或首物理页唯一的顶部宽幅文档身份降为对应 paragraph annotation；文档身份只保存最终整段文本和 `annotation_role=document_identity`，不缓存型号/品类拆分副本。普通 `text_level` 不得单独晋升 heading。
+- 预期输出：每个新 converter 主块都携带唯一 `semantic_decision_reason`。`page_header/page_footer/page_number` 只作为候选：跨页重复且位置稳定的边缘行、通用日期/URL/页码标记或同页对齐的短顶带组可成为 decoration，并保留稳定原因；重复文本允许首页等少量异常位置，但只有落在稳定位置簇的实例才按重复装饰处理。大图/表格主导页中与主体相连且没有在普通页重复的技术标签、长文本、主体区域文本及其他歧义候选提升为 body；仅有装饰候选的源页也先裁决可靠重复行与明确页码，再把其余不确定文本提升为 body。MinerU bbox 与 layout.page_size 缩放不一致时，接近页底但未到常规阈值的候选只凭跨页重复或明确页码成为 decoration，孤立文本继续保全。歧义 body 记录 `semantic_decoration_ambiguous:*`，主体关系提升记录 `semantic_decoration_promoted:*`；不得把非阻断风险当作删除歧义文本的理由。`page_footnote` 成为可见 `page_note`。源 title 默认保留 heading，仅明确图表题、修订范围、局部分组标签或首物理页唯一的顶部宽幅文档身份降为对应 paragraph annotation；文档身份只保存最终整段文本和 `annotation_role=document_identity`，不缓存型号/品类拆分副本。普通 `text_level` 不得单独晋升 heading。
 - 冲突/例外：`toc_source`、`filtered` 和真实 decoration 是显式非正文去向，不要求正文 payload，但必须保留裁决理由；合成 TOC anchor 不计 source 主块。真实 decoration 只作为语义与风险证据保留，最终 Word header/footer 由模板与配置拥有。
 - 禁止：把 MinerU 物理坐标直接变成 Word 绝对定位；仅凭 `source_type=page_header` 删除正文；要求所有标题必须有章节号；按品牌、型号、页码或具体文本写特例。
-- 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_semantic_normalization_distinguishes_true_decorations_from_body_content`、`.test_semantic_normalization_resolves_title_page_note_and_explicit_toc_roles`；`tests.test_document_ir_heading_hierarchy.DocumentIRHeadingHierarchyTests.test_converter_marks_only_unique_top_wide_first_page_product_title`；`tests.test_document_ir_layout_contract.DocumentIRLayoutContractTests.test_source_integrity_accepts_explicit_toc_disposition_and_requires_complete_new_semantics`。
+- 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_semantic_normalization_distinguishes_true_decorations_from_body_content`、`.test_repeated_margins_survive_first_page_outlier_and_decoration_only_pages`、`.test_semantic_normalization_resolves_title_page_note_and_explicit_toc_roles`；`tests.test_document_ir_heading_hierarchy.DocumentIRHeadingHierarchyTests.test_converter_marks_only_unique_top_wide_first_page_product_title`；`tests.test_document_ir_layout_contract.DocumentIRLayoutContractTests.test_source_integrity_accepts_explicit_toc_disposition_and_requires_complete_new_semantics`。
 - 样本证据：2026-08-20 对 external `sn54ac244` MinerU 包只读临时回归：第 38 源页 8 个免责声明 `page_header` 候选全部提升为 body；常规页眉、页脚、页码仍保持 decoration；两条 revision range 降为 `group_label`。原包和临时 ZIP 不纳入仓库。
 - 来源/取代：任务 `08-20-refine-word-generation-rules` 的 D5 与内容完整性裁决；取代 converter 直接信任 source role、所有 title 强制 heading 的行为。
 
@@ -203,35 +203,35 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 状态：`enforced-tested`
 - 输入信号：LayoutPlan 完成软页面分组后，相邻页面组的 portrait/landscape 状态。
 - 正式 owner：`app/services/renderer/word_renderer.py::DocumentIRWordRenderer.render_to_bytes`、`::_configure_layout_page_section`。
-- 预期输出：方向变化时创建 `WD_SECTION_START.NEW_PAGE` 并应用目标方向；相同方向不因源物理页边界创建页面节，源页边界由 FLOW-001/002 的真实内容锚点处理。
+- 预期输出：方向变化时创建 `WD_SECTION_START.NEW_PAGE` 并应用目标方向；相同方向不因源物理页边界创建页面节，也不附加段落 `pageBreakBefore`。目录语义起页由 FLOW-002 另行处理。
 - 冲突/例外：双栏区域内部使用 continuous section，由 COL-002 约束；同方向页面组的软分页不得升级为 section。
 - 禁止：每个 MinerU page 都新增 `NEW_PAGE`；用 break-only 段落模拟方向节。
 - 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_starts_new_section_when_page_orientation_changes`、`.test_render_to_bytes_does_not_force_break_between_same_orientation_source_pages`。
 - 样本证据：CM4112 为 external evidence；没有 committed 纵横向混合真样本。
 - 来源/取代：commit `5d4a02d7` 删除逐源页硬分页；commit `674ce937` 保留方向分节。
 
-### FLOW-001 同方向源页默认形成受控软页面组
+### FLOW-001 同方向源页保留出处并自然续排
 
 - 状态：`enforced-tested`
 - 输入信号：相邻同方向源页、两侧最终阅读顺序、明确 table continuation、同一 `content_group_id`、页边缘 list 续接、decoration-only 页，以及因内容保全提升为正文且仍位于源页底边的页脚候选。
 - 正式 owner：`app/services/renderer/layout_plan.py::_build_soft_page_groups`、`::_continuation_reason`。
-- 预期输出：存在明确续接证据时合并为一个 LayoutPage 页面组，不加分页，并在 `continuation_reasons` 保存稳定原因；没有续接证据的新源页形成新页面组。布局计划保存原 `source_page_indices`，Word 页数仍由客户端按模板内容流决定。
-- 冲突/例外：方向变化由 PAGE-002 创建 `NEW_PAGE` section；已识别 decoration-only 的源页可并入相邻页面组。只有同时具有 `decoration_candidate_promoted_to_body`、页脚源角色和源页底边位置证据的保全块才可证明下一源页自然续接；没有可见 body 且不能证明为 decoration-only 的页面不能用自然流动掩盖，后续完整性证据必须保留该不确定性。
-- 禁止：把同方向当作连续内容证据；恢复“一页 PDF 一个 Word 硬分页”；按标题文字、型号或页码建立续接特例。
-- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_does_not_force_break_between_same_orientation_source_pages`、`.test_render_to_bytes_anchors_semantic_page_breaks_to_real_content`、`.test_soft_page_group_uses_final_left_to_right_anchor_and_explicit_continuation_reason`、`.test_soft_page_group_continues_after_promoted_page_edge_footer`。
-- 样本证据：2026-08-20 external SC2167 当前候选形成 32 个软页面组，只有跨页表 continuation 合并相邻源页；WPS 为 36 页且未观察到空白正文页。2026-08-21 external SN54AC244 定向修复候选把首页末尾声明与目录保留在同一 WPS 第 2 页，不再产生近空白尾页。当前仍没有 committed 视觉基线。
+- 预期输出：存在明确续接证据时合并为一个 LayoutPage 页面组，并在 `continuation_reasons` 保存稳定原因；没有续接证据的新源页仍形成新页面组并保留 `source_page_indices`，但普通组边界不强制分页。`break_reason=source_page_boundary` 只描述源页出处，不表示 Word 分页命令；显式 `toc_title` 位于新源页首块时另标记 `toc_start`。Word 页数由客户端按模板与内容流决定。
+- 冲突/例外：方向变化由 PAGE-002 创建 `NEW_PAGE` section；已识别 decoration-only 的源页可并入相邻页面组。只有同时具有 `decoration_candidate_promoted_to_body`、页脚源角色和源页底边位置证据的保全块才可证明同一源页面组；没有可见 body 且不能证明为 decoration-only 的页面仍须在完整性证据中保留不确定性。
+- 禁止：把同方向当作语义续接证据；恢复“一页 PDF 一个 Word 硬分页”；按图号、标题文字、型号或页码建立分页特例。
+- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_does_not_force_break_between_same_orientation_source_pages`、`.test_render_to_bytes_flows_across_source_pages_without_forced_breaks`、`.test_toc_title_at_source_page_start_uses_inline_break_without_empty_page_marker`、`.test_soft_page_group_keeps_source_provenance_and_explicit_continuation_reason`、`.test_paired_figures_flow_after_two_columns_regardless_of_caption_reference`、`.test_soft_page_group_continues_after_promoted_page_edge_footer`。
+- 样本证据：2026-08-20 external SC2167 既有候选形成 32 个软页面组，WPS 为 36 页；2026-08-21 external SN54AC244 既有定向修复把首页末尾声明与目录保留在同一 WPS 第 2 页。2026-09-21 external CM1348 原 PDF 37 页，旧 v8 WPS 58 页且 22 页正文底部空白超过 40%；v10 WPS 为 32 页、仅 1 页超过该阈值，目录从第 2 页开始。v11 与 v10 全部 DOCX ZIP member 内容一致，图 11/12 后的空白仍未关闭。完整视觉签字仍缺失。
 - 来源/取代：commit `5d4a02d7`；取代旧逐物理页分页行为。
 
-### FLOW-002 页面组边界分页必须锚定最终阅读顺序的真实内容
+### FLOW-002 普通源页边界自然续排，目录语义起页与栏切换使用真实内容锚点
 
 - 状态：`enforced-tested`
-- 输入信号：FLOW-001 未合并的非首页面组，以及该组完成 one-col/two-col/paired row 规划后的最终左栏→右栏顺序。
-- 正式 owner：`app/services/renderer/layout_plan.py::_build_soft_page_groups`、`::_first_rendered_block_id`；消费 owner 为 `app/services/renderer/word_renderer.py::_render_block`、`app/services/renderer/table_renderer.py::_render_table_captions`、`app/services/renderer/image_renderer.py::_apply_paragraph_breaks`。
-- 预期输出：同方向新页面组把 `pageBreakBefore` 放在最终顺序首个真实 paragraph/list/formula/image/caption 或 table cell 内容上；方向变化只由 `NEW_PAGE` section 承载。双栏的 column break 同样附着于右栏第一个真实内容块，不生成 break-only 空段落。
-- 冲突/例外：严格成对视觉行的分页锚点位于左单元格首个图片段落；captionless table 的分页锚点位于首个单元格段落。Word 客户端仍可因 widow/orphan、keep-with-next 和内容高度调整最终页数。
-- 禁止：分页锚点在栏重排前按全局 y 选择；只对 heading 或带题注表格保护页面边界；创建只含 page/column break 的空段落。
-- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_anchors_semantic_page_breaks_to_real_content`、`.test_soft_page_group_uses_final_left_to_right_anchor_and_explicit_continuation_reason`。
-- 样本证据：CM4112“工作原理”和表格组是 external negative/acceptance evidence；未提交当前回归 fixture，且最新整本文档仍有页数增长风险。
+- 输入信号：FLOW-001 未合并的同方向源页面组、组首块是否有显式 `toc_title` annotation，以及该组完成 one-col/two-col/paired row 规划后的最终左栏→右栏顺序。
+- 正式 owner：`app/services/renderer/layout_plan.py::_build_soft_page_groups`；消费 owner 为 `app/services/renderer/word_renderer.py::_render_layout_page`、`::_render_layout_region`、`::_render_block`。
+- 预期输出：普通同方向新页面组的 `break_before_block_id` 为空，不向首块写入 `pageBreakBefore`；显式 `toc_title` 是新源页首块时，记录 `toc_start` 并在同一标题段落首 run 中写原生 page break。WPS 对目录标题的 `pageBreakBefore` 属性曾在前置 continuous section 后多造空白页，内联 break 的本地诊断可从第 2 页起目录而不多造该页。方向变化只由 `NEW_PAGE` section 承载；若 renderer 已在当前边界创建该新页分节，须消费 `toc_start` 起页意图，不再写第二个 page break。双栏 column break 仍附着于右栏第一个真实内容块，不生成 break-only 空段落。
+- 冲突/例外：目录标题不在新源页首块时不强制起页；前页宽表降级为 `landscape_table` 再恢复纵向目录时，方向恢复分节优先，禁止叠加目录起页。Word 客户端可因 widow/orphan、keep-with-next 和内容高度调整最终页数。源 PDF 物理页边界本身不是 Word 的语义分页指令。
+- 禁止：仅凭 MinerU 源页索引为普通 paragraph、image 或 table 设置 `pageBreakBefore`；按标题文字识别目录；创建只含 page/column break 的空段落。
+- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_flows_across_source_pages_without_forced_breaks`、`.test_toc_title_at_source_page_start_uses_inline_break_without_empty_page_marker`、`.test_toc_title_does_not_double_break_after_landscape_table_fallback`、`.test_soft_page_group_keeps_source_provenance_and_explicit_continuation_reason`。
+- 样本证据：CM1348 v8 的 29 个源页分页属性会在 WPS 生成大量无法通过删除空格消除的空白；v10 去除这些属性并把显式目录起页改为内联 break 后，WPS 为 32 页且目录始于第 2 页。v11 增加横向表格恢复纵向时的双重起页抑制，CM1348 的 DOCX ZIP member 与 v10 全同，该分支仅有合成回归验证。尚未提交整文档视觉 fixture。
 - 来源/取代：归档任务 `08-18-fix-mineru-first-page-layout`；补充 FLOW-001 而非恢复逐页硬分页。
 
 ### FLOW-003 内容组保持与表格跨页
@@ -265,10 +265,10 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 状态：`enforced-tested`
 - 输入信号：layout plan 已按左栏自上而下、右栏自上而下排列且携带有效 `column_break_index` 的 `two_col` region。
 - 正式 owner：计划 owner 为 `app/services/renderer/layout_plan.py::_finalize_region`；消费 owner 为 `app/services/renderer/word_renderer.py::_render_layout_region`、`::_set_section_columns`。
-- 预期输出：只在真实 two-col region 前后用 continuous section 进入和恢复栏数；column break 附着于右栏首个真实内容。单侧 region 预先降级，不创建没有右栏内容的无意义 section；普通双栏正文不使用布局表格。
+- 预期输出：只在真实 two-col region 前后用 continuous section 进入和恢复栏数；column break 附着于右栏首个真实内容。单侧 region 预先降级，不创建没有右栏内容的无意义 section；普通双栏正文不使用布局表格。bundled 默认模板直接声明 `w:cols/@w:space=720` twips；进入多栏时，其他模板继承的空值或零栏距也改为 720，已有正栏距保持不变，栏宽计算使用最终值。
 - 冲突/例外：COL-003 的严格图片对不进入 columns section；continuous section 的实际栏平衡需要 Word/WPS 视觉验收。
 - 禁止：renderer 使用 bbox/页面中线兜底重判左右栏；按全局 y 交错左右栏；用空段落承载 column break；用 1×2 表格包装普通正文。
-- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_uses_native_columns_for_v2_region`、`.test_render_to_bytes_prefers_column_hint_when_ordering_native_columns`、`.test_render_to_bytes_keeps_continuous_restore_when_wide_content_follows_columns`。
+- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_uses_native_columns_for_v2_region`、`.test_two_column_section_replaces_zero_template_gutter_only`、`.test_render_to_bytes_prefers_column_hint_when_ordering_native_columns`、`.test_render_to_bytes_keeps_continuous_restore_when_wide_content_follows_columns`。
 - 样本证据：2026-08-20 external SC2167 当前候选包含 2 个原生 `two_col` region，WPS 首页确认双栏阅读与后续全宽模块图正常；没有 committed 视觉回归。
 - 来源/取代：commit `5d4a02d7` 与 `32edca58`；取代布局表格模拟普通栏。
 
@@ -277,11 +277,11 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 状态：`enforced-tested`
 - 输入信号：同一可信纵向带中数量相等、bbox 实际重叠、每侧只有 image 且 annotation 唯一可归属的 left/right blocks。
 - 正式 owner：计划 owner 为 `app/services/renderer/layout_plan.py::_paired_visual_rows`；消费 owner 为 `app/services/renderer/image_renderer.py::_render_paired_visual_row`；计数 owner 为 `app/services/renderer/docx_quality.py::_is_paired_visual_table`。
-- 预期输出：LayoutPlan 输出独立 `paired_visual_row` region；renderer 用无边框原生 1×2 Word table，每个单元格独立承载图片及自己的 caption/footnote。布局表写入 `w:tblDescription="md2word:paired_visual_row"`，analyzer 计入 `layout_table_count` 并从语义 `table_count` 排除。
+- 预期输出：LayoutPlan 输出独立 `paired_visual_row` region；renderer 用无边框原生 1×2 Word table，每个单元格独立承载图片及自己的 caption/footnote。整行 `cantSplit` 负责保持图和题注；单元格段落须显式关闭 `keepNext`，覆盖模板样式继承，避免 WPS 把连续成对图片行当成不可分页的大组。布局表写入 `w:tblDescription="md2word:paired_visual_row"`，analyzer 计入 `layout_table_count` 并从语义 `table_count` 排除。
 - 冲突/例外：多 annotation 或无法严格成对的图片留在 COL-002 原生栏中。
 - 禁止：把任意两张图、普通正文、文本卡片或宽表强行配对；合并/错配题注；使用同段落 25%/75% 制表位模拟独立图片容器。
 - 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_keeps_paired_image_caption_fields_in_row_order`、`.test_render_to_bytes_keeps_multi_annotation_images_in_native_columns`。
-- 样本证据：2026-08-20 external SC2167 当前候选包含 4 个 `paired_visual_row`，结构证据均为带标记的无边框布局表，LibreOffice 辅助渲染未发现题注串列；当前 committed fixture 不含真实图片。
+- 样本证据：2026-08-20 external SC2167 既有候选包含 4 个 `paired_visual_row`，结构证据均为带标记的无边框布局表，LibreOffice 辅助渲染未发现题注串列。2026-09-21 external CM1348 对照原 PDF 的图 9–14 行：v11 WPS 第 9 页只到图 11/12；去除成对图片单元格 `keepNext` 的消融、v12 和模板继承修订后的 v13 均使图 13–18 填入第 9 页，且 WPS 总页数仍为 32。其他页仍需视觉复核，当前 committed fixture 不含真实图片。
 - 来源/取代：归档任务 `08-18-fix-layout-formula-image-caption`。
 
 ### TEXT-001 原生标题语义与内容组保持
@@ -290,7 +290,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 输入信号：IR schema version、显式 IR heading、MinerU 顶层或 v2 `content.level`、标题最终文本、v1 heading-like paragraph、配置的 heading/`part_number`/`category` Word style 和层级。
 - 正式 owner：标题层级与文档身份结构由 `app/conversion/docx_rules/text_semantics.py::infer_heading_level`、`::resolve_source_heading_level`、`::split_document_identity` 和 `app/services/document_ir/semantic_normalization.py::normalize_semantics` 唯一裁决；`app/services/renderer/word_renderer.py::_render_block` 与 `app/services/renderer/text_renderer.py::_fill_heading_paragraph` 只消费最终裁决。
 - 预期输出：显式 heading 使用 Word heading 样式并 `keep_with_next`。编号标题按编号深度生成 H1/H2/H3，超过模板能力时限制为 H3；`chapter/section/part/附录/appendix` 保持 H1；未编号 source title 优先保留 MinerU 显式层级，缺失时使用通用 H2。首物理页唯一的顶部宽幅产品标题不进入 Heading/TOC，而是在渲染时根据翻译后的最终 `block.text` 拆成两个 Word 原生段落，分别使用 `part_number` 与 `category` 样式；第一段只与第二段 `keep_with_next`。`document-ir/v2` 普通 paragraph 不根据文本升级 heading，`document-ir/v1` 顺序兼容才允许可靠 heading-like 推断。
-- 冲突/例外：页顶分页由 FLOW-002；v1 推断得到的 heading-like paragraph 不设置 `keep_with_next`，也不能触发 FLOW-002。身份候选必须同时满足首物理页、唯一、顶部、宽幅和通用产品标题结构；任一证据缺失时仍按 D5 保留 source heading。翻译后最终文本无法再次拆分时显式失败，不回退成普通段落或 Heading。v2 只消费 converter 明确产生的 heading、TOC/身份 annotation 和 list，不再从普通点线 paragraph 重新推断 TOC。
+- 冲突/例外：源物理页边界不触发 FLOW-002 的强制分页；v1 推断得到的 heading-like paragraph 不设置 `keep_with_next`。身份候选必须同时满足首物理页、唯一、顶部、宽幅和通用产品标题结构；任一证据缺失时仍按 D5 保留 source heading。翻译后最终文本无法再次拆分时显式失败，不回退成普通段落或 Heading。v2 只消费 converter 明确产生的 heading、TOC/身份 annotation 和 list，不再从普通点线 paragraph 重新推断 TOC。
 - 禁止：只加粗/放大而不使用标题语义；所有短句均升级；按“工作原理”等具体标题硬编码。
 - 自动验证：`tests.test_document_ir_heading_hierarchy` 覆盖编号/无编号层级、首页身份正负例、翻译后动态拆分、专用样式、TOC/evidence 对账和失败关闭；既有回归为 `tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_writes_heading_list_and_formula_ooxml_semantics`、`.test_render_to_bytes_keeps_v1_heading_like_paragraph_compatibility`、`.test_render_to_bytes_uses_explicit_v2_semantics_without_heading_guessing`、`.test_render_to_bytes_uses_configured_heading_word_style_when_available`；图/表反例见 `tests.test_text_render_characterization.TextRenderingCharacterizationTests.test_looks_like_heading_text_rejects_english_sentence`。
 - 样本证据：2026-08-21 external SN54 R-04 候选为 32/32 Heading，层级分布 H1/H2/H3=11/19/2，首页身份两段可见 payload 与 TOC cache 对账通过且 `blocking_quality_flags=[]`；WPS 首页确认 `part_number/category` 两段样式，正文抽查确认 `5`/`5.1`/`8.2.1` 分别为 Heading 1/2/3，完整品类名称只在首页出现一次。SC2167 候选为首页身份 1 个、其余 51 个无编号 Heading 均保留 source level 2，WPS 首页样式和“产品概况”Heading 2 通过，`blocking_quality_flags=[]`。
@@ -326,7 +326,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 输入信号：v2 table/image/figure/chart caption 字段中的 flat inline-node list，或 legacy string list/多个 nested rich-node groups。
 - 正式 owner：通用分组由 `app/services/document_ir/mineru_converter.py::MinerUToDocumentIRService._captions` 负责；mixed visual run 的局部试算由 `::_reassociation_caption_candidates` 负责。现有文本/公式清理 helper 只作为片段归一化依赖。
 - 预期输出：一个 flat `text/equation_inline/text` 节点数组形成一个完整 `DocumentIRBlock.captions` 元素，进入 Word 后只占一个题注段落；string list 和多个 nested rich groups 继续形成多条独立题注。inline equation 保留 `$...$` 数学边界，供翻译分段和 OMML 共用；可见 inline 语义、SEQ/bookmark、fallback、table context 和 COL-003 annotation 数量判断均基于完整逻辑题注。
-- 冲突/例外：footnote 继续按现有 marker/连续性规则合并。唯一窄例外是 IMAGE-002 已识别含稀疏 table 的 mixed visual run 时，可把 flat rich nodes 中第二个明确编号 Figure/图 text node 作为候选边界；只有整组题注数量、label、编号唯一连续全部成立后才提交分界和类型归一化。纯 image/chart group、证据不足或未对齐时仍保持原分组或失败关闭。renderer 继续坚持“一 caption 元素一段落”，不负责恢复 converter 已丢失的边界。
+- 冲突/例外：footnote 继续按现有 marker/连续性规则合并。IMAGE-002 已识别含稀疏 table 的 mixed visual run 时，可把 flat rich nodes 中第二个明确编号 Figure/图 text node 作为候选边界；只有整组题注数量、label、编号唯一连续全部成立后才提交分界和类型归一化。IMAGE-003 的真实表格错挂图题恢复可以试算唯一显式 Figure→Table text node 边界，但只有同页唯一主体及前后连续图号均成立才提交，内联公式留在所属片段。其他证据不足的输入保持原分组并提示复核。renderer 继续坚持“一 caption 元素一段落”。
 - 禁止：全局按图号、标点、页码或 bbox 拆 flat rich caption；用 `collect_text_from_fields()` 把 flat rich nodes 直接拍成多条 captions；在 image/table renderer 合并相邻题注；修改 continuous section 或 `pageBreakBefore` 掩盖孤立题注行。
 - 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_maps_nested_v2_chart_to_image_and_records_source_inventory`、`.test_convert_zip_preserves_multiple_logical_caption_groups`、`.test_rich_chart_captions_render_without_isolated_fragments_and_keep_paired_layout`、`.test_convert_zip_keeps_flat_rich_caption_group_for_plain_charts`、`.test_convert_zip_normalizes_sparse_visual_tables_after_strict_caption_reassociation`、`.test_convert_zip_demotes_table_condition_caption_to_context_paragraph`。
 - 样本证据：CM4112 的图 33 在 IR 中为保留数学边界的单条题注，Word 可见结果仍为完整 `图 33 通道隔离度 (± 18V)`，OOXML 不含仅为 `±`/`18V)` 的段落；既有 WPS GUI 第 12 页实际包含图 31～33 及完整题注，第 13 页直接以“工作原理”起页。该 GUI 记录早于本轮数学边界调整，不能替代当前整文档复验。完整历史见当前任务 `research/cm4112-validation.md`。
@@ -410,7 +410,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 输入信号：同页连续 image group 的题注数量失衡；或连续 mixed visual run 同时包含 image/chart 与严格水平对齐的稀疏 table pair。稀疏 table 必须有结果根内有效图片资产、可解析的单行且不超过三列 HTML、至少一个明确编号 Figure/图题注，并且不属于 IMAGE-004 表图复合或未决 overlap。
 - 正式 owner：`app/services/document_ir/mineru_converter.py::_reassociate_numbered_image_captions`、`::_sparse_visual_table_indices`、`::_reassociate_image_group`；HTML 结构继续复用 `app/conversion/runtime/table_html_parser.py::parse_html_table`。
 - 预期输出：只有整组题注数量等于视觉块数、label 相同、编号唯一且连续时，才按编号重分配题注，并把已证明误标的稀疏 table 转为 chart/image 语义和资产；普通 image group 的 flat rich caption 仍受 TEXT-004 约束。任一条件不足时不提交试算结果。
-- 冲突/例外：未对齐、数量不足、label 不一致、编号重复/不连续、真实单行表或主体不唯一时保持原类型和题注分组；既有 Figure-on-table 无唯一主体路径继续写入 `caption_owner_unresolved` 并失败关闭。此规则不通过视觉最近邻猜关联；多 annotation 渲染仍由 COL-002/IMAGE-001 保持。
+- 冲突/例外：未对齐、数量不足、label 不一致、编号重复/不连续、真实单行表或主体不唯一时保持原类型和题注分组；Figure-on-table 无唯一主体路径写入 `caption_owner_unresolved` 并进入非阻断人工复核。此规则不通过视觉最近邻猜关联；多 annotation 渲染仍由 COL-002/IMAGE-001 保持。
 - 禁止：只凭 `simple_table`、`image_source`、单行 HTML 或 Figure 题注任一单条件把 table 转图片；只按出现顺序重排题注；在纯 image/chart group 拆 flat rich caption；跨页关联；丢弃无法识别的原题注。
 - 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_reassociates_only_strict_numbered_image_groups`、`.test_convert_zip_normalizes_sparse_visual_tables_after_strict_caption_reassociation`、`.test_convert_zip_does_not_normalize_unaligned_sparse_visual_tables`、`.test_convert_zip_keeps_real_single_row_table_with_image_source`、`.test_convert_zip_keeps_flat_rich_caption_group_for_plain_charts`。
 - 样本证据：2026-08-27 external CM4226 的同页三图被 MinerU 输出为 `table/table/chart`，且第三块 flat rich caption 同时包含图 19/21。当前规则恢复为三个 image asset 和图 19/20/21 独立题注；正式本地 source→IR、IR→DOCX 门禁为空，WPS 确认图 19/20 并排、图 21 位于下方且无重叠。SC2167 继续作为 historical evidence。
@@ -420,11 +420,11 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：同一源页内明确的 Figure 题注被挂到后续非图片 block，或严格对齐图片对中只有一个标题型 annotation；同时存在可由源顺序、纵向先后、水平覆盖或 IMAGE-004 已确定的唯一表图包含关系证明的视觉主体组。
-- 正式 owner：`app/services/document_ir/mineru_converter.py::_reassociate_visual_group_captions`、`::_bind_group_caption`；失败关闭 owner 为 `app/services/document_ir/integrity.py::build_source_integrity`。
+- 正式 owner：`app/services/document_ir/mineru_converter.py::_recover_displaced_figure_captions`、`::_reassociate_visual_group_captions`、`::_bind_group_caption`；人工复核 owner 为 `app/services/document_ir/integrity.py::build_source_review_issues`。
 - 预期输出：先完成 IMAGE-004 的唯一表图包含关系裁决，再重关联图题。普通图片组共享同一 `content_group_id`；已确定的表图复合组以 image 与 table 共同作为 subject。题注统一成为一个带 `subject_block_ids` 的 `standalone_caption`，原错误 annotation 清空且最终只可见一次；满足 COL-003 严格条件的双图继续使用成对视觉行，题注位于布局表外。
-- 冲突/例外：主体关系不唯一时写入 `caption_owner_unresolved` 并由 source→IR 完整性门禁阻断；不把不确定题注继续挂在原错误主体，也不把版式降级当作题注归属成功。
+- 冲突/例外：真实多行多列表格不因 Figure 题注转为图片。同页唯一无题注图片、唯一错挂图题、前后图片同 label 连续编号且页内无重复编号、有效 bbox/资产、无已确定复合组时，可跨栏恢复独立图题，保留真实表格、表题、脚注与公式并记录 `caption_reassociated` 供复核。主体不唯一时保留源解析内容和原题注位置，写入 `caption_owner_unresolved`；只要内容完整便生成可下载 Word 和源页复核提示，不把不确定归属宣告成功。
 - 禁止：按品牌、型号、页码、固定题注全文或任意最近邻猜测主体；跨页关联；复制题注到每张图片。
-- 自动验证：`tests.test_document_ir_mineru_converter_layout` 的跨类型 Figure 题注、共享双图题注、包含表图复合题注和无唯一主体阻断用例；`tests.test_document_ir_word_renderer_layout` 的成对视觉行与 annotation evidence 回归。
+- 自动验证：`tests.test_document_ir_mineru_converter_layout` 的跨类型 Figure 题注、共享双图题注、包含表图复合题注、跨栏连续图号恢复及无唯一主体保全复核用例；`tests.test_document_ir_word_renderer_layout` 的成对视觉行与 annotation evidence 回归。
 - 样本证据：2026-08-21 external `sn54ac244` 中 page 6 的 Figure 6-1 绑定 `block_0083/0084/0085` 图片组，page 0 的 `block_0016/0018` 共享一个独立题注；SC2167 末页“图 23 LQFP48 封装图”绑定 `block_0376` image 与 `block_0377` table 的唯一复合组，WPS 确认题注位于复合区域之后且只可见一次。
 
 ### IMAGE-004 可编辑表格与包含整图只在唯一关系下消除视觉重复
@@ -433,8 +433,8 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 输入信号：同一源页只有一个 HTML table 被一张 image bbox 完全包含，反向也只有这一组关系；HTML 可解析、两方资产存在，且表区不超过整图面积的保守上限。
 - 正式 owner：关系裁决为 `app/services/document_ir/mineru_converter.py::_normalize_contained_table_images`；互补区域与 DrawingML 坐标的共享 owner 为 `app/services/document_ir/integrity.py::complement_crop_rects`、`::drawingml_crop_offsets`；消费 owner 为 `app/services/renderer/image_renderer.py::_add_cropped_picture`。
 - 预期输出：保留一个可编辑语义表和一个原 image block/asset；表图两端写入相同 `visual_overlap_group_id` 与 normalization，image 保存表区之外有序、互不重叠且精确互补的 `visual_crop_rects`。renderer 使用原图片字节和 DrawingML `a:srcRect` 输出保留片段，不重写栅格资产。
-- 冲突/例外：关系歧义、HTML 无效、资产缺失、表区过大或互补合同不完整时写入 `visual_overlap_unresolved` 并失败关闭。裁剪片段和可编辑表按 Word 流式内容安全重排，不承诺把表格绝对定位回图片空洞，最终视觉仍受 QUALITY-003 约束。
-- 禁止：同时输出未裁剪整图和重复 HTML table；复制 IR image/asset 身份；仅凭 drawing 总数宣告裁剪正确；用 PDF 绝对定位覆盖 Word 原生流。
+- 冲突/例外：关系歧义或表区过大时不执行裁剪，保留原图与可编辑表格并记录 `visual_overlap_unresolved` 供人工复核，允许局部视觉重复。HTML 无效导致无有效表内容、图片资产缺失、已提交裁剪组的互补合同损坏仍按 QUALITY-004 阻断。裁剪片段与表格按 Word 流式内容重排，不承诺绝对定位，最终视觉仍受 QUALITY-003 约束。
+- 禁止：关系已确定且已提交裁剪归一化时又输出重复整图；静默删除歧义表格或图片；复制 IR image/asset 身份；仅凭 drawing 总数宣告裁剪正确；用 PDF 绝对定位覆盖 Word 原生流。
 - 自动验证：`tests.test_document_ir_mineru_converter_layout` 覆盖唯一关系、JSON round-trip、歧义、无效 HTML、缺资产和面积上限；`tests.test_document_ir_layout_contract` 覆盖精确互补与 group 两端合同；`tests.test_document_ir_word_renderer_layout` 覆盖 `a:srcRect` 输出及片段缺失、重复、坐标错误和顺序错误阻断。
 - 样本证据：2026-08-21 external `sn54ac244` 仅归一化 `block_0292+0293`、`block_0316+0317` 两组，共 8 个 `a:srcRect`；OOXML evidence 无片段缺失、意外或顺序错配，WPS 第 35、39 页确认复合组同页、无裁剪断线、大空洞、独立重复表或遮挡。
 
@@ -491,6 +491,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 ### MATH-002 支持子集通过共享入口生成 OMML
 
 - 状态：`enforced-tested`
+- 本轮数学入口扩展：明确公式与 inline math 可解析常见函数 `ln/log/exp/sin/cos/tan`、符号 `Sigma/pi/tau` 和转义下划线。新增命令不得进入普通文本的全局控制词替换表；普通正文、表格文本、题注中的路径与 UNC 保持原文。`array` 等未支持环境仍按 MATH-003 可见回退，不宣称全 TeX 支持。
 - 输入信号：公式 block、正文 inline math、表格 cell/notes 中的 TeX；支持分式、根式、上下标、常用符号、文本/样式 wrapper、overline、boxed、left/right、`\\tag{...}` 和已确认的 `\,` thin-space 等当前解析子集；当前 DOCX 模板可声明、缺失或留空 `word/settings.xml/m:mathFont`。
 - 正式 owner：`app/services/renderer/text_renderer.py::_OmmlParser`、`WordTextRendererMixin._render_mixed_math`、`._fill_formula_paragraph`、`._bind_math_font_context`；当前文档字体上下文绑定由 `app/services/renderer/word_renderer.py::DocumentIRWordRenderer.render_to_bytes` 触发；输入归一化由 `app/conversion/docx_rules/text_semantics.py::normalize_formula_text`、`::collapse_double_escaped_tex_commands` 负责。
 - 预期输出：支持的数学结构写为原生 OMML，独立公式、正文 inline math、表格中未被 MATH-004 分流的复杂片段和 note 共用同一解析路径。字母/希腊字母变量 run 不写默认 `m:sty` 或具体 `w:rFonts`，继承客户端数学斜体；数字、运算符和标点按数学语义分成直立 run，写 `m:sty=p` 并从当前文档 `m:mathFont` 派生 `w:rFonts/@w:ascii` 与 `@w:hAnsi`，避免 WPS 隐藏纯数字分式和顶层运算符。显式 `\\mathit`、`\\mathbf`、`\\boldsymbol` 写对应 `i/b` 并移除与其竞争的派生 run 字体；`\\mathrm`、`\\mathsf`、`\\text` 使用同一 `p + 当前数学字体`。无花括号上下标参数只消费一个 TeX token，不吞入后续字母或运算符。合法 `\\tag{...}` 在同一 OMML 内生成可见括号编号；不承诺右对齐、原生公式编号状态或独立定位。
@@ -535,7 +536,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 预期输出：renderer 清空模板 body 但保留 sectPr 和模板 header/footer，应用绑定版本的页面、段落、表格、字体及术语配置；发布版本不可变性不在本文重复定义。
 - 冲突/例外：模板决定 Word 样式和绝对页面设置，源 layout 决定内容顺序、分栏和方向；显式空字体值保留继承语义。
 - 禁止：为适配 PDF 修改已发布 seed；在 renderer 猜另一套 schema；让源 bbox 覆盖模板字体/边距。
-- 自动验证：`tests.test_template_layout_config_schema.TemplateLayoutConfigSchemaTests.test_real_seed_matches_editor_and_renderer_contract`、`.test_bundled_v1_hashes_manifest_and_docx_are_consistent`、`.test_legacy_font_fields_are_completed_without_overwriting_explicit_empty_values`；renderer 配置测试见 PAGE-001/TEXT-001。
+- 自动验证：`tests.test_template_layout_config_schema.TemplateLayoutConfigSchemaTests.test_real_seed_matches_editor_and_renderer_contract`、`.test_bundled_versions_preserve_v1_and_select_v2_seed`、`.test_legacy_font_fields_are_completed_without_overwriting_explicit_empty_values`；renderer 配置测试见 PAGE-001/TEXT-001。
 - 样本证据：Golden 历史验收绑定旧 commit，不能证明当前版本；当前无模板组合视觉基线。
 - 来源/取代：`template-layout-configuration.md` 和 commit `32edca58`。
 
@@ -543,11 +544,11 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：模板已带 decoration、配置 `header/footer.enabled`、自定义 footer 文本，以及 IR 的 page_header/page_footer/page_number blocks。
-- 正式 owner：`app/services/renderer/word_renderer.py::_apply_header_footer`。
-- 预期输出：模板与配置共同拥有最终 decoration。配置禁用或仅 enabled 但没有标题、有效 logo、footer 文字或页码覆盖内容时，保留模板既有 header/footer；配置明确提供内容时才重建对应 part。IR 的 page_header/page_footer/page_number 不逐源页写入共享 section，后续 section 沿用 Word 标准 relationship 继承，不复制关系。
-- 冲突/例外：Word decoration 属于 section，无法表达同一 section 内每个源物理页不同 decoration；这类源差异保留在 IR/layout/evidence，但不能覆盖模板或配置。无效的正式本地 `use_mineru_header_footer` 参数已移除，不保留兼容开关。
+- 正式 owner：`app/services/renderer/word_renderer.py::_apply_header_footer`、`::_normalize_template_header_spacers`。
+- 预期输出：模板与配置共同拥有最终 decoration。配置禁用或仅 enabled 但没有标题、有效 logo、footer 文字或页码覆盖内容时，保留模板既有 header/footer；配置明确提供内容时才重建对应 part。纵向页面若遇到模板页眉以长空格占位配合分散对齐定位尾部标题，输出时仅把该占位符改为相对页边距的右对齐 tab，保留图标与标题文字；纯横向文档不改动原页眉。IR 的 page_header/page_footer/page_number 不逐源页写入共享 section，后续 section 沿用 Word 标准 relationship 继承，不复制关系。
+- 冲突/例外：Word decoration 属于 section，无法表达同一 section 内每个源物理页不同 decoration；这类源差异保留在 IR/layout/evidence，但不能覆盖模板或配置。混合纵横向文档若共用同一 header part，纵向安全定位会同时作用于继承该 part 的横向节，不能声称只改变纵向节。无效的正式本地 `use_mineru_header_footer` 参数已移除，不保留兼容开关。
 - 禁止：逐源页清空或覆盖共享 section decoration；配置无覆盖内容时擦除模板 footer；在配置 footer 后再写源 footer；静默接受已移除开关。
-- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_template_decorations_when_config_disabled`、`.test_enabled_config_without_content_preserves_template_decorations_and_ignores_source_decorations`、`.test_render_to_bytes_writes_native_custom_footer_and_ignores_source_footer`；`tests.test_conversion_sandbox_dev_tools.LocalMinerUConversionCliTests.test_formal_adapter_rejects_removed_mineru_header_footer_switch`。
+- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_template_decorations_when_config_disabled`、`.test_portrait_template_header_replaces_long_space_spacer_without_changing_landscape`、`.test_enabled_config_without_content_preserves_template_decorations_and_ignores_source_decorations`、`.test_render_to_bytes_writes_native_custom_footer_and_ignores_source_footer`；`tests.test_conversion_sandbox_dev_tools.LocalMinerUConversionCliTests.test_formal_adapter_rejects_removed_mineru_header_footer_switch`。
 - 样本证据：SC2167 自定义 footer 为 external historical evidence；源页 header 逐页差异无样本门禁。
 - 来源/取代：归档任务 `08-18-fix-layout-formula-image-caption`；当前代码审计补充 section 覆盖和未消费开关缺口。
 
@@ -578,6 +579,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 ### QUALITY-001 DOCX 结构证据与风险标记
 
 - 状态：`enforced-tested`
+- LaTeX 残留扫描只覆盖普通 Word `w:t`；原生 OMML `m:t` 内的字面下划线不是残留，解析失败回退到普通文本后仍必须被扫描。
 - 输入信号：生成的 DOCX bytes/file 以及 DocumentIR/layout plan。
 - 正式 owner：`app/services/renderer/docx_quality.py::analyze_docx_quality_bytes`、`::build_docx_quality_flags`；`app/services/renderer/evidence.py::build_renderer_evidence`。
 - 预期输出：记录可编辑段落/语义表格、布局表、heading、numbering、TOC field/cache、keepNext、表头/cantSplit、宽表、横向节、图片 asset marker/relationship/checksum/srcRect 和 LaTeX residue 等 OOXML 指标；renderer evidence 另记录 soft page groups、break/continuation reason、明确 column downgrade、table fit decisions。无可编辑内容、图片化、手写列表、静态目录、未样式化标题、公式残留等仍生成非阻断风险 flag。
@@ -618,6 +620,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 正式 owner：source→IR 由 `app/services/document_ir/integrity.py`；IR→layout/DOCX evidence 由 `app/services/renderer/evidence.py`；发布边界由正式本地 adapter 和 `DocumentJobExecutionService` 负责。
 - 预期输出：evidence 同时记录 expected、actual、差值和稳定 `blocking_quality_flags`。新 converter 的每个主源块必须有语义裁决；body 块保留可见 payload，decoration/`toc_source`/`filtered` 保留显式去向。可见 body block（含空文本 TOC anchor）必须且只能进入 layout 一次；正文、列表项、语义表格 cell、caption/footnote 和可规范化公式必须在 DOCX 可见内容中得到证明；图片必须由 block asset id 经 drawing marker、relationship 对到媒体 checksum。IMAGE-004 的裁剪图片还必须按 asset、`srcRect` 坐标、multiplicity 和同资产片段顺序逐项对账；v2 TOC 的 source/anchor、字段数量及无源页码 heading cache 必须一致。确定性内容缺失、重复 layout、资产或裁剪片段错配、不可见 payload 或 TOC disposition 违反失败关闭：source→IR 在线任务归类 `document_ir_failed`，IR→DOCX 归类 `render_failed`，本地不发布最终 DOCX。
 - 冲突/例外：两级策略固定为“内容损坏阻断、版式不确定安全降级”。术语替换使用 renderer 同一最终配置；Word field 的分 run 文本先合并；可解析 OMML 以其可见数学文本规范化证明，避免把合法公式判为丢失。LaTeX residue 但内容仍可见、decoration 歧义、soft page group、栏/表格容器或字号降级、实际分页、栏平衡、清晰度和其他现有 `quality_flags` 是非阻断人工复核风险；无法确定性证明的客户端行为不得伪装成阻断。旧 IR 无 inventory/语义证据时只跳过无法证明的 source 对账，不能跳过 IR→layout/DOCX 对账。
+- 人工复核合同：未决题注、未决表图重叠及自动恢复题注写入 `review_issues`，每项为 `code`、`source_page`（源 PDF 的 1-based 页码，未知为 null）、`block_id`、`message`。renderer evidence 随 generated_word metadata 持久化，files API 仅白名单投影四字段；任务详情只展示当前 result_file_id 的复核位置，不能称为 Word 实际页码。本地正式入口同步生成 `.review.json`。警告不改变成功状态和下载权限，确定性完整性阻断仍优先。
 - 禁止：把全部 quality flags 升级为 fatal；先写入/上传最终 DOCX 再检查；吞掉完整性异常或返回伪成功。
 - 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_renderer_evidence_blocks_missing_layout_drawing_and_table`、`.test_renderer_evidence_proves_visible_payloads_and_image_asset_identity`、`.test_renderer_evidence_blocks_missing_visible_payload_and_asset_identity_mismatch`；`tests.test_conversion_sandbox_dev_tools.LocalMinerUConversionCliTests.test_formal_adapter_does_not_publish_docx_when_renderer_integrity_blocks`；`tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_integrity_gates_fail_before_ir_or_word_publication`。
 - 样本证据：CM4112 当前 external 样本 expected/actual 为 53/53 drawings、8/8 tables、18/18 headings，`blocking_quality_flags=[]`；旧候选 15 drawings 的确定性丢失现会被阻断。
@@ -627,11 +630,11 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 | 冲突 | 基础规则 | 优先规则/裁决 | 必须共同保护的回归 |
 |---|---|---|---|
-| 同方向源页边界 vs 明确内容续接 | FLOW-001 | 明确续表、内容组、列表续接，或具有保全原因、页脚源角色和源页底边位置三重证据的正文块合并页面组；其他边界按 FLOW-002 锚定到最终首块 | SC2167 无 blank body pages；CM4112“工作原理”和独立表格组起页；SN54 首页声明与 TOC；整本文档页数变化须解释 |
+| 同方向源页边界 vs 明确内容续接 | FLOW-001 | 明确续表、内容组、列表续接，或具有保全原因、页脚源角色和源页底边位置三重证据的正文块合并页面组；其他普通边界保留出处但不强制 Word 分页，显式目录首块按 FLOW-002 起页 | CM1348 源页边界不制造大面积空白且目录从第 2 页开始；SC2167 与 SN54 目录/正文流动；整本文档页数变化须解释 |
 | 软页面分组 vs 长表跨页 | FLOW-001 | FLOW-003 的续表元数据抑制组间分页，`tblHeader`/`cantSplit` 交给 Word 分页；不得恢复逐源页硬分页 | CM4112 第 3/4 页、SC2167 长表不挤压且无空白页 |
 | 源页方向 vs 宽表 | PAGE-001 | 源 page 宽高方向优先；宽表本身不触发横向 | OPA228 P7 portrait wide table；真实 landscape page |
 | 普通原生双栏 vs 成对图片 | COL-002 | COL-003 仅对严格图片对使用有标记的无边框 1×2 布局表 | 左→右阅读顺序、多 annotation 不错配、SC2167 图片网格 |
-| 成对视觉行/表图复合 vs 共享图题 | COL-003、IMAGE-003、IMAGE-004 | 先裁决唯一视觉关系，再绑定题注；严格图片对仍用 1×2 布局表，表图复合以 image+table 为共同 subject，唯一题注作为同内容组的独立段落置于其后 | 图片同页成对、包含表图复合、题注只可见一次、无唯一主体时阻断 |
+| 成对视觉行/表图复合 vs 共享图题 | COL-003、IMAGE-003、IMAGE-004 | 先裁决唯一视觉关系，再绑定题注；严格图片对仍用 1×2 布局表，表图复合以 image+table 为共同 subject，唯一题注作为同内容组的独立段落置于其后 | 图片同页成对、包含表图复合、题注只可见一次、无唯一主体时保全并提示复核 |
 | 双栏 vs wide/局部单栏 | COL-001 | wide block 与真实单栏 gap 留在单栏 region；仅实际 band 进入双栏。只有短、纯文本且紧邻 wide 图片的视觉前导可降级为单栏连续组，并记录 evidence | OPA228/CM4112 首页内容顺序与表格宽度；SN54 机械图标签与主体同页 |
 | 模板绝对样式 vs 源版式 | STYLE-001 | 模板决定纸张/边距/字体；源 IR 决定内容语义、相对布局和方向 | 模板版本测试 + PAGE/COL/FLOW 共同回归 |
 | 模板/配置 decoration vs 源 decoration | STYLE-002 | 模板/配置是最终 owner；只有配置明确提供覆盖内容才重建 part，源 decoration 只留作证据，不写共享 section | 模板继承、空覆盖配置、自定义 footer/PAGE field、同向源 decoration 不覆盖 |
@@ -663,7 +666,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 | IR-002、PAGE-001、PAGE-002 | layout signals、section setup | converter/renderer layout | OPA228 PDF 仅作为输入资产 | CM4112 external | 没有当前真实纵横向/页数视觉基线 |
 | IR-003、IR-004、IR-005、QUALITY-004 | semantic normalization、integrity、converter、renderer evidence、正式发布边界 | converter/IR contract/renderer/formal adapter/document job | 无 | CM4112 当前对账；`sn54ac244` decoration/title external 回归 | 无 committed 含 chart/复杂 decoration 的 MinerU fixture；实际分页不属于阻断计数 |
 | TABLE-004 | shared table parser、source integrity、table renderer、renderer evidence | converter/renderer layout | 无 | SN54、SC2167 external 合法表格回归 | 无效输入确定性失败已闭环；无效路径不需要客户端视觉门禁 |
-| FLOW-001、FLOW-002 | layout plan 页面组/最终锚点、renderer 消费 | renderer layout | 无 | SC2167、CM4112 external | 无实际落页和空白页自动断言；客户端最终分页仍需视觉门禁 |
+| FLOW-001、FLOW-002 | layout plan 页面组/源页出处、renderer 自然续排与目录语义起页 | renderer layout | 无 | CM1348 v10、SC2167、CM4112 external | 无自动客户端落页断言；CM1348 图 11/12 后仍有一处明显空白 |
 | FLOW-003、TABLE-001、TABLE-002、TABLE-003 | layout signals、layout plan、table renderer | converter/renderer table tests | OPA228 P6/P7 PDF 未执行 | CM4112、SC2167 external | continuation height 只用于页面组续接；无表格挤压/跨页视觉门禁 |
 | COL-001、COL-002 | layout plan、renderer columns | renderer layout | OPA228 P1/P2 PDF 未执行 | CM4112 当前 LibreOffice/WPS、SC2167 external | 无自动 Word/WPS 栏平衡断言；WPS 分页仍与 LibreOffice 不同 |
 | COL-003、IMAGE-001、IMAGE-002、IMAGE-003、IMAGE-004 | layout plan、image renderer、DOCX analyzer/evidence、converter/source integrity | renderer/converter/layout contract image tests | 无真实图片 MinerU fixture | SC2167、`sn54ac244` external | 仅 1×1 PNG；损坏图片 fallback、DPI/清晰度无直接基线；裁剪后的最终流式排版仍需 Word/WPS 复核 |
@@ -697,7 +700,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 | `app/conversion/runtime/table_render_runtime.py` 与 `tests.test_render_table_from_html_characterization` | legacy 长表拆分、caption、table writer | TABLE-001/002/003 | writer 非权威；`table_html_parser.py` 是正式 renderer 当前实际依赖，但 legacy writer 测试仍不算正式证据 |
 | `app/conversion/runtime/text_rendering.py` 与 `tests.test_text_render_characterization` | legacy paragraph/TOC/title/list writer | TEXT、FIELD、MATH、STYLE 正式规则 | writer 非权威；指向 `app/conversion/docx_rules/text_semantics.py` 的共享纯规则测试只能作为补充证据 |
 | legacy static TOC/caption/page number | 静态点线、普通题注或静态页码 | FIELD-001/002/003 已取代 | 不恢复静态字段；页码始终使用原生 PAGE field |
-| legacy 每源页硬分页 | 物理页与 Word 页一一硬切 | FLOW-001/002；历史行为为 `superseded` | commit `5d4a02d7` 明确取代；章节/表格组只走 FLOW-002 |
+| legacy 每源页硬分页 | 物理页与 Word 页一一硬切 | FLOW-001/002；历史行为为 `superseded` | commit `5d4a02d7` 删除逐页硬分节；同向源页不再设置 `pageBreakBefore`，方向变化仍由 PAGE-002 处理 |
 | legacy 固定/最小图片宽度 | 以固定尺寸提高可见性 | IMAGE-001；历史行为为 `superseded` | 正式 renderer 使用 bbox 相对宽度；清晰度问题应通过真实图片样本处理 |
 | legacy 1×2 布局表格 | 用表格模拟正文双栏或图片对 | COL-002/003；普通正文包装行为为 `superseded` | 普通正文用原生栏；严格图片对仅用带标记的无边框 1×2 布局表 |
 

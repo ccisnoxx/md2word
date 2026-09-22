@@ -29,6 +29,7 @@ DATE_MARKER_RE = re.compile(
 )
 URL_MARKER_RE = re.compile(r"^(?:https?://|www\.)\S+$", re.IGNORECASE)
 DECORATION_SOURCE_TYPES = {"header", "page_header", "footer", "page_footer", "page_number"}
+MarginLineKey = tuple[str, str, tuple[str, int]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,7 +104,7 @@ def _base_decision(
     candidate: SemanticCandidate,
     *,
     page_has_regular_content: bool,
-    recurring_lines: set[tuple[str, str]],
+    recurring_lines: set[MarginLineKey],
     subject_header_indices: set[int],
     aligned_decoration_indices: set[int],
 ) -> SemanticDecision:
@@ -190,12 +191,12 @@ def _decoration_decision(
     candidate: SemanticCandidate,
     *,
     page_has_regular_content: bool,
-    recurring_lines: set[tuple[str, str]],
+    recurring_lines: set[MarginLineKey],
     is_subject_header: bool,
     is_aligned_decoration: bool,
 ) -> SemanticDecision:
     text = candidate.text.strip()
-    if text and ((candidate.page_index is not None and not page_has_regular_content) or len(text) > 200):
+    if text and len(text) > 200:
         return SemanticDecision(
             "paragraph",
             "body",
@@ -213,15 +214,35 @@ def _decoration_decision(
             )
         if _has_recurring_margin_lines(candidate, recurring_lines):
             return SemanticDecision("paragraph", role, "repeated_margin_decoration")
+        if text and candidate.page_index is not None and not page_has_regular_content and candidate.source_type != "page_number":
+            return SemanticDecision(
+                "paragraph",
+                "body",
+                "decoration_candidate_promoted_to_body",
+                quality_flags=(f"semantic_decoration_promoted:{candidate.source_index}",),
+            )
         if is_aligned_decoration:
             return SemanticDecision("paragraph", role, "aligned_margin_decoration_group")
-        if _is_structured_margin_marker(candidate):
+        if _is_structured_margin_marker(candidate) and (
+            candidate.source_type == "page_number"
+            or candidate.source_type in {"header", "page_header"}
+            or candidate.bbox is not None
+            and candidate.page_height is not None
+            and candidate.bbox[1] >= candidate.page_height * 0.75
+        ):
             return SemanticDecision("paragraph", role, "structured_margin_marker")
         return SemanticDecision(
             "paragraph",
             "body",
             "ambiguous_margin_decoration_preserved_as_body",
             quality_flags=(f"semantic_decoration_ambiguous:{candidate.source_index}",),
+        )
+    if text and candidate.page_index is not None and not page_has_regular_content:
+        return SemanticDecision(
+            "paragraph",
+            "body",
+            "decoration_candidate_promoted_to_body",
+            quality_flags=(f"semantic_decoration_promoted:{candidate.source_index}",),
         )
     return SemanticDecision(
         "paragraph",
@@ -237,7 +258,9 @@ def _is_margin_decoration(candidate: SemanticCandidate) -> bool:
     _left, top, _right, bottom = candidate.bbox
     if candidate.source_type in {"header", "page_header"}:
         return bottom <= candidate.page_height * 0.12
-    return top >= candidate.page_height * 0.75
+    # MinerU 的 bbox 与 layout.page_size 可能采用不同的纵向缩放比例。
+    # 0.70～0.75 区间只允许跨页重复行或明确页码作为装饰，孤立正文仍保留。
+    return top >= candidate.page_height * 0.70
 
 
 def _structured_subject_pages(candidates: list[SemanticCandidate]) -> set[int]:
@@ -275,7 +298,7 @@ def _recurring_margin_lines(
     candidates: list[SemanticCandidate],
     *,
     subject_pages: set[int],
-) -> tuple[set[tuple[str, str]], set[tuple[str, str]]]:
+) -> tuple[set[MarginLineKey], set[MarginLineKey]]:
     """按跨页覆盖率和稳定边缘位置提取真实重复 decoration 行。"""
 
     document_pages = {candidate.page_index for candidate in candidates if candidate.page_index is not None}
@@ -290,20 +313,28 @@ def _recurring_margin_lines(
                 (candidate.page_index, _margin_position_bucket(candidate))
             )
 
-    recurring: set[tuple[str, str]] = set()
-    recurring_outside_subject: set[tuple[str, str]] = set()
+    recurring: set[MarginLineKey] = set()
+    recurring_outside_subject: set[MarginLineKey] = set()
     for key, values in observations.items():
         pages = {page_index for page_index, _position in values}
-        positions = {position for _page_index, position in values}
+        position_pages: dict[tuple[str, int], set[int]] = defaultdict(set)
+        for page_index, position in values:
+            position_pages[position].add(page_index)
+        stable_positions = sorted(position_pages.items(), key=lambda item: -len(item[1]))[:2]
+        stable_pages = set().union(*(group for _position, group in stable_positions))
         if (
             len(pages) < 2
             or (len(pages) / len(document_pages) < 0.2 and len(pages) < 6)
-            or len(positions) > 2
+            or len(stable_pages) / len(pages) < 0.8
         ):
             continue
-        recurring.add(key)
-        if pages - subject_pages:
-            recurring_outside_subject.add(key)
+        for position, stable_position_pages in stable_positions:
+            if len(stable_position_pages) < (1 if len(pages) == 2 else 2):
+                continue
+            positioned_key = (*key, position)
+            recurring.add(positioned_key)
+            if stable_position_pages - subject_pages:
+                recurring_outside_subject.add(positioned_key)
     return recurring, recurring_outside_subject
 
 
@@ -311,7 +342,7 @@ def _subject_header_indices(
     candidates: list[SemanticCandidate],
     *,
     subject_pages: set[int],
-    recurring_lines_outside_subject: set[tuple[str, str]],
+    recurring_lines_outside_subject: set[MarginLineKey],
 ) -> set[int]:
     """逐块绑定技术标签与同页大图/表格主体，不提升同页稳定品牌装饰。"""
 
@@ -384,10 +415,13 @@ def _aligned_margin_group_indices(
     return result
 
 
-def _has_recurring_margin_lines(candidate: SemanticCandidate, recurring_lines: set[tuple[str, str]]) -> bool:
+def _has_recurring_margin_lines(candidate: SemanticCandidate, recurring_lines: set[MarginLineKey]) -> bool:
     lines = _line_signatures(candidate.text)
     family = _decoration_family(candidate.source_type)
-    return bool(lines) and all((family, line) in recurring_lines for line in lines)
+    if not lines or candidate.bbox is None or not candidate.page_width or not candidate.page_height:
+        return False
+    position = _margin_position_bucket(candidate)
+    return all((family, line, position) in recurring_lines for line in lines)
 
 
 def _line_signatures(text: str) -> tuple[str, ...]:

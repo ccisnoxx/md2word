@@ -139,9 +139,10 @@ class _OmmlParser:
 
     def _parse_command(self) -> Any:
         self.position += 1
-        if self.position < len(self.source) and self.source[self.position] == ",":
+        if self.position < len(self.source) and self.source[self.position] in {",", "_"}:
+            escaped = self.source[self.position]
             self.position += 1
-            return self._math_run("\u2009")
+            return self._math_run("\u2009") if escaped == "," else self._upright_math_run("_")
         start = self.position
         while self.position < len(self.source) and self.source[self.position].isalpha():
             self.position += 1
@@ -233,11 +234,15 @@ class _OmmlParser:
                 raise ValueError("公式编号不能为空")
             # OMML 没有 TeX tag 的等价布局；直接追加可见序列，保留参数内已解析的复杂数学节点。
             return [self._upright_math_run("("), *group, self._upright_math_run(")")]
-        symbol = GREEK_AND_TEXT_COMMANDS.get(command)
+        if command in {"ln", "log", "exp", "sin", "cos", "tan"}:
+            return self._upright_math_run(command)
+        symbol = GREEK_AND_TEXT_COMMANDS.get(command, {"Sigma": "Σ", "pi": "π", "tau": "τ"}.get(command))
         if symbol is None:
             raise ValueError(f"不支持的 TeX 命令: {command}")
         run = self._math_run(symbol)
-        if all(self._is_upright_math_character(char) for char in symbol):
+        if command in {"max", "min"} or all(
+            self._is_upright_math_character(char) for char in symbol
+        ):
             self._apply_roman_style([run])
         return run
 

@@ -16,10 +16,12 @@ from docx import Document
 
 from app.conversion.docx_rules.mineru_content import find_final_promotional_page
 from app.conversion.docx_rules.text_semantics import parse_decimal_list_marker
-from app.services.document_ir.integrity import DocumentIntegrityError, build_source_integrity
+from app.services.document_ir.integrity import (
+    DocumentIntegrityError, build_source_integrity, build_source_review_issues,
+)
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.renderer import DocumentIRWordRenderer
-from app.services.renderer.evidence import build_renderer_evidence
+from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
 from app.services.renderer.layout_plan import build_layout_plan
 
 
@@ -32,6 +34,89 @@ MINIMAL_PNG_BYTES = (
 
 
 class MinerUToDocumentIRLayoutTests(unittest.TestCase):
+    def test_displaced_caption_recovery_does_not_guess_ambiguous_or_cross_page_subjects(self) -> None:
+        for case in ("gap", "duplicate", "multiple_missing", "cross_page", "compound"):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temp_dir:
+                blocks = [
+                    {"type": "image", "img_path": "images/a.png", "image_caption": ["Figure 8. First"],
+                     "bbox": [30, 40, 240, 140], "page_idx": 0},
+                    {"type": "image", "img_path": "images/b.png", "bbox": [30, 200, 240, 300], "page_idx": 0},
+                    {"type": "image", "img_path": "images/c.png", "image_caption": ["Figure 10. Last"],
+                     "bbox": [30, 360, 240, 460], "page_idx": 0},
+                    {"type": "text", "text": "Independent data", "bbox": [310, 20, 560, 40], "page_idx": 0},
+                    {"type": "table", "table_caption": ["Figure 9. Middle"],
+                     "table_body": "<table><tr><td>A</td><td>B</td></tr><tr><td>C</td><td>D</td></tr></table>",
+                     "bbox": [310, 60, 560, 160], "page_idx": 0},
+                ]
+                if case == "gap":
+                    blocks[2]["image_caption"] = ["Figure 12. Last"]
+                elif case == "duplicate":
+                    blocks.append({**blocks[0], "bbox": [310, 650, 560, 750]})
+                elif case == "multiple_missing":
+                    blocks[2]["image_caption"] = []
+                elif case == "cross_page":
+                    blocks[1]["page_idx"] = 1
+                else:
+                    blocks[4]["table_caption"] = ["Figure 9-1. Middle"]
+                zip_path = Path(temp_dir) / "mineru.zip"
+                self._write_zip(zip_path, blocks=blocks,
+                    layout={"pdf_info": [{"page_idx": n, "page_size": [600, 800]} for n in (0, 1)]},
+                    images={f"images/{name}.png": MINIMAL_PNG_BYTES for name in "abc"})
+                result = MinerUToDocumentIRService().convert_zip(
+                    zip_path, job_id="negative", source_file_id="source", document_language="en",
+                )
+            self.assertFalse(any(block.metadata.get("caption_reassociated_from") for block in result.document.blocks))
+            table = next(block for block in result.document.blocks if block.id == "block_0005")
+            self.assertEqual(table.captions, blocks[4]["table_caption"])
+            self.assertIn("caption_subject_unresolved", [issue["code"] for issue in build_source_review_issues(result.document)])
+
+    def test_recover_displaced_numbered_caption_preserves_multiline_table_and_annotations(self) -> None:
+        for table_above in (False, True):
+            with self.subTest(table_above=table_above), tempfile.TemporaryDirectory() as temp_dir:
+                zip_path = Path(temp_dir) / "mineru.zip"
+                blocks = [
+                    {"type": "image", "img_path": "images/a.png", "image_caption": ["Figure 8. First"],
+                     "bbox": [30, 40, 240, 140], "page_idx": 3},
+                    {"type": "image", "img_path": "images/b.png", "bbox": [30, 200, 240, 300], "page_idx": 3},
+                    {"type": "image", "img_path": "images/c.png", "image_caption": ["Figure 10. Last"],
+                     "bbox": [30, 360, 240, 460], "page_idx": 3},
+                    {"type": "text", "text": "Independent data", "bbox": [310, 20, 560, 40], "page_idx": 3},
+                    {"type": "table", "content": {
+                        "table_caption": [{"type": "text", "content": "Figure 9. Middle"},
+                                          {"type": "text", "content": "Table 2. Limits"},
+                                          {"type": "equation_inline", "content": "V_{IN}"}],
+                        "html": "<table><tr><td>A</td><td>B</td><td>C</td><td>D</td></tr>"
+                                "<tr><td>E</td><td>F</td><td>G</td><td>H</td></tr>"
+                                "<tr><td>I</td><td>J</td><td>K</td><td>L</td></tr></table>",
+                        "table_footnote": ["Retain this note"],
+                    }, "bbox": [310, 60, 560, 160] if table_above else [310, 500, 560, 620], "page_idx": 3},
+                ]
+                self._write_zip(zip_path, blocks=blocks,
+                    layout={"pdf_info": [{"page_idx": 3, "page_size": [600, 800]}]},
+                    images={f"images/{name}.png": MINIMAL_PNG_BYTES for name in "abc"})
+                result = MinerUToDocumentIRService().convert_zip(
+                    zip_path, job_id="recovery", source_file_id="source", document_language="en",
+                )
+            table = next(block for block in result.document.blocks if block.id == "block_0005")
+            caption = next(block for block in result.document.blocks if block.text == "Figure 9. Middle")
+            self.assertEqual(table.type, "table")
+            self.assertTrue(table.captions[0].startswith("Table 2. Limits"))
+            self.assertIn("$V_{IN}$", table.captions[0])
+            self.assertEqual(table.footnotes, ["Retain this note"])
+            self.assertEqual(caption.metadata["subject_block_ids"], ["block_0002"])
+            self.assertEqual(build_source_review_issues(result.document)[0]["source_page"], 4)
+            image_bytes = {asset.asset_id: asset.content for asset in result.image_assets}
+            content = DocumentIRWordRenderer().render_to_bytes(
+                result.document, template_path=None, config_path=None,
+                image_loader=lambda asset: image_bytes.get(asset.id),
+            )
+            ensure_renderer_integrity(build_renderer_evidence(result.document, content))
+            word = Document(io.BytesIO(content))
+            self.assertTrue(word.element.xpath(".//m:oMath"))
+            self.assertEqual(len(word.inline_shapes), 3)
+            self.assertEqual(sum(p.text == "Figure 9. Middle" for p in word.paragraphs), 1)
+            self.assertEqual(word.tables[0].cell(2, 3).text, "L")
+
     def test_convert_zip_prefers_v2_content_and_keeps_legacy_only_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
@@ -1235,13 +1320,14 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
                 },
             )
 
-            with self.assertRaisesRegex(DocumentIntegrityError, "caption_subject_unresolved:block_0002"):
-                MinerUToDocumentIRService().convert_zip(
+            result = MinerUToDocumentIRService().convert_zip(
                     zip_path,
                     job_id="docjob_unaligned_sparse_visual_tables",
                     source_file_id="file_unaligned_sparse_visual_tables",
                     document_language="zh",
                 )
+        self.assertEqual([block.type for block in result.document.blocks[:2]], ["table", "table"])
+        self.assertEqual(build_source_review_issues(result.document)[0]["code"], "caption_subject_unresolved")
 
     def test_convert_zip_keeps_real_single_row_table_with_image_source(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1387,7 +1473,7 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
         self.assertEqual(evidence["visible_payload_evidence"]["counts"]["annotation"], {"expected": 1, "covered": 1})
         self.assertIn("shared_image_caption_group:block_0001:block_0002", result.document.quality_flags)
 
-    def test_convert_zip_blocks_figure_caption_on_table_without_unique_image_subject(self) -> None:
+    def test_convert_zip_preserves_ambiguous_caption_and_generates_reviewable_word(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             zip_path = Path(temp_dir) / "mineru.zip"
             self._write_zip(
@@ -1404,13 +1490,23 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
                 layout={"pdf_info": [{"page_idx": 0, "page_size": [600, 800]}]},
             )
 
-            with self.assertRaisesRegex(DocumentIntegrityError, "caption_subject_unresolved:block_0001"):
-                MinerUToDocumentIRService().convert_zip(
+            result = MinerUToDocumentIRService().convert_zip(
                     zip_path,
                     job_id="docjob_ambiguous_figure_caption",
                     source_file_id="file_ambiguous_figure_caption",
                     document_language="en",
                 )
+        content = DocumentIRWordRenderer().render_to_bytes(
+            result.document, template_path=None, config_path=None, image_loader=lambda asset: None,
+        )
+        evidence = build_renderer_evidence(result.document, content)
+        ensure_renderer_integrity(evidence)
+        word = Document(io.BytesIO(content))
+        self.assertEqual(word.tables[0].cell(0, 0).text, "VALUE")
+        self.assertIn("Figure 2. Ambiguous visual", [paragraph.text for paragraph in word.paragraphs])
+        self.assertEqual(evidence["review_issues"][0]["source_page"], 1)
+        self.assertEqual(evidence["review_issues"][0]["block_id"], "block_0001")
+        self.assertEqual(evidence["review_issues"][0]["code"], "caption_subject_unresolved")
 
     def test_convert_zip_normalizes_unique_table_contained_in_image_without_losing_editable_content(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1539,7 +1635,7 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
             result.document.quality_flags,
         )
 
-    def test_convert_zip_blocks_ambiguous_table_image_containment(self) -> None:
+    def test_convert_zip_preserves_ambiguous_table_image_containment_for_review(self) -> None:
         blocks = [
             {
                 "type": "table",
@@ -1576,13 +1672,24 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
                 },
             )
 
-            with self.assertRaisesRegex(DocumentIntegrityError, "visual_overlap_unresolved"):
-                MinerUToDocumentIRService().convert_zip(
+            result = MinerUToDocumentIRService().convert_zip(
                     zip_path,
                     job_id="docjob_ambiguous_visual_overlap",
                     source_file_id="file_ambiguous_visual_overlap",
                     document_language="en",
                 )
+        self.assertEqual([block.type for block in result.document.blocks], ["table", "image", "image"])
+        self.assertTrue(build_source_review_issues(result.document))
+        self.assertFalse(any(block.metadata.get("visual_crop_rects") for block in result.document.blocks))
+        image_bytes = {asset.asset_id: asset.content for asset in result.image_assets}
+        content = DocumentIRWordRenderer().render_to_bytes(
+            result.document, template_path=None, config_path=None,
+            image_loader=lambda asset: image_bytes.get(asset.id),
+        )
+        ensure_renderer_integrity(build_renderer_evidence(result.document, content))
+        word = Document(io.BytesIO(content))
+        self.assertEqual(len(word.inline_shapes), 2)
+        self.assertEqual(word.tables[0].cell(0, 0).text, "DIM")
 
     def test_convert_zip_blocks_unsafe_table_image_normalization_inputs(self) -> None:
         cases = {
@@ -1625,7 +1732,15 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
                     images=images,
                 )
 
-                with self.assertRaisesRegex(DocumentIntegrityError, "visual_overlap_unresolved"):
+                if label == "表区超过半幅":
+                    result = MinerUToDocumentIRService().convert_zip(
+                        zip_path, job_id="docjob_large_overlap", source_file_id="file_large_overlap",
+                        document_language="en",
+                    )
+                    self.assertTrue(build_source_review_issues(result.document))
+                    self.assertEqual([block.type for block in result.document.blocks], ["table", "image"])
+                    continue
+                with self.assertRaisesRegex(DocumentIntegrityError, "payload_missing"):
                     MinerUToDocumentIRService().convert_zip(
                         zip_path,
                         job_id="docjob_unsafe_visual_overlap",
@@ -1798,6 +1913,98 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
         self.assertIn("semantic_decoration_ambiguous:5", document.quality_flags)
         self.assertIn("semantic_decoration_promoted:7", document.quality_flags)
         self.assertIn("semantic_decoration_ambiguous:8", document.quality_flags)
+
+    def test_repeated_margins_survive_first_page_outlier_and_decoration_only_pages(self) -> None:
+        blocks: list[dict[str, Any]] = []
+        for page_index in range(8):
+            header_bbox = (
+                [55, 67, 347, 141] if page_index == 0
+                else [845, 14, 939, 39] if page_index % 2 == 0
+                else [58, 14, 152, 39]
+            )
+            blocks.extend([
+                {"type": "page_header", "text": "ACME DEVICE", "bbox": header_bbox, "page_idx": page_index},
+                {"type": "page_footer", "text": "ACME DEVICE MANUAL", "bbox": [67, 910, 376, 925], "page_idx": page_index},
+                {"type": "page_number", "text": str(page_index + 1), "bbox": [922, 910, 934, 925], "page_idx": page_index},
+            ])
+            if page_index not in {3, 4}:
+                blocks.append({
+                    "type": "text", "text": f"Body page {page_index}",
+                    "bbox": [60, 180, 600, 250], "page_idx": page_index,
+                })
+        blocks.append({
+            "type": "page_footer", "text": "Unique engineering note",
+            "bbox": [67, 910, 376, 925], "page_idx": 7,
+        })
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "mineru.zip"
+            self._write_zip(
+                zip_path,
+                blocks=blocks,
+                layout={"pdf_info": [{"page_idx": index, "page_size": [600, 800]} for index in range(8)]},
+            )
+            document = MinerUToDocumentIRService().convert_zip(
+                zip_path,
+                job_id="docjob_repeated_margins",
+                source_file_id="file_repeated_margins",
+                document_language="en",
+            ).document
+
+        headers = {block.page_index: block for block in document.blocks if block.text == "ACME DEVICE"}
+        self.assertEqual(headers[0].layout.role, "body")
+        self.assertEqual({headers[index].layout.role for index in range(1, 8)}, {"page_header"})
+        self.assertEqual(
+            {block.layout.role for block in document.blocks if block.text == "ACME DEVICE MANUAL"},
+            {"page_footer"},
+        )
+        self.assertEqual(
+            {block.layout.role for block in document.blocks if block.metadata.get("source_type") == "page_number"},
+            {"page_number"},
+        )
+        self.assertEqual(
+            next(block.layout.role for block in document.blocks if block.text == "Unique engineering note"),
+            "body",
+        )
+        plan = build_layout_plan(document)
+        self.assertTrue(any({3, 4}.issubset(page.source_page_indices) for page in plan.pages))
+        self.assertFalse(any(
+            block.text == "ACME DEVICE" and block.page_index != 0
+            for page in plan.pages for region in page.regions for block in region.blocks
+        ))
+
+    def test_repeated_subject_labels_and_isolated_footer_remain_visible(self) -> None:
+        blocks: list[dict[str, Any]] = []
+        for page_index in range(5):
+            blocks.extend([
+                {"type": "page_header", "text": "Pin configuration", "bbox": [40, 20, 220, 60], "page_idx": page_index},
+                {"type": "image", "img_path": "images/chart.png", "bbox": [40, 90, 560, 700], "page_idx": page_index},
+            ])
+        blocks.append({
+            "type": "page_footer", "text": "Do not exceed 5 V.",
+            "bbox": [40, 760, 500, 790], "page_idx": 5,
+        })
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "mineru.zip"
+            self._write_zip(
+                zip_path,
+                blocks=blocks,
+                layout={"pdf_info": [{"page_idx": index, "page_size": [600, 800]} for index in range(6)]},
+                images={"images/chart.png": MINIMAL_PNG_BYTES},
+            )
+            document = MinerUToDocumentIRService().convert_zip(
+                zip_path,
+                job_id="docjob_subject_labels",
+                source_file_id="file_subject_labels",
+                document_language="en",
+            ).document
+
+        self.assertEqual(
+            {block.layout.role for block in document.blocks if block.text == "Pin configuration"},
+            {"body"},
+        )
+        footer = next(block for block in document.blocks if block.text == "Do not exceed 5 V.")
+        self.assertEqual(footer.layout.role, "body")
+        self.assertEqual(footer.metadata["semantic_decision_reason"], "decoration_candidate_promoted_to_body")
 
     def test_semantic_normalization_keeps_page_subject_labels_beside_true_decorations(self) -> None:
         blocks = [

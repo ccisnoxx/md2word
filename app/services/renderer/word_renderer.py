@@ -11,7 +11,7 @@ from typing import Any
 
 from docx import Document
 from docx.enum.section import WD_ORIENTATION, WD_SECTION_START
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 from docx.image.exceptions import InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -136,6 +136,11 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
 
         assets_by_id = {asset.id: asset for asset in document_ir.assets}
         resolved_layout_plan = layout_plan or build_layout_plan(document_ir, template_config)
+        if any(
+            page.width is not None and page.height is not None and not self._layout_page_requires_landscape(page)
+            for page in resolved_layout_plan.pages
+        ):
+            self._normalize_template_header_spacers(document)
         render_context = self._build_render_context(
             document_ir,
             resolved_layout_plan.table_fit_decisions,
@@ -150,6 +155,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
             for page_index, page in enumerate(resolved_layout_plan.pages):
                 page_landscape = self._layout_page_requires_landscape(page)
                 starts_with_landscape_table = bool(page.regions and page.regions[0].kind == "landscape_table")
+                starts_new_page_section = False
                 if page_index == 0:
                     self._configure_layout_page_section(
                         document,
@@ -160,6 +166,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                 elif not starts_with_landscape_table:
                     if page_landscape != current_section_landscape:
                         document.add_section(WD_SECTION_START.NEW_PAGE)
+                        starts_new_page_section = True
                     self._configure_layout_page_section(document, page, template_config, landscape=page_landscape)
                 self._render_layout_page(
                     document,
@@ -168,7 +175,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                     template_config,
                     image_loader,
                     render_context,
-                    page_break_before_block_id=page.break_before_block_id,
+                    page_break_before_block_id=None if starts_new_page_section else page.break_before_block_id,
                     use_current_section_for_first_landscape=page_index == 0 and starts_with_landscape_table,
                 )
                 if page.regions:
@@ -390,6 +397,34 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
             if template_config.footer.show_page_number:
                 self._add_complex_field(paragraph, " PAGE ", "1", footer_style)
 
+    def _normalize_template_header_spacers(self, document: Any) -> None:
+        """窄页中把模板的长空格占位符改为相对页边距的右对齐 tab。"""
+
+        for section in document.sections:
+            if section.header.is_linked_to_previous:
+                continue
+            for paragraph in section.header.paragraphs:
+                if paragraph.alignment != WD_ALIGN_PARAGRAPH.DISTRIBUTE:
+                    continue
+                runs = paragraph.runs
+                for index, run in enumerate(runs):
+                    if len(run.text) < 24 or run.text.strip() or not any(
+                        later.text.strip() for later in runs[index + 1 :]
+                    ):
+                        continue
+                    tab = OxmlElement("w:ptab")
+                    tab.set(qn("w:alignment"), "right")
+                    tab.set(qn("w:relativeTo"), "margin")
+                    tab.set(qn("w:leader"), "none")
+                    text_nodes = run._r.findall(qn("w:t"))
+                    if not text_nodes:
+                        continue
+                    run._r.replace(text_nodes[0], tab)
+                    for text_node in text_nodes[1:]:
+                        run._r.remove(text_node)
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                    break
+
     def _add_positional_tab(self, paragraph: Any, alignment: str) -> None:
         run = paragraph.add_run()
         tab = OxmlElement("w:ptab")
@@ -468,9 +503,12 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                 paragraph = document.add_paragraph()
                 self._apply_paragraph_breaks(
                     paragraph,
-                    page_break_before=page_break_before,
+                    page_break_before=False,
                     column_break_before=column_break_before,
                 )
+                if page_break_before:
+                    # WPS 对连续分节后的 pageBreakBefore 可能多造一张空白页。
+                    paragraph.add_run().add_break(WD_BREAK.PAGE)
                 self._fill_paragraph(
                     paragraph,
                     text,
@@ -775,3 +813,6 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
             columns = OxmlElement("w:cols")
             section._sectPr.append(columns)
         columns.set(qn("w:num"), str(count))
+        if count > 1 and columns.get(qn("w:space")) in (None, "0"):
+            # 单栏模板的零栏距不能直接继承到双栏正文，否则两栏文字会贴合。
+            columns.set(qn("w:space"), "720")

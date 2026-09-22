@@ -200,6 +200,13 @@ def convert_formal_mineru_package(request: FormalMinerUConversionRequest) -> For
         source_document_ir_path.write_text(source_document_ir.model_dump_json(indent=2), encoding="utf-8")
 
     request.output_path.write_bytes(word_content)
+    request.output_path.with_suffix(".review.json").write_text(
+        json.dumps({
+            "page_reference": "source_pdf_1_based",
+            "review_issues": renderer_metadata["review_issues"],
+            "quality_flags": renderer_metadata["quality_flags"],
+        }, ensure_ascii=False, indent=2), encoding="utf-8",
+    )
     docx_quality = renderer_metadata["docx_quality"]
     quality_flags = renderer_metadata["quality_flags"]
     return FormalMinerUConversionResult(

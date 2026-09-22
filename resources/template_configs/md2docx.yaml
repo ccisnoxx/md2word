@@ -6,7 +6,7 @@
 
 # 基础配置
 output: output                    # 输出目录
-template: resources/templates/default/datasheet_template.docx  # Word 模板路径
+template: resources/templates/default/datasheet_template_v2.docx  # Word 模板路径
 enable_toc: false                 # 是否生成目录
 
 # 表格配置

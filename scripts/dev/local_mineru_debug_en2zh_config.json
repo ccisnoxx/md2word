@@ -3,7 +3,7 @@
   "output_path": "tests/tmp/local_mineru_debug/en2zh/OPA228_P1.zh.docx",
   "document_language": "auto",
   "translation_mode": "en2zh",
-  "template_path": "resources/templates/default/datasheet_template.docx",
+  "template_path": "resources/templates/default/datasheet_template_v2.docx",
   "layout_config_path": "resources/template_configs/datasheet_template.yaml",
   "subscript_config": "resources/term_rules/subscripts_dictionary.yaml",
   "no_template": false,

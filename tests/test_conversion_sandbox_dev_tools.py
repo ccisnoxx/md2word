@@ -281,6 +281,29 @@ class LocalMinerUConversionCliTests(TestCase):
                 )
 
             self.assertFalse(output_path.exists())
+            self.assertFalse(output_path.with_suffix(".review.json").exists())
+
+    def test_formal_adapter_publishes_word_with_source_page_review_report(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            package = root / "mineru-package"
+            package.mkdir()
+            (package / "sample_content_list_v2.json").write_text(json.dumps([{
+                "type": "table", "table_caption": ["Figure 7. Unresolved subject"],
+                "table_body": "<table><tr><td>Preserved data</td></tr></table>",
+                "bbox": [10, 20, 180, 60], "page_idx": 2,
+            }]), encoding="utf-8")
+            output_path = root / "reviewable.docx"
+            result = formal_mineru_conversion.run_conversion(
+                input_path=str(package), output_path=str(output_path), template_path=None,
+                subscript_config=None, no_template=True, document_language="en",
+            )
+            report = json.loads(output_path.with_suffix(".review.json").read_text(encoding="utf-8"))
+            self.assertEqual(report["page_reference"], "source_pdf_1_based")
+            self.assertEqual(report["review_issues"][0]["source_page"], 3)
+            self.assertEqual(report["review_issues"][0]["code"], "caption_subject_unresolved")
+            self.assertEqual(result.renderer_metadata["blocking_quality_flags"], [])
+            self.assertEqual(Document(output_path).tables[0].cell(0, 0).text, "Preserved data")
 
     def test_formal_adapter_writes_translation_request_before_missing_key_failure(self) -> None:
         with TemporaryDirectory() as tmp_dir:

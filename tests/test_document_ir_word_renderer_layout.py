@@ -14,6 +14,7 @@ from xml.etree import ElementTree
 
 from docx import Document
 from docx.enum.section import WD_ORIENTATION, WD_SECTION_START
+from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -640,6 +641,41 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertEqual(rendered.sections[0].left_margin, rendered.sections[1].left_margin)
         self.assertTrue(rendered.sections[1].header.is_linked_to_previous)
 
+    def test_two_column_section_replaces_zero_template_gutter_only(self) -> None:
+        for template_space, expected_space in (("0", "720"), ("540", "540")):
+            with self.subTest(template_space=template_space), tempfile.TemporaryDirectory() as directory:
+                template = Document()
+                columns = template.sections[0]._sectPr.find(qn("w:cols"))
+                self.assertIsNotNone(columns)
+                columns.set(qn("w:space"), template_space)
+                template_path = Path(directory) / "template.docx"
+                template.save(template_path)
+
+                content = DocumentIRWordRenderer().render_to_bytes(
+                    self._make_v2_two_column_document(),
+                    template_path=template_path,
+                    config_path=None,
+                    image_loader=lambda _asset: None,
+                )
+                rendered = Document(io.BytesIO(content))
+                two_column_sections = [
+                    section
+                    for section in rendered.sections
+                    if section._sectPr.find(qn("w:cols")).get(qn("w:num")) == "2"
+                ]
+                self.assertEqual(len(two_column_sections), 1)
+                self.assertEqual(
+                    two_column_sections[0]._sectPr.find(qn("w:cols")).get(qn("w:space")),
+                    expected_space,
+                )
+
+    def test_bundled_default_template_declares_720_twip_column_spacing(self) -> None:
+        template_path = Path(__file__).resolve().parents[1] / "resources" / "templates" / "default" / "datasheet_template_v2.docx"
+        template = Document(template_path)
+        columns = template.sections[0]._sectPr.find(qn("w:cols"))
+        self.assertIsNotNone(columns)
+        self.assertEqual(columns.get(qn("w:space")), "720")
+
     def test_render_to_bytes_prefers_column_hint_when_ordering_native_columns(self) -> None:
         renderer = DocumentIRWordRenderer()
 
@@ -707,12 +743,35 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertIn("Left second", rendered.tables[1].cell(0, 0).text)
         self.assertIn("Right second", rendered.tables[1].cell(0, 1).text)
         self.assertEqual(xml.count('w:val="md2word:paired_visual_row"'), 2)
+        for table in rendered.tables:
+            self.assertEqual(len(table._tbl.xpath("./w:tr/w:trPr/w:cantSplit")), 1)
+            self.assertTrue(all(paragraph.paragraph_format.keep_with_next is False for cell in table.rows[0].cells for paragraph in cell.paragraphs))
         self.assertNotIn("<w:tabs>", xml)
         for source_number in range(1, 5):
             self.assertIn(f" SEQ Figure \\r {source_number} \\* ARABIC ", xml)
         quality = analyze_docx_quality_bytes(content)
         self.assertEqual(quality["table_count"], 0)
         self.assertEqual(quality["layout_table_count"], 2)
+
+        with tempfile.TemporaryDirectory() as directory:
+            template = Document()
+            for style in template.styles:
+                if style.type == WD_STYLE_TYPE.PARAGRAPH:
+                    style.paragraph_format.keep_with_next = True
+            template_path = Path(directory) / "inherited-keep-next.docx"
+            template.save(template_path)
+            inherited_content = DocumentIRWordRenderer().render_to_bytes(
+                document,
+                template_path=template_path,
+                config_path=None,
+                image_loader=lambda _asset: MINIMAL_PNG_BYTES,
+            )
+            inherited = Document(io.BytesIO(inherited_content))
+            for table in inherited.tables:
+                for cell in table.rows[0].cells:
+                    for paragraph in cell.paragraphs:
+                        self.assertTrue(paragraph.style.paragraph_format.keep_with_next)
+                        self.assertIs(paragraph.paragraph_format.keep_with_next, False)
 
     def test_render_to_bytes_keeps_multi_annotation_images_in_native_columns(self) -> None:
         document = DocumentIR(
@@ -777,10 +836,91 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
 
         self.assertEqual(rendered.sections[-1].start_type, WD_SECTION_START.CONTINUOUS)
         self.assertNotIn('<w:br w:type="page"', xml)
-        self.assertIn("<w:pageBreakBefore/>", xml)
+        self.assertNotIn("<w:pageBreakBefore/>", xml)
         self.assertTrue(any(paragraph.text == "Next source page" for paragraph in rendered.paragraphs))
 
-    def test_render_to_bytes_anchors_semantic_page_breaks_to_real_content(self) -> None:
+    def test_toc_title_at_source_page_start_uses_inline_break_without_empty_page_marker(self) -> None:
+        def sample(*, toc_first: bool) -> DocumentIR:
+            blocks = [
+                DocumentIRBlock(
+                    id="cover", type="paragraph", order=0, text="Cover body",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(0, 60, 400, 100), role="body", column_hint="wide"),
+                ),
+            ]
+            if not toc_first:
+                blocks.append(
+                    DocumentIRBlock(
+                        id="lead", type="paragraph", order=1, text="Page lead",
+                        layout=DocumentIRBlockLayout(page_index=1, bbox=(0, 60, 400, 100), role="body", column_hint="wide"),
+                    )
+                )
+            blocks.append(
+                DocumentIRBlock(
+                    id="toc", type="paragraph", order=2, text="目录",
+                    metadata={"annotation_role": "toc_title"},
+                    layout=DocumentIRBlockLayout(page_index=1, bbox=(0, 120, 400, 160), role="body", column_hint="wide"),
+                )
+            )
+            return DocumentIR(
+                schema_version="document-ir/v2",
+                metadata=DocumentIRMetadata(job_id="docjob_toc_start", source_file_id="file_toc_start", document_language="zh"),
+                pages=[DocumentIRPage(index=index, width=400.0, height=600.0) for index in range(2)],
+                blocks=blocks,
+            )
+
+        for toc_first in (True, False):
+            with self.subTest(toc_first=toc_first):
+                document = sample(toc_first=toc_first)
+                plan = build_layout_plan(document)
+                self.assertEqual(plan.pages[1].break_before_block_id, "toc" if toc_first else None)
+                self.assertEqual(plan.pages[1].break_reason, "toc_start" if toc_first else "source_page_boundary")
+                content = DocumentIRWordRenderer().render_to_bytes(
+                    document, template_path=None, config_path=None, image_loader=lambda _asset: None,
+                    layout_plan=plan,
+                )
+                xml = self._document_xml(content)
+                self.assertEqual(xml.count('<w:br w:type="page"'), int(toc_first))
+                self.assertNotIn("<w:pageBreakBefore/>", xml)
+
+    def test_toc_title_does_not_double_break_after_landscape_table_fallback(self) -> None:
+        long_value = "A" * 50
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="docjob_toc_after_landscape", source_file_id="file_toc_after_landscape", document_language="zh"),
+            pages=[DocumentIRPage(index=index, width=400.0, height=600.0) for index in range(2)],
+            blocks=[
+                DocumentIRBlock(
+                    id="wide_table", type="table", order=0,
+                    html="<table><tr>" + "".join(f"<td>{long_value}</td>" for _ in range(4)) + "</tr></table>",
+                    layout=DocumentIRBlockLayout(page_index=0, bbox=(10, 60, 390, 180), role="body", column_hint="wide"),
+                ),
+                DocumentIRBlock(
+                    id="toc", type="paragraph", order=1, text="目录",
+                    metadata={"annotation_role": "toc_title"},
+                    layout=DocumentIRBlockLayout(page_index=1, bbox=(10, 60, 390, 90), role="body", column_hint="wide"),
+                ),
+            ],
+        )
+        config = TemplateConfigPackage.load(
+            Path(__file__).resolve().parents[1] / "resources" / "template_configs" / "datasheet_template.yaml"
+        )
+        plan = build_layout_plan(document, config)
+        content = DocumentIRWordRenderer().render_to_bytes(
+            document, template_path=None, config_path=None, image_loader=lambda _asset: None,
+            layout_plan=plan, template_config=config,
+        )
+        rendered = Document(io.BytesIO(content))
+        xml = self._document_xml(content)
+
+        self.assertEqual([region.kind for region in plan.pages[0].regions], ["landscape_table"])
+        self.assertEqual(plan.pages[1].break_before_block_id, "toc")
+        self.assertEqual([section.orientation for section in rendered.sections], [WD_ORIENTATION.LANDSCAPE, WD_ORIENTATION.PORTRAIT])
+        self.assertEqual(rendered.sections[1].start_type, WD_SECTION_START.NEW_PAGE)
+        self.assertNotIn('<w:br w:type="page"', xml)
+        self.assertNotIn("<w:pageBreakBefore/>", xml)
+        self.assertIn("目录", self._document_text(content))
+
+    def test_render_to_bytes_flows_across_source_pages_without_forced_breaks(self) -> None:
         document = DocumentIR(
             schema_version="document-ir/v2",
             metadata=DocumentIRMetadata(job_id="docjob_semantic_pages", source_file_id="file_semantic_pages", document_language="zh"),
@@ -844,15 +984,15 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         xml = self._document_xml(content)
         paragraphs = {paragraph.text: paragraph for paragraph in rendered.paragraphs if paragraph.text}
 
-        self.assertTrue(paragraphs["工作原理"].paragraph_format.page_break_before)
+        self.assertIsNone(paragraphs["工作原理"].paragraph_format.page_break_before)
         self.assertTrue(paragraphs["工作原理"].paragraph_format.keep_with_next)
-        self.assertTrue(paragraphs["绝对最大额定值"].paragraph_format.page_break_before)
-        self.assertTrue(paragraphs["默认测试条件：VS = ±18V、VCM = 0V、TA = 25°C。"].paragraph_format.page_break_before)
-        self.assertTrue(paragraphs["Natural continuation"].paragraph_format.page_break_before)
-        self.assertEqual(xml.count("<w:pageBreakBefore/>"), 4)
+        self.assertIsNone(paragraphs["绝对最大额定值"].paragraph_format.page_break_before)
+        self.assertIsNone(paragraphs["默认测试条件：VS = ±18V、VCM = 0V、TA = 25°C。"].paragraph_format.page_break_before)
+        self.assertIsNone(paragraphs["Natural continuation"].paragraph_format.page_break_before)
+        self.assertEqual(xml.count("<w:pageBreakBefore/>"), 0)
         self.assertNotIn('<w:br w:type="page"', xml)
 
-    def test_soft_page_group_uses_final_left_to_right_anchor_and_explicit_continuation_reason(self) -> None:
+    def test_soft_page_group_keeps_source_provenance_and_explicit_continuation_reason(self) -> None:
         document = DocumentIR(
             schema_version="document-ir/v2",
             metadata=DocumentIRMetadata(job_id="docjob_soft_groups", source_file_id="file_soft_groups", document_language="zh"),
@@ -896,7 +1036,7 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
 
         self.assertEqual(len(plan.pages), 2)
         self.assertEqual(plan.pages[1].source_page_indices, (1, 2))
-        self.assertEqual(plan.pages[1].break_before_block_id, "left_final_first")
+        self.assertIsNone(plan.pages[1].break_before_block_id)
         self.assertEqual(plan.pages[1].break_reason, "source_page_boundary")
         self.assertEqual(plan.pages[1].continuation_reasons, ("content_group:continued_body",))
 
@@ -909,16 +1049,60 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         )
         rendered = Document(io.BytesIO(content))
         paragraphs = {paragraph.text: paragraph for paragraph in rendered.paragraphs if paragraph.text}
-        self.assertTrue(paragraphs["左栏正文"].paragraph_format.page_break_before)
+        self.assertIsNone(paragraphs["左栏正文"].paragraph_format.page_break_before)
         self.assertIsNone(paragraphs["右栏标题"].paragraph_format.page_break_before)
         self.assertIsNone(paragraphs["跨源页续接正文"].paragraph_format.page_break_before)
         evidence = build_renderer_evidence(document, content, plan)
         self.assertEqual(evidence["soft_page_groups"][1]["source_page_indices"], [1, 2])
-        self.assertEqual(evidence["soft_page_groups"][1]["break_before_block_id"], "left_final_first")
+        self.assertIsNone(evidence["soft_page_groups"][1]["break_before_block_id"])
         self.assertEqual(
             evidence["soft_page_groups"][1]["continuation_reasons"],
             ["content_group:continued_body"],
         )
+
+    def test_paired_figures_flow_after_two_columns_regardless_of_caption_reference(self) -> None:
+        def sample(last_text: str, *, first_caption: str = "图 34 频率响应") -> DocumentIR:
+            return DocumentIR(
+                schema_version="document-ir/v2",
+                metadata=DocumentIRMetadata(job_id="docjob_figure_flow", source_file_id="file_figure_flow", document_language="zh"),
+                pages=[DocumentIRPage(index=index, width=400.0, height=600.0) for index in range(2)],
+                assets=[
+                    DocumentIRAsset(id="left_asset", kind="image", source_path="left.png"),
+                    DocumentIRAsset(id="right_asset", kind="image", source_path="right.png"),
+                ],
+                blocks=[
+                    DocumentIRBlock(
+                        id="left_text", type="paragraph", order=0, text="左栏正文",
+                        layout=DocumentIRBlockLayout(page_index=0, bbox=(10, 60, 180, 140), role="body", column_hint="left"),
+                    ),
+                    DocumentIRBlock(
+                        id="right_text", type="paragraph", order=1, text=last_text,
+                        layout=DocumentIRBlockLayout(page_index=0, bbox=(220, 60, 390, 140), role="body", column_hint="right"),
+                    ),
+                    DocumentIRBlock(
+                        id="figure_34", type="image", order=2, asset_ref="left_asset", captions=[first_caption],
+                        layout=DocumentIRBlockLayout(page_index=1, bbox=(10, 60, 180, 180), role="body", column_hint="left"),
+                    ),
+                    DocumentIRBlock(
+                        id="figure_35", type="image", order=3, asset_ref="right_asset", captions=["图 35 阶跃响应"],
+                        layout=DocumentIRBlockLayout(page_index=1, bbox=(220, 60, 390, 180), role="body", column_hint="right"),
+                    ),
+                ],
+            )
+
+        for last_text in ("如图 34 所示，频率响应在右侧延续。", "右栏正文结束，下一页为独立插图。"):
+            with self.subTest(last_text=last_text):
+                document = sample(last_text)
+                plan = build_layout_plan(document)
+                self.assertEqual(len(plan.pages), 2)
+                self.assertEqual(plan.pages[1].source_page_indices, (1,))
+                self.assertIsNone(plan.pages[1].break_before_block_id)
+                content = DocumentIRWordRenderer().render_to_bytes(
+                    document, template_path=None, config_path=None, image_loader=lambda _asset: MINIMAL_PNG_BYTES,
+                    layout_plan=plan,
+                )
+                self.assertNotIn("<w:pageBreakBefore/>", self._document_xml(content))
+                self.assertEqual(len(Document(io.BytesIO(content)).inline_shapes), 2)
 
     def test_soft_page_group_continues_after_promoted_page_edge_footer(self) -> None:
         document = DocumentIR(
@@ -1462,6 +1646,35 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertTrue(all(section.header.is_linked_to_previous for section in rendered.sections[1:]))
         self.assertTrue(all(section.footer.is_linked_to_previous for section in rendered.sections[1:]))
 
+    def test_portrait_template_header_replaces_long_space_spacer_without_changing_landscape(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            template_path = Path(temp_dir) / "template.docx"
+            template = Document()
+            header = template.sections[0].header.paragraphs[0]
+            header.alignment = WD_ALIGN_PARAGRAPH.DISTRIBUTE
+            header.add_run("Brand")
+            spacer = header.add_run(" " * 80)
+            spacer.add_picture(io.BytesIO(MINIMAL_PNG_BYTES))
+            header.add_run("Data sheet")
+            template.save(template_path)
+
+            portrait = self._make_v2_two_column_document()
+            landscape = portrait.model_copy(update={"pages": [DocumentIRPage(index=0, width=600, height=400)]})
+            for document, expects_tab in ((portrait, True), (landscape, False)):
+                with self.subTest(expects_tab=expects_tab):
+                    content = DocumentIRWordRenderer().render_to_bytes(
+                        document,
+                        template_path=template_path,
+                        config_path=None,
+                        image_loader=lambda _asset: None,
+                    )
+                    rendered_header = Document(io.BytesIO(content)).sections[0].header.paragraphs[0]
+                    self.assertEqual("w:ptab" in rendered_header._p.xml, expects_tab)
+                    self.assertEqual(rendered_header.alignment == WD_ALIGN_PARAGRAPH.LEFT, expects_tab)
+                    self.assertEqual(" " * 80 in rendered_header.text, not expects_tab)
+                    self.assertIn("Data sheet", rendered_header.text)
+                    self.assertEqual(rendered_header._p.xml.count("<w:drawing>"), 1)
+
     def test_render_to_bytes_writes_configured_body_header_and_footer_font_slots(self) -> None:
         renderer = DocumentIRWordRenderer()
         document = DocumentIR(
@@ -1912,6 +2125,58 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         for residue in (r"\frac", r"\left", r"\right", r"\leq", "I N", "5 0 0", "C M 7 5 0 1"):
             self.assertNotIn(residue, xml)
         self.assertEqual(analyze_docx_quality_bytes(content)["latex_residue_count"], 0)
+
+    def test_common_math_operators_and_escaped_underscore_render_in_all_text_paths(self) -> None:
+        expression = r"\text{ENOB} = \frac{\ln(\text{FSR/Noise\_RMS})}{\ln(2)} + \sin(x)\tag{4}"
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(
+                job_id="docjob_math_operators",
+                source_file_id="file_math_operators",
+                document_language="zh",
+            ),
+            blocks=[
+                DocumentIRBlock(id="formula", type="formula", order=0, latex=expression),
+                DocumentIRBlock(id="inline", type="paragraph", order=1, text=f"正文 ${expression}$"),
+                DocumentIRBlock(id="table", type="table", order=2, html=f"<table><tr><td>${expression}$</td></tr></table>"),
+            ],
+        )
+
+        content = DocumentIRWordRenderer().render_to_bytes(
+            document,
+            template_path=None,
+            config_path=None,
+            image_loader=lambda _asset: None,
+        )
+        xml = self._document_xml(content)
+        visible_text = self._document_text(content)
+
+        self.assertEqual(xml.count("<m:f>"), 3)
+        for expected, count in (("ENOB", 3), ("ln", 6), ("FSR/Noise_RMS", 3), ("sin", 3), ("(4)", 3)):
+            self.assertEqual(visible_text.count(expected), count)
+        for residue in (r"\frac", r"\ln", r"\sin", r"\_"):
+            self.assertNotIn(residue, xml)
+        self.assertEqual(analyze_docx_quality_bytes(content)["latex_residue_count"], 0)
+
+    def test_math_only_commands_do_not_rewrite_plain_paths(self) -> None:
+        paths = r"C:\log\output.txt C:\exp\data \\Sigma\share"
+        document = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="docjob_plain_paths", source_file_id="file_plain_paths", document_language="en"),
+            assets=[DocumentIRAsset(id="asset_paths", kind="image", source_path="images/paths.png")],
+            blocks=[
+                DocumentIRBlock(id="paragraph", type="paragraph", order=0, text=paths),
+                DocumentIRBlock(id="table", type="table", order=1, html=f"<table><tr><td>{paths}</td></tr></table>"),
+                DocumentIRBlock(id="image", type="image", order=2, asset_ref="asset_paths", captions=[paths]),
+            ],
+        )
+
+        content = DocumentIRWordRenderer().render_to_bytes(
+            document,
+            template_path=None,
+            config_path=None,
+            image_loader=lambda _asset: MINIMAL_PNG_BYTES,
+        )
+
+        self.assertEqual(self._document_text(content).count(paths), 3)
 
     def test_render_to_bytes_supports_datasheet_tex_matrix_in_all_math_entries(self) -> None:
         expression = (
@@ -2852,7 +3117,7 @@ class DocumentIRWordRendererLayoutTests(unittest.TestCase):
         self.assertNotIn("Shared logic diagram", paired_table_text)
         self.assertIn("Figure 1. Shared logic diagram", [paragraph.text for paragraph in rendered.paragraphs])
         xml = self._document_xml(content)
-        self.assertEqual(xml.count("<w:pageBreakBefore/>"), 1)
+        self.assertEqual(xml.count("<w:pageBreakBefore/>"), 0)
         self.assertNotIn('<w:br w:type="page"', xml)
 
     def test_render_to_bytes_preserves_inline_rich_text_markup(self) -> None:

@@ -39,8 +39,8 @@ from app.domains.translation.modes import is_translation_mode, language_pair_for
 
 
 DEFAULT_TEMPLATE_CANDIDATES = (
-    Path("resources/templates/default/datasheet_template.docx"),
-    Path(__file__).resolve().parents[2] / "resources" / "templates" / "default" / "datasheet_template.docx",
+    Path("resources/templates/default/datasheet_template_v2.docx"),
+    Path(__file__).resolve().parents[2] / "resources" / "templates" / "default" / "datasheet_template_v2.docx",
 )
 DEFAULT_SUBSCRIPT_CONFIG_CANDIDATES = (
     Path("var/config/runtime_subscripts_dictionary.yaml"),

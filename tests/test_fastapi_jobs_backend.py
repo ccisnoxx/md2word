@@ -2389,7 +2389,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["metadata_store"], "mysql")
-        self.assertEqual(payload["resources"]["template_versions"], 1)
+        self.assertEqual(payload["resources"]["template_versions"], 2)
         self.assertEqual(payload["resources"]["term_rule_set_versions"], 2)
         self.assertEqual(payload["resources"]["translation_profile_versions"], 2)
         self.assertEqual(payload["resources"]["default_template_version"], "default@1")
@@ -7403,7 +7403,7 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_internal_users_json=build_auth_users_json(),
             )
             publish_default_job_resources(runtime, include_translation=True)
-            publish_template_resource_version(runtime, version="2", content=b"template-v2", make_default=False)
+            publish_template_resource_version(runtime, version="3", content=b"template-v3", make_default=False)
             publish_term_rule_resource_version(runtime, version="2", source_term="VTWO", make_default=False)
             publish_translation_profile_resource_version(
                 runtime,
@@ -7429,7 +7429,7 @@ class FastAPIJobsBackendTests(TestCase):
                         "source_file_id": source_file["id"],
                         "mode": "en2zh_pdf_to_word",
                         "document_language": "en",
-                        "template_version_id": "default@2",
+                        "template_version_id": "default@3",
                         "term_rule_set_version": "2",
                         "translation_term_version": translation_term_version,
                         "translation_profile_version": "2",
@@ -7439,7 +7439,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(create_response.status_code, 201)
         snapshot = create_response.json()["job"]["request_snapshot"]["resources"]
         self.assertEqual(snapshot["template"]["resource_id"], "default")
-        self.assertEqual(snapshot["template"]["version"], "2")
+        self.assertEqual(snapshot["template"]["version"], "3")
         self.assertEqual(snapshot["term_rule_set"]["resource_id"], "electronics-default")
         self.assertEqual(snapshot["term_rule_set"]["version"], "2")
         self.assertEqual(snapshot["translation_term_set"]["set_id"], "translation-terms-en2zh")
@@ -7455,7 +7455,7 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_internal_users_json=build_auth_users_json(),
             )
             publish_default_job_resources(runtime, include_translation=True)
-            publish_template_resource_version(runtime, version="2", content=b"template-v2", make_default=False)
+            publish_template_resource_version(runtime, version="3", content=b"template-v3", make_default=False)
             publish_term_rule_resource_version(runtime, version="2", source_term="VTWO", make_default=False)
             publish_translation_profile_resource_version(
                 runtime,
@@ -7481,7 +7481,7 @@ class FastAPIJobsBackendTests(TestCase):
                         "source_file_id": source_file["id"],
                         "mode": "en2zh_pdf_to_word",
                         "document_language": "en",
-                        "template_version_id": "default@2",
+                        "template_version_id": "default@3",
                         "term_rule_set_version": "2",
                         "translation_term_version": translation_term_version,
                         "translation_profile_version": "2",
@@ -7491,7 +7491,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(create_response.status_code, 201)
         snapshot = create_response.json()["job"]["request_snapshot"]["resources"]
         self.assertEqual(snapshot["template"]["resource_id"], "default")
-        self.assertEqual(snapshot["template"]["version"], "2")
+        self.assertEqual(snapshot["template"]["version"], "3")
         self.assertEqual(snapshot["term_rule_set"]["resource_id"], "electronics-default")
         self.assertEqual(snapshot["term_rule_set"]["version"], "2")
         self.assertEqual(snapshot["translation_term_set"]["set_id"], "translation-terms-en2zh")
@@ -7517,8 +7517,8 @@ class FastAPIJobsBackendTests(TestCase):
             assert template_path is not None and layout_path is not None
             payload = {
                 "template_id": "default",
-                "version": "2",
-                "name": "Draft Template 2",
+                "version": "3",
+                "name": "Draft Template 3",
                 "description": "admin validation draft",
                 "docx_path": str(template_path.resolve()),
                 "docx_sha256": f"sha256:{hashlib.sha256(template_path.read_bytes()).hexdigest()}",
@@ -7529,9 +7529,9 @@ class FastAPIJobsBackendTests(TestCase):
             service.create_or_update_draft(
                 resource_type="template",
                 resource_id="default",
-                version="2",
+                version="3",
                 snapshot_hash=resource_payload_hash(payload),
-                payload_ref="template:default@2",
+                payload_ref="template:default@3",
                 payload=payload,
             )
             app = create_app(runtime)
@@ -7546,7 +7546,7 @@ class FastAPIJobsBackendTests(TestCase):
                         "source_file_id": operator_source["id"],
                         "mode": "direct_pdf_to_word",
                         "document_language": "en",
-                        "template_version_id": "default@2",
+                        "template_version_id": "default@3",
                     },
                 )
                 admin_headers = build_auth_header(client, username="admin", password="admin-pass")
@@ -7558,14 +7558,14 @@ class FastAPIJobsBackendTests(TestCase):
                         "source_file_id": admin_source["id"],
                         "mode": "direct_pdf_to_word",
                         "document_language": "en",
-                        "template_version_id": "default@2",
+                        "template_version_id": "default@3",
                     },
                 )
 
         self.assertEqual(operator_response.status_code, 400)
         self.assertIn("draft", operator_response.json()["detail"])
         self.assertEqual(admin_response.status_code, 201)
-        self.assertEqual(admin_response.json()["job"]["template_version_id"], "default@2")
+        self.assertEqual(admin_response.json()["job"]["template_version_id"], "default@3")
         self.assertEqual(admin_response.json()["job"]["request_snapshot"]["resources"]["template"]["status"], "draft")
 
     def test_document_job_retry_resource_selection_requires_admin_and_rebinds_term_assets(self):
@@ -9675,7 +9675,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertTrue(word_file.metadata["docx_quality"]["editable_content_available"])
         self.assertFalse(word_file.metadata["docx_quality"]["image_only_suspected"])
         self.assertGreaterEqual(word_file.metadata["docx_quality"]["landscape_sections"], 1)
-        self.assertEqual(word_file.metadata["template_version_id"], "default@1")
+        self.assertEqual(word_file.metadata["template_version_id"], "default@2")
         self.assertEqual([file.file_type for file in image_files], ["image_asset"])
         self.assertEqual([file.file_type for file in image_archive_files], ["image_assets_archive"])
         self.assertEqual(image_archive_files[0].metadata["image_asset_count"], 1)
@@ -10041,7 +10041,7 @@ class FastAPIJobsBackendTests(TestCase):
             self.assertIsNotNone(template_path)
             publish_template_resource_version(
                 runtime,
-                version="2",
+                version="3",
                 content=template_path.read_bytes(),
                 make_default=True,
             )
@@ -10905,6 +10905,52 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(oss_failed_job["failed_stage"], "uploading")
         self.assertEqual(oss_failed_job["error_code"], "oss_failed")
 
+    def test_document_job_review_warning_is_persisted_exposed_and_downloadable(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = build_test_runtime(
+                Path(temp_dir), auth_jwt_secret_key="test-jwt-secret",
+                auth_internal_users_json=build_auth_users_json(), document_jobs_worker_backend="eager",
+            )
+            converter = runtime.document_job_execution_service.document_ir_service
+            original_convert = converter.convert_zip
+
+            def convert_with_review(*args, **kwargs):
+                result = original_convert(*args, **kwargs)
+                block = next(block for block in result.document.blocks if block.type == "table")
+                block.metadata["caption_owner_unresolved"] = True
+                return result
+
+            with patch.object(converter, "convert_zip", side_effect=convert_with_review), TestClient(create_app(runtime)) as client:
+                headers = build_auth_header(client)
+                source = self._upload_source_pdf(client, headers)
+                response = client.post("/api/v1/document-jobs", headers=headers, json={"source_file_id": source["id"]})
+                self.assertEqual(response.json()["status"], "succeeded")
+                job_id = response.json()["job_id"]
+                files = client.get(f"/api/v1/document-jobs/{job_id}/files", headers=headers).json()["files"]
+                word = next(file for file in files if file["file_type"] == "generated_word")
+                issues = word["quality_evidence"]["review_issues"]
+                self.assertEqual(len(issues), 1)
+                self.assertEqual(issues[0]["source_page"], 1)
+                self.assertEqual(issues[0]["code"], "caption_subject_unresolved")
+                self.assertEqual(set(issues[0]), {"code", "source_page", "block_id", "message"})
+                record = runtime.document_file_repository.get_document_file(word["id"])
+                runtime.document_file_repository.update_document_file(
+                    word["id"], metadata={**record.metadata, "review_issues": [
+                        {**issues[0], "private_extra": "must-not-leak"},
+                        {**issues[0], "source_page": True},
+                        {**issues[0], "source_page": 0},
+                        {"code": "invalid"},
+                    ]},
+                )
+                safe_files = client.get(f"/api/v1/document-jobs/{job_id}/files", headers=headers).json()["files"]
+                safe_word = next(file for file in safe_files if file["id"] == word["id"])
+                self.assertEqual(safe_word["quality_evidence"]["review_issues"], issues)
+                download = client.get(f"/api/v1/document-jobs/{job_id}/download-url", headers=headers)
+                self.assertEqual(download.status_code, 200)
+                content = client.get(download.json()["download_url"].replace("http://testserver", ""))
+                self.assertEqual(content.status_code, 200)
+                self.assertTrue(content.content.startswith(b"PK"))
+
     def test_document_job_integrity_gates_fail_before_ir_or_word_publication(self):
         class BlockingDocumentIRService:
             def convert_zip(self, *args, **kwargs):
@@ -11257,13 +11303,13 @@ class FastAPIJobsBackendTests(TestCase):
                 self.assertEqual(detail_response.status_code, 200)
                 detail = detail_response.json()
                 self.assertEqual(detail["id"], "default")
-                self.assertEqual(detail["template"]["file_name"], "datasheet_template.docx")
+                self.assertEqual(detail["template"]["file_name"], "datasheet_template_v2.docx")
                 self.assertIsNotNone(detail["template"]["sha256"])
                 self.assertEqual(detail["layout_config"]["file_name"], "datasheet_template.yaml")
                 self.assertEqual(detail["subscript_config"]["file_name"], "runtime_subscripts_dictionary.yaml")
 
-    def test_bundled_v1_bootstrap_is_idempotent(self):
-        """重复启动只保留同一个 bundled V1 和默认指针。"""
+    def test_bundled_v2_bootstrap_is_idempotent(self):
+        """重复启动只保留同一个 bundled V2 和默认指针。"""
 
         from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
 
@@ -11278,7 +11324,7 @@ class FastAPIJobsBackendTests(TestCase):
                 ),
             )
             create_app(runtime)
-            first = runtime.resource_version_service.repository.get_resource_version("template", "default", "1")
+            first = runtime.resource_version_service.repository.get_resource_version("template", "default", "2")
             create_app(runtime)
 
             service = runtime.resource_version_service
@@ -11288,14 +11334,14 @@ class FastAPIJobsBackendTests(TestCase):
             records = service.repository.list_resource_versions("template", "default")
             self.assertIsNotNone(default_record)
             assert default_record is not None
-            self.assertEqual(default_record.version, "1")
-            self.assertEqual([record.version for record in records], ["1"])
+            self.assertEqual(default_record.version, "2")
+            self.assertEqual([record.version for record in records], ["2"])
             self.assertEqual(records[0].snapshot_hash, first.snapshot_hash)
             self.assertEqual(first.payload["layout_config_path"], "resources/template_configs/datasheet_template.yaml")
             self.assertNotIn(("template", "default"), fake_mysql.resource_version_sequences)
 
-    def test_bundled_v1_bootstrap_sets_default_and_first_draft_is_v2(self):
-        """空库初始化 V1；第一次创建样式草稿分配 V2。"""
+    def test_bundled_v2_bootstrap_sets_default_and_first_draft_is_v3(self):
+        """空库初始化 V2；第一次创建样式草稿分配 V3。"""
 
         from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
 
@@ -11318,9 +11364,9 @@ class FastAPIJobsBackendTests(TestCase):
             default_record = service.repository.get_default_resource_version("template", "default")
             self.assertIsNotNone(default_record)
             assert default_record is not None
-            self.assertEqual(default_record.version, "1")
-            self.assertIsNone(service.repository.get_resource_version("template", "default", "2"))
-            self.assertEqual(runtime.template_read_service.resolve_template_version(None).version, 1)
+            self.assertEqual(default_record.version, "2")
+            self.assertIsNone(service.repository.get_resource_version("template", "default", "3"))
+            self.assertEqual(runtime.template_read_service.resolve_template_version(None).version, 2)
             self.assertNotIn(("template", "default"), fake_mysql.resource_version_sequences)
 
             with TestClient(app) as client:
@@ -11331,9 +11377,9 @@ class FastAPIJobsBackendTests(TestCase):
                 create_response = client.post(
                     "/api/v1/templates/default/layout-config/versions",
                     json={
-                        "base_template_version_id": "default@1",
+                        "base_template_version_id": "default@2",
                         "expected_config_sha256": read_payload["config_sha256"],
-                        "expected_active_template_version_id": "default@1",
+                        "expected_active_template_version_id": "default@2",
                         "changes": {"normal": {"font_size": 11}},
                         "change_note": "验证新基线后的首个草稿版本号",
                     },
@@ -11341,8 +11387,200 @@ class FastAPIJobsBackendTests(TestCase):
                 )
 
             self.assertEqual(create_response.status_code, 201)
-            self.assertEqual(create_response.json()["version"], 2)
-            self.assertEqual(service.repository.get_resource_version("template", "default", "2").status.value, "draft")
+            self.assertEqual(create_response.json()["version"], 3)
+            self.assertEqual(service.repository.get_resource_version("template", "default", "3").status.value, "draft")
+
+    def test_bundled_v2_bootstrap_preserves_old_default_and_rejects_version_collision(self):
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            manifest_path = temp_root / "templates_manifest.yaml"
+            repo_root = Path(__file__).resolve().parents[1]
+            write_templates_manifest(
+                manifest_path,
+                [{
+                    "id": "default",
+                    "name": "Default Template",
+                    "enabled": True,
+                    "is_default_seed": True,
+                    "version": 2,
+                    "template_path": str((repo_root / "resources" / "templates" / "default" / "datasheet_template_v2.docx").resolve()),
+                    "layout_config_path": str((repo_root / "resources" / "template_configs" / "datasheet_template.yaml").resolve()),
+                }],
+            )
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                templates_manifest_path=str(manifest_path),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(), connect_factory=fake_mysql.connect,
+                ),
+            )
+            old_path = publish_template_resource_version(runtime, version="1", content=b"historical-v1", make_default=True)
+            create_app(runtime)
+            service = runtime.resource_version_service
+            self.assertIsNotNone(service)
+            assert service is not None
+            self.assertEqual(service.repository.get_default_resource_version("template", "default").version, "1")
+            listed = runtime.template_read_service.list_template_versions("default")
+            self.assertEqual([item.version for item in listed], [2, 1])
+            self.assertEqual(listed[1].template.file_name, old_path.name)
+            self.assertEqual(runtime.template_read_service.resolve_template_version("default@1").template_path, old_path)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                Path(temp_dir),
+                jobs_repository_backend="mysql",
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(), connect_factory=fake_mysql.connect,
+                ),
+            )
+            occupied_path = publish_template_resource_version(runtime, version="2", content=b"unrelated-v2", make_default=True)
+            listed = runtime.template_read_service.list_template_versions("default")
+            self.assertEqual(listed[0].template.file_name, occupied_path.name)
+            self.assertEqual(runtime.template_read_service.resolve_template_version("default@2").template_path, occupied_path)
+            with self.assertRaisesRegex(ValueError, "模板 seed 版本与已登记资源冲突: default@2"):
+                create_app(runtime)
+
+    def test_bundled_v2_bootstrap_preserves_disabled_seed_and_manifest_metadata_edits(self):
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            manifest_path = temp_root / "templates_manifest.yaml"
+            repo_root = Path(__file__).resolve().parents[1]
+            write_templates_manifest(
+                manifest_path,
+                [{
+                    "id": "default",
+                    "name": "Default Template",
+                    "enabled": True,
+                    "is_default_seed": True,
+                    "version": 2,
+                    "template_path": str((repo_root / "resources" / "templates" / "default" / "datasheet_template_v2.docx").resolve()),
+                    "layout_config_path": str((repo_root / "resources" / "template_configs" / "datasheet_template.yaml").resolve()),
+                }],
+            )
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                templates_manifest_path=str(manifest_path),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(), connect_factory=fake_mysql.connect,
+                ),
+            )
+            create_app(runtime)
+            service = runtime.resource_version_service
+            assert service is not None
+            publish_template_resource_version(runtime, version="3", content=b"new-default-v3", make_default=True)
+            service.disable("template", "default", "2")
+            runtime.template_read_service.update_template_metadata(
+                "default", name="Renamed Default", description="updated without a new version",
+            )
+
+            create_app(runtime)
+
+            self.assertEqual(service.repository.get_resource_version("template", "default", "2").status.value, "disabled")
+            self.assertEqual(service.repository.get_default_resource_version("template", "default").version, "3")
+
+    def test_bootstrap_does_not_promote_existing_custom_template_draft(self):
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            manifest_path = temp_root / "templates_manifest.yaml"
+            repo_root = Path(__file__).resolve().parents[1]
+            bundled_path = repo_root / "resources" / "templates" / "default" / "datasheet_template_v2.docx"
+            write_templates_manifest(
+                manifest_path,
+                [{
+                    "id": "default",
+                    "name": "Default Template",
+                    "enabled": True,
+                    "is_default_seed": True,
+                    "version": 2,
+                    "template_path": str(bundled_path.resolve()),
+                }],
+            )
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                jobs_repository_backend="mysql",
+                templates_manifest_path=str(manifest_path),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(), connect_factory=fake_mysql.connect,
+                ),
+            )
+            create_app(runtime)
+            upload_path = temp_root / "managed-upload.docx"
+            upload_path.write_bytes(bundled_path.read_bytes())
+            runtime.template_read_service.create_template(
+                template_id="managed",
+                name="Managed Template",
+                description="custom draft",
+                source_path=upload_path,
+                source_filename="managed.docx",
+                layout_config_path=None,
+            )
+
+            create_app(runtime)
+
+            service = runtime.resource_version_service
+            assert service is not None
+            self.assertEqual(service.repository.get_resource_version("template", "managed", "1").status.value, "draft")
+            self.assertIsNone(service.repository.get_default_resource_version("template", "managed"))
+
+    def test_bootstrap_preserves_replaced_default_template_draft(self):
+        from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            manifest_path = temp_root / "templates_manifest.yaml"
+            bundled_path = Path(__file__).resolve().parents[1] / "resources" / "templates" / "default" / "datasheet_template_v2.docx"
+            write_templates_manifest(
+                manifest_path,
+                [{
+                    "id": "default",
+                    "name": "Default Template",
+                    "enabled": True,
+                    "is_default_seed": True,
+                    "version": 2,
+                    "template_path": str(bundled_path.resolve()),
+                }],
+            )
+            fake_mysql = _FakeMysqlDatabase()
+            runtime = build_test_runtime(
+                temp_root,
+                admin_token="secret-admin",
+                jobs_repository_backend="mysql",
+                templates_manifest_path=str(manifest_path),
+                repository_factory=lambda _data_dir: build_mysql_persistence_adapters(
+                    _mysql_config(), connect_factory=fake_mysql.connect,
+                ),
+            )
+            app = create_app(runtime)
+            with TestClient(app) as client:
+                response = client.put(
+                    "/api/v1/templates/default/file",
+                    files={"template": (
+                        "replacement.docx", bundled_path.read_bytes(),
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    )},
+                    headers={"X-Admin-Token": "secret-admin"},
+                )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(runtime.template_read_service._require_template_item("default").version, 3)
+
+            create_app(runtime)
+
+            service = runtime.resource_version_service
+            assert service is not None
+            self.assertEqual(service.repository.get_resource_version("template", "default", "3").status.value, "draft")
+            self.assertEqual(service.repository.get_default_resource_version("template", "default").version, "2")
 
     def test_template_download_returns_docx(self):
         with tempfile.TemporaryDirectory() as temp_dir:
