@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "证据等级、最小验证和不可变资源边界"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "区分单元/构建/smoke 及适用范围"}
+{"file": ".trellis/tasks/archive/2026-10/10-12-bas-001-current-capability-baseline/research/current-capabilities.md", "reason": "核对报告结论，不把历史或目标当当前结果"}
+{"file": "docs/implementation/baseline-verification-2026-10-12.md", "reason": "核对本次真实执行账本、六项事实和 AC，不重复业务测试"}
+{"file": ".trellis/tasks/archive/2026-10/10-12-bas-001-current-capability-baseline/research/reproduction-evidence.md", "reason": "三项正式入口探针的精确输入、完整代码与输出"}

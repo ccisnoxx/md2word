@@ -15,7 +15,7 @@ task_id: BAS-001
 
 - 仓库/cwd：`/Users/sc/PycharmProjects/md2word`；分支：`md2word/BAS-001`；HEAD 见 front matter。
 - 本地基线执行时间：2026-10-12 21:14 PDT，等于 2026-10-13 04:14 UTC；不存在日期/版本混用。
-- Trellis：`.trellis/tasks/10-12-bas-001-current-capability-baseline`；父任务 `10-12-datasheet-docx-delivery-quality`。
+- Trellis：`.trellis/tasks/archive/2026-10/10-12-bas-001-current-capability-baseline`；父任务 `10-12-datasheet-docx-delivery-quality`。
 - 开始时 manifest BAS-001=`planning`、DOC-001=`done`；DOC-001 归档 `archive/2026-10/10-12-doc-001-documentation-package-index/task.json` 的 `meta.human_acceptance` 已接受。用户本轮明确批准三份规划。扫描任务记录未见冲突的 `in_progress` 实现任务。
 - 初始 dirty：`.gitignore`（非本任务）；父 `task.json`、manifest、本任务未跟踪目录（上一轮本任务规划）。`.gitignore` SHA-256 为 `b0719d64dea7293460521fa0fb9b575bb3440abcdc4d567ec465adc95a39dc89`，保留不动。
 - 已执行准确子任务 `task.py start`，Trellis 保持 `in_progress`；manifest 在执行后为 `review`，`resolution=null`。人工验收前不 `done`、不 `skipped_existing`、不 archive。
@@ -23,7 +23,7 @@ task_id: BAS-001
 
 `static_confirmed` 表示实现/合同交叉证据；`run_pass` 表示本次实跑；`historical` 只适用于归档所列版本；`blocked_by_environment` / `not_run` 不作通过证据。这些标签不新增业务状态。
 
-规划静态证据及搜索范围见 [current-capabilities.md](../../.trellis/tasks/10-12-bas-001-current-capability-baseline/research/current-capabilities.md)，合成输入、完整代码和实际输出见 [reproduction-evidence.md](../../.trellis/tasks/10-12-bas-001-current-capability-baseline/research/reproduction-evidence.md)。下文源码路径相对仓库根，行号对应本报告 HEAD。
+规划静态证据及搜索范围见 [current-capabilities.md](../../.trellis/tasks/archive/2026-10/10-12-bas-001-current-capability-baseline/research/current-capabilities.md)，合成输入、完整代码和实际输出见 [reproduction-evidence.md](../../.trellis/tasks/archive/2026-10/10-12-bas-001-current-capability-baseline/research/reproduction-evidence.md)。下文源码路径相对仓库根，行号对应本报告 HEAD。
 
 ## 2. 六项事实与目标差距
 
@@ -157,6 +157,6 @@ E 使用 committed minimized public fixture `tests/fixtures/component_pdf_sample
 
 ## 人工验收与收尾（2026-10-12）
 
-用户已接受 BAS-001 的实现、全部测试证据及已列残余风险，并授权当前任务提交、归档；不 push、不启动后续任务。AC1–AC7 逐项证据已复核，报告前文的 review/in_progress 是执行交付时状态；最终 manifest 为 `done`，Trellis 归档后为 `completed`。本报告与复现证据是本轮新交付，因此不适用 `skipped_existing`。
+用户已接受 BAS-001 的实现、全部测试证据及已列残余风险，并授权当前任务提交、归档；不 push、不启动后续任务。AC1–AC7 逐项证据已复核，报告前文的 review/in_progress 是执行交付时状态；最终 manifest 为 `done`，Trellis 已归档为 `completed`。本报告与复现证据是本轮新交付，因此不适用 `skipped_existing`。
 
 收尾仅变更验收记录、归档引用及日志；原始命令、结果、日志哈希和未验证范围保持不变，不重跑无变化的业务测试。轻量门禁和归档操作证据见任务 `validation.md`。

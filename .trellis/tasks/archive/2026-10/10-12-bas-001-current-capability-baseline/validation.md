@@ -71,3 +71,12 @@ Spec-sync 已复核：database-guidelines 中已有本任务的 maintenance 事�
 archive / add_session 默认会自动提交；已向用户说明本轮使用 --no-commit，在核对路径和精确文件后分别提交归档与日志，以保持工作提交→归档提交→journal 提交顺序。无未知 dirty 纳入提交。
 
 归档前轻量复验已通过：task.py validate（implement 3/check 5）、git diff --check、文档链接/空白/JSONL 路径、manifest 44 项不变、父任务不变、业务 diff 为空和 gitignore 哈希一致。
+
+## 归档执行记录
+
+- 工作提交：`107624d7e87f8287c83020d9c751e9d54d23d855`，仅 14 个 BAS-001 交付文件，.gitignore 未提交。
+- 已执行 `TZ=America/Los_Angeles python3 .trellis/scripts/task.py archive .trellis/tasks/10-12-bas-001-current-capability-baseline --no-commit`，退出 0；Trellis status=completed，completedAt=2026-10-12。
+- 实际位置：`.trellis/tasks/archive/2026-10/10-12-bas-001-current-capability-baseline`；manifest、报告导航和 JSONL 的有效路径已同步。历史命令中的旧路径保留，以准确记录当时执行。
+- BAS-001 会话指针由 archive 清除，父任务和其他任务状态不变。journal 在归档提交之后记录工作提交哈希，不把归档提交冒充工作提交。
+
+归档后轻量复验通过：task.py validate（implement 3/check 5）、新位置 Markdown/JSONL 引用、manifest done/归档路径、44 个其他任务及父任务不变、业务 diff 和 gitignore 哈希；task.py current --source 返回 Current task: (none)、Source: none。git diff --check 通过。

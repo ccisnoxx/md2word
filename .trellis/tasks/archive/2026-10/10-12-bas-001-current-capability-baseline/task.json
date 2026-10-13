@@ -3,7 +3,7 @@
   "name": "bas-001-current-capability-baseline",
   "title": "BAS-001：当前能力与测试基线核验",
   "description": "R0：六项能力和测试基线证据已交付并获人工验收；只执行当前任务提交及归档，不修改业务行为。",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": null,
   "scope": "baseline-verification",
   "package": null,
@@ -11,11 +11,11 @@
   "creator": "777",
   "assignee": "777",
   "createdAt": "2026-10-12",
-  "completedAt": null,
+  "completedAt": "2026-10-12",
   "branch": "md2word/BAS-001",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
+  "commit": "107624d7e87f8287c83020d9c751e9d54d23d855",
   "pr_url": null,
   "subtasks": [],
   "children": [],
@@ -25,7 +25,7 @@
     "docs/implementation/baseline-verification-2026-10-12.md",
     ".trellis/spec/backend/database-guidelines.md"
   ],
-  "notes": "2026-10-12：人工已批准规划，准确 start；当前本地基线和六项能力证据已交付。manifest review，Trellis in_progress；P1 preflight 缺认证阻断，线上/Word/真实 MySQL 未验证。等待人工验收与提交授权，不 archive、不 push。 2026-10-12：用户已接受实现、测试证据和残余风险并确认 commit plan；manifest done，授权当前任务提交与归档，不 push。",
+  "notes": "2026-10-12：人工已批准规划，准确 start；当前本地基线和六项能力证据已交付。manifest review，Trellis in_progress；P1 preflight 缺认证阻断，线上/Word/真实 MySQL 未验证。等待人工验收与提交授权，不 archive、不 push。 2026-10-12：用户已接受实现、测试证据和残余风险并确认 commit plan；manifest done，授权当前任务提交与归档，不 push。 已提交任务交付并归档到 archive/2026-10；本字段 commit 指向工作提交，bookkeeping 提交另见 git log。",
   "meta": {
     "planning_approval": {
       "date": "2026-10-12",
