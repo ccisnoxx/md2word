@@ -892,3 +892,39 @@ Released commit b167e61 to hostdzire via release dir flow; verified internal/pub
 ### Next Steps
 
 - 当前任务结束；不自动开始后续任务，不 push。
+
+
+## Session 28: CON-101 人工验收、提交与归档
+
+**Date**: 2026-10-12
+**Task**: CON-101 人工验收、提交与归档
+**Branch**: `md2word/CON-101`
+
+### Summary
+
+人工已接受 CON-101 的实现、测试证据和残余风险；manifest 从 review 改为 done，完成工作提交与当前子任务归档，不属于 skipped_existing。未修改业务代码、其他任务状态或 .gitignore，不 push，不开始后续任务。
+
+### Main Changes
+
+- 工作提交 e2f7243dca64ed2996b794b2e6e56e5608df0f93 严格包含已确认的 29 个路径；.gitignore 排除。
+- 归档提交 40dbc7e8e7b0aea075661eaa5bb0a5952e39094f；Trellis completed，位置 .trellis/tasks/archive/2026-10/10-12-con-101-product-mode-ui-copy，父任务仍 planning。
+- 全量 smoke 的既有页面样式 mock 缺口、配置漂移导致审计 digest 不可用，以及真实线上/DB/Word 未验证均保留，人工已接受。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e2f7243dca64ed2996b794b2e6e56e5608df0f93` | (see git log) |
+
+### Testing
+
+- [OK] 收尾实际执行 git diff --check、归档前后 task.py validate 与 JSON/JSONL/文档链接/allowlist/哈希/其他任务状态检查，全部最终通过。
+- [OK] AC1–AC8 逐项复核；17 个业务/测试/API/Spec 文件未变，复用已接受的后端模式 11、release 202、前端 unit 134/build 和 CON-101 定向 UI smoke 11 通过证据，未重跑业务测试。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- CON-101 已收尾；后续任务只待用户另行授权，不自动开始，不 push。
