@@ -51,6 +51,10 @@ Schema creation is bootstrap SQL in code:
 - MySQL statements live in `app/infrastructure/persistence/mysql/schema.py`.
 - `SqlitePersistenceBackend` and `MysqlPersistenceBackend` call `initialize_schema()` during backend initialization.
 
+MySQL 的 `initialize_schema(connection)` 不止建表：按建表、maintenance SQL、补列、post-column SQL、删除旧索引、补索引的顺序执行。`_ensure_column()` / `_ensure_index()` 查询 `INFORMATION_SCHEMA` 后决定是否执行 ALTER；这是启动时 schema maintenance，不是有版本账本的 up/down migration。sqlite 的初始化仍是 CREATE TABLE/INDEX IF NOT EXISTS 循环。shadow copy 用于 metadata 后端搬迁，不提供 schema 版本回滚。
+
+既有定向证据为 `tests/test_database_job_repository.py::PersistenceAdapterTests.test_mysql_schema_maintenance_adds_missing_translation_term_columns_without_if_not_exists`：fake MySQL 验证缺列维护及 SQL 兼容形状，不能据此宣称真实 DDL 原子回滚或并发初始化安全。首次持久化字段变更仍须在对应任务设计前滚、backfill、兼容窗口和回滚/不可逆处理；不能等发布阶段才补设计。BAS-001 的当前运行证据见 `docs/implementation/baseline-verification-2026-10-12.md`。
+
 Do not add ORM migrations or PostgreSQL assumptions inside feature work unless the task explicitly establishes that new convention. `docs/dev/backend-local-setup-and-architecture.md` and `docs/runbooks/backend.md` both state the current production-oriented metadata backend is MySQL, while PostgreSQL is not present.
 
 For metadata backend moves from file to sqlite/MySQL, use the existing shadow-copy scripts documented in `docs/runbooks/backend.md`:

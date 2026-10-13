@@ -1,0 +1,48 @@
+{
+  "id": "bas-001-current-capability-baseline",
+  "name": "bas-001-current-capability-baseline",
+  "title": "BAS-001：当前能力与测试基线核验",
+  "description": "R0：六项能力和测试基线证据已交付并获人工验收；只执行当前任务提交及归档，不修改业务行为。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "baseline-verification",
+  "package": null,
+  "priority": "P2",
+  "creator": "777",
+  "assignee": "777",
+  "createdAt": "2026-10-12",
+  "completedAt": null,
+  "branch": "md2word/BAS-001",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-12-datasheet-docx-delivery-quality",
+  "relatedFiles": [
+    "docs/implementation/codex-task-manifest.yaml",
+    "docs/implementation/baseline-verification-2026-10-12.md",
+    ".trellis/spec/backend/database-guidelines.md"
+  ],
+  "notes": "2026-10-12：人工已批准规划，准确 start；当前本地基线和六项能力证据已交付。manifest review，Trellis in_progress；P1 preflight 缺认证阻断，线上/Word/真实 MySQL 未验证。等待人工验收与提交授权，不 archive、不 push。 2026-10-12：用户已接受实现、测试证据和残余风险并确认 commit plan；manifest done，授权当前任务提交与归档，不 push。",
+  "meta": {
+    "planning_approval": {
+      "date": "2026-10-12",
+      "source": "用户明确接受 prd.md、design.md、implement.md 并授权实现 BAS-001",
+      "accepted": true
+    },
+    "human_acceptance": {
+      "date": "2026-10-12",
+      "accepted": [
+        "implementation",
+        "validation",
+        "residual_risks"
+      ],
+      "scope": "BAS-001",
+      "commit_authorized": true,
+      "archive_authorized": true,
+      "push_authorized": false
+    }
+  }
+}

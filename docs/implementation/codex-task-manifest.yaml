@@ -29,10 +29,10 @@ tasks:
     suggested_branch: md2word/BAS-001
     trellis_slug: bas-001-current-capability-baseline
     prompt_file: docs/implementation/codex-prompts/BAS-001.md
-    status: todo
-    trellis_task_path: null
-    resolution: null
-    notes: null
+    status: done
+    trellis_task_path: .trellis/tasks/10-12-bas-001-current-capability-baseline
+    resolution: "已交付六项能力事实核验、当前测试基线与可复现证据；人工已接受实现、测试证据和残余风险。报告此前不存在，不属于 skipped_existing。"
+    notes: "2026-10-12：人工已验收并确认 BAS-001 commit plan，授权提交与归档，不 push。实际分支 md2word/BAS-001；基线和验收证据见 baseline-verification-2026-10-12.md 及任务 validation.md；P1 preflight 缺认证、线上/Word/真实 MySQL 未验证等残余风险已接受。不修改其他任务状态、不启动后续任务。"
   - id: CON-101
     title: "产品模式和 UI 文案收口"
     phase: R1
