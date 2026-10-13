@@ -13,6 +13,16 @@ P1 beta 入口是 `mode=en2zh_pdf_to_word`，仍只面向技术 datasheet / 电�
 
 P2 入口是内部单租户规模化与外部化：不扩展为 SaaS 或泛 PDF，而是补齐 hostdzire 部署追踪、线上门禁、运维可观测、任务治理和容量治理。P2 线上证据使用 `scripts/ops/run_p2_online_gate.py` 聚合 runtime readiness、metrics、ops alerts、release check、P0 preflight 和 P1 preflight。
 
+## 产品、架构与实施文档
+
+- [文档总入口](docs/README.md)与[文档清单及权威关系](DOCUMENTATION-MANIFEST.md)
+- 产品范围：[PRD](docs/product/prd.md)、[冻结决策与非目标](docs/product/scope-and-decisions.md)
+- 架构：[业务架构](docs/architecture/business-architecture.md)、[系统架构](docs/architecture/system-architecture.md)、[已接受 ADR](docs/decisions/architecture-decisions.md)
+- 实施：[总实施计划](docs/implementation/implementation-plan.md)、[当前差距调查入口](docs/implementation/current-gap-analysis.md)
+- 任务：[任务定义与依赖](docs/implementation/codex-task-backlog.md)、[执行状态清单](docs/implementation/codex-task-manifest.yaml)、[逐任务提示词](docs/implementation/codex-prompts/README.md)、[Codex/Trellis 执行指南](docs/implementation/codex-execution-guide.md)
+
+PRD 与冻结决策定义产品目标，实施计划和任务清单定义交付步骤；这些文档不表示相关能力已经上线。当前 API 与运行事实仍查阅下方既有文档，代码执行约束遵循 `.trellis/spec/`。任务状态以执行状态清单为准，`review` 表示待人工验收。
+
 ## 发布与联调入口
 
 - 后端运行手册：[docs/runbooks/backend.md](docs/runbooks/backend.md)

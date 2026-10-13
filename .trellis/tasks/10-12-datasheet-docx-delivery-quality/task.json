@@ -1,0 +1,28 @@
+{
+  "id": "datasheet-docx-delivery-quality",
+  "name": "datasheet-docx-delivery-quality",
+  "title": "Datasheet 文档交付质量完善",
+  "description": "管理文档交付质量目标、子任务依赖与集成验收；本轮仅建立父任务记录，不启动父任务实现。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "777",
+  "assignee": "777",
+  "createdAt": "2026-10-12",
+  "completedAt": null,
+  "branch": "docs/datasheet-delivery-baseline",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-12-doc-001-documentation-package-index"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-10-12：本轮补建；此前实际不存在父子任务及所述获批规划文件。按本轮 DOC-001 明确实现范围执行，不声称既有文件已获审阅。",
+  "meta": {}
+}

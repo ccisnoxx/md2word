@@ -1,0 +1,551 @@
+schema_version: 1
+project: md2word
+repository_root: /Users/sc/PycharmProjects/md2word
+baseline_branch: main
+parent_task_slug: datasheet-docx-delivery-quality
+status_values: [todo, planning, in_progress, review, done, blocked, skipped_existing]
+rules:
+  - dependencies must be done or manually accepted skipped_existing before implementation
+  - implementation sessions end at review
+  - only human acceptance changes review to done or skipped_existing
+tasks:
+  - id: DOC-001
+    title: "合入文档包和索引"
+    phase: R0
+    phase_name: "文档与基线"
+    depends_on: []
+    suggested_branch: md2word/DOC-001
+    trellis_slug: doc-001-documentation-package-index
+    prompt_file: docs/implementation/codex-prompts/DOC-001.md
+    status: done
+    trellis_task_path: .trellis/tasks/archive/2026-10/10-12-doc-001-documentation-package-index
+    resolution: "已实现文档包导航、权威关系与 46 个链接修复；人工已接受实现、测试证据和残余风险。"
+    notes: "2026-10-12：人工已验收并授权 DOC-001 提交及归档。实际分支 docs/datasheet-delivery-baseline；文档包及索引交付完成，不属于 skipped_existing。最终轻量验证及归档证据见任务 validation.md；不 push，不启动后续任务。"
+  - id: BAS-001
+    title: "当前能力与测试基线核验"
+    phase: R0
+    phase_name: "文档与基线"
+    depends_on: [DOC-001]
+    suggested_branch: md2word/BAS-001
+    trellis_slug: bas-001-current-capability-baseline
+    prompt_file: docs/implementation/codex-prompts/BAS-001.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: CON-101
+    title: "产品模式和 UI 文案收口"
+    phase: R1
+    phase_name: "合同和状态"
+    depends_on: [BAS-001]
+    suggested_branch: md2word/CON-101
+    trellis_slug: con-101-product-mode-ui-copy
+    prompt_file: docs/implementation/codex-prompts/CON-101.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: CON-102
+    title: "执行阶段扩展"
+    phase: R1
+    phase_name: "合同和状态"
+    depends_on: [BAS-001]
+    suggested_branch: md2word/CON-102
+    trellis_slug: con-102-document-job-stages
+    prompt_file: docs/implementation/codex-prompts/CON-102.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: CON-103
+    title: "质量/复核/交付状态模型"
+    phase: R1
+    phase_name: "合同和状态"
+    depends_on: [CON-102]
+    suggested_branch: md2word/CON-103
+    trellis_slug: con-103-quality-review-delivery-state
+    prompt_file: docs/implementation/codex-prompts/CON-103.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: CON-104
+    title: "下载和发布可用性合同"
+    phase: R1
+    phase_name: "合同和状态"
+    depends_on: [CON-103]
+    suggested_branch: md2word/CON-104
+    trellis_slug: con-104-download-publish-availability
+    prompt_file: docs/implementation/codex-prompts/CON-104.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: IR-201
+    title: "MinerUArtifactValidator"
+    phase: R2
+    phase_name: "MinerU 与 DocumentIR"
+    depends_on: [BAS-001]
+    suggested_branch: md2word/IR-201
+    trellis_slug: ir-201-mineru-artifact-validator
+    prompt_file: docs/implementation/codex-prompts/IR-201.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: IR-202
+    title: "MarginArtifactNormalizer"
+    phase: R2
+    phase_name: "MinerU 与 DocumentIR"
+    depends_on: [IR-201]
+    suggested_branch: md2word/IR-202
+    trellis_slug: ir-202-margin-artifact-normalizer
+    prompt_file: docs/implementation/codex-prompts/IR-202.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: IR-203
+    title: "CrossPageParagraphMerger"
+    phase: R2
+    phase_name: "MinerU 与 DocumentIR"
+    depends_on: [IR-201]
+    suggested_branch: md2word/IR-203
+    trellis_slug: ir-203-cross-page-paragraph-merger
+    prompt_file: docs/implementation/codex-prompts/IR-203.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: IR-204
+    title: "CaptionReconciler 增强"
+    phase: R2
+    phase_name: "MinerU 与 DocumentIR"
+    depends_on: [IR-201]
+    suggested_branch: md2word/IR-204
+    trellis_slug: ir-204-caption-reconciler
+    prompt_file: docs/implementation/codex-prompts/IR-204.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: IR-205
+    title: "LogicalTableGroup 与 source spans"
+    phase: R2
+    phase_name: "MinerU 与 DocumentIR"
+    depends_on: [IR-201]
+    suggested_branch: md2word/IR-205
+    trellis_slug: ir-205-logical-table-group
+    prompt_file: docs/implementation/codex-prompts/IR-205.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: IR-206
+    title: "Table Reference Asset"
+    phase: R2
+    phase_name: "MinerU 与 DocumentIR"
+    depends_on: [IR-205]
+    suggested_branch: md2word/IR-206
+    trellis_slug: ir-206-table-reference-asset
+    prompt_file: docs/implementation/codex-prompts/IR-206.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: IR-207
+    title: "ZK7044 最小回归样本"
+    phase: R2
+    phase_name: "MinerU 与 DocumentIR"
+    depends_on: [IR-201]
+    suggested_branch: md2word/IR-207
+    trellis_slug: ir-207-zk7044-minimal-fixtures
+    prompt_file: docs/implementation/codex-prompts/IR-207.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: TAB-301
+    title: "CanonicalTableGrid 模型"
+    phase: R3
+    phase_name: "表格核心"
+    depends_on: [IR-205]
+    suggested_branch: md2word/TAB-301
+    trellis_slug: tab-301-canonical-table-grid
+    prompt_file: docs/implementation/codex-prompts/TAB-301.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: TAB-302
+    title: "HTML Normalizer/Grid Builder"
+    phase: R3
+    phase_name: "表格核心"
+    depends_on: [TAB-301]
+    suggested_branch: md2word/TAB-302
+    trellis_slug: tab-302-html-normalizer-grid-builder
+    prompt_file: docs/implementation/codex-prompts/TAB-302.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: TAB-303
+    title: "Table Validator/Quality Flags"
+    phase: R3
+    phase_name: "表格核心"
+    depends_on: [TAB-302]
+    suggested_branch: md2word/TAB-303
+    trellis_slug: tab-303-table-validator-quality-flags
+    prompt_file: docs/implementation/codex-prompts/TAB-303.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: TAB-304
+    title: "大表保留合并关系"
+    phase: R3
+    phase_name: "表格核心"
+    depends_on: [TAB-302]
+    suggested_branch: md2word/TAB-304
+    trellis_slug: tab-304-large-table-merge-preservation
+    prompt_file: docs/implementation/codex-prompts/TAB-304.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: TAB-305
+    title: "跨页逻辑表 Word 渲染"
+    phase: R3
+    phase_name: "表格核心"
+    depends_on: [TAB-304, IR-205]
+    suggested_branch: md2word/TAB-305
+    trellis_slug: tab-305-cross-page-logical-table-rendering
+    prompt_file: docs/implementation/codex-prompts/TAB-305.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: TAB-306
+    title: "空 HTML 内部占位和 blocked"
+    phase: R3
+    phase_name: "表格核心"
+    depends_on: [TAB-303, CON-103]
+    suggested_branch: md2word/TAB-306
+    trellis_slug: tab-306-empty-html-placeholder-blocked
+    prompt_file: docs/implementation/codex-prompts/TAB-306.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: TAB-307
+    title: "表格 evidence 聚合"
+    phase: R3
+    phase_name: "表格核心"
+    depends_on: [TAB-303, TAB-304]
+    suggested_branch: md2word/TAB-307
+    trellis_slug: tab-307-table-evidence-aggregation
+    prompt_file: docs/implementation/codex-prompts/TAB-307.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: TAB-308
+    title: "表格专项回归门禁"
+    phase: R3
+    phase_name: "表格核心"
+    depends_on: [TAB-304, TAB-305, TAB-306, TAB-307, IR-207]
+    suggested_branch: md2word/TAB-308
+    trellis_slug: tab-308-table-regression-gate
+    prompt_file: docs/implementation/codex-prompts/TAB-308.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: TR-401
+    title: "Caption/Footnote 翻译覆盖"
+    phase: R4
+    phase_name: "翻译完整性"
+    depends_on: [IR-204]
+    suggested_branch: md2word/TR-401
+    trellis_slug: tr-401-caption-footnote-translation
+    prompt_file: docs/implementation/codex-prompts/TR-401.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: TR-402
+    title: "ProtectedTokenCodec"
+    phase: R4
+    phase_name: "翻译完整性"
+    depends_on: [BAS-001]
+    suggested_branch: md2word/TR-402
+    trellis_slug: tr-402-protected-token-codec
+    prompt_file: docs/implementation/codex-prompts/TR-402.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: TR-403
+    title: "TranslationIntegrityValidator"
+    phase: R4
+    phase_name: "翻译完整性"
+    depends_on: [TR-402]
+    suggested_branch: md2word/TR-403
+    trellis_slug: tr-403-translation-integrity-validator
+    prompt_file: docs/implementation/codex-prompts/TR-403.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: TR-404
+    title: "TableContextBuilder"
+    phase: R4
+    phase_name: "翻译完整性"
+    depends_on: [TAB-301]
+    suggested_branch: md2word/TR-404
+    trellis_slug: tr-404-table-context-builder
+    prompt_file: docs/implementation/codex-prompts/TR-404.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: TR-405
+    title: "术语和目标语言后验检查"
+    phase: R4
+    phase_name: "翻译完整性"
+    depends_on: [TR-403]
+    suggested_branch: md2word/TR-405
+    trellis_slug: tr-405-term-language-post-validation
+    prompt_file: docs/implementation/codex-prompts/TR-405.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: TR-406
+    title: "部分批次失败语义收口"
+    phase: R4
+    phase_name: "翻译完整性"
+    depends_on: [TR-403, CON-102]
+    suggested_branch: md2word/TR-406
+    trellis_slug: tr-406-partial-batch-failure-semantics
+    prompt_file: docs/implementation/codex-prompts/TR-406.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: TR-407
+    title: "四语言方向样本和门禁"
+    phase: R4
+    phase_name: "翻译完整性"
+    depends_on: [TR-401, TR-402, TR-403, TR-404, TR-405, TR-406]
+    suggested_branch: md2word/TR-407
+    trellis_slug: tr-407-four-language-regression-gates
+    prompt_file: docs/implementation/codex-prompts/TR-407.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: RND-501
+    title: "RenderPlan 与 block evidence"
+    phase: R5
+    phase_name: "DOCX、模板和预览"
+    depends_on: [IR-205, TAB-301]
+    suggested_branch: md2word/RND-501
+    trellis_slug: rnd-501-render-plan-block-evidence
+    prompt_file: docs/implementation/codex-prompts/RND-501.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: RND-502
+    title: "公式 OMML 和降级规则"
+    phase: R5
+    phase_name: "DOCX、模板和预览"
+    depends_on: [BAS-001]
+    suggested_branch: md2word/RND-502
+    trellis_slug: rnd-502-formula-omml-fallback
+    prompt_file: docs/implementation/codex-prompts/RND-502.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: RND-503
+    title: "图片并排和 Caption"
+    phase: R5
+    phase_name: "DOCX、模板和预览"
+    depends_on: [IR-204]
+    suggested_branch: md2word/RND-503
+    trellis_slug: rnd-503-image-group-caption-rendering
+    prompt_file: docs/implementation/codex-prompts/RND-503.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: RND-504
+    title: "WordPreviewProvider"
+    phase: R5
+    phase_name: "DOCX、模板和预览"
+    depends_on: [CON-103]
+    suggested_branch: md2word/RND-504
+    trellis_slug: rnd-504-word-preview-provider
+    prompt_file: docs/implementation/codex-prompts/RND-504.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: RND-505
+    title: "PDF/IR/Word 页映射"
+    phase: R5
+    phase_name: "DOCX、模板和预览"
+    depends_on: [RND-501, RND-504]
+    suggested_branch: md2word/RND-505
+    trellis_slug: rnd-505-pdf-ir-word-page-mapping
+    prompt_file: docs/implementation/codex-prompts/RND-505.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: RND-506
+    title: "页级 DOCX 质量检查"
+    phase: R5
+    phase_name: "DOCX、模板和预览"
+    depends_on: [RND-504, RND-505]
+    suggested_branch: md2word/RND-506
+    trellis_slug: rnd-506-page-level-docx-quality
+    prompt_file: docs/implementation/codex-prompts/RND-506.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: QA-601
+    title: "统一 Review 模型"
+    phase: R6
+    phase_name: "审核、批准和发布"
+    depends_on: [CON-103]
+    suggested_branch: md2word/QA-601
+    trellis_slug: qa-601-unified-document-review
+    prompt_file: docs/implementation/codex-prompts/QA-601.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: QA-602
+    title: "Quality/Review API"
+    phase: R6
+    phase_name: "审核、批准和发布"
+    depends_on: [QA-601, TAB-307, RND-506]
+    suggested_branch: md2word/QA-602
+    trellis_slug: qa-602-quality-review-api
+    prompt_file: docs/implementation/codex-prompts/QA-602.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: QA-603
+    title: "三栏审核页面"
+    phase: R6
+    phase_name: "审核、批准和发布"
+    depends_on: [QA-602, RND-505]
+    suggested_branch: md2word/QA-603
+    trellis_slug: qa-603-three-panel-review-ui
+    prompt_file: docs/implementation/codex-prompts/QA-603.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: QA-604
+    title: "下载状态提示"
+    phase: R6
+    phase_name: "审核、批准和发布"
+    depends_on: [CON-104, QA-602]
+    suggested_branch: md2word/QA-604
+    trellis_slug: qa-604-download-status-warning
+    prompt_file: docs/implementation/codex-prompts/QA-604.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: QA-605
+    title: "PublicationRecord 和发布门禁"
+    phase: R6
+    phase_name: "审核、批准和发布"
+    depends_on: [QA-601, RND-504]
+    suggested_branch: md2word/QA-605
+    trellis_slug: qa-605-publication-record-gate
+    prompt_file: docs/implementation/codex-prompts/QA-605.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: QA-606
+    title: "发布 UI 与审计"
+    phase: R6
+    phase_name: "审核、批准和发布"
+    depends_on: [QA-605]
+    suggested_branch: md2word/QA-606
+    trellis_slug: qa-606-publication-ui-audit
+    prompt_file: docs/implementation/codex-prompts/QA-606.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: QA-607
+    title: "审核发布 E2E"
+    phase: R6
+    phase_name: "审核、批准和发布"
+    depends_on: [QA-603, QA-604, QA-605, QA-606]
+    suggested_branch: md2word/QA-607
+    trellis_slug: qa-607-review-publication-e2e
+    prompt_file: docs/implementation/codex-prompts/QA-607.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: REL-701
+    title: "Release check 和 Acceptance gate"
+    phase: R7
+    phase_name: "发布收口"
+    depends_on: [TAB-308, TR-407, QA-607]
+    suggested_branch: md2word/REL-701
+    trellis_slug: rel-701-release-acceptance-gate
+    prompt_file: docs/implementation/codex-prompts/REL-701.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: REL-702
+    title: "指标、告警和容量"
+    phase: R7
+    phase_name: "发布收口"
+    depends_on: [REL-701]
+    suggested_branch: md2word/REL-702
+    trellis_slug: rel-702-metrics-alerts-capacity
+    prompt_file: docs/implementation/codex-prompts/REL-702.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: REL-703
+    title: "迁移和灰度启用"
+    phase: R7
+    phase_name: "发布收口"
+    depends_on: [REL-701]
+    suggested_branch: md2word/REL-703
+    trellis_slug: rel-703-migration-gradual-rollout
+    prompt_file: docs/implementation/codex-prompts/REL-703.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null
+  - id: REL-704
+    title: "Runbook、OpenAPI、最终签字"
+    phase: R7
+    phase_name: "发布收口"
+    depends_on: [REL-703]
+    suggested_branch: md2word/REL-704
+    trellis_slug: rel-704-runbook-openapi-signoff
+    prompt_file: docs/implementation/codex-prompts/REL-704.md
+    status: todo
+    trellis_task_path: null
+    resolution: null
+    notes: null

@@ -1,0 +1,4 @@
+{"file": "docs/product/scope-and-decisions.md", "reason": "冻结产品范围"}
+{"file": "DOCUMENTATION-MANIFEST.md", "reason": "权威入口和文件清单"}
+{"file": "docs/implementation/codex-task-backlog.md", "reason": "DOC-001 验收与任务边界"}
+{"file": ".trellis/workflow.md", "reason": "生命周期和文档任务流程"}

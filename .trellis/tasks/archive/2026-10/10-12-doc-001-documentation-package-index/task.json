@@ -1,0 +1,46 @@
+{
+  "id": "doc-001-documentation-package-index",
+  "name": "doc-001-documentation-package-index",
+  "title": "DOC-001：合入文档包和索引",
+  "description": "R0 文档包完整性、权威文档导航和相对链接检查；不修改业务代码；已人工验收，执行提交及归档。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "777",
+  "assignee": "777",
+  "createdAt": "2026-10-12",
+  "completedAt": "2026-10-12",
+  "branch": "docs/datasheet-delivery-baseline",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-12-datasheet-docx-delivery-quality",
+  "relatedFiles": [
+    "README.md",
+    "DOCUMENTATION-MANIFEST.md",
+    "docs/README.md",
+    "docs/implementation/codex-task-backlog.md",
+    "docs/implementation/codex-task-manifest.yaml",
+    "docs/implementation/codex-task-prompts-all-in-one.md"
+  ],
+  "notes": "2026-10-12：本轮补建；此前实际不存在父子任务及所述获批规划文件。按本轮 DOC-001 明确实现范围执行，不声称既有文件已获审阅。 实现及定向检查完成，manifest review，验收证据见 validation.md，提交候选见 commit-plan.txt；等待人工验收与提交授权，不 archive。 2026-10-12：用户已接受实现、测试证据与残余风险，确认 commit plan，授权 done、提交及归档，不 push。",
+  "meta": {
+    "human_acceptance": {
+      "date": "2026-10-12",
+      "accepted": [
+        "implementation",
+        "validation",
+        "residual_risks"
+      ],
+      "scope": "DOC-001",
+      "commit_authorized": true,
+      "archive_authorized": true,
+      "push_authorized": false
+    }
+  }
+}
