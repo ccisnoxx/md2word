@@ -857,3 +857,38 @@ Released commit b167e61 to hostdzire via release dir flow; verified internal/pub
 ### Status
 
 [OK] **Completed**
+
+
+## Session 27: BAS-001 人工验收、提交与归档
+
+**Date**: 2026-10-12
+**Task**: BAS-001 人工验收、提交与归档
+**Branch**: `md2word/BAS-001`
+
+### Summary
+
+人工已接受实现、测试证据和残余风险。manifest done，Trellis completed 并归档；只提交 BAS-001 相关文件，保留 .gitignore，不 push、不启动后续任务。
+
+### Main Changes
+
+- 归档路径：.trellis/tasks/archive/2026-10/10-12-bas-001-current-capability-baseline；同步 manifest、报告导航及 JSONL 引用。
+- Spec 已包含 MySQL schema maintenance 和 fake 测试边界；收尾不新增业务或合同变更。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `107624d7e87f8287c83020d9c751e9d54d23d855` | (see git log) |
+
+### Testing
+
+- [OK] 本轮 git diff --check、task.py validate、文档链接/空白/JSONL、状态/范围检查均通过；44 个其他 manifest 任务与父任务状态不变。
+- [OK] 复用已接受基线：release 202、IR 30、fake MySQL 1、API 3、component 1/1、frontend 127 和 build 通过；P1 preflight 缺认证，线上/Word/真实 MySQL 未验证的风险已接受。本轮未重复业务测试。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 当前任务结束；不自动开始后续任务，不 push。
