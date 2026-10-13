@@ -131,3 +131,16 @@ WorkPlan 与派发 guard 在各阶段均通过；但实现阶段记录的 Codex 
 - `git diff --check`：退出 0。
 - `python3 .trellis/scripts/task.py validate .trellis/tasks/10-12-con-101-product-mode-ui-copy`：退出 0，implement 5/check 6 条有效。
 - `.venv/bin/python` 内联收尾核对：退出 0；29 路径 allowlist、17 个业务/测试/API/Spec 文件哈希、44 个其他 manifest 任务及父任务保持一致；JSON/JSONL、11 条 context、33 个 Markdown 链接及文档空白检查通过，`.gitignore` 哈希不变。首次附加核对因要求父任务 JSON 末尾换行而退出 1；已确认 HEAD 同样无末尾换行，父任务与收尾快照完全一致。仅将该自定义换行断言限制在 Markdown/JSONL 后通过，没有改写父任务或放宽业务测试。
+
+### 工作提交与归档结果
+
+- 工作提交：`e2f7243dca64ed2996b794b2e6e56e5608df0f93`，消息 `fix(document-jobs): close product modes and direct AI boundaries`；严格包含已确认的 29 个路径，排除 `.gitignore`。
+- `TZ=America/Los_Angeles python3 .trellis/scripts/task.py archive .trellis/tasks/10-12-con-101-product-mode-ui-copy --no-commit`：退出 0，子任务已归档到 `.trellis/tasks/archive/2026-10/10-12-con-101-product-mode-ui-copy`，Trellis=`completed`、completedAt=`2026-10-12`。脚本没有自动提交。
+- manifest 保持 done，并更新为实际归档路径；task.json 工作 commit 与 relatedFiles、JSONL context 和 PRD 当前路径同步。旧命令及原提交路径列表作为阶段历史保留。父任务与其他任务状态未改；journal 在归档提交后记录工作提交哈希。
+
+### 归档后轻量验证
+
+- `git diff --check`：退出 0。
+- `python3 .trellis/scripts/task.py validate .trellis/tasks/archive/2026-10/10-12-con-101-product-mode-ui-copy`：退出 0，implement 5/check 6 条全部有效。
+- `.venv/bin/python` 内联归档核对：退出 0，10 个任务文件完整移动；JSON/JSONL/relatedFiles、10 个任务文档链接和文档空白检查通过；CON-101 done/completed，44 个其他 manifest 任务、父任务、17 个候选文件及 `.gitignore` 哈希未变。
+- `python3 .trellis/scripts/get_context.py --mode record --platform codex`：退出 0，CURRENT TASK 为 none，父任务仍 planning；未启动后续任务。

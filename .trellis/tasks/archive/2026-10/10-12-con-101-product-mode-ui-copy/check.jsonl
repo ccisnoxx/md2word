@@ -2,5 +2,5 @@
 {"file": ".trellis/spec/backend/error-handling.md", "reason": "重点复核 alias 和 direct 请求的错误兼容"}
 {"file": ".trellis/spec/frontend/index.md", "reason": "前端必需门禁与交互边界"}
 {"file": ".trellis/spec/frontend/ui-quality-guidelines.md", "reason": "长模式文案、条件隐藏、键盘与响应式回归"}
-{"file": ".trellis/tasks/10-12-con-101-product-mode-ui-copy/research/current-behavior.md", "reason": "逐项对照已存在能力与剩余差距，避免扩展任务"}
+{"file": ".trellis/tasks/archive/2026-10/10-12-con-101-product-mode-ui-copy/research/current-behavior.md", "reason": "逐项对照已存在能力与剩余差距，避免扩展任务"}
 {"file": ".trellis/spec/backend/document-job-mode-contract.md", "reason": "检查公共请求和 direct 零翻译调用的执行合同"}

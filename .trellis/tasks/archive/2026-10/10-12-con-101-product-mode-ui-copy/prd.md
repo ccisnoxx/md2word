@@ -3,7 +3,7 @@
 ## 任务身份与评审状态
 
 - 阶段：R1（合同和状态）；父任务：`10-12-datasheet-docx-delivery-quality`。
-- 子任务：`.trellis/tasks/10-12-con-101-product-mode-ui-copy`；分支：`md2word/CON-101`。
+- 子任务：`.trellis/tasks/archive/2026-10/10-12-con-101-product-mode-ui-copy`；分支：`md2word/CON-101`。
 - 前置依赖：BAS-001，manifest 为 `done`，归档记录有 2026-10-12 人工接受实现、验证和残余风险的证据。
 - 本轮仅调查和规划，Trellis/manifest 均保持 `planning`；没有实施批准。不执行 `task.py start`、业务修改、提交或 push。
 - 产品真源：`docs/product/prd.md`、`docs/product/scope-and-decisions.md`；范围定义：backlog CON-101；技术约束：已接受 ADR。目标文档不代表现有能力已经实现。
