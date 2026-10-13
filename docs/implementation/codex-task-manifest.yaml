@@ -41,10 +41,10 @@ tasks:
     suggested_branch: md2word/CON-101
     trellis_slug: con-101-product-mode-ui-copy
     prompt_file: docs/implementation/codex-prompts/CON-101.md
-    status: todo
-    trellis_task_path: null
-    resolution: null
-    notes: null
+    status: done
+    trellis_task_path: .trellis/tasks/10-12-con-101-product-mode-ui-copy
+    resolution: "已实现模式名称、历史 alias 请求兼容、direct 翻译资源隔离及 UI 显隐；人工已接受实现、测试证据和残余风险，不属于 skipped_existing。"
+    notes: "2026-10-12：人工已验收并确认 CON-101 commit plan，授权提交与归档，不 push。实际分支 md2word/CON-101；AC1–AC8 与后端模式 11、release 202、前端 unit 134/build、定向 UI smoke 11 的证据已核验，业务候选保持不变。全 smoke 既有页面样式 mock 缺口、审计配置漂移和未运行真实线上/DB/Word 的残余风险已接受；最终轻量验证与归档记录见任务 validation.md。不修改其他任务状态、不启动后续任务。"
   - id: CON-102
     title: "执行阶段扩展"
     phase: R1

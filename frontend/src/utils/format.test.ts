@@ -183,6 +183,13 @@ describe("document job diagnostic recommendation", () => {
 });
 
 describe("document job mode metadata", () => {
+  it("CON-101：所有共享入口使用同一组五个产品名称", () => {
+    const productNames = ["原文 PDF 转可编辑 Word", "英译中", "俄译中", "中译英", "中译俄"];
+
+    expect(documentJobModeOptions.map((option) => option.label)).toEqual(productNames);
+    expect(documentJobModeOptions.map((option) => option.shortLabel)).toEqual(productNames);
+  });
+
   it("defines create language and translation-resource behavior in one place", () => {
     expect(documentJobModeOptions.map((option) => option.mode)).toEqual([
       "direct_pdf_to_word",

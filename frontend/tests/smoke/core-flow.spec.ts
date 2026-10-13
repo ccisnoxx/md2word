@@ -1,7 +1,8 @@
 // 文件：frontend/tests/smoke/core-flow.spec.ts
 // 用途：覆盖内部工作台核心操作流程的浏览器 smoke。
 import { expect, test, type Page } from "@playwright/test";
-import { activateSkipLink, expectNoPageHorizontalOverflow, WORKBENCH_VIEWPORTS } from "./support/accessibility";
+import type { DocumentJobConfigSummaryResponse, DocumentJobCreateRequest } from "../../src/api/types";
+import { activateSkipLink, expectElementContentFitsViewportWidth, expectNoPageHorizontalOverflow, WORKBENCH_VIEWPORTS } from "./support/accessibility";
 
 const adminOnlyDeleteReason = "只有 admin 可以删除文档任务。";
 
@@ -278,14 +279,13 @@ type MockApiOptions = {
   downloadConflict?: boolean;
   en2zhAvailable?: boolean;
   translationQaUnavailable?: boolean;
+  configWarnings?: string[];
+  configBlockers?: string[];
+  configOptions?: DocumentJobConfigSummaryResponse["options"];
+  directRequestSnapshot?: Record<string, unknown>;
 };
 
-type DocumentJobCreatePayload = {
-  source_file_id?: string;
-  mode?: string;
-  translation_mode?: string;
-  document_language?: string;
-};
+type DocumentJobCreatePayload = Partial<DocumentJobCreateRequest>;
 
 type MockApiControls = {
   createdDocumentJobPayloads: () => DocumentJobCreatePayload[];
@@ -299,6 +299,59 @@ type MockApiControls = {
 };
 
 type MockRole = "operator" | "admin";
+
+const directProductName = "原文 PDF 转可编辑 Word";
+
+const con101ConfigOptions: DocumentJobConfigSummaryResponse["options"] = {
+  templates: [{ resource_id: "con-template", version: "2", label: "CON 模板@2", status: "published", is_default: false, summary: {} }],
+  term_rule_sets: [{ resource_id: "con-symbols", version: "3", label: "CON 符号规则@3", status: "published", is_default: false, summary: {} }],
+  translation_term_sets: [{
+    resource_id: "con-en2zh-terms", version: "4", label: "CON 英译中术语@4", status: "published", is_default: false,
+    summary: { language_pair: "en2zh" },
+  }],
+  translation_profiles: [{
+    resource_id: "con-en2zh-profile", version: "5", label: "CON 英译中配置@5", status: "published", is_default: false,
+    summary: { language_pair: "en2zh" },
+  }],
+};
+
+// 历史 direct 的惰性翻译字段只用于证明展示投影，不应成为新请求的有效资源。
+const legacyDirectRequestSnapshot = {
+  mode: "direct_pdf_to_word",
+  translation_mode: "direct",
+  document_language: "auto",
+  source_file: { original_filename: "smoke.pdf" },
+  source_job_id: "docjob_legacy_source",
+  clone: {
+    source_job_id: "docjob_legacy_source",
+    config_strategy: "keep_source_snapshot",
+    reason: null,
+    source_status: "succeeded",
+    source_stage: "completed",
+    source_template_version_id: "con-template@2",
+    source_term_version_id: "en2zh@retired",
+  },
+  template_version_id: "con-template@2",
+  term_version_id: "legacy-en2zh@1",
+  debug_full_text_enabled: true,
+  translation_profile: { translation_profile_id: "legacy-profile", model: "legacy-model" },
+  term_assets: {
+    term_rule_set_id: "con-symbols",
+    term_rule_set_version: "3",
+    translation_term_set_id: "legacy-terms",
+    translation_term_version: "1",
+  },
+  resources: {
+    template: { resource_id: "con-template", version: "2", snapshot_hash: "template-hash" },
+    term_rule_set: { resource_id: "con-symbols", version: "3", snapshot_hash: "symbols-hash" },
+    mineru: { model_version: "pipeline", source: "config" },
+    artifact_ids: { document_ir: "file_ir_smoke" },
+    translation_term_set: { set_id: "legacy-terms", version: "1", snapshot_hash: "legacy-term-hash" },
+    translation_profile: { resource_id: "legacy-profile", version: "1", model: "legacy-model" },
+    translation_prompt_id: "legacy-prompt",
+    translation_prompt_content_hash: "legacy-prompt-hash",
+  },
+};
 
 const operatorPermissions = [
   "document_jobs:read",
@@ -1400,7 +1453,7 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
             translation_profile: null,
           },
         },
-        options: {
+        options: options.configOptions || {
           templates: [],
           term_rule_sets: [],
           translation_term_sets: [],
@@ -1414,11 +1467,11 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
             ru2zh: false,
           },
           p0_document_jobs_required: true,
-          p0_document_jobs_ready: true,
+          p0_document_jobs_ready: !options.configBlockers?.length,
           document_jobs_worker_backend: "external",
           document_jobs_automatic_execution_enabled: true,
-          blockers: [],
-          warnings: [],
+          blockers: options.configBlockers || [],
+          warnings: options.configWarnings || [],
         },
       }),
     });
@@ -1519,7 +1572,10 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(documentJob),
+      body: JSON.stringify({
+        ...documentJob,
+        ...(options.directRequestSnapshot ? { request_snapshot: options.directRequestSnapshot, term_version_id: "legacy-en2zh@1" } : {}),
+      }),
     });
   });
   await page.route("**/api/v1/document-jobs/docjob_qa_001/translation-qa**", async (route) => {
@@ -1717,11 +1773,18 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
   };
 }
 
-async function loginAsOperator(page: Page): Promise<void> {
-  await page.getByPlaceholder("请输入用户名").fill("operator");
-  await page.getByPlaceholder("请输入密码").fill("operator-pass");
+async function loginAsRole(page: Page, role: MockRole = "operator"): Promise<void> {
+  await page.getByPlaceholder("请输入用户名").fill(role);
+  await page.getByPlaceholder("请输入密码").fill(`${role}-pass`);
   await page.getByRole("button", { name: "登录工作台" }).click();
   await expect(page).toHaveURL(/\/cockpit(\?|$)/);
+}
+
+async function selectTaskConfigOption(page: Page, fieldLabel: string, optionLabel: string): Promise<void> {
+  const field = page.locator(".config-selection label").filter({ hasText: fieldLabel });
+  await field.locator(".el-select").click();
+  await page.locator(".el-select-dropdown:visible").getByText(optionLabel, { exact: true }).click();
+  await expect(field).toContainText(optionLabel);
 }
 
 async function settleWorkbenchScreenshot(page: Page): Promise<void> {
@@ -1764,7 +1827,7 @@ test("operations redesign renders verified desktop, tablet, and mobile screensho
     await settleWorkbenchScreenshot(page);
     await page.screenshot({ path: testInfo.outputPath(`ops-login-${viewport.name}.png`) });
 
-    await loginAsOperator(page);
+    await loginAsRole(page);
     await page.goto("/jobs?sort=created_at_desc&include_archived=false&page=1");
     await expect(page.getByRole("heading", { name: "任务列表" })).toBeVisible();
     await expect(page.locator(".work-queue-strip").getByRole("button", { name: /失败任务/ })).toBeVisible();
@@ -1989,7 +2052,7 @@ test("operator can create an English to Chinese document job from the mode selec
   });
 });
 
-test("operator sees unavailable English to Chinese mode disabled while direct mode remains creatable", async ({ page }) => {
+test("CON-101：operator 的未就绪翻译方向禁用，direct 可创建且不展开缺失配置细节", async ({ page }) => {
   const controls = await mockApi(page, { en2zhAvailable: false });
 
   await page.goto("/login");
@@ -2000,7 +2063,8 @@ test("operator sees unavailable English to Chinese mode disabled while direct mo
 
   await page.goto("/jobs/new");
   await expect(page.getByRole("heading", { name: "创建转换任务" })).toBeVisible();
-  await expect(page.getByText(/英译中\s*需要默认翻译术语集和翻译配置发布后才能选择。/)).toBeVisible();
+  await expect(page.getByText("英译中未就绪。")).toBeVisible();
+  await expect(page.getByText(/需要默认翻译术语集和翻译配置发布后才能选择/)).toHaveCount(0);
   await expect(page.getByRole("radio", { name: "英译中" })).toBeDisabled();
   await page.locator("input[type='file']").setInputFiles({
     name: "smoke.pdf",
@@ -2016,6 +2080,229 @@ test("operator sees unavailable English to Chinese mode disabled while direct mo
     document_language: "auto",
   });
 });
+
+for (const role of ["admin", "operator"] as const) {
+  test(`CON-101：${role} direct 上传隐藏翻译项并保留模板、符号规则及普通 warnings`, async ({ page }) => {
+    const controls = await mockApi(page, {
+      en2zhAvailable: false,
+      configOptions: con101ConfigOptions,
+      configWarnings: [
+        "translation_term_set_default_missing:en2zh",
+        "translation_profile_default_missing:ru2zh",
+        "translation_term_repository_unavailable",
+        "translation_term_set_default_unavailable:zh2en",
+        "translation_profile_service_unavailable",
+        "translation_profile_default_unavailable:zh2ru:invalid_profile",
+        "translation_profile_options_unavailable:profile_directory_missing",
+        "translation_profile_versions_unavailable:electronics-ru2zh:version_missing",
+        "template_default_unavailable:invalid_template",
+        "future_config_warning:trace_con101",
+      ],
+    });
+    await page.goto("/login");
+    await loginAsRole(page, role);
+    await page.goto("/jobs/new");
+    const uploadPanel = page.locator(".upload-card");
+
+    await expect(page.getByRole("radio", { name: directProductName, exact: true })).toBeChecked();
+    await expect(uploadPanel.getByText("保持原文语言和语义，不调用 AI。", { exact: true })).toBeVisible();
+    await expect(uploadPanel.getByText("翻译术语集", { exact: true })).toHaveCount(0);
+    await expect(uploadPanel.getByText("翻译配置", { exact: true })).toHaveCount(0);
+    await expect(uploadPanel.getByText("全文调试归档", { exact: true })).toHaveCount(0);
+    await expect(uploadPanel.getByText(/默认翻译术语集未发布|默认翻译配置未发布|默认翻译术语集不可用|默认翻译配置不可用/)).toHaveCount(0);
+    await expect(uploadPanel.locator(".config-warning")).not.toContainText("translation_term_repository_unavailable");
+    await expect(uploadPanel.locator(".config-warning")).not.toContainText("translation_profile_service_unavailable");
+    await expect(uploadPanel.locator(".config-warning")).not.toContainText("translation_profile_options_unavailable");
+    await expect(uploadPanel.locator(".config-warning")).not.toContainText("translation_profile_versions_unavailable");
+    await expect(uploadPanel.locator(".config-warning")).toContainText("template_default_unavailable:invalid_template");
+    await expect(uploadPanel.locator(".config-warning")).toContainText("future_config_warning:trace_con101");
+    await expect(page.getByRole("radio", { name: "英译中", exact: true })).toBeDisabled();
+    await selectTaskConfigOption(page, "模板版本", "CON 模板@2");
+    await selectTaskConfigOption(page, "符号与排版规则", "CON 符号规则@3");
+    await page.locator("input[type='file']").setInputFiles({
+      name: "smoke.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%%EOF\n"),
+    });
+    await expect(page.getByRole("button", { name: "创建任务", exact: true })).toBeEnabled();
+    await page.getByRole("button", { name: "创建任务", exact: true }).click();
+
+    await expect.poll(() => controls.createdDocumentJobPayloads().length).toBe(1);
+    expect(controls.createdDocumentJobPayloads()[0]).toEqual({
+      source_file_id: "file_upload_smoke",
+      translation_mode: "direct",
+      document_language: "auto",
+      template_version_id: "con-template@2",
+      term_rule_set_id: "con-symbols",
+      term_rule_set_version: "3",
+      debug_full_text: false,
+    });
+  });
+
+  test(`CON-101：${role} direct 详情和展开快照隐藏遗留 AI 配置，普通诊断与事件保留`, async ({ page }) => {
+    await mockApi(page, { directRequestSnapshot: legacyDirectRequestSnapshot });
+    const translationRequests: string[] = [];
+    page.on("request", (request) => {
+      if (/\/document-jobs\/docjob_smoke_001\/(translation-batches|translation-qa)/.test(new URL(request.url()).pathname)) {
+        translationRequests.push(request.url());
+      }
+    });
+    await page.goto("/login");
+    await loginAsRole(page, role);
+    await page.goto("/jobs/docjob_smoke_001");
+    const detail = page.locator(".job-detail-page");
+
+    await expect(detail.getByText(directProductName, { exact: true })).toBeVisible();
+    await expect(detail.getByText("保持原文语言和语义，不调用 AI。", { exact: true })).toBeVisible();
+    await expect(detail.getByText("con-template@2", { exact: true })).toBeVisible();
+    await expect(detail.getByText("con-symbols@3", { exact: true }).first()).toBeVisible();
+    for (const label of ["翻译术语集", "翻译配置", "旧术语版本 ID", "Provider 批次"]) {
+      await expect(detail.getByText(label, { exact: true })).toHaveCount(0);
+    }
+    await expect(detail.getByRole("button", { name: "翻译 QA", exact: true })).toHaveCount(0);
+    await page.getByRole("tab", { name: "诊断", exact: true }).click();
+    await expect(detail.getByLabel("Provider 批次", { exact: true })).toHaveCount(0);
+    await expect(detail.getByText("AI 调用日志", { exact: true })).toHaveCount(0);
+    await expect(detail.getByRole("heading", { name: "Word 质量证据", exact: true })).toBeVisible();
+    await expect(detail.getByRole("heading", { name: "回调消息", exact: true })).toBeVisible();
+    await expect(detail.getByLabel("事件预览", { exact: true }).getByText("trace_id=trace_smoke", { exact: true })).toBeVisible();
+
+    await page.getByRole("tab", { name: "上下文", exact: true }).click();
+    await detail.locator(".snapshot-details summary").click();
+    const snapshotElement = detail.locator(".snapshot");
+    await expect(snapshotElement).toBeVisible();
+    const snapshot = JSON.parse(await snapshotElement.innerText());
+    expect(snapshot.term_assets).toEqual({ term_rule_set_id: "con-symbols", term_rule_set_version: "3" });
+    expect(snapshot.resources).toEqual({
+      template: legacyDirectRequestSnapshot.resources.template,
+      term_rule_set: legacyDirectRequestSnapshot.resources.term_rule_set,
+      mineru: legacyDirectRequestSnapshot.resources.mineru,
+      artifact_ids: legacyDirectRequestSnapshot.resources.artifact_ids,
+    });
+    expect(snapshot).not.toHaveProperty("translation_profile");
+    expect(snapshot).not.toHaveProperty("debug_full_text_enabled");
+    expect(snapshot).not.toHaveProperty("term_version_id");
+    expect(snapshot.clone).toEqual({
+      source_job_id: "docjob_legacy_source",
+      config_strategy: "keep_source_snapshot",
+      reason: null,
+      source_status: "succeeded",
+      source_stage: "completed",
+      source_template_version_id: "con-template@2",
+    });
+    expect(snapshot.source_file.original_filename).toBe("smoke.pdf");
+    expect(snapshot.source_job_id).toBe("docjob_legacy_source");
+    await expect(snapshotElement).not.toContainText("legacy-model");
+    await expect(snapshotElement).not.toContainText("legacy-prompt");
+    await page.getByRole("tab", { name: "事件", exact: true }).click();
+    await expect(detail.getByText("任务已完成。", { exact: true }).last()).toBeVisible();
+    expect(translationRequests).toEqual([]);
+  });
+}
+
+test("CON-101：admin 翻译切回 direct 清空术语、Profile 与调试状态，提交仅保留普通资源", async ({ page }) => {
+  const controls = await mockApi(page, {
+    en2zhAvailable: true,
+    configOptions: con101ConfigOptions,
+    configWarnings: ["translation_profile_default_missing:ru2zh"],
+  });
+  await page.goto("/login");
+  await loginAsRole(page, "admin");
+  await page.goto("/jobs/new");
+  await selectTaskConfigOption(page, "模板版本", "CON 模板@2");
+  await selectTaskConfigOption(page, "符号与排版规则", "CON 符号规则@3");
+  await page.locator(".mode-row .el-radio-button").filter({ hasText: "英译中" }).click();
+  await expect(page.locator(".upload-card .config-warning")).toContainText("默认翻译配置未发布（俄译中）");
+  await selectTaskConfigOption(page, "翻译术语集", "CON 英译中术语@4");
+  await selectTaskConfigOption(page, "翻译配置", "CON 英译中配置@5");
+  await page.locator(".switch-row .el-switch").click();
+  await expect(page.locator(".switch-row").getByRole("switch")).toBeChecked();
+
+  await page.locator(".mode-row .el-radio-button").filter({ hasText: directProductName }).click();
+  await expect(page.locator(".config-selection").getByText("翻译术语集", { exact: true })).toHaveCount(0);
+  await expect(page.locator(".config-selection").getByText("翻译配置", { exact: true })).toHaveCount(0);
+  await expect(page.locator(".switch-row")).toHaveCount(0);
+  await expect(page.locator(".upload-card .config-warning")).toHaveCount(0);
+
+  // 再切回翻译观察选择和调试开关已清空，不能仅依赖 direct 的 payload 守卫。
+  await page.locator(".mode-row .el-radio-button").filter({ hasText: "英译中" }).click();
+  await expect(page.locator(".config-selection label").filter({ hasText: "翻译术语集" })).toContainText("使用默认翻译术语");
+  await expect(page.locator(".config-selection label").filter({ hasText: "翻译配置" })).toContainText("使用默认翻译配置");
+  await expect(page.locator(".config-selection")).not.toContainText("CON 英译中术语@4");
+  await expect(page.locator(".config-selection")).not.toContainText("CON 英译中配置@5");
+  await expect(page.locator(".switch-row").getByRole("switch")).not.toBeChecked();
+  await page.locator(".mode-row .el-radio-button").filter({ hasText: directProductName }).click();
+  await page.locator("input[type='file']").setInputFiles({
+    name: "smoke.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%%EOF\n"),
+  });
+  await page.getByRole("button", { name: "创建任务", exact: true }).click();
+
+  await expect.poll(() => controls.createdDocumentJobPayloads().length).toBe(1);
+  expect(controls.createdDocumentJobPayloads()[0]).toEqual({
+    source_file_id: "file_upload_smoke",
+    translation_mode: "direct",
+    document_language: "auto",
+    debug_full_text: false,
+    template_version_id: "con-template@2",
+    term_rule_set_id: "con-symbols",
+    term_rule_set_version: "3",
+  });
+});
+
+test("CON-101：direct 保留 P0 blocker 并阻止提交", async ({ page }) => {
+  const controls = await mockApi(page, {
+    en2zhAvailable: false,
+    configWarnings: ["translation_term_set_default_missing:en2zh", "future_config_warning"],
+    configBlockers: ["mineru_api_token_missing"],
+  });
+  await page.goto("/login");
+  await loginAsRole(page);
+  await page.goto("/jobs/new");
+  await expect(page.getByText("P0 执行链路未就绪", { exact: true })).toBeVisible();
+  await expect(page.getByText("MinerU API token 未配置", { exact: true })).toBeVisible();
+  await expect(page.locator(".upload-card").getByText(/future_config_warning/)).toBeVisible();
+  await expect(page.locator(".upload-card").getByText(/默认翻译术语集未发布/)).toHaveCount(0);
+  await page.locator("input[type='file']").setInputFiles({
+    name: "smoke.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%%EOF\n"),
+  });
+  await expect(page.getByRole("button", { name: "创建任务", exact: true })).toBeDisabled();
+  expect(controls.createdDocumentJobPayloads()).toEqual([]);
+});
+
+for (const viewport of WORKBENCH_VIEWPORTS) {
+  test(`CON-101：${viewport.width}px direct 长名称可见、无横向溢出且支持键盘切换`, async ({ page }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    if (viewport.name === "laptop") {
+      await page.addInitScript(() => window.localStorage.setItem("md2word.theme.mode", "dark"));
+    }
+    await mockApi(page, { en2zhAvailable: true, directRequestSnapshot: legacyDirectRequestSnapshot });
+    await page.goto("/login");
+    await loginAsRole(page);
+    await page.goto("/jobs/new");
+    if (viewport.name === "laptop") {
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    }
+    const directRadio = page.getByRole("radio", { name: directProductName, exact: true });
+    const directLabel = page.locator(".mode-row .el-radio-button__inner").filter({ hasText: directProductName });
+    await expect(directLabel).toBeVisible();
+    await expectElementContentFitsViewportWidth(page, directLabel);
+    await expectNoPageHorizontalOverflow(page);
+    await directRadio.focus();
+    await expect(directRadio).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByRole("radio", { name: "英译中", exact: true })).toBeChecked();
+    await page.keyboard.press("ArrowLeft");
+    await expect(directRadio).toBeChecked();
+
+    await page.goto("/jobs/docjob_smoke_001");
+    const modeValue = page.locator(".job-detail-page .el-descriptions__content").filter({ hasText: directProductName });
+    await expect(modeValue).toBeVisible();
+    await expectElementContentFitsViewportWidth(page, modeValue);
+    await expectNoPageHorizontalOverflow(page);
+    await page.getByRole("tab", { name: "上下文", exact: true }).click();
+    await page.locator(".snapshot-details summary").click();
+    await expect(page.locator(".snapshot")).toBeVisible();
+    await expectNoPageHorizontalOverflow(page);
+  });
+}
 
 test("operator sees an explicit forbidden state for admin-only routes", async ({ page }) => {
   await mockApi(page);

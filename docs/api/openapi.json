@@ -1801,6 +1801,7 @@
                 "type": "null"
               }
             ],
+            "description": "仅适用于跨语言翻译任务；原文转换（direct）不得显式绑定翻译资源。",
             "title": "Translation Term Set Id"
           },
           "translation_term_version": {
@@ -1812,6 +1813,7 @@
                 "type": "null"
               }
             ],
+            "description": "仅适用于跨语言翻译任务；原文转换（direct）不得显式绑定翻译资源。",
             "title": "Translation Term Version"
           },
           "use_latest_term_assets": {
@@ -1967,6 +1969,7 @@
                 "type": "null"
               }
             ],
+            "description": "仅 Admin 可为翻译任务开启；direct 请求不得为 true。",
             "title": "Debug Full Text"
           },
           "document_language": {
@@ -2039,6 +2042,7 @@
                 "type": "null"
               }
             ],
+            "description": "仅适用于跨语言翻译任务；原文转换（direct）不得显式绑定翻译资源。",
             "title": "Term Version Id"
           },
           "translation_profile_id": {
@@ -2050,6 +2054,7 @@
                 "type": "null"
               }
             ],
+            "description": "仅适用于跨语言翻译任务；原文转换（direct）不得显式绑定翻译资源。",
             "title": "Translation Profile Id"
           },
           "translation_profile_version": {
@@ -2061,6 +2066,7 @@
                 "type": "null"
               }
             ],
+            "description": "仅适用于跨语言翻译任务；原文转换（direct）不得显式绑定翻译资源。",
             "title": "Translation Profile Version"
           },
           "translation_term_set_id": {
@@ -2072,6 +2078,7 @@
                 "type": "null"
               }
             ],
+            "description": "仅适用于跨语言翻译任务；原文转换（direct）不得显式绑定翻译资源。",
             "title": "Translation Term Set Id"
           },
           "translation_term_version": {
@@ -2083,6 +2090,7 @@
                 "type": "null"
               }
             ],
+            "description": "仅适用于跨语言翻译任务；原文转换（direct）不得显式绑定翻译资源。",
             "title": "Translation Term Version"
           }
         },
@@ -2358,6 +2366,7 @@
         "properties": {
           "debug_full_text": {
             "default": false,
+            "description": "仅 Admin 可为翻译任务开启；direct 请求不得为 true。",
             "title": "Debug Full Text",
             "type": "boolean"
           },
@@ -2436,6 +2445,7 @@
                 "type": "null"
               }
             ],
+            "description": "仅适用于跨语言翻译任务；原文转换（direct）不得显式绑定翻译资源。",
             "title": "Term Version Id"
           },
           "translation_mode": {
@@ -2454,6 +2464,7 @@
                 "type": "null"
               }
             ],
+            "description": "使用五种规范模式；兼容历史 zh2zh / zh_to_zh 输入并归一为 direct。",
             "title": "Translation Mode"
           },
           "translation_profile_id": {
@@ -2465,6 +2476,7 @@
                 "type": "null"
               }
             ],
+            "description": "仅适用于跨语言翻译任务；原文转换（direct）不得显式绑定翻译资源。",
             "title": "Translation Profile Id"
           },
           "translation_profile_version": {
@@ -2476,6 +2488,7 @@
                 "type": "null"
               }
             ],
+            "description": "仅适用于跨语言翻译任务；原文转换（direct）不得显式绑定翻译资源。",
             "title": "Translation Profile Version"
           },
           "translation_term_set_id": {
@@ -2487,6 +2500,7 @@
                 "type": "null"
               }
             ],
+            "description": "仅适用于跨语言翻译任务；原文转换（direct）不得显式绑定翻译资源。",
             "title": "Translation Term Set Id"
           },
           "translation_term_version": {
@@ -2498,6 +2512,7 @@
                 "type": "null"
               }
             ],
+            "description": "仅适用于跨语言翻译任务；原文转换（direct）不得显式绑定翻译资源。",
             "title": "Translation Term Version"
           }
         },
@@ -4024,6 +4039,7 @@
                 "type": "null"
               }
             ],
+            "description": "仅适用于跨语言翻译任务；原文转换（direct）不得显式绑定翻译资源。",
             "title": "Translation Term Set Id"
           },
           "translation_term_version": {
@@ -4035,6 +4051,7 @@
                 "type": "null"
               }
             ],
+            "description": "仅适用于跨语言翻译任务；原文转换（direct）不得显式绑定翻译资源。",
             "title": "Translation Term Version"
           },
           "use_latest_term_assets": {

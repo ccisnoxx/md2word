@@ -20,7 +20,8 @@
   "subtasks": [],
   "children": [
     "10-12-doc-001-documentation-package-index",
-    "10-12-bas-001-current-capability-baseline"
+    "10-12-bas-001-current-capability-baseline",
+    "10-12-con-101-product-mode-ui-copy"
   ],
   "parent": null,
   "relatedFiles": [],

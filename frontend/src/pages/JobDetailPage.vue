@@ -110,6 +110,7 @@
 
             <el-descriptions :column="2" border>
               <el-descriptions-item label="模式">{{ jobModeText[job.mode] || job.mode }}</el-descriptions-item>
+              <el-descriptions-item v-if="!usesTranslationResources(job)" label="转换说明">保持原文语言和语义，不调用 AI。</el-descriptions-item>
               <el-descriptions-item v-if="supportsJobTranslationQa(job)" label="翻译 QA">
                 <span class="qa-summary">
                   <el-tag :type="translationQaStatusTagType(job.translation_qa_status)" effect="plain">
@@ -124,10 +125,10 @@
               <el-descriptions-item label="来源任务 ID">{{ job.source_job_id || "-" }}</el-descriptions-item>
               <el-descriptions-item label="结果文件 ID">{{ job.result_file_id || "-" }}</el-descriptions-item>
               <el-descriptions-item label="Word 模板">{{ boundTemplateLabel }}</el-descriptions-item>
-              <el-descriptions-item label="术语规则集">{{ boundTermRuleSetLabel }}</el-descriptions-item>
-              <el-descriptions-item label="翻译术语集">{{ boundTranslationTermSetLabel }}</el-descriptions-item>
-              <el-descriptions-item label="翻译配置">{{ boundTranslationProfileLabel }}</el-descriptions-item>
-              <el-descriptions-item label="旧术语版本 ID">{{ job.term_version_id || "-" }}</el-descriptions-item>
+              <el-descriptions-item label="符号与排版规则">{{ boundTermRuleSetLabel }}</el-descriptions-item>
+              <el-descriptions-item v-if="usesTranslationResources(job)" label="翻译术语集">{{ boundTranslationTermSetLabel }}</el-descriptions-item>
+              <el-descriptions-item v-if="usesTranslationResources(job)" label="翻译配置">{{ boundTranslationProfileLabel }}</el-descriptions-item>
+              <el-descriptions-item v-if="usesTranslationResources(job)" label="旧术语版本 ID">{{ job.term_version_id || "-" }}</el-descriptions-item>
               <el-descriptions-item label="创建时间">{{ formatDateTime(job.created_at) }}</el-descriptions-item>
               <el-descriptions-item label="更新时间">{{ formatDateTime(job.updated_at) }}</el-descriptions-item>
               <el-descriptions-item label="重试次数">{{ job.retry_count }}</el-descriptions-item>
@@ -217,8 +218,9 @@
             </EvidenceSurfaceSection>
 
             <EvidenceSurfaceSection
+              v-if="usesTranslationResources(job)"
               title="Provider 批次"
-              description="Provider batch 摘要；AI 调用日志仅显示文件 ID，正文内容不进入此视图。"
+              description="翻译 Provider 批次摘要；AI 调用日志仅显示文件 ID，正文内容不进入此视图。"
               aria-label="Provider 批次"
               root-class="diagnostic-section-block"
             >
@@ -302,7 +304,7 @@
                 v-else
                 v-loading="translationBatchesLoading"
                 class="compact-empty"
-                :description="supportsJobTranslationQa(job) ? '暂无 translation provider batch 记录' : '当前任务模式没有 provider batch 诊断'"
+                description="暂无翻译 Provider 批次记录"
               />
             </EvidenceSurfaceSection>
 
@@ -450,10 +452,10 @@
             <div class="section-header">
               <div>
                 <h2 class="section-title">任务上下文建议</h2>
-                <p class="section-subtitle">从当前任务带入来源文件和绑定术语版本。</p>
+                <p class="section-subtitle">从当前任务带入来源文件和绑定配置版本。</p>
               </div>
               <div class="toolbar">
-                <el-button type="primary" :icon="EditPen" @click="openTermRuleProposal">提交术语规则建议</el-button>
+                <el-button type="primary" :icon="EditPen" @click="openTermRuleProposal">提交符号与排版规则建议</el-button>
                 <el-button
                   v-if="supportsJobTranslationQa(job)"
                   :icon="EditPen"
@@ -466,7 +468,7 @@
             <el-descriptions :column="2" border>
               <el-descriptions-item label="来源任务">{{ job.id }}</el-descriptions-item>
               <el-descriptions-item label="来源文件">{{ job.source_file_id }}</el-descriptions-item>
-              <el-descriptions-item label="当前术语规则集">{{ termRuleProposalVersionLabel }}</el-descriptions-item>
+              <el-descriptions-item label="当前符号与排版规则">{{ termRuleProposalVersionLabel }}</el-descriptions-item>
               <el-descriptions-item v-if="supportsJobTranslationQa(job)" label="当前翻译术语集">
                 {{ translationTermProposalVersionLabel }}
               </el-descriptions-item>
@@ -589,18 +591,18 @@
             <el-form-item label="配置策略">
               <el-radio-group v-model="retryDialog.strategy">
                 <el-radio label="keep_original">沿用原配置</el-radio>
-                <el-radio v-if="isAdmin" label="use_latest_term_assets">使用最新术语默认值</el-radio>
-                <el-radio v-if="isAdmin" label="select_term_assets">指定术语版本</el-radio>
+                <el-radio v-if="isAdmin" label="use_latest_term_assets">{{ usesTranslationResources(retryDialog.job) ? "使用最新规则与翻译术语默认值" : "使用最新符号与排版规则" }}</el-radio>
+                <el-radio v-if="isAdmin" label="select_term_assets">{{ usesTranslationResources(retryDialog.job) ? "指定规则与翻译术语版本" : "指定规则版本" }}</el-radio>
               </el-radio-group>
             </el-form-item>
             <template v-if="isAdmin && retryDialog.strategy === 'select_term_assets'">
-              <el-form-item label="术语规则集">
+              <el-form-item label="符号与排版规则">
                 <el-select
                   v-model="retryDialog.termRuleVersion"
                   clearable
                   filterable
                   :loading="configLoading"
-                  placeholder="沿用原术语规则集"
+                  placeholder="沿用原符号与排版规则"
                 >
                   <el-option
                     v-for="option in configSummary?.options.term_rule_sets || []"
@@ -632,7 +634,7 @@
               type="info"
               :closable="false"
               show-icon
-              title="重试只重绑术语规则集和翻译术语集默认值；模板和翻译配置沿用原任务快照。"
+              :title="usesTranslationResources(retryDialog.job) ? '重试只重绑符号与排版规则和翻译术语集默认值；模板和翻译配置沿用原任务快照。' : '重试只重绑符号与排版规则默认值；模板沿用原任务快照。'"
             />
             <ApiErrorAlert :error="configError" :diagnostic-context="jobErrorDiagnosticContext('document_jobs.config_summary')" />
           </el-form>
@@ -684,13 +686,13 @@
                   />
                 </el-select>
               </el-form-item>
-              <el-form-item label="术语规则集">
+              <el-form-item label="符号与排版规则">
                 <el-select
                   v-model="cloneDialog.termRuleVersion"
                   clearable
                   filterable
                   :loading="configLoading"
-                  placeholder="使用当前默认术语规则集"
+                  placeholder="使用当前默认符号与排版规则"
                 >
                   <el-option
                     v-for="option in configSummary?.options.term_rule_sets || []"
@@ -801,6 +803,7 @@ import {
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { copyDownloadLink, openDownloadLink, type DownloadLinkNotice } from "@/utils/download";
 import { configOptionKey, configVersionId, findConfigOption } from "@/utils/configOptions";
+import { documentJobRequestSnapshotForDisplay } from "@/utils/documentJobConfig";
 import {
   summarizeTranslationBatches,
   translationBatchAiCallLogSummaryText,
@@ -901,7 +904,11 @@ const eventStageOptions: DocumentJobStage[] = [
 ];
 
 const isAdmin = computed(() => auth.user?.role === "admin");
-const requestSnapshotPreview = computed(() => JSON.stringify(job.value?.request_snapshot || {}, null, 2));
+const requestSnapshotPreview = computed(() => JSON.stringify(
+  job.value ? documentJobRequestSnapshotForDisplay(job.value.request_snapshot, job.value.mode) : {},
+  null,
+  2,
+));
 const sourceFilename = computed(() => (job.value ? getJobSourceFilename(job.value) : "-"));
 const translationQaReviewText = computed(() => {
   if (!job.value || job.value.translation_qa_status === "unreviewed") {
@@ -1182,7 +1189,7 @@ const dispositionFacts = computed(() => {
     { label: "错误码", value: job.value.error_code || "-", mono: true },
     { label: "trace_id", value: latestTraceId.value, mono: true },
     { label: "回调", value: callbackHealthText.value },
-    { label: "Provider 批次", value: translationBatchHealthText.value },
+    ...(usesTranslationResources(job.value) ? [{ label: "Provider 批次", value: translationBatchHealthText.value }] : []),
     { label: "质量", value: qualityDispositionText.value },
     { label: "文件", value: fileAvailabilitySummary.value },
   ];

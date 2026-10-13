@@ -12,7 +12,7 @@ source_files:
   - app/domains/document_jobs/execution.py
 summary: Document Jobs API 提供 P0 PDF -> Word 任务创建、查询、事件、重试、clone、取消、归档、删除和下载入口。
 tags: [document-jobs, api, pdf, word]
-last_reviewed: 2026-07-23
+last_reviewed: 2026-10-12
 ---
 
 ## 概述
@@ -67,11 +67,11 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 
 | 值 | 含义 |
 |---|---|
-| `direct_pdf_to_word` | P0 默认路径，直接生成 Word。 |
-| `en2zh_pdf_to_word` | 实验能力，先翻译 DocumentIR 再生成 Word。 |
-| `ru2zh_pdf_to_word` | 俄译中能力，先翻译 DocumentIR 再生成 Word。 |
-| `zh2en_pdf_to_word` | 中译英能力，先翻译 DocumentIR 再生成 Word。 |
-| `zh2ru_pdf_to_word` | 中译俄能力，先翻译 DocumentIR 再生成 Word。 |
+| `direct_pdf_to_word` | 原文 PDF 转可编辑 Word；保持原文语言和语义，不调用 AI。 |
+| `en2zh_pdf_to_word` | 英译中；先翻译 DocumentIR 再生成 Word。 |
+| `ru2zh_pdf_to_word` | 俄译中；先翻译 DocumentIR 再生成 Word。 |
+| `zh2en_pdf_to_word` | 中译英；先翻译 DocumentIR 再生成 Word。 |
+| `zh2ru_pdf_to_word` | 中译俄；先翻译 DocumentIR 再生成 Word。 |
 
 ### 失败诊断字段
 
@@ -108,19 +108,38 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 | `translation_mode` | 否 | `direct` / `en2zh` / `ru2zh` / `zh2en` / `zh2ru`。 |
 | `document_language` | 否 | `auto` / `zh` / `en` / `ru`，默认 `auto`。 |
 | `template_version_id` | 否 | 模板版本选择；创建任务时普通用户和 Admin 都可以绑定 published 版本。 |
-| `term_version_id` | 否 | 兼容术语版本字段。 |
-| `term_rule_set_id` | 否 | 术语规则集。 |
-| `term_rule_set_version` | 否 | 术语规则集版本。 |
-| `translation_term_set_id` | 否 | 翻译术语集。 |
-| `translation_term_version` | 否 | 翻译术语集版本。 |
-| `translation_profile_id` | 否 | 翻译配置 ID；创建任务时可显式选择 published 版本。 |
-| `translation_profile_version` | 否 | 翻译配置版本；创建任务时可显式选择 published 版本。 |
+| `term_version_id` | 否 | 旧翻译术语版本字段，仅跨语言任务可显式指定。 |
+| `term_rule_set_id` | 否 | 符号与排版规则集，原文转换和翻译任务均可使用。 |
+| `term_rule_set_version` | 否 | 符号与排版规则集版本。 |
+| `translation_term_set_id` | 否 | 仅跨语言任务使用的翻译术语集。 |
+| `translation_term_version` | 否 | 仅跨语言任务使用的翻译术语集版本。 |
+| `translation_profile_id` | 否 | 仅跨语言任务使用的翻译配置 ID，可显式选择 published 版本。 |
+| `translation_profile_version` | 否 | 仅跨语言任务使用的翻译配置版本。 |
 | `debug_full_text` | 否 | 是否保留全文调试信息。仅翻译任务支持，且只有 admin 可以开启；默认关闭。 |
 
 - 响应：`201 Created`，包含 `job_id`、`status`、`stage`、`progress` 和完整 `job`。
 - 成功动作写入 `document_job.create` audit event。
 - Readiness gate：当 `p0_document_jobs_required=true` 且 `p0_document_jobs_ready=false` 时，返回 `503 document_jobs_not_ready`，不会创建 job，也不会把 source file 绑定到 job。
 - 权限：已登录创建用户可以在创建任务时绑定 published 资源版本；配置维护、发布、设默认仍走各资源管理接口权限。`debug_full_text` 只有 admin 可以开启。
+
+原文转换请求示例：
+
+```json
+{
+  "source_file_id": "file_uploaded_pdf",
+  "translation_mode": "direct",
+  "document_language": "auto"
+}
+```
+
+原文转换不加载翻译术语、Translation Profile、翻译 Prompt 或 AI Provider；模板与符号规则仍可绑定。服务端保留历史输入归一化，新调用只使用表中的规范值，响应与新任务快照只记录规范模式。
+
+- 规范化后 `mode` 与 `translation_mode` 不一致：`400 invalid_request`。
+- 未知模式、空串或字段类型错误：`422 validation_error`。
+- direct 显式指定任一非空翻译资源字段（包括旧 `term_version_id`）：`400 invalid_request`，拒绝发生在资源加载、任务创建、源文件绑定和队列投递前。
+- direct 请求 `debug_full_text=true`：Operator 保持 `403 role_forbidden`；Admin 返回 `400 invalid_request`。
+
+该 direct 约束针对新写入意图；历史任务的惰性资源字段仍可读取，不清理历史快照或审计。
 
 ### `GET /api/v1/document-jobs/config-summary`
 
@@ -143,6 +162,7 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
     - `blockers`：P0 门禁阻断项，上传页应在 required 且 not ready 时阻止创建任务。
     - `warnings`：非阻塞 warning。
 - 语义：只读聚合接口，不修改默认指针、不导入导出术语、不触发任务处理。
+- 该摘要包含所有模式的资源元数据；direct 页面只展示模板与符号规则，隐藏翻译资源配置细节。翻译资源缺失不阻止 direct 创建，但 P0 执行 blockers 和其他配置错误仍有效。
 
 ### `GET /api/v1/document-jobs`
 
@@ -268,6 +288,7 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 - 成功动作写入 `document_job.retry` audit event。
 - 权限：Operator 只能提交原因并沿用原配置；Admin 可选择使用最新默认术语资产或指定 published 术语资产。Retry 当前不重新绑定模板或翻译配置。
 - 边界：Retry 只用于失败任务原地重试，不创建新任务，不等同于 clone。
+- direct 只能重选符号与排版规则，显式选择翻译术语被拒绝；沿用历史快照时不重新加载惰性的翻译字段。
 
 ### `POST /api/v1/document-jobs/{job_id}/clone`
 
@@ -282,11 +303,13 @@ Document Jobs API 使用统一错误结构，同时保留 FastAPI 兼容的 `det
 | `document_language` | 否 | 覆盖新任务文档语言；未传则沿用源任务。 |
 | `template_version_id` | 否 | 仅 `select_published_versions` 下可传，Admin-only。 |
 | `term_rule_set_id` / `term_rule_set_version` | 否 | 仅 `select_published_versions` 下可传，Admin-only。 |
-| `translation_term_set_id` / `translation_term_version` | 否 | 仅 `select_published_versions` 下可传，Admin-only。 |
-| `translation_profile_id` / `translation_profile_version` | 否 | 仅 `select_published_versions` 下可传，Admin-only。 |
+| `translation_term_set_id` / `translation_term_version` | 否 | 仅跨语言任务的 `select_published_versions` 下可传，Admin-only。 |
+| `translation_profile_id` / `translation_profile_version` | 否 | 仅跨语言任务的 `select_published_versions` 下可传，Admin-only。 |
 | `debug_full_text` | 否 | 覆盖新任务 debug 全文开关。 |
 
 `debug_full_text=true` 只允许 admin 使用。Operator clone 已开启全文归档的源任务时，若使用 `keep_source_snapshot` 继承该开关，也会被拒绝；应由 admin 创建 P1 QA 样本任务或 clone 任务。
+
+direct clone 不绑定翻译资源：新显式选择被拒绝；`keep_source_snapshot` 保留历史惰性字段以追溯，但不加载它们、不改源任务；`use_current_defaults` 只解析普通转换资源。任务详情隐藏 direct 的翻译资源和 AI 调试展示项，仅对展示快照做投影，不改变后端快照和权限。
 
 - 成功：`201 Created`，返回 `source_job_id`、新 `job_id` 和完整新 `job`，并写入 `job_cloned` 任务事件和 `document_job.clone` audit event。
 - 失败：源 PDF 不存在、不可见、过期或不是 uploaded source PDF 时返回 404/403/409；Operator 传显式资源版本返回 403。

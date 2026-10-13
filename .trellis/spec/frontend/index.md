@@ -8,6 +8,7 @@
 2. 优先复用 `frontend/src/styles/main.scss` 的 `--app-*` 令牌与共享类。
 3. 响应式调整必须分别验证 `375/768/1024/1440px`，并至少覆盖一个深色主题样本。
 4. 改变可见入口或弹层布局时，保留键盘可达性、关闭后的焦点返回和既有业务处理函数。
+5. 修改任务模式/配置展示时阅读 [任务模式与 direct 资源合同](../backend/document-job-mode-contract.md)，共享五种名称和模式能力；direct 快照投影只读，动作仍消费后端 available actions。
 
 ## 规范索引
 

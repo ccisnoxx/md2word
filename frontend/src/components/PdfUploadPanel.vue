@@ -1,10 +1,10 @@
-<!-- frontend/src/components/PdfUploadPanel.vue: Authorize, upload, and create one document job from a PDF. -->
+<!-- 文件：frontend/src/components/PdfUploadPanel.vue；用途：授权、上传 PDF 并创建单个文档任务。 -->
 <template>
   <el-card class="upload-card card-flat" shadow="never">
     <div class="section-header">
       <div>
         <h2 class="section-title">上传 PDF 创建任务</h2>
-        <p class="section-subtitle">默认创建 PDF 直接转 Word 任务。</p>
+        <p class="section-subtitle">默认创建原文 PDF 转可编辑 Word 任务。</p>
       </div>
       <el-tag type="info" effect="plain">单文件</el-tag>
     </div>
@@ -48,6 +48,7 @@
         </el-radio-button>
       </el-radio-group>
     </div>
+    <p v-if="!selectedModeRequiresTranslationResources" class="section-subtitle">保持原文语言和语义，不调用 AI。</p>
     <el-alert
       v-if="modeReadinessHint"
       class="mode-readiness"
@@ -111,7 +112,7 @@
             </el-select>
           </label>
           <label>
-            <span>术语规则集</span>
+            <span>符号与排版规则</span>
             <el-select v-model="selectedTermRuleVersion" clearable filterable placeholder="使用默认规则集">
               <el-option
                 v-for="option in configSummary?.options.term_rule_sets || []"
@@ -179,7 +180,11 @@ import { getMaxUploadBytes, uploadFileContent, validatePdfFile } from "@/utils/u
 import { normalizeApiError, type ApiClientError } from "@/utils/errors";
 import { readinessCodeText } from "@/utils/displayText";
 import { configOptionKey, configVersionId, findConfigOption } from "@/utils/configOptions";
-import { isTranslationModeAvailable, translationResourceDefaultsForMode } from "@/utils/documentJobConfig";
+import {
+  documentJobConfigWarningsForMode,
+  isTranslationModeAvailable,
+  translationResourceDefaultsForMode,
+} from "@/utils/documentJobConfig";
 import {
   documentJobModeDefinitions,
   documentJobModeCreateLanguage,
@@ -210,7 +215,7 @@ const selectedTranslationProfileVersion = ref("");
 const debugFullText = ref(false);
 const maxUploadMb = computed(() => Math.round(getMaxUploadBytes() / 1024 / 1024));
 const isAdmin = computed(() => auth.user?.role === "admin");
-const configWarnings = computed(() => (configSummary.value?.readiness.warnings || []).map(readinessCodeText));
+const configWarnings = computed(() => documentJobConfigWarningsForMode(configSummary.value, mode.value).map(readinessCodeText));
 const selectedTranslationMode = computed(() => documentJobModeTranslationMode(mode.value));
 const p0ReadinessBlockers = computed(() => configSummary.value?.readiness.blockers || []);
 const p0ExecutionBlocked = computed(() => Boolean(
@@ -245,7 +250,9 @@ const modeReadinessHint = computed(() => {
     ? mode.value
     : firstUnavailableModeOption.value?.mode;
   return unavailableMode
-    ? `${documentJobModeDefinitions[unavailableMode].shortLabel} 需要默认翻译术语集和翻译配置发布后才能选择。`
+    ? selectedModeRequiresTranslationResources.value
+      ? `${documentJobModeDefinitions[unavailableMode].shortLabel} 需要默认翻译术语集和翻译配置发布后才能选择。`
+      : `${documentJobModeDefinitions[unavailableMode].shortLabel}未就绪。`
     : "";
 });
 const selectedTranslationDefaults = computed(() =>
@@ -255,7 +262,7 @@ const defaultConfigItems = computed(() => {
   const defaults = configSummary.value?.defaults;
   const items = [
     { key: "template", label: "模板", value: defaults?.template?.label || "未配置" },
-    { key: "term-rule-set", label: "术语规则集", value: defaults?.term_rule_set?.label || "未配置" },
+    { key: "term-rule-set", label: "符号与排版规则", value: defaults?.term_rule_set?.label || "未配置" },
   ];
   if (selectedModeRequiresTranslationResources.value) {
     items.push(

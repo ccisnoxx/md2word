@@ -1,0 +1,62 @@
+{
+  "id": "con-101-product-mode-ui-copy",
+  "name": "con-101-product-mode-ui-copy",
+  "title": "CON-101：产品模式和 UI 文案收口",
+  "description": "R1：收口五种产品模式、direct AI 资源隔离和服务端历史 alias 兼容。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "document-jobs",
+  "package": null,
+  "priority": "P2",
+  "creator": "777",
+  "assignee": "777",
+  "createdAt": "2026-10-12",
+  "completedAt": null,
+  "branch": "md2word/CON-101",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-12-datasheet-docx-delivery-quality",
+  "relatedFiles": [
+    "docs/implementation/codex-task-manifest.yaml",
+    ".trellis/tasks/10-12-con-101-product-mode-ui-copy/prd.md",
+    ".trellis/tasks/10-12-con-101-product-mode-ui-copy/design.md",
+    ".trellis/tasks/10-12-con-101-product-mode-ui-copy/implement.md"
+  ],
+  "notes": "2026-10-12：人工已接受实现、测试证据和残余风险，并确认当前任务 commit plan；manifest=done。按工作提交、归档提交、journal 提交顺序收尾，不 push，不开始后续任务。",
+  "meta": {
+    "planning_only": false,
+    "task_manifest_id": "CON-101",
+    "depends_on": [
+      "BAS-001"
+    ],
+    "release_phase": "R1",
+    "planning_review": "approved",
+    "planning_approval": {
+      "date": "2026-10-12",
+      "accepted": true,
+      "source": "用户明确接受当前 prd/design/implement 并授权实现 CON-101"
+    },
+    "implementation_complete": true,
+    "audit_id": "20261013T050906Z-con-101-a6f352f4",
+    "audit_digest_status": "unavailable_config_drift",
+    "residual_risks": [
+      "全量UI smoke存在既有页面样式mock缺口，HEAD旧测试可复现",
+      "Codex配置漂移阻断聚合审计digest",
+      "真实线上/数据库/Word未验证"
+    ],
+    "human_acceptance": {
+      "date": "2026-10-12",
+      "accepted": true,
+      "scope": "CON-101",
+      "source": "用户明确接受实现、测试证据和残余风险，并授权只提交当前任务及归档",
+      "accepted_evidence": "validation.md 的 AC1–AC8、实际测试结果及残余风险",
+      "commit_authorized": true,
+      "archive_authorized": true,
+      "push_authorized": false
+    }
+  }
+}

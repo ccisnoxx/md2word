@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-# File: app/domains/translation/modes.py
-# Purpose: Centralize supported document translation modes and language-pair metadata.
+# app/domains/translation/modes.py：统一任务模式、历史输入兼容和语言方向元数据。
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +17,7 @@ DocumentJobMode = Literal[
     "zh2ru_pdf_to_word",
 ]
 DocumentLanguage = Literal["auto", "zh", "en", "ru"]
+LEGACY_DIRECT_TRANSLATION_MODES: tuple[str, ...] = ("zh2zh", "zh_to_zh")
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,11 +128,13 @@ def derive_translation_term_set_id(language_pair: str) -> str:
 
 
 def normalize_translation_mode(value: str | None) -> TranslationMode:
+    """保留内部兼容输入；HTTP schema 只开放约定的历史别名子集。"""
+
     normalized = str(value or "direct").strip().lower()
+    if normalized in LEGACY_DIRECT_TRANSLATION_MODES:
+        return "direct"
     aliases = {
         "none": "direct",
-        "zh2zh": "direct",
-        "zh_to_zh": "direct",
         "llm_en_to_zh": "en2zh",
         "en_to_zh": "en2zh",
         "llm_ru_to_zh": "ru2zh",
@@ -140,7 +142,7 @@ def normalize_translation_mode(value: str | None) -> TranslationMode:
     }
     normalized = aliases.get(normalized, normalized)
     if normalized not in TRANSLATION_MODE_SPECS:
-        raise ValueError(f"Unsupported translation_mode: {value}")
+        raise ValueError(f"不支持的 translation_mode: {value}")
     return normalized  # type: ignore[return-value]
 
 

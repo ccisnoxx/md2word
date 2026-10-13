@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "后端 owner、错误和验证入口"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "保持 API 错误、权限优先级和翻译失败语义"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "前端约束与既定质量门禁"}
+{"file": ".trellis/tasks/10-12-con-101-product-mode-ui-copy/research/current-behavior.md", "reason": "当前模式、真实差距、只读复现及现有验证入口"}
+{"file": ".trellis/spec/backend/document-job-mode-contract.md", "reason": "本次实现固化的 alias/direct 输入、UI 投影和测试边界"}

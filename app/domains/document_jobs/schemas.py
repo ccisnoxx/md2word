@@ -6,28 +6,46 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.domains.files.schemas import DocumentFileSummaryResponse
-from app.domains.translation.modes import DocumentJobMode, DocumentLanguage, TranslationMode
+from app.domains.translation.modes import (
+    DocumentJobMode,
+    DocumentLanguage,
+    LEGACY_DIRECT_TRANSLATION_MODES,
+    TranslationMode,
+    normalize_translation_mode,
+)
 
 DocumentJobActionId = Literal["download", "retry", "cancel", "archive", "unarchive", "clone", "delete"]
+TRANSLATION_SELECTION_DESCRIPTION = "仅适用于跨语言翻译任务；原文转换（direct）不得显式绑定翻译资源。"
 
 
 class DocumentJobCreateRequest(BaseModel):
     source_file_id: str
     mode: DocumentJobMode | None = None
-    translation_mode: TranslationMode | None = None
+    translation_mode: TranslationMode | None = Field(
+        default=None, description="使用五种规范模式；兼容历史 zh2zh / zh_to_zh 输入并归一为 direct。"
+    )
     document_language: DocumentLanguage = "auto"
     template_version_id: str | None = None
-    term_version_id: str | None = None
+    term_version_id: str | None = Field(default=None, description=TRANSLATION_SELECTION_DESCRIPTION)
     term_rule_set_id: str | None = None
     term_rule_set_version: str | None = None
-    translation_term_set_id: str | None = None
-    translation_term_version: str | None = None
-    translation_profile_id: str | None = None
-    translation_profile_version: str | None = None
-    debug_full_text: bool = False
+    translation_term_set_id: str | None = Field(default=None, description=TRANSLATION_SELECTION_DESCRIPTION)
+    translation_term_version: str | None = Field(default=None, description=TRANSLATION_SELECTION_DESCRIPTION)
+    translation_profile_id: str | None = Field(default=None, description=TRANSLATION_SELECTION_DESCRIPTION)
+    translation_profile_version: str | None = Field(default=None, description=TRANSLATION_SELECTION_DESCRIPTION)
+    debug_full_text: bool = Field(default=False, description="仅 Admin 可为翻译任务开启；direct 请求不得为 true。")
+
+    @field_validator("translation_mode", mode="before")
+    @classmethod
+    def _normalize_historical_direct_mode(cls, value: Any) -> Any:
+        """仅接纳已约定的历史输入，其他值继续由五值 Literal 严格校验。"""
+
+        if isinstance(value, str) and value.strip().lower() in LEGACY_DIRECT_TRANSLATION_MODES:
+            return normalize_translation_mode(value)
+        return value
 
 
 class DocumentJobAvailableActionResponse(BaseModel):
@@ -451,8 +469,8 @@ class DocumentJobRetryRequest(BaseModel):
     use_latest_term_assets: bool = False
     term_rule_set_id: str | None = None
     term_rule_set_version: str | None = None
-    translation_term_set_id: str | None = None
-    translation_term_version: str | None = None
+    translation_term_set_id: str | None = Field(default=None, description=TRANSLATION_SELECTION_DESCRIPTION)
+    translation_term_version: str | None = Field(default=None, description=TRANSLATION_SELECTION_DESCRIPTION)
 
 
 class DocumentJobCloneRequest(BaseModel):
@@ -460,14 +478,14 @@ class DocumentJobCloneRequest(BaseModel):
     config_strategy: Literal["keep_source_snapshot", "use_current_defaults", "select_published_versions"] = "keep_source_snapshot"
     document_language: DocumentLanguage | None = None
     template_version_id: str | None = None
-    term_version_id: str | None = None
+    term_version_id: str | None = Field(default=None, description=TRANSLATION_SELECTION_DESCRIPTION)
     term_rule_set_id: str | None = None
     term_rule_set_version: str | None = None
-    translation_term_set_id: str | None = None
-    translation_term_version: str | None = None
-    translation_profile_id: str | None = None
-    translation_profile_version: str | None = None
-    debug_full_text: bool | None = None
+    translation_term_set_id: str | None = Field(default=None, description=TRANSLATION_SELECTION_DESCRIPTION)
+    translation_term_version: str | None = Field(default=None, description=TRANSLATION_SELECTION_DESCRIPTION)
+    translation_profile_id: str | None = Field(default=None, description=TRANSLATION_SELECTION_DESCRIPTION)
+    translation_profile_version: str | None = Field(default=None, description=TRANSLATION_SELECTION_DESCRIPTION)
+    debug_full_text: bool | None = Field(default=None, description="仅 Admin 可为翻译任务开启；direct 请求不得为 true。")
 
 
 class DocumentJobRetryResponse(BaseModel):
@@ -502,8 +520,8 @@ class DocumentJobBulkRetryRequest(BaseModel):
     use_latest_term_assets: bool = False
     term_rule_set_id: str | None = None
     term_rule_set_version: str | None = None
-    translation_term_set_id: str | None = None
-    translation_term_version: str | None = None
+    translation_term_set_id: str | None = Field(default=None, description=TRANSLATION_SELECTION_DESCRIPTION)
+    translation_term_version: str | None = Field(default=None, description=TRANSLATION_SELECTION_DESCRIPTION)
 
 
 class DocumentJobBulkItemResponse(BaseModel):

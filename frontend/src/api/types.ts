@@ -1356,6 +1356,7 @@ export type FileQuotaPolicyOpsSummaryResponse = {
   safety: FileQuotaPolicyOpsSafetyResponse;
 };
 
+// 前端仅使用五个规范模式；direct 保持原文且不调用 AI。
 export type TranslationMode = "direct" | "en2zh" | "ru2zh" | "zh2en" | "zh2ru";
 export type TranslationLanguagePair = Exclude<TranslationMode, "direct">;
 export type DocumentJobMode =
@@ -1385,13 +1386,17 @@ export type DocumentJobCreateRequest = {
   translation_mode?: TranslationMode | null;
   document_language: DocumentLanguage;
   template_version_id?: string | null;
+  // 旧翻译术语版本仅用于翻译任务；direct 不得显式绑定。
   term_version_id?: string | null;
+  // 符号与排版规则适用于 direct 和四个翻译方向。
   term_rule_set_id?: string | null;
   term_rule_set_version?: string | null;
+  // 以下术语集和 Profile 字段仅用于翻译任务，direct 不得显式绑定。
   translation_term_set_id?: string | null;
   translation_term_version?: string | null;
   translation_profile_id?: string | null;
   translation_profile_version?: string | null;
+  // 全文调试仅供有权限的管理员用于翻译任务。
   debug_full_text?: boolean;
 };
 
@@ -1406,8 +1411,10 @@ export type DocumentJobAvailableAction = {
 export type DocumentJobRetryRequest = {
   reason?: string | null;
   use_latest_term_assets?: boolean;
+  // direct 重试可重选符号与排版规则。
   term_rule_set_id?: string | null;
   term_rule_set_version?: string | null;
+  // 翻译术语重选仅用于翻译任务。
   translation_term_set_id?: string | null;
   translation_term_version?: string | null;
 };
@@ -1417,13 +1424,17 @@ export type DocumentJobCloneRequest = {
   config_strategy?: "keep_source_snapshot" | "use_current_defaults" | "select_published_versions";
   document_language?: DocumentLanguage | null;
   template_version_id?: string | null;
+  // 旧翻译术语版本仅用于翻译任务；direct 不得显式绑定。
   term_version_id?: string | null;
+  // 符号与排版规则适用于所有任务模式。
   term_rule_set_id?: string | null;
   term_rule_set_version?: string | null;
+  // 以下术语集和 Profile 字段仅用于翻译任务，direct 不得显式绑定。
   translation_term_set_id?: string | null;
   translation_term_version?: string | null;
   translation_profile_id?: string | null;
   translation_profile_version?: string | null;
+  // direct 克隆不得启用 AI 全文调试。
   debug_full_text?: boolean | null;
 };
 

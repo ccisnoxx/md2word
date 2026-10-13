@@ -52,6 +52,7 @@ from app.domains.translation.modes import (
     TranslationMode,
     document_job_mode_for_translation_mode,
     is_translation_document_job_mode,
+    normalize_translation_mode,
     spec_for_document_job_mode,
     translation_mode_for_document_job_mode,
 )
@@ -205,6 +206,16 @@ class DocumentJobService:
         source_file = self._get_source_file_for_create(source_file_id, user)
         mode = self._resolve_document_job_mode(mode=mode, translation_mode=translation_mode)
         self._ensure_document_language_allowed(mode, document_language)
+        self._ensure_debug_full_text_allowed(user, debug_full_text)
+        self._ensure_direct_translation_selection_absent(
+            mode,
+            term_version_id=term_version_id,
+            translation_term_set_id=translation_term_set_id,
+            translation_term_version=translation_term_version,
+            translation_profile_id=translation_profile_id,
+            translation_profile_version=translation_profile_version,
+            debug_full_text=debug_full_text,
+        )
         normalized_template_version_id = self._resolve_template_version_id(
             template_version_id,
             allow_draft=user.role == "admin",
@@ -213,7 +224,6 @@ class DocumentJobService:
             mode,
             self._legacy_translation_term_version_id(mode, term_version_id, translation_term_version),
         )
-        self._ensure_debug_full_text_allowed(user, debug_full_text)
         debug_full_text_enabled = self._resolve_debug_full_text_enabled(mode, debug_full_text)
         now = utc_now()
         job_id = f"docjob_{uuid4().hex[:12]}"
@@ -647,6 +657,11 @@ class DocumentJobService:
         if job.archived_at is not None:
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "已归档文档任务不允许重试。")
         self._ensure_retry_allowed(job)
+        self._ensure_direct_translation_selection_absent(
+            job.mode,
+            translation_term_set_id=translation_term_set_id,
+            translation_term_version=translation_term_version,
+        )
         now = utc_now()
         retry_count = job.retry_count + 1
         patch = self._build_retry_patch(
@@ -740,6 +755,15 @@ class DocumentJobService:
             and source_job.debug_full_text_enabled
         )
         self._ensure_debug_full_text_allowed(user, requested_debug_full_text or inherited_debug_full_text)
+        self._ensure_direct_translation_selection_absent(
+            source_job.mode,
+            term_version_id=term_version_id,
+            translation_term_set_id=translation_term_set_id,
+            translation_term_version=translation_term_version,
+            translation_profile_id=translation_profile_id,
+            translation_profile_version=translation_profile_version,
+            debug_full_text=requested_debug_full_text,
+        )
 
         now = utc_now()
         new_job_id = f"docjob_{uuid4().hex[:12]}"
@@ -2302,6 +2326,11 @@ class DocumentJobService:
         mode: DocumentJobMode | None,
         translation_mode: TranslationMode | None,
     ) -> DocumentJobMode:
+        if translation_mode is not None:
+            try:
+                translation_mode = normalize_translation_mode(translation_mode)
+            except ValueError as exc:
+                raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", str(exc)) from exc
         if mode is None and translation_mode is None:
             return "direct_pdf_to_word"
         if mode is None:
@@ -2320,6 +2349,38 @@ class DocumentJobService:
                 f"translation_mode 与 mode 不一致: translation_mode={translation_mode} mode={mode}。",
             )
         return mode
+
+    def _ensure_direct_translation_selection_absent(
+        self,
+        mode: DocumentJobMode,
+        *,
+        term_version_id: str | None = None,
+        translation_term_set_id: str | None = None,
+        translation_term_version: str | None = None,
+        translation_profile_id: str | None = None,
+        translation_profile_version: str | None = None,
+        debug_full_text: bool = False,
+    ) -> None:
+        """只校验新写入意图；历史 direct 快照的惰性字段不参与资源选择。"""
+
+        if is_translation_document_job_mode(mode):
+            return
+        has_translation_selection = any(
+            self._normalize_optional_text(value)
+            for value in (
+                term_version_id,
+                translation_term_set_id,
+                translation_term_version,
+                translation_profile_id,
+                translation_profile_version,
+            )
+        )
+        if has_translation_selection or debug_full_text:
+            raise ApiError(
+                status.HTTP_400_BAD_REQUEST,
+                "invalid_request",
+                "原文转换（direct）不能绑定翻译资源或开启翻译全文调试。",
+            )
 
     def _ensure_document_language_allowed(self, mode: DocumentJobMode, document_language: str) -> None:
         spec = spec_for_document_job_mode(mode)
@@ -2372,9 +2433,13 @@ class DocumentJobService:
             raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", str(exc)) from exc
 
     def _resolve_term_version_id(self, mode: DocumentJobMode, term_version_id: str | None) -> str | None:
+        """direct 在调用术语服务前返回，历史字段不能触发翻译资源加载。"""
+
+        language_pair = spec_for_document_job_mode(mode).language_pair
+        if language_pair is None:
+            return None
         if self.term_version_service is None:
             return term_version_id
-        language_pair = spec_for_document_job_mode(mode).language_pair
         try:
             snapshot = self.term_version_service.resolve_for_job(term_version_id, language_pair=language_pair)
         except FileNotFoundError as exc:

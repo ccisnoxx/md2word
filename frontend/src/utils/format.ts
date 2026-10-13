@@ -1,5 +1,5 @@
-// File: frontend/src/utils/format.ts
-// Purpose: 统一任务页面使用的状态文案、展示格式和操作权限判断。
+// 文件：frontend/src/utils/format.ts
+// 用途：统一任务页面使用的状态文案、展示格式和操作权限判断。
 import type {
   DocumentFileResponse,
   DocumentFileSummaryResponse,
@@ -49,8 +49,8 @@ export type DocumentJobModeDefinition = {
 export const documentJobModeDefinitions: Record<DocumentJobMode, DocumentJobModeDefinition> = {
   direct_pdf_to_word: {
     mode: "direct_pdf_to_word",
-    label: "PDF 直接转 Word",
-    shortLabel: "直接转 Word",
+    label: "原文 PDF 转可编辑 Word",
+    shortLabel: "原文 PDF 转可编辑 Word",
     createDocumentLanguage: "auto",
     translationMode: "direct",
     requiresTranslationResources: false,
@@ -58,7 +58,7 @@ export const documentJobModeDefinitions: Record<DocumentJobMode, DocumentJobMode
   },
   en2zh_pdf_to_word: {
     mode: "en2zh_pdf_to_word",
-    label: "英文 PDF 翻译转 Word",
+    label: "英译中",
     shortLabel: "英译中",
     createDocumentLanguage: "en",
     translationMode: "en2zh",
@@ -67,7 +67,7 @@ export const documentJobModeDefinitions: Record<DocumentJobMode, DocumentJobMode
   },
   ru2zh_pdf_to_word: {
     mode: "ru2zh_pdf_to_word",
-    label: "俄文 PDF 翻译转 Word",
+    label: "俄译中",
     shortLabel: "俄译中",
     createDocumentLanguage: "ru",
     translationMode: "ru2zh",
@@ -76,7 +76,7 @@ export const documentJobModeDefinitions: Record<DocumentJobMode, DocumentJobMode
   },
   zh2en_pdf_to_word: {
     mode: "zh2en_pdf_to_word",
-    label: "中文 PDF 翻译为英文 Word",
+    label: "中译英",
     shortLabel: "中译英",
     createDocumentLanguage: "zh",
     translationMode: "zh2en",
@@ -85,7 +85,7 @@ export const documentJobModeDefinitions: Record<DocumentJobMode, DocumentJobMode
   },
   zh2ru_pdf_to_word: {
     mode: "zh2ru_pdf_to_word",
-    label: "中文 PDF 翻译为俄文 Word",
+    label: "中译俄",
     shortLabel: "中译俄",
     createDocumentLanguage: "zh",
     translationMode: "zh2ru",
