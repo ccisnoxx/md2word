@@ -16,3 +16,8 @@ app/__pycache__/
 app/**/__pycache__/
 frontend/node_modules/
 frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+# 测试生成的根目录图片
+/--*.png
+/--*.jpg
