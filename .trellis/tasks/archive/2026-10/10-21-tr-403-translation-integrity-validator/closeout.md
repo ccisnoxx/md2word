@@ -56,4 +56,8 @@ Spec update 已核对：Validator Spec 的七节合同、稳定错误/首次预�
 - 日志用 add_session --no-commit 生成，再仅暂存本次新日志与索引补丁。既有 CON-102 等未提交 journal/索引、manifest/父任务其他条目及其他任务文件保留，不带入提交。
 - 起始 1474 文件已保存临时保护快照；收尾检查业务 15 文件、其他任务文件及共享文件非当前片段不变。无 stash、覆盖、删除用户文件或 push。
 
-工作提交 hash 和实际归档后结果在归档记账提交中补录；日志仅引用工作提交，不引用归档提交。正式记录保留，临时保护快照在检查完成后清理。
+工作提交：`f46a3bcf148e6abc16a0011b6e7079d7f723130b`，37 个文件/限定补丁。Trellis 已由准确子任务 archive --no-commit 写为 completed 并移至 `.trellis/tasks/archive/2026-10/10-21-tr-403-translation-integrity-validator`，旧活动目录已不存在、指向本任务的 session 已清理；manifest 的实际 task path 与 implement/check context 已迁移。归档及本次日志由后续独立限定记账提交承载，不修改其他任务状态。日志仅引用工作提交，不引用归档提交。正式记录保留，临时保护快照在最终检查完成后清理。
+
+工作提交前 git diff --cached --check 曾发现两份新任务文档有多余空白末行，已仅修正文档 EOF 并复核通过，未改业务。父任务无最终换行使自动生成的局部 patch 无法解析，改用精确 index blob 暂存 HEAD 加本 child 的版本；磁盘原 parent 文件未改，其他 child 未带入。
+
+归档后的 context、状态、链接、字节保护及 git diff --check 在归档记账前再次核对；最终检查和提交 hash 以本次收尾回复及 git log 为准。
