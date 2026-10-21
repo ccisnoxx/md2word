@@ -9,7 +9,7 @@
 ## 2. 身份、依赖与事实基线
 
 - 阶段：R4（翻译完整性）；父任务：datasheet-docx-delivery-quality。
-- 子任务：.trellis/tasks/10-21-tr-402-protected-token-codec。
+- 子任务：.trellis/tasks/archive/2026-10/10-21-tr-402-protected-token-codec。
 - 实施分支：md2word/TR-402。规划轮位于 main，基线 HEAD 为 4c40e6c52bde072a7ad3afab67eb425f757bd33c；本轮经用户授权创建建议分支，保留所有原有 dirty。
 - 2026-10-21 核验：manifest 中 TR-402 原为 todo；唯一依赖 BAS-001=done，归档 task.json 为 completed 且有人工验收记录；其工作提交 107624d7e87f8287c83020d9c751e9d54d23d855 是当前 HEAD 的祖先。
 - 规划调查时 protected_tokens.py 不存在；正式 translator 只校验返回 ID 序列。legacy runtime 已有有限正则与逐 item 的固定 PH 占位符，但会碰撞、漏保护和放过重复，不能直接复用为达标实现。

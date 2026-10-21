@@ -45,3 +45,12 @@ Spec-sync 已重新阅读七节 Codec 合同：前缀碰撞、完整字面量先
 - 不执行 stash/reset/清理他人文件，不 push，不开始其他任务。
 
 实际工作提交哈希、归档位置和最终核验结果在提交/归档后补记；记账提交以 git log 为准，避免把归档提交冒充工作提交。
+
+## 实际提交与归档
+
+- 工作提交：24ed6a717ca86cf5ed086f2eda58030e4af66810，仅18个当前任务文件及共享文件的TR-402增量。
+- 已执行 task.py archive --no-commit，退出0；准确归档位置为 .trellis/tasks/archive/2026-10/10-21-tr-402-protected-token-codec。
+- Trellis status=completed、completedAt=2026-10-21；manifest=done，resolution=implemented。
+- implement/check 的研究引用已迁移，PRD 当前任务导航同步；历史命令/基线事实保留。
+- 归档后 task.py validate：implement 4/check 4，退出0；current --source 返回无活动任务（退出1为无任务约定）。
+- 归档后当前任务文档/JSONL路径、其他44个manifest任务、原有dirty和业务候选哈希核对保持；不扩大业务验证范围。

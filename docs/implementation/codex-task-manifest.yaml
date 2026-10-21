@@ -282,9 +282,9 @@ tasks:
     trellis_slug: tr-402-protected-token-codec
     prompt_file: docs/implementation/codex-prompts/TR-402.md
     status: done
-    trellis_task_path: .trellis/tasks/10-21-tr-402-protected-token-codec
+    trellis_task_path: .trellis/tasks/archive/2026-10/10-21-tr-402-protected-token-codec
     resolution: implemented
-    notes: "2026-10-21：用户已人工审查并接受TR-402实现、测试证据和残余风险，确认当前commit plan并授权仅本任务提交/归档/记账。存在纯Codec与测试实际增量，done/implemented，非skipped_existing。分支md2word/TR-402；已接受24项Codec、32项既有回归及fresh复核，收尾hash/context/diff/audit轻量核验通过。P1认证缺失、translation-core样本不存在及未接生产/实译限制继续保留。实际提交与归档证据见子任务closeout.md，不push、不开始后续任务。"
+    notes: "2026-10-21：用户已人工审查并接受TR-402实现、测试证据和残余风险，确认当前commit plan并授权仅本任务提交/归档/记账。存在纯Codec与测试实际增量，done/implemented，非skipped_existing。分支md2word/TR-402；已接受24项Codec、32项既有回归及fresh复核，收尾hash/context/diff/audit轻量核验通过。P1认证缺失、translation-core样本不存在及未接生产/实译限制继续保留。实际提交与归档证据见子任务closeout.md，不push、不开始后续任务。 工作提交24ed6a717ca86cf5ed086f2eda58030e4af66810；Trellis已completed并归档，context路径已迁移；记账提交见git log。"
   - id: TR-403
     title: "TranslationIntegrityValidator"
     phase: R4
