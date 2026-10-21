@@ -964,3 +964,38 @@ TR-402纯函数ProtectedTokenCodec、测试证据和残余风险已获人工接�
 ### Next Steps
 
 - TR-402已收尾，不push、不启动后续任务；P1缺认证、translation-core样本缺失和未接生产/实译等已接受限制继续保留。
+
+
+## Session 31: TR-403 人工验收、提交与归档
+
+**Date**: 2026-10-21
+**Task**: TR-403 人工验收、提交与归档
+**Branch**: `md2word/TR-403`
+
+### Summary
+
+用户人工验收当前实现、测试证据和残余风险；仅TR-403完成done/implemented、限定提交及归档，不push、不启动后续任务。
+
+### Main Changes
+
+- 核对AC1–AC12与实际实现/测试；Spec合同已同步，收尾未改业务代码。
+- Trellis completed并归档10-21-tr-403-translation-integrity-validator；仅TR-403 manifest和父child登记，既存其他任务/共享文件补丁保留。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f46a3bcf148e6abc16a0011b6e7079d7f723130b` | (see git log) |
+
+### Testing
+
+- [OK] 收尾89项定向通过；活动与归档context各8 entries通过；git diff与cached diff检查通过；已关闭独立复核audit-verify通过。
+- [OK] 复用已接受128项、修正后50项及单测、release202/OpenAPI证据；不重复重门禁或调用真实模型。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 保留已接受P1缺认证、translation-core未注册、真实环境/Word未验及完整实施审计配置漂移缺口；不把人工接受写成已测通过，不启动后续任务。
