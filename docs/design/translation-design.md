@@ -2,7 +2,7 @@
 doc_type: technical-design
 status: target
 component: translation
-last_reviewed: 2026-10-03
+last_reviewed: 2026-10-21
 ---
 
 # 翻译流水线设计
@@ -32,11 +32,12 @@ zh2ru
 - Provider JSON 结构化输出；
 - ID 数量/缺失/重复/额外项校验；
 - 批次计划、重试、拆分和调用审计。
+- TR-402 提供独立纯内存 ProtectedTokenCodec 原语及离线契约测试；尚未接入 Provider/Worker，不能据此认定生产技术保持率已经达标。
 
 目标差距：
 
 - captions/footnotes 需要明确进入翻译单元；
-- 技术 Token 主要依赖 Prompt，缺少确定性 codec；
+- 正式翻译链路的技术 Token 仍主要依赖 Prompt，需要 TR-403 接入已有 Codec 并在回填前验证；
 - 表格短文本缺少行头/列头上下文；
 - 翻译后技术完整性检查不足；
 - 四种语言方向的正式样本不完整。
@@ -147,9 +148,9 @@ block.id:table:r<row>:c<col>:run<index>
 ### 7.2 编码
 
 ```text
-TA = 25°C → {{PH_0001}}
-0x0028[4:0] → {{PH_0002}}
-VCC1_VCO → {{PH_0003}}
+TA = 25°C → {{MD2W_PT_v1_0_1}}
+0x0028[4:0] → {{MD2W_PT_v1_0_2}}
+VCC1_VCO → {{MD2W_PT_v1_0_3}}
 ```
 
 要求：
@@ -159,14 +160,21 @@ VCC1_VCO → {{PH_0003}}
 - 映射只保存在内存或受控 debug artifact；
 - Prompt 明确禁止修改占位符。
 
+TR-402 的具体内部接口和规则见 [ProtectedTokenCodec Spec](../../.trellis/spec/backend/protected-token-codec.md)。输入为完整有序 TranslationTextItem tuple，每次出现独立编号；扫描全部源文本选择不存在的命名空间前缀，不使用随机数/全局计数。已有占位符字面量同样被代理，避免源文碰撞。新模块的原始映射仅在内存保存，不新增 debug Artifact 出口。
+
+检测在原文上执行，URL/邮箱与公式等完整结构优先，随后处理地址/位字段、型号/标准/版本、信号、数量单位、数字及有界技术缩写；不把普通大写词或任意自然语言吞为 Token。原始切片不做空白、Unicode 或单位规范化。上述示例命名空间为 0，实际遇到源文前缀冲突会确定性递增。
+
 ### 7.3 解码前校验
 
-- 集合完全相等；
-- 每个占位符恰好出现一次，除非源中本就多次出现且编码模型明确允许；
+- 返回 item ID 序列与输入一致；
+- 逐 item 验证占位符所属关系与次数，不能只比较全批集合；
+- 每个占位符恰好出现一次；源中多次出现同值时也分配不同占位符；
 - 不允许未知占位符；
 - 不允许占位符被拆空格、改大小写或改括号。
 
 失败时批次为确定性失败，不回填。
+
+Codec 在整批通过后一次恢复，恢复出的源文占位符字面量不再次替换；同 item 内移动完整占位符允许，跨 item 移植拒绝。它不判断译文语义或未编码内容。生产失败映射、编码后的预算、Prompt 告知、术语顺序及同步/Worker 双入口接线由 TR-403 处理；本次不修改历史 Prompt/Profile 快照或新建 feature flag。
 
 ## 8. 术语
 
