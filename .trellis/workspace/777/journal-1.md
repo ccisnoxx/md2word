@@ -928,3 +928,39 @@ Released commit b167e61 to hostdzire via release dir flow; verified internal/pub
 ### Next Steps
 
 - CON-101 已收尾；后续任务只待用户另行授权，不自动开始，不 push。
+
+
+## Session 30: TR-402 人工验收、提交与归档
+
+**Date**: 2026-10-21
+**Task**: TR-402 人工验收、提交与归档
+**Branch**: `md2word/TR-402`
+
+### Summary
+
+TR-402纯函数ProtectedTokenCodec、测试证据和残余风险已获人工接受；仅提交当前任务、归档和记录会话，不push、不开始后续任务。
+
+### Main Changes
+
+- 工作提交24ed6a7只含Codec、24项测试、对应Spec/设计、TR-402正式任务文件及共享文件中的当前任务增量。
+- 归档提交a148bde仅移动当前11份任务文件并同步路径；manifest=done/implemented，Trellis=completed，归档位于.trellis/tasks/archive/2026-10/10-21-tr-402-protected-token-codec。
+- 其他44个manifest任务状态保持，原有dirty受保护；manifest/父任务/journal均按当前任务增量选择性暂存。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `24ed6a717ca86cf5ed086f2eda58030e4af66810` | (see git log) |
+
+### Testing
+
+- [OK] 复用已人工接受的Codec24项、translation/legacy/direct32项及两轮独立复核；业务/测试候选SHA-256未变，不重复测试或线上门禁。
+- [OK] 本轮git diff --check、归档前后task validate（implement4/check4）、文档/JSONL路径、精确暂存及既有audit-verify均通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- TR-402已收尾，不push、不启动后续任务；P1缺认证、translation-core样本缺失和未接生产/实译等已接受限制继续保留。
