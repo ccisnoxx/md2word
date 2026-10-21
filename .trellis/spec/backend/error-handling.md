@@ -1,5 +1,13 @@
 # Error Handling
 
+## 正式翻译完整性错误
+
+`TranslationIntegrityError` 只携带固定中文消息、稳定 `code` 和脱敏 `evidence`，没有 partial replacements。具体错误矩阵见 [翻译完整性合同](translation-integrity-validator.md)。同步 `DocumentIRTranslationError` 保留 code/evidence；Worker 在通用 ValueError 映射前识别完整性错误，批次保留专用码，主任务顶层仍为既有 `translation_failed`。Provider JSON/传输/截断保留原分类，不把完整性失败伪装成截断。
+
+外部 Provider 的任意异常不能直接以 `str(error)` 或原异常链进入普通日志、job event 或审计；边界输出固定安全描述及允许的类型/状态/usage/hash 元数据。只替换已知 Prompt 字符串不足以保证脱敏。真实调用只记一次成功/失败审计，调用前验证失败不伪造调用；审计写失败保持可见，不能吞掉后标记成功或再次伪造一次 Provider 失败审计。
+
+首次计划尚无 batch 时的预算错误同样保留顶层 `translation_failed`，通过既有 `stage_failed.payload.integrity` 留下专用机器码与安全摘要；没有 batch 的 binding 为 null，不创建假的调用日志或批次。普通非翻译错误与条件状态更新不改变。
+
 The backend uses a centralized API error response shape around `ApiError`, while some legacy/specialized routers still raise `HTTPException` directly.
 
 Evidence:
@@ -119,8 +127,11 @@ provider.translate(request)
 
 ```python
 for batch_items in self._split_provider_batches(all_document_items):
-    result = provider.translate(self._build_provider_request(..., items=batch_items))
-    replacements.update(self._validate_result(batch_items, result))
+    prepared = self.build_provider_request(..., items=batch_items)
+    result = provider.translate(prepared.request)
+    validated = self.validator.validate(prepared.source_items, prepared.encoded_batch, result)
+    replacements.update(validated.replacements)
+# 所有批次成功后才回填；不能在循环内 apply。
 ```
 
 ## Validation Boundaries

@@ -243,23 +243,26 @@ class FakeDocumentJobTranslationProvider:
         if self.raise_error:
             raise RuntimeError("provider unavailable")
         translations = {
-            "block_0001.text": "1 特性",
-            "block_0002.text": "输入失调电压很低。",
-            "block_0003.text": "电气特性",
-            "block_0003.html.0000": "参数",
-            "block_0003.html.0001": "输入电压",
-            "block_0004.text": "图 1. 引脚图",
-            "block_0005.list_items.0000": "低噪声",
-            "block_0005.list_items.0001": "高压摆率",
+            "block_0001.text": ("Features", "特性"),
+            "block_0002.text": ("The input offset voltage is low.", "输入失调电压很低。"),
+            "block_0003.text": ("Electrical Characteristics", "电气特性"),
+            "block_0003.html.0000": ("Parameter", "参数"),
+            "block_0003.html.0001": ("Input voltage", "输入电压"),
+            "block_0004.text": ("Figure", "图"),
+            "block_0005.list_items.0000": ("Low noise", "低噪声"),
+            "block_0005.list_items.0001": ("High slew rate", "高压摆率"),
         }
         from app.domains.translation.models import TranslationProviderResult, TranslationTextItem
 
-        return TranslationProviderResult(
-            items=tuple(
-                TranslationTextItem(id=item.id, text=translations.get(item.id, f"译文:{item.text}"))
-                for item in request.items
-            )
-        )
+        items = []
+        for item in request.items:
+            replacement = translations.get(item.id)
+            # 只替换自然语言，保留实际请求中的编号和技术占位符。
+            text = item.text.replace(*replacement) if replacement is not None else f"译文:{item.text}"
+            if item.id == "block_0004.text":
+                text = text.replace("Pin diagram", "引脚图")
+            items.append(TranslationTextItem(id=item.id, text=text))
+        return TranslationProviderResult(items=tuple(items))
 
 
 class TruncatingOnceDocumentJobTranslationProvider(FakeDocumentJobTranslationProvider):
@@ -10431,6 +10434,8 @@ class FastAPIJobsBackendTests(TestCase):
                     if file.job_id == job_id and file.file_type == "ai_call_log"
                 )
 
+                source_ir_before = runtime.document_file_repository.get_document_file(first_job.source_document_ir_file_id)
+                source_ir_bytes_before = runtime.file_upload_service.read_file_content(source_ir_before)
                 provider.raise_error = False
                 retry_response = client.post(
                     f"/api/v1/document-jobs/{job_id}/retry",
@@ -10444,6 +10449,13 @@ class FastAPIJobsBackendTests(TestCase):
                     params={"file_id": old_ai_log.id},
                 )
 
+            retried_job = runtime.document_job_repository.get_document_job(job_id)
+            source_ir_after = runtime.document_file_repository.get_document_file(retried_job.source_document_ir_file_id)
+            source_ir_bytes_after = runtime.file_upload_service.read_file_content(source_ir_after)
+            new_batch = runtime.document_job_translation_batch_repository.list_translation_batches(job_id, generation=1)[0]
+            batch_payload = json.loads(runtime.file_upload_service.read_file_content(
+                runtime.document_file_repository.get_document_file(new_batch.result_file_id)
+            ))
             all_job_files = [
                 file
                 for file in runtime.document_file_repository.list_document_files()
@@ -10463,6 +10475,15 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(retry_response.status_code, 200)
         self.assertEqual(retry_response.json()["status"], "succeeded")
         self.assertEqual(retry_response.json()["retry_count"], 1)
+        self.assertEqual(source_ir_after.id, source_ir_before.id)
+        self.assertEqual(source_ir_after, source_ir_before)
+        self.assertEqual(source_ir_bytes_after, source_ir_bytes_before)
+        self.assertEqual(source_ir_after.checksum_sha256, "sha256:" + hashlib.sha256(source_ir_bytes_after).hexdigest())
+        self.assertEqual(new_batch.source_document_ir_file_id, source_ir_before.id)
+        self.assertEqual(batch_payload["integrity"]["binding"]["generation"], 1)
+        self.assertEqual(batch_payload["integrity"]["binding"]["attempt"], 1)
+        self.assertEqual(batch_payload["integrity"]["binding"]["source_document_ir_file_id"], source_ir_before.id)
+        self.assertEqual(batch_payload["integrity"]["binding"]["source_document_ir_sha256"], source_ir_before.checksum_sha256)
         self.assertEqual(len(provider.requests), 3)
         self.assertEqual(len(runtime.document_job_execution_service.fake_mineru_client.calls), 1)
         self.assertEqual(len(runtime.document_job_execution_service.fake_mineru_client.download_calls), 1)

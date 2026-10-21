@@ -118,3 +118,38 @@ Translation batch stores follow the existing payload-plus-index pattern:
 - sqlite/MySQL use `document_job_translation_batches` with indexed `batch_id`, `job_id`, `generation`, `status`, `created_at`, and `updated_at`
 
 When changing batch persistence fields or state transitions, update all three adapters, the schema bootstrap, fake MySQL cursor behavior, and the adapter parity coverage in `tests/test_database_job_repository.py`.
+
+## 场景：生成件物理身份与历史对象读取
+
+### 1. 范围与触发
+
+修改 `FileUploadService.register_generated_content`、生成件路径或异步结果登记时适用。记录级 CAS 负责选取结果，不能阻止登记前的文件写入覆盖共享对象。
+
+### 2. 接口
+
+外部 `register_generated_content(..., filename, content, metadata=None)` 保持不变；内部 `_generated_object_key_for(*, tenant_id, job_id, file_type, file_id, filename, provider) -> str` 必须使用本次登记已经分配的 `file_id`。
+
+### 3. 合同
+
+- 新生成件 key 为 `document-jobs/<safe tenant>/<safe job>/<safe type>/<safe file_id>/<safe filename>`；S3 继续追加既有安全 prefix。共享方法的所有新生成件都采用此规则，不按翻译类型保留覆盖旁路。
+- 同一 generation/attempt 的再次登记也分配独立物理身份；代次、尝试和来源归属仍由现有记录及 evidence 校验，路径不能替代这些检查。
+- `original_filename`、源 PDF 上传布局、bucket/backend、权限和保留策略不变。文件写入/登记失败不能当成成功；CAS 拒绝只能留下自身未选中的新对象。
+- 读取、下载和清理始终使用记录保存的 `object_key`，不从当前模板重建历史路径。新旧布局共存，不 backfill、不搬迁历史件、不修改 DB/schema/repository 协议。
+
+### 4. 验证与错误
+
+沿用现有安全片段及 prefix 检查；危险 prefix 在写入前显式拒绝，不能降级换路径。每次成功登记的 checksum/size 必须对应自身对象实际字节。文件身份隔离不扩大既有 CAS/lease 的并发保证。
+
+### 5. 正常、缺省与非法场景
+
+正常为同一业务 filename 重复登记后，所有记录分别读回自身字节；历史固定 key 记录继续可读。缺省继续使用既有后端配置。非法为分配新 `file_id` 却仍复用 type/filename 路径，或在 CAS 失败后删除/重写胜出及历史对象。
+
+### 6. 必要测试
+
+`tests.test_generated_artifact_identity` 通过真实 service、文件仓储、本地临时目录及 fake S3 put/get，覆盖 source IR、batch result、目标 IR、DOCX 和审计的重复登记、实际字节/checksum、原下载名、历史固定 key、源上传布局及路径安全。翻译接线测试另覆盖新代/新 attempt 胜出后迟到写且 CAS 拒绝的真实字节保真；fake 不能冒充真实 S3/MySQL 并发证据。
+
+### 7. 错误与正确做法
+
+错误：只断言新记录 ID 不同或旧 CAS 失败，就宣称 Artifact 不可变。
+
+正确：共享文件服务按本次 `file_id` 分配新 key，CAS 选择结果记录；测试在迟到写完成后实际读回胜出及历史对象，断言字节和 checksum 均未变。

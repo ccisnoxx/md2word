@@ -20,6 +20,7 @@ from app.domains.translation.profiles_service import (
     translation_profile_snapshot_from_record,
 )
 from app.domains.translation.provider import OpenAICompatibleTranslationProvider
+from app.domains.translation.integrity import INTEGRITY_INSTRUCTION, INTEGRITY_INSTRUCTION_SHA256, INTEGRITY_INSTRUCTION_VERSION
 from app.domains.translation.schemas import TranslationProfileDraftUpdateRequest
 from tests.test_resource_versioning import HASH_V1, _MemoryResourceVersionRepository
 
@@ -319,6 +320,29 @@ class TranslationProfilePromptTests(TestCase):
         self.assertEqual(stored.content_hash, prompt_content_hash(markdown))
         self.assertTrue(system_prompt.startswith(markdown))
         self.assertIn("source=zh; target=en", system_prompt)
+
+    def test_four_bound_profiles_append_versioned_integrity_protocol_without_hash_changes(self) -> None:
+        self.service.bootstrap_default_profiles_if_missing()
+        provider = OpenAICompatibleTranslationProvider(self.settings)
+        for language_pair in ("en2zh", "ru2zh", "zh2en", "zh2ru"):
+            with self.subTest(language_pair=language_pair):
+                snapshot = self.service.resolve_default_snapshot(language_pair)
+                source, target = language_pair.split("2")
+                request = TranslationProviderRequest(
+                    language_pair, source, target, (TranslationTextItem("item", "natural"),),
+                    prompt_id=snapshot.prompt.id,
+                    prompt_content_hash=snapshot.prompt.content_hash,
+                    system_prompt_markdown=snapshot.prompt.markdown,
+                )
+                before = snapshot.prompt
+                effective = provider._system_prompt(request)
+                self.assertTrue(effective.startswith(snapshot.prompt.markdown))
+                self.assertTrue(effective.endswith(INTEGRITY_INSTRUCTION))
+                self.assertIn(INTEGRITY_INSTRUCTION_VERSION, effective)
+                self.assertIn("{{MD2W_PT_v1_n_k}}", effective)
+                self.assertEqual(snapshot.prompt, before)
+                self.assertEqual(request.prompt_content_hash, prompt_content_hash(snapshot.prompt.markdown))
+                self.assertEqual(prompt_content_hash(INTEGRITY_INSTRUCTION), INTEGRITY_INSTRUCTION_SHA256)
 
     def test_audit_projection_and_error_redaction_exclude_prompt_markdown(self) -> None:
         markdown = "# secret-system-prompt\nDo not expose this marker."

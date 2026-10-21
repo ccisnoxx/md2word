@@ -5,7 +5,7 @@ component: conversion-runtime
 status: current
 summary: 在正式项目中用 PyCharm 运行本地 MinerU 转 DOCX 调试。
 tags: [conversion, mineru, sandbox, regression, pycharm]
-last_reviewed: 2026-06-26
+last_reviewed: 2026-10-21
 ---
 
 # 本地 MinerU 转 DOCX 调试入口
@@ -107,7 +107,7 @@ scripts.dev.formal_mineru_conversion.run_conversion(...)
 | `translation_api_key` | 翻译 API key；不要提交真实密钥 |
 | `translation_base_url` | OpenAI-compatible base URL |
 | `translation_max_pages` | 翻译批次页数软限制 |
-| `translation_max_chars` | 翻译批次字符硬限制 |
+| `translation_max_chars` | 实际编码 items 文本字符硬限制；不是完整 Prompt 的 tokenizer 上限 |
 | `log_level` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
 
 如果需要使用另一个配置文件，可以在 PyCharm Parameters 中传入：
@@ -152,6 +152,22 @@ scripts.dev.formal_mineru_conversion.run_conversion(...)
 - `translation_response` 默认留空；离线调试时填入未提交的本地响应 JSON
 
 如果没有 `OPENAI_API_KEY` 且没有配置 `translation_response`，en2zh/ru2zh 会明确失败并提示缺少 key；这是预期行为，不会自动回退为 direct。需要离线调试时，先让脚本写出 `translation_request_output`，再把本地未提交的响应 JSON 填到 `translation_response`。
+
+## TR-403 本地翻译请求 v2 与严格响应
+
+`translation_request_output` 使用 `document-ir-local-translation-request/v2`，导出共享正式计划实际发送的编码 items，而不是 v1 的原始技术文本。每个实际 batch 独立生成占位符；既有 `char_count` 表示原文字符数，`encoded_char_count` 表示编码文本字符数。术语/Prompt/预算和完整性规则由正式 translator 拥有，本地 adapter 不维护第二套计划或自动修复。
+
+离线响应只返回约定字段，例如：
+
+```json
+{"items":[{"id":"原请求中的完整 ID","text":"自然语言译文 {{MD2W_PT_v1_0_1}}"}]}
+```
+
+多批也可返回 `{"batches":[{"batch_id":"实际批次 ID","items":[...]}]}`；每批仅允许 `items` 和可选 `batch_id`。不要把请求的 schema、页码或字符计数复制进响应。全部 item/batch 必须与实际请求的数量、顺序和 ID 一致，完整 envelope 在翻译和回填前核对；不能以字典覆盖、过滤额外项或重排来修正响应。
+
+所有占位符须在原 item 中恰好一次、字符完全一致；允许同 item 内移动，不允许跨 item 转移。响应不能在保留占位符之外新增裸数字、单位、型号、地址、位字段或公式。任一失败不回填、不生成目标 DOCX/成功 trace，不静默回退源文。无技术 Token 的合法文字响应仍可用。
+
+原 v1 导出文件保持不变；技术文本响应必须重新导出 v2 并按真实编码请求提供，不把旧原文响应自动转换成占位响应。请求仍可能包含未保护自然语言；占位不是全文匿名化，显式导出文件和成功全文 trace 只留本地受控目录，不提交仓库或作为普通审计输出。direct 不导出/读取翻译资源，也不调用 Provider。
 
 ## 命令行临时入口
 

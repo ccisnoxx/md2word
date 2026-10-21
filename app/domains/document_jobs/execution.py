@@ -60,8 +60,16 @@ from app.domains.translation.document_ir_translator import (
 from app.domains.translation.models import (
     TranslationProfileSnapshot,
     TranslationProviderResult,
+    TranslationTextItem,
+    TermVersionSnapshot,
 )
-from app.domains.translation.provider import TranslationProviderResponseError
+from app.domains.translation.integrity import (
+    TranslationIntegrityBinding,
+    TranslationIntegrityError,
+    TranslationIntegrityEvidence,
+    ValidatedTranslationBatch,
+)
+from app.domains.translation.provider import OpenAICompatibleTranslationProvider, TranslationProviderResponseError
 
 
 class DocumentJobTaskQueueProtocol(Protocol):
@@ -174,6 +182,7 @@ class DocumentJobExecutionService:
                 error_code=error_code,
                 error_message=str(exc),
                 trace_id=trace_id,
+                integrity=exc.evidence if isinstance(exc, (DocumentIRTranslationError, TranslationIntegrityError)) else None,
             )
         except Exception as exc:
             current = self.job_repository.get_document_job(job_id) or job
@@ -782,8 +791,7 @@ class DocumentJobExecutionService:
             )
             return rendering or self.job_repository.get_document_job(job.id) or job
         if is_translation_document_job_mode(job.mode) and job.source_document_ir_file_id:
-            source_file = self._get_uploaded_file(job.source_document_ir_file_id)
-            source_document_ir = DocumentIR.model_validate_json(self.file_service.read_file_content(source_file))
+            _source_file, source_document_ir = self._read_translation_source(job, job.source_document_ir_file_id)
             return self._ensure_translation_batches_and_enqueue(job, source_document_ir, trace_id=trace_id)
 
         raw_file = self._get_mineru_raw_result_file(job)
@@ -1073,7 +1081,6 @@ class DocumentJobExecutionService:
         if not batches:
             return self._register_translated_document_ir_and_continue(
                 job,
-                source_document_ir,
                 succeeded_batches=[],
                 trace_id=trace_id,
             )
@@ -1162,7 +1169,7 @@ class DocumentJobExecutionService:
             return batch
         if job.status == "canceled":
             return self._cancel_translation_batch(batch, trace_id=trace_id)
-        if job.status in {"succeeded", "failed"} or job.retry_count != batch.job_retry_count:
+        if job.status in {"succeeded", "failed"} or job.retry_count != batch.job_retry_count or job.retry_count != batch.generation:
             return batch
         if job.status != "running" or job.stage != "ir_converting":
             return batch
@@ -1170,13 +1177,17 @@ class DocumentJobExecutionService:
         if claimed is None:
             return self.translation_batch_repository.get_translation_batch(batch.id)
 
+        prepared = None
         request = None
+        binding = None
+        provider_called = False
+        audit_started = False
+        audit_completed = False
         result: TranslationProviderResult | None = None
         recorder: TranslationCallAuditRecorder | None = None
         started_at = time.perf_counter()
         try:
-            source_file = self._get_uploaded_file(claimed.source_document_ir_file_id)
-            source_document_ir = DocumentIR.model_validate_json(self.file_service.read_file_content(source_file))
+            source_file, source_document_ir = self._read_translation_source(job, claimed.source_document_ir_file_id)
             _targets, items = self.document_ir_translation_service.extract_translation_items(source_document_ir)
             items_by_id = {item.id: item for item in items}
             batch_items = [items_by_id[item_id] for item_id in claimed.item_ids]
@@ -1195,7 +1206,7 @@ class DocumentJobExecutionService:
                 if self.translation_audit_service is not None
                 else None
             )
-            request = self.document_ir_translation_service.build_provider_request(
+            prepared = self.document_ir_translation_service.build_provider_request(
                 source_document_ir,
                 batch_items,
                 term_version=term_version,
@@ -1211,18 +1222,37 @@ class DocumentJobExecutionService:
                 parent_batch_id=claimed.parent_batch_id,
                 page_start=claimed.page_start,
                 page_end=claimed.page_end,
+                max_chars_per_request=self._translation_profile_batch_limits(translation_profile)[1],
             )
-            result = self.document_ir_translation_service.provider.translate(request)
-            replacements = self.document_ir_translation_service.validate_result(batch_items, result)
+            request = prepared.request
+            binding = self._translation_integrity_binding(job, claimed, source_file, translation_profile, term_version)
+            provider_called = True
+            try:
+                result = self.document_ir_translation_service.provider.translate(request)
+            except TranslationProviderResponseError:
+                raise
+            except Exception:
+                # 外部异常可夹带正文；在调用边界转成固定安全描述，保留既有失败路径。
+                raise RuntimeError("翻译 Provider 调用失败。") from None
+            validated = self.document_ir_translation_service.validator.validate(
+                prepared.source_items, prepared.encoded_batch, result,
+            )
+            integrity = validated.evidence.bind(binding)
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             if recorder is not None:
-                recorder.record_success(request, result, duration_ms=duration_ms)
+                audit_started = True
+                recorder.record_success(request, result, duration_ms=duration_ms, integrity=integrity)
                 self._record_translation_audit_events(job, recorder, trace_id=trace_id)
+                audit_completed = True
+            current = self.job_repository.get_document_job(job.id)
+            if current is None or current.retry_count != claimed.generation or current.status != "running" or current.stage != "ir_converting":
+                return self.translation_batch_repository.get_translation_batch(claimed.id)
             result_file = self._register_translation_batch_result(
                 job,
                 batch=claimed,
                 result=result,
-                replacements=replacements,
+                validated=validated,
+                integrity=integrity,
                 recorder=recorder,
             )
             succeeded = self.translation_batch_repository.update_translation_batch_if_current(
@@ -1264,9 +1294,15 @@ class DocumentJobExecutionService:
             self._finalize_translation_generation(job.id, generation=succeeded.generation, trace_id=trace_id)
             return succeeded
         except (KeyError, ValueError, RuntimeError, FileNotFoundError, OSError) as exc:
+            # 审计自身失败须可见，不能再把同一次调用登记成另一份失败审计。
+            if audit_started and not audit_completed:
+                raise
             duration_ms = int((time.perf_counter() - started_at) * 1000)
-            if recorder is not None and request is not None:
-                recorder.record_failure(request, result, error=exc, duration_ms=duration_ms)
+            if recorder is not None and provider_called and not audit_started:
+                integrity = exc.evidence if isinstance(exc, TranslationIntegrityError) else self.document_ir_translation_service.validator.call_failure_evidence(
+                    prepared.source_items, prepared.encoded_batch, error_code=self._translation_batch_error_code(exc),
+                )
+                recorder.record_failure(request, result, error=exc, duration_ms=duration_ms, integrity=integrity.bind(binding))
                 self._record_translation_audit_events(job, recorder, trace_id=trace_id)
             return self._handle_translation_batch_failure(
                 claimed,
@@ -1328,7 +1364,10 @@ class DocumentJobExecutionService:
         trace_id: str | None,
     ) -> DocumentJobTranslationBatchRecord:
         error_code = self._translation_batch_error_code(error)
-        error_message = str(error)
+        error_message = str(error) if isinstance(error, TranslationIntegrityError) else "翻译 Provider 调用或批次处理失败。"
+        current = self.job_repository.get_document_job(job.id)
+        if current is None or current.retry_count != batch.generation or current.status != "running" or current.stage != "ir_converting":
+            return self.translation_batch_repository.get_translation_batch(batch.id) or batch
         if self._should_split_translation_batch(batch, error):
             split = self._split_translation_batch(
                 batch,
@@ -1407,8 +1446,7 @@ class DocumentJobExecutionService:
         recorder: TranslationCallAuditRecorder | None,
         trace_id: str | None,
     ) -> DocumentJobTranslationBatchRecord:
-        source_file = self._get_uploaded_file(batch.source_document_ir_file_id)
-        source_document_ir = DocumentIR.model_validate_json(self.file_service.read_file_content(source_file))
+        _source_file, source_document_ir = self._read_translation_source(job, batch.source_document_ir_file_id)
         targets, items = self.document_ir_translation_service.extract_translation_items(source_document_ir)
         targets_by_id = {target.item_id: target for target in targets}
         items_by_id = {item.id: item for item in items}
@@ -1499,7 +1537,7 @@ class DocumentJobExecutionService:
         job = self.job_repository.get_document_job(job_id)
         if job is None or job.status in {"succeeded", "failed", "canceled"}:
             return job
-        if job.status != "running" or job.stage != "ir_converting":
+        if job.status != "running" or job.stage != "ir_converting" or job.retry_count != generation:
             return job
         self._reset_expired_translation_batch_leases(job, generation=generation, trace_id=trace_id)
         batches = self.translation_batch_repository.list_translation_batches(job.id, generation=generation)
@@ -1531,11 +1569,8 @@ class DocumentJobExecutionService:
                 trace_id=trace_id,
             )
         if all(batch.status == "succeeded" for batch in leaf_batches):
-            source_file = self._get_uploaded_file(job.source_document_ir_file_id or leaf_batches[0].source_document_ir_file_id)
-            source_document_ir = DocumentIR.model_validate_json(self.file_service.read_file_content(source_file))
             return self._register_translated_document_ir_and_continue(
                 job,
-                source_document_ir,
                 succeeded_batches=leaf_batches,
                 trace_id=trace_id,
             )
@@ -1544,15 +1579,25 @@ class DocumentJobExecutionService:
     def _register_translated_document_ir_and_continue(
         self,
         job: DocumentJobRecord,
-        source_document_ir: DocumentIR,
         *,
         succeeded_batches: list[DocumentJobTranslationBatchRecord],
         trace_id: str | None,
     ) -> DocumentJobRecord:
-        translated = source_document_ir.model_copy(deep=True)
-        targets, items = self.document_ir_translation_service.extract_translation_items(translated)
+        current = self.job_repository.get_document_job(job.id)
+        if current is None or current.retry_count != job.retry_count or current.status != "running" or current.stage != "ir_converting":
+            return current or job
+        job = current
+        try:
+            source_file, source_document_ir = self._read_translation_source(job, job.source_document_ir_file_id)
+            translated = source_document_ir.model_copy(deep=True)
+            targets, items = self.document_ir_translation_service.extract_translation_items(translated)
+            replacements = self._load_batch_replacements(job, source_file, items, succeeded_batches)
+        except (DocumentIRTranslationError, TranslationIntegrityError, TranslationProviderResponseError, ValueError, FileNotFoundError, OSError) as exc:
+            return self._mark_failed(
+                job, failed_stage="ir_converting", error_code="translation_failed",
+                error_message=f"翻译批次合并校验失败: {self._translation_batch_error_code(exc)}", trace_id=trace_id,
+            )
         expected_ids = [item.id for item in items]
-        replacements = self._load_batch_replacements(succeeded_batches)
         missing_ids = [item_id for item_id in expected_ids if item_id not in replacements]
         extra_ids = sorted(set(replacements) - set(expected_ids))
         if missing_ids or extra_ids:
@@ -1650,20 +1695,111 @@ class DocumentJobExecutionService:
         )
         return self._render_and_save_word(updated, trace_id=trace_id)
 
-    def _load_batch_replacements(self, batches: list[DocumentJobTranslationBatchRecord]) -> dict[str, str]:
+    def _read_translation_artifact(
+        self, job: DocumentJobRecord, file_id: str, *, file_type: str,
+    ) -> tuple[DocumentFileRecord, bytes]:
+        """按已登记的对象读取并验证字节；路径模板和 payload 不能自证归属。"""
+        record = self._get_uploaded_file(file_id)
+        if (
+            record.job_id != job.id or record.tenant_id != job.tenant_id
+            or record.company_id != job.company_id or record.file_type != file_type
+            or (file_type == "translation_batch_result" and (
+                type(record.metadata.get("retry_count")) is not int
+                or record.metadata["retry_count"] != job.retry_count
+            ))
+        ):
+            raise DocumentIRTranslationError("翻译 Artifact 来源或代次不一致。", code="translation_integrity_evidence_mismatch")
+        content = self.file_service.read_file_content(record)
+        checksum = "sha256:" + hashlib.sha256(content).hexdigest()
+        if record.checksum_sha256 != checksum or record.size_bytes != len(content):
+            raise DocumentIRTranslationError("翻译 Artifact 字节校验失败。", code="translation_integrity_evidence_mismatch")
+        return record, content
+
+    def _read_translation_source(
+        self, job: DocumentJobRecord, file_id: str | None,
+    ) -> tuple[DocumentFileRecord, DocumentIR]:
+        if not file_id or file_id != job.source_document_ir_file_id:
+            raise DocumentIRTranslationError("翻译 source IR 引用不一致。", code="translation_integrity_evidence_mismatch")
+        # retry 沿用任务权威指针指向的不可变源件；创建代次不等于本次消费代次。
+        record, content = self._read_translation_artifact(job, file_id, file_type="document_ir")
+        translation = record.metadata.get("translation")
+        if not isinstance(translation, dict) or translation.get("role") != "source" or translation.get("applied") is not False:
+            raise DocumentIRTranslationError("翻译 source IR 角色不一致。", code="translation_integrity_evidence_mismatch")
+        document_ir = DocumentIR.model_validate_json(content)
+        if document_ir.metadata.job_id != job.id or document_ir.metadata.source_file_id != job.source_file_id:
+            raise DocumentIRTranslationError("翻译 source IR 文档来源不一致。", code="translation_integrity_evidence_mismatch")
+        return record, document_ir
+
+    def _translation_integrity_binding(
+        self, job: DocumentJobRecord, batch: DocumentJobTranslationBatchRecord,
+        source_file: DocumentFileRecord, profile: TranslationProfileSnapshot | None,
+        term_version: TermVersionSnapshot | None,
+    ) -> TranslationIntegrityBinding:
+        spec = spec_for_document_job_mode(job.mode)
+        term_hash = term_version.snapshot_hash if term_version is not None else None
+        term_id = term_version.term_version_id if term_version is not None else job.term_version_id
+        if (
+            batch.job_id != job.id or batch.job_retry_count != job.retry_count
+            or batch.generation != job.retry_count or batch.source_document_ir_file_id != source_file.id
+            or batch.language_pair != spec.language_pair or batch.term_snapshot_hash != term_hash
+            or batch.term_version_id != term_id
+        ):
+            raise DocumentIRTranslationError("翻译批次绑定与当前任务快照不一致。", code="translation_integrity_evidence_mismatch")
+        return TranslationIntegrityBinding(
+            job_id=job.id, batch_id=batch.id, root_batch_id=batch.root_batch_id,
+            parent_batch_id=batch.parent_batch_id, attempt=batch.attempt_count, generation=batch.generation,
+            source_document_ir_file_id=source_file.id, source_document_ir_sha256=source_file.checksum_sha256,
+            profile_snapshot_hash=profile.snapshot_hash if profile is not None else None,
+            prompt_content_hash=profile.prompt.content_hash if profile is not None else None,
+            term_snapshot_hash=term_hash,
+        )
+
+    def _load_batch_replacements(
+        self, job: DocumentJobRecord, source_file: DocumentFileRecord,
+        source_items: list[TranslationTextItem], batches: list[DocumentJobTranslationBatchRecord],
+    ) -> dict[str, str]:
+        """对全部叶子的本地来源、恢复文本和证据重核，全部通过后才交给 apply。"""
         replacements: dict[str, str] = {}
-        for batch in sorted(batches, key=lambda item: (item.page_start or 0, item.created_at, item.id)):
-            if not batch.result_file_id:
-                continue
-            result_file = self._get_uploaded_file(batch.result_file_id)
-            payload = json.loads(self.file_service.read_file_content(result_file).decode("utf-8"))
-            for item in payload.get("items", []):
-                if not isinstance(item, dict):
-                    continue
-                item_id = str(item.get("id") or "")
-                if item_id in replacements:
-                    raise ValueError(f"翻译批次重复返回 item: {item_id}")
-                replacements[item_id] = str(item.get("text") or "")
+        spec = spec_for_document_job_mode(job.mode)
+        profile = self._translation_profile_for_job(job, language_pair=spec.language_pair)
+        term_version = self._resolve_term_version_for_job(job)
+        for selected in sorted(batches, key=lambda item: (item.page_start or 0, item.created_at, item.id)):
+            batch = self.translation_batch_repository.get_translation_batch(selected.id)
+            if batch is None or batch.status != "succeeded" or not batch.result_file_id or (
+                batch.result_file_id != selected.result_file_id or batch.attempt_count != selected.attempt_count
+            ):
+                raise DocumentIRTranslationError("翻译成功批次已变化或缺少结果。", code="translation_integrity_evidence_mismatch")
+            binding = self._translation_integrity_binding(job, batch, source_file, profile, term_version)
+            local_items = tuple(item for item in source_items if item.id in batch.item_ids)
+            if (
+                tuple(item.id for item in local_items) != tuple(batch.item_ids)
+                or batch.item_count != len(local_items)
+                or batch.char_count != sum(len(item.text) for item in local_items)
+            ):
+                raise DocumentIRTranslationError("翻译批次有序源项边界不一致。", code="translation_integrity_evidence_mismatch")
+            result_file, content = self._read_translation_artifact(job, batch.result_file_id, file_type="translation_batch_result")
+            payload = json.loads(content)
+            envelope = {
+                "job_id": job.id, "batch_id": batch.id, "root_batch_id": batch.root_batch_id,
+                "parent_batch_id": batch.parent_batch_id, "generation": batch.generation,
+                "attempt": batch.attempt_count, "source_document_ir_file_id": source_file.id,
+                "language_pair": batch.language_pair,
+            }
+            if (
+                not isinstance(payload, dict) or payload.get("schema_version") != "translation-batch-result/v1"
+                or any(key not in payload or type(payload[key]) is not type(value) or payload[key] != value for key, value in envelope.items())
+                or any(key not in result_file.metadata or type(result_file.metadata[key]) is not type(value) or result_file.metadata[key] != value for key, value in envelope.items() if key not in {"job_id", "attempt"})
+                or type(result_file.metadata.get("attempt_count")) is not int
+                or result_file.metadata["attempt_count"] != batch.attempt_count
+            ):
+                raise DocumentIRTranslationError("翻译结果 Artifact 关联不一致。", code="translation_integrity_evidence_mismatch")
+            restored = OpenAICompatibleTranslationProvider._parse_items({"items": payload.get("items")})
+            validated = self.document_ir_translation_service.validator.validate_persisted(
+                local_items, restored, payload.get("integrity"), binding=binding,
+            )
+            if replacements.keys() & validated.replacements.keys():
+                raise DocumentIRTranslationError("翻译叶子批次包含重复合并项。", code="translation_integrity_item_duplicate")
+            replacements.update(validated.replacements)
         return replacements
 
     def _register_translation_batch_result(
@@ -1672,17 +1808,22 @@ class DocumentJobExecutionService:
         *,
         batch: DocumentJobTranslationBatchRecord,
         result: TranslationProviderResult,
-        replacements: dict[str, str],
+        validated: ValidatedTranslationBatch,
+        integrity: TranslationIntegrityEvidence,
         recorder: TranslationCallAuditRecorder | None,
     ) -> DocumentFileRecord:
         payload = {
             "schema_version": "translation-batch-result/v1",
             "job_id": job.id,
             "batch_id": batch.id,
+            "root_batch_id": batch.root_batch_id,
+            "parent_batch_id": batch.parent_batch_id,
+            "attempt": batch.attempt_count,
             "generation": batch.generation,
             "source_document_ir_file_id": batch.source_document_ir_file_id,
             "language_pair": batch.language_pair,
-            "items": [{"id": item_id, "text": replacements[item_id]} for item_id in batch.item_ids],
+            "items": [{"id": item.id, "text": item.text} for item in validated.items],
+            "integrity": integrity.to_dict(),
             "provider": {
                 "finish_reason": result.finish_reason,
                 "usage": result.usage,
@@ -1703,6 +1844,8 @@ class DocumentJobExecutionService:
             content=json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"),
             metadata={
                 "batch_id": batch.id,
+                "root_batch_id": batch.root_batch_id,
+                "parent_batch_id": batch.parent_batch_id,
                 "generation": batch.generation,
                 "source_document_ir_file_id": batch.source_document_ir_file_id,
                 "language_pair": batch.language_pair,
@@ -1871,6 +2014,8 @@ class DocumentJobExecutionService:
         return attempts < batch.provider_call_budget
 
     def _translation_batch_error_code(self, error: Exception) -> str:
+        if isinstance(error, (TranslationIntegrityError, DocumentIRTranslationError)):
+            return error.code
         if isinstance(error, TranslationProviderResponseError) and error.suspected_truncation:
             return "translation_provider_truncated"
         if isinstance(error, (TranslationProviderResponseError, ValueError, KeyError)):
@@ -2507,7 +2652,7 @@ class DocumentJobExecutionService:
         failed_stage = self._failed_stage_for_current_job(job)
         if isinstance(exc, MinerUError) or failed_stage == "parsing":
             return failed_stage, "mineru_failed"
-        if isinstance(exc, DocumentIRTranslationError):
+        if isinstance(exc, (DocumentIRTranslationError, TranslationIntegrityError)):
             return failed_stage, "translation_failed"
         if isinstance(exc, zipfile.BadZipFile) or failed_stage == "ir_converting":
             return failed_stage, "document_ir_failed"
@@ -2525,6 +2670,7 @@ class DocumentJobExecutionService:
         error_code: str,
         error_message: str,
         trace_id: str | None,
+        integrity: TranslationIntegrityEvidence | None = None,
     ) -> DocumentJobRecord:
         now = utc_now()
         failed = self.job_repository.update_document_job_if_current(
@@ -2542,12 +2688,15 @@ class DocumentJobExecutionService:
         )
         if failed is None:
             return self.job_repository.get_document_job(job.id) or job
+        payload = {"error_code": error_code, "error_message": error_message}
+        if integrity is not None:
+            payload["integrity"] = integrity.to_dict()
         self._record_event(
             failed,
             event_type="stage_failed",
             stage=failed_stage,
             message="document_jobs Worker 执行失败。",
-            payload={"error_code": error_code, "error_message": error_message},
+            payload=payload,
             trace_id=trace_id,
             level="error",
         )

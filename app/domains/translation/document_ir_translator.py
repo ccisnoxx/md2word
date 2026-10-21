@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from bs4 import BeautifulSoup
@@ -22,7 +22,11 @@ from app.domains.translation.models import (
     TranslationTextItem,
     normalize_translation_source_term,
 )
-from app.domains.translation.provider import TranslationProvider
+from app.domains.translation.provider import TranslationProvider, TranslationProviderResponseError
+from app.domains.translation.integrity import (
+    TranslationIntegrityEvidence, TranslationIntegrityError, TranslationIntegrityValidator,
+)
+from app.domains.translation.protected_tokens import EncodedTokenBatch, encode
 
 
 _TRACE_CONTEXT_RADIUS = 40
@@ -32,7 +36,12 @@ DEFAULT_MAX_CHARS_PER_PROVIDER_REQUEST = 8000
 
 
 class DocumentIRTranslationError(RuntimeError):
-    """翻译 provider 调用或返回结构异常时抛出的领域错误。"""
+    """翻译失败的安全领域错误；保留专用机器码与脱敏证据。"""
+
+    def __init__(self, message: str, *, code: str = "translation_provider_failed", evidence: TranslationIntegrityEvidence | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+        self.evidence = evidence
 
 
 class TranslationCallRecorder(Protocol):
@@ -44,6 +53,7 @@ class TranslationCallRecorder(Protocol):
         result: TranslationProviderResult,
         *,
         duration_ms: int,
+        integrity: TranslationIntegrityEvidence | None = None,
     ) -> None: ...
 
     def record_failure(
@@ -53,6 +63,7 @@ class TranslationCallRecorder(Protocol):
         *,
         error: Exception,
         duration_ms: int,
+        integrity: TranslationIntegrityEvidence | None = None,
     ) -> None: ...
 
 
@@ -89,12 +100,21 @@ class _TermMatch:
     item_index: int
     match_start: int
     match_end: int
-    context_snippet: str
+    context_snippet: str = field(repr=False)
     term_index: int
 
     @property
     def matched_length(self) -> int:
         return self.match_end - self.match_start
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedTranslationRequest:
+    """单次调用的原文、真实请求与内存 ledger；不得把该载体落盘或发给 Provider。"""
+
+    source_items: tuple[TranslationTextItem, ...] = field(repr=False)
+    request: TranslationProviderRequest = field(repr=False)
+    encoded_batch: EncodedTokenBatch = field(repr=False)
 
 
 class DocumentIRTranslationService:
@@ -108,6 +128,7 @@ class DocumentIRTranslationService:
         max_chars_per_request: int = DEFAULT_MAX_CHARS_PER_PROVIDER_REQUEST,
     ) -> None:
         self.provider = provider
+        self.validator = TranslationIntegrityValidator()
         self.max_items_per_request = max(1, int(max_items_per_request))
         self.max_chars_per_request = max(1, int(max_chars_per_request))
 
@@ -119,36 +140,52 @@ class DocumentIRTranslationService:
         language_pair: str = "en2zh",
         prompt: TranslationPromptSnapshot | None = None,
         call_recorder: TranslationCallRecorder | None = None,
+        max_pages_per_batch: int | None = None,
     ) -> DocumentIR:
         """返回翻译后的 DocumentIR 副本；blocks/assets 数量和顺序保持不变。"""
 
         translated = document_ir.model_copy(deep=True)
-        targets, items = self.extract_translation_items(translated)
+        try:
+            targets, items, batches = self.build_translation_plan(
+                document_ir,
+                max_pages_per_batch=max_pages_per_batch or max(1, len(document_ir.pages)),
+                max_chars_per_batch=self.max_chars_per_request,
+                batch_id_prefix="document_ir_provider_request",
+            )
+        except TranslationIntegrityError as exc:
+            raise DocumentIRTranslationError(str(exc), code=exc.code, evidence=exc.evidence) from None
         if not items:
             return translated
+        items_by_id = {item.id: item for item in items}
         replacements: dict[str, str] = {}
-        for batch_index, batch_items in enumerate(self._split_provider_batches(items), start=1):
-            request = self.build_provider_request(
-                document_ir,
-                batch_items,
-                term_version=term_version,
-                language_pair=language_pair,
-                prompt=prompt,
-                batch_id=f"document_ir_provider_request_{batch_index:04d}",
+        for batch in batches:
+            prepared = self.build_provider_request(
+                document_ir, [items_by_id[item_id] for item_id in batch.item_ids],
+                term_version=term_version, language_pair=language_pair, prompt=prompt,
+                batch_id=batch.batch_id, page_start=batch.page_start, page_end=batch.page_end,
             )
+            request = prepared.request
             started_at = time.perf_counter()
             result: TranslationProviderResult | None = None
             try:
                 result = self.provider.translate(request)
-                replacements.update(self.validate_result(batch_items, result))
+                validated = self.validator.validate(prepared.source_items, prepared.encoded_batch, result)
             except Exception as exc:
                 duration_ms = int((time.perf_counter() - started_at) * 1000)
+                code = exc.code if isinstance(exc, TranslationIntegrityError) else (
+                    "translation_provider_truncated" if isinstance(exc, TranslationProviderResponseError) and exc.suspected_truncation else
+                    "translation_provider_invalid_response" if isinstance(exc, TranslationProviderResponseError) else "translation_provider_failed"
+                )
+                evidence = exc.evidence if isinstance(exc, TranslationIntegrityError) else self.validator.call_failure_evidence(
+                    prepared.source_items, prepared.encoded_batch, error_code=code,
+                )
                 if call_recorder is not None:
-                    call_recorder.record_failure(request, result, error=exc, duration_ms=duration_ms)
-                raise DocumentIRTranslationError(str(exc)) from exc
+                    call_recorder.record_failure(request, result, error=exc, duration_ms=duration_ms, integrity=evidence)
+                raise DocumentIRTranslationError("翻译 Provider 调用或完整性校验失败。", code=code, evidence=evidence) from None
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             if call_recorder is not None:
-                call_recorder.record_success(request, result, duration_ms=duration_ms)
+                call_recorder.record_success(request, result, duration_ms=duration_ms, integrity=validated.evidence)
+            replacements.update(validated.replacements)
         self.apply_replacements(translated, targets, replacements)
         translated.metadata.document_language = self._target_document_language(language_pair)
         return translated
@@ -165,7 +202,7 @@ class DocumentIRTranslationService:
         list[TranslationTextItem],
         list[DocumentIRTranslationBatchPlan],
     ]:
-        """按页数优先、字符数兜底生成 provider batch task 输入。"""
+        """按页数、实际编码字符和 item 数生成确定性计划；char_count 仍表示源文。"""
 
         targets, items = self.extract_translation_items(document_ir)
         if not items:
@@ -202,6 +239,7 @@ class DocumentIRTranslationService:
         for item in items:
             target = targets_by_id[item.id]
             item_chars = len(item.text)
+            self.validator.prepare((item,), max_chars=max_chars)
             item_page = target.page_number
             next_page_start = current_page_start
             next_page_end = current_page_end
@@ -214,7 +252,8 @@ class DocumentIRTranslationService:
                 and next_page_end is not None
                 and next_page_end - next_page_start + 1 > max_pages
             )
-            exceeds_chars = bool(current) and current_chars + item_chars > max_chars
+            candidate = encode(tuple([*current, item]))
+            exceeds_chars = bool(current) and sum(len(value.text) for value in candidate.items) > max_chars
             exceeds_items = bool(current) and len(current) >= self.max_items_per_request
             if exceeds_pages or exceeds_chars or exceeds_items:
                 flush()
@@ -226,26 +265,6 @@ class DocumentIRTranslationService:
             current_page_end = next_page_end
         flush()
         return targets, items, batches
-
-    def _split_provider_batches(self, items: list[TranslationTextItem]) -> list[list[TranslationTextItem]]:
-        batches: list[list[TranslationTextItem]] = []
-        current: list[TranslationTextItem] = []
-        current_chars = 0
-        for item in items:
-            item_chars = len(item.text)
-            should_flush = bool(current) and (
-                len(current) >= self.max_items_per_request
-                or current_chars + item_chars > self.max_chars_per_request
-            )
-            if should_flush:
-                batches.append(current)
-                current = []
-                current_chars = 0
-            current.append(item)
-            current_chars += item_chars
-        if current:
-            batches.append(current)
-        return batches
 
     def build_provider_request(
         self,
@@ -261,19 +280,25 @@ class DocumentIRTranslationService:
         parent_batch_id: str | None = None,
         page_start: int | None = None,
         page_end: int | None = None,
-    ) -> TranslationProviderRequest:
+        max_chars_per_request: int | None = None,
+    ) -> PreparedTranslationRequest:
+        source_items = tuple(items)
+        encoded = self.validator.prepare(
+            source_items, max_chars=max_chars_per_request if max_chars_per_request is not None else self.max_chars_per_request,
+        )
         matched_terms, term_traces = self._match_request_terms(
             items=items,
             term_version=term_version,
             language_pair=language_pair,
             job_id=document_ir.metadata.job_id or "",
             batch_id=batch_id,
+            encoded_batch=encoded,
         )
-        return TranslationProviderRequest(
+        request = TranslationProviderRequest(
             language_pair=language_pair,
             source_language=self._source_language(language_pair),
             target_language=self._target_language(language_pair),
-            items=tuple(items),
+            items=encoded.items,
             prompt_id=prompt.id if prompt is not None else None,
             prompt_content_hash=prompt.content_hash if prompt is not None else None,
             system_prompt_markdown=prompt.markdown if prompt is not None else None,
@@ -286,6 +311,7 @@ class DocumentIRTranslationService:
             page_start=page_start,
             page_end=page_end,
         )
+        return PreparedTranslationRequest(source_items, request, encoded)
 
     def _match_request_terms(
         self,
@@ -295,6 +321,7 @@ class DocumentIRTranslationService:
         language_pair: str,
         job_id: str,
         batch_id: str,
+        encoded_batch: EncodedTokenBatch,
     ) -> tuple[tuple[TranslationTermEntry, ...], tuple[TranslationTermMatchTraceRecord, ...]]:
         if term_version is None:
             return (), ()
@@ -308,6 +335,11 @@ class DocumentIRTranslationService:
                 if pattern is None:
                     continue
                 for match in pattern.finditer(item.text):
+                    if any(
+                        token.item_id == item.id and match.start() < token.end and token.start < match.end()
+                        for token in encoded_batch.occurrences
+                    ):
+                        continue
                     item_matches.append(
                         _TermMatch(
                             entry=entry,
@@ -515,17 +547,6 @@ class DocumentIRTranslationService:
             )
             items.append(TranslationTextItem(id=item_id, text=text))
             text_index += 1
-
-    def validate_result(
-        self,
-        items: list[TranslationTextItem],
-        result: TranslationProviderResult,
-    ) -> dict[str, str]:
-        expected_ids = [item.id for item in items]
-        returned_ids = [item.id for item in result.items]
-        if returned_ids != expected_ids:
-            raise ValueError("翻译 provider 返回的 item id 与请求不一致。")
-        return {item.id: item.text for item in result.items}
 
     def apply_replacements(
         self,

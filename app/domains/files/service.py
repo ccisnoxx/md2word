@@ -397,6 +397,7 @@ class FileUploadService:
             tenant_id=tenant_id,
             job_id=job_id,
             file_type=file_type,
+            file_id=file_id,
             filename=filename,
             provider=provider,
         )
@@ -774,13 +775,16 @@ class FileUploadService:
         tenant_id: str,
         job_id: str,
         file_type: DocumentFileType,
+        file_id: str,
         filename: str,
         provider: DocumentFileStorageProvider,
     ) -> str:
+        """用本次登记身份隔离物理对象，避免同名重试覆盖已登记字节。"""
+
         safe_filename = _safe_object_filename(filename)
         logical_key = (
             f"document-jobs/{_safe_path_part(tenant_id)}/{_safe_path_part(job_id)}/"
-            f"{_safe_path_part(file_type)}/{safe_filename}"
+            f"{_safe_path_part(file_type)}/{_safe_path_part(file_id)}/{safe_filename}"
         )
         if provider != "s3":
             return logical_key

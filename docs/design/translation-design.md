@@ -32,17 +32,18 @@ zh2ru
 - Provider JSON 结构化输出；
 - ID 数量/缺失/重复/额外项校验；
 - 批次计划、重试、拆分和调用审计。
-- TR-402 提供独立纯内存 ProtectedTokenCodec 原语及离线契约测试；尚未接入 Provider/Worker，不能据此认定生产技术保持率已经达标。
+- TR-402 提供独立纯内存 ProtectedTokenCodec；TR-403 将其接入共享请求准备和完整性 Validator，供同步、Worker 与正式本地 adapter 使用。受控 batch result 保存恢复文本及绑定 evidence，fan-in 重新核对后才回填；离线证据不代表生产实译保持率已经验收。
 
 目标差距：
 
 - captions/footnotes 需要明确进入翻译单元；
-- 正式翻译链路的技术 Token 仍主要依赖 Prompt，需要 TR-403 接入已有 Codec 并在回填前验证；
 - 表格短文本缺少行头/列头上下文；
-- 翻译后技术完整性检查不足；
+- 术语/目标语言/源语言残留后验检查仍未由 TR-403 实现；
 - 四种语言方向的正式样本不完整。
 
 ## 3. 流程
+
+下图含尚待相邻任务完成的目标能力；TR-403 的实际链路为：原文有序 items → 实际编码预算计划 → Codec encode/未保护跨度术语匹配 → Provider 严格 JSON → ID/ledger/占位符 → 一次 decode → 逐 item 技术多重集 → 成功 evidence → 回填。Worker 在成功 Artifact 消费时另核对权威来源、当前 generation/attempt、checksum、ID/hash 和技术 inventory，不因文件自报 passed 而跳过。目标语言及术语后验校验仍属 TR-405。
 
 ```mermaid
 flowchart LR
@@ -157,7 +158,7 @@ VCC1_VCO → {{MD2W_PT_v1_0_3}}
 
 - 占位符在一个批次内唯一；
 - 占位符不与源文本已有内容冲突；
-- 映射只保存在内存或受控 debug artifact；
+- ledger 映射只保存在当前调用内存，不新增导出或 debug 映射 Artifact；
 - Prompt 明确禁止修改占位符。
 
 TR-402 的具体内部接口和规则见 [ProtectedTokenCodec Spec](../../.trellis/spec/backend/protected-token-codec.md)。输入为完整有序 TranslationTextItem tuple，每次出现独立编号；扫描全部源文本选择不存在的命名空间前缀，不使用随机数/全局计数。已有占位符字面量同样被代理，避免源文碰撞。新模块的原始映射仅在内存保存，不新增 debug Artifact 出口。
@@ -174,7 +175,9 @@ TR-402 的具体内部接口和规则见 [ProtectedTokenCodec Spec](../../.trell
 
 失败时批次为确定性失败，不回填。
 
-Codec 在整批通过后一次恢复，恢复出的源文占位符字面量不再次替换；同 item 内移动完整占位符允许，跨 item 移植拒绝。它不判断译文语义或未编码内容。生产失败映射、编码后的预算、Prompt 告知、术语顺序及同步/Worker 双入口接线由 TR-403 处理；本次不修改历史 Prompt/Profile 快照或新建 feature flag。
+Codec 在整批通过后一次恢复，恢复出的源文占位符字面量不再次替换；同 item 内移动完整占位符允许，跨 item 移植拒绝。Codec 本身不判断未编码内容；TR-403 的 Validator 再对恢复文本 encode，并逐 item 比较 Counter((kind, original_text))，拒绝在完整占位符之外追加裸数字/单位/地址/型号/公式，重复值按次数核对。
+
+实际编码文本决定预算，plan/record 原有 char_count 仍表示源文；单项编码后超限在调用前显式失败。术语只在不与保护跨度相交的原文位置匹配。Provider 追加固定 translation-integrity-instructions/v1 协议，不修改绑定 Prompt 正文/hash 或历史 Profile，不新增 feature flag。具体接口、机器码和证据字段见 [Validator Spec](../../.trellis/spec/backend/translation-integrity-validator.md)。
 
 ## 8. 术语
 
@@ -244,7 +247,7 @@ Codec 在整批通过后一次恢复，恢复出的源文占位符字面量不�
 9. 源语言残留；
 10. 回填。
 
-前 6 项失败为阻断；后续项根据规则分 warning/blocked。
+前 6 项失败为阻断；TR-403 当前实现的 ID 首错优先级为 duplicate→missing→extra→order，随后验证占位符及恢复后的逐 item 技术 inventory。所有 item 通过才返回恢复结果；一个 item 失败则整批无可消费 replacements，不自动修复、不补原文。后 3 项为 TR-405 的目标能力，本任务不新增相关 quality flag 或改变主任务最终失败产品语义。
 
 ## 12. 部分失败
 
@@ -261,7 +264,12 @@ Codec 在整批通过后一次恢复，恢复出的源文占位符字面量不�
 - 内容哈希；
 - model/prompt/term snapshot；
 - usage/耗时/错误；
-- 短且脱敏的术语命中上下文。
+- 术语上下文长度/哈希，不保存上下文片段正文；
+- translation-integrity/v1 的版本、阶段、结果/错误码、分类计数、内容哈希及批次权威关联。
+
+每次真实 Provider 调用只保存一份成功或失败审计，验证失败属于失败调用；预算等调用前失败不伪造 AI 调用。外部异常使用固定安全描述，未经验证的返回 ID 只记录哈希。既有正文 DTO、嵌套 Prompt/trace 及上游 _TermMatch.context_snippet 都隐藏敏感 repr 字段；真实值和序列化保持，不能直接输出 asdict。
+
+生成件新 key 在 file_type/filename 之间加入本次登记的 file_id，避免迟到 generation/attempt 或同 attempt 重复登记覆盖字节；CAS 仍仅负责选择记录，不替代物理隔离。历史 key/字节保留并按记录读取，无迁移/backfill。既有 retry 可以继承 job 权威指针下的不可变 source IR，验证源归属/角色/IR 来源及真实 checksum 后，新批次绑定当前 generation/attempt；源创建代次不能被误作消费代次，也不能以此复用旧译文批次。上线前暂停翻译入队、排空旧 Worker/活跃旧代后同步部署调用端与 Worker；活跃旧中间结果缺 evidence 必须拒绝，已完成历史件不重跑。回退先停执行，不恢复无验证回填或固定路径覆盖。
 
 全文 debug：
 

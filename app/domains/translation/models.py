@@ -35,7 +35,7 @@ class TranslationPromptSnapshot:
 
     id: str
     name: str
-    markdown: str
+    markdown: str = field(repr=False)
     content_hash: str
     built_in: bool
 
@@ -179,7 +179,7 @@ class TranslationTermMatchTraceRecord:
     batch_id: str | None = None
     match_start: int | None = None
     match_end: int | None = None
-    context_snippet: str | None = None
+    context_snippet: str | None = field(default=None, repr=False)
     injected_to_glossary: bool = False
     provider_trace_id: str | None = None
     created_at: datetime = field(default_factory=utc_now)
@@ -200,8 +200,8 @@ class TermVersionSnapshot:
 class TranslationTextItem:
     """一次 provider 调用中的最小文本片段。"""
 
-    id: str
-    text: str
+    id: str = field(repr=False)
+    text: str = field(repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,12 +211,12 @@ class TranslationProviderRequest:
     language_pair: str
     source_language: str
     target_language: str
-    items: tuple[TranslationTextItem, ...]
+    items: tuple[TranslationTextItem, ...] = field(repr=False)
     prompt_id: str | None = None
     prompt_content_hash: str | None = None
-    system_prompt_markdown: str | None = None
-    terms: tuple[TranslationTermEntry, ...] = field(default_factory=tuple)
-    term_traces: tuple[TranslationTermMatchTraceRecord, ...] = field(default_factory=tuple)
+    system_prompt_markdown: str | None = field(default=None, repr=False)
+    terms: tuple[TranslationTermEntry, ...] = field(default_factory=tuple, repr=False)
+    term_traces: tuple[TranslationTermMatchTraceRecord, ...] = field(default_factory=tuple, repr=False)
     batch_id: str | None = None
     attempt: int | None = None
     split_level: int | None = None
@@ -229,7 +229,7 @@ class TranslationProviderRequest:
 class TranslationProviderResult:
     """translation provider 返回的结构化文本结果。"""
 
-    items: tuple[TranslationTextItem, ...]
+    items: tuple[TranslationTextItem, ...] = field(repr=False)
     finish_reason: str | None = None
     usage: dict[str, int] = field(default_factory=dict)
     response_id: str | None = None

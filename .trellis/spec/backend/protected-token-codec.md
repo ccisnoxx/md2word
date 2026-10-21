@@ -4,7 +4,7 @@
 
 修改 app/domains/translation/protected_tokens.py 或调用其内部接口时适用。该模块是技术 Token 检测、批次占位、验证和恢复的唯一 owner，采用标准库与现有 TranslationTextItem；不依赖 legacy runtime，不维护第二套翻译流水线。
 
-TR-402 只交付纯内存原语，没有接入 DocumentIRTranslationService、Worker、Provider 或审计落盘。生产集成归属 TR-403；不能把纯模块通过测试写成生产技术完整性已达标。
+TR-402 只交付纯内存原语；TR-403 的正式接线和恢复后技术 inventory 对账由 [翻译完整性验证与消费合同](translation-integrity-validator.md) 管理。Codec 自身仍无 I/O、预算或持久化职责，不能把纯模块/离线 fake 通过写成生产实译已达标。
 
 ## 2. 接口与模型
 
@@ -46,7 +46,7 @@ decode(
 | 合法占位符移到其他 item | protected_token_wrong_item |
 | 可识别的占位符语法被破坏 | protected_token_malformed；或因不再精确匹配而报 missing |
 
-任一 item 不通过均整批抛出，无部分成功、修复后继续或源文 fallback。错误文本、日志和默认 repr 不能包含原文、映射值或全文；不改变现有 HTTP/Worker translation_failed 映射。
+任一 item 不通过均整批抛出，无部分成功、修复后继续或源文 fallback。错误文本、日志和默认 repr 不能包含原文、映射值或全文。正式调用由 Validator 映射为稳定 translation_integrity_*，保留既有主任务 translation_failed；Codec 不直接决定 HTTP/Worker 状态。
 
 ## 5. 正常、缺省与非法场景
 
@@ -61,7 +61,7 @@ tests.test_protected_tokens 覆盖每类命中/重叠、自然语言反例、源
 
 复用现有公开最小 OPA228 fixture，经 MinerUToDocumentIRService.convert_zip 和既有抽取入口构造输入后验证 Codec；不创建另一套解析实现，不调用真实模型。已有 translator、legacy、direct 定向回归保持。
 
-没有生产接线时，不要求通过真实模型证明纯函数正确性；P1 preflight 的环境失败应如实报告，不能写成 Token 测试失败或整条翻译已通过。四方向正式实译、预算/Prompt/术语匹配与 Worker 接线由后续任务验证。
+纯函数不要求通过真实模型证明正确性；P1 preflight 的环境失败应如实报告，不能写成 Token 测试失败或整条翻译已通过。预算/Prompt/术语匹配与 Worker 接线由 TR-403 的定向测试覆盖；四方向正式实译与在线/Word 验收另需独立证据。
 
 ## 7. 错误与正确做法
 

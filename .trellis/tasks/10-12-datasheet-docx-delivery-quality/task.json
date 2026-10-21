@@ -22,7 +22,8 @@
     "10-12-doc-001-documentation-package-index",
     "10-12-bas-001-current-capability-baseline",
     "10-12-con-101-product-mode-ui-copy",
-    "10-21-tr-402-protected-token-codec"
+    "10-21-tr-402-protected-token-codec",
+    "10-21-tr-403-translation-integrity-validator"
   ],
   "parent": null,
   "relatedFiles": [],
