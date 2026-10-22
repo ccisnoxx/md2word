@@ -999,3 +999,40 @@ TR-402纯函数ProtectedTokenCodec、测试证据和残余风险已获人工接�
 ### Next Steps
 
 - 保留已接受P1缺认证、translation-core未注册、真实环境/Word未验及完整实施审计配置漂移缺口；不把人工接受写成已测通过，不启动后续任务。
+
+
+## Session 32: TR-406 人工验收、两笔业务提交与归档
+
+**Date**: 2026-10-22
+**Task**: TR-406 人工验收、两笔业务提交与归档
+**Branch**: `codex/tr-406-partial-batch-failure-semantics`
+
+### Summary
+
+TR-406 revision 2实现和依赖基线整合已获人工验收，两笔业务提交已确认；本次仅manifest done、TR-406归档及会话bookkeeping，保留其他未提交改动，不push、不启动后续任务。
+
+### Main Changes
+
+- 已验收CON-102/103/104纯依赖树经独立验证后提交，再提交TR-406终态/完整根计划/attempt与lease/同代预算/AC12与AC13收口、API和UI增量；最终71产品路径与验收候选逐字节一致。
+- 本次仅TR-406标记done/implemented并移至archive/2026-10/10-22-tr-406-partial-batch-failure-semantics，task状态completed；父任务和其他任务不更新。
+- 业务源码保持验收版本。归档与会话使用--no-commit生成内容，再以隔离索引提交本次增量，原staged删除及既存archive/journal/prompt/backlog/manifest改动不混入。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0946326b0f457ef4b4f60895f17feb915d657c14` | (see git log) |
+| `6d89c7e012a5086114a739a9dfd1b067556237ce` | (see git log) |
+
+### Testing
+
+- [OK] 复用已接受的最终126项核心兼容、前端152项/build/smoke、API与状态下载门、OpenAPI/release、公开及direct样本；纯依赖树132项后端、150项前端/build/OpenAPI/release和独立check/风险复核通过。
+- [OK] 本轮仅bookkeeping：归档context implement/check各15项通过；71产品hash不变，归档范围及原有dirty/staged patch核对。2项原HEAD callback失败与2处验收候选EOF空行保持原记录。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- TR-406本次收尾结束，不push、不自动启动后续任务。真实MySQL/InnoDB、部署文件锁、真实Provider/S3与Word人工门继续按原记录保留，等待独立授权。
