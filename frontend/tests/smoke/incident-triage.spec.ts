@@ -1,5 +1,5 @@
-// File: frontend/tests/smoke/incident-triage.spec.ts
-// Purpose: Browser smoke coverage for the lightweight incident triage workbench.
+// 文件：frontend/tests/smoke/incident-triage.spec.ts
+// 用途：验证异常处理工作台的队列筛选、诊断与处置入口。
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { expectElementContentFitsViewportWidth, expectNoPageHorizontalOverflow } from "./support/accessibility";
 
@@ -173,8 +173,7 @@ function incidentById(jobId: string) {
   return incidentItems.find((item) => (item.job as Record<string, unknown>).id === jobId) || retryIncident;
 }
 
-function diagnosticResponse(jobId: string) {
-  const item = incidentById(jobId);
+function diagnosticResponse(jobId: string, item = incidentById(jobId)) {
   const job = item.job as Record<string, unknown>;
   return {
     item,
@@ -384,6 +383,94 @@ async function selectIncidentRow(page: Page, filename: string): Promise<void> {
   const row = mainRows(page).filter({ hasText: filename }).first();
   await row.locator(".el-checkbox__input").click();
 }
+
+test("CON-102：异常页筛选新阶段并往返 URL，未知失败阶段可见且禁用动作保持", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const runtimeErrors: string[] = [];
+  page.on("pageerror", (error) => runtimeErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") {
+      runtimeErrors.push(message.text());
+    }
+  });
+  const controls = await setupIncidentApi(page);
+  const stages = [
+    { stage: "translating", label: "翻译中" },
+    { stage: "translation_validating", label: "校验翻译完整性" },
+    { stage: "quality_checking", label: "检查文档质量" },
+    { stage: "future_document_stage", label: "future_document_stage" },
+  ];
+  const stageIncidents = stages.map(({ stage }) => makeIncidentItem({
+    job: makeJob({
+      id: `docjob_con102_${stage}`,
+      failed_stage: stage,
+      error_code: "document_job_unexpected_error",
+      error_message: "CON-102 阶段异常样本。",
+      request_snapshot: { source_file: { original_filename: `${stage}.pdf` } },
+      available_actions: nonRetryableActions,
+    }),
+    retryable: false,
+    retry_disabled_reason: "后端锁定当前任务。",
+    evidence_summary: [`failed_stage=${stage}`],
+  }));
+  await page.route(/\/api\/v1\/document-job-incidents(?:\?.*)?$/, async (route) => {
+    const url = new URL(route.request().url());
+    controls.listRequests.push(url.search);
+    const stage = url.searchParams.get("stage");
+    await fulfillJson(route, listResponse(stage
+      ? stageIncidents.filter((item) => (item.job as Record<string, unknown>).failed_stage === stage)
+      : stageIncidents));
+  });
+  await page.route("**/api/v1/document-job-incidents/*/diagnostics", async (route) => {
+    const jobId = new URL(route.request().url()).pathname.split("/").at(-2) || "";
+    const item = stageIncidents.find((incident) => (incident.job as Record<string, unknown>).id === jobId);
+    if (item) {
+      await fulfillJson(route, diagnosticResponse(jobId, item));
+    } else {
+      await route.fallback();
+    }
+  });
+
+  await page.goto("/incidents");
+  await expect(page).toHaveTitle("内部文档转换工作台");
+  await expect(page.getByRole("heading", { name: "异常处理", exact: true })).toBeVisible();
+  await expect(mainRows(page)).toHaveCount(4);
+  const futureRow = mainRows(page).filter({ hasText: "future_document_stage.pdf" });
+  await expect(futureRow.locator(".status-cell")).toContainText("future_document_stage");
+  await expect(futureRow.getByRole("button", { name: "重试", exact: true })).toBeDisabled();
+  await futureRow.getByRole("button", { name: "诊断", exact: true }).click();
+  await expect(page.locator(".incident-diagnostic-drawer .diagnostic-panel")).toContainText("失败 / future_document_stage");
+  await expect(page.locator(".incident-diagnostic-drawer .event-meta")).toContainText("future_document_stage");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".incident-diagnostic-drawer")).toBeHidden();
+
+  const stageSelect = page.locator(".filter-toolbar .el-select").nth(1);
+  for (const { stage, label } of stages.slice(0, 3)) {
+    await stageSelect.click();
+    await page.locator(".el-select-dropdown:visible").getByText(label, { exact: true }).click();
+    await expect.poll(() => new URL(page.url()).searchParams.get("stage")).toBe(stage);
+    await expect.poll(() => controls.listRequests.some((query) => new URLSearchParams(query).get("stage") === stage)).toBe(true);
+    await expect(mainRows(page)).toHaveCount(1);
+    await expect(mainRows(page).first().locator(".status-cell")).toContainText(label);
+    await expect(mainRows(page).getByRole("button", { name: "重试", exact: true })).toBeDisabled();
+    await page.reload();
+    await expect(stageSelect).toContainText(label);
+    await expect(mainRows(page)).toHaveCount(1);
+    await expect(mainRows(page).first()).toContainText(`${stage}.pdf`);
+  }
+  await page.goBack();
+  await expect.poll(() => new URL(page.url()).searchParams.get("stage")).toBe("translation_validating");
+  await expect(mainRows(page).first().locator(".status-cell")).toContainText("校验翻译完整性");
+  await page.goForward();
+  await expect.poll(() => new URL(page.url()).searchParams.get("stage")).toBe("quality_checking");
+  await expect(mainRows(page).first().locator(".status-cell")).toContainText("检查文档质量");
+  await mainRows(page).getByRole("button", { name: "诊断", exact: true }).click();
+  await expect(page.locator(".incident-diagnostic-drawer .diagnostic-panel")).toContainText("失败 / 检查文档质量");
+  await expect(page.locator(".incident-diagnostic-drawer .event-meta")).toContainText("检查文档质量");
+  await expect(page.locator("vite-error-overlay")).toHaveCount(0);
+  expect(controls.retryRequests).toEqual([]);
+  expect(runtimeErrors).toEqual([]);
+});
 
 test("operator can triage incidents from the desktop queue and diagnostic drawer", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });

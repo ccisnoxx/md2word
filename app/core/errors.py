@@ -2,7 +2,7 @@ from __future__ import annotations
 
 # app/core/errors.py: 定义 API 可复用的错误码和应用层异常。
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 
@@ -38,6 +38,7 @@ class ApiError(Exception):
     status_code: int
     code: ApiErrorCode
     message: str
+    reason_code: str | None = field(default=None, kw_only=True)
 
     def __str__(self) -> str:
         return self.message

@@ -34,7 +34,10 @@ quality_summary_json
 quality_status = pending
 review_status = unreviewed
 delivery_status = internal_draft
+quality_summary = {}
 ```
+
+CON-103 的 Migration A 使用 JSON payload 作为权威，SQL 四列只作同步投影；`quality_summary_json` 为 MySQL LONGTEXT / SQLite TEXT。新旧表均支持 additive 加列，不新增索引或发布记录表。
 
 ### Migration B：质量和复核表
 
@@ -59,21 +62,15 @@ Publication 表对 `result_file_id/checksum` 建唯一或业务约束，防止�
 
 ### 已成功 direct/translation
 
-- `quality_status=pending` 或 `warning`，不能假定 passed；
-- `review_status` 从旧 translation QA 映射；
+- 缺失的 `quality_status=pending`，不能从成功、文件 metadata 或 Golden 推导 passed/warning；
+- 缺失的 `review_status=unreviewed`，旧 translation QA 原文保留；
 - `delivery_status=internal_draft`；
+- 缺失的 `quality_summary={}`；
 - 不自动创建 publication。
 
 ### 旧 translation QA
 
-```text
-approved → approved
-needs_fix → needs_fix
-blocked → blocked
-unreviewed → unreviewed
-```
-
-只有与当前 `result_file_id/hash` 一致时映射有效。
+CON-103 不自动映射旧 QA 状态。当前旧字段缺少可靠的当前结果/hash/generation 绑定，缺失新字段的记录一律使用保守默认值；原状态、问题、备注、复核人/时间和事件保留。回填只补缺键，非法已填值和损坏 JSON 显式失败。
 
 ### 历史人工 Golden signoff
 

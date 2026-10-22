@@ -157,3 +157,23 @@ Only use this pattern when the API response schema explicitly represents per-ite
 The HTTP middleware in `app/main.py` logs unexpected exceptions on the `system` logger with trace, method, path, and duration, then re-raises. Stage execution uses `JobStageService._handle_stage_failure()` to update job/stage state, append events, and log business failures.
 
 Do not add broad silent `except Exception` blocks that hide errors. If an exception is caught, either convert it to a stable `ApiError`/workflow transition or preserve it in stage/job diagnostic state.
+
+## DocumentJob 结果登记竞争与真实错误
+
+- first-valid-receipt选定/完成的当前代、最终IR或receipt条件不符，是正常竞争失效：返回最新权威任务，不伪造oss_failed或成功事件。
+- receipt前候选的迟到异常按本次实际阶段定位，并原子要求槽位仍空；receipt后收尾错误必须匹配选定file ID。
+- 阶段helper成功CAS后若事件追加、翻译计划或资源准备失败，由该owner持本次CAS返回的新快照收尾；调用者先检查返回状态再继续Provider、claim或文件副作用。
+- 对象写入、legacy完整性/checksum、候选descriptor冲突、到期/删除后的物化错误按uploading/oss_failed失败关闭，保留receipt/候选及审计，不换同代结果以掩盖损坏。
+
+## CON-103 复核和迁移错误
+
+- published 删除必须在任何文件副作用前返回 `409 conflict`；复核必须走独立条件写并比较代数、结果 ID 和最新质量状态。
+- `approved` 不授予发布权限；只有执行成功、当前可用主 DOCX 和质量非 blocked 才满足后端资格，owner/tenant/company 仍沿用原权限边界。
+- 迁移发现损坏 JSON、未知枚举或非法组合时非零退出，报告安全的 job ID、错误类别和最后成功游标，不输出原 payload、备注或凭据。
+- MySQL DDL 可能部分提交；失败后保留新增列并暂停写者，修复后继续前滚，不以事务回滚日志声称已撤销 DDL。
+
+## CON-104 下载细分原因的兼容错误桥
+
+`ApiError(..., *, reason_code=None)` 的新增参数为 keyword-only；只有非空 reason_code 才追加 `error.reason_code`，保留既有 HTTP、error_code、detail、request_id 和 trace_id。业务 service 明确给出稳定细分码，错误桥不解析中文文案、不捕获未知存储失败。
+
+主件缺失、归属/type 不符、未上传或过期、非当前候选分别使用既定 reason code；无权访问和未知任务不附加细分原因。动作展示复用同一 metadata guard，真实 repository/event/audit 失败继续传播。

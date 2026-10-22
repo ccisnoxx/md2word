@@ -150,7 +150,11 @@ SQLITE_SCHEMA_STATEMENTS: tuple[str, ...] = (
         job_id TEXT PRIMARY KEY,
         payload TEXT NOT NULL,
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        quality_status TEXT NOT NULL DEFAULT 'pending',
+        review_status TEXT NOT NULL DEFAULT 'unreviewed',
+        delivery_status TEXT NOT NULL DEFAULT 'internal_draft',
+        quality_summary_json TEXT NULL
     )
     """,
     """
@@ -229,9 +233,20 @@ SQLITE_SCHEMA_STATEMENTS: tuple[str, ...] = (
     """,
 )
 
+DOCUMENT_JOB_STATE_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("quality_status", "TEXT NOT NULL DEFAULT 'pending'"),
+    ("review_status", "TEXT NOT NULL DEFAULT 'unreviewed'"),
+    ("delivery_status", "TEXT NOT NULL DEFAULT 'internal_draft'"),
+    ("quality_summary_json", "TEXT NULL"),
+)
+
 
 def initialize_schema(connection: sqlite3.Connection) -> None:
-    """创建 sqlite metadata backend 当前需要的表和索引。"""
+    """创建表和索引，并为既有 DocumentJob 表幂等补列；payload 回填由显式工具执行。"""
 
     for statement in SQLITE_SCHEMA_STATEMENTS:
         connection.execute(statement)
+    existing_columns = {row[1] for row in connection.execute("PRAGMA table_info(document_jobs)")}
+    for name, definition in DOCUMENT_JOB_STATE_COLUMNS:
+        if name not in existing_columns:
+            connection.execute(f"ALTER TABLE document_jobs ADD COLUMN {name} {definition}")

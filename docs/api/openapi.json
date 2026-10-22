@@ -1586,6 +1586,24 @@
         "title": "DocumentFileSummaryResponse",
         "type": "object"
       },
+      "DocumentJobActionDisabledReasonResponse": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "DocumentJobActionDisabledReasonResponse",
+        "type": "object"
+      },
       "DocumentJobArchiveResponse": {
         "properties": {
           "archived_at": {
@@ -1611,6 +1629,20 @@
       },
       "DocumentJobAvailableActionResponse": {
         "properties": {
+          "classification": {
+            "anyOf": [
+              {
+                "const": "internal_only",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "当前主 DOCX 仅供内部使用，不代表最终交付件。",
+            "readOnly": true,
+            "title": "Classification"
+          },
           "disabled_reason": {
             "anyOf": [
               {
@@ -1622,6 +1654,47 @@
             ],
             "title": "Disabled Reason"
           },
+          "disabled_reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "Disabled Reason Code"
+          },
+          "disabled_reasons": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DocumentJobActionDisabledReasonResponse"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "发布禁用原因，按优先级排列。",
+            "readOnly": true,
+            "title": "Disabled Reasons"
+          },
+          "eligible": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "仅表示发布核心资格；执行许可仍由 enabled 表达。",
+            "readOnly": true,
+            "title": "Eligible"
+          },
           "enabled": {
             "title": "Enabled",
             "type": "boolean"
@@ -1630,6 +1703,30 @@
             "default": false,
             "title": "Retryable",
             "type": "boolean"
+          },
+          "warning_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "Warning Code"
+          },
+          "warning_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "Warning Message"
           }
         },
         "required": [
@@ -2829,6 +2926,20 @@
       },
       "DocumentJobDownloadUrlResponse": {
         "properties": {
+          "classification": {
+            "anyOf": [
+              {
+                "const": "internal_only",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "当前主 DOCX 为 internal_only，普通 Artifact 为空。",
+            "readOnly": true,
+            "title": "Classification"
+          },
           "download_url": {
             "title": "Download Url",
             "type": "string"
@@ -2854,6 +2965,30 @@
             "default": "GET",
             "title": "Method",
             "type": "string"
+          },
+          "warning_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "Warning Code"
+          },
+          "warning_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "Warning Message"
           }
         },
         "required": [
@@ -3615,7 +3750,8 @@
                 "archive",
                 "unarchive",
                 "clone",
-                "delete"
+                "delete",
+                "publish"
               ]
             },
             "title": "Available Actions",
@@ -3696,6 +3832,18 @@
               }
             ],
             "title": "Deleted By"
+          },
+          "delivery_status": {
+            "default": "internal_draft",
+            "description": "当前交付状态；QA 批准不触发发布。",
+            "enum": [
+              "internal_draft",
+              "ready_to_publish",
+              "published"
+            ],
+            "readOnly": true,
+            "title": "Delivery Status",
+            "type": "string"
           },
           "document_ir_file_id": {
             "anyOf": [
@@ -3797,6 +3945,28 @@
             "title": "Progress",
             "type": "integer"
           },
+          "quality_status": {
+            "default": "pending",
+            "description": "当前任务的系统质量结论。",
+            "enum": [
+              "pending",
+              "passed",
+              "warning",
+              "blocked"
+            ],
+            "readOnly": true,
+            "title": "Quality Status",
+            "type": "string"
+          },
+          "quality_summary": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "系统提供的安全质量摘要，尚无证据时为 {}。",
+            "readOnly": true,
+            "title": "Quality Summary",
+            "type": "object"
+          },
           "request_snapshot": {
             "additionalProperties": true,
             "title": "Request Snapshot",
@@ -3816,6 +3986,19 @@
           "retry_count": {
             "title": "Retry Count",
             "type": "integer"
+          },
+          "review_status": {
+            "default": "unreviewed",
+            "description": "当前复核状态的唯一真源。",
+            "enum": [
+              "unreviewed",
+              "approved",
+              "needs_fix",
+              "blocked"
+            ],
+            "readOnly": true,
+            "title": "Review Status",
+            "type": "string"
           },
           "source_document_ir_file_id": {
             "anyOf": [

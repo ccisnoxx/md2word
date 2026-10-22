@@ -258,6 +258,10 @@ curl http://127.0.0.1:8000/api/v1/health/ready
 
 报告 `ok: true` 后再切换 `.env` 到 `JOBS_REPOSITORY_BACKEND=mysql` 并重启服务。脚本默认拒绝写入非空 MySQL metadata 目标，避免 job events、stage messages 或 audit events 被重复追加。
 
+### CON-103 Migration A
+
+`scripts/ops/migrate_document_job_state.py` 只处理 DocumentJob 四个状态字段及 SQL 投影：JSON payload 是权威，缺键采用 `pending/unreviewed/internal_draft/{}`，旧 QA 原文保留，不自动映射历史批准。执行前须暂停相关 API/Worker 写者；默认 dry-run/verify 不触发 bootstrap/DDL。按 `schema`、`backfill`、`all` 分阶段 apply，并使用报告中的 `last_successful_job_id` 续跑；MySQL DDL 部分成功时保留已加列、修复后前滚，不执行 DROP。真实 MySQL/InnoDB 和部署文件系统启用门保持 pending，本轮未连接生产。
+
 ## 2.2 artifact storage 与对象 adapter
 
 默认策略：

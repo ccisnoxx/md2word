@@ -1,7 +1,7 @@
 // 文件：frontend/tests/smoke/core-flow.spec.ts
 // 用途：覆盖内部工作台核心操作流程的浏览器 smoke。
 import { expect, test, type Page } from "@playwright/test";
-import type { DocumentJobConfigSummaryResponse, DocumentJobCreateRequest } from "../../src/api/types";
+import type { DocumentFileSummaryResponse, DocumentJobConfigSummaryResponse, DocumentJobCreateRequest, DocumentJobDownloadAvailability, DocumentJobResponse } from "../../src/api/types";
 import { activateSkipLink, expectElementContentFitsViewportWidth, expectNoPageHorizontalOverflow, WORKBENCH_VIEWPORTS } from "./support/accessibility";
 
 const adminOnlyDeleteReason = "只有 admin 可以删除文档任务。";
@@ -104,6 +104,10 @@ const translationQaJob = {
   document_ir_file_id: "file_ir_qa",
   debug_full_text_enabled: true,
   translation_qa_status: "unreviewed",
+  quality_status: "pending",
+  review_status: "unreviewed",
+  delivery_status: "internal_draft",
+  quality_summary: {},
   request_snapshot: {
     source_file: { original_filename: "qa-smoke.pdf" },
   },
@@ -116,6 +120,8 @@ const translationQaBlockedJob = {
   result_file_id: "file_result_qa_blocked",
   document_ir_file_id: "file_ir_qa_blocked",
   translation_qa_status: "blocked",
+  quality_status: "blocked",
+  review_status: "blocked",
   translation_qa_issue_type: "artifact_missing",
   translation_qa_note: "debug archive missing",
   request_snapshot: {
@@ -1593,7 +1599,7 @@ async function mockApi(page: Page, options: MockApiOptions = {}): Promise<MockAp
             reviewed_by: "user_operator",
             reviewed_at: "2026-06-11T00:06:00Z",
           },
-          job: { ...translationQaJob, translation_qa_status: "approved" },
+          job: { ...translationQaJob, translation_qa_status: "approved", review_status: "approved" },
         }),
       });
       return;
@@ -1802,6 +1808,108 @@ async function expectLocatorInViewport(page: Page, selector: string): Promise<vo
   }
   expect(box.y, `${selector} should not start above the viewport`).toBeGreaterThanOrEqual(0);
   expect(box.y + box.height, `${selector} should fit inside the viewport`).toBeLessThanOrEqual(viewport.height + 1);
+}
+
+const con102StageScenarios = [
+  { stage: "translating", label: "翻译中", filterable: true },
+  { stage: "translation_validating", label: "校验翻译完整性", filterable: true },
+  { stage: "quality_checking", label: "检查文档质量", filterable: true },
+  { stage: "future_document_stage", label: "future_document_stage", filterable: false },
+];
+
+for (const scenario of con102StageScenarios) {
+  test(`CON-102：详情展示 ${scenario.stage}、失败定位与事件筛选，保持后端禁用动作`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const runtimeErrors: string[] = [];
+    page.on("pageerror", (error) => runtimeErrors.push(error.message));
+    page.on("console", (message) => {
+      if (message.type() === "error") {
+        runtimeErrors.push(message.text());
+      }
+    });
+    await mockApi(page);
+    await page.addInitScript(() => window.localStorage.setItem("md2word.frontend.access_token", "smoke-token"));
+    let currentJob = {
+      ...documentJob,
+      mode: "en2zh_pdf_to_word",
+      translation_mode: "en2zh",
+      document_language: "en",
+      status: "running",
+      stage: scenario.stage,
+      progress: 75,
+      result_file_id: null,
+      completed_at: null as string | null,
+      failed_stage: null as string | null,
+      error_code: null as string | null,
+      error_message: null as string | null,
+      available_actions: {
+        ...activeActionStates,
+        cancel: { enabled: false, disabled_reason: "后端锁定当前任务。", retryable: false },
+      },
+    };
+    await page.route("**/api/v1/document-jobs/docjob_smoke_001", (route) => route.fulfill({ json: currentJob }));
+    await page.route("**/api/v1/document-jobs/docjob_smoke_001/files", (route) => route.fulfill({
+      json: { job_id: documentJob.id, files: [] },
+    }));
+    await page.route("**/api/v1/document-jobs/docjob_smoke_001/translation-batches", (route) => route.fulfill({
+      json: { job_id: documentJob.id, generation: 0, items: [] },
+    }));
+    await page.route("**/api/v1/document-jobs/docjob_smoke_001/events", (route) => route.fulfill({
+      json: {
+        job_id: documentJob.id,
+        items: con102StageScenarios.map(({ stage }) => ({
+          id: `event_con102_${stage}`,
+          job_id: documentJob.id,
+          tenant_id: "tenant_default",
+          company_id: "company_default",
+          created_by: "worker",
+          stage,
+          level: "info",
+          event_type: "stage_started",
+          message: `CON-102 阶段事件 ${stage}`,
+          payload: { generation: 0 },
+          duration_ms: null,
+          trace_id: "trace_con102",
+          created_at: "2026-10-16T00:00:00Z",
+        })),
+      },
+    }));
+
+    await page.goto(`/jobs/${documentJob.id}`);
+    await expect(page).toHaveURL(`/jobs/${documentJob.id}`);
+    await expect(page).toHaveTitle("内部文档转换工作台");
+    await expect(page.getByRole("heading", { name: "任务详情", exact: true })).toBeVisible();
+    await expect(page.locator(".detail-overview .job-progress")).toContainText(scenario.label);
+    const actions = page.locator(".detail-header .job-actions");
+    await expect(actions.getByRole("button", { name: "下载", exact: true })).toBeDisabled();
+    await expect(actions.getByRole("button", { name: "取消", exact: true })).toBeDisabled();
+
+    await page.getByRole("tab", { name: "事件", exact: true }).click();
+    const timeline = page.locator(".event-timeline");
+    await expect(timeline.locator(".event-message")).toHaveCount(con102StageScenarios.length);
+    await expect(timeline.getByText(scenario.label, { exact: true })).toBeVisible();
+    if (scenario.filterable) {
+      await page.getByRole("tabpanel", { name: "事件", exact: true }).locator(".el-select").nth(1).click();
+      await page.locator(".el-select-dropdown:visible").getByText(scenario.label, { exact: true }).click();
+      await expect(timeline.locator(".event-message")).toHaveText([`CON-102 阶段事件 ${scenario.stage}`]);
+    }
+
+    currentJob = {
+      ...currentJob,
+      status: "failed",
+      stage: "failed",
+      failed_stage: scenario.stage,
+      error_code: "render_failed",
+      error_message: "CON-102 失败定位样本。",
+    };
+    await actions.getByRole("button", { name: "刷新", exact: true }).click();
+    await expect(page.locator(".task-disposition-fact").filter({ hasText: "失败阶段" })).toContainText(scenario.label);
+    await expect(actions.getByRole("button", { name: "重试", exact: true })).toBeDisabled();
+    await page.getByRole("tab", { name: "诊断", exact: true }).click();
+    await expect(page.locator(".failure-summary")).toContainText(`任务在 ${scenario.label} 阶段失败`);
+    await expect(page.locator("vite-error-overlay")).toHaveCount(0);
+    expect(runtimeErrors).toEqual([]);
+  });
 }
 
 test("operations redesign renders verified desktop, tablet, and mobile screenshots", async ({ browser }, testInfo) => {
@@ -2533,4 +2641,241 @@ test("admin can inspect status, audit, ops gates, and file retention workspaces"
   await expect(page.getByRole("heading", { name: "过期候选" })).toBeVisible();
   await expect(page.getByRole("button", { name: "执行物理删除" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "执行 cleanup run" })).toBeDisabled();
+});
+
+const con104Warning = "该文档存在严重质量问题，仅供内部排查，不可交付或发布。";
+const con104PhaseReasons = [
+  { code: "preview_unavailable", message: "当前阶段尚未接通发布所需的预览验证。" },
+  { code: "publication_unavailable", message: "当前阶段尚未提供文档发布功能。" },
+];
+
+function con104Job(overrides: Partial<DocumentJobResponse> = {}): DocumentJobResponse {
+  return {
+    ...documentJob,
+    mode: "direct_pdf_to_word",
+    translation_mode: "direct",
+    status: "succeeded",
+    stage: "completed",
+    translation_qa_status: "unreviewed",
+    quality_status: "blocked",
+    review_status: "unreviewed",
+    delivery_status: "internal_draft",
+    available_actions: {
+      ...actionStates,
+      download: { ...actionStates.download, classification: "internal_only", warning_code: "quality_blocked_not_deliverable", warning_message: con104Warning },
+      publish: {
+        enabled: false,
+        eligible: false,
+        retryable: false,
+        disabled_reason: "质量阻塞，不能发布。",
+        disabled_reason_code: "quality_status_blocked",
+        disabled_reasons: [{ code: "quality_status_blocked", message: "质量阻塞，不能发布。" }, ...con104PhaseReasons],
+      },
+    },
+    ...overrides,
+  };
+}
+
+const con104ResultFile: DocumentFileSummaryResponse = {
+  id: "file_result_smoke",
+  tenant_id: "tenant_default",
+  company_id: "company_default",
+  job_id: documentJob.id,
+  file_type: "generated_word",
+  storage_provider: "local_file",
+  original_filename: "smoke.docx",
+  mime_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  size_bytes: 1024,
+  status: "uploaded",
+  expires_at: null,
+  created_by: "worker",
+  created_at: "2026-06-11T00:01:00Z",
+  updated_at: "2026-06-11T00:01:00Z",
+  quality_evidence: {},
+};
+const con104SourceFile: DocumentFileSummaryResponse = {
+  ...con104ResultFile,
+  id: "file_source_smoke",
+  file_type: "source_pdf",
+  original_filename: "smoke.pdf",
+  mime_type: "application/pdf",
+};
+
+async function mockCon104Api(page: Page, job: DocumentJobResponse, options: { legacy?: boolean } = {}) {
+  await mockApi(page);
+  await page.addInitScript(() => {
+    window.localStorage.setItem("md2word.frontend.access_token", "smoke-token");
+    // 记录打开瞬间已呈现的签发提示，并避免 smoke 发起真实下载。
+    window.open = (url) => {
+      document.documentElement.dataset.con104OpenedNotice = document.querySelector(".download-policy-notice")?.textContent || "";
+      document.documentElement.dataset.con104OpenedUrl = String(url);
+      return null;
+    };
+  });
+  await page.route("**/api/v1/auth/me", (route) => route.fulfill({ json: mockUser("admin") }));
+  await page.route(/\/api\/v1\/document-jobs(?:\?.*)?$/, (route) => route.fulfill({
+    json: { items: [job], page: 1, page_size: 20, total: 1, summary: { succeeded: 1 } },
+  }));
+  await page.route("**/api/v1/document-jobs/docjob_smoke_001", (route) => route.fulfill({ json: job }));
+  await page.route("**/api/v1/document-jobs/docjob_smoke_001/files", (route) => route.fulfill({
+    json: { job_id: job.id, files: [con104ResultFile, con104SourceFile] },
+  }));
+  await page.route("**/api/v1/document-jobs/docjob_smoke_001/translation-batches", (route) => route.fulfill({
+    json: { job_id: job.id, generation: 0, items: [] },
+  }));
+  const issuedFileIds: Array<string | null> = [];
+  await page.route(/\/api\/v1\/document-jobs\/docjob_smoke_001\/download-url(?:\?.*)?$/, (route) => {
+    const fileId = new URL(route.request().url()).searchParams.get("file_id");
+    issuedFileIds.push(fileId);
+    const file = fileId === con104SourceFile.id ? con104SourceFile : con104ResultFile;
+    const policy: DocumentJobDownloadAvailability = options.legacy ? {} : file.file_type === "generated_word"
+      ? { classification: "internal_only", warning_code: "future_signing_warning", warning_message: `当次签发警告 ${issuedFileIds.length}：仍不可交付。` }
+      : { classification: null, warning_code: null, warning_message: null };
+    return route.fulfill({
+      json: { job_id: job.id, file_id: file.id, file, download_url: `about:blank#con104-${issuedFileIds.length}`, method: "GET", expires_at: "2026-10-20T12:00:00Z", ...policy },
+    });
+  });
+  return issuedFileIds;
+}
+
+const con104Scenarios = [
+  { name: "质量阻塞且未复核", job: con104Job(), eligibility: "核心资格未通过", warning: con104Warning, reason: "质量阻塞，不能发布。" },
+  {
+    name: "翻译结果未复核",
+    job: con104Job({
+      mode: "en2zh_pdf_to_word", translation_mode: "en2zh", quality_status: "passed",
+      available_actions: {
+        ...actionStates,
+        download: { ...actionStates.download, classification: "internal_only", warning_code: "document_unreviewed_not_deliverable", warning_message: "文档尚未复核，不可交付或发布。" },
+        publish: { enabled: false, eligible: false, disabled_reason: "文档尚未复核。", disabled_reasons: [{ code: "review_status_unreviewed", message: "文档尚未复核。" }, ...con104PhaseReasons], retryable: false },
+      },
+    }),
+    eligibility: "核心资格未通过", warning: "文档尚未复核，不可交付或发布。", reason: "文档尚未复核。",
+  },
+  {
+    name: "Admin 已批准且核心资格通过",
+    job: con104Job({
+      quality_status: "passed", review_status: "approved", translation_qa_status: "approved",
+      available_actions: {
+        ...actionStates,
+        download: { ...actionStates.download, classification: "internal_only", warning_code: null, warning_message: null },
+        publish: { enabled: false, eligible: true, disabled_reason: con104PhaseReasons[0].message, disabled_reasons: con104PhaseReasons, retryable: false },
+      },
+    }),
+    eligibility: "核心资格通过", warning: "仅供内部使用", reason: con104PhaseReasons[0].message,
+  },
+];
+
+for (const scenario of con104Scenarios) {
+  test(`CON-104：${scenario.name}保留内部下载并禁用发布`, async ({ page }) => {
+    await mockCon104Api(page, scenario.job);
+    await page.goto("/jobs/docjob_smoke_001");
+    await expect(page.getByRole("heading", { name: "任务详情", exact: true })).toBeVisible();
+    await expect(page.locator(".job-actions__download-notice")).toContainText(scenario.warning);
+    await expect(page.locator(".job-actions").getByRole("button", { name: "下载", exact: true })).toBeEnabled();
+    const publication = page.locator(".publication-availability");
+    await expect(publication).toContainText(scenario.eligibility);
+    await expect(publication).toContainText(scenario.reason);
+    await expect(publication.getByRole("button", { name: "发布", exact: true })).toBeDisabled();
+    await expect(publication).not.toContainText("已可交付");
+  });
+}
+
+test("CON-104：三个下载入口先展示当次签发警告，源 PDF 不套主件限制", async ({ page }) => {
+  const issuedFileIds = await mockCon104Api(page, con104Job());
+  await page.goto("/jobs");
+  await expect(page.locator(".download-availability-notice")).toContainText(con104Warning);
+  await page.getByRole("button", { name: "下载", exact: true }).click();
+  await expect(page.locator(".download-policy-notice")).toHaveText("仅供内部使用；当次签发警告 1：仍不可交付。");
+  await expect(page.locator("html")).toHaveAttribute("data-con104-opened-notice", "仅供内部使用；当次签发警告 1：仍不可交付。");
+  await expect(page.getByRole("link", { name: "打开下载链接" })).toHaveAttribute("href", "about:blank#con104-1");
+
+  await page.goto("/jobs/docjob_smoke_001");
+  await page.locator(".job-actions").getByRole("button", { name: "下载", exact: true }).click();
+  await expect(page.locator(".download-policy-notice")).toContainText("当次签发警告 2");
+  await expect(page.locator("html")).toHaveAttribute("data-con104-opened-notice", "仅供内部使用；当次签发警告 2：仍不可交付。");
+  await page.getByRole("tab", { name: "文件", exact: true }).click();
+  const resultRow = page.getByRole("row").filter({ hasText: "smoke.docx" });
+  await resultRow.getByRole("button", { name: "下载", exact: true }).click();
+  await expect(page.locator(".download-policy-notice")).toContainText("当次签发警告 3");
+  await expect(page.locator("html")).toHaveAttribute("data-con104-opened-notice", "仅供内部使用；当次签发警告 3：仍不可交付。");
+  const sourceRow = page.getByRole("row").filter({ hasText: "file_source_smoke" });
+  await sourceRow.getByRole("button", { name: "下载", exact: true }).click();
+  await expect(page.locator(".download-policy-notice")).toHaveCount(0);
+  await expect(page.locator("html")).toHaveAttribute("data-con104-opened-notice", "");
+  expect(issuedFileIds).toEqual([null, null, "file_result_smoke", "file_source_smoke"]);
+});
+
+test("CON-104：服务器动作覆盖本地已批准字段，未知原因码仍可读", async ({ page }) => {
+  const job = con104Job({
+    quality_status: "passed", review_status: "approved", translation_qa_status: "approved",
+    available_actions: {
+      ...actionStates,
+      download: { enabled: false, disabled_reason: "服务器锁定当前下载。", retryable: false },
+      publish: { enabled: false, eligible: false, disabled_reason: "后端新增门禁尚未通过。", disabled_reasons: [{ code: "future_gate", message: "后端新增门禁尚未通过。" }], retryable: false },
+    },
+  });
+  await mockCon104Api(page, job);
+  await page.goto("/jobs/docjob_smoke_001");
+  await expect(page.locator(".job-actions").getByRole("button", { name: "下载", exact: true })).toBeDisabled();
+  await expect(page.locator(".publication-availability")).toContainText("核心资格未通过");
+  await expect(page.getByLabel("发布禁用原因")).toContainText("后端新增门禁尚未通过。");
+  await expect(page.getByLabel("发布禁用原因")).toContainText("future_gate");
+  await expect(page.locator(".publication-availability").getByRole("button", { name: "发布", exact: true })).toBeDisabled();
+});
+
+test("CON-104：缺少新增合同仍可内部下载，但不确认交付和发布资格", async ({ page }) => {
+  await mockCon104Api(page, con104Job({ available_actions: actionStates, review_status: "approved", quality_status: "passed", translation_qa_status: "approved" }), { legacy: true });
+  await page.goto("/jobs/docjob_smoke_001");
+  await expect(page.locator(".job-actions__download-notice")).toHaveText("下载分类未提供，不能确认交付资格");
+  await expect(page.getByLabel("发布禁用原因")).toContainText("后端未提供发布可用性。");
+  await expect(page.locator(".publication-availability").getByRole("button", { name: "发布", exact: true })).toBeDisabled();
+  await page.locator(".job-actions").getByRole("button", { name: "下载", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-con104-opened-notice", "下载分类未提供，不能确认交付资格");
+  await expect(page.getByRole("link", { name: "打开下载链接" })).toBeVisible();
+});
+
+test("CON-104：动作区四种宽度和深色主题可读，禁用原因支持键盘读取", async ({ page }, testInfo) => {
+  const runtimeErrors: string[] = [];
+  page.on("pageerror", (error) => runtimeErrors.push(error.message));
+  page.on("console", (message) => {
+    if (["error", "warning"].includes(message.type())) runtimeErrors.push(message.text());
+  });
+  await mockCon104Api(page, con104Job());
+  await page.goto("/jobs/docjob_smoke_001");
+  await expect(page).toHaveTitle("内部文档转换工作台");
+  await expect(page).toHaveURL(/\/jobs\/docjob_smoke_001$/);
+  await expect(page.getByRole("heading", { name: "任务详情", exact: true })).toBeVisible();
+  await expect(page.locator("vite-error-overlay")).toHaveCount(0);
+  await settleWorkbenchScreenshot(page);
+  for (const viewport of WORKBENCH_VIEWPORTS) {
+    await page.setViewportSize(viewport);
+    await expectNoPageHorizontalOverflow(page);
+    await expectElementContentFitsViewportWidth(page, page.locator(".job-actions"));
+    await expectElementContentFitsViewportWidth(page, page.getByLabel("发布禁用原因"));
+    await expect(page.locator(".job-actions__download-notice")).toContainText(con104Warning);
+    if (viewport.width === 1440) {
+      await page.locator(".detail-header").screenshot({ path: testInfo.outputPath("con104-download-actions-desktop.png"), animations: "disabled" });
+    }
+  }
+  await page.evaluate(() => window.localStorage.setItem("md2word.theme.mode", "dark"));
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  const reasons = page.getByLabel("发布禁用原因");
+  await reasons.focus();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Shift+Tab");
+  await expect(reasons).toBeFocused();
+  await expect(reasons).toContainText("质量阻塞，不能发布。");
+  await expectNoPageHorizontalOverflow(page);
+  await settleWorkbenchScreenshot(page);
+  await page.locator(".publication-availability").screenshot({ path: testInfo.outputPath("con104-publication-dark-mobile.png"), animations: "disabled" });
+  // 旧诊断区在文件证据尚未返回时把 danger 传给 ElAlert；仅记录这两个已确认的基线告警。
+  const knownBaselineWarnings = runtimeErrors.filter((message) =>
+    message.includes('at <ElAlert class="quality-evidence-alert" type="danger"')
+    && (message.startsWith('[Vue warn]: Invalid prop: validation failed for prop "type".')
+      || message.startsWith('[Vue warn]: Invalid prop: custom validator check failed for prop "type".')),
+  );
+  expect(runtimeErrors.filter((message) => !knownBaselineWarnings.includes(message))).toEqual([]);
+  console.info(`已确认的旧诊断区 ElAlert type 基线告警：${knownBaselineWarnings.length} 条；其他控制台告警和错误均受断言约束。`);
 });

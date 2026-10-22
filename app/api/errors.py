@@ -70,7 +70,7 @@ async def _job_resource_snapshot_error_handler(_request: Request, exc: JobResour
 async def _api_error_handler(request: Request, exc: ApiError) -> JSONResponse:
     """把应用层 ApiError 输出为统一错误结构。"""
 
-    return api_error_response(request, exc.status_code, exc.code, exc.message)
+    return api_error_response(request, exc.status_code, exc.code, exc.message, reason_code=exc.reason_code)
 
 
 async def _mineru_config_error_handler(request: Request, exc: MinerUConfigError) -> JSONResponse:
@@ -144,12 +144,13 @@ def api_error_response(
     *,
     detail: object | None = None,
     headers: dict[str, str] | None = None,
+    reason_code: str | None = None,
 ) -> JSONResponse:
     """生成统一 API 错误响应；detail 字段保持向后兼容。"""
 
     return JSONResponse(
         status_code=status_code,
-        content=_build_error_content(request, status_code, code, message, detail=detail),
+        content=_build_error_content(request, status_code, code, message, detail=detail, reason_code=reason_code),
         headers=headers,
     )
 
@@ -161,20 +162,24 @@ def _build_error_content(
     message: str,
     *,
     detail: object | None = None,
+    reason_code: str | None = None,
 ) -> dict[str, object]:
     trace_id = str(getattr(request.state, "trace_id", ""))
+    error = {
+        "code": code,
+        "message": message,
+        "status_code": status_code,
+        "request_id": trace_id,
+        "trace_id": trace_id,
+    }
+    if reason_code is not None:
+        error["reason_code"] = reason_code
     return {
         "detail": message if detail is None else detail,
         "error_code": code,
         "request_id": trace_id,
         "trace_id": trace_id,
-        "error": {
-            "code": code,
-            "message": message,
-            "status_code": status_code,
-            "request_id": trace_id,
-            "trace_id": trace_id,
-        },
+        "error": error,
     }
 
 

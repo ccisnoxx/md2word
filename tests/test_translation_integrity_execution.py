@@ -173,7 +173,7 @@ class TranslationIntegrityExecutionTests(TestCase):
         execution.settings.translation_max_chars = 10
         with patch.object(execution.document_ir_translation_service, "apply_replacements") as apply:
             failed = execution.execute_job(job.id)
-        self.assertEqual((failed.status, failed.failed_stage, failed.error_code), ("failed", "ir_converting", "translation_failed"))
+        self.assertEqual((failed.status, failed.failed_stage, failed.error_code), ("failed", "translating", "translation_failed"))
         failures = [event for event in runtime.document_job_event_repository.list_document_job_events(job.id) if event.event_type == "stage_failed"]
         self.assertEqual(len(failures), 1)
         evidence = failures[0].payload["integrity"]
@@ -314,20 +314,27 @@ class TranslationIntegrityExecutionTests(TestCase):
             with self.subTest(delayed_type=delayed_type):
                 runtime, execution, _provider, job, batch, document, raw = self.make_case()
                 register = runtime.file_upload_service.register_generated_content
+                register_candidate = runtime.file_upload_service.register_result_candidate
                 delayed = False
                 snapshots = {}
                 rejected = []
                 cas = runtime.document_job_repository.update_document_job_if_current
+                prepare = runtime.document_job_repository.prepare_document_job_result
                 def observe_cas(job_id, **kwargs):
                     result = cas(job_id, **kwargs)
                     if kwargs.get("expected_retry_count") == 0 and result is None:
                         rejected.append(kwargs)
                     return result
-                def interleave(**kwargs):
+
+                def observe_prepare(job_id, **kwargs):
+                    result = prepare(job_id, **kwargs)
+                    if kwargs.get("expected_retry_count") == 0 and result is None:
+                        rejected.append(kwargs)
+                    return result
+
+                def interleave_after_barrier(content, retry_count, kind):
                     nonlocal delayed, snapshots
-                    role = kwargs.get("metadata", {}).get("translation", {}).get("role")
-                    kind = role if kwargs["file_type"] == "document_ir" else kwargs["file_type"]
-                    if not delayed and kind == delayed_type and kwargs.get("metadata", {}).get("retry_count") == 0:
+                    if not delayed and kind == delayed_type and retry_count == 0:
                         delayed = True
                         new_job = runtime.document_job_repository.update_document_job(
                             job.id, retry_count=1, status="running", stage="ir_converting", source_document_ir_file_id=None,
@@ -347,10 +354,25 @@ class TranslationIntegrityExecutionTests(TestCase):
                         snapshots = self.snapshot_files(runtime)
                         winner_id = (winner.source_document_ir_file_id if delayed_type == "source" else
                                      winner.document_ir_file_id if delayed_type == "translated" else winner.result_file_id)
-                        self.assertNotEqual(kwargs["content"], snapshots[winner_id][0])
+                        self.assertNotEqual(content, snapshots[winner_id][0])
+
+                def interleave(**kwargs):
+                    role = kwargs.get("metadata", {}).get("translation", {}).get("role")
+                    kind = role if kwargs["file_type"] == "document_ir" else kwargs["file_type"]
+                    interleave_after_barrier(
+                        kwargs["content"], kwargs.get("metadata", {}).get("retry_count"), kind,
+                    )
                     return register(**kwargs)
+
+                def interleave_candidate(**kwargs):
+                    interleave_after_barrier(
+                        kwargs["content"], kwargs.get("metadata", {}).get("retry_count"), "generated_word",
+                    )
+                    return register_candidate(**kwargs)
                 with patch.object(runtime.file_upload_service, "register_generated_content", side_effect=interleave), patch.object(
                     runtime.document_job_repository, "update_document_job_if_current", side_effect=observe_cas,
+                ), patch.object(runtime.document_job_repository, "prepare_document_job_result", side_effect=observe_prepare), patch.object(
+                    runtime.file_upload_service, "register_result_candidate", side_effect=interleave_candidate,
                 ):
                     if delayed_type == "source":
                         execution._register_source_ir_and_enqueue_translation(

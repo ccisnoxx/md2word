@@ -2,11 +2,15 @@ from __future__ import annotations
 
 # app/infrastructure/persistence/mysql/files.py: MySQL backend 的 job files 和 document files adapter。
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import datetime
 from typing import Any
 
 from app.domains.jobs.models import JobFile
 from app.domains.files.models import DocumentFileRecord
 from app.infrastructure.persistence.mysql.backend import MysqlPersistenceBackend
+from app.domains.files.result_registration import expired_file, materialized_file, patched_file
 
 
 class MysqlJobFileRepository:
@@ -41,34 +45,37 @@ class MysqlJobFileRepository:
 
 
 class MysqlDocumentFileRepository:
-    """用 MySQL backend 读写 document_files metadata。"""
+    """在同一文件序列化点维护候选身份、物化和不可逆生命周期。"""
 
     def __init__(self, backend: MysqlPersistenceBackend) -> None:
         self.backend = backend
 
-    def create_document_file(self, record: DocumentFileRecord) -> DocumentFileRecord:
+    @contextmanager
+    def _locked_file(self, file_id: str) -> Iterator[tuple[Any, DocumentFileRecord | None]]:
         with self.backend.connect() as connection:
-            self._upsert_document_file(connection, record)
-        return record
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT payload FROM document_files WHERE file_id = %s FOR UPDATE", (file_id,))
+                row = cursor.fetchone()
+            yield connection, DocumentFileRecord.model_validate_json(row["payload"]) if row is not None else None
 
-    def _upsert_document_file(self, connection: Any, record: DocumentFileRecord) -> None:
+    def _write_file(self, connection: Any, record: DocumentFileRecord, *, create: bool = False) -> None:
+        if create:
+            query = "INSERT INTO document_files (file_id, payload, created_at, updated_at) VALUES (%s, %s, %s, %s)"
+            params = (record.id, self.backend.dump_payload(record), record.created_at.isoformat(), record.updated_at.isoformat())
+        else:
+            query = "UPDATE document_files SET payload = %s, created_at = %s, updated_at = %s WHERE file_id = %s"
+            params = (self.backend.dump_payload(record), record.created_at.isoformat(), record.updated_at.isoformat(), record.id)
         with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                INSERT INTO document_files (file_id, payload, created_at, updated_at)
-                VALUES (%s, %s, %s, %s)
-                ON DUPLICATE KEY UPDATE
-                    payload = VALUES(payload),
-                    created_at = VALUES(created_at),
-                    updated_at = VALUES(updated_at)
-                """,
-                (
-                    record.id,
-                    self.backend.dump_payload(record),
-                    record.created_at.isoformat(),
-                    record.updated_at.isoformat(),
-                ),
-            )
+            cursor.execute(query, params)
+
+    def create_document_file(self, record: DocumentFileRecord) -> DocumentFileRecord:
+        with self._locked_file(record.id) as (connection, existing):
+            if existing is not None:
+                if existing != record:
+                    raise ValueError("文件 ID 已存在，不能覆盖生命周期或证据。")
+                return existing
+            self._write_file(connection, record, create=True)
+            return record
 
     def get_document_file(self, file_id: str) -> DocumentFileRecord | None:
         with self.backend.connect() as connection:
@@ -87,12 +94,25 @@ class MysqlDocumentFileRepository:
         return [DocumentFileRecord.model_validate_json(row["payload"]) for row in rows]
 
     def update_document_file(self, file_id: str, **patch: Any) -> DocumentFileRecord:
-        with self.backend.connect() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT payload FROM document_files WHERE file_id = %s", (file_id,))
-                row = cursor.fetchone()
-            if row is None:
+        with self._locked_file(file_id) as (connection, existing):
+            if existing is None:
                 raise FileNotFoundError(f"文件不存在: {file_id}")
-            updated = DocumentFileRecord.model_validate_json(row["payload"]).model_copy(update=patch)
-            self._upsert_document_file(connection, updated)
-        return updated
+            updated = patched_file(existing, patch)
+            self._write_file(connection, updated)
+            return updated
+
+    def materialize_prepared_result(self, descriptor: DocumentFileRecord) -> DocumentFileRecord:
+        with self._locked_file(descriptor.id) as (connection, existing):
+            if existing is None:
+                raise FileNotFoundError(f"结果候选不存在: {descriptor.id}")
+            updated = materialized_file(existing, descriptor)
+            self._write_file(connection, updated)
+            return updated
+
+    def expire_document_file(self, file_id: str, *, now: datetime) -> DocumentFileRecord:
+        with self._locked_file(file_id) as (connection, existing):
+            if existing is None:
+                raise FileNotFoundError(f"文件不存在: {file_id}")
+            updated = expired_file(existing, now=now)
+            self._write_file(connection, updated)
+            return updated

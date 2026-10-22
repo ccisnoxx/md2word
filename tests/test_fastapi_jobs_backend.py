@@ -7746,6 +7746,7 @@ class FastAPIJobsBackendTests(TestCase):
                     created_at=old_time,
                     updated_at=old_time,
                 )
+                # 旧批准没有当前结果绑定，只保留历史原值，队列应投影为未复核。
                 runtime.document_job_repository.update_document_job(
                     beta_job_id,
                     translation_qa_status="approved",
@@ -7758,6 +7759,7 @@ class FastAPIJobsBackendTests(TestCase):
                     queued_job_id,
                     status="queued",
                     stage="uploaded",
+                    review_status="needs_fix",
                     translation_qa_status="needs_fix",
                     translation_qa_issue_type="terminology",
                     translation_qa_note="Term mismatch",
@@ -7768,6 +7770,7 @@ class FastAPIJobsBackendTests(TestCase):
                     running_job_id,
                     status="running",
                     stage="parsing",
+                    review_status="blocked",
                     translation_qa_status="blocked",
                     translation_qa_issue_type="artifact_missing",
                     translation_qa_note="Missing IR",
@@ -7860,7 +7863,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(default_response.status_code, 200)
         self.assertEqual(default_response.json()["total"], 4)
         expected_default_summary = {"failed": 1, "pending": 1, "queued": 1, "running": 1}
-        expected_qa_summary = {"unreviewed": 0, "approved": 1, "needs_fix": 1, "blocked": 1}
+        expected_qa_summary = {"unreviewed": 1, "approved": 0, "needs_fix": 1, "blocked": 1}
         self.assertEqual(default_response.json()["summary"], expected_default_summary)
         self.assertEqual(default_response.json()["filtered_summary"], expected_default_summary)
         self.assertEqual(
@@ -7897,8 +7900,8 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(active_group_response.json()["filtered_summary"], {"pending": 1, "queued": 1, "running": 1})
         self.assertEqual(active_group_response.json()["translation_qa_summary"], expected_qa_summary)
         self.assertEqual(qa_status_response.status_code, 200)
-        self.assertEqual([item["id"] for item in qa_status_response.json()["items"]], [beta_job_id])
-        self.assertEqual(qa_status_response.json()["filtered_summary"], {"pending": 1})
+        self.assertEqual(qa_status_response.json()["items"], [])
+        self.assertEqual(qa_status_response.json()["filtered_summary"], {})
         self.assertEqual(
             qa_status_response.json()["translation_qa_summary"],
             expected_qa_summary,
@@ -7910,8 +7913,8 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(qa_all_response.json()["filtered_summary"], {"pending": 1, "queued": 1, "running": 1})
         self.assertEqual(qa_all_response.json()["translation_qa_summary"], expected_qa_summary)
         self.assertEqual(qa_unreviewed_response.status_code, 200)
-        self.assertEqual(qa_unreviewed_response.json()["items"], [])
-        self.assertEqual(qa_unreviewed_response.json()["filtered_summary"], {})
+        self.assertEqual([item["id"] for item in qa_unreviewed_response.json()["items"]], [beta_job_id])
+        self.assertEqual(qa_unreviewed_response.json()["filtered_summary"], {"pending": 1})
         self.assertEqual(qa_unreviewed_response.json()["translation_qa_summary"], expected_qa_summary)
         self.assertEqual(status_group_conflict_response.status_code, 400)
         self.assertEqual(status_group_conflict_response.json()["error_code"], "invalid_request")
@@ -7959,7 +7962,11 @@ class FastAPIJobsBackendTests(TestCase):
 
         self.assertEqual(create_response.status_code, 201)
         pending_actions = list_response.json()["items"][0]["available_actions"]
-        self.assertEqual(set(pending_actions), {"download", "retry", "cancel", "archive", "unarchive", "clone", "delete"})
+        self.assertEqual(set(pending_actions), {"download", "retry", "cancel", "archive", "unarchive", "clone", "delete", "publish"})
+        for action in pending_actions.values():
+            self.assertTrue({"enabled", "disabled_reason", "retryable"}.issubset(action))
+        self.assertFalse(pending_actions["publish"]["enabled"])
+        self.assertFalse(pending_actions["publish"]["eligible"])
         self.assertTrue(pending_actions["cancel"]["enabled"])
         self.assertTrue(pending_actions["clone"]["enabled"])
         self.assertFalse(pending_actions["delete"]["enabled"])
@@ -8019,6 +8026,7 @@ class FastAPIJobsBackendTests(TestCase):
                     mode="en2zh_pdf_to_word",
                     status="running",
                     stage="parsing",
+                    review_status="blocked",
                     translation_qa_status="blocked",
                     translation_qa_issue_type="artifact_missing",
                     translation_qa_note="DocumentIR missing",
@@ -9712,7 +9720,7 @@ class FastAPIJobsBackendTests(TestCase):
             for event in events
             if event.event_type == "file_registered" and event.payload.get("file_type") == "document_ir"
         )
-        rendered_event = next(event for event in events if event.event_type == "stage_succeeded" and event.stage == "rendering")
+        checked_event = next(event for event in events if event.event_type == "stage_succeeded" and event.stage == "quality_checking")
         word_registered_event = next(
             event
             for event in events
@@ -9720,8 +9728,8 @@ class FastAPIJobsBackendTests(TestCase):
         )
         self.assertEqual(ir_registered_event.payload["schema_version"], "document-ir/v2")
         self.assertEqual(ir_registered_event.payload["layout_block_count"], 6)
-        self.assertEqual(rendered_event.payload["renderer_mode"], "layout_v2")
-        self.assertIn("layout_wide_table:block_0003", rendered_event.payload["layout_quality_flags"])
+        self.assertEqual(checked_event.payload["renderer_mode"], "layout_v2")
+        self.assertIn("layout_wide_table:block_0003", checked_event.payload["layout_quality_flags"])
         self.assertEqual(word_registered_event.payload["renderer_mode"], "layout_v2")
         self.assertIn("layout_wide_table:block_0003", word_registered_event.payload["layout_quality_flags"])
 
@@ -10323,6 +10331,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(create_response.json()["status"], "failed")
         self.assertIsNotNone(stored_job)
         self.assertEqual(stored_job.error_code, "translation_failed")
+        self.assertEqual(stored_job.failed_stage, "translating")
         self.assertEqual(len(provider.requests), 2)
         self.assertEqual(len(ai_logs), 2)
         self.assertEqual(debug_archives, [])
@@ -10888,14 +10897,10 @@ class FastAPIJobsBackendTests(TestCase):
                 auth_internal_users_json=build_auth_users_json(),
                 document_jobs_worker_backend="eager",
             )
-            original_register = runtime.file_upload_service.register_generated_content
+            def broken_register_result_candidate(**kwargs):
+                raise RuntimeError("结果候选对象写入失败")
 
-            def broken_register_generated_content(**kwargs):
-                if kwargs["file_type"] == "generated_word":
-                    raise RuntimeError("oss boom")
-                return original_register(**kwargs)
-
-            runtime.file_upload_service.register_generated_content = broken_register_generated_content
+            runtime.file_upload_service.register_result_candidate = broken_register_result_candidate
             app = create_app(runtime)
             with TestClient(app) as client:
                 headers = build_auth_header(client)
@@ -10976,7 +10981,7 @@ class FastAPIJobsBackendTests(TestCase):
             ]
 
         failed_job = response.json()["job"]
-        self.assertEqual(failed_job["failed_stage"], "rendering")
+        self.assertEqual(failed_job["failed_stage"], "quality_checking")
         self.assertEqual(failed_job["error_code"], "render_failed")
         self.assertNotIn("generated_word", {file.file_type for file in job_files})
 

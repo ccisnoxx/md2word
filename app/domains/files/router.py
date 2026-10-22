@@ -186,13 +186,16 @@ def mark_file_retention_expired(
 
     planner = _retention_planner(runtime)
     preflight_plan = planner.build_plan()
-    marked_file_ids = [
-        candidate.file_id
-        for candidate in preflight_plan.candidates
-        if candidate.status == "uploaded"
-    ]
     planner.mark_expired(now=preflight_plan.generated_at)
     plan = planner.build_plan(now=preflight_plan.generated_at)
+    previous_statuses = {candidate.file_id: candidate.status for candidate in preflight_plan.candidates}
+    # 按实际状态变化汇总，包含结果协议 pending 候选，普通待上传源文件仍不计入。
+    marked_file_ids = [
+        candidate.file_id
+        for candidate in plan.candidates
+        if candidate.status == "expired"
+        and previous_statuses.get(candidate.file_id) in {"pending_upload", "uploaded"}
+    ]
     runtime.audit_service.record(
         actor=_actor_from_user(user),
         action="file.retention_mark_expired",

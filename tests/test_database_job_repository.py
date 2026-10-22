@@ -143,6 +143,8 @@ _CURRENT_TERM_RULE_INDEXES = {
 
 
 class _FakeMysqlDatabase:
+    """仅记录 SQL 和连接边界，不模拟真实事务回滚或 InnoDB 锁。"""
+
     def __init__(self) -> None:
         self.jobs: dict[str, dict[str, Any]] = {}
         self.job_events: list[dict[str, Any]] = []
@@ -177,6 +179,9 @@ class _FakeMysqlDatabase:
         self.table_columns: dict[str, set[str]] = {}
         self.table_indexes: dict[str, set[str]] = {}
         self.executed_sql: list[str] = []
+        self.commit_count = 0
+        self.rollback_count = 0
+        self.close_count = 0
 
     def connect(self) -> "_FakeMysqlConnection":
         return _FakeMysqlConnection(self)
@@ -190,13 +195,13 @@ class _FakeMysqlConnection:
         return _FakeMysqlCursor(self.database)
 
     def commit(self) -> None:
-        pass
+        self.database.commit_count += 1
 
     def rollback(self) -> None:
-        pass
+        self.database.rollback_count += 1
 
     def close(self) -> None:
-        pass
+        self.database.close_count += 1
 
 
 class _FakeMysqlCursor:
@@ -257,6 +262,11 @@ class _FakeMysqlCursor:
                     if table == "term_rules" and table not in self.database.table_columns:
                         self.database.table_columns[table] = set(_CURRENT_TERM_RULE_COLUMNS)
                         self.database.table_indexes[table] = set(_CURRENT_TERM_RULE_INDEXES)
+                    if table == "document_jobs" and table not in self.database.table_columns:
+                        self.database.table_columns[table] = {
+                            "job_id", "payload", "created_at", "updated_at", "quality_status",
+                            "review_status", "delivery_status", "quality_summary_json",
+                        }
             self._rows = []
             return
         if normalized.startswith("select count(*) as column_count from information_schema.columns"):
@@ -304,6 +314,12 @@ class _FakeMysqlCursor:
                 raise AssertionError("MySQL fake does not support ADD COLUMN IF NOT EXISTS")
             column_name = normalized.split()[5]
             self.database.table_columns.setdefault("translation_terms", set()).add(column_name)
+            self._rows = []
+            return
+        if normalized.startswith("alter table document_jobs add column"):
+            if " if not exists " in f" {normalized} ":
+                raise AssertionError("MySQL fake 不支持 ADD COLUMN IF NOT EXISTS。")
+            self.database.table_columns.setdefault("document_jobs", set()).add(normalized.split()[5])
             self._rows = []
             return
         if normalized.startswith("insert into jobs"):
@@ -472,8 +488,26 @@ class _FakeMysqlCursor:
                 for row in sorted(rows, key=lambda item: (item["created_at"], item["normalized_username"], item["user_id"]))
             ]
             return
+        for table, primary_key in (("document_jobs", "job_id"), ("document_files", "file_id")):
+            if normalized.startswith(f"update {table} set payload"):
+                if table == "document_jobs":
+                    if "created_at =" in normalized:
+                        payload, created_at, updated_at, *state_values, record_id = params
+                        self.database.document_jobs[record_id].update(created_at=created_at, updated_at=updated_at)
+                    else:
+                        payload, *state_values, record_id = params
+                    self.database.document_jobs[record_id].update(
+                        payload=payload, **dict(zip(("quality_status", "review_status", "delivery_status", "quality_summary_json"), state_values, strict=True)),
+                    )
+                else:
+                    payload, created_at, updated_at, record_id = params
+                    getattr(self.database, table)[record_id].update(payload=payload, created_at=created_at, updated_at=updated_at)
+                self._rows = []
+                return
         if normalized.startswith("insert into document_files"):
             file_id, payload, created_at, updated_at = params
+            if file_id in self.database.document_files and "on duplicate key" not in normalized:
+                raise ValueError("主键冲突。")
             self.database.document_files[file_id] = {
                 "file_id": file_id,
                 "payload": payload,
@@ -561,12 +595,15 @@ class _FakeMysqlCursor:
             self._rows = [{"payload": row["payload"]}] if row is not None else []
             return
         if normalized.startswith("insert into document_jobs"):
-            job_id, payload, created_at, updated_at = params
+            job_id, payload, created_at, updated_at, *state_values = params
+            if job_id in self.database.document_jobs and "on duplicate key" not in normalized:
+                raise ValueError("主键冲突。")
             self.database.document_jobs[job_id] = {
                 "job_id": job_id,
                 "payload": payload,
                 "created_at": created_at,
                 "updated_at": updated_at,
+                **dict(zip(("quality_status", "review_status", "delivery_status", "quality_summary_json"), state_values, strict=True)),
             }
             self._rows = []
             return
@@ -1562,6 +1599,46 @@ class PersistenceAdapterTests(TestCase):
                 for statement in fake_mysql.executed_sql
             )
         )
+
+    def test_mysql_document_job_state_schema_and_write_projection_shapes(self):
+        fake_mysql = _FakeMysqlDatabase()
+        fake_mysql.table_columns["document_jobs"] = {"job_id", "payload", "created_at", "updated_at", "quality_status"}
+        adapters = build_mysql_persistence_adapters(_mysql_config(), connect_factory=fake_mysql.connect)
+        ddl = [sql for sql in fake_mysql.executed_sql if sql.startswith("alter table document_jobs add column")]
+        self.assertEqual(len(ddl), 3)
+        self.assertTrue(all("if not exists" not in sql for sql in ddl))
+        repository = adapters.document_job_repository
+        record = DocumentJobRecord(id="state-shape", tenant_id="tenant", company_id="company", created_by="operator",
+                                   source_file_id="source", template_version_id="default@2")
+        repository.create_document_job(record)
+        repository.update_document_job(record.id, quality_status="warning", quality_summary={"code": "retained"})
+        build_mysql_persistence_adapters(_mysql_config(), connect_factory=fake_mysql.connect)
+        self.assertEqual(len([sql for sql in fake_mysql.executed_sql if sql.startswith("alter table document_jobs add column")]), 3)
+        row = fake_mysql.document_jobs[record.id]
+        self.assertEqual((row["quality_status"], row["review_status"], row["delivery_status"], row["quality_summary_json"]),
+                         ("warning", "unreviewed", "internal_draft", '{"code": "retained"}'))
+        statements = [sql for sql in fake_mysql.executed_sql if " document_jobs " in sql]
+        self.assertTrue(any(sql.endswith("where job_id = %s for update") for sql in statements))
+        updates = [sql for sql in statements if sql.startswith("update document_jobs set payload")]
+        self.assertEqual(len(updates), 1)
+        self.assertTrue(all(f"{column} = %s" in updates[0] for column in
+                            ("quality_status", "review_status", "delivery_status", "quality_summary_json")))
+
+    def test_mysql_document_job_invalid_backfill_calls_rollback_without_rewriting_raw(self):
+        fake_mysql = _FakeMysqlDatabase()
+        repository = build_mysql_persistence_adapters(_mysql_config(), connect_factory=fake_mysql.connect).document_job_repository
+        record = DocumentJobRecord(id="invalid-state", tenant_id="tenant", company_id="company", created_by="operator",
+                                   source_file_id="source", template_version_id="default@2")
+        repository.create_document_job(record)
+        raw_payload = record.model_dump_json().replace('"review_status":"unreviewed"', '"review_status":"invalid"')
+        fake_mysql.document_jobs[record.id]["payload"] = raw_payload
+        commits, rollbacks, closes = fake_mysql.commit_count, fake_mysql.rollback_count, fake_mysql.close_count
+        with self.assertRaises(ValidationError):
+            repository.backfill_document_job_state_if_missing(record.id)
+        self.assertEqual(fake_mysql.document_jobs[record.id]["payload"], raw_payload)
+        self.assertEqual(fake_mysql.commit_count, commits)
+        self.assertEqual(fake_mysql.rollback_count, rollbacks + 1)
+        self.assertEqual(fake_mysql.close_count, closes + 1)
 
     def test_mysql_runtime_bootstraps_term_assets_and_translation_terms(self):
         from app.main import build_runtime

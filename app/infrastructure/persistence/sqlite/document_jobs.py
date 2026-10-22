@@ -3,45 +3,67 @@ from __future__ import annotations
 # app/infrastructure/persistence/sqlite/document_jobs.py: sqlite backend 的 document_jobs adapter。
 
 import sqlite3
+import json
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import datetime
 from typing import Any
 
 from app.domains.document_jobs.models import (
     DocumentJobCallbackMessage,
     DocumentJobEventRecord,
     DocumentJobRecord,
+    DocumentJobReviewStatus,
+    DocumentJobTranslationQaIssueType,
     DocumentJobTranslationBatchRecord,
 )
+from app.domains.document_jobs.delivery_state import (
+    backfill_document_job_state_payload, document_job_state_columns, reviewed_job,
+)
 from app.infrastructure.persistence.sqlite.backend import SqlitePersistenceBackend
+from app.domains.document_jobs.result_state import matches_current, patched_job, prepare_result, retry_job
+from app.domains.files.models import DocumentFileRecord
+from app.domains.resources.models import utc_now
 
 
 class SqliteDocumentJobRepository:
-    """用 sqlite backend 读写 DocumentJobRecord 主记录。"""
+    """同一主记录的全部写入共享短锁；对象 I/O 在调用方锁外进行。"""
 
     def __init__(self, backend: SqlitePersistenceBackend) -> None:
         self.backend = backend
 
     def create_document_job(self, record: DocumentJobRecord) -> DocumentJobRecord:
         with self.backend.connect() as connection:
-            self._upsert_document_job(connection, record)
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "INSERT INTO document_jobs (job_id, payload, created_at, updated_at, "
+                "quality_status, review_status, delivery_status, quality_summary_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (record.id, self.backend.dump_payload(record), record.created_at.isoformat(), record.updated_at.isoformat(),
+                 *document_job_state_columns(record)),
+            )
         return record
 
-    def _upsert_document_job(self, connection: sqlite3.Connection, record: DocumentJobRecord) -> None:
+    def _write_job(self, connection: Any, record: DocumentJobRecord) -> None:
         connection.execute(
-            """
-            INSERT INTO document_jobs (job_id, payload, created_at, updated_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(job_id) DO UPDATE SET
-                payload = excluded.payload,
-                created_at = excluded.created_at,
-                updated_at = excluded.updated_at
-            """,
-            (
-                record.id,
-                self.backend.dump_payload(record),
-                record.created_at.isoformat(),
-                record.updated_at.isoformat(),
-            ),
+            "UPDATE document_jobs SET payload = ?, created_at = ?, updated_at = ?, "
+            "quality_status = ?, review_status = ?, delivery_status = ?, quality_summary_json = ? WHERE job_id = ?",
+            (self.backend.dump_payload(record), record.created_at.isoformat(), record.updated_at.isoformat(),
+             *document_job_state_columns(record), record.id),
         )
+
+    @contextmanager
+    def _locked_payload(self, job_id: str) -> Iterator[tuple[Any, Any]]:
+        with self.backend.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT payload FROM document_jobs WHERE job_id = ?", (job_id,)).fetchone()
+            if row is None:
+                raise FileNotFoundError(f"文档任务不存在: {job_id}")
+            yield connection, json.loads(row["payload"])
+
+    @contextmanager
+    def _locked_job(self, job_id: str) -> Iterator[tuple[Any, DocumentJobRecord]]:
+        with self._locked_payload(job_id) as (connection, payload):
+            yield connection, DocumentJobRecord.model_validate(payload)
 
     def get_document_job(self, job_id: str) -> DocumentJobRecord | None:
         with self.backend.connect() as connection:
@@ -60,45 +82,76 @@ class SqliteDocumentJobRepository:
             ).fetchall()
         return [DocumentJobRecord.model_validate_json(row["payload"]) for row in rows]
 
-    def update_document_job(self, job_id: str, **patch: Any) -> DocumentJobRecord:
-        with self.backend.connect() as connection:
-            row = connection.execute(
-                "SELECT payload FROM document_jobs WHERE job_id = ?",
-                (job_id,),
-            ).fetchone()
-            if row is None:
-                raise FileNotFoundError(f"文档任务不存在: {job_id}")
-            existing = DocumentJobRecord.model_validate_json(row["payload"])
-            updated = DocumentJobRecord.model_validate(existing.model_copy(update=patch).model_dump(mode="python"))
-            self._upsert_document_job(connection, updated)
-        return updated
-
     def update_document_job_if_current(
-        self,
-        job_id: str,
-        *,
-        allowed_statuses: set[str],
-        allowed_stages: set[str],
-        expected_retry_count: int | None = None,
+        self, job_id: str, *, allowed_statuses: set[str], allowed_stages: set[str],
+        expected_retry_count: int | None = None, expected_document_ir_file_id: str | None = None,
+        require_no_prepared_result: bool = False, expected_prepared_result_file_id: str | None = None,
         **patch: Any,
     ) -> DocumentJobRecord | None:
-        with self.backend.connect() as connection:
-            row = connection.execute(
-                "SELECT payload FROM document_jobs WHERE job_id = ?",
-                (job_id,),
-            ).fetchone()
-            if row is None:
-                raise FileNotFoundError(f"文档任务不存在: {job_id}")
-            existing = DocumentJobRecord.model_validate_json(row["payload"])
-            if existing.status in {"succeeded", "failed", "canceled"}:
+        with self._locked_job(job_id) as (connection, existing):
+            if not matches_current(existing, allowed_statuses=allowed_statuses, allowed_stages=allowed_stages,
+                                   expected_retry_count=expected_retry_count,
+                                   expected_document_ir_file_id=expected_document_ir_file_id,
+                                   require_no_prepared_result=require_no_prepared_result,
+                                   expected_prepared_result_file_id=expected_prepared_result_file_id):
                 return None
-            if existing.status not in allowed_statuses or existing.stage not in allowed_stages:
+            if patch.get("status") == "succeeded" and existing.timeout_at is not None and existing.timeout_at <= utc_now():
                 return None
-            if expected_retry_count is not None and existing.retry_count != expected_retry_count:
-                return None
-            updated = DocumentJobRecord.model_validate(existing.model_copy(update=patch).model_dump(mode="python"))
-            self._upsert_document_job(connection, updated)
-        return updated
+            updated = patched_job(existing, patch)
+            self._write_job(connection, updated)
+            return updated
+
+    def prepare_document_job_result(
+        self, job_id: str, *, expected_retry_count: int, expected_document_ir_file_id: str,
+        candidate: DocumentFileRecord,
+    ) -> DocumentJobRecord | None:
+        with self._locked_job(job_id) as (connection, existing):
+            updated = prepare_result(existing, expected_retry_count=expected_retry_count,
+                                     expected_document_ir_file_id=expected_document_ir_file_id, candidate=candidate)
+            if updated is not None:
+                self._write_job(connection, updated)
+            return updated
+
+    def retry_document_job(
+        self, job_id: str, *, expected_retry_count: int, max_retries: int, **patch: Any,
+    ) -> DocumentJobRecord | None:
+        with self._locked_job(job_id) as (connection, existing):
+            updated = retry_job(existing, expected_retry_count=expected_retry_count, max_retries=max_retries, **patch)
+            if updated is not None:
+                self._write_job(connection, updated)
+            return updated
+
+    def update_document_job(self, job_id: str, **patch: Any) -> DocumentJobRecord:
+        with self._locked_job(job_id) as (connection, existing):
+            updated = patched_job(existing, patch)
+            self._write_job(connection, updated)
+            return updated
+
+    def update_document_job_review_if_current(
+        self, job_id: str, *, expected_retry_count: int, expected_result_file_id: str | None,
+        review_status: DocumentJobReviewStatus, issue_type: DocumentJobTranslationQaIssueType | None,
+        note: str | None, reviewed_by: str | None, reviewed_at: datetime | None, updated_at: datetime,
+    ) -> DocumentJobRecord | None:
+        with self._locked_job(job_id) as (connection, existing):
+            updated = reviewed_job(existing, expected_retry_count=expected_retry_count,
+                expected_result_file_id=expected_result_file_id, review_status=review_status,
+                issue_type=issue_type, note=note, reviewed_by=reviewed_by, reviewed_at=reviewed_at,
+                updated_at=updated_at)
+            if updated is not None:
+                self._write_job(connection, updated)
+            return updated
+
+    def backfill_document_job_state_if_missing(self, job_id: str) -> bool:
+        with self._locked_payload(job_id) as (connection, payload):
+            updated = backfill_document_job_state_payload(payload)
+            # 不经模型重序列化 raw，旧字段、未知键和业务时间戳原样保留。
+            connection.execute(
+                "UPDATE document_jobs SET payload = ?, quality_status = ?, review_status = ?, "
+                "delivery_status = ?, quality_summary_json = ? WHERE job_id = ?",
+                (json.dumps(updated, ensure_ascii=False),
+                 *document_job_state_columns(DocumentJobRecord.model_validate(updated)), job_id),
+            )
+            return updated != payload
 
 
 class SqliteDocumentJobEventRepository:

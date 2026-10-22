@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-# File: app/domains/document_jobs/router.py
-# Purpose: 提供 document_jobs 创建、查询、批量操作和事件查询接口。
+# 文件：app/domains/document_jobs/router.py
+# 用途：提供 document_jobs 创建、查询、批量操作和事件查询接口。
 
 import hashlib
 import hmac
@@ -22,6 +22,7 @@ from app.api.dependencies import (
 )
 from app.domains.audit.models import ActorContext
 from app.domains.document_jobs.config_summary import build_document_job_config_summary
+from app.domains.document_jobs.delivery_state import translation_qa_projection
 from app.domains.document_jobs.models import (
     DocumentJobEventRecord,
     DocumentJobRecord,
@@ -613,6 +614,7 @@ def create_document_job_download_url(
     trace_id: str = Depends(get_trace_id),
 ) -> DocumentJobDownloadUrlResponse:
     job, file = runtime.document_job_service.get_file_for_download(job_id, user=user, file_id=file_id)
+    policy = runtime.document_job_service.build_download_policy(job, file)
     expires_at = utc_now() + timedelta(seconds=runtime.settings.oss_download_presign_expires_seconds)
     if file.storage_provider == "s3":
         download_url = runtime.file_upload_service.create_presigned_download_url(
@@ -626,6 +628,7 @@ def create_document_job_download_url(
     runtime.document_job_service.record_download_authorized(
         job,
         file,
+        policy=policy,
         expires_at=expires_at.isoformat(),
         trace_id=trace_id,
     )
@@ -635,6 +638,12 @@ def create_document_job_download_url(
         target_type="document_job",
         target_id=job.id,
         trace_id=trace_id,
+        details={
+            "generation": job.retry_count,
+            "file_id": file.id,
+            "classification": policy.classification,
+            "warning_code": policy.warning_code,
+        },
     )
     return DocumentJobDownloadUrlResponse(
         job_id=job.id,
@@ -642,6 +651,9 @@ def create_document_job_download_url(
         download_url=download_url,
         expires_at=expires_at,
         file=_build_document_file_summary_response(file),
+        classification=policy.classification,
+        warning_code=policy.warning_code,
+        warning_message=policy.warning_message,
     )
 
 
@@ -675,7 +687,7 @@ def _build_document_job_response(
     job: DocumentJobRecord,
 ) -> DocumentJobResponse:
     return DocumentJobResponse(
-        **job.model_dump(mode="python"),
+        **{**job.model_dump(mode="python"), **translation_qa_projection(job)},
         translation_mode=translation_mode_for_document_job_mode(job.mode),
         available_actions=runtime.document_job_service.build_available_actions(job, user=user),
     )
@@ -801,11 +813,7 @@ def _build_document_file_quality_evidence(file: DocumentFileRecord) -> dict[str,
 
 def _build_translation_qa_state_response(job: DocumentJobRecord) -> DocumentJobTranslationQaStateResponse:
     return DocumentJobTranslationQaStateResponse(
-        status=job.translation_qa_status,
-        issue_type=job.translation_qa_issue_type,
-        note=job.translation_qa_note,
-        reviewed_by=job.translation_qa_reviewed_by,
-        reviewed_at=job.translation_qa_reviewed_at,
+        **{key.removeprefix("translation_qa_"): value for key, value in translation_qa_projection(job).items()}
     )
 
 

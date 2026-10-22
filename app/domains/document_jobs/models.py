@@ -3,10 +3,12 @@ from __future__ import annotations
 # app/domains/document_jobs/models.py: 定义 PDF 到 Word 业务任务的状态机和事件模型。
 
 from datetime import datetime
+import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, JsonValue, StrictInt, model_validator
 
+from app.domains.files.models import DocumentFileRecord
 from app.domains.resources.models import utc_now
 from app.domains.translation.modes import DocumentJobMode, DocumentLanguage
 
@@ -17,7 +19,10 @@ DocumentJobStage = Literal[
     "parsing",
     "parsed",
     "ir_converting",
+    "translating",
+    "translation_validating",
     "rendering",
+    "quality_checking",
     "uploading",
     "completed",
     "failed",
@@ -34,6 +39,9 @@ DocumentJobTranslationBatchStatus = Literal[
 ]
 DocumentJobEventLevel = Literal["info", "warning", "error"]
 DocumentJobTranslationQaStatus = Literal["unreviewed", "approved", "needs_fix", "blocked"]
+DocumentJobQualityStatus = Literal["pending", "passed", "warning", "blocked"]
+DocumentJobReviewStatus = Literal["unreviewed", "approved", "needs_fix", "blocked"]
+DocumentJobDeliveryStatus = Literal["internal_draft", "ready_to_publish", "published"]
 DocumentJobTranslationQaIssueType = Literal[
     "translation",
     "terminology",
@@ -77,11 +85,34 @@ DocumentJobCallbackMessageStatus = Literal["pending", "running", "processed", "f
 DOCUMENT_JOB_ALLOWED_STAGES_BY_STATUS: dict[DocumentJobStatus, set[DocumentJobStage]] = {
     "pending": {"uploaded"},
     "queued": {"uploaded"},
-    "running": {"parsing", "parsed", "ir_converting", "rendering", "uploading"},
+    "running": {
+        "parsing", "parsed", "ir_converting", "translating", "translation_validating",
+        "rendering", "quality_checking", "uploading",
+    },
     "succeeded": {"completed"},
     "failed": {"failed"},
     "canceled": {"canceled"},
 }
+
+
+class DocumentJobPreparedResult(BaseModel):
+    """已通过质量检查且写入完成的结果凭据；首次持久化后身份不可替换。"""
+
+    protocol_version: StrictInt = Field(default=1, ge=1, le=1)
+    generation: StrictInt = Field(ge=0)
+    document_ir_file_id: str
+    file: DocumentFileRecord
+
+    @model_validator(mode="after")
+    def _validate_descriptor(self) -> "DocumentJobPreparedResult":
+        file = self.file
+        if file.file_type != "generated_word" or file.status != "uploaded":
+            raise ValueError("结果凭据必须描述已写入的主 DOCX。")
+        if not file.checksum_sha256 or re.fullmatch(r"sha256:[0-9a-f]{64}", file.checksum_sha256) is None:
+            raise ValueError("结果凭据缺少 SHA-256。")
+        if file.size_bytes <= 0 or not file.object_key or file.expires_at is None:
+            raise ValueError("结果凭据的对象描述不完整。")
+        return self
 
 
 class DocumentJobRecord(BaseModel):
@@ -101,6 +132,7 @@ class DocumentJobRecord(BaseModel):
     template_version_id: str
     term_version_id: str | None = None
     result_file_id: str | None = None
+    prepared_result: DocumentJobPreparedResult | None = None
     mineru_raw_result_file_id: str | None = None
     source_document_ir_file_id: str | None = None
     document_ir_file_id: str | None = None
@@ -122,6 +154,10 @@ class DocumentJobRecord(BaseModel):
     deleted_at: datetime | None = None
     deleted_by: str | None = None
     delete_reason: str | None = None
+    quality_status: DocumentJobQualityStatus = "pending"
+    review_status: DocumentJobReviewStatus = "unreviewed"
+    delivery_status: DocumentJobDeliveryStatus = "internal_draft"
+    quality_summary: dict[str, JsonValue] = Field(default_factory=dict)
     translation_qa_status: DocumentJobTranslationQaStatus = "unreviewed"
     translation_qa_issue_type: DocumentJobTranslationQaIssueType | None = None
     translation_qa_note: str | None = None
@@ -136,6 +172,24 @@ class DocumentJobRecord(BaseModel):
         allowed_stages = DOCUMENT_JOB_ALLOWED_STAGES_BY_STATUS[self.status]
         if self.stage not in allowed_stages:
             raise ValueError(f"document job 状态不允许阶段: status={self.status} stage={self.stage}")
+        if self.review_status == "approved":
+            if self.status != "succeeded" or not self.result_file_id or self.quality_status == "blocked":
+                raise ValueError("批准复核要求执行成功、当前主件和非阻断质量。")
+        if self.delivery_status in {"ready_to_publish", "published"}:
+            if (self.quality_status not in {"passed", "warning"} or self.review_status != "approved"
+                    or self.status != "succeeded" or not self.result_file_id):
+                raise ValueError("交付晋升要求质量通过或警告、已批准复核及成功的当前主件。")
+        receipt = self.prepared_result
+        if receipt is not None:
+            if self.stage not in {"uploading", "completed", "failed", "canceled"}:
+                raise ValueError("结果凭据仅能保留在上传阶段或终态。")
+            if receipt.generation != self.retry_count or receipt.document_ir_file_id != self.document_ir_file_id:
+                raise ValueError("结果凭据与当前代或最终 IR 不一致。")
+            if (receipt.file.tenant_id, receipt.file.company_id, receipt.file.job_id) != (self.tenant_id, self.company_id, self.id):
+                raise ValueError("结果凭据与任务归属不一致。")
+            if ((self.status == "succeeded" or self.result_file_id is not None)
+                    and self.result_file_id != receipt.file.id):
+                raise ValueError("任务主件与选定的结果凭据不一致。")
         return self
 
 

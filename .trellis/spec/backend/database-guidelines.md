@@ -119,6 +119,26 @@ Translation batch stores follow the existing payload-plus-index pattern:
 
 When changing batch persistence fields or state transitions, update all three adapters, the schema bootstrap, fake MySQL cursor behavior, and the adapter parity coverage in `tests/test_database_job_repository.py`.
 
+## DocumentJob 结果登记的局部原子合同（CON-102）
+
+触发：修改DocumentJob主记录写入、prepared_result、结果候选的创建/物化/保留期或retry换代。流程与下载规则由[任务模式与阶段合同](./document-job-mode-contract.md#8-执行阶段与恢复合同con-102)定义；本节只拥有持久化保证，不将batch或legacy jobs仓储改造成全局CAS。
+
+- `DocumentJobRecord.prepared_result`是内部JSON payload，旧记录缺省None；公开response不增加字段，无DDL/backfill。首次原子选定receipt决定同代/最终IR唯一结果身份，之后不得换件。
+- `document_jobs/result_state.py`共用纯条件/更新规则；序列化由adapter负责。所有同job主记录创建/patch/if_current/prepare/retry必须在同一记录序列化点读最新值、检查、验证并写回。create不以upsert覆盖已有ID；非状态patch保留已有receipt。
+- `if_current`的generation/最终IR、receipt为空或匹配file ID条件在锁内判断；retry检查当前failed/代数/预算并清槽换代。receipt为空和匹配ID条件互斥；正常竞争拒绝返回None，真实存储/描述冲突不能吞成lost-race。
+- file在独立稳定`.lock`文件使用跨进程advisory lock；不能锁随后被replace的JSON inode，不在线删除锁文件，不退化为进程内锁。JSON replace只承诺本任务进程中断恢复。
+- SQLite写方法在读取前BEGIN IMMEDIATE，使用同一短连接判断/写入；异常rollback/连接关闭释放锁。MySQL现有InnoDB行在短事务内SELECT FOR UPDATE，同连接读/判断/写；创建使用唯一键insert冲突，沿用commit/rollback。
+- `files/result_registration.py`拥有文件不可变descriptor与生命周期条件；结果candidate先insert pending metadata再写独立key；物化只补etag/uploaded，不再次写对象、延长expires_at或覆盖evidence。expired/deleted不得被迟到写者复活。
+- 锁/事务内不得做渲染、质量检查、对象/网络IO或跨仓储开另一写连接；无job/file跨域事务。receipt加幂等物化覆盖中断窗口。
+
+## CON-103 状态投影与 Migration A
+
+DocumentJob 四字段与业务规则由 [模式与交付状态合同 §9](./document-job-mode-contract.md#9-质量复核和交付状态con-103) 拥有。这里定义三 adapter 的序列化、列和迁移保证。
+
+- `quality_status`、`review_status`、`delivery_status`、`quality_summary_json` 是同一任务 JSON payload 的保守投影；全部 create/patch/条件 patch/prepare/retry/review 写路径必须在同一锁或连接中同步维护。
+- `backfill_document_job_state_if_missing(job_id)` 只在锁内补缺键，保留已有合法值、旧 QA 原文、receipt、快照、时间戳和未知 raw 键；不从旧 QA 或成功状态推导通过。
+- SQLite 使用增量列维护和 BEGIN IMMEDIATE，MySQL 使用同连接 schema maintenance 与事务；file 复用稳定 job.lock。迁移/回填失败显式传播，不以默认值吞错。
+
 ## 场景：生成件物理身份与历史对象读取
 
 ### 1. 范围与触发

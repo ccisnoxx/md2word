@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-# File: app/domains/document_jobs/incidents.py
-# Purpose: Build lightweight document_job incident queue projections without persisting Incident records.
+# 文件：app/domains/document_jobs/incidents.py
+# 用途：投影轻量任务异常队列，不持久化独立 Incident 记录。
 
 from collections import Counter
 from datetime import datetime
@@ -10,6 +10,7 @@ from typing import Any, get_args
 from fastapi import status
 
 from app.core.errors import ApiError
+from app.domains.document_jobs.delivery_state import translation_qa_projection
 from app.domains.document_jobs.models import DocumentJobRecord, DocumentJobStage, DocumentJobStatus
 from app.domains.document_jobs.schemas import (
     DocumentJobAvailableActionResponse,
@@ -46,7 +47,7 @@ CONVERSION_FAILURE_TOKENS = ("mineru", "parse", "render", "convert", "conversion
 
 
 class DocumentJobIncidentService:
-    """Lightweight incident queue projection over document_jobs metadata."""
+    """基于 document_jobs 元数据构建轻量异常队列投影。"""
 
     def __init__(self, document_job_service: Any) -> None:
         self.document_job_service = document_job_service
@@ -213,7 +214,7 @@ class DocumentJobIncidentService:
         retry_disabled_reason = retry_action.disabled_reason if retry_action else "后端未返回重试动作。"
         stalled_minutes = self._stalled_minutes(job, now)
         stalled = stalled_minutes is not None and stalled_minutes >= DEFAULT_STALLED_MINUTES
-        blocked = job.translation_qa_status == "blocked"
+        blocked = job.review_status == "blocked"
         is_incident = job.status == "failed" or blocked or retryable or stalled
         failure_type = self._classify_failure(job, stalled=stalled)
         priority = self._priority(job, retryable=retryable, stalled=stalled, blocked=blocked)
@@ -226,7 +227,7 @@ class DocumentJobIncidentService:
         )
         return DocumentJobIncidentQueueItemResponse(
             job=DocumentJobResponse(
-                **job.model_dump(mode="python"),
+                **{**job.model_dump(mode="python"), **translation_qa_projection(job)},
                 available_actions=actions,
             ),
             failure_type=failure_type,
@@ -290,34 +291,37 @@ class DocumentJobIncidentService:
             return "worker_or_dispatch_failed"
         if self._has_missing_artifact_signal(job, haystack):
             return "artifact_missing"
-        if job.translation_qa_status == "blocked":
+        if job.review_status == "blocked":
             return "qa_unavailable"
         if is_translation_document_job_mode(job.mode) and (
-            job.failed_stage == "ir_converting" or any(token in haystack for token in TRANSLATION_FAILURE_TOKENS)
+            job.failed_stage in {"ir_converting", "translating", "translation_validating"}
+            or any(token in haystack for token in TRANSLATION_FAILURE_TOKENS)
         ):
             return "translation_failed"
         if job.status == "failed" and (
-            job.failed_stage in {"parsing", "rendering", "uploading"} or any(token in haystack for token in CONVERSION_FAILURE_TOKENS)
+            job.failed_stage in {"parsing", "rendering", "quality_checking", "uploading"}
+            or any(token in haystack for token in CONVERSION_FAILURE_TOKENS)
         ):
             return "conversion_failed"
         return "unknown"
 
     def _failure_haystack(self, job: DocumentJobRecord) -> str:
+        qa = translation_qa_projection(job)
         values = [
             job.failed_stage,
             job.error_code,
             job.error_message,
-            job.translation_qa_issue_type,
-            job.translation_qa_note,
+            qa["translation_qa_issue_type"],
+            qa["translation_qa_note"],
         ]
         return " ".join(value for value in values if value).casefold()
 
     def _has_missing_artifact_signal(self, job: DocumentJobRecord, haystack: str) -> bool:
-        if job.translation_qa_issue_type == "artifact_missing":
+        if translation_qa_projection(job)["translation_qa_issue_type"] == "artifact_missing":
             return True
         if job.status == "succeeded" and job.result_file_id is None:
             return True
-        if is_translation_document_job_mode(job.mode) and job.translation_qa_status == "blocked" and job.document_ir_file_id is None:
+        if is_translation_document_job_mode(job.mode) and job.review_status == "blocked" and job.document_ir_file_id is None:
             return True
         return any(token in haystack for token in ARTIFACT_MISSING_TOKENS)
 

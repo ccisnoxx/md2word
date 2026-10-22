@@ -1374,7 +1374,10 @@ export type DocumentJobStage =
   | "parsing"
   | "parsed"
   | "ir_converting"
+  | "translating"
+  | "translation_validating"
   | "rendering"
+  | "quality_checking"
   | "uploading"
   | "completed"
   | "failed"
@@ -1400,12 +1403,23 @@ export type DocumentJobCreateRequest = {
   debug_full_text?: boolean;
 };
 
-export type DocumentJobActionId = "download" | "retry" | "cancel" | "archive" | "unarchive" | "clone" | "delete";
+export type DocumentJobActionId = "download" | "retry" | "cancel" | "archive" | "unarchive" | "clone" | "delete" | "publish";
 
-export type DocumentJobAvailableAction = {
+export type DocumentJobDisabledReason = { code: string; message: string };
+
+export type DocumentJobDownloadAvailability = {
+  classification?: "internal_only" | null;
+  warning_code?: string | null;
+  warning_message?: string | null;
+};
+
+export type DocumentJobAvailableAction = DocumentJobDownloadAvailability & {
   enabled: boolean;
   disabled_reason: string | null;
   retryable: boolean;
+  eligible?: boolean | null;
+  disabled_reason_code?: string | null;
+  disabled_reasons?: DocumentJobDisabledReason[] | null;
 };
 
 export type DocumentJobRetryRequest = {
@@ -1486,6 +1500,11 @@ export type DocumentJobResponse = {
   translation_mode: TranslationMode;
   document_language: string;
   status: DocumentJobStatus;
+  // 滚动部署期间旧响应可缺省；动作资格仍以 available_actions 为准。
+  quality_status?: DocumentJobQualityStatus;
+  review_status?: DocumentJobReviewStatus;
+  delivery_status?: DocumentJobDeliveryStatus;
+  quality_summary?: Record<string, unknown>;
   stage: DocumentJobStage;
   progress: number;
   template_version_id: string;
@@ -1516,10 +1535,17 @@ export type DocumentJobResponse = {
   translation_qa_reviewed_by: string | null;
   translation_qa_reviewed_at: string | null;
   request_snapshot: Record<string, unknown>;
-  available_actions: Record<DocumentJobActionId, DocumentJobAvailableAction>;
+  // 七种既有动作仍必需；旧后端可暂不提供新增发布动作。
+  available_actions: Record<Exclude<DocumentJobActionId, "publish">, DocumentJobAvailableAction> & {
+    publish?: DocumentJobAvailableAction;
+  };
   created_at: string;
   updated_at: string;
 };
+
+export type DocumentJobQualityStatus = "pending" | "passed" | "warning" | "blocked";
+export type DocumentJobReviewStatus = "unreviewed" | "approved" | "needs_fix" | "blocked";
+export type DocumentJobDeliveryStatus = "internal_draft" | "ready_to_publish" | "published";
 
 export type DocumentJobCreateResponse = {
   job_id: string;
@@ -2026,7 +2052,7 @@ export type DocumentJobConfigSummaryResponse = {
   };
 };
 
-export type DocumentJobDownloadUrlResponse = {
+export type DocumentJobDownloadUrlResponse = DocumentJobDownloadAvailability & {
   job_id: string;
   file_id: string;
   download_url: string;

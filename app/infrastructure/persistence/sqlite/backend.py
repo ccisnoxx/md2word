@@ -28,6 +28,9 @@ class SqlitePersistenceBackend:
         try:
             yield connection
             connection.commit()
+        except BaseException:
+            connection.rollback()
+            raise
         finally:
             connection.close()
 

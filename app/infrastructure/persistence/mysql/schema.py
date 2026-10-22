@@ -403,6 +403,10 @@ MYSQL_SCHEMA_STATEMENTS: tuple[str, ...] = (
         payload LONGTEXT NOT NULL,
         created_at VARCHAR(40) NOT NULL,
         updated_at VARCHAR(40) NOT NULL,
+        quality_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+        review_status VARCHAR(32) NOT NULL DEFAULT 'unreviewed',
+        delivery_status VARCHAR(32) NOT NULL DEFAULT 'internal_draft',
+        quality_summary_json LONGTEXT NULL,
         KEY idx_document_jobs_created_at (created_at, job_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
@@ -470,6 +474,10 @@ MYSQL_SCHEMA_POST_COLUMN_MAINTENANCE_STATEMENTS: tuple[str, ...] = (
 )
 
 MYSQL_SCHEMA_COLUMN_MAINTENANCE: tuple[tuple[str, str, str], ...] = (
+    ("document_jobs", "quality_status", "quality_status VARCHAR(32) NOT NULL DEFAULT 'pending'"),
+    ("document_jobs", "review_status", "review_status VARCHAR(32) NOT NULL DEFAULT 'unreviewed'"),
+    ("document_jobs", "delivery_status", "delivery_status VARCHAR(32) NOT NULL DEFAULT 'internal_draft'"),
+    ("document_jobs", "quality_summary_json", "quality_summary_json LONGTEXT NULL"),
     ("term_rules", "normalized_term", "normalized_term VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT ''"),
     ("term_rules", "scope_type", "scope_type VARCHAR(32) NOT NULL DEFAULT 'global'"),
     ("term_rules", "scope_id", "scope_id VARCHAR(128) NULL"),

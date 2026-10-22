@@ -2,29 +2,58 @@ from __future__ import annotations
 
 # app/infrastructure/persistence/file/document_jobs.py: file backend 的 document_jobs adapter。
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import datetime
 from typing import Any
 
 from app.domains.document_jobs.models import (
     DocumentJobCallbackMessage,
     DocumentJobEventRecord,
     DocumentJobRecord,
+    DocumentJobReviewStatus,
+    DocumentJobTranslationQaIssueType,
     DocumentJobTranslationBatchRecord,
 )
+from app.domains.document_jobs.delivery_state import backfill_document_job_state_payload, reviewed_job
 from app.infrastructure.persistence.file.backend import FilePersistenceBackend
+from app.domains.document_jobs.result_state import matches_current, patched_job, prepare_result, retry_job
+from app.domains.files.models import DocumentFileRecord
+from app.domains.resources.models import utc_now
+from app.infrastructure.persistence.file.record_lock import record_lock
 
 
 class FileDocumentJobRepository:
-    """用 file backend 读写 DocumentJobRecord 主记录。"""
+    """同一主记录的全部写入共享短锁；对象 I/O 在调用方锁外进行。"""
 
     def __init__(self, backend: FilePersistenceBackend) -> None:
         self.backend = backend
 
     def create_document_job(self, record: DocumentJobRecord) -> DocumentJobRecord:
-        self.backend.write_json(
-            self.backend.document_jobs_dir / record.id / "job.json",
-            record.model_dump(mode="json"),
-        )
-        return record
+        with record_lock(self.backend.document_jobs_dir / record.id / "job.lock"):
+            existing = self.get_document_job(record.id)
+            if existing is not None:
+                if existing != record:
+                    raise ValueError("任务 ID 已存在，不能覆盖主记录。")
+                return existing
+            self._write_job(None, record)
+            return record
+
+    def _write_job(self, connection: Any, record: DocumentJobRecord) -> None:
+        self.backend.write_json(self.backend.document_jobs_dir / record.id / "job.json", record.model_dump(mode="json"))
+
+    @contextmanager
+    def _locked_payload(self, job_id: str) -> Iterator[tuple[Any, Any]]:
+        with record_lock(self.backend.document_jobs_dir / job_id / "job.lock"):
+            path = self.backend.document_jobs_dir / job_id / "job.json"
+            if not path.exists():
+                raise FileNotFoundError(f"文档任务不存在: {job_id}")
+            yield None, self.backend.read_json(path, {})
+
+    @contextmanager
+    def _locked_job(self, job_id: str) -> Iterator[tuple[Any, DocumentJobRecord]]:
+        with self._locked_payload(job_id) as (connection, payload):
+            yield connection, DocumentJobRecord.model_validate(payload)
 
     def get_document_job(self, job_id: str) -> DocumentJobRecord | None:
         path = self.backend.document_jobs_dir / job_id / "job.json"
@@ -38,35 +67,72 @@ class FileDocumentJobRepository:
             records.append(DocumentJobRecord.model_validate(self.backend.read_json(path, {})))
         return sorted(records, key=lambda record: (record.created_at, record.id))
 
-    def update_document_job(self, job_id: str, **patch: Any) -> DocumentJobRecord:
-        existing = self.get_document_job(job_id)
-        if existing is None:
-            raise FileNotFoundError(f"文档任务不存在: {job_id}")
-        updated = DocumentJobRecord.model_validate(existing.model_copy(update=patch).model_dump(mode="python"))
-        self.create_document_job(updated)
-        return updated
-
     def update_document_job_if_current(
-        self,
-        job_id: str,
-        *,
-        allowed_statuses: set[str],
-        allowed_stages: set[str],
-        expected_retry_count: int | None = None,
+        self, job_id: str, *, allowed_statuses: set[str], allowed_stages: set[str],
+        expected_retry_count: int | None = None, expected_document_ir_file_id: str | None = None,
+        require_no_prepared_result: bool = False, expected_prepared_result_file_id: str | None = None,
         **patch: Any,
     ) -> DocumentJobRecord | None:
-        existing = self.get_document_job(job_id)
-        if existing is None:
-            raise FileNotFoundError(f"文档任务不存在: {job_id}")
-        if existing.status in {"succeeded", "failed", "canceled"}:
-            return None
-        if existing.status not in allowed_statuses or existing.stage not in allowed_stages:
-            return None
-        if expected_retry_count is not None and existing.retry_count != expected_retry_count:
-            return None
-        updated = DocumentJobRecord.model_validate(existing.model_copy(update=patch).model_dump(mode="python"))
-        self.create_document_job(updated)
-        return updated
+        with self._locked_job(job_id) as (connection, existing):
+            if not matches_current(existing, allowed_statuses=allowed_statuses, allowed_stages=allowed_stages,
+                                   expected_retry_count=expected_retry_count,
+                                   expected_document_ir_file_id=expected_document_ir_file_id,
+                                   require_no_prepared_result=require_no_prepared_result,
+                                   expected_prepared_result_file_id=expected_prepared_result_file_id):
+                return None
+            if patch.get("status") == "succeeded" and existing.timeout_at is not None and existing.timeout_at <= utc_now():
+                return None
+            updated = patched_job(existing, patch)
+            self._write_job(connection, updated)
+            return updated
+
+    def prepare_document_job_result(
+        self, job_id: str, *, expected_retry_count: int, expected_document_ir_file_id: str,
+        candidate: DocumentFileRecord,
+    ) -> DocumentJobRecord | None:
+        with self._locked_job(job_id) as (connection, existing):
+            updated = prepare_result(existing, expected_retry_count=expected_retry_count,
+                                     expected_document_ir_file_id=expected_document_ir_file_id, candidate=candidate)
+            if updated is not None:
+                self._write_job(connection, updated)
+            return updated
+
+    def retry_document_job(
+        self, job_id: str, *, expected_retry_count: int, max_retries: int, **patch: Any,
+    ) -> DocumentJobRecord | None:
+        with self._locked_job(job_id) as (connection, existing):
+            updated = retry_job(existing, expected_retry_count=expected_retry_count, max_retries=max_retries, **patch)
+            if updated is not None:
+                self._write_job(connection, updated)
+            return updated
+
+    def update_document_job(self, job_id: str, **patch: Any) -> DocumentJobRecord:
+        with self._locked_job(job_id) as (connection, existing):
+            updated = patched_job(existing, patch)
+            self._write_job(connection, updated)
+            return updated
+
+    def update_document_job_review_if_current(
+        self, job_id: str, *, expected_retry_count: int, expected_result_file_id: str | None,
+        review_status: DocumentJobReviewStatus, issue_type: DocumentJobTranslationQaIssueType | None,
+        note: str | None, reviewed_by: str | None, reviewed_at: datetime | None, updated_at: datetime,
+    ) -> DocumentJobRecord | None:
+        with self._locked_job(job_id) as (connection, existing):
+            updated = reviewed_job(existing, expected_retry_count=expected_retry_count,
+                expected_result_file_id=expected_result_file_id, review_status=review_status,
+                issue_type=issue_type, note=note, reviewed_by=reviewed_by, reviewed_at=reviewed_at,
+                updated_at=updated_at)
+            if updated is not None:
+                self._write_job(connection, updated)
+            return updated
+
+    def backfill_document_job_state_if_missing(self, job_id: str) -> bool:
+        with self._locked_payload(job_id) as (_, payload):
+            updated = backfill_document_job_state_payload(payload)
+            changed = updated != payload
+            if changed:
+                self.backend.write_json(self.backend.document_jobs_dir / job_id / "job.json", updated)
+            return changed
 
 
 class FileDocumentJobEventRepository:

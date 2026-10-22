@@ -38,13 +38,14 @@
     <el-alert
       v-if="lastDownloadLink"
       class="page-section download-link-alert"
-      type="success"
+      :type="lastDownloadLink.notice ? 'warning' : 'success'"
       :closable="true"
       show-icon
       :title="lastDownloadLink.label"
       @close="lastDownloadLink = null"
     >
       <div class="download-link-notice">
+        <strong v-if="lastDownloadLink.notice" class="download-policy-notice" role="status">{{ lastDownloadLink.notice }}</strong>
         <span>有效期至 {{ formatDateTime(lastDownloadLink.expiresAt) }}</span>
         <a :href="lastDownloadLink.url" target="_blank" rel="noopener">打开下载链接</a>
         <el-button text size="small" @click="copyLastDownloadLink">复制链接</el-button>
@@ -98,6 +99,25 @@
             </div>
           </div>
         </div>
+      </el-card>
+
+      <el-card class="page-section publication-availability card-flat" shadow="never">
+        <div class="section-header">
+          <div>
+            <h2 class="section-title">发布可用性</h2>
+            <p class="section-subtitle">
+              {{ job.available_actions.publish?.eligible === true ? "核心资格通过" : job.available_actions.publish?.eligible === false ? "核心资格未通过" : "核心资格未提供" }}
+              · {{ isDocumentJobActionEnabled(job, "publish") ? "后端已开放发布" : "当前不可发布" }}
+            </p>
+          </div>
+          <el-button :disabled="!isDocumentJobActionEnabled(job, 'publish')" aria-describedby="publication-disabled-reasons">发布</el-button>
+        </div>
+        <ul id="publication-disabled-reasons" class="publication-reasons" tabindex="0" aria-label="发布禁用原因">
+          <li v-for="(reason, index) in documentJobActionDisabledReasons(job, 'publish')" :key="`${reason.code}-${index}`">
+            <span>{{ reason.message }}</span>
+            <small v-if="reason.code" class="mono">{{ reason.code }}</small>
+          </li>
+        </ul>
       </el-card>
 
       <el-tabs v-model="activeTab" class="detail-tabs">
@@ -439,7 +459,7 @@
               </p>
             </el-alert>
             <el-descriptions :column="1" border>
-              <el-descriptions-item label="失败阶段">{{ job.failed_stage || "-" }}</el-descriptions-item>
+              <el-descriptions-item label="失败阶段">{{ job.failed_stage ? jobStageText[job.failed_stage] || job.failed_stage : "-" }}</el-descriptions-item>
               <el-descriptions-item label="错误码">{{ job.error_code || "-" }}</el-descriptions-item>
               <el-descriptions-item label="错误信息">{{ job.error_message || "-" }}</el-descriptions-item>
             </el-descriptions>
@@ -556,7 +576,7 @@
                 </el-select>
                 <el-select v-model="eventStageFilter" clearable placeholder="全部阶段" style="width: 156px">
                   <el-option
-                    v-for="stage in eventStageOptions"
+                    v-for="stage in documentJobStages"
                     :key="stage"
                     :label="jobStageText[stage]"
                     :value="stage"
@@ -755,7 +775,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { DataAnalysis, Download, EditPen, Refresh } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
@@ -788,9 +808,12 @@ import {
   formatDateTime,
   getJobSourceFilename,
   documentJobActionDisabledReason,
+  documentJobActionDisabledReasons,
+  documentJobDownloadNotice,
   documentJobQualityFlagText,
   documentJobModeRequiresTranslationResources,
   documentJobModeSupportsTranslationQa,
+  documentJobStages,
   isActiveJobStatus,
   isDocumentJobActionEnabled,
   jobModeText,
@@ -891,18 +914,6 @@ const cloneDialog = reactive({
   translationTermVersion: "",
   translationProfileVersion: "",
 });
-const eventStageOptions: DocumentJobStage[] = [
-  "uploaded",
-  "parsing",
-  "parsed",
-  "ir_converting",
-  "rendering",
-  "uploading",
-  "completed",
-  "failed",
-  "canceled",
-];
-
 const isAdmin = computed(() => auth.user?.role === "admin");
 const requestSnapshotPreview = computed(() => JSON.stringify(
   job.value ? documentJobRequestSnapshotForDisplay(job.value.request_snapshot, job.value.mode) : {},
@@ -1059,7 +1070,7 @@ const failureSummary = computed(() => {
   }
   const stage = job.value.failed_stage || job.value.stage || "unknown";
   const code = job.value.error_code || "unknown";
-  return `任务在 ${stage} 阶段失败，错误码 ${code}。`;
+  return `任务在 ${jobStageText[stage as DocumentJobStage] || stage} 阶段失败，错误码 ${code}。`;
 });
 const failureHelpText = computed(() => {
   const code = job.value?.error_code || "";
@@ -1185,7 +1196,7 @@ const dispositionFacts = computed(() => {
     { label: "阶段", value: jobStageText[job.value.stage] || job.value.stage },
     { label: "进度", value: `${job.value.progress}%` },
     { label: "最近更新", value: formatDateTime(job.value.updated_at) },
-    { label: "失败阶段", value: job.value.failed_stage || "-" },
+    { label: "失败阶段", value: job.value.failed_stage ? jobStageText[job.value.failed_stage] || job.value.failed_stage : "-" },
     { label: "错误码", value: job.value.error_code || "-", mono: true },
     { label: "trace_id", value: latestTraceId.value, mono: true },
     { label: "回调", value: callbackHealthText.value },
@@ -1207,6 +1218,7 @@ const actionSummaries = computed(() => {
     archive: "归档",
     unarchive: "取消归档",
     delete: "删除",
+    publish: "发布",
   };
   return taskActionOrder
     .filter((action) => shouldShowDocumentJobAction(job.value as DocumentJobResponse, action))
@@ -1647,10 +1659,13 @@ async function handleDownload(target: DocumentJobResponse): Promise<void> {
       url: response.download_url,
       expiresAt: response.expires_at,
       fileName: response.file.original_filename,
+      notice: documentJobDownloadNotice(response),
     };
+    // 先呈现本次签发的限制，再打开链接，避免使用列表或详情的旧警告。
+    await nextTick();
     const opened = openDownloadLink(response.download_url);
     if (opened) {
-      ElMessage.success(`下载链接已生成，有效期至 ${formatDateTime(response.expires_at)}。`);
+      ElMessage.warning(`${lastDownloadLink.value.notice}。下载链接已生成，有效期至 ${formatDateTime(response.expires_at)}。`);
     } else {
       ElMessage.warning("浏览器可能拦截了新窗口，页面已显示下载链接。");
     }
@@ -1674,10 +1689,16 @@ async function handleFileDownload(file: DocumentFileSummaryResponse): Promise<vo
       url: response.download_url,
       expiresAt: response.expires_at,
       fileName: response.file.original_filename,
+      notice: documentJobDownloadNotice(response, response.file.file_type === "generated_word"),
     };
+    await nextTick();
     const opened = openDownloadLink(response.download_url);
     if (opened) {
-      ElMessage.success(`下载链接已生成，有效期至 ${formatDateTime(response.expires_at)}。`);
+      if (lastDownloadLink.value.notice) {
+        ElMessage.warning(`${lastDownloadLink.value.notice}。下载链接已生成，有效期至 ${formatDateTime(response.expires_at)}。`);
+      } else {
+        ElMessage.success(`下载链接已生成，有效期至 ${formatDateTime(response.expires_at)}。`);
+      }
     } else {
       ElMessage.warning("浏览器可能拦截了新窗口，页面已显示下载链接。");
     }
@@ -2152,6 +2173,29 @@ onBeforeUnmount(() => {
   color: var(--app-color-primary);
   font-weight: 700;
   text-decoration: none;
+}
+
+.download-policy-notice {
+  flex-basis: 100%;
+  overflow-wrap: anywhere;
+}
+
+.publication-reasons {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--app-color-text);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.publication-reasons small {
+  display: block;
+  color: var(--app-color-text-muted);
+}
+
+.publication-reasons:focus-visible {
+  outline: 2px solid var(--app-color-primary);
+  outline-offset: 4px;
 }
 
 .task-disposition-card {

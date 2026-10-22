@@ -16,6 +16,7 @@ from fastapi import status
 from app.services.auth.models import AuthenticatedUser
 from app.core.config import Settings
 from app.core.errors import ApiError
+from app.domains.files.result_registration import is_result_candidate
 from app.domains.files.models import DocumentFileRecord, DocumentFileStorageProvider, DocumentFileType
 from app.domains.files.repository import DocumentFileRepositoryProtocol
 from app.domains.files.validation import validate_pdf_metadata, validate_pdf_upload
@@ -212,6 +213,8 @@ class FileUploadService:
         """通过后端代理上传已授权文件内容，并回填 checksum / page_count。"""
 
         record = self.get_document_file(file_id, user=user)
+        if is_result_candidate(record):
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "内部结果候选不允许代理上传。")
         if record.status != "pending_upload":
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文件当前状态不允许重复上传。")
         validation = validate_pdf_upload(
@@ -427,6 +430,33 @@ class FileUploadService:
         stored = record.model_copy(update={"etag": etag, "updated_at": utc_now()})
         self.repository.create_document_file(stored)
         return stored
+
+    def register_result_candidate(
+        self, *, tenant_id: str, company_id: str, job_id: str, created_by: str,
+        filename: str, content: bytes, metadata: dict[str, Any],
+    ) -> DocumentFileRecord:
+        """先持久化可追踪的私有候选，再写独立对象；返回值只供任务选定凭据。"""
+
+        file_id = f"file_{uuid4().hex}"
+        provider = self._storage_provider()
+        bucket = self._bucket_for(provider)
+        if provider == "s3" and not bucket:
+            raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "S3 bucket 未配置。")
+        now = utc_now()
+        pending = DocumentFileRecord(
+            id=file_id, tenant_id=tenant_id, company_id=company_id, job_id=job_id,
+            created_by=created_by, file_type="generated_word", storage_provider=provider, bucket=bucket,
+            object_key=self._object_key_for(tenant_id, file_id, filename, provider),
+            original_filename=Path(filename).name,
+            mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            size_bytes=len(content), checksum_sha256=f"sha256:{hashlib.sha256(content).hexdigest()}",
+            status="pending_upload", expires_at=now + timedelta(days=self.retention_days_resolver("generated_word")),
+            metadata={**metadata, "document_job_result_protocol": 1}, created_at=now, updated_at=now,
+        )
+        self.repository.create_document_file(pending)
+        etag = self._write_object(pending, content)
+        # 对象写入后的描述只进入 receipt，落选候选保持 pending，不能被扫描晋升。
+        return pending.model_copy(update={"status": "uploaded", "etag": etag})
 
     def _validate_retention_delete_file_ids(self, file_ids: list[str]) -> list[str]:
         """校验物理删除批量 file_id，避免空值、重复和过大批次。"""

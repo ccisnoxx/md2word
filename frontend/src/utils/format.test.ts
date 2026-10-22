@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import type { DocumentFileResponse, DocumentJobResponse } from "@/api/types";
+import type { DocumentFileResponse, DocumentJobResponse, DocumentJobStage } from "@/api/types";
 import {
   buildDocumentJobDiagnosticRecommendation,
   buildDocumentJobQualityEvidence,
   documentJobActionDisabledReason,
+  documentJobActionDisabledReasons,
+  documentJobDownloadNotice,
   documentJobQualityFlagText,
   documentJobModeCreateLanguage,
   documentJobModeOptions,
@@ -103,6 +105,62 @@ const defaultAvailableActions: DocumentJobResponse["available_actions"] = {
 };
 
 describe("document job action contract", () => {
+  it("CON-104：只消费后端发布动作，不从本地状态或旧 QA 推导资格", () => {
+    const job = buildJob({
+      ...defaultAvailableActions,
+      publish: { enabled: false, eligible: false, disabled_reason: "服务器拒绝发布。", retryable: false },
+    }, { quality_status: "passed", review_status: "approved", translation_qa_status: "approved" });
+    expect(isDocumentJobActionEnabled(job, "publish")).toBe(false);
+    expect(documentJobActionDisabledReason(job, "publish")).toBe("服务器拒绝发布。");
+
+    const legacyJob = buildJob(defaultAvailableActions, { delivery_status: "published" });
+    expect(isDocumentJobActionEnabled(legacyJob, "publish")).toBe(false);
+    expect(documentJobActionDisabledReasons(legacyJob, "publish")).toEqual([
+      { code: "", message: "后端未提供发布可用性。" },
+    ]);
+  });
+
+  it("CON-104：保留未知机器码的服务端原因和旧单原因文本", () => {
+    const reasons = [{ code: "future_publish_gate", message: "等待后端新增验证。" }];
+    const job = buildJob({
+      ...defaultAvailableActions,
+      publish: { enabled: false, eligible: true, disabled_reason: "等待发布功能。", disabled_reasons: reasons, retryable: false },
+    });
+    expect(documentJobActionDisabledReasons(job, "publish")).toEqual(reasons);
+    expect(documentJobActionDisabledReasons(job, "retry")).toEqual([
+      { code: "", message: "只有 failed 文档任务允许重试。" },
+    ]);
+  });
+
+  it("CON-104：内部分类与未知警告直接展示，缺字段不禁止服务器允许的下载", () => {
+    expect(documentJobDownloadNotice({ classification: "internal_only", warning_code: "future_warning", warning_message: "新警告。" }))
+      .toBe("仅供内部使用；新警告。");
+    expect(documentJobDownloadNotice({ classification: "internal_only", warning_message: null })).toBe("仅供内部使用");
+    const legacyJob = buildJob(defaultAvailableActions);
+    expect(documentJobDownloadNotice(legacyJob.available_actions.download)).toBe("下载分类未提供，不能确认交付资格");
+    expect(isDocumentJobActionEnabled(legacyJob, "download")).toBe(true);
+  });
+
+  it("CON-104：普通 Artifact 的空分类不套用主件资格提示", () => {
+    expect(documentJobDownloadNotice({ classification: null, warning_code: null, warning_message: null }, false)).toBe("");
+    expect(documentJobDownloadNotice({}, false)).toBe("");
+    expect(documentJobDownloadNotice({ classification: null })).toBe("下载分类未提供，不能确认交付资格");
+  });
+
+  it.each<DocumentJobStage>(["translating", "translation_validating", "quality_checking"])(
+    "CON-102：%s 阶段仍按后端动作授权禁用取消和重试",
+    (stage) => {
+      const job = buildJob({
+        ...defaultAvailableActions,
+        cancel: { enabled: false, disabled_reason: "当前任务已锁定。", retryable: false },
+      }, { status: "running", stage });
+
+      expect(isDocumentJobActionEnabled(job, "cancel")).toBe(false);
+      expect(documentJobActionDisabledReason(job, "cancel")).toBe("当前任务已锁定。");
+      expect(isDocumentJobActionEnabled(job, "retry")).toBe(false);
+    },
+  );
+
   it("uses server-provided action availability instead of local status fallback", () => {
     const job = buildJob({
       download: { enabled: false, disabled_reason: "结果文件已过期。", retryable: false },

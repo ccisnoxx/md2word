@@ -15,6 +15,7 @@ from bs4 import BeautifulSoup
 from fastapi import status
 
 from app.core.config import Settings
+from app.domains.document_jobs.delivery_state import translation_qa_projection
 from app.domains.document_jobs.models import (
     DocumentJobEventLevel,
     DocumentJobEventRecord,
@@ -28,7 +29,9 @@ from app.domains.document_jobs.models import (
     DocumentJobTranslationQaStatus,
 )
 from app.domains.document_jobs.schemas import (
+    DocumentJobActionDisabledReasonResponse,
     DocumentJobAvailableActionResponse,
+    DocumentJobDownloadClassification,
     DocumentJobTranslationQaAiCallResponse,
     DocumentJobTranslationQaArtifactsResponse,
     DocumentJobTranslationQaResponse,
@@ -87,6 +90,15 @@ DOCUMENT_JOB_FILE_TYPE_ORDER = {
 }
 DOCUMENT_JOB_DELETE_TERMINAL_STATUSES = {"succeeded", "failed", "canceled"}
 DEFAULT_DOCUMENT_JOB_DELETE_REASON = "admin_preview_confirm_delete"
+
+
+@dataclass(frozen=True)
+class DocumentJobDownloadPolicy:
+    """同次签发和动作投影共用的只读分类，不作为授权凭证持久化。"""
+
+    classification: DocumentJobDownloadClassification | None = None
+    warning_code: str | None = None
+    warning_message: str | None = None
 
 
 @dataclass(frozen=True)
@@ -431,15 +443,42 @@ class DocumentJobService:
         """返回前端展示用的动作可用性投影；真正执行仍由各 endpoint 校验。"""
 
         retry_disabled_reason = self._retry_disabled_reason(job)
+        download = self._build_download_action(job)
         return {
-            "download": self._available_action(self._download_disabled_reason(job)),
+            "download": download,
             "retry": self._available_action(retry_disabled_reason, retryable=retry_disabled_reason is None),
             "cancel": self._available_action(self._cancel_disabled_reason(job)),
             "archive": self._available_action(self._archive_disabled_reason(job)),
             "unarchive": self._available_action(self._unarchive_disabled_reason(job)),
             "clone": self._available_action(self._clone_disabled_reason(job, user=user)),
             "delete": self._available_action(self._delete_disabled_reason(job, user=user)),
+            "publish": self._build_publish_action(job, user=user, download=download),
         }
+
+    def build_download_policy(
+        self,
+        job: DocumentJobRecord,
+        file: DocumentFileRecord,
+    ) -> DocumentJobDownloadPolicy:
+        """为已通过下载校验的文件生成分类；普通 Artifact 不冒充当前主件。"""
+
+        if file.file_type != "generated_word" or file.id != job.result_file_id:
+            return DocumentJobDownloadPolicy()
+        if job.quality_status == "blocked":
+            warning = ("quality_blocked_not_deliverable", "该文档存在严重质量问题，仅供内部排查，不可交付或发布。")
+        elif job.review_status == "blocked":
+            warning = ("review_blocked_not_deliverable", "该文档复核已阻断，仅供内部排查，不可交付或发布。")
+        elif job.review_status == "needs_fix":
+            warning = ("review_needs_fix_not_deliverable", "该文档复核要求修正，仅供内部使用，不可交付或发布。")
+        elif job.review_status == "unreviewed":
+            warning = ("document_unreviewed_not_deliverable", "该文档尚未复核，仅供内部使用，不可交付或发布。")
+        elif job.quality_status == "pending":
+            warning = ("quality_pending_not_deliverable", "该文档尚无质量结论，仅供内部使用，不可交付或发布。")
+        else:
+            return DocumentJobDownloadPolicy(classification="internal_only")
+        return DocumentJobDownloadPolicy(
+            classification="internal_only", warning_code=warning[0], warning_message=warning[1],
+        )
 
     def get_translation_qa(
         self,
@@ -534,27 +573,49 @@ class DocumentJobService:
         job = self.get_job(job_id, user=user)
         if not is_translation_document_job_mode(job.mode):
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "翻译 QA 仅支持翻译任务。")
+        result_file = None
+        if qa_status == "approved":
+            if job.quality_status == "blocked":
+                raise ApiError(status.HTTP_409_CONFLICT, "conflict", "质量阻断的任务不能批准复核。")
+            try:
+                result_file = self._get_downloadable_completed_result_file(job)
+            except ApiError as exc:
+                if exc.status_code != status.HTTP_404_NOT_FOUND or exc.code != "not_found":
+                    raise
+                raise ApiError(status.HTTP_409_CONFLICT, "conflict", "当前主 DOCX 未登记，不能批准复核。") from exc
+            self._ensure_file_reader_available()
+            # 对象读取留在任务短锁外；随后 CAS 再核对代数、主件和最新质量。
+            try:
+                content = self.file_upload_service.read_file_content(result_file)
+            except FileNotFoundError as exc:
+                raise ApiError(status.HTTP_409_CONFLICT, "conflict", "当前主 DOCX 不可用，不能批准复核。") from exc
+            if (len(content) != result_file.size_bytes or (
+                result_file.checksum_sha256 is not None
+                and result_file.checksum_sha256 != f"sha256:{hashlib.sha256(content).hexdigest()}"
+            )):
+                raise ApiError(status.HTTP_409_CONFLICT, "conflict", "当前主 DOCX 与登记的完整性描述不一致。")
+        elif job.result_file_id is not None:
+            result_file = self.file_repository.get_document_file(job.result_file_id)
+            if result_file is not None and (
+                (result_file.tenant_id, result_file.company_id, result_file.job_id)
+                != (job.tenant_id, job.company_id, job.id)
+            ):
+                result_file = None
         now = utc_now()
-        normalized_note = self._normalize_optional_text(note)
-        patch: dict[str, Any] = {
-            "translation_qa_status": qa_status,
-            "translation_qa_issue_type": issue_type,
-            "translation_qa_note": normalized_note,
-            "updated_at": now,
-        }
-        if qa_status == "unreviewed":
-            patch.update(
-                translation_qa_issue_type=None,
-                translation_qa_note=None,
-                translation_qa_reviewed_by=None,
-                translation_qa_reviewed_at=None,
-            )
-        else:
-            patch.update(
-                translation_qa_reviewed_by=user.id,
-                translation_qa_reviewed_at=now,
-            )
-        updated = self.job_repository.update_document_job(job.id, **patch)
+        updated = self.job_repository.update_document_job_review_if_current(
+            job.id,
+            expected_retry_count=job.retry_count,
+            expected_result_file_id=job.result_file_id,
+            review_status=qa_status,
+            issue_type=issue_type,
+            note=self._normalize_optional_text(note),
+            reviewed_by=None if qa_status == "unreviewed" else user.id,
+            reviewed_at=None if qa_status == "unreviewed" else now,
+            updated_at=now,
+        )
+        if updated is None:
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "任务代数、当前主件或复核条件已变化，请刷新后重试。")
+        qa = translation_qa_projection(updated)
         self.record_event(
             updated,
             event_type="translation_qa_updated",
@@ -562,10 +623,16 @@ class DocumentJobService:
             level="info",
             message="翻译 QA 复核状态已更新。",
             payload={
-                "status": updated.translation_qa_status,
-                "issue_type": updated.translation_qa_issue_type,
-                "reviewed_by": updated.translation_qa_reviewed_by,
-                "note_length": len(updated.translation_qa_note or ""),
+                # 锁外读取时的观测值，不承诺是本次 CAS 提交的真实前驱状态。
+                "observed_review_status": job.review_status,
+                "review_status": updated.review_status,
+                "status": qa["translation_qa_status"],
+                "issue_type": qa["translation_qa_issue_type"],
+                "reviewed_by": qa["translation_qa_reviewed_by"],
+                "generation": updated.retry_count,
+                "result_file_id": updated.result_file_id,
+                "checksum_sha256": result_file.checksum_sha256 if result_file else None,
+                "note_length": len(qa["translation_qa_note"] or ""),
             },
             trace_id=trace_id,
         )
@@ -580,7 +647,6 @@ class DocumentJobService:
         """校验任务权限和完成状态后返回生成 Word 文件。"""
 
         job = self.get_job(job_id, user=user)
-        self._ensure_job_not_deleted(job)
         return job, self._get_downloadable_completed_result_file(job)
 
     def get_file_for_download(
@@ -593,7 +659,6 @@ class DocumentJobService:
         """按可见任务签发文件下载前，校验文件归属、状态、过期和类型。"""
 
         job = self.get_job(job_id, user=user)
-        self._ensure_job_not_deleted(job)
         if file_id is None:
             return job, self._get_downloadable_completed_result_file(job)
         return job, self._get_downloadable_task_file(job, file_id=file_id)
@@ -609,7 +674,6 @@ class DocumentJobService:
         job = self.job_repository.get_document_job(job_id)
         if job is None:
             raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"文档任务不存在: {job_id}")
-        self._ensure_job_not_deleted(job)
         file = self._get_downloadable_completed_result_file(job)
         if file.id != file_id:
             raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "下载链接与结果文件不匹配。")
@@ -626,7 +690,6 @@ class DocumentJobService:
         job = self.job_repository.get_document_job(job_id)
         if job is None:
             raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"文档任务不存在: {job_id}")
-        self._ensure_job_not_deleted(job)
         return job, self._get_downloadable_task_file(job, file_id=file_id)
 
     def retry_job(
@@ -674,7 +737,12 @@ class DocumentJobService:
             translation_term_set_id=translation_term_set_id,
             translation_term_version=translation_term_version,
         )
-        retried = self.job_repository.update_document_job(job.id, **patch)
+        retried = self.job_repository.retry_document_job(
+            job.id, expected_retry_count=job.retry_count,
+            max_retries=self.settings.p0_document_job_max_retries, **patch,
+        )
+        if retried is None:
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "任务状态或重试代数已变化，无法重试。")
         self.record_event(
             retried,
             event_type="retry_requested",
@@ -686,6 +754,7 @@ class DocumentJobService:
                 "reason": self._normalize_optional_text(reason),
                 "previous_error_code": job.error_code,
                 "previous_failed_stage": job.failed_stage,
+                "previous_prepared_result_file_id": job.prepared_result.file.id if job.prepared_result else None,
                 "resume_stage": retried.stage,
                 "use_latest_term_assets": use_latest_term_assets,
                 "term_assets": retried.request_snapshot.get("term_assets"),
@@ -992,7 +1061,10 @@ class DocumentJobService:
         canceled = self.job_repository.update_document_job_if_current(
             job.id,
             allowed_statuses=CANCELABLE_DOCUMENT_JOB_STATUSES,
-            allowed_stages={"uploaded", "parsing", "parsed", "ir_converting", "rendering", "uploading"},
+            allowed_stages={
+                "uploaded", "parsing", "parsed", "ir_converting", "translating",
+                "translation_validating", "rendering", "quality_checking", "uploading",
+            },
             expected_retry_count=job.retry_count,
             status="canceled",
             stage="canceled",
@@ -1026,6 +1098,7 @@ class DocumentJobService:
         job: DocumentJobRecord,
         file: DocumentFileRecord,
         *,
+        policy: DocumentJobDownloadPolicy,
         expires_at: str,
         trace_id: str | None,
     ) -> None:
@@ -1037,7 +1110,14 @@ class DocumentJobService:
             stage=job.stage,
             level="info",
             message="任务文件下载链接已授权。",
-            payload={"file_id": file.id, "file_type": file.file_type, "expires_at": expires_at},
+            payload={
+                "generation": job.retry_count,
+                "file_id": file.id,
+                "file_type": file.file_type,
+                "expires_at": expires_at,
+                "classification": policy.classification,
+                "warning_code": policy.warning_code,
+            },
             trace_id=trace_id,
         )
 
@@ -1087,13 +1167,16 @@ class DocumentJobService:
 
     def _mark_created_job_queued(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
         now = utc_now()
-        queued = self.job_repository.update_document_job(
-            job.id,
+        queued = self.job_repository.update_document_job_if_current(
+            job.id, allowed_statuses={"pending"}, allowed_stages={"uploaded"},
+            expected_retry_count=job.retry_count, require_no_prepared_result=True,
             status="queued",
             stage="uploaded",
             progress=max(job.progress, 5),
             updated_at=now,
         )
+        if queued is None:
+            return self.job_repository.get_document_job(job.id) or job
         self.record_event(
             queued,
             event_type="stage_started",
@@ -1113,8 +1196,9 @@ class DocumentJobService:
         trace_id: str | None,
     ) -> DocumentJobRecord:
         now = utc_now()
-        failed = self.job_repository.update_document_job(
-            job.id,
+        failed = self.job_repository.update_document_job_if_current(
+            job.id, allowed_statuses={job.status}, allowed_stages={job.stage},
+            expected_retry_count=job.retry_count, require_no_prepared_result=True,
             status="failed",
             stage="failed",
             failed_stage="uploaded",
@@ -1123,6 +1207,8 @@ class DocumentJobService:
             completed_at=now,
             updated_at=now,
         )
+        if failed is None:
+            return self.job_repository.get_document_job(job.id) or job
         self.record_event(
             failed,
             event_type="stage_failed",
@@ -1194,7 +1280,7 @@ class DocumentJobService:
         return patch
 
     def _retry_resume_state(self, job: DocumentJobRecord) -> tuple[str, str, int]:
-        """Choose the earliest valid workflow stage that preserves completed artifacts."""
+        """按已持久化产物选择最早可安全恢复的阶段。"""
 
         if job.result_file_id is not None:
             return "running", "uploading", max(job.progress, 90)
@@ -1206,11 +1292,7 @@ class DocumentJobService:
 
     def _build_translation_qa_state(self, job: DocumentJobRecord) -> DocumentJobTranslationQaStateResponse:
         return DocumentJobTranslationQaStateResponse(
-            status=job.translation_qa_status,
-            issue_type=job.translation_qa_issue_type,
-            note=job.translation_qa_note,
-            reviewed_by=job.translation_qa_reviewed_by,
-            reviewed_at=job.translation_qa_reviewed_at,
+            **{key.removeprefix("translation_qa_"): value for key, value in translation_qa_projection(job).items()}
         )
 
     def _build_unavailable_translation_qa(
@@ -1556,16 +1638,24 @@ class DocumentJobService:
         return source_file
 
     def _get_completed_result_file(self, job: DocumentJobRecord) -> DocumentFileRecord:
-        self._ensure_job_not_deleted(job)
-        if job.status != "succeeded" or job.stage != "completed" or job.result_file_id is None:
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文档任务尚未成功完成，生成 Word 不可下载。")
+        self._ensure_job_not_deleted(job, reason_code="job_deleted")
+        if job.status != "succeeded" or job.stage != "completed":
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文档任务尚未成功完成，生成 Word 不可下载。",
+                           reason_code="job_not_completed")
+        if job.result_file_id is None:
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文档任务尚未成功完成，生成 Word 不可下载。",
+                           reason_code="result_file_missing")
         file = self.file_repository.get_document_file(job.result_file_id)
         if file is None:
-            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"结果文件不存在: {job.result_file_id}")
-        if file.job_id != job.id or file.file_type != "generated_word":
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "结果文件与文档任务不匹配。")
+            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"结果文件不存在: {job.result_file_id}",
+                           reason_code="result_file_missing")
+        if ((file.tenant_id, file.company_id, file.job_id) != (job.tenant_id, job.company_id, job.id)
+                or file.file_type != "generated_word"):
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "结果文件与文档任务不匹配。",
+                           reason_code="result_file_mismatch")
         if file.status != "uploaded":
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "结果文件尚未完成上传。")
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "结果文件尚未完成上传。",
+                           reason_code="result_file_not_uploaded")
         return file
 
     def _get_downloadable_completed_result_file(self, job: DocumentJobRecord) -> DocumentFileRecord:
@@ -1593,7 +1683,7 @@ class DocumentJobService:
         )
 
     def _get_downloadable_task_file(self, job: DocumentJobRecord, *, file_id: str) -> DocumentFileRecord:
-        self._ensure_job_not_deleted(job)
+        self._ensure_job_not_deleted(job, reason_code="job_deleted")
         file = self.file_repository.get_document_file(file_id)
         if file is None:
             raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"文件不存在: {file_id}")
@@ -1604,15 +1694,17 @@ class DocumentJobService:
         if file.file_type not in DOCUMENT_JOB_DOWNLOAD_FILE_TYPES:
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "该文件类型不支持从任务详情下载。")
         if not self._is_current_downloadable_job_file(job, file):
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "该文件不属于当前任务重试轮次，不能从任务详情下载。")
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "该文件不属于当前任务重试轮次，不能从任务详情下载。",
+                           reason_code="file_not_current")
         if file.status != "uploaded":
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文件尚未完成上传，不能下载。")
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文件尚未完成上传，不能下载。",
+                           reason_code="result_file_not_uploaded")
         self._ensure_file_not_expired(file)
         return file
 
     def _ensure_file_not_expired(self, file: DocumentFileRecord) -> None:
         if file.expires_at is not None and file.expires_at <= utc_now():
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文件已过期，不能下载。")
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文件已过期，不能下载。", reason_code="file_expired")
 
     def _file_belongs_to_job(self, job: DocumentJobRecord, file: DocumentFileRecord) -> bool:
         return file.job_id == job.id or file.id == job.source_file_id
@@ -1626,8 +1718,13 @@ class DocumentJobService:
             if file.id == job.document_ir_file_id:
                 return True
             return job.document_ir_file_id is None and file.id == job.source_document_ir_file_id
-        if file.file_type == "generated_word" and file.id == job.result_file_id:
-            return True
+        if file.file_type == "generated_word":
+            # 协议候选只能通过权威完成指针暴露，receipt 或同代 metadata 均不构成授权。
+            if job.prepared_result is not None or file.metadata.get("document_job_result_protocol") == 1:
+                return (job.status == "succeeded" and job.stage == "completed"
+                        and file.id == job.result_file_id and file.status == "uploaded")
+            if file.id == job.result_file_id:
+                return job.status == "succeeded" and job.stage == "completed"
         return self._file_matches_current_retry_count(job, file)
 
     def _file_matches_current_retry_count(self, job: DocumentJobRecord, file: DocumentFileRecord) -> bool:
@@ -1648,15 +1745,15 @@ class DocumentJobService:
         return None
 
     def _ensure_delete_allowed(self, job: DocumentJobRecord, *, user: AuthenticatedUser) -> None:
-        if user.role != "admin":
-            raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "只有 admin 可以删除文档任务。")
-        self._ensure_job_not_deleted(job)
-        if job.status not in DOCUMENT_JOB_DELETE_TERMINAL_STATUSES:
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "只有终态任务允许删除；处理中任务请先取消。")
+        reason = self._delete_disabled_reason(job, user=user)
+        if reason is not None:
+            if user.role != "admin":
+                raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", reason)
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", reason)
 
-    def _ensure_job_not_deleted(self, job: DocumentJobRecord) -> None:
+    def _ensure_job_not_deleted(self, job: DocumentJobRecord, *, reason_code: str | None = None) -> None:
         if job.deleted_at is not None:
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文档任务已删除。")
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文档任务已删除。", reason_code=reason_code)
 
     def _build_delete_plan(
         self,
@@ -1841,10 +1938,10 @@ class DocumentJobService:
             return True
         if translation_qa_status == "all":
             return is_translation_document_job_mode(job.mode)
-        return is_translation_document_job_mode(job.mode) and job.translation_qa_status == translation_qa_status
+        return is_translation_document_job_mode(job.mode) and job.review_status == translation_qa_status
 
     def _count_translation_qa_statuses(self, jobs: list[DocumentJobRecord]) -> dict[str, int]:
-        counts = Counter(job.translation_qa_status for job in jobs)
+        counts = Counter(job.review_status for job in jobs)
         return {qa_status: counts.get(qa_status, 0) for qa_status in get_args(DocumentJobTranslationQaStatus)}
 
     def _document_job_search_values(self, job: _DocumentJobSearchable) -> list[str]:
@@ -1896,14 +1993,63 @@ class DocumentJobService:
             retryable=retryable,
         )
 
-    def _download_disabled_reason(self, job: DocumentJobRecord) -> str | None:
-        if job.deleted_at is not None:
-            return "文档任务已删除。"
-        if job.status != "succeeded":
-            return "只有 succeeded 文档任务允许下载结果。"
-        if job.result_file_id is None:
-            return "任务结果文件尚未登记，不能下载。"
-        return None
+    def _build_download_action(self, job: DocumentJobRecord) -> DocumentJobAvailableActionResponse:
+        """只检查签发已有的 metadata 门槛，不读取对象或新增质量拒绝。"""
+
+        try:
+            file = self._get_downloadable_completed_result_file(job)
+        except ApiError as exc:
+            reason = exc.message
+            if exc.reason_code == "job_not_completed":
+                reason = "只有 succeeded 文档任务允许下载结果。"
+            elif exc.reason_code == "result_file_missing" and job.result_file_id is None:
+                reason = "任务结果文件尚未登记，不能下载。"
+            return DocumentJobAvailableActionResponse(
+                enabled=False, disabled_reason=reason, disabled_reason_code=exc.reason_code,
+            )
+        policy = self.build_download_policy(job, file)
+        return DocumentJobAvailableActionResponse(
+            enabled=True, classification=policy.classification,
+            warning_code=policy.warning_code, warning_message=policy.warning_message,
+        )
+
+    def _build_publish_action(
+        self,
+        job: DocumentJobRecord,
+        *,
+        user: AuthenticatedUser,
+        download: DocumentJobAvailableActionResponse,
+    ) -> DocumentJobAvailableActionResponse:
+        """核心资格不等于执行许可；预览与真实发布仍由后续能力拥有。"""
+
+        reasons: list[DocumentJobActionDisabledReasonResponse] = []
+        if not download.enabled:
+            reasons.append(DocumentJobActionDisabledReasonResponse(
+                code=download.disabled_reason_code, message=download.disabled_reason,
+            ))
+        if user.role != "admin":
+            reasons.append(DocumentJobActionDisabledReasonResponse(code="admin_required", message="只有 Admin 可以发布文档。"))
+        if job.quality_status == "blocked":
+            reasons.append(DocumentJobActionDisabledReasonResponse(code="quality_status_blocked", message="质量阻塞，不能发布。"))
+        elif job.quality_status == "pending":
+            reasons.append(DocumentJobActionDisabledReasonResponse(code="quality_status_pending", message="尚无质量结论，不能发布。"))
+        if job.review_status != "approved":
+            review_messages = {"unreviewed": "文档尚未复核。", "needs_fix": "文档复核要求修正。", "blocked": "文档复核已阻断。"}
+            reasons.append(DocumentJobActionDisabledReasonResponse(
+                code=f"review_status_{job.review_status}", message=review_messages[job.review_status],
+            ))
+        if job.delivery_status == "published":
+            reasons.append(DocumentJobActionDisabledReasonResponse(code="already_published", message="该结果已发布，不能重复发布。"))
+        eligible = not reasons
+        # 当前没有预览证据或发布执行入口，不能靠开关把核心资格直接变成发布授权。
+        reasons.extend([
+            DocumentJobActionDisabledReasonResponse(code="preview_unavailable", message="当前阶段尚未接通发布所需的预览验证。"),
+            DocumentJobActionDisabledReasonResponse(code="publication_unavailable", message="当前阶段尚未提供文档发布功能。"),
+        ])
+        return DocumentJobAvailableActionResponse(
+            enabled=False, eligible=eligible, disabled_reason=reasons[0].message,
+            disabled_reason_code=reasons[0].code, disabled_reasons=reasons,
+        )
 
     def _retry_disabled_reason(self, job: DocumentJobRecord) -> str | None:
         if job.deleted_at is not None:
@@ -1961,6 +2107,8 @@ class DocumentJobService:
             return "文档任务已删除。"
         if job.status not in DOCUMENT_JOB_DELETE_TERMINAL_STATUSES:
             return "只有终态任务允许删除；处理中任务请先取消。"
+        if job.delivery_status == "published":
+            return "已发布任务不能删除，仅允许更新归档元数据。"
         return None
 
     def _build_request_snapshot(

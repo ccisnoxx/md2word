@@ -1,12 +1,18 @@
 from __future__ import annotations
 
-# File: app/domains/document_jobs/schemas.py
-# Purpose: 定义 document_jobs API 的 v1 请求/响应模型。
+# 文件：app/domains/document_jobs/schemas.py
+# 用途：定义 document_jobs API 的 v1 请求/响应模型。
 
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, JsonValue, field_validator
+
+from app.domains.document_jobs.models import (
+    DocumentJobDeliveryStatus,
+    DocumentJobQualityStatus,
+    DocumentJobReviewStatus,
+)
 
 from app.domains.files.schemas import DocumentFileSummaryResponse
 from app.domains.translation.modes import (
@@ -17,7 +23,8 @@ from app.domains.translation.modes import (
     normalize_translation_mode,
 )
 
-DocumentJobActionId = Literal["download", "retry", "cancel", "archive", "unarchive", "clone", "delete"]
+DocumentJobActionId = Literal["download", "retry", "cancel", "archive", "unarchive", "clone", "delete", "publish"]
+DocumentJobDownloadClassification = Literal["internal_only"]
 TRANSLATION_SELECTION_DESCRIPTION = "仅适用于跨语言翻译任务；原文转换（direct）不得显式绑定翻译资源。"
 
 
@@ -48,10 +55,27 @@ class DocumentJobCreateRequest(BaseModel):
         return value
 
 
+class DocumentJobActionDisabledReasonResponse(BaseModel):
+    code: str
+    message: str
+
+
 class DocumentJobAvailableActionResponse(BaseModel):
     enabled: bool
     disabled_reason: str | None = None
     retryable: bool = False
+    disabled_reason_code: str | None = Field(default=None, json_schema_extra={"readOnly": True})
+    disabled_reasons: list[DocumentJobActionDisabledReasonResponse] | None = Field(
+        default=None, json_schema_extra={"readOnly": True}, description="发布禁用原因，按优先级排列。"
+    )
+    classification: DocumentJobDownloadClassification | None = Field(
+        default=None, json_schema_extra={"readOnly": True}, description="当前主 DOCX 仅供内部使用，不代表最终交付件。"
+    )
+    warning_code: str | None = Field(default=None, json_schema_extra={"readOnly": True})
+    warning_message: str | None = Field(default=None, json_schema_extra={"readOnly": True})
+    eligible: bool | None = Field(
+        default=None, json_schema_extra={"readOnly": True}, description="仅表示发布核心资格；执行许可仍由 enabled 表达。"
+    )
 
 
 class DocumentJobResponse(BaseModel):
@@ -90,6 +114,18 @@ class DocumentJobResponse(BaseModel):
     deleted_at: datetime | None = None
     deleted_by: str | None = None
     delete_reason: str | None = None
+    quality_status: DocumentJobQualityStatus = Field(
+        default="pending", json_schema_extra={"readOnly": True}, description="当前任务的系统质量结论。"
+    )
+    review_status: DocumentJobReviewStatus = Field(
+        default="unreviewed", json_schema_extra={"readOnly": True}, description="当前复核状态的唯一真源。"
+    )
+    delivery_status: DocumentJobDeliveryStatus = Field(
+        default="internal_draft", json_schema_extra={"readOnly": True}, description="当前交付状态；QA 批准不触发发布。"
+    )
+    quality_summary: dict[str, JsonValue] = Field(
+        default_factory=dict, json_schema_extra={"readOnly": True}, description="系统提供的安全质量摘要，尚无证据时为 {}。"
+    )
     translation_qa_status: Literal["unreviewed", "approved", "needs_fix", "blocked"] = "unreviewed"
     translation_qa_issue_type: Literal[
         "translation",
@@ -462,6 +498,11 @@ class DocumentJobDownloadUrlResponse(BaseModel):
     method: Literal["GET"] = "GET"
     expires_at: datetime
     file: DocumentFileSummaryResponse
+    classification: DocumentJobDownloadClassification | None = Field(
+        default=None, json_schema_extra={"readOnly": True}, description="当前主 DOCX 为 internal_only，普通 Artifact 为空。"
+    )
+    warning_code: str | None = Field(default=None, json_schema_extra={"readOnly": True})
+    warning_message: str | None = Field(default=None, json_schema_extra={"readOnly": True})
 
 
 class DocumentJobRetryRequest(BaseModel):
