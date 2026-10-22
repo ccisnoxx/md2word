@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import secrets
+import sqlite3
 import tempfile
 import time
 import zipfile
@@ -42,6 +43,12 @@ from app.domains.document_jobs.repository import (
     DocumentJobEventRepositoryProtocol,
     DocumentJobRepositoryProtocol,
     DocumentJobTranslationBatchRepositoryProtocol,
+    TranslationBatchTreeInvalidError,
+)
+from app.domains.document_jobs.workflow import (
+    TranslationGenerationSummary,
+    TranslationRootPlan,
+    reduce_translation_generation,
 )
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
@@ -70,6 +77,17 @@ from app.domains.translation.integrity import (
     ValidatedTranslationBatch,
 )
 from app.domains.translation.provider import OpenAICompatibleTranslationProvider, TranslationProviderResponseError
+
+
+class _TranslationBatchStorageError(RuntimeError):
+    """翻译成功响应已审计，但批次结果或状态提交写入失败。"""
+
+
+def _is_metadata_storage_error(error: Exception) -> bool:
+    """识别仓储驱动异常，避免把数据库故障当成 Provider 失败重试。"""
+
+    error_module = type(error).__module__
+    return isinstance(error, (OSError, sqlite3.Error)) or error_module.startswith("pymysql.")
 
 
 class DocumentJobTaskQueueProtocol(Protocol):
@@ -175,9 +193,13 @@ class DocumentJobExecutionService:
             if latest.status == "running" and latest.stage == "ir_converting":
                 latest = self._convert_and_save_document_ir(latest, trace_id=trace_id)
             elif latest.status == "running" and latest.stage == "translating":
-                source_file = self._get_uploaded_file(latest.source_document_ir_file_id)
-                source_document_ir = DocumentIR.model_validate_json(self.file_service.read_file_content(source_file))
-                latest = self._ensure_translation_batches_and_enqueue(latest, source_document_ir, trace_id=trace_id)
+                source_file, source_document_ir = self._read_translation_source(
+                    latest, latest.source_document_ir_file_id,
+                )
+                del source_file
+                latest = self._ensure_translation_batches_and_enqueue(
+                    latest, source_document_ir, trace_id=trace_id,
+                )
             elif latest.status == "running" and latest.stage == "translation_validating":
                 latest = self._finalize_translation_generation(
                     latest.id, generation=latest.retry_count, trace_id=trace_id,
@@ -185,11 +207,34 @@ class DocumentJobExecutionService:
             if latest.status == "running" and latest.stage in {"rendering", "quality_checking", "uploading"}:
                 return self._render_and_save_word(latest, trace_id=trace_id)
             return latest
+        except (ApiError, FileNotFoundError, OSError, ValueError, RuntimeError, MinerUError, zipfile.BadZipFile) as exc:
+            current = self.job_repository.get_document_job(job_id) or job
+            failed_stage, error_code = self._classify_worker_failure(exc, current)
+            return self._mark_failed(
+                current,
+                failed_stage=failed_stage,
+                error_code=error_code,
+                error_message=str(exc),
+                trace_id=trace_id,
+                integrity=exc.evidence if isinstance(exc, (DocumentIRTranslationError, TranslationIntegrityError)) else None,
+            )
         except Exception as exc:
             current = self.job_repository.get_document_job(job_id) or job
-            if current.retry_count != job.retry_count:
-                return current
-            return self._fail_stage_attempt(latest, exc, trace_id=trace_id)
+            failed_stage = self._failed_stage_for_current_job(current)
+            error_message = f"Worker 未预期异常: {type(exc).__name__}: {exc}"
+            self.logger.exception(
+                "[trace_id=%s job_id=%s stage=%s status=unexpected_error]",
+                trace_id,
+                job_id,
+                failed_stage,
+            )
+            return self._mark_failed(
+                current,
+                failed_stage=failed_stage,
+                error_code="document_job_unexpected_error",
+                error_message=error_message,
+                trace_id=trace_id,
+            )
 
     def mark_job_timed_out(self, job_id: str, *, trace_id: str | None = None) -> DocumentJobRecord | None:
         """供 Worker 超时保护调用，保证 Celery 超时时 MySQL/file 状态也落到 failed。"""
@@ -1062,120 +1107,179 @@ class DocumentJobExecutionService:
         trace_id: str | None,
     ) -> DocumentJobRecord:
         generation = job.retry_count
-        current = self.job_repository.get_document_job(job.id)
-        if current is None or current.status != "running" or current.retry_count != generation:
-            return current or job
-        job = current
-        job = self._mark_translating_started(job, trace_id=trace_id)
-        if job.status != "running" or job.stage != "translating" or job.retry_count != generation:
-            return job
-        try:
-            if self.document_ir_translation_service is None:
-                raise DocumentIRTranslationError("DocumentIR 翻译服务未配置。")
-            spec = spec_for_document_job_mode(job.mode)
-            if spec.language_pair is None:
-                raise DocumentIRTranslationError("当前任务不是翻译任务。")
-            if not job.source_document_ir_file_id:
-                raise DocumentIRTranslationError("翻译任务缺少 source DocumentIR 文件。")
-
-            batches = self.translation_batch_repository.list_translation_batches(job.id, generation=generation)
-            if not batches:
-                batches = self._create_initial_translation_batches(
+        if job.stage == "ir_converting":
+            transitioned = self.job_repository.update_document_job_if_current(
+                job.id,
+                allowed_statuses={"running"},
+                allowed_stages={"ir_converting"},
+                expected_retry_count=generation,
+                stage="translating",
+                updated_at=utc_now(),
+            )
+            if transitioned is None:
+                return self.job_repository.get_document_job(job.id) or job
+            job = transitioned
+            try:
+                self._record_event(
                     job,
-                    source_document_ir,
-                    language_pair=spec.language_pair,
-                    generation=generation,
+                    event_type="stage_started",
+                    stage="translating",
+                    message="DocumentIR 翻译已开始。",
+                    payload={"source_document_ir_file_id": job.source_document_ir_file_id},
                     trace_id=trace_id,
                 )
-            return self._finalize_translation_generation(job.id, generation=generation, trace_id=trace_id) or job
-        except Exception as exc:
-            return self._fail_stage_attempt(job, exc, trace_id=trace_id)
-
-    def _mark_translating_started(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
-        """源 IR 已持久化后先推进主阶段，保证 eager 批次也观察到翻译阶段。"""
-
-        if job.stage != "ir_converting":
+            except Exception as exc:
+                return self._fail_stage_attempt(job, exc, trace_id=trace_id)
+        if job.status != "running" or job.stage != "translating" or job.retry_count != generation:
             return job
-        translating = self.job_repository.update_document_job_if_current(
-            job.id,
-            allowed_statuses={"running"},
-            allowed_stages={"ir_converting"},
-            expected_retry_count=job.retry_count,
-            stage="translating",
-            progress=max(job.progress, 45),
-            updated_at=utc_now(),
-        )
-        if translating is None:
-            return self.job_repository.get_document_job(job.id) or job
+        if self.document_ir_translation_service is None:
+            raise DocumentIRTranslationError("DocumentIR 翻译服务未配置。")
+        spec = spec_for_document_job_mode(job.mode)
+        if spec.language_pair is None:
+            raise DocumentIRTranslationError("当前任务不是翻译任务。")
+        if not job.source_document_ir_file_id:
+            raise DocumentIRTranslationError("翻译任务缺少 source DocumentIR 文件。")
+        expected_plans = self._build_expected_translation_plans(job, source_document_ir)
         try:
-            self._record_event(
-                translating, event_type="stage_succeeded", stage="ir_converting",
-                message="源 DocumentIR 转换已完成。",
-                payload={"source_document_ir_file_id": translating.source_document_ir_file_id}, trace_id=trace_id,
+            batches = self.translation_batch_repository.ensure_translation_batch_roots(
+                job.id,
+                generation=generation,
+                expected_plans=expected_plans,
             )
-            self._record_event(
-                translating, event_type="stage_started", stage="translating",
-                message="DocumentIR 翻译已开始。",
-                payload={"source_document_ir_file_id": translating.source_document_ir_file_id}, trace_id=trace_id,
+        except TranslationBatchTreeInvalidError as exc:
+            return self._mark_failed(
+                job,
+                failed_stage="translating",
+                error_code=exc.code,
+                error_message="翻译批次树与当前权威计划不一致。",
+                trace_id=trace_id,
             )
-        except Exception as exc:
-            return self._fail_stage_attempt(translating, exc, trace_id=trace_id)
-        return translating
+        except TranslationIntegrityError as exc:
+            return self._mark_failed(
+                job,
+                failed_stage="translating",
+                error_code="translation_failed",
+                error_message=str(exc),
+                trace_id=trace_id,
+                integrity=exc.evidence,
+            )
+        if not batches:
+            return self._finalize_translation_generation(
+                job.id, generation=generation, trace_id=trace_id,
+            ) or job
+        self._reset_expired_translation_batch_leases(job, generation=generation, trace_id=trace_id)
+        self._enqueue_runnable_translation_batches(job, generation=generation, trace_id=trace_id)
+        return self._finalize_translation_generation(job.id, generation=generation, trace_id=trace_id) or job
 
-    def _create_initial_translation_batches(
+    def _get_translation_execution_snapshot(
+        self,
+        job_id: str,
+        *,
+        generation: int,
+    ) -> tuple[DocumentJobRecord | None, list[DocumentJobTranslationBatchRecord]]:
+        """从批次仓储的同任务锁快照读取 job 与当前代批次。"""
+
+        try:
+            snapshot_job, batches = self.translation_batch_repository.get_translation_batch_snapshot(job_id)
+        except (FileNotFoundError, OSError):
+            return None, []
+        if snapshot_job.retry_count != generation:
+            return snapshot_job, []
+        return snapshot_job, [batch for batch in batches if batch.generation == snapshot_job.retry_count]
+
+    def summarize_translation_generation(
+        self,
+        job: DocumentJobRecord,
+        batches: list[DocumentJobTranslationBatchRecord] | None = None,
+    ) -> TranslationGenerationSummary | None:
+        """以当前 job 的 source/config 重新计算权威批次结论。
+
+        API 和执行入口共用这条纯 reducer 接线；权威根计划来自 source/config，不能
+        从已落库批次反推。direct 任务不读取翻译资源，旧记录无法重建计划时返回 None。
+        """
+
+        current_batches = batches
+        if current_batches is None:
+            requested_generation = job.retry_count
+            job, current_batches = self._get_translation_execution_snapshot(
+                job.id, generation=requested_generation,
+            )
+            if job is None or job.retry_count != requested_generation:
+                return None
+        if not is_translation_document_job_mode(job.mode):
+            return None
+        if self.document_ir_translation_service is None or not job.source_document_ir_file_id:
+            return None
+        try:
+            _source_file, source_document_ir = self._read_translation_source(
+                job, job.source_document_ir_file_id,
+            )
+            expected_plans = self._build_expected_translation_plans(job, source_document_ir)
+        except (DocumentIRTranslationError, TranslationIntegrityError, FileNotFoundError, OSError, ValueError):
+            # 旧任务可能缺少本轮重建所需的 source；API 仍返回旧诊断字段，不伪造新结论。
+            return None
+        return reduce_translation_generation(
+            job_id=job.id,
+            job_status=job.status,
+            job_stage=job.stage,
+            generation=job.retry_count,
+            expected_plans=expected_plans,
+            batches=current_batches,
+            provider_call_budget=(
+                expected_plans[0].provider_call_budget if expected_plans else 0
+            ),
+        )
+
+    def _build_expected_translation_plans(
         self,
         job: DocumentJobRecord,
         source_document_ir: DocumentIR,
-        *,
-        language_pair: str,
-        generation: int,
-        trace_id: str | None,
-    ) -> list[DocumentJobTranslationBatchRecord]:
-        translation_profile = self._translation_profile_for_job(
-            job,
-            language_pair=language_pair,
-        )
-        max_pages, max_chars = self._translation_profile_batch_limits(
-            translation_profile
-        )
+    ) -> list[TranslationRootPlan]:
+        """由不可变 source、资源快照计算本代根计划，供 reducer 与安装端口共用。"""
+
+        spec = spec_for_document_job_mode(job.mode)
+        if spec.language_pair is None:
+            return []
+        if self.document_ir_translation_service is None:
+            raise DocumentIRTranslationError("DocumentIR 翻译服务未配置。")
+        profile = self._translation_profile_for_job(job, language_pair=spec.language_pair)
+        max_pages, max_chars = self._translation_profile_batch_limits(profile)
         term_version = self._resolve_term_version_for_job(job)
         _targets, _items, plans = self.document_ir_translation_service.build_translation_plan(
             source_document_ir,
             max_pages_per_batch=max_pages,
             max_chars_per_batch=max_chars,
-            batch_id_prefix=f"{job.id}_retry{generation}_translation_batch",
+            batch_id_prefix=f"{job.id}_retry{job.retry_count}_translation_batch",
         )
-        deterministic_count = len(plans)
-        provider_call_budget = min(200, deterministic_count * 12)
-        now = utc_now()
-        records: list[DocumentJobTranslationBatchRecord] = []
-        for plan in plans:
-            record = DocumentJobTranslationBatchRecord(
-                id=plan.batch_id,
+        provider_call_budget = min(200, len(plans) * 12)
+        max_attempts = max(1, self.settings.translation_provider_batch_max_attempts)
+        return [
+            TranslationRootPlan(
+                batch_id=plan.batch_id,
                 job_id=job.id,
+                generation=job.retry_count,
                 job_retry_count=job.retry_count,
-                generation=generation,
-                root_batch_id=plan.batch_id,
-                parent_batch_id=plan.parent_batch_id,
-                status="pending",
-                page_start=plan.page_start,
-                page_end=plan.page_end,
-                item_ids=list(plan.item_ids),
+                source_document_ir_file_id=job.source_document_ir_file_id or "",
+                language_pair=spec.language_pair,
+                item_ids=tuple(plan.item_ids),
                 item_count=plan.item_count,
                 char_count=plan.char_count,
+                page_start=plan.page_start,
+                page_end=plan.page_end,
+                term_version_id=(
+                    term_version.term_version_id
+                    if term_version is not None else job.term_version_id
+                ),
+                term_snapshot_hash=(
+                    term_version.snapshot_hash if term_version is not None else None
+                ),
                 split_level=plan.split_level,
-                max_attempts=max(1, self.settings.translation_provider_batch_max_attempts),
-                deterministic_batch_count=deterministic_count,
+                deterministic_batch_count=len(plans),
                 provider_call_budget=provider_call_budget,
-                source_document_ir_file_id=job.source_document_ir_file_id,
-                language_pair=language_pair,
-                term_version_id=term_version.term_version_id if term_version is not None else job.term_version_id,
-                term_snapshot_hash=term_version.snapshot_hash if term_version is not None else None,
-                created_at=now,
-                updated_at=now,
+                max_attempts=max_attempts,
             )
-            records.append(self.translation_batch_repository.create_translation_batch(record))
-        return records
+            for plan in plans
+        ]
 
     def execute_translation_batch(self, batch_id: str, *, trace_id: str | None = None) -> DocumentJobTranslationBatchRecord | None:
         """执行单个 provider batch task；重复投递依赖 batch 状态幂等收敛。"""
@@ -1186,23 +1290,35 @@ class DocumentJobExecutionService:
         job = self.job_repository.get_document_job(batch.job_id)
         if job is None:
             return batch
-        if job.retry_count != batch.job_retry_count or job.retry_count != batch.generation:
-            return batch
         if job.status == "canceled":
             return self._cancel_translation_batch(batch, trace_id=trace_id)
-        if job.status in {"succeeded", "failed"}:
-            return batch
-        if self._mark_timed_out_if_needed(job, trace_id=trace_id) is not None:
+        if job.status in {"succeeded", "failed"} or job.retry_count != batch.job_retry_count or job.retry_count != batch.generation:
             return batch
         if job.status == "running" and job.stage == "ir_converting" and job.source_document_ir_file_id:
             job = self._mark_translating_started(job, trace_id=trace_id)
-        # 阶段 owner 的失败收尾可能返回显式 retry 后的新代记录，旧 batch 不能借此继续 claim。
-        if (job.status != "running" or job.stage != "translating"
-                or job.retry_count != batch.job_retry_count or job.retry_count != batch.generation):
+        if (
+            job.status != "running" or job.stage != "translating"
+            or job.retry_count != batch.job_retry_count or job.retry_count != batch.generation
+        ):
             return batch
+        if batch.status == "failed" and not batch.retryable:
+            self._finalize_translation_generation(
+                job.id, generation=batch.generation, trace_id=trace_id,
+            )
+            return self.translation_batch_repository.get_translation_batch(batch.id) or batch
         claimed = self._claim_translation_batch(batch, trace_id=trace_id)
         if claimed is None:
-            return self.translation_batch_repository.get_translation_batch(batch.id)
+            reconciled = self._reconcile_translation_batch_atomic_rejection(
+                batch, generation=batch.generation, trace_id=trace_id,
+            )
+            # _claim 已完成预算失败的条件写与任务收口；保留 execute 既有失败批次返回合同，
+            # 但绝不把该记录当作已获 lease 的批次继续执行。
+            if (
+                reconciled.status == "failed"
+                and reconciled.error_code == "translation_request_budget_exceeded"
+            ):
+                return reconciled
+            return None
 
         prepared = None
         request = None
@@ -1272,45 +1388,71 @@ class DocumentJobExecutionService:
                 self._record_translation_audit_events(job, recorder, trace_id=trace_id)
                 audit_completed = True
             current = self.job_repository.get_document_job(job.id)
-            if current is None or current.retry_count != claimed.generation:
+            if current is None or current.retry_count != claimed.generation or current.status != "running" or current.stage != "translating":
                 return self.translation_batch_repository.get_translation_batch(claimed.id)
-            if current.status == "canceled":
-                return self._cancel_translation_batch(claimed, trace_id=trace_id)
-            if (
-                current.status != "running" or current.stage != "translating"
-                or current.retry_count != claimed.generation
-                or self._mark_timed_out_if_needed(current, trace_id=trace_id) is not None
-            ):
-                return self.translation_batch_repository.get_translation_batch(claimed.id)
-            result_file = self._register_translation_batch_result(
-                job,
-                batch=claimed,
-                result=result,
-                validated=validated,
-                integrity=integrity,
-                recorder=recorder,
+            current_summary = self.summarize_translation_generation(current)
+            if current_summary is not None and current_summary.outcome in {
+                "failed", "completed", "canceled", "validating",
+            }:
+                # Provider 调用已经真实发生，但终态闸门先于结果登记；该响应只能保留审计。
+                self._finalize_translation_generation(
+                    current.id, generation=claimed.generation, trace_id=trace_id,
+                )
+                return self.translation_batch_repository.get_translation_batch(claimed.id) or claimed
+            _source_file, current_source_ir = self._read_translation_source(
+                current, claimed.source_document_ir_file_id,
             )
-            succeeded = self.translation_batch_repository.update_translation_batch_if_current(
-                claimed.id,
-                allowed_statuses={"running"},
-                expected_generation=claimed.generation,
-                status="succeeded",
-                result_file_id=result_file.id,
-                ai_call_log_file_ids=self._recorder_call_log_file_ids(recorder),
-                debug_archive_file_ids=self._recorder_debug_archive_file_ids(recorder),
-                finish_reason=result.finish_reason,
-                usage=result.usage,
-                response_id=result.response_id,
-                error_code=None,
-                error_message=None,
-                retryable=False,
-                lease_owner=None,
-                leased_at=None,
-                lease_expires_at=None,
-                updated_at=utc_now(),
-            )
+            expected_plans = self._build_expected_translation_plans(current, current_source_ir)
+            try:
+                result_file = self._register_translation_batch_result(
+                    job,
+                    batch=claimed,
+                    result=result,
+                    validated=validated,
+                    integrity=integrity,
+                    recorder=recorder,
+                )
+            except (RuntimeError, ValueError, FileNotFoundError, OSError) as exc:
+                # Provider 已成功且审计已落盘；结果 Artifact 的 I/O 失败不能再次调用 Provider。
+                raise _TranslationBatchStorageError("翻译批次结果 Artifact 写入失败。") from exc
+            try:
+                succeeded = self.translation_batch_repository.update_translation_batch_if_current(
+                    claimed.id,
+                    allowed_statuses={"running"},
+                    expected_generation=claimed.generation,
+                    expected_attempt_count=claimed.attempt_count,
+                    expected_lease_owner=claimed.lease_owner,
+                    expected_job_id=claimed.job_id,
+                    expected_job_status={"running"},
+                    expected_job_stages={"translating"},
+                    expected_plans=expected_plans,
+                    status="succeeded",
+                    result_file_id=result_file.id,
+                    ai_call_log_file_ids=self._recorder_call_log_file_ids(recorder),
+                    debug_archive_file_ids=self._recorder_debug_archive_file_ids(recorder),
+                    finish_reason=result.finish_reason,
+                    usage=result.usage,
+                    response_id=result.response_id,
+                    error_code=None,
+                    error_message=None,
+                    retryable=False,
+                    lease_owner=None,
+                    leased_at=None,
+                    lease_expires_at=None,
+                    updated_at=utc_now(),
+                )
+            except TranslationBatchTreeInvalidError:
+                raise
+            except (RuntimeError, ValueError, FileNotFoundError, OSError, sqlite3.Error) as exc:
+                raise _TranslationBatchStorageError("翻译批次状态提交失败。") from exc
+            except Exception as exc:
+                if not _is_metadata_storage_error(exc):
+                    raise
+                raise _TranslationBatchStorageError("翻译批次状态提交失败。") from exc
             if succeeded is None:
-                return self.translation_batch_repository.get_translation_batch(claimed.id)
+                return self._reconcile_translation_batch_atomic_rejection(
+                    claimed, generation=claimed.generation, trace_id=trace_id,
+                )
             self._record_event(
                 job,
                 event_type="translation_batch_succeeded",
@@ -1329,6 +1471,27 @@ class DocumentJobExecutionService:
             )
             self._finalize_translation_generation(job.id, generation=succeeded.generation, trace_id=trace_id)
             return succeeded
+        except TranslationBatchTreeInvalidError:
+            # 权威 source/config 与持久化批次树不一致时，不能把它伪装成 Provider 失败。
+            current = self.job_repository.get_document_job(claimed.job_id)
+            if current is None or current.retry_count != claimed.generation:
+                return self.translation_batch_repository.get_translation_batch(claimed.id) or claimed
+            self._mark_failed(
+                job,
+                failed_stage="translating",
+                error_code="translation_batch_tree_invalid",
+                error_message="翻译批次计划与当前 source/config 不一致。",
+                trace_id=trace_id,
+            )
+            return self.translation_batch_repository.get_translation_batch(claimed.id) or claimed
+        except _TranslationBatchStorageError as exc:
+            return self._fail_translation_batch_storage(
+                claimed,
+                job,
+                expected_plans=expected_plans,
+                error_message=str(exc),
+                trace_id=trace_id,
+            )
         except (KeyError, ValueError, RuntimeError, FileNotFoundError, OSError) as exc:
             # 审计自身失败须可见，不能再把同一次调用登记成另一份失败审计。
             if audit_started and not audit_completed:
@@ -1340,14 +1503,27 @@ class DocumentJobExecutionService:
                 )
                 recorder.record_failure(request, result, error=exc, duration_ms=duration_ms, integrity=integrity.bind(binding))
                 self._record_translation_audit_events(job, recorder, trace_id=trace_id)
-            return self._handle_translation_batch_failure(
-                claimed,
-                job,
-                error=exc,
-                recorder=recorder,
-                trace_id=trace_id,
-                duration_ms=duration_ms,
-            )
+            try:
+                return self._handle_translation_batch_failure(
+                    claimed,
+                    job,
+                    error=exc,
+                    recorder=recorder,
+                    trace_id=trace_id,
+                    duration_ms=duration_ms,
+                )
+            except TranslationBatchTreeInvalidError:
+                current = self.job_repository.get_document_job(claimed.job_id)
+                if current is None or current.retry_count != claimed.generation:
+                    return self.translation_batch_repository.get_translation_batch(claimed.id) or claimed
+                self._mark_failed(
+                    job,
+                    failed_stage="translating",
+                    error_code="translation_batch_tree_invalid",
+                    error_message="翻译批次计划与当前 source/config 不一致。",
+                    trace_id=trace_id,
+                )
+                return self.translation_batch_repository.get_translation_batch(claimed.id) or claimed
 
     def _claim_translation_batch(
         self,
@@ -1355,22 +1531,132 @@ class DocumentJobExecutionService:
         *,
         trace_id: str | None,
     ) -> DocumentJobTranslationBatchRecord | None:
+        current_job = self.job_repository.get_document_job(batch.job_id)
+        if (
+            current_job is None
+            or current_job.status != "running"
+            or current_job.stage != "translating"
+            or current_job.retry_count != batch.generation
+        ):
+            return None
+        try:
+            summary = self.summarize_translation_generation(current_job)
+        except TranslationBatchTreeInvalidError:
+            self._mark_failed(
+                current_job,
+                failed_stage="translating",
+                error_code="translation_batch_tree_invalid",
+                error_message="翻译批次计划与当前 source/config 不一致。",
+                trace_id=trace_id,
+            )
+            return None
+        except (DocumentIRTranslationError, TranslationIntegrityError, FileNotFoundError, OSError, sqlite3.Error, ValueError) as exc:
+            self._mark_failed(
+                current_job,
+                failed_stage="translating",
+                error_code="oss_failed" if _is_metadata_storage_error(exc) else "translation_failed",
+                error_message="翻译批次计划校验失败。",
+                trace_id=trace_id,
+            )
+            return None
+        if summary is not None and summary.outcome in {"failed", "completed", "canceled", "validating"}:
+            self._finalize_translation_generation(
+                current_job.id, generation=batch.generation, trace_id=trace_id,
+            )
+            return None
+        try:
+            _source_file, source_document_ir = self._read_translation_source(
+                current_job, current_job.source_document_ir_file_id,
+            )
+            expected_plans = self._build_expected_translation_plans(current_job, source_document_ir)
+        except TranslationBatchTreeInvalidError:
+            self._finalize_translation_generation(
+                current_job.id, generation=batch.generation, trace_id=trace_id,
+            )
+            return None
+        except (DocumentIRTranslationError, TranslationIntegrityError, FileNotFoundError, OSError, sqlite3.Error, ValueError) as exc:
+            if isinstance(exc, TranslationIntegrityError) and exc.code == "translation_request_budget_exceeded":
+                _snapshot_job, installed_batches = self._get_translation_execution_snapshot(
+                    current_job.id, generation=batch.generation,
+                )
+                failed = self.translation_batch_repository.update_translation_batch_if_current(
+                    batch.id,
+                    allowed_statuses={"pending", "queued"},
+                    expected_generation=batch.generation,
+                    expected_attempt_count=batch.attempt_count,
+                    expected_lease_owner=batch.lease_owner,
+                    expected_job_id=batch.job_id,
+                    expected_job_status={"running"},
+                    expected_job_stages={"translating"},
+                    expected_plans=installed_batches,
+                    status="failed",
+                    error_code=exc.code,
+                    error_message=str(exc),
+                    retryable=False,
+                    updated_at=utc_now(),
+                )
+                self._mark_failed(
+                    current_job,
+                    failed_stage="translating",
+                    error_code="translation_failed",
+                    error_message=str(exc),
+                    trace_id=trace_id,
+                )
+                return None
+            self._mark_failed(
+                current_job,
+                failed_stage="translating",
+                error_code="oss_failed" if _is_metadata_storage_error(exc) else "translation_failed",
+                error_message="翻译批次计划校验失败。",
+                trace_id=trace_id,
+            )
+            return None
         now = utc_now()
-        claimed = self.translation_batch_repository.update_translation_batch_if_current(
-            batch.id,
-            allowed_statuses={"pending", "queued", "failed"},
-            expected_generation=batch.generation,
-            status="running",
-            attempt_count=batch.attempt_count + 1,
-            lease_owner="translation_batch_worker",
-            leased_at=now,
-            lease_expires_at=now + timedelta(seconds=self.settings.translation_provider_batch_lease_seconds),
-            error_code=None,
-            error_message=None,
-            retryable=False,
-            updated_at=now,
-        )
+        lease_owner = f"translation_batch_worker:{uuid4().hex}"
+        try:
+            claimed = self.translation_batch_repository.claim_translation_batch(
+                batch.id,
+                expected_generation=batch.generation,
+                expected_attempt_count=batch.attempt_count,
+                lease_owner=lease_owner,
+                leased_at=now,
+                lease_expires_at=now + timedelta(seconds=self.settings.translation_provider_batch_lease_seconds),
+                provider_call_budget=batch.provider_call_budget,
+                expected_plans=expected_plans,
+            )
+        except TranslationBatchTreeInvalidError:
+            self._mark_failed(
+                current_job,
+                failed_stage="translating",
+                error_code="translation_batch_tree_invalid",
+                error_message="翻译批次计划与当前 source/config 不一致。",
+                trace_id=trace_id,
+            )
+            return None
+        except (FileNotFoundError, OSError, sqlite3.Error) as exc:
+            self._mark_failed(
+                current_job,
+                failed_stage="translating",
+                error_code="oss_failed" if _is_metadata_storage_error(exc) else "translation_failed",
+                error_message="翻译批次计划读取失败。",
+                trace_id=trace_id,
+            )
+            return None
+        except Exception as exc:
+            if not _is_metadata_storage_error(exc):
+                raise
+            self._mark_failed(
+                current_job,
+                failed_stage="translating",
+                error_code="oss_failed",
+                error_message="翻译批次计划读取失败。",
+                trace_id=trace_id,
+            )
+            return None
         if claimed is None:
+            self._reconcile_translation_batch_atomic_rejection(
+                batch, generation=batch.generation, trace_id=trace_id,
+            )
             return None
         job = self.job_repository.get_document_job(batch.job_id)
         if job is not None:
@@ -1391,6 +1677,126 @@ class DocumentJobExecutionService:
             )
         return claimed
 
+    def _reconcile_translation_batch_atomic_rejection(
+        self,
+        batch: DocumentJobTranslationBatchRecord,
+        *,
+        generation: int,
+        trace_id: str | None,
+    ) -> DocumentJobTranslationBatchRecord:
+        """原子端口拒绝后重读同代快照，收口终态而不把普通竞争误报为失败。"""
+
+        current_job, current_batches = self._get_translation_execution_snapshot(
+            batch.job_id, generation=generation,
+        )
+        current_batch = next((item for item in current_batches if item.id == batch.id), None)
+        if current_batch is None:
+            current_batch = self.translation_batch_repository.get_translation_batch(batch.id) or batch
+        if (
+            current_job is None
+            or current_job.retry_count != generation
+            or current_job.status in {"succeeded", "failed", "canceled"}
+            or current_job.stage not in {"translating", "translation_validating"}
+        ):
+            return current_batch
+        try:
+            summary = self.summarize_translation_generation(current_job, current_batches)
+        except TranslationBatchTreeInvalidError:
+            self._mark_failed(
+                current_job,
+                failed_stage=current_job.stage,
+                error_code="translation_batch_tree_invalid",
+                error_message="翻译批次计划与当前 source/config 不一致。",
+                trace_id=trace_id,
+            )
+            return current_batch
+        except (DocumentIRTranslationError, TranslationIntegrityError, FileNotFoundError, OSError, ValueError):
+            return current_batch
+        if summary is not None and summary.outcome in {"failed", "completed", "canceled", "validating"}:
+            self._finalize_translation_generation(
+                current_job.id, generation=current_job.retry_count, trace_id=trace_id,
+            )
+            return self.translation_batch_repository.get_translation_batch(batch.id) or current_batch
+        return current_batch
+
+    def _fail_translation_batch_storage(
+        self,
+        batch: DocumentJobTranslationBatchRecord,
+        job: DocumentJobRecord,
+        *,
+        expected_plans: list[TranslationRootPlan],
+        error_message: str,
+        trace_id: str | None,
+    ) -> DocumentJobTranslationBatchRecord:
+        """批次结果或状态写入失败时，以原代次安全收口且不重调 Provider。"""
+
+        current = self.job_repository.get_document_job(batch.job_id)
+        if current is None or current.retry_count != batch.generation:
+            return self.translation_batch_repository.get_translation_batch(batch.id) or batch
+        self._mark_failed(
+            job,
+            failed_stage="translating",
+            error_code="oss_failed",
+            error_message=error_message,
+            trace_id=trace_id,
+        )
+        failed_batch = self.translation_batch_repository.update_translation_batch_if_current(
+            batch.id,
+            allowed_statuses={"running"},
+            expected_generation=batch.generation,
+            expected_attempt_count=batch.attempt_count,
+            expected_lease_owner=batch.lease_owner,
+            expected_plans=expected_plans,
+            status="failed",
+            error_code="oss_failed",
+            error_message=error_message,
+            retryable=False,
+            lease_owner=None,
+            leased_at=None,
+            lease_expires_at=None,
+            updated_at=utc_now(),
+        )
+        return failed_batch or self.translation_batch_repository.get_translation_batch(batch.id) or batch
+
+    def _mark_translating_started(
+        self, job: DocumentJobRecord, *, trace_id: str | None,
+    ) -> DocumentJobRecord:
+        """源 IR 已落盘后提交翻译阶段；事件失败时沿用已提交阶段收尾。"""
+
+        if job.stage != "ir_converting":
+            return job
+        translating = self.job_repository.update_document_job_if_current(
+            job.id,
+            allowed_statuses={"running"},
+            allowed_stages={"ir_converting"},
+            expected_retry_count=job.retry_count,
+            stage="translating",
+            progress=max(job.progress, 45),
+            updated_at=utc_now(),
+        )
+        if translating is None:
+            return self.job_repository.get_document_job(job.id) or job
+        try:
+            self._record_event(
+                translating,
+                event_type="stage_succeeded",
+                stage="ir_converting",
+                message="源 DocumentIR 转换已完成。",
+                payload={"source_document_ir_file_id": translating.source_document_ir_file_id},
+                trace_id=trace_id,
+            )
+            self._record_event(
+                translating,
+                event_type="stage_started",
+                stage="translating",
+                message="DocumentIR 翻译已开始。",
+                payload={"source_document_ir_file_id": translating.source_document_ir_file_id},
+                trace_id=trace_id,
+            )
+        except Exception as exc:
+            return self._fail_stage_attempt(translating, exc, trace_id=trace_id)
+        return translating
+
     def _handle_translation_batch_failure(
         self,
         batch: DocumentJobTranslationBatchRecord,
@@ -1401,31 +1807,49 @@ class DocumentJobExecutionService:
         trace_id: str | None,
         duration_ms: int,
     ) -> DocumentJobTranslationBatchRecord:
-        current = self.job_repository.get_document_job(job.id)
-        if current is not None and current.retry_count == batch.generation and current.status == "canceled":
-            return self._cancel_translation_batch(batch, trace_id=trace_id)
-        if (
-            current is None or current.status != "running" or current.stage != "translating"
-            or current.retry_count != batch.generation
-            or self._mark_timed_out_if_needed(current, trace_id=trace_id) is not None
-        ):
-            return self.translation_batch_repository.get_translation_batch(batch.id) or batch
         error_code = self._translation_batch_error_code(error)
         error_message = str(error) if isinstance(error, TranslationIntegrityError) else "翻译 Provider 调用或批次处理失败。"
         current = self.job_repository.get_document_job(job.id)
         if current is None or current.retry_count != batch.generation or current.status != "running" or current.stage != "translating":
             return self.translation_batch_repository.get_translation_batch(batch.id) or batch
-        if self._should_split_translation_batch(batch, error):
-            split = self._split_translation_batch(
-                batch,
-                job,
-                error_code=error_code,
-                error_message=error_message,
-                error=error,
-                recorder=recorder,
-                trace_id=trace_id,
-                duration_ms=duration_ms,
+        try:
+            _source_file, source_document_ir = self._read_translation_source(
+                current, batch.source_document_ir_file_id,
             )
+            expected_plans = self._build_expected_translation_plans(current, source_document_ir)
+        except (DocumentIRTranslationError, TranslationIntegrityError, FileNotFoundError, OSError, ValueError) as exc:
+            self._mark_failed(
+                current,
+                failed_stage="translating",
+                error_code="oss_failed" if isinstance(exc, (FileNotFoundError, OSError)) else "translation_failed",
+                error_message="翻译批次计划重建失败。",
+                trace_id=trace_id,
+            )
+            return self.translation_batch_repository.get_translation_batch(batch.id) or batch
+        if self._should_split_translation_batch(batch, error):
+            try:
+                split = self._split_translation_batch(
+                    batch,
+                    job,
+                    error_code=error_code,
+                    error_message=error_message,
+                    error=error,
+                    recorder=recorder,
+                    trace_id=trace_id,
+                    duration_ms=duration_ms,
+                )
+            except TranslationBatchTreeInvalidError:
+                latest = self.job_repository.get_document_job(batch.job_id)
+                if latest is None or latest.retry_count != batch.generation:
+                    return self.translation_batch_repository.get_translation_batch(batch.id) or batch
+                self._mark_failed(
+                    job,
+                    failed_stage="translating",
+                    error_code="translation_batch_tree_invalid",
+                    error_message="翻译批次计划与当前 source/config 不一致。",
+                    trace_id=trace_id,
+                )
+                return self.translation_batch_repository.get_translation_batch(batch.id) or batch
             self._enqueue_runnable_translation_batches(job, generation=batch.generation, trace_id=trace_id)
             return split
 
@@ -1433,26 +1857,46 @@ class DocumentJobExecutionService:
             batch.attempt_count < batch.max_attempts
             and self._provider_call_budget_remaining(job, batch)
         )
-        failed = self.translation_batch_repository.update_translation_batch_if_current(
-            batch.id,
-            allowed_statuses={"running"},
-            expected_generation=batch.generation,
-            status="failed",
-            ai_call_log_file_ids=self._recorder_call_log_file_ids(recorder),
-            debug_archive_file_ids=self._recorder_debug_archive_file_ids(recorder),
-            finish_reason=error.finish_reason if isinstance(error, TranslationProviderResponseError) else None,
-            usage=error.usage if isinstance(error, TranslationProviderResponseError) else {},
-            response_id=error.response_id if isinstance(error, TranslationProviderResponseError) else None,
-            error_code=error_code,
-            error_message=error_message,
-            retryable=retryable,
-            lease_owner=None,
-            leased_at=None,
-            lease_expires_at=None,
-            updated_at=utc_now(),
-        )
-        if failed is None:
+        try:
+            failed = self.translation_batch_repository.update_translation_batch_if_current(
+                batch.id,
+                allowed_statuses={"running"},
+                expected_generation=batch.generation,
+                expected_attempt_count=batch.attempt_count,
+                expected_lease_owner=batch.lease_owner,
+                expected_job_id=batch.job_id,
+                expected_job_status={"running"},
+                expected_job_stages={"translating"},
+                expected_plans=expected_plans,
+                status="failed",
+                ai_call_log_file_ids=self._recorder_call_log_file_ids(recorder),
+                debug_archive_file_ids=self._recorder_debug_archive_file_ids(recorder),
+                finish_reason=error.finish_reason if isinstance(error, TranslationProviderResponseError) else None,
+                usage=error.usage if isinstance(error, TranslationProviderResponseError) else {},
+                response_id=error.response_id if isinstance(error, TranslationProviderResponseError) else None,
+                error_code=error_code,
+                error_message=error_message,
+                retryable=retryable,
+                lease_owner=None,
+                leased_at=None,
+                lease_expires_at=None,
+                updated_at=utc_now(),
+            )
+        except Exception as exc:
+            if not _is_metadata_storage_error(exc):
+                raise
+            self._mark_failed(
+                current,
+                failed_stage="translating",
+                error_code="oss_failed",
+                error_message="翻译批次状态写入失败。",
+                trace_id=trace_id,
+            )
             return self.translation_batch_repository.get_translation_batch(batch.id) or batch
+        if failed is None:
+            return self._reconcile_translation_batch_atomic_rejection(
+                batch, generation=batch.generation, trace_id=trace_id,
+            )
         self._record_event(
             job,
             event_type="translation_batch_failed",
@@ -1503,36 +1947,14 @@ class DocumentJobExecutionService:
         midpoint = max(1, len(batch.item_ids) // 2)
         child_item_groups = [batch.item_ids[:midpoint], batch.item_ids[midpoint:]]
         now = utc_now()
-        split = self.translation_batch_repository.update_translation_batch_if_current(
-            batch.id,
-            allowed_statuses={"running"},
-            expected_generation=batch.generation,
-            status="split",
-            ai_call_log_file_ids=self._recorder_call_log_file_ids(recorder),
-            debug_archive_file_ids=self._recorder_debug_archive_file_ids(recorder),
-            finish_reason=error.finish_reason if isinstance(error, TranslationProviderResponseError) else None,
-            usage=error.usage if isinstance(error, TranslationProviderResponseError) else {},
-            response_id=error.response_id if isinstance(error, TranslationProviderResponseError) else None,
-            error_code=error_code,
-            error_message=error_message,
-            retryable=False,
-            truncation_retry=True,
-            lease_owner=None,
-            leased_at=None,
-            lease_expires_at=None,
-            updated_at=now,
-        )
-        if split is None:
-            return self.translation_batch_repository.get_translation_batch(batch.id) or batch
+        child_records: list[DocumentJobTranslationBatchRecord] = []
         for child_index, child_item_ids in enumerate(child_item_groups, start=1):
             if not child_item_ids:
                 continue
             child_id = f"{batch.id}_s{batch.split_level + 1}_{child_index:02d}"
-            if self.translation_batch_repository.get_translation_batch(child_id) is not None:
-                continue
             page_start, page_end = self._page_range_for_item_ids(child_item_ids, targets_by_id)
             char_count = sum(len(items_by_id[item_id].text) for item_id in child_item_ids)
-            self.translation_batch_repository.create_translation_batch(
+            child_records.append(
                 DocumentJobTranslationBatchRecord(
                     id=child_id,
                     job_id=batch.job_id,
@@ -1558,6 +1980,47 @@ class DocumentJobExecutionService:
                     created_at=now,
                     updated_at=now,
                 )
+            )
+        expected_plans = self._build_expected_translation_plans(job, source_document_ir)
+        split_result = self.translation_batch_repository.split_translation_batch(
+            batch.id,
+            expected_generation=batch.generation,
+            expected_attempt_count=batch.attempt_count,
+            expected_lease_owner=batch.lease_owner or "",
+            expected_plans=expected_plans,
+            children=child_records,
+        )
+        if split_result is None:
+            return self._reconcile_translation_batch_atomic_rejection(
+                batch, generation=batch.generation, trace_id=trace_id,
+            )
+        split, _children = split_result
+        annotated = self.translation_batch_repository.update_translation_batch_if_current(
+            split.id,
+            allowed_statuses={"split"},
+            expected_generation=split.generation,
+            expected_attempt_count=split.attempt_count,
+            expected_lease_owner=None,
+            expected_job_id=split.job_id,
+            expected_job_status={"running"},
+            expected_job_stages={"translating"},
+            expected_plans=expected_plans,
+            ai_call_log_file_ids=self._recorder_call_log_file_ids(recorder),
+            debug_archive_file_ids=self._recorder_debug_archive_file_ids(recorder),
+            finish_reason=error.finish_reason if isinstance(error, TranslationProviderResponseError) else None,
+            usage=error.usage if isinstance(error, TranslationProviderResponseError) else {},
+            response_id=error.response_id if isinstance(error, TranslationProviderResponseError) else None,
+            error_code=error_code,
+            error_message=error_message,
+            retryable=False,
+            truncation_retry=True,
+            updated_at=now,
+        )
+        if annotated is not None:
+            split = annotated
+        else:
+            return self._reconcile_translation_batch_atomic_rejection(
+                split, generation=split.generation, trace_id=trace_id,
             )
         self._record_event(
             job,
@@ -1586,124 +2049,146 @@ class DocumentJobExecutionService:
         trace_id: str | None,
     ) -> DocumentJobRecord | None:
         job = self.job_repository.get_document_job(job_id)
-        if job is None or job.status != "running" or job.retry_count != generation:
+        if job is None or job.status in {"succeeded", "failed", "canceled"}:
             return job
-        if job.stage not in {"translating", "translation_validating"}:
+        if job.status != "running" or job.stage not in {"translating", "translation_validating"} or job.retry_count != generation:
             return job
+        failure_stage = job.stage
+        self._reset_expired_translation_batch_leases(job, generation=generation, trace_id=trace_id)
+        snapshot_job, batches = self._get_translation_execution_snapshot(job.id, generation=generation)
+        if snapshot_job is None or snapshot_job.retry_count != generation:
+            return snapshot_job or job
+        job = snapshot_job
+        if job.status in {"succeeded", "failed", "canceled"}:
+            return job
+        failure_stage = job.stage
         try:
-            timed_out = self._mark_timed_out_if_needed(job, trace_id=trace_id)
-            if timed_out is not None:
-                return timed_out
-            if job.stage == "translating":
-                self._reset_expired_translation_batch_leases(job, generation=generation, trace_id=trace_id)
-            batches = self.translation_batch_repository.list_translation_batches(job.id, generation=generation)
-            leaf_batches = [batch for batch in batches if batch.status != "split"]
-            if batches and not leaf_batches:
-                return job
-            if any(batch.status in {"pending", "queued", "running"} for batch in leaf_batches):
-                self._enqueue_runnable_translation_batches(job, generation=generation, trace_id=trace_id)
-                return self.job_repository.get_document_job(job.id) or job
-            retryable_failures = [
-                batch
-                for batch in leaf_batches
-                if batch.status == "failed"
-                and batch.retryable
-                and batch.attempt_count < batch.max_attempts
-                and self._provider_call_budget_remaining(job, batch)
-            ]
-            if retryable_failures:
-                self._enqueue_runnable_translation_batches(job, generation=generation, trace_id=trace_id)
-                return self.job_repository.get_document_job(job.id) or job
-            failed_batches = [batch for batch in leaf_batches if batch.status == "failed"]
-            if failed_batches:
-                first_failure = sorted(failed_batches, key=lambda item: (item.updated_at, item.id))[0]
-                return self._mark_failed(
-                    job,
-                    failed_stage="translating",
-                    error_code="translation_failed",
-                    error_message=f"翻译批次失败: {first_failure.error_code or 'unknown'} {first_failure.error_message or ''}".strip(),
-                    trace_id=trace_id,
-                )
-            if all(batch.status == "succeeded" for batch in leaf_batches):
-                if job.stage == "translating":
-                    validating = self.job_repository.update_document_job_if_current(
-                        job.id,
-                        allowed_statuses={"running"},
-                        allowed_stages={"translating"},
-                        expected_retry_count=generation,
-                        stage="translation_validating",
-                        progress=max(job.progress, 55),
-                        updated_at=utc_now(),
-                    )
-                    if validating is None:
-                        return self.job_repository.get_document_job(job.id) or job
-                    job = validating
-                    self._record_event(
-                        job, event_type="stage_succeeded", stage="translating",
-                        message="翻译有效叶子批次已全部完成。", payload={"batch_count": len(leaf_batches)}, trace_id=trace_id,
-                    )
-                    self._record_event(
-                        job, event_type="stage_started", stage="translation_validating",
-                        message="翻译结果完整性校验已开始。", payload={"batch_count": len(leaf_batches)}, trace_id=trace_id,
-                    )
-                started_at = time.perf_counter()
+            summary = self.summarize_translation_generation(job, batches)
+        except TranslationBatchTreeInvalidError:
+            return self._mark_failed(
+                job,
+                failed_stage=failure_stage,
+                error_code="translation_batch_tree_invalid",
+                error_message="翻译批次计划与当前 source/config 不一致。",
+                trace_id=trace_id,
+            )
+        except (DocumentIRTranslationError, TranslationIntegrityError, FileNotFoundError, OSError, ValueError) as exc:
+            return self._mark_failed(
+                job,
+                failed_stage=failure_stage,
+                error_code="translation_failed",
+                error_message=f"翻译批次计划校验失败: {self._translation_batch_error_code(exc)}",
+                trace_id=trace_id,
+            )
+        if summary is None:
+            error_code = "translation_batch_tree_invalid"
+            batch_source_ids = {batch.source_document_ir_file_id for batch in batches}
+            if batches and job.source_document_ir_file_id not in batch_source_ids:
+                # 当前任务指针与本代批次绑定不一致，属于完整性/代次错误，不是对象存储缺失。
+                error_code = "translation_failed"
+            else:
                 try:
-                    updated = self._register_translated_document_ir_and_continue(
-                        job, succeeded_batches=leaf_batches, trace_id=trace_id,
+                    self._read_translation_source(job, job.source_document_ir_file_id)
+                except (FileNotFoundError, OSError, sqlite3.Error):
+                    error_code = "oss_failed"
+                except (DocumentIRTranslationError, TranslationIntegrityError, ValueError):
+                    error_code = "translation_failed"
+            return self._mark_failed(
+                job,
+                failed_stage=failure_stage,
+                error_code=error_code,
+                error_message="翻译批次无法由当前 source/config 重建权威计划。",
+                trace_id=trace_id,
+            )
+        leaf_batches = [batch for batch in batches if batch.status != "split"]
+        if summary.outcome == "failed":
+            return self._mark_failed(
+                job,
+                failed_stage=failure_stage,
+                error_code="translation_failed",
+                error_message=(
+                    f"翻译批次失败: {summary.reason_code or 'translation_failed'}"
+                    f" {summary.reason_message or ''}"
+                ).strip(),
+                trace_id=trace_id,
+            )
+        if summary.outcome in {"not_started", "running", "retrying"}:
+            self._enqueue_runnable_translation_batches(job, generation=generation, trace_id=trace_id)
+            return self.job_repository.get_document_job(job.id) or job
+        if summary.outcome == "canceled":
+            return job
+        if summary.outcome not in {"completed", "validating"}:
+            return job
+        if all(batch.status == "succeeded" for batch in leaf_batches):
+            if job.stage == "translating":
+                stage_started_at = time.perf_counter()
+                validating = self.job_repository.update_document_job_if_current(
+                    job.id,
+                    allowed_statuses={"running"},
+                    allowed_stages={"translating"},
+                    expected_retry_count=generation,
+                    stage="translation_validating",
+                    progress=max(job.progress, 55),
+                    updated_at=utc_now(),
+                )
+                if validating is None:
+                    return self.job_repository.get_document_job(job.id) or job
+                try:
+                    self._record_event(
+                        validating,
+                        event_type="stage_succeeded",
+                        stage="translating",
+                        message="翻译批次已全部完成。",
+                        payload={"batch_count": len(leaf_batches)},
+                        trace_id=trace_id,
+                        duration_ms=int((time.perf_counter() - stage_started_at) * 1000),
+                    )
+                    self._record_event(
+                        validating,
+                        event_type="stage_started",
+                        stage="translation_validating",
+                        message="翻译完整性校验已开始。",
+                        payload={"batch_count": len(leaf_batches)},
+                        trace_id=trace_id,
                     )
                 except Exception as exc:
-                    error_code = (
-                        "oss_failed" if isinstance(exc, (ApiError, FileNotFoundError, OSError))
-                        else "translation_failed"
-                    )
-                    return self._mark_failed(
-                        job, failed_stage="translation_validating", error_code=error_code,
-                        error_message=str(exc), trace_id=trace_id,
-                        duration_ms=int((time.perf_counter() - started_at) * 1000),
-                    )
-                if updated.status != "running" or updated.stage != "rendering" or updated.retry_count != generation:
-                    return updated
-                job = updated
-                self._record_event(
-                    updated, event_type="stage_succeeded", stage="translation_validating",
-                    message="翻译结果完整性校验通过，DocumentIR 已保存。",
-                    payload={"document_ir_file_id": updated.document_ir_file_id, "batch_count": len(leaf_batches)},
-                    trace_id=trace_id, duration_ms=int((time.perf_counter() - started_at) * 1000),
-                )
-                return self.execute_job(updated.id, trace_id=trace_id) or updated
-            return job
-            if any(batch.status in {"pending", "queued", "running"} for batch in leaf_batches):
-                self._enqueue_runnable_translation_batches(job, generation=generation, trace_id=trace_id)
-                return self.job_repository.get_document_job(job.id) or job
-            retryable_failures = [
-                batch
-                for batch in leaf_batches
-                if batch.status == "failed"
-                and batch.retryable
-                and batch.attempt_count < batch.max_attempts
-                and self._provider_call_budget_remaining(job, batch)
-            ]
-            if retryable_failures:
-                self._enqueue_runnable_translation_batches(job, generation=generation, trace_id=trace_id)
-                return self.job_repository.get_document_job(job.id) or job
-            failed_batches = [batch for batch in leaf_batches if batch.status == "failed"]
-            if failed_batches:
-                first_failure = sorted(failed_batches, key=lambda item: (item.updated_at, item.id))[0]
-                return self._mark_failed(
-                    job,
-                    failed_stage="translating",
-                    error_code="translation_failed",
-                    error_message=f"翻译批次失败: {first_failure.error_code or 'unknown'} {first_failure.error_message or ''}".strip(),
-                    trace_id=trace_id,
-                )
-            if all(batch.status == "succeeded" for batch in leaf_batches):
-                return self._register_translated_document_ir_and_continue(
+                    return self._fail_stage_attempt(validating, exc, trace_id=trace_id)
+                job = validating
+            started_at = time.perf_counter()
+            try:
+                updated = self._register_translated_document_ir_and_continue(
                     job,
                     succeeded_batches=leaf_batches,
                     trace_id=trace_id,
                 )
-        except Exception as exc:
-            return self._fail_stage_attempt(job, exc, trace_id=trace_id)
+            except Exception as exc:
+                error_code = (
+                    "oss_failed" if isinstance(exc, (ApiError, FileNotFoundError, OSError))
+                    else "translation_failed"
+                )
+                return self._mark_failed(
+                    job,
+                    failed_stage="translation_validating",
+                    error_code=error_code,
+                    error_message=str(exc),
+                    trace_id=trace_id,
+                    duration_ms=int((time.perf_counter() - started_at) * 1000),
+                )
+            if updated.status != "running" or updated.stage != "rendering" or updated.retry_count != generation:
+                return updated
+            try:
+                self._record_event(
+                    updated,
+                    event_type="stage_succeeded",
+                    stage="translation_validating",
+                    message="翻译结果完整性校验通过，DocumentIR 已保存。",
+                    payload={"document_ir_file_id": updated.document_ir_file_id, "batch_count": len(leaf_batches)},
+                    trace_id=trace_id,
+                    duration_ms=int((time.perf_counter() - started_at) * 1000),
+                )
+            except Exception as exc:
+                return self._fail_stage_attempt(updated, exc, trace_id=trace_id)
+            return self.execute_job(updated.id, trace_id=trace_id) or updated
         return job
 
     def _register_translated_document_ir_and_continue(
@@ -1720,27 +2205,42 @@ class DocumentJobExecutionService:
         started_at = time.perf_counter()
         try:
             source_file, source_document_ir = self._read_translation_source(job, job.source_document_ir_file_id)
+        except (DocumentIRTranslationError, TranslationIntegrityError, ValueError) as exc:
+            return self._mark_failed(
+                job,
+                failed_stage="translation_validating",
+                error_code="translation_failed",
+                error_message=f"翻译 source 校验失败: {self._translation_batch_error_code(exc)}",
+                trace_id=trace_id,
+                duration_ms=int((time.perf_counter() - started_at) * 1000),
+            )
+        except (FileNotFoundError, OSError) as exc:
+            return self._mark_failed(
+                job,
+                failed_stage="translation_validating",
+                error_code="oss_failed",
+                error_message=f"翻译 source 校验失败: {self._translation_batch_error_code(exc)}",
+                trace_id=trace_id,
+                duration_ms=int((time.perf_counter() - started_at) * 1000),
+            )
+        try:
             translated = source_document_ir.model_copy(deep=True)
             targets, items = self.document_ir_translation_service.extract_translation_items(translated)
             replacements = self._load_batch_replacements(job, source_file, items, succeeded_batches)
         except (DocumentIRTranslationError, TranslationIntegrityError, TranslationProviderResponseError, ValueError, FileNotFoundError, OSError) as exc:
-            error_code = self._translation_batch_error_code(exc)
-            if error_code in {
-                "translation_integrity_item_missing", "translation_integrity_item_extra",
-                "translation_fan_in_mismatch",
-            }:
-                error_code = "translation_fan_in_mismatch"
-            elif isinstance(exc, OSError) and not isinstance(exc, FileNotFoundError):
-                error_code = "oss_failed"
-            else:
-                error_code = "translation_failed"
+            error_code = (
+                "oss_failed" if isinstance(exc, (FileNotFoundError, OSError))
+                else "translation_fan_in_mismatch" if getattr(exc, "code", None) == "translation_fan_in_mismatch"
+                else "translation_failed"
+            )
             return self._mark_failed(
-                job, failed_stage="translation_validating", error_code=error_code,
-                error_message=f"翻译批次合并校验失败: {self._translation_batch_error_code(exc)}", trace_id=trace_id,
+                job,
+                failed_stage="translation_validating",
+                error_code=error_code,
+                error_message=f"翻译批次合并校验失败: {self._translation_batch_error_code(exc)}",
+                trace_id=trace_id,
                 duration_ms=int((time.perf_counter() - started_at) * 1000),
             )
-        translated = source_document_ir.model_copy(deep=True)
-        targets, items = self.document_ir_translation_service.extract_translation_items(translated)
         expected_ids = [item.id for item in items]
         missing_ids = [item_id for item_id in expected_ids if item_id not in replacements]
         extra_ids = sorted(set(replacements) - set(expected_ids))
@@ -1815,22 +2315,19 @@ class DocumentJobExecutionService:
         )
         if updated is None:
             return self.job_repository.get_document_job(job.id) or job
-        try:
-            self._record_event(
-                updated,
-                event_type="file_registered",
-                stage="translation_validating",
-                message="翻译后的 DocumentIR 已保存。",
-                payload={
-                    "file_id": ir_file.id,
-                    "file_type": ir_file.file_type,
-                    "object_key": ir_file.object_key,
-                    **self._document_ir_layout_metadata(translated),
-                },
-                trace_id=trace_id,
-            )
-        except Exception as exc:
-            return self._fail_stage_attempt(updated, exc, trace_id=trace_id)
+        self._record_event(
+            updated,
+            event_type="file_registered",
+            stage="translation_validating",
+            message="翻译后的 DocumentIR 已保存。",
+            payload={
+                "file_id": ir_file.id,
+                "file_type": ir_file.file_type,
+                "object_key": ir_file.object_key,
+                **self._document_ir_layout_metadata(translated),
+            },
+            trace_id=trace_id,
+        )
         return updated
 
     def _read_translation_artifact(
@@ -1904,7 +2401,7 @@ class DocumentJobExecutionService:
         for selected in sorted(batches, key=lambda item: (item.page_start or 0, item.created_at, item.id)):
             batch = self.translation_batch_repository.get_translation_batch(selected.id)
             if batch is None or batch.status != "succeeded" or not batch.result_file_id or (
-                batch.result_file_id != selected.result_file_id or batch.attempt_count != selected.attempt_count
+                batch.attempt_count != selected.attempt_count
             ):
                 raise DocumentIRTranslationError("翻译成功批次已变化或缺少结果。", code="translation_integrity_evidence_mismatch")
             binding = self._translation_integrity_binding(job, batch, source_file, profile, term_version)
@@ -1915,31 +2412,24 @@ class DocumentJobExecutionService:
                 or batch.char_count != sum(len(item.text) for item in local_items)
             ):
                 raise DocumentIRTranslationError("翻译批次有序源项边界不一致。", code="translation_integrity_evidence_mismatch")
-            try:
-                result_file, content = self._read_translation_artifact(
-                    job, batch.result_file_id, file_type="translation_batch_result",
-                )
-            except (DocumentIRTranslationError, TranslationIntegrityError) as exc:
-                # 旧结果缺少新元数据时先区分缺失/多余项，仍在校验边界拒绝内容。
-                try:
-                    candidate_file = self._get_uploaded_file(batch.result_file_id)
-                    candidate_content = self.file_service.read_file_content(candidate_file)
-                    candidate_payload = json.loads(candidate_content)
-                    candidate_items = candidate_payload.get("items") if isinstance(candidate_payload, dict) else None
-                    candidate_ids = {
-                        item.get("id") for item in candidate_items
-                        if isinstance(item, dict) and isinstance(item.get("id"), str)
-                    } if isinstance(candidate_items, list) else set()
-                    if candidate_ids != set(batch.item_ids):
-                        raise DocumentIRTranslationError(
-                            "翻译批次合并结果不完整。", code="translation_fan_in_mismatch",
-                        ) from exc
-                except DocumentIRTranslationError:
-                    raise
-                except Exception:
-                    pass
-                raise
+            candidate = self._get_uploaded_file(batch.result_file_id)
+            candidate_payload = json.loads(self.file_service.read_file_content(candidate))
+            candidate_items = candidate_payload.get("items") if isinstance(candidate_payload, dict) else None
+            if isinstance(candidate_items, list):
+                candidate_ids = [item.get("id") for item in candidate_items if isinstance(item, dict)]
+                if set(candidate_ids) != set(batch.item_ids) and len(candidate_ids) == len(set(candidate_ids)):
+                    raise DocumentIRTranslationError(
+                        "翻译批次合并结果不完整。", code="translation_fan_in_mismatch",
+                    )
+            result_file, content = self._read_translation_artifact(job, batch.result_file_id, file_type="translation_batch_result")
             payload = json.loads(content)
+            raw_items = payload.get("items") if isinstance(payload, dict) else None
+            if isinstance(raw_items, list):
+                raw_item_ids = [item.get("id") for item in raw_items if isinstance(item, dict)]
+                if set(raw_item_ids) != set(batch.item_ids) and len(raw_item_ids) == len(set(raw_item_ids)):
+                    raise DocumentIRTranslationError(
+                        "翻译批次合并结果不完整。", code="translation_fan_in_mismatch",
+                    )
             envelope = {
                 "job_id": job.id, "batch_id": batch.id, "root_batch_id": batch.root_batch_id,
                 "parent_batch_id": batch.parent_batch_id, "generation": batch.generation,
@@ -1953,16 +2443,6 @@ class DocumentJobExecutionService:
                 or type(result_file.metadata.get("attempt_count")) is not int
                 or result_file.metadata["attempt_count"] != batch.attempt_count
             ):
-                payload_items = payload.get("items") if isinstance(payload, dict) else None
-                payload_ids = {
-                    item.get("id") for item in payload_items
-                    if isinstance(item, dict) and isinstance(item.get("id"), str)
-                } if isinstance(payload_items, list) else set()
-                local_ids = set(batch.item_ids)
-                if payload_ids != local_ids:
-                    raise DocumentIRTranslationError(
-                        "翻译批次合并结果不完整。", code="translation_fan_in_mismatch",
-                    )
                 raise DocumentIRTranslationError("翻译结果 Artifact 关联不一致。", code="translation_integrity_evidence_mismatch")
             restored = OpenAICompatibleTranslationProvider._parse_items({"items": payload.get("items")})
             validated = self.document_ir_translation_service.validator.validate_persisted(
@@ -1970,7 +2450,6 @@ class DocumentJobExecutionService:
             )
             if replacements.keys() & validated.replacements.keys():
                 raise DocumentIRTranslationError("翻译叶子批次包含重复合并项。", code="translation_integrity_item_duplicate")
-            replacements.update(validated.replacements)
             replacements.update(validated.replacements)
         return replacements
 
@@ -2005,30 +2484,37 @@ class DocumentJobExecutionService:
                 "content_sha256": result.content_sha256,
             },
         }
-        return self.file_service.register_generated_content(
-            tenant_id=job.tenant_id,
-            company_id=job.company_id,
-            job_id=job.id,
-            created_by=job.created_by,
-            file_type="translation_batch_result",
-            filename=f"{batch.id}.json",
-            mime_type="application/json",
-            content=json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"),
-            metadata={
-                "batch_id": batch.id,
-                "root_batch_id": batch.root_batch_id,
-                "parent_batch_id": batch.parent_batch_id,
-                "generation": batch.generation,
-                "source_document_ir_file_id": batch.source_document_ir_file_id,
-                "language_pair": batch.language_pair,
-                "item_count": batch.item_count,
-                "char_count": batch.char_count,
-                "attempt_count": batch.attempt_count,
-                "ai_call_log_file_ids": self._recorder_call_log_file_ids(recorder),
-                "debug_archive_file_ids": self._recorder_debug_archive_file_ids(recorder),
-                "retry_count": job.retry_count,
-            },
-        )
+        try:
+            return self.file_service.register_generated_content(
+                tenant_id=job.tenant_id,
+                company_id=job.company_id,
+                job_id=job.id,
+                created_by=job.created_by,
+                file_type="translation_batch_result",
+                filename=f"{batch.id}.json",
+                mime_type="application/json",
+                content=json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"),
+                metadata={
+                    "batch_id": batch.id,
+                    "root_batch_id": batch.root_batch_id,
+                    "parent_batch_id": batch.parent_batch_id,
+                    "generation": batch.generation,
+                    "source_document_ir_file_id": batch.source_document_ir_file_id,
+                    "language_pair": batch.language_pair,
+                    "item_count": batch.item_count,
+                    "char_count": batch.char_count,
+                    "attempt_count": batch.attempt_count,
+                    "ai_call_log_file_ids": self._recorder_call_log_file_ids(recorder),
+                    "debug_archive_file_ids": self._recorder_debug_archive_file_ids(recorder),
+                    "retry_count": job.retry_count,
+                },
+            )
+        except (RuntimeError, ValueError, FileNotFoundError, OSError, sqlite3.Error) as exc:
+            raise _TranslationBatchStorageError("翻译批次结果 Artifact 写入失败。") from exc
+        except Exception as exc:
+            if not _is_metadata_storage_error(exc):
+                raise
+            raise _TranslationBatchStorageError("翻译批次结果 Artifact 写入失败。") from exc
 
     def _enqueue_runnable_translation_batches(
         self,
@@ -2040,7 +2526,9 @@ class DocumentJobExecutionService:
         if self.translation_batch_task_queue is None:
             return
         while True:
-            current = self.job_repository.get_document_job(job.id)
+            current, batches = self._get_translation_execution_snapshot(
+                job.id, generation=generation,
+            )
             if (
                 current is None or current.status != "running" or current.stage != "translating"
                 or current.retry_count != generation
@@ -2048,7 +2536,10 @@ class DocumentJobExecutionService:
             ):
                 return
             job = current
-            batches = self.translation_batch_repository.list_translation_batches(job.id, generation=generation)
+            summary = self.summarize_translation_generation(job, batches)
+            if summary is not None and summary.outcome in {"failed", "completed", "validating", "canceled"}:
+                self._finalize_translation_generation(job.id, generation=generation, trace_id=trace_id)
+                return
             leaf_batches = [batch for batch in batches if batch.status != "split"]
             active_count = sum(1 for batch in leaf_batches if batch.status in {"queued", "running"})
             max_active = max(1, self.settings.translation_provider_batch_max_concurrency_per_job)
@@ -2057,18 +2548,45 @@ class DocumentJobExecutionService:
             candidate = self._next_runnable_translation_batch(job, leaf_batches)
             if candidate is None:
                 return
-            queued = self.translation_batch_repository.update_translation_batch_if_current(
-                candidate.id,
-                allowed_statuses={"pending", "failed"},
-                expected_generation=candidate.generation,
-                status="queued",
-                lease_owner=None,
-                leased_at=None,
-                lease_expires_at=None,
-                updated_at=utc_now(),
-            )
+            try:
+                _source_file, source_document_ir = self._read_translation_source(
+                    job, job.source_document_ir_file_id,
+                )
+                expected_plans = self._build_expected_translation_plans(job, source_document_ir)
+            except (DocumentIRTranslationError, TranslationIntegrityError, FileNotFoundError, OSError, ValueError):
+                self._finalize_translation_generation(job.id, generation=generation, trace_id=trace_id)
+                return
+            try:
+                queued = self.translation_batch_repository.enqueue_translation_batch(
+                    candidate.id,
+                    expected_generation=candidate.generation,
+                    expected_attempt_count=candidate.attempt_count,
+                    provider_call_budget=candidate.provider_call_budget,
+                    expected_plans=expected_plans,
+                )
+            except TranslationBatchTreeInvalidError:
+                self._mark_failed(
+                    job,
+                    failed_stage=job.stage,
+                    error_code="translation_batch_tree_invalid",
+                    error_message="翻译批次计划与当前 source/config 不一致。",
+                    trace_id=trace_id,
+                )
+                return
+            except (FileNotFoundError, OSError):
+                self._mark_failed(
+                    job,
+                    failed_stage=job.stage,
+                    error_code="oss_failed",
+                    error_message="翻译批次队列状态写入失败。",
+                    trace_id=trace_id,
+                )
+                return
             if queued is None:
-                continue
+                self._reconcile_translation_batch_atomic_rejection(
+                    candidate, generation=generation, trace_id=trace_id,
+                )
+                return
             self._record_event(
                 job,
                 event_type="translation_batch_queued",
@@ -2113,31 +2631,43 @@ class DocumentJobExecutionService:
         generation: int,
         trace_id: str | None,
     ) -> None:
-        current = self.job_repository.get_document_job(job.id)
+        current, batches = self._get_translation_execution_snapshot(
+            job.id, generation=generation,
+        )
         if (
             current is None or current.status != "running" or current.stage != "translating"
             or current.retry_count != generation
         ):
             return
         now = utc_now()
-        for batch in self.translation_batch_repository.list_translation_batches(job.id, generation=generation):
+        try:
+            _source_file, source_document_ir = self._read_translation_source(
+                current, current.source_document_ir_file_id,
+            )
+            expected_plans = self._build_expected_translation_plans(current, source_document_ir)
+        except (DocumentIRTranslationError, TranslationIntegrityError, FileNotFoundError, OSError, ValueError):
+            # finalizer 随后会用同一 source/config 失败结论收口；这里不以旧批次自证根树。
+            return
+        for batch in batches:
             if batch.status != "running" or batch.lease_expires_at is None or batch.lease_expires_at > now:
                 continue
             retryable = batch.attempt_count < batch.max_attempts and self._provider_call_budget_remaining(job, batch)
-            expired = self.translation_batch_repository.update_translation_batch_if_current(
+            expired = self.translation_batch_repository.release_translation_batch_lease(
                 batch.id,
-                allowed_statuses={"running"},
                 expected_generation=batch.generation,
-                status="failed",
+                expected_attempt_count=batch.attempt_count,
+                expected_lease_owner=batch.lease_owner or "",
+                now=now,
+                expected_plans=expected_plans,
                 error_code="translation_batch_lease_expired",
                 error_message="翻译批次租约已过期，等待重新投递。",
                 retryable=retryable,
-                lease_owner=None,
-                leased_at=None,
-                lease_expires_at=None,
                 updated_at=now,
             )
             if expired is None:
+                self._reconcile_translation_batch_atomic_rejection(
+                    batch, generation=generation, trace_id=trace_id,
+                )
                 continue
             self._record_event(
                 job,
@@ -2166,6 +2696,9 @@ class DocumentJobExecutionService:
             batch.id,
             allowed_statuses={"pending", "queued", "running"},
             expected_generation=batch.generation,
+            expected_attempt_count=batch.attempt_count,
+            expected_lease_owner=batch.lease_owner,
+            expected_job_id=batch.job_id,
             status="canceled",
             lease_owner=None,
             leased_at=None,
@@ -2195,7 +2728,11 @@ class DocumentJobExecutionService:
         return self._provider_call_budget_remaining_for_batch(batch)
 
     def _provider_call_budget_remaining_for_batch(self, batch: DocumentJobTranslationBatchRecord) -> bool:
-        batches = self.translation_batch_repository.list_translation_batches(batch.job_id, generation=batch.generation)
+        snapshot_job, batches = self._get_translation_execution_snapshot(
+            batch.job_id, generation=batch.generation,
+        )
+        if snapshot_job is None or snapshot_job.retry_count != batch.generation:
+            return False
         attempts = sum(item.attempt_count for item in batches)
         return attempts < batch.provider_call_budget
 
@@ -2969,7 +3506,6 @@ class DocumentJobExecutionService:
         return self._mark_failed(
             job, failed_stage=failed_stage, error_code=error_code,
             error_message=error_message, trace_id=trace_id,
-            integrity=error.evidence if isinstance(error, (DocumentIRTranslationError, TranslationIntegrityError)) else None,
         )
 
     def _mark_failed(
@@ -2989,9 +3525,11 @@ class DocumentJobExecutionService:
         failed = self.job_repository.update_document_job_if_current(
             job.id,
             allowed_statuses={"pending", "queued", "running"},
-            allowed_stages={job.stage},
+            allowed_stages={
+                "uploaded", "parsing", "parsed", "ir_converting", "translating",
+                "translation_validating", "rendering", "quality_checking", "uploading",
+            },
             expected_retry_count=job.retry_count,
-            expected_document_ir_file_id=job.document_ir_file_id,
             require_no_prepared_result=not allow_prepared_result and expected_prepared_result_file_id is None,
             expected_prepared_result_file_id=expected_prepared_result_file_id,
             status="failed",
@@ -3004,7 +3542,11 @@ class DocumentJobExecutionService:
         )
         if failed is None:
             return self.job_repository.get_document_job(job.id) or job
-        payload = {"error_code": error_code, "error_message": error_message}
+        payload = {
+            "error_code": error_code,
+            "error_message": error_message,
+            **({"prepared_result_file_id": failed.prepared_result.file.id} if failed.prepared_result else {}),
+        }
         if integrity is not None:
             payload["integrity"] = integrity.to_dict()
         self._record_event(
@@ -3012,11 +3554,7 @@ class DocumentJobExecutionService:
             event_type="stage_failed",
             stage=failed_stage,
             message="document_jobs Worker 执行失败。",
-            payload={
-                "error_code": error_code, "error_message": error_message,
-                **({"prepared_result_file_id": failed.prepared_result.file.id} if failed.prepared_result else {}),
-                **({"integrity": integrity.to_dict()} if integrity is not None else {}),
-            },
+            payload=payload,
             trace_id=trace_id,
             level="error",
             duration_ms=duration_ms,

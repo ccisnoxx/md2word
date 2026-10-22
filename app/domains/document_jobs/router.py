@@ -67,6 +67,7 @@ from app.domains.document_jobs.schemas import (
     DocumentJobTranslationQaUpdateResponse,
     DocumentJobTranslationBatchListResponse,
     DocumentJobTranslationBatchSummaryResponse,
+    DocumentJobTranslationBatchExecutionResponse,
 )
 from app.services.auth.models import AuthenticatedUser
 
@@ -352,12 +353,37 @@ def get_document_job_translation_batches(
     runtime: AppRuntime = Depends(get_runtime),
     user: AuthenticatedUser = Depends(require_current_user),
 ) -> DocumentJobTranslationBatchListResponse:
-    batches = runtime.document_job_service.list_translation_batches(job_id, user=user)
-    generation = batches[0].generation if batches else runtime.document_job_service.get_job(job_id, user=user).retry_count
+    job, batches = runtime.document_job_service.get_translation_batch_snapshot(job_id, user=user)
+    generation = job.retry_count
+    execution = runtime.document_job_execution_service.summarize_translation_generation(job, batches)
+    row_dispositions = {
+        row.batch_id: row for row in execution.rows
+    } if execution is not None else {}
     return DocumentJobTranslationBatchListResponse(
         job_id=job_id,
         generation=generation,
-        items=[_build_translation_batch_summary_response(batch) for batch in batches],
+        items=[
+            _build_translation_batch_summary_response(
+                batch,
+                disposition=row_dispositions.get(batch.id),
+            )
+            for batch in batches
+        ],
+        execution=(
+            DocumentJobTranslationBatchExecutionResponse(
+                outcome=execution.outcome,
+                leaf_count=execution.leaf_count,
+                succeeded_leaf_count=execution.succeeded_leaf_count,
+                active_leaf_count=execution.active_leaf_count,
+                retryable_failed_leaf_count=execution.retryable_failed_leaf_count,
+                terminal_failed_leaf_count=execution.terminal_failed_leaf_count,
+                failure_batch_id=execution.failure_batch_id,
+                reason_code=execution.reason_code,
+                reason_message=execution.reason_message,
+                partial_artifacts_debug_only=execution.partial_artifacts_debug_only,
+            )
+            if execution is not None else None
+        ),
     )
 
 
@@ -748,6 +774,8 @@ def _build_document_file_summary_response(file: DocumentFileRecord) -> DocumentF
 
 def _build_translation_batch_summary_response(
     batch: DocumentJobTranslationBatchRecord,
+    *,
+    disposition: Any | None = None,
 ) -> DocumentJobTranslationBatchSummaryResponse:
     return DocumentJobTranslationBatchSummaryResponse(
         batch_id=batch.id,
@@ -776,6 +804,8 @@ def _build_translation_batch_summary_response(
         error_message=batch.error_message,
         retryable=batch.retryable,
         truncation_retry=batch.truncation_retry,
+        is_effective_leaf=(disposition.is_effective_leaf if disposition is not None else batch.status != "split"),
+        failure_disposition=(disposition.failure_disposition if disposition is not None else "none"),
         lease_expires_at=batch.lease_expires_at,
         created_at=batch.created_at,
         updated_at=batch.updated_at,

@@ -1,0 +1,197 @@
+{
+  "baseline_tree": "7fb0acfa499e95cb87809157426b306490e3907b",
+  "base_head": "596a2de7ed29edb7fdb378d91c17bda09b7f1066",
+  "accepted_product_reference_tree": "9a56f1f6e1c85bec9feef8e61058f1dec2cb7321",
+  "source_commits": {
+    "CON102": [
+      "52810b61",
+      "4d306826"
+    ],
+    "CON103": [
+      "bd828da"
+    ],
+    "CON104": [
+      "48c9402f6ed7ece4871c3ec3ca28a6a6f20920a6"
+    ]
+  },
+  "implementation_validation": [
+    {
+      "name": "compileall",
+      "status": "passed",
+      "command": "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m compileall -q app tests"
+    },
+    {
+      "name": "baseline_targeted_unittest",
+      "status": "passed",
+      "tests": 132
+    },
+    {
+      "name": "frontend_unit",
+      "status": "passed",
+      "test_files": 31,
+      "tests": 150,
+      "command": "npm run test:unit"
+    },
+    {
+      "name": "frontend_build",
+      "status": "passed",
+      "command": "npm run build"
+    },
+    {
+      "name": "release_check",
+      "status": "passed",
+      "targeted_unittest_targets": 36,
+      "command": "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python scripts/ops/check_release.py"
+    }
+  ],
+  "independent_check": {
+    "task": "10-22-tr-406-partial-batch-failure-semantics",
+    "base_path": "/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/md2word-tr406-commit-nz877xh3/baseline",
+    "base_head": "596a2de7ed29edb7fdb378d91c17bda09b7f1066",
+    "scope": {
+      "baseline_paths": 60,
+      "tr406_paths": 30,
+      "shared_paths": 19,
+      "nonshared_paths": 41,
+      "candidate_nonshared_hash_mismatches": [],
+      "baseline_outside_scope_changes": [],
+      "conflict_markers": [],
+      "expected_baseline_reconstruction_worktree_deltas": [
+        "app/domains/document_jobs/execution.py",
+        "docs/api/openapi.json",
+        "tests/test_translation_integrity_execution.py"
+      ],
+      "tr406_layers_excluded": [
+        "workflow reducer",
+        "batch root install/claim/snapshot",
+        "TR406 execution DTO/UI protections",
+        "tests.test_translation_batch_workflow",
+        "tests.test_translation_batch_repository",
+        "tests.test_translation_batch_failure_semantics"
+      ]
+    },
+    "hashes": {
+      "start_source": "baseline-frozen-hashes.json",
+      "end_recomputed": true,
+      "mismatches": [],
+      "count": 60,
+      "all_paths_unchanged": true,
+      "path_sha256": {
+        ".trellis/spec/backend/database-guidelines.md": "eb4c56361a465477986391565e7f20e03b281899dc46502b8d04918b2df470e5",
+        ".trellis/spec/backend/document-job-mode-contract.md": "d5cdd0b51c47a2b92a2166f258df4f2581c62071c712af78d98c8c4a57a04906",
+        ".trellis/spec/backend/error-handling.md": "0731b082acf0ca60ac464f86f6026c606e4de26a2a0af1da26582b91b406594f",
+        ".trellis/spec/backend/index.md": "d08191077ee21a8f61acc1f874cf4bb47d6a1615a68da8280951a5f93aa735c9",
+        ".trellis/spec/frontend/index.md": "6c7e6a7f4f788e7faae2cc3fe7423e81420bfd7b734aa3fa08ccd9fb2b2b1b80",
+        "app/api/errors.py": "19f25cc7fe399b93d45fb0bceb8a19dc9ec66258a1e7454d93621d88f5d68710",
+        "app/core/errors.py": "0f304b21d9f0ba4d1de87342ad423cc790eec60885b7b44c848463a852a09205",
+        "app/domains/document_jobs/delivery_state.py": "bbcce2edc088fa5a8dee6f79e9eb63b54d04490022a530f21ea0adcb4de7a14d",
+        "app/domains/document_jobs/execution.py": "7ae9816360ba905732e8ee856aec05b7bdd64e4026cf33fe79a58e94fbefdae7",
+        "app/domains/document_jobs/incidents.py": "28b9e5c7a5a906f3cb4fec851a53c0106d5c9cbc1c587cb93f5d85af3ab0b29b",
+        "app/domains/document_jobs/models.py": "7d75a67e9b7d3cc2cf453fab6827f94d4e95511d4faf4d03bd4df18f3ce8d21a",
+        "app/domains/document_jobs/repository.py": "7e59884cfee1d5df97d8717c2ded59d918ab5e62bae15daf9e4025b50990b88b",
+        "app/domains/document_jobs/result_state.py": "4547de0da7677877f0af451906a0764cdefb308cb4fc9ca67d818b2d8d3d163a",
+        "app/domains/document_jobs/router.py": "7a7cdea16e9d8f876c05d87b0ea3950aea5aa09cbb98f805fca44a5702eb2d3d",
+        "app/domains/document_jobs/schemas.py": "7d8013e166a3499b0e2e4ba20173f6cab6321e8ff2f13dad50aa9ecd0c025c07",
+        "app/domains/document_jobs/service.py": "3e5c16d0f68828135fa92964e5125ca89cf7482dc359615067a7cf31618d78c9",
+        "app/domains/files/repository.py": "0261a6eb1174ceeab416075fffef43a4641b4ed835818d0d47cee59a4d47a427",
+        "app/domains/files/result_registration.py": "681ff39a9b7ce3487a86852bf5101b6ee24e2dcc623eb29f868ecca959266f9f",
+        "app/domains/files/retention.py": "62566bc9338093d2704b24d4da2406723f9860b3945a07a54a85b045a0719692",
+        "app/domains/files/router.py": "4c6efe629e9c36a694fa611e9f0e916479506724867029caacb8672fc5207677",
+        "app/domains/files/service.py": "ef8b03d8a5adc25a749b1cbf4e5bca912a71a2a5d867210cbf251a4bdd0e1c18",
+        "app/infrastructure/persistence/file/document_jobs.py": "87da5b084e28830d719510bfc65a684c8c6e0ad3f550f43c6510bbf14a82eeb3",
+        "app/infrastructure/persistence/file/files.py": "ad62ff1d4ff1d31b254846ba555ea77aaafadec5d4c18cfe0930142af695b1c8",
+        "app/infrastructure/persistence/file/record_lock.py": "83deadb86b672eabc4f0e7e10f9943aa7dd775f468cef26b39fa227e7ba0c51e",
+        "app/infrastructure/persistence/mysql/document_jobs.py": "0e86d072c99b883b14423a0112848080cea9d0dda0d61ef108872b499d0f763f",
+        "app/infrastructure/persistence/mysql/files.py": "e523d42e7aa263086227e996ba5591e263268a87d555a6cfa4c49d5347072476",
+        "app/infrastructure/persistence/mysql/schema.py": "3027da0bdef586a706ad7f16c0c6e8411b0843066875e533ad478d15096f2789",
+        "app/infrastructure/persistence/sqlite/backend.py": "54b69acf341587d69bc31411db18236b47331ecf457f1b20fe750d40fdf8f64f",
+        "app/infrastructure/persistence/sqlite/document_jobs.py": "1cde3c918b0873cdb13c9cc6ccfb4ab0fefef2ef47229f13b32b479f446e475f",
+        "app/infrastructure/persistence/sqlite/files.py": "57df3d85e884a2f208404591ded6b9c358b84eec1198aeba10af268a4594dc7a",
+        "app/infrastructure/persistence/sqlite/schema.py": "05e44c2e29fdbc36f637ce6fcc2c23fd2f31ce8157174b7ad47d92c4cce086a4",
+        "docs/api/document-jobs.md": "9f946bb2c3bff8e43b7b57de40daf901848af7edb6d7cababda7f21896f94e18",
+        "docs/api/openapi.json": "5cefe445ebd1d5286a8339670cd79c36add96c69de50bdd61acf38008da5078d",
+        "docs/implementation/rollout-and-migration.md": "8409d5af09eab1b76a6b0fcd64c2ed5e369937a6a436433c1f13abc67d29be91",
+        "docs/runbooks/backend.md": "b5196d853774cb7b45a5c0bed364fa9419234dda74eb705e597bd26f11cdc77c",
+        "frontend/src/api/types.ts": "57317c987f32cab726dc40e57e5a1f0b4f056bd97ef160ff3f33f3a036c6d335",
+        "frontend/src/components/JobActions.vue": "a9d433b45c0dd643cef13e2e1989d424bbd5b3df63170e4a4dcccc47568030f3",
+        "frontend/src/components/JobTable.vue": "69013972d065863f8d5e2ec81f268b8522396e076b4d19ac54d711cfd4f3023a",
+        "frontend/src/pages/IncidentTriagePage.vue": "4882773b55ef0a88bd597091b4ee03dd1d7bf1557f873833602612c8deedb2ef",
+        "frontend/src/pages/JobDetailPage.vue": "f4670201308b68b1715c74afb6f5071a92b39aee6bbe3584e472e237ab93595b",
+        "frontend/src/pages/JobsPage.vue": "8114583a33d92549c8b097dec7b6b5bc6bf80a7208f62d64728b53ad42b9288a",
+        "frontend/src/utils/download.ts": "c274c5c72c3650a03db59219142b860356d9b443e8d02916d76d1a6ece1dd362",
+        "frontend/src/utils/format.test.ts": "2df8b1de3ce979121ed43c92425a20341ff4802f8e17a8f6ba6935c94846c8b9",
+        "frontend/src/utils/format.ts": "7644ba930e05cf7794e225fe53a52f1d041f9c86eb8ca2c2c976dbbca8ba7ab8",
+        "frontend/src/utils/incidents.test.ts": "5e9e290d9f16e743bbb9512a43b3968a13518c1abb2bd0a35d2747ab5f30e4b5",
+        "frontend/src/utils/incidents.ts": "4d326ffa034fd2478b46cb0455995e2a3612599d9512ee7041625c6a69ea9d2c",
+        "frontend/tests/smoke/core-flow.spec.ts": "4d6190f1ad2aba0d33efa151a5e6773b75bf7c67e917f87935c6945b11f6fa70",
+        "frontend/tests/smoke/incident-triage.spec.ts": "627ac15fc7d86c5890859a8647f2f8ea13b2f00960efe7936ce11151f7796f6a",
+        "scripts/ops/check_release.py": "c1961210aa7a11673cd8a6be50f983b093aeeb01cc26c2f74160f29df06dd4a4",
+        "scripts/ops/migrate_document_job_state.py": "50aefe8e5803135a7665202d8b93e5cb06abcdf242e96fbdfb56c4db55a4ca01",
+        "tests/test_database_job_repository.py": "9a12f5c39a854d6daf54b3b57211f890945cdd795a4675a515b082e153608b97",
+        "tests/test_document_job_delivery_state.py": "2c21a372b7419c1bb4b4e16472862a81a52fb6a20d468d97848daaeecb2f00a0",
+        "tests/test_document_job_delivery_state_api.py": "a44f4b1057c90f7ed21c6b56930f34583fd7179b15dc091e97b6bd46ddf6ab17",
+        "tests/test_document_job_delivery_state_migration.py": "f4244629068ff9530b2b37b36a1e95b742d023cba45c260f699021aa77d7b923",
+        "tests/test_document_job_download_availability.py": "7f5cebc0bf1ca7993a62f702e48be69956a2891972ff496df99d3429c330fa47",
+        "tests/test_document_job_download_availability_api.py": "21c6b89f671465c6ec22ca4fbb9108d7aea229755fb81256d19c0a3fc67239c6",
+        "tests/test_document_job_execution_stages.py": "d5be16d7a20e6903602bc5d530c7f4f56f6da41ed12fae1a9cb53aa5657172ff",
+        "tests/test_document_job_result_persistence.py": "73d28b28f230b131d924aee278c3206ed023b1e12991ebb4cd81cbd3a56bf9f7",
+        "tests/test_fastapi_jobs_backend.py": "196b9321807541d77afcf6ba5c1c1cb6a33c1f698f4348d44d3ce8a75126ef58",
+        "tests/test_translation_integrity_execution.py": "f8071fc9e46a2ee193a9e956006cfda731239a1530cf367aa5ab9d944a64224a"
+      }
+    },
+    "validation": {
+      "state_download_migration": {
+        "tests": 48,
+        "status": "passed"
+      },
+      "translation_compatibility": {
+        "tests": 84,
+        "status": "passed"
+      },
+      "combined_backend_tests": {
+        "tests": 132,
+        "status": "passed"
+      },
+      "compileall": "passed",
+      "openapi_check": {
+        "status": "passed",
+        "paths": 164,
+        "schemas": 323,
+        "changed": false,
+        "tr406_execution_schemas_present": false
+      },
+      "frontend_reused": {
+        "unit_test_files": 31,
+        "unit_tests": 150,
+        "build": "passed",
+        "release_targeted_unittest_targets": 36,
+        "source_hashes_unchanged": true
+      }
+    },
+    "known_boundary_notes": [
+      "原始 HEAD 的两个 fake renderer callback 失败不在本次 132 项集合中，按既有 baseline 证据保留，不扩大修复。",
+      "accepted candidate 已知 app/domains/document_jobs/delivery_state.py:97 EOF 空行；最终 accepted tree 另有 TR406 测试文件 tests/test_translation_batch_failure_semantics.py:1386 同类 EOF 空行；属于已验收 candidate 格式诊断，不改冻结源。",
+      "本轮未运行 TR406 新三个测试模块，未以本基线判断 TR406 reducer/终态窗口语义。",
+      "未连接生产、真实 Provider、真实 MySQL/InnoDB、S3 或外部服务。"
+    ],
+    "conclusion": "可作为第一笔提交的独立纯依赖中间树"
+  },
+  "known_whitespace_diagnostics": [
+    "app/domains/document_jobs/delivery_state.py:97: new blank line at EOF",
+    "tests/test_translation_batch_failure_semantics.py:1386: new blank line at EOF (final candidate only)"
+  ],
+  "final_candidate_bytes_preserved": true,
+  "risk_review_status": "passed",
+  "risk_review": {
+    "new_findings": [],
+    "reviewed_tree": "7fb0acfa499e95cb87809157426b306490e3907b",
+    "frozen_path_mismatches_start": 0,
+    "frozen_path_mismatches_end": 0,
+    "git_blob_mismatches": 0,
+    "ordered_path_hash_digest": "71503301cea0a6055da77777dbaf00d2067cd7dc98de23e466075e5e918bb6b7",
+    "source_commit_identical_shared_paths": 13,
+    "shared_paths": 19,
+    "unresolved_production_gates_preserved": true
+  },
+  "dependency_business_commit": "0946326b0f457ef4b4f60895f17feb915d657c14"
+}

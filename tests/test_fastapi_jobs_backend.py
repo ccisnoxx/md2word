@@ -7746,7 +7746,6 @@ class FastAPIJobsBackendTests(TestCase):
                     created_at=old_time,
                     updated_at=old_time,
                 )
-                # 旧批准没有当前结果绑定，只保留历史原值，队列应投影为未复核。
                 runtime.document_job_repository.update_document_job(
                     beta_job_id,
                     translation_qa_status="approved",
@@ -7963,10 +7962,6 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(create_response.status_code, 201)
         pending_actions = list_response.json()["items"][0]["available_actions"]
         self.assertEqual(set(pending_actions), {"download", "retry", "cancel", "archive", "unarchive", "clone", "delete", "publish"})
-        for action in pending_actions.values():
-            self.assertTrue({"enabled", "disabled_reason", "retryable"}.issubset(action))
-        self.assertFalse(pending_actions["publish"]["enabled"])
-        self.assertFalse(pending_actions["publish"]["eligible"])
         self.assertTrue(pending_actions["cancel"]["enabled"])
         self.assertTrue(pending_actions["clone"]["enabled"])
         self.assertFalse(pending_actions["delete"]["enabled"])

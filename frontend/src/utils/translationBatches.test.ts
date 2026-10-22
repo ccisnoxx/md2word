@@ -11,6 +11,8 @@ import {
   translationBatchRowClassName,
   translationBatchStatusTagType,
   translationBatchStatusText,
+  translationBatchDispositionText,
+  translationBatchOutcomeText,
 } from "@/utils/translationBatches";
 
 function buildBatch(
@@ -99,6 +101,49 @@ describe("translation batch display helpers", () => {
       aiCallLogCount: 3,
       providerCallBudget: 24,
       deterministicBatchCount: 2,
+      leafCount: 2,
+      executionAvailable: false,
+      outcome: null,
     });
+  });
+
+  it("优先使用后端执行摘要，并区分拆分父项与停止叶子", () => {
+    const execution = {
+      outcome: "retrying" as const,
+      leaf_count: 3,
+      succeeded_leaf_count: 1,
+      active_leaf_count: 1,
+      retryable_failed_leaf_count: 1,
+      terminal_failed_leaf_count: 0,
+      failure_batch_id: null,
+      reason_code: null,
+      reason_message: null,
+      partial_artifacts_debug_only: true,
+    };
+    const parent = buildBatch({ status: "split", is_effective_leaf: false, failure_disposition: "superseded" });
+    const retrying = buildBatch({ status: "failed", is_effective_leaf: true, failure_disposition: "retrying", retryable: true });
+    const stopped = buildBatch({ status: "queued", is_effective_leaf: true, failure_disposition: "stopped" });
+
+    expect(summarizeTranslationBatches([parent, retrying, stopped], execution)).toMatchObject({
+      total: 3,
+      leafCount: 3,
+      succeeded: 1,
+      active: 1,
+      failed: 0,
+      executionAvailable: true,
+      outcome: "retrying",
+    });
+    expect(translationBatchDispositionText(parent)).toBe("拆分父项");
+    expect(translationBatchDispositionText(retrying)).toBe("自动重试中");
+    expect(translationBatchDispositionText(stopped)).toBe("其他批次已停止");
+    expect(translationBatchOutcomeText(execution)).toBe("自动重试中");
+    expect(translationBatchStatusTagType(retrying)).toBe("warning");
+  });
+
+  it("旧 API 缺少 execution 时保留诊断但不声称详细结论", () => {
+    const summary = summarizeTranslationBatches([buildBatch({ status: "failed" })]);
+    expect(summary.executionAvailable).toBe(false);
+    expect(summary.outcome).toBeNull();
+    expect(translationBatchOutcomeText(undefined)).toBeNull();
   });
 });

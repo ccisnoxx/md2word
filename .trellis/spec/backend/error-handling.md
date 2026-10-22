@@ -8,6 +8,8 @@
 
 首次计划尚无 batch 时的预算错误同样保留顶层 `translation_failed`，通过既有 `stage_failed.payload.integrity` 留下专用机器码与安全摘要；没有 batch 的 binding 为 null，不创建假的调用日志或批次。普通非翻译错误与条件状态更新不改变。
 
+批次终态、树损坏和 attempt/lease 停止原因由 [批次生命周期合同](translation-batch-lifecycle.md#4-校验与错误矩阵) 定义：叶子终败立即归 `translating/translation_failed`，不等待兄弟或改记质量 blocked；fan-in 来源/完整性问题归 `translation_validating`。条件竞争不能吞掉真实仓储异常，同代停止拒绝后须锁外幂等收口，重复消息不重复写终态事件。
+
 The backend uses a centralized API error response shape around `ApiError`, while some legacy/specialized routers still raise `HTTPException` directly.
 
 Evidence:
@@ -81,7 +83,7 @@ Do not duplicate workflow state checks in routers when the rule already belongs 
 
 ### 1. Scope / Trigger
 
-- Trigger: changing `app/domains/translation/document_ir_translator.py`, `app/domains/translation/provider.py`, `app/domains/translation/audit.py`, or document job `ir_converting` behavior.
+- Trigger: changing `app/domains/translation/document_ir_translator.py`, `app/domains/translation/provider.py`, `app/domains/translation/audit.py`, or document job `ir_converting` / `translating` / `translation_validating` behavior.
 - DocumentIR translation is a provider boundary: raw DocumentIR text is transformed into provider JSON, provider JSON is parsed back into replacements, and failures must become job diagnostics instead of partial translated documents.
 
 ### 2. Signatures
@@ -100,7 +102,7 @@ Do not duplicate workflow state checks in routers when the rule already belongs 
 ### 4. Validation & Error Matrix
 
 - Provider raises, returns invalid JSON, missing `items`, empty item text, or mismatched item IDs -> raise `DocumentIRTranslationError`.
-- `DocumentJobExecutionService._classify_worker_failure()` maps `DocumentIRTranslationError` to `error_code="translation_failed"` and `failed_stage="ir_converting"`.
+- `DocumentJobExecutionService._classify_worker_failure()` 将 Provider/单批次翻译失败映射为 `error_code="translation_failed"`、`failed_stage="translating"`；全量合并/回填失败定位 `translation_validating`，missing/extra ID 保留 `translation_fan_in_mismatch`，文件/存储错误保留 `oss_failed`。历史 `ir_converting` 诊断仍可读取；阶段与恢复的唯一合同见 [DocumentJob 模式与阶段合同](./document-job-mode-contract.md#8-执行阶段与恢复合同con-102)。
 - Already written call logs are still recorded as job events, but translated text replacements are applied only after all batches validate.
 
 ### 5. Good/Base/Bad Cases
@@ -161,19 +163,13 @@ Do not add broad silent `except Exception` blocks that hide errors. If an except
 ## DocumentJob 结果登记竞争与真实错误
 
 - first-valid-receipt选定/完成的当前代、最终IR或receipt条件不符，是正常竞争失效：返回最新权威任务，不伪造oss_failed或成功事件。
-- receipt前候选的迟到异常按本次实际阶段定位，并原子要求槽位仍空；receipt后收尾错误必须匹配选定file ID。
-- 阶段helper成功CAS后若事件追加、翻译计划或资源准备失败，由该owner持本次CAS返回的新快照收尾；调用者先检查返回状态再继续Provider、claim或文件副作用。
+- receipt前候选的迟到异常按本次实际阶段定位，并原子要求槽位仍空；不能重新读取另一调用的current.stage后将其流程标failed。receipt后收尾错误必须匹配选定file ID。
+- 阶段helper成功CAS后若事件追加、翻译计划或资源准备失败，由该owner持本次CAS返回的新快照收尾，并让调用者先检查返回状态再继续Provider、claim或文件副作用。不能只依赖外层尚未更新的旧快照，也不能用无条件最新阶段绕开条件失败保护。定向证据见`test_document_job_execution_stages.py`的首次准备失败与post-transition事件故障用例；持续事件存储故障不因此获得事务/outbox保证。
+- 条件失败收尾可以返回另一调用的权威新代记录。batch调用者在阶段helper返回后、claim之前，必须同时复查`job.retry_count == batch.job_retry_count == batch.generation`，再检查状态/阶段；不能把新代任务快照用于旧代Provider或审计。该局部复查不承诺消除所有外部调用期间的并发换代，既有返回后generation保护仍须保留。
 - 对象写入、legacy完整性/checksum、候选descriptor冲突、到期/删除后的物化错误按uploading/oss_failed失败关闭，保留receipt/候选及审计，不换同代结果以掩盖损坏。
+- 真正任务timeout仍使用document_job_timeout；取消或超时先赢时，后续结果完成不得复活终态。retry提交发现状态/代数已变继续返回既有409 conflict。
+- 具体流程和局部原子持久化保证分别由document-job-mode-contract.md §8、database-guidelines.md的DocumentJob结果登记章节定义；本节不复制结果状态机。
 
-## CON-103 复核和迁移错误
+## CON-103/104 交付错误
 
-- published 删除必须在任何文件副作用前返回 `409 conflict`；复核必须走独立条件写并比较代数、结果 ID 和最新质量状态。
-- `approved` 不授予发布权限；只有执行成功、当前可用主 DOCX 和质量非 blocked 才满足后端资格，owner/tenant/company 仍沿用原权限边界。
-- 迁移发现损坏 JSON、未知枚举或非法组合时非零退出，报告安全的 job ID、错误类别和最后成功游标，不输出原 payload、备注或凭据。
-- MySQL DDL 可能部分提交；失败后保留新增列并暂停写者，修复后继续前滚，不以事务回滚日志声称已撤销 DDL。
-
-## CON-104 下载细分原因的兼容错误桥
-
-`ApiError(..., *, reason_code=None)` 的新增参数为 keyword-only；只有非空 reason_code 才追加 `error.reason_code`，保留既有 HTTP、error_code、detail、request_id 和 trace_id。业务 service 明确给出稳定细分码，错误桥不解析中文文案、不捕获未知存储失败。
-
-主件缺失、归属/type 不符、未上传或过期、非当前候选分别使用既定 reason code；无权访问和未知任务不附加细分原因。动作展示复用同一 metadata guard，真实 repository/event/audit 失败继续传播。
+复核批准必须满足成功任务、当前主 DOCX 和非阻断质量，并在同任务锁内比较 generation/result ID；不授予发布权限。`published` 记录在文件副作用前拒绝删除或内容变更。下载拒绝的 `ApiError` 可通过 keyword-only `reason_code` 透传到嵌套 `error.reason_code`，保留既有 HTTP、`error_code`、`detail` 和权限边界；未明确原因的错误不补空字段。下载动作与签发接口共用 metadata guard，真实存储/审计错误继续显式传播。

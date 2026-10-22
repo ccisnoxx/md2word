@@ -4,6 +4,8 @@
 
 修改正式翻译请求准备、Provider 解析、同步/Worker 回填、批次 Artifact、审计或正文默认表示时适用。`protected_tokens.py` 唯一拥有检测/占位/恢复；`integrity.py` 唯一拥有纯校验与安全 evidence；translator 负责共同准备，execution 负责持久化消费。禁止复制检测规则或建立第二条翻译链路。
 
+批次根计划、树、同代自动恢复、attempt/lease 和终态失败的运行期原子边界由 [翻译批次生命周期合同](translation-batch-lifecycle.md) 定义；该合同复用本文的 evidence 和一次回填，不复制 Validator 或建立新的主件/发布 owner。
+
 ## 2. 接口
 
 ```python

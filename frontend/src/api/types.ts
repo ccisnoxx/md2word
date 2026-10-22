@@ -1887,12 +1887,46 @@ export type DocumentJobTranslationBatchSummaryResponse = {
   lease_expires_at: string | null;
   created_at: string;
   updated_at: string;
+  // 这些字段由新后端按行投影；旧部署缺失时仍保留原始批次诊断。
+  is_effective_leaf?: boolean;
+  failure_disposition?: DocumentJobTranslationBatchFailureDisposition;
+};
+
+export type DocumentJobTranslationBatchOutcome =
+  | "not_started"
+  | "running"
+  | "retrying"
+  | "validating"
+  | "failed"
+  | "completed"
+  | "canceled";
+
+export type DocumentJobTranslationBatchFailureDisposition =
+  | "none"
+  | "retrying"
+  | "terminal"
+  | "stopped"
+  | "superseded";
+
+export type DocumentJobTranslationBatchExecutionResponse = {
+  outcome: DocumentJobTranslationBatchOutcome;
+  leaf_count: number;
+  succeeded_leaf_count: number;
+  active_leaf_count: number;
+  retryable_failed_leaf_count: number;
+  terminal_failed_leaf_count: number;
+  failure_batch_id: string | null;
+  reason_code: string | null;
+  reason_message: string | null;
+  partial_artifacts_debug_only: boolean;
 };
 
 export type DocumentJobTranslationBatchListResponse = {
   job_id: string;
   generation: number;
   items: DocumentJobTranslationBatchSummaryResponse[];
+  // additive 字段：旧 API 省略时前端不得推导终态或发布资格。
+  execution?: DocumentJobTranslationBatchExecutionResponse | null;
 };
 
 export type TranslationQaStatus = "unreviewed" | "approved" | "needs_fix" | "blocked";

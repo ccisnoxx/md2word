@@ -400,12 +400,38 @@ class DocumentJobService:
         """只读返回任务当前 retry_count generation 的翻译 provider 批次诊断。"""
 
         job = self.get_job(job_id, user=user)
+        if not is_translation_document_job_mode(job.mode):
+            return []
         if self.document_job_translation_batch_repository is None:
             raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "翻译批次诊断仓储未配置。")
         return self.document_job_translation_batch_repository.list_translation_batches(
             job.id,
             generation=job.retry_count,
         )
+
+    def get_translation_batch_snapshot(
+        self,
+        job_id: str,
+        *,
+        user: AuthenticatedUser,
+    ) -> tuple[DocumentJobRecord, list[DocumentJobTranslationBatchRecord]]:
+        """在同一仓储快照上返回已授权任务与当前代批次。"""
+
+        # 先做一次轻量鉴权，再让仓储在同一锁快照中读取真正的当前 job 和批次代次。
+        # 不能把鉴权读取到的 retry_count 带入 snapshot，否则换代窗口会混合新 job 与旧批次。
+        job = self.get_job(job_id, user=user)
+        if not is_translation_document_job_mode(job.mode):
+            return job, []
+        if self.document_job_translation_batch_repository is None:
+            raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "翻译批次诊断仓储未配置。")
+        snapshot_job, batches = self.document_job_translation_batch_repository.get_translation_batch_snapshot(
+            job.id,
+        )
+        if not self._is_visible(snapshot_job, user):
+            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", "文档任务不存在。")
+        # 当前三类 adapter 的 generation=None 快照会带回历史记录；按同一锁快照返回的
+        # job.retry_count 过滤，避免历史批次进入当前代 API 投影。
+        return snapshot_job, [batch for batch in batches if batch.generation == snapshot_job.retry_count]
 
     def list_visible_jobs(
         self,
@@ -584,7 +610,6 @@ class DocumentJobService:
                     raise
                 raise ApiError(status.HTTP_409_CONFLICT, "conflict", "当前主 DOCX 未登记，不能批准复核。") from exc
             self._ensure_file_reader_available()
-            # 对象读取留在任务短锁外；随后 CAS 再核对代数、主件和最新质量。
             try:
                 content = self.file_upload_service.read_file_content(result_file)
             except FileNotFoundError as exc:
@@ -623,7 +648,6 @@ class DocumentJobService:
             level="info",
             message="翻译 QA 复核状态已更新。",
             payload={
-                # 锁外读取时的观测值，不承诺是本次 CAS 提交的真实前驱状态。
                 "observed_review_status": job.review_status,
                 "review_status": updated.review_status,
                 "status": qa["translation_qa_status"],
@@ -1640,22 +1664,17 @@ class DocumentJobService:
     def _get_completed_result_file(self, job: DocumentJobRecord) -> DocumentFileRecord:
         self._ensure_job_not_deleted(job, reason_code="job_deleted")
         if job.status != "succeeded" or job.stage != "completed":
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文档任务尚未成功完成，生成 Word 不可下载。",
-                           reason_code="job_not_completed")
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文档任务尚未成功完成，生成 Word 不可下载。", reason_code="job_not_completed")
         if job.result_file_id is None:
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文档任务尚未成功完成，生成 Word 不可下载。",
-                           reason_code="result_file_missing")
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文档任务尚未成功完成，生成 Word 不可下载。", reason_code="result_file_missing")
         file = self.file_repository.get_document_file(job.result_file_id)
         if file is None:
-            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"结果文件不存在: {job.result_file_id}",
-                           reason_code="result_file_missing")
+            raise ApiError(status.HTTP_404_NOT_FOUND, "not_found", f"结果文件不存在: {job.result_file_id}", reason_code="result_file_missing")
         if ((file.tenant_id, file.company_id, file.job_id) != (job.tenant_id, job.company_id, job.id)
                 or file.file_type != "generated_word"):
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "结果文件与文档任务不匹配。",
-                           reason_code="result_file_mismatch")
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "结果文件与文档任务不匹配。", reason_code="result_file_mismatch")
         if file.status != "uploaded":
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "结果文件尚未完成上传。",
-                           reason_code="result_file_not_uploaded")
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "结果文件尚未完成上传。", reason_code="result_file_not_uploaded")
         return file
 
     def _get_downloadable_completed_result_file(self, job: DocumentJobRecord) -> DocumentFileRecord:
@@ -1694,11 +1713,9 @@ class DocumentJobService:
         if file.file_type not in DOCUMENT_JOB_DOWNLOAD_FILE_TYPES:
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "该文件类型不支持从任务详情下载。")
         if not self._is_current_downloadable_job_file(job, file):
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "该文件不属于当前任务重试轮次，不能从任务详情下载。",
-                           reason_code="file_not_current")
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "该文件不属于当前任务重试轮次，不能从任务详情下载。", reason_code="file_not_current")
         if file.status != "uploaded":
-            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文件尚未完成上传，不能下载。",
-                           reason_code="result_file_not_uploaded")
+            raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文件尚未完成上传，不能下载。", reason_code="result_file_not_uploaded")
         self._ensure_file_not_expired(file)
         return file
 
@@ -2025,7 +2042,7 @@ class DocumentJobService:
         reasons: list[DocumentJobActionDisabledReasonResponse] = []
         if not download.enabled:
             reasons.append(DocumentJobActionDisabledReasonResponse(
-                code=download.disabled_reason_code, message=download.disabled_reason,
+                code=download.disabled_reason_code or "download_unavailable", message=download.disabled_reason or "结果不可下载。",
             ))
         if user.role != "admin":
             reasons.append(DocumentJobActionDisabledReasonResponse(code="admin_required", message="只有 Admin 可以发布文档。"))
@@ -2041,7 +2058,6 @@ class DocumentJobService:
         if job.delivery_status == "published":
             reasons.append(DocumentJobActionDisabledReasonResponse(code="already_published", message="该结果已发布，不能重复发布。"))
         eligible = not reasons
-        # 当前没有预览证据或发布执行入口，不能靠开关把核心资格直接变成发布授权。
         reasons.extend([
             DocumentJobActionDisabledReasonResponse(code="preview_unavailable", message="当前阶段尚未接通发布所需的预览验证。"),
             DocumentJobActionDisabledReasonResponse(code="publication_unavailable", message="当前阶段尚未提供文档发布功能。"),

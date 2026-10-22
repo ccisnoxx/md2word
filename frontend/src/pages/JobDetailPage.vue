@@ -239,9 +239,9 @@
 
             <EvidenceSurfaceSection
               v-if="usesTranslationResources(job)"
-              title="Provider 批次"
+              title="翻译批次"
               description="翻译 Provider 批次摘要；AI 调用日志仅显示文件 ID，正文内容不进入此视图。"
-              aria-label="Provider 批次"
+              aria-label="翻译批次"
               root-class="diagnostic-section-block"
             >
               <template #actions>
@@ -253,6 +253,19 @@
                 :error="translationBatchesError"
                 :diagnostic-context="jobErrorDiagnosticContext('document_jobs.translation_batches')"
               />
+              <el-alert
+                v-if="translationBatchConclusion"
+                class="translation-batch-conclusion"
+                :type="translationBatchConclusion.type"
+                :closable="false"
+                show-icon
+                :title="translationBatchConclusion.title"
+              >
+                <p>{{ translationBatchConclusion.description }}</p>
+                <p v-if="translationBatchConclusion.reason" class="translation-batch-conclusion-reason mono">
+                  {{ translationBatchConclusion.reason }}
+                </p>
+              </el-alert>
               <div v-if="translationBatches.length" class="translation-batch-summary-grid">
                 <div v-for="item in translationBatchSummaryItems" :key="item.label" class="translation-batch-summary-item">
                   <span>{{ item.label }}</span>
@@ -791,6 +804,7 @@ import type {
   DocumentJobRetryRequest,
   DocumentJobResponse,
   DocumentJobStage,
+  DocumentJobTranslationBatchExecutionResponse,
   DocumentJobTranslationBatchSummaryResponse,
 } from "@/api/types";
 import { documentJobsApi } from "@/api/documentJobs";
@@ -839,6 +853,8 @@ import {
   translationBatchScaleText,
   translationBatchStatusTagType,
   translationBatchStatusText,
+  translationBatchOutcomeTagType,
+  translationBatchOutcomeText,
 } from "@/utils/translationBatches";
 
 const route = useRoute();
@@ -851,6 +867,7 @@ const files = ref<DocumentFileSummaryResponse[]>([]);
 const callbackSummary = ref<DocumentJobCallbackMessageSummaryResponse | null>(null);
 const translationBatches = ref<DocumentJobTranslationBatchSummaryResponse[]>([]);
 const translationBatchGeneration = ref<number | null>(null);
+const translationBatchExecution = ref<DocumentJobTranslationBatchExecutionResponse | null | undefined>(undefined);
 const loading = ref(false);
 const eventsLoading = ref(false);
 const filesLoading = ref(false);
@@ -880,6 +897,7 @@ const configSummary = ref<DocumentJobConfigSummaryResponse | null>(null);
 const lastDownloadLink = ref<DownloadLinkNotice | null>(null);
 let pollTimer: number | undefined;
 let pollRefreshCount = 0;
+let translationBatchRequestRound = 0;
 
 type RetryStrategy = "keep_original" | "use_latest_term_assets" | "select_term_assets";
 type CloneConfigStrategy = NonNullable<DocumentJobCloneRequest["config_strategy"]>;
@@ -1032,9 +1050,13 @@ const filteredEvents = computed(() =>
     return true;
   }),
 );
-const translationBatchSummary = computed(() => summarizeTranslationBatches(translationBatches.value));
+const translationBatchSummary = computed(() => summarizeTranslationBatches(
+  translationBatches.value,
+  translationBatchExecution.value,
+));
 const translationBatchSummaryItems = computed(() => [
   { label: "总批次", value: String(translationBatchSummary.value.total) },
+  { label: "有效叶", value: String(translationBatchSummary.value.leafCount) },
   { label: "成功", value: String(translationBatchSummary.value.succeeded) },
   { label: "运行中", value: String(translationBatchSummary.value.active) },
   { label: "失败", value: String(translationBatchSummary.value.failed) },
@@ -1045,6 +1067,33 @@ const translationBatchSummaryItems = computed(() => [
   { label: "generation", value: translationBatchGeneration.value === null ? "-" : String(translationBatchGeneration.value) },
   { label: "预算", value: translationBatchSummary.value.providerCallBudget === null ? "-" : String(translationBatchSummary.value.providerCallBudget) },
 ]);
+const translationBatchConclusion = computed(() => {
+  if (!translationBatchSummary.value.executionAvailable || !translationBatchExecution.value) {
+    if (translationBatches.value.length) {
+      return {
+        type: "info" as const,
+        title: "详细结论不可用",
+        description: "当前 API 未返回 execution 摘要，页面保留批次诊断；不会据此推导发布或下载资格。",
+        reason: "",
+      };
+    }
+    return null;
+  }
+  const execution = translationBatchExecution.value;
+  const title = translationBatchOutcomeText(execution) || "翻译批次状态未知";
+  const type = translationBatchOutcomeTagType(execution);
+  const reason = execution.reason_code
+    ? `${execution.reason_code}${execution.reason_message ? `: ${execution.reason_message}` : ""}`
+    : "";
+  const description = execution.outcome === "failed"
+    ? "当前代未生成可交付 Word；部分批次只保留在受控诊断路径。"
+    : execution.outcome === "retrying"
+      ? "后端正在同一 generation 自动恢复失败叶子，成功批次不会重复调用。"
+      : execution.outcome === "completed"
+        ? "所有翻译批次已完成；可用的下载和发布操作请以任务页面提示为准。"
+        : "当前代结论由后端 execution 摘要提供。页面不根据批次数量自行改变任务动作。";
+  return { type, title, description, reason };
+});
 const translationBatchHealthText = computed(() => {
   if (!supportsJobTranslationQa(job.value)) {
     return "不适用";
@@ -1055,8 +1104,17 @@ const translationBatchHealthText = computed(() => {
   if (translationBatchesError.value) {
     return "加载失败";
   }
+  if (!translationBatchSummary.value.executionAvailable) {
+    return translationBatches.value.length ? "详细结论不可用" : "暂无批次";
+  }
+  if (translationBatchSummary.value.outcome === "retrying") {
+    return "自动重试中";
+  }
+  if (translationBatchSummary.value.outcome === "failed") {
+    return "翻译失败，未生成可交付 Word";
+  }
   if (!translationBatchSummary.value.total) {
-    return "暂无批次";
+    return translationBatchSummary.value.outcome === "completed" ? "翻译批次已完成" : "暂无批次";
   }
   if (translationBatchSummary.value.failed || translationBatchSummary.value.attention) {
     return `需关注 ${translationBatchSummary.value.attention} / ${translationBatchSummary.value.total}`;
@@ -1205,7 +1263,7 @@ const dispositionFacts = computed(() => {
     { label: "文件", value: fileAvailabilitySummary.value },
   ];
 });
-const taskActionOrder: DocumentJobActionId[] = ["download", "retry", "clone", "cancel", "archive", "unarchive", "delete"];
+const taskActionOrder: DocumentJobActionId[] = ["download", "retry", "clone", "cancel", "archive", "unarchive", "delete", "publish"];
 const actionSummaries = computed(() => {
   if (!job.value) {
     return [];
@@ -1492,10 +1550,12 @@ async function loadCallbackSummary(targetJobId = jobId.value): Promise<void> {
 }
 
 async function loadTranslationBatches(targetJobId = jobId.value): Promise<void> {
+  const requestRound = ++translationBatchRequestRound;
   if (!supportsJobTranslationQa(job.value)) {
-    if (targetJobId === jobId.value) {
+    if (targetJobId === jobId.value && requestRound === translationBatchRequestRound) {
       translationBatches.value = [];
       translationBatchGeneration.value = null;
+      translationBatchExecution.value = undefined;
       translationBatchesError.value = null;
       translationBatchesLoading.value = false;
     }
@@ -1505,16 +1565,19 @@ async function loadTranslationBatches(targetJobId = jobId.value): Promise<void> 
   translationBatchesError.value = null;
   try {
     const response = await documentJobsApi.listTranslationBatches(targetJobId);
-    if (targetJobId === jobId.value) {
+    const isCurrentRequest = targetJobId === jobId.value && requestRound === translationBatchRequestRound;
+    const isCurrentGeneration = job.value?.retry_count === undefined || response.generation === job.value.retry_count;
+    if (isCurrentRequest && isCurrentGeneration) {
       translationBatches.value = response.items;
       translationBatchGeneration.value = response.generation;
+      translationBatchExecution.value = response.execution;
     }
   } catch (caught) {
-    if (targetJobId === jobId.value) {
+    if (targetJobId === jobId.value && requestRound === translationBatchRequestRound) {
       translationBatchesError.value = normalizeApiError(caught);
     }
   } finally {
-    if (targetJobId === jobId.value) {
+    if (targetJobId === jobId.value && requestRound === translationBatchRequestRound) {
       translationBatchesLoading.value = false;
     }
   }
@@ -1546,6 +1609,7 @@ async function loadAll(options: LoadAllOptions = {}): Promise<void> {
     } else {
       translationBatches.value = [];
       translationBatchGeneration.value = null;
+      translationBatchExecution.value = undefined;
       translationBatchesError.value = null;
     }
     await Promise.all(secondaryLoads);
@@ -1555,6 +1619,7 @@ async function loadAll(options: LoadAllOptions = {}): Promise<void> {
     callbackSummary.value = null;
     translationBatches.value = [];
     translationBatchGeneration.value = null;
+    translationBatchExecution.value = undefined;
     eventsError.value = null;
     filesError.value = null;
     callbackSummaryError.value = null;
@@ -1661,7 +1726,6 @@ async function handleDownload(target: DocumentJobResponse): Promise<void> {
       fileName: response.file.original_filename,
       notice: documentJobDownloadNotice(response),
     };
-    // 先呈现本次签发的限制，再打开链接，避免使用列表或详情的旧警告。
     await nextTick();
     const opened = openDownloadLink(response.download_url);
     if (opened) {
@@ -2164,17 +2228,6 @@ onBeforeUnmount(() => {
   align-items: center;
 }
 
-.download-link-notice span {
-  color: var(--app-color-text-muted);
-  font-size: 13px;
-}
-
-.download-link-notice a {
-  color: var(--app-color-primary);
-  font-weight: 700;
-  text-decoration: none;
-}
-
 .download-policy-notice {
   flex-basis: 100%;
   overflow-wrap: anywhere;
@@ -2196,6 +2249,17 @@ onBeforeUnmount(() => {
 .publication-reasons:focus-visible {
   outline: 2px solid var(--app-color-primary);
   outline-offset: 4px;
+}
+
+.download-link-notice span {
+  color: var(--app-color-text-muted);
+  font-size: 13px;
+}
+
+.download-link-notice a {
+  color: var(--app-color-primary);
+  font-weight: 700;
+  text-decoration: none;
 }
 
 .task-disposition-card {
@@ -2401,6 +2465,31 @@ onBeforeUnmount(() => {
 
 .translation-batch-table :deep(.is-translation-batch-active > td) {
   background: var(--el-color-primary-light-9);
+}
+
+.translation-batch-table :deep(.is-translation-batch-stopped > td) {
+  background: var(--el-color-warning-light-9);
+}
+
+.translation-batch-table :deep(.is-translation-batch-retrying > td) {
+  background: var(--el-color-warning-light-9);
+}
+
+.translation-batch-table :deep(.is-translation-batch-superseded > td) {
+  background: var(--app-color-surface-muted);
+}
+
+.translation-batch-conclusion {
+  margin-bottom: var(--app-space-2);
+}
+
+.translation-batch-conclusion p {
+  margin: 0;
+}
+
+.translation-batch-conclusion-reason {
+  margin-top: 6px !important;
+  overflow-wrap: anywhere;
 }
 
 .diagnostic-section-block {

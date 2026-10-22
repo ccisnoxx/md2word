@@ -282,7 +282,7 @@ class TranslationIntegrityExecutionTests(TestCase):
         with patch.object(execution.document_ir_translation_service, "apply_replacements") as apply:
             final = execution._finalize_translation_generation(job.id, generation=0, trace_id=None)
         self.assertEqual(final.status, "failed")
-        self.assertIn("translation_integrity_item_duplicate", final.error_message)
+        self.assertIn("translation_batch_tree_invalid", final.error_message)
         apply.assert_not_called()
 
     def test_generation_changed_during_provider_cannot_register_success_or_enter_fan_in(self):
@@ -369,6 +369,7 @@ class TranslationIntegrityExecutionTests(TestCase):
                         kwargs["content"], kwargs.get("metadata", {}).get("retry_count"), "generated_word",
                     )
                     return register_candidate(**kwargs)
+
                 with patch.object(runtime.file_upload_service, "register_generated_content", side_effect=interleave), patch.object(
                     runtime.document_job_repository, "update_document_job_if_current", side_effect=observe_cas,
                 ), patch.object(runtime.document_job_repository, "prepare_document_job_result", side_effect=observe_prepare), patch.object(

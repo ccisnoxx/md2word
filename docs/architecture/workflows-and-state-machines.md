@@ -65,14 +65,17 @@ stateDiagram-v2
   pending --> queued
   queued --> running
   running --> succeeded
-  running --> queued: retryable error 且预算未耗尽
-  running --> split: truncation/size 错误
-  split --> canceled: 父批次停止执行
-  split --> [*]: 创建子批次
-  running --> failed: 非重试错误或预算耗尽
+  running --> failed: 调用失败
+  failed --> queued: retryable 且 attempt/全代预算可用
+  running --> split: 可拆分的截断且预算可用
+  split --> [*]: 完整登记两个子批次，父记录保留
 ```
 
-主任务只有在所有有效叶子批次 `succeeded` 后才能进入 `translation_validating`。
+主任务只有在所有有效叶子批次 `succeeded` 且树和证据完整时才能进入 `translation_validating`。split 父记录为被替代的计划节点，不计为失败或有效叶子；残缺根集合、残缺 split 和非法叶子均明确失败。
+
+任一叶子不可再试时，主任务立即失败，不等待活动兄弟。持久化终态结论即停止本代 enqueue/claim/结果晋升，不等待主任务 failed 写入；若两步之间中断，终态自身或排队兄弟的下一次消费均须幂等收口。终态前合法领取的在途请求允许结束并保留真实审计，其结果不得成为主件。
+
+完整根计划安装、领取、提交和 split 均沿同 job 序列化边界进行；条件写同时核对 generation、attempt 和唯一 lease。根集合从不可变 source/config 确定，已有根不能被迟到初始化覆盖。file 不承诺多文件事务，中断后的残缺计划保留诊断并失败关闭。
 
 ## 5. 质量状态聚合
 
@@ -164,10 +167,10 @@ stateDiagram-v2
 
 ### 翻译批次重试
 
-- 只重试失败批次；
-- 确定性错误（ID 缺失、Token 变化）默认不直接重复同一响应，应拆分或失败；
-- Provider 临时错误可重试；
-- 每个 root batch 有调用预算。
+- 同一 generation 的自动恢复只重试失败叶子，不重复成功兄弟；`retryable`、attempt 上限、唯一 lease 和全代调用预算共同决定是否能再次领取。
+- 完整性错误沿现有有限尝试策略处理，只有真实可拆分截断才 split；不将 Token/ID 错误伪装为截断，不用源文补齐。
+- 用户通过原子 retry 入口换代后，从权威 source IR 重新建全部本代批次，默认使用原配置快照；旧译文不得改代次或重新包装复用，旧 worker 回流不能覆盖新代。
+- 部分成功证据不生成 partial DOCX，也不成为目标 IR 或用户下载结果。已完成/已发布历史件和审计保持不可变。
 
 ## 10. 取消
 

@@ -4283,8 +4283,104 @@
         "title": "DocumentJobRetryResponse",
         "type": "object"
       },
+      "DocumentJobTranslationBatchExecutionResponse": {
+        "description": "当前代翻译批次的权威执行结论与安全原因摘要。",
+        "properties": {
+          "active_leaf_count": {
+            "default": 0,
+            "title": "Active Leaf Count",
+            "type": "integer"
+          },
+          "failure_batch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Batch Id"
+          },
+          "leaf_count": {
+            "default": 0,
+            "title": "Leaf Count",
+            "type": "integer"
+          },
+          "outcome": {
+            "enum": [
+              "not_started",
+              "running",
+              "retrying",
+              "validating",
+              "failed",
+              "completed",
+              "canceled"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "partial_artifacts_debug_only": {
+            "default": true,
+            "title": "Partial Artifacts Debug Only",
+            "type": "boolean"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
+          "reason_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Message"
+          },
+          "retryable_failed_leaf_count": {
+            "default": 0,
+            "title": "Retryable Failed Leaf Count",
+            "type": "integer"
+          },
+          "succeeded_leaf_count": {
+            "default": 0,
+            "title": "Succeeded Leaf Count",
+            "type": "integer"
+          },
+          "terminal_failed_leaf_count": {
+            "default": 0,
+            "title": "Terminal Failed Leaf Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "title": "DocumentJobTranslationBatchExecutionResponse",
+        "type": "object"
+      },
       "DocumentJobTranslationBatchListResponse": {
         "properties": {
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentJobTranslationBatchExecutionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "generation": {
             "title": "Generation",
             "type": "integer"
@@ -4371,6 +4467,18 @@
             ],
             "title": "Error Message"
           },
+          "failure_disposition": {
+            "default": "none",
+            "enum": [
+              "none",
+              "retrying",
+              "terminal",
+              "stopped",
+              "superseded"
+            ],
+            "title": "Failure Disposition",
+            "type": "string"
+          },
           "finish_reason": {
             "anyOf": [
               {
@@ -4385,6 +4493,11 @@
           "generation": {
             "title": "Generation",
             "type": "integer"
+          },
+          "is_effective_leaf": {
+            "default": true,
+            "title": "Is Effective Leaf",
+            "type": "boolean"
           },
           "item_count": {
             "default": 0,

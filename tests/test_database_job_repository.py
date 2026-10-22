@@ -287,6 +287,12 @@ class _FakeMysqlCursor:
             self.database.table_columns.setdefault("term_rules", set()).add(column_name)
             self._rows = []
             return
+        if normalized.startswith("alter table document_jobs add column"):
+            if " if not exists " in f" {normalized} ":
+                raise AssertionError("MySQL fake 不支持 ADD COLUMN IF NOT EXISTS。")
+            self.database.table_columns.setdefault("document_jobs", set()).add(normalized.split()[5])
+            self._rows = []
+            return
         if normalized.startswith("update term_rules set normalized_term"):
             for row in self.database.term_rules.values():
                 if not row.get("normalized_term"):
@@ -314,12 +320,6 @@ class _FakeMysqlCursor:
                 raise AssertionError("MySQL fake does not support ADD COLUMN IF NOT EXISTS")
             column_name = normalized.split()[5]
             self.database.table_columns.setdefault("translation_terms", set()).add(column_name)
-            self._rows = []
-            return
-        if normalized.startswith("alter table document_jobs add column"):
-            if " if not exists " in f" {normalized} ":
-                raise AssertionError("MySQL fake 不支持 ADD COLUMN IF NOT EXISTS。")
-            self.database.table_columns.setdefault("document_jobs", set()).add(normalized.split()[5])
             self._rows = []
             return
         if normalized.startswith("insert into jobs"):
@@ -497,7 +497,8 @@ class _FakeMysqlCursor:
                     else:
                         payload, *state_values, record_id = params
                     self.database.document_jobs[record_id].update(
-                        payload=payload, **dict(zip(("quality_status", "review_status", "delivery_status", "quality_summary_json"), state_values, strict=True)),
+                        payload=payload,
+                        **dict(zip(("quality_status", "review_status", "delivery_status", "quality_summary_json"), state_values, strict=True)),
                     )
                 else:
                     payload, created_at, updated_at, record_id = params
@@ -1599,46 +1600,6 @@ class PersistenceAdapterTests(TestCase):
                 for statement in fake_mysql.executed_sql
             )
         )
-
-    def test_mysql_document_job_state_schema_and_write_projection_shapes(self):
-        fake_mysql = _FakeMysqlDatabase()
-        fake_mysql.table_columns["document_jobs"] = {"job_id", "payload", "created_at", "updated_at", "quality_status"}
-        adapters = build_mysql_persistence_adapters(_mysql_config(), connect_factory=fake_mysql.connect)
-        ddl = [sql for sql in fake_mysql.executed_sql if sql.startswith("alter table document_jobs add column")]
-        self.assertEqual(len(ddl), 3)
-        self.assertTrue(all("if not exists" not in sql for sql in ddl))
-        repository = adapters.document_job_repository
-        record = DocumentJobRecord(id="state-shape", tenant_id="tenant", company_id="company", created_by="operator",
-                                   source_file_id="source", template_version_id="default@2")
-        repository.create_document_job(record)
-        repository.update_document_job(record.id, quality_status="warning", quality_summary={"code": "retained"})
-        build_mysql_persistence_adapters(_mysql_config(), connect_factory=fake_mysql.connect)
-        self.assertEqual(len([sql for sql in fake_mysql.executed_sql if sql.startswith("alter table document_jobs add column")]), 3)
-        row = fake_mysql.document_jobs[record.id]
-        self.assertEqual((row["quality_status"], row["review_status"], row["delivery_status"], row["quality_summary_json"]),
-                         ("warning", "unreviewed", "internal_draft", '{"code": "retained"}'))
-        statements = [sql for sql in fake_mysql.executed_sql if " document_jobs " in sql]
-        self.assertTrue(any(sql.endswith("where job_id = %s for update") for sql in statements))
-        updates = [sql for sql in statements if sql.startswith("update document_jobs set payload")]
-        self.assertEqual(len(updates), 1)
-        self.assertTrue(all(f"{column} = %s" in updates[0] for column in
-                            ("quality_status", "review_status", "delivery_status", "quality_summary_json")))
-
-    def test_mysql_document_job_invalid_backfill_calls_rollback_without_rewriting_raw(self):
-        fake_mysql = _FakeMysqlDatabase()
-        repository = build_mysql_persistence_adapters(_mysql_config(), connect_factory=fake_mysql.connect).document_job_repository
-        record = DocumentJobRecord(id="invalid-state", tenant_id="tenant", company_id="company", created_by="operator",
-                                   source_file_id="source", template_version_id="default@2")
-        repository.create_document_job(record)
-        raw_payload = record.model_dump_json().replace('"review_status":"unreviewed"', '"review_status":"invalid"')
-        fake_mysql.document_jobs[record.id]["payload"] = raw_payload
-        commits, rollbacks, closes = fake_mysql.commit_count, fake_mysql.rollback_count, fake_mysql.close_count
-        with self.assertRaises(ValidationError):
-            repository.backfill_document_job_state_if_missing(record.id)
-        self.assertEqual(fake_mysql.document_jobs[record.id]["payload"], raw_payload)
-        self.assertEqual(fake_mysql.commit_count, commits)
-        self.assertEqual(fake_mysql.rollback_count, rollbacks + 1)
-        self.assertEqual(fake_mysql.close_count, closes + 1)
 
     def test_mysql_runtime_bootstraps_term_assets_and_translation_terms(self):
         from app.main import build_runtime

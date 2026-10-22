@@ -289,15 +289,37 @@ class DocumentJobTranslationBatchSummaryResponse(BaseModel):
     error_message: str | None = None
     retryable: bool = False
     truncation_retry: bool = False
+    is_effective_leaf: bool = True
+    failure_disposition: Literal[
+        "none", "retrying", "terminal", "stopped", "superseded"
+    ] = "none"
     lease_expires_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class DocumentJobTranslationBatchExecutionResponse(BaseModel):
+    """当前代翻译批次的权威执行结论与安全原因摘要。"""
+
+    outcome: Literal[
+        "not_started", "running", "retrying", "validating", "failed", "completed", "canceled"
+    ]
+    leaf_count: int = 0
+    succeeded_leaf_count: int = 0
+    active_leaf_count: int = 0
+    retryable_failed_leaf_count: int = 0
+    terminal_failed_leaf_count: int = 0
+    failure_batch_id: str | None = None
+    reason_code: str | None = None
+    reason_message: str | None = None
+    partial_artifacts_debug_only: bool = True
 
 
 class DocumentJobTranslationBatchListResponse(BaseModel):
     job_id: str
     generation: int
     items: list[DocumentJobTranslationBatchSummaryResponse] = Field(default_factory=list)
+    execution: DocumentJobTranslationBatchExecutionResponse | None = None
 
 
 class DocumentJobCallbackProblemSummaryResponse(BaseModel):
