@@ -329,10 +329,10 @@ tasks:
     suggested_branch: md2word/TR-406
     trellis_slug: tr-406-partial-batch-failure-semantics
     prompt_file: docs/implementation/codex-prompts/TR-406.md
-    status: in_progress
-    trellis_task_path: .trellis/tasks/10-22-tr-406-partial-batch-failure-semantics
-    resolution: null
-    notes: "2026-10-22：TR-403与CON-102均done、归档completed且人工已接受，依赖门通过；全任务检索无重复，以create --parent --no-start创建唯一子任务。当前分支md2word/TR-403、HEAD596a2de；TR-403可达，CON-102验收提交不在当前HEAD，实施前须准备兼容已验收基线并协调TR-404/405写范围，本轮不合并。仅调查规划；37项定向基线通过，fake探针确认终态等待、超预算重复领取及旧attempt可写缺口，非skipped_existing。三件套revision1及最小context待人工评审，不改业务、不start、不提交/push，不更新其他任务状态。详细证据见子任务research/current-state.md与planning-validation.md。 2026-10-22：按已确认独立architect两项P2将三件套修订为revision2：完整根计划一次性安装/已有ID不可覆盖，持久化终态驱动enqueue/claim闸门与幂等收口；新增AC12/13、修订记录和最小context。保持planning、待人工评审，本稿未独立复审、不改业务、不start、不提交/push，不更新其他任务状态。 2026-10-22：用户接受revision2及独立复审结论，明确授权先整合CON-102再实施验证；已进入实施，保留既存dirty，完成停验收，不提交/push/部署。 2026-10-22：按追加授权整合CON-103/104已验收基线及原有bootstrap，完成TR-406实现、AC1–13本地证据、126项核心兼容、前端152项/build/smoke、OpenAPI/release与样本验证；最终独立复审无残留发现，本地候选ready_for_acceptance。2项原HEAD既有数据库callback失败及真实环境/人工门分列保留；原dirty/index不变，保持in_progress停人工验收，未提交/push/归档/生产连接。 2026-10-22：用户已验收通过并批准两笔业务提交计划，授权先重建验证纯依赖树，再提交TR-406增量；最终合成须与验收候选一致，原dirty排除保留，不push、不归档、不记录会话。"
+    status: done
+    trellis_task_path: .trellis/tasks/archive/2026-10/10-22-tr-406-partial-batch-failure-semantics
+    resolution: implemented
+    notes: "2026-10-22：TR-403与CON-102均done、归档completed且人工已接受，依赖门通过；全任务检索无重复，以create --parent --no-start创建唯一子任务。当前分支md2word/TR-403、HEAD596a2de；TR-403可达，CON-102验收提交不在当前HEAD，实施前须准备兼容已验收基线并协调TR-404/405写范围，本轮不合并。仅调查规划；37项定向基线通过，fake探针确认终态等待、超预算重复领取及旧attempt可写缺口，非skipped_existing。三件套revision1及最小context待人工评审，不改业务、不start、不提交/push，不更新其他任务状态。详细证据见子任务research/current-state.md与planning-validation.md。 2026-10-22：按已确认独立architect两项P2将三件套修订为revision2：完整根计划一次性安装/已有ID不可覆盖，持久化终态驱动enqueue/claim闸门与幂等收口；新增AC12/13、修订记录和最小context。保持planning、待人工评审，本稿未独立复审、不改业务、不start、不提交/push，不更新其他任务状态。 2026-10-22：用户接受revision2及独立复审结论，明确授权先整合CON-102再实施验证；已进入实施，保留既存dirty，完成停验收，不提交/push/部署。 2026-10-22：按追加授权整合CON-103/104已验收基线及原有bootstrap，完成TR-406实现、AC1–13本地证据、126项核心兼容、前端152项/build/smoke、OpenAPI/release与样本验证；最终独立复审无残留发现，本地候选ready_for_acceptance。2项原HEAD既有数据库callback失败及真实环境/人工门分列保留；原dirty/index不变，保持in_progress停人工验收，未提交/push/归档/生产连接。 2026-10-22：用户已验收通过并批准两笔业务提交计划，授权先重建验证纯依赖树，再提交TR-406增量；最终合成须与验收候选一致，原dirty排除保留，不push、不归档、不记录会话。 2026-10-22：用户确认依赖提交0946326b0f457ef4b4f60895f17feb915d657c14及TR-406提交6d89c7e012a5086114a739a9dfd1b067556237ce，授权仅TR-406 done/implemented、归档与本次会话bookkeeping。中间树132后端/150前端/build/OpenAPI/release及独立复核通过，最终71产品路径与验收候选逐字节一致；保留既有失败/格式诊断与真实环境门。其他dirty和6项既存staged删除保持，不push、不启动后续任务。"
   - id: TR-407
     title: "四语言方向样本和门禁"
     phase: R4

@@ -2,7 +2,7 @@
 
 日期：2026-10-22。分支：`codex/tr-406-partial-batch-failure-semantics`。用户已接受 revision 2 并授权实施，随后明确同意整合 CON-103/104 已验收基线及其原有 schema bootstrap；授权原文与边界见 [实施授权](implementation-authorization.md)。
 
-本地实施、计划内验证和独立复审已完成，候选冻结并停人工验收。第三轮三项缺口均已修复，最终限定复审没有新增或残留 P1/P2/P3；见 [最终独立复审](implementation-review-final.md)。用户随后已明确验收通过并批准两笔业务提交，任务仍为 in_progress，human_acceptance_status=accepted；提交执行授权和排除范围见 commit-plan.md。
+本地实施、计划内验证和独立复审已完成，候选冻结并停人工验收。第三轮三项缺口均已修复，最终限定复审没有新增或残留 P1/P2/P3；见 [最终独立复审](implementation-review-final.md)。用户已明确验收通过并确认两笔业务提交，human_acceptance_status=accepted；随后授权仅TR-406 manifest done、归档和本次会话记录。业务与bookkeeping阶段的授权按时间分别保留。
 
 ## 实施范围与结果
 
@@ -36,4 +36,4 @@ AC1–13 的行为与测试入口逐条列于 [验收证据映射](acceptance-ev
 
 真实 MySQL/InnoDB 并发/断连、部署文件系统跨进程锁、真实 Provider 四方向语言质量、S3/线上 API、旧写者排空/新写者启用以及 LibreOffice/Word 人工签字均未运行。这些证据由对应上线或人工门拥有，本地 fake 不替代。没有新增真实外调或部署授权。
 
-实施交付时已停人工验收；用户随后验收通过并授权按 commit-plan.md 执行两笔业务提交。task/manifest保持 in_progress，归档及会话记录不在本轮范围；不 push、部署、生产变更或启动下一任务。
+实施交付时先停人工验收，随后用户批准并确认两笔业务提交：依赖0946326b0f457ef4b4f60895f17feb915d657c14、TR-406增量6d89c7e012a5086114a739a9dfd1b067556237ce。用户再授权本次仅将TR-406标记done/implemented、归档至.trellis/tasks/archive/2026-10/10-22-tr-406-partial-batch-failure-semantics并记录会话；保留所有其他未提交改动，不push、不部署、不启动下一任务。

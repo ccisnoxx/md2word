@@ -2,8 +2,8 @@
   "id": "tr-406-partial-batch-failure-semantics",
   "name": "tr-406-partial-batch-failure-semantics",
   "title": "TR-406：部分批次失败语义收口",
-  "description": "R4：TR-406已人工验收，依赖纯中间树验证通过；按已批准计划分两笔业务提交，第二笔为本任务记录所在提交。不push、不归档、不记录会话。",
-  "status": "in_progress",
+  "description": "R4：TR-406实现与依赖基线已验收，两笔业务提交获确认；仅本任务标记done、归档并记录本次会话，不push、不启动后续任务。",
+  "status": "completed",
   "dev_type": "fullstack",
   "scope": "translation-batch-failure",
   "package": null,
@@ -11,11 +11,11 @@
   "creator": "777",
   "assignee": "777",
   "createdAt": "2026-10-22",
-  "completedAt": null,
+  "completedAt": "2026-10-22",
   "branch": "codex/tr-406-partial-batch-failure-semantics",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
+  "commit": "6d89c7e012a5086114a739a9dfd1b067556237ce",
   "pr_url": null,
   "subtasks": [],
   "children": [],
@@ -35,7 +35,7 @@
     "frontend/src/utils/translationBatches.ts",
     "docs/implementation/codex-task-manifest.yaml"
   ],
-  "notes": "2026-10-22：用户明确仅调查规划；create --parent --no-start，不激活、不切分支、不改业务、不提交/push。直接依赖均已人工接受done；CON-102实现尚不在当前HEAD，实施前整合。保留既存dirty，仅更新本子任务、父任务children和manifest TR-406。 2026-10-22：用户确认fresh architect两项P2并授权仅修订规划；三件套revision2已补完整根计划安装/禁止覆盖及终态窗口enqueue/claim停止闸门，新增AC12/13和对应验收。最小context与审查记录同步，未新派复审，仍待人工审核；不改业务、不start、不提交/push，父任务既存删除保持。 2026-10-22：用户接受revision2并授权先整合CON-102再实施验证；保留全部既存dirty，完成停验收，不提交/push/归档/部署。独立复审已在planning-rereview.md确认规划闭合。 2026-10-22：追加授权CON-103/104已验收基线整合完成；AC1–13本地证据、126项核心兼容、前端152项/build/smoke、OpenAPI/release及样本验证完成。多轮独立复审缺口均已闭合，候选ready_for_acceptance；2项原HEAD既有数据库callback失败与线上/人工未验门明确保留。保持in_progress，等待人工验收，未stage/commit/push/归档/bookkeeping/部署。 2026-10-22：用户明确验收通过，随后同意commit plan并授权两笔业务提交；要求先重建验证纯依赖中间树，最终合成与验收候选一致，排除保留原dirty；不push、不归档、不记录会话。",
+  "notes": "2026-10-22：用户明确仅调查规划；create --parent --no-start，不激活、不切分支、不改业务、不提交/push。直接依赖均已人工接受done；CON-102实现尚不在当前HEAD，实施前整合。保留既存dirty，仅更新本子任务、父任务children和manifest TR-406。 2026-10-22：用户确认fresh architect两项P2并授权仅修订规划；三件套revision2已补完整根计划安装/禁止覆盖及终态窗口enqueue/claim停止闸门，新增AC12/13和对应验收。最小context与审查记录同步，未新派复审，仍待人工审核；不改业务、不start、不提交/push，父任务既存删除保持。 2026-10-22：用户接受revision2并授权先整合CON-102再实施验证；保留全部既存dirty，完成停验收，不提交/push/归档/部署。独立复审已在planning-rereview.md确认规划闭合。 2026-10-22：追加授权CON-103/104已验收基线整合完成；AC1–13本地证据、126项核心兼容、前端152项/build/smoke、OpenAPI/release及样本验证完成。多轮独立复审缺口均已闭合，候选ready_for_acceptance；2项原HEAD既有数据库callback失败与线上/人工未验门明确保留。保持in_progress，等待人工验收，未stage/commit/push/归档/bookkeeping/部署。 2026-10-22：用户明确验收通过，随后同意commit plan并授权两笔业务提交；要求先重建验证纯依赖中间树，最终合成与验收候选一致，排除保留原dirty；不push、不归档、不记录会话。 2026-10-22：用户确认两笔业务提交，授权仅TR-406 manifest done/implemented、任务归档及本次会话记录，允许必要bookkeeping提交；所有其他dirty排除保留，不push、不启动后续任务。",
   "meta": {
     "task_id": "TR-406",
     "phase": "R4",
@@ -53,7 +53,7 @@
     "implementation_authorized": true,
     "dependency_check": "passed",
     "dependency_baseline_integration": "integrated_and_locally_verified",
-    "resolution": "implementation_required",
+    "resolution": "implemented",
     "planning_validation": "planning-validation.md",
     "planning_context_entries": {
       "implement": 9,
@@ -125,10 +125,19 @@
     "dependency_intermediate_validation_status": "passed",
     "dependency_business_commit": "0946326b0f457ef4b4f60895f17feb915d657c14",
     "tr406_business_commit": {
-      "resolution": "commit_containing_this_task_record",
+      "hash": "6d89c7e012a5086114a739a9dfd1b067556237ce",
       "parent": "0946326b0f457ef4b4f60895f17feb915d657c14",
       "subject": "fix(translation): enforce terminal batch failure semantics (TR-406)"
     },
-    "business_commit_status": "committed_without_push"
+    "business_commit_status": "committed_without_push",
+    "finish_authorization": {
+      "manifest_done": true,
+      "archive_only_this_task": true,
+      "record_this_session": true,
+      "bookkeeping_commits": true,
+      "preserve_other_dirty": true,
+      "push": false,
+      "start_followup_tasks": false
+    }
   }
 }
