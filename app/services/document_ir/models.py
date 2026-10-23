@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.services.document_ir.artifact_validator import MinerUValidationReport
+
 
 DocumentIRBlockType = Literal["heading", "paragraph", "table", "image", "list", "formula"]
 DocumentIRAssetKind = Literal["image"]
@@ -24,6 +26,8 @@ class DocumentIRMetadata(BaseModel):
     parser_version: str | None = None
     source_block_count: int | None = None
     source_type_counts: dict[str, int] = Field(default_factory=dict)
+    mineru_validation: MinerUValidationReport | None = None
+    mineru_validation_input: dict[str, Any] | None = None
 
 
 class DocumentIRAsset(BaseModel):

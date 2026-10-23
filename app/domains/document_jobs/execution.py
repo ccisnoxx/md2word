@@ -3328,7 +3328,9 @@ class DocumentJobExecutionService:
         ir = DocumentIR.model_validate_json(self.file_service.read_file_content(ir_file))
         evidence = build_renderer_evidence(ir, content, formula_report=report)
         ensure_renderer_integrity(evidence)
-        if any(record.metadata.get(key) != value for key, value in evidence.items()):
+        if any(record.metadata.get(key) != value for key, value in evidence.items()
+               if key not in {"mineru_validation", "mineru_validation_input", "caption_reconciliation"}
+               or key in record.metadata):
             raise ValueError("主 DOCX 的公式报告或质量证据与实际字节不一致。")
 
     def _document_ir_layout_metadata(self, document_ir: DocumentIR) -> dict[str, Any]:
@@ -3446,7 +3448,9 @@ class DocumentJobExecutionService:
         ir = DocumentIR.model_validate_json(self.file_service.read_file_content(self._get_document_ir_file(job)))
         evidence = build_renderer_evidence(ir, content)
         ensure_renderer_integrity(evidence)
-        if any(record.metadata.get(key) != value for key, value in evidence.items()):
+        if any(record.metadata.get(key) != value for key, value in evidence.items()
+               if key not in {"mineru_validation", "mineru_validation_input", "caption_reconciliation"}
+               or key in record.metadata):
             raise ValueError("历史主件缺少与实际字节一致的质量证据。")
         return record
 

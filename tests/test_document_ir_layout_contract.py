@@ -3,8 +3,15 @@ from __future__ import annotations
 # tests/test_document_ir_layout_contract.py: 覆盖 DocumentIR v1/v2 布局合同兼容性。
 
 import unittest
+import json
+import tempfile
+import zipfile
+from pathlib import Path
+
+from app.services.document_ir import MinerUToDocumentIRService
 
 from app.services.document_ir.integrity import build_source_integrity
+from app.services.renderer.evidence import build_renderer_metadata
 from app.services.document_ir.models import (
     DocumentIR,
     DocumentIRBlock,
@@ -42,6 +49,8 @@ class DocumentIRLayoutContractTests(unittest.TestCase):
         self.assertIsNone(document.blocks[0].layout)
         self.assertEqual(document.blocks[0].captions, [])
         self.assertEqual(document.blocks[0].footnotes, [])
+        self.assertNotIn("caption_reconciliation", document.blocks[0].metadata)
+        self.assertIsNone(document.metadata.mineru_validation)
         self.assertIsNone(document.metadata.source_block_count)
         self.assertEqual(document.metadata.source_type_counts, {})
 
@@ -91,6 +100,7 @@ class DocumentIRLayoutContractTests(unittest.TestCase):
 
         decoded = DocumentIR.model_validate_json(document.model_dump_json())
 
+        self.assertIsNone(decoded.metadata.mineru_validation)
         self.assertEqual(decoded.schema_version, "document-ir/v2")
         self.assertEqual(decoded.pages[0].width, 612.0)
         self.assertEqual(decoded.metadata.source_block_count, 1)
@@ -103,6 +113,76 @@ class DocumentIRLayoutContractTests(unittest.TestCase):
         self.assertEqual(decoded.blocks[0].footnotes, ["All values are typical."])
         self.assertEqual(decoded.blocks[0].metadata["layout_role_reason"], "column_hint=wide;source=bbox")
         self.assertIn("layout_wide_table:block_0001", decoded.quality_flags)
+        self.assertNotIn("caption_reconciliation", decoded.blocks[0].metadata)
+
+    def test_optional_caption_evidence_round_trips_and_summary_is_bounded_without_originals(self) -> None:
+        raw = [{"type": "text", "content": "图5 私有标题图6 连写"}]
+        caption_evidence = {
+            "rule_version": "caption-reconciliation/v1", "status": "uncertain",
+            "originals": [{"json_pointer": "/0/chart_caption", "value": raw, "groups": ["/0/chart_caption"]}],
+            "bindings": [], "reasons": ["split_boundary_uncertain"],
+        }
+        document = DocumentIR(
+            schema_version="document-ir/v2",
+            metadata=DocumentIRMetadata(job_id="caption", source_file_id="source", document_language="zh"),
+            blocks=[DocumentIRBlock(
+                id=f"block_{index:04d}", type="paragraph", order=index, text="正文",
+                metadata={"mineru_source": {"json_pointer": f"/{index}"}, "caption_reconciliation": caption_evidence},
+            ) for index in range(43)],
+            quality_flags=["caption_binding_uncertain"],
+        )
+        document.blocks.append(DocumentIRBlock(
+            id="context", type="paragraph", order=44, text="条件", metadata={
+                "source_block_id": "block_0000", "caption_reconciliation": caption_evidence,
+            },
+        ))
+        decoded = DocumentIR.model_validate_json(document.model_dump_json())
+        self.assertEqual(decoded, document)
+        self.assertEqual(decoded.blocks[0].metadata["caption_reconciliation"]["originals"][0]["value"], raw)
+        summary = build_renderer_metadata(decoded)["caption_reconciliation"]
+        self.assertEqual(summary["block_count"], 43)
+        self.assertEqual(summary["status_counts"], {"uncertain": 43})
+        self.assertEqual(summary["reason_counts"], {"split_boundary_uncertain": 43})
+        self.assertEqual(len(summary["examples"]), 40)
+        self.assertEqual(summary["omitted_example_count"], 3)
+        serialized = json.dumps(summary, ensure_ascii=False)
+        self.assertNotIn("私有", serialized)
+        self.assertNotIn("originals", serialized)
+
+    def test_new_report_round_trips_without_changing_v2_schema(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "mineru.zip"
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr("content_list_v2.json", json.dumps([[{"type": "text", "text": "12 µV"}]]))
+            result = MinerUToDocumentIRService().convert_zip(path, job_id="job", source_file_id="file", document_language="en")
+        decoded = DocumentIR.model_validate_json(result.document.model_dump_json())
+        self.assertEqual(decoded.schema_version, "document-ir/v2")
+        self.assertEqual(decoded.metadata.mineru_validation, result.validation_report)
+        self.assertEqual(decoded.blocks[0].metadata["mineru_source"]["json_pointer"], "/0/0")
+
+    def test_historical_validation_report_keeps_versions_and_optional_defaults(self):
+        document = DocumentIR.model_validate({
+            "schema_version": "document-ir/v2",
+            "metadata": {
+                "job_id": "job", "source_file_id": "file", "document_language": "en",
+                "mineru_validation": {
+                    "schema_version": "mineru-artifact-validation/v1",
+                    "validator_version": "mineru-artifact-validator/v1",
+                    "policy_version": "mineru-input-policy/v1",
+                    "package_sha256": "0" * 64,
+                    "can_convert": True,
+                },
+            },
+        })
+        report = document.metadata.mineru_validation
+        self.assertEqual(report.validator_version, "mineru-artifact-validator/v1")
+        self.assertEqual(report.policy_version, "mineru-input-policy/v1")
+        self.assertTrue(report.complete)
+        self.assertEqual(report.effective_inventory, {})
+        self.assertEqual(report.normalization, {})
+        decoded = DocumentIR.model_validate_json(document.model_dump_json())
+        self.assertEqual(decoded.metadata.mineru_validation, report)
+        self.assertEqual(decoded.schema_version, "document-ir/v2")
 
 
 if __name__ == "__main__":

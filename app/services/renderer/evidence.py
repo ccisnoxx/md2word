@@ -10,6 +10,7 @@ from app.conversion.docx_rules.table_expansion import expanded_table_rows, requi
 from app.conversion.runtime.table_html_parser import parse_html_table
 from app.services.document_ir.integrity import build_source_integrity, ensure_integrity, is_visible_body_block
 from app.services.document_ir.models import DocumentIR
+from app.services.document_ir.caption_reconciler import RULE_VERSION as CAPTION_RULE_VERSION
 from app.services.renderer.docx_quality import (
     analyze_docx_quality_bytes,
     build_docx_quality_flags,
@@ -20,7 +21,7 @@ from app.services.renderer.layout_plan import LayoutPlan, build_layout_plan
 
 
 def build_renderer_metadata(document_ir: DocumentIR, layout_plan: LayoutPlan | None = None) -> dict[str, Any]:
-    """生成产物与事件已有的稳定渲染元数据。"""
+    """构造产物和事件共用的布局证据，输入质量与执行完整性分开。"""
 
     resolved_layout_plan = layout_plan or build_layout_plan(document_ir)
     body_blocks = [block for block in document_ir.blocks if is_visible_body_block(block)]
@@ -28,7 +29,7 @@ def build_renderer_metadata(document_ir: DocumentIR, layout_plan: LayoutPlan | N
         block.id for page in resolved_layout_plan.pages for region in page.regions for block in region.blocks
     ]
     expected_block_ids = [block.id for block in body_blocks]
-    return {
+    metadata = {
         "schema_version": document_ir.schema_version,
         "renderer_mode": resolved_layout_plan.mode,
         "layout_page_count": len(resolved_layout_plan.pages),
@@ -44,7 +45,49 @@ def build_renderer_metadata(document_ir: DocumentIR, layout_plan: LayoutPlan | N
         ),
         "layout_quality_flags": document_ir.quality_flags,
         "source_integrity": build_source_integrity(document_ir),
+        "mineru_validation": (document_ir.metadata.mineru_validation.model_dump(mode="json")
+                              if document_ir.metadata.mineru_validation is not None else None),
+        "mineru_validation_input": document_ir.metadata.mineru_validation_input,
     }
+    caption_blocks = [block for block in document_ir.blocks if not block.metadata.get("source_block_id")
+                      and isinstance(block.metadata.get("caption_reconciliation"), dict)]
+    if caption_blocks:
+        statuses: Counter[str] = Counter()
+        reasons: Counter[str] = Counter()
+        binding_count = candidate_count = 0
+        examples: list[dict[str, Any]] = []
+        relation_examples: list[dict[str, Any]] = []
+        for block in caption_blocks:
+            caption = block.metadata["caption_reconciliation"]
+            statuses[caption["status"]] += 1
+            reasons.update(caption.get("reasons", []))
+            binding_count += len(caption.get("bindings", []))
+            candidate_count += len(caption.get("candidates", []))
+            for kind in ("bindings", "candidates"):
+                for receipt in caption.get(kind, []):
+                    if len(relation_examples) < 40:
+                        relation_examples.append({
+                            "kind": kind, "donor_block_id": receipt["donor_block_id"],
+                            "target_block_id": receipt["target_block_id"], "source_locator": receipt["source_locator"],
+                            "rule_id": receipt["rule_id"], "evidence_only": receipt["evidence_only"],
+                            "reasons": receipt.get("reasons", [receipt["reason"]] if "reason" in receipt else []),
+                        })
+            if len(examples) < 40:
+                examples.append({
+                    "block_id": block.id, "source_locator": block.metadata.get("mineru_source"),
+                    "status": caption["status"], "reasons": caption.get("reasons", []),
+                })
+        # 摘要不复制 originals、rich runs 或可见文本；完整关系仍由 IR 主源块持有。
+        metadata["caption_reconciliation"] = {
+            "rule_version": CAPTION_RULE_VERSION, "block_count": len(caption_blocks),
+            "status_counts": dict(sorted(statuses.items())), "reason_counts": dict(sorted(reasons.items())),
+            "binding_count": binding_count, "candidate_count": candidate_count,
+            "examples": examples, "omitted_example_count": len(caption_blocks) - len(examples),
+            "relation_examples": relation_examples,
+            "omitted_relation_count": binding_count + candidate_count - len(relation_examples),
+        }
+    return metadata
+
 
 
 def build_renderer_evidence(

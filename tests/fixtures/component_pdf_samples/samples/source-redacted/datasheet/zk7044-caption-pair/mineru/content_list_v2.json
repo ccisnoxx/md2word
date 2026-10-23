@@ -1,0 +1,43 @@
+[
+  [
+    {
+      "type": "chart",
+      "content": {
+        "image_source": {
+          "path": "images/neutral-1.png"
+        },
+        "content": "",
+        "chart_caption": [
+          {
+            "type": "text",
+            "content": "图5 zyzxz xyqyq qq 2222.2MHz, qzz2 yzyzxz xyqy xqqyyxqyy 图6 zyqzz zyzyz zy 2222.22 MHz, xzx2 yqzzzz zyzx"
+          }
+        ],
+        "chart_footnote": []
+      },
+      "bbox": [
+        78,
+        80,
+        472,
+        321
+      ]
+    },
+    {
+      "type": "chart",
+      "content": {
+        "image_source": {
+          "path": "images/neutral-2.png"
+        },
+        "content": "",
+        "chart_caption": [],
+        "chart_footnote": []
+      },
+      "bbox": [
+        542,
+        85,
+        941,
+        327
+      ]
+    }
+  ]
+]
