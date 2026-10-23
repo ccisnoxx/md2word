@@ -1,0 +1,144 @@
+{
+  "branch": "md2word/RND-503",
+  "manifest_status": "review",
+  "trellis_status": "in_progress",
+  "manual_acceptance_pending": true,
+  "all_required_checks_passed": false,
+  "unverified": [
+    "Golden environment auth/API",
+    "Microsoft Word including field updates",
+    "deployed preview",
+    "real MySQL/S3/MinIO",
+    "production rollback"
+  ],
+  "checks": [
+    {
+      "name": "core_unit",
+      "log": "tests/tmp/rnd503/logs/final-core-unit.log",
+      "sha256": "89f95ff10d0fa51f73cd524977e4575d5ad88d64743b9f977c6191764e68013c",
+      "exit_code": 0,
+      "tests_or_samples": 301
+    },
+    {
+      "name": "isolated_characterization",
+      "log": "tests/tmp/rnd503/logs/isolated-characterization.log",
+      "sha256": "21b2edaafb65a0502fab9b56b42580528e39a225900a579715d35a6e05729506",
+      "exit_code": 0,
+      "tests_or_samples": 13
+    },
+    {
+      "name": "initial_mixed_unit",
+      "log": "tests/tmp/rnd503/logs/final-unit.log",
+      "sha256": "059f783afd25a0d199a86f33d090d4c545c0ddf39aa37a169e09f975c0cab7ef",
+      "exit_code": 1,
+      "tests_or_samples": 314
+    },
+    {
+      "name": "component",
+      "log": "tests/tmp/rnd503/logs/component.log",
+      "sha256": "3c318ed3de05b7129ac8d6d7bb7558b0b9e711be7873e8280412dbb243177e41",
+      "exit_code": 0,
+      "tests_or_samples": 1
+    },
+    {
+      "name": "direct_matrix",
+      "log": "tests/tmp/rnd503/logs/direct.log",
+      "sha256": "7586060ec218859b0176f1a3e8a6cbd2f4023d5bb6329c93a23cc574c2494804",
+      "exit_code": 0,
+      "tests_or_samples": 5
+    },
+    {
+      "name": "release",
+      "log": "tests/tmp/rnd503/logs/release.log",
+      "sha256": "0ee537ad56b9a8d9b6b2e76502fc2b8e2351cd9557efd0259988aadfcd77234e",
+      "exit_code": 0,
+      "tests_or_samples": 202
+    },
+    {
+      "name": "golden",
+      "log": "tests/tmp/rnd503/logs/golden.log",
+      "sha256": "3b1503fad70560b8e04c6a069a77b1428d336488c03f909264e3fdba57c2a2d4",
+      "exit_code": 1,
+      "tests_or_samples": null
+    },
+    {
+      "name": "golden_preflight",
+      "log": "tests/tmp/rnd503/logs/golden-preflight.log",
+      "sha256": "9fb0b73ee564e5ec42fe68d0e7fe1fbfddf8af2f6f4cf2421c8c72c5c1037bd8",
+      "exit_code": 1,
+      "tests_or_samples": null
+    },
+    {
+      "name": "actual_b1",
+      "log": "tests/tmp/rnd503/logs/b1.log",
+      "sha256": "b1df6580d319e256f76b90e2dbc6ee12154193741535d2d84bb6453f68c08f73",
+      "exit_code": 0,
+      "tests_or_samples": 4
+    }
+  ],
+  "initial_mixed_errors": 2,
+  "mixed_failure_resolution": "existing global stub isolation; HEAD probe reproduces; separate processes both pass",
+  "b1_subtests": 45,
+  "task_validate": {
+    "exit_code": 0,
+    "implement_entries": 10,
+    "check_entries": 10
+  },
+  "git_diff_check": {
+    "exit_code": 0
+  },
+  "api_snapshot": {
+    "changed": false,
+    "paths": 164,
+    "schemas": 324
+  },
+  "latest_review": "post-review-validation.json",
+  "latest_checks": [
+    {
+      "name": "core_unit",
+      "command": ".venv/bin/python -B -m unittest tests.test_image_group_rendering tests.test_document_ir_word_renderer_layout tests.test_document_ir_mineru_converter_layout tests.test_caption_reconciler tests.test_document_ir_layout_contract tests.test_formula_rendering tests.test_document_job_result_persistence tests.test_document_job_modes tests.test_conversion_sandbox_dev_tools tests.test_rnd503_dependency_integration tests.test_mineru_artifact_validator tests.test_template_layout_config_schema tests.test_formula_translation_boundary tests.test_document_job_delivery_state",
+      "exit_code": 0,
+      "tests_or_samples": 311,
+      "log": "tests/tmp/rnd503/post-review/closure-core-unit.log",
+      "sha256": "8403ada2b0c087163fd7cdad09ea34726572c999d1db13bac90cda9aadf48d02"
+    },
+    {
+      "name": "component",
+      "command": ".venv/bin/python -B scripts/dev/run_component_pdf_regression.py --output-dir tests/tmp/rnd503/post-review/closure-component",
+      "exit_code": 0,
+      "tests_or_samples": 1,
+      "log": "tests/tmp/rnd503/post-review/closure-component.log",
+      "sha256": "fc56fa4231c054f4cb92405abd03e0e9074756ec323b7c71a67fbf111260ba2a"
+    },
+    {
+      "name": "direct",
+      "command": ".venv/bin/python -B scripts/dev/run_local_mineru_quality_matrix.py --mode direct --sample-set phase2-core --output-dir tests/tmp/rnd503/post-review/closure-direct",
+      "exit_code": 0,
+      "tests_or_samples": 5,
+      "log": "tests/tmp/rnd503/post-review/closure-direct.log",
+      "sha256": "22be391dfa647eacaea4f0faf0b0a1a65dbf9b331c15794f257e8f5cb31ad9a6"
+    },
+    {
+      "name": "release",
+      "command": ".venv/bin/python -B scripts/ops/check_release.py",
+      "exit_code": 0,
+      "tests_or_samples": 203,
+      "log": "tests/tmp/rnd503/post-review/closure-release.log",
+      "sha256": "38f9e2c9af82d5ec5662e87c94e6deaa6a930a8a73b1cf37dee4e23341287743"
+    },
+    {
+      "name": "b1",
+      "command": ".venv/bin/python -B tests/tmp/rnd503/run_b1_build.py",
+      "exit_code": 0,
+      "tests_or_samples": 7,
+      "log": "tests/tmp/rnd503/post-review/closure-b1.log",
+      "sha256": "cbd27337cf15dbef8bd35d6a123ad67538243e8754aca0e165c4e67c42d01826"
+    }
+  ],
+  "latest_task_validate": {
+    "exit_code": 0,
+    "implement_entries": 11,
+    "check_entries": 11
+  },
+  "latest_b1_subtests": 55
+}

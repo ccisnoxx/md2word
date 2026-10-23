@@ -25,6 +25,36 @@ from scripts.dev import (
 
 
 class LocalMinerUConversionCliTests(TestCase):
+    def test_formal_adapter_saves_same_image_report_and_rejects_missing_inline(self) -> None:
+        from tests.test_image_group_rendering import write_numbered_image_zip, change_docx, NS
+        from app.services.renderer.word_renderer import DocumentIRWordRenderer
+        from dataclasses import replace
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "images.zip"
+            write_numbered_image_zip(package, (24, 25))
+            kwargs = dict(input_path=str(package), output_path=str(root / "images.docx"), template_path=None,
+                layout_config_path=None, subscript_config=None, no_template=True, use_mineru_header_footer=False,
+                document_language="zh", translation_mode="direct")
+            result = formal_mineru_conversion.run_conversion(**kwargs)
+            report = result.renderer_metadata["image_layout_report"]
+            self.assertEqual(report["schema_version"], "image-layout/v1")
+            self.assertEqual(report["render_inputs"]["schema_version"], "image-render-inputs/v1")
+            self.assertEqual(result.renderer_metadata["layout_table_count"], 1)
+            self.assertEqual(result.renderer_metadata["content_table_count"], 0)
+            self.assertIn("图 24", Document(result.output_docx_path).tables[0].cell(0, 0).text)
+            original = DocumentIRWordRenderer.render_to_result
+            def remove_inline(renderer, *args, **options):
+                rendered = original(renderer, *args, **options)
+                def remove(root):
+                    parent = next(node for node in root.iter() if node.find("./wp:inline", NS) is not None)
+                    parent.remove(parent.find("./wp:inline", NS))
+                return replace(rendered, content=change_docx(rendered.content, remove))
+            kwargs["output_path"] = str(root / "rejected.docx")
+            with mock.patch.object(DocumentIRWordRenderer, "render_to_result", remove_inline), self.assertRaises(ValueError):
+                formal_mineru_conversion.run_conversion(**kwargs)
+            self.assertFalse(Path(kwargs["output_path"]).exists())
+
     def test_build_conversion_kwargs_uses_official_runtime_contract(self) -> None:
         args = run_local_mineru_conversion.parse_args(
             [

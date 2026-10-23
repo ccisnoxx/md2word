@@ -1,0 +1,45 @@
+{
+  "baseline_description": "B0 integrated snapshot renderer/evidence/terminology/adapter plus original schema, same accepted dependency and same local inputs",
+  "old_flags": {
+    "OPA228_P1": [
+      "docx_unstyled_heading_candidates:1"
+    ],
+    "OPA228_P2": [],
+    "OPA228_P6": [
+      "docx_unstyled_heading_candidates:3"
+    ],
+    "OPA228_P7": [],
+    "RS2G04": [
+      "docx_latex_residue:2",
+      "docx_unstyled_heading_candidates:10"
+    ]
+  },
+  "new_flags": {
+    "OPA228_P1": [
+      "docx_unstyled_heading_candidates:1"
+    ],
+    "OPA228_P2": [],
+    "OPA228_P6": [
+      "docx_unstyled_heading_candidates:3"
+    ],
+    "OPA228_P7": [],
+    "RS2G04": [
+      "docx_latex_residue:2",
+      "docx_unstyled_heading_candidates:11"
+    ]
+  },
+  "equal": false,
+  "explained_delta": {
+    "sample_id": "RS2G04",
+    "flag": "docx_unstyled_heading_candidates",
+    "old": 10,
+    "new": 11,
+    "cause": "old paired caption paragraph split into two source-bound image captions; old text equals concatenation of the two new caption texts",
+    "source_block_ids": [
+      "block_0115",
+      "block_0116"
+    ],
+    "new_source_heading": false,
+    "other_flags_equal": true
+  }
+}

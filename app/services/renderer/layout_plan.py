@@ -3,8 +3,169 @@ from __future__ import annotations
 # app/services/renderer/layout_plan.py: 将 DocumentIR v2 布局事实规划为 Word renderer 内部页面/区域计划。
 
 from dataclasses import dataclass, field
+from collections import Counter
+import hashlib
+import json
+import math
 
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock
+
+
+IMAGE_GROUP_VERSION = "image-group/v1"
+IMAGE_GROUP_THRESHOLDS = {"common_overlap": 0.80, "height_ratio": 0.80,
+                          "center_offset": 0.10, "top_offset": 0.015, "gap": 0.08}
+
+
+@dataclass(frozen=True, slots=True)
+class ImageSpan:
+    """源序连续图片的一次决定；旧页面区域的统计和排序不因此改变。"""
+
+    block_ids: tuple[str, ...]
+    page_index: int | None
+    mode: str
+    reasons: tuple[str, ...] = ()
+    metrics: tuple[tuple[str, float], ...] = ()
+
+    @property
+    def id(self) -> str:
+        value = json.dumps([IMAGE_GROUP_VERSION, self.page_index, self.block_ids], separators=(",", ":"))
+        return "ig_" + hashlib.sha256(value.encode()).hexdigest()[:24]
+
+
+def image_annotations(block: DocumentIRBlock) -> tuple[tuple[str, str], ...]:
+    """沿用图片注释合并去重合同，同时保留首个原始字段来源。"""
+
+    values = [(f"captions/{i}", text) for i, text in enumerate(block.captions)]
+    if isinstance(block.metadata.get("caption"), str):
+        values.append(("metadata/caption", block.metadata["caption"]))
+    values.extend((f"footnotes/{i}", text) for i, text in enumerate(block.footnotes))
+    seen: set[str] = set()
+    result: list[tuple[str, str]] = []
+    for field_name, value in values:
+        text = value.strip()
+        if text and text not in seen:
+            result.append((field_name, text))
+            seen.add(text)
+    return tuple(result)
+
+
+def image_row_metrics(blocks: list[DocumentIRBlock], height: float) -> dict[str, float]:
+    boxes = [block.layout.bbox for block in blocks]
+    heights = [box[3] - box[1] for box in boxes]
+    centers = [(box[1] + box[3]) / 2 for box in boxes]
+    return {"common_overlap": (min(box[3] for box in boxes) - max(box[1] for box in boxes)) / max(heights),
+            "height_ratio": min(heights) / max(heights),
+            "center_offset": (max(centers) - min(centers)) / min(heights),
+            "top_offset": (max(box[1] for box in boxes) - min(box[1] for box in boxes)) / height}
+
+
+def _aligned(metrics: dict[str, float]) -> bool:
+    return (metrics["common_overlap"] >= IMAGE_GROUP_THRESHOLDS["common_overlap"]
+            and metrics["height_ratio"] >= IMAGE_GROUP_THRESHOLDS["height_ratio"]
+            and metrics["center_offset"] <= IMAGE_GROUP_THRESHOLDS["center_offset"]
+            and metrics["top_offset"] <= IMAGE_GROUP_THRESHOLDS["top_offset"])
+
+
+def build_image_plan(document_ir: DocumentIR) -> tuple[ImageSpan, ...]:
+    """仅用最终 IR 判定图片组，不重排源块，也不读取资产或运行时配置。"""
+
+    pages = {page.index: page for page in document_ir.pages}
+    source = sorted(document_ir.blocks, key=lambda block: block.order)
+    duplicate_orders = {order for order, count in Counter(b.order for b in source).items() if count > 1}
+    localized = any(isinstance(b.metadata.get("caption_reconciliation"), dict)
+                    and b.metadata["caption_reconciliation"].get("status") == "uncertain" for b in source)
+    global_uncertain = "caption_binding_uncertain" in document_ir.quality_flags and not localized
+    spans: list[ImageSpan] = []
+    run: list[DocumentIRBlock] = []
+
+    def flush() -> None:
+        if not run:
+            return
+        page_index = _block_page_index(run[0])
+        if len(run) == 1:
+            spans.append(ImageSpan((run[0].id,), page_index, "single"))
+            run.clear()
+            return
+        page = pages.get(page_index)
+        reason = None
+        if document_ir.schema_version != "document-ir/v2" or page is None or page.width is None or page.height is None:
+            reason = "geometry_unavailable"
+        elif not all(math.isfinite(v) and v > 0 for v in (page.width, page.height)):
+            reason = "geometry_invalid"
+        else:
+            for block in run:
+                box = _bbox(block)
+                if box is None:
+                    reason = "geometry_unavailable"
+                    break
+                if not all(math.isfinite(v) for v in box) or not (0 <= box[0] < box[2] <= page.width and 0 <= box[1] < box[3] <= page.height):
+                    reason = "geometry_invalid"
+                    break
+                if block.page_index is not None and block.layout.page_index is not None and block.page_index != block.layout.page_index:
+                    reason = "page_or_section_boundary"
+                    break
+        if any(block.order in duplicate_orders for block in run):
+            reason = "source_order_conflict"
+        if reason:
+            spans.append(ImageSpan(tuple(b.id for b in run), page_index, "single_sequence", (reason,)))
+            run.clear()
+            return
+        # 连通只用于发现竞争分量；最终必须重新证明整个分量的共同阈值。
+        remaining = set(range(len(run)))
+        components: list[list[int]] = []
+        while remaining:
+            component = {min(remaining)}
+            frontier = list(component)
+            remaining -= component
+            while frontier:
+                index = frontier.pop()
+                neighbors = {other for other in remaining if _aligned(image_row_metrics([run[index], run[other]], page.height))}
+                remaining -= neighbors
+                component |= neighbors
+                frontier.extend(neighbors)
+            components.append(sorted(component))
+        decisions: dict[int, ImageSpan] = {}
+        for indices in components:
+            members = [run[i] for i in indices]
+            metrics = image_row_metrics(members, page.height)
+            reasons: list[str] = []
+            if indices != list(range(indices[0], indices[-1] + 1)) or not _aligned(metrics):
+                reasons.append("competing_row_membership")
+            if len(indices) == 1:
+                box = _bbox(members[0])
+                if any(min(box[3], _bbox(other)[3]) > max(box[1], _bbox(other)[1]) for other in run if other is not members[0]):
+                    reasons.append("row_alignment_insufficient")
+            if len(indices) > 1:
+                boxes = [_bbox(member) for member in members]
+                if any(right[0] <= left[0] for left, right in zip(boxes, boxes[1:])):
+                    reasons.append("source_order_conflict")
+                elif any(right[0] < left[2] for left, right in zip(boxes, boxes[1:])):
+                    reasons.append("horizontal_overlap")
+                if any((right[0] - left[2]) / page.width > IMAGE_GROUP_THRESHOLDS["gap"] for left, right in zip(boxes, boxes[1:])):
+                    reasons.append("gap_too_large")
+                if global_uncertain or any((receipt := member.metadata.get("caption_reconciliation", {})).get("status") == "uncertain" or receipt.get("candidates") for member in members):
+                    reasons.append("caption_binding_uncertain")
+                if any(receipt.get("evidence_only") for member in members for receipt in member.metadata.get("caption_reconciliation", {}).get("bindings", [])):
+                    reasons.append("external_caption_binding")
+            # 非连续竞争分量不能作为原子单元移动；逐块展开，保留每个源位置。
+            if indices != list(range(indices[0], indices[-1] + 1)):
+                for index in indices:
+                    decisions[index] = ImageSpan((run[index].id,), page_index, "single_sequence", tuple(dict.fromkeys(reasons)))
+            else:
+                mode = "group" if len(indices) > 1 and not reasons else ("single_sequence" if reasons else "single")
+                decisions[indices[0]] = ImageSpan(tuple(b.id for b in members), page_index, mode, tuple(dict.fromkeys(reasons)), tuple(metrics.items()))
+        spans.extend(decisions[index] for index in sorted(decisions))
+        run.clear()
+
+    for block in source:
+        if block.type != "image" or _block_role(block) != "body":
+            flush()
+            continue
+        if run and _block_page_index(run[-1]) != _block_page_index(block):
+            flush()
+        run.append(block)
+    flush()
+    return tuple(spans)
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,0 +1,44 @@
+[
+  {
+    "direction": "added",
+    "count": 1,
+    "text_sha256": "a089e2e50ec7671bacda37a3ce15f5476f1691de34766199f3ac1855db263d67",
+    "chars": 35,
+    "image_annotation_sources": [
+      [
+        "block_0107",
+        "captions/0"
+      ],
+      [
+        "block_0116",
+        "captions/0"
+      ]
+    ],
+    "anchors": [
+      "md2w_img_c4ea5c3d22435f76ea9f341a6cc4",
+      "md2w_img_e07b52e7458e3041511a55bb0ca1"
+    ]
+  },
+  {
+    "direction": "added",
+    "count": 1,
+    "text_sha256": "386fa9b96ad2431c979baaa4755bbae0a5205976f5cb2d9d9baff80be080ae36",
+    "chars": 9,
+    "image_annotation_sources": [
+      [
+        "block_0115",
+        "captions/0"
+      ]
+    ],
+    "anchors": [
+      "md2w_img_10c927e3f86908bc0dd86b34ae92",
+      "md2w_formula_000136"
+    ]
+  },
+  {
+    "direction": "removed",
+    "count": 1,
+    "text_sha256": "db92d527ca0f9bd210c329087701674d426f7ee5bbb4e2a3937c3edff462a702",
+    "chars": 44
+  }
+]

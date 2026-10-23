@@ -53,6 +53,7 @@ from app.domains.document_jobs.workflow import (
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
 from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
+from app.services.renderer import image_evidence
 from app.services.renderer.layout_plan import build_layout_plan
 from app.domains.translation.audit import (
     TranslationAuditService,
@@ -3136,6 +3137,7 @@ class DocumentJobExecutionService:
                 options=DocumentIRRenderOptions(
                     subscript_config_path=self.settings.subscript_config_path,
                     document_language=document_ir.metadata.document_language,
+                    template_version_id=template_selection.template_version_id,
                 ),
             )
             word_content = render_result.content
@@ -3175,6 +3177,9 @@ class DocumentJobExecutionService:
             try:
                 renderer_metadata = build_renderer_evidence(
                     document_ir, word_content, layout_plan, formula_report=render_result.formula_report,
+                    image_layout_report=render_result.image_layout_report,
+                    expected_template_version_id=template_selection.template_version_id,
+                    expected_generation_policy=image_evidence.IMAGE_GENERATION_POLICY,
                 )
                 ensure_renderer_integrity(renderer_metadata)
             except Exception as exc:
@@ -3271,8 +3276,8 @@ class DocumentJobExecutionService:
             return timed_out
         try:
             word_file = self.file_repository.materialize_prepared_result(receipt.file)
-            # 已选凭据恢复同样核对新公式报告；对象读取和质量重建均在 job 锁外。
-            self._validate_formula_result_file(word_file)
+            # 已选凭据重验原文件报告；对象读取和质量重建均在 job 锁外。
+            self._validate_render_result_file(word_file)
             completed = self.job_repository.update_document_job_if_current(
                 job.id, allowed_statuses={"running"}, allowed_stages={"uploading"},
                 expected_retry_count=receipt.generation, expected_document_ir_file_id=receipt.document_ir_file_id,
@@ -3297,9 +3302,9 @@ class DocumentJobExecutionService:
 
     @staticmethod
     def _safe_renderer_event_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
-        """逐公式证据仅随内部文件保存，普通事件保留汇总和既有非公式字段。"""
+        """逐项证据与格式快照仅随内部文件保存，普通事件保留安全汇总。"""
 
-        safe = {key: value for key, value in metadata.items() if key != "formula_report"}
+        safe = {key: value for key, value in metadata.items() if key not in {"formula_report", "image_layout_report"}}
         quality = safe.get("docx_quality")
         if isinstance(quality, dict):
             safe["docx_quality"] = {
@@ -3307,14 +3312,23 @@ class DocumentJobExecutionService:
             }
         return safe
 
-    def _validate_formula_result_file(self, record: DocumentFileRecord) -> None:
+    def _validate_render_result_file(self, record: DocumentFileRecord) -> None:
         """新报告绑定文件原始 IR，不能用当前代 IR 重新解释历史主件。"""
 
-        if "formula_report" not in record.metadata and "formula_summary" not in record.metadata:
+        has_formula = "formula_report" in record.metadata or "formula_summary" in record.metadata
+        has_image = bool(image_evidence.IMAGE_EVIDENCE_KEYS.intersection(record.metadata))
+        if not has_formula and not has_image:
+            if image_evidence.has_image_markers(self.file_service.read_file_content(record)):
+                raise ValueError("主 DOCX 含图片布局标记但缺少报告。")
             return
         report = record.metadata.get("formula_report")
-        if not isinstance(report, dict):
+        if has_formula and not isinstance(report, dict):
             raise ValueError("主 DOCX 的公式报告缺失或无效。")
+        image_report = record.metadata.get("image_layout_report")
+        if has_image and (not isinstance(image_report, dict) or not isinstance(record.metadata.get("image_layout_summary"), dict)):
+            raise ValueError("主 DOCX 的图片报告或摘要缺失或无效。")
+        if has_image and image_report.get("render_inputs", {}).get("template", {}).get("version_id") is not None and not record.metadata.get("template_version_id"):
+            raise ValueError("主 DOCX 的图片报告缺少外层模板绑定。")
         ir_id = record.metadata.get("document_ir_file_id")
         if not isinstance(ir_id, str) or not ir_id:
             raise ValueError("主 DOCX 的公式报告缺少原始 IR 绑定。")
@@ -3323,10 +3337,13 @@ class DocumentJobExecutionService:
                 != (record.tenant_id, record.company_id, record.job_id) or ir_file.file_type != "document_ir"):
             raise ValueError("主 DOCX 的原始 IR 与文件归属不一致。")
         content = self.file_service.read_file_content(record)
+        if not has_image and image_evidence.has_image_markers(content):
+            raise ValueError("主 DOCX 含图片布局标记但缺少报告。")
         if record.size_bytes != len(content) or record.checksum_sha256 != f"sha256:{hashlib.sha256(content).hexdigest()}":
             raise ValueError("主 DOCX 字节与 SHA-256 描述不一致。")
         ir = DocumentIR.model_validate_json(self.file_service.read_file_content(ir_file))
-        evidence = build_renderer_evidence(ir, content, formula_report=report)
+        evidence = build_renderer_evidence(ir, content, formula_report=report, image_layout_report=image_report,
+            expected_template_version_id=record.metadata.get("template_version_id") if has_image else None)
         ensure_renderer_integrity(evidence)
         if any(record.metadata.get(key) != value for key, value in evidence.items()
                if key not in {"mineru_validation", "mineru_validation_input", "caption_reconciliation"}
@@ -3421,7 +3438,7 @@ class DocumentJobExecutionService:
                     or record.file_type != "generated_word"
                     or (record.expires_at is not None and record.expires_at <= utc_now())):
                 raise ValueError("任务指定的结果文件不属于该任务的可用主 DOCX。")
-            self._validate_formula_result_file(record)
+            self._validate_render_result_file(record)
             return record
         candidates = [
             file for file in self.file_repository.list_document_files()
@@ -3439,10 +3456,13 @@ class DocumentJobExecutionService:
         record = candidates[0]
         if record.expires_at is None or record.expires_at <= utc_now():
             raise ValueError("历史主件已过期或缺少保留期。")
-        if "formula_report" in record.metadata or "formula_summary" in record.metadata:
-            self._validate_formula_result_file(record)
+        if (any(key in record.metadata for key in ("formula_report", "formula_summary"))
+                or image_evidence.IMAGE_EVIDENCE_KEYS.intersection(record.metadata)):
+            self._validate_render_result_file(record)
             return record
         content = self.file_service.read_file_content(record)
+        if image_evidence.has_image_markers(content):
+            raise ValueError("主 DOCX 含图片布局标记但缺少报告。")
         if record.size_bytes != len(content) or record.checksum_sha256 != f"sha256:{hashlib.sha256(content).hexdigest()}":
             raise ValueError("历史主件字节与 SHA-256 描述不一致。")
         ir = DocumentIR.model_validate_json(self.file_service.read_file_content(self._get_document_ir_file(job)))

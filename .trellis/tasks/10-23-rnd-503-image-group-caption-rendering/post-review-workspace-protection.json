@@ -1,0 +1,61 @@
+{
+  "branch": "md2word/RND-503",
+  "head": "1835263621a2a18627a5730e7fd62b6bc7cae8c2",
+  "post_review_snapshot": "/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/rnd503-postreview-4bb63wbx",
+  "original_index_unchanged": true,
+  "original_index_patch_sha256": "90ca0b76b045149346c4a06682f20263387b5a1881761f9b6ad3f97aab056105",
+  "original_staged_deletion_count": 302,
+  "protected_original_dirty_unchanged": {
+    ".trellis/workspace/777/index.md": true,
+    ".trellis/workspace/777/journal-1.md": true,
+    "docs/implementation/codex-prompts/CON-104.md": true,
+    "docs/implementation/codex-task-backlog.md": true
+  },
+  "manifest_outside_rnd503_byte_identical": true,
+  "other_manifest_tasks_unchanged": 44,
+  "post_review_changed_business_files": [
+    "app/domains/document_jobs/execution.py",
+    "app/services/renderer/image_renderer.py",
+    "app/services/renderer/word_renderer.py",
+    "app/services/renderer/image_evidence.py",
+    "tests/test_document_ir_word_renderer_layout.py",
+    "tests/test_document_job_result_persistence.py",
+    "tests/test_image_group_rendering.py"
+  ],
+  "post_review_changed_paths": [
+    ".trellis/spec/backend/word-generation-rules.md",
+    ".trellis/tasks/10-23-rnd-503-image-group-caption-rendering/artifact-hashes.json",
+    ".trellis/tasks/10-23-rnd-503-image-group-caption-rendering/b1-build-manifest.json",
+    ".trellis/tasks/10-23-rnd-503-image-group-caption-rendering/b1-validation.md",
+    ".trellis/tasks/10-23-rnd-503-image-group-caption-rendering/check.jsonl",
+    ".trellis/tasks/10-23-rnd-503-image-group-caption-rendering/implement.jsonl",
+    ".trellis/tasks/10-23-rnd-503-image-group-caption-rendering/implementation-summary.md",
+    ".trellis/tasks/10-23-rnd-503-image-group-caption-rendering/implementation-validation.md",
+    ".trellis/tasks/10-23-rnd-503-image-group-caption-rendering/research/word-image-contracts.md",
+    ".trellis/tasks/10-23-rnd-503-image-group-caption-rendering/task.json",
+    ".trellis/tasks/10-23-rnd-503-image-group-caption-rendering/validation-results.json",
+    "app/domains/document_jobs/execution.py",
+    "app/services/renderer/image_evidence.py",
+    "app/services/renderer/image_renderer.py",
+    "app/services/renderer/word_renderer.py",
+    "docs/design/docx-rendering-template-design.md",
+    "docs/implementation/codex-task-manifest.yaml",
+    "tests/test_document_ir_word_renderer_layout.py",
+    "tests/test_document_job_result_persistence.py"
+  ],
+  "known_preexisting_untracked_test": {
+    "path": "tests/test_image_group_rendering.py",
+    "recognized_in_start_status": true,
+    "included_in_start_content_hash_snapshot": false,
+    "authorized_owner_modified": true,
+    "final_sha256": "f85f3bcc426526be471fa1da87bc35fb91adb678550dab1676652bf292a44eab"
+  },
+  "all_294_sources_match_final_b1": true,
+  "approved_v2_bytes_retained": true,
+  "current_task_status": "in_progress",
+  "manifest_status": "review",
+  "staged_by_this_task": false,
+  "committed": false,
+  "pushed": false,
+  "archived": false
+}

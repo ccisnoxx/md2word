@@ -3,7 +3,6 @@ from __future__ import annotations
 # app/services/renderer/word_renderer.py: 将 DocumentIR v1/v2 按模板配置渲染为可编辑 DOCX。
 
 import io
-from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,8 +19,9 @@ from docx.shared import Cm, Mm, Twips
 from app.conversion.docx_rules.terminology import TerminologyReplacer
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset, DocumentIRBlock
 from app.services.renderer.image_renderer import WordImageRendererMixin
+from app.services.renderer.image_evidence import caption_bookmark_inventory, new_image_report, finish_image_report
 from app.services.renderer.evidence import formula_source_inventory
-from app.services.renderer.layout_plan import LayoutPage, LayoutRegion, build_layout_plan
+from app.services.renderer.layout_plan import LayoutPage, LayoutRegion, build_layout_plan, build_image_plan
 from app.services.renderer.semantic_text import parse_toc_entry_text
 from app.services.renderer.table_renderer import WordTableRendererMixin
 from app.services.renderer.template_config import TemplateConfigPackage, TemplateParagraphStyleConfig
@@ -39,19 +39,21 @@ class DocumentIRRenderOptions:
 
     subscript_config_path: Path | None = None
     document_language: str | None = None
+    template_version_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class DocumentIRRenderResult:
-    """同一次渲染生成的 DOCX 与私有公式报告。"""
+    """同一次渲染生成的 DOCX 与私有公式、图片报告。"""
 
     content: bytes = field(repr=False)
     formula_report: dict[str, Any]
+    image_layout_report: dict[str, Any] | None = None
 
 
 @dataclass(slots=True)
 class _RenderContext:
-    """单次渲染的字段目标；不得存到可并发复用的 renderer 实例。"""
+    """单次渲染的字段目标、图片计划和报告，不写入可并发复用的实例。"""
 
     caption_bookmarks: dict[tuple[str, int], tuple[str, int]]
     allow_heading_inference: bool
@@ -60,6 +62,13 @@ class _RenderContext:
     formula_entries: list[dict[str, Any]] = field(default_factory=list)
     used_formula_sources: set[int] = field(default_factory=set)
     formula_location: tuple[str, str] | None = None
+    image_report: dict[str, Any] = field(default_factory=dict)
+    image_spans: dict[str, Any] = field(default_factory=dict)
+    image_blocks: dict[str, DocumentIRBlock] = field(default_factory=dict)
+    image_records: dict[str, tuple[dict[str, Any], dict[str, Any]]] = field(default_factory=dict)
+    consumed_images: set[str] = field(default_factory=set)
+    image_bookmark_ids: dict[str, int] = field(default_factory=dict)
+    source_blocks: list[DocumentIRBlock] = field(default_factory=list)
 
 
 class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, WordImageRendererMixin):
@@ -87,10 +96,12 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         image_loader: ImageContentLoader,
         options: DocumentIRRenderOptions | None = None,
     ) -> DocumentIRRenderResult:
-        """以单次文档上下文生成字节和公式报告，兼容入口共用此核心。"""
+        """以单次文档上下文生成字节和私有报告，兼容入口共用此核心。"""
 
-        template_config = self._load_template_config(document_ir, config_path, options)
-        document = self._create_document(template_path)
+        config_content = config_path.read_bytes() if config_path is not None else None
+        template_content = template_path.read_bytes() if template_path is not None else None
+        template_config = self._load_template_config(document_ir, config_path, options, content=config_content)
+        document = Document(io.BytesIO(template_content)) if template_content is not None else Document()
         self._clear_body(document)
         self._apply_page_setup(document, template_config)
         self._apply_header_footer(document, template_config, config_path=config_path)
@@ -98,6 +109,13 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
 
         assets_by_id = {asset.id: asset for asset in document_ir.assets}
         render_context = self._build_render_context(document_ir)
+        render_context.image_report = new_image_report(document_ir, template_config=template_config,
+            template_content=template_content, config_content=config_content,
+            template_version_id=options.template_version_id if options else None,
+            language=(options.document_language if options and options.document_language else document_ir.metadata.document_language))
+        render_context.source_blocks = sorted(document_ir.blocks, key=lambda block: block.order)
+        render_context.image_blocks = {block.id: block for block in document_ir.blocks if block.type == "image"}
+        render_context.image_spans = {block_id: span for span in build_image_plan(document_ir) for block_id in span.block_ids}
         document.part._md2word_formula_context = render_context
         layout_plan = build_layout_plan(document_ir)
         if layout_plan.mode == "legacy_v1_fallback":
@@ -127,7 +145,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
 
         buffer = io.BytesIO()
         document.save(buffer)
-        return DocumentIRRenderResult(buffer.getvalue(), {"schema_version": "formula-render/v1", "entries": render_context.formula_entries})
+        return DocumentIRRenderResult(buffer.getvalue(), {"schema_version": "formula-render/v1", "entries": render_context.formula_entries}, finish_image_report(render_context.image_report))
 
     def _apply_document_settings(self, document: Any) -> None:
         settings = document.settings.element
@@ -158,52 +176,26 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         return max(int(available_width / column_count), 1), column_count
 
     def _build_render_context(self, document_ir: DocumentIR) -> _RenderContext:
-        caption_keys: list[tuple[str, int]] = []
-        for block in document_ir.blocks:
-            if block.type == "table":
-                annotations = self._unique_annotation_texts(block.captions)
-            elif block.type == "image":
-                annotations = self._image_annotation_texts(block)
-            else:
-                continue
-            for annotation in annotations:
-                parsed = self._parse_caption_text(annotation.strip())
-                if parsed is None:
-                    continue
-                _prefix, label, _spacing, source_number, _tail = parsed
-                kind = "figure" if label.lower() == "figure" or label == "图" else "table"
-                caption_keys.append((kind, source_number))
-
-        counts = Counter(caption_keys)
-        bookmarks: dict[tuple[str, int], tuple[str, int]] = {}
-        for key in caption_keys:
-            if counts[key] != 1 or key in bookmarks:
-                continue
-            kind, source_number = key
-            bookmarks[key] = (f"_md2word_{kind}_{source_number}", len(bookmarks) + 1)
         return _RenderContext(
-            caption_bookmarks=bookmarks,
+            caption_bookmarks=caption_bookmark_inventory(document_ir),
             allow_heading_inference=document_ir.schema_version == "document-ir/v1",
             formula_sources=formula_source_inventory(document_ir),
         )
-
-    def _create_document(self, template_path: Path | None) -> Any:
-        if template_path is not None and template_path.exists():
-            return Document(str(template_path))
-        return Document()
 
     def _load_template_config(
         self,
         document_ir: DocumentIR,
         config_path: Path | None,
         options: DocumentIRRenderOptions | None,
+        *,
+        content: bytes | None = None,
     ) -> TemplateConfigPackage:
         document_language = (
             options.document_language
             if options is not None and options.document_language
             else document_ir.metadata.document_language
         )
-        template_config = TemplateConfigPackage.load(config_path).for_document_language(document_language)
+        template_config = (TemplateConfigPackage.load_content(content) if content is not None else TemplateConfigPackage.load(config_path)).for_document_language(document_language)
         subscript_config_path = options.subscript_config_path if options is not None else None
         if subscript_config_path is not None:
             terminology = TerminologyReplacer(subscript_config_path)
@@ -422,15 +414,14 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
             )
             return
         if block.type == "image":
-            self._render_image(
-                document,
-                block,
-                assets_by_id,
-                template_config,
-                image_loader,
-                page_width=page_width,
-                caption_bookmarks=render_context.caption_bookmarks,
-            )
+            if block.id in render_context.consumed_images:
+                return
+            span = render_context.image_spans[block.id]
+            grouped = span.mode == "group" and render_context.image_report["render_inputs"]["generation_policy"] == "grouped/v1"
+            block_ids = span.block_ids if grouped else (block.id,)
+            render_context.consumed_images.update(block_ids)
+            self._render_image_span(document, span, [render_context.image_blocks[key] for key in block_ids],
+                assets_by_id, template_config, image_loader, render_context, page_width=page_width)
 
     def _render_layout_page(
         self,
@@ -444,6 +435,50 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         page_break_before_block_id: str | None = None,
     ) -> None:
         self._render_page_decorations(document, page, template_config)
+        body_ids = {block.id for region in page.regions for block in region.blocks}
+        source_images = [block.id for block in render_context.source_blocks if block.id in body_ids and block.type == "image"]
+        native_images: list[str] = []
+        for region in page.regions:
+            ordered = region.blocks
+            if region.kind == "two_col":
+                left, right = self._split_two_col_blocks(region.blocks)
+                ordered = [*left, *right]
+            native_images.extend(block.id for block in ordered if block.type == "image")
+        source_positions = {block_id: index for index, block_id in enumerate(source_images)}
+        positions = [source_positions[block_id] for block_id in native_images]
+        suffix_min = [len(positions)] * (len(positions) + 1)
+        for index in range(len(positions) - 1, -1, -1):
+            suffix_min[index] = min(positions[index], suffix_min[index + 1])
+        overlay_spans: set[str] = set()
+        prefix_max = -1
+        for index, block_id in enumerate(native_images):
+            span = render_context.image_spans[block_id]
+            if (positions[index] < prefix_max or positions[index] > suffix_min[index + 1]
+                    or (span.mode == "group" and render_context.image_report["render_inputs"]["generation_policy"] == "grouped/v1")):
+                overlay_spans.add(span.id)
+            prefix_max = max(prefix_max, positions[index])
+        overlay_ids = {block_id for block_id in source_images if render_context.image_spans[block_id].id in overlay_spans}
+        if overlay_ids:
+            # 只抽出确认组或确有阅读次序冲突的图片；普通单图继续处于原生栏流。
+            pending: set[str] = set()
+            def render_pending() -> None:
+                for region in page.regions:
+                    blocks = [block for block in region.blocks if block.id in pending]
+                    if blocks:
+                        self._render_layout_region(document, LayoutRegion(region.kind, blocks), assets_by_id,
+                            template_config, image_loader, render_context, page_width=page.width,
+                            page_break_before_block_id=page_break_before_block_id)
+                pending.clear()
+            for block in render_context.source_blocks:
+                if block.id not in body_ids:
+                    continue
+                if block.id in overlay_ids:
+                    render_pending()
+                    self._render_block(document, block, assets_by_id, template_config, image_loader, render_context, page_width=page.width)
+                else:
+                    pending.add(block.id)
+            render_pending()
+            return
         for region in page.regions:
             self._render_layout_region(
                 document,
@@ -567,22 +602,6 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                 )
             return
 
-        image_rows = self._split_two_column_image_rows(region.blocks)
-        if image_rows is not None:
-            for row_index, (left, right) in enumerate(image_rows):
-                self._render_two_column_image_row(
-                    document,
-                    left,
-                    right,
-                    assets_by_id,
-                    template_config,
-                    image_loader,
-                    page_width=page_width,
-                    caption_bookmarks=render_context.caption_bookmarks,
-                    keep_with_next=row_index < len(image_rows) - 1,
-                )
-            return
-
         left_blocks, right_blocks = self._split_two_col_blocks(region.blocks)
         two_column_section = document.add_section(WD_SECTION_START.CONTINUOUS)
         self._set_section_columns(two_column_section, 2)
@@ -648,31 +667,3 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
             else:
                 right_blocks.append(block)
         return left_blocks, right_blocks
-
-    def _split_two_column_image_rows(
-        self,
-        blocks: list[DocumentIRBlock],
-    ) -> list[tuple[DocumentIRBlock, DocumentIRBlock]] | None:
-        """把 bbox 明确成对的纯图片双栏区按行切分，保持题注字段的阅读顺序。"""
-
-        if (
-            len(blocks) < 2
-            or any(block.type != "image" for block in blocks)
-            or any(len(self._image_annotation_texts(block)) > 1 for block in blocks)
-        ):
-            return None
-        left_blocks, right_blocks = self._split_two_col_blocks(blocks)
-        if len(left_blocks) != len(right_blocks) or not left_blocks:
-            return None
-        left_blocks.sort(key=lambda block: block.layout.bbox[1] if block.layout and block.layout.bbox else float("inf"))
-        right_blocks.sort(key=lambda block: block.layout.bbox[1] if block.layout and block.layout.bbox else float("inf"))
-        rows: list[tuple[DocumentIRBlock, DocumentIRBlock]] = []
-        for left, right in zip(left_blocks, right_blocks, strict=True):
-            left_bbox = left.layout.bbox if left.layout is not None else None
-            right_bbox = right.layout.bbox if right.layout is not None else None
-            if left_bbox is None or right_bbox is None:
-                return None
-            if min(left_bbox[3], right_bbox[3]) <= max(left_bbox[1], right_bbox[1]):
-                return None
-            rows.append((left, right))
-        return rows

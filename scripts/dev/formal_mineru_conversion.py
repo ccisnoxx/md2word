@@ -21,6 +21,7 @@ from app.services.document_ir.models import DocumentIR, DocumentIRAsset
 from app.services.renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
 from app.services.renderer.word_renderer import DocumentIRRenderResult
 from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
+from app.services.renderer import image_evidence
 
 
 LOCAL_JOB_ID = "local_mineru_debug"
@@ -210,7 +211,9 @@ def convert_formal_mineru_package(request: FormalMinerUConversionRequest) -> For
         render_result = _render_document(document_ir, result.image_assets, request)
         word_content = render_result.content
 
-    renderer_metadata = build_renderer_evidence(document_ir, word_content, formula_report=render_result.formula_report)
+    renderer_metadata = build_renderer_evidence(document_ir, word_content, formula_report=render_result.formula_report,
+                                                image_layout_report=render_result.image_layout_report,
+                                                expected_generation_policy=image_evidence.IMAGE_GENERATION_POLICY)
     ensure_renderer_integrity(renderer_metadata)
     document_ir_path = _document_ir_output_path(request.output_path)
     document_ir_path.write_text(document_ir.model_dump_json(indent=2), encoding="utf-8")

@@ -1,11 +1,9 @@
-"""Shared terminology replacement rules for DOCX text and table HTML."""
+"""DOCX 文本与表格 HTML 共用的格式替换规则。"""
 
 from __future__ import annotations
 
-# File: app/conversion/docx_rules/terminology.py
-# Purpose: Apply runtime subscript/terminology YAML consistently across renderers.
-
 import re
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -25,12 +23,38 @@ class ReplacementRule:
 
 
 class TerminologyReplacer:
-    """Apply legacy runtime YAML terminology rules to plain text and HTML."""
+    """按既有顺序和作用域执行 YAML 格式替换，支持不可变输入重放。"""
 
     def __init__(self, config_path: Path | None = None) -> None:
         self.config_path = config_path
         self.rules: list[ReplacementRule] = []
+        self.content_sha256: str | None = None
         self._load_rules()
+
+    def freeze_rules(self) -> list[dict]:
+        """仅保存执行所需白名单值；数组顺序就是已经生效的规则顺序。"""
+        return [{"pattern": rule.pattern, "replacement": rule.replacement,
+                 "flags": rule.regex.flags, "apply_scope": rule.apply_scope}
+                for rule in self.rules if rule.enabled and rule.regex is not None]
+
+    @classmethod
+    def from_frozen_rules(cls, rules: list[dict]) -> "TerminologyReplacer":
+        """历史证据只重放冻结规则，不读取当前文件或重新排序。"""
+        replacer = cls()
+        if not isinstance(rules, list):
+            raise ValueError("图片格式规则快照无效")
+        for data in rules:
+            if (not isinstance(data, dict) or set(data) != {"pattern", "replacement", "flags", "apply_scope"}
+                    or not isinstance(data["pattern"], str) or not isinstance(data["replacement"], str)
+                    or type(data["flags"]) is not int or not isinstance(data["apply_scope"], str)):
+                raise ValueError("图片格式规则快照无效")
+            try:
+                regex = re.compile(data["pattern"], data["flags"])
+            except (re.error, ValueError) as exc:
+                raise ValueError("图片格式规则无法重放") from exc
+            replacer.rules.append(ReplacementRule(source="", pattern=data["pattern"],
+                replacement=data["replacement"], apply_scope=data["apply_scope"], regex=regex))
+        return replacer
 
     def replace_text(self, text: str) -> str:
         if not text or not self.rules:
@@ -61,7 +85,9 @@ class TerminologyReplacer:
         if not self.config_path or not self.config_path.exists():
             return
 
-        config = yaml.safe_load(self.config_path.read_text(encoding="utf-8")) or {}
+        content = self.config_path.read_bytes()
+        self.content_sha256 = hashlib.sha256(content).hexdigest()
+        config = yaml.safe_load(content.decode("utf-8")) or {}
         rules_data = config.get("subscript_rules", {})
         if not isinstance(rules_data, dict):
             return

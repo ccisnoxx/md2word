@@ -17,7 +17,8 @@ from app.services.renderer.docx_quality import (
     validate_formula_report,
     verify_docx_formula_report,
 )
-from app.services.renderer.layout_plan import LayoutPlan, build_layout_plan
+from app.services.renderer.layout_plan import LayoutPlan, build_layout_plan, image_annotations
+from app.services.renderer.image_evidence import verify_image_report
 
 
 def build_renderer_metadata(document_ir: DocumentIR, layout_plan: LayoutPlan | None = None) -> dict[str, Any]:
@@ -96,10 +97,17 @@ def build_renderer_evidence(
     layout_plan: LayoutPlan | None = None,
     *,
     formula_report: dict[str, Any] | None = None,
+    image_layout_report: dict[str, Any] | None = None,
+    expected_template_version_id: str | None = None,
+    expected_generation_policy: str | None = None,
 ) -> dict[str, Any]:
     """生成 DOCX 证据；新报告严格核验，历史无报告保持原字段。"""
 
     evidence = build_renderer_metadata(document_ir, layout_plan)
+    if image_layout_report is not None:
+        evidence["image_layout_summary"] = verify_image_report(document_ir, word_content, image_layout_report,
+            expected_template_version_id=expected_template_version_id, expected_generation_policy=expected_generation_policy)
+        evidence["image_layout_report"] = image_layout_report
     if formula_report is not None:
         summary = validate_formula_report(formula_report)
         expected_sources = formula_source_inventory(document_ir)
@@ -114,6 +122,8 @@ def build_renderer_evidence(
     evidence["quality_flags"] = build_docx_quality_flags(docx_quality)
     if formula_report is not None and evidence["formula_summary"]["fallback_count"]:
         evidence["quality_flags"].append("formula_text_fallback")
+    if image_layout_report is not None and evidence["image_layout_summary"]["uncertain_span_count"]:
+        evidence["quality_flags"].append("image_group_uncertain")
     body_blocks = [block for block in document_ir.blocks if is_visible_body_block(block)]
     expected_inline_shapes = sum(1 for block in body_blocks if block.type == "image")
     expected_tables = sum(1 for block in body_blocks if block.type == "table")
@@ -144,7 +154,17 @@ def build_renderer_evidence(
         flags.append("ir_docx_integrity:image_asset_missing")
     if actual_inline_shapes != expected_inline_shapes:
         flags.append("ir_docx_integrity:inline_shape_count_mismatch")
-    if actual_tables != expected_tables:
+    if image_layout_report is not None:
+        layout_count = evidence["image_layout_summary"]["accepted_group_count"]
+        content_count = actual_tables - layout_count
+        evidence.update({"expected_layout_table_count": layout_count, "layout_table_count": layout_count,
+                         "layout_table_count_delta": 0, "expected_content_table_count": expected_tables,
+                         "content_table_count": content_count, "content_table_count_delta": content_count - expected_tables,
+                         "expected_total_table_count": expected_tables + layout_count,
+                         "total_table_count": actual_tables, "total_table_count_delta": actual_tables - expected_tables - layout_count})
+        if content_count != expected_tables:
+            flags.append("ir_docx_integrity:table_count_mismatch")
+    elif actual_tables != expected_tables:
         flags.append("ir_docx_integrity:table_count_mismatch")
     if document_ir.schema_version == "document-ir/v2" and actual_headings != expected_headings:
         flags.append("ir_docx_integrity:heading_count_mismatch")
@@ -188,20 +208,22 @@ def formula_source_inventory(document_ir: DocumentIR) -> list[dict[str, Any]]:
                 add(block.id, f"list_items/{index}", text)
         elif block.type != "image":
             add(block.id, "text", block.text or "")
-        if block.type in {"table", "image"}:
+        if block.type == "image":
+            annotations = image_annotations(block)
+            for field, text in annotations:
+                add(block.id, field, text)
+            if not annotations:
+                add(block.id, "text", block.text or "")
+        elif block.type == "table":
             seen: set[tuple[str, str]] = set()
             values = [(f"captions/{index}", text) for index, text in enumerate(block.captions)]
-            if block.type == "image" and isinstance(block.metadata.get("caption"), str):
-                values.append(("metadata/caption", block.metadata["caption"]))
             values.extend((f"footnotes/{index}", text) for index, text in enumerate(block.footnotes))
             for field, text in values:
-                # 表题与表注分别去重；图片沿用所有 annotation 合并去重的既有规则。
-                key = (field.split("/")[0] if block.type == "table" else "", text.strip())
+                # 表题与表注分别去重；图片库存与 writer 共用上面的唯一注释遍历。
+                key = (field.split("/")[0], text.strip())
                 if text.strip() and key not in seen:
                     seen.add(key)
                     add(block.id, field, text.strip())
-            if block.type == "image" and not seen:
-                add(block.id, "text", block.text or "")
     return sources
 
 

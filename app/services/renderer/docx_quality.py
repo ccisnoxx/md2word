@@ -105,6 +105,10 @@ def _analyze_docx_package(package: zipfile.ZipFile, *, formula_report: dict[str,
 
     paragraphs = root.findall(".//w:p", DOCX_XML_NS)
     tables = root.findall(".//w:tbl", DOCX_XML_NS)
+    # 独立分析只能识别候选，正式 evidence 另行认证其源图片与注释绑定。
+    layout_candidates = [table for table in tables if (marker := table.find("./w:tblPr/w:tblCaption", DOCX_XML_NS)) is not None
+                         and marker.get(_w_attr("val"), "").startswith("md2w_image_layout:")]
+    content_tables = [table for table in tables if table not in layout_candidates]
     table_cell_paragraphs = [paragraph for table in tables for paragraph in table.findall(".//w:tc/w:p", DOCX_XML_NS)]
     table_cell_paragraph_ids = {id(paragraph) for paragraph in table_cell_paragraphs}
     paragraph_texts = [_paragraph_text(paragraph) for paragraph in paragraphs]
@@ -128,13 +132,13 @@ def _analyze_docx_package(package: zipfile.ZipFile, *, formula_report: dict[str,
     text_chars = len(joined_text)
     table_count = len(tables)
     table_shapes = [_table_shape(table) for table in tables]
-    wide_table_count = sum(1 for table in tables if _table_column_count(table) >= WIDE_TABLE_MIN_COLUMNS)
+    wide_table_count = sum(1 for table in content_tables if _table_column_count(table) >= WIDE_TABLE_MIN_COLUMNS)
     inline_shape_count = len(root.findall(".//wp:inline", DOCX_XML_NS))
     editable_text_available = text_chars >= EDITABLE_TEXT_MIN_CHARS
-    editable_content_available = editable_text_available or table_count > 0
+    editable_content_available = editable_text_available or bool(content_tables)
     heading_paragraphs = sum(1 for paragraph in paragraphs if _paragraph_has_heading_style(paragraph, heading_style_ids))
     toc_tab_leader_paragraphs = sum(1 for paragraph in paragraphs if _paragraph_has_dot_tab_leader(paragraph))
-    return {
+    result = {
         "paragraph_count": len(paragraphs),
         "table_count": table_count,
         "table_shapes": table_shapes,
@@ -157,9 +161,9 @@ def _analyze_docx_package(package: zipfile.ZipFile, *, formula_report: dict[str,
             if _looks_like_plain_toc_entry(text) and not _paragraph_has_dot_tab_leader(paragraph)
         ),
         "keep_next_paragraphs": sum(1 for paragraph in paragraphs if paragraph.find("./w:pPr/w:keepNext", DOCX_XML_NS) is not None),
-        "table_header_rows": sum(1 for table in tables for row in table.findall("./w:tr", DOCX_XML_NS) if _row_has_table_header(row)),
-        "table_no_split_rows": sum(1 for table in tables for row in table.findall("./w:tr", DOCX_XML_NS) if _row_has_cant_split(row)),
-        "shaded_table_cells": sum(1 for table in tables for cell in table.findall(".//w:tc", DOCX_XML_NS) if _cell_has_fill(cell)),
+        "table_header_rows": sum(1 for table in content_tables for row in table.findall("./w:tr", DOCX_XML_NS) if _row_has_table_header(row)),
+        "table_no_split_rows": sum(1 for table in content_tables for row in table.findall("./w:tr", DOCX_XML_NS) if _row_has_cant_split(row)),
+        "shaded_table_cells": sum(1 for table in content_tables for cell in table.findall(".//w:tc", DOCX_XML_NS) if _cell_has_fill(cell)),
         "table_cell_zero_spacing_paragraphs": sum(1 for paragraph in table_cell_paragraphs if _paragraph_has_zero_spacing(paragraph)),
         "landscape_sections": sum(1 for section in root.findall(".//w:sectPr", DOCX_XML_NS) if _section_is_landscape(section)),
         "latex_residue_count": len(latex_matches),
@@ -169,6 +173,9 @@ def _analyze_docx_package(package: zipfile.ZipFile, *, formula_report: dict[str,
         "editable_content_available": editable_content_available,
         "image_only_suspected": media_count > 0 and not editable_content_available,
     }
+    if layout_candidates:
+        result["candidate_layout_table_count"] = len(layout_candidates)
+    return result
 
 
 def _heading_style_ids(package: zipfile.ZipFile) -> set[str]:

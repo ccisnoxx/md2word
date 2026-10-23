@@ -73,15 +73,15 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 ### INPUT-002 MinerU 包边界与显式失败
 
-- 状态：`implemented-gap`
-- 输入信号：ZIP 条目、目录路径和 content list JSON 结构。
-- 正式 owner：`app/services/document_ir/mineru_package.py::extract_zip`、`::find_content_list`、`::load_content_blocks`；`scripts/dev/formal_mineru_conversion.py::_materialize_mineru_zip`、`::_validate_request_paths`。
-- 预期输出：拒绝绝对路径、空/`.`/`..` ZIP 条目、缺失 content list 和非 list 内容；错误显式暴露，不返回伪成功。
+- 状态：`enforced-tested`（已接受依赖输入合同的本地集成验证，不代表线上/Word验收）。
+- 输入信号：ZIP 条目、目录路径、选中 content list 原始 JSON、页面/bbox、资产及 HTML。
+- 正式 owner：`app/services/document_ir/mineru_package.py` 拥有包路径/限额/精确资产寻址；`artifact_validator.py` 拥有原始结构/资产/HTML和 `mineru-artifact-validation/v1` 报告；converter 只消费已验证视图；本地 adapter 进入同一服务。
+- 预期输出：全包展开前拒绝绝对/穿越/Windows路径、symlink/特殊条目、覆盖/祖先冲突及超限，按实际字节有界展开；选中JSON非法不得回退其它结果。必需图片真实解码且可被Word消费；显式非法/非有限bbox在映射前失败。资产不按basename猜测，合法HTML保持原生表格。源包只读，失败带有界结构报告，不返回伪成功。
 - 冲突/例外：目录输入由正式 adapter 物化成 ZIP 后进入同一服务；旧 runtime 的路径穿越 characterization test 不能证明这里已覆盖。
 - 禁止：猜测邻近文件、静默返回空文档、以宽泛异常吞掉输入错误。
-- 自动验证：正式 adapter 的 `tests.test_conversion_sandbox_dev_tools.LocalMinerUConversionCliTests.test_missing_input_fails_before_runtime_call` 仅覆盖入口路径；尚无直接正式 `extract_zip` 恶意条目测试。
-- 样本证据：OPA228 最小包只覆盖正常目录输入。
-- 来源/取代：当前正式代码审计；安全边界已实现但正式自动证据不足。
+- 自动验证：`tests.test_mineru_artifact_validator` 的ZIP预检/碰撞/CRC/限额、路径歧义/穿越、Unicode/坏JSON、非有限bbox、坏图/不支持格式、raw/effective inventory与报告边界；converter/IR contract和正式adapter入口负例保持。
+- 样本证据：RND-503依赖集成174项通过；component/direct/真实客户端以本轮validation分层记录，不借历史结果声称新样本通过。
+- 来源/取代：已接受IR-201/IR-204最终17cde1f的有边界集成，见RND-503 dependency-integration记录；不由本条推导未接入的其它Worker事件/仓储能力。
 
 ### INPUT-003 最终宣传页保守过滤
 
@@ -231,6 +231,18 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 样本证据：SC2167、CM4112 第 3/4 页表格均为 external evidence；没有自动排版后的表格挤压/分页断言。
 - 来源/取代：两个 08-18 归档任务；明确降级“续表已解决”的历史结论。
 
+### IR-005 严格题注关系与原始证据
+
+- 状态：`enforced-tested`；正式ZIP/OOXML和定向证据仅证明结构与内容，未代表Word视觉。
+
+- caption 统一由 document_ir/caption_reconciler.py 负责逻辑分组、可靠换行拆分、严格编号和关系回执；converter 只消费最终结果，禁止再递归读回旧 nested 字段。
+- 自动修复限同页、原源索引连续、同对象族、标签一致、编号唯一连续、数量相等及原分布失衡；image/chart/figure 与 table 分族，已有一对象一题注保持。
+- flat rich nodes 仍是一个逻辑题注，仅完整标签/编号起始的可靠显式换行或既有逻辑组可以拆分；无边界连写图5/6不猜拆。原始值/runs/locator 保留在专用 metadata，不使用可见 caption 别名。
+- 独立 paragraph 不搬移或复制可见文本，仅在唯一相容对象、同页直接邻接和有效 bbox 下建立 evidence-only；歧义记录 caption_binding_uncertain，普通无候选对象不全局误报。
+- 表题/条件保持 TABLE-002 的唯一 classifier，明确边界分别处理，混合边界不明保留原 annotation 并标不确定；合法 HTML 继续原生表格。
+- 原始证据只由主源块保存，table_context 派生块不复制；renderer 摘要不包含原文。拟自动修复必须守恒且唯一消费，损坏按 QUALITY-004 失败关闭，普通 uncertainty 不升级 fatal。最终可见caption列表也纳入守恒门禁；重复条件保留出现次数，重复编号表题保持原annotation并uncertain，防止下游既有去重静默丢次。范围/共享标签续号不按首号绑定。
+- 自动验证：`tests.test_caption_reconciler`、converter 的 nested/sequence/accepted redacted/table/paragraph/damage/legacy 联合测试、IR contract roundtrip 与 translation metadata 保真。真实Word/WPS和字段更新结果仍未验证；FIELD-002 的跳号限制不由本任务修复。
+
 ## 4. 分栏、文本、表格与图片
 
 ### COL-001 局部双栏检测
@@ -251,23 +263,22 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 输入信号：layout plan 的 `two_col` region 及其 left/right blocks。
 - 正式 owner：`app/services/renderer/word_renderer.py::_render_layout_region`、`::_set_section_columns`、`::_split_two_col_blocks`。
 - 预期输出：通过 continuous section 的 `w:cols` 进入两栏，按左栏自上而下、column break、右栏自上而下渲染，再用 continuous section 恢复单栏；不使用布局表格承载普通双栏正文。
-- 冲突/例外：COL-003 的严格图片对用制表位；continuous section 的实际栏平衡需要 Word/WPS 视觉验收。
+- 冲突/例外：COL-003 的严格图片组使用无边框布局表格；continuous section 的实际栏平衡需要 Word/WPS 视觉验收。
 - 禁止：按全局 y 顺序交错左右栏；渲染完双栏后不恢复单栏；用 1×2 表格包装普通正文。
 - 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_uses_native_columns_for_v2_region`、`.test_render_to_bytes_prefers_column_hint_when_ordering_native_columns`、`.test_render_to_bytes_keeps_continuous_restore_when_wide_content_follows_columns`。
 - 样本证据：SC2167 为 external historical WPS/LibreOffice evidence；没有 committed 当前视觉回归。
 - 来源/取代：commit `5d4a02d7` 与 `32edca58`；取代布局表格模拟普通栏。
 
-### COL-003 严格成对图片行例外
+### COL-003 严格图片行与无边框布局表格
 
-- 状态：`enforced-tested`
-- 输入信号：同一 two-col region 中可严格配对的 left/right image blocks，且配对不会吞并多题注/非图片内容。
-- 正式 owner：`app/services/renderer/word_renderer.py::_split_two_column_image_rows`；`app/services/renderer/image_renderer.py::_render_two_column_image_row`、`::_configure_image_row_tabs`。
-- 预期输出：单栏段落用 25%/75% 制表位放置一对图片，并按行顺序保留各自题注字段；不创建布局表格。
-- 冲突/例外：多 annotation 或无法严格成对的图片留在 COL-002 原生栏中。
-- 禁止：把任意两张图强行配对；合并/错配题注；恢复 1×2 布局表格。
-- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_keeps_paired_image_caption_fields_in_row_order`、`.test_render_to_bytes_keeps_multi_annotation_images_in_native_columns`。
-- 样本证据：SC2167 图片网格为 external historical evidence；当前 fixture 不含图片。
-- 来源/取代：归档任务 `08-18-fix-layout-formula-image-caption`。
+- 状态：`enforced-tested`（RND-503结构/内容与恢复本地验证通过；Word/部署预览尚待人工验收）。
+- 输入信号：最终IR同页、源连续image run，具有有效有限bbox与页面尺寸；不跨正文/真实section，不猜caption归属。
+- 正式owner：`app/services/renderer/layout_plan.py`拥有image-group/v1；image_renderer/word_renderer只消费其计划和单次有效输入。
+- 预期输出：确认行用固定1×N无边框Word布局表格，每图inline且等比；各自caption/footnote在本cell完整独立渲染。共同纵向交集/max高≥0.80，高度比≥0.80，中心偏移/min高≤0.10，顶边偏移/页高≤0.015，相邻横向间隔/页宽≤0.08且不重叠；全部成立、源序与x序一致并无竞争才接受。连通分量须全组复核，不能传递猜配。
+- 冲突/例外：替代旧COL-003的25%/75%制表位图片例外；普通正文COL-002继续原生栏。IR-204 uncertain/evidence-only竞争否决并排；正常多annotation不是拒绝理由；不确定按源序单图并标记。
+- 禁止：全局bbox重排，复制/拆分或搬独立段落caption，仅凭marker/总数豁免数据表对账；布局表不能伪造数据表可编辑性。
+- 自动/样本验证：可靠图5/6与24/25、单图/阈值/OOXML/历史恢复/冻结输入/B1有定向测试；全新critical复审另覆盖原生栏混合单图、全部报告键缺失、模板继承定位及真实旧产物兼容。各轮unit/component/direct/release/B1和LibreOffice辅助预览的准确结果见任务implementation-validation.md与post-implementation-review.md；Word/部署预览/Golden未验边界仍独立记录，不以本条代签。
+- 来源/取代：2026-10-23用户接受的RND-503 v2；原制表位行为仍保留在旧测试/历史证据中，不再约束新图片writer。
 
 ### TEXT-001 原生标题语义与内容组保持
 
@@ -309,8 +320,8 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：v2 table/image/figure/chart caption 字段中的 flat inline-node list，或 legacy string list/多个 nested rich-node groups。
-- 正式 owner：`app/services/document_ir/mineru_converter.py::MinerUToDocumentIRService._captions`；现有文本/公式清理 helper 只作为片段归一化依赖。
-- 预期输出：一个 flat `text/equation_inline/text` 节点数组形成一个完整 `DocumentIRBlock.captions` 元素，进入 Word 后只占一个题注段落；string list 和多个 nested rich groups 继续形成多条独立题注。可见 inline 语义、SEQ/bookmark、fallback、table context 和 COL-003 annotation 数量判断均基于完整逻辑题注。
+- 正式 owner：`app/services/document_ir/caption_reconciler.py::reconcile_captions`；现有文本/公式清理 helper 只作为片段归一化依赖。
+- 预期输出：一个没有可靠换行标题边界的 flat `text/equation_inline/text` 节点数组形成一个完整 `DocumentIRBlock.captions` 元素；可靠显式换行拆分只按 IR-005 的严格规则执行，进入 Word 后只占一个题注段落；string list 和多个 nested rich groups 继续形成多条独立题注。可见 inline 语义、SEQ/bookmark、fallback、table context 和 COL-003 annotation 数量判断均基于完整逻辑题注。
 - 冲突/例外：footnote 继续按现有 marker/连续性规则合并；无可靠结构时保持原分组，不按图号、标点、页码或 bbox 猜测。renderer 继续坚持“一 caption 元素一段落”，不负责恢复 converter 已丢失的边界。
 - 禁止：用 `collect_text_from_fields()` 把 flat rich nodes 直接拍成多条 captions；在 image/table renderer 合并相邻题注；修改 continuous section 或 `pageBreakBefore` 掩盖孤立题注行。
 - 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_maps_nested_v2_chart_to_image_and_records_source_inventory`、`.test_convert_zip_preserves_multiple_logical_caption_groups`、`.test_rich_chart_captions_render_without_isolated_fragments_and_keep_paired_layout`、`.test_convert_zip_demotes_table_condition_caption_to_context_paragraph`。
@@ -367,26 +378,26 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 ### IMAGE-001 图片资产绑定、显示宽度和可见失败
 
-- 状态：`implemented-gap`
+- 状态：`implemented-gap`（RND-503结构/内容与历史fallback测试已补，真实Word/部署预览仍独立待验）。
 - 输入信号：IR image asset_id、MinerU 包内资产路径、bbox/page width、当前栏宽和 captions。
-- 正式 owner：`app/services/document_ir/mineru_converter.py::_resolve_image_path`；`app/services/renderer/image_renderer.py::_render_image`、`::_available_width`、`::_image_fallback_text`。
-- 预期输出：资产路径必须位于包根内；renderer 使用原图片字节，按 bbox/page 相对宽度限制在当前栏/页面内，写入 `w:doNotAutoCompressPictures` 并保留题注；缺失或无效图片输出可见 fallback 文本。
-- 冲突/例外：不承诺放大小图到某个历史最小宽度；Word 显示清晰度仍取决于原图像素和客户端。现有正式测试直接覆盖正常图片字节、相对宽度、题注和禁止自动压缩，但未直接覆盖越界/重名资产绑定及缺失、损坏图片 fallback。
+- 正式 owner：包路径 `mineru_package.resolve_asset_path`、输入资产 `artifact_validator`；图片计划 `layout_plan`；显示/fallback `image_renderer._render_image_span/_write_image`；冻结输入/实际包认证 `image_evidence`。
+- 预期输出：资产位于包根内，原字节不转码/重采样，按有效区域等比缩放且inline，禁止自动压缩。每图全部注释与原来源保持；新组用COL-003布局表；缺/坏图显示受控诊断及全部已有注释，确定性缺图仍拒绝登记成功件。
+- 冲突/例外：不承诺放大小图到某个历史最小宽度；清晰度取决于源像素和客户端。正式MinerU输入对必需坏图/非法bbox已失败关闭；历史IR仍有可见fallback。非有限历史bbox只禁并排，图片报告采用JSON安全确定投影；不扩大为修改IR模型/序列化合同。
 - 禁止：静默丢图；无条件拉伸到全栏；用截图替换可编辑正文；按某个样本设置固定厘米宽度。
-- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_uses_bbox_width_for_images_and_annotations`；converter 的正常路径/资产输出由 `tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_outputs_v2_pages_layout_roles_and_annotations` 间接覆盖。
-- 样本证据：正式测试仅用 1×1 PNG；SC2167 清晰度为 external historical evidence，缺当前真实像素/DPI fixture。
-- 来源/取代：commit `5d4a02d7`；取代 legacy 固定最小宽度策略。
+- 自动验证：`tests.test_image_group_rendering` 的横竖非方图/完整注释/资源失败/资产交换/比例/快照与恢复负例，既有bbox宽度测试和converter正常路径测试保留；源越界/歧义/坏图见INPUT-002。
+- 样本证据：中性非方PNG、正式可靠图5/6及24/25 ZIP、已接受去标识不确定caption-pair；SC2167仍是外部历史清晰度证据，不能代签当前Word。
+- 来源/取代：已批准RND-503 v2取代旧制表位writer，保留5d4a02d7的源字节/可见失败原则。
 
-### IMAGE-002 编号图片题注只做严格重关联
+### IMAGE-002 编号图片及表题只做严格重关联
 
 - 状态：`enforced-tested`
-- 输入信号：同页连续 image group 的题注数量失衡，所有可识别题注具有相同 label、连续编号且数量与图片严格相等。
-- 正式 owner：`app/services/document_ir/mineru_converter.py::_reassociate_numbered_image_captions`、`::_reassociate_image_group`。
-- 预期输出：按连续编号为每张图分配唯一题注；原来已一图一题注或条件不完整时保持原关联。
-- 冲突/例外：此规则不通过视觉最近邻猜关联；多 annotation 渲染仍由 COL-002/IMAGE-001 保持。
+- 输入信号：同页原始源索引连续的 image/chart/figure 或独立 table group 的题注数量失衡，所有题注具有相同 label、唯一连续编号且数量与对象严格相等。
+- 正式 owner：`app/services/document_ir/caption_reconciler.py::reconcile_captions`；converter 只消费统一结果。
+- 预期输出：按连续编号为每个对象分配唯一题注；原来已一对象一题注时保持原关联，条件不完整时保持原文并按 IR-005 记录 uncertainty。
+- 冲突/例外：此规则不通过视觉最近邻猜关联；多 annotation 渲染由 COL-003/IMAGE-001 保持，普通正文栏仍归COL-002。
 - 禁止：只按出现顺序重排任意题注；跨页关联；丢弃无法识别的原题注。
 - 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_reassociates_only_strict_numbered_image_groups`。
-- 样本证据：SC2167 为 external historical evidence；无 committed 图片组 fixture。
+- 样本证据：SC2167仍为external历史证据；RND-503复用已授权去标识caption-pair，并以可靠合成ZIP验证图5/6、24/25。原不可靠源串不预修，保留uncertainty及可见次数。
 - 来源/取代：归档任务 `08-18-fix-layout-formula-image-caption/research/caption-reassociation.md`。
 
 ## 5. 原生字段与公式
@@ -570,7 +581,7 @@ RND-502 补充：`formula_text_fallback` 是内容完整、可见、可审计的
 | 同方向自然流 vs 章节/表格组起页 | FLOW-001 | FLOW-002 只对非首页页顶 heading、captioned table、table context 的真实段落设置 `pageBreakBefore` | SC2167 无 blank body pages；CM4112“工作原理”和独立表格组起页；整本文档页数变化须解释 |
 | 自然流 vs 长表跨页 | FLOW-001 | FLOW-003 的 `tblHeader`/`cantSplit` 与 Word 自然分页；不得恢复逐源页硬分页 | CM4112 第 3/4 页、SC2167 长表不挤压且无空白页 |
 | 源页方向 vs 宽表 | PAGE-001 | 源 page 宽高方向优先；宽表本身不触发横向 | OPA228 P7 portrait wide table；真实 landscape page |
-| 普通原生双栏 vs 成对图片 | COL-002 | COL-003 仅对严格图片对使用单栏制表位 | 左→右阅读顺序、多 annotation 不错配、SC2167 图片网格 |
+| 普通原生双栏 vs 成对图片 | COL-002 | COL-003 对严格图片组使用无边框布局表格 | 左→右阅读顺序、多 annotation 不错配、SC2167 图片网格 |
 | 双栏 vs wide/局部单栏 | COL-001 | wide block 与真实单栏 gap 留在单栏 region；仅实际 band 进入双栏 | OPA228/CM4112 首页内容顺序与表格宽度 |
 | 模板绝对样式 vs 源版式 | STYLE-001 | 模板决定纸张/边距/字体；源 IR 决定内容语义、相对布局和方向 | 模板版本测试 + PAGE/COL/FLOW 共同回归 |
 | 模板/自定义 decoration vs 源 decoration | STYLE-002 | 配置禁用保留模板；显式自定义 footer 高于源 footer；同 section 逐页源 decoration 及源 header 覆盖配置 header 是已知缺口 | 模板继承、自定义 footer PAGE field、同向页不同 header 缺口样本 |
@@ -590,7 +601,7 @@ RND-502 补充：`formula_text_fallback` 是内容完整、可见、可审计的
 | PIPE-001、INPUT-001、INPUT-004 | formal adapter、MinerU package/converter | conversion sandbox、converter layout、component runner | OPA228 P1 最小 MinerU v2 包 | 无 | fixture 不含表格/图片/公式/双栏；runner 只断言可打开 |
 | INPUT-005、FLOW-003 | layout signals、共享占位符规则、converter | converter layout | 无 | `docjob_cfcdfa737312` external failure ZIP | 无 committed 真 MinerU 包；原用户 ZIP 仅作临时只读回归 |
 | PIPE-002、IR-001 | models、layout plan、renderer | IR contract、converter/renderer layout | 无复杂 IR 基线 | 线上合成 worker | 无当前真样本 IR snapshot |
-| INPUT-002 | package extraction、formal adapter | 仅入口正常/缺路径 | OPA228 P1 正常包 | 无 | 无正式 ZIP traversal/坏 JSON 定向测试 |
+| INPUT-002 | package extraction、artifact validator、formal adapter | 已接受依赖的ZIP/path/坏JSON/资产/报告边界及converter测试 | OPA228 P1 正常包与中性负例 | 无 | 不代表线上真实存储或Word视觉 |
 | INPUT-003 | shared content rule、converter | conservative/filter converter tests | 无 | SC2167 historical | 无 committed 宣传尾页包 |
 | IR-002、PAGE-001、PAGE-002 | layout signals、section setup | converter/renderer layout | OPA228 PDF 仅作为输入资产 | CM4112 external | 没有当前真实纵横向/页数视觉基线 |
 | IR-003、IR-004、QUALITY-004 | integrity、converter、renderer evidence、正式发布边界 | converter/IR contract/renderer/formal adapter/document job | 无 | CM4112 当前 external 对账 | 无 committed 含 chart 的 MinerU fixture；实际分页不属于阻断计数 |
@@ -598,7 +609,7 @@ RND-502 补充：`formula_text_fallback` 是内容完整、可见、可审计的
 | FLOW-001、FLOW-002 | renderer page loop、semantic break | renderer layout | 无 | SC2167、CM4112 external | 无实际落页和空白页自动断言；双栏重排可能使语义分页目标晚于左栏内容 |
 | FLOW-003、TABLE-001、TABLE-002、TABLE-003 | layout signals、table renderer | converter/renderer table tests | OPA228 P6/P7 PDF 未执行 | CM4112、SC2167 external | continuation height 无消费者；无表格挤压/跨页视觉门禁 |
 | COL-001、COL-002 | layout plan、renderer columns | renderer layout | OPA228 P1/P2 PDF 未执行 | CM4112 当前 LibreOffice/WPS、SC2167 external | 无自动 Word/WPS 栏平衡断言；WPS 分页仍与 LibreOffice 不同 |
-| COL-003、IMAGE-001、IMAGE-002 | image renderer、converter | renderer/converter image tests | 无真实图片 MinerU fixture | SC2167 external | 仅 1×1 PNG；无越界/重名绑定和损坏 fallback 定向测试；无 DPI/清晰度基线 |
+| COL-003、IMAGE-001、IMAGE-002、IR-005 | image plan/writer/evidence、converter/reconciler | 阈值/比例/OOXML变换/注释/三恢复入口/B1及源安全负例 | 可靠图5/6、24/25合成ZIP、中性非方图、已接受去标识不确定caption-pair | SC2167 historical；本轮LO26.2.4.2辅助预览 | Microsoft Word更新字段前后及部署预览待验；无真实专有ZK全册签字，不承诺源图清晰度 |
 | TEXT-001、TEXT-002、TEXT-003、TEXT-004 | converter caption owner、text renderer、shared semantics | converter/renderer layout、shared text characterization | OPA228 P1 最小包 | CM4112 当前 heading 18/18；图 33 单题注与 WPS GUI 关键页；OPA228 historical signoff | component runner 未断言 heading/list/unit focus；无 committed 富文本 caption 包 |
 | FIELD-001、FIELD-002 | text renderer、render context | renderer layout | OPA228 P2 PDF 未执行 | SC2167 external | 字段更新和视觉仅客户端可确认；SEQ 更新可能重排非 1 起始/跳号编号 |
 | FIELD-003、STYLE-002 | renderer header/footer | custom footer/template tests（部分） | 无 | SC2167 historical | 纯页码无 PAGE field；同 section source header 覆盖；adapter 开关未消费 |
@@ -631,7 +642,7 @@ RND-502 补充：`formula_text_fallback` 是内容完整、可见、可审计的
 | legacy static TOC/caption/page number | 静态点线、普通题注或静态页码 | FIELD-001/002 已取代；FIELD-003 尚有纯页码缺口 | 不恢复静态字段；缺口进入正式 owner 后续任务 |
 | legacy 每源页硬分页 | 物理页与 Word 页一一硬切 | FLOW-001/002；历史行为为 `superseded` | commit `5d4a02d7` 明确取代；章节/表格组只走 FLOW-002 |
 | legacy 固定/最小图片宽度 | 以固定尺寸提高可见性 | IMAGE-001；历史行为为 `superseded` | 正式 renderer 使用 bbox 相对宽度；清晰度问题应通过真实图片样本处理 |
-| legacy 1×2 布局表格 | 用表格模拟正文双栏或图片对 | COL-002/003；历史行为为 `superseded` | 普通正文用原生栏；严格图片对用制表位 |
+| legacy 1×2 布局表格 | 用表格模拟正文双栏或图片对 | COL-002/003；历史行为为 `superseded` | 普通正文用原生栏；严格图片组按RND-503使用无边框布局表格 |
 
 ## 11. 已确认但本任务不修复的产品缺口
 
@@ -701,3 +712,74 @@ metadata=`formula_report/formula_summary`；摘要含 schema、formula/OMML/sema
 错误：从最终 XML 生成“expected”哈希后再比较自身；仅按一个 OMML 对一个 formula block 计数；从迟到 renderer 的内存报告更新质量。
 
 正确：先由转换结果计算 expected，再写 DOM；最终 analyzer 独立读取锚点范围并核对源 inventory/投影；完成只消费当前选定不可变 receipt 的摘要。部署/回退先暂停或排空相关旧任务，只有理解新报告和旧计划边界的兼容执行器可继续在途工作，不删除历史字段/文件/审计。
+
+## RND-503：图片布局与原文件输入的可执行合同
+
+### 1. 范围与触发
+
+修改图片同行判定、图片 writer、布局表计数或图片报告恢复时适用。几何阈值及源连续边界以 COL-003 为准；IR-204 仍拥有题注重关联。以下为已实现合同，实际验证状态由任务 implementation-validation 记录决定，不宣称 Word 视觉已通过。
+
+### 2. 接口与 owner
+
+- `layout_plan.build_image_plan(document_ir) -> tuple[ImageSpan, ...]`：纯附加决策，旧 `build_layout_plan()` 的结构/aggregate/历史解释保持。
+- `DocumentIRRenderResult(content, formula_report, image_layout_report=None)`：兼容旧 bytes 调用，同次报告由正式 Worker 和本地 adapter 传递。
+- `DocumentIRRenderOptions.template_version_id`：正式外层身份，恢复取自原文件 metadata，不能取当前 job 默认版本。
+- `build_renderer_evidence(..., image_layout_report=None, expected_template_version_id=None, expected_generation_policy=None)`：新件认证；恢复不强求当前生成构建策略，只按原文件策略解释。
+- `image_evidence.verify_image_report(...) -> dict`：源计划、冻结输入、实际包独立重验，返回有界安全摘要；不得反向依赖 word_renderer 或另建分组算法。
+- `TemplateConfigPackage.load_content(bytes)` 与 `load(path)` 共享原归一化/校验；renderer 从一次实际读取同时取得解析值及内容 hash，不改公开 template-config/v1 schema。
+- `TerminologyReplacer.freeze_rules()/from_frozen_rules()` 复用同一替换算法，保留生效规则顺序、pattern/replacement、regex flags 和作用域，不重读历史路径。
+
+### 3. 私有报告与兼容合同
+
+报告 `image-layout/v1` 绑定规则 `image-group/v1`、阈值、原 IR hash、span/block/page/order/bbox、实际 mode/reasons、布局表 marker、逐图资产 hash/尺寸、逐注 field/source hash/expected 投影和实际锚点。每次预期投影由原 IR 字段与冻结输入重建，不能仅比较报告内 expected 和输出自己生成的 hash。
+
+`image-render-inputs/v1` 包含已知 `image-annotation-output/v1`、`image-writer/v1`、原文件生成构建身份、实际模板版本及 DOCX/配置内容 hash、语言、必要 caption style/格式规则、写 DOM 前每个 span 的有效 section 几何；整个输入 canonical hash 绑定到报告。builtin 来源必须显式标识。禁止保存任意 YAML、Settings、路径、翻译术语、Prompt、凭据；报告/必要规则只在现有 owner/Admin 文件 metadata 内，普通事件不展开报告或规则快照。
+
+确认组为固定 1×N 原生布局表，每图一 cell，全部 `wp:inline` 且按真实像素比例缩放；六边 nil、显式 grid/tcW/margin，cantSplit，逐注独立段落并保持所属图。只有完整认证的表可排除在内容表计数外。旧 `table_count/table_count_delta` 仍表示实际总数/总数减 IR 内容表数；新 layout/content/total 字段各自对账。standalone analyzer 保守排除布局候选造成的虚假内容可编辑性，正式 evidence 必须完整认证，marker 本身不是通行证。
+
+图片段首行/左右缩进和 inline distT/distB/distL/distR 必须显式0，内外两层图片尺寸一致；不能仅按 width/height 宣称没有裁切。LibreOffice 26.2.4.2省略inline距离会引入约9.05pt左右图距，实际右图clip小于绘制宽度；四距0产物对照恢复完整边界。tcMar在vAlign前、tblBorders在tblLayout/tblLook/tblCaption前，遵循安装库schema。跨span实际DOM源序、资源/尺寸降级依据及无额外正文也独立认证。 布局表显式左对齐、tblInd=0dxa；reader认证direct优先、basedOn/默认表样式继承后的有效定位，拒绝非零缩进、不支持的对齐及exact行高。有效零缩进下left/center/right均在已认证有效宽内；新writer固定left不构成旧件新硬条件。旧无direct属性但有效零和受支持对齐的已生成件继续接受（缩进dxa按实际值；pct/auto按Word忽略值的零位移解释，nil按无宽解释；type省略按dxa、宽度省略按0；未知单位拒绝）。Word对非left对齐仍可能应用非零缩进，因此不按ISO通则直接豁免非零dxa，不能把新增直接属性变成旧件必需字段。
+
+cell宽度必须同时认证数值和dxa单位；源图矩形/填充矩形不得非零裁切，内部offset为0、无旋转/翻转，缺省和显式0等价。保持asset hash和外框extent不变的变换同样必须拒绝，不能以源字节未变推导显示保真。
+
+历史无效bbox的报告源位置采用确定JSON安全投影（非有限坐标→null），writer与源重算共用，不修改原IR。报告经真实DocumentFileRecord JSON往返后证据必须一致。正式MinerU非法bbox仍在映射前拒绝；不承诺typed IR经model_dump_json把非有限值转null后可重新读取。私有快照模型/regex校验异常转换成无原输入的受控错误，普通error/event不得暴露必要格式规则值。
+
+metadata 使用 `image_layout_report/image_layout_summary`；摘要只含版本、组/单图/不确定次数、受控 reason 计数、report hash 和有界 ID examples。`image_group_uncertain` 是复核 warning，不加入 blocking_quality_flags，不提升质量/审核/发布状态；确定性丢图/漏注/篡改仍失败。普通单图和 B1 主动单图不产生无意义不确定 warning。
+
+legacy 发现、明确历史指针、receipt 三入口对新报告读取原文件字节/原始 IR/外层模板身份重验；当前配置变化或删除原临时路径不能影响合法旧件。历史无报告件保持原字段集合，不强制补写；新字段部分缺失不能降级旧合同。即使全部图片证据键和两项公式键都缺失，legacy扫描仍须在prepare/select receipt之前从实际DOCX识别新图片标记并拒绝；真正无marker旧件继续恢复。既有 formula 报告、选中 receipt、CAS、retry_count/generation 和原子边界保留，I/O 在 job 锁外。
+
+普通混合原生双栏中的单图和不确定顺序图，若原生栏读序与图片源序一致，必须在原region实际位置逐图消费，保留栏流和列宽；只有确认并排组或真实图片读序冲突的span抽离。后者保留既有原因和源序单图，不能靠重排图像满足栏序。源计划/span成员不变，每图只写一次。
+
+同一不确定span中已知bbox图片可位于two_col region、缺bbox成员位于后续one_col region，单一span几何不足以表达真实位置。冻结输入span的可选 `image_geometries` 仅保存与首图 `geometry` 不同的成员（block_id→geometry）；无此键的历史报告继续使用原span.geometry。报告hash覆盖该输入，每图从实际OOXML所属section独立重验，不能用新字段跳过源成员、尺寸、源序或注释校验。它是内部私有报告的兼容附加数据，无公开API/DB列/运行时开关；B1必须包含当前完整reader，不能以修复前旧B1二进制冒充当前回退构建。
+
+### 4. 校验与错误矩阵
+
+| 情形 | 输出/错误 |
+|---|---|
+| 同页源连续且全组阈值成立、无绑定竞争 | 固定无边框布局表及逐图完整证据 |
+| 几何不足、源序冲突、竞争或 IR-204 uncertain/evidence-only | 源序单图，`image_group_uncertain` 和受控 reason；不修改 IR 归属 |
+| 单张正常图/清晰独立行 | 正常单图，不制造 warning |
+| 已确认组资产/尺寸不可用 | 整组源序单图；缺/坏图显示诊断及全部已有注释，完整性仍拒绝缺图成功件 |
+| marker 复制/伪造、交换资产/注释、漏注、浮动对象、宽度越界、源/快照错绑 | 新登记 `quality_checking/render_failed`，不登记候选 |
+| 新报告缺必要字段、未知版本、hash/原身份不符、实际包损坏 | 恢复 `uploading/oss_failed`；保留 receipt/历史文件，不 fallback |
+| 旧件缺三个依赖附加摘要键 | 只在旧 metadata 未保存该键时不强求新增键；已有摘要/核心必要字段仍严格比较 |
+| 已有新报告后部署回退 | 使用 B1 保留 reader，只切生成侧 single-only/v1；不能卸载 reader 回 B0 |
+
+受控 reason 集合：`geometry_unavailable`、`geometry_invalid`、`page_or_section_boundary`、`source_order_conflict`、`row_alignment_insufficient`、`horizontal_overlap`、`gap_too_large`、`competing_row_membership`、`caption_binding_uncertain`、`external_caption_binding`、`asset_unavailable`、`image_size_unfit`。
+
+### 5. 正常、历史与失败场景
+
+正常：两图/三图各有多 caption/footnote，按源序成组，各注仍在自己的 cell。历史：无图片报告但有旧公式报告的文件按旧必要字段恢复；有新报告的跨代明确指针按原文件冻结输入恢复。失败：保留表格和图片总数，仅交换两图关系或题注，也必须拒绝；新增内容表不能靠复制 marker 被豁免。
+
+兼容构建 B1 仅把源码生成常量 `IMAGE_GENERATION_POLICY` 固定为 `single-only/v1`，没有运行时 feature flag 或用户任务参数。报告 reader 继续解释 `grouped/v1` 和 `single-only/v1`；两种构建互读原文件策略。必须记录 B1 源码指纹和三入口/旧公式/篡改拒绝验证，不以排空在途任务代替历史兼容。
+
+### 6. 必要测试与证据
+
+`tests.test_image_group_rendering`：阈值内/等/外、竞争及源序、固定布局表/比例/注释、实际 OOXML 篡改、冻结输入和并发隔离。`tests.test_document_ir_mineru_converter_layout`：正式可靠图5/6、24/25及去标识不可靠样本、单图。`tests.test_document_job_result_persistence`：三入口、跨代、当前配置变化后恢复、损坏拒绝、B1、公式/receipt/事件隐私。`tests.test_rnd503_dependency_integration`：缺字段/None/原 IR 非空旧 reader 忽略/已有非空摘要 × 三入口。
+
+定向 unit、component、direct matrix、check_release、Golden 和客户端证据分别记账；实际新测试模块/选择以任务 validation 为准。OOXML 证明结构，不代签 Word 更新字段前后、长注释分页、目标图对及部署预览的视觉结论。没有触及 API/前端/DDL 时不得为该任务凭空生成迁移或前端业务状态。
+
+### 7. 错误与正确做法
+
+错误：只凭 marker 把表当布局表；从当前符号 YAML 生成历史 expected；以整篇最后 section 猜所有 span 宽度；B1 删除新 reader 后仅渲染单图；事件展开完整 frozen rules。
+
+正确：源 IR/冻结输入/实际包三方认证后分类；使用原文件身份及已知投影版本重算；逐 span 比较写前和实际所属 section；B1 保留全部读取/拒绝与 receipt 接线，仅固定生成策略；事件只投影有界摘要。

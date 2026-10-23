@@ -28,6 +28,9 @@ from app.services.renderer.evidence import build_renderer_evidence
 from tests import test_database_job_repository as persistence
 from tests import test_fastapi_jobs_backend as fixtures
 from tests import test_document_job_execution_stages as stages
+from tests.test_image_group_rendering import legacy_image_docx, image_ir, image_loader, change_docx, NS
+from app.services.renderer import image_evidence
+from app.services.renderer.word_renderer import DocumentIRRenderOptions
 
 
 class SimulatedProcessExit(BaseException):
@@ -108,6 +111,196 @@ class DocumentJobResultPersistenceTests(TestCase):
         )
         return runtime.document_job_repository.update_document_job(job.id, document_ir_file_id=ir_file.id), ir
 
+    def _install_image_ir(self, runtime, execution, job, *, variant="original", image_count=2, annotations=True):
+        """登记指定数量的中性图片最终 IR，不修改历史资产或原 IR。"""
+        ir = image_ir(image_count, annotations=annotations)
+        ir.metadata = ir.metadata.model_copy(update={"job_id": job.id, "source_file_id": job.source_file_id,
+            "source_block_count": image_count, "source_type_counts": {"image": image_count}})
+        for block in ir.blocks:
+            block.metadata["source_type"] = "image"
+        if variant != "original":
+            ir.blocks[0].captions = ["Figure 99: current generation has different source"]
+        file_ids = []
+        for asset in ir.assets:
+            file = runtime.file_upload_service.register_generated_content(
+                tenant_id=job.tenant_id, company_id=job.company_id, job_id=job.id, created_by=job.created_by,
+                file_type="image_asset", filename=asset.id + ".png", mime_type="image/png",
+                content=image_loader(asset), metadata={},
+            )
+            asset.file_id = file.id
+            file_ids.append(file.id)
+        ir_file = runtime.file_upload_service.register_generated_content(
+            tenant_id=job.tenant_id, company_id=job.company_id, job_id=job.id, created_by=job.created_by,
+            file_type="document_ir", filename="images.document-ir.json", mime_type="application/json",
+            content=ir.model_dump_json().encode(), metadata={},
+        )
+        return runtime.document_job_repository.update_document_job(job.id, document_ir_file_id=ir_file.id,
+            image_asset_file_ids=file_ids), ir
+
+    def _image_recovery_case(self, entry, writer_policy, damage=None):
+        """可供正常构建与实际 B1 reader 选择器复用的三入口验收。"""
+        with self._runtime() as (root, runtime, execution, job, _client, _headers):
+            job, ir = self._install_image_ir(runtime, execution, job)
+            config = root / "history-layout.yaml"
+            rules = root / "history-format.yaml"
+            config.write_text("schema_version: template-config/v1\npage_setup:\n  page_width_cm: 19\n  left_margin: 1\n  right_margin: 1\n", encoding="utf-8")
+            rules.write_text("subscript_rules:\n  symbols:\n    DemoToken: PRIVATE_FORMAT_SENTINEL\n", encoding="utf-8")
+            with patch.object(image_evidence, "IMAGE_GENERATION_POLICY", writer_policy):
+                rendered = execution.word_renderer.render_to_result(ir, template_path=None, config_path=config,
+                    image_loader=execution._build_image_loader(job), options=DocumentIRRenderOptions(
+                        subscript_config_path=rules, template_version_id=job.template_version_id))
+            metadata = build_renderer_evidence(ir, rendered.content, formula_report=rendered.formula_report,
+                image_layout_report=rendered.image_layout_report, expected_template_version_id=job.template_version_id,
+                expected_generation_policy=writer_policy)
+            content = rendered.content
+            if damage == "annotation":
+                def change(root):
+                    note = next(node for node in root.findall(".//w:t", NS) if node.text == "Note 1: extra")
+                    note.text = "Changed note"
+                content = change_docx(content, change)
+            elif damage == "missing_report":
+                metadata.pop("image_layout_report")
+            elif damage == "missing_both_reports":
+                metadata.pop("image_layout_report")
+                metadata.pop("image_layout_summary")
+            elif damage == "missing_inputs":
+                metadata["image_layout_report"].pop("render_inputs")
+            elif damage == "private_style":
+                report = metadata["image_layout_report"]
+                report["render_inputs"]["caption_style"]["font_size"] = "PRIVATE_FORMAT_SENTINEL"
+                report["render_inputs_sha256"] = image_evidence.canonical_sha256(report["render_inputs"])
+            elif damage == "unknown_version":
+                report = metadata["image_layout_report"]
+                report["render_inputs"]["projection_version"] = "unknown/v9"
+                report["render_inputs_sha256"] = image_evidence.canonical_sha256(report["render_inputs"])
+            elif damage == "wrong_template":
+                metadata["template_version_id"] = "other@9"
+            word = runtime.file_upload_service.register_generated_content(
+                tenant_id=job.tenant_id, company_id=job.company_id, job_id=job.id, created_by=job.created_by,
+                file_type="generated_word", filename="images.docx",
+                mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                content=content, metadata={"retry_count": job.retry_count, "document_ir_file_id": job.document_ir_file_id,
+                    "template_version_id": job.template_version_id, **metadata},
+            )
+            # 首次报告绑定由元数据单独保存；之后当前配置和路径不再是恢复来源。
+            config.unlink(); rules.unlink()
+            job = runtime.document_job_repository.update_document_job(job.id, stage="uploading")
+            if entry == "explicit":
+                job, _new_ir = self._install_image_ir(runtime, execution, job, variant="current")
+                job = runtime.document_job_repository.update_document_job(job.id, retry_count=1,
+                    result_file_id=word.id, template_version_id="current-other@9")
+            elif entry == "receipt":
+                job = runtime.document_job_repository.prepare_document_job_result(job.id,
+                    expected_retry_count=job.retry_count, expected_document_ir_file_id=job.document_ir_file_id, candidate=word)
+            with patch.object(execution.word_renderer, "render_to_result") as rerender, patch.object(
+                execution.template_read_service, "resolve_template_version", side_effect=AssertionError("恢复不得读取当前模板")):
+                result = execution.execute_job(job.id)
+            rerender.assert_not_called()
+            if damage:
+                self.assertEqual((result.status, result.failed_stage, result.error_code), ("failed", "uploading", "oss_failed"))
+                self.assertEqual(result.prepared_result, job.prepared_result)
+                self.assertNotIn("PRIVATE_FORMAT_SENTINEL", result.error_message)
+            else:
+                self.assertEqual((result.status, result.result_file_id), ("succeeded", word.id), result.error_message)
+            for event in runtime.document_job_event_repository.list_document_job_events(job.id):
+                self.assertNotIn("image_layout_report", event.payload)
+                self.assertNotIn("PRIVATE_FORMAT_SENTINEL", str(event.payload))
+
+    def test_image_report_all_recovery_entries_use_frozen_original_inputs(self):
+        for writer_policy in ("grouped/v1", "single-only/v1"):
+            for entry in ("legacy", "explicit", "receipt"):
+                with self.subTest(writer_policy=writer_policy, entry=entry):
+                    self._image_recovery_case(entry, writer_policy)
+
+    def test_image_report_all_recovery_entries_reject_corruption_without_reselection(self):
+        for damage in ("annotation", "missing_report", "missing_both_reports", "missing_inputs", "private_style", "unknown_version", "wrong_template"):
+            for entry in ("legacy", "explicit", "receipt"):
+                with self.subTest(damage=damage, entry=entry):
+                    self._image_recovery_case(entry, "grouped/v1", damage)
+
+    @contextmanager
+    def _image_result_without_report_fields(self, writer_policy, image_count, *, marker_free=False):
+        """删除完整报告字段集，防止残留计数键替测试触发新 reader。"""
+        with self._runtime() as (_root, runtime, execution, job, _client, _headers):
+            job, ir = self._install_image_ir(runtime, execution, job, image_count=image_count, annotations=False)
+            with patch.object(image_evidence, "IMAGE_GENERATION_POLICY", writer_policy):
+                rendered = execution.word_renderer.render_to_result(
+                    ir, template_path=None, config_path=None, image_loader=execution._build_image_loader(job),
+                    options=DocumentIRRenderOptions(template_version_id=job.template_version_id),
+                )
+            metadata = build_renderer_evidence(ir, rendered.content, formula_report=rendered.formula_report,
+                image_layout_report=rendered.image_layout_report, expected_template_version_id=job.template_version_id)
+            report_keys = image_evidence.IMAGE_EVIDENCE_KEYS | {"formula_report", "formula_summary"}
+            self.assertTrue(report_keys.issubset(metadata))
+            for key in report_keys:
+                metadata.pop(key)
+            content = legacy_image_docx(rendered.content) if marker_free else rendered.content
+            with zipfile.ZipFile(io.BytesIO(content)) as package:
+                self.assertFalse(ElementTree.fromstring(package.read("word/document.xml")).findall(".//w:tbl", NS))
+            self.assertEqual(image_evidence.has_image_markers(content), not marker_free)
+            word = runtime.file_upload_service.register_generated_content(
+                tenant_id=job.tenant_id, company_id=job.company_id, job_id=job.id, created_by=job.created_by,
+                file_type="generated_word", filename="without-reports.docx",
+                mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                content=content, metadata={"retry_count": job.retry_count, "document_ir_file_id": job.document_ir_file_id,
+                    "template_version_id": job.template_version_id, **metadata},
+            )
+            self.assertNotIn("document_job_result_protocol", word.metadata)
+            self.assertFalse(report_keys.intersection(word.metadata))
+            job = runtime.document_job_repository.update_document_job(job.id, stage="uploading")
+            yield runtime, execution, job, word
+
+    def test_legacy_missing_all_reports_rejects_image_markers_before_candidate_selection(self):
+        for policy, count in (("grouped/v1", 1), ("single-only/v1", 2)):
+            with self.subTest(policy=policy), self._image_result_without_report_fields(policy, count) as (
+                runtime, execution, job, _word,
+            ):
+                self.assertIsNone(job.prepared_result)
+                with self.assertRaisesRegex(ValueError, "图片布局标记"):
+                    execution._get_existing_result_file(job)
+                self.assertIsNone(runtime.document_job_repository.get_document_job(job.id).prepared_result)
+
+    def test_missing_all_reports_three_recovery_entries_preserve_receipt_and_do_not_rerender(self):
+        for policy, count in (("grouped/v1", 1), ("single-only/v1", 2)):
+            for entry in ("legacy", "explicit", "receipt"):
+                with self.subTest(policy=policy, entry=entry), self._image_result_without_report_fields(policy, count) as (
+                    runtime, execution, job, word,
+                ):
+                    if entry == "explicit":
+                        job = runtime.document_job_repository.update_document_job(job.id, result_file_id=word.id)
+                    elif entry == "receipt":
+                        job = runtime.document_job_repository.prepare_document_job_result(job.id,
+                            expected_retry_count=job.retry_count, expected_document_ir_file_id=job.document_ir_file_id,
+                            candidate=word)
+                    with patch.object(execution.word_renderer, "render_to_result") as render, patch.object(
+                        runtime.document_job_repository, "prepare_document_job_result",
+                        wraps=runtime.document_job_repository.prepare_document_job_result,
+                    ) as select, patch.object(runtime.document_file_repository, "materialize_prepared_result",
+                        wraps=runtime.document_file_repository.materialize_prepared_result,
+                    ) as materialize:
+                        result = execution.execute_job(job.id)
+                    self.assertEqual((result.status, result.failed_stage, result.error_code),
+                        ("failed", "uploading", "oss_failed"))
+                    self.assertEqual(result.prepared_result, job.prepared_result)
+                    self.assertEqual(result.result_file_id, job.result_file_id)
+                    self.assertEqual(runtime.document_file_repository.get_document_file(word.id).metadata, word.metadata)
+                    render.assert_not_called()
+                    select.assert_not_called()
+                    if entry != "receipt":
+                        materialize.assert_not_called()
+
+    def test_marker_free_legacy_single_images_without_report_fields_still_recover(self):
+        for policy, count in (("grouped/v1", 1), ("single-only/v1", 2)):
+            with self.subTest(policy=policy), self._image_result_without_report_fields(policy, count, marker_free=True) as (
+                runtime, execution, job, word,
+            ):
+                self.assertEqual(execution._get_existing_result_file(job).id, word.id)
+                with patch.object(execution.word_renderer, "render_to_result") as render:
+                    result = execution.execute_job(job.id)
+                self.assertEqual((result.status, result.result_file_id), ("succeeded", word.id), result.error_message)
+                self.assertEqual(result.prepared_result.file.id, word.id)
+                render.assert_not_called()
+
     def test_formula_fallback_quality_summary_and_events_use_selected_result(self):
         for quality, expected in (("pending", "pending"), ("blocked", "blocked"), ("passed", "warning"), ("warning", "warning")):
             with self.subTest(quality=quality), self._runtime() as (root, runtime, execution, job, client, headers):
@@ -142,8 +335,8 @@ class DocumentJobResultPersistenceTests(TestCase):
                         ir, template_path=template.template_path, config_path=template.layout_config_path,
                         image_loader=execution._build_image_loader(job),
                     )
-                    evidence = build_renderer_evidence(ir, rendered.content, formula_report=rendered.formula_report)
-                    content = rendered.content
+                    content = legacy_image_docx(rendered.content)
+                    evidence = build_renderer_evidence(ir, content, formula_report=rendered.formula_report)
                     if corrupt:
                         # 保留 anchor/mode/count 与原报告，只改最终字节中的一个数学值。
                         altered = io.BytesIO()

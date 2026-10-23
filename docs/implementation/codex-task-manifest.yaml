@@ -377,10 +377,10 @@ tasks:
     suggested_branch: md2word/RND-503
     trellis_slug: rnd-503-image-group-caption-rendering
     prompt_file: docs/implementation/codex-prompts/RND-503.md
-    status: todo
-    trellis_task_path: null
+    status: review
+    trellis_task_path: .trellis/tasks/10-23-rnd-503-image-group-caption-rendering
     resolution: null
-    notes: null
+    notes: "2026-10-23：按用户明确规划授权以create --parent --no-start创建唯一子任务，IR-204 manifest=done且Git归档completed/人工接受证据已核对；当前HEAD尚未包含其已接受实现，实施前必须完成依赖集成核验。本轮只调查与规划，等待三件套评审，不start、不修改业务、不提交/push；实际分支md2word/RND-502，建议分支仅记入任务元数据。三件套v1/研究和implement/check各7条最小context已完成，最终task validate无警告；现有9项定向基线通过，3项内存反例确认实际差距，非skipped_existing。详当前任务planning-validation.md；新功能/Golden/Word/预览未验，原暂存区及其他任务条目保持。 随后按用户要求由全新architect独立只读审查；两P2经主会话核实，修订三件套v2的原文件输入绑定与B0/B1兼容回退合同，同一审查者完整复验确认两P2规划层闭合、无新增确认P1/P2/P3。implement/check各8条最终validate无警告；详planning-review.md。仍planning待人工审核，IR-204集成硬门未就绪，不start、不改业务、不提交/push。 2026-10-23：用户明确接受v2及独立复核，授权实施；已切md2word/RND-503并保存原dirty/索引，165原基线和174依赖集成/历史恢复门通过，准确子任务已start。B0为HEAD1835263加未提交依赖文件指纹，不伪造依赖提交已合入；仅实施本任务，完成到review，不提交/push/archive。 实施收口：严格图片组、无边框表格与逐图注释、冻结输入及三入口认证已完成；独立合同六项和Trellis两类认证缺口均经主会话核实修复复验。最终301真实链+13隔离characterization、component1/1、direct5/5、release202/OpenAPI current及实际B1双向兼容通过；首轮314两项旧stub隔离错误和RS2G04候选计数10→11原因保留记录。Golden无凭据/API，Word/部署预览/真实MySQL-S3及生产回退未验；详implementation-validation.md、implementation-review-final.md、b1-validation.md。实际分支md2word/RND-503，准确任务路径保持，仅本任务review、Trellis仍in_progress，等待人工验收/commit plan，不done/archive/提交/push，原302暂存删除及其它dirty保留。 本轮按用户要求全新critical实际复审：三类P2（全报告缺失legacy提前认证、混合原生栏单图、模板有效定位）经主会话复现并修复，另补合法旧对齐/单位/省略属性兼容；最终独立复验无未关闭代码阻断。311核心、203release/OpenAPI、component1/1、direct5/5、实际B1七selectors/55subTest及17+2互读通过；六份LO八页逐页查看，极高缺bbox图与注释跨页仍待Word验收。Golden/部署预览/生产回退等未验边界保留，详情post-implementation-review.md及post-review-validation.json。状态仍review/Trellis in_progress，批准v2字节不改，保护原302暂存删除和无关dirty，不提交/push/archive。 用户已人工验收并接受实现、独立复审修复、验证证据及列明未验边界，授权两次工作提交和Trellis完成归档；按closeout.md收口，不push、不启动后续任务。"
   - id: RND-504
     title: "WordPreviewProvider"
     phase: R5

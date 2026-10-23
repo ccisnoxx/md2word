@@ -32,6 +32,7 @@
   - 页脚：`font_name`、`western_font_name`、`complex_script_font_name`。
 - `ResourceVersionRepositoryProtocol.create_resource_version(record)`：只插入，不覆盖。
 - `ResourceVersionRepositoryProtocol.allocate_next_version(type, id, minimum_next)`：MySQL 事务内分配不复用整数。
+- 内部 `TemplateConfigPackage.load_content(content: bytes)`：与 `load(path)` 共享既有 YAML object、schema、归一化和字段值校验；renderer 单次读取字节后同时计算 hash 和解析，不增加 API/schema 字段。
 - bundled seed 清单：`default@2` 指向 `resources/template_configs/datasheet_template_v2.yaml`；已发布 `default@1` payload 继续指向 `resources/template_configs/datasheet_template.yaml`。
 
 ### 3. Contracts
@@ -44,6 +45,7 @@
 - MySQL 模式下 `resource_default_versions` 是版本默认指针唯一来源；manifest 只登记 seed，`template_state.json` 只登记默认 template id。
 - Job 创建时固化 Template Version；普通用户只能选 published，admin 可显式创建 draft 验证任务，Worker 只消费已固化版本。
 - 版本 YAML 缺失、损坏、schema 不支持或 hash 不匹配时失败关闭，不回退其他 YAML 或 renderer 默认值。
+- RND-503 图片历史重验消费原文件冻结的必要规范化格式输入，不重读当前 YAML/默认指针。配置 owner 继续只定义唯一结构；图片私有输入/报告版本与恢复合同由 Word 生成规则拥有，不把任意 YAML 或可变路径存入事件。
 
 #### 3.2 多文种字体
 

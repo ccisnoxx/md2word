@@ -39,7 +39,7 @@ class Rnd503DependencyIntegrationTests(TestCase):
                         ir, template_path=template.template_path, config_path=template.layout_config_path,
                         image_loader=execution._build_image_loader(job),
                     )
-                    content = rendered.content
+                    content = base.legacy_image_docx(rendered.content)
                     evidence = build_renderer_evidence(ir, content, formula_report=rendered.formula_report)
                     if shape != "nonempty_saved":
                         for key in ("mineru_validation", "mineru_validation_input", "caption_reconciliation"):

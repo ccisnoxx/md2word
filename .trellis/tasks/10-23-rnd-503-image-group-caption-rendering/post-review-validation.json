@@ -1,0 +1,93 @@
+{
+  "branch": "md2word/RND-503",
+  "manifest_status": "review",
+  "trellis_status": "in_progress",
+  "manual_acceptance_pending": true,
+  "all_required_checks_passed": false,
+  "checks": [
+    {
+      "name": "core_unit",
+      "command": ".venv/bin/python -B -m unittest tests.test_image_group_rendering tests.test_document_ir_word_renderer_layout tests.test_document_ir_mineru_converter_layout tests.test_caption_reconciler tests.test_document_ir_layout_contract tests.test_formula_rendering tests.test_document_job_result_persistence tests.test_document_job_modes tests.test_conversion_sandbox_dev_tools tests.test_rnd503_dependency_integration tests.test_mineru_artifact_validator tests.test_template_layout_config_schema tests.test_formula_translation_boundary tests.test_document_job_delivery_state",
+      "exit_code": 0,
+      "tests_or_samples": 311,
+      "log": "tests/tmp/rnd503/post-review/closure-core-unit.log",
+      "sha256": "8403ada2b0c087163fd7cdad09ea34726572c999d1db13bac90cda9aadf48d02"
+    },
+    {
+      "name": "component",
+      "command": ".venv/bin/python -B scripts/dev/run_component_pdf_regression.py --output-dir tests/tmp/rnd503/post-review/closure-component",
+      "exit_code": 0,
+      "tests_or_samples": 1,
+      "log": "tests/tmp/rnd503/post-review/closure-component.log",
+      "sha256": "fc56fa4231c054f4cb92405abd03e0e9074756ec323b7c71a67fbf111260ba2a"
+    },
+    {
+      "name": "direct",
+      "command": ".venv/bin/python -B scripts/dev/run_local_mineru_quality_matrix.py --mode direct --sample-set phase2-core --output-dir tests/tmp/rnd503/post-review/closure-direct",
+      "exit_code": 0,
+      "tests_or_samples": 5,
+      "log": "tests/tmp/rnd503/post-review/closure-direct.log",
+      "sha256": "22be391dfa647eacaea4f0faf0b0a1a65dbf9b331c15794f257e8f5cb31ad9a6"
+    },
+    {
+      "name": "release",
+      "command": ".venv/bin/python -B scripts/ops/check_release.py",
+      "exit_code": 0,
+      "tests_or_samples": 203,
+      "log": "tests/tmp/rnd503/post-review/closure-release.log",
+      "sha256": "38f9e2c9af82d5ec5662e87c94e6deaa6a930a8a73b1cf37dee4e23341287743"
+    },
+    {
+      "name": "b1",
+      "command": ".venv/bin/python -B tests/tmp/rnd503/run_b1_build.py",
+      "exit_code": 0,
+      "tests_or_samples": 7,
+      "log": "tests/tmp/rnd503/post-review/closure-b1.log",
+      "sha256": "cbd27337cf15dbef8bd35d6a123ad67538243e8754aca0e165c4e67c42d01826"
+    }
+  ],
+  "b1_subtests": 55,
+  "b1_reader_artifact_checks": 17,
+  "normal_reader_b1_artifact_checks": 2,
+  "task_validate": {
+    "exit_code": 0,
+    "implement_entries": 11,
+    "check_entries": 11
+  },
+  "git_diff_check": {
+    "exit_code": 0
+  },
+  "api_snapshot": {
+    "changed": false,
+    "paths": 164,
+    "schemas": 324
+  },
+  "characterization": {
+    "tests": 13,
+    "rerun_this_review": false,
+    "reason": "unchanged isolated legacy stub process; prior evidence retained",
+    "log": "tests/tmp/rnd503/logs/isolated-characterization.log"
+  },
+  "golden": {
+    "rerun_this_review": false,
+    "previous_exit_code": 1,
+    "reason": "auth_missing,api_unreachable; unchanged external environment",
+    "logs": [
+      "tests/tmp/rnd503/logs/golden.log",
+      "tests/tmp/rnd503/logs/golden-preflight.log"
+    ]
+  },
+  "unverified": [
+    "Microsoft Word including field update and extreme-image pagination",
+    "deployed preview",
+    "Golden authenticated API",
+    "real MySQL/S3/MinIO",
+    "production cross-host rollback"
+  ],
+  "preview": {
+    "files": 6,
+    "pages": 8,
+    "viewed_all_pages": true,
+    "extreme_image_note": "mixed-geometry: image on page2, its captions/notes on page3; no omission or wrong binding"
+  }
+}

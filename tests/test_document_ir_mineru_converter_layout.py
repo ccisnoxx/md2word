@@ -610,7 +610,7 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
                                     {"type": "text", "content": " 15V)"},
                                 ],
                             },
-                            "bbox": [220, 82, 380, 220],
+                            "bbox": [190, 82, 350, 220],
                         },
                     ]
                 ],
@@ -649,7 +649,8 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
         self.assertIn("18V)", figure_33_paragraph)
         xml = document_xml.decode("utf-8")
         self.assertNotIn('<w:br w:type="column"', xml)
-        self.assertIn("<w:tabs>", xml)
+        self.assertNotIn("<w:tabs>", xml)
+        self.assertEqual(len(rendered.tables), 1)
         self.assertEqual(xml.count(" SEQ 图 \\* ARABIC "), 2)
 
     def test_convert_zip_fails_closed_when_declared_formula_payload_is_missing(self) -> None:

@@ -156,7 +156,14 @@ class TemplateConfigPackage(BaseModel):
             return cls()
         if not config_path.exists() or not config_path.is_file():
             raise FileNotFoundError(f"模板配置文件不存在: {config_path}")
-        raw = _read_yaml_object(config_path)
+        return cls.load_content(config_path.read_bytes())
+
+    @classmethod
+    def load_content(cls, content: bytes) -> "TemplateConfigPackage":
+        """从已冻结字节复用相同校验，确保渲染和输入 hash 使用同一份内容。"""
+        raw = yaml.safe_load(content.decode("utf-8")) or {}
+        if not isinstance(raw, dict):
+            raise ValueError("模板配置必须是 YAML object")
         if raw.get("schema_version") != SUPPORTED_SCHEMA_VERSION:
             raise ValueError(f"schema_version 必须是 {SUPPORTED_SCHEMA_VERSION}。")
         try:
