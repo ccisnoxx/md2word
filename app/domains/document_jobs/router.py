@@ -34,6 +34,7 @@ from app.domains.files.schemas import DocumentFileSummaryResponse
 from app.domains.resources.models import utc_now
 from app.domains.translation.modes import translation_mode_for_document_job_mode
 from app.core.runtime import AppRuntime
+from app.domains.document_jobs.preview import preview_download_ttl
 from app.domains.document_jobs.schemas import (
     DocumentJobArchiveResponse,
     DocumentJobBulkItemResponse,
@@ -641,11 +642,15 @@ def create_document_job_download_url(
 ) -> DocumentJobDownloadUrlResponse:
     job, file = runtime.document_job_service.get_file_for_download(job_id, user=user, file_id=file_id)
     policy = runtime.document_job_service.build_download_policy(job, file)
-    expires_at = utc_now() + timedelta(seconds=runtime.settings.oss_download_presign_expires_seconds)
+    expires_seconds = runtime.settings.oss_download_presign_expires_seconds
+    if file.file_type.startswith("word_preview_"):
+        expires_seconds = preview_download_ttl(
+            job, file, runtime.document_file_repository, runtime.file_upload_service, expires_seconds=expires_seconds)
+    expires_at = utc_now() + timedelta(seconds=expires_seconds)
     if file.storage_provider == "s3":
         download_url = runtime.file_upload_service.create_presigned_download_url(
             file,
-            expires_seconds=runtime.settings.oss_download_presign_expires_seconds,
+            expires_seconds=expires_seconds,
         )
     else:
         token = _build_download_token(runtime, job_id=job.id, file_id=file.id, expires_at=expires_at)
@@ -690,11 +695,15 @@ def download_document_job_result(
     runtime: AppRuntime = Depends(get_runtime),
 ):
     file_id = _verify_download_token(runtime, job_id=job_id, token=token)
-    _job, file = runtime.document_job_service.get_file_for_authorized_download(job_id, file_id=file_id)
+    job, file = runtime.document_job_service.get_file_for_authorized_download(job_id, file_id=file_id)
     if file.storage_provider == "s3":
+        expires_seconds = runtime.settings.oss_download_presign_expires_seconds
+        if file.file_type.startswith("word_preview_"):
+            expires_seconds = preview_download_ttl(
+                job, file, runtime.document_file_repository, runtime.file_upload_service, expires_seconds=expires_seconds)
         download_url = runtime.file_upload_service.create_presigned_download_url(
             file,
-            expires_seconds=runtime.settings.oss_download_presign_expires_seconds,
+            expires_seconds=expires_seconds,
         )
         return RedirectResponse(download_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
     path = runtime.file_upload_service.resolve_local_object_path(file.object_key)

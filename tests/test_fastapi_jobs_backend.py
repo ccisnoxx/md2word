@@ -602,6 +602,7 @@ def build_test_runtime(
         job_resource_snapshot_service,
         document_job_translation_batch_repository=document_job_translation_batch_repository,
         file_upload_service=file_upload_service,
+        word_preview_service=document_job_execution_service.word_preview_service,
     )
     document_job_incident_service = DocumentJobIncidentService(document_job_service)
     health_service = HealthService(

@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
 from app.domains.files.models import DocumentFileRecord
+from app.domains.document_jobs.preview_state import PreviewArtifactObservation, PreviewClaim, PreviewClaimRequest
 
 from app.domains.document_jobs.models import (
     DocumentJobCallbackMessage,
@@ -192,6 +193,7 @@ class DocumentJobRepositoryProtocol(Protocol):
         expected_document_ir_file_id: str | None = None,
         require_no_prepared_result: bool = False,
         expected_prepared_result_file_id: str | None = None,
+        preview_contribution: dict | None = None,
         **patch: Any,
     ) -> DocumentJobRecord | None: ...
 
@@ -203,6 +205,16 @@ class DocumentJobRepositoryProtocol(Protocol):
         self, job_id: str, *, expected_retry_count: int, max_retries: int, **patch: Any,
     ) -> DocumentJobRecord | None: ...
 
+    def claim_document_job_preview(
+        self, job_id: str, *, request: PreviewClaimRequest, observation: PreviewArtifactObservation | None = None,
+    ) -> PreviewClaim: ...
+    def begin_document_job_preview_registration(
+        self, job_id: str, *, request: PreviewClaimRequest, revision: int, lease_token: str, attempt: int,
+    ) -> DocumentJobRecord | None: ...
+    def finish_document_job_preview(
+        self, job_id: str, *, request: PreviewClaimRequest, revision: int, lease_token: str,
+        status: str, manifest_file_id: str, error_code: str | None, retryable: bool, evidence: dict,
+    ) -> DocumentJobRecord | None: ...
     def update_document_job_review_if_current(
         self, job_id: str, *, expected_retry_count: int, expected_result_file_id: str | None,
         review_status: DocumentJobReviewStatus, issue_type: DocumentJobTranslationQaIssueType | None,

@@ -15,6 +15,8 @@ from bs4 import BeautifulSoup
 from fastapi import status
 
 from app.core.config import Settings
+from app.domains.document_jobs.preview import PREVIEW_FILE_TYPES, verified_current_preview_files
+from app.domains.document_jobs.preview_state import PreviewRetryResult
 from app.domains.document_jobs.delivery_state import translation_qa_projection
 from app.domains.document_jobs.models import (
     DocumentJobEventLevel,
@@ -71,6 +73,7 @@ from app.services.auth.models import AuthenticatedUser
 
 DOCUMENT_JOB_LIST_SORTS = {"created_at_desc", "created_at_asc", "updated_at_desc", "updated_at_asc"}
 DOCUMENT_JOB_DOWNLOAD_FILE_TYPES: set[DocumentFileType] = {
+    *PREVIEW_FILE_TYPES,
     "source_pdf",
     "mineru_raw_result",
     "document_ir",
@@ -182,6 +185,7 @@ class DocumentJobService:
         job_resource_snapshot_service: Any | None = None,
         document_job_translation_batch_repository: DocumentJobTranslationBatchRepositoryProtocol | None = None,
         file_upload_service: Any | None = None,
+        word_preview_service: Any | None = None,
     ) -> None:
         self.settings = settings
         self.job_repository = job_repository
@@ -193,6 +197,7 @@ class DocumentJobService:
         self.job_resource_snapshot_service = job_resource_snapshot_service
         self.document_job_translation_batch_repository = document_job_translation_batch_repository
         self.file_upload_service = file_upload_service
+        self.word_preview_service = word_preview_service
 
     def create_job(
         self,
@@ -798,6 +803,14 @@ class DocumentJobService:
                 f"Worker 投递失败: {failed.error_message}",
             ) from exc
         return self.job_repository.get_document_job(job.id) or retried
+
+    def retry_word_preview(self, job_id: str, *, user: AuthenticatedUser, reason: str, request_id: str,
+                           trace_id: str | None = None) -> PreviewRetryResult:
+        """内部应用入口；沿用 owner/Admin 范围，不增加 HTTP 重试路由。"""
+        job = self.get_job(job_id, user=user)
+        if self.word_preview_service is None:
+            raise ApiError(503, "service_unavailable", "Word 预览应用服务未配置。")
+        return self.word_preview_service.retry(job, user=user, reason=reason, request_id=request_id, trace_id=trace_id)
 
     def clone_job(
         self,
@@ -1683,15 +1696,22 @@ class DocumentJobService:
         return file
 
     def _list_files_for_job(self, job: DocumentJobRecord) -> list[DocumentFileRecord]:
-        files = [
+        candidates = [
             file
             for file in self.file_repository.list_document_files()
             if file.tenant_id == job.tenant_id
             and file.company_id == job.company_id
             and file.file_type in DOCUMENT_JOB_DOWNLOAD_FILE_TYPES
             and self._file_belongs_to_job(job, file)
-            and self._is_current_downloadable_job_file(job, file)
         ]
+        # 完整预览只观测一次；以刚验证的Record筛选列表快照，避免逐页重读全组。
+        preview_files = verified_current_preview_files(job, self.file_repository, self.file_upload_service) if any(
+            file.file_type in PREVIEW_FILE_TYPES for file in candidates
+        ) else {}
+        files = [file for file in candidates if (
+            preview_files.get(file.id) == file if file.file_type in PREVIEW_FILE_TYPES
+            else self._is_current_downloadable_job_file(job, file)
+        )]
         return sorted(
             files,
             key=lambda file: (
@@ -1727,6 +1747,9 @@ class DocumentJobService:
         return file.job_id == job.id or file.id == job.source_file_id
 
     def _is_current_downloadable_job_file(self, job: DocumentJobRecord, file: DocumentFileRecord) -> bool:
+        if file.file_type in PREVIEW_FILE_TYPES:
+            # 单件下载每次独立观测，不能使用先前列表的核验结果。
+            return verified_current_preview_files(job, self.file_repository, self.file_upload_service).get(file.id) == file
         if file.file_type == "source_pdf":
             return file.id == job.source_file_id
         if file.file_type == "mineru_raw_result" and file.id == job.mineru_raw_result_file_id:
@@ -2170,6 +2193,7 @@ class DocumentJobService:
             },
             "resources": resource_snapshot,
             "debug_full_text_enabled": debug_full_text_enabled,
+            "word_preview": self.settings.word_preview_policy().model_dump(mode="json"),
         }
 
     def _resolve_clone_config(
@@ -2213,6 +2237,10 @@ class DocumentJobService:
                 translation_profile_version=self._read_snapshot_string(source_profile, "translation_profile_version"),
                 resource_snapshot=self._read_snapshot_record(source_job.request_snapshot, "resources"),
             )
+            if "word_preview" in source_job.request_snapshot:
+                request_snapshot["word_preview"] = source_job.request_snapshot["word_preview"]
+            else:
+                request_snapshot.pop("word_preview", None)
             request_snapshot["clone"] = self._build_clone_snapshot(source_job, config_strategy, reason)
             return {
                 "template_version_id": source_job.template_version_id,

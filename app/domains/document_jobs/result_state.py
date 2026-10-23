@@ -62,8 +62,10 @@ def prepare_result(
     return patched_job(job, {"prepared_result": receipt, "updated_at": now})
 
 
-def patched_job(job: DocumentJobRecord, patch: dict[str, Any]) -> DocumentJobRecord:
-    patch = delivery_state_patch(job, patch)
+def patched_job(job: DocumentJobRecord, patch: dict[str, Any], *, preview_contribution: dict | None = None) -> DocumentJobRecord:
+    if job.delivery_status == "published":
+        patch = delivery_state_patch(job, patch, preview_contribution=preview_contribution)
+        return DocumentJobRecord.model_validate(job.model_copy(update=patch).model_dump(mode="python"))
     receipt = job.prepared_result
     if (patch.get("status") == "succeeded" and patch.get("stage") == "completed"
             and receipt is not None and receipt.generation == job.retry_count
@@ -77,10 +79,15 @@ def patched_job(job: DocumentJobRecord, patch: dict[str, Any]) -> DocumentJobRec
             summary = validate_formula_report(metadata.get("formula_report"))
             if summary != metadata.get("formula_summary"):
                 raise ValueError("结果凭据的公式摘要与报告不一致。")
-            patch = {**patch, "quality_summary": {**job.quality_summary, "formula": summary},
-                     "quality_status": job.quality_status}
-            if job.quality_status == "passed" and summary["fallback_count"]:
+            patch = {**patch, "quality_summary": {**patch.get("quality_summary", job.quality_summary), "formula": summary}}
+            # 预览blocked是聚合结果，不能在普通完成时重捕获为永久基础贡献。
+            checks = job.quality_summary.get("checks_v1", {})
+            base = checks.get("__unattributed__", {}).get("quality_status", job.quality_status)
+            # completion不能用调用方的passed覆盖锁内既有基础结论。
+            patch.pop("quality_status", None)
+            if base == "passed" and summary["fallback_count"]:
                 patch["quality_status"] = "warning"
+    patch = delivery_state_patch(job, patch, preview_contribution=preview_contribution)
     result_stages = {"rendering", "quality_checking", "uploading", "completed"}
     if ("progress" in patch and patch.get("retry_count", job.retry_count) == job.retry_count
             and job.stage in result_stages and patch.get("stage", job.stage) in result_stages):

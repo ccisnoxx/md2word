@@ -32,6 +32,9 @@ from app.infrastructure.persistence.sqlite.backend import SqlitePersistenceBacke
 from app.domains.document_jobs.result_state import matches_current, patched_job, prepare_result, retry_job
 from app.domains.files.models import DocumentFileRecord
 from app.domains.resources.models import utc_now
+from app.domains.document_jobs.preview_state import (
+    PreviewArtifactObservation, PreviewClaim, PreviewClaimRequest, begin_preview_registration, claim_preview, finish_preview,
+)
 
 
 class SqliteDocumentJobRepository:
@@ -94,6 +97,7 @@ class SqliteDocumentJobRepository:
         self, job_id: str, *, allowed_statuses: set[str], allowed_stages: set[str],
         expected_retry_count: int | None = None, expected_document_ir_file_id: str | None = None,
         require_no_prepared_result: bool = False, expected_prepared_result_file_id: str | None = None,
+        preview_contribution: dict | None = None,
         **patch: Any,
     ) -> DocumentJobRecord | None:
         with self._locked_job(job_id) as (connection, existing):
@@ -105,7 +109,7 @@ class SqliteDocumentJobRepository:
                 return None
             if patch.get("status") == "succeeded" and existing.timeout_at is not None and existing.timeout_at <= utc_now():
                 return None
-            updated = patched_job(existing, patch)
+            updated = patched_job(existing, patch, preview_contribution=preview_contribution)
             self._write_job(connection, updated)
             return updated
 
@@ -125,6 +129,37 @@ class SqliteDocumentJobRepository:
     ) -> DocumentJobRecord | None:
         with self._locked_job(job_id) as (connection, existing):
             updated = retry_job(existing, expected_retry_count=expected_retry_count, max_retries=max_retries, **patch)
+            if updated is not None:
+                self._write_job(connection, updated)
+            return updated
+
+    def claim_document_job_preview(self, job_id: str, *, request: PreviewClaimRequest,
+        observation: PreviewArtifactObservation | None = None,
+    ) -> PreviewClaim:
+        with self._locked_job(job_id) as (connection, existing):
+            claim = claim_preview(existing, request, observation=observation, now=utc_now())
+            if claim.job != existing:
+                self._write_job(connection, claim.job)
+            return claim
+
+    def finish_document_job_preview(
+        self, job_id: str, *, request: PreviewClaimRequest, revision: int, lease_token: str,
+        status: str, manifest_file_id: str, error_code: str | None, retryable: bool, evidence: dict,
+    ) -> DocumentJobRecord | None:
+        with self._locked_job(job_id) as (connection, existing):
+            updated = finish_preview(existing, request, revision=revision, lease_token=lease_token,
+                status=status, manifest_file_id=manifest_file_id, error_code=error_code,
+                retryable=retryable, evidence=evidence, now=utc_now())
+            if updated is not None:
+                self._write_job(connection, updated)
+            return updated
+
+    def begin_document_job_preview_registration(
+        self, job_id: str, *, request: PreviewClaimRequest, revision: int, lease_token: str, attempt: int,
+    ) -> DocumentJobRecord | None:
+        with self._locked_job(job_id) as (connection, existing):
+            updated = begin_preview_registration(existing, request, revision=revision, lease_token=lease_token,
+                                                 attempt=attempt, now=utc_now())
             if updated is not None:
                 self._write_job(connection, updated)
             return updated

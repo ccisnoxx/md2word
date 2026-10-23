@@ -1,10 +1,11 @@
-# File: app/core/config.py
-# Purpose: 定义 FastAPI 后端运行配置、集成开关和路径派生规则。
+# 文件：app/core/config.py
+# 用途： 定义 FastAPI 后端运行配置、集成开关和路径派生规则。
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -60,6 +61,25 @@ class Settings(BaseSettings):
     p0_document_job_timeout_seconds: int = 1200
     p0_document_job_max_retries: int = 2
     document_jobs_worker_backend: Literal["disabled", "celery", "eager"] = "disabled"
+    word_preview_backend: Literal["disabled", "sandboxed"] = "disabled"
+    word_preview_required: bool = False
+    word_preview_profile_id: str = "unconfigured"
+    word_preview_profile_sha256: str = "sha256:" + "0" * 64
+    word_preview_launcher: str = ""
+    word_preview_profile_path: str = ""
+    word_preview_render_pages: bool = False
+    word_preview_timeout_seconds: float = Field(default=60, gt=0, le=300)
+    word_preview_deadline_seconds: float = Field(default=125, gt=0, le=900)
+    word_preview_max_attempts: int = Field(default=2, ge=1, le=5)
+    word_preview_max_runs_per_result: int = Field(default=16, ge=1, le=100)
+    word_preview_max_input_bytes: int = Field(default=52_428_800, gt=0)
+    word_preview_max_output_bytes: int = Field(default=104_857_600, gt=0)
+    word_preview_max_pages: int = Field(default=200, gt=0, le=10000)
+    word_preview_max_page_pixels: int = Field(default=20_000_000, gt=0)
+    word_preview_max_temp_bytes: int = Field(default=536_870_912, gt=0)
+    word_preview_max_cpu_seconds: int = Field(default=60, gt=0)
+    word_preview_max_memory_bytes: int = Field(default=536_870_912, gt=0)
+    word_preview_max_processes: int = Field(default=16, gt=0, le=128)
     document_jobs_celery_broker_url: str = "redis://127.0.0.1:6379/0"
     document_jobs_celery_result_backend: str = ""
     document_jobs_celery_queue: str = "document-jobs"
@@ -125,6 +145,12 @@ class Settings(BaseSettings):
     term_rules_seed_path: str = "resources/term_rules/term_rules.v2.yaml"
     term_rules_store_path: str = "var/config/term_rules_store.json"
     term_rules_runtime_yaml_path: str = "var/config/runtime_subscripts_dictionary.yaml"
+
+    def word_preview_policy(self):
+        """只把非敏感策略固化进新任务；部署路径及 launcher 指纹不进入快照。"""
+        from app.services.preview.models import PreviewPolicy
+        return PreviewPolicy(**{name: getattr(self, "word_preview_" + name)
+                                for name in PreviewPolicy.model_fields if name != "schema_version"})
 
     @property
     def root_dir(self) -> Path:

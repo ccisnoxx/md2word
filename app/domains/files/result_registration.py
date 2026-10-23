@@ -1,9 +1,9 @@
-"""结果候选的不可变描述与文件生命周期规则；在 adapter 的文件锁内调用。"""
+"""结果凭据、预览候选和文件生命周期的纯规则；在 adapter 文件锁内调用。"""
 
 from datetime import datetime, timezone
 from typing import Any
 
-from app.domains.files.models import DocumentFileRecord
+from app.domains.files.models import DocumentFileRecord, WORD_PREVIEW_FILE_TYPES
 from app.domains.resources.models import utc_now
 
 
@@ -11,6 +11,13 @@ def is_result_candidate(file: DocumentFileRecord) -> bool:
     return (file.file_type == "generated_word"
             and type(file.metadata.get("document_job_result_protocol")) is int
             and file.metadata["document_job_result_protocol"] == 1)
+
+
+def is_preview_candidate(file: DocumentFileRecord) -> bool:
+    """仅本协议的内部预览候选可按保留期回收，普通待上传文件语义保持。"""
+    return (file.file_type in WORD_PREVIEW_FILE_TYPES
+            and type(file.metadata.get("word_preview_artifact_protocol")) is int
+            and file.metadata["word_preview_artifact_protocol"] == 1)
 
 
 def materialized_file(existing: DocumentFileRecord, descriptor: DocumentFileRecord) -> DocumentFileRecord:
@@ -38,13 +45,21 @@ def expired_file(existing: DocumentFileRecord, *, now: datetime) -> DocumentFile
     expires_at = existing.expires_at
     if expires_at is not None and expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if (expires_at is not None and expires_at <= now
-            and (existing.status == "uploaded" or (existing.status == "pending_upload" and is_result_candidate(existing)))):
+    expirable_pending = existing.status == "pending_upload" and (
+        is_result_candidate(existing) or is_preview_candidate(existing)
+    )
+    if expires_at is not None and expires_at <= now and (existing.status == "uploaded" or expirable_pending):
         return existing.model_copy(update={"status": "expired", "updated_at": now})
     return existing
 
 
 def patched_file(existing: DocumentFileRecord, patch: dict[str, Any]) -> DocumentFileRecord:
+    if is_preview_candidate(existing) and patch.get("status") == "uploaded":
+        expires_at = existing.expires_at
+        if expires_at is not None and expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at is None or expires_at <= utc_now():
+            raise ValueError("预览候选已过期，不能确认上传。")
     if existing.status in {"expired", "deleted"} and patch.get("status", existing.status) not in {existing.status, "deleted"}:
         raise ValueError("过期或已删除文件不能恢复可用状态。")
     return DocumentFileRecord.model_validate(existing.model_copy(update=patch).model_dump(mode="python"))

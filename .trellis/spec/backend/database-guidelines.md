@@ -165,3 +165,17 @@ When changing stage messages, update all supported stores and tests. `tests/test
 ## CON-103 状态投影与回填
 
 `DocumentJob` 的 `quality_status`、`review_status`、`delivery_status`、`quality_summary` 由 payload 权威保存；SQLite/MySQL 的同名投影列必须与同一连接写入同步，file backend 复用既有 job lock。复核只允许通过 `update_document_job_review_if_current` 比较当前 generation 和 result ID；`backfill_document_job_state_if_missing` 只补缺键，保留旧 QA、时间戳和未知 raw 键。SQLite/MySQL schema maintenance 或显式迁移失败时不降级写入，fake MySQL 仅证明 SQL/回滚调用形状，真实 InnoDB 与部署文件系统仍是线上启用门。
+
+## DocumentJob 预览与质量贡献（RND-504）
+
+具体签名、状态和错误语义由 [WordPreviewProvider 与任务预览合同](./word-preview-contract.md) 拥有。本节定义持久化约束：
+
+- 可选私有 `word_preview_state` 和 `quality_summary.checks_v1` 沿现有 payload 保存，无 DDL/新表/回填；质量投影仍与主记录同锁同连接写入。保留 CON-103/TR-406/结果 receipt 的现有方法和锁协议。
+- claim、登记前标记、finish 和幂等复用在原同 job 序列化点执行；Provider/对象/文件读取均在锁外。新 key 消费、预算和 fingerprint 先于副作用提交。历史 key 永不因新 current 被淘汰或重新执行。
+- 当前 attempt 必须在任何 Artifact 副作用前标为登记中；finish 确认当前来源/run/attempt 的终态 manifest。登记未知不能被预算耗尽、旧 manifest 或后一次渲染改成完成。缺阶段的历史在途记录按未知，不猜“尚未写文件”。
+- 成功 alias 必须比较锁外完整可用性观测的来源、run、revision、manifest 和最早到期点。明确生命周期失效可由新 key 有界创建新 run；存储未知/完整性不符显式失败，不能当缺失自动修复。该观测不构成跨 job/files/storage 事务。
+- 单次文件列表复用一次完整观测及其验证后的descriptor集合，避免每个page重读整套对象；不加全局缓存，单件下载/Token仍独立核验，锁内仍无文件I/O。
+- 三类预览文件 metadata-first pending→对象→同 file 锁确认 uploaded。pending 过期仅适用严格类型和 `word_preview_artifact_protocol=1`；原源文件 pending 与 generated_word receipt 规则保持。所有生成件沿共享含独立 file_id 的 key；未选中、迟到或历史对象不能覆盖胜出件。
+- 普通可靠 Provider 失败留证后可执行 succeeded+quality blocked；Artifact insert/write/confirm 不可确认则不允许 initial completed。主件与候选记录保留，物理回收沿既有 retention 限制。
+
+部署先停不识别字段的写者；回滚保持能保留 preview/checks/receipt 的兼容代码、文件及审计。fake MySQL 不能替代真实 InnoDB，默认 disabled 不代表跨存储中断已获生产验证。

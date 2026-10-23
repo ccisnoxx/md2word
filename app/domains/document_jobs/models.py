@@ -9,6 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, JsonValue, StrictInt, model_validator
 
 from app.domains.files.models import DocumentFileRecord
+from app.domains.document_jobs.preview_state import WordPreviewState
 from app.domains.resources.models import utc_now
 from app.domains.translation.modes import DocumentJobMode, DocumentLanguage
 
@@ -51,6 +52,10 @@ DocumentJobTranslationQaIssueType = Literal[
     "other",
 ]
 DocumentJobEventType = Literal[
+    "preview_started",
+    "preview_succeeded",
+    "preview_failed",
+    "preview_retry_requested",
     "job_created",
     "job_archived",
     "job_unarchived",
@@ -133,6 +138,7 @@ class DocumentJobRecord(BaseModel):
     term_version_id: str | None = None
     result_file_id: str | None = None
     prepared_result: DocumentJobPreparedResult | None = None
+    word_preview_state: WordPreviewState | None = None
     mineru_raw_result_file_id: str | None = None
     source_document_ir_file_id: str | None = None
     document_ir_file_id: str | None = None

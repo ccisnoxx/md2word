@@ -1,5 +1,5 @@
-# File: app/domains/files/service.py
-# Purpose: 处理文件元数据登记、上传授权、代理写入和保留期物理删除。
+# 文件：app/domains/files/service.py
+# 用途： 处理文件元数据登记、上传授权、代理写入和保留期物理删除。
 
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ from fastapi import status
 from app.services.auth.models import AuthenticatedUser
 from app.core.config import Settings
 from app.core.errors import ApiError
-from app.domains.files.result_registration import is_result_candidate
-from app.domains.files.models import DocumentFileRecord, DocumentFileStorageProvider, DocumentFileType
+from app.domains.files.result_registration import is_result_candidate, is_preview_candidate
+from app.domains.files.models import DocumentFileRecord, DocumentFileStorageProvider, DocumentFileType, WORD_PREVIEW_FILE_TYPES
 from app.domains.files.repository import DocumentFileRepositoryProtocol
 from app.domains.files.validation import validate_pdf_metadata, validate_pdf_upload
 from app.domains.resources.models import utc_now
@@ -213,7 +213,7 @@ class FileUploadService:
         """通过后端代理上传已授权文件内容，并回填 checksum / page_count。"""
 
         record = self.get_document_file(file_id, user=user)
-        if is_result_candidate(record):
+        if is_result_candidate(record) or is_preview_candidate(record):
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "内部结果候选不允许代理上传。")
         if record.status != "pending_upload":
             raise ApiError(status.HTTP_409_CONFLICT, "conflict", "文件当前状态不允许重复上传。")
@@ -274,11 +274,24 @@ class FileUploadService:
             raise ValueError("本地文件下载不支持 S3 presigned URL。")
         if not record.bucket:
             raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "S3 bucket 未配置。")
+        if record.file_type.startswith("word_preview_"):
+            expires_seconds = self.preview_download_ttl(record, expires_seconds=expires_seconds)
         return self._s3_client().generate_presigned_url(
             "get_object",
             Params={"Bucket": record.bucket, "Key": record.object_key},
             ExpiresIn=expires_seconds,
         )
+
+    def preview_download_ttl(self, record: DocumentFileRecord, *, expires_seconds: int) -> int:
+        """预览直连 URL 的有效期同时受文件、主件和现有签发上限约束。"""
+        source = self.repository.get_document_file(record.metadata.get("source_result_file_id", ""))
+        if source is None or source.expires_at is None or record.expires_at is None:
+            raise ApiError(409, "conflict", "预览文件缺少有效主件保留期。")
+        ttl = min(expires_seconds, self.settings.oss_download_presign_expires_seconds,
+                  int((min(source.expires_at, record.expires_at) - utc_now()).total_seconds()))
+        if ttl <= 0:
+            raise ApiError(409, "conflict", "预览文件或主件已过期。")
+        return ttl
 
     def preview_retention_physical_delete(
         self,
@@ -389,13 +402,14 @@ class FileUploadService:
         metadata: dict[str, Any] | None = None,
         expires_at: datetime | None = None,
     ) -> DocumentFileRecord:
-        """登记并写入 Worker 生成的中间或结果文件。"""
+        """登记 Worker 文件；预览先写可追踪 pending，再写独立对象并锁内确认。"""
 
         file_id = f"file_{uuid4().hex[:12]}"
         provider = self._storage_provider()
         bucket = self._bucket_for(provider)
         if provider == "s3" and not bucket:
             raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "service_unavailable", "S3 bucket 未配置。")
+        preview = file_type in WORD_PREVIEW_FILE_TYPES
         object_key = self._generated_object_key_for(
             tenant_id=tenant_id,
             job_id=job_id,
@@ -419,14 +433,19 @@ class FileUploadService:
             mime_type=mime_type,
             size_bytes=len(content),
             checksum_sha256=checksum_sha256,
-            status="uploaded",
+            status="pending_upload" if preview else "uploaded",
             expires_at=expires_at or now + timedelta(days=self.retention_days_resolver(file_type)),
-            metadata=metadata or {},
+            metadata={**(metadata or {}), "word_preview_artifact_protocol": 1} if preview else (metadata or {}),
             created_by=created_by,
             created_at=now,
             updated_at=now,
         )
+        if preview:
+            # 插入失败时尚无对象；对象或确认失败时保留 metadata 与独立 key 供恢复/清理。
+            self.repository.create_document_file(record)
         etag = self._write_object(record, content)
+        if preview:
+            return self.repository.update_document_file(record.id, status="uploaded", etag=etag, updated_at=utc_now())
         stored = record.model_copy(update={"etag": etag, "updated_at": utc_now()})
         self.repository.create_document_file(stored)
         return stored

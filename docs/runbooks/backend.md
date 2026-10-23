@@ -573,3 +573,23 @@ P0 Golden Sample 以 `tests/fixtures/golden_samples/pdfs` 下的四个 OPA228 da
 这四份样本通过 Files + Document Jobs 主链路执行 `direct_pdf_to_word`。P0 通过条件是 4/4 任务成功、4/4 结果 DOCX 可由 Word 打开、4/4 由 admin reviewer 人工签字通过；不再以扩充到 10-20 份样本作为阻塞条件。人工质量线要求接近原版排版并符合 Word 文档排版标准，二者冲突时以可维护的 Word 标准结构为准。
 
 正式执行地点是 hostdzire；本地不跑真实 Golden Sample 转换。执行、签字和证据回填步骤见 [线上优先验证流程](/Users/sc/PycharmProjects/md2word/docs/deploy/online-first-validation-workflow.md)。
+
+## 7. Word 预览配置与恢复（RND-504）
+
+默认 `WORD_PREVIEW_BACKEND=disabled`、`WORD_PREVIEW_REQUIRED=false`、`WORD_PREVIEW_RENDER_PAGES=false`。disabled 非必需仅形成 pending 未检查贡献；required 不可用和可靠预览失败使质量 blocked，主 DOCX 保留内部下载，批准/发布不可用。配置不接受 fake backend；fake 仅测试注入。此任务不启用生产，不安装或采购转换引擎。
+
+启用 sandboxed 前，部署 owner 必须提供批准的绝对 launcher/profile 路径、profile 原字节 SHA-256、launcher hash、固定 `word-preview-exec/v1` 身份和非空 approval_reference。实证引擎及完整 PDF 解码 validator/字体版本、无网络/无宏、非特权私有挂载、CPU/内存/临时磁盘/进程限制、整个隔离域终止及清理。profile 自报能力和 tests-only 子进程通过均不能代替这些证据。配置键和预算详见 [预览合同](../../.trellis/spec/backend/word-preview-contract.md)。
+
+部署先暂停不识别 preview/checks 字段的 API 内联执行和 Worker 写者，再统一部署兼容版本。无 DDL 不代表旧 Pydantic 写者可安全混部。上线写者还需真实 InnoDB、部署文件系统锁/中断和对象存储证据；Word 人工视觉单独验收，不以 PDF 可打开代替。历史无快照任务不自动补跑，任务快照固定，改全局 backend 不篡改已有任务策略。
+
+内部 `DocumentJobService.retry_word_preview` 需要真实受权 user、非空 reason、规范 UUID request_id，仅适用于当前有效主件、已成功且未发布/归档/删除的任务；本项没有 HTTP 重试端点。先检查权限和当前 receipt，单独重试不调用 MinerU/翻译/renderer，不改 generation/result。重放旧 key 只查历史，不移动 current；新 key 只有全部当前预览仍可读有效才复用成功 run。明确过期/删除/不存在可在原额度内创建新 run，存储超时/未知或完整性错误不得当成缺失自动重建。
+
+错误处置遵循以下边界：
+
+- `preview_disabled`、provider/profile/sandbox unavailable：核对策略与批准部署，不修改历史快照来伪装通过；required 保留 blocker。
+- timeout/暂态 engine failed：仅原 run/deadline/attempt 额度内重试，不重置计数或清 ledger；永久输入/输出/资源错误先保留安全诊断。
+- `preview_storage_failed` 或登记阶段未知：保留 receipt、主 DOCX、pending metadata/对象和审计。当前 attempt 在任何文件副作用前标登记中，只有本次终态 manifest 确认才可完成。旧失败 manifest、预算耗尽或新渲染均不能证明当前存储成功。本版失败关闭，不自动扫描猜测或清状态重跑；initial 保持原 oss_failed/总超时，独立重试保留既有 execution 成功但显式失败。
+- lifecycle 失效：不复活过期/删除文件，不签旧本地 Token；新 key 的恢复使用全新 file_id。S3 已签直连 URL 不即时撤销，仅通过主件/预览最短剩余 TTL 控制。
+- lost-race/stale/busy：重读当前权威状态，不选旧 run/旧代候选。alias 观测不是跨存储事务，返回和下载仍重验；失败不回滚已消费 key。
+
+回滚先停止新预览和不兼容写者，关闭 backend 并保留识别 preview/checks/receipt 的兼容代码、全部 Artifact 与审计；关闭不清 blocker、不恢复批准，不覆盖已发布文件，不 DROP/删除历史记录。禁止退回丢私有字段或覆盖对象键的旧 writer。仅停止业务请求不保证迟到二进制已物理回收，retention 仍沿原受控边界。

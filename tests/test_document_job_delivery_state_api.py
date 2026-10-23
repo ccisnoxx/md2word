@@ -46,8 +46,16 @@ class DocumentJobDeliveryStateApiTests(TestCase):
             translator = DocumentIRTranslationService(fixtures.FakeDocumentJobTranslationProvider())
             runtime.document_job_execution_service.document_ir_translation_service = translator
             runtime.document_job_execution_service.fake_mineru_client.result_zip_bytes = fixtures.make_english_mineru_zip_bytes()
-            with TestClient(create_app(runtime), raise_server_exceptions=raise_server_exceptions) as client:
-                yield runtime, client, fixtures.build_auth_header(client)
+            snapshot_builder = runtime.document_job_service._build_request_snapshot
+
+            def legacy_snapshot(*args, **kwargs):
+                # 这里隔离CON-103/104的历史状态合同；新默认预览由专用组合回归覆盖。
+                snapshot = snapshot_builder(*args, **kwargs)
+                return {key: value for key, value in snapshot.items() if key != "word_preview"}
+
+            with patch.object(runtime.document_job_service, "_build_request_snapshot", side_effect=legacy_snapshot):
+                with TestClient(create_app(runtime), raise_server_exceptions=raise_server_exceptions) as client:
+                    yield runtime, client, fixtures.build_auth_header(client)
 
     def _create(self, client, headers, *, translation=True, extra=None):
         source = fixtures.FastAPIJobsBackendTests._upload_source_pdf(self, client, headers)
