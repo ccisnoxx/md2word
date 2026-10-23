@@ -1036,3 +1036,40 @@ TR-406 revision 2实现和依赖基线整合已获人工验收，两笔业务提
 ### Next Steps
 
 - TR-406本次收尾结束，不push、不自动启动后续任务。真实MySQL/InnoDB、部署文件锁、真实Provider/S3与Word人工门继续按原记录保留，等待独立授权。
+
+
+## Session 33: RND-502 人工验收、提交与归档
+
+**Date**: 2026-10-23
+**Task**: RND-502 人工验收、提交与归档
+**Branch**: `md2word/RND-502`
+
+### Summary
+
+RND-502 v2实现、独立复审修复和验证证据已人工接受，列明未验证边界已接受；仅本任务工作提交及Trellis归档，不push，保留无关改动。
+
+### Main Changes
+
+- 统一inline/block/table公式入口、OMML与semantic输出、可见literal降级及逐式最终字节绑定；翻译公式保护及三恢复入口/选中receipt摘要合同已完成。
+- 本轮独立复审1P1/2P2经主会话确认、checker修复、独立复验均闭合；architect角色不适配事实与实际critical_reviewer记录完整保留。
+- 工作提交136802c；归档提交1bc9d71；manifest仅RND-502到done，任务completed并迁移至.trellis/tasks/archive/2026-10/10-23-rnd-502-formula-omml-fallback，context自引用迁移且当前指针清理。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `136802cb273c85e94ff65d41aca5aa15c8c70459` | (see git log) |
+
+### Testing
+
+- [OK] 已接受冻结候选311定向、202 release/OpenAPI current、component1/1、direct矩阵5/5及RS2G04报告审计证据复用。
+- [OK] 收口仅删formula.py一个多余EOF LF，逐字节/AST无语义变化核实，36公式测试重新通过；最终diff及归档task validate implement/check各8通过。
+- [OK] 独立index精确提交；每笔提交后原302项暂存diff保持，其他44任务manifest与无关dirty保持。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 真实Word视觉、线上Golden、真实InnoDB/S3/部署文件系统仍未验证；上线/回退继续遵守兼容执行器和排空在途约束。不push、不自动开始后续任务。
