@@ -51,3 +51,9 @@ Git 使用独立 index 构造精确候选，再仅同步本任务 index 条目�
 ## 新文件纳入后的候选检查
 
 独立 index 首次把未跟踪源纳入 cached diff --check，检出 formula.py 多余 EOF 空行；checker 仅删除一个末尾 LF。主会话以旧候选 blob == 新文件 + 单个 LF、AST 完全相同核实。36 项公式测试重新通过（0.726s），日志 tests/tmp/rnd502/closeout-formula-tests.log；既有 311/202/样本门继续作为相同业务语义证据。最终源快照 0c2264f7aade7cb6b9eecf135724cb45507750a5d727fcdb1615d8ecbf00c045，详情 tests/tmp/rnd502/closeout-code-snapshot.json；已接受原快照仍保留，不混淆两个字节版本。
+
+## 工作提交与归档结果
+
+工作提交：136802cb273c85e94ff65d41aca5aa15c8c70459。task.py archive --no-commit 仅迁移当前子任务至 .trellis/tasks/archive/2026-10/10-23-rnd-502-formula-omml-fallback，status=completed、completedAt=2026-10-23；manifest 仅 RND-502=done。当前任务 runtime 指针由 archive 清理，不启动后续任务。implement/check 自引用迁移至归档路径，批准 v2 三件套原字节保持。
+
+归档候选使用精确 source/destination/本任务 manifest 条目，独立 bookkeeping 提交；302 项原暂存删除、父任务、其他 task 目录、CON-104/backlog/.serena 及既有 journal 改动保持。会话提交只包含本次新增会话，不纳入先前 CON-102 未提交日志。
