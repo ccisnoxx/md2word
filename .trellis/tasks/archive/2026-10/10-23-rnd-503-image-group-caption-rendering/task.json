@@ -3,7 +3,7 @@
   "name": "rnd-503-image-group-caption-rendering",
   "title": "RND-503：图片并排和 Caption",
   "description": "RND-503实现、独立复审修复与验证已获人工接受；按两次工作提交完成收口并归档，不push、不启动后续任务。",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": "backend",
   "scope": "renderer",
   "package": null,
@@ -11,11 +11,11 @@
   "creator": "777",
   "assignee": "777",
   "createdAt": "2026-10-23",
-  "completedAt": null,
+  "completedAt": "2026-10-23",
   "branch": "md2word/RND-503",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
+  "commit": "67bc26db2586c264ca038f6f24e2d37714982c71",
   "pr_url": null,
   "subtasks": [],
   "children": [],
@@ -37,7 +37,7 @@
     "tests/test_rnd503_dependency_integration.py",
     "tests/test_document_job_result_persistence.py"
   ],
-  "notes": "2026-10-23：用户明确只调查规划；create --parent --no-start。IR-204=done/归档completed且人工接受；当前HEAD未集成17cde1f。三件套v1及最小context完成，停人工规划评审，不start、不实现、不提交/push。 最终task validate：implement/check各7条通过、无警告；9项既有基线通过，3项内存反例确认实际差距，非skipped_existing。新功能/Golden/Word/预览门禁未执行；其他manifest任务及原暂存区保持。 2026-10-23：按用户要求派全新architect独立只读审查；两P2经主会话核实，三件套修订v2并交同一代理复验。阈值与caption语义不变，仍planning，不start、不改业务、不提交/push。 同一architect完整复验v2：两P2规划层闭合、无新增确认P1/P2/P3。最终context各8条validate通过；独立审查不构成人工实施批准，IR-204集成硬门保留。 2026-10-23：用户明确接受v2并授权实施；当前分支md2word/RND-503，保存原dirty/索引快照，165项原基线通过；仅接入已接受IR201/IR204闭合依赖并保留RND502数学规则，174项依赖/恢复门通过。B0为HEAD加未提交集成文件指纹，不伪造依赖提交已进HEAD；不提交/push/archive。 实施已收口至manifest review；Trellis保持in_progress，最终301+13/202/组件1/1/direct5/5/实际B1均通过，独立合同及Trellis复核闭合。Golden/Word/部署预览等列明待验，不提交/push/archive，详implementation-validation与review-final。 2026-10-23：用户已人工验收当前实现、独立复审修复和验证证据，并接受列明未验边界，授权两次工作提交及完成/归档；此前review/不提交限制为历史阶段，当前由closeout.md记录收口授权。不push、不启动后续任务。",
+  "notes": "2026-10-23：用户明确只调查规划；create --parent --no-start。IR-204=done/归档completed且人工接受；当前HEAD未集成17cde1f。三件套v1及最小context完成，停人工规划评审，不start、不实现、不提交/push。 最终task validate：implement/check各7条通过、无警告；9项既有基线通过，3项内存反例确认实际差距，非skipped_existing。新功能/Golden/Word/预览门禁未执行；其他manifest任务及原暂存区保持。 2026-10-23：按用户要求派全新architect独立只读审查；两P2经主会话核实，三件套修订v2并交同一代理复验。阈值与caption语义不变，仍planning，不start、不改业务、不提交/push。 同一architect完整复验v2：两P2规划层闭合、无新增确认P1/P2/P3。最终context各8条validate通过；独立审查不构成人工实施批准，IR-204集成硬门保留。 2026-10-23：用户明确接受v2并授权实施；当前分支md2word/RND-503，保存原dirty/索引快照，165项原基线通过；仅接入已接受IR201/IR204闭合依赖并保留RND502数学规则，174项依赖/恢复门通过。B0为HEAD加未提交集成文件指纹，不伪造依赖提交已进HEAD；不提交/push/archive。 实施已收口至manifest review；Trellis保持in_progress，最终301+13/202/组件1/1/direct5/5/实际B1均通过，独立合同及Trellis复核闭合。Golden/Word/部署预览等列明待验，不提交/push/archive，详implementation-validation与review-final。 2026-10-23：用户已人工验收当前实现、独立复审修复和验证证据，并接受列明未验边界，授权两次工作提交及完成/归档；此前review/不提交限制为历史阶段，当前由closeout.md记录收口授权。不push、不启动后续任务。 两次工作提交已完成：依赖e1f5079、功能67bc26d；范围独立复核通过，按人工授权以archive --no-commit完成当前子任务，不启动后续任务。",
   "meta": {
     "planning_only": false,
     "implementation_approved": true,
@@ -146,6 +146,11 @@
       ],
       "unverified_boundaries_accepted": true
     },
-    "dependency_work_commit": "e1f5079b695047d95912a541fc00d40e505dfc60"
+    "dependency_work_commit": "e1f5079b695047d95912a541fc00d40e505dfc60",
+    "work_commits": [
+      "e1f5079b695047d95912a541fc00d40e505dfc60",
+      "67bc26db2586c264ca038f6f24e2d37714982c71"
+    ],
+    "closeout_scope_check": "passed:trellis-check readonly;20 dependency paths,49 feature paths;original302cachedpatch unchanged"
   }
 }

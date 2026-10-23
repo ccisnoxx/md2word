@@ -22,3 +22,11 @@
 ## 已完成的工作提交
 
 第一笔依赖提交：`e1f5079b695047d95912a541fc00d40e505dfc60`，20个路径；独立树174项通过。共享原索引仅同步该20路径，原302项cached删除binary patch保持相等。第二笔将恢复全部已验收的最终实现和测试，不改业务字节。
+
+第二笔功能提交：`67bc26db2586c264ca038f6f24e2d37714982c71`，49个路径。独立trellis-check对两笔实际候选树确认无范围/合同阻断：依赖20路径可独立运行，最终业务来源和v2三件套字节与人工接受快照一致；两笔均未包含原302暂存删除或无关dirty。
+
+当前子任务由人工验收授权完成；归档使用`--no-commit`，归档后的context和manifest路径将同步验证。历史Golden/Word等未验状态保持原样，不把人工接受写成测试通过。
+
+## 归档收口检查
+
+`task.py archive <当前子任务> --no-commit`已完成，task.json为completed、completedAt=2026-10-23；manifest仅RND-503改为done/implemented及准确归档路径。归档后implement/check各11条validate通过，无警告；已批准v2三件套SHA保持。当前会话无active task，不启动后续任务。父任务文件及其他manifest条目与收口前工作树快照相等，原302暂存删除binary patch相等。归档提交继续使用独立index；会话记录单独生成和提交，原CON-102工作树journal增量保留。
