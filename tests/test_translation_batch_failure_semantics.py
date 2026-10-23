@@ -446,7 +446,20 @@ class TranslationBatchFailureSemanticsTests(TestCase):
                 )
                 execution = runtime.document_job_execution_service
                 execution.document_ir_translation_service = runtime.document_ir_translation_service
-                execution.fake_mineru_client.result_zip_bytes = fixtures.make_semantic_mineru_zip_bytes()
+                source = io.BytesIO(fixtures.make_semantic_mineru_zip_bytes())
+                protected = io.BytesIO()
+                # 此用例验证批次成功/失败；为源表格公式给出原 Codec 已支持的完整边界。
+                with zipfile.ZipFile(source) as archive, zipfile.ZipFile(protected, "w") as output:
+                    for name in archive.namelist():
+                        content = archive.read(name)
+                        if name == "content_list_v2.json":
+                            blocks = json.loads(content)
+                            for block in blocks:
+                                if block["type"] == "table":
+                                    block["table_body"] = block["table_body"].replace(r"nV/ \sqrt{Hz}", r"\(nV/ \sqrt{Hz}\)")
+                            content = json.dumps(blocks, ensure_ascii=False).encode("utf-8")
+                        output.writestr(name, content)
+                execution.fake_mineru_client.result_zip_bytes = protected.getvalue()
 
                 with TestClient(fixtures.create_app(runtime)) as client:
                     headers = fixtures.build_auth_header(client, username="admin", password="admin-pass")

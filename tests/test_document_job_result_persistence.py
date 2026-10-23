@@ -3,6 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import timedelta
+from dataclasses import replace
 import hashlib
 import multiprocessing
 import os
@@ -10,6 +11,7 @@ from pathlib import Path
 import tempfile
 import io
 import zipfile
+from xml.etree import ElementTree
 from threading import Event, current_thread
 from unittest import TestCase
 from unittest.mock import patch
@@ -91,6 +93,103 @@ class DocumentJobResultPersistenceTests(TestCase):
     _files = stages.DocumentJobExecutionStageTests._files
     _pause_after_ir = stages.DocumentJobExecutionStageTests._pause_after_ir
 
+    def _install_formula_ir(self, runtime, execution, job, source=r"$\unknown{VOUT}$"):
+        """登记新的合成最终 IR，保留源清单与现有结构，不覆写历史文件。"""
+        original = execution._get_document_ir_file(job)
+        ir = DocumentIR.model_validate_json(runtime.file_upload_service.read_file_content(original))
+        block = next(block for block in ir.blocks if block.type == "paragraph")
+        ir = ir.model_copy(update={"blocks": [
+            item.model_copy(update={"text": source}) if item.id == block.id else item for item in ir.blocks
+        ]})
+        ir_file = runtime.file_upload_service.register_generated_content(
+            tenant_id=job.tenant_id, company_id=job.company_id, job_id=job.id, created_by=job.created_by,
+            file_type="document_ir", filename="formula.document-ir.json", mime_type="application/json",
+            content=ir.model_dump_json().encode(), metadata=original.metadata,
+        )
+        return runtime.document_job_repository.update_document_job(job.id, document_ir_file_id=ir_file.id), ir
+
+    def test_formula_fallback_quality_summary_and_events_use_selected_result(self):
+        for quality, expected in (("pending", "pending"), ("blocked", "blocked"), ("passed", "warning"), ("warning", "warning")):
+            with self.subTest(quality=quality), self._runtime() as (root, runtime, execution, job, client, headers):
+                job, ir = self._install_formula_ir(runtime, execution, job)
+                runtime.document_job_repository.update_document_job(
+                    job.id, quality_status=quality, quality_summary={"retained": {"check": "existing"}},
+                )
+                result = execution.execute_job(job.id)
+                self.assertEqual(result.status, "succeeded", result.error_message)
+                self.assertEqual(result.quality_status, expected)
+                self.assertEqual(result.quality_summary["retained"], {"check": "existing"})
+                self.assertEqual(result.quality_summary["formula"]["fallback_count"], 1)
+                self.assertEqual((result.review_status, result.delivery_status), ("unreviewed", "internal_draft"))
+                word = runtime.document_file_repository.get_document_file(result.result_file_id)
+                self.assertEqual(word.metadata["formula_summary"], result.quality_summary["formula"])
+                events = runtime.document_job_event_repository.list_document_job_events(job.id)
+                for event in events:
+                    self.assertNotIn("formula_report", event.payload)
+                    self.assertNotIn("latex_residue_examples", event.payload.get("docx_quality", {}))
+                    self.assertNotIn(r"\unknown{VOUT}", str(event.payload))
+                # blocked 与 unreviewed 仍是内部可下载草稿，发布资格由现有服务判断。
+                response = client.get(f"/api/v1/document-jobs/{job.id}/download-url", headers=headers)
+                self.assertEqual(response.status_code, 200, response.text)
+
+    def test_formula_report_all_recovery_entries_reject_changed_output(self):
+        for entry in ("legacy", "explicit", "receipt"):
+            for corrupt in (False, True):
+                with self.subTest(entry=entry, corrupt=corrupt), self._runtime() as (root, runtime, execution, job, client, headers):
+                    job, ir = self._install_formula_ir(runtime, execution, job, source="$x^2+3$")
+                    template = execution.template_read_service.resolve_template_version(job.template_version_id)
+                    rendered = execution.word_renderer.render_to_result(
+                        ir, template_path=template.template_path, config_path=template.layout_config_path,
+                        image_loader=execution._build_image_loader(job),
+                    )
+                    evidence = build_renderer_evidence(ir, rendered.content, formula_report=rendered.formula_report)
+                    content = rendered.content
+                    if corrupt:
+                        # 保留 anchor/mode/count 与原报告，只改最终字节中的一个数学值。
+                        altered = io.BytesIO()
+                        with zipfile.ZipFile(io.BytesIO(content)) as source, zipfile.ZipFile(altered, "w") as target:
+                            for item in source.infolist():
+                                data = source.read(item.filename)
+                                if item.filename == "word/document.xml":
+                                    xml = ElementTree.fromstring(data)
+                                    math = xml.find(".//{http://schemas.openxmlformats.org/officeDocument/2006/math}t")
+                                    self.assertIsNotNone(math)
+                                    math.text = "9"
+                                    data = ElementTree.tostring(xml, encoding="utf-8", xml_declaration=True)
+                                target.writestr(item, data)
+                        content = altered.getvalue()
+                    word = runtime.file_upload_service.register_generated_content(
+                        tenant_id=job.tenant_id, company_id=job.company_id, job_id=job.id, created_by=job.created_by,
+                        file_type="generated_word", filename="recovered.docx",
+                        mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        content=content, metadata={"retry_count": job.retry_count,
+                            "document_ir_file_id": job.document_ir_file_id, **evidence},
+                    )
+                    job = runtime.document_job_repository.update_document_job(job.id, stage="uploading")
+                    if entry == "explicit":
+                        # 明确指针维持旧代复用；仍按旧文件 IR 校验，不导入新代摘要。
+                        new_job, _ir = self._install_formula_ir(runtime, execution, job, source="$y^3$")
+                        job = runtime.document_job_repository.update_document_job(
+                            job.id, retry_count=1, result_file_id=word.id,
+                        )
+                    elif entry == "receipt":
+                        job = runtime.document_job_repository.prepare_document_job_result(
+                            job.id, expected_retry_count=job.retry_count,
+                            expected_document_ir_file_id=job.document_ir_file_id, candidate=word,
+                        )
+                    with patch.object(execution.word_renderer, "render_to_result") as render:
+                        result = execution.execute_job(job.id)
+                    render.assert_not_called()
+                    if corrupt:
+                        self.assertEqual((result.status, result.failed_stage, result.error_code), ("failed", "uploading", "oss_failed"))
+                        self.assertEqual(result.prepared_result, job.prepared_result)
+                    else:
+                        self.assertEqual((result.status, result.result_file_id), ("succeeded", word.id), result.error_message)
+                        if entry == "explicit":
+                            self.assertNotIn("formula", result.quality_summary)
+                        else:
+                            self.assertEqual(result.quality_summary["formula"], evidence["formula_summary"])
+
     def _build_runtime(self, root, kind):
         return fixtures.build_test_runtime(
             root, repository_factory=lambda path: _adapters(kind, path),
@@ -134,13 +233,14 @@ class DocumentJobResultPersistenceTests(TestCase):
                     entered, release = Event(), Event()
                     original_write = runtime.file_upload_service._write_object
                     original_materialize = runtime.document_file_repository.materialize_prepared_result
-                    original_render = execution.word_renderer.render_to_bytes
+                    original_render = execution.word_renderer.render_to_result
 
                     def render(*args, **kwargs):
-                        data = io.BytesIO(original_render(*args, **kwargs))
+                        rendered = original_render(*args, **kwargs)
+                        data = io.BytesIO(rendered.content)
                         with zipfile.ZipFile(data, "a") as archive:
                             archive.writestr("docProps/con102-attempt.txt", current_thread().name)
-                        return data.getvalue()
+                        return replace(rendered, content=data.getvalue())
 
                     def write(record, content):
                         if current_thread().name.startswith("late-uploader") and record.file_type == "generated_word":
@@ -156,7 +256,7 @@ class DocumentJobResultPersistenceTests(TestCase):
 
                     with patch.object(runtime.file_upload_service, "_write_object", side_effect=write), patch.object(
                         runtime.document_file_repository, "materialize_prepared_result", side_effect=materialize,
-                    ), patch.object(execution.word_renderer, "render_to_bytes", side_effect=render), ThreadPoolExecutor(max_workers=1, thread_name_prefix="late-uploader") as pool:
+                    ), patch.object(execution.word_renderer, "render_to_result", side_effect=render), ThreadPoolExecutor(max_workers=1, thread_name_prefix="late-uploader") as pool:
                         late = pool.submit(execution.execute_job, job.id)
                         try:
                             self.assertTrue(entered.wait(15))
@@ -208,7 +308,7 @@ class DocumentJobResultPersistenceTests(TestCase):
                     self.assertEqual(len(before_files), 1)
                     restarted = self._build_runtime(root, kind)
                     new_execution = restarted.document_job_execution_service
-                    with patch.object(new_execution.word_renderer, "render_to_bytes", wraps=new_execution.word_renderer.render_to_bytes) as render, patch.object(
+                    with patch.object(new_execution.word_renderer, "render_to_result", wraps=new_execution.word_renderer.render_to_result) as render, patch.object(
                         restarted.file_upload_service, "_write_object", wraps=restarted.file_upload_service._write_object,
                     ) as write:
                         result = new_execution.execute_job(job.id)
@@ -532,7 +632,7 @@ class DocumentJobResultPersistenceTests(TestCase):
                 else:
                     runtime.document_file_repository.update_document_file(original.id, metadata={
                         "retry_count": 0, "document_ir_file_id": job.document_ir_file_id})
-                with patch.object(execution.word_renderer, "render_to_bytes") as render:
+                with patch.object(execution.word_renderer, "render_to_result") as render:
                     failed = execution.execute_job(job.id)
                 self.assertEqual((failed.status, failed.failed_stage, failed.error_code), ("failed", "uploading", "oss_failed"))
                 self.assertIsNone(failed.prepared_result)
@@ -669,7 +769,7 @@ class DocumentJobResultPersistenceTests(TestCase):
                 repository = runtime.document_job_repository
                 uploading = repository.update_document_job(stale.id, stage="uploading", progress=85)
                 # B 已回到 rendering，但内存渲染中断；A 仍拿着先前 60% 的同代快照。
-                with patch.object(execution.word_renderer, "render_to_bytes", side_effect=SimulatedProcessExit):
+                with patch.object(execution.word_renderer, "render_to_result", side_effect=SimulatedProcessExit):
                     with self.assertRaises(SimulatedProcessExit):
                         execution._render_and_save_word(uploading, trace_id=None)
                 self.assertEqual((repository.get_document_job(stale.id).stage, repository.get_document_job(stale.id).progress),

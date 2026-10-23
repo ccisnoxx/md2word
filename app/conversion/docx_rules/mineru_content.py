@@ -9,7 +9,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-from app.conversion.docx_rules.text_semantics import is_list_item_text, normalize_formula_text
+from app.conversion.docx_rules.formula import scan_math_spans
+from app.conversion.docx_rules.text_semantics import is_list_item_text
 
 
 DETAILS_BLOCK_RE = re.compile(r"<details\b[^>]*>.*?</details>", re.IGNORECASE | re.DOTALL)
@@ -48,8 +49,17 @@ def clean_markdown_document(text: str) -> str:
 
 
 def clean_text(text: str) -> str:
-    cleaned = clean_markdown_document(str(text or ""))
-    return " ".join(cleaned.replace("\n", " ").split()).strip()
+    """清理普通正文；数学片段保留源字符与内部空白，供翻译保护和渲染共同消费。"""
+
+    source = str(text or "")
+    parts: list[str] = []
+    cursor = 0
+    for span in scan_math_spans(source):
+        parts.append(re.sub(r"\s+", " ", clean_markdown_document(source[cursor:span.start])))
+        parts.append(span.source)
+        cursor = span.end
+    parts.append(re.sub(r"\s+", " ", clean_markdown_document(source[cursor:])))
+    return "".join(parts).strip()
 
 
 def join_text_fragments(nodes: list[dict[str, Any]], *, clean: bool = True) -> str:
@@ -119,9 +129,9 @@ def coerce_text_list(value: Any) -> list[str]:
                 texts.append(text)
             return texts
         if node_type in {"equation_inline", "inline_formula"} and isinstance(value.get("content"), str):
-            text = clean_text(normalize_formula_text(value["content"]))
-            if text:
-                texts.append(text)
+            # semantic 公式的原式和边界必须先于任何正文归一化保留。
+            if value["content"].strip():
+                texts.append(f"${value['content']}$")
             return texts
 
         for key, child in value.items():
@@ -281,7 +291,9 @@ def should_join_footnote_fragment(previous: str, fragment: str) -> bool:
         return True
     if stripped_previous[-1] in ",;:([{（【/":
         return True
-    if INLINE_FORMULA_MARKUP_RE.search(stripped_fragment) and not stripped_previous.endswith((".", "。", ";", "；")):
+    if (
+        INLINE_FORMULA_MARKUP_RE.search(stripped_fragment) or scan_math_spans(stripped_fragment)
+    ) and not stripped_previous.endswith((".", "。", ";", "；")):
         return True
 
     lower_previous = stripped_previous.lower()

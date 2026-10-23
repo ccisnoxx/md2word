@@ -77,9 +77,17 @@ skip_margin_artifact
 
 1. 支持的 LaTeX → OMML；
 2. 简单变量 → Word run + 上下标；
-3. 无法转换 → 受控公式图片或原始文本并生成 blocking/warning flag。
+3. 当前无法转换 → 原位置显示 `【公式降级，需复核】` 与逐字原式，生成 `formula_text_fallback` warning；本版本不新增图片引擎。
 
-不得静默删除公式或把 `$...$` 残留为最终正文。
+大表沿用既有展开几何；`docx_rules/table_expansion.py` 仅拥有共享内容投影，保留源 HTML 和重复出现的源坐标，渲染与公式库存使用同一投影，避免大表独立丢失上下标。
+
+共享入口为 `app/conversion/docx_rules/formula.py`。支持子集必须完整消费输入；纯数字强公式正常登记；显式 group 的脚本基底保持完整。合法简单 `\tag{7}` 保留编号、`x^2+3` 仅对 `2` 上标、`\text{A B}` 保留空格。未知命令、畸形语法、不支持结构、无法安全归一化分别记录稳定 reason。合法 semantic sub/sup 内的 b/i/换行保留；畸形 HTML 及不能保真的嵌套数学组合整体原文降级，不能静默丢掉脚本。原式和已识别数学片段不经过术语替换，公式不得被翻译、改值或因失败删除。
+
+正式调用 `render_to_result()` 一次取得 DOCX 与 `formula-render/v1` 报告；`render_to_bytes()` 保持兼容。源位置取自真实 block/field 的单次上下文，重复同式不靠 hash 猜位置。每次出现的源位置/哈希、bookmark、mode/reason 与写 DOM 前确定的 `formula-output/v1` 预期投影绑定，最终 OOXML 重建投影校验值、次序、上下标及数学结构。受控降级仅在匹配报告、可见提示与完整原式后豁免静默残留扫描；未登记 LaTeX 继续报告残留。
+
+逐公式报告存于授权内部文件 metadata，普通事件只给 `formula_summary`，不展开原式或旧 `latex_residue_examples`。新报告在 legacy 扫描、明确历史主件及 receipt 恢复三入口均严格核验；无报告旧件保持原恢复合同，明确历史指针允许按原文件 IR 跨代复用。完成时仅从当前已选 receipt 合并质量摘要，不提升 pending/blocked，passed 遇降级只降为 warning，不自动批准或发布。
+
+翻译准备排除明确 `<eq>` 数学子树，保留其它正文及原节点索引；其它数学必须被现有 Codec 完整保护，否则 Provider 前以内部码 `translation_formula_boundary_unprotected` 失败，顶层沿用 `translation_failed`。不改变 Codec 规则或覆盖同代已安装根计划。上线及回退前需排空相关旧任务或使用兼容执行器；不回写已发布件、历史报告或审计。
 
 ## 7. 图片
 

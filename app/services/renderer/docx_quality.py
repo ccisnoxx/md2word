@@ -10,6 +10,13 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
 
+from app.conversion.docx_rules.formula import (
+    FORMULA_OUTPUT_VERSION,
+    FORMULA_REASONS,
+    FORMULA_REPORT_VERSION,
+    canonical_sha256,
+    output_sha256,
+)
 from app.conversion.docx_rules.text_semantics import looks_like_heading_text, parse_toc_entry_text
 
 
@@ -26,14 +33,14 @@ MANUAL_LIST_MARKER_RE = re.compile(r"^\s*(?:[•■*]|[-–—])\s+")
 WIDE_TABLE_MIN_COLUMNS = 6
 
 
-def analyze_docx_quality_bytes(content: bytes | None) -> dict[str, Any]:
+def analyze_docx_quality_bytes(content: bytes | None, *, formula_report: dict[str, Any] | None = None) -> dict[str, Any]:
     """从 DOCX bytes 中提取可编辑性和 Word 标准结构证据。"""
 
     if not content:
         return {}
     try:
         with zipfile.ZipFile(BytesIO(content)) as package:
-            return _analyze_docx_package(package)
+            return _analyze_docx_package(package, formula_report=formula_report)
     except zipfile.BadZipFile:
         return {}
 
@@ -83,7 +90,7 @@ def build_docx_quality_flags(quality: Mapping[str, Any] | None) -> list[str]:
     return flags
 
 
-def _analyze_docx_package(package: zipfile.ZipFile) -> dict[str, Any]:
+def _analyze_docx_package(package: zipfile.ZipFile, *, formula_report: dict[str, Any] | None = None) -> dict[str, Any]:
     try:
         document_xml = package.read("word/document.xml")
     except KeyError:
@@ -111,7 +118,13 @@ def _analyze_docx_package(package: zipfile.ZipFile) -> dict[str, Any]:
     ]
     semantic_body_paragraph_texts = [_paragraph_text(paragraph) for paragraph in semantic_body_paragraphs]
     joined_text = "\n".join(text for text in paragraph_texts if text)
-    latex_matches = _unique_latex_residue(joined_text)
+    residue_text = joined_text
+    if formula_report is not None:
+        validate_formula_report(formula_report)
+        ranges = _formula_ranges(root, formula_report)
+        excluded = {id(node) for entry, nodes in ranges if entry["mode"] == "text_fallback" for node in nodes for node in node.iter()}
+        residue_text = "\n".join("".join(node.text or "" for node in paragraph.iter() if node.tag in {_w_attr("t"), f"{{{DOCX_XML_NS['m']}}}t"} and id(node) not in excluded) for paragraph in paragraphs)
+    latex_matches = _unique_latex_residue(residue_text)
     text_chars = len(joined_text)
     table_count = len(tables)
     table_shapes = [_table_shape(table) for table in tables]
@@ -272,3 +285,99 @@ def _unique_latex_residue(text: str) -> list[str]:
         seen.add(value)
         values.append(value)
     return values
+
+
+def validate_formula_report(report: object) -> dict[str, Any]:
+    """严格校验持久化报告并派生安全摘要；此函数不进行文件 I/O。"""
+    if not isinstance(report, dict) or set(report) != {"schema_version", "entries"} or report.get("schema_version") != FORMULA_REPORT_VERSION:
+        raise ValueError("公式报告版本或结构无效")
+    entries = report.get("entries")
+    if not isinstance(entries, list):
+        raise ValueError("公式报告条目无效")
+    counts = {"omml": 0, "semantic_runs": 0, "text_fallback": 0}
+    reasons: dict[str, int] = {}
+    entry_keys = {"occurrence", "source", "anchor", "mode", "reason", "output_projection_version", "expected_output_sha256"}
+    source_keys = {"block_id", "field", "start", "end", "boundary", "source_sha256"}
+    for index, entry in enumerate(entries, 1):
+        if not isinstance(entry, dict) or set(entry) != entry_keys:
+            raise ValueError("公式报告条目结构无效")
+        if type(entry["occurrence"]) is not int or entry["occurrence"] != index or entry["anchor"] != f"md2w_formula_{index:06d}":
+            raise ValueError("公式报告锚点或次序无效")
+        mode = entry["mode"]
+        if not isinstance(mode, str) or mode not in counts or entry["output_projection_version"] != FORMULA_OUTPUT_VERSION:
+            raise ValueError("公式报告输出模式无效")
+        reason = entry["reason"]
+        if (mode == "text_fallback" and (not isinstance(reason, str) or reason not in FORMULA_REASONS)) or (mode != "text_fallback" and reason is not None):
+            raise ValueError("公式报告降级原因无效")
+        source = entry["source"]
+        if not isinstance(source, dict) or set(source) != source_keys:
+            raise ValueError("公式报告源绑定无效")
+        if not isinstance(source["block_id"], str) or not source["block_id"] or not isinstance(source["field"], str) or not re.fullmatch(r"(?:text|latex|html/\d+/\d+|list_items/\d+|captions/\d+|footnotes/\d+|metadata/caption)", source["field"]):
+            raise ValueError("公式报告源位置无效")
+        if type(source["start"]) is not int or type(source["end"]) is not int or not 0 <= source["start"] < source["end"]:
+            raise ValueError("公式报告源范围无效")
+        if not isinstance(source["boundary"], str) or source["boundary"] not in {"block", "dollar", "display_dollar", "paren", "bracket", "eq", "bare_command", "semantic", "semantic_script"}:
+            raise ValueError("公式报告数学边界无效")
+        for value in (source["source_sha256"], entry["expected_output_sha256"]):
+            if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
+                raise ValueError("公式报告内容绑定无效")
+        counts[mode] += 1
+        if reason:
+            reasons[reason] = reasons.get(reason, 0) + 1
+    return {
+        "schema_version": "formula-summary/v1",
+        "formula_count": len(entries),
+        "omml_count": counts["omml"],
+        "semantic_count": counts["semantic_runs"],
+        "fallback_count": counts["text_fallback"],
+        "warning_codes": ["formula_text_fallback"] if counts["text_fallback"] else [],
+        "reason_counts": dict(sorted(reasons.items())),
+        "report_sha256": canonical_sha256(report),
+    }
+
+
+def _formula_ranges(root: ElementTree.Element, report: dict[str, Any]) -> list[tuple[dict[str, Any], list[ElementTree.Element]]]:
+    entries = {entry["anchor"]: entry for entry in report["entries"]}
+    found: set[str] = set()
+    ranges: list[tuple[dict[str, Any], list[ElementTree.Element]]] = []
+    all_starts = root.findall(".//w:bookmarkStart", DOCX_XML_NS)
+    all_ends = root.findall(".//w:bookmarkEnd", DOCX_XML_NS)
+    for parent in root.iter():
+        children = list(parent)
+        for index, child in enumerate(children):
+            if child.tag != _w_attr("bookmarkStart"):
+                continue
+            anchor = child.get(_w_attr("name")) or ""
+            if not anchor.startswith("md2w_formula_"):
+                continue
+            if anchor not in entries or anchor in found:
+                raise ValueError("DOCX 公式锚点缺失、重复或未登记")
+            found.add(anchor)
+            bookmark_id = child.get(_w_attr("id"))
+            if sum(node.get(_w_attr("id")) == bookmark_id for node in all_starts) != 1 or sum(node.get(_w_attr("id")) == bookmark_id for node in all_ends) != 1:
+                raise ValueError("DOCX 公式锚点身份无效")
+            end = next((end_index for end_index in range(index + 1, len(children)) if children[end_index].tag == _w_attr("bookmarkEnd") and children[end_index].get(_w_attr("id")) == bookmark_id), None)
+            if end is None:
+                raise ValueError("DOCX 公式锚点范围未闭合")
+            nodes = children[index + 1:end]
+            entry = entries[anchor]
+            math_count = sum(node.tag == f"{{{DOCX_XML_NS['m']}}}oMath" for node in nodes)
+            if not nodes or (entry["mode"] == "omml" and (math_count != 1 or len(nodes) != 1)) or (entry["mode"] != "omml" and (math_count or any(node.tag != _w_attr("r") for node in nodes))):
+                raise ValueError("DOCX 公式实际输出模式不匹配")
+            if output_sha256(nodes) != entry["expected_output_sha256"]:
+                raise ValueError("DOCX 公式实际输出与预期绑定不匹配")
+            ranges.append((entry, nodes))
+    if found != set(entries):
+        raise ValueError("DOCX 公式锚点缺失")
+    covered_math = {id(node) for _entry, nodes in ranges for element in nodes for node in element.iter() if node.tag == f"{{{DOCX_XML_NS['m']}}}oMath"}
+    if covered_math != {id(node) for node in root.findall(".//m:oMath", DOCX_XML_NS)}:
+        raise ValueError("DOCX 包含未登记的数学对象")
+    return ranges
+
+
+def verify_docx_formula_report(content: bytes, report: dict[str, Any]) -> None:
+    """从最终 DOCX 锚点范围重建投影，拒绝改值、错位、截断和漏提示。"""
+    validate_formula_report(report)
+    with zipfile.ZipFile(BytesIO(content)) as package:
+        root = ElementTree.fromstring(package.read("word/document.xml"))
+    _formula_ranges(root, report)

@@ -11,6 +11,7 @@ from typing import Protocol
 from bs4 import BeautifulSoup
 from bs4.element import NavigableString
 
+from app.conversion.docx_rules.formula import scan_math_spans
 from app.services.document_ir.models import DocumentIR, DocumentIRBlock
 from app.domains.translation.models import (
     TermVersionSnapshot,
@@ -26,22 +27,32 @@ from app.domains.translation.provider import TranslationProvider, TranslationPro
 from app.domains.translation.integrity import (
     TranslationIntegrityEvidence, TranslationIntegrityError, TranslationIntegrityValidator,
 )
-from app.domains.translation.protected_tokens import EncodedTokenBatch, encode
+from app.domains.translation.protected_tokens import EncodedTokenBatch, ProtectedTokenKind, encode
 
 
 _TRACE_CONTEXT_RADIUS = 40
 _TRACE_CONTEXT_MAX_CHARS = 120
 DEFAULT_MAX_ITEMS_PER_PROVIDER_REQUEST = 300
 DEFAULT_MAX_CHARS_PER_PROVIDER_REQUEST = 8000
+_FORMULA_BOUNDARY_ERROR = "translation_formula_boundary_unprotected"
+_FORMULA_BOUNDARY_MESSAGE = "公式翻译保护边界无法完整闭合，已停止翻译。"
 
 
 class DocumentIRTranslationError(RuntimeError):
     """翻译失败的安全领域错误；保留专用机器码与脱敏证据。"""
 
-    def __init__(self, message: str, *, code: str = "translation_provider_failed", evidence: TranslationIntegrityEvidence | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "translation_provider_failed",
+        evidence: TranslationIntegrityEvidence | None = None,
+        formula_protection: dict[str, str | int] | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.evidence = evidence
+        self.formula_protection = formula_protection
 
 
 class TranslationCallRecorder(Protocol):
@@ -239,7 +250,8 @@ class DocumentIRTranslationService:
         for item in items:
             target = targets_by_id[item.id]
             item_chars = len(item.text)
-            self.validator.prepare((item,), max_chars=max_chars)
+            encoded_item = self.validator.prepare((item,), max_chars=max_chars)
+            self._validate_formula_protection((item,), encoded_item)
             item_page = target.page_number
             next_page_start = current_page_start
             next_page_end = current_page_end
@@ -286,6 +298,7 @@ class DocumentIRTranslationService:
         encoded = self.validator.prepare(
             source_items, max_chars=max_chars_per_request if max_chars_per_request is not None else self.max_chars_per_request,
         )
+        self._validate_formula_protection(source_items, encoded)
         matched_terms, term_traces = self._match_request_terms(
             items=items,
             term_version=term_version,
@@ -312,6 +325,41 @@ class DocumentIRTranslationService:
             page_end=page_end,
         )
         return PreparedTranslationRequest(source_items, request, encoded)
+
+    @staticmethod
+    def _validate_formula_protection(
+        source_items: tuple[TranslationTextItem, ...],
+        encoded: EncodedTokenBatch,
+    ) -> None:
+        """共享数学边界必须由同次 Codec 的单个完整公式 Token 覆盖。"""
+
+        formula_count = 0
+        unprotected_count = 0
+        for item in source_items:
+            for span in scan_math_spans(item.text):
+                formula_count += 1
+                if not any(
+                    token.item_id == item.id
+                    and token.kind == ProtectedTokenKind.FORMULA
+                    and token.start <= span.start
+                    and span.end <= token.end
+                    for token in encoded.occurrences
+                ):
+                    unprotected_count += 1
+        if unprotected_count:
+            DocumentIRTranslationService._raise_formula_boundary_error(formula_count, unprotected_count)
+
+    @staticmethod
+    def _raise_formula_boundary_error(formula_count: int, unprotected_count: int) -> None:
+        raise DocumentIRTranslationError(
+            _FORMULA_BOUNDARY_MESSAGE,
+            code=_FORMULA_BOUNDARY_ERROR,
+            formula_protection={
+                "code": _FORMULA_BOUNDARY_ERROR,
+                "formula_count": formula_count,
+                "unprotected_count": unprotected_count,
+            },
+        ) from None
 
     def _match_request_terms(
         self,
@@ -529,10 +577,15 @@ class DocumentIRTranslationService:
         if block.type != "table" or not block.html:
             return
         soup = BeautifulSoup(block.html, "html.parser")
+        self._validate_html_formula_boundaries(soup)
         text_index = 0
         for node in soup.find_all(string=True):
             text = str(node).strip()
             if not text:
+                continue
+            # 数学后代仍占用原索引，后续正文 ID 与旧回填位置保持一致。
+            if node.find_parent("eq") is not None:
+                text_index += 1
                 continue
             item_id = f"{block.id}.html.{text_index:04d}"
             targets.append(
@@ -547,6 +600,38 @@ class DocumentIRTranslationService:
             )
             items.append(TranslationTextItem(id=item_id, text=text))
             text_index += 1
+
+    @staticmethod
+    def _validate_html_formula_boundaries(soup: BeautifulSoup) -> None:
+        """仅投影同一单元格的 DOM 文字，拒绝跨节点且无数学子树归属的公式。"""
+
+        groups: dict[int, list[NavigableString]] = {}
+        for node in soup.find_all(string=True):
+            cell = node.find_parent(["td", "th"])
+            groups.setdefault(id(cell if cell is not None else soup), []).append(node)
+        # HTML 上下标的数学语义会在纯文字投影中丢失；共享 scanner 在完整 DOM 串上认领。
+        semantic_spans = [span for span in scan_math_spans(str(soup)) if span.boundary == "semantic"]
+        formula_count = len(semantic_spans)
+        unprotected_count = len(semantic_spans)
+        for nodes in groups.values():
+            text = "".join(str(node) for node in nodes)
+            spans = scan_math_spans(text)
+            formula_count += len(spans)
+            positions = []
+            cursor = 0
+            for node in nodes:
+                end = cursor + len(str(node))
+                positions.append((cursor, end, node))
+                cursor = end
+            for span in spans:
+                owners = [node for start, end, node in positions if start < span.end and span.start < end]
+                math_owner = owners[0].find_parent("eq")
+                if math_owner is not None and all(node.find_parent("eq") is math_owner for node in owners):
+                    continue
+                if len(owners) != 1 or math_owner is not None:
+                    unprotected_count += 1
+        if unprotected_count:
+            DocumentIRTranslationService._raise_formula_boundary_error(formula_count, unprotected_count)
 
     def apply_replacements(
         self,

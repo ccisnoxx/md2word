@@ -6,6 +6,7 @@ from app.domains.document_jobs.delivery_state import delivery_state_patch
 from app.domains.document_jobs.models import DocumentJobPreparedResult, DocumentJobRecord
 from app.domains.files.models import DocumentFileRecord
 from app.domains.resources.models import utc_now
+from app.services.renderer.docx_quality import validate_formula_report
 from app.services.renderer.evidence import ensure_renderer_integrity
 
 
@@ -63,6 +64,23 @@ def prepare_result(
 
 def patched_job(job: DocumentJobRecord, patch: dict[str, Any]) -> DocumentJobRecord:
     patch = delivery_state_patch(job, patch)
+    receipt = job.prepared_result
+    if (patch.get("status") == "succeeded" and patch.get("stage") == "completed"
+            and receipt is not None and receipt.generation == job.retry_count
+            and receipt.document_ir_file_id == job.document_ir_file_id
+            and patch.get("retry_count", job.retry_count) == receipt.generation
+            and patch.get("document_ir_file_id", job.document_ir_file_id) == receipt.document_ir_file_id
+            and patch.get("result_file_id") == receipt.file.id):
+        # 只从锁内已选凭据投影摘要；迟到 renderer 的内存报告不能污染获胜结果。
+        metadata = receipt.file.metadata
+        if "formula_report" in metadata or "formula_summary" in metadata:
+            summary = validate_formula_report(metadata.get("formula_report"))
+            if summary != metadata.get("formula_summary"):
+                raise ValueError("结果凭据的公式摘要与报告不一致。")
+            patch = {**patch, "quality_summary": {**job.quality_summary, "formula": summary},
+                     "quality_status": job.quality_status}
+            if job.quality_status == "passed" and summary["fallback_count"]:
+                patch["quality_status"] = "warning"
     result_stages = {"rendering", "quality_checking", "uploading", "completed"}
     if ("progress" in patch and patch.get("retry_count", job.retry_count) == job.retry_count
             and job.stage in result_stages and patch.get("stage", job.stage) in result_stages):

@@ -224,7 +224,7 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
         self.assertEqual(block.metadata["source_type"], "chart")
         self.assertEqual(block.asset_ref, result.document.assets[0].id)
         self.assertEqual(result.image_assets[0].content, b"chart-bytes")
-        self.assertEqual(block.captions, ["图 1 输出V<sub>OUT</sub>"])
+        self.assertEqual(block.captions, [r"图 1 输出$V _ {O U T}$"])
         self.assertEqual(block.footnotes, ["测试条件：25°C"])
         self.assertEqual(result.document.metadata.source_block_count, 1)
         self.assertEqual(result.document.metadata.source_type_counts, {"chart": 1})
@@ -281,7 +281,7 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
             )
 
         self.assertEqual(result.document.blocks[0].captions, ["图 1 第一条", "图 2 第二条"])
-        self.assertEqual(result.document.blocks[1].captions, ["图 3 第三条", "图 4 输出V<sub>OUT</sub>"])
+        self.assertEqual(result.document.blocks[1].captions, ["图 3 第三条", r"图 4 输出$V _ {O U T}$"])
 
     def test_rich_chart_captions_render_without_isolated_fragments_and_keep_paired_layout(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -334,7 +334,7 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
                 image_loader=lambda asset: image_bytes.get(asset.id),
             )
 
-        self.assertEqual(result.document.blocks[0].captions, ["图 33 通道隔离度 (± 18V)"])
+        self.assertEqual(result.document.blocks[0].captions, [r"图 33 通道隔离度 ($\pm$ 18V)"])
         rendered = Document(io.BytesIO(content))
         self.assertNotIn("±", [paragraph.text.strip() for paragraph in rendered.paragraphs])
         self.assertNotIn("18V)", [paragraph.text.strip() for paragraph in rendered.paragraphs])
@@ -342,8 +342,9 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
             document_xml = docx_zip.read("word/document.xml")
         root = ElementTree.fromstring(document_xml)
         word_ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+        math_ns = "{http://schemas.openxmlformats.org/officeDocument/2006/math}"
         paragraph_texts = [
-            "".join(node.text or "" for node in paragraph.iter(f"{word_ns}t"))
+            "".join(node.text or "" for node in paragraph.iter() if node.tag in {f"{word_ns}t", f"{math_ns}t"})
             for paragraph in root.iter(f"{word_ns}p")
         ]
         figure_33_paragraph = next(text for text in paragraph_texts if "通道隔离度" in text)
@@ -919,7 +920,7 @@ class MinerUToDocumentIRLayoutTests(unittest.TestCase):
         self.assertEqual(document.blocks[2].type, "table")
         self.assertEqual(document.blocks[2].html, "<table><tr><td>VOS</td></tr></table>")
         self.assertEqual(document.blocks[2].captions, ["Electrical Characteristics"])
-        self.assertEqual(document.blocks[2].footnotes, ["Note: V<sub>OS</sub>"])
+        self.assertEqual(document.blocks[2].footnotes, ["Note: $V_{OS}$"])
         self.assertEqual(document.blocks[2].layout.column_hint, "wide")
         self.assertEqual(document.blocks[3].type, "image")
         self.assertEqual(document.blocks[3].captions, ["Figure 1. Noise"])

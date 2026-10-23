@@ -69,3 +69,46 @@ Provider JSON/传输/截断保留 `translation_provider_invalid_response/failed/
 错误：`provider.translate(raw_request)` 后仅比较 ID，边校验边更新 replacements；把文件里的 `status=passed` 当成验证结论。
 
 正确：共享准备生成真实编码请求与内存 ledger，整批 Validator 成功后才使用恢复结果；落盘绑定权威来源，fan-in 从本地来源重新校验后一次回填。真实匹配隐私测试必须有实际命中、真实 context 保留，不以 mock 或零命中通过。
+
+## RND-502：公式翻译边界
+
+### 1. 范围与触发
+
+正式 renderer 接受的数学范围必须在翻译准备前完整保护。该合同仅接通公式保真，不更改 ProtectedTokenCodec 识别规则、Provider、术语策略、TranslationTextItem/Target 或批次持久格式。
+
+### 2. 接口
+
+`DocumentIRTranslationService.build_translation_plan()` / `build_provider_request()` 共用数学边界检查；`DocumentIRTranslationError` 保留 `code/evidence` 并新增可选安全 `formula_protection`。同步、Worker 与本地 fake 均经同一入口，不能只在 translate() 顶层检查。
+
+### 3. 合同
+
+- MinerU rich semantic formula 保留原式并使用现有 Codec 可识别的分隔符，表格 raw HTML/spans 不改写。
+- 表格 `<eq>` 整个数学子树不抽取为 Provider item，遍历仍为所有原非空 text node 递增 index，后续正文 ID/回填索引不漂移。不能因同格有公式而跳过相邻正文。
+- semantic sub/sup 的内层样式、换行、畸形修复及包裹数学的外层范围必须由完整共享 scanner 认领；不能只扫描内层显式公式而丢掉外层 script。无法完整保护时仍为调用前拒绝。
+- 其余共享扫描识别的数学必须被原 Codec 实际保护范围整体覆盖；检查 ledger 原始 span，不能用“没有检测到技术 Token”自证安全。跨节点或裸数学不能完整保护时在 Provider 前拒绝，不新增临时占位规则、不拆散公式。
+- 调用前失败的 `formula_protection` 只含固定码及 `formula_count/unprotected_count`，`evidence=None`，不伪造 passed integrity/batch/AI 审计；execution 写既有 stage_failed 安全子对象。
+- 已安装根计划和同代批次来源不可覆盖；抽取集合变化与旧根树不匹配时保留既有 `translation_batch_tree_invalid` 失败关闭。部署/回退先排空相关在途任务或保留兼容执行器，新代按原授权流程重建；不回填历史目标 IR/DOCX。
+
+### 4. 校验与错误矩阵
+
+| 情形 | 结果 |
+|---|---|
+| eq 中含 text/style/技术值 | 整个数学子树不送 Provider，原样回填保留 |
+| 既有 Codec 完整保护数学 | 只发送编码 item，沿用原 Validator |
+| 已识别数学不能完整保护 | 内部 `translation_formula_boundary_unprotected`，固定消息“公式翻译保护边界无法完整闭合，已停止翻译。”；顶层 `translation_failed`，零 Provider 调用 |
+| 旧根树与新抽取集合不同 | `translation_batch_tree_invalid`，不重写根树 |
+| direct | 零翻译 Provider/Prompt/翻译术语读取 |
+
+### 5. 正常、缺省与非法场景
+
+正常：`Before<eq>\\text{High <b>Low</b>}</eq>After` 仅 Before/After 为翻译目标，After 仍占原节点索引。缺省：普通路径、金额和 underscore 标识符不误判为数学。非法：跨 DOM 的数学分隔符或 renderer 已识别而 Codec 未整体保护的裸数学不得发送给 Provider。
+
+### 6. 必要测试
+
+`tests.test_formula_translation_boundary` 检查主动改值 fake、四种分隔符、eq 内样式、节点 ID、跨节点零调用、converter 与本地完整链路；`tests.test_translation_integrity_execution` 检查首次建批无调用/无伪证据的安全事件、旧根计划保持及新代隔离。原 Codec、翻译/完整性与批次失败语义回归继续有效。
+
+### 7. 错误与正确做法
+
+错误：renderer 才识别 `<eq>`，translator 仍把 High/Low 裸发 Provider；或把 entire cell 都当公式而跳过其它正文。
+
+正确：共享入口确定数学，明确数学子树保留，其它数学对照原 Codec 的实际整体保护范围；不能证明安全则调用前失败。数学原文、Prompt、任意异常链和位置 ID 不进入普通错误摘要。

@@ -365,10 +365,10 @@ tasks:
     suggested_branch: md2word/RND-502
     trellis_slug: rnd-502-formula-omml-fallback
     prompt_file: docs/implementation/codex-prompts/RND-502.md
-    status: todo
-    trellis_task_path: null
-    resolution: null
-    notes: null
+    status: review
+    trellis_task_path: .trellis/tasks/10-23-rnd-502-formula-omml-fallback
+    resolution: "按已批准v2实现完成，停人工review；最新独立复审1P1/2P2均修复并复验，311项定向、release202项/OpenAPI、组件1/1及direct矩阵5/5通过；外部/Word门待验。"
+    notes: "2026-10-23：BAS-001=done，HEAD归档completed且人工已接受，依赖门通过。以create --parent --no-start创建唯一子任务；完成真实调查、三件套v1、最小context和task validate（implement/check各6，无警告），停规划评审门。9项现有定向基线通过，合成反例证实编号/上标/空格/符号/混排及受控降级差距，非skipped_existing；详research/current-state.md及planning-validation.md。实际分支codex/pre-rnd501-local-wip，HEAD=c56e128；建议分支仅记录。不改业务、不start、不提交/push/archive，原暂存区和其他dirty保留，其他任务状态不变；初版v1未授权实施。随后按用户要求由全新architect独立只读审查，主会话独立复现1P1/1P2并修订三件套v2：翻译数学边界/主动篡改、预期输出绑定，补三恢复入口/诊断出口及回退下限；详planning-review.md。首轮修订后仍planning、未授权实施。随后第二位全新architect独立只读复审v2，确认上轮P1/P2在规划层闭合且无新增确认P1/P2/P3；主会话核实并保留三件套原字节，详planning-rereview.md。仍planning，v2待人工审核，不改业务/start/提交/push。 2026-10-23：用户已接受v2三件套及本轮独立复审结论，授权按v2实施；依赖BAS-001仍done、归档completed，基线c56e128与v2哈希无漂移。保存既有dirty快照并切换md2word/RND-502；只实施当前子任务，完成计划验证后停review，不提交/push/archive。 实施收口：共享公式入口、OMML/semantic/受控literal降级、翻译保护边界、逐式预期输出绑定与精确来源、三恢复入口及锁内质量摘要已完成。完整check自修及critical reviewer五项独立复验均闭合；最终306项/202项及样本门通过，Golden认证/API与Word/真实MySQL/S3未验。详当前子任务implementation-validation.md/implementation-review.md；停review、Trellis仍in_progress，不提交/push/archive，其他44任务及原dirty/暂存树保留。 本轮用户要求全新实际实现复审：architect返回角色不适配且未执行代码审查，改派全新critical_reviewer独立只读核验，1P1/2P2经主会话确认及checker修复后均独立复验闭合；最新311定向、202 release/OpenAPI、组件1/1、direct5/5通过。详post-implementation-review.md；仍review，无start/提交/push/archive。"
   - id: RND-503
     title: "图片并排和 Caption"
     phase: R5

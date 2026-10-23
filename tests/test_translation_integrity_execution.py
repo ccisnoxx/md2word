@@ -8,6 +8,7 @@ import json
 import tempfile
 import zipfile
 from contextlib import nullcontext
+from dataclasses import replace
 from pathlib import Path
 from unittest import TestCase
 from unittest.mock import patch
@@ -41,7 +42,7 @@ class TranslationIntegrityExecutionTests(TestCase):
         self.root = Path(self.temp.name)
         self.counter = 0
 
-    def make_case(self, *, defer_planning=False):
+    def make_case(self, *, defer_planning=False, source_blocks=None):
         self.counter += 1
         runtime = build_test_runtime(self.root / str(self.counter), jobs_artifact_storage_backend="local_object")
         execution = runtime.document_job_execution_service
@@ -58,7 +59,7 @@ class TranslationIntegrityExecutionTests(TestCase):
         ))
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
-            archive.writestr("content_list_v2.json", json.dumps([
+            archive.writestr("content_list_v2.json", json.dumps(source_blocks if source_blocks is not None else [
                 {"type": "text", "text": "Model OPA228 uses 10 V.", "page_idx": 0},
                 {"type": "text", "text": "Supply 5 V.", "page_idx": 0},
             ]))
@@ -190,6 +191,76 @@ class TranslationIntegrityExecutionTests(TestCase):
         self.assertEqual(current.source_document_ir_file_id, job.source_document_ir_file_id)
         self.assertEqual(len(self.files(runtime, "document_ir")), 1)
         apply.assert_not_called()
+
+    def test_first_formula_boundary_failure_preserves_source_without_provider_or_fake_integrity(self):
+        source = r"Before $\text{High <b>Low</b>}$ After"
+        runtime, execution, provider, job, _batch, _document, _raw = self.make_case(
+            defer_planning=True,
+            source_blocks=[{"type": "table", "table_body": f"<table><tr><td>{source}</td></tr></table>", "page_idx": 0}],
+        )
+        with patch.object(execution.document_ir_translation_service, "apply_replacements") as apply:
+            failed = execution.execute_job(job.id)
+        self.assertEqual((failed.status, failed.failed_stage, failed.error_code), ("failed", "translating", "translation_failed"))
+        failures = [event for event in runtime.document_job_event_repository.list_document_job_events(job.id) if event.event_type == "stage_failed"]
+        self.assertEqual(len(failures), 1)
+        self.assertEqual(failures[0].payload["formula_protection"], {
+            "code": "translation_formula_boundary_unprotected", "formula_count": 1, "unprotected_count": 1,
+        })
+        self.assertNotIn("integrity", failures[0].payload)
+        self.assertNotIn("High", json.dumps(failures[0].model_dump(mode="json")))
+        self.assertEqual(provider.requests, [])
+        self.assertEqual(runtime.document_job_translation_batch_repository.list_translation_batches(job.id), [])
+        for file_type in ("ai_call_log", "translation_batch_result", "generated_word"):
+            self.assertEqual(self.files(runtime, file_type), [])
+        self.assertEqual(failed.source_document_ir_file_id, job.source_document_ir_file_id)
+        self.assertEqual(len(self.files(runtime, "document_ir")), 1)
+        apply.assert_not_called()
+
+    def test_old_math_dom_root_plan_is_not_rewritten_or_silently_backfilled(self):
+        formula = r"\text{High Low}"
+        runtime, execution, provider, job, _batch, document, _raw = self.make_case(
+            defer_planning=True,
+            source_blocks=[{"type": "table", "table_body": f"<table><tr><td>Before<eq>{formula}</eq>After</td></tr></table>", "page_idx": 0}],
+        )
+        current_plan = execution._build_expected_translation_plans(job, document)[0]
+        legacy_plan = replace(
+            current_plan,
+            item_ids=("block_0001.html.0000", "block_0001.html.0001", "block_0001.html.0002"),
+            item_count=3,
+            char_count=current_plan.char_count + len(formula),
+        )
+        repository = runtime.document_job_translation_batch_repository
+        installed = repository.ensure_translation_batch_roots(job.id, generation=job.retry_count, expected_plans=[legacy_plan])
+        with patch.object(execution.document_ir_translation_service, "apply_replacements") as apply:
+            failed = execution.execute_job(job.id)
+        self.assertEqual((failed.status, failed.failed_stage, failed.error_code), ("failed", "translating", "translation_batch_tree_invalid"))
+        remaining = repository.list_translation_batches(job.id)
+        self.assertEqual([batch.id for batch in remaining], [batch.id for batch in installed])
+        self.assertEqual(remaining[0].item_ids, list(legacy_plan.item_ids))
+        self.assertEqual((remaining[0].item_count, remaining[0].char_count), (legacy_plan.item_count, legacy_plan.char_count))
+        self.assertEqual(provider.requests, [])
+        self.assertEqual(self.files(runtime, "translation_batch_result"), [])
+        self.assertEqual(self.files(runtime, "generated_word"), [])
+        self.assertEqual(failed.source_document_ir_file_id, job.source_document_ir_file_id)
+        apply.assert_not_called()
+
+    def test_worker_rejects_previously_installed_unprotected_math_before_provider(self):
+        # 模拟升级前已安装的合法旧计划；新消费者不能沿旧计划发送裸数学。
+        with patch.object(DocumentIRTranslationService, "_validate_formula_protection"):
+            runtime, execution, provider, job, batch, _document, _raw = self.make_case(
+                source_blocks=[{"type": "table", "table_body": r"<table><tr><td>Before \frac{High}{Low} After</td></tr></table>", "page_idx": 0}],
+            )
+        execution.execute_translation_batch(batch.id)
+        failed = runtime.document_job_repository.get_document_job(job.id)
+        self.assertEqual((failed.status, failed.failed_stage, failed.error_code), ("failed", "translating", "translation_failed"))
+        failures = [event for event in runtime.document_job_event_repository.list_document_job_events(job.id) if event.event_type == "stage_failed"]
+        self.assertEqual(len(failures), 1)
+        self.assertEqual(failures[0].payload["formula_protection"]["code"], "translation_formula_boundary_unprotected")
+        self.assertNotIn("integrity", failures[0].payload)
+        self.assertEqual(provider.requests, [])
+        for file_type in ("ai_call_log", "translation_batch_result", "generated_word"):
+            self.assertEqual(self.files(runtime, file_type), [])
+        self.assertEqual(failed.source_document_ir_file_id, job.source_document_ir_file_id)
 
     def test_audit_failure_is_visible_and_never_recorded_twice(self):
         _runtime, execution, _provider, _job, batch, _document, _raw = self.make_case()

@@ -36,6 +36,7 @@ class WordImageRendererMixin:
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         if not image_content:
             fallback_text = self._image_fallback_text(block)
+            self._set_image_formula_source(document, block, fallback_text)
             if not self._fill_caption_paragraph(
                 paragraph,
                 fallback_text,
@@ -58,6 +59,7 @@ class WordImageRendererMixin:
         except (InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError):
             paragraph.text = ""
             fallback_text = self._image_fallback_text(block)
+            self._set_image_formula_source(document, block, fallback_text)
             if not self._fill_caption_paragraph(
                 paragraph,
                 fallback_text,
@@ -76,6 +78,7 @@ class WordImageRendererMixin:
         if annotations:
             paragraph.paragraph_format.keep_with_next = True
         for index, caption in enumerate(annotations):
+            self._set_image_formula_source(document, block, caption)
             caption_paragraph = document.add_paragraph()
             if index < len(annotations) - 1:
                 caption_paragraph.paragraph_format.keep_with_next = True
@@ -146,11 +149,12 @@ class WordImageRendererMixin:
         self._configure_image_row_tabs(caption_paragraph, content_width)
         if keep_with_next:
             caption_paragraph.paragraph_format.keep_with_next = True
-        for captions in annotations:
+        for block, captions in zip((left, right), annotations, strict=True):
             caption_paragraph.add_run("\t")
             if not captions:
                 continue
             caption = captions[0]
+            self._set_image_formula_source(document, block, caption)
             if not self._fill_caption_paragraph(
                 caption_paragraph,
                 caption,
@@ -190,6 +194,15 @@ class WordImageRendererMixin:
     def _image_fallback_text(self, block: DocumentIRBlock) -> str:
         captions = self._image_annotation_texts(block)
         return captions[0] if captions else block.text or ""
+
+    def _set_image_formula_source(self, document: Any, block: DocumentIRBlock, text: str) -> None:
+        """图片题注组合去重后仍绑定首个原始字段，成对图片也逐块登记。"""
+        values = [(f"captions/{index}", value) for index, value in enumerate(block.captions)]
+        if isinstance(block.metadata.get("caption"), str):
+            values.append(("metadata/caption", block.metadata["caption"]))
+        values.extend((f"footnotes/{index}", value) for index, value in enumerate(block.footnotes))
+        field = next((field for field, value in values if value.strip() == text), "text")
+        self._set_formula_source(document, block.id, field)
 
     def _image_annotation_texts(self, block: DocumentIRBlock) -> list[str]:
         values: list[str] = []

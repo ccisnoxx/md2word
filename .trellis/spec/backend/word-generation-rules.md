@@ -40,7 +40,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 状态：`enforced-tested`
 - 输入信号：本地 MinerU 目录/ZIP，或线上任务已下载的 MinerU 结果 ZIP。
 - 正式 owner：`scripts/dev/formal_mineru_conversion.py::run_conversion`、`::convert_formal_mineru_package`；`app/domains/document_jobs/execution.py::DocumentJobExecutionService._convert_and_save_document_ir`、`._render_and_save_word`。
-- 预期输出：先由 `MinerUToDocumentIRService.convert_zip()` 生成并持久化 DocumentIR，再由 `DocumentIRWordRenderer.render_to_bytes()` 生成 DOCX 和 renderer evidence；所有正式修复都落在该链路的唯一 owner。
+- 预期输出：先由 `MinerUToDocumentIRService.convert_zip()` 生成并持久化 DocumentIR，再由 `DocumentIRWordRenderer.render_to_result()` 一次生成 DOCX 和公式报告，再构建 renderer evidence（旧 `render_to_bytes()` 保持 bytes 兼容）；所有正式修复都落在该链路的唯一 owner。
 - 冲突/例外：调试脚本可以包装正式 adapter，但不得切换到旧 runtime；`document-ir/v1` 的 renderer 顺序回退仍属于正式 renderer 内部兼容路径。
 - 禁止：直接用 `full.md` 生成正式 Word；在 CLI、任务 worker 或样本 runner 中复制转换/渲染规则；以旧 runtime 的输出替代正式结果。
 - 自动验证：`tests.test_conversion_sandbox_dev_tools.LocalMinerUConversionCliTests.test_main_calls_formal_conversion_adapter`、`.test_formal_adapter_converts_minimal_mineru_package_to_openable_docx`；`tests.test_fastapi_jobs_backend.FastAPIJobsBackendTests.test_document_job_worker_saves_mineru_raw_ir_and_image_assets`。
@@ -297,9 +297,9 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 - 状态：`enforced-tested`
 - 输入信号：v2 rich text、inline HTML 的 sub/sup/bold/italic、普通文字和术语配置。
-- 正式 owner：`app/services/renderer/text_renderer.py::_fill_paragraph`、`::_render_inline_html`、`::_prepare_text_for_rendering`；`app/services/renderer/semantic_text.py`。
-- 预期输出：支持的 inline 标记转为 Word run 语义；术语替换与公式文本归一化当前在所有共享文本入口应用，已知 TeX 模式才被改写，普通正文和未知路径字符保持可见。
-- 冲突/例外：原生 OMML 只在明确数学边界或整段可解析公式路径生成；普通正文仍会经过 `normalize_formula_text()`，因此新增归一化规则必须同时覆盖非数学负例。不支持的 inline markup 应保持可见文本。
+- 正式 owner：`app/services/renderer/text_renderer.py::_fill_paragraph`、`::_render_mixed_math`、`::_render_inline_children`、`::_prepare_text_for_rendering`；`app/services/renderer/semantic_text.py`。
+- 预期输出：支持的 inline 标记转为 Word run 语义；数学先分段，普通文本单独进行术语替换；数学与降级原式不经过术语替换或有损归一化，普通正文和未知路径字符保持可见。
+- 冲突/例外：原生 OMML 只在共享扫描识别的数学片段或显式 formula block 生成；普通正文不因包含分式而整体进入 OMML，新增识别规则必须覆盖非数学负例。不支持的 inline markup 应保持可见文本。
 - 禁止：为公式清理全局删除反斜杠/括号/空格；静默丢弃未知 inline node；在表格、正文和题注维护不同清理实现。
 - 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_inline_rich_text_markup`、`.test_render_to_bytes_applies_subscript_config_to_formal_renderer_outputs`。
 - 样本证据：无当前 committed 富文本真样本。
@@ -441,27 +441,27 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 ### MATH-002 支持子集通过共享入口生成 OMML
 
-- 状态：`implemented-gap`
-- 输入信号：公式 block、正文 inline math、表格 cell/notes 中的 TeX；支持分式、根式、上下标、常用符号、文本/样式 wrapper、overline、boxed 和 left/right 等当前解析子集。
-- 正式 owner：`app/services/renderer/text_renderer.py::_OmmlParser`、`WordTextRendererMixin._render_mixed_math`、`._fill_formula_paragraph`；`app/conversion/docx_rules/text_semantics.py::normalize_formula_text`、`::collapse_double_escaped_tex_commands`。
-- 预期输出：支持的数学结构写为原生 OMML；普通公式字符显式使用直立体，只有 `\\mathit` 等源公式明确要求时才使用斜体；正文、独立公式、表格 cell 和 note 共用同一归一化/解析路径；只折叠已知 TeX command 的双反斜杠，保留普通 UNC/路径文本。
-- 冲突/例外：不是完整 TeX 引擎；matrix/cases/align、自定义 macro 等未实现结构不得写成“全部公式已支持”。当前 `\\tag{...}` 会被识别但不生成可见公式编号，现有公式矩阵只证明命令残留被移除，不能证明编号保真。
-- 禁止：每遇到一个公式就在调用者加特例；全局删除反斜杠；仅在正文修复而遗漏表格/题注路径；声称支持任意 LaTeX。
-- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_writes_fraction_omml_in_formula_and_table_cells`、`.test_render_to_bytes_writes_extended_omml_in_all_shared_text_paths`、`.test_render_to_bytes_preprocesses_cm4112_formulas_without_tex_residue`、`.test_render_to_bytes_supports_datasheet_tex_matrix_in_all_math_entries`、`.test_render_to_bytes_normalizes_formula_text_in_table_cells_and_notes`、`.test_render_to_bytes_normalizes_manual_quality_record_formula_residue`。
-- 样本证据：CM4112/RS2G04 为 external evidence；自动测试使用提炼公式矩阵，不是 committed 真 MinerU 包。
-- 来源/取代：commit `674ce937`；取代按单个公式字符串兼容的修复方式。
+- 状态：`enforced-tested`（有限子集；当前执行证据见 RND-502 任务 validation）
+- 输入信号：显式 formula block、semantic formula、inline 分隔符及保守裸数学、HTML `<eq>` / sub/sup；不以任意反斜杠判断数学。
+- 正式 owner：`app/conversion/docx_rules/formula.py` 的共享扫描和有限 parser；`WordTextRendererMixin` 按原顺序写 run/OMML，表格及题注复用同一入口。
+- 预期输出：支持分式/根式/上下标/符号/样式/overline/boxed/left-right 子集；合法简单 tag 保留主体 OMML 与可见编号。裸脚本参数不吞运算符，显式 group 与命令产生的原子作为完整脚本基底保留（OMML box），text wrapper 保留空格，style wrapper 后接脚本不能重建成默认直立体，`\vee` 不得写成 V。闭合的纯数字数学分隔符和 MinerU numeric semantic formula 必须登记，未闭合金额继续作为普通正文。数学内容不经过普通术语替换，HTML 标签不进入公式字面内容。
+- 冲突/例外：不是完整 TeX 引擎；matrix/cases/align、自定义宏等安全降级，不新增 TeX/AI/图片服务。不能只用零残留证明数学语义正确。
+- 禁止：全局删反斜杠/dollar/空格；将含分式整段自然语言转为数学；公式编号静默丢失；建立第二套解析器。
+- 自动验证：`tests.test_formula_rendering`、现有 renderer 公式矩阵、`tests.test_formula_translation_boundary` 合成 MinerU→IR→fake translation→原生表格 DOCX。
+- 样本证据：committed 精确结构单测与合成链路；external 样本/Word 签字按任务记录分层，不冒用历史验收。
+- 来源/取代：RND-502 v2；取代 parser 位于 text_renderer 和 tag 静默丢弃的旧行为。
 
-### MATH-003 解析失败保持可见并留下质量信号
+### MATH-003 解析失败保持原式且降级可审计
 
 - 状态：`enforced-tested`
-- 输入信号：未知 command、括号不闭合或 `_OmmlParser` 无法完整解析的公式源。
-- 正式 owner：`app/services/renderer/text_renderer.py::_OmmlParser.parse`、`WordTextRendererMixin._render_mixed_math`；`app/services/renderer/docx_quality.py::_unique_latex_residue`、`::build_docx_quality_flags`。
-- 预期输出：不能安全生成 OMML 时保留原公式文本可见，并由 DOCX analyzer 报告 `latex_residue`/`latex_residue_detected`，而不是静默丢失。
-- 冲突/例外：如果输入在进入 renderer 前已错误降级成普通字符，残留扫描可能发现不了，见 QUALITY-004。
-- 禁止：解析失败返回空段落；捕获后伪装成功；为消除质量 flag 删除原文本。
-- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_malformed_fraction_remains_visible_and_is_reported_as_latex_residue`。
-- 样本证据：无 committed 失败公式 fixture。
-- 来源/取代：commit `674ce937` 的失败合同。
+- 输入信号：非空数学中的未知命令、畸形语法、不支持结构或不能证明安全的归一化。
+- 正式 owner：共享 `FormulaRenderResult` 与 renderer 单次 context；`docx_quality.py` / `evidence.py` 校验最终字节。
+- 预期输出：原位置 literal run 写 `【公式降级，需复核】` 加逐字原式，mode=`text_fallback`、warning=`formula_text_fallback`；reason 仅 `unsupported_command/invalid_syntax/unsupported_structure/unsafe_normalization`。原式不再按 HTML 解析或术语替换。合法 semantic sub/sup 内 b/i 和换行保留原生样式；未闭合/错配 HTML 为 invalid_syntax，嵌套脚本或 semantic 脚本包裹显式/裸 TeX 数学的未支持组合为 unsupported_structure，整式降级，不能丢掉外层脚本。
+- 冲突/例外：空源仍按输入完整性失败；缺内容、锚点或输出绑定损坏仍失败关闭。仅在报告、可见提示、原式与预期输出一致的受控区域允许原始 TeX；其他残留保持 `docx_latex_residue:*`。旧无报告 analyzer 仍保留原残留字段，不伪造通过。
+- 禁止：失败删公式/空段落；用 broad catch 把 XML/文件/程序错误变成降级；将 warning 塞进 fatal flags；为清残留放宽全局扫描。
+- 自动验证：`tests.test_formula_rendering` 的失败原因、精确保真和篡改测试；`tests.test_document_job_result_persistence` 的三入口恢复与质量投影。
+- 样本证据：合成失败公式与当前本地报告；真 Word 视觉签字另行记录。
+- 来源/取代：RND-502 v2；将原普通文本回退升级为有提示、逐式证据与预期输出绑定的受控文本降级。
 
 ## 6. 样式、页眉页脚与质量门禁
 
@@ -561,6 +561,8 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 样本证据：CM4112 当前 external 样本 expected/actual 为 53/53 drawings、8/8 tables、18/18 headings，`blocking_quality_flags=[]`；旧候选 15 drawings 的确定性丢失现会被阻断。
 - 来源/取代：当前正式代码/调用链审计发现。
 
+RND-502 补充：`formula_text_fallback` 是内容完整、可见、可审计的 warning，不是 fatal。新报告中的源/锚点/预期输出投影不一致属于确定性完整性失败，必须阻断新候选；receipt 后损坏按 uploading/oss_failed 保留选件，不重渲染掩盖。详细版本合同见下方 RND-502 场景。
+
 ## 7. 冲突优先级矩阵
 
 | 冲突 | 基础规则 | 优先规则/裁决 | 必须共同保护的回归 |
@@ -600,7 +602,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 | TEXT-001、TEXT-002、TEXT-003、TEXT-004 | converter caption owner、text renderer、shared semantics | converter/renderer layout、shared text characterization | OPA228 P1 最小包 | CM4112 当前 heading 18/18；图 33 单题注与 WPS GUI 关键页；OPA228 historical signoff | component runner 未断言 heading/list/unit focus；无 committed 富文本 caption 包 |
 | FIELD-001、FIELD-002 | text renderer、render context | renderer layout | OPA228 P2 PDF 未执行 | SC2167 external | 字段更新和视觉仅客户端可确认；SEQ 更新可能重排非 1 起始/跳号编号 |
 | FIELD-003、STYLE-002 | renderer header/footer | custom footer/template tests（部分） | 无 | SC2167 historical | 纯页码无 PAGE field；同 section source header 覆盖；adapter 开关未消费 |
-| MATH-001、MATH-002、MATH-003 | converter、shared semantics、OMML parser | converter/renderer formula matrix | 无 MinerU 公式 fixture | CM4112、RS2G04 external | 非完整 TeX；`\\tag` 不生成可见编号；无真实输入包；预 renderer 降级可能漏 flag |
+| MATH-001、MATH-002、MATH-003 | converter、共享 formula owner、单次 render context、analyzer/evidence | 精确公式结构/输出篡改/翻译边界/三恢复入口与并发测试 | 合成 MinerU→IR→fake translation→原生表格 DOCX；无专有 MinerU 公式包 | CM4112、RS2G04 external；当前本地证据见 RND-502 validation | 有限 TeX 子集，复杂结构受控降级；合法简单 tag 已保留编号；当前真 Word 视觉签字仍待验 |
 | STYLE-001、STYLE-003、STYLE-004 | formal adapter、renderer/template config/fonts | template schema、formal adapter、renderer layout | 模板 seed 与 OPA228 PDF | CM4112 当前四槽与 WPS 请求字体/缺失字体边界；Golden old-commit signoff | 目标系统未安装精确宋体/Cambria Math；OMML 字体独立 |
 | QUALITY-001、QUALITY-002 | analyzer/evidence、sample governance | Golden/component governance | 4 个 OPA228 PDF + 1 个最小 MinerU 包 | 历史/外部样本分层 | Analyzer 不测实际分页；Golden 当前不离线 deterministic；外部/历史层级未自动强制 |
 | QUALITY-003 | 尚无 | 无整文档视觉自动门禁 | 仅输入资产 | CM4112 当前 LibreOffice/WPS 有界记录 | 图 33 碎片稀疏页已消失；仍无 WPS GUI 全 20 页、自动栏平衡/清晰度门禁，LibreOffice 与 WPS 为 23/20 页 |
@@ -643,7 +645,59 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 双栏页的语义分页目标在栏重排前选取；目标位于右栏时，`pageBreakBefore` 可能出现在已渲染的左栏内容之后。
 - v2 无显式 page size 时会使用 A4，可能覆盖 DOCX 模板自身的非 A4 页面尺寸。
 - TOC 只保留一个原生字段并按合同抑制后续静态目录项，但尚无 Word/WPS 更新后目录内容的当前验证；SEQ 未使用 `\\r` 保留源编号，Word 更新字段后跳号/非 1 起始题注可能被重新编号；源 `page_number` block 仍只是普通页脚文本。
-- `\\tag{...}` 当前会被公式 parser 消费但不生成可见编号，且不会留下 LaTeX residue 质量信号。
+- RND-502 已支持简单 tag 可见编号；复杂或不完整 tag 必须整式受控降级，不能静默消费编号。
 - 可选翻译当前不处理 captions 和 footnotes，可能产生正文已翻译而题注/表注仍为原文的混合输出。
 - `build_docx_quality_flags()` 只记录结构风险；线上任务当前不会仅因这些 flags 自动失败。
 - 没有当前版本的整文档页数、空白页、实际落页、表格挤压、栏平衡和图片清晰度自动门禁；CM4112 最新 external 结果已证明局部测试不足。
+
+## RND-502：公式报告与结果绑定的可执行合同
+
+### 1. 范围与触发
+
+修改公式解析、混排、renderer/evidence 或新报告恢复时适用。该机制证明写入保真，parser 数学正确性仍由精确节点测试保护。
+
+### 2. 接口
+
+- `render_to_result(...) -> DocumentIRRenderResult(content, formula_report)`；旧 `render_to_bytes(...) -> bytes` 委托同一核心。
+- `build_renderer_evidence(ir, content, layout_plan=None, *, formula_report=None)`；未提供报告时保持旧 evidence 字段集合。
+- `validate_formula_report(report) -> dict`：校验版本化持久化报告并派生安全摘要，不执行文件 I/O。
+- `docx_rules.table_expansion.expanded_table_rows(HtmlTable)`：共用既有大表展开内容投影；`TableCellOccurrence` 保留原 `HtmlCell` 及源 row/column。阈值仍为 >400 行或 HTML >30000 字符；跨行重复、跨列尾格空白规则保持，renderer 与源公式库存共用该投影。
+
+### 3. 合同
+
+`formula-render/v1` 每次出现记录源位置/sha256、确定性 bookmark、mode/reason、`formula-output/v1` 与写 DOM 前确定的预期输出哈希。投影保留数学节点/顺序/语义属性、文本值、上下标和编号；忽略 prefix/bookmark ID/rsid/容器及非语义字体尺寸。最终 OOXML 从完整 bookmark 范围重建并比较。run 内所有可见/行为节点与全部 rPr（包括重复属性节点）均进入投影，只有明确的字体/字号和 rsid 等非语义属性排除；追加 noBreakHyphen/cr/sym/field 或 vanish/webHidden 等不能被忽略。报告不含原式全文或路径。
+
+metadata=`formula_report/formula_summary`；摘要含 schema、formula/OMML/semantic/fallback 次数、warning/reason counts、report hash。普通事件排除逐式报告和旧 `docx_quality.latex_residue_examples`。报告仍遵守既有 `/files/{id}` 内部 owner/admin 权限，没有新端点。
+
+单次 RenderContext.formula_location 从真实 block/field 调用点绑定来源，包含 list、cell、caption/note 和 image annotation；不能只按源 hash 或库存遍历次序猜位置。相同原式跨入口必须由实际 anchor 所在位置回查正确 source。
+
+超阈值表格每次实际显示均登记 occurrence；跨行重复保留同一源 cell 坐标并各有独立锚点，不把原式先压成纯文本，也不放宽重复计数对账。
+
+完成时在既有 job 锁内仅由匹配 generation/最终 IR/结果 ID 的选中 receipt 合并 `quality_summary.formula`，保留其它摘要；pending/blocked 不提升，passed 遇 fallback 降 warning。不扩展状态机/DDL。三恢复入口均对新报告读取实际字节及文件原始 IR 重验，I/O 在 job 锁外；历史明确指针跨代复用不导入旧报告到新代摘要。无新字段旧件维持原合同，新字段损坏不能降级 legacy。已发布件和审计不回写。
+
+空 m:t 在保存前后的空字符串/None 统一投影为 None；节点本身仍保留，不能因此忽略追加空 run、删除字符或结构变化。上下标参数的纯文本压缩不得重建带显式数学样式的节点而丢弃 i/b 等语义属性。有限解析尚不支持的 \left./\right. 不可见 delimiter 整式按 unsupported_structure 降级，不能把句点作为可见符号输出并报告成功。
+
+### 4. 校验与错误矩阵
+
+| 情形 | 行为 |
+|---|---|
+| 支持且完整消费 | OMML/semantic run，逐式登记 |
+| 非空不支持输入 | literal 原式+提示，formula_text_fallback warning |
+| 空源或输出丢失 | 既有输入/输出完整性失败 |
+| 新渲染报告/字节不符 | quality_checking/render_failed，不登记候选 |
+| 新报告恢复损坏 | uploading/oss_failed，保留 receipt/历史件 |
+| 非公式 LaTeX 残留 | 保持原 flag，不豁免普通正文 |
+
+### 5. 正常、历史与失败场景
+
+正常：重复原式按出现次数登记，同一 renderer 并发调用不共享 collector。历史：缺报告旧件按既有证据恢复，不自动补字段。失败：相同 anchor/source/mode/count 下改数字、移动脚本、截断原式或删除提示仍须拒绝。
+
+### 6. 必要测试
+
+`tests.test_formula_rendering`、`tests.test_document_ir_word_renderer_layout`、`tests.test_formula_translation_boundary`、`tests.test_document_job_result_persistence`、`tests.test_document_job_delivery_state`；分别断言精确结构、原生表格/正文顺序、最终输出篡改、三恢复入口、选中摘要及三 adapter 状态列往返。fake MySQL 不证明真实 InnoDB；OOXML 不代替 Word 视觉签字。
+
+### 7. 错误与正确做法
+
+错误：从最终 XML 生成“expected”哈希后再比较自身；仅按一个 OMML 对一个 formula block 计数；从迟到 renderer 的内存报告更新质量。
+
+正确：先由转换结果计算 expected，再写 DOM；最终 analyzer 独立读取锚点范围并核对源 inventory/投影；完成只消费当前选定不可变 receipt 的摘要。部署/回退先暂停或排空相关旧任务，只有理解新报告和旧计划边界的兼容执行器可继续在途工作，不删除历史字段/文件/审计。

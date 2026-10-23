@@ -10,15 +10,15 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Emu, Mm, Pt
+from docx.text.run import Run
 
+from app.conversion.docx_rules.table_expansion import expanded_table_rows, requires_table_expansion
 from app.conversion.runtime.table_html_parser import HtmlCell, HtmlTable, parse_html_table
 from app.services.document_ir.models import DocumentIRBlock
 from app.services.document_ir.table_annotations import is_table_context_annotation
 from app.services.renderer.template_config import TemplateConfigPackage, TemplateParagraphStyleConfig
 
 
-MAX_COMPLEX_TABLE_ROWS = 400
-MAX_COMPLEX_TABLE_HTML_LEN = 30000
 MIN_TABLE_COLUMN_WIDTH = Mm(16)
 WIDE_TABLE_COLUMN_COUNT = 6
 COMPACT_TABLE_FONT_SIZE = 8.0
@@ -40,8 +40,7 @@ class WordTableRendererMixin:
         reference_bookmarks: Any | None = None,
         page_break_before: bool = False,
     ) -> None:
-        table_html = self._prepare_table_html(block.html, template_config)
-        table_model = parse_html_table(table_html)
+        table_model = parse_html_table(block.html)
         self._render_table_captions(
             document,
             block,
@@ -50,6 +49,7 @@ class WordTableRendererMixin:
             page_break_before=page_break_before,
         )
         if table_model is None or not table_model.rows or table_model.max_columns <= 0:
+            self._set_formula_source(document, block.id, "text")
             paragraph = document.add_paragraph()
             self._fill_paragraph(
                 paragraph,
@@ -64,13 +64,14 @@ class WordTableRendererMixin:
         max_cols = table_model.max_columns
         usable_width = self._available_table_width(document)
         table_template_config = self._template_config_for_table_columns(template_config, max_cols)
-        if self._is_large_table(block, table_model):
+        if requires_table_expansion(table_model, block.html):
             self._render_expanded_table(
                 document,
                 table_model,
                 max_cols,
                 usable_width,
                 table_template_config,
+                block_id=block.id,
                 reference_bookmarks=reference_bookmarks,
             )
         else:
@@ -80,6 +81,7 @@ class WordTableRendererMixin:
                 max_cols,
                 usable_width,
                 table_template_config,
+                block_id=block.id,
                 reference_bookmarks=reference_bookmarks,
             )
         self._render_table_notes(document, block, template_config)
@@ -92,6 +94,7 @@ class WordTableRendererMixin:
         usable_width: int,
         template_config: TemplateConfigPackage,
         *,
+        block_id: str,
         reference_bookmarks: Any | None = None,
     ) -> None:
         """渲染常规 HTML table，保留 rowspan/colspan 合并结构。"""
@@ -101,7 +104,7 @@ class WordTableRendererMixin:
         occupied: dict[tuple[int, int], bool] = {}
         for row_index, row in enumerate(table_model.rows):
             col_index = 0
-            for cell_model in row:
+            for source_column, cell_model in enumerate(row):
                 while occupied.get((row_index, col_index)):
                     col_index += 1
                 if col_index >= max_cols:
@@ -114,6 +117,7 @@ class WordTableRendererMixin:
                 if end_row != row_index or end_col != col_index:
                     merged_cell = base_cell.merge(table.cell(end_row, end_col))
                 merged_cell.width = sum(column_widths[col_index : end_col + 1])
+                self._set_formula_source(document, block_id, f"html/{row_index}/{source_column}")
                 self._fill_table_cell(
                     merged_cell,
                     cell_model,
@@ -135,20 +139,23 @@ class WordTableRendererMixin:
         usable_width: int,
         template_config: TemplateConfigPackage,
         *,
+        block_id: str,
         reference_bookmarks: Any | None = None,
     ) -> None:
         """大表回退策略：展开跨行跨列，避免巨大复杂表合并导致渲染失败。"""
 
-        rows = self._expand_table_rows(table_model, max_cols)
+        rows = expanded_table_rows(table_model)
         table = self._add_configured_table(document, len(rows), max_cols, usable_width, template_config)
         column_widths = self._table_column_widths(max_cols, usable_width)
         for row_index, row in enumerate(rows):
             for col_index in range(max_cols):
-                text = row[col_index] if col_index < len(row) else ""
+                occurrence = row[col_index]
+                if occurrence is not None:
+                    self._set_formula_source(document, block_id, f"html/{occurrence.source_row}/{occurrence.source_column}")
                 table.cell(row_index, col_index).width = column_widths[col_index]
                 self._fill_table_cell(
                     table.cell(row_index, col_index),
-                    HtmlCell(text=text, html=text),
+                    occurrence.cell if occurrence is not None else HtmlCell(text=""),
                     row_index == 0,
                     template_config,
                     reference_bookmarks=reference_bookmarks,
@@ -231,39 +238,6 @@ class WordTableRendererMixin:
             self._set_cell_fill(cell, template_config.table_style.header_fill)
         cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
 
-    def _expand_table_rows(self, table_model: HtmlTable, max_cols: int) -> list[list[str]]:
-        row_spans: dict[int, tuple[int, str]] = {}
-        rows: list[list[str]] = []
-        for table_row in table_model.rows:
-            pending_cells = list(table_row)
-            row_values: list[str] = []
-            col_index = 0
-            while col_index < max_cols:
-                active_span = row_spans.get(col_index)
-                if active_span is not None and active_span[0] > 0:
-                    row_values.append(active_span[1])
-                    row_spans[col_index] = (active_span[0] - 1, active_span[1])
-                    col_index += 1
-                    continue
-                if active_span is not None:
-                    row_spans.pop(col_index, None)
-                if not pending_cells:
-                    row_values.append("")
-                    col_index += 1
-                    continue
-
-                cell_model = pending_cells.pop(0)
-                for offset in range(cell_model.colspan):
-                    row_values.append(cell_model.text if offset == 0 else "")
-                    if cell_model.rowspan > 1:
-                        row_spans[col_index + offset] = (
-                            cell_model.rowspan - 1,
-                            cell_model.text if offset == 0 else "",
-                        )
-                col_index += cell_model.colspan
-            rows.append(row_values[:max_cols])
-        return rows
-
     def _render_block_annotations(
         self,
         document: Any,
@@ -285,6 +259,8 @@ class WordTableRendererMixin:
         page_break_before: bool = False,
     ) -> None:
         for index, text in enumerate(self._unique_annotation_texts(block.captions)):
+            source_index = next(index for index, value in enumerate(block.captions) if value.strip() == text)
+            self._set_formula_source(document, block.id, f"captions/{source_index}")
             paragraph = document.add_paragraph()
             paragraph.paragraph_format.keep_with_next = True
             if page_break_before and index == 0:
@@ -314,6 +290,8 @@ class WordTableRendererMixin:
         template_config: TemplateConfigPackage,
     ) -> None:
         for text in self._unique_annotation_texts(block.footnotes):
+            source_index = next(index for index, value in enumerate(block.footnotes) if value.strip() == text)
+            self._set_formula_source(document, block.id, f"footnotes/{source_index}")
             paragraph = document.add_paragraph()
             self._fill_paragraph(
                 paragraph,
@@ -332,15 +310,6 @@ class WordTableRendererMixin:
                 seen.add(text)
         return texts
 
-    def _is_large_table(self, block: DocumentIRBlock, table_model: HtmlTable) -> bool:
-        return len(table_model.rows) > MAX_COMPLEX_TABLE_ROWS or len(block.html or "") > MAX_COMPLEX_TABLE_HTML_LEN
-
-    def _prepare_table_html(self, html: str | None, template_config: TemplateConfigPackage) -> str | None:
-        terminology = template_config.terminology
-        if terminology is None:
-            return html
-        return terminology.replace_html(html) or html
-
     def _apply_table_header_run_style(
         self,
         paragraph: Any,
@@ -349,8 +318,14 @@ class WordTableRendererMixin:
     ) -> None:
         if not is_header or not template_config.table_style.header_bold:
             return
-        for run in paragraph.runs:
-            run.bold = True
+        inside_formula = False
+        for child in paragraph._p:
+            if child.tag == qn("w:bookmarkStart") and (child.get(qn("w:name")) or "").startswith("md2w_formula_"):
+                inside_formula = True
+            elif child.tag == qn("w:bookmarkEnd") and inside_formula:
+                inside_formula = False
+            elif child.tag == qn("w:r") and not inside_formula:
+                Run(child, paragraph).bold = True
 
     def _table_cell_content(
         self,

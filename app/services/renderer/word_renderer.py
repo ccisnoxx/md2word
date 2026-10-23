@@ -5,7 +5,7 @@ from __future__ import annotations
 import io
 from collections import Counter
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +20,7 @@ from docx.shared import Cm, Mm, Twips
 from app.conversion.docx_rules.terminology import TerminologyReplacer
 from app.services.document_ir.models import DocumentIR, DocumentIRAsset, DocumentIRBlock
 from app.services.renderer.image_renderer import WordImageRendererMixin
+from app.services.renderer.evidence import formula_source_inventory
 from app.services.renderer.layout_plan import LayoutPage, LayoutRegion, build_layout_plan
 from app.services.renderer.semantic_text import parse_toc_entry_text
 from app.services.renderer.table_renderer import WordTableRendererMixin
@@ -40,6 +41,14 @@ class DocumentIRRenderOptions:
     document_language: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class DocumentIRRenderResult:
+    """同一次渲染生成的 DOCX 与私有公式报告。"""
+
+    content: bytes = field(repr=False)
+    formula_report: dict[str, Any]
+
+
 @dataclass(slots=True)
 class _RenderContext:
     """单次渲染的字段目标；不得存到可并发复用的 renderer 实例。"""
@@ -47,6 +56,10 @@ class _RenderContext:
     caption_bookmarks: dict[tuple[str, int], tuple[str, int]]
     allow_heading_inference: bool
     toc_written: bool = False
+    formula_sources: list[dict[str, Any]] = field(default_factory=list)
+    formula_entries: list[dict[str, Any]] = field(default_factory=list)
+    used_formula_sources: set[int] = field(default_factory=set)
+    formula_location: tuple[str, str] | None = None
 
 
 class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, WordImageRendererMixin):
@@ -63,6 +76,19 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
     ) -> bytes:
         """按模板 DOCX 与配置包生成 Word 二进制。"""
 
+        return self.render_to_result(document_ir, template_path=template_path, config_path=config_path, image_loader=image_loader, options=options).content
+
+    def render_to_result(
+        self,
+        document_ir: DocumentIR,
+        *,
+        template_path: Path | None,
+        config_path: Path | None,
+        image_loader: ImageContentLoader,
+        options: DocumentIRRenderOptions | None = None,
+    ) -> DocumentIRRenderResult:
+        """以单次文档上下文生成字节和公式报告，兼容入口共用此核心。"""
+
         template_config = self._load_template_config(document_ir, config_path, options)
         document = self._create_document(template_path)
         self._clear_body(document)
@@ -72,6 +98,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
 
         assets_by_id = {asset.id: asset for asset in document_ir.assets}
         render_context = self._build_render_context(document_ir)
+        document.part._md2word_formula_context = render_context
         layout_plan = build_layout_plan(document_ir)
         if layout_plan.mode == "legacy_v1_fallback":
             for block in layout_plan.pages[0].regions[0].blocks:
@@ -100,7 +127,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
 
         buffer = io.BytesIO()
         document.save(buffer)
-        return buffer.getvalue()
+        return DocumentIRRenderResult(buffer.getvalue(), {"schema_version": "formula-render/v1", "entries": render_context.formula_entries})
 
     def _apply_document_settings(self, document: Any) -> None:
         settings = document.settings.element
@@ -157,6 +184,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         return _RenderContext(
             caption_bookmarks=bookmarks,
             allow_heading_inference=document_ir.schema_version == "document-ir/v1",
+            formula_sources=formula_source_inventory(document_ir),
         )
 
     def _create_document(self, template_path: Path | None) -> Any:
@@ -334,6 +362,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
         page_width: float | None = None,
         page_break_before: bool = False,
     ) -> None:
+        render_context.formula_location = (block.id, "text")
         if block.type == "heading":
             paragraph = document.add_paragraph()
             self._fill_heading_paragraph(paragraph, block.text or "", block.level, template_config)
@@ -363,7 +392,8 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
             )
             return
         if block.type == "list":
-            for item in block.list_items or []:
+            for item_index, item in enumerate(block.list_items or []):
+                render_context.formula_location = (block.id, f"list_items/{item_index}")
                 if parse_toc_entry_text(item) is not None:
                     if render_context.toc_written:
                         continue
@@ -377,6 +407,7 @@ class DocumentIRWordRenderer(WordTextRendererMixin, WordTableRendererMixin, Word
                 )
             return
         if block.type == "formula":
+            render_context.formula_location = (block.id, "latex" if block.latex else "text")
             paragraph = document.add_paragraph()
             self._fill_formula_paragraph(paragraph, block.latex or block.text or "", template_config)
             return

@@ -27,6 +27,9 @@ from app.infrastructure.persistence import (
     build_sqlite_persistence_adapters,
 )
 from app.infrastructure.persistence.sqlite.backend import SqlitePersistenceBackend
+from app.services.document_ir.models import DocumentIR, DocumentIRBlock, DocumentIRMetadata
+from app.services.renderer.word_renderer import DocumentIRWordRenderer
+from app.services.renderer.evidence import build_renderer_evidence
 from tests.test_database_job_repository import _FakeMysqlDatabase, _mysql_config
 from tests.test_document_job_result_persistence import _candidate
 
@@ -94,6 +97,39 @@ class DocumentJobDeliveryStateTests(TestCase):
             row = database.document_jobs["job"]
             values = tuple(row[key] for key in ("quality_status", "review_status", "delivery_status", "quality_summary_json"))
         self.assertEqual(values, document_job_state_columns(record))
+
+    def test_formula_summary_uses_locked_winning_receipt_in_all_adapters(self):
+        ir = DocumentIR(
+            metadata=DocumentIRMetadata(job_id="job", source_file_id="source", document_language="en"),
+            blocks=[DocumentIRBlock(id="math", type="formula", order=0, latex=r"\unknown{VOUT}")],
+        )
+        rendered = DocumentIRWordRenderer().render_to_result(ir, template_path=None, config_path=None, image_loader=lambda _: None)
+        evidence = build_renderer_evidence(ir, rendered.content, formula_report=rendered.formula_report)
+        winner = _candidate().model_copy(update={"metadata": {**_candidate().metadata, **evidence}})
+        for kind in ("file", "sqlite", "mysql"):
+            for quality, expected in (("pending", "pending"), ("blocked", "blocked"), ("passed", "warning"), ("warning", "warning")):
+                with self.subTest(kind=kind, quality=quality), _repository(kind) as (repo, build, database):
+                    repo.create_document_job(_job(status="running", stage="uploading", document_ir_file_id="ir",
+                        quality_status=quality, quality_summary={"other": "retained"}))
+                    selected = repo.prepare_document_job_result("job", expected_retry_count=0,
+                        expected_document_ir_file_id="ir", candidate=winner)
+                    # 迟到候选不能替换已选描述或其摘要。
+                    late = _candidate("late")
+                    self.assertEqual(repo.prepare_document_job_result("job", expected_retry_count=0,
+                        expected_document_ir_file_id="ir", candidate=late).prepared_result, selected.prepared_result)
+                    completed = repo.update_document_job_if_current("job", allowed_statuses={"running"},
+                        allowed_stages={"uploading"}, expected_retry_count=0, expected_document_ir_file_id="ir",
+                        expected_prepared_result_file_id=winner.id, status="succeeded", stage="completed",
+                        result_file_id=winner.id, quality_status="passed")
+                    self.assertEqual(completed.quality_status, expected)
+                    self.assertEqual(completed.quality_summary, {"other": "retained", "formula": evidence["formula_summary"]})
+                    self.assertEqual(build().document_job_repository.get_document_job("job"), completed)
+                    self._assert_columns(repo, kind, database)
+                    repo.update_document_job("job", status="failed", stage="failed")
+                    retried = repo.retry_document_job("job", expected_retry_count=0, max_retries=2,
+                        retry_count=1, status="running", stage="rendering")
+                    self.assertEqual(retried.quality_summary, {})
+                    self.assertIsNone(retried.prepared_result)
 
     def test_legacy_model_defaults_do_not_promote_old_qa_and_round_trip_new_state(self):
         legacy = _job(status="succeeded", stage="completed", result_file_id="result",

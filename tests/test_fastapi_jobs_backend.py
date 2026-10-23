@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable
 from unittest import TestCase
 from unittest.mock import patch
+from xml.etree import ElementTree
 
 import yaml
 
@@ -9775,7 +9776,17 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertIn("<m:sSub>", document_xml)
         self.assertIn("<m:sSup>", document_xml)
         self.assertLess(document_xml.index(" SEQ Table "), table_index)
-        self.assertLess(table_index, document_xml.index("Note: E=mc"))
+        ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main", "m": "http://schemas.openxmlformats.org/officeDocument/2006/math"}
+        body = ElementTree.fromstring(document_xml).find("w:body", ns)
+        body_nodes = list(body)
+        table_position = next(index for index, node in enumerate(body_nodes) if node.tag == f"{{{ns['w']}}}tbl")
+        note_position, note = next((index, node) for index, node in enumerate(body_nodes)
+            if node.tag == f"{{{ns['w']}}}p" and "".join(child.text or "" for child in node.iter()
+                if child.tag in {f"{{{ns['w']}}}t", f"{{{ns['m']}}}t"}) == "Note: E=mc2")
+        self.assertLess(table_position, note_position)
+        script_run = next(run for run in note.findall("w:r", ns)
+            if run.find("w:rPr/w:vertAlign[@w:val='superscript']", ns) is not None)
+        self.assertEqual("".join(script_run.itertext()), "2")
         self.assertIn("<w:keepNext/>", document_xml[:table_index])
         self.assertNotIn("• Low noise", document_xml)
         self.assertNotIn(r"\sqrt", document_xml)

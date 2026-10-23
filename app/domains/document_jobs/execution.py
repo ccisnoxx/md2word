@@ -217,6 +217,7 @@ class DocumentJobExecutionService:
                 error_message=str(exc),
                 trace_id=trace_id,
                 integrity=exc.evidence if isinstance(exc, (DocumentIRTranslationError, TranslationIntegrityError)) else None,
+                formula_protection=exc.formula_protection if isinstance(exc, DocumentIRTranslationError) else None,
             )
         except Exception as exc:
             current = self.job_repository.get_document_job(job_id) or job
@@ -1557,6 +1558,7 @@ class DocumentJobExecutionService:
                 error_code="oss_failed" if _is_metadata_storage_error(exc) else "translation_failed",
                 error_message="翻译批次计划校验失败。",
                 trace_id=trace_id,
+                formula_protection=exc.formula_protection if isinstance(exc, DocumentIRTranslationError) else None,
             )
             return None
         if summary is not None and summary.outcome in {"failed", "completed", "canceled", "validating"}:
@@ -1609,6 +1611,7 @@ class DocumentJobExecutionService:
                 error_code="oss_failed" if _is_metadata_storage_error(exc) else "translation_failed",
                 error_message="翻译批次计划校验失败。",
                 trace_id=trace_id,
+                formula_protection=exc.formula_protection if isinstance(exc, DocumentIRTranslationError) else None,
             )
             return None
         now = utc_now()
@@ -1824,6 +1827,7 @@ class DocumentJobExecutionService:
                 error_code="oss_failed" if isinstance(exc, (FileNotFoundError, OSError)) else "translation_failed",
                 error_message="翻译批次计划重建失败。",
                 trace_id=trace_id,
+                formula_protection=exc.formula_protection if isinstance(exc, DocumentIRTranslationError) else None,
             )
             return self.translation_batch_repository.get_translation_batch(batch.id) or batch
         if self._should_split_translation_batch(batch, error):
@@ -2079,19 +2083,25 @@ class DocumentJobExecutionService:
                 error_code="translation_failed",
                 error_message=f"翻译批次计划校验失败: {self._translation_batch_error_code(exc)}",
                 trace_id=trace_id,
+                formula_protection=exc.formula_protection if isinstance(exc, DocumentIRTranslationError) else None,
             )
         if summary is None:
             error_code = "translation_batch_tree_invalid"
+            formula_protection = None
             batch_source_ids = {batch.source_document_ir_file_id for batch in batches}
             if batches and job.source_document_ir_file_id not in batch_source_ids:
                 # 当前任务指针与本代批次绑定不一致，属于完整性/代次错误，不是对象存储缺失。
                 error_code = "translation_failed"
             else:
                 try:
-                    self._read_translation_source(job, job.source_document_ir_file_id)
+                    _source_file, source_ir = self._read_translation_source(job, job.source_document_ir_file_id)
+                    self._build_expected_translation_plans(job, source_ir)
                 except (FileNotFoundError, OSError, sqlite3.Error):
                     error_code = "oss_failed"
-                except (DocumentIRTranslationError, TranslationIntegrityError, ValueError):
+                except DocumentIRTranslationError as exc:
+                    error_code = "translation_failed"
+                    formula_protection = exc.formula_protection
+                except (TranslationIntegrityError, ValueError):
                     error_code = "translation_failed"
             return self._mark_failed(
                 job,
@@ -2099,6 +2109,7 @@ class DocumentJobExecutionService:
                 error_code=error_code,
                 error_message="翻译批次无法由当前 source/config 重建权威计划。",
                 trace_id=trace_id,
+                formula_protection=formula_protection,
             )
         leaf_batches = [batch for batch in batches if batch.status != "split"]
         if summary.outcome == "failed":
@@ -2212,6 +2223,7 @@ class DocumentJobExecutionService:
                 error_code="translation_failed",
                 error_message=f"翻译 source 校验失败: {self._translation_batch_error_code(exc)}",
                 trace_id=trace_id,
+                formula_protection=exc.formula_protection if isinstance(exc, DocumentIRTranslationError) else None,
                 duration_ms=int((time.perf_counter() - started_at) * 1000),
             )
         except (FileNotFoundError, OSError) as exc:
@@ -2239,6 +2251,7 @@ class DocumentJobExecutionService:
                 error_code=error_code,
                 error_message=f"翻译批次合并校验失败: {self._translation_batch_error_code(exc)}",
                 trace_id=trace_id,
+                formula_protection=exc.formula_protection if isinstance(exc, DocumentIRTranslationError) else None,
                 duration_ms=int((time.perf_counter() - started_at) * 1000),
             )
         expected_ids = [item.id for item in items]
@@ -3115,7 +3128,7 @@ class DocumentJobExecutionService:
                 rendering.template_version_id,
                 allow_draft=draft_was_authorized_at_creation,
             )
-            word_content = self.word_renderer.render_to_bytes(
+            render_result = self.word_renderer.render_to_result(
                 document_ir,
                 template_path=template_selection.template_path,
                 config_path=template_selection.layout_config_path,
@@ -3125,6 +3138,7 @@ class DocumentJobExecutionService:
                     document_language=document_ir.metadata.document_language,
                 ),
             )
+            word_content = render_result.content
             checking = self.job_repository.update_document_job_if_current(
                 rendering.id,
                 allowed_statuses={"running"},
@@ -3159,7 +3173,9 @@ class DocumentJobExecutionService:
             )
             quality_started_at = time.perf_counter()
             try:
-                renderer_metadata = build_renderer_evidence(document_ir, word_content, layout_plan)
+                renderer_metadata = build_renderer_evidence(
+                    document_ir, word_content, layout_plan, formula_report=render_result.formula_report,
+                )
                 ensure_renderer_integrity(renderer_metadata)
             except Exception as exc:
                 failed = self._mark_failed(
@@ -3181,7 +3197,8 @@ class DocumentJobExecutionService:
             attempt = uploading
             self._record_event(
                 uploading, event_type="stage_succeeded", stage="quality_checking",
-                message="Word 文档质量检查已通过。", payload={"document_ir_file_id": ir_file.id, **renderer_metadata},
+                message="Word 文档质量检查已通过。",
+                payload={"document_ir_file_id": ir_file.id, **self._safe_renderer_event_metadata(renderer_metadata)},
                 trace_id=trace_id, duration_ms=int((time.perf_counter() - quality_started_at) * 1000),
             )
             self._record_event(
@@ -3254,6 +3271,8 @@ class DocumentJobExecutionService:
             return timed_out
         try:
             word_file = self.file_repository.materialize_prepared_result(receipt.file)
+            # 已选凭据恢复同样核对新公式报告；对象读取和质量重建均在 job 锁外。
+            self._validate_formula_result_file(word_file)
             completed = self.job_repository.update_document_job_if_current(
                 job.id, allowed_statuses={"running"}, allowed_stages={"uploading"},
                 expected_retry_count=receipt.generation, expected_document_ir_file_id=receipt.document_ir_file_id,
@@ -3269,11 +3288,48 @@ class DocumentJobExecutionService:
             return self._mark_timed_out_if_needed(current, trace_id=trace_id) or current
         self._record_event(completed, event_type="file_registered", stage="uploading", message="生成 Word 已保存。",
                            payload={"file_id": word_file.id, "file_type": word_file.file_type,
-                                    "object_key": word_file.object_key, **word_file.metadata}, trace_id=trace_id)
+                                    "object_key": word_file.object_key,
+                                    **self._safe_renderer_event_metadata(word_file.metadata)}, trace_id=trace_id)
         self._record_event(completed, event_type="stage_succeeded", stage="completed", message="文档任务已完成。",
                            payload={"result_file_id": word_file.id, "template_version_id": completed.template_version_id},
                            trace_id=trace_id)
         return completed
+
+    @staticmethod
+    def _safe_renderer_event_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+        """逐公式证据仅随内部文件保存，普通事件保留汇总和既有非公式字段。"""
+
+        safe = {key: value for key, value in metadata.items() if key != "formula_report"}
+        quality = safe.get("docx_quality")
+        if isinstance(quality, dict):
+            safe["docx_quality"] = {
+                key: value for key, value in quality.items() if key != "latex_residue_examples"
+            }
+        return safe
+
+    def _validate_formula_result_file(self, record: DocumentFileRecord) -> None:
+        """新报告绑定文件原始 IR，不能用当前代 IR 重新解释历史主件。"""
+
+        if "formula_report" not in record.metadata and "formula_summary" not in record.metadata:
+            return
+        report = record.metadata.get("formula_report")
+        if not isinstance(report, dict):
+            raise ValueError("主 DOCX 的公式报告缺失或无效。")
+        ir_id = record.metadata.get("document_ir_file_id")
+        if not isinstance(ir_id, str) or not ir_id:
+            raise ValueError("主 DOCX 的公式报告缺少原始 IR 绑定。")
+        ir_file = self._get_uploaded_file(ir_id)
+        if ((ir_file.tenant_id, ir_file.company_id, ir_file.job_id)
+                != (record.tenant_id, record.company_id, record.job_id) or ir_file.file_type != "document_ir"):
+            raise ValueError("主 DOCX 的原始 IR 与文件归属不一致。")
+        content = self.file_service.read_file_content(record)
+        if record.size_bytes != len(content) or record.checksum_sha256 != f"sha256:{hashlib.sha256(content).hexdigest()}":
+            raise ValueError("主 DOCX 字节与 SHA-256 描述不一致。")
+        ir = DocumentIR.model_validate_json(self.file_service.read_file_content(ir_file))
+        evidence = build_renderer_evidence(ir, content, formula_report=report)
+        ensure_renderer_integrity(evidence)
+        if any(record.metadata.get(key) != value for key, value in evidence.items()):
+            raise ValueError("主 DOCX 的公式报告或质量证据与实际字节不一致。")
 
     def _document_ir_layout_metadata(self, document_ir: DocumentIR) -> dict[str, Any]:
         """生成 DocumentIR artifact 与事件共用的布局诊断摘要。"""
@@ -3363,6 +3419,7 @@ class DocumentJobExecutionService:
                     or record.file_type != "generated_word"
                     or (record.expires_at is not None and record.expires_at <= utc_now())):
                 raise ValueError("任务指定的结果文件不属于该任务的可用主 DOCX。")
+            self._validate_formula_result_file(record)
             return record
         candidates = [
             file for file in self.file_repository.list_document_files()
@@ -3380,6 +3437,9 @@ class DocumentJobExecutionService:
         record = candidates[0]
         if record.expires_at is None or record.expires_at <= utc_now():
             raise ValueError("历史主件已过期或缺少保留期。")
+        if "formula_report" in record.metadata or "formula_summary" in record.metadata:
+            self._validate_formula_result_file(record)
+            return record
         content = self.file_service.read_file_content(record)
         if record.size_bytes != len(content) or record.checksum_sha256 != f"sha256:{hashlib.sha256(content).hexdigest()}":
             raise ValueError("历史主件字节与 SHA-256 描述不一致。")
@@ -3506,6 +3566,7 @@ class DocumentJobExecutionService:
         return self._mark_failed(
             job, failed_stage=failed_stage, error_code=error_code,
             error_message=error_message, trace_id=trace_id,
+            formula_protection=error.formula_protection if isinstance(error, DocumentIRTranslationError) else None,
         )
 
     def _mark_failed(
@@ -3517,6 +3578,7 @@ class DocumentJobExecutionService:
         error_message: str,
         trace_id: str | None,
         integrity: TranslationIntegrityEvidence | None = None,
+        formula_protection: dict[str, str | int] | None = None,
         duration_ms: int | None = None,
         expected_prepared_result_file_id: str | None = None,
         allow_prepared_result: bool = False,
@@ -3549,6 +3611,8 @@ class DocumentJobExecutionService:
         }
         if integrity is not None:
             payload["integrity"] = integrity.to_dict()
+        if formula_protection is not None:
+            payload["formula_protection"] = formula_protection
         self._record_event(
             failed,
             event_type="stage_failed",
