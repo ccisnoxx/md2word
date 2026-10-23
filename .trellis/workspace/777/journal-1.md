@@ -1073,3 +1073,42 @@ RND-502 v2实现、独立复审修复和验证证据已人工接受，列明未�
 ### Next Steps
 
 - 真实Word视觉、线上Golden、真实InnoDB/S3/部署文件系统仍未验证；上线/回退继续遵守兼容执行器和排空在途约束。不push、不自动开始后续任务。
+
+
+## Session 34: RND-503 人工验收、两次工作提交与归档
+
+**Date**: 2026-10-23
+**Task**: RND-503 人工验收、两次工作提交与归档
+**Branch**: `md2word/RND-503`
+
+### Summary
+
+用户人工验收并接受实现、全新critical复审修复、验证证据及列明残余风险/未验边界后，授权两次任务限定工作提交、manifest done及当前子任务归档。保留原302暂存删除及无关dirty，不push，不启动后续任务。
+
+### Main Changes
+
+- 已接受IR-204最小依赖与RND-503最终图片组/Caption实现分别提交，逐笔使用独立Git index，未带入其他任务或原暂存删除。
+- manifest仅RND-503改为done/implemented，子任务completed并归档至.trellis/tasks/archive/2026-10/10-23-rnd-503-image-group-caption-rendering；批准v2三件套字节保持。
+- 原CON-102未提交journal会话保留工作树；本会话仅提交自身新增记录及index增量，归档和journal分别为Trellis bookkeeping提交。
+- Golden缺认证/API、Microsoft Word、部署预览、真实MySQL/S3/MinIO及生产跨主机回退未验；人工接受边界不等于验证通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e1f5079b695047d95912a541fc00d40e505dfc60` | (see git log) |
+| `67bc26db2586c264ca038f6f24e2d37714982c71` | (see git log) |
+
+### Testing
+
+- [OK] 本次新增：第一笔依赖候选独立树执行8个定向模块，174 tests/OK；两笔提交范围及来源由独立trellis-check只读核对通过。
+- [OK] 复用已接受最终证据：核心311、release203、component1/1、direct5/5、实际B1七selectors/55subTests及17+2产物互读；另13项隔离characterization、六份LO八页实看。
+- [OK] 归档后task.py validate：implement/check各11条通过，无警告；逐笔cached diff --check及原302暂存binary patch相等核验通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 本任务已获人工接受并完成；不启动后续任务，不push。
