@@ -1,0 +1,154 @@
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+Release check report
+ok: True
+
+[openapi] ok: True
+OpenAPI snapshot is current
+OpenAPI check report
+output_path: /Users/sc/.codex/worktrees/rnd504-current-integration/md2word/docs/api/openapi.json
+ok: True
+changed: False
+path_count: 164
+schema_count: 324
+
+[frontend-contract] ok: True
+Frontend API contracts match core OpenAPI fields
+
+[frontend-smoke-mock] ok: True
+Frontend smoke mock covers core contract scenarios
+
+[targeted-unittest] ok: True
+Targeted unittest passed: 36 target(s)
+/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+....[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+.[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+..[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+..[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+.[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+.[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+.[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+..[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+......[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+......{"time": "2026-10-23 20:52:00,510", "logger": "business", "level": "WARNING", "message": "[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]"}
+{"time": "2026-10-23 20:52:00,512", "logger": "access", "level": "INFO", "message": "[trace_id=6a23507b57284282837ef169bfb513d6 method=POST path=/api/v1/auth/login status_code=200 duration_ms=1.2]"}
+{"time": "2026-10-23 20:52:00,512", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/auth/login \"HTTP/1.1 200 OK\""}
+{"time": "2026-10-23 20:52:00,513", "logger": "access", "level": "INFO", "message": "[trace_id=97bb1a15db1647d392a724e81fa9cde5 method=POST path=/api/v1/auth/login status_code=200 duration_ms=0.7]"}
+{"time": "2026-10-23 20:52:00,513", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/auth/login \"HTTP/1.1 200 OK\""}
+{"time": "2026-10-23 20:52:00,514", "logger": "access", "level": "INFO", "message": "[trace_id=2cb27bacf19b4ab7ba3fd128c94cfcad method=GET path=/api/v1/users status_code=403 duration_ms=0.7]"}
+{"time": "2026-10-23 20:52:00,514", "logger": "httpx", "level": "INFO", "message": "HTTP Request: GET http://testserver/api/v1/users \"HTTP/1.1 403 Forbidden\""}
+{"time": "2026-10-23 20:52:00,515", "logger": "access", "level": "INFO", "message": "[trace_id=0f4385e4500f4466b3db5ec2d155e29e method=PATCH path=/api/v1/users/user_admin status_code=409 duration_ms=1.5]"}
+{"time": "2026-10-23 20:52:00,516", "logger": "httpx", "level": "INFO", "message": "HTTP Request: PATCH http://testserver/api/v1/users/user_admin \"HTTP/1.1 409 Conflict\""}
+{"time": "2026-10-23 20:52:00,537", "logger": "access", "level": "INFO", "message": "[trace_id=bb84b1a07d0a47d98015861df6b44fe5 method=POST path=/api/v1/users status_code=201 duration_ms=20.9]"}
+{"time": "2026-10-23 20:52:00,537", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/users \"HTTP/1.1 201 Created\""}
+{"time": "2026-10-23 20:52:00,558", "logger": "access", "level": "INFO", "message": "[trace_id=86e814085aa4401b83e99ea679f10226 method=POST path=/api/v1/users status_code=201 duration_ms=20.8]"}
+{"time": "2026-10-23 20:52:00,558", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/users \"HTTP/1.1 201 Created\""}
+{"time": "2026-10-23 20:52:00,560", "logger": "access", "level": "INFO", "message": "[trace_id=a1817e54a0594dcea594885fcede0068 method=POST path=/api/v1/users status_code=409 duration_ms=1.1]"}
+{"time": "2026-10-23 20:52:00,560", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/users \"HTTP/1.1 409 Conflict\""}
+{"time": "2026-10-23 20:52:00,561", "logger": "access", "level": "INFO", "message": "[trace_id=0f51fffb8922439192487416a3174f1a method=GET path=/api/v1/users status_code=200 duration_ms=0.8]"}
+{"time": "2026-10-23 20:52:00,561", "logger": "httpx", "level": "INFO", "message": "HTTP Request: GET http://testserver/api/v1/users?keyword=managed \"HTTP/1.1 200 OK\""}
+{"time": "2026-10-23 20:52:00,581", "logger": "access", "level": "INFO", "message": "[trace_id=874383781aae40df978b1719dff3e65b method=POST path=/api/v1/auth/login status_code=200 duration_ms=20.0]"}
+{"time": "2026-10-23 20:52:00,582", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/auth/login \"HTTP/1.1 200 OK\""}
+{"time": "2026-10-23 20:52:00,603", "logger": "access", "level": "INFO", "message": "[trace_id=f850b8f11bd24ad49f442372f33bad43 method=POST path=/api/v1/users/user_a547519d7fdd/reset-password status_code=200 duration_ms=21.1]"}
+{"time": "2026-10-23 20:52:00,603", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/users/user_a547519d7fdd/reset-password \"HTTP/1.1 200 OK\""}
+{"time": "2026-10-23 20:52:00,604", "logger": "access", "level": "INFO", "message": "[trace_id=ea1c38c7f285466089fb63d35aeb3a85 method=GET path=/api/v1/auth/me status_code=401 duration_ms=0.5]"}
+{"time": "2026-10-23 20:52:00,604", "logger": "httpx", "level": "INFO", "message": "HTTP Request: GET http://testserver/api/v1/auth/me \"HTTP/1.1 401 Unauthorized\""}
+{"time": "2026-10-23 20:52:00,624", "logger": "access", "level": "INFO", "message": "[trace_id=6b47ab6303394bf0848de1862de61b52 method=POST path=/api/v1/auth/login status_code=401 duration_ms=19.4]"}
+{"time": "2026-10-23 20:52:00,624", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/auth/login \"HTTP/1.1 401 Unauthorized\""}
+{"time": "2026-10-23 20:52:00,644", "logger": "access", "level": "INFO", "message": "[trace_id=3a7de6d8bcc84503885ffc343e795159 method=POST path=/api/v1/auth/login status_code=200 duration_ms=20.0]"}
+{"time": "2026-10-23 20:52:00,644", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/auth/login \"HTTP/1.1 200 OK\""}
+{"time": "2026-10-23 20:52:00,702", "logger": "access", "level": "INFO", "message": "[trace_id=f7d850dc93e54999b643c5bcbe9e89f8 method=POST path=/api/v1/auth/change-password status_code=200 duration_ms=57.9]"}
+{"time": "2026-10-23 20:52:00,703", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/auth/change-password \"HTTP/1.1 200 OK\""}
+{"time": "2026-10-23 20:52:00,703", "logger": "access", "level": "INFO", "message": "[trace_id=810eca880b1c4e07828fd0913e7dd451 method=GET path=/api/v1/auth/me status_code=401 duration_ms=0.4]"}
+{"time": "2026-10-23 20:52:00,703", "logger": "httpx", "level": "INFO", "message": "HTTP Request: GET http://testserver/api/v1/auth/me \"HTTP/1.1 401 Unauthorized\""}
+{"time": "2026-10-23 20:52:00,723", "logger": "access", "level": "INFO", "message": "[trace_id=a14f6941b15348db8bc87bef694aa65c method=POST path=/api/v1/auth/login status_code=200 duration_ms=19.8]"}
+{"time": "2026-10-23 20:52:00,723", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/auth/login \"HTTP/1.1 200 OK\""}
+{"time": "2026-10-23 20:52:00,725", "logger": "access", "level": "INFO", "message": "[trace_id=09de1e7ef78548899935bd01ee5b77d9 method=PATCH path=/api/v1/users/user_a547519d7fdd status_code=200 duration_ms=1.7]"}
+{"time": "2026-10-23 20:52:00,726", "logger": "httpx", "level": "INFO", "message": "HTTP Request: PATCH http://testserver/api/v1/users/user_a547519d7fdd \"HTTP/1.1 200 OK\""}
+{"time": "2026-10-23 20:52:00,726", "logger": "access", "level": "INFO", "message": "[trace_id=fecfd99d2b0f4a1cb49d969662a8ce88 method=GET path=/api/v1/auth/me status_code=401 duration_ms=0.5]"}
+{"time": "2026-10-23 20:52:00,727", "logger": "httpx", "level": "INFO", "message": "HTTP Request: GET http://testserver/api/v1/auth/me \"HTTP/1.1 401 Unauthorized\""}
+{"time": "2026-10-23 20:52:00,728", "logger": "access", "level": "INFO", "message": "[trace_id=aded6186fb44465392eec4ecd1e510fc method=POST path=/api/v1/auth/login status_code=401 duration_ms=0.7]"}
+{"time": "2026-10-23 20:52:00,728", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/auth/login \"HTTP/1.1 401 Unauthorized\""}
+{"time": "2026-10-23 20:52:00,729", "logger": "access", "level": "INFO", "message": "[trace_id=758561f12d534f0cb9cb82dc5198ae66 method=PATCH path=/api/v1/users/user_a547519d7fdd status_code=200 duration_ms=1.2]"}
+{"time": "2026-10-23 20:52:00,729", "logger": "httpx", "level": "INFO", "message": "HTTP Request: PATCH http://testserver/api/v1/users/user_a547519d7fdd \"HTTP/1.1 200 OK\""}
+..{"time": "2026-10-23 20:52:00,831", "logger": "business", "level": "WARNING", "message": "[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]"}
+{"time": "2026-10-23 20:52:00,833", "logger": "access", "level": "INFO", "message": "[trace_id=d2d5a90b378b45038d0104cccafa610a method=POST path=/api/v1/auth/login status_code=200 duration_ms=1.3]"}
+{"time": "2026-10-23 20:52:00,833", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/auth/login \"HTTP/1.1 200 OK\""}
+{"time": "2026-10-23 20:52:00,835", "logger": "access", "level": "INFO", "message": "[trace_id=b0d3ecf954104bb5adbdf09da0011626 method=POST path=/api/v1/auth/login status_code=200 duration_ms=1.1]"}
+{"time": "2026-10-23 20:52:00,835", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/auth/login \"HTTP/1.1 200 OK\""}
+{"time": "2026-10-23 20:52:00,836", "logger": "access", "level": "INFO", "message": "[trace_id=0d1138c13fa5499f917964448a708f4d method=GET path=/api/v1/acceptance/runs status_code=401 duration_ms=0.6]"}
+{"time": "2026-10-23 20:52:00,836", "logger": "httpx", "level": "INFO", "message": "HTTP Request: GET http://testserver/api/v1/acceptance/runs \"HTTP/1.1 401 Unauthorized\""}
+{"time": "2026-10-23 20:52:00,837", "logger": "access", "level": "INFO", "message": "[trace_id=05f4598463d84d19ab53b06e5dc965b0 method=GET path=/api/v1/acceptance/runs status_code=403 duration_ms=0.4]"}
+{"time": "2026-10-23 20:52:00,837", "logger": "httpx", "level": "INFO", "message": "HTTP Request: GET http://testserver/api/v1/acceptance/runs \"HTTP/1.1 403 Forbidden\""}
+{"time": "2026-10-23 20:52:00,838", "logger": "access", "level": "INFO", "message": "[trace_id=55f16abeed1b4b64846e10bfb9244318 method=GET path=/api/v1/acceptance/runs status_code=200 duration_ms=0.6]"}
+{"time": "2026-10-23 20:52:00,838", "logger": "httpx", "level": "INFO", "message": "HTTP Request: GET http://testserver/api/v1/acceptance/runs \"HTTP/1.1 200 OK\""}
+{"time": "2026-10-23 20:52:00,839", "logger": "access", "level": "INFO", "message": "[trace_id=d6fa3599ba8e4731bf4493052d85a059 method=GET path=/api/v1/acceptance/runs/latest-summary status_code=200 duration_ms=1.2]"}
+{"time": "2026-10-23 20:52:00,839", "logger": "httpx", "level": "INFO", "message": "HTTP Request: GET http://testserver/api/v1/acceptance/runs/latest-summary \"HTTP/1.1 200 OK\""}
+{"time": "2026-10-23 20:52:00,840", "logger": "access", "level": "INFO", "message": "[trace_id=ae31a9a08b044ea597375d0c07f0623b method=GET path=/api/v1/acceptance/runs status_code=200 duration_ms=1.0]"}
+{"time": "2026-10-23 20:52:00,841", "logger": "httpx", "level": "INFO", "message": "HTTP Request: GET http://testserver/api/v1/acceptance/runs?status=unknown \"HTTP/1.1 200 OK\""}
+{"time": "2026-10-23 20:52:00,842", "logger": "access", "level": "INFO", "message": "[trace_id=ff51f55160f44af4a1ee14e2d8b2b7a6 method=GET path=/api/v1/acceptance/runs/acceptance_p0_unknown status_code=200 duration_ms=0.8]"}
+{"time": "2026-10-23 20:52:00,842", "logger": "httpx", "level": "INFO", "message": "HTTP Request: GET http://testserver/api/v1/acceptance/runs/acceptance_p0_unknown \"HTTP/1.1 200 OK\""}
+{"time": "2026-10-23 20:52:00,843", "logger": "access", "level": "INFO", "message": "[trace_id=0f0d457991c34e218008087ea54dfc1a method=GET path=/api/v1/acceptance/runs/missing_run status_code=404 duration_ms=0.6]"}
+{"time": "2026-10-23 20:52:00,843", "logger": "httpx", "level": "INFO", "message": "HTTP Request: GET http://testserver/api/v1/acceptance/runs/missing_run \"HTTP/1.1 404 Not Found\""}
+{"time": "2026-10-23 20:52:00,845", "logger": "access", "level": "INFO", "message": "[trace_id=be1ec4e969574bff8a350a1f011718c1 method=POST path=/api/v1/acceptance/runs/acceptance_p0_unknown/review status_code=200 duration_ms=1.4]"}
+{"time": "2026-10-23 20:52:00,845", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/acceptance/runs/acceptance_p0_unknown/review \"HTTP/1.1 200 OK\""}
+{"time": "2026-10-23 20:52:00,845", "logger": "access", "level": "INFO", "message": "[trace_id=0205e4e6fcc0450398f0559a3c500049 method=POST path=/api/v1/acceptance/runs/missing_run/review status_code=404 duration_ms=0.6]"}
+{"time": "2026-10-23 20:52:00,846", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/acceptance/runs/missing_run/review \"HTTP/1.1 404 Not Found\""}
+.{"time": "2026-10-23 20:52:00,997", "logger": "business", "level": "WARNING", "message": "[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]"}
+{"time": "2026-10-23 20:52:00,999", "logger": "access", "level": "INFO", "message": "[trace_id=077f246534de409aadc4f2dc3571b026 method=POST path=/api/v1/auth/login status_code=200 duration_ms=1.3]"}
+{"time": "2026-10-23 20:52:00,999", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/auth/login \"HTTP/1.1 200 OK\""}
+{"time": "2026-10-23 20:52:01,001", "logger": "access", "level": "INFO", "message": "[trace_id=ee5e7ba0a62b47cf8dc700f807e7341c method=POST path=/api/v1/acceptance/runs status_code=400 duration_ms=1.4]"}
+{"time": "2026-10-23 20:52:01,001", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/acceptance/runs \"HTTP/1.1 400 Bad Request\""}
+.{"time": "2026-10-23 20:52:01,098", "logger": "business", "level": "WARNING", "message": "[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]"}
+{"time": "2026-10-23 20:52:01,099", "logger": "access", "level": "INFO", "message": "[trace_id=b598f9377d8b4e85bada5afdb939a66e method=POST path=/api/v1/auth/login status_code=200 duration_ms=1.0]"}
+{"time": "2026-10-23 20:52:01,099", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/auth/login \"HTTP/1.1 200 OK\""}
+{"time": "2026-10-23 20:52:01,100", "logger": "access", "level": "INFO", "message": "[trace_id=2b97c7d9f93444a3b6186476ec6da8dc method=POST path=/api/v1/auth/login status_code=200 duration_ms=1.0]"}
+{"time": "2026-10-23 20:52:01,101", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/auth/login \"HTTP/1.1 200 OK\""}
+{"time": "2026-10-23 20:52:01,102", "logger": "access", "level": "INFO", "message": "[trace_id=6c802c604457425ea12591926d1dcf1a method=POST path=/api/v1/acceptance/runs status_code=401 duration_ms=0.7]"}
+{"time": "2026-10-23 20:52:01,102", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/acceptance/runs \"HTTP/1.1 401 Unauthorized\""}
+{"time": "2026-10-23 20:52:01,103", "logger": "access", "level": "INFO", "message": "[trace_id=b3b918f423f545dba83d75778a34ba99 method=POST path=/api/v1/acceptance/runs status_code=403 duration_ms=0.7]"}
+{"time": "2026-10-23 20:52:01,103", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/acceptance/runs \"HTTP/1.1 403 Forbidden\""}
+{"time": "2026-10-23 20:52:01,104", "logger": "access", "level": "INFO", "message": "[trace_id=22f895cb21a54262a068f404aa19e593 method=POST path=/api/v1/acceptance/runs status_code=201 duration_ms=1.0]"}
+{"time": "2026-10-23 20:52:01,104", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/acceptance/runs \"HTTP/1.1 201 Created\""}
+{"time": "2026-10-23 20:52:01,105", "logger": "access", "level": "INFO", "message": "[trace_id=d142fb23918244978765736e910d3fff method=POST path=/api/v1/acceptance/runs/acceptance_p1_formal_run/review status_code=200 duration_ms=1.1]"}
+{"time": "2026-10-23 20:52:01,106", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/acceptance/runs/acceptance_p1_formal_run/review \"HTTP/1.1 200 OK\""}
+{"time": "2026-10-23 20:52:01,107", "logger": "access", "level": "INFO", "message": "[trace_id=b5e2556d12ad4dcdb52bcfbbeabcdf6a method=POST path=/api/v1/acceptance/runs status_code=200 duration_ms=1.0]"}
+{"time": "2026-10-23 20:52:01,107", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/acceptance/runs \"HTTP/1.1 200 OK\""}
+..{"time": "2026-10-23 20:52:01,258", "logger": "business", "level": "WARNING", "message": "[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]"}
+{"time": "2026-10-23 20:52:01,259", "logger": "access", "level": "INFO", "message": "[trace_id=d865e7fa47bd458d8ed0032b3087cfad method=POST path=/api/v1/acceptance/runs status_code=401 duration_ms=0.7]"}
+{"time": "2026-10-23 20:52:01,259", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/acceptance/runs \"HTTP/1.1 401 Unauthorized\""}
+{"time": "2026-10-23 20:52:01,260", "logger": "access", "level": "INFO", "message": "[trace_id=0baa80d6ffe3468c82bf7d5575ff1c03 method=POST path=/api/v1/acceptance/runs status_code=403 duration_ms=0.6]"}
+{"time": "2026-10-23 20:52:01,261", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/acceptance/runs \"HTTP/1.1 403 Forbidden\""}
+{"time": "2026-10-23 20:52:01,262", "logger": "access", "level": "INFO", "message": "[trace_id=4ee254f132a14f14af2863a4018aed82 method=POST path=/api/v1/acceptance/runs status_code=201 duration_ms=1.0]"}
+{"time": "2026-10-23 20:52:01,262", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/acceptance/runs \"HTTP/1.1 201 Created\""}
+{"time": "2026-10-23 20:52:01,263", "logger": "access", "level": "INFO", "message": "[trace_id=190e74401f184268ab942036dfe045b5 method=POST path=/api/v1/acceptance/runs/acceptance_p2_online_gate_current/review status_code=200 duration_ms=0.9]"}
+{"time": "2026-10-23 20:52:01,263", "logger": "httpx", "level": "INFO", "message": "HTTP Request: POST http://testserver/api/v1/acceptance/runs/acceptance_p2_online_gate_current/review \"HTTP/1.1 200 OK\""}
+............................................................................................................................................{"time": "2026-10-23 20:52:02,100", "logger": "urllib3.connectionpool", "level": "DEBUG", "message": "Starting new HTTP connection (1): 127.0.0.1:57232"}
+{"time": "2026-10-23 20:52:02,100", "logger": "urllib3.connectionpool", "level": "DEBUG", "message": "http://127.0.0.1:57232 \"GET /api/v1/health/ops-alerts HTTP/1.1\" 200 245"}
+{"time": "2026-10-23 20:52:02,101", "logger": "urllib3.connectionpool", "level": "DEBUG", "message": "Starting new HTTP connection (1): 127.0.0.1:57232"}
+{"time": "2026-10-23 20:52:02,102", "logger": "urllib3.connectionpool", "level": "DEBUG", "message": "http://127.0.0.1:57232 \"GET /api/v1/health/ready HTTP/1.1\" 200 371"}
+.{"time": "2026-10-23 20:52:02,613", "logger": "urllib3.connectionpool", "level": "DEBUG", "message": "Starting new HTTP connection (1): 127.0.0.1:57235"}
+{"time": "2026-10-23 20:52:02,614", "logger": "urllib3.connectionpool", "level": "DEBUG", "message": "http://127.0.0.1:57235 \"POST /api/v1/auth/login HTTP/1.1\" 200 253"}
+{"time": "2026-10-23 20:52:02,615", "logger": "urllib3.connectionpool", "level": "DEBUG", "message": "Starting new HTTP connection (1): 127.0.0.1:57235"}
+{"time": "2026-10-23 20:52:02,615", "logger": "urllib3.connectionpool", "level": "DEBUG", "message": "http://127.0.0.1:57235 \"GET /api/v1/health/ready HTTP/1.1\" 200 371"}
+.{"time": "2026-10-23 20:52:03,128", "logger": "urllib3.connectionpool", "level": "DEBUG", "message": "Starting new HTTP connection (1): 127.0.0.1:57238"}
+{"time": "2026-10-23 20:52:03,129", "logger": "urllib3.connectionpool", "level": "DEBUG", "message": "http://127.0.0.1:57238 \"GET /api/v1/auth/me HTTP/1.1\" 200 192"}
+{"time": "2026-10-23 20:52:03,130", "logger": "urllib3.connectionpool", "level": "DEBUG", "message": "Starting new HTTP connection (1): 127.0.0.1:57238"}
+{"time": "2026-10-23 20:52:03,131", "logger": "urllib3.connectionpool", "level": "DEBUG", "message": "http://127.0.0.1:57238 \"GET /api/v1/health/ready HTTP/1.1\" 200 333"}
+.{"time": "2026-10-23 20:52:03,641", "logger": "urllib3.connectionpool", "level": "DEBUG", "message": "Starting new HTTP connection (1): 127.0.0.1:57241"}
+{"time": "2026-10-23 20:52:03,642", "logger": "urllib3.connectionpool", "level": "DEBUG", "message": "http://127.0.0.1:57241 \"GET /api/v1/auth/me HTTP/1.1\" 200 192"}
+{"time": "2026-10-23 20:52:03,643", "logger": "urllib3.connectionpool", "level": "DEBUG", "message": "Starting new HTTP connection (1): 127.0.0.1:57241"}
+{"time": "2026-10-23 20:52:03,643", "logger": "urllib3.connectionpool", "level": "DEBUG", "message": "http://127.0.0.1:57241 \"GET /api/v1/health/ready HTTP/1.1\" 200 371"}
+............................
+----------------------------------------------------------------------
+Ran 203 tests in 7.030s
+
+OK

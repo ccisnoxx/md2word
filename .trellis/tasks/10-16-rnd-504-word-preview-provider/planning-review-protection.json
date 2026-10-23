@@ -1,0 +1,35 @@
+{
+  "review_input_controlled_files": 986,
+  "changed": [
+    ".trellis/tasks/10-16-rnd-504-word-preview-provider/check.jsonl",
+    ".trellis/tasks/10-16-rnd-504-word-preview-provider/design.md",
+    ".trellis/tasks/10-16-rnd-504-word-preview-provider/implement.jsonl",
+    ".trellis/tasks/10-16-rnd-504-word-preview-provider/implement.md",
+    ".trellis/tasks/10-16-rnd-504-word-preview-provider/planning-validation.md",
+    ".trellis/tasks/10-16-rnd-504-word-preview-provider/prd.md",
+    ".trellis/tasks/10-16-rnd-504-word-preview-provider/task.json",
+    "docs/implementation/codex-task-manifest.yaml"
+  ],
+  "new": [
+    ".trellis/tasks/10-16-rnd-504-word-preview-provider/planning-review-protection.json",
+    ".trellis/tasks/10-16-rnd-504-word-preview-provider/planning-review.md",
+    ".trellis/tasks/10-16-rnd-504-word-preview-provider/research/architect-review-protection.json",
+    ".trellis/tasks/10-16-rnd-504-word-preview-provider/research/review-v3/design.md",
+    ".trellis/tasks/10-16-rnd-504-word-preview-provider/research/review-v3/implement.md",
+    ".trellis/tasks/10-16-rnd-504-word-preview-provider/research/review-v3/planning-validation.md",
+    ".trellis/tasks/10-16-rnd-504-word-preview-provider/research/review-v3/prd.md"
+  ],
+  "unexpected_paths": [],
+  "head_same": true,
+  "branch_same": true,
+  "cached_diff_same": true,
+  "other_manifest_entries_unchanged": true,
+  "rnd504_status": "planning",
+  "dependency_con103_status": "done",
+  "business_source_diff": [],
+  "task_validate_exit_code": 0,
+  "task_validate_warnings": false,
+  "current_task_exit_code": 1,
+  "current_task": "none",
+  "current_task_exit_one_means_no_active_task": true
+}

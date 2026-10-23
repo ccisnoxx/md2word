@@ -1,0 +1,377 @@
+{
+  "source_commit": "931d2f65738f7592a5b3e2dd4c528f9e1b2a0e19",
+  "source_task_commit": "48818e9",
+  "target_commit": "01e6c1add86f1ba7f24abc120629fa2fe6bd5ed9",
+  "paths": [
+    {
+      "path": ".trellis/spec/backend/database-guidelines.md",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "7a75cac13bb9298fb85166aa5e9f33fef34bc990",
+      "current_blob": "1d720a34fdf836e47670be65005b9191bde68a90",
+      "source_parent_blob": "8fa7de0f86e3290fa99e1a133b010c5444aa0e03",
+      "target_equals_source_parent": false,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": ".trellis/spec/backend/index.md",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "ed94ddc23eaf49960c84bba4be22bdd3bdf4eaea",
+      "current_blob": "9c8953b46bfc606d2f98a1ea9791b97a66ae7ecc",
+      "source_parent_blob": "f2b9e78c7b2d7628dba8754ac57b6ddb99eb95f0",
+      "target_equals_source_parent": false,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": ".trellis/spec/backend/word-generation-rules.md",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "82275d3f12b71c22bd566822186acc47a8277a5d",
+      "current_blob": "8d42a6ad00dd8c7db1f3b8bc1114cd2f15d61221",
+      "source_parent_blob": "41642536ac1eb2e3eb6ce102dec9bb88dcec4cc0",
+      "target_equals_source_parent": false,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": ".trellis/spec/backend/word-preview-contract.md",
+      "source_change": "A",
+      "current_exists": false,
+      "source_blob": "46e2b8e4be6f3dd8baed203e99fb0851ff772756",
+      "current_blob": null,
+      "source_parent_blob": null,
+      "target_equals_source_parent": null,
+      "strategy": "复用已接受新增文件并验证当前导入/测试闭包"
+    },
+    {
+      "path": "app/core/config.py",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "589c224343dfcf9b1d3e35ffaef679e0e1b6587f",
+      "current_blob": "6867cd7c76522dc8a350d78b720bedda221886c8",
+      "source_parent_blob": "6867cd7c76522dc8a350d78b720bedda221886c8",
+      "target_equals_source_parent": true,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": "app/core/runtime.py",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "71a5bddd8a2fd7c17c5bfb472ec56a762f82ca28",
+      "current_blob": "2c4fb97f56a8a8e041a90600e09085a39f988543",
+      "source_parent_blob": "2c4fb97f56a8a8e041a90600e09085a39f988543",
+      "target_equals_source_parent": true,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": "app/domains/document_jobs/delivery_state.py",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "451d36f8d87d50a062c6061ec472ca3fbefd2b51",
+      "current_blob": "128be89190222a7c0efc5181c1c3f474389573d6",
+      "source_parent_blob": "a49987e6e62a6de61f4b800ca2c53ebb21bc690c",
+      "target_equals_source_parent": false,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": "app/domains/document_jobs/execution.py",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "ff03f01e0390002006714e1ec96c8b9b1db17576",
+      "current_blob": "cf183166730468bf8d9039e37d2eddb03eb09740",
+      "source_parent_blob": "7fbbc77e77f402235e23601218478a43c6466c66",
+      "target_equals_source_parent": false,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": "app/domains/document_jobs/models.py",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "eee548228a3022ad3298b9d9313c8b94b212b827",
+      "current_blob": "2339bc87aac157e51c2ef44c5abfbba16fbe3627",
+      "source_parent_blob": "2339bc87aac157e51c2ef44c5abfbba16fbe3627",
+      "target_equals_source_parent": true,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": "app/domains/document_jobs/preview.py",
+      "source_change": "A",
+      "current_exists": false,
+      "source_blob": "d90b265cac8ae0ea490d295fd943e0919d8deb59",
+      "current_blob": null,
+      "source_parent_blob": null,
+      "target_equals_source_parent": null,
+      "strategy": "复用已接受新增文件并验证当前导入/测试闭包"
+    },
+    {
+      "path": "app/domains/document_jobs/preview_state.py",
+      "source_change": "A",
+      "current_exists": false,
+      "source_blob": "02ce304c936ef26e29b430ea69b0a151c4922629",
+      "current_blob": null,
+      "source_parent_blob": null,
+      "target_equals_source_parent": null,
+      "strategy": "复用已接受新增文件并验证当前导入/测试闭包"
+    },
+    {
+      "path": "app/domains/document_jobs/quality_state.py",
+      "source_change": "A",
+      "current_exists": false,
+      "source_blob": "6a91c65a7acd02ee6870e30366ff9c785485cd80",
+      "current_blob": null,
+      "source_parent_blob": null,
+      "target_equals_source_parent": null,
+      "strategy": "复用已接受新增文件并验证当前导入/测试闭包"
+    },
+    {
+      "path": "app/domains/document_jobs/repository.py",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "e27c012c9fa3ea2da06433bffebfd0d46186faeb",
+      "current_blob": "5813430d6108cdf4bf806ac23e7aae82823111bf",
+      "source_parent_blob": "b76059887f287756fbf614c0369f43f654269dc5",
+      "target_equals_source_parent": false,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": "app/domains/document_jobs/result_state.py",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "a56984531c655b3cf165eaffd809f0c35ef03977",
+      "current_blob": "99f71ad168a89e5a657f7ae7c0ca7e6ea80e29fd",
+      "source_parent_blob": "6c7e29759042fba80145108fbe25d3c621ac6da4",
+      "target_equals_source_parent": false,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": "app/domains/document_jobs/router.py",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "899bc86d85a1e430ecfcc7a98d12f1abd170b200",
+      "current_blob": "b015ecf05d2fb4176896f91b23f15e5130444740",
+      "source_parent_blob": "17095863c1a28f50c9ab89a220a283f7613cf22f",
+      "target_equals_source_parent": false,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": "app/domains/document_jobs/service.py",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "7de6db6a08b5a18312f7f20125e9a6d05820643d",
+      "current_blob": "19934aa1d87efc8397f622ef72a1187779f88037",
+      "source_parent_blob": "09916849c6ade287d2ad3ec89d7e9fdc24b24ede",
+      "target_equals_source_parent": false,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": "app/domains/files/models.py",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "64aa7463409653d24686dde3b0dfd2e7f27e56b6",
+      "current_blob": "449fc3f9d5ac0fad450f6885ae639f184a82dda6",
+      "source_parent_blob": "449fc3f9d5ac0fad450f6885ae639f184a82dda6",
+      "target_equals_source_parent": true,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": "app/domains/files/result_registration.py",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "aaf4c4efe4f4173940fadcb6787f2871bf6e58c4",
+      "current_blob": "dbfde77cd4f9ce7eb9dda1b53e8e0e1d9b141c52",
+      "source_parent_blob": "dbfde77cd4f9ce7eb9dda1b53e8e0e1d9b141c52",
+      "target_equals_source_parent": true,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": "app/domains/files/service.py",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "edff182bdd4f24a09e57b5855a81e1fb05146ee5",
+      "current_blob": "353a87ca96689b8a7bbdde255b1a63252b7bd527",
+      "source_parent_blob": "442cbe5f5c9db1409f7df6417e4c534b50500c79",
+      "target_equals_source_parent": false,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": "app/infrastructure/persistence/file/document_jobs.py",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "bbbe58d62e09167f991a9153259cde274992b2ba",
+      "current_blob": "75ad02c19483e958753b406b3bf7e00af40f6a4f",
+      "source_parent_blob": "4f6b6c7577c5d211e047bcb9338556e9ef6b4b6e",
+      "target_equals_source_parent": false,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": "app/infrastructure/persistence/mysql/document_jobs.py",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "ea20ff68aabe564f9de95cbf483ff6f21e27baaa",
+      "current_blob": "906506a2cd0f3ea916b6f048f345803bb7cf83e0",
+      "source_parent_blob": "56587d5535d234db484c2ccf43872bfdc22e1469",
+      "target_equals_source_parent": false,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": "app/infrastructure/persistence/sqlite/document_jobs.py",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "4374cfdb8b36f0be4ce02bca8eac22a1fd494b08",
+      "current_blob": "f648fd120e0b899c7fdbe861d843f91a6a1f7d15",
+      "source_parent_blob": "058e6b6ff6cc8069d7a4f48dd16a090ea145238a",
+      "target_equals_source_parent": false,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": "app/main.py",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "740da1d837ecd7c7bf3950e989bc63ca392b76b1",
+      "current_blob": "33627a52abcb2f76c5b98de660c1af27deedc824",
+      "source_parent_blob": "33627a52abcb2f76c5b98de660c1af27deedc824",
+      "target_equals_source_parent": true,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": "app/services/preview/__init__.py",
+      "source_change": "A",
+      "current_exists": false,
+      "source_blob": "3d2b4741c802e2b0f2b41cfeea2eb3aa7c12378d",
+      "current_blob": null,
+      "source_parent_blob": null,
+      "target_equals_source_parent": null,
+      "strategy": "复用已接受新增文件并验证当前导入/测试闭包"
+    },
+    {
+      "path": "app/services/preview/executor_protocol.py",
+      "source_change": "A",
+      "current_exists": false,
+      "source_blob": "a5d96f77b073b5fd391e0a5a539d32befba6ab53",
+      "current_blob": null,
+      "source_parent_blob": null,
+      "target_equals_source_parent": null,
+      "strategy": "复用已接受新增文件并验证当前导入/测试闭包"
+    },
+    {
+      "path": "app/services/preview/models.py",
+      "source_change": "A",
+      "current_exists": false,
+      "source_blob": "920b5a1b9bbc14791a12f614b47655b919368712",
+      "current_blob": null,
+      "source_parent_blob": null,
+      "target_equals_source_parent": null,
+      "strategy": "复用已接受新增文件并验证当前导入/测试闭包"
+    },
+    {
+      "path": "app/services/preview/provider.py",
+      "source_change": "A",
+      "current_exists": false,
+      "source_blob": "81b584608cfa8f3757259cb32167f55523ae8e96",
+      "current_blob": null,
+      "source_parent_blob": null,
+      "target_equals_source_parent": null,
+      "strategy": "复用已接受新增文件并验证当前导入/测试闭包"
+    },
+    {
+      "path": "app/services/preview/sandbox_adapter.py",
+      "source_change": "A",
+      "current_exists": false,
+      "source_blob": "38a42f98e8abbd4e4abffc612e62bb1a64dfc7f4",
+      "current_blob": null,
+      "source_parent_blob": null,
+      "target_equals_source_parent": null,
+      "strategy": "复用已接受新增文件并验证当前导入/测试闭包"
+    },
+    {
+      "path": "docs/design/docx-rendering-template-design.md",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "a6643aa63bb5f9dd5b37f7599d4aec9c9b5c421b",
+      "current_blob": "5c8be9cee9dd2b73892375aa7075d8532c7ddc5c",
+      "source_parent_blob": "16bb8dabde1b760bfae908f9c825002de536e626",
+      "target_equals_source_parent": false,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": "docs/design/quality-review-release-design.md",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "c60a5a48d2adf30cfbb934fbc587c1478c553466",
+      "current_blob": "e446d93089320a106e1c54236c0c2615f1505eb9",
+      "source_parent_blob": "e446d93089320a106e1c54236c0c2615f1505eb9",
+      "target_equals_source_parent": true,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": "docs/dev/backend-local-setup-and-architecture.md",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "0107cdab128dbafe3ea78f89b0d5cac21a58067b",
+      "current_blob": "b3b03096a26cfd4dfc309d8014245a5182ed24ed",
+      "source_parent_blob": "b3b03096a26cfd4dfc309d8014245a5182ed24ed",
+      "target_equals_source_parent": true,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": "docs/runbooks/backend.md",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "faeb5a53e7ce9cbe99503da516053cffb849853a",
+      "current_blob": "3919fc5c83ee95fcf212055180108095a4af11a5",
+      "source_parent_blob": "23f41904d9531d94ec24f8527a77b23e0b37c316",
+      "target_equals_source_parent": false,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": "tests/test_document_job_preview_persistence.py",
+      "source_change": "A",
+      "current_exists": false,
+      "source_blob": "a33d251c5c68966b0c298791b364b92d9650f850",
+      "current_blob": null,
+      "source_parent_blob": null,
+      "target_equals_source_parent": null,
+      "strategy": "复用已接受新增文件并验证当前导入/测试闭包"
+    },
+    {
+      "path": "tests/test_document_job_result_persistence.py",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "c5bffaeb6c1385d0c8a41fa8b56154a5941c9cc2",
+      "current_blob": "d52a183f048c4bbd0dc5b6597335d58d5bfafb78",
+      "source_parent_blob": "49f7095349e26ebe0563c3888c882a7d2225081b",
+      "target_equals_source_parent": false,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": "tests/test_document_job_word_preview.py",
+      "source_change": "A",
+      "current_exists": false,
+      "source_blob": "ee3fd241da06aca2f13b311343c17526fda4d54f",
+      "current_blob": null,
+      "source_parent_blob": null,
+      "target_equals_source_parent": null,
+      "strategy": "复用已接受新增文件并验证当前导入/测试闭包"
+    },
+    {
+      "path": "tests/test_fastapi_jobs_backend.py",
+      "source_change": "M",
+      "current_exists": true,
+      "source_blob": "dfbb0793ea3a1dfedb6f10220d6fc01f78b26de9",
+      "current_blob": "59485a90a158ca642246482d5ae7cc0d9bd3d86f",
+      "source_parent_blob": "aac4efd34aad3c4422e42bad6eab526749083b92",
+      "target_equals_source_parent": false,
+      "strategy": "在当前文件逐hunk接入；保留后续合同，禁止整文件覆盖"
+    },
+    {
+      "path": "tests/test_word_preview_provider.py",
+      "source_change": "A",
+      "current_exists": false,
+      "source_blob": "41b1c4704ff570a5e2e3fe1a4620b4a73923de59",
+      "current_blob": null,
+      "source_parent_blob": null,
+      "target_equals_source_parent": null,
+      "strategy": "复用已接受新增文件并验证当前导入/测试闭包"
+    }
+  ]
+}

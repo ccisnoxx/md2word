@@ -1,0 +1,44 @@
+/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/rnd504-head-api-1gg7gtw4/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/rnd504-head-api-1gg7gtw4/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+FFF
+======================================================================
+FAIL: test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft) (backend='file')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/rnd504-head-api-1gg7gtw4/tests/test_document_job_delivery_state_api.py", line 176, in test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft
+    self._assert_defaults(reset.json()["job"])
+  File "/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/rnd504-head-api-1gg7gtw4/tests/test_document_job_delivery_state_api.py", line 69, in _assert_defaults
+    self.assertEqual({field: response[field] for field in STATE_DEFAULTS}, STATE_DEFAULTS)
+AssertionError: {'qua[108 chars]y': {'formula': {'schema_version': 'formula-su[213 chars]f'}}} != {'qua[108 chars]y': {}}
+Diff is 660 characters long. Set self.maxDiff to None to see it.
+
+======================================================================
+FAIL: test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft) (backend='database')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/rnd504-head-api-1gg7gtw4/tests/test_document_job_delivery_state_api.py", line 176, in test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft
+    self._assert_defaults(reset.json()["job"])
+  File "/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/rnd504-head-api-1gg7gtw4/tests/test_document_job_delivery_state_api.py", line 69, in _assert_defaults
+    self.assertEqual({field: response[field] for field in STATE_DEFAULTS}, STATE_DEFAULTS)
+AssertionError: {'qua[108 chars]y': {'formula': {'schema_version': 'formula-su[213 chars]f'}}} != {'qua[108 chars]y': {}}
+Diff is 660 characters long. Set self.maxDiff to None to see it.
+
+======================================================================
+FAIL: test_qa_keeps_owner_tenant_company_admin_and_direct_boundaries (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_qa_keeps_owner_tenant_company_admin_and_direct_boundaries)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/rnd504-head-api-1gg7gtw4/tests/test_document_job_delivery_state_api.py", line 195, in test_qa_keeps_owner_tenant_company_admin_and_direct_boundaries
+    self._assert_defaults(detail)
+  File "/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/rnd504-head-api-1gg7gtw4/tests/test_document_job_delivery_state_api.py", line 69, in _assert_defaults
+    self.assertEqual({field: response[field] for field in STATE_DEFAULTS}, STATE_DEFAULTS)
+AssertionError: {'qua[108 chars]y': {'formula': {'schema_version': 'formula-su[213 chars]f'}}} != {'qua[108 chars]y': {}}
+Diff is 660 characters long. Set self.maxDiff to None to see it.
+
+----------------------------------------------------------------------
+Ran 2 tests in 1.001s
+
+FAILED (failures=3)

@@ -18,6 +18,7 @@ from uuid import uuid4
 
 from app.clients.mineru_client import MinerUClient, MinerUError
 from app.core.config import Settings
+from app.domains.document_jobs.preview import DocumentJobPreviewService
 from app.domains.jobs.models import JobResourceSnapshot
 from app.domains.jobs.resource_snapshots import (
     JobResourceSnapshotError,
@@ -131,7 +132,10 @@ class DocumentJobExecutionService:
         job_resource_snapshot_service: JobResourceSnapshotService | None = None,
         translation_batch_task_queue: DocumentTranslationBatchTaskQueueProtocol | None = None,
         mineru_client_factory: Callable[[], Any] | None = None,
+        word_preview_service: DocumentJobPreviewService | None = None,
     ) -> None:
+        self.word_preview_service = word_preview_service or DocumentJobPreviewService(
+            settings, job_repository, event_repository, file_repository, file_service)
         self.settings = settings
         self.job_repository = job_repository
         self.event_repository = event_repository
@@ -3278,6 +3282,9 @@ class DocumentJobExecutionService:
             word_file = self.file_repository.materialize_prepared_result(receipt.file)
             # 已选凭据重验原文件报告；对象读取和质量重建均在 job 锁外。
             self._validate_render_result_file(word_file)
+            preview_job, preview_finished = self.word_preview_service.ensure_initial(current, trace_id=trace_id)
+            if not preview_finished:
+                return self._mark_timed_out_if_needed(preview_job, trace_id=trace_id) or preview_job
             completed = self.job_repository.update_document_job_if_current(
                 job.id, allowed_statuses={"running"}, allowed_stages={"uploading"},
                 expected_retry_count=receipt.generation, expected_document_ir_file_id=receipt.document_ir_file_id,
@@ -3499,12 +3506,23 @@ class DocumentJobExecutionService:
         return f"{source_stem}.docx"
 
     def _mark_succeeded(self, job: DocumentJobRecord, *, trace_id: str | None) -> DocumentJobRecord:
+        # legacy 明确主件可下载，但无 receipt 不能生成或伪造与当前来源绑定的预览。
+        preview_contribution = None
+        if "word_preview" in job.request_snapshot:
+            from app.services.preview.models import PreviewPolicy
+            policy = PreviewPolicy.model_validate(job.request_snapshot["word_preview"])
+            preview_contribution = {"quality_status": "blocked" if policy.required else "pending",
+                "status": "unavailable", "error_code": "preview_provider_unavailable",
+                "source_generation": job.retry_count, "source_result_file_id": job.result_file_id,
+                "profile_id": policy.profile_id, "profile_sha256": policy.profile_sha256,
+                "manifest_file_id": None}
         completed = self.job_repository.update_document_job_if_current(
             job.id,
             allowed_statuses={"running"},
             allowed_stages={"uploading"},
             expected_retry_count=job.retry_count,
             expected_document_ir_file_id=job.document_ir_file_id, require_no_prepared_result=True,
+            preview_contribution=preview_contribution,
             status="succeeded",
             stage="completed",
             progress=100,

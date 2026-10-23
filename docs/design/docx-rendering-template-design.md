@@ -253,7 +253,7 @@ quality_flags
 
 ```python
 class WordPreviewProvider(Protocol):
-    def render(self, docx: bytes) -> PreviewResult: ...
+    def render(self, docx: bytes, *, policy: PreviewPolicy) -> PreviewResult: ...
 ```
 
 输出：
@@ -264,6 +264,12 @@ class WordPreviewProvider(Protocol):
 - 失败摘要。
 
 在线主链路可配置 preview required；发布必须要求 preview 成功。
+
+RND-504 在当前选定 receipt 物化、公式/图片原件认证之后、最终 completed CAS 之前接入预览。Provider 只消费 DOCX bytes 和策略，不进入 DocumentIR 语义，不调用 MinerU、翻译或 renderer。PDF/可选页面图及诊断 manifest 登记为独立不可变 Artifact，保留当前共享含 file_id 的对象键。默认 backend=disabled、required=false，不把未检查当作通过。
+
+固定 `word-preview-exec/v1` 协议由受控绝对 launcher 和 hash 固定的批准 profile 执行；shell=False、最小环境、单次私有目录、有界预算、输入输出完整验证。真实引擎/解码器/字体、隔离和 Word 视觉仍是生产启用门；协议子进程通过不代表生产已可用。
+
+可靠预览失败保留主 DOCX 供内部下载，自身质量贡献 blocked，禁止批准/发布；登记存储不可确认保持原 oss_failed，不能伪装普通预览失败后完成。登记阶段和 manifest 必须属于当前 attempt。内部单独重试采用原 job 锁和持久幂等账本，不改 generation/result，不重渲染 DOCX；成功只解除自身 blocker。当前预览失效时新 key 可有界恢复，历史 key 只重放历史。完整合同见 [WordPreviewProvider 与任务预览合同](../../.trellis/spec/backend/word-preview-contract.md)。本项不实现页映射/页级质量、公开预览 API、前端或发布 API，现有后端 publish enabled=false 保持。
 
 ## 15. 质量目标
 

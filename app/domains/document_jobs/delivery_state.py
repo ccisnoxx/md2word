@@ -4,6 +4,7 @@ from datetime import datetime
 import json
 from typing import Any
 
+from app.domains.document_jobs.quality_state import quality_patch
 from app.domains.document_jobs.models import (
     DocumentJobRecord,
     DocumentJobReviewStatus,
@@ -20,9 +21,11 @@ def initial_delivery_state() -> dict[str, Any]:
             "delivery_status": "internal_draft", "quality_summary": {}}
 
 
-def delivery_state_patch(job: DocumentJobRecord, patch: dict[str, Any]) -> dict[str, Any]:
+def delivery_state_patch(job: DocumentJobRecord, patch: dict[str, Any], *, preview_contribution: dict | None = None) -> dict[str, Any]:
     """在模型验证前处理证据失效；已发布记录先检查原值，不能先降级再改内容。"""
     if job.delivery_status == "published":
+        if preview_contribution is not None:
+            raise ValueError("已发布任务不能原地修改预览质量贡献。")
         archive_fields = {"archived_at", "archived_by", "updated_at"}
         if any(key not in archive_fields and value != getattr(job, key, None) for key, value in patch.items()):
             raise ValueError("已发布任务仅允许更新归档元数据，不能原地修改内容或交付状态。")
@@ -31,8 +34,10 @@ def delivery_state_patch(job: DocumentJobRecord, patch: dict[str, Any]) -> dict[
     if patch.get("retry_count", job.retry_count) != job.retry_count or (
         job.result_file_id is not None and next_result != job.result_file_id
     ):
-        updated.update(initial_delivery_state())
-    elif next_result != job.result_file_id:
+        updated.update(initial_delivery_state(), word_preview_state=None)
+    else:
+        updated = quality_patch(job, updated, contribution=preview_contribution)
+    if next_result != job.result_file_id and job.result_file_id is None:
         # 首次绑定保留本代质量结论，复核批准不能跨结果身份延续。
         updated.update(review_status="unreviewed", delivery_status="internal_draft")
     if (updated.get("quality_status", job.quality_status) == "blocked"

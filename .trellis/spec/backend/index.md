@@ -32,6 +32,7 @@ Before backend changes:
 10. 修改技术 Token 检测、批次占位、完整性验证或恢复调用时，阅读 [ProtectedTokenCodec 内部合同](./protected-token-codec.md)。
 11. 修改正式翻译准备、Provider/Worker/本地接线、批次 evidence 或正文 repr 时，阅读 [翻译完整性验证与消费合同](./translation-integrity-validator.md)。
 12. 修改翻译批次树、根计划安装、attempt/lease、自动恢复、终态收口或批次摘要 API 时，阅读 [翻译批次生命周期与原子边界](./translation-batch-lifecycle.md)。
+13. 修改 DOCX 预览 Provider、预览重试/质量贡献、Artifact 或下载引用校验时，阅读 [WordPreviewProvider 与任务预览合同](./word-preview-contract.md)。
 
 Also read `.trellis/spec/guides/index.md` and the relevant thinking guide when the change crosses API, service, repository, worker, or runtime boundaries.
 
@@ -46,6 +47,7 @@ Also read `.trellis/spec/guides/index.md` and the relevant thinking guide when t
 | [ProtectedTokenCodec 内部合同](./protected-token-codec.md) | 纯函数检测、批次唯一、碰撞保护、整批计数验证、精确恢复与隐私边界 | 当前 |
 | [翻译完整性验证与消费合同](./translation-integrity-validator.md) | 共享编码准备、整批校验、稳定错误、fan-in evidence、默认表示隐私及存储身份边界 | 当前 |
 | [翻译批次生命周期与原子边界](./translation-batch-lifecycle.md) | 完整根计划、同 job 原子操作、attempt/lease、终态重放与 API/UI 投影 | 当前 |
+| [WordPreviewProvider 与任务预览合同](./word-preview-contract.md) | 固定进程协议、登记确认、幂等账本、生命周期复用、质量贡献与授权 | 当前 |
 | [Logging Guidelines](./logging-guidelines.md) | `access` / `business` / `system` loggers, text/JSON format, trace/job context, sensitive data boundaries | Current |
 | [Runtime Configuration](./runtime-configuration.md) | MinerU 账号与密钥绑定、环境变量优先级、安全 API、审计和 Worker 即时生效合同 | Current |
 | [Word 模板样式配置合同](./template-layout-configuration.md) | Admin schema、版本治理、旧配置兼容和多文种 OOXML 字体槽位 | Current |

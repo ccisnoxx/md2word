@@ -1,0 +1,84 @@
+/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+......[trace_id=None job_id=docjob_06a4784bbff6 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_704c714eb9ac stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_30c23a71f1fc stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_b61457983fc0 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_511ed67de1d5 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_3f9f24f0be2b stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_becf6e1e38e9 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_0dcca8ac00e1 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_fead70e02090 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_3a783643e2db stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_37447a511883 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_e16871567580 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_989a7548fd75 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_6361839097be stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_007573146b76 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_876232916bc8 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_af2e8976f335 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_94d7c2412016 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_2383a5dfbf65 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_15320a08f717 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_04cdeed64328 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_3dbd53c9ffbc stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_05d9db359319 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_564564bea9c6 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_f42fdea54313 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_c6e05d7fb64f stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_4c908dea2ad9 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_10a589cd5666 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_9703ec26a9fc stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_2e08bfa63482 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+...............[trace_id=None job_id=docjob_fdf6b5fee95f stage=uploading status=failed] 页面存储不可用
+..[trace_id=None job_id=docjob_9e91d35865da stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_9427f534de8c stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_1242349cad6c stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_994508da2bd5 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_37efa5646f7d stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_1f3b12adf26d stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_0a3ed1069468 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_82251736b7c8 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_afe73b2ba5c8 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_71f55bf4c830 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_b49c5b3019d7 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_477b46e440e0 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_9dfaa94309f0 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_cc89c48a8aa7 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_f110f3ea1bcd stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_18feefe982b1 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_ad1003fe64c1 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_bb6d278d52e8 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+.[trace_id=None job_id=docjob_ce85cf243b31 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_20397d1e4255 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_673570134090 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_7a4704685890 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_e234fc4ebc9b stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_faa06bba5187 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_4e1b07ff31bb stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_d6fd6fb70210 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_2fb54996f00a stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_57725c44ca8b stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_8d632c12a1a0 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_4103b8c22185 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_a61d637b32da stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_eb407c0702ca stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_41e4bef676e6 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_45386badebed stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_fef14479d02d stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+.[trace_id=None job_id=docjob_7d68b640dbb3 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_08ccb5391ed3 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+....[trace_id=None job_id=docjob_a234b1ef7e56 stage=uploading status=failed] 主件读取失败
+[trace_id=None job_id=docjob_ce6ffe075822 stage=uploading status=failed] 主 DOCX 字节与 SHA-256 描述不一致。
+[trace_id=None job_id=docjob_2d84adb56aca stage=uploading status=failed] metadata 失败
+.....[trace_id=None job_id=docjob_87a07374e28e stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_665b6191bf87 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+.
+----------------------------------------------------------------------
+Ran 35 tests in 41.451s
+
+OK

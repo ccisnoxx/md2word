@@ -1,0 +1,43 @@
+/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+....[trace_id=None job_id=docjob_b72902b6b4e3 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_f1b9f4ad83e2 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_24a116e18b01 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_d439b58a861b stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_79c2a16ea469 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_c9ef39eb2ed6 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_7efd6ccc6abf stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_4d13978d3843 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_871c2a2f5bb4 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_abf7f604abd0 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_19be42f41a18 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_103688f59b01 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_6b6df3c6ce07 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_7ecfeb9bdb01 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_ca5ceb6ca5fe stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_c4d3d84c8f6a stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_6108ea29653b stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_7620278b3f98 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_e5723ee15c2e stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_c00d3158f03e stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_3a839f029c8b stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_fac0f3e62342 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_ba80a7f71ab8 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_138ad028255e stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_e13b2412b84f stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_331d405ac627 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_121f56b1e733 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_35cd2268619e stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_653bde9bf7ef stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_d223e22afb5f stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+.[trace_id=None job_id=docjob_f52df9aa52b3 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_eaea5df10c26 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+.....
+----------------------------------------------------------------------
+Ran 10 tests in 13.119s
+
+OK

@@ -1,0 +1,20 @@
+{
+  "changed_preexisting": [
+    ".trellis/tasks/10-12-datasheet-docx-delivery-quality/task.json",
+    "docs/implementation/codex-task-manifest.yaml"
+  ],
+  "unexpected_changed_preexisting": [],
+  "manifest_changed_entries": [
+    "RND-504"
+  ],
+  "other_manifest_fields_equal": true,
+  "parent_changed_keys": [
+    "children"
+  ],
+  "parent_added_children": [
+    "10-16-rnd-504-word-preview-provider"
+  ],
+  "head_same": true,
+  "branch_same": true,
+  "cached_diff_same": true
+}

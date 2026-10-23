@@ -17,6 +17,9 @@ DocumentFileType = Literal[
     "image_asset",
     "image_assets_archive",
     "generated_word",
+    "word_preview_pdf",
+    "word_preview_page",
+    "word_preview_manifest",
     "translation_batch_result",
     "ai_call_log",
     "ai_debug_archive",
@@ -24,6 +27,9 @@ DocumentFileType = Literal[
     "template_config",
     "term_file",
 ]
+WORD_PREVIEW_FILE_TYPES = frozenset({"word_preview_pdf", "word_preview_page", "word_preview_manifest"})
+
+
 DocumentFileStatus = Literal["pending_upload", "uploaded", "expired", "deleted"]
 DocumentFileStorageProvider = Literal["local_file", "local_object", "s3"]
 

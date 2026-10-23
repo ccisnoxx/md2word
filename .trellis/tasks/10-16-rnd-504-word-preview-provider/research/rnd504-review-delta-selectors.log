@@ -1,0 +1,56 @@
+/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+...[trace_id=None job_id=docjob_f03b92d59b82 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_8e2310ee8d10 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_6c56097c4ae2 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_76f7fefa20f0 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_afd873ea08a1 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_70966ec58fe2 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_4701c3036df1 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_54fd65d451e2 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_faee616ec4de stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_f5163fce0c85 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_343d563818ce stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_a10e6c03c540 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_d91ef9039a7f stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_2406b5fadde0 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+E[trace_id=None job_id=docjob_c23ce4d4abb9 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_2ec03fb391c0 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_930334044773 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+..F
+======================================================================
+ERROR: test_preview_storage_errors_are_safe_in_public_job_and_evidence_projections (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_preview_storage_errors_are_safe_in_public_job_and_evidence_projections) (file_type='word_preview_manifest', point='object')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/tests/test_document_job_word_preview.py", line 912, in test_preview_storage_errors_are_safe_in_public_job_and_evidence_projections
+    projections.extend(read(file).decode() for file in self._files(runtime, job.id, "word_preview_manifest"))
+  File "/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/tests/test_document_job_word_preview.py", line 912, in <genexpr>
+    projections.extend(read(file).decode() for file in self._files(runtime, job.id, "word_preview_manifest"))
+                       ^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/domains/files/service.py", line 268, in read_file_content
+    return self.resolve_local_object_path(record.object_key).read_bytes()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/pathlib.py", line 1050, in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/pathlib.py", line 1044, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/rnd504-app-1zk63vkn/object_artifacts/document-jobs/tenant_default/docjob_2406b5fadde0/word_preview_manifest/file_5018fab12980/g0-file_049621d709704137abfee0cfb6a35f7b-45ce3f7e6d354d8d9eaab1d35e808581-a1-manifest.json'
+
+======================================================================
+FAIL: test_legacy_running_without_stage_still_fails_closed_for_new_uuid (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_legacy_running_without_stage_still_fails_closed_for_new_uuid)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/tests/test_document_job_word_preview.py", line 998, in test_legacy_running_without_stage_still_fails_closed_for_new_uuid
+    with patch.object(execution.word_preview_service, "_event", side_effect=result_fixtures.SimulatedProcessExit), self.assertRaises(result_fixtures.SimulatedProcessExit):
+AssertionError: SimulatedProcessExit not raised
+
+----------------------------------------------------------------------
+Ran 7 tests in 9.997s
+
+FAILED (failures=1, errors=1)

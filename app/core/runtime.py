@@ -1,5 +1,5 @@
-# File: app/core/runtime.py
-# Purpose: 保存 FastAPI 进程内共享的应用服务和边界端口。
+# 文件：app/core/runtime.py
+# 用途： 保存 FastAPI 进程内共享的应用服务和边界端口。
 
 from __future__ import annotations
 
@@ -96,5 +96,6 @@ class AppRuntime:
     stage_service: Any
     stage_dispatcher: StageDispatcherProtocol
     stage_message_store: StageMessageStoreProtocol
+    word_preview_service: Any | None = None
     alert_delivery_provider: Any | None = None
     secret_resolver: Any | None = None

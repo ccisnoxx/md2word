@@ -1,0 +1,383 @@
+/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+[trace_id=trace_query job_id=docjob_d8523c74c201 stage=translating status=failed] P0 文档任务超过 1200 秒超时限制。
+[trace_id=trace_query job_id=docjob_a8f5afd5c71c stage=translation_validating status=failed] P0 文档任务超过 1200 秒超时限制。
+[trace_id=trace_query job_id=docjob_e7acda06b374 stage=quality_checking status=failed] P0 文档任务超过 1200 秒超时限制。
+.[trace_id=None job_id=docjob_203075ac791f stage=uploading status=failed] 主 DOCX 含图片布局标记但缺少报告。
+F..[trace_id=None job_id=docjob_10d77df06724 stage=uploading status=failed] 主 DOCX 含图片布局标记但缺少报告。
+F[trace_id=None job_id=docjob_c8ea85abfd7d stage=uploading status=failed] 任务指定的结果文件不属于该任务的可用主 DOCX。
+[trace_id=None job_id=docjob_98eb1cc0a334 stage=uploading status=failed] 任务指定的结果文件不属于该任务的可用主 DOCX。
+[trace_id=None job_id=docjob_a879b72e7634 stage=uploading status=failed] 文件尚未完成上传: file_3efb788db37c
+[trace_id=trace_fan_in job_id=docjob_21cec876aaf9 stage=translation_validating status=failed] 翻译批次合并校验失败: translation_fan_in_mismatch
+[trace_id=trace_fan_in job_id=docjob_3837c896fbad stage=translation_validating status=failed] 翻译批次合并校验失败: translation_fan_in_mismatch
+[trace_id=trace_fan_in job_id=docjob_561758a7b997 stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=trace_fan_in job_id=docjob_b51ce88341c6 stage=translation_validating status=failed] 翻译批次合并校验失败: translation_provider_invalid_response
+[trace_id=trace_fan_in job_id=docjob_02d163276496 stage=translation_validating status=failed] 翻译批次合并校验失败: translation_provider_failed
+[trace_id=trace_fan_in job_id=docjob_0a4a2a77f01e stage=translation_validating status=failed] 最终 IR 存储失败
+.[trace_id=trace_stages job_id=docjob_4128c06a0f96 stage=translating status=failed] 翻译批次失败: attempts_exhausted 翻译批次已耗尽最大 attempt 次数。
+..[trace_id=trace_new_attempt job_id=docjob_06978a0b6fcd stage=translating status=failed] 交错中的另一调用确认本代失败
+.[trace_id=trace_stage_owner job_id=docjob_a2edc1007b80 stage=translating status=failed] DocumentIR 翻译服务未配置。
+[trace_id=trace_stage_owner job_id=docjob_30eea16d6333 stage=translating status=failed] 翻译任务缺少绑定的 Translation Profile。
+..[trace_id=None job_id=docjob_e023012bf915 stage=translating status=failed] P0 文档任务超过 1200 秒超时限制。
+[trace_id=None job_id=docjob_27a6c2bb09ca stage=translation_validating status=failed] P0 文档任务超过 1200 秒超时限制。
+[trace_id=None job_id=docjob_e4231a16f025 stage=quality_checking status=failed] P0 文档任务超过 1200 秒超时限制。
+.[trace_id=trace_stage_owner job_id=docjob_f13b9df03285 stage=parsing status=failed] 阶段已推进后的事件追加失败
+[trace_id=trace_stage_owner job_id=docjob_870548c33bbf stage=ir_converting status=failed] 阶段已推进后的事件追加失败
+[trace_id=trace_stage_owner job_id=docjob_5a53bfa7c51e stage=translation_validating status=failed] 阶段已推进后的事件追加失败
+[trace_id=trace_stage_owner job_id=docjob_59a98345b9c3 stage=translating status=failed] 阶段已推进后的事件追加失败
+[trace_id=trace_stage_owner job_id=docjob_bdb4b4209ec0 stage=translation_validating status=failed] 阶段已推进后的事件追加失败
+..[trace_id=trace_stages job_id=docjob_d6a7526f65e4 stage=quality_checking status=failed] DocumentIR→DOCX 内容完整性校验失败：ir_docx_integrity:missing
+[trace_id=trace_stages job_id=docjob_e75279a4fc41 stage=quality_checking status=failed] DocumentIR→DOCX 内容完整性校验失败：ir_docx_integrity:missing
+....[trace_id=trace_stages job_id=docjob_1e227c2fbc1e stage=ir_converting status=failed] MinerU 产物验证失败：mineru_content_empty。
+F..[trace_id=None job_id=docjob_1ad60ccc8f76 stage=uploading status=failed] P0 文档任务超过 1200 秒超时限制。
+[trace_id=None job_id=docjob_a637c2955746 stage=uploading status=failed] P0 文档任务超过 1200 秒超时限制。
+.[trace_id=None job_id=docjob_534eb0eeafdd stage=uploading status=failed] P0 文档任务超过 1200 秒超时限制。
+[trace_id=None job_id=docjob_3b0e40edcaee stage=uploading status=failed] P0 文档任务超过 1200 秒超时限制。
+.....[trace_id=None job_id=docjob_065ba73f6781 stage=uploading status=failed] DOCX 公式实际输出与预期绑定不匹配
+[trace_id=None job_id=docjob_1b70bd196ac7 stage=uploading status=failed] DOCX 公式实际输出与预期绑定不匹配
+[trace_id=None job_id=docjob_d834f4d0b929 stage=uploading status=failed] DOCX 公式实际输出与预期绑定不匹配
+..[trace_id=None job_id=docjob_f7cb6b3813d7 stage=uploading status=failed] 图片布局证据无效：注释内容或字段投影
+[trace_id=None job_id=docjob_6e25b5ba2386 stage=uploading status=failed] 图片布局证据无效：注释内容或字段投影
+[trace_id=None job_id=docjob_9b84f5b807c8 stage=uploading status=failed] 图片布局证据无效：注释内容或字段投影
+[trace_id=None job_id=docjob_c08fd825758b stage=uploading status=failed] 主 DOCX 的图片报告或摘要缺失或无效。
+[trace_id=None job_id=docjob_270c93a4716f stage=uploading status=failed] 主 DOCX 的图片报告或摘要缺失或无效。
+[trace_id=None job_id=docjob_803b73ebad2c stage=uploading status=failed] 主 DOCX 的图片报告或摘要缺失或无效。
+[trace_id=None job_id=docjob_887a8889004e stage=uploading status=failed] 主 DOCX 的图片报告或摘要缺失或无效。
+[trace_id=None job_id=docjob_80ef8d74e810 stage=uploading status=failed] 主 DOCX 的图片报告或摘要缺失或无效。
+[trace_id=None job_id=docjob_27e9a9c2b287 stage=uploading status=failed] 主 DOCX 的图片报告或摘要缺失或无效。
+[trace_id=None job_id=docjob_d8439ec1fb8c stage=uploading status=failed] 图片布局报告缺少必要字段或结构损坏
+[trace_id=None job_id=docjob_7710ebcd254a stage=uploading status=failed] 图片布局报告缺少必要字段或结构损坏
+[trace_id=None job_id=docjob_259406f231bd stage=uploading status=failed] 图片布局报告缺少必要字段或结构损坏
+[trace_id=None job_id=docjob_59ac5d7eb78d stage=uploading status=failed] 图片布局报告缺少必要字段或结构损坏
+[trace_id=None job_id=docjob_357ca5c26b88 stage=uploading status=failed] 图片布局报告缺少必要字段或结构损坏
+[trace_id=None job_id=docjob_6fd65b913392 stage=uploading status=failed] 图片布局报告缺少必要字段或结构损坏
+[trace_id=None job_id=docjob_861734b166c7 stage=uploading status=failed] 图片布局证据无效：输入或投影版本
+[trace_id=None job_id=docjob_e3ad1c358abf stage=uploading status=failed] 图片布局证据无效：输入或投影版本
+[trace_id=None job_id=docjob_4bbdd017d472 stage=uploading status=failed] 图片布局证据无效：输入或投影版本
+[trace_id=None job_id=docjob_83238f913ff2 stage=uploading status=failed] 图片布局证据无效：模板版本身份
+[trace_id=None job_id=docjob_7f74d24df0a6 stage=uploading status=failed] 图片布局证据无效：模板版本身份
+[trace_id=None job_id=docjob_81ae8af9c847 stage=uploading status=failed] 图片布局证据无效：模板版本身份
+...[trace_id=None job_id=docjob_0393e0b90676 stage=uploading status=failed] 同代最终 IR 存在多份历史主件，不能猜测结果身份。
+[trace_id=None job_id=docjob_4b2c498b3137 stage=uploading status=failed] 主 DOCX 字节与 SHA-256 描述不一致。
+[trace_id=None job_id=docjob_ec82a6c5f847 stage=uploading status=failed] 主 DOCX 含图片布局标记但缺少报告。
+...[trace_id=None job_id=docjob_8b2b60cb62b5 stage=uploading status=failed] 结果候选已过期或删除，不能物化。
+[trace_id=None job_id=docjob_097b4c58980f stage=uploading status=failed] 结果候选已过期或删除，不能物化。
+.[trace_id=None job_id=docjob_3c7d733aa7d5 stage=uploading status=failed] 主 DOCX 含图片布局标记但缺少报告。
+[trace_id=None job_id=docjob_79edadbaa042 stage=uploading status=failed] 主 DOCX 含图片布局标记但缺少报告。
+[trace_id=None job_id=docjob_7e13f92678fc stage=uploading status=failed] 主 DOCX 含图片布局标记但缺少报告。
+[trace_id=None job_id=docjob_ad4cc0d3921d stage=uploading status=failed] 主 DOCX 含图片布局标记但缺少报告。
+[trace_id=None job_id=docjob_6d066d4b59ef stage=uploading status=failed] 主 DOCX 含图片布局标记但缺少报告。
+[trace_id=None job_id=docjob_b02dcda8fa40 stage=uploading status=failed] 主 DOCX 含图片布局标记但缺少报告。
+..../Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+./Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+..............[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+.[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+.[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+.[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+.[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+.[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+..[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+.[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py:59: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  response = await handler(conn, exc)  # type: ignore[arg-type]
+.[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+..........[trace_id=f693e4a6a37b4e07b5cdd932df462a00 method=GET path=/api/v1/document-jobs/docjob_598c3573ae59/download-url status=exception duration_ms=1.7]
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py", line 539, in trace_logging_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/middleware/cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/routing.py", line 134, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/routing.py", line 120, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/routing.py", line 674, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/routing.py", line 330, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/concurrency.py", line 34, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/anyio/to_thread.py", line 63, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 2592, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 1029, in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/domains/document_jobs/router.py", line 659, in create_document_job_download_url
+    runtime.document_job_service.record_download_authorized(
+  File "/Users/sc/.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/unittest/mock.py", line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/unittest/mock.py", line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/unittest/mock.py", line 1183, in _execute_mock_call
+    raise effect
+OSError: 模拟审计存储失败
+[trace_id=bf9b82ea12084f65905668af8737c954 method=GET path=/api/v1/document-jobs/docjob_598c3573ae59/download-url status=exception duration_ms=1.2]
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/main.py", line 539, in trace_logging_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/middleware/cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/routing.py", line 134, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/routing.py", line 120, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/routing.py", line 674, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/routing.py", line 330, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/starlette/concurrency.py", line 34, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/anyio/to_thread.py", line 63, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 2592, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 1029, in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/app/domains/document_jobs/router.py", line 666, in create_document_job_download_url
+    runtime.audit_service.record(
+  File "/Users/sc/.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/unittest/mock.py", line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/unittest/mock.py", line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/unittest/mock.py", line 1183, in _execute_mock_call
+    raise effect
+OSError: 模拟审计存储失败
+..[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+..[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+....[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+.[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+.FF...F.[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+............[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_missing
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_provider_invalid_response
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_item_duplicate
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_technical_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translating status=failed] 翻译批次无法由当前 source/config 重建权威计划。
+[trace_id=None job_id=job stage=translating status=failed] 翻译批次无法由当前 source/config 重建权威计划。
+[trace_id=None job_id=job stage=translating status=failed] 翻译批次无法由当前 source/config 重建权威计划。
+[trace_id=None job_id=job stage=translating status=failed] 翻译批次无法由当前 source/config 重建权威计划。
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+.[trace_id=None job_id=job stage=translating status=failed] 翻译批次失败: translation_batch_tree_invalid 实际根集合与权威根计划不完整匹配。
+.[trace_id=None job_id=job stage=translating status=failed] 公式翻译保护边界无法完整闭合，已停止翻译。
+.[trace_id=None job_id=job stage=translating status=failed] 翻译请求编码后的文本字符数超过批次限额。
+....[trace_id=None job_id=job stage=translating status=failed] 翻译批次树与当前权威计划不一致。
+.[trace_id=None job_id=job stage=translating status=failed] 翻译请求编码后的文本字符数超过批次限额。
+.[trace_id=None job_id=job stage=translating status=failed] 翻译批次计划校验失败。
+..
+======================================================================
+FAIL: test_automatic_word_discovery_requires_current_generation_and_final_ir (tests.test_document_job_execution_stages.DocumentJobExecutionStageTests.test_automatic_word_discovery_requires_current_generation_and_final_ir)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/tests/test_document_job_execution_stages.py", line 419, in test_automatic_word_discovery_requires_current_generation_and_final_ir
+    self.assertEqual((result.status, result.result_file_id), ("succeeded", word.id))
+AssertionError: Tuples differ: ('failed', None) != ('succeeded', 'file_93ff801ed472')
+
+First differing element 0:
+'failed'
+'succeeded'
+
+- ('failed', None)
++ ('succeeded', 'file_93ff801ed472')
+
+======================================================================
+FAIL: test_explicit_result_reuses_old_generation_but_checks_file_identity (tests.test_document_job_execution_stages.DocumentJobExecutionStageTests.test_explicit_result_reuses_old_generation_but_checks_file_identity) (invalid=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/tests/test_document_job_execution_stages.py", line 436, in test_explicit_result_reuses_old_generation_but_checks_file_identity
+    self.assertEqual(result.status, "succeeded" if invalid is None else "failed")
+AssertionError: 'failed' != 'succeeded'
+- failed
++ succeeded
+
+
+======================================================================
+FAIL: test_zero_translation_units_complete_without_provider_calls (tests.test_document_job_execution_stages.DocumentJobExecutionStageTests.test_zero_translation_units_complete_without_provider_calls)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/tests/test_document_job_execution_stages.py", line 208, in test_zero_translation_units_complete_without_provider_calls
+    self.assertEqual(job.status, "succeeded", job.error_message)
+AssertionError: 'failed' != 'succeeded'
+- failed
++ succeeded
+ : MinerU 产物验证失败：mineru_content_empty。
+
+======================================================================
+FAIL: test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft) (backend='file')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/tests/test_document_job_delivery_state_api.py", line 184, in test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft
+    self._assert_defaults(reset.json()["job"])
+  File "/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/tests/test_document_job_delivery_state_api.py", line 77, in _assert_defaults
+    self.assertEqual({field: response[field] for field in STATE_DEFAULTS}, STATE_DEFAULTS)
+AssertionError: {'qua[108 chars]y': {'formula': {'schema_version': 'formula-su[213 chars]f'}}} != {'qua[108 chars]y': {}}
+Diff is 660 characters long. Set self.maxDiff to None to see it.
+
+======================================================================
+FAIL: test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft) (backend='database')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/tests/test_document_job_delivery_state_api.py", line 184, in test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft
+    self._assert_defaults(reset.json()["job"])
+  File "/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/tests/test_document_job_delivery_state_api.py", line 77, in _assert_defaults
+    self.assertEqual({field: response[field] for field in STATE_DEFAULTS}, STATE_DEFAULTS)
+AssertionError: {'qua[108 chars]y': {'formula': {'schema_version': 'formula-su[213 chars]f'}}} != {'qua[108 chars]y': {}}
+Diff is 660 characters long. Set self.maxDiff to None to see it.
+
+======================================================================
+FAIL: test_qa_keeps_owner_tenant_company_admin_and_direct_boundaries (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_qa_keeps_owner_tenant_company_admin_and_direct_boundaries)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/tests/test_document_job_delivery_state_api.py", line 203, in test_qa_keeps_owner_tenant_company_admin_and_direct_boundaries
+    self._assert_defaults(detail)
+  File "/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/tests/test_document_job_delivery_state_api.py", line 77, in _assert_defaults
+    self.assertEqual({field: response[field] for field in STATE_DEFAULTS}, STATE_DEFAULTS)
+AssertionError: {'qua[108 chars]y': {'formula': {'schema_version': 'formula-su[213 chars]f'}}} != {'qua[108 chars]y': {}}
+Diff is 660 characters long. Set self.maxDiff to None to see it.
+
+----------------------------------------------------------------------
+Ran 113 tests in 53.878s
+
+FAILED (failures=6)

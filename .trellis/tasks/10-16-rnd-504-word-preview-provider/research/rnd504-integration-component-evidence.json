@@ -1,0 +1,24 @@
+{
+  "report": "/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/tests/tmp/rnd504-integration-component/report.json",
+  "sha256": "95d3b05604ab415544bb1aa87e563d86b8808403b067c5a7c12edf92e8895376",
+  "summary": {
+    "sample_count": 1,
+    "succeeded": 1,
+    "failed": 0,
+    "manifest_sample_count": 1,
+    "manifest_enabled_count": 1,
+    "manifest_runnable_count": 1,
+    "ok": true
+  },
+  "result_statuses": [
+    {
+      "sample_id": "ti-opamp-opa228-p1-smoke",
+      "mode": null,
+      "status": "succeeded",
+      "docx_openable": true,
+      "docx_sha256": "3866141cadf4d1275d7f86a3eaa203ca4a8a48ebc782d1f54d2498a68c505736",
+      "docx_quality_flags": null,
+      "issues": null
+    }
+  ]
+}

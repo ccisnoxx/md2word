@@ -1,0 +1,54 @@
+/Users/sc/PycharmProjects/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/rnd504-head-c4ein1yd/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/rnd504-head-c4ein1yd/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+[trace_id=None job_id=docjob_3cc964952532 stage=uploading status=failed] 主 DOCX 含图片布局标记但缺少报告。
+F[trace_id=None job_id=docjob_ea0a712067e4 stage=uploading status=failed] 主 DOCX 含图片布局标记但缺少报告。
+F[trace_id=None job_id=docjob_cbdbd40979b3 stage=uploading status=failed] 任务指定的结果文件不属于该任务的可用主 DOCX。
+[trace_id=None job_id=docjob_1c8165e63b92 stage=uploading status=failed] 任务指定的结果文件不属于该任务的可用主 DOCX。
+[trace_id=None job_id=docjob_c962aaba4618 stage=uploading status=failed] 文件尚未完成上传: file_1c96ffa6e5ed
+[trace_id=trace_stages job_id=docjob_53ccdf6a461e stage=ir_converting status=failed] MinerU 产物验证失败：mineru_content_empty。
+F
+======================================================================
+FAIL: test_automatic_word_discovery_requires_current_generation_and_final_ir (tests.test_document_job_execution_stages.DocumentJobExecutionStageTests.test_automatic_word_discovery_requires_current_generation_and_final_ir)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/rnd504-head-c4ein1yd/tests/test_document_job_execution_stages.py", line 419, in test_automatic_word_discovery_requires_current_generation_and_final_ir
+    self.assertEqual((result.status, result.result_file_id), ("succeeded", word.id))
+AssertionError: Tuples differ: ('failed', None) != ('succeeded', 'file_3d1fa8d680b0')
+
+First differing element 0:
+'failed'
+'succeeded'
+
+- ('failed', None)
++ ('succeeded', 'file_3d1fa8d680b0')
+
+======================================================================
+FAIL: test_explicit_result_reuses_old_generation_but_checks_file_identity (tests.test_document_job_execution_stages.DocumentJobExecutionStageTests.test_explicit_result_reuses_old_generation_but_checks_file_identity) (invalid=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/rnd504-head-c4ein1yd/tests/test_document_job_execution_stages.py", line 436, in test_explicit_result_reuses_old_generation_but_checks_file_identity
+    self.assertEqual(result.status, "succeeded" if invalid is None else "failed")
+AssertionError: 'failed' != 'succeeded'
+- failed
++ succeeded
+
+
+======================================================================
+FAIL: test_zero_translation_units_complete_without_provider_calls (tests.test_document_job_execution_stages.DocumentJobExecutionStageTests.test_zero_translation_units_complete_without_provider_calls)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/rnd504-head-c4ein1yd/tests/test_document_job_execution_stages.py", line 208, in test_zero_translation_units_complete_without_provider_calls
+    self.assertEqual(job.status, "succeeded", job.error_message)
+AssertionError: 'failed' != 'succeeded'
+- failed
++ succeeded
+ : MinerU 产物验证失败：mineru_content_empty。
+
+----------------------------------------------------------------------
+Ran 3 tests in 1.386s
+
+FAILED (failures=3)

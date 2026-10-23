@@ -389,10 +389,10 @@ tasks:
     suggested_branch: md2word/RND-504
     trellis_slug: rnd-504-word-preview-provider
     prompt_file: docs/implementation/codex-prompts/RND-504.md
-    status: todo
-    trellis_task_path: null
-    resolution: null
-    notes: null
+    status: review
+    trellis_task_path: .trellis/tasks/10-16-rnd-504-word-preview-provider
+    resolution: implemented_pending_review
+    notes: "2026-10-16：CON-103 已人工验收 done、归档 completed，依赖门通过；创建唯一子任务并完成调查/三件套/最小 context，停在规划评审门。原根 HEAD=4c40e6c（md2word/TAB-306）不含依赖，只读业务基线=033cb61（含 CON-103 实现 bd828da）；实施前必须准备正确依赖工作区并保留既有 dirty。现有开发视觉工具不满足正式 Provider/Artifact/重试，存在真实增量，非 skipped_existing；生产引擎未选/未安装，默认 disabled，port/fake 不替代真实沙箱/字体/Word 验收。不改业务代码、不 start、不提交/push；不更新其他任务状态。 2026-10-17：按用户要求完成一次独立规划审查并修订3项P2及S3证据边界；执行协议、预览自身阻断恢复、跨run请求账本和定向验收已固化，审查审计20261016T155059Z-rnd-504-1f39fea6通过；仍planning，等待最新规划评审，不start/实现/提交/push。 2026-10-23：本轮仅调查/规划，CON-103仍done且Git归档completed/人工接受，当前已有状态合同但原提交非HEAD祖先。发现已验收实现931d2f6及归档48818e9，复用原10-16子任务身份并恢复规划，历史原件保留research/history；当前HEAD01e6c1a无preview，37源路径中12缺失/25已有，规划最小复用集成，非当前skipped_existing，不重建第二套实现。当前22项状态/下载/对象身份基线及独立源快照40项预览测试通过，均不证明目标集成/生产沙箱。修订3三件套与最小context完成，待人工评审；保留CON-104、TR-406、RND-502/503及共享独立key，生产disabled，不选SaaS/装依赖、不切分支、不start、不改业务、不提交/push。原dirty/暂存树及其他任务条目保持，详当前子任务planning-validation.md。 2026-10-23：按用户要求安排一位全新architect（fork_turns=none）独立只读审查修订3；两项P2（登记中断后预算耗尽误完成、过期成功预览被新key继续alias）由主会话分别以源原函数内存反例核实，三件套修订4补恢复分类/登记阶段、有效证据复用与失效新run、CAS和组合验收。986文件只读阶段零变化，详planning-review.md；同一architect定向复核确认两项在规划层闭合、未确认修订引入新矛盾，991文件复核阶段零变化；修订4待人工评审，仍planning，不改业务/start/提交/push，其他任务状态与索引保持。 2026-10-23：用户已接受修订4和独立复核，授权本轮实施；批准三件套hash及HEAD01e6c1a无漂移，CON-103依赖门通过。根993受控路径及索引已保护，实际独立工作树/分支为rnd504-current-integration、codex/rnd504-current-integration，仅本任务实施到review；生产disabled，不提交/push/archive或启动其他任务。详implementation-authorization.md。 2026-10-23：修订4实施完成，复用931d2f6并保留当前CON-104/TR-406/RND-502/503与共享file_id键；独立critical三P2由主会话核实并修复、最终复审closed，Trellis两轮检查无未闭合新增问题。最终应用35项通过（总63项覆盖），post-review release203项通过，既有113项仍6次已HEAD复现基线失败；component1/1、direct5/5/P0=0但P1/P2和视觉/真实存储/引擎门未验。仅本任务review，业务候选在codex/rnd504-current-integration独立工作树，原根dirty/302暂存删除与样本输入保持；生产disabled/production_ready=false，不提交/push/archive/add_session/其他任务。详implementation-summary.md、implementation-validation.md、implementation-review.md。 2026-10-23T21:34:52+08:00：用户已接受实现、独立复核、验证证据、列明基线失败及未验证边界，确认仅本任务三次本地提交及Trellis归档计划并授权执行。实际工作树codex/rnd504-current-integration；原根dirty/索引保护，生产disabled，不push/合回原分支/处理工作树/启动其他任务。归档完成前状态暂保review，详closeout.md。"
   - id: RND-505
     title: "PDF/IR/Word 页映射"
     phase: R5

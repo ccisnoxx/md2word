@@ -14,7 +14,7 @@ import zipfile
 from xml.etree import ElementTree
 from threading import Event, current_thread
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from app.core.errors import ApiError
 from app.domains.document_jobs.router import _build_download_token
@@ -391,7 +391,7 @@ class DocumentJobResultPersistenceTests(TestCase):
         )
 
     @contextmanager
-    def _runtime(self, kind="file"):
+    def _runtime(self, kind="file", *, preview=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             runtime = self._build_runtime(root, kind)
@@ -399,6 +399,10 @@ class DocumentJobResultPersistenceTests(TestCase):
             with fixtures.TestClient(fixtures.create_app(runtime)) as client:
                 headers = fixtures.build_auth_header(client)
                 job = self._pause_after_ir(runtime, execution, client, headers)
+                if not preview:
+                    # 既有receipt/公式/图片合同使用历史无预览快照，组合行为在专用预览测试验证。
+                    snapshot = {key: value for key, value in job.request_snapshot.items() if key != "word_preview"}
+                    job = runtime.document_job_repository.update_document_job(job.id, request_snapshot=snapshot)
                 yield root, runtime, execution, job, client, headers
 
     def _assert_result_bytes(self, runtime, result):
@@ -481,7 +485,7 @@ class DocumentJobResultPersistenceTests(TestCase):
     def test_four_interruptions_restart_service_and_preserve_selected_identity(self):
         for kind in ("file", "sqlite"):
             for point in ("pending", "object", "receipt", "materialized"):
-                with self.subTest(kind=kind, point=point), self._runtime(kind) as (
+                with self.subTest(kind=kind, point=point), self._runtime(kind, preview=True) as (
                     root, runtime, execution, job, client, headers,
                 ):
                     target = runtime.document_file_repository if point in {"pending", "materialized"} else (
@@ -501,11 +505,21 @@ class DocumentJobResultPersistenceTests(TestCase):
                     self.assertEqual(len(before_files), 1)
                     restarted = self._build_runtime(root, kind)
                     new_execution = restarted.document_job_execution_service
+                    write = Mock()
+                    original_write = restarted.file_upload_service._write_object
+
+                    def observe_primary_write(record, content):
+                        # 预览追加独立manifest，原断言继续保护主DOCX不重写。
+                        if record.file_type == "generated_word":
+                            write(record, content)
+                        return original_write(record, content)
+
                     with patch.object(new_execution.word_renderer, "render_to_result", wraps=new_execution.word_renderer.render_to_result) as render, patch.object(
-                        restarted.file_upload_service, "_write_object", wraps=restarted.file_upload_service._write_object,
-                    ) as write:
+                        restarted.file_upload_service, "_write_object", side_effect=observe_primary_write,
+                    ):
                         result = new_execution.execute_job(job.id)
                     files = self._assert_result_bytes(restarted, result)
+                    self.assertEqual(len(self._files(restarted, job.id, "word_preview_manifest")), 1)
                     if point in {"receipt", "materialized"}:
                         self.assertEqual(result.result_file_id, before.prepared_result.file.id)
                         render.assert_not_called()

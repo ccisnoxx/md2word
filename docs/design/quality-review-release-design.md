@@ -65,11 +65,16 @@ flowchart LR
 
 ```text
 blocked: 存在 blocker
-warning: 无 blocker，但存在 warning
-passed: 无 blocker/warning
+pending: 无 blocker，但仍有未检查贡献
+warning: 无 blocker/pending，但存在 warning
+passed: 全部已知贡献通过
 ```
 
 任务可以 `execution_status=succeeded + quality_status=blocked`，表示诊断草稿已成功生成。
+
+RND-504 使用最小 `quality_summary.checks_v1.word_preview` 保存自身贡献，保守捕获已有结论为 `__unattributed__`。普通显式 quality 更新（包括同值 blocked）更新未归属贡献；进度/receipt patch 不捕获自身聚合 blocker。非法结构 conflict，通用 summary patch 不得覆盖 producer 贡献。disabled 且非必需为 pending；required 不可用或实际预览失败为 blocked；成功只改自身 passed，不清其他/未知 blocker，不恢复旧批准。
+
+当前选定 receipt 的公式摘要先合并非预览基础：原 passed 遇 formula_text_fallback 降 warning，原 pending 保持，再与预览贡献合成，最后按总体 blocked 撤销批准/交付晋升。保留 RND-502/503 内容完整性和原件认证。Artifact 登记未知不能借质量降级使 initial 执行完成；可靠失败 manifest 才支持 succeeded+blocked。完整 owner 合同见 [WordPreviewProvider 与任务预览合同](../../.trellis/spec/backend/word-preview-contract.md)。此处不是新增 QualityRun 或页级检查。
 
 ## 5. 页级与元素级结果
 
@@ -237,6 +242,8 @@ GET  /api/v1/document-jobs/{id}/publications
 ```
 
 API 字段必须进入 OpenAPI 快照。
+
+上述为目标 API。RND-504 仅增加受权内部预览服务与既有文件授权检查，不新增这些路由或前端发布判断；CON-104 的后端 available actions 保持，publish 的核心 eligible 与 enabled 分离，enabled 仍为 false。登记预览不能越过后续复核/发布任务的实现与验收门。
 
 ## 13. 审计
 

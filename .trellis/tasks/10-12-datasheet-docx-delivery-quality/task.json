@@ -23,7 +23,8 @@
     "10-12-bas-001-current-capability-baseline",
     "10-12-con-101-product-mode-ui-copy",
     "10-21-tr-402-protected-token-codec",
-    "10-21-tr-403-translation-integrity-validator"
+    "10-21-tr-403-translation-integrity-validator",
+    "10-16-rnd-504-word-preview-provider"
   ],
   "parent": null,
   "relatedFiles": [],

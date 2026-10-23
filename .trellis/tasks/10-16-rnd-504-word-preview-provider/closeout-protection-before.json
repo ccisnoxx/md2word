@@ -1,0 +1,24 @@
+{
+  "captured_at": "2026-10-23T21:34:52+08:00",
+  "protection_directory": "/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/rnd504-closeout-pd6ex9px",
+  "root_head": "01e6c1add86f1ba7f24abc120629fa2fe6bd5ed9",
+  "root_branch": "md2word/RND-503",
+  "root_index_sha256": "eff7fc89c7fa60a6b7e176f11b610b018432186d8825276fbbaf85cf2269a810",
+  "root_index_entries_sha256": "72c831a5b26910c8cdde59da371356dfb3d9a41b85d3b41d3843a17094f8258b",
+  "root_cached_diff_sha256": "0b0e0f2118f832e0c4b4be363997a2c4a14723529b7d2f058bf01d8287c0d41d",
+  "root_controlled_paths": 1021,
+  "root_staged_deletions": 302,
+  "root_index_retained_entries": 915,
+  "worktree_index_empty": true,
+  "candidate_matches": 38,
+  "approved_plans": {
+    "prd.md": "b8e6756a61aacb863c96af9694ada504c9cc4f596cbdcda6bcff223a6187b62e",
+    "design.md": "7b5c184a725f0861594450c4ab3682e4ab275be18bb68eea353929b524cf9d40",
+    "implement.md": "a718d7b828e3904c936e9c17da91ff235cdad6c04455742105135009278b41c0"
+  },
+  "sample_inputs": 72,
+  "task_hooks": [],
+  "git_hooks": [],
+  "production_backend": "disabled",
+  "production_ready": false
+}

@@ -1,0 +1,16 @@
+{
+  "revision3_independent_readonly_review": {
+    "controlled_files": 986,
+    "changed": [],
+    "new": [],
+    "head_same": true,
+    "branch_same": true,
+    "cached_diff_same": true
+  },
+  "revision4_targeted_readonly_recheck": {
+    "controlled_files": 991,
+    "changed": [],
+    "new": [],
+    "scope": "same architect revision4 targeted recheck; before coordinator bookkeeping"
+  }
+}

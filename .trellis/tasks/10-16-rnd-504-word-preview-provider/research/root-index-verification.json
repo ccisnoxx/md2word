@@ -1,0 +1,11 @@
+{
+  "original_status_time": "2026-10-23T12:24:20.105Z",
+  "cached_statuses": "D only",
+  "count": 302,
+  "cached_paths_identical": true,
+  "original_index_mtime_precedes_implementation": true,
+  "note": "初始snapshot文本SHA与当前diff文本不同，改用原始未截断status精确路径和HEAD唯一删除集合核对；本轮未stage/index操作。",
+  "index_exactly_head_minus_original_deletions": true,
+  "index_entries": 915,
+  "head_entries": 1217
+}

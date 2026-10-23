@@ -1,0 +1,21 @@
+{
+  "current_test_count": 113,
+  "current_failure_count": 6,
+  "current_error_count": 0,
+  "current_failures_exactly_head_reproduced": true,
+  "failures": [
+    "test_automatic_word_discovery_requires_current_generation_and_final_ir (tests.test_document_job_execution_stages.DocumentJobExecutionStageTests.test_automatic_word_discovery_requires_current_generation_and_final_ir)",
+    "test_explicit_result_reuses_old_generation_but_checks_file_identity (tests.test_document_job_execution_stages.DocumentJobExecutionStageTests.test_explicit_result_reuses_old_generation_but_checks_file_identity) (invalid=None)",
+    "test_zero_translation_units_complete_without_provider_calls (tests.test_document_job_execution_stages.DocumentJobExecutionStageTests.test_zero_translation_units_complete_without_provider_calls)",
+    "test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft) (backend='file')",
+    "test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft) (backend='database')",
+    "test_qa_keeps_owner_tenant_company_admin_and_direct_boundaries (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_qa_keeps_owner_tenant_company_admin_and_direct_boundaries)"
+  ],
+  "head_logs": [
+    "rnd504-head-baseline.log",
+    "rnd504-head-api-baseline.log"
+  ],
+  "current_log": "post-review-contract-regression.log",
+  "current_seconds": 53.878,
+  "post_review_same_failures": true
+}

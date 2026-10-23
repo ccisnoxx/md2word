@@ -183,3 +183,13 @@ var/
   - `var/config/template_state.json` 作为运行态默认模板状态
 - jobs 现在允许显式 `template_id` 选择可见模板；未传时回退到当前运行态默认模板。
 - `retry/cancel/recover-mineru-result/cleanup-local-files` 已实现，默认按 admin 访问口径要求 `X-Admin-Token`。
+
+## Document Jobs DOCX 预览（RND-504）
+
+Files + Document Jobs 当前主链路在唯一主 DOCX receipt 物化并完成现有原件认证之后，经过可替换 `WordPreviewProvider` 生成 PDF/可选 PNG，最后做原任务 completed CAS。Provider 仅 bytes+PreviewPolicy；Artifact 由既有 FileUploadService 管理，私有预览 ledger 与质量贡献由 DocumentJob 原锁/事务持久化，不增加转换流水线、公开 API 或 SQL schema。
+
+`WORD_PREVIEW_BACKEND=disabled`、`WORD_PREVIEW_REQUIRED=false`、`WORD_PREVIEW_RENDER_PAGES=false` 为默认。fake 仅测试注入，配置 backend 只接受 disabled/sandboxed。创建任务快照策略/profile/预算；历史无字段不自动补跑，普通 retry 使用原快照，单独预览重试不改变 DOCX/generation。launcher/profile 绝对路径来自受控部署配置，不能来自任务参数，不复制密钥到子进程。
+
+sandboxed adapter 使用固定 `word-preview-exec/v1` describe/render 协议和批准 profile hash，校验输入输出、期限、进程组终止及本次目录清理。引擎/完整 PDF validator/字体和真实隔离由部署 owner 批准并实证，不能因本机有 soffice 或协议测试通过就启用。相关配置与错误处置见 [后端运维手册](../runbooks/backend.md#7-word-预览配置与恢复rnd-504)，完整合同见 [WordPreviewProvider 与任务预览合同](../../.trellis/spec/backend/word-preview-contract.md)。
+
+质量合成保留已有/未知结论，预览成功仅清自身 blocker；普通预览失败留证后可保留内部 DOCX 下载。文件登记不可确认仍按存储失败，当前 attempt 未确认不能靠耗尽预算改成 completed。成功 run 的当前 Artifact 全部有效才允许新 key alias，明确失效可由新 key 有界恢复。原执行 CAS、CON-104 下载分类、后端 actions、TR-406 以及公式/图片认证保持，发布未启用。

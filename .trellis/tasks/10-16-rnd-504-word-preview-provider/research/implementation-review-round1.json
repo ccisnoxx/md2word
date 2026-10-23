@@ -1,0 +1,74 @@
+{
+  "reviewer": "/root/rnd504_implementation_review",
+  "role": "critical_reviewer",
+  "readonly": true,
+  "finding": {
+    "id": "IR1",
+    "priority": "P2",
+    "status": "confirmed_fix_in_progress",
+    "old_locations": [
+      "app/domains/document_jobs/service.py:1698",
+      "app/domains/document_jobs/preview.py:376"
+    ],
+    "trigger": "GET/files对每个当前preview文件重新完整观测",
+    "impact": "对象读取与PNG校验随页数平方放大；不需要真实S3即可复现",
+    "reviewer_probe": {
+      "pages_1_reads": 12,
+      "pages_3_reads": 30,
+      "pages_10_reads": 156
+    },
+    "main_session_independent_probe": {
+      "pages": 3,
+      "http_status": 200,
+      "generated_word_reads": 5,
+      "manifest_reads": 5,
+      "pdf_reads": 5,
+      "page_reads": 15,
+      "total_reads": 30
+    },
+    "agreed_fix": "单次list只做一次完整当前观测，按验证后完整Record匹配；单件/Token独立重验，无跨请求cache",
+    "expected_reads_10_pages": 13
+  },
+  "other_findings": "审查者已读全核心，尚未确认其他新增P0/P1，正式初审/最终delta复审待收口",
+  "additional_findings": [
+    {
+      "id": "IR2",
+      "priority": "P2",
+      "status": "confirmed_fix_in_progress",
+      "old_locations": [
+        "app/domains/document_jobs/preview.py:202",
+        "app/domains/document_jobs/execution.py:3296"
+      ],
+      "trigger": "预览PDF写入抛带路径PermissionError，原execution catch投影str(exc)",
+      "main_session_independent_probe": {
+        "execution_status": "failed",
+        "failed_stage": "uploading",
+        "error_code": "oss_failed",
+        "owner_get_status": 200,
+        "path_canary_leaked": true,
+        "receipt_preserved": true
+      },
+      "agreed_fix": "仅新预览source/artifact I/O边界安全固定错误，仍向外失败，保留receipt/pending；不包整流水线，不捕获BaseException"
+    },
+    {
+      "id": "IR3",
+      "priority": "P2",
+      "status": "confirmed_fix_in_progress",
+      "old_locations": [
+        "app/domains/document_jobs/preview_state.py:161",
+        "app/domains/document_jobs/preview_state.py:174"
+      ],
+      "trigger": "有效成功旧终态缺阶段，current initial + 新UUID retry",
+      "main_session_independent_probe": {
+        "valid_manifest": true,
+        "old_current": "initial",
+        "retry_exception": "PreviewFailure",
+        "current_status_after": "failed",
+        "quality_after": "blocked",
+        "provider_calls": 1
+      },
+      "scope_decision": "design§6已经承诺旧终态完整manifest确认，范围内局部兼容修复；没有现网旧数据存在结论，不加迁移/回填",
+      "agreed_fix": "同锁在新key判定前以完整观测确认旧当前终态，不升级旧在途/未知，不自造revision stale，不加预算/deadline"
+    }
+  ]
+}

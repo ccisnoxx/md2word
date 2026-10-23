@@ -1,0 +1,114 @@
+{
+  "report": "/Users/sc/.codex/worktrees/rnd504-current-integration/md2word/tests/tmp/rnd504-integration-direct/report.json",
+  "sha256": "b372ed8e24c07b7b1347e74a1b5a041702cb4bcd6b989502d03a257b249082bc",
+  "summary": {
+    "sample_set": "phase2-core",
+    "sample_count": 5,
+    "entry_count": 5,
+    "modes": [
+      "direct"
+    ],
+    "succeeded": 5,
+    "failed": 0,
+    "blocked": 0,
+    "dry_run": 0,
+    "p0_entries": 4,
+    "p0_succeeded": 4,
+    "p0_issues": 0,
+    "docx_quality_flagged_entries": 3,
+    "docx_quality_flags": [
+      "docx_latex_residue:2",
+      "docx_unstyled_heading_candidates:1",
+      "docx_unstyled_heading_candidates:11",
+      "docx_unstyled_heading_candidates:3"
+    ],
+    "automated_matrix_ok": true,
+    "phase3_entry_ready": false,
+    "phase3_entry_blocker": "p1_p2_backlog_required"
+  },
+  "result_statuses": [
+    {
+      "sample_id": "OPA228_P1",
+      "mode": "direct",
+      "status": "succeeded",
+      "docx_openable": true,
+      "docx_sha256": "ee8b02606c7c41856214586e1d8718b309d596f1249d400a31b276a31717bc7e",
+      "docx_quality_flags": [
+        "docx_unstyled_heading_candidates:1"
+      ],
+      "issues": [
+        {
+          "severity": "P1",
+          "code": "docx_unstyled_heading_candidates:1",
+          "sample_id": "OPA228_P1",
+          "mode": "direct",
+          "message": "DOCX quality flag: docx_unstyled_heading_candidates:1"
+        }
+      ]
+    },
+    {
+      "sample_id": "OPA228_P2",
+      "mode": "direct",
+      "status": "succeeded",
+      "docx_openable": true,
+      "docx_sha256": "a142756488b7ec22769cc1f785c4e52874a571f78b62734a2f9f27032218a678",
+      "docx_quality_flags": [],
+      "issues": []
+    },
+    {
+      "sample_id": "OPA228_P6",
+      "mode": "direct",
+      "status": "succeeded",
+      "docx_openable": true,
+      "docx_sha256": "13e794a78d97489a668d81961753f8e0efb1286bcf94df92ebe5f3749073ab4b",
+      "docx_quality_flags": [
+        "docx_unstyled_heading_candidates:3"
+      ],
+      "issues": [
+        {
+          "severity": "P1",
+          "code": "docx_unstyled_heading_candidates:3",
+          "sample_id": "OPA228_P6",
+          "mode": "direct",
+          "message": "DOCX quality flag: docx_unstyled_heading_candidates:3"
+        }
+      ]
+    },
+    {
+      "sample_id": "OPA228_P7",
+      "mode": "direct",
+      "status": "succeeded",
+      "docx_openable": true,
+      "docx_sha256": "3695ec52ac4a72308ba3b500b4fa0469dbb15c2e1ade9b6f041331b8c61d8e6a",
+      "docx_quality_flags": [],
+      "issues": []
+    },
+    {
+      "sample_id": "RS2G04",
+      "mode": "direct",
+      "status": "succeeded",
+      "docx_openable": true,
+      "docx_sha256": "478ac99d744c351d79cd60e3f4c9b5720fe0952319f30ce7fae8d9cad0220f82",
+      "docx_quality_flags": [
+        "docx_latex_residue:2",
+        "docx_unstyled_heading_candidates:11"
+      ],
+      "issues": [
+        {
+          "severity": "P1",
+          "code": "docx_latex_residue:2",
+          "sample_id": "RS2G04",
+          "mode": "direct",
+          "message": "DOCX quality flag: docx_latex_residue:2"
+        },
+        {
+          "severity": "P2",
+          "code": "docx_unstyled_heading_candidates:11",
+          "sample_id": "RS2G04",
+          "mode": "direct",
+          "message": "DOCX quality flag: docx_unstyled_heading_candidates:11"
+        }
+      ]
+    }
+  ]
+}

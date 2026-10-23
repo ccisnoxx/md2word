@@ -531,6 +531,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 正式 owner：`app/services/renderer/docx_quality.py::analyze_docx_quality_bytes`、`::build_docx_quality_flags`；`app/services/renderer/evidence.py::build_renderer_evidence`。
 - 预期输出：记录可编辑段落/表格、heading、numbering、TOC clue、keepNext、表头/cantSplit、宽表、横向节、图片和 LaTeX residue 等 OOXML 指标，并对无可编辑内容、图片化、手写列表、静态目录、未样式化标题、公式残留等风险生成 flag。
 - 冲突/例外：指标或 flag 只证明包内结构，不证明 Word 实际页数、溢出、栏平衡、表格不挤压或图片清晰；`wide_table_count`/`landscape_sections` 当前不会自动形成方向风险 flag。
+- RND-504 补充：预览 PDF/页面成功是可用性证据，不替代这些视觉结论；预览自身质量贡献不能清除已有公式、图片或未知 blocker，详见 QUALITY-005。
 - 禁止：把 `quality_flags=[]` 当作视觉验收通过；把“可打开”当作质量通过；用 analyzer 指标替代真客户端排版。
 - 自动验证：`tests.test_golden_sample_manifest.GoldenSampleManifestTests.test_docx_quality_analysis_reads_ooxml_structure_without_python_docx`、`.test_docx_quality_flags_obvious_word_semantics_risks`、`.test_docx_quality_analysis_flags_image_only_docx`；`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_renderer_evidence_summarizes_layout_and_docx_quality`。
 - 样本证据：线上 worker 持久化 evidence；只有 `blocking_quality_flags` 触发失败关闭，既有非阻断 `quality_flags` 仍允许成功并进入人工复核。
@@ -573,6 +574,18 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 来源/取代：当前正式代码/调用链审计发现。
 
 RND-502 补充：`formula_text_fallback` 是内容完整、可见、可审计的 warning，不是 fatal。新报告中的源/锚点/预期输出投影不一致属于确定性完整性失败，必须阻断新候选；receipt 后损坏按 uploading/oss_failed 保留选件，不重渲染掩盖。详细版本合同见下方 RND-502 场景。
+
+### QUALITY-005 DOCX 预览与贡献边界
+
+- 状态：`implemented-gap`；本轮验证证据见 RND-504 任务 implementation-validation.md，生产 backend 保持 disabled。
+- 输入信号：已物化且经过现有公式/图片原件认证的当前 receipt/DOCX，及创建时冻结的 PreviewPolicy；Provider 不消费 DocumentIR。
+- 正式 owner：`app/services/preview/` 拥有 bytes→PDF/页面协议；`document_jobs/preview.py`、`preview_state.py` 拥有编排/幂等及当前引用，`quality_state.py` 合成贡献。具体合同见 [WordPreviewProvider 与任务预览合同](./word-preview-contract.md)。
+- 预期输出：独立不可变 PDF/可选 PNG/manifest；可靠失败保留主 DOCX 供内部下载、预览贡献 blocked。disabled 非必需为 pending；成功只解除自身 blocker，先保留选定 receipt 的公式 fallback warning，再合成质量和撤销批准。
+- 冲突/例外：PDF 成功不代表页面映射、版式/内容视觉通过或发布资格；发布 enabled 仍 false。metadata/object/confirm 未知不得当作普通预览失败完成；当前 attempt 登记阶段和确认必须匹配，旧失败 manifest 不证明当前尝试已确认。
+- 禁止：重渲染 DOCX 隐藏预览错误，凭 run.status 成功复用已失效 Artifact，旧 key 偷开新 run，同 retry_count 暴露部分件，清其他 blocker/恢复旧批准，恢复旧覆盖对象键，匿名提供预览或不受控 shell/宏。
+- 自动验证：`tests.test_word_preview_provider`、`tests.test_document_job_word_preview`、`tests.test_document_job_preview_persistence`，加当前 execution/result/delivery/download/identity、TR-406 与组件/发布回归。实际执行和未执行项分别记录，不继承历史通过。
+- 样本证据：tests-only 协议子进程验证 adapter，不证明真实引擎、批准隔离、字体、部署 FS/MySQL/S3 或 Word 视觉。未知生产证据保留启用门，不为通过测试安装依赖或启用 backend。
+- 来源/取代：历史 `931d2f6` 复用与当前批准修订 4；新 key 仅完整有效观测才 alias，明确生命周期失效可有界恢复，存储未知/完整性不符失败关闭。
 
 ## 7. 冲突优先级矩阵
 

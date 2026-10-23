@@ -1,0 +1,12 @@
+{"type": "file", "file": ".trellis/tasks/10-16-rnd-504-word-preview-provider/prd.md", "reason": "本修订范围、AC和不变量；历史授权不继承"}
+{"type": "file", "file": ".trellis/tasks/10-16-rnd-504-word-preview-provider/design.md", "reason": "当前目标与源实现边界、质量顺序和并发安全"}
+{"type": "file", "file": ".trellis/tasks/10-16-rnd-504-word-preview-provider/implement.md", "reason": "最小复用路径、验证和评审门"}
+{"type": "file", "file": ".trellis/tasks/10-16-rnd-504-word-preview-provider/research/current-state.md", "reason": "当前事实、历史源、22/40测试证据边界"}
+{"type": "file", "file": ".trellis/tasks/10-16-rnd-504-word-preview-provider/research/integration-inventory.json", "reason": "37个源目标blob对照；不覆盖较新共享owner"}
+{"type": "file", "file": ".trellis/spec/backend/word-preview-contract.md", "reason": "本轮当前预览合同；历史复用加修订4登记确认/生命周期复用，保留现有质量和对象身份"}
+{"type": "file", "file": ".trellis/spec/backend/database-guidelines.md", "reason": "当前三adapter锁、receipt、质量投影和独立file_id对象键"}
+{"type": "file", "file": ".trellis/spec/backend/document-job-mode-contract.md", "reason": "direct零AI、执行/恢复与CON-104后端权威动作"}
+{"type": "file", "file": ".trellis/spec/backend/error-handling.md", "reason": "局部preview错误与真实存储/执行错误边界"}
+{"type": "file", "file": ".trellis/tasks/10-16-rnd-504-word-preview-provider/research/current-word-generation-boundaries.md", "reason": "当前Word规则定向原文与source hash；完整来源在实施前按需读取，避免截断"}
+{"type": "file", "file": ".trellis/tasks/10-16-rnd-504-word-preview-provider/planning-review.md", "reason": "修订3独立审查两项确认反例及修订4恢复合同，禁止照搬旧耗尽/成功复用分支"}
+{"type": "file", "file": ".trellis/tasks/10-16-rnd-504-word-preview-provider/implementation-authorization.md", "reason": "当前用户已接受修订4并授权本轮实施；冻结规划的阶段说明不再阻止实施"}
