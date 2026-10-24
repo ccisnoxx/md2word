@@ -2,8 +2,8 @@
   "id": "rnd-505-pdf-ir-word-page-mapping",
   "name": "rnd-505-pdf-ir-word-page-mapping",
   "title": "RND-505：PDF/IR/Word 页映射",
-  "description": "RND-505 v2与G0已完成，用户已接受实现、独立复审、基线失败及未验门；本轮授权隔离树本地提交和Trellis收口。",
-  "status": "in_progress",
+  "description": "RND-505 v2与G0已完成人工验收及本地工作提交，按授权仅归档当前子任务；五次基线失败和未验门保留，未push或合回原根。",
+  "status": "completed",
   "dev_type": "backend",
   "scope": "pdf-ir-word-page-mapping",
   "package": null,
@@ -11,11 +11,11 @@
   "creator": "777",
   "assignee": "777",
   "createdAt": "2026-10-24",
-  "completedAt": null,
+  "completedAt": "2026-10-24",
   "branch": "codex/rnd505-v2-implementation",
   "base_branch": "8fa11d9779ce05e9cba1cfb7afee34ecbd58a4cf",
   "worktree_path": "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word",
-  "commit": null,
+  "commit": "850c0090c3dcb7c6c23aa3498066fe745fa8036d",
   "pr_url": null,
   "subtasks": [],
   "children": [],
@@ -29,7 +29,7 @@
     "app/services/renderer/block_anchors.py",
     "app/domains/document_jobs/execution.py"
   ],
-  "notes": "2026-10-24：create --parent --no-start；RND501状态同步已获授权。RND501/RND504统一基线不在本轮实施；只做研究与规划，原dirty/index保持，不提交/push。 全新architect独立只读审查确认1P1/1P2，主会话核实后修订v2，同一审查者复核均闭合；仍planning，G0未满足，未授权实施。 用户已接受v2并授权隔离实施。G0独立复核通过后start；实现、Trellis check和独立critical复审完成，1P2核实修复并复验关闭；当前停review待人工验收，不提交/push。 本轮全新critical只读复审发现归并代表/输出类型认证P2；核实修复及56项定向、B1和项目回归通过，最终独立复核结论见post-implementation-review.md。历史start已由上一轮执行，本轮未再start；原根、index保留，不提交/push。 2026-10-24：用户已接受实现及全新独立复审，授权隔离树本地提交G0与RND-505、Trellis归档和会话记录；不push、不合回、不重复测试，保留原根全部改动。详closeout.md。",
+  "notes": "2026-10-24：create --parent --no-start；RND501状态同步已获授权。RND501/RND504统一基线不在本轮实施；只做研究与规划，原dirty/index保持，不提交/push。 全新architect独立只读审查确认1P1/1P2，主会话核实后修订v2，同一审查者复核均闭合；仍planning，G0未满足，未授权实施。 用户已接受v2并授权隔离实施。G0独立复核通过后start；实现、Trellis check和独立critical复审完成，1P2核实修复并复验关闭；当前停review待人工验收，不提交/push。 本轮全新critical只读复审发现归并代表/输出类型认证P2；核实修复及56项定向、B1和项目回归通过，最终独立复核结论见post-implementation-review.md。历史start已由上一轮执行，本轮未再start；原根、index保留，不提交/push。 2026-10-24：用户已接受实现及全新独立复审，授权隔离树本地提交G0与RND-505、Trellis归档和会话记录；不push、不合回、不重复测试，保留原根全部改动。详closeout.md。 工作提交850c0090c3dcb7c6c23aa3498066fe745fa8036d已完成，归档路径.trellis/tasks/archive/2026-10/10-24-rnd-505-pdf-ir-word-page-mapping；用户接受实现和残余边界，任务完成不代签生产门。",
   "meta": {
     "backlog_id": "RND-505",
     "phase": "R5",
@@ -59,7 +59,7 @@
     "latest_planning_review": "planning-review-round2.md",
     "g0_source_snapshot": "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/tmp/rnd505-g0-b0",
     "g0_review": "g0-review.md",
-    "implementation_status": "accepted",
+    "implementation_status": "completed",
     "implementation_review": "post-implementation-review.md",
     "check_status": "passed_with_verified_baseline_failures",
     "independent_implementation_review": "fresh_critical_reviewer_one_p2_two_variants_closed_no_remaining_findings",
@@ -73,6 +73,18 @@
     "closeout_record": "closeout.md",
     "push_authorized": false,
     "root_integration_authorized": false,
-    "closeout_tests_rerun": false
+    "closeout_tests_rerun": false,
+    "archive_path": ".trellis/tasks/archive/2026-10/10-24-rnd-505-pdf-ir-word-page-mapping",
+    "completion_scope": "accepted_local_implementation_not_production_enablement",
+    "baseline_failure_count": 5,
+    "baseline_error_count": 0,
+    "unverified_environment_gates": [
+      "real_word_wps_visual",
+      "golden",
+      "production_preview_sandbox_fonts",
+      "real_innodb",
+      "deployment_fs_s3",
+      "production_capacity"
+    ]
   }
 }

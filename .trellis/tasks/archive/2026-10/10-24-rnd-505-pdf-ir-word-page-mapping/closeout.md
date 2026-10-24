@@ -54,3 +54,7 @@
 ## 收口静态核对说明
 
 全量暂存diff的空白检查发现5行原始unittest verbose日志尾空格，均为历史输出，未为通过格式检查改写证据（g0-candidate-ir-dependencies.log、g0-candidate-t0-renderer-execution.log两行、g0-candidate-tr-con.log、g0-final-tr-con.log）。排除仅这些原始.log后的维护源码/文档检查通过；这不属于新增测试失败。业务源码与已接受指纹不变。本轮未重复运行测试。
+
+## 实际工作提交与归档落点
+
+工作提交：`850c0090c3dcb7c6c23aa3498066fe745fa8036d`，父提交`8fa11d9779ce05e9cba1cfb7afee34ecbd58a4cf`，已核对141个明确路径。归档路径：`.trellis/tasks/archive/2026-10/10-24-rnd-505-pdf-ir-word-page-mapping`。归档操作将当前task设为completed，manifest仅RND-505设done/implemented，其余44条与原根保护基线保持；业务/Spec源码没有后续修改。随后会话记录引用此工作提交，最终bookkeeping提交号见Git日志。
