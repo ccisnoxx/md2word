@@ -1112,3 +1112,53 @@ RND-502 v2实现、独立复审修复和验证证据已人工接受，列明未�
 ### Next Steps
 
 - 本任务已获人工接受并完成；不启动后续任务，不push。
+
+
+## Session 35: RND-505 验收、统一基线与本地收口
+
+**Date**: 2026-10-24
+**Task**: RND-505 验收、统一基线与本地收口
+**Branch**: `codex/rnd505-v2-implementation`
+
+### Summary
+
+用户接受G0及RND-505实现和全新独立复审，完成本地工作提交与当前子任务归档；保留5项基线失败和未验环境门，未重复测试，不push、不合回原根。
+
+### Main Changes
+
+本轮只执行验收收口及本地提交，没有重新运行测试。
+
+工作提交包含已组合验证的G0与RND-505。归档提交：a6392a779ae300fa6def2e1e76b93443cf5dd45a。准确任务路径：.trellis/tasks/archive/2026-10/10-24-rnd-505-pdf-ir-word-page-mapping。manifest仅RND-505为done/implemented，task completed；父任务和其他44条状态保持原根基线。
+
+既有证据：最终修复定向56通过；B1三入口30子场景与file/SQLite独立进程通过，305个app指纹匹配；release203/OpenAPI current changed=false；component1/1、direct5/5 P0=0。集中339项仍5 failure、0 error，两个execution旧fixture报告缺失，以及三个API既有formula摘要断言差异，逐项基线签名证据保留，未改称全绿。
+
+未验：真实Word/WPS视觉、Golden、生产预览沙箱/字体、真实InnoDB、部署FS/S3及生产容量；phase3_entry_ready=false。生产preview disabled/production_ready=false；B1停写但保留兼容reader、证明metadata与历史Artifact，不准直接退回B0，不删除审计或重写发布件。
+
+本轮只做hash/Git/context/收口文件检查；5行历史unittest日志尾空格保留，维护源码/文档空白检查通过。不push、不合回原根、不删除工作树、不启动或归档其他任务。新增收口文档及日志为中文，业务代码和已验收注释/docstring未再改动。
+
+最终保护核对：
+```json
+{
+  "original_protected_paths": 1118,
+  "original_changed_paths": [],
+  "original_status_unchanged": true,
+  "original_staged_entries_unchanged": true,
+  "original_head_unchanged": true,
+  "accepted_sources_unchanged_except_closeout_manifest": true,
+  "approved_v2_unchanged": true,
+  "archive_commit": "a6392a779ae300fa6def2e1e76b93443cf5dd45a",
+  "work_commit": "850c0090c3dcb7c6c23aa3498066fe745fa8036d",
+  "tests_rerun_in_closeout": false
+}
+```
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `850c0090c3dcb7c6c23aa3498066fe745fa8036d` | (see git log) |
+
+### Status
+
+[OK] **Completed**
