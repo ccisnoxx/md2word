@@ -1,0 +1,278 @@
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+test_direct_create_boundary_does_not_depend_on_translation_services (tests.test_document_job_modes.DocumentJobModesTests.test_direct_create_boundary_does_not_depend_on_translation_services) ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_direct_create_debug_keeps_role_priority_and_has_no_side_effects (tests.test_document_job_modes.DocumentJobModesTests.test_direct_create_debug_keeps_role_priority_and_has_no_side_effects) ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_direct_create_rejects_each_translation_selection_before_loading (tests.test_document_job_modes.DocumentJobModesTests.test_direct_create_rejects_each_translation_selection_before_loading) ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_direct_rejection_preserves_source_access_and_retry_state_priority (tests.test_document_job_modes.DocumentJobModesTests.test_direct_rejection_preserves_source_access_and_retry_state_priority) ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_direct_retry_and_clone_reject_new_translation_selections_after_permissions (tests.test_document_job_modes.DocumentJobModesTests.test_direct_retry_and_clone_reject_new_translation_selections_after_permissions) ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_direct_symbol_rules_stay_available_for_create_retry_and_clone (tests.test_document_job_modes.DocumentJobModesTests.test_direct_symbol_rules_stay_available_for_create_retry_and_clone) ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_direct_without_translation_configuration_executes_one_docx_without_translation_calls (tests.test_document_job_modes.DocumentJobModesTests.test_direct_without_translation_configuration_executes_one_docx_without_translation_calls) ... ok
+test_historical_direct_read_clone_and_default_retry_keep_lazy_snapshot (tests.test_document_job_modes.DocumentJobModesTests.test_historical_direct_read_clone_and_default_retry_keep_lazy_snapshot) ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_http_conflicting_alias_and_invalid_modes_keep_errors_without_mutation (tests.test_document_job_modes.DocumentJobModesTests.test_http_conflicting_alias_and_invalid_modes_keep_errors_without_mutation) ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py:59: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  response = await handler(conn, exc)  # type: ignore[arg-type]
+ok
+test_http_historical_aliases_create_canonical_direct (tests.test_document_job_modes.DocumentJobModesTests.test_http_historical_aliases_create_canonical_direct) ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_internal_aliases_remain_supported_and_schema_enum_remains_canonical (tests.test_document_job_modes.DocumentJobModesTests.test_internal_aliases_remain_supported_and_schema_enum_remains_canonical) ... ok
+test_availability_reads_only_metadata_without_object_io (tests.test_document_job_download_availability.DocumentJobDownloadAvailabilityTests.test_availability_reads_only_metadata_without_object_io) ... ok
+test_default_download_actions_share_existing_issuance_rejections (tests.test_document_job_download_availability.DocumentJobDownloadAvailabilityTests.test_default_download_actions_share_existing_issuance_rejections) ... ok
+test_ordinary_artifacts_remain_downloadable_without_main_document_classification (tests.test_document_job_download_availability.DocumentJobDownloadAvailabilityTests.test_ordinary_artifacts_remain_downloadable_without_main_document_classification) ... ok
+test_publish_eligibility_requires_canonical_quality_review_and_current_admin (tests.test_document_job_download_availability.DocumentJobDownloadAvailabilityTests.test_publish_eligibility_requires_canonical_quality_review_and_current_admin) ... ok
+test_published_is_not_republished_or_classified_as_final (tests.test_document_job_download_availability.DocumentJobDownloadAvailabilityTests.test_published_is_not_republished_or_classified_as_final) ... ok
+test_warning_priority_and_internal_download_do_not_promote_delivery (tests.test_document_job_download_availability.DocumentJobDownloadAvailabilityTests.test_warning_priority_and_internal_download_do_not_promote_delivery) ... ok
+test_artifacts_candidates_and_scope_keep_their_existing_security_boundaries (tests.test_document_job_download_availability_api.DocumentJobDownloadAvailabilityApiTests.test_artifacts_candidates_and_scope_keep_their_existing_security_boundaries) ... ok
+test_core_scenarios_roles_and_latest_default_explicit_signing_policy (tests.test_document_job_download_availability_api.DocumentJobDownloadAvailabilityApiTests.test_core_scenarios_roles_and_latest_default_explicit_signing_policy) ... ok
+test_download_signing_keeps_event_and_audit_failures_explicit (tests.test_document_job_download_availability_api.DocumentJobDownloadAvailabilityApiTests.test_download_signing_keeps_event_and_audit_failures_explicit) ... [trace_id=bbd1a88017674d93aa86c80109f99a2b method=GET path=/api/v1/document-jobs/docjob_21262f697e2b/download-url status=exception duration_ms=2.7]
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py", line 539, in trace_logging_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/middleware/cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/routing.py", line 134, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/routing.py", line 120, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/routing.py", line 674, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/routing.py", line 330, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/concurrency.py", line 34, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/anyio/to_thread.py", line 63, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 2592, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 1029, in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/domains/document_jobs/router.py", line 660, in create_document_job_download_url
+    runtime.document_job_service.record_download_authorized(
+  File "/Users/sc/.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/unittest/mock.py", line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/unittest/mock.py", line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/unittest/mock.py", line 1183, in _execute_mock_call
+    raise effect
+OSError: 模拟审计存储失败
+[trace_id=41a0e302a7904511b81b29080e66b7c0 method=GET path=/api/v1/document-jobs/docjob_21262f697e2b/download-url status=exception duration_ms=3.0]
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py", line 539, in trace_logging_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/middleware/cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/routing.py", line 134, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/routing.py", line 120, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/routing.py", line 674, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/routing.py", line 330, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/concurrency.py", line 34, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/anyio/to_thread.py", line 63, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 2592, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 1029, in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/domains/document_jobs/router.py", line 667, in create_document_job_download_url
+    runtime.audit_service.record(
+  File "/Users/sc/.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/unittest/mock.py", line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/unittest/mock.py", line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/unittest/mock.py", line 1183, in _execute_mock_call
+    raise effect
+OSError: 模拟审计存储失败
+ok
+test_list_detail_and_incidents_use_the_same_metadata_only_owner (tests.test_document_job_download_availability_api.DocumentJobDownloadAvailabilityApiTests.test_list_detail_and_incidents_use_the_same_metadata_only_owner) ... ok
+test_reason_code_is_additive_and_unrelated_api_errors_keep_the_exact_legacy_shape (tests.test_document_job_download_availability_api.DocumentJobDownloadAvailabilityApiTests.test_reason_code_is_additive_and_unrelated_api_errors_keep_the_exact_legacy_shape) ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_signed_policy_event_and_audit_have_only_safe_summaries (tests.test_document_job_download_availability_api.DocumentJobDownloadAvailabilityApiTests.test_signed_policy_event_and_audit_have_only_safe_summaries) ... ok
+test_source_pdf_during_execution_keeps_ordinary_download_contract (tests.test_document_job_download_availability_api.DocumentJobDownloadAvailabilityApiTests.test_source_pdf_during_execution_keeps_ordinary_download_contract) ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_approval_rejects_blocked_incomplete_expired_missing_and_invalid_current_files (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_approval_rejects_blocked_incomplete_expired_missing_and_invalid_current_files) ... ok
+test_clone_and_retry_return_defaults_even_with_reused_result_and_old_metadata (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_clone_and_retry_return_defaults_even_with_reused_result_and_old_metadata) ... ok
+test_internal_download_keeps_blocked_unreviewed_results_and_token_candidate_guards (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_internal_download_keeps_blocked_unreviewed_results_and_token_candidate_guards) ... ok
+test_legacy_blocked_metadata_does_not_create_current_incidents (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_legacy_blocked_metadata_does_not_create_current_incidents) ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_legacy_raw_qa_is_canonical_in_detail_qa_queue_and_incidents_without_writes (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_legacy_raw_qa_is_canonical_in_detail_qa_queue_and_incidents_without_writes) ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft) ... 
+  test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft) (backend='file') ... FAIL
+  test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft) (backend='database') ... FAIL
+test_published_delete_rejects_stale_preview_without_side_effects_and_keeps_archive (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_published_delete_rejects_stale_preview_without_side_effects_and_keeps_archive) ... ok
+test_qa_event_failure_propagates_after_review_write (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_qa_event_failure_propagates_after_review_write) ... ok
+test_qa_event_labels_lock_free_observation_when_another_review_commits_first (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_qa_event_labels_lock_free_observation_when_another_review_commits_first) ... ok
+test_qa_keeps_owner_tenant_company_admin_and_direct_boundaries (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_qa_keeps_owner_tenant_company_admin_and_direct_boundaries) ... FAIL
+test_review_cas_rejects_retry_replacement_blocker_and_none_result_races (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_review_cas_rejects_retry_replacement_blocker_and_none_result_races) ... ok
+test_state_schema_is_read_only_additive_and_json_object (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_state_schema_is_read_only_additive_and_json_object) ... [trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+ok
+test_fake_s3_repeated_generated_artifacts_preserve_each_content_and_prefix (tests.test_generated_artifact_identity.GeneratedArtifactIdentityTests.test_fake_s3_repeated_generated_artifacts_preserve_each_content_and_prefix) ... ok
+test_generated_keys_keep_safe_segments_and_original_download_name (tests.test_generated_artifact_identity.GeneratedArtifactIdentityTests.test_generated_keys_keep_safe_segments_and_original_download_name) ... ok
+test_historical_fixed_keys_remain_readable_after_new_registration (tests.test_generated_artifact_identity.GeneratedArtifactIdentityTests.test_historical_fixed_keys_remain_readable_after_new_registration) ... ok
+test_invalid_s3_prefix_is_rejected_before_writing (tests.test_generated_artifact_identity.GeneratedArtifactIdentityTests.test_invalid_s3_prefix_is_rejected_before_writing) ... ok
+test_local_file_repeated_generated_artifacts_preserve_each_content (tests.test_generated_artifact_identity.GeneratedArtifactIdentityTests.test_local_file_repeated_generated_artifacts_preserve_each_content) ... ok
+test_local_object_repeated_generated_artifacts_preserve_each_content (tests.test_generated_artifact_identity.GeneratedArtifactIdentityTests.test_local_object_repeated_generated_artifacts_preserve_each_content) ... ok
+test_source_upload_keys_keep_existing_layout (tests.test_generated_artifact_identity.GeneratedArtifactIdentityTests.test_source_upload_keys_keep_existing_layout) ... ok
+test_retention_dry_run_selects_local_and_object_artifacts_by_status_and_age (tests.test_artifact_retention.ArtifactRetentionTests.test_retention_dry_run_selects_local_and_object_artifacts_by_status_and_age) ... ok
+test_document_file_retention_plan_marks_expired_without_deleting_objects (tests.test_artifact_retention.DocumentFileRetentionTests.test_document_file_retention_plan_marks_expired_without_deleting_objects) ... ok
+test_audit_failure_is_visible_and_never_recorded_twice (tests.test_translation_integrity_execution.TranslationIntegrityExecutionTests.test_audit_failure_is_visible_and_never_recorded_twice) ... ok
+test_bad_second_item_is_atomic_and_preserves_specific_retryable_codes (tests.test_translation_integrity_execution.TranslationIntegrityExecutionTests.test_bad_second_item_is_atomic_and_preserves_specific_retryable_codes) ... ok
+test_fan_in_rejects_missing_evidence_origin_generation_attempt_hash_shape_and_technical_changes (tests.test_translation_integrity_execution.TranslationIntegrityExecutionTests.test_fan_in_rejects_missing_evidence_origin_generation_attempt_hash_shape_and_technical_changes) ... [trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_missing
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_provider_invalid_response
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_item_duplicate
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_technical_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translating status=failed] 翻译批次无法由当前 source/config 重建权威计划。
+[trace_id=None job_id=job stage=translating status=failed] 翻译批次无法由当前 source/config 重建权威计划。
+[trace_id=None job_id=job stage=translating status=failed] 翻译批次无法由当前 source/config 重建权威计划。
+[trace_id=None job_id=job stage=translating status=failed] 翻译批次无法由当前 source/config 重建权威计划。
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+ok
+test_fan_in_rejects_overlap_between_successful_leaf_batches (tests.test_translation_integrity_execution.TranslationIntegrityExecutionTests.test_fan_in_rejects_overlap_between_successful_leaf_batches) ... [trace_id=None job_id=job stage=translating status=failed] 翻译批次失败: translation_batch_tree_invalid 实际根集合与权威根计划不完整匹配。
+ok
+test_first_formula_boundary_failure_preserves_source_without_provider_or_fake_integrity (tests.test_translation_integrity_execution.TranslationIntegrityExecutionTests.test_first_formula_boundary_failure_preserves_source_without_provider_or_fake_integrity) ... [trace_id=None job_id=job stage=translating status=failed] 公式翻译保护边界无法完整闭合，已停止翻译。
+ok
+test_first_plan_budget_failure_keeps_translation_code_and_safe_evidence (tests.test_translation_integrity_execution.TranslationIntegrityExecutionTests.test_first_plan_budget_failure_keeps_translation_code_and_safe_evidence) ... [trace_id=None job_id=job stage=translating status=failed] 翻译请求编码后的文本字符数超过批次限额。
+ok
+test_generation_changed_during_provider_cannot_register_success_or_enter_fan_in (tests.test_translation_integrity_execution.TranslationIntegrityExecutionTests.test_generation_changed_during_provider_cannot_register_success_or_enter_fan_in) ... ok
+test_late_old_attempt_cas_rejection_preserves_winning_result_evidence_and_output_bytes (tests.test_translation_integrity_execution.TranslationIntegrityExecutionTests.test_late_old_attempt_cas_rejection_preserves_winning_result_evidence_and_output_bytes) ... ok
+test_late_old_generation_writes_cannot_overwrite_winning_or_historical_source_target_or_docx (tests.test_translation_integrity_execution.TranslationIntegrityExecutionTests.test_late_old_generation_writes_cannot_overwrite_winning_or_historical_source_target_or_docx) ... ok
+test_old_math_dom_root_plan_is_not_rewritten_or_silently_backfilled (tests.test_translation_integrity_execution.TranslationIntegrityExecutionTests.test_old_math_dom_root_plan_is_not_rewritten_or_silently_backfilled) ... [trace_id=None job_id=job stage=translating status=failed] 翻译批次树与当前权威计划不一致。
+ok
+test_provider_exception_is_redacted_and_preflight_budget_has_no_call_audit (tests.test_translation_integrity_execution.TranslationIntegrityExecutionTests.test_provider_exception_is_redacted_and_preflight_budget_has_no_call_audit) ... [trace_id=None job_id=job stage=translating status=failed] 翻译请求编码后的文本字符数超过批次限额。
+ok
+test_worker_rejects_previously_installed_unprotected_math_before_provider (tests.test_translation_integrity_execution.TranslationIntegrityExecutionTests.test_worker_rejects_previously_installed_unprotected_math_before_provider) ... [trace_id=None job_id=job stage=translating status=failed] 翻译批次计划校验失败。
+ok
+test_worker_restores_before_persistence_and_fan_in_revalidates (tests.test_translation_integrity_execution.TranslationIntegrityExecutionTests.test_worker_restores_before_persistence_and_fan_in_revalidates) ... ok
+
+======================================================================
+FAIL: test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft) (backend='file')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_document_job_delivery_state_api.py", line 184, in test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft
+    self._assert_defaults(reset.json()["job"])
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_document_job_delivery_state_api.py", line 77, in _assert_defaults
+    self.assertEqual({field: response[field] for field in STATE_DEFAULTS}, STATE_DEFAULTS)
+AssertionError: {'qua[108 chars]y': {'formula': {'schema_version': 'formula-su[213 chars]f'}}} != {'qua[108 chars]y': {}}
+Diff is 660 characters long. Set self.maxDiff to None to see it.
+
+======================================================================
+FAIL: test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft) (backend='database')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_document_job_delivery_state_api.py", line 184, in test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft
+    self._assert_defaults(reset.json()["job"])
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_document_job_delivery_state_api.py", line 77, in _assert_defaults
+    self.assertEqual({field: response[field] for field in STATE_DEFAULTS}, STATE_DEFAULTS)
+AssertionError: {'qua[108 chars]y': {'formula': {'schema_version': 'formula-su[213 chars]f'}}} != {'qua[108 chars]y': {}}
+Diff is 660 characters long. Set self.maxDiff to None to see it.
+
+======================================================================
+FAIL: test_qa_keeps_owner_tenant_company_admin_and_direct_boundaries (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_qa_keeps_owner_tenant_company_admin_and_direct_boundaries)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_document_job_delivery_state_api.py", line 203, in test_qa_keeps_owner_tenant_company_admin_and_direct_boundaries
+    self._assert_defaults(detail)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_document_job_delivery_state_api.py", line 77, in _assert_defaults
+    self.assertEqual({field: response[field] for field in STATE_DEFAULTS}, STATE_DEFAULTS)
+AssertionError: {'qua[108 chars]y': {'formula': {'schema_version': 'formula-su[213 chars]f'}}} != {'qua[108 chars]y': {}}
+Diff is 660 characters long. Set self.maxDiff to None to see it.
+
+----------------------------------------------------------------------
+Ran 58 tests in 18.109s
+
+FAILED (failures=3)

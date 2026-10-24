@@ -1,0 +1,374 @@
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+.................................................................................................................................................................[trace_id=None job_id=docjob_38d112c483c1 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_158f0affe34a stage=uploading status=failed] 预览Artifact字节与描述符不一致。
+...[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+.......[trace_id=None job_id=docjob_8cc5fadf2de7 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_a0af6fd063a4 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_0b5a988e7643 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_d054684260a7 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_3b2cff028a19 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_a896fafd362d stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_42ea0480cd51 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_df3912dd6d33 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_34c323387b53 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_78550bae1547 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_dbd9613a2bc3 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_096d3f0a4520 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_0f2f40391c87 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_2fe82252d915 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_ebbb0fb53ed6 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_c536bc8bac5c stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_1cacc501ea77 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_547e450c8817 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_76d2238d3170 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_f80d342201b7 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_5f7ec0b30bb8 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_4fdc086dd967 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_c2a95cc3db54 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_64cc382ba8af stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_cfb0c8977520 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_c02347ec155a stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_7628b6ca9f27 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_e35764e3fbbc stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_3a87a99dd9ec stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_7618ae72823d stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+...............[trace_id=None job_id=docjob_39edac52899a stage=uploading status=failed] 页面存储不可用
+..[trace_id=None job_id=docjob_9a10e93bde99 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_d6f369ee4c63 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_6ccfe7ac4286 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_4ad5c14a5570 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_6f10281feafc stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_54219d1df8b0 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_a14c47b47679 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_ac6b0cfdd94f stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_bbe201ab0fd7 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_d38a21d54fcb stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_75a4db5007fa stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_c477e11becd0 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_5dcee3605523 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_0d1646842d92 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_d4315319d475 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_64639166a2fa stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_570d167f80a0 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_111ca627406b stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+.[trace_id=None job_id=docjob_debf95756511 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_eb2db410a1f4 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_d87a1e9b4921 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_b643403fd22e stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_575c995a421c stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_3d3313381b4f stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_ea053d402cb9 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_00470c06c3ce stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_99db77dd1b5d stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_bc7ccf7c6fd1 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_24480b781390 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_1468092fc4e3 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_f11a59052a65 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_46351db89c4a stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_765042a8c87a stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_aee2e335b92a stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_b5985297931f stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+.[trace_id=None job_id=docjob_8cd9c2355008 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_6bbe13f94907 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+....[trace_id=None job_id=docjob_0751271bedf4 stage=uploading status=failed] 主件读取失败
+[trace_id=None job_id=docjob_55ac5e862b8a stage=uploading status=failed] 主 DOCX 字节与 SHA-256 描述不一致。
+[trace_id=None job_id=docjob_c4e3c76b94dd stage=uploading status=failed] metadata 失败
+.....[trace_id=None job_id=docjob_1cd13706f150 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_1ef49a4003b2 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+......../Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+..........[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。
+...[trace_id=None job_id=docjob_216443e3858a stage=uploading status=failed] P0 文档任务超过 1200 秒超时限制。
+[trace_id=None job_id=docjob_6055244fb46a stage=uploading status=failed] P0 文档任务超过 1200 秒超时限制。
+.[trace_id=None job_id=docjob_24a6e50d46bf stage=uploading status=failed] P0 文档任务超过 1200 秒超时限制。
+[trace_id=None job_id=docjob_da43a39ac952 stage=uploading status=failed] P0 文档任务超过 1200 秒超时限制。
+.....[trace_id=None job_id=docjob_e538763b7d7e stage=uploading status=failed] DOCX 公式实际输出与预期绑定不匹配
+[trace_id=None job_id=docjob_e94db0e55b60 stage=uploading status=failed] DOCX 公式实际输出与预期绑定不匹配
+[trace_id=None job_id=docjob_f4ca7353d249 stage=uploading status=failed] DOCX 公式实际输出与预期绑定不匹配
+...[trace_id=None job_id=docjob_75f5d2f330e8 stage=uploading status=failed] 图片布局证据无效：注释内容或字段投影
+[trace_id=None job_id=docjob_92b2449b8704 stage=uploading status=failed] 图片布局证据无效：注释内容或字段投影
+[trace_id=None job_id=docjob_dd681677850d stage=uploading status=failed] 图片布局证据无效：注释内容或字段投影
+[trace_id=None job_id=docjob_f73feff976c6 stage=uploading status=failed] 主 DOCX 的图片报告或摘要缺失或无效。
+[trace_id=None job_id=docjob_da6e93349edc stage=uploading status=failed] 主 DOCX 的图片报告或摘要缺失或无效。
+[trace_id=None job_id=docjob_77e3de36002a stage=uploading status=failed] 主 DOCX 的图片报告或摘要缺失或无效。
+[trace_id=None job_id=docjob_8e79da3f531a stage=uploading status=failed] 主 DOCX 的图片报告或摘要缺失或无效。
+[trace_id=None job_id=docjob_3ea6bedc4bc3 stage=uploading status=failed] 主 DOCX 的图片报告或摘要缺失或无效。
+[trace_id=None job_id=docjob_5741227a052e stage=uploading status=failed] 主 DOCX 的图片报告或摘要缺失或无效。
+[trace_id=None job_id=docjob_4d6f779fd7a6 stage=uploading status=failed] 图片布局报告缺少必要字段或结构损坏
+[trace_id=None job_id=docjob_2240041561a0 stage=uploading status=failed] 图片布局报告缺少必要字段或结构损坏
+[trace_id=None job_id=docjob_772753d49b6b stage=uploading status=failed] 图片布局报告缺少必要字段或结构损坏
+[trace_id=None job_id=docjob_404d2022822d stage=uploading status=failed] 图片布局报告缺少必要字段或结构损坏
+[trace_id=None job_id=docjob_f6a511cd4261 stage=uploading status=failed] 图片布局报告缺少必要字段或结构损坏
+[trace_id=None job_id=docjob_c9869060aa17 stage=uploading status=failed] 图片布局报告缺少必要字段或结构损坏
+[trace_id=None job_id=docjob_12b02d301e29 stage=uploading status=failed] 图片布局证据无效：输入或投影版本
+[trace_id=None job_id=docjob_046a75a32245 stage=uploading status=failed] 图片布局证据无效：输入或投影版本
+[trace_id=None job_id=docjob_093078a35d5f stage=uploading status=failed] 图片布局证据无效：输入或投影版本
+[trace_id=None job_id=docjob_bd057afb9cd9 stage=uploading status=failed] 图片布局证据无效：模板版本身份
+[trace_id=None job_id=docjob_f393785d2561 stage=uploading status=failed] 图片布局证据无效：模板版本身份
+[trace_id=None job_id=docjob_8ad59170a241 stage=uploading status=failed] 图片布局证据无效：模板版本身份
+..[trace_id=None job_id=docjob_a8bb89321558 stage=quality_checking status=failed] DocumentIR→DOCX 内容完整性校验失败：ir_render_evidence:binding_mismatch
+[trace_id=None job_id=docjob_31c2ffa1d3c5 stage=quality_checking status=failed] DocumentIR→DOCX 内容完整性校验失败：ir_render_evidence:block_coverage_mismatch
+[trace_id=None job_id=docjob_ef23537628ad stage=quality_checking status=failed] DocumentIR→DOCX 内容完整性校验失败：ir_docx_integrity:table_count_mismatch
+[trace_id=None job_id=docjob_70e2ed008eba stage=uploading status=failed] 模拟 metadata 登记失败
+..[trace_id=None job_id=docjob_7d1f0bfbf59b stage=uploading status=failed] 同代最终 IR 存在多份历史主件，不能猜测结果身份。
+[trace_id=None job_id=docjob_de636a0fe776 stage=uploading status=failed] 主 DOCX 字节与 SHA-256 描述不一致。
+[trace_id=None job_id=docjob_708b9e5b89f9 stage=uploading status=failed] 主 DOCX 含图片布局标记但缺少报告。
+....[trace_id=None job_id=docjob_02e210bfc418 stage=uploading status=failed] 结果候选已过期或删除，不能物化。
+[trace_id=None job_id=docjob_11717add37c6 stage=uploading status=failed] 结果候选已过期或删除，不能物化。
+.[trace_id=None job_id=docjob_e7b0f65f7c59 stage=uploading status=failed] 主 DOCX 含图片布局标记但缺少报告。
+[trace_id=None job_id=docjob_5e81801bea51 stage=uploading status=failed] 主 DOCX 含图片布局标记但缺少报告。
+[trace_id=None job_id=docjob_7dd5e90a3d37 stage=uploading status=failed] 主 DOCX 含图片布局标记但缺少报告。
+[trace_id=None job_id=docjob_f123e7c1664c stage=uploading status=failed] 主 DOCX 含图片布局标记但缺少报告。
+[trace_id=None job_id=docjob_76938a678ee5 stage=uploading status=failed] 主 DOCX 含图片布局标记但缺少报告。
+[trace_id=None job_id=docjob_5be97dcf28c7 stage=uploading status=failed] 主 DOCX 含图片布局标记但缺少报告。
+..../Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+./Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+.................[trace_id=trace_query job_id=docjob_b25e20b62c9c stage=translating status=failed] P0 文档任务超过 1200 秒超时限制。
+[trace_id=trace_query job_id=docjob_02164762578c stage=translation_validating status=failed] P0 文档任务超过 1200 秒超时限制。
+[trace_id=trace_query job_id=docjob_0e6e96702485 stage=quality_checking status=failed] P0 文档任务超过 1200 秒超时限制。
+.[trace_id=None job_id=docjob_42edb89ba20a stage=uploading status=failed] 主 DOCX 含图片布局标记但缺少报告。
+F..[trace_id=None job_id=docjob_86cf4fc52358 stage=uploading status=failed] 主 DOCX 含图片布局标记但缺少报告。
+F[trace_id=None job_id=docjob_c5ee7d97dfa7 stage=uploading status=failed] 任务指定的结果文件不属于该任务的可用主 DOCX。
+[trace_id=None job_id=docjob_9f55ef99ad06 stage=uploading status=failed] 任务指定的结果文件不属于该任务的可用主 DOCX。
+[trace_id=None job_id=docjob_908dfb967d7e stage=uploading status=failed] 文件尚未完成上传: file_8883dfb48de1
+[trace_id=trace_fan_in job_id=docjob_8f641528da9c stage=translation_validating status=failed] 翻译批次合并校验失败: translation_fan_in_mismatch
+[trace_id=trace_fan_in job_id=docjob_ec4b24709d1a stage=translation_validating status=failed] 翻译批次合并校验失败: translation_fan_in_mismatch
+[trace_id=trace_fan_in job_id=docjob_df77474fc956 stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=trace_fan_in job_id=docjob_61dbeb78d307 stage=translation_validating status=failed] 翻译批次合并校验失败: translation_provider_invalid_response
+[trace_id=trace_fan_in job_id=docjob_5066027d41d1 stage=translation_validating status=failed] 翻译批次合并校验失败: translation_provider_failed
+[trace_id=trace_fan_in job_id=docjob_8bcb63377453 stage=translation_validating status=failed] 最终 IR 存储失败
+.[trace_id=trace_stages job_id=docjob_4eaccd166666 stage=translating status=failed] 翻译批次失败: attempts_exhausted 翻译批次已耗尽最大 attempt 次数。
+..[trace_id=trace_new_attempt job_id=docjob_b63ccee91314 stage=translating status=failed] 交错中的另一调用确认本代失败
+.[trace_id=trace_stage_owner job_id=docjob_a8eb3c862233 stage=translating status=failed] DocumentIR 翻译服务未配置。
+[trace_id=trace_stage_owner job_id=docjob_23264fd1f4cb stage=translating status=failed] 翻译任务缺少绑定的 Translation Profile。
+..[trace_id=None job_id=docjob_ade6013945c5 stage=translating status=failed] P0 文档任务超过 1200 秒超时限制。
+[trace_id=None job_id=docjob_0cb32a60f950 stage=translation_validating status=failed] P0 文档任务超过 1200 秒超时限制。
+[trace_id=None job_id=docjob_3adb49891ad3 stage=quality_checking status=failed] P0 文档任务超过 1200 秒超时限制。
+.[trace_id=trace_stage_owner job_id=docjob_e8676d118cf9 stage=parsing status=failed] 阶段已推进后的事件追加失败
+[trace_id=trace_stage_owner job_id=docjob_2efe232bfa5f stage=ir_converting status=failed] 阶段已推进后的事件追加失败
+[trace_id=trace_stage_owner job_id=docjob_62fc0a52cc86 stage=translation_validating status=failed] 阶段已推进后的事件追加失败
+[trace_id=trace_stage_owner job_id=docjob_750c873af193 stage=translating status=failed] 阶段已推进后的事件追加失败
+[trace_id=trace_stage_owner job_id=docjob_da1788a933a4 stage=translation_validating status=failed] 阶段已推进后的事件追加失败
+..[trace_id=trace_stages job_id=docjob_ad441c8bb874 stage=quality_checking status=failed] DocumentIR→DOCX 内容完整性校验失败：unknown_integrity_failure
+[trace_id=trace_stages job_id=docjob_22aa03cfc711 stage=quality_checking status=failed] DocumentIR→DOCX 内容完整性校验失败：unknown_integrity_failure
+.....[trace_id=trace_stages job_id=docjob_9620164622e7 stage=ir_converting status=failed] MinerU 产物验证失败：mineru_content_empty。
+....................[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_missing
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_provider_invalid_response
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_item_duplicate
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_technical_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translating status=failed] 翻译批次无法由当前 source/config 重建权威计划。
+[trace_id=None job_id=job stage=translating status=failed] 翻译批次无法由当前 source/config 重建权威计划。
+[trace_id=None job_id=job stage=translating status=failed] 翻译批次无法由当前 source/config 重建权威计划。
+[trace_id=None job_id=job stage=translating status=failed] 翻译批次无法由当前 source/config 重建权威计划。
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+[trace_id=None job_id=job stage=translation_validating status=failed] 翻译批次合并校验失败: translation_integrity_evidence_mismatch
+.[trace_id=None job_id=job stage=translating status=failed] 翻译批次失败: translation_batch_tree_invalid 实际根集合与权威根计划不完整匹配。
+.[trace_id=None job_id=job stage=translating status=failed] 公式翻译保护边界无法完整闭合，已停止翻译。
+.[trace_id=None job_id=job stage=translating status=failed] 翻译请求编码后的文本字符数超过批次限额。
+....[trace_id=None job_id=job stage=translating status=failed] 翻译批次树与当前权威计划不一致。
+.[trace_id=None job_id=job stage=translating status=failed] 翻译请求编码后的文本字符数超过批次限额。
+.[trace_id=None job_id=job stage=translating status=failed] 翻译批次计划校验失败。
+.....[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+.[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+.FF...F.[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+.[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+.[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+.[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+.[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+.[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+.[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+..[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+.[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py:59: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  response = await handler(conn, exc)  # type: ignore[arg-type]
+.[trace_id=startup document_jobs_recovery=startup status=skipped reason=worker_backend_disabled]
+........
+======================================================================
+FAIL: test_automatic_word_discovery_requires_current_generation_and_final_ir (tests.test_document_job_execution_stages.DocumentJobExecutionStageTests.test_automatic_word_discovery_requires_current_generation_and_final_ir)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_document_job_execution_stages.py", line 420, in test_automatic_word_discovery_requires_current_generation_and_final_ir
+    self.assertEqual((result.status, result.result_file_id), ("succeeded", word.id))
+AssertionError: Tuples differ: ('failed', None) != ('succeeded', 'file_ff8258314842')
+
+First differing element 0:
+'failed'
+'succeeded'
+
+- ('failed', None)
++ ('succeeded', 'file_ff8258314842')
+
+======================================================================
+FAIL: test_explicit_result_reuses_old_generation_but_checks_file_identity (tests.test_document_job_execution_stages.DocumentJobExecutionStageTests.test_explicit_result_reuses_old_generation_but_checks_file_identity) (invalid=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_document_job_execution_stages.py", line 437, in test_explicit_result_reuses_old_generation_but_checks_file_identity
+    self.assertEqual(result.status, "succeeded" if invalid is None else "failed")
+AssertionError: 'failed' != 'succeeded'
+- failed
++ succeeded
+
+
+======================================================================
+FAIL: test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft) (backend='file')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_document_job_delivery_state_api.py", line 184, in test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft
+    self._assert_defaults(reset.json()["job"])
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_document_job_delivery_state_api.py", line 77, in _assert_defaults
+    self.assertEqual({field: response[field] for field in STATE_DEFAULTS}, STATE_DEFAULTS)
+AssertionError: {'qua[108 chars]y': {'formula': {'schema_version': 'formula-su[213 chars]f'}}} != {'qua[108 chars]y': {}}
+Diff is 660 characters long. Set self.maxDiff to None to see it.
+
+======================================================================
+FAIL: test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft) (backend='database')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_document_job_delivery_state_api.py", line 184, in test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft
+    self._assert_defaults(reset.json()["job"])
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_document_job_delivery_state_api.py", line 77, in _assert_defaults
+    self.assertEqual({field: response[field] for field in STATE_DEFAULTS}, STATE_DEFAULTS)
+AssertionError: {'qua[108 chars]y': {'formula': {'schema_version': 'formula-su[213 chars]f'}}} != {'qua[108 chars]y': {}}
+Diff is 660 characters long. Set self.maxDiff to None to see it.
+
+======================================================================
+FAIL: test_qa_keeps_owner_tenant_company_admin_and_direct_boundaries (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_qa_keeps_owner_tenant_company_admin_and_direct_boundaries)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_document_job_delivery_state_api.py", line 203, in test_qa_keeps_owner_tenant_company_admin_and_direct_boundaries
+    self._assert_defaults(detail)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_document_job_delivery_state_api.py", line 77, in _assert_defaults
+    self.assertEqual({field: response[field] for field in STATE_DEFAULTS}, STATE_DEFAULTS)
+AssertionError: {'qua[108 chars]y': {'formula': {'schema_version': 'formula-su[213 chars]f'}}} != {'qua[108 chars]y': {}}
+Diff is 660 characters long. Set self.maxDiff to None to see it.
+
+----------------------------------------------------------------------
+Ran 339 tests in 143.718s
+
+FAILED (failures=5)

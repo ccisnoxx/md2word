@@ -2,7 +2,7 @@
 doc_type: technical-design
 status: target
 component: table-pipeline
-last_reviewed: 2026-10-03
+last_reviewed: 2026-10-23
 ---
 
 # 表格处理设计
@@ -26,13 +26,18 @@ last_reviewed: 2026-10-03
 - `app/services/renderer/table_renderer.py`：创建 Word Table、处理 `rowspan/colspan`、caption 和 footnote；
 - 大表超过行数或 HTML 长度阈值时，会展开跨行跨列合并；
 - `docx_quality.py`：提取表格数、形状、表头行、不可拆行等 OOXML 证据。
+- IR-201 在正式 MinerU→DocumentIR 前用 `artifact_validator.py` 对 HTML 基本可消费性和参考图安全作四分类，输出结构化报告；有效 HTML 仍走同一 Word 原生表格 renderer。报告单独进入 IR/事件/renderer evidence，不是 CanonicalTableGrid 或表格质量状态机。
+
+空/坏 HTML 的质量 blocker 不自动改成执行 fatal；既有空续页归并和内容完整性检查继续决定当前链路能否生成。可确定续页保留原始缺失事实，孤立/含正文空表继续失败关闭；当前没有实现 TAB-306 的占位 DOCX、source PDF 裁图或统一 blocked 下载/发布状态。分类与分级的当前字段见 [MinerU 产物合同](../contracts/mineru-artifact-contract.md#10-ir-201-验证报告与执行边界)。
+
+TAB-301 增加 `services/tables/models.py` 的版本化独立 Grid/cell/run/source/quality 合同及 JSON/ID/hash 校验；它尚未接入生产流程。完整模型字段、身份与逐片/集合 hash 定义由 [DocumentIR 合同 §9](../contracts/document-ir-contract.md#9-canonicaltablegridtab-301) 管理。
 
 主要差距：
 
 1. parser 只有行和 cell，没有确定性的二维占位网格；
 2. 大表展开会丢失合并语义，不符合目标；
 3. 没有系统化的结构质量检查和表格级状态；
-4. 没有逻辑跨页表格模型；
+4. IR-205 增加逻辑组和原始 fragment 元数据，尚不合并 Word 渲染；
 5. table reference image 没有成为明确的一等 QA Artifact；
 6. HTML 为空时的占位和 blocked 状态需要统一合同。
 
@@ -50,20 +55,19 @@ flowchart LR
   H --> I[OOXML/Table Layout QA]
 ```
 
-## 4. 模块建议
+## 4. 模块边界与后续计划
 
 ```text
 app/services/tables/
-├── models.py                # CanonicalTableGrid/Cell/Run
+├── models.py                # TAB-301 独立模型合同
 ├── html_normalizer.py       # 非破坏性规范化
 ├── grid_builder.py          # rowspan/colspan 占位算法
 ├── validator.py             # 结构、内容和连续性检查
-├── continuation.py          # 跨页 logical table grouping
 ├── translation_units.py     # cell/run 翻译单元
 └── evidence.py              # 参考图和质量报告
 ```
 
-初期也可放在 `app/services/document_ir/` 和 `renderer/`，但必须暴露稳定模型，避免 parser/renderer 各自重复解释 HTML。
+当前只有 models.py 由 TAB-301 提供；其他模块是后续目标，不是已实现能力。续表分组继续由 document_ir/logical_table_group.py 唯一管理。tables 单向复用 DocumentIR 的 SourceSpan/RepeatedHeaderHint，DocumentIR 不反向导入 tables，不建立平行转换流水线。
 
 ## 5. HTML 规范化
 
@@ -88,7 +92,11 @@ app/services/tables/
 
 原始 HTML 和规范化 HTML 都保存；原始内容不可覆盖。
 
-## 6. CanonicalTableGrid 算法
+## 6. CanonicalTableGrid 与后续算法
+
+TAB-301 仅校验版本、类型、身份/源顺序、引用、run target 和 hash 自洽；不生成 occupancy，不做几何质量判断。零/负/非整数 span 拒绝；不同来源锚点冲突和正 span 尾端越界均无损保存，供后续 validator 诊断。空 flags 不代表质量通过；模型不包含 Word 对象，也不改变现有 renderer。
+
+以下占位/冲突算法归 TAB-302/303 后续实现。
 
 ### 6.1 占位规则
 
@@ -168,20 +176,19 @@ line_break
 
 ## 9. 跨页表格
 
-### 9.1 LogicalTableGroup
+### 9.1 LogicalTableGroup（IR-205）
 
-归并证据：
+分组唯一 owner 为 `app/services/document_ir/logical_table_group.py`，模型由现有 DocumentIR models 管理，正式 converter 接线。存储使用 document-ir/v2 可选 metadata；不另建第二个 tables continuation owner。每个原始 table/placeholder 以 content list hash + JSON Pointer 稳定标识，原始 JSON/HTML、页/bbox、索引及关系保留；有效主 blocks 和 source inventory 与原渲染合同不变。
 
-- 当前 fragment 无 caption；
-- 位于页面顶部；
-- 上一 fragment 位于前页底部；
-- 列数/表头相似；
-- 行编号、引脚编号或地址连续；
-- 没有新的表号。
+非空片段仅在数组 body 邻接、页码相邻、前页尾/后页顶和水平对齐、可靠列统计一致且没有新表号/普通独立 caption/正文隔断时作为候选。还须明确同表续标记，或精确显式表头及首列完整整数/十六进制 token 严格+1；不猜地址步长、表格语义或缺失内容。几何按可信页尺寸归一化，本版前表底边≥0.75H、后表顶边≤0.25H，水平端点差≤0.05W；未知或冲突不自动归组。
 
-不能确定时保留独立表格并标记 `table_continuation_uncertain`。
+复用现有 HTML parser 提取显式 th 签名，不构造 CanonicalGrid；其 max_columns 不可当复杂 rowspan 表的权威逻辑列数。重复表头只记 start_row/row_count/signature hint，不删源行。相同列名不足以证明同表。
 
-### 9.2 Word 输出
+严格空续页复用 IR-201 source/target/rule/reason 回执，关系为 normalized_empty_placeholder，只说明既有归并事实。空项保留为 source fragment，不重新进入 Word blocks；原失败边界不变。确定非空关联为 verified_continuation。候选不确定时保留独立组，附 `table_continuation_uncertain:<fragment_id>` 与受控原因；不把警告当批准或发布依据。
+
+测试分开记录表3多空续页、表9/10邻接独立表、表10空/缺片、表24多页/重复表头；合成合同、SC2167表3历史与真实授权样本分层，不能拿OPA228可打开代替四表真实验收。
+
+### 9.2 Word 输出（TAB-305 后续目标）
 
 逻辑续表尽量输出为一个 Word Table：
 
@@ -285,3 +292,7 @@ html == empty
 - 合并关系不因大表阈值展开；
 - 表格可编辑；
 - blocked 文档可下载但不可发布。
+
+## 当前分支集成边界（RND-501）
+
+本次候选从c56e128复用IR-201/205与TAB-301必要来源合同，不引入IR-206、TAB-302以后生产算法或RND-504。当前TR-402/403/406的翻译、完整性和批次生命周期以及CON-104下载/发布规则继续由既有owner管理；输入报告和Grid flags不提供批准/发布资格。实际验证以RND-501当前实施记录为准，历史验收不等于新候选已通过。

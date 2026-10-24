@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from datetime import timedelta
 from dataclasses import replace
 import hashlib
+import json
 import multiprocessing
 import os
 from pathlib import Path
@@ -16,6 +17,8 @@ from threading import Event, current_thread
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
+from docx import Document
+
 from app.core.errors import ApiError
 from app.domains.document_jobs.router import _build_download_token
 from app.domains.document_jobs.models import DocumentJobPreparedResult, DocumentJobRecord
@@ -23,8 +26,9 @@ from app.domains.files.models import DocumentFileRecord
 from app.domains.files.retention import DocumentFileRetentionPlanner
 from app.domains.resources.models import utc_now
 from app.infrastructure.persistence import build_file_persistence_adapters, build_sqlite_persistence_adapters
-from app.services.document_ir.models import DocumentIR
-from app.services.renderer.evidence import build_renderer_evidence
+from app.services.document_ir.models import DocumentIR, DocumentIRBlock, DocumentIRMetadata
+from app.services.renderer.evidence import (build_renderer_evidence, build_renderer_aggregate_evidence,
+    build_renderer_event_summary, validate_render_result, LEGACY_RENDERER_EVIDENCE_KEYS)
 from tests import test_database_job_repository as persistence
 from tests import test_fastapi_jobs_backend as fixtures
 from tests import test_document_job_execution_stages as stages
@@ -95,6 +99,21 @@ class DocumentJobResultPersistenceTests(TestCase):
     _create = stages.DocumentJobExecutionStageTests._create
     _files = stages.DocumentJobExecutionStageTests._files
     _pause_after_ir = stages.DocumentJobExecutionStageTests._pause_after_ir
+
+    def _install_toc_ir(self, runtime, job):
+        """登记真实 TOC 归并与独立尾段的合成 IR，供导航和恢复合同共用。"""
+        blocks = [DocumentIRBlock(id=block_id, type="paragraph", order=index, text=text,
+            metadata={"source_type": "text"}) for index, (block_id, text) in enumerate((
+                ("first", "1 Overview ........ 3"), ("merged", "2 Detail ........ 4"),
+                ("tail", "Ordinary body tail.")))]
+        ir = DocumentIR(metadata=DocumentIRMetadata(job_id=job.id, source_file_id=job.source_file_id,
+            document_language="en", source_block_count=len(blocks), source_type_counts={"text": len(blocks)}),
+            blocks=blocks)
+        ir_file = runtime.file_upload_service.register_generated_content(
+            tenant_id=job.tenant_id, company_id=job.company_id, job_id=job.id, created_by=job.created_by,
+            file_type="document_ir", filename="toc.document-ir.json", mime_type="application/json",
+            content=ir.model_dump_json().encode(), metadata={})
+        return runtime.document_job_repository.update_document_job(job.id, document_ir_file_id=ir_file.id), ir
 
     def _install_formula_ir(self, runtime, execution, job, source=r"$\unknown{VOUT}$"):
         """登记新的合成最终 IR，保留源清单与现有结构，不覆写历史文件。"""
@@ -417,7 +436,9 @@ class DocumentJobResultPersistenceTests(TestCase):
         self.assertEqual(file.checksum_sha256, f"sha256:{hashlib.sha256(content).hexdigest()}")
         ir_file = runtime.document_file_repository.get_document_file(result.document_ir_file_id)
         ir = DocumentIR.model_validate_json(runtime.file_upload_service.read_file_content(ir_file))
-        self.assertTrue(all(file.metadata[key] == value for key, value in build_renderer_evidence(ir, content).items()))
+        self.assertTrue(all(file.metadata[key] == value for key, value in build_renderer_evidence(ir, content).items() if key != "render_trace_status"))
+        self.assertEqual(file.metadata["render_trace_status"], "complete")
+        self.assertEqual(file.metadata["block_render_evidence"]["docx_sha256"], hashlib.sha256(content).hexdigest())
         self.assertEqual(len({file.object_key for file in files}), len(files))
         return files
 
@@ -431,13 +452,18 @@ class DocumentJobResultPersistenceTests(TestCase):
                     original_write = runtime.file_upload_service._write_object
                     original_materialize = runtime.document_file_repository.materialize_prepared_result
                     original_render = execution.word_renderer.render_to_result
+                    rendered = []
 
                     def render(*args, **kwargs):
-                        rendered = original_render(*args, **kwargs)
-                        data = io.BytesIO(rendered.content)
-                        with zipfile.ZipFile(data, "a") as archive:
-                            archive.writestr("docProps/con102-attempt.txt", current_thread().name)
-                        return replace(rendered, content=data.getvalue())
+                        # 在正式 renderer 读取/冻结前产生两个有效模板；bytes 与 trace 始终同次。
+                        template = Document(str(kwargs["template_path"]))
+                        template.core_properties.comments = current_thread().name
+                        with tempfile.NamedTemporaryFile(suffix=".docx", dir=root) as stream:
+                            template.save(stream.name)
+                            same_call = original_render(*args, **{**kwargs, "template_path": Path(stream.name)})
+                        validate_render_result(args[0], same_call.content, same_call)
+                        rendered.append(same_call)
+                        return same_call
 
                     def write(record, content):
                         if current_thread().name.startswith("late-uploader") and record.file_type == "generated_word":
@@ -469,6 +495,11 @@ class DocumentJobResultPersistenceTests(TestCase):
                         finally:
                             release.set()
                     files = self._assert_result_bytes(runtime, result)
+                    winner = next(file for file in files if file.id == result.result_file_id)
+                    actual = [item for item in rendered if "sha256:" + hashlib.sha256(item.content).hexdigest() == winner.checksum_sha256]
+                    self.assertEqual(len(actual), 1)
+                    self.assertEqual(winner.metadata["render_plan"], actual[0].plan.model_dump(mode="json"))
+                    self.assertEqual(winner.metadata["block_render_evidence"], actual[0].block_evidence.model_dump(mode="json"))
                     self.assertEqual(result.result_file_id, selected.prepared_result.file.id)
                     self.assertEqual(sorted(file.status for file in files), ["pending_upload", "uploaded"])
                     self.assertEqual(len({file.checksum_sha256 for file in files}), 2)
@@ -993,3 +1024,278 @@ class DocumentJobResultPersistenceTests(TestCase):
                 self._assert_result_bytes(runtime, result)
                 self.assertEqual(observed[0], ("quality_checking", 85))
                 self.assertTrue(all(progress >= 85 for stage, progress in observed))
+
+    def test_trace_json_and_receipt_recovery_events_are_safe_in_file_and_sqlite(self):
+        canary = "PRIVATE_RND501_CANARY"
+        for kind in ("file", "sqlite"):
+            with self.subTest(kind=kind), self._runtime(kind) as (root, runtime, execution, job, client, headers):
+                original = build_renderer_evidence
+                def evidence(*args, **kwargs):
+                    value = original(*args, **kwargs)
+                    value["unknown_metadata"] = canary
+                    return value
+                with patch("app.domains.document_jobs.execution.build_renderer_evidence", side_effect=evidence), patch.object(
+                        runtime.document_file_repository, "materialize_prepared_result", side_effect=SimulatedProcessExit):
+                    with self.assertRaises(SimulatedProcessExit):
+                        execution.execute_job(job.id)
+                before = runtime.document_job_repository.get_document_job(job.id)
+                self.assertIn(canary, json.dumps(before.prepared_result.file.metadata))
+                # 普通投影仍拒绝自由 flags、残留正文及伪造计数；恢复夹具本身保持内容证据合法。
+                hostile = {**before.prepared_result.file.metadata, "layout_quality_flags": [canary],
+                    "quality_flags": [canary], "docx_quality": {"latex_residue_examples": [canary], "latex_residue_count": canary}}
+                self.assertNotIn(canary, json.dumps(build_renderer_event_summary(hostile)))
+                restarted = self._build_runtime(root, kind)
+                new_execution = restarted.document_job_execution_service
+                with patch.object(new_execution.word_renderer, "render_to_result", side_effect=AssertionError("receipt 恢复不能重新渲染")), patch.object(
+                        new_execution.word_renderer, "render_to_bytes", side_effect=AssertionError("receipt 恢复不能调用 bytes wrapper")):
+                    completed = new_execution.execute_job(job.id)
+                file = restarted.document_file_repository.get_document_file(completed.result_file_id)
+                self.assertEqual(file.metadata, before.prepared_result.file.metadata)
+                self.assertEqual(completed.prepared_result, before.prepared_result)
+                self.assertEqual(json.loads(json.dumps(file.metadata)), file.metadata)
+                events = restarted.document_job_event_repository.list_document_job_events(job.id)
+                selected = [event for event in events if event.stage == "quality_checking" or event.payload.get("file_type") == "generated_word"]
+                self.assertTrue(selected)
+                for event in selected:
+                    serialized = json.dumps(event.payload)
+                    self.assertNotIn(canary, serialized)
+                    self.assertNotIn("block_render_map", serialized)
+                    self.assertNotIn("latex_residue_examples", serialized)
+                    self.assertNotIn(file.object_key, serialized)
+                registered = next(event for event in selected if event.payload.get("file_type") == "generated_word")
+                self.assertEqual(registered.payload["docx_sha256"], file.checksum_sha256.removeprefix("sha256:"))
+                self.assertIn("mineru_validation", registered.payload)
+                listed = client.get(f"/api/v1/document-jobs/{job.id}/files", headers=headers)
+                self.assertEqual(listed.status_code, 200)
+                self.assertNotIn(canary, listed.text)
+                self.assertNotIn("block_render_map", listed.text)
+
+    def test_invalid_new_trace_does_not_register_a_candidate_or_leak_failure_evidence(self):
+        canary = "PRIVATE_FAILURE_RND501_CANARY"
+        for failure in ("hash", "owner", "raw_error", "metadata_io"):
+            with self.subTest(failure=failure), self._runtime() as (root, runtime, execution, job, client, headers):
+                render = execution.word_renderer.render_to_result
+                def invalid(*args, **kwargs):
+                    result = render(*args, **kwargs)
+                    trace = result.block_evidence.model_copy(deep=True)
+                    if failure == "hash":
+                        trace.docx_sha256 = "0" * 64
+                    elif failure == "owner":
+                        trace.block_render_map.pop()
+                    return replace(result, block_evidence=trace)
+                if failure in {"hash", "owner"}:
+                    context = patch.object(execution.word_renderer, "render_to_result", side_effect=invalid)
+                elif failure == "metadata_io":
+                    context = patch.object(runtime.file_upload_service, "register_result_candidate", side_effect=OSError("模拟 metadata 登记失败"))
+                else:
+                    from app.services.document_ir.integrity import DocumentIntegrityError
+                    context = patch("app.domains.document_jobs.execution.ensure_renderer_integrity", side_effect=DocumentIntegrityError(
+                        "DocumentIR→DOCX", {"blocking_quality_flags": [canary, "ir_docx_integrity:table_count_mismatch"], "render_plan": {"body": canary}, "latex_residue_examples": [canary]}))
+                with context:
+                    failed = execution.execute_job(job.id)
+                self.assertEqual(failed.status, "failed")
+                self.assertEqual(failed.error_code, "oss_failed" if failure == "metadata_io" else "render_failed")
+                self.assertEqual(failed.failed_stage, "uploading" if failure == "metadata_io" else "quality_checking")
+                self.assertFalse(self._files(runtime, job.id, "generated_word"))
+                self.assertIsNone(failed.prepared_result)
+                events = runtime.document_job_event_repository.list_document_job_events(job.id)
+                self.assertNotIn(canary, json.dumps([event.payload for event in events]))
+                self.assertNotIn(canary, failed.error_message)
+
+    def test_full_trace_metadata_round_trips_fake_mysql_descriptor(self):
+        from tests.test_renderer_render_plan import make_ir, render
+        ir = make_ir()
+        result = render(ir)
+        metadata = {**_candidate().metadata, **build_renderer_evidence(ir, result.content, render_result=result)}
+        database = persistence._FakeMysqlDatabase()
+        with tempfile.TemporaryDirectory() as directory:
+            adapters = persistence.build_mysql_persistence_adapters(persistence._mysql_config(), connect_factory=database.connect)
+            candidate = _candidate().model_copy(update={"metadata": metadata, "size_bytes": len(result.content),
+                "checksum_sha256": "sha256:" + hashlib.sha256(result.content).hexdigest()})
+            adapters.document_job_repository.create_document_job(_job())
+            adapters.document_file_repository.create_document_file(candidate.model_copy(update={"status": "pending_upload", "etag": None}))
+            selected = adapters.document_job_repository.prepare_document_job_result("job", expected_retry_count=0,
+                expected_document_ir_file_id="ir", candidate=candidate)
+            recovered = adapters.document_job_repository.get_document_job("job")
+            self.assertEqual(recovered.prepared_result, selected.prepared_result)
+            materialized = adapters.document_file_repository.materialize_prepared_result(recovered.prepared_result.file)
+            self.assertEqual(materialized.metadata, metadata)
+            self.assertEqual(materialized.metadata["block_render_evidence"]["docx_sha256"], hashlib.sha256(result.content).hexdigest())
+
+    def test_legacy_recovery_checks_every_original_aggregate_key_without_new_fields(self):
+        with self._runtime() as (root, runtime, execution, job, client, headers):
+            completed = execution.execute_job(job.id)
+            word = runtime.document_file_repository.get_document_file(completed.result_file_id)
+            # 真正旧件没有新图片 marker；不能从新件删报告后要求旧合同放行。
+            content = legacy_image_docx(runtime.file_upload_service.read_file_content(word))
+            original_ir = DocumentIR.model_validate_json(runtime.file_upload_service.read_file_content(execution._get_document_ir_file(job)))
+            aggregate = build_renderer_aggregate_evidence(original_ir, content)
+            legacy = {key: aggregate[key] for key in LEGACY_RENDERER_EVIDENCE_KEYS}
+            word = runtime.file_upload_service.register_generated_content(
+                tenant_id=job.tenant_id, company_id=job.company_id, job_id=job.id, created_by=job.created_by,
+                file_type="generated_word", filename="legacy.docx", mime_type=word.mime_type,
+                content=content, metadata=legacy)
+            legacy.update(retry_count=job.retry_count, document_ir_file_id=job.document_ir_file_id)
+            runtime.document_file_repository.update_document_file(word.id, metadata=legacy)
+            old_job = runtime.document_job_repository.update_document_job(job.id, status="running", stage="uploading",
+                prepared_result=None, result_file_id=None)
+            self.assertEqual(execution._get_existing_result_file(old_job).id, word.id)
+            for key in LEGACY_RENDERER_EVIDENCE_KEYS:
+                with self.subTest(key=key):
+                    damaged = {**legacy, key: {"invalid": True}}
+                    runtime.document_file_repository.update_document_file(word.id, metadata=damaged)
+                    with self.assertRaisesRegex(ValueError, "质量证据"):
+                        execution._get_existing_result_file(old_job)
+            runtime.document_file_repository.update_document_file(word.id, metadata=legacy)
+            with patch.object(execution.word_renderer, "render_to_result") as render:
+                recovered = execution.execute_job(job.id)
+            self.assertEqual((recovered.status, recovered.result_file_id), ("succeeded", word.id))
+            render.assert_not_called()
+            self.assertNotIn("render_plan", recovered.prepared_result.file.metadata)
+
+
+class DocumentJobBlockAnchorRecoveryTests(TestCase):
+    """新通用 marker 和独立证明在三恢复入口保持，不改变原内容门禁。"""
+
+    _build_runtime = DocumentJobResultPersistenceTests._build_runtime
+    _upload_source_pdf = DocumentJobResultPersistenceTests._upload_source_pdf
+    _create = DocumentJobResultPersistenceTests._create
+    _files = DocumentJobResultPersistenceTests._files
+    _pause_after_ir = DocumentJobResultPersistenceTests._pause_after_ir
+    _runtime = DocumentJobResultPersistenceTests._runtime
+    _install_toc_ir = DocumentJobResultPersistenceTests._install_toc_ir
+
+    def test_tampered_toc_representative_three_recovery_entries_keep_primary_and_states(self):
+        from app.domains.document_jobs.preview import _mapping_source
+
+        for kind in ("file", "sqlite"):
+            for entry in ("legacy", "explicit", "receipt"):
+                with self.subTest(kind=kind, entry=entry), self._runtime(kind) as (
+                        root, runtime, execution, job, client, headers):
+                    job, ir = self._install_toc_ir(runtime, job)
+                    rendered = execution.word_renderer.render_to_result(ir, template_path=None, config_path=None,
+                        image_loader=execution._build_image_loader(job),
+                        options=DocumentIRRenderOptions(template_version_id=job.template_version_id))
+                    evidence = build_renderer_evidence(ir, rendered.content, render_result=rendered)
+                    evidence["block_render_evidence"]["block_render_map"][1]["representative_block_id"] = "tail"
+                    word = runtime.file_upload_service.register_generated_content(tenant_id=job.tenant_id,
+                        company_id=job.company_id, job_id=job.id, created_by=job.created_by, file_type="generated_word",
+                        filename="tampered-toc-trace.docx", mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        content=rendered.content, metadata={"source_file_id": job.source_file_id,
+                            "document_ir_file_id": job.document_ir_file_id, "retry_count": job.retry_count,
+                            "template_version_id": job.template_version_id, **evidence})
+                    job = runtime.document_job_repository.update_document_job(job.id, stage="uploading")
+                    if entry == "explicit":
+                        job = runtime.document_job_repository.update_document_job(job.id, result_file_id=word.id)
+                    elif entry == "receipt":
+                        job = runtime.document_job_repository.prepare_document_job_result(job.id,
+                            expected_retry_count=job.retry_count, expected_document_ir_file_id=job.document_ir_file_id, candidate=word)
+                    with patch.object(execution.word_renderer, "render_to_result", side_effect=AssertionError("恢复不能重新渲染")):
+                        result = execution.execute_job(job.id)
+                    self.assertEqual((result.status, result.stage, result.quality_status, result.review_status,
+                        result.delivery_status), ("succeeded", "completed", "pending", "unreviewed", "internal_draft"), result.error_message)
+                    self.assertEqual(result.result_file_id, word.id)
+                    self.assertIsNone(result.word_preview_state)
+                    if entry == "explicit":
+                        self.assertIsNone(result.prepared_result)
+                    else:
+                        self.assertEqual(result.prepared_result.file, word)
+                    saved = runtime.document_file_repository.get_document_file(word.id)
+                    self.assertEqual(saved.metadata, word.metadata)
+                    self.assertEqual(runtime.file_upload_service.read_file_content(saved), rendered.content)
+                    self.assertEqual(_mapping_source(saved, rendered.content,
+                        runtime.document_file_repository, runtime.file_upload_service), (None, None, None))
+                    self.assertEqual(saved.metadata["block_anchor_evidence"], evidence["block_anchor_evidence"])
+                    signed = client.get(f"/api/v1/document-jobs/{job.id}/download-url", headers=headers)
+                    self.assertEqual(signed.status_code, 200, signed.text)
+                    self.assertEqual(client.get(signed.json()["download_url"]).content, rendered.content)
+
+    def test_deep_optional_proof_stays_local_in_recovery_and_preview_source(self):
+        import sys
+        from app.domains.document_jobs.preview import _mapping_source
+
+        for kind in ("file", "sqlite"):
+            with self.subTest(kind=kind), self._runtime(kind) as (root, runtime, execution, job, client, headers):
+                ir = DocumentIR.model_validate_json(runtime.file_upload_service.read_file_content(execution._get_document_ir_file(job)))
+                rendered = execution.word_renderer.render_to_result(ir, template_path=None, config_path=None,
+                    image_loader=execution._build_image_loader(job), options=DocumentIRRenderOptions(template_version_id=job.template_version_id))
+                evidence = build_renderer_evidence(ir, rendered.content, render_result=rendered)
+                source = runtime.file_upload_service.register_generated_content(tenant_id=job.tenant_id,
+                    company_id=job.company_id, job_id=job.id, created_by=job.created_by, file_type="generated_word",
+                    filename="deep-optional-proof.docx", mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    content=rendered.content, metadata={"source_file_id": job.source_file_id,
+                        "document_ir_file_id": job.document_ir_file_id, "retry_count": job.retry_count,
+                        "template_version_id": job.template_version_id, **evidence})
+                nested = 0
+                for _ in range(sys.getrecursionlimit() + 1):
+                    nested = [nested]
+                # 深层值只进入可选证明边界，不经过无关的文件 metadata 编码器。
+                proof = {"schema_version": "block-anchor-evidence/v1", "entries": [], "extra": nested}
+                metadata = {**source.metadata, "block_anchor_evidence": proof}
+                source = source.model_copy(update={"metadata": metadata})
+                with self.assertLogs("business", "WARNING") as logs:
+                    execution._validate_render_result_file(source)
+                self.assertIn("reason_code=anchor_missing", " ".join(logs.output))
+                plan, trace, anchors = _mapping_source(source, rendered.content,
+                    runtime.document_file_repository, runtime.file_upload_service)
+                self.assertEqual(plan, rendered.plan)
+                self.assertEqual(trace, rendered.block_evidence)
+                self.assertIsNone(anchors)
+                self.assertIs(metadata["block_anchor_evidence"], proof)
+
+    def test_three_recovery_entries_preserve_optional_proof_and_never_rerender(self):
+        import importlib.util
+        compat_root = os.environ.get("RND505_COMPAT_ROOT")
+        compat = None
+        if compat_root:
+            path = Path(compat_root) / "app/domains/document_jobs/execution.py"
+            spec = importlib.util.spec_from_file_location("rnd505_b1_execution_reader", path)
+            compat = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(compat)
+        for kind in ("file", "sqlite"):
+            for entry in ("legacy", "explicit", "receipt"):
+                for variant in ("valid", "missing", "unknown", "bad_hash", "bad_trace"):
+                    with self.subTest(kind=kind, entry=entry, variant=variant), self._runtime(kind) as (
+                            root, runtime, execution, job, client, headers):
+                        ir = DocumentIR.model_validate_json(runtime.file_upload_service.read_file_content(execution._get_document_ir_file(job)))
+                        rendered = execution.word_renderer.render_to_result(ir, template_path=None, config_path=None,
+                            image_loader=execution._build_image_loader(job), options=DocumentIRRenderOptions(template_version_id=job.template_version_id))
+                        evidence = build_renderer_evidence(ir, rendered.content, render_result=rendered)
+                        self.assertIn("block_anchor_evidence", evidence)
+                        if variant == "missing": evidence.pop("block_anchor_evidence")
+                        elif variant == "unknown": evidence["block_anchor_evidence"]["schema_version"] = "future/v9"
+                        elif variant == "bad_hash": evidence["block_anchor_evidence"]["evidence_sha256"] = "f" * 64
+                        elif variant == "bad_trace": evidence["block_render_evidence"]["docx_sha256"] = "f" * 64
+                        word = runtime.file_upload_service.register_generated_content(tenant_id=job.tenant_id,
+                            company_id=job.company_id, job_id=job.id, created_by=job.created_by, file_type="generated_word",
+                            filename="same-call-anchors.docx", mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            content=rendered.content, metadata={"source_file_id": job.source_file_id,
+                                "document_ir_file_id": job.document_ir_file_id, "retry_count": job.retry_count,
+                                "template_version_id": job.template_version_id, **evidence})
+                        job = runtime.document_job_repository.update_document_job(job.id, stage="uploading")
+                        if entry == "explicit":
+                            job = runtime.document_job_repository.update_document_job(job.id, result_file_id=word.id)
+                        elif entry == "receipt":
+                            job = runtime.document_job_repository.prepare_document_job_result(job.id,
+                                expected_retry_count=job.retry_count, expected_document_ir_file_id=job.document_ir_file_id, candidate=word)
+                        if compat is not None:
+                            # B1 只有 writer 停用；此类来自实际快照，依赖 reader 源码由快照指纹核对。
+                            execution.__class__ = compat.DocumentJobExecutionService
+                        with patch.object(execution.word_renderer, "render_to_result", side_effect=AssertionError("恢复不能重新渲染")):
+                            result = execution.execute_job(job.id)
+                        self.assertEqual((result.status, result.stage), ("succeeded", "completed"), result.error_message)
+                        self.assertEqual(result.result_file_id, word.id)
+                        if entry == "explicit":
+                            self.assertIsNone(result.prepared_result)
+                        else:
+                            self.assertEqual(result.prepared_result.file.metadata, word.metadata)
+                        saved = runtime.document_file_repository.get_document_file(word.id)
+                        self.assertEqual(saved.metadata, word.metadata)
+                        self.assertEqual(runtime.file_upload_service.read_file_content(saved), rendered.content)
+                        self.assertEqual(result.quality_status, "pending")
+                        payloads = json.dumps([event.payload for event in runtime.document_job_event_repository.list_document_job_events(job.id)])
+                        self.assertNotIn("block_anchor_evidence", payloads)
+                        self.assertNotIn("md2w_blk_", payloads)
+                        listed = client.get(f"/api/v1/document-jobs/{job.id}/files", headers=headers).text
+                        self.assertNotIn("block_anchor_evidence", listed)
+                        self.assertNotIn("md2w_blk_", listed)

@@ -474,3 +474,7 @@ direct clone 不绑定翻译资源：新显式选择被拒绝；`keep_source_sna
 - `direct_pdf_to_word` 是 P0 默认发布路径。
 - `en2zh_pdf_to_word` 仍按实验能力处理，不阻塞 P0 direct 发布。
 - Golden Sample 当前仍 blocked：正式规模已收敛为 4 个 OPA228 canonical 样本；主链路曾 4/4 通过，但仍等待 admin 人工 Word 质量验收 4/4 通过。
+
+## RND-501输入报告与证据投影兼容
+
+RND-501当前集成复用IR-201输入验证与IR-205来源账本。致命输入错误在ir_converting以document_ir_failed关闭，报告绑定原始ZIP文件身份及发起generation；新渲染证据无效在candidate前以render_failed关闭，存储错误仍oss_failed。完整计划/trace保存在受控metadata，不新增API字段或evidence路由。公开摘要与事件只使用安全白名单；现有TR批次摘要/完整性字段、CON-104下载warning/classification、available actions、权限/审计及发布限制保持。

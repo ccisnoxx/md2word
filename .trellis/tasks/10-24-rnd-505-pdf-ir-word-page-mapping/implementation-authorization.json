@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-24",
+  "authorized": "用户接受v2及独立复核，授权隔离工作树完成G0、实现与检查，停review；不提交/push",
+  "root_head": "01e6c1add86f1ba7f24abc120629fa2fe6bd5ed9",
+  "root_protection_snapshot": "/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/rnd505-implementation-root-8zr3l2y2",
+  "worktree": "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word",
+  "initial_base": "8fa11d9779ce05e9cba1cfb7afee34ecbd58a4cf",
+  "rnd501_source": "69906a5e1e4b676a3e775fa50a94cef0ebc799c9",
+  "approved_triad_hashes": {
+    "prd.md": "86af71bf412d9e9f57d277a2279c275eba70443c4d00a631a42f0a67c879e2e1",
+    "design.md": "4a2edca7a32b1d8f597802906b2b6210a2d5a6f2361ff2cbe58d3c9d98718474",
+    "implement.md": "66c9381894a680d12a1bb66ff7c93febca0f80d1ed40fcf27b41c20c12d9d535"
+  },
+  "integration_gate": "passed_with_verified_baseline_failures",
+  "start_executed": true,
+  "actual_branch": "codex/rnd505-v2-implementation",
+  "suggested_branch_preserved": "md2word/RND-505@bfa81cbaeded7f35c9c801a54e103a4f1f1bdc36",
+  "g0_snapshot": "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/tmp/rnd505-g0-b0",
+  "implementation_phase": "v2_in_progress"
+}

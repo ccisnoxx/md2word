@@ -24,7 +24,11 @@
     "10-12-con-101-product-mode-ui-copy",
     "10-21-tr-402-protected-token-codec",
     "10-21-tr-403-translation-integrity-validator",
-    "10-16-rnd-504-word-preview-provider"
+    "10-17-rnd-501-render-plan-block-evidence",
+    "10-23-rnd-502-formula-omml-fallback",
+    "10-23-rnd-503-image-group-caption-rendering",
+    "10-16-rnd-504-word-preview-provider",
+    "10-24-rnd-505-pdf-ir-word-page-mapping"
   ],
   "parent": null,
   "relatedFiles": [],

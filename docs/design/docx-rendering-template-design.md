@@ -1,8 +1,10 @@
 ---
+本文整体为目标设计；当前正式行为以 [Word 生成规则](../../.trellis/spec/backend/word-generation-rules.md) 为准。RND-501 只收口计划和同次实证，不同时实现下文的 Grid 生产接线、宽表自动横向或布局表格等后续目标。
+
 doc_type: technical-design
 status: target
 component: docx-renderer-template
-last_reviewed: 2026-10-03
+last_reviewed: 2026-10-23
 ---
 
 # DOCX 原生渲染与模板设计
@@ -16,6 +18,8 @@ last_reviewed: 2026-10-03
 ```text
 app/services/renderer/
 ├── layout_plan.py
+├── render_plan.py
+├── block_evidence.py
 ├── word_renderer.py
 ├── text_renderer.py
 ├── table_renderer.py
@@ -46,7 +50,13 @@ RenderPlan
 └── quality expectations
 ```
 
-`RenderPlan` 不需要长期持久化，但应能输出 debug JSON。
+### RND-501 的实现边界
+
+`render-plan/v1` 属于 renderer，不写回 DocumentIR。它复用既有 LayoutPlan，在创建 Word 对象前确定实际 writer 消费的 section/文字/表格/图片/TOC 策略；模板、有效配置和符号规则使用同一次加载的内容指纹。计划与实际结果分开记录，继承值不伪装为预先知道的 Word 尺寸，源页也不是 Word 页。
+
+正式线上与 local adapter 使用 `render_to_result` 的同次 `content/plan/block_evidence/formula_report/image_layout_report`，旧 `render_to_bytes` 参数和 bytes 返回保持。完整计划/实证保存于既有 generated_word.metadata 与 local result，不增加 Artifact 类型/DB schema/公开查询接口；不因旧件缺字段而回填或重渲染。
+
+可执行字段、错误与兼容合同见 [RenderPlan 与 block evidence 合同](../../.trellis/spec/backend/render-plan-evidence-contract.md)。RND-501 来源验收由其任务记录说明；与 RND-502/503/504 的 G0 组合证据由 RND-505 任务 g0-integration.md 说明，本文不宣称已完成 Word 视觉验收。
 
 ## 4. 渲染模式
 
@@ -245,7 +255,11 @@ block_render_map
 quality_flags
 ```
 
-`block_render_map` 用于三栏审核定位，可以存为独立 JSON Artifact，不必写入 DocumentIR 核心。
+`block_render_map` 为后续三栏审核提供定位事实。RND-501 使用 generated_word.metadata 中的 `render_plan` / `block_render_evidence`，后者绑定 IR、资源、计划与最终 DOCX hash；每个输入 block 有唯一主记录，真实输出点提供有序目标，并在保存后从最终包冻结结构 locator。图片对、TOC、多个 decoration 合写均须明确共享/代表关系；跨节链接的 header/footer 按物理 part 处理贡献覆盖，空内容与没有输出对象分开。
+
+RND-501的历史边界是逻辑anchor_ref与已有题注bookmark；它本身不物化通用书签。当前RND-505在此基础上生成通用block bookmark、独立创建证明和可降级导航映射，详本文RND-505节及页映射合同；多页仍为低置信推断，不代表测得的Word实际页。
+
+完整证据在候选登记/receipt 选定前冻结，receipt恢复保持原 metadata。RND-501原候选没有preview retry；当前组合基线复用RND-504原预览生命周期，RND-505不改变其retry/CAS协议。历史恢复只比较稳定的旧 aggregate 投影，缺 trace 表示 unavailable。事件/公开摘要使用完整字段白名单，排除正文例子、自由 ID/flags 和路径/object key；保留安全计数、受控码和 INPUT-006 合同报告。新增 trace 无效继续 render_failed，存储/登记故障仍 oss_failed，不改变原质量或权限规则。
 
 ## 14. Word 预览
 
@@ -292,3 +306,8 @@ RND-504 在当前选定 receipt 物化、公式/图片原件认证之后、最�
 - 模板 style 存在与 fallback；
 - Microsoft Word 人工验收；
 - 现有 OPA228 和 ZK7044 回归。
+
+
+## RND-505：通用书签和导航页映射
+
+每个实际输出block可生成非可见通用书签；成功创建事实使用独立block_anchor_evidence，同次最终对象/字节认证后随原主件登记，原RND-501 v1首名和内容targets不变。预览manifest承载独立page_mapping；单页正文可定位第0页，多页只按来源/实际输出序推断low起点，跨页范围未知，不承诺像素分页。详细字段、错误、生命周期和B1兼容门见[PDF/IR/Word页映射合同](../contracts/pdf-ir-word-page-mapping-contract.md)。

@@ -1,0 +1,21 @@
+{
+  "baseline_paths": 1030,
+  "changed_existing_paths": [
+    ".trellis/tasks/10-12-datasheet-docx-delivery-quality/task.json",
+    ".trellis/tasks/10-17-rnd-501-render-plan-block-evidence/task.json",
+    "docs/implementation/codex-task-manifest.yaml"
+  ],
+  "index_unchanged": true,
+  "archive_file_count": 69,
+  "archive_exact_match": true,
+  "manifest_changed_entries": [
+    "RND-501",
+    "RND-505"
+  ],
+  "manifest_other_entries_unchanged": 43,
+  "head": "01e6c1add86f1ba7f24abc120629fa2fe6bd5ed9",
+  "integration_executed": false,
+  "task_start_executed": false,
+  "business_tests_run": false,
+  "commit_or_push": false
+}

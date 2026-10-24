@@ -1,0 +1,7 @@
+Component PDF regression report
+run_dir: /Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/tmp/rnd505-fresh-review-component
+sample_count: 1
+succeeded: 1
+failed: 0
+ok: True
+- ti-opamp-opa228-p1-smoke: succeeded -> /Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/tmp/rnd505-fresh-review-component/docx/ti-opamp-opa228-p1-smoke.docx

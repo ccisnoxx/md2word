@@ -1,0 +1,97 @@
+{
+  "baseline_commit": "8fa11d9779ce05e9cba1cfb7afee34ecbd58a4cf",
+  "execution_baseline": [
+    {
+      "selector": "test_automatic_word_discovery_requires_current_generation_and_final_ir (tests.test_document_job_execution_stages.DocumentJobExecutionStageTests.test_automatic_word_discovery_requires_current_generation_and_final_ir)",
+      "kind": "FAIL",
+      "assertions": [
+        "AssertionError: Tuples differ: ('failed', None) != ('succeeded', 'file_<id>')"
+      ]
+    },
+    {
+      "selector": "test_explicit_result_reuses_old_generation_but_checks_file_identity (tests.test_document_job_execution_stages.DocumentJobExecutionStageTests.test_explicit_result_reuses_old_generation_but_checks_file_identity) (invalid=None)",
+      "kind": "FAIL",
+      "assertions": [
+        "AssertionError: 'failed' != 'succeeded'"
+      ]
+    },
+    {
+      "selector": "test_zero_translation_units_complete_without_provider_calls (tests.test_document_job_execution_stages.DocumentJobExecutionStageTests.test_zero_translation_units_complete_without_provider_calls)",
+      "kind": "FAIL",
+      "assertions": [
+        "AssertionError: 'failed' != 'succeeded'"
+      ]
+    }
+  ],
+  "execution_candidate": [
+    {
+      "selector": "test_automatic_word_discovery_requires_current_generation_and_final_ir (tests.test_document_job_execution_stages.DocumentJobExecutionStageTests.test_automatic_word_discovery_requires_current_generation_and_final_ir)",
+      "kind": "FAIL",
+      "assertions": [
+        "AssertionError: Tuples differ: ('failed', None) != ('succeeded', 'file_<id>')"
+      ]
+    },
+    {
+      "selector": "test_explicit_result_reuses_old_generation_but_checks_file_identity (tests.test_document_job_execution_stages.DocumentJobExecutionStageTests.test_explicit_result_reuses_old_generation_but_checks_file_identity) (invalid=None)",
+      "kind": "FAIL",
+      "assertions": [
+        "AssertionError: 'failed' != 'succeeded'"
+      ]
+    }
+  ],
+  "api_baseline_evidence_source": ".trellis/tasks/10-16-rnd-504-word-preview-provider/research/rnd504-head-api-baseline.log",
+  "api_baseline_provenance": "已验收RND-504保留的原HEAD对照日志；本轮提取证据，没有重跑该API基线",
+  "api_baseline": [
+    {
+      "selector": "test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft) (backend='file')",
+      "kind": "FAIL",
+      "assertions": [
+        "AssertionError: {'qua[108 chars]y': {'formula': {'schema_version': 'formula-su[213 chars]f'}}} != {'qua[108 chars]y': {}}"
+      ]
+    },
+    {
+      "selector": "test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft) (backend='database')",
+      "kind": "FAIL",
+      "assertions": [
+        "AssertionError: {'qua[108 chars]y': {'formula': {'schema_version': 'formula-su[213 chars]f'}}} != {'qua[108 chars]y': {}}"
+      ]
+    },
+    {
+      "selector": "test_qa_keeps_owner_tenant_company_admin_and_direct_boundaries (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_qa_keeps_owner_tenant_company_admin_and_direct_boundaries)",
+      "kind": "FAIL",
+      "assertions": [
+        "AssertionError: {'qua[108 chars]y': {'formula': {'schema_version': 'formula-su[213 chars]f'}}} != {'qua[108 chars]y': {}}"
+      ]
+    }
+  ],
+  "api_candidate": [
+    {
+      "selector": "test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft) (backend='file')",
+      "kind": "FAIL",
+      "assertions": [
+        "AssertionError: {'qua[108 chars]y': {'formula': {'schema_version': 'formula-su[213 chars]f'}}} != {'qua[108 chars]y': {}}"
+      ]
+    },
+    {
+      "selector": "test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_operator_approval_updates_owner_and_safe_audit_while_remaining_draft) (backend='database')",
+      "kind": "FAIL",
+      "assertions": [
+        "AssertionError: {'qua[108 chars]y': {'formula': {'schema_version': 'formula-su[213 chars]f'}}} != {'qua[108 chars]y': {}}"
+      ]
+    },
+    {
+      "selector": "test_qa_keeps_owner_tenant_company_admin_and_direct_boundaries (tests.test_document_job_delivery_state_api.DocumentJobDeliveryStateApiTests.test_qa_keeps_owner_tenant_company_admin_and_direct_boundaries)",
+      "kind": "FAIL",
+      "assertions": [
+        "AssertionError: {'qua[108 chars]y': {'formula': {'schema_version': 'formula-su[213 chars]f'}}} != {'qua[108 chars]y': {}}"
+      ]
+    }
+  ],
+  "removed_baseline_failure": {
+    "selector": "test_zero_translation_units_complete_without_provider_calls",
+    "reason": "复用69906a5e已接受fixture：非空且没有可翻译单元的公式输入；原空content_list被新独立失败测试继续拒绝，并非放松mineru_content_empty"
+  },
+  "new_unattributed_failures": [],
+  "execution_signatures_match": true,
+  "api_signatures_match": true
+}

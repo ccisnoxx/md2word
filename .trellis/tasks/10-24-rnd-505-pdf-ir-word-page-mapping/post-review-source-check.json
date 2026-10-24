@@ -1,0 +1,15 @@
+{
+  "syntax": "passed",
+  "source_sha256": {
+    "app/services/renderer/evidence.py": "9c4a9591d86be69744a1072cb564b884c3f37330d0ec310477d19d674ab09e24",
+    "tests/test_preview_page_mapping.py": "ffb0986d494769fb07fba5417dfa11461c2fc7648b412e0a4c556eac08b2d31c",
+    "tests/test_document_job_word_preview.py": "c6b1c9593d084ab1577bc7616e106b77b595bc57a40caedf868b3582f8bba48d",
+    "tests/test_document_job_result_persistence.py": "85575ca99e4f8370d6694c93d60c409ade0f684d6a5bfd268af6547aa6d470b0"
+  },
+  "lint_type_tools": {
+    "ruff": false,
+    "flake8": false,
+    "mypy": false,
+    "pyright": false
+  }
+}

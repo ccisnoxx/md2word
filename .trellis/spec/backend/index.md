@@ -36,6 +36,8 @@ Before backend changes:
 
 Also read `.trellis/spec/guides/index.md` and the relevant thinking guide when the change crosses API, service, repository, worker, or runtime boundaries.
 
+13. 修改渲染计划、逐block实证、renderer metadata或相关事件时，阅读[RenderPlan与block evidence合同](./render-plan-evidence-contract.md)。
+
 ## Guidelines Index
 
 | Guide | What It Covers | Status |
@@ -52,7 +54,12 @@ Also read `.trellis/spec/guides/index.md` and the relevant thinking guide when t
 | [Runtime Configuration](./runtime-configuration.md) | MinerU 账号与密钥绑定、环境变量优先级、安全 API、审计和 Worker 即时生效合同 | Current |
 | [Word 模板样式配置合同](./template-layout-configuration.md) | Admin schema、版本治理、旧配置兼容和多文种 OOXML 字体槽位 | Current |
 | [Word 生成规则](./word-generation-rules.md) | 正式 MinerU→DocumentIR→Word 输出行为、冲突优先级、回归证据和 legacy 差异 | Current |
+| [RenderPlan与block evidence](./render-plan-evidence-contract.md) | 同次计划、逐块目标、绑定与安全投影；当前TR/CON及无预览边界 | 当前候选 |
 | [Quality Guidelines](./quality-guidelines.md) | `unittest` style, targeted checks, release gate, OpenAPI contract checks, local vs online validation | Current |
+
+## 页映射相关变更
+
+修改通用书签、独立锚点证明或preview页映射时，阅读[PDF/IR/Word导航映射](./page-mapping-contract.md)及其详细合同；预览CAS与RND-501/502/503原认证仍由各原owner负责。
 
 ## Quality Check
 

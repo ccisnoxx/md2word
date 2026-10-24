@@ -1015,3 +1015,253 @@ class DocumentJobWordPreviewTests(TestCase):
                              (original.status, original.stage, original.result_file_id, original.prepared_result))
             self.assertEqual(current.word_preview_state.current_run.run_deadline_at, legacy.current_run.run_deadline_at)
             self.assertEqual(len(provider.inputs), 1)
+
+
+class DocumentJobPageMappingTests(TestCase):
+    """映射只属于同次受权 manifest，不参与任务业务状态。"""
+
+    _upload_source_pdf = DocumentJobWordPreviewTests._upload_source_pdf
+    _create = DocumentJobWordPreviewTests._create
+    _files = DocumentJobWordPreviewTests._files
+    _pause_after_ir = DocumentJobWordPreviewTests._pause_after_ir
+    _build_runtime = DocumentJobWordPreviewTests._build_runtime
+    _install_toc_ir = result_fixtures.DocumentJobResultPersistenceTests._install_toc_ir
+    runtime = DocumentJobWordPreviewTests.runtime
+
+    def test_real_renderer_receipt_mapping_and_success_alias_keep_original_manifest(self):
+        from app.domains.document_jobs.preview import current_page_mapping
+        with self.runtime() as (runtime, execution, provider, job, user, client, headers):
+            result = execution.execute_job(job.id)
+            self.assertEqual(result.status, "succeeded", result.error_message)
+            source = result.prepared_result.file
+            mapping = current_page_mapping(result, runtime.document_file_repository, runtime.file_upload_service)
+            self.assertEqual(mapping["status"], "available")
+            binding = mapping["binding"]
+            self.assertEqual((binding["source_generation"], binding["result_file_id"], binding["docx_sha256"]),
+                             (result.retry_count, source.id, source.checksum_sha256))
+            self.assertEqual(binding["input_ir_sha256"], source.metadata["render_plan"]["input_ir_sha256"])
+            proof = {entry["block_id"]: entry for entry in source.metadata["block_anchor_evidence"]["entries"]}
+            for entry in mapping["entries"]:
+                if entry["location"]["kind"] == "single_page":
+                    owner = entry["representative_block_id"] or entry["block_id"]
+                    self.assertEqual(entry["bookmark_name"], proof[owner]["bookmark_name"])
+            before = runtime.file_upload_service.read_file_content(source)
+            with patch("app.domains.document_jobs.preview.build_page_mapping") as mapper, patch.object(
+                    execution.word_renderer, "render_to_result") as renderer:
+                alias = runtime.document_job_service.retry_word_preview(job.id, user=user, reason="复用同件", request_id=str(uuid4()))
+                replay = execution.execute_job(job.id)
+            mapper.assert_not_called()
+            renderer.assert_not_called()
+            self.assertEqual(alias.run.manifest_file_id, result.word_preview_state.current_run.manifest_file_id)
+            self.assertEqual(replay.prepared_result, result.prepared_result)
+            self.assertEqual(runtime.file_upload_service.read_file_content(source), before)
+            self.assertEqual(len(provider.inputs), 1)
+            payloads = json.dumps([event.payload for event in runtime.document_job_event_repository.list_document_job_events(job.id)])
+            for private in ("block_anchor_evidence", "page_mapping", "md2w_blk_", '"source_spans"'):
+                self.assertNotIn(private, payloads)
+            listed = client.get(f"/api/v1/document-jobs/{job.id}/files", headers=headers).text
+            self.assertNotIn("block_anchor_evidence", listed)
+            self.assertNotIn("md2w_blk_", listed)
+
+    def test_persisted_toc_tampering_only_disables_mapping(self):
+        from copy import deepcopy
+        from app.domains.document_jobs.preview import current_page_mapping
+
+        observations = []
+        for variant in ("valid", "representative", "disposition"):
+            with self.subTest(variant=variant), self.runtime(pages=True, quality="blocked") as (
+                    runtime, execution, provider, job, user, client, headers):
+                job, ir = self._install_toc_ir(runtime, job)
+                provider.outcomes.append(multi_page_preview_result(
+                    PreviewPolicy.model_validate(job.request_snapshot["word_preview"]), 5))
+                register = runtime.file_upload_service.register_result_candidate
+                captured = {}
+                def candidate(**kwargs):
+                    captured.update(content=kwargs["content"], metadata=deepcopy(kwargs["metadata"]))
+                    metadata = deepcopy(kwargs["metadata"])
+                    if variant == "representative":
+                        metadata["block_render_evidence"]["block_render_map"][1]["representative_block_id"] = "tail"
+                    elif variant == "disposition":
+                        trace = metadata["block_render_evidence"]
+                        trace["block_render_map"][1]["disposition"] = "rendered"
+                        trace["counts"]["coalesced"] -= 1
+                        trace["counts"]["rendered"] += 1
+                    return register(**{**kwargs, "metadata": metadata})
+                with patch.object(runtime.file_upload_service, "register_result_candidate", side_effect=candidate):
+                    result = execution.execute_job(job.id)
+                self.assertEqual((result.status, result.quality_status, result.review_status, result.delivery_status,
+                    result.word_preview_state.current_run.status),
+                    ("succeeded", "blocked", "unreviewed", "internal_draft", "succeeded"), result.error_message)
+                source = result.prepared_result.file
+                self.assertEqual(provider.inputs, [captured["content"]])
+                self.assertEqual(runtime.file_upload_service.read_file_content(source), captured["content"])
+                self.assertEqual(source.checksum_sha256, sha256(captured["content"]))
+                self.assertEqual(source.metadata["block_anchor_evidence"], captured["metadata"]["block_anchor_evidence"])
+                mapping = current_page_mapping(result, runtime.document_file_repository, runtime.file_upload_service)
+                if variant != "valid":
+                    self.assertEqual((mapping["status"], mapping["reason_code"], mapping["entries"]),
+                        ("unavailable", "legacy_evidence_missing", []))
+                else:
+                    entries = {entry["block_id"]: entry for entry in mapping["entries"]}
+                    self.assertEqual([entries[block]["location"]["preview_page_index"]
+                        for block in ("first", "merged", "tail")], [0, 0, 4])
+                    self.assertEqual(entries["merged"]["bookmark_name"], entries["first"]["bookmark_name"])
+                    self.assertNotEqual(entries["merged"]["bookmark_name"], entries["tail"]["bookmark_name"])
+                actions = runtime.document_job_service.build_available_actions(result, user=user)
+                observations.append((result.quality_status, result.review_status, result.delivery_status, actions))
+                self.assertNotIn("page_mapping", json.dumps(result.quality_summary))
+                signed = client.get(f"/api/v1/document-jobs/{job.id}/download-url", headers=headers)
+                self.assertEqual(signed.status_code, 200, signed.text)
+                self.assertEqual(client.get(signed.json()["download_url"]).content, captured["content"])
+        for observation in observations[1:]:
+            self.assertEqual(observations[0], observation)
+
+    def test_pure_mapper_exception_is_safe_nonblocking_and_does_not_change_primary(self):
+        from app.domains.document_jobs.preview import current_page_mapping
+        canary = "PRIVATE_MAPPING_BLOCK_BODY_canary"
+        with self.runtime(quality="blocked") as (runtime, execution, provider, job, user, client, headers):
+            with patch("app.domains.document_jobs.preview.build_page_mapping", side_effect=RuntimeError(canary)), self.assertLogs("business", "ERROR") as logs:
+                result = execution.execute_job(job.id)
+            self.assertEqual((result.status, result.quality_status, result.review_status, result.delivery_status),
+                             ("succeeded", "blocked", "unreviewed", "internal_draft"))
+            self.assertEqual(result.word_preview_state.current_run.status, "succeeded")
+            self.assertEqual(current_page_mapping(result, runtime.document_file_repository, runtime.file_upload_service)["reason_code"], "unexpected_error")
+            self.assertNotIn(canary, " ".join(logs.output))
+            source = result.prepared_result.file
+            self.assertEqual(sha256(runtime.file_upload_service.read_file_content(source)), source.checksum_sha256)
+            self.assertNotIn("page_mapping", json.dumps(result.quality_summary))
+            signed = client.get(f"/api/v1/document-jobs/{job.id}/download-url", headers=headers)
+            self.assertEqual(signed.status_code, 200)
+            self.assertEqual(client.get(signed.json()["download_url"]).status_code, 200)
+
+    def test_old_missing_unknown_and_invalid_mapping_read_locally_without_changing_preview(self):
+        from app.domains.document_jobs.preview import current_page_mapping
+        for variant, expected in (("missing", "legacy_evidence_missing"), ("unknown", "unsupported_version"),
+                                  ("hash", "invalid_mapping"), ("wrong_run", "invalid_mapping")):
+            with self.subTest(variant=variant), self.runtime() as (runtime, execution, provider, job, user, client, headers):
+                original = execution.word_preview_service._register
+                def register(*args):
+                    if args[2] == "word_preview_manifest":
+                        body = json.loads(args[4])
+                        if variant == "missing": body.pop("page_mapping")
+                        elif variant == "unknown": body["page_mapping"]["schema_version"] = "future/v9"
+                        elif variant == "hash": body["page_mapping"]["mapping_sha256"] = "f" * 64
+                        else:
+                            from app.services.preview.page_mapping import _seal
+                            changed = body["page_mapping"]
+                            changed["binding"]["run_id"] = "another-run"
+                            body["page_mapping"] = _seal({key: value for key, value in changed.items() if key != "mapping_sha256"})
+                        args = (*args[:4], json.dumps(body).encode(), *args[5:])
+                    return original(*args)
+                with patch.object(execution.word_preview_service, "_register", side_effect=register):
+                    result = execution.execute_job(job.id)
+                self.assertEqual((result.status, result.quality_status, result.word_preview_state.current_run.status), ("succeeded", "pending", "succeeded"))
+                before = runtime.document_job_repository.get_document_job(job.id)
+                value = current_page_mapping(result, runtime.document_file_repository, runtime.file_upload_service)
+                self.assertEqual(value["reason_code"], expected)
+                self.assertEqual(runtime.document_job_repository.get_document_job(job.id), before)
+                manifest_id = result.word_preview_state.current_run.manifest_file_id
+                signed = client.get(f"/api/v1/document-jobs/{job.id}/download-url", params={"file_id": manifest_id}, headers=headers)
+                self.assertEqual(signed.status_code, 200)
+                self.assertEqual(client.get(signed.json()["download_url"]).status_code, 200)
+                self.assertEqual(len(provider.inputs), 1)
+
+    def test_new_mapping_uses_existing_manifest_permission_and_expiry_boundaries(self):
+        with self.runtime() as (runtime, execution, provider, job, user, client, headers):
+            result = execution.execute_job(job.id)
+            manifest_id = result.word_preview_state.current_run.manifest_file_id
+            owner, artifact = runtime.document_job_service.get_file_for_download(job.id, user=user, file_id=manifest_id)
+            self.assertIn(b'"page_mapping"', runtime.file_upload_service.read_file_content(artifact))
+            for stranger in (user.model_copy(update={"id": "other"}), user.model_copy(update={"tenant_id": "other"}),
+                             user.model_copy(update={"company_id": "other"})):
+                with self.assertRaises(ApiError):
+                    runtime.document_job_service.get_file_for_download(job.id, user=stranger, file_id=manifest_id)
+            admin = user.model_copy(update={"id": "admin", "role": "admin"})
+            self.assertEqual(runtime.document_job_service.get_file_for_download(job.id, user=admin, file_id=manifest_id)[1].id, manifest_id)
+            runtime.document_file_repository.update_document_file(manifest_id, expires_at=utc_now() - timedelta(seconds=1))
+            with self.assertRaises(ApiError):
+                runtime.document_job_service.get_file_for_download(job.id, user=user, file_id=manifest_id)
+
+    def test_g0_old_manifest_reader_accepts_new_manifest_and_keeps_unknown_mapping_optional(self):
+        """使用实际 G0 源码交叉读取；快照是当前任务证据，并非隐含旧二进制安全声明。"""
+        import importlib.util
+        path = Path(__file__).parent / "tmp/rnd505-g0-b0/app/domains/document_jobs/preview.py"
+        if not path.exists():
+            self.skipTest("当前工作区未保存 G0 reader 快照。")
+        spec = importlib.util.spec_from_file_location("rnd505_b0_preview_reader", path)
+        reader = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(reader)
+        with self.runtime() as (runtime, execution, provider, job, user, client, headers):
+            result = execution.execute_job(job.id)
+            records, body = reader._artifact_evidence(result, result.word_preview_state.current_run,
+                runtime.document_file_repository, runtime.file_upload_service)
+            self.assertEqual(body["page_mapping"]["status"], "available")
+            self.assertTrue(reader.observe_current_preview(result, runtime.document_file_repository, runtime.file_upload_service).available)
+            self.assertEqual(len(provider.inputs), 1)
+
+    def test_optional_original_ir_lifecycle_never_becomes_a_new_preview_gate(self):
+        from app.domains.document_jobs.preview import current_page_mapping
+        for variant in ("missing", "expired", "foreign", "object_missing", "storage_error", "hash"):
+            with self.subTest(variant=variant), self.runtime() as (runtime, execution, provider, job, user, client, headers):
+                ready = []
+                provider.before_return = lambda: ready.append(True)
+                get_file = runtime.document_file_repository.get_document_file
+                read_file = runtime.file_upload_service.read_file_content
+                reads_after_preview = []
+                def get(file_id):
+                    record = get_file(file_id)
+                    if ready and file_id == job.document_ir_file_id:
+                        if variant == "missing": return None
+                        if variant == "expired": return record.model_copy(update={"status": "expired"})
+                        if variant == "foreign": return record.model_copy(update={"tenant_id": "foreign"})
+                    return record
+                def read(record):
+                    if ready and record.id == job.document_ir_file_id:
+                        reads_after_preview.append(record.id)
+                        if variant == "object_missing": raise FileNotFoundError("已知原 IR 对象不存在")
+                        if variant == "storage_error": raise OSError("未知存储错误不可冒充原 IR 缺失")
+                        if variant == "hash": return b"damaged IR"
+                    return read_file(record)
+                with patch.object(runtime.document_file_repository, "get_document_file", side_effect=get), patch.object(
+                        runtime.file_upload_service, "read_file_content", side_effect=read):
+                    result = execution.execute_job(job.id)
+                    if variant in {"storage_error", "hash"}:
+                        self.assertEqual((result.status, result.failed_stage, result.error_code), ("failed", "uploading", "oss_failed"))
+                    else:
+                        self.assertEqual((result.status, result.quality_status, result.word_preview_state.current_run.status),
+                                         ("succeeded", "pending", "succeeded"), result.error_message)
+                        self.assertEqual(current_page_mapping(result, runtime.document_file_repository, runtime.file_upload_service)["reason_code"],
+                                         "legacy_evidence_missing")
+                        if variant in {"missing", "expired", "foreign"}:
+                            self.assertFalse(reads_after_preview)
+
+    def test_receipt_proof_missing_or_invalid_never_upgrades_existing_namespace_bookmarks(self):
+        from copy import deepcopy
+        from app.domains.document_jobs.preview import current_page_mapping
+        for variant in ("missing", "unknown", "wrong_docx", "bad_trace"):
+            with self.subTest(variant=variant), self.runtime() as (runtime, execution, provider, job, user, client, headers):
+                register = runtime.file_upload_service.register_result_candidate
+                def candidate(**kwargs):
+                    metadata = deepcopy(kwargs["metadata"])
+                    if variant == "missing": metadata.pop("block_anchor_evidence")
+                    elif variant == "unknown": metadata["block_anchor_evidence"]["schema_version"] = "future/v9"
+                    elif variant == "wrong_docx": metadata["block_anchor_evidence"]["docx_sha256"] = "f" * 64
+                    else: metadata["block_render_evidence"]["docx_sha256"] = "f" * 64
+                    return register(**{**kwargs, "metadata": metadata})
+                with patch.object(runtime.file_upload_service, "register_result_candidate", side_effect=candidate):
+                    result = execution.execute_job(job.id)
+                self.assertEqual((result.status, result.quality_status, result.word_preview_state.current_run.status),
+                                 ("succeeded", "pending", "succeeded"), result.error_message)
+                mapping = current_page_mapping(result, runtime.document_file_repository, runtime.file_upload_service)
+                self.assertEqual(mapping["status"], "unavailable" if variant == "bad_trace" else "degraded")
+                if variant == "bad_trace":
+                    self.assertEqual(mapping["reason_code"], "legacy_evidence_missing")
+                else:
+                    located = [entry for entry in mapping["entries"] if entry["location"]["kind"] != "unavailable"]
+                    self.assertTrue(located)
+                    self.assertTrue(all(entry["bookmark_name"] is None and entry["anchor_reason_code"] == "anchor_missing" for entry in located))
+                    self.assertTrue(all(entry["location"]["confidence"] == "high" for entry in located))
+                source = result.prepared_result.file
+                import zipfile
+                with zipfile.ZipFile(io.BytesIO(runtime.file_upload_service.read_file_content(source))) as package:
+                    self.assertIn(b"md2w_blk_", package.read("word/document.xml"))

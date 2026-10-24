@@ -152,3 +152,8 @@ repository.update_document_job(job_id, quality_status="passed")
 ```
 
 正确：在当前来源和 lease 的 `finish_document_job_preview` 窄 CAS 内只替换 `word_preview` 贡献，由共享质量规则合成总体状态后执行 review/delivery 失效。泛化 quality 更新保留未归属结论，预览成功不获得审核或发布权限。
+
+
+## RND-505可选导航对象
+
+word-preview/v1成功manifest可含独立版本page_mapping；不更改本合同claim/registration/finish、重放/alias、TTL或发布资格。旧manifest无字段合法；内层未知/坏hash/错binding仅映射不可用，原manifest完整性或存储错误仍原失败。Provider失败不为映射增加文件。新增私有证明/映射的公开出口只投影受控计数，详[页映射Spec](./page-mapping-contract.md)。

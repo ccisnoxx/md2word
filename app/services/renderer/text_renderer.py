@@ -27,13 +27,11 @@ from app.conversion.docx_rules.formula import (
 )
 from app.conversion.docx_rules.terminology import TerminologyReplacer
 from app.services.renderer.semantic_text import (
-    infer_heading_level,
     infer_list_item_level,
     is_toc_title_text,
     is_list_item_text,
     looks_like_heading_text,
     normalize_list_item,
-    parse_toc_entry_text,
 )
 from app.services.renderer.template_config import TemplateConfigPackage, TemplateParagraphStyleConfig
 
@@ -117,90 +115,30 @@ class WordTextRendererMixin:
         paragraph_format.left_indent = Pt(12 + min(max(level, 0), 1) * 12)
         paragraph_format.first_line_indent = Pt(-9)
 
-    def _fill_auto_list_or_paragraph(
-        self,
-        paragraph: Any,
-        text: str,
-        template_config: TemplateConfigPackage,
-        *,
-        reference_bookmarks: CaptionBookmarks | None = None,
-        allow_heading_inference: bool = True,
-    ) -> None:
-        if is_toc_title_text(text):
-            self._fill_paragraph(
-                paragraph,
-                text,
-                template_config.toc_title,
-                terminology=template_config.terminology,
-                reference_bookmarks=reference_bookmarks,
-            )
-            return
-        if self._fill_toc_entry_if_needed(paragraph, text, template_config):
-            return
-        if is_list_item_text(text):
-            self._fill_list_paragraph(
-                paragraph,
-                text,
-                template_config,
-                reference_bookmarks=reference_bookmarks,
-            )
-            return
-        if allow_heading_inference and looks_like_heading_text(text):
-            self._fill_heading_paragraph(paragraph, text, infer_heading_level(text), template_config)
-            return
-        self._fill_paragraph(
-            paragraph,
-            text,
-            template_config.normal,
-            terminology=template_config.terminology,
-            reference_bookmarks=reference_bookmarks,
-        )
+    def _fill_planned_text(self, paragraph, text, policy, template_config, *, reference_bookmarks=None):
+        """只执行已选策略，自动推断的优先级由 select_text_policy 唯一管理。"""
+        if policy.mode == "toc":
+            self._fill_toc_entry_paragraph(paragraph, policy, template_config)
+        elif policy.mode == "bullet":
+            self._fill_list_paragraph(paragraph, text, template_config, reference_bookmarks=reference_bookmarks)
+        elif policy.mode == "heading":
+            self._fill_heading_paragraph(paragraph, text, policy.heading_level, template_config)
+        elif policy.mode == "formula":
+            self._fill_formula_paragraph(paragraph, text, template_config)
+        elif policy.mode == "table_context":
+            self._fill_table_context_paragraph(paragraph, text, template_config)
+        else:
+            self._fill_paragraph(paragraph, text, getattr(template_config, policy.style_group),
+                terminology=template_config.terminology, reference_bookmarks=reference_bookmarks)
 
-    def _fill_auto_list_item_paragraph(
-        self,
-        paragraph: Any,
-        text: str,
-        template_config: TemplateConfigPackage,
-        *,
-        reference_bookmarks: CaptionBookmarks | None = None,
-    ) -> None:
-        if is_toc_title_text(text):
-            self._fill_paragraph(
-                paragraph,
-                text,
-                template_config.toc_title,
-                terminology=template_config.terminology,
-                reference_bookmarks=reference_bookmarks,
-            )
-            return
-        if self._fill_toc_entry_if_needed(paragraph, text, template_config):
-            return
-        self._fill_list_paragraph(
-            paragraph,
-            text,
-            template_config,
-            reference_bookmarks=reference_bookmarks,
-        )
-
-    def _fill_toc_entry_if_needed(
-        self,
-        paragraph: Any,
-        text: str,
-        template_config: TemplateConfigPackage,
-    ) -> bool:
-        parsed = parse_toc_entry_text(text)
-        if parsed is None:
-            return False
-
-        title, _page_number = parsed
-        toc_style = template_config.toc_style_for_level(infer_heading_level(title))
+    def _fill_toc_entry_paragraph(self, paragraph, policy, template_config) -> None:
+        toc_style = getattr(template_config, policy.style_group)
         self._configure_toc_styles(paragraph.part.styles, template_config)
         self._apply_named_style(paragraph, toc_style.word_style_name)
         self._apply_paragraph_style(paragraph, toc_style)
         paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
         paragraph.paragraph_format.first_line_indent = Pt(0)
         self._add_complex_field(paragraph, r' TOC \o "1-3" \h \z \u ', "更新目录", toc_style)
-        return True
 
     def _fill_formula_paragraph(
         self,

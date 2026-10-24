@@ -37,7 +37,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 ### PIPE-001 正式转换链路唯一性
 
-- 状态：`enforced-tested`
+- 状态：`implemented-gap`（来源合同已验收；G0组合候选验证以RND-505任务的g0-integration.md为准，历史结果不替代新候选或真实环境证据）。
 - 输入信号：本地 MinerU 目录/ZIP，或线上任务已下载的 MinerU 结果 ZIP。
 - 正式 owner：`scripts/dev/formal_mineru_conversion.py::run_conversion`、`::convert_formal_mineru_package`；`app/domains/document_jobs/execution.py::DocumentJobExecutionService._convert_and_save_document_ir`、`._render_and_save_word`。
 - 预期输出：先由 `MinerUToDocumentIRService.convert_zip()` 生成并持久化 DocumentIR，再由 `DocumentIRWordRenderer.render_to_result()` 一次生成 DOCX 和公式报告，再构建 renderer evidence（旧 `render_to_bytes()` 保持 bytes 兼容）；所有正式修复都落在该链路的唯一 owner。
@@ -97,9 +97,9 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 ### INPUT-004 v2 富文本、列表换行与脚注归一化
 
-- 状态：`enforced-tested`
+- 状态：`implemented-gap`（来源合同已验收；G0组合候选验证以RND-505任务的g0-integration.md为准，历史结果不替代新候选或真实环境证据）。
 - 输入信号：v2 `content` 节点、inline equation、显式 `list_items`、以列表标记起始的多行文本、目录点线和碎片化脚注。
-- 正式 owner：`app/conversion/docx_rules/mineru_content.py::join_text_fragments`、`::split_multiline_list_items`、`::split_toc_like_lines`、`::merge_footnote_fragments`；`app/services/document_ir/mineru_converter.py::_list_items`、`::_rich_text_nodes`。
+- 正式 owner：`app/conversion/docx_rules/mineru_content.py::join_text_fragments`、`::select_mineru_text_source`、`::mineru_raw_text_preserving_lines`、`::select_mineru_list_source`、`::mineru_list_items`、`::split_multiline_list_items`、`::split_toc_like_lines`、`::merge_footnote_fragments`。
 - 预期输出：保留 inline equation 数学边界；多行列表拆成独立 item，未标记续行仍保留在同一 item；目录样式文本仅在足够高比例点线项时拆分；脚注按明确连续信号合并。
 - 冲突/例外：普通多行正文不拆列表；单行负温度或减号文本不得当作列表。
 - 禁止：对所有换行统一空格化；只保留列表第一行；在普通正文全局执行无差别或破坏性的 TeX 清理。
@@ -111,7 +111,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 ### INPUT-005 空表续页占位符只按语义叶字段归一化
 
-- 状态：`enforced-tested`
+- 状态：`implemented-gap`（来源合同已验收；G0组合候选验证以RND-505任务的g0-integration.md为准，历史结果不替代新候选或真实环境证据）。
 - 输入信号：MinerU table block 的 HTML、题注、脚注、明确正文叶字段，以及 `image_source.path="images/"`、`table_type`、`table_nest_level` 等结构元数据。
 - 正式 owner：`app/services/document_ir/layout_signals.py::_is_mineru_empty_table_placeholder`、`::merge_table_placeholder_continuations`；保守判定复用 `app/conversion/docx_rules/mineru_content.py::is_empty_table_placeholder`。
 - 预期输出：只有 HTML、题注、脚注和明确正文均为空，且资产标记满足既有空表证据的 table 才能在 source inventory 建立前并入上一真实表；通用 JSON 容器、schema 枚举、类型标签和资产路径不是正文证据。真实 HTML、题注、脚注或 `text`、`description` 等明确正文必须阻止合并。
@@ -120,16 +120,107 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_merges_real_mineru_empty_table_continuations`、`.test_convert_zip_keeps_contentful_or_orphan_empty_tables_fail_closed`；nested 正例必须保留真实 MinerU v2 层级和结构元数据，负例必须证明明确正文及孤立空表不会被静默删除。
 - 样本证据：线上任务 `docjob_cfcdfa737312` 的失败包为 external evidence，不提交用户原始 ZIP；2026-08-20 使用当前修复对该 ZIP 做只读临时回归，归一化后 420 个 source blocks、19 个 table、38 个图片资产且 blocker 为空，临时文件已删除；自动测试只保留脱敏最小结构。
 - 来源/取代：任务 `08-20-fix-mineru-table-placeholder-regression`；补足只覆盖顶层简化字段、未覆盖 nested v2 结构元数据的历史测试缺口。
+- IR-205 来源扩展：归并空项保留在 IR-006 原始 fragment 账本，不重新加入有效主 blocks；归一化回执只证明执行事实，不等于已验证非空续表。
+
+### INPUT-006 MinerU 结构化产物验证报告
+
+- 状态：`implemented-gap`（来源合同已验收；G0组合候选验证以RND-505任务的g0-integration.md为准，历史结果不替代新候选或真实环境证据）。
+- 唯一 owner：原始节点/字段/HTML/图片验证由 `artifact_validator.py`；包 I/O、路径和限额由 `mineru_package.py`；语义规范化、IR 和 integrity 仍由既有 converter/integrity 管理。
+- 有效类型、文本/列表消费和 HTML 选择规则由 `app/conversion/docx_rules/mineru_content.py` 的 `classify_mineru_block`、`select_mineru_text_source`、`select_mineru_list_source`、`select_mineru_table_html` 共同约束 validator 与 converter，保留原先 header/title/table/image/formula/list 优先级；不允许两边重复维护不同口径。
+
+#### 1. 适用范围与触发
+
+正式 `convert_zip()` 在扁平化、末页过滤、题注处理和空续页归并前验证原始 payload。线上和正式 local adapter 共用此入口，不新增 PDF parser、OCR、第二转换链或表格修复。源 ZIP/JSON/技术内容只读。
+
+validator.validate 在写入任何报告/正文前检查整个原始 JSON payload 的 keys、values 和嵌套数组；孤立 Unicode surrogate 为 mineru_json_invalid / isolated_unicode_surrogate，不存坏字符串。合法解码后的 surrogate pair、中文和 emoji 原文保留；包读取层不重复扫描。
+
+#### 2. 可执行签名
+
+- `MinerUValidationPolicy` / `DEFAULT_POLICY`：版本化输入限额。
+- `extract_zip(zip_path, target_dir, *, policy=DEFAULT_POLICY)`：预检条目并按实际字节有界展开。
+- `resolve_asset_path(raw_path, package_root, content_list_dir=None) -> (Path | None, resolution)`：精确包内寻址，拒绝穿越/歧义，无 basename 搜索。
+- `MinerUArtifactValidator(report, *, policy=DEFAULT_POLICY).validate(payload, *, package_root, content_list_path) -> MinerUValidatedContent`：返回安全内存块视图及报告；fatal 抛 `MinerUArtifactValidationError(report)`。
+- `MinerUToDocumentIRService(*, policy=DEFAULT_POLICY).convert_zip(...)`：原有调用签名继续可用，result 的 `validation_report` 有默认值。
+
+#### 3. 数据与持久化合同
+
+`MinerUValidationReport` 固定 `schema_version=mineru-artifact-validation/v1`。输入标识为 package/content-list SHA-256、包内 content-list path、validator/policy version。原始 `inventory` 不覆盖语义规范化后的 source counts。
+
+`warnings/blockers` issue 保存 code、severity、stops_conversion、JSON Pointer、page/source 索引、source_type、field 和有限 facts。聚合计数描述已完成的检查范围；`complete=false` 时不得解释为全量通过。v2 达到明细/JSON 字节限额就以 report_limit_exceeded 停止，first_fatal 和安全摘要保留，不能继续静默截断。已有 v1 截断字段保留兼容。`table_checks` 和 normalization/effective inventory 也受报告字节边界约束，raw facts 不因空续表已归并而删除。
+
+validator v3 将原始路径安全与保留内容完成门分开：所有原始显式引用（含公式、待过滤图片及支持资产载体数组中的每个字符串）必须先验安全；只有既有规则的精确回执才能说明过滤/归并。保留对象的不可消费非空 HTML 在 IR 构建前阻断，不能先登记 IR 再由 renderer 发现；严格空续页回执只可解释 empty_table_html，非空 invalid_table_html 即使被旧归并器移除也不得豁免；显式 table_placeholder 携带正文（含typed text/content）/任何非空原始HTML/注释时输入失败，不添加新内容消费协议。报告未知类型使用受控标签、未知字段名哈希，明细按来源及 code 稳定排序。
+
+有效 `effective_inventory.block_count/type_counts` 与 `normalization.filtered_promotional_page_index/filtered_block_count/filtered_blocks/merged_table_placeholder_count/merged_table_placeholders/resolved_issue_counts` 来自既有归一化真实结果。filtered_blocks 保留来源/规则/原因，merged_table_placeholders 另带 target；无法对账的删除是 unaccounted_normalization 阻断。普通table的实际删除节点若仍有支持的正文载体，按contentful_table_placeholder失败关闭，不能用empty_table_html回执豁免；已知content数组间必须保留正文语义，不能丢失字段上下文，普通结构metadata不作正文扫描；已知typed run必需content先验字符串类型，显式占位符HTML字段类型也不能绕过输入门；共享classify helper前拒绝dict/list型type，保留定位blocker，不让TypeError逃逸；保留节点的既有完整性错误及invalid_table_html分类保持。raw 计数不减去已解决问题；失败压缩用显式 omitted 计数说明，不生成第二套归并规则。
+
+`DocumentIRMetadata.mineru_validation` 可空；`mineru_validation_input` 保存 execution 补充的原 ZIP file ID/hash 与 retry_count。旧 v1/v2 缺字段表示 unavailable，不认定 passed；不回填历史 IR 或改变已保存文件 hash。块 `metadata.mineru_source` 追溯原始位置，不替代 IR-205 source spans。
+
+报告流向成功 IR、现有 events 和 renderer/file metadata 的独立 section；失败报告随异常 evidence 进入 stage_failed。事件受 owner/admin 与 tenant/company 权限控制；files quality_evidence 白名单不自动开放新 report。无公开 schema/DB/stage/权限变更，无 feature flag。
+
+#### 4. 验证与错误矩阵
+
+| 条件 | 行为 |
+|---|---|
+| 不支持顶层、坏 JSON/page/block、非法页号/类型 payload | 结构化 blocker + stops_conversion=true，不造伪成功 IR |
+| 缺 bbox、legacy flat 缺页号 | warning，不猜 geometry/页号，后续完整性门禁继续有效 |
+| 显式 bbox 非四有限数值或面积非正 | blocker + stops_conversion=true，映射前失败，不改技术文本/原包 |
+| 报告达到明细/字节限额 | report_limit_exceeded + complete=false/can_convert=false，不发布不完整 IR |
+| traversal/absolute/drive/UNC、symlink、规范路径覆盖或多义命中 | 路径 blocker，先拒绝再读取，不用同名图补救 |
+| 必需 image/chart 缺图/目录/空图/坏图/Word 不支持 | blocker + stops_conversion=true；不弱化 drawing integrity |
+| HTML 正常但 table reference 无效/缺失 | warning，继续 Word 原生表格 |
+| 空/坏 HTML | 质量 blocker，stops_conversion=false；后续既有 integrity 仍可使执行失败 |
+| 可确定空表续页 | INPUT-005 仍归并，原始 empty HTML/reference 事实保留，normalization/effective inventory 明示已解决与未解决 |
+| 孤立/含正文空表 | INPUT-005 不归并，QUALITY-004 继续失败关闭 |
+
+正常 legacy typed fields/wrapper 保留；坏选中 v2 不回退 legacy。flat 保持原顺序，非连续页号不重排；合法十进制字符串页号有 coerced warning，bool/浮点截断不可接受。bbox 不假设固定 0–1000 坐标。
+
+nested 空页记录 mineru_page_empty，保留原始外层页号；flat 相邻有效页号向前跳过超过 1 时记录 mineru_page_gap，不要求首个页号为 0，不推断物理页数。整文档没有源块仍为 mineru_content_empty fatal。
+
+正常历史空 margin runs 是独立兼容例外：OPA228 的 `page_header_content/page_footer_content/page_number_content=[]` 不是缺失技术正文，必须保留块并记录 mineru_margin_payload_empty warning；仍检查字段/runs 类型，不能据此放行空 body/title/list/formula。
+
+按实际选中的 typed 分支验证。v2 list item_content 必须是 converter 能消费的 runs，根级 legacy items 字符串及实际可保留多文本叶字段的普通 dict 继续兼容；空的权威 paragraph_content 不能以旁支 description/alt 证明正文已经保留。列表容器/item、typed run 的非空已知语义文本或 runs/list/content 旁支必须显式 payload blocker，不能在 Word 中静默丢失。根级图片/HTML legacy 推断出的有效类型必须执行对应资产/表格验证。HTML 选择顺序固定为 table_body/table_html/html/content，再使用既有全块抽取；报告和转换必须针对同一个选中字符串，不能用旁支合法 HTML 为被消费的坏 HTML 背书。
+
+单次验证按安全规范图片文件复用原字节/raster 检查，避免同一文件多块引用绕过展开限额形成字节副本和解码放大；每引用的 locator/计数和 IR 每块 asset 合同不合并。必需 Word 图片头能力独立缓存，不能由 reference-only WEBP 正例绕过。
+
+v2 展开限额：10,000 entries、128 MiB/file、1 GiB total、64 MiB/JSON；流式实际字节也检查。warnings+blockers 定位总预算 1,000 条、报告 UTF-8 JSON 预算 512 KiB，低测试策略可注入；超限明确失败并保存有界报告。Pillow 安全 raster 探测沿用既有能力，不降低全局阈值；解码前仅允许 PNG/JPEG/GIF/BMP/TIFF/WEBP，拒绝 EPS 等外部辅助程序格式。必需图像检查 python-docx 图片头及真实 native/scaled dimensions 计算，零 DPI 或不可计算尺寸为 invalid_image_asset；table reference 不要求 Word 尺寸能力。不转码或修复原图。全部报告机器码解释见 docs/contracts/mineru-artifact-contract.md §10.1。
+
+输入 failure 保持 `ir_converting/document_ir_failed`，既有 IR→DOCX integrity failure 保持 `render_failed`。已知或未预期异常，包括无 validation report 的旧 IR 渲染异常，均必须绑定发起操作的原 attempt；刷新仅可使用相同 retry 的 stage，不得把旧失败回写新 retry。主记录条件更新的原子边界由 [数据库规则](./database-guidelines.md#documentjob-主记录原子更新合同) 定义，不宣称记录/事件/文件跨仓储事务或 exactly-once。
+
+内部 policy 六个额度字段必须是非 bool 的正整数，报告至少 4096 字节；非法值显式 ValueError，不静默抬高或回退。预算计量为 json.dumps(report.model_dump(mode="json"), ensure_ascii=False, allow_nan=False) 默认空白的 UTF-8 字节。
+
+2026-10-15用户已授权补齐原先SELECT→检查→写入的主记录覆盖窗口：file三个写入口共享稳定进程间锁，SQLite读前取得写事务，MySQL在既有事务内FOR UPDATE。真实file/SQLite交错与file跨进程、异常释放，以及MySQL SQL/事务合同11项通过；完整互斥合同与ID不可变边界以数据库规则为唯一owner。真实MySQL并发、Linux文件锁运行证据与记录/文件/事件跨仓储事务仍未验证，不由输入报告或顺序stale用例推导。
+
+#### 5. 正例、基础与反例
+
+- 正例：nested v2/rich content、flat legacy、wrapper 与正常 PNG；源顺序、公式/annotations 和 HTML 原生表格保持。
+- 基础：没有 bbox 或有效 HTML 缺参考图，生成结果并记录 warning；旧 IR 没 report 仍可读。
+- 反例：`../images/x.png` 即使包内有同名图也失败；`images/` 不作图片；孤立空表不因前置验证改为伪成功。
+
+#### 6. 所需测试及断言
+
+- `tests.test_mineru_artifact_validator`：坏节点不静默丢失、路径/ZIP 根约束、非法 bbox fatal/缺 bbox warning、legacy 缺页、资产、HTML 四分类、report JSON/确定性与超限失败、raw/effective 归一化对账。
+- 本轮额度/Unicode/页诊断直接合同：`.test_policy_rejects_non_integer_or_non_positive_limits`、`.test_escaped_isolated_surrogates_stop_with_safe_report_and_input_hash`、`.test_direct_validator_rejects_surrogate_before_report_fields`、`.test_valid_surrogate_pairs_chinese_and_emoji_keep_text`、`.test_raw_nested_wrapper_locator_inventory_and_empty_page`、`.test_flat_decimal_legacy_page_preserves_order`。Worker真实ZIP错误证据由 `.test_mineru_bbox_and_report_limit_failures_preserve_worker_evidence` 覆盖，不能只测mock报告。
+- converter/layout contract：源 locator/inventory、旧 v1/v2、续页正反例及报告传递。
+- renderer：Word table/cell 内容与 span、独立验证 section、原 integrity 数组不被质量 blocker 改写。
+- Worker/API：真实 converter + fake MinerU 的成功/失败报告、原 retry 绑定、重复投递、direct 零 Provider/Prompt/术语与 owner 隔离。
+- 复核缺口回归：validator `.test_selected_list_items_validate_all_known_semantic_containers`、`.test_list_containers_and_typed_runs_reject_unconsumed_semantic_leaves`、`.test_zero_word_dpi_is_fatal_for_required_image_but_valid_for_reference`、`.test_table_report_uses_the_html_selected_by_the_converter`；API `.test_old_render_exception_without_report_does_not_fail_new_retry` 验证两类异常对旧 retry 的条件更新，不只检查 mock 值。
+- validator v3 回归：`.test_zip_file_directory_conflicts_are_preflighted_in_both_orders` 验证全包展开前拒绝祖先冲突；`.test_formula_optional_reference_still_obeys_raw_path_safety`、`.test_filtered_media_can_be_missing_but_cannot_bypass_raw_safety` 验证安全先验与过滤例外；`.test_unconsumable_html_stops_before_ir_construction_with_report`、`.test_contentful_explicit_placeholder_cannot_discard_payload` 验证前置内容门禁；`.test_report_uses_controlled_labels_and_natural_source_order` 验证安全标签与顺序。`.test_raw_html_and_typed_content_in_explicit_placeholder_stop_before_mapping` 与 `.test_empty_and_structural_explicit_placeholders_remain_mergeable` 验证原始内容负例及空占位正例；`.test_all_legacy_asset_strings_are_checked_before_mapping`、`.test_legacy_asset_strings_keep_optional_and_first_reference_semantics`、`.test_asset_string_collection_does_not_scan_body_runs` 验证全部引用安全与原消费边界；`.test_merged_ordinary_table_cannot_discard_supported_body_content` 与 `.test_nested_content_arrays_cannot_disappear_as_table_continuations` 验证普通table/显式占位符的支持正文与nested content数组不丢，并保留结构metadata正例；`.test_zip_collisions_follow_target_filesystem_before_extraction` 按实际文件系统验证碰撞写前拒绝或合法大小写不同路径。`.test_placeholder_semantic_nodes_reject_invalid_required_field_types` 与 `.test_unhashable_nested_type_has_a_structured_input_failure` 验证typed正文、显式HTML畸形类型及不可哈希type在分类/IR构建前结构化失败。API `.test_mineru_old_attempt_results_do_not_cross_retry_or_cancel` 覆盖成功/失败×retry/cancel；数据库 callback 合同断言报告 metadata/event JSON roundtrip。
+- 实际样本/线上/Word evidence 必须按 QUALITY-002 分层，不能把报告可序列化或 DOCX 可打开当视觉验收。
+
+#### 7. 错误与正确用法
+
+错误：先 `lstrip("./")`、按 basename 找邻近资产，或把所有 report blockers 填入必然抛错的 integrity flags；在 catch 中刷新新 retry 后将旧失败应用到新 job。
+
+正确：原文先检查，使用唯一包内路径 owner；以 `stops_conversion` 判断输入能否继续，报告单独聚合，仍调用既有 `ensure_integrity`。原始 locator 指向未改写的 ZIP/JSON，执行 evidence 与原 attempt 绑定。
 
 ## 3. DocumentIR、页面与正文流
 
 ### IR-001 DocumentIR 是内容与版式事实的正式边界
 
-- 状态：`enforced-tested`
+- 状态：`implemented-gap`（来源合同已验收；G0组合候选验证以RND-505任务的g0-integration.md为准，历史结果不替代新候选或真实环境证据）。
 - 输入信号：MinerU block type、page index、bbox、角色、物理页尺寸、caption/footnote、图片资产和源顺序。
 - 正式 owner：`app/services/document_ir/models.py::DocumentIR`、`::DocumentIRPage`、`::DocumentIRBlock`、`::DocumentIRBlockLayout`；`app/services/document_ir/mineru_converter.py::MinerUToDocumentIRService._convert_blocks`。
 - 预期输出：v2 IR 分离 block 语义和 layout 信号，记录原始 `source_index`、缺失 layout/bbox 的 quality flag，并把不支持的正文类型显式降级为 paragraph。
-- 冲突/例外：IR 记录源事实，不决定模板字体、Word 绝对纸张尺寸或实际分页结果。
+- 冲突/例外：IR 记录源事实，不决定模板字体、Word 绝对纸张尺寸或实际分页结果。IR-205 原始源索引使用可信 locator，与归一化后 layout.source_index 分开，分组不改变原 blocks/layout。
 - 禁止：把渲染决策写回 MinerU 原始 JSON；在 renderer 重新猜另一套 block type；丢弃未知正文而不留标记。
 - 自动验证：`tests.test_document_ir_layout_contract.DocumentIRLayoutContractTests.test_v2_payload_round_trips_page_and_block_layout`；`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_outputs_v2_pages_layout_roles_and_annotations`、`.test_convert_zip_records_missing_layout_source_and_bbox`。
 - 样本证据：线上合成任务测试持久化 raw IR 和图片资产；没有当前复杂真样本 IR 基线。
@@ -161,21 +252,86 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 ### IR-004 v2 声明结构必须携带源清单并完成映射对账
 
-- 状态：`enforced-tested`
+- 状态：`implemented-gap`（来源合同已验收；G0组合候选验证以RND-505任务的g0-integration.md为准，历史结果不替代新候选或真实环境证据）。
 - 输入信号：完成末页过滤、题注重关联和续表归一化后的 MinerU v2 blocks，及 converter 生成的主 DocumentIR blocks/assets。
 - 正式 owner：`app/services/document_ir/mineru_converter.py::MinerUToDocumentIRService._convert_blocks`；完整性证据与阻断由 `app/services/document_ir/integrity.py` 唯一负责。
 - 预期输出：DocumentIR metadata 记录归一化后的 source block 总数和按 source type 计数；每个主 block 通过既有 `metadata.source_type` 对账。`chart/image/figure` 必须生成带有效 `asset_ref` 的 `image`，table/formula/heading/list 必须生成对应显式类型和必要 payload；确定性缺失以稳定 flag 失败关闭。
 - 冲突/例外：旧 IR 没有 source inventory 时跳过无法证明的 source→IR 对账，但仍执行 IR→layout/DOCX 对账；table context 等合成辅助 block 不计为主 block；不新增第二套 MinerU JSON parser。
-- 禁止：把 `chart` 降级为 paragraph；只记录 `unsupported_block_type` 后继续成功；用媒体文件数替代一个 image block 对应一个 drawing 的合同。
+- 禁止：把 `chart` 降级为 paragraph；只记录 `unsupported_block_type` 后继续成功；用媒体文件数替代一个 image block 对应一个 drawing 的合同。原始 table fragment 账本单独对账，不能将其数量写入有效 source_block_count。
 - 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_maps_nested_v2_chart_to_image_and_records_source_inventory`、`.test_convert_zip_fails_closed_when_declared_formula_payload_is_missing`；`tests.test_document_ir_layout_contract.DocumentIRLayoutContractTests.test_v1_payload_defaults_layout_fields_to_empty`。
 - 样本证据：CM4112 当前 external 样本对账为 196 个归一化 source blocks，其中 38 chart + 15 image → 53 image blocks/assets；最终 DOCX 为 53 drawings，阻断标记为空。完整记录见本任务 `research/cm4112-validation.md`。
 - 来源/取代：任务 `08-18-fix-formal-word-structural-regressions`；补足 IR-001 与 IMAGE-001 未覆盖的跨边界完整性合同。
 
+### IR-006 逻辑表格组与原始来源账本
+
+- 过滤来源共存：capture在宣传封底过滤前捕获原始表集合；attach仅凭同次validator完整精确的filtered_blocks回执排除已过滤表来源（固定rule/reason、SourceSpan locator、过滤页号一致，不与保留/归并来源重叠）。剩余表来源继续严格等于有效table加归并空片；不改过滤算法，不猜owner，也不让缺回执的来源静默消失。原报告保留raw inventory及过滤事实。对应LogicalTableGroupTests.test_filtered_promotional_tables_require_exact_source_receipts覆盖四个正例与九个负例。
+- 状态：`implemented-gap`（来源合同已验收；G0组合候选验证以RND-505任务的g0-integration.md为准，历史结果不替代新候选或真实环境证据）。
+- owner：`app/services/document_ir/logical_table_group.py`唯一构建分组/来源投影与一致性；`models.py`定义可选持久化模型；converter接线；不在renderer或新tables/continuation复制规则。
+
+#### 1. 适用范围与触发
+
+正式MinerU→IR需要保存跨页表格、空续页来源、原始HTML、稳定定位和续表证据时应用；不得改变INPUT-005/IR-004/QUALITY-004的安全、有效主块或渲染门禁。不增加OCR、AI、网格和Word合并。
+
+#### 2. 签名与版本
+
+正式入口仍为 `MinerUToDocumentIRService.convert_zip(...) -> MinerUToDocumentIRResult`。内部签名为 `capture_table_sources(payload, validated_blocks, *, checksum) -> TableSourceLedger`、`attach_logical_table_groups(document, ledger) -> None`、`validate_logical_table_groups(document) -> None`；模型JSON读取也调用同一验证owner。DocumentIR v2 metadata增加可选logical_table_groups_version（None）和logical_table_groups（空列表）；新版本为 `logical-table-groups/v1`。主table metadata包含logical_group_id/table_fragment_id/source_spans。无新公开API/DB字段/环境变量/任务快照。
+
+#### 3. 数据与调用合同
+
+- 在任何会改源字段的归一化之前，按同一个验证payload及可信JSON Pointer捕获原始table/placeholder，不从最终blocks反推，不信任源输入内部locator。
+- 原始副本与可信消费视图分开：输入自带_mineru_source全文保留，但HTML位置和caption/footnote证据使用可信覆盖视图，不能让原始同名字段参与语义判断。
+- raw_fragment是原始JSON真源，raw_html按源字段定位只读访问，保留原空白、缺失/空/存在状态和hash；不能用strip后的block.html替代，不把全文塞进受限mineru_validation报告。
+- fragment ID由content_list_sha256和原JSON Pointer确定，group ID由版本和首fragment确定；同输入/版本重复、JSON往返和翻译副本稳定，不承诺跨输入修订追踪。
+- 非空fragment保留自己的主block；归并空项只在源账本、source span及receipt中存在。既有source inventory对有效主block，新账本对原始片段，两者不得混用；不改ID/order/layout/HTML，不按bbox重排。
+- normalized_empty_placeholder只代表旧helper实际归并；verified_continuation要求相邻页及body数组边界、前底后顶几何、水平对齐、可靠列统计、无新表/正文矛盾，且明确续标记或精确显式th签名+完整首列序号严格+1。相同header不是充分证据，未知地址stride不猜。
+- 几何比例前表底边≥0.75H、后表顶边≤0.25H，归一水平端点差≤0.05；缺可信页尺寸/bbox保留未知，不按样本型号改阈值。parser没有二维grid，复杂rowspan列统计不可靠时不自动归组。
+- 不支持的复合表号、括号/字母后缀、单题注多表号不能只取整数前缀，也不能回落表头+序号证据掩盖矛盾。重读verified关系必须是直接前驱、相邻页且源正证据一致；empty关系继续允许按receipt关联同一owner。组首必须关联有效主block，每个normalized空片必须有同组真实owner的receipt关系；禁止独立空片组。损坏Artifact反例 `test_reloaded_empty_fragments_cannot_detach_from_receipt_owner_group` 即使同步修改计数和owner spans仍须拒绝，表3多空片星状正例保持。
+- repeated_header_hint只记录前缀显式th匹配的行区间/signature；不删HTML、不改captions、不合Word表。
+- 翻译源metadata不变、不送Provider；原文只进受控IR，日志/事件/API摘要不含全文，权限/审计/retry-CAS/generation/不可变发布沿用。
+
+#### 4. 验证与错误矩阵
+
+| 输入/故障 | 行为 |
+|---|---|
+| 旧v1/v2无分组字段 | 默认空，不造spans，不回填旧IR。 |
+| 有确定正证据且无冲突 | 记录关系和稳定组，保留原非空blocks。 |
+| 新表号/普通独立caption/正文隔断 | 分开，不因相同header误并。 |
+| 有候选但证据未知/矛盾 | 保留独立组；table_continuation_uncertain:<fragment_id>非fatal，原因使用有限机器码。 |
+| 已认可严格空续页 | 保存原片段及source→target规则，不新增渲染block。 |
+| 孤立/含正文空表、非空坏HTML | 沿旧IR-201/完整性门失败，不变成无审查的blocked占位。 |
+| 源片段遗漏/重复、错误owner/关系或新合同损坏 | 显式失败；worker映射ir_converting/document_ir_failed，不吞掉新字段或返回伪成功。 |
+
+#### 5. 正常、兼容与错误用例
+
+正常：表24多个非空片段在可靠相邻页、表头和序号证据下同组，源HTML和Word表数不变。兼容：表3两个严格空续页归并后仍一个主表，但源账本保留三片段。错误：表9/10列名相同却有新表号，必须独立；不存在的缺页不能创建fragment。
+
+#### 6. 必需测试与证据
+
+`tests.test_document_ir_logical_table_group`覆盖原始定位/HTML、稳定身份/往返、归组及不同表反例、空项回执、hint和源账本损坏；model/converter/translation/renderer及FastAPI定向测试分别覆盖旧读、有效主账、源metadata翻译不变、原生输出数和持久化/direct/generation。表3/9/10/24的合成合同、SC2167表3历史与真实授权最小样本分层；component openable或OPA228过滤matrix不等于四表或视觉通过。
+
+#### 7. 错误与正确方式
+
+错误：将空续页加回DocumentIR.blocks并把fragment数当source_block_count，或在翻译后按目标HTML重建group身份。
+
+
+```python
+# 错误：有效主块数不是原始片段数，消费HTML也不是原始HTML。
+metadata.source_block_count = len(fragments)
+raw_html = block.html
+
+# 正确：正式converter保持既有主账，来源由单一owner独立构建。
+ledger = capture_table_sources(payload, validated.blocks, checksum=report.content_list_sha256)
+# 既有归一化、校验与DocumentIR主块构建完成后：
+attach_logical_table_groups(document, ledger)
+```
+
+正确：原JSON按可信locator取回→旧归一化/校验→有效blocks→来源账本关联receipt/owner→追加metadata；只在源层计算一次，译文只改允许的payload。新reader可读旧IR；旧reader能忽略新字段渲染但不得回写新IR。回滚停止新写入并保留读兼容、原包和历史证据，不能删除审计或放松路径/内容边界。
+
 ### PAGE-001 模板绝对页面设置与源方向分工
 
-- 状态：`implemented-gap`
+- 状态：`implemented-gap`（来源合同已验收；G0组合候选验证以RND-505任务的g0-integration.md为准，历史结果不替代新候选或真实环境证据）。
 - 输入信号：模板 page setup（纸张宽高、边距、装订线）和 DocumentIR page 宽高方向。
-- 正式 owner：`app/services/renderer/word_renderer.py::_apply_page_setup`、`::_apply_page_setup_to_section`、`::_configure_layout_page_section`、`::_layout_page_requires_landscape`。
+- 正式 owner：`app/services/renderer/render_plan.py::build_render_plan`（方向决策）；`app/services/renderer/word_renderer.py::_apply_page_setup`、`::_apply_page_setup_to_section`、`::_configure_layout_page_section`（执行）。
 - 预期输出：显式 layout config 决定 Word 的绝对纸张尺寸和边距；源页只决定 portrait/landscape。宽表本身不改变方向，源页宽大于高时才使用横向节。
 - 冲突/例外：v2 没有显式 page size 时当前使用 A4，可能覆盖 DOCX 模板自身的非 A4 尺寸；这是未裁决缺口。方向变化按 PAGE-002 分节。
 - 禁止：用 MinerU/PDF 物理数值直接重写 Word 纸张；见到宽表就横向；忽略显式源页方向。
@@ -185,9 +341,9 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 ### PAGE-002 仅方向变化创建新页分节
 
-- 状态：`enforced-tested`
+- 状态：`implemented-gap`（来源合同已验收；G0组合候选验证以RND-505任务的g0-integration.md为准，历史结果不替代新候选或真实环境证据）。
 - 输入信号：相邻 LayoutPage 的 portrait/landscape 状态不同。
-- 正式 owner：`app/services/renderer/word_renderer.py::DocumentIRWordRenderer.render_to_bytes`、`::_configure_layout_page_section`。
+- 正式 owner：`app/services/renderer/render_plan.py::build_render_plan`；`app/services/renderer/word_renderer.py::DocumentIRWordRenderer.render_to_result`、`::_configure_layout_page_section`。
 - 预期输出：方向变化时创建 `WD_SECTION_START.NEW_PAGE` 并应用目标方向；相同方向不因源物理页边界自动新建页面节。
 - 冲突/例外：双栏区域内部使用 continuous section，由 COL-002 约束；语义分页由 FLOW-002 单独触发。
 - 禁止：每个 MinerU page 都新增 `NEW_PAGE`；用 break-only 段落模拟方向节。
@@ -197,9 +353,9 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 ### FLOW-001 同方向源页自然流动
 
-- 状态：`enforced-tested`
+- 状态：`implemented-gap`（来源合同已验收；G0组合候选验证以RND-505任务的g0-integration.md为准，历史结果不替代新候选或真实环境证据）。
 - 输入信号：相邻源页方向相同，且下一页首内容不满足 FLOW-002 的语义起页信号。
-- 正式 owner：`app/services/renderer/word_renderer.py::DocumentIRWordRenderer.render_to_bytes`、`::_render_layout_page`。
+- 正式 owner：`app/services/renderer/render_plan.py::build_render_plan`；`app/services/renderer/word_renderer.py::DocumentIRWordRenderer.render_to_result`。
 - 预期输出：不插入 `document.add_page_break()`、`w:br type="page"` 或只含分页符的空段落，让 Word 按内容自然分页。
 - 冲突/例外：FLOW-002 精确的页顶内容组可在真实内容段落设置 `pageBreakBefore`；方向变化按 PAGE-002。
 - 禁止：恢复“每个 PDF 页一个 Word 硬分页”；以空段落承载分页；为修某个标题破坏长表自然跨页。
@@ -209,9 +365,9 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 ### FLOW-002 页顶标题与独立表格组语义起页
 
-- 状态：`implemented-gap`
+- 状态：`implemented-gap`（来源合同已验收；G0组合候选验证以RND-505任务的g0-integration.md为准，历史结果不替代新候选或真实环境证据）。
 - 输入信号：非首 LayoutPage 的第一个可见 body block 是 heading、带 caption 的 table，或 `table_context` paragraph。
-- 正式 owner：`app/services/renderer/word_renderer.py::_semantic_page_break_block_id`、`::_render_block`；`app/services/renderer/table_renderer.py::_render_table_captions`。
+- 正式 owner：`app/services/renderer/render_plan.py::semantic_page_break_block_id`、`::build_render_plan`；`app/services/renderer/word_renderer.py::_render_block`；`app/services/renderer/table_renderer.py::_render_table_captions`。
 - 预期输出：把 `pageBreakBefore` 放在标题段落、表格组首个 caption 或 context 真实内容段落上；普通段落和无 caption table 不强制起页。
 - 冲突/例外：优先于 FLOW-001，但只对精确页顶内容组生效；不得创建独立 break-only paragraph。当前目标按 layout plan 的首 block 选择，而 two-col region 随后按左栏再右栏重排；若目标来自右栏，分页可能落在已渲染的左栏内容之后，现有测试未覆盖该组合。
 - 禁止：按标题文字（如“工作原理”）或型号硬编码；所有 heading 无条件分页；在表格本体前额外插入空页。
@@ -221,11 +377,11 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 ### FLOW-003 内容组保持与表格跨页
 
-- 状态：`implemented-gap`
+- 状态：`implemented-gap`（来源合同已验收；G0组合候选验证以RND-505任务的g0-integration.md为准，历史结果不替代新候选或真实环境证据）。
 - 输入信号：heading、表题/表格/表注、长表行和连续表格 placeholder。
 - 正式 owner：`app/services/renderer/word_renderer.py::_render_block`；`app/services/renderer/table_renderer.py::_render_table_captions`、`::_configure_data_table_rows`；`app/services/document_ir/layout_signals.py::merge_table_placeholder_continuations`。
 - 预期输出：heading/table caption 使用 `keep_with_next`；表头可重复，表格行使用 `cantSplit`；空 table placeholder 只并入前一真实表格，不另渲染重复空表。
-- 冲突/例外：`DocumentIRBlockLayout.continuation_heights` 当前只写入、没有 renderer 消费者，不能声称续页高度已参与 Word 排版；Word 最终分页仍由客户端决定。
+- 冲突/例外：`DocumentIRBlockLayout.continuation_heights` 当前只写入、没有 renderer 消费者，不能声称续页高度已参与 Word 排版；Word 最终分页仍由客户端决定。IR-006逻辑组同样只是源metadata，不实现Word表合并、删重复表头或版式修改。
 - 禁止：把整张长表放进不可跨页容器；因 placeholder 创建第二张空表；把“有 continuation 元数据”写成“已验证不挤压”。
 - 自动验证：`tests.test_document_ir_mineru_converter_layout.MinerUToDocumentIRLayoutTests.test_convert_zip_merges_table_placeholder_continuation_and_landscape_orientation`、`.test_convert_zip_merges_real_mineru_empty_table_continuations`；`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_html_table_spans_and_annotations`。
 - 样本证据：SC2167、CM4112 第 3/4 页表格均为 external evidence；没有自动排版后的表格挤压/分页断言。
@@ -259,9 +415,9 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 ### COL-002 Word 原生栏与阅读顺序
 
-- 状态：`enforced-tested`
+- 状态：`implemented-gap`（来源合同已验收；G0组合候选验证以RND-505任务的g0-integration.md为准，历史结果不替代新候选或真实环境证据）。
 - 输入信号：layout plan 的 `two_col` region 及其 left/right blocks。
-- 正式 owner：`app/services/renderer/word_renderer.py::_render_layout_region`、`::_set_section_columns`、`::_split_two_col_blocks`。
+- 正式 owner：`app/services/renderer/render_plan.py::split_two_col_blocks`、`::build_render_plan`；`app/services/renderer/word_renderer.py::render_to_result`、`::_set_section_columns`。
 - 预期输出：通过 continuous section 的 `w:cols` 进入两栏，按左栏自上而下、column break、右栏自上而下渲染，再用 continuous section 恢复单栏；不使用布局表格承载普通双栏正文。
 - 冲突/例外：COL-003 的严格图片组使用无边框布局表格；continuous section 的实际栏平衡需要 Word/WPS 视觉验收。
 - 禁止：按全局 y 顺序交错左右栏；渲染完双栏后不恢复单栏；用 1×2 表格包装普通正文。
@@ -376,6 +532,58 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 - 样本证据：无；需要最小无效 table HTML 正式回归。
 - 来源/取代：当前正式代码审计发现。
 
+### TABLE-005 CanonicalTableGrid 模型与来源身份
+
+- 状态：`implemented-gap`（来源合同已验收；G0组合候选验证以RND-505任务的g0-integration.md为准，历史结果不替代新候选或真实环境证据）。
+- owner：`app/services/tables/models.py`；来源账本/归组继续由 IR-006 owner 管理，parser/renderer 不变。完整字段与 hash 公式只由 [DocumentIR 合同 §9](../../../docs/contracts/document-ir-contract.md#9-canonicaltablegridtab-301) 定义。
+
+#### 1. 适用范围与触发
+
+显式构造或重读独立 canonical-table/v1 Grid 时使用。仅模型自洽验证，不是 HTML builder、表格质量 validator 或 Word renderer；不得以本规则宣称 TAB-302～308 已完成。
+
+#### 2. 签名与版本
+
+`TableGrid`、`TableCell`、`CellRun`、`TableSourceFragment`、`TableQualityFlag` 是 Pydantic 内部数据模型；`TableGrid.model_validate_json(data)` 显式重读、`model_dump(mode="json")` 输出纯 JSON 数据。schema_version 必需且只接受 canonical-table/v1，无新 API/DB/配置或生产 Artifact 注册。
+
+#### 3. 数据合同
+
+- TableGrid 保存非负 rows/columns、有序 source_fragments/cells、header_rows 和 flags；cell 保存源行/cell 序号、网格锚点、正 span、显式 header、顺序 runs 及源内容 hash。
+- table_id 复用 IR-006 logical_group_id；cell/run 身份使用版本化源 fragment/行/cell/run 序号，不用译文、网格坐标、span、时间、job/file ID。源修订稳定范围不扩展为跨文件追踪。
+- 来源 HTML 是已验证 TableFragment 的逐字快照；SourceSpan/RepeatedHeaderHint 复用既有类型，原始 full ledger 不回写。每片 raw hash 对原 UTF-8 字节，Grid 根 hash 对有序来源集合；禁止混淆两者。
+- 六种 run 仅 text 可有 target；非 text 原值/顺序不变，公式不含 Word/OMML 对象。源内容 hash 与 target/span/坐标/flags 分离。
+- 新模型 extra=forbid，版本/标量/身份/源位置/引用/hash 严格。不同来源锚点冲突、正 span 尾端越界保留诊断，不截断/覆盖/补行列；质量检测归后续任务。
+- 空 flags 不等于 passed，更不代表有发布资格；旧 IR 无 Grid 继续原路径，不造模型、不 backfill、不改 v1/v2。模型无 I/O/Provider/文件路径访问，不修改任务 generation/CAS/发布不可变。
+
+#### 4. 验证与错误矩阵
+
+| 输入/故障 | 结果 |
+|---|---|
+| 固定源/版本、JSON 往返或仅改 target/span/网格坐标 | 稳定身份；target 不改源内容指纹。 |
+| 非整数/bool/零负 span、重复身份/源位置、悬空引用或 hash 错误 | 显式模型验证失败，无静默默认/截断/兼容回落。 |
+| 缺/未知 canonical 版本或未知字段 | 拒绝，不丢字段后冒充旧数据。 |
+| 不同来源几何冲突/正 span 越界 | 原样保存，不产生自动修复/通过结论。 |
+| 无 Grid 的旧 v1/v2 | 继续既有读取和原生渲染，无强制升级。 |
+| 自由文本/来源字符串含孤立 surrogate | 模型阶段以 table_model_encoding 拒绝，不接受后再在JSON输出失败。 |
+| 诊断输出 | hide_input_in_errors；省略 input/context；extra_forbidden/invalid_key 的任意用户键定位归一 __extra__，不能记录完整 ValidationError/原文。 |
+
+#### 5. 正例、基础与反例
+
+正例：多层表头、六种 runs、多片来源的 JSON 往返；只改 span 后仍可匹配同一个 cell/run。基础：旧 HTML-only IR 渲染结果不变。反例：用 target/row/column 重新生成 ID、用规范化 HTML 冒充 raw、把空 flags 当可发布，或零 span 自动改成 1。
+
+#### 6. 所需测试与证据
+
+`tests.test_canonical_table_grid` 验证字段/ID/hash/严格失败/安全错误/几何诊断保留；`tests.test_canonical_table_grid_compatibility` 使用正式 converter 的来源并验证旧 IR/来源无回写和原生 OOXML/evidence。复用 IR-006 和 renderer 的 span/th/v1 直接合同；component/direct P1/P6 是回归证据，不是 Grid 已接线或真实复杂表格视觉证据。
+
+#### 7. 错误与正确方式
+
+```python
+# 错误：绕过模型验证后直接把变更副本当持久化成功。
+changed = grid.model_copy(update={"rows": -1})
+
+# 正确：变更边界重新验证完整JSON；身份由源位置决定，不随译文重编号。
+changed = TableGrid.model_validate({**grid.model_dump(mode="json"), "rows": 2})
+```
+
 ### IMAGE-001 图片资产绑定、显示宽度和可见失败
 
 - 状态：`implemented-gap`（RND-503结构/内容与历史fallback测试已补，真实Word/部署预览仍独立待验）。
@@ -478,9 +686,9 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 ### STYLE-001 模板配置优先且版本合同独立
 
-- 状态：`enforced-tested`
+- 状态：`implemented-gap`（来源合同已验收；G0组合候选验证以RND-505任务的g0-integration.md为准，历史结果不替代新候选或真实环境证据）。
 - 输入信号：绑定模板 DOCX、layout config、document language 和 subscript/terminology config。
-- 正式 owner：`app/services/renderer/word_renderer.py::_create_document`、`::_load_template_config`；`app/services/renderer/template_config.py`；版本/API owner 见 [模板布局配置合同](./template-layout-configuration.md)。
+- 正式 owner：`app/services/renderer/word_renderer.py::render_to_result`、`::_load_template_config`；`app/services/renderer/template_config.py`；版本/API owner 见 [模板布局配置合同](./template-layout-configuration.md)。
 - 预期输出：renderer 清空模板 body 但保留 sectPr 和模板 header/footer，应用绑定版本的页面、段落、表格、字体及术语配置；发布版本不可变性不在本文重复定义。
 - 冲突/例外：模板决定 Word 样式和绝对页面设置，源 layout 决定内容顺序、分栏和方向；显式空字体值保留继承语义。
 - 禁止：为适配 PDF 修改已发布 seed；在 renderer 猜另一套 schema；让源 bbox 覆盖模板字体/边距。
@@ -490,13 +698,13 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 ### STYLE-002 页眉页脚优先级与 section 限制
 
-- 状态：`implemented-gap`
+- 状态：`implemented-gap`（来源合同已验收；G0组合候选验证以RND-505任务的g0-integration.md为准，历史结果不替代新候选或真实环境证据）。
 - 输入信号：模板已带 decoration、配置 `header/footer.enabled`、自定义 footer 文本，以及 IR 的 page_header/page_footer/page_number blocks。
-- 正式 owner：`app/services/renderer/word_renderer.py::_apply_header_footer`、`::_render_page_decorations`、`::_resolve_decoration_font`。
+- 正式 owner：`app/services/renderer/word_renderer.py::_apply_header_footer`、`::_render_page_decoration`、`::_resolve_decoration_font`。
 - 预期输出：配置禁用时保留模板 decoration；显式自定义 footer 高于源 footer；未自定义时才允许源 decoration 写入 section，并继承配置/legacy/template font 次序；后续 section 沿用 Word 标准 relationship 继承，不复制 header/footer relationship。
-- 冲突/例外：Word decoration 属于 section；相同方向源页共享 section 时，当前逐页写源 header/footer 会互相覆盖，只剩该 section 最后一次内容，源 header 也可能覆盖 `_apply_header_footer` 先写入的配置 header 文本。正式本地请求的 `use_mineru_header_footer` 当前也未传入 renderer，不能视为有效开关。
+- 冲突/例外：section 可链接并共享同一物理 header/footer part；同向源页及方向变化/continuous 双栏后仍链接同 part 时，逐次写入会覆盖原贡献，源 header 也可能覆盖 `_apply_header_footer` 先写入的配置 header 文本。多个 header、footer+page_number blocks 可合写同一段。RND-501 只按真实 part/元素记录合写、引用和 superseded，不修复覆盖行为。正式本地请求的 `use_mineru_header_footer` 当前也未传入 renderer，不能视为有效开关。
 - 禁止：声称支持每个同向源页不同页眉；在自定义 footer 后再写源 footer；把未消费的 request 字段写成已实现行为。
-- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_template_decorations_when_config_disabled`、`.test_render_to_bytes_writes_native_custom_footer_and_ignores_source_footer`、`.test_extracted_decorations_keep_normal_style_and_legacy_font_inheritance`、`.test_decoration_font_resolution_preserves_explicit_empty_and_fallback_order`；没有同 section 多源页不同 header 的正式测试。
+- 自动验证：`tests.test_document_ir_word_renderer_layout.DocumentIRWordRendererLayoutTests.test_render_to_bytes_preserves_template_decorations_when_config_disabled`、`.test_render_to_bytes_writes_native_custom_footer_and_ignores_source_footer`、`.test_extracted_decorations_keep_normal_style_and_legacy_font_inheritance`、`.test_decoration_font_resolution_preserves_explicit_empty_and_fallback_order`；`tests.test_renderer_block_evidence.BlockEvidenceTests.test_linked_physical_decoration_replacement_survives_orientation_and_columns` 核对跨方向/continuous section 的物理贡献覆盖，不代表每页不同 header 已实现。
 - 样本证据：SC2167 自定义 footer 为 external historical evidence；源页 header 逐页差异无样本门禁。
 - 来源/取代：归档任务 `08-18-fix-layout-formula-image-caption`；当前代码审计补充 section 覆盖和未消费开关缺口。
 
@@ -526,7 +734,7 @@ characterization tests 证明正式链路已实现某条规则。正式 renderer
 
 ### QUALITY-001 DOCX 结构证据与风险标记
 
-- 状态：`enforced-tested`
+- 状态：`implemented-gap`（来源合同已验收；G0组合候选验证以RND-505任务的g0-integration.md为准，历史结果不替代新候选或真实环境证据）。
 - 输入信号：生成的 DOCX bytes/file 以及 DocumentIR/layout plan。
 - 正式 owner：`app/services/renderer/docx_quality.py::analyze_docx_quality_bytes`、`::build_docx_quality_flags`；`app/services/renderer/evidence.py::build_renderer_evidence`。
 - 预期输出：记录可编辑段落/表格、heading、numbering、TOC clue、keepNext、表头/cantSplit、宽表、横向节、图片和 LaTeX residue 等 OOXML 指标，并对无可编辑内容、图片化、手写列表、静态目录、未样式化标题、公式残留等风险生成 flag。
@@ -587,6 +795,18 @@ RND-502 补充：`formula_text_fallback` 是内容完整、可见、可审计的
 - 样本证据：tests-only 协议子进程验证 adapter，不证明真实引擎、批准隔离、字体、部署 FS/MySQL/S3 或 Word 视觉。未知生产证据保留启用门，不为通过测试安装依赖或启用 backend。
 - 来源/取代：历史 `931d2f6` 复用与当前批准修订 4；新 key 仅完整有效观测才 alias，明确生命周期失效可有界恢复，存储未知/完整性不符失败关闭。
 
+### RENDER-001 同次计划、逐 block 实证与安全投影
+
+- 状态：`implemented-gap`（来源合同已验收；G0组合候选验证以RND-501实施记录为准，历史结果不替代新候选或真实环境证据）。
+- 输入信号：DocumentIR、同次加载的模板/有效配置/符号规则与最终 DOCX。
+- 正式 owner：`renderer/render_plan.py` 拥有纯计划与共用策略；`word_renderer.py` 消费计划，`block_evidence.py` 收集并冻结真实目标，`evidence.py` 拥有完整/旧 aggregate/安全摘要边界。可执行字段、错误与回归要求以 [RenderPlan 与 block evidence 合同](./render-plan-evidence-contract.md) 为唯一详细 owner。
+- 预期输出：版本化 RenderPlan 在创建 Word 对象前确定，完整 block evidence 与同次 IR/resource/plan/DOCX 身份绑定；每块一主记录、真实有序 targets、TOC/图片/decoration 受控共享、空内容与无对象分离。完整 trace 在 candidate/receipt 前冻结，只保存在既有受控 metadata/local result。
+- 冲突/例外：源页/section/XML locator 不是实际 Word 页；逻辑 anchor_ref 不是通用 bookmark；legacy 缺 trace 为 unavailable，历史恢复只比较稳定旧 aggregate，不回填/重渲染。预览 retry 和 receipt 恢复不改主件/metadata；原质量、终态/CAS和授权规则不变。
+- 禁止：事后按正文猜归属、第二套预测分支、复制 raw IR/HTML/路径到 trace、仅删除新增字段后展开旧 metadata 到事件、用 trace 放宽 descriptor/质量门，或为记录证据改变现有 Word 排版。
+- 自动验证：`tests.test_renderer_render_plan`、`tests.test_renderer_block_evidence` 与正式 renderer/local/receipt/preview/安全事件定向回归；实际运行结果单列，不以文件存在冒充通过。
+- 样本证据：集成基线 OPA228 p1 smoke 和五类合成 OOXML 对照可用于本候选前后比较；实际客户端、真实 InnoDB、部署 FS/生产预览没有因此就绪。
+- 来源/取代：RND-501 修订后已接受三件套；扩展 QUALITY-001/004 的结构证据，不取代 QUALITY-003/005 的视觉与预览边界，不占用 QUALITY-005 编号。
+
 ## 7. 冲突优先级矩阵
 
 | 冲突 | 基础规则 | 优先规则/裁决 | 必须共同保护的回归 |
@@ -630,6 +850,14 @@ RND-502 补充：`formula_text_fallback` 是内容完整、可见、可审计的
 | STYLE-001、STYLE-003、STYLE-004 | formal adapter、renderer/template config/fonts | template schema、formal adapter、renderer layout | 模板 seed 与 OPA228 PDF | CM4112 当前四槽与 WPS 请求字体/缺失字体边界；Golden old-commit signoff | 目标系统未安装精确宋体/Cambria Math；OMML 字体独立 |
 | QUALITY-001、QUALITY-002 | analyzer/evidence、sample governance | Golden/component governance | 4 个 OPA228 PDF + 1 个最小 MinerU 包 | 历史/外部样本分层 | Analyzer 不测实际分页；Golden 当前不离线 deterministic；外部/历史层级未自动强制 |
 | QUALITY-003 | 尚无 | 无整文档视觉自动门禁 | 仅输入资产 | CM4112 当前 LibreOffice/WPS 有界记录 | 图 33 碎片稀疏页已消失；仍无 WPS GUI 全 20 页、自动栏平衡/清晰度门禁，LibreOffice 与 WPS 为 23/20 页 |
+
+### 当前来源与渲染证据扩展回归
+
+| 规则 | 当前owner与检查 | 证据边界 |
+|---|---|---|
+| INPUT-006、IR-006 | artifact_validator/mineru_package/logical_table_group、真实converter、旧代报告与账本fan-in负例 | 原始来源与执行事实不代表视觉/发布资格；严格输入拒绝按合同归因。 |
+| TABLE-005 | tables/models、canonical_grid及兼容测试 | 独立模型未接后续生产算法，不改变HTML原生化策略。 |
+| RENDER-001 | 同次plan/collector/evidence、当前execution与formal adapter、23键历史件恢复、真实receipt竞争、TR/CON回归 | 新候选绑定当前源码hash与Word部件对照；保留已验收RND-504，未运行环境门不伪造通过。 |
 
 ## 9. 规则变更流程
 
@@ -796,3 +1024,8 @@ legacy 发现、明确历史指针、receipt 三入口对新报告读取原文�
 错误：只凭 marker 把表当布局表；从当前符号 YAML 生成历史 expected；以整篇最后 section 猜所有 span 宽度；B1 删除新 reader 后仅渲染单图；事件展开完整 frozen rules。
 
 正确：源 IR/冻结输入/实际包三方认证后分类；使用原文件身份及已知投影版本重算；逐 span 比较写前和实际所属 section；B1 保留全部读取/拒绝与 receipt 接线，仅固定生成策略；事件只投影有界摘要。
+
+
+## RND-505：非可见block书签与独立创建证明
+
+通用marker仅由同次实际输出对象创建，在最终save/freeze前完成，所有locator和报告绑定最终字节。RND-501 v1首名/内容targets/Reason不变；独立block-anchor-evidence/v1仅记录成功创建事实。图片报告兼容投影只忽略精确命名且合法配对的新非可见marker，原run/drawing/尺寸/图cell认证不变。完整合同见[页映射Spec](./page-mapping-contract.md)。

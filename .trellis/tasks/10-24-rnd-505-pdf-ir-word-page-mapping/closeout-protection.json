@@ -1,0 +1,11 @@
+{
+  "snapshot": "/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/rnd505-closeout-kgch0e0d",
+  "protected_root": "/Users/sc/PycharmProjects/md2word",
+  "baseline_paths": 1118,
+  "root_head": "01e6c1add86f1ba7f24abc120629fa2fe6bd5ed9",
+  "root_branch": "codex/preserve-rnd503-dirty-20261023",
+  "candidate_head": "8fa11d9779ce05e9cba1cfb7afee34ecbd58a4cf",
+  "candidate_branch": "codex/rnd505-v2-implementation",
+  "candidate_48_hashes_match_accepted": true,
+  "approved_v2_hashes_match": true
+}

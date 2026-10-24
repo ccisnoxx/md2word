@@ -2,6 +2,9 @@ from __future__ import annotations
 
 # tests/test_document_ir_translation.py: 覆盖 P1 DocumentIR 翻译 provider、术语版本和结构不变性。
 
+import json
+import zipfile
+from dataclasses import asdict
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +12,7 @@ from unittest.mock import Mock, patch
 from zipfile import ZipFile
 from bs4 import BeautifulSoup
 
+from app.services.document_ir import MinerUToDocumentIRService
 from app.services.document_ir.models import (
     DocumentIR,
     DocumentIRAsset,
@@ -102,6 +106,48 @@ class EchoSingleItemTranslationProvider:
 
 
 class DocumentIRTranslationTests(unittest.TestCase):
+
+    def test_translation_preserves_logical_sources_and_excludes_raw_copies_from_provider(self) -> None:
+        """翻译修改可消费 HTML，但不能污染原始来源、组身份或向 Provider 发送源副本。"""
+        secret = "仅来源账本保留的测试标记"
+        raw = {"type": "table", "page_idx": 0, "bbox": [10, 60, 90, 90],
+               "html": " \n<table><tr><th>Number</th><th>Value</th></tr><tr><td>1</td><td>Input</td></tr></table> ",
+               "source_note": secret}
+        following = {**raw, "page_idx": 1, "bbox": [10, 10, 90, 90], "html": raw["html"].replace(">1<", ">2<")}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "mineru.zip"
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr("content_list_v2.json", json.dumps([raw, following,
+                    {"type": "table_placeholder", "page_idx": 2}], ensure_ascii=False))
+                archive.writestr("layout.json", json.dumps({"pdf_info": [
+                    {"page_idx": page, "page_size": [100, 100]} for page in range(3)]}))
+            source = MinerUToDocumentIRService().convert_zip(
+                path, job_id="translation", source_file_id="source", document_language="en").document
+        provider = Mock()
+        provider.requests = []
+        def translate(request):
+            provider.requests.append(request)
+            return TranslationProviderResult(items=tuple(TranslationTextItem(
+                id=item.id, text=item.text.replace("Number", "编号").replace("Value", "值").replace("Input", "输入"))
+                for item in request.items))
+        provider.translate.side_effect = translate
+        translated = DocumentIRTranslationService(provider).translate(source, term_version=None)
+        self.assertEqual(len(source.metadata.logical_table_groups), 1)
+        self.assertEqual(len(source.metadata.logical_table_groups[0].fragments), 3)
+        self.assertEqual(translated.metadata.logical_table_groups, source.metadata.logical_table_groups)
+        self.assertEqual([block.metadata for block in translated.blocks], [block.metadata for block in source.blocks])
+        self.assertNotEqual(translated.blocks[0].html, source.blocks[0].html)
+        self.assertEqual(translated.metadata.logical_table_groups[0].fragments[0].raw_html, raw["html"])
+        self.assertEqual(DocumentIR.model_validate_json(translated.model_dump_json()), translated)
+        items = [asdict(item) for request in provider.requests for item in request.items]
+        self.assertTrue(items)
+        self.assertTrue(all(set(item) == {"id", "text"} for item in items))
+        serialized = json.dumps(items, ensure_ascii=False)
+        self.assertNotIn(secret, serialized)
+        self.assertNotIn("raw_fragment", serialized)
+        self.assertNotIn("table-fragment:", serialized)
+        self.assertNotIn("logical-table:", serialized)
+
     def test_term_version_service_loads_csv_and_builds_canonical_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             terms_path = Path(temp_dir) / "translation_terms.csv"

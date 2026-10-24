@@ -17,7 +17,7 @@ from app.domains.resources.models import utc_now
 from app.domains.jobs.models import JobResourceSnapshot
 from app.services.document_ir.models import DocumentIR
 from app.services.document_ir.integrity import DocumentIntegrityError
-from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
+from app.services.renderer.evidence import build_renderer_evidence, build_renderer_aggregate_evidence, ensure_renderer_integrity
 from app.domains.translation.document_ir_translator import DocumentIRTranslationService
 from tests import test_database_job_repository as persistence
 from tests import test_fastapi_jobs_backend as fixtures
@@ -201,7 +201,7 @@ class DocumentJobExecutionStageTests(TestCase):
         with self._runtime() as (runtime, execution, provider, client, headers):
             buffer = io.BytesIO()
             with zipfile.ZipFile(buffer, "w") as archive:
-                archive.writestr("content_list_v2.json", "[]")
+                archive.writestr("content_list_v2.json", json.dumps([[{"type": "equation_interline", "content": {"math_type": "latex", "math_content": "x+y"}}]]))
             execution.fake_mineru_client.result_zip_bytes = buffer.getvalue()
             job_id = self._create(client, headers, mode="en2zh", language="en")
             job = runtime.document_job_repository.get_document_job(job_id)
@@ -382,10 +382,11 @@ class DocumentJobExecutionStageTests(TestCase):
 
                     with patch.object(execution.word_renderer, "render_to_result", wraps=execution.word_renderer.render_to_result) as render, patch(
                         "app.domains.document_jobs.execution.build_renderer_evidence", wraps=build_renderer_evidence,
-                    ) as evidence, patch.object(runtime.document_job_repository, "update_document_job_if_current", side_effect=update):
+                    ) as evidence, patch("app.domains.document_jobs.execution.build_renderer_aggregate_evidence",
+                        wraps=build_renderer_aggregate_evidence) as restored_evidence, patch.object(runtime.document_job_repository, "update_document_job_if_current", side_effect=update):
                         result = execution.execute_job(job.id, trace_id="trace_quality_replay")
                     self.assertEqual(result.status, "succeeded", result.error_message)
-                    self.assertEqual((render.call_count, evidence.call_count), (1, 2))
+                    self.assertEqual((render.call_count, evidence.call_count, restored_evidence.call_count), (1, 1, 1))
                     self.assertEqual(progress, sorted(progress))
                     self.assertGreaterEqual(min(progress), 94)
                     self.assertEqual(len(provider.requests), provider_count)
@@ -616,3 +617,68 @@ class DocumentJobExecutionStageTests(TestCase):
                 recorder.assert_not_called()
                 self.assertFalse(self._files(runtime, job_id, "ai_call_log"))
             self.assertEqual(runtime.document_job_repository.get_document_job(job_id), resumed[0])
+
+    def test_real_translation_fan_in_preserves_raw_ledger_and_binds_final_render(self):
+        from dataclasses import asdict
+        from app.services.renderer.render_plan import content_hash
+        canary = "PRIVATE_RAW_LEDGER_CONTENT"
+        raw = {"type": "table", "page_idx": 0, "bbox": [10, 60, 90, 90],
+            "html": "<table><tr><th>Parameter</th></tr><tr><td>Input voltage</td></tr></table>",
+            "source_note": canary}
+        with self._runtime() as (runtime, execution, provider, client, headers):
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, "w") as archive:
+                archive.writestr("content_list_v2.json", json.dumps([raw,
+                    {"type": "table_placeholder", "page_idx": 1, "bbox": [10, 10, 90, 50]}]))
+                archive.writestr("layout.json", json.dumps({"pdf_info": [
+                    {"page_idx": page, "page_size": [100, 100]} for page in range(2)]}))
+            execution.fake_mineru_client.result_zip_bytes = buffer.getvalue()
+            job_id = self._create(client, headers, mode="en2zh", language="en")
+            job = runtime.document_job_repository.get_document_job(job_id)
+            self.assertEqual(job.status, "succeeded", job.error_message)
+            source_file = runtime.document_file_repository.get_document_file(job.source_document_ir_file_id)
+            final_file = runtime.document_file_repository.get_document_file(job.document_ir_file_id)
+            source = DocumentIR.model_validate_json(runtime.file_upload_service.read_file_content(source_file))
+            final = DocumentIR.model_validate_json(runtime.file_upload_service.read_file_content(final_file))
+            self.assertEqual(final.metadata.logical_table_groups, source.metadata.logical_table_groups)
+            self.assertEqual(len(final.metadata.logical_table_groups[0].fragments), 2)
+            self.assertEqual(final.metadata.logical_table_groups[0].fragments[0].raw_fragment, raw)
+            self.assertNotEqual(final.blocks[0].html, source.blocks[0].html)
+            word = runtime.document_file_repository.get_document_file(job.result_file_id)
+            self.assertEqual(word.metadata["render_trace_status"], "complete")
+            self.assertEqual(word.metadata["render_plan"]["input_ir_sha256"], content_hash(final.model_dump(mode="json")))
+            self.assertEqual(word.metadata["block_render_evidence"]["docx_sha256"], word.checksum_sha256.removeprefix("sha256:"))
+            self.assertNotIn(canary, json.dumps([asdict(request) for request in provider.requests], ensure_ascii=False))
+            self.assertNotIn(canary, json.dumps([event.payload for event in
+                runtime.document_job_event_repository.list_document_job_events(job_id)]))
+
+    def test_validation_failure_uses_initiating_generation_and_does_not_write_new_ir(self):
+        for change_generation in (False, True):
+            with self.subTest(change_generation=change_generation), self._runtime() as (runtime, execution, provider, client, headers):
+                buffer = io.BytesIO()
+                with zipfile.ZipFile(buffer, "w") as archive:
+                    archive.writestr("content_list_v2.json", "[]")
+                execution.fake_mineru_client.result_zip_bytes = buffer.getvalue()
+                convert = execution.document_ir_service.convert_zip
+                def validating(*args, **kwargs):
+                    if change_generation:
+                        runtime.document_job_repository.update_document_job(kwargs["job_id"], retry_count=1)
+                    return convert(*args, **kwargs)
+                with patch.object(execution.document_ir_service, "convert_zip", side_effect=validating):
+                    job_id = self._create(client, headers)
+                job = runtime.document_job_repository.get_document_job(job_id)
+                self.assertFalse(self._files(runtime, job_id, "document_ir"))
+                self.assertFalse(self._files(runtime, job_id, "generated_word"))
+                events = runtime.document_job_event_repository.list_document_job_events(job_id)
+                failures = [event for event in events if event.event_type == "stage_failed"]
+                if change_generation:
+                    self.assertEqual((job.status, job.stage, job.retry_count), ("running", "ir_converting", 1))
+                    self.assertEqual(failures, [])
+                else:
+                    self.assertEqual((job.failed_stage, job.error_code), ("ir_converting", "document_ir_failed"))
+                    self.assertEqual(len(failures), 1)
+                    binding = failures[0].payload["mineru_validation_input"]
+                    self.assertEqual(binding["retry_count"], 0)
+                    self.assertEqual(binding["mineru_raw_result_file_id"], job.mineru_raw_result_file_id)
+                    raw = runtime.document_file_repository.get_document_file(job.mineru_raw_result_file_id)
+                    self.assertEqual(binding["mineru_raw_result_sha256"], raw.checksum_sha256)

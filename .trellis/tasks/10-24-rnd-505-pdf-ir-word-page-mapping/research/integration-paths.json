@@ -1,0 +1,473 @@
+{
+  "purpose": "只读差异清单；非逐文件覆盖授权，G0须融合当前后续改动",
+  "paths": [
+    {
+      "accepted_commit": "69906a5e",
+      "path": ".trellis/spec/backend/directory-structure.md",
+      "accepted_sha256": "568b6b06f40f196a4852692dee89da31a3194001efdd123c62d039a62687033b",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": ".trellis/spec/backend/index.md",
+      "accepted_sha256": "eb10898ed4a8dda998b80dd815f1d545d4b9527302f33d88933fd2b965df1f9f",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": ".trellis/spec/backend/render-plan-evidence-contract.md",
+      "accepted_sha256": "31063105d45a8c05c459f789e59d7321bf6ebb5fdf43c56de25c3d2ae3c9af91",
+      "current_root_status": "missing"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": ".trellis/spec/backend/word-generation-rules.md",
+      "accepted_sha256": "4f88a2a14a2d99f1c8550a6ddbc7a4fe167cf24123113f6faa220170f859a49e",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "app/conversion/docx_rules/mineru_content.py",
+      "accepted_sha256": "423a3846de0287bfcd791d8ccdc8a3bb7aceed4b6349ecc20b998a09cb1d7e87",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "app/domains/document_jobs/execution.py",
+      "accepted_sha256": "3a1b804b3ca8ae7be83e11966dfdaf0bf77c61fbe01ee7aad63bf8f1b6fc581d",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "app/domains/document_jobs/router.py",
+      "accepted_sha256": "8af7b751ec5dcef2794989950efd3372000d21127047a4c444748804451b6f99",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "app/services/document_ir/artifact_validator.py",
+      "accepted_sha256": "d735fc0bf7c4585f27ca5ea9a8cf548bbd9e373cd229e4251b6093d46395ffbf",
+      "current_root_status": "same"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "app/services/document_ir/layout_signals.py",
+      "accepted_sha256": "714feecb7b995b4d160571598bf886a569f4714665d499ae6c6e755375a4eb6c",
+      "current_root_status": "same"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "app/services/document_ir/logical_table_group.py",
+      "accepted_sha256": "e63fa66b51d4c9989c873fd9c662aa15b151be4d1993fa701568b15ab5c60278",
+      "current_root_status": "missing"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "app/services/document_ir/mineru_converter.py",
+      "accepted_sha256": "8479dbb9d8e4444348c2f5cd5a8d5019c46762e702640cf5bb7554dd88fecf6a",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "app/services/document_ir/mineru_package.py",
+      "accepted_sha256": "532c28a45a700a9b1eba0bbf549c52825359f2868231857a1f1320bfb841bc76",
+      "current_root_status": "same"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "app/services/document_ir/models.py",
+      "accepted_sha256": "d23215c44ed7c668aab909141a4f81aecfa4e6b0fa8860b4d641fc60f76d65e9",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "app/services/renderer/block_evidence.py",
+      "accepted_sha256": "3bbe4c613c22ef02d4029712983f6cb6cd2062a3adc6736512c40ec87b9e2169",
+      "current_root_status": "missing"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "app/services/renderer/evidence.py",
+      "accepted_sha256": "09a820e34c493960e60fe564da64c6e31476a2505270ec37e0f05b7c17bb90f1",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "app/services/renderer/image_renderer.py",
+      "accepted_sha256": "50ae62801c26d2c1a61cbe57ec5b479a355d54275f17cd58fd7eb71e0146ea29",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "app/services/renderer/render_plan.py",
+      "accepted_sha256": "c2afaecdac8112916dd3de5cce7967e78a75b76e850b142b7bfe2959b68a3666",
+      "current_root_status": "missing"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "app/services/renderer/table_renderer.py",
+      "accepted_sha256": "80eb7c06ca7e13fd9a0cacdc413e7647f03f58790ff102001828b2f1aa99e584",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "app/services/renderer/text_renderer.py",
+      "accepted_sha256": "bafe23353c8bb5389bcbf689a3c5b710234f511f9505c9485a28957c39641e24",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "app/services/renderer/word_renderer.py",
+      "accepted_sha256": "b0a2a4b5941423cc1b3030488535a8b27a293753e42b0e65c6db576a22d6f467",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "app/services/tables/__init__.py",
+      "accepted_sha256": "863f3cd878e41d88c3cc7e373196b8ca4e867cb4121cb2a5aa151fd4caec08e2",
+      "current_root_status": "missing"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "app/services/tables/models.py",
+      "accepted_sha256": "fe7e3b892019767cad2851717690e952a8bd14b68454a46be2d5fcb1106872cd",
+      "current_root_status": "missing"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "docs/api/document-jobs.md",
+      "accepted_sha256": "1c5ed9c36a4ad95b190a3d598cc89e627895c80cca20b2aaa4b8e7da899dd420",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "docs/contracts/document-ir-contract.md",
+      "accepted_sha256": "edb123d532b3e91e0116d96d2f6fa3081444e85b173b3b20d261cde8fb2983a7",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "docs/contracts/mineru-artifact-contract.md",
+      "accepted_sha256": "ca4131474a02ec040008c67d2154c7c56b1706a0fad8918b66f189efe83f732c",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "docs/design/docx-rendering-template-design.md",
+      "accepted_sha256": "829c3b502e27aae5dd8ee79034214a7be4a740fcb1421a21ea41c7ff5636205c",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "docs/design/table-processing-design.md",
+      "accepted_sha256": "5379b37581a8aacead1e8642ef8b5c6e3096256f655696ec615547105b38988a",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "docs/dev/backend-local-setup-and-architecture.md",
+      "accepted_sha256": "ec6498fdcfe73d11f7b5a047cdded88e38bb237af5f41aba813538910b27606e",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "scripts/dev/formal_mineru_conversion.py",
+      "accepted_sha256": "20c8f9573e23e663485dac5733c283a0fed42003e9c25dd332d8e6f2fb390caa",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "tests/test_canonical_table_grid.py",
+      "accepted_sha256": "67d076555183778c80ac62dfd74ee4eff1788e931279b2c16afe0110530b7f64",
+      "current_root_status": "missing"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "tests/test_canonical_table_grid_compatibility.py",
+      "accepted_sha256": "886338bd622e8e98d02c1bd7a8bd3a3e7ccf4975f3edaad076a5b7df50c8763f",
+      "current_root_status": "missing"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "tests/test_document_ir_logical_table_group.py",
+      "accepted_sha256": "ac4b198ea0d1eb36ddcb10ec056a614813d268bc952425b65cece60b1382230c",
+      "current_root_status": "missing"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "tests/test_document_ir_mineru_converter_layout.py",
+      "accepted_sha256": "8bdb7948c2e39c6440040c6d9dd398aaec7bd02a53ccafb9b3f7a18829722fea",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "tests/test_document_ir_translation.py",
+      "accepted_sha256": "5c1109fd2552285c60e5337030dce9eb149b022d9db9726e154e656551659e3f",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "tests/test_document_job_execution_stages.py",
+      "accepted_sha256": "6597959f3b09940ad34ff6a6b0b2a106b8a3fcd0800793224dfcba6423aa248d",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "tests/test_document_job_result_persistence.py",
+      "accepted_sha256": "9c02a340bf3e71ddd7400213de34c50859af425c698dcf519dfa76b166c7ea22",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "tests/test_fastapi_jobs_backend.py",
+      "accepted_sha256": "c18613c23c53772bc8e37e56b4eb40412a4ecde77142f71d06519f42925dfabe",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "tests/test_mineru_artifact_validator.py",
+      "accepted_sha256": "a32d51a56ac426485fd6974fcb19853ebdac003cf143d8f7786b42f3b81d8bf7",
+      "current_root_status": "same"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "tests/test_renderer_block_evidence.py",
+      "accepted_sha256": "f7c52b4610595e9ef7257e3222b5a1a1fb11e4b7fc2193681cc72b34dd0ff317",
+      "current_root_status": "missing"
+    },
+    {
+      "accepted_commit": "69906a5e",
+      "path": "tests/test_renderer_render_plan.py",
+      "accepted_sha256": "9fc2a5f66acdedc6430281668508bde1668683e9d582c298fb39720365eb09b1",
+      "current_root_status": "missing"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": ".trellis/spec/backend/database-guidelines.md",
+      "accepted_sha256": "6d3c03e587523722096f42867be0e98a899f4856fa0b28bcf57397864f80fffb",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": ".trellis/spec/backend/index.md",
+      "accepted_sha256": "b31ea18b2dc2bfe7f1c14928343b459f3035f1e4ff16980dc956b113097cf306",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": ".trellis/spec/backend/word-generation-rules.md",
+      "accepted_sha256": "8bb7e3f15459a3ae52937390a30f224915dd2f64beed80ae48d0b5f75cd8b475",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": ".trellis/spec/backend/word-preview-contract.md",
+      "accepted_sha256": "d397e9d061d90c59c7057ed11823c2533e82f460633f2859945386b2fe4c9b30",
+      "current_root_status": "missing"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/core/config.py",
+      "accepted_sha256": "bcd2f2b22ffefe199df002ed1afaf1483384ad97cb3e8d6145796558452a3e02",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/core/runtime.py",
+      "accepted_sha256": "c8d2c1bb96d57636f208a5e10c1dfd3f5214d11d651694d86ae855d7ec4a0ce5",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/domains/document_jobs/delivery_state.py",
+      "accepted_sha256": "0692f921527c636ec849275203c1075e5acf7fd0f7ae8a581743e466aaacac8e",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/domains/document_jobs/execution.py",
+      "accepted_sha256": "ae4c9c268a1d02f893352be506eae4c3184ac270932608f1c7ed9f2c36d84814",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/domains/document_jobs/models.py",
+      "accepted_sha256": "597e8cf6c987823bbd56cda725e2ce9b8bacc0695cafd767a46c48588edc8eca",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/domains/document_jobs/preview.py",
+      "accepted_sha256": "e92338c7e74ea0c1c8cdbfe5d031ebe44630dfa022aaf0e3cf2bdffd7aeaebdb",
+      "current_root_status": "missing"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/domains/document_jobs/preview_state.py",
+      "accepted_sha256": "d5ed0a45edbf8c52cc2ced22346da8da4136d96c82980a7863fbbae79e0cba60",
+      "current_root_status": "missing"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/domains/document_jobs/quality_state.py",
+      "accepted_sha256": "74f510835980d02dc67fd4923a2ddd72e222dd2abaeb73abefd66ee6c4ba94b5",
+      "current_root_status": "missing"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/domains/document_jobs/repository.py",
+      "accepted_sha256": "5e9a32df3ff3f7c01f46c4b6da56cebc0815ff90b7b6877cec64792691a16a09",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/domains/document_jobs/result_state.py",
+      "accepted_sha256": "639d31a39b6d4b3e2591490530389f41232de9a8b61bdd2a29655a2d28b3fef6",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/domains/document_jobs/router.py",
+      "accepted_sha256": "9a87a6dca99df3697a2a0b3adfbf1369256f7efe777f95a647ddc6ad767b2638",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/domains/document_jobs/service.py",
+      "accepted_sha256": "a344a835da139b96ff646655e962654502de7838c3fc1d733f1917655242e340",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/domains/files/models.py",
+      "accepted_sha256": "2677ba213eb459d842d4407fc7dc36dfede55b29b93460ef339d023a39ae9b1f",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/domains/files/result_registration.py",
+      "accepted_sha256": "b1d1c95bd1c8be8b1d91f655bb635ba1942b8d753a96ff937cea28069b939597",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/domains/files/service.py",
+      "accepted_sha256": "7a6bea8fea1d221d4c06f25a5e47228b89aef3791228331725576552880b4db0",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/infrastructure/persistence/file/document_jobs.py",
+      "accepted_sha256": "7d3cb46bc39a5a7e5b77387f004655c89f324efe1cde9cf1874af1aa0b61f279",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/infrastructure/persistence/mysql/document_jobs.py",
+      "accepted_sha256": "c125cd2fb5a211438ae6d24d2da214a7da5bc1b9df4ff1b3ffc0647dff46afcd",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/infrastructure/persistence/sqlite/document_jobs.py",
+      "accepted_sha256": "53d5995bdc644671c3ba43b64a69b8e9eb0dd78839ec4f21533498129266d730",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/main.py",
+      "accepted_sha256": "20c71b9f33942b5b67574087bb2b97d3575fde2a37865c3be3ef9495049492fb",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/services/preview/__init__.py",
+      "accepted_sha256": "b7bbfc5bec8a4936f43aec51440af784f2c52f84762046ae30a7ae3d136692ac",
+      "current_root_status": "missing"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/services/preview/executor_protocol.py",
+      "accepted_sha256": "5026f914582da505613f6bb3aead2c7dfa147525cd7b62712e105c7cc1e83d26",
+      "current_root_status": "missing"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/services/preview/models.py",
+      "accepted_sha256": "f74d814708efe6ff51c402171be8ab784a3de7c0bb5210ac89d3a7ae6a618f65",
+      "current_root_status": "missing"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/services/preview/provider.py",
+      "accepted_sha256": "69cd3261a6a32a0ad53cb4727648c153f253d7eb2a451c112a554b80a6af4daa",
+      "current_root_status": "missing"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "app/services/preview/sandbox_adapter.py",
+      "accepted_sha256": "cdff359c9c1e54c1bbf91396fc2dac09536b4b46b05846f146cf094cdb218793",
+      "current_root_status": "missing"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "docs/design/docx-rendering-template-design.md",
+      "accepted_sha256": "b327b119e5dc877fceac864af0a2761dbbdb42ab8d1ebeee58ea22c367c91181",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "docs/design/quality-review-release-design.md",
+      "accepted_sha256": "cb3970a29c7636b2be28cb17b434ba8fa72df3600c855c9149ab6aadfdc27729",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "docs/dev/backend-local-setup-and-architecture.md",
+      "accepted_sha256": "0aef6c88670fc678b9e380830d3a01d9fceec9900f4ede1c2fd363fef0e5b938",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "docs/runbooks/backend.md",
+      "accepted_sha256": "24f0e8655697a35c4302573ff5feab062784591777782ba099999d886b1f55d5",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "tests/test_document_job_delivery_state_api.py",
+      "accepted_sha256": "fc211704799a641343976858ea978254887670b6fb28ee999b3286ee3b6770ac",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "tests/test_document_job_preview_persistence.py",
+      "accepted_sha256": "e59dca5afd49070f8e1083cacca1338aa2d078e42bf789586cbc7a66c35eb224",
+      "current_root_status": "missing"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "tests/test_document_job_result_persistence.py",
+      "accepted_sha256": "fb4a0e33a95c789b44f317aad42925ce0f21deaa62cd15e814d95c487bcdd9d2",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "tests/test_document_job_word_preview.py",
+      "accepted_sha256": "cd8842a0f901407ddd752645da50389b1323c82c472267031c49db57b8685077",
+      "current_root_status": "missing"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "tests/test_fastapi_jobs_backend.py",
+      "accepted_sha256": "6243f3ef3fce8111968f6c41d0c655983685c14eb819802fe76854ba463f7baa",
+      "current_root_status": "different"
+    },
+    {
+      "accepted_commit": "8fa11d97",
+      "path": "tests/test_word_preview_provider.py",
+      "accepted_sha256": "808ef9b15e30191f262043518a967ea9eca37f9bfde7c414fb71bf4d86188b0c",
+      "current_root_status": "missing"
+    }
+  ]
+}

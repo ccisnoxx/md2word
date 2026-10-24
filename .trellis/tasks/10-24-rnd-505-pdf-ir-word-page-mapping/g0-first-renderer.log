@@ -1,0 +1,321 @@
+.E....E.EEEEEE.FFFFFFEFFF.E..
+======================================================================
+ERROR: test_duplicate_source_identity_fails_without_creating_word (tests.test_renderer_render_plan.RenderPlanTests.test_duplicate_source_identity_fails_without_creating_word)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/services/renderer/word_renderer.py", line 121, in render_to_result
+    plan = build_render_plan(document_ir, layout_plan=layout_plan, effective_config=template_config,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/services/renderer/render_plan.py", line 174, in build_render_plan
+    raise ValueError("ir_render_evidence:block_coverage_mismatch")
+ValueError: ir_render_evidence:block_coverage_mismatch
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_renderer_render_plan.py", line 139, in test_duplicate_source_identity_fails_without_creating_word
+    render(ir)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_renderer_render_plan.py", line 32, in render
+    return DocumentIRWordRenderer().render_to_result(ir, template_path=kwargs.pop("template_path", None),
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/services/renderer/word_renderer.py", line 126, in render_to_result
+    raise render_contract_failure(error) from None
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/services/renderer/evidence.py", line 276, in render_contract_failure
+    return DocumentIntegrityError("DocumentIR→DOCX", {"blocking_quality_flags": [code]})
+           ^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'DocumentIntegrityError' is not defined
+
+======================================================================
+ERROR: test_all_body_objects_annotations_and_empty_objects_keep_exact_owners (tests.test_renderer_block_evidence.BlockEvidenceTests.test_all_body_objects_annotations_and_empty_objects_keep_exact_owners)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_renderer_block_evidence.py", line 63, in test_all_body_objects_annotations_and_empty_objects_keep_exact_owners
+    result = render(ir, image_loader=lambda asset: MINIMAL_PNG_BYTES)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_renderer_render_plan.py", line 32, in render
+    return DocumentIRWordRenderer().render_to_result(ir, template_path=kwargs.pop("template_path", None),
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/services/renderer/word_renderer.py", line 165, in render_to_result
+    self._render_block(document, block, assets_by_id, template_config, image_loader, render_context,
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/services/renderer/word_renderer.py", line 384, in _render_block
+    self._fill_planned_text(paragraph, text, policy, template_config,
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/services/renderer/text_renderer.py", line 127, in _fill_planned_text
+    self._fill_formula_paragraph(paragraph, text, template_config)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/services/renderer/text_renderer.py", line 151, in _fill_formula_paragraph
+    self._append_formula(paragraph, formula_block_span(text), template_config.normal)
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/conversion/docx_rules/formula.py", line 275, in formula_block_span
+    raise ValueError("公式源内容为空")
+ValueError: 公式源内容为空
+
+======================================================================
+ERROR: test_invalid_binding_missing_owner_and_forged_or_swapped_targets_fail_closed (tests.test_renderer_block_evidence.BlockEvidenceTests.test_invalid_binding_missing_owner_and_forged_or_swapped_targets_fail_closed) (failure='hash')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/services/renderer/evidence.py", line 293, in validate_render_result
+    raise ValueError("ir_render_evidence:binding_mismatch")
+ValueError: ir_render_evidence:binding_mismatch
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_renderer_block_evidence.py", line 291, in test_invalid_binding_missing_owner_and_forged_or_swapped_targets_fail_closed
+    validate_render_result(ir, result.content, replace(result, block_evidence=trace))
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/services/renderer/evidence.py", line 447, in validate_render_result
+    except DocumentIntegrityError:
+           ^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'DocumentIntegrityError' is not defined
+
+======================================================================
+ERROR: test_invalid_binding_missing_owner_and_forged_or_swapped_targets_fail_closed (tests.test_renderer_block_evidence.BlockEvidenceTests.test_invalid_binding_missing_owner_and_forged_or_swapped_targets_fail_closed) (failure='missing')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/services/renderer/evidence.py", line 303, in validate_render_result
+    raise ValueError("ir_render_evidence:block_coverage_mismatch")
+ValueError: ir_render_evidence:block_coverage_mismatch
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_renderer_block_evidence.py", line 291, in test_invalid_binding_missing_owner_and_forged_or_swapped_targets_fail_closed
+    validate_render_result(ir, result.content, replace(result, block_evidence=trace))
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/services/renderer/evidence.py", line 447, in validate_render_result
+    except DocumentIntegrityError:
+           ^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'DocumentIntegrityError' is not defined
+
+======================================================================
+ERROR: test_invalid_binding_missing_owner_and_forged_or_swapped_targets_fail_closed (tests.test_renderer_block_evidence.BlockEvidenceTests.test_invalid_binding_missing_owner_and_forged_or_swapped_targets_fail_closed) (failure='locator')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/services/renderer/evidence.py", line 389, in validate_render_result
+    kind, actual, bookmarks = index.project(target.part, tuple(target.child_path))
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/services/renderer/block_evidence.py", line 191, in project
+    raise ValueError("ir_render_evidence:target_mismatch")
+ValueError: ir_render_evidence:target_mismatch
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_renderer_block_evidence.py", line 291, in test_invalid_binding_missing_owner_and_forged_or_swapped_targets_fail_closed
+    validate_render_result(ir, result.content, replace(result, block_evidence=trace))
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/services/renderer/evidence.py", line 447, in validate_render_result
+    except DocumentIntegrityError:
+           ^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'DocumentIntegrityError' is not defined
+
+======================================================================
+ERROR: test_invalid_binding_missing_owner_and_forged_or_swapped_targets_fail_closed (tests.test_renderer_block_evidence.BlockEvidenceTests.test_invalid_binding_missing_owner_and_forged_or_swapped_targets_fail_closed) (failure='swap')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/services/renderer/evidence.py", line 441, in validate_render_result
+    raise ValueError("ir_render_evidence:target_mismatch")
+ValueError: ir_render_evidence:target_mismatch
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_renderer_block_evidence.py", line 291, in test_invalid_binding_missing_owner_and_forged_or_swapped_targets_fail_closed
+    validate_render_result(ir, result.content, replace(result, block_evidence=trace))
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/services/renderer/evidence.py", line 447, in validate_render_result
+    except DocumentIntegrityError:
+           ^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'DocumentIntegrityError' is not defined
+
+======================================================================
+ERROR: test_invalid_binding_missing_owner_and_forged_or_swapped_targets_fail_closed (tests.test_renderer_block_evidence.BlockEvidenceTests.test_invalid_binding_missing_owner_and_forged_or_swapped_targets_fail_closed) (failure='sharing')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/services/renderer/evidence.py", line 412, in validate_render_result
+    raise ValueError("ir_render_evidence:target_mismatch")
+ValueError: ir_render_evidence:target_mismatch
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_renderer_block_evidence.py", line 291, in test_invalid_binding_missing_owner_and_forged_or_swapped_targets_fail_closed
+    validate_render_result(ir, result.content, replace(result, block_evidence=trace))
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/services/renderer/evidence.py", line 447, in validate_render_result
+    except DocumentIntegrityError:
+           ^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'DocumentIntegrityError' is not defined
+
+======================================================================
+ERROR: test_invalid_binding_missing_owner_and_forged_or_swapped_targets_fail_closed (tests.test_renderer_block_evidence.BlockEvidenceTests.test_invalid_binding_missing_owner_and_forged_or_swapped_targets_fail_closed) (failure='nan')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/services/renderer/evidence.py", line 288, in validate_render_result
+    trace = BlockRenderEvidence.model_validate(render_result.block_evidence.model_dump(mode="json"))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/pydantic/main.py", line 732, in model_validate
+    return cls.__pydantic_validator__.validate_python(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pydantic_core._pydantic_core.ValidationError: 1 validation error for BlockRenderEvidence
+block_render_map.0.targets.0.actual.bad.float
+  Input should be a finite number [type=finite_number, input_value=nan, input_type=float]
+    For further information visit https://errors.pydantic.dev/2.13/v/finite_number
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_renderer_block_evidence.py", line 291, in test_invalid_binding_missing_owner_and_forged_or_swapped_targets_fail_closed
+    validate_render_result(ir, result.content, replace(result, block_evidence=trace))
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/services/renderer/evidence.py", line 447, in validate_render_result
+    except DocumentIntegrityError:
+           ^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'DocumentIntegrityError' is not defined
+
+======================================================================
+ERROR: test_paired_caption_ownership_preserves_ambiguous_tabs_and_partial_rows (tests.test_renderer_block_evidence.BlockEvidenceTests.test_paired_caption_ownership_preserves_ambiguous_tabs_and_partial_rows)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_renderer_block_evidence.py", line 197, in test_paired_caption_ownership_preserves_ambiguous_tabs_and_partial_rows
+    first_ir, first, first_xml = ambiguous[0]
+                                 ~~~~~~~~~^^^
+IndexError: list index out of range
+
+======================================================================
+ERROR: test_safe_projection_retains_report_and_counts_without_free_values (tests.test_renderer_block_evidence.BlockEvidenceTests.test_safe_projection_retains_report_and_counts_without_free_values)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_renderer_block_evidence.py", line 322, in test_safe_projection_retains_report_and_counts_without_free_values
+    ensure_renderer_integrity(evidence)
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/services/renderer/evidence.py", line 264, in ensure_renderer_integrity
+    raise DocumentIntegrityError("DocumentIR→DOCX", build_renderer_event_summary(evidence))
+          ^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'DocumentIntegrityError' is not defined
+
+======================================================================
+FAIL: test_paired_caption_ownership_preserves_ambiguous_tabs_and_partial_rows (tests.test_renderer_block_evidence.BlockEvidenceTests.test_paired_caption_ownership_preserves_ambiguous_tabs_and_partial_rows) (left=None, right=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_renderer_block_evidence.py", line 183, in test_paired_caption_ownership_preserves_ambiguous_tabs_and_partial_rows
+    self.assertEqual([decision.mode for decision in result.plan.decisions], ["image_pair", "image_pair"])
+AssertionError: Lists differ: ['native_image', 'native_image'] != ['image_pair', 'image_pair']
+
+First differing element 0:
+'native_image'
+'image_pair'
+
+- ['native_image', 'native_image']
++ ['image_pair', 'image_pair']
+
+======================================================================
+FAIL: test_paired_caption_ownership_preserves_ambiguous_tabs_and_partial_rows (tests.test_renderer_block_evidence.BlockEvidenceTests.test_paired_caption_ownership_preserves_ambiguous_tabs_and_partial_rows) (left='Gain $x+y$', right=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_renderer_block_evidence.py", line 183, in test_paired_caption_ownership_preserves_ambiguous_tabs_and_partial_rows
+    self.assertEqual([decision.mode for decision in result.plan.decisions], ["image_pair", "image_pair"])
+AssertionError: Lists differ: ['native_image', 'native_image'] != ['image_pair', 'image_pair']
+
+First differing element 0:
+'native_image'
+'image_pair'
+
+- ['native_image', 'native_image']
++ ['image_pair', 'image_pair']
+
+======================================================================
+FAIL: test_paired_caption_ownership_preserves_ambiguous_tabs_and_partial_rows (tests.test_renderer_block_evidence.BlockEvidenceTests.test_paired_caption_ownership_preserves_ambiguous_tabs_and_partial_rows) (left=None, right='\\frac{a}{b}')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_renderer_block_evidence.py", line 183, in test_paired_caption_ownership_preserves_ambiguous_tabs_and_partial_rows
+    self.assertEqual([decision.mode for decision in result.plan.decisions], ["image_pair", "image_pair"])
+AssertionError: Lists differ: ['native_image', 'native_image'] != ['image_pair', 'image_pair']
+
+First differing element 0:
+'native_image'
+'image_pair'
+
+- ['native_image', 'native_image']
++ ['image_pair', 'image_pair']
+
+======================================================================
+FAIL: test_paired_caption_ownership_preserves_ambiguous_tabs_and_partial_rows (tests.test_renderer_block_evidence.BlockEvidenceTests.test_paired_caption_ownership_preserves_ambiguous_tabs_and_partial_rows) (left='Figure 1 Reference', right='Gain $x+y$')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_renderer_block_evidence.py", line 183, in test_paired_caption_ownership_preserves_ambiguous_tabs_and_partial_rows
+    self.assertEqual([decision.mode for decision in result.plan.decisions], ["image_pair", "image_pair"])
+AssertionError: Lists differ: ['native_image', 'native_image'] != ['image_pair', 'image_pair']
+
+First differing element 0:
+'native_image'
+'image_pair'
+
+- ['native_image', 'native_image']
++ ['image_pair', 'image_pair']
+
+======================================================================
+FAIL: test_paired_caption_ownership_preserves_ambiguous_tabs_and_partial_rows (tests.test_renderer_block_evidence.BlockEvidenceTests.test_paired_caption_ownership_preserves_ambiguous_tabs_and_partial_rows) (left='A<span><pre>&amp;#9;</pre></span>', right='B')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_renderer_block_evidence.py", line 183, in test_paired_caption_ownership_preserves_ambiguous_tabs_and_partial_rows
+    self.assertEqual([decision.mode for decision in result.plan.decisions], ["image_pair", "image_pair"])
+AssertionError: Lists differ: ['native_image', 'native_image'] != ['image_pair', 'image_pair']
+
+First differing element 0:
+'native_image'
+'image_pair'
+
+- ['native_image', 'native_image']
++ ['image_pair', 'image_pair']
+
+======================================================================
+FAIL: test_paired_caption_ownership_preserves_ambiguous_tabs_and_partial_rows (tests.test_renderer_block_evidence.BlockEvidenceTests.test_paired_caption_ownership_preserves_ambiguous_tabs_and_partial_rows) (left='A', right='<span><pre>&amp;#9;</pre></span>B')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_renderer_block_evidence.py", line 183, in test_paired_caption_ownership_preserves_ambiguous_tabs_and_partial_rows
+    self.assertEqual([decision.mode for decision in result.plan.decisions], ["image_pair", "image_pair"])
+AssertionError: Lists differ: ['native_image', 'native_image'] != ['image_pair', 'image_pair']
+
+First differing element 0:
+'native_image'
+'image_pair'
+
+- ['native_image', 'native_image']
++ ['image_pair', 'image_pair']
+
+======================================================================
+FAIL: test_paired_drawings_and_caption_segments_have_individual_owners (tests.test_renderer_block_evidence.BlockEvidenceTests.test_paired_drawings_and_caption_segments_have_individual_owners)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_renderer_block_evidence.py", line 108, in test_paired_drawings_and_caption_segments_have_individual_owners
+    self.assertIs(parents[0], parents[1])
+AssertionError: <Element {http://schemas.openxmlformats.org/wordprocessingml/2006/main}p at 0x109fee200> is not <Element {http://schemas.openxmlformats.org/wordprocessingml/2006/main}p at 0x109feef00>
+
+======================================================================
+FAIL: test_paired_math_captions_keep_complete_individual_omml_owners (tests.test_renderer_block_evidence.BlockEvidenceTests.test_paired_math_captions_keep_complete_individual_omml_owners) (caption='\\frac{a}{b}')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_renderer_block_evidence.py", line 124, in test_paired_math_captions_keep_complete_individual_omml_owners
+    self.assertEqual([decision.mode for decision in result.plan.decisions], ["image_pair", "image_pair"])
+AssertionError: Lists differ: ['native_image', 'native_image'] != ['image_pair', 'image_pair']
+
+First differing element 0:
+'native_image'
+'image_pair'
+
+- ['native_image', 'native_image']
++ ['image_pair', 'image_pair']
+
+======================================================================
+FAIL: test_paired_math_captions_keep_complete_individual_omml_owners (tests.test_renderer_block_evidence.BlockEvidenceTests.test_paired_math_captions_keep_complete_individual_omml_owners) (caption='Gain $x+y$')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_renderer_block_evidence.py", line 124, in test_paired_math_captions_keep_complete_individual_omml_owners
+    self.assertEqual([decision.mode for decision in result.plan.decisions], ["image_pair", "image_pair"])
+AssertionError: Lists differ: ['native_image', 'native_image'] != ['image_pair', 'image_pair']
+
+First differing element 0:
+'native_image'
+'image_pair'
+
+- ['native_image', 'native_image']
++ ['image_pair', 'image_pair']
+
+----------------------------------------------------------------------
+Ran 17 tests in 2.282s
+
+FAILED (failures=9, errors=10)

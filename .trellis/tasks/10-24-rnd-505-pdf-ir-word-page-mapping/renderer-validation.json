@@ -1,0 +1,78 @@
+{
+  "schema_version": "rnd505-renderer-validation/v1",
+  "status": "renderer_ready_for_combined_review",
+  "source_fingerprints": {
+    "app/services/renderer/block_anchors.py": {
+      "candidate_sha256": "262800d0e7a50157c7c9d09ad8c9036649493ebf03f436282e41ac684ee0ff52",
+      "g0_sha256": null
+    },
+    "app/services/renderer/block_evidence.py": {
+      "candidate_sha256": "24c836cf5b2627b978e204cf0681d9cd4bee239add05007260edeed0a62a47cf",
+      "g0_sha256": "0fd483c7ed3730353297ff6302cad332f5bbe9c85e043eb785d5bf211285239a"
+    },
+    "app/services/renderer/word_renderer.py": {
+      "candidate_sha256": "81b54f87d631016f697d47ef5b522ab61ddda70973534510b3c83ef09abceeef",
+      "g0_sha256": "9fbd7682a7f0ed4a6df4969c73da54fe57d1915169fcf9b3c0d63811e3b6f0b0"
+    },
+    "app/services/renderer/evidence.py": {
+      "candidate_sha256": "a75143a6b90d6fe7c831c4d85f9944f0016536600cebd3b6d3236f86a342d77e",
+      "g0_sha256": "1aa7486465df62251243cf995104e2ae6d024265d5cc4d17eae319fd7f6fd09c"
+    },
+    "app/services/renderer/image_evidence.py": {
+      "candidate_sha256": "3082d8981375d3e0740d3a49a6e0a2404378e77b44c9df1f1c9f18f2b7c8c3ff",
+      "g0_sha256": "3adce3b48164897de9d483be40df4487b36098aab204bbe408300729a9dc4dcb"
+    },
+    "tests/test_renderer_block_anchors.py": {
+      "candidate_sha256": "6fcb2ea55789b5c451d08aa8c4cf485d26d2f7eb965c7c96e1748ec7209a45f7",
+      "g0_sha256": null
+    },
+    "tests/test_renderer_block_evidence.py": {
+      "candidate_sha256": "2257b397e210784c3b7c5194784d4e6a6afe440d1439c8352a0165016bdc2a3c",
+      "g0_sha256": "fee5aadb52dfc0bca6dfad16c30620d77553df5a2def4cef6bf962b3fd7d3df7"
+    },
+    "tests/test_formula_rendering.py": {
+      "candidate_sha256": "9389ea1815b62e03522a484d0851872114a65f87b4737ea82df12a00c6a47cc8",
+      "g0_sha256": "8e4f395398f2fb0656c7a4ddb4885f1c7c6707ee1309bdeae387ea29e68dc23d"
+    }
+  },
+  "checks": [
+    {
+      "command": ".venv/bin/python -m unittest tests.test_renderer_block_anchors tests.test_renderer_block_evidence tests.test_renderer_render_plan tests.test_formula_rendering tests.test_image_group_rendering tests.test_document_ir_word_renderer_layout",
+      "exit_code": 0,
+      "tests": 145,
+      "log": "renderer-tests.log",
+      "note": "最后业务代码，随后仅新增共享header/footer测试"
+    },
+    {
+      "command": ".venv/bin/python -m unittest tests.test_renderer_block_anchors",
+      "exit_code": 0,
+      "tests": 12,
+      "note": "含新增共享header/footer测试，与145项重叠；唯一覆盖146项"
+    },
+    {
+      "command": ".venv/bin/python tests/tmp/rnd505-b1-renderer/check_compatibility.py",
+      "exit_code": 0,
+      "checks": 3,
+      "log": "tests/tmp/rnd505-b1-renderer/compatibility-results.json"
+    },
+    {
+      "command": "AST parse of 8 touched Python files",
+      "exit_code": 0
+    },
+    {
+      "command": "git diff --check -- <8 owned paths>",
+      "exit_code": 0
+    }
+  ],
+  "tools_not_available": [
+    "ruff",
+    "mypy",
+    "pyright"
+  ],
+  "limitations": [
+    "未验Word/WPS/部署预览视觉",
+    "未验100000条/8MiB真实生产文档容量",
+    "renderer层B1不代替三适配器及完整应用B1",
+    "原主件hash及公式图片/aggregate认证仍严格；可选trace/proof不可用不新增历史恢复拒绝门"
+  ]
+}

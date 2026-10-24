@@ -53,10 +53,10 @@ tasks:
     suggested_branch: md2word/CON-102
     trellis_slug: con-102-document-job-stages
     prompt_file: docs/implementation/codex-prompts/CON-102.md
-    status: todo
-    trellis_task_path: null
-    resolution: null
-    notes: null
+    status: done
+    trellis_task_path: .trellis/tasks/archive/2026-10/10-15-con-102-document-job-stages
+    resolution: "已实现执行阶段扩展与first-valid-receipt结果协议，人工已接受实现、验证及残余风险；两次业务提交已完成，不属于skipped_existing。"
+    notes: "2026-10-16：人工验收并授权收尾；业务提交52810b6、4d30682，manifest done、仅归档CON-102并记录会话。三轮fresh复核及最终release 202证据保留。真实MySQL/InnoDB并发/rollback/断连与部署FS锁语义门禁仍pending，不启用生产写者。不push、不开始CON-103或其他任务；收尾见归档任务completion.md。"
   - id: CON-103
     title: "质量/复核/交付状态模型"
     phase: R1
@@ -65,10 +65,10 @@ tasks:
     suggested_branch: md2word/CON-103
     trellis_slug: con-103-quality-review-delivery-state
     prompt_file: docs/implementation/codex-prompts/CON-103.md
-    status: todo
-    trellis_task_path: null
-    resolution: null
-    notes: null
+    status: done
+    trellis_task_path: .trellis/tasks/archive/2026-10/10-16-con-103-quality-review-delivery-state
+    resolution: "已实现四字段状态模型、三存储投影/显式迁移和旧QA兼容；人工已接受实现、验证和残余风险，两次提交完成并授权Trellis收尾，不属于skipped_existing。"
+    notes: "2026-10-16：人工验收并授权manifest done、仅归档CON-103及记录会话；提交bd828da、80b82db，核心/API/迁移、前端146/build/Chrome2、最终release202及两轮复核证据保留。真实MySQL/InnoDB并发/rollback/断连与部署FS锁语义继续为写者启用门，不启生产写者；不push、不开始CON-104或其他任务，收尾见归档任务completion.md。"
   - id: CON-104
     title: "下载和发布可用性合同"
     phase: R1
@@ -77,10 +77,10 @@ tasks:
     suggested_branch: md2word/CON-104
     trellis_slug: con-104-download-publish-availability
     prompt_file: docs/implementation/codex-prompts/CON-104.md
-    status: todo
-    trellis_task_path: null
-    resolution: null
-    notes: null
+    status: done
+    trellis_task_path: .trellis/tasks/archive/2026-10/10-20-con-104-download-publish-availability
+    resolution: "已新增后端下载分类/警告、发布核心资格及禁用原因合同、前端消费和兼容/安全测试；人工已接受实现、测试证据和残余风险，不属于skipped_existing。"
+    notes: "2026-10-20：人工验收并确认commit plan，授权仅本任务提交、归档和会话bookkeeping；实际分支codex/con104-availability-contract（base033cb61含80b82db）。后端30、OpenAPI8、release202、前端150/build、Chrome定向6+1和独立复核证据已接受；D1资格/执行分离及生产写者pending保持。只做最终轻量核验，不push、不启动后续任务；收尾见归档任务completion.md。"
   - id: IR-201
     title: "MinerUArtifactValidator"
     phase: R2
@@ -89,10 +89,10 @@ tasks:
     suggested_branch: md2word/IR-201
     trellis_slug: ir-201-mineru-artifact-validator
     prompt_file: docs/implementation/codex-prompts/IR-201.md
-    status: todo
-    trellis_task_path: null
-    resolution: null
-    notes: null
+    status: done
+    trellis_task_path: .trellis/tasks/archive/2026-10/10-15-ir-201-mineru-artifact-validator
+    resolution: "复用既有主体后完成本轮输入安全/内容校验、规范化回执及报告合同补强；人工已接受实现、验证证据和已披露风险，授权按明确清单提交及Trellis归档。存在实际增量，非skipped_existing。"
+    notes: "2026-10-15：人工验收并批准提交收口；154项定向、202项release、component1/1、direct过滤matrix2/2通过，最终独立复核无新确认发现。线上/真实MySQL/Word视觉等缺口已披露并接受，不push、不启动其他任务；实际提交/归档记录见Trellis子任务。"
   - id: IR-202
     title: "MarginArtifactNormalizer"
     phase: R2
@@ -125,10 +125,10 @@ tasks:
     suggested_branch: md2word/IR-204
     trellis_slug: ir-204-caption-reconciler
     prompt_file: docs/implementation/codex-prompts/IR-204.md
-    status: todo
-    trellis_task_path: null
-    resolution: null
-    notes: null
+    status: done
+    trellis_task_path: .trellis/tasks/archive/2026-10/10-15-ir-204-caption-reconciler
+    resolution: "已实现统一严格题注重关联、可靠边界拆分、逐目标来源证据及不确定性QA；人工已接受实现、测试证据和残余风险，存在实际增量，非skipped_existing。"
+    notes: "2026-10-20：人工验收并确认当前commit plan，授权IR-204提交及归档，不push、不启动后续任务。实际分支codex/ir204-implementation，实施树/Users/sc/.codex/worktrees/ir204-implementation/md2word，依赖IR-201为done且已集成。AC1–AC9证据逐项复核，收尾72项定向复跑通过、8个源码/测试hash匹配已接受候选；component8/8、direct5/5及release202/OpenAPI既有通过证据复用。Word/WPS字段更新/视觉及Phase3准入false等残余风险已接受。收尾轻量验证、明确文件提交与归档记录见当前子任务closeout.md；其他44项manifest记录不变。"
   - id: IR-205
     title: "LogicalTableGroup 与 source spans"
     phase: R2
@@ -137,10 +137,10 @@ tasks:
     suggested_branch: md2word/IR-205
     trellis_slug: ir-205-logical-table-group
     prompt_file: docs/implementation/codex-prompts/IR-205.md
-    status: todo
-    trellis_task_path: null
-    resolution: null
-    notes: null
+    status: done
+    trellis_task_path: .trellis/tasks/archive/2026-10/10-15-ir-205-logical-table-group
+    resolution: "已实现版本化LogicalTableGroup、完整原始fragment/raw HTML、稳定source spans、保守续表关系与重复表头hint，并完成翻译/持久化/并发边界合同验证；存在实际增量，非skipped_existing。用户已人工接受实现、测试证据和残余风险，批准提交并按Trellis归档。"
+    notes: "2026-10-15：人工验收完成并确认commit plan；实际分支codex/ir205-implementation，基线4cb29a2含IR-201。收尾五模块106项通过；既有component1/1、direct P1/P6 2/2、release202项/OpenAPI current及两轮fresh复核证据复用。真实四表/Word视觉/线上/MySQL与metadata体积等残余风险已明确接受；仅提交IR-205并归档，不push、不启动后续任务。 工作提交9f67c67e50fc8f5376893d6edc8fae2089a3d67b；Trellis已归档至.trellis/tasks/archive/2026-10/10-15-ir-205-logical-table-group，bookkeeping独立提交。"
   - id: IR-206
     title: "Table Reference Asset"
     phase: R2
@@ -149,10 +149,10 @@ tasks:
     suggested_branch: md2word/IR-206
     trellis_slug: ir-206-table-reference-asset
     prompt_file: docs/implementation/codex-prompts/IR-206.md
-    status: todo
-    trellis_task_path: null
-    resolution: null
-    notes: null
+    status: done
+    trellis_task_path: .trellis/tasks/archive/2026-10/10-15-ir-206-table-reference-asset
+    resolution: "已实现表格reference QA Artifact及受认证审核列表/内容接口，保存可信来源、MIME、hash、file ID与fragment/group关联；原生Word表格和direct零翻译边界保持。实际增量，非skipped_existing。用户已人工接受实现、验证证据及残余风险，并确认仅本任务40文件提交计划。"
+    notes: "2026-10-15：用户已确认40文件工作提交22d64df337bb26c3a13fc537bab806c16f46a12f及人工验收/残余风险，追加授权仅IR-206 Trellis归档、会话记录与必要独立bookkeeping提交。task.py archive --no-commit已归档至.trellis/tasks/archive/2026-10/10-15-ir-206-table-reference-asset，status=completed、completedAt=2026-10-15；manifest保持done，任务内context引用已迁移。实现及三轮独立复核证据复用，业务/测试未变。真实MySQL/S3/线上/Word视觉及样本告警风险仍按已接受边界保留。保留其他dirty，不push、不启动其他任务；bookkeeping hash以git log为准。"
   - id: IR-207
     title: "ZK7044 最小回归样本"
     phase: R2
@@ -161,10 +161,10 @@ tasks:
     suggested_branch: md2word/IR-207
     trellis_slug: ir-207-zk7044-minimal-fixtures
     prompt_file: docs/implementation/codex-prompts/IR-207.md
-    status: todo
-    trellis_task_path: null
-    resolution: null
-    notes: null
+    status: done
+    trellis_task_path: .trellis/tasks/archive/2026-10/10-15-ir-207-zk7044-minimal-fixtures
+    resolution: "已实现七组去标识结构样本及离线治理/runner证据；人工已审核并接受实现、验证证据和已披露边界，不属于skipped_existing。"
+    notes: "2026-10-15：用户已接受IR-207并确认工作提交180c90aae7a958c395c3c70d1974260239b25c47，随后授权当前任务归档及独立会话记账。Trellis已completed，路径已迁移；七组75块/17文件/77548字节，60项不同定向测试及最终component8/8证据保留。原根及其他任务改动保持；不push、不启动后续任务。归档/会话提交hash以Git记录为准。"
   - id: TAB-301
     title: "CanonicalTableGrid 模型"
     phase: R3
@@ -173,10 +173,10 @@ tasks:
     suggested_branch: md2word/TAB-301
     trellis_slug: tab-301-canonical-table-grid
     prompt_file: docs/implementation/codex-prompts/TAB-301.md
-    status: todo
-    trellis_task_path: null
-    resolution: null
-    notes: null
+    status: done
+    trellis_task_path: .trellis/tasks/archive/2026-10/10-16-tab-301-canonical-table-grid
+    resolution: "已新增独立CanonicalTableGrid模型、稳定来源ID/哈希、严格校验和JSON兼容合同，存在实际实现增量，非skipped_existing。用户已人工接受实现、测试证据和残余风险，并确认当前任务commit plan，授权提交及Trellis归档；不push。"
+    notes: "2026-10-16：人工验收完成；实际分支codex/tab301-implementation，工作区/Users/sc/.codex/worktrees/tab301-implementation/md2word，基线9f67c67含IR-205。收尾集中46项测试/内存compile/context/diff通过；复用已接受component1/1、direct2/2及OOXML证据；两复核发现均关闭。合同与Spec已同步；无生产接线/API/DB/前端变化。仅本任务提交、归档和日志，不push、不启动后续任务；线上/Word视觉及既有Phase3门等限制已人工接受。"
   - id: TAB-302
     title: "HTML Normalizer/Grid Builder"
     phase: R3
@@ -185,10 +185,10 @@ tasks:
     suggested_branch: md2word/TAB-302
     trellis_slug: tab-302-html-normalizer-grid-builder
     prompt_file: docs/implementation/codex-prompts/TAB-302.md
-    status: todo
-    trellis_task_path: null
-    resolution: null
-    notes: null
+    status: done
+    trellis_task_path: .trellis/tasks/archive/2026-10/10-16-tab-302-html-normalizer-grid-builder
+    resolution: implemented
+    notes: "2026-10-16：用户已人工审查并接受实现、测试证据及残余风险，确认当前commit plan并授权本任务提交/归档。新增HTML normalizer/Grid builder，非skipped_existing；分支codex/tab302-implementation，基线c71c7ca含已接受TAB-301。本轮71项定向测试、task validate及diff检查通过；既有component/direct/OOXML和真实4组129cells167runs证据复用。纯算法未接生产，线上/Word视觉/性能及更大阶段P1/P2门限制已接受；工作提交471126c826583cdf169935ee5c87ce82978b058e，Trellis completed并归档；不push，不开始后续任务。"
   - id: TAB-303
     title: "Table Validator/Quality Flags"
     phase: R3
@@ -197,10 +197,10 @@ tasks:
     suggested_branch: md2word/TAB-303
     trellis_slug: tab-303-table-validator-quality-flags
     prompt_file: docs/implementation/codex-prompts/TAB-303.md
-    status: todo
-    trellis_task_path: null
-    resolution: null
-    notes: null
+    status: done
+    trellis_task_path: .trellis/tasks/archive/2026-10/10-16-tab-303-table-validator-quality-flags
+    resolution: implemented
+    notes: "2026-10-16：用户已人工审查并接受TAB-303实现、测试证据及残余风险，确认commit plan并授权提交/归档。新增只读validator/quality及测试，结论implemented，非skipped_existing；实际分支codex/tab303-implementation，基线2c11bada含已接受TAB-302。收尾集中91项定向测试、task validate、内存compile/context/diff检查通过；既有component1/1、direct2/2、OOXML及6来源producer证据复用。无生产/API/DB/前端变化；原始ZK全文、Word视觉/线上及更大Phase3门等限制已人工接受。工作提交5bb6baabe50fd8e6c772c5726ea876df403c09d5；Trellis completed并归档当前子任务；不push、不开始后续任务，详见归档validation.md/closeout.md。"
   - id: TAB-304
     title: "大表保留合并关系"
     phase: R3
@@ -209,10 +209,10 @@ tasks:
     suggested_branch: md2word/TAB-304
     trellis_slug: tab-304-large-table-merge-preservation
     prompt_file: docs/implementation/codex-prompts/TAB-304.md
-    status: todo
-    trellis_task_path: null
-    resolution: null
-    notes: null
+    status: done
+    trellis_task_path: .trellis/tasks/archive/2026-10/10-16-tab-304-large-table-merge-preservation
+    resolution: implemented
+    notes: "2026-10-16：用户已人工审查并接受实现、测试证据及残余风险，确认当前commit plan并授权仅TAB-304提交/归档。实际分支codex/tab304-implementation，基线e99b251含已验收TAB-302。新增CanonicalGrid增量OOXML和内容保真，非skipped_existing；收尾157项定向、配置13/数学9、compile12、OOXML/hash、context/diff通过，复用已接受component1/1、direct2/2、真实输入8/8、性能及4轮复核证据。AC6取舍、线上/Word与loader隔离缺口已接受；不push，不开始后续任务。工作提交及归档见任务closeout记录。 工作提交fbc2d944796b522dd79ab595ccfc2045f2778917；Trellis completed并归档，context引用已迁移；bookkeeping及日志独立提交。"
   - id: TAB-305
     title: "跨页逻辑表 Word 渲染"
     phase: R3
@@ -221,10 +221,10 @@ tasks:
     suggested_branch: md2word/TAB-305
     trellis_slug: tab-305-cross-page-logical-table-rendering
     prompt_file: docs/implementation/codex-prompts/TAB-305.md
-    status: todo
-    trellis_task_path: null
-    resolution: null
-    notes: null
+    status: done
+    trellis_task_path: .trellis/tasks/archive/2026-10/10-16-tab-305-cross-page-logical-table-rendering
+    resolution: implemented
+    notes: "2026-10-16：用户已人工审查并接受TAB-305实现、测试证据及残余风险，确认commit plan并授权仅本任务提交和归档；实际分支codex/tab305-implementation，基线09a2387。存在实际合表/逐片evidence/blocked审核实现增量，resolution=implemented，非skipped_existing。最终轻量renderer123项、API及CAS15项、源码hash/compile17、依赖hash23、DOCX/hash/context/diff通过；复用已接受component3/3、direct2/2、release202和fresh复核。Word/Golden/真MySQL缺口已人工接受，不改写为已验证；不push，不开始后续任务。提交与归档位置详当前任务closeout.md。 工作提交aa150c89c45f42454101b3aa96b3c845ff602b50；Trellis completed并归档至.trellis/tasks/archive/2026-10/10-16-tab-305-cross-page-logical-table-rendering，context引用已迁移；依赖整合349bd759f8120a9a2d09be1b443791f182df5293。"
   - id: TAB-306
     title: "空 HTML 内部占位和 blocked"
     phase: R3
@@ -233,10 +233,10 @@ tasks:
     suggested_branch: md2word/TAB-306
     trellis_slug: tab-306-empty-html-placeholder-blocked
     prompt_file: docs/implementation/codex-prompts/TAB-306.md
-    status: todo
-    trellis_task_path: null
-    resolution: null
-    notes: null
+    status: done
+    trellis_task_path: .trellis/tasks/archive/2026-10/10-16-tab-306-empty-html-placeholder-blocked
+    resolution: implemented
+    notes: "2026-10-20：用户已人工审查并接受TAB-306实现、测试证据及残余风险，并确认两批commit plan及本任务提交/归档；实际实现增量，resolution=implemented，非skipped_existing。实际分支codex/tab306-implementation。收尾34项定向测试、hash/context/diff轻量检查通过；已接受release202/OpenAPI166/325、direct2/2及fresh复核证据复用，component6/8缺源拒绝、Golden环境阻断及Word/真实MySQL/部署FS未验继续保留，不伪报通过。提交和归档详情见本任务closeout.md；工作提交3ebfb7a7e62dfc5242bb149ea3091d8c3f9492b5，基线整合938b25b1ae0e7abd89d6f9a926130845c5775bc8；Trellis completed并归档至.trellis/tasks/archive/2026-10/10-16-tab-306-empty-html-placeholder-blocked，上下文引用已迁移。不push、不开始后续任务、不启用生产writer。"
   - id: TAB-307
     title: "表格 evidence 聚合"
     phase: R3
@@ -245,10 +245,10 @@ tasks:
     suggested_branch: md2word/TAB-307
     trellis_slug: tab-307-table-evidence-aggregation
     prompt_file: docs/implementation/codex-prompts/TAB-307.md
-    status: todo
-    trellis_task_path: null
-    resolution: null
-    notes: null
+    status: review
+    trellis_task_path: .trellis/tasks/10-20-tab-307-table-evidence-aggregation
+    resolution: implemented
+    notes: "2026-10-20：用户接受修订规划后授权实施；正确隔离整合基线b5c2a90（等同已接受业务3ebfb7a7），原根dirty受保护；实际分支codex/tab307-implementation。已实现安全table-evidence/v1、实测OOXML聚合、quality_report/receipt/冻结期限/内部权限查询与legacy兼容；独立只读审查问题及旧错误映射回归已修复。最终直接59项、release202项及此前纯表/OpenAPI/本地侧车证据通过；相关102/103的既有NUL错误文本失败、component3/5的两项缺合法来源和真实环境未验继续保留，不伪报完整验收。结论implemented，非skipped_existing；仅TAB-307进入review，Trellis保留in_progress，等待人工审核实现与残余风险，不提交/push/archive/部署。详当前任务validation.md、implementation-review.md、handoff.md。"
   - id: TAB-308
     title: "表格专项回归门禁"
     phase: R3
@@ -257,10 +257,10 @@ tasks:
     suggested_branch: md2word/TAB-308
     trellis_slug: tab-308-table-regression-gate
     prompt_file: docs/implementation/codex-prompts/TAB-308.md
-    status: todo
-    trellis_task_path: null
+    status: planning
+    trellis_task_path: .trellis/tasks/10-20-tab-308-table-regression-gate
     resolution: null
-    notes: null
+    notes: "2026-10-20：复核最新依赖准入通过：TAB-304/305/306、IR-207根记录done；TAB-307实施工作区manifest done、归档completed且人工已接受（业务228f40332257dad19e6ab5892b23b3c292e1f0d1），根旧review镜像不改写。唯一子任务已create --parent --no-start；真实调查、三件套与最小context已完成，停planning评审。存在离线fixture/风险断言/报告/release接线增量，非skipped_existing。根4c40e6c不是实施基线，实施前须准备完整已接受checkout；本轮不改业务、不start、不提交/push。规划校验见当前任务planning-validation.md。 2026-10-20：已完成用户指定fresh architect只读规划审查，主代理核实并修订固定拒绝阶段、显式翻译未复核子例、最低mandatory归属、安全报告出口及依赖镜像差异；最新三件套待评审，仍planning，不start/业务实现/提交/push。"
   - id: TR-401
     title: "Caption/Footnote 翻译覆盖"
     phase: R4
@@ -305,10 +305,10 @@ tasks:
     suggested_branch: md2word/TR-404
     trellis_slug: tr-404-table-context-builder
     prompt_file: docs/implementation/codex-prompts/TR-404.md
-    status: todo
-    trellis_task_path: null
+    status: review
+    trellis_task_path: .trellis/tasks/10-21-tr-404-table-context-builder
     resolution: null
-    notes: null
+    notes: "2026-10-21：唯一依赖TAB-301=done，归档completed且人工已接受，依赖门通过；全任务检索无重复，以create --parent --no-start创建唯一子任务。当前分支md2word/TR-403、HEAD=596a2de；TAB-301/TAB-302已验收提交未在当前HEAD，实施前须准备含CanonicalGrid/builder与现有TR-403的正确基线，本轮不合并依赖。已调查真实代码/测试/合同并编写三件套与最小context，存在输入context、预算、短项优先和双入口/本地投影差距，非skipped_existing。仅调查规划，停planning评审；不改业务、不start、不提交/push，不更新其他任务状态。验证证据见当前子任务planning-validation.md。 2026-10-21：已完成用户指定的一个fresh architect独立规划审查；主会话核实P2（OPA228最小fixture无表格）并修订三件套revision 2、调查和最小context，明确必跑合成MinerU表格完整链路与非空context/w:tbl/span/译文断言。审查审计closed/verified；最新修订稿待人工评审，仍planning，不start/业务实现/提交/push。 2026-10-21：另一个fresh architect已复审revision2，确认表格完整链路验收P2在规划层闭合、无新增确认问题，主会话核实一致。技术方案保持revision2，仅更新审查元数据/记录；最新审计closed/verified，见planning-review.md。仍planning，等待用户批准，不start/业务实现/提交/push。 2026-10-21：修订2已人工接受并明确授权实施；实际工作区 /Users/sc/.codex/worktrees/tr-404-table-context/md2word，分支md2word/TR-404，完整已验收依赖基线107项通过；只实现当前任务，结束停review，不提交/push/归档。 2026-10-21：TR-404已实现；145定向、44表格依赖、202 release、component1/1、direct2/2通过；完整fresh复核的冲突分组P2已修，63项及另一个fresh增量复核12项/反例通过，无确认残留。P1认证/运行时、真实Provider语言质量/Word视觉/在线存储未验保留。仅TR-404到review，Trellis保持in_progress，详见实际worktree任务implementation-report/validation/review；不提交/push/归档。 2026-10-21：用户已人工接受实现、测试证据及已披露风险；仅授权提供commit plan，明确已验收依赖基线/TR-404增量划分并排除其他dirty。未授权提交/push/归档，暂保留review/in_progress，见当前任务commit-plan.md。"
   - id: TR-405
     title: "术语和目标语言后验检查"
     phase: R4
@@ -317,10 +317,10 @@ tasks:
     suggested_branch: md2word/TR-405
     trellis_slug: tr-405-term-language-post-validation
     prompt_file: docs/implementation/codex-prompts/TR-405.md
-    status: todo
-    trellis_task_path: null
+    status: planning
+    trellis_task_path: .trellis/tasks/10-21-tr-405-term-language-post-validation
     resolution: null
-    notes: null
+    notes: "2026-10-21：TR-403=done/implemented、归档completed且已人工接受，工作提交f46a3bc在当前HEAD可达，依赖门通过。全任务检索无重复，以create --parent --no-start创建唯一子任务；仅调查规划，已完成真实调查、三件套revision1与最小context，现有功能有缺口，非skipped_existing。72项定向基线通过，fake证明禁用译法/长源文无flags；默认影子warning、规则创建时快照，待人工评审。当前HEAD缺已验收CON-102/103/104业务合同，实施前须整合正确基线并协调TR-404写范围，本轮不合并。实际分支md2word/TR-403，建议md2word/TR-405仅记录，不切分支、不改业务、不start、不提交/push，不更新其他任务状态。 2026-10-21：已完成用户指定的一位fresh architect独立只读规划审查，主会话核实2项P1/1项P2并将三件套修订到revision2：完整术语绑定、用户新代retry从source建批、同item有效语言例外及最终IR消费验收；审计20261021T124609Z-tr-405-fresh-architect-planning-review-0a5b5875已closed/verified。revision2待人工评审，未第二轮独立复审，仍planning，不start/业务修改/提交/push，详planning-review.md。 2026-10-21：另派全新architect独立只读复审revision2，三项修订在规划层闭合、最终IR evidence无新增确认问题；主会话核实，三件套正文保持revision2，仅补GET核验/原值摘要实施注意与复审记录，见planning-rereview.md。本轮审计20261021T133441Z-tr-405-revision2-fresh-architect-rereview-b7ffda11已closed/verified；仍planning、待人工评审，新代用户retry重译成本仍需审核，不改业务、不start、不提交/push。"
   - id: TR-406
     title: "部分批次失败语义收口"
     phase: R4
@@ -341,10 +341,10 @@ tasks:
     suggested_branch: md2word/TR-407
     trellis_slug: tr-407-four-language-regression-gates
     prompt_file: docs/implementation/codex-prompts/TR-407.md
-    status: todo
+    status: blocked
     trellis_task_path: null
     resolution: null
-    notes: null
+    notes: "2026-10-22：规划前依赖门未通过：TR-401=todo、TR-404=review、TR-405=planning，均未达到done或经人工接受的skipped_existing；TR-402/TR-403/TR-406在当前manifest中为done/implemented。TR-404虽记录人工接受实现，但仍保留review/in_progress，不视为满足本轮准入条件。按用户明确停止条件，仅将TR-407标记blocked并停止；未创建或激活子任务，未编写规划三件套或配置context，未执行task.py start、业务修改、提交或push。待全部依赖达到准入条件后再恢复调查规划；当前trellis_task_path保持null，不更新其他任务状态，保留工作区既有改动。"
   - id: RND-501
     title: "RenderPlan 与 block evidence"
     phase: R5
@@ -353,10 +353,10 @@ tasks:
     suggested_branch: md2word/RND-501
     trellis_slug: rnd-501-render-plan-block-evidence
     prompt_file: docs/implementation/codex-prompts/RND-501.md
-    status: todo
-    trellis_task_path: null
-    resolution: null
-    notes: null
+    status: done
+    trellis_task_path: .trellis/tasks/archive/2026-10/10-17-rnd-501-render-plan-block-evidence
+    resolution: implemented
+    notes: "2026-10-23修订3：用户已接受修订2及两P2独立复审结论，指定当前分支codex/tr-406-partial-batch-failure-semantics@c56e128为集成目标；本轮仅调查及更新集成规划。当前尚未集成，改为integration_required，不建议skipped_existing。最小范围包括必要IR-201输入/可信来源前置、IR-205、TAB-301及RND-501；保留TR-402/403/406、CON-104/receipt合同，排除RND-504。19业务候选路径及最小context已列明；修订3待人工评审，未授权业务修改/start/提交/push。历史独立复审只适用于修订2；其他任务状态不变。 随后同一只读architect审查修订3无新增可行动缺陷，主会话核实并澄清私有trace保留ID、公开摘要脱敏出口；仍待人工评审。 2026-10-24：用户授权依据跨分支核查同步已验收状态。原会话明确接受实现及验证限制；69906a5e工作提交、f51edf7e归档、1b24738c记账均保存在codex/tr-406-partial-batch-failure-semantics。manifest done/implemented，权威归档completed；本地恢复归档原件，原规划目录保留为历史副本。当前根HEAD01e6c1ad未集成RND-501，业务差异19路径为3同/11异/5缺；与RND-504统一基线集成为RND-505实施前置门，本轮不实际集成。"
   - id: RND-502
     title: "公式 OMML 和降级规则"
     phase: R5
@@ -389,10 +389,10 @@ tasks:
     suggested_branch: md2word/RND-504
     trellis_slug: rnd-504-word-preview-provider
     prompt_file: docs/implementation/codex-prompts/RND-504.md
-    status: review
-    trellis_task_path: .trellis/tasks/10-16-rnd-504-word-preview-provider
-    resolution: implemented_pending_review
-    notes: "2026-10-16：CON-103 已人工验收 done、归档 completed，依赖门通过；创建唯一子任务并完成调查/三件套/最小 context，停在规划评审门。原根 HEAD=4c40e6c（md2word/TAB-306）不含依赖，只读业务基线=033cb61（含 CON-103 实现 bd828da）；实施前必须准备正确依赖工作区并保留既有 dirty。现有开发视觉工具不满足正式 Provider/Artifact/重试，存在真实增量，非 skipped_existing；生产引擎未选/未安装，默认 disabled，port/fake 不替代真实沙箱/字体/Word 验收。不改业务代码、不 start、不提交/push；不更新其他任务状态。 2026-10-17：按用户要求完成一次独立规划审查并修订3项P2及S3证据边界；执行协议、预览自身阻断恢复、跨run请求账本和定向验收已固化，审查审计20261016T155059Z-rnd-504-1f39fea6通过；仍planning，等待最新规划评审，不start/实现/提交/push。 2026-10-23：本轮仅调查/规划，CON-103仍done且Git归档completed/人工接受，当前已有状态合同但原提交非HEAD祖先。发现已验收实现931d2f6及归档48818e9，复用原10-16子任务身份并恢复规划，历史原件保留research/history；当前HEAD01e6c1a无preview，37源路径中12缺失/25已有，规划最小复用集成，非当前skipped_existing，不重建第二套实现。当前22项状态/下载/对象身份基线及独立源快照40项预览测试通过，均不证明目标集成/生产沙箱。修订3三件套与最小context完成，待人工评审；保留CON-104、TR-406、RND-502/503及共享独立key，生产disabled，不选SaaS/装依赖、不切分支、不start、不改业务、不提交/push。原dirty/暂存树及其他任务条目保持，详当前子任务planning-validation.md。 2026-10-23：按用户要求安排一位全新architect（fork_turns=none）独立只读审查修订3；两项P2（登记中断后预算耗尽误完成、过期成功预览被新key继续alias）由主会话分别以源原函数内存反例核实，三件套修订4补恢复分类/登记阶段、有效证据复用与失效新run、CAS和组合验收。986文件只读阶段零变化，详planning-review.md；同一architect定向复核确认两项在规划层闭合、未确认修订引入新矛盾，991文件复核阶段零变化；修订4待人工评审，仍planning，不改业务/start/提交/push，其他任务状态与索引保持。 2026-10-23：用户已接受修订4和独立复核，授权本轮实施；批准三件套hash及HEAD01e6c1a无漂移，CON-103依赖门通过。根993受控路径及索引已保护，实际独立工作树/分支为rnd504-current-integration、codex/rnd504-current-integration，仅本任务实施到review；生产disabled，不提交/push/archive或启动其他任务。详implementation-authorization.md。 2026-10-23：修订4实施完成，复用931d2f6并保留当前CON-104/TR-406/RND-502/503与共享file_id键；独立critical三P2由主会话核实并修复、最终复审closed，Trellis两轮检查无未闭合新增问题。最终应用35项通过（总63项覆盖），post-review release203项通过，既有113项仍6次已HEAD复现基线失败；component1/1、direct5/5/P0=0但P1/P2和视觉/真实存储/引擎门未验。仅本任务review，业务候选在codex/rnd504-current-integration独立工作树，原根dirty/302暂存删除与样本输入保持；生产disabled/production_ready=false，不提交/push/archive/add_session/其他任务。详implementation-summary.md、implementation-validation.md、implementation-review.md。 2026-10-23T21:34:52+08:00：用户已接受实现、独立复核、验证证据、列明基线失败及未验证边界，确认仅本任务三次本地提交及Trellis归档计划并授权执行。实际工作树codex/rnd504-current-integration；原根dirty/索引保护，生产disabled，不push/合回原分支/处理工作树/启动其他任务。归档完成前状态暂保review，详closeout.md。"
+    status: done
+    trellis_task_path: .trellis/tasks/archive/2026-10/10-16-rnd-504-word-preview-provider
+    resolution: implemented
+    notes: "2026-10-16：CON-103 已人工验收 done、归档 completed，依赖门通过；创建唯一子任务并完成调查/三件套/最小 context，停在规划评审门。原根 HEAD=4c40e6c（md2word/TAB-306）不含依赖，只读业务基线=033cb61（含 CON-103 实现 bd828da）；实施前必须准备正确依赖工作区并保留既有 dirty。现有开发视觉工具不满足正式 Provider/Artifact/重试，存在真实增量，非 skipped_existing；生产引擎未选/未安装，默认 disabled，port/fake 不替代真实沙箱/字体/Word 验收。不改业务代码、不 start、不提交/push；不更新其他任务状态。 2026-10-17：按用户要求完成一次独立规划审查并修订3项P2及S3证据边界；执行协议、预览自身阻断恢复、跨run请求账本和定向验收已固化，审查审计20261016T155059Z-rnd-504-1f39fea6通过；仍planning，等待最新规划评审，不start/实现/提交/push。 2026-10-23：本轮仅调查/规划，CON-103仍done且Git归档completed/人工接受，当前已有状态合同但原提交非HEAD祖先。发现已验收实现931d2f6及归档48818e9，复用原10-16子任务身份并恢复规划，历史原件保留research/history；当前HEAD01e6c1a无preview，37源路径中12缺失/25已有，规划最小复用集成，非当前skipped_existing，不重建第二套实现。当前22项状态/下载/对象身份基线及独立源快照40项预览测试通过，均不证明目标集成/生产沙箱。修订3三件套与最小context完成，待人工评审；保留CON-104、TR-406、RND-502/503及共享独立key，生产disabled，不选SaaS/装依赖、不切分支、不start、不改业务、不提交/push。原dirty/暂存树及其他任务条目保持，详当前子任务planning-validation.md。 2026-10-23：按用户要求安排一位全新architect（fork_turns=none）独立只读审查修订3；两项P2（登记中断后预算耗尽误完成、过期成功预览被新key继续alias）由主会话分别以源原函数内存反例核实，三件套修订4补恢复分类/登记阶段、有效证据复用与失效新run、CAS和组合验收。986文件只读阶段零变化，详planning-review.md；同一architect定向复核确认两项在规划层闭合、未确认修订引入新矛盾，991文件复核阶段零变化；修订4待人工评审，仍planning，不改业务/start/提交/push，其他任务状态与索引保持。 2026-10-23：用户已接受修订4和独立复核，授权本轮实施；批准三件套hash及HEAD01e6c1a无漂移，CON-103依赖门通过。根993受控路径及索引已保护，实际独立工作树/分支为rnd504-current-integration、codex/rnd504-current-integration，仅本任务实施到review；生产disabled，不提交/push/archive或启动其他任务。详implementation-authorization.md。 2026-10-23：修订4实施完成，复用931d2f6并保留当前CON-104/TR-406/RND-502/503与共享file_id键；独立critical三P2由主会话核实并修复、最终复审closed，Trellis两轮检查无未闭合新增问题。最终应用35项通过（总63项覆盖），post-review release203项通过，既有113项仍6次已HEAD复现基线失败；component1/1、direct5/5/P0=0但P1/P2和视觉/真实存储/引擎门未验。仅本任务review，业务候选在codex/rnd504-current-integration独立工作树，原根dirty/302暂存删除与样本输入保持；生产disabled/production_ready=false，不提交/push/archive/add_session/其他任务。详implementation-summary.md、implementation-validation.md、implementation-review.md。 2026-10-23T21:34:52+08:00：用户已接受实现、独立复核、验证证据、列明基线失败及未验证边界，确认仅本任务三次本地提交及Trellis归档计划并授权执行。实际工作树codex/rnd504-current-integration；原根dirty/索引保护，生产disabled，不push/合回原分支/处理工作树/启动其他任务。归档完成前状态暂保review，详closeout.md。 2026-10-23T21:38:35+08:00：人工验收及本任务三次本地提交/归档已获授权；工作提交8fa11d9779ce05e9cba1cfb7afee34ecbd58a4cf，本子任务completed并归档至所列路径，RND-504标done、implemented，父任务/其他任务状态不改。原根dirty/暂存与样本保护，生产disabled/production_ready=false；三P2已closed，已接受基线失败/未验边界不改写为通过。无push/合回/工作树删除归档/后续任务，日志单独本地提交。 2026-10-23：本轮用户明确选择保留done/completed，仅核查已有交付与当前根分支差异并补充验证收口/集成规划；已核实8fa11d97的父提交即当前HEAD01e6c1a，38个验收路径12缺失/26实现前，候选SHA与提交全部一致。补充三件套、对照和可移植context见原归档任务research/root-integration-20261023；不重复建设、不改业务、不start/提交/push，不合回当前dirty根目录，生产disabled。"
   - id: RND-505
     title: "PDF/IR/Word 页映射"
     phase: R5
@@ -401,10 +401,10 @@ tasks:
     suggested_branch: md2word/RND-505
     trellis_slug: rnd-505-pdf-ir-word-page-mapping
     prompt_file: docs/implementation/codex-prompts/RND-505.md
-    status: todo
-    trellis_task_path: null
+    status: review
+    trellis_task_path: .trellis/tasks/10-24-rnd-505-pdf-ir-word-page-mapping
     resolution: null
-    notes: null
+    notes: "2026-10-24实施授权：用户已接受v2及独立复核，授权隔离工作树G0→实现至review，未授权提交/push。实际codex/rnd505-v2-implementation@8fa11d97加未提交G0差量，G0复核无新增阻断，81/87/203通过、177两项及58三次历史失败逐项同签名；component1/direct5通过。任务已在隔离树start，原根全部dirty/index保护。 2026-10-24：用户授权同步RND-501已验收状态并解除旧阻塞，RND-501/RND-504均done/implemented且人工验收证据已核。以create --parent --no-start创建唯一子任务，仅调查规划。RND-501(69906a5e)与RND-504(8fa11d97)统一基线集成及RND-502/503、TR/CON共存回归为实施前置门，当前根未集成，不据完成状态假定代码可用。三件套v1、研究和最小context已完成，task validate通过（implement 8/check 9，无警告）；独立规划审查问题已修订，统一基线G0未满足，停人工规划评审门；不改业务、不start、不提交/push，保留既有dirty/index。 随后按用户要求安排全新architect（独立上下文）只读审查，确认1P1/1P2：旧v1书签语义与图片/模板冲突证明缺口、完整trace无正文时entries形状矛盾。主会话逐项核实后修订三件套v2，新增独立可选锚点证明并保留原认证语义，补三恢复入口/脱敏/B1及no_target合同；同一审查者复核两项闭合，无新增实质风险。context仍implement8/check9且validate无警告，详planning-review-round2.md；仍planning，G0未满足，等待v2人工审核，不集成/业务修改/start/提交/push。 实施收口：通用非可见marker与独立创建证明、来源/实际序低置信页映射、原manifest可选合同与局部reader、三恢复入口/安全摘要已完成。339集中测试仍5次既有失败且同签名，checker14受影响/独立P2复验通过；补丁后release203/OpenAPI current、component1/direct5与B1实际源码/进程/三入口通过。独立critical无未关闭新增阻断，停review/Trellis in_progress，等待人工验收；实际工作树与完整证据见implementation-validation.md。原根全部dirty/index保持，生产disabled，不commit/push/archive或合回。 2026-10-24：用户已接受RND-505实现和全新独立复审，授权隔离树本地提交G0与RND-505及Trellis收口；5次基线failure/0error与未验环境门如实保留，不重复测试、不push、不合回原根，归档完成后仅本任务done。详closeout.md。"
   - id: RND-506
     title: "页级 DOCX 质量检查"
     phase: R5
@@ -413,10 +413,10 @@ tasks:
     suggested_branch: md2word/RND-506
     trellis_slug: rnd-506-page-level-docx-quality
     prompt_file: docs/implementation/codex-prompts/RND-506.md
-    status: todo
+    status: blocked
     trellis_task_path: null
     resolution: null
-    notes: null
+    notes: "2026-10-16：规划前依赖门检查未通过：RND-504、RND-505 均为 todo，尚未达到 done 或经人工接受的 skipped_existing。按本次规划请求的停止条件标记 blocked 并停止；未创建 RND-506 Trellis 子任务，未编写规划三件套或配置 context，未执行 task.py start、提交或 push。待两项依赖满足准入条件后再恢复调查和规划；不更新其他任务状态。"
   - id: QA-601
     title: "统一 Review 模型"
     phase: R6

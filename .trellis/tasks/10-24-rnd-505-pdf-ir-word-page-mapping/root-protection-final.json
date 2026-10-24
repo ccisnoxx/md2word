@@ -1,0 +1,18 @@
+{
+  "protected_root": "/Users/sc/PycharmProjects/md2word",
+  "baseline_paths": 1118,
+  "changed_paths": [],
+  "index_unchanged": true,
+  "status_unchanged": true,
+  "root_head": "01e6c1add86f1ba7f24abc120629fa2fe6bd5ed9",
+  "manifest_changes_vs_original_root": [
+    "RND-505"
+  ],
+  "other_manifest_entries_unchanged": 44,
+  "worktree": "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word",
+  "tooling_links": [
+    ".venv -> 原有venv，未安装依赖",
+    "mineru_result -> 只读已有样本，输出在工作树tests/tmp"
+  ],
+  "committed_or_pushed": false
+}

@@ -1,0 +1,29 @@
+{
+  "protected_root": "/Users/sc/PycharmProjects/md2word",
+  "snapshot": "/var/folders/m5/j06tv2sn1hn93d6f33j559jm0000gn/T/rnd505-post-review-793_lvof",
+  "baseline_paths": 1118,
+  "changed_paths": [],
+  "staged_entries_unchanged": true,
+  "status_unchanged": true,
+  "candidate_staged_entries_unchanged": true,
+  "root_head": "01e6c1add86f1ba7f24abc120629fa2fe6bd5ed9",
+  "candidate_head": "8fa11d9779ce05e9cba1cfb7afee34ecbd58a4cf",
+  "approved_v2_unchanged": {
+    "prd.md": true,
+    "design.md": true,
+    "implement.md": true
+  },
+  "current_review_maintained_file_delta": [
+    ".trellis/spec/backend/page-mapping-contract.md",
+    "docs/contracts/pdf-ir-word-page-mapping-contract.md",
+    "tests/test_preview_page_mapping.py",
+    "app/services/renderer/evidence.py",
+    "tests/test_document_job_result_persistence.py",
+    "tests/test_document_job_word_preview.py"
+  ],
+  "committed_or_pushed": false,
+  "manifest_changes_vs_original_root": [
+    "RND-505"
+  ],
+  "other_manifest_entries_unchanged": 44
+}

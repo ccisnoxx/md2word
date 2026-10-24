@@ -21,6 +21,14 @@ from app.domains.document_jobs.preview_state import (
 from app.domains.resources.models import utc_now
 from app.domains.files.models import DocumentFileRecord, WORD_PREVIEW_FILE_TYPES
 from app.services.preview.models import PreviewFailure, PreviewPolicy, PreviewResult, sha256, validate_docx, validate_result
+from app.services.preview.page_mapping import (
+    MappingBinding, build_page_mapping, read_page_mapping, unavailable_mapping,
+)
+from app.services.document_ir.models import DocumentIR
+from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
+from app.services.renderer.render_plan import RenderPlan
+from app.services.renderer.block_evidence import BlockRenderEvidence
+from app.services.renderer.block_anchors import validate_block_anchor_evidence
 from app.services.preview.provider import WordPreviewProvider
 from app.services.preview.sandbox_adapter import SandboxWordPreviewProvider
 
@@ -210,6 +218,16 @@ class DocumentJobPreviewService:
                 "profile_id": state.profile_id, "profile_sha256": state.profile_sha256, "run_id": run.run_id,
                 "attempt": run.attempt_count, "status": status, "error_code": error.code if error else None,
                 "created_at": utc_now().isoformat(), **evidence, **descriptors}
+            if status == "succeeded":
+                plan, trace, anchors = _mapping_source(file, docx, self.file_repository, self.file_service)
+                binding = _mapping_binding(file, state, run, pdf=pdf, page_count=output.page_count, plan=plan)
+                try:
+                    manifest["page_mapping"] = build_page_mapping(binding=binding, plan=plan,
+                        block_evidence=trace, block_anchor_evidence=anchors)
+                except Exception:
+                    # 只有纯 mapper 隔离未预期错误；上面的原件读取/认证与下面登记仍显式失败。
+                    manifest["page_mapping"] = unavailable_mapping(binding, "unexpected_error")
+                    self.logger.error("[job_id=%s trace_id=%s reason_code=unexpected_error] 页映射推断失败。", job.id, trace_id)
             # manifest 或 CAS 持久化失败显式传播，执行收尾不能伪成功。
             manifest_file = self._register(current, file, "word_preview_manifest", "manifest.json",
                                           json.dumps(manifest, ensure_ascii=False).encode(), "application/json")
@@ -264,6 +282,73 @@ class DocumentJobPreviewService:
         except Exception:
             # 状态提交后事件失败不能触发重渲染；保留现有无 outbox 的诊断边界。
             self.logger.error("[job_id=%s stage=%s] 预览事件追加失败，已提交状态保持有效。", job.id, job.stage)
+
+
+def _mapping_source(source, content, file_repository, file_service):
+    """只读取选定主件的原始 IR 与持久证据；存储/原件损坏不能借映射降级。"""
+    metadata = source.metadata
+    if metadata.get("render_trace_status") != "complete":
+        return None, None, None
+    ir_id = metadata.get("document_ir_file_id")
+    if not isinstance(ir_id, str) or not ir_id:
+        return None, None, None
+    with _preview_storage_io():
+        ir_file = file_repository.get_document_file(ir_id)
+    if (ir_file is None or ir_file.status != "uploaded" or ir_file.file_type != "document_ir"
+            or (ir_file.expires_at is not None and ir_file.expires_at <= utc_now())
+            or (ir_file.tenant_id, ir_file.company_id, ir_file.job_id)
+            != (source.tenant_id, source.company_id, source.job_id)):
+        # 原 IR 生命周期与 scope 不能成为历史主件的新可用性门，也不能扩展读取权限。
+        return None, None, None
+    try:
+        ir_bytes = _read_artifact(ir_file, file_service)
+    except _PreviewUnavailable:
+        return None, None, None
+    try:
+        document_ir = DocumentIR.model_validate_json(ir_bytes)
+    except (ValidationError, ValueError):
+        raise ValueError("主件的原始 IR 数据无法认证。") from None
+    evidence = build_renderer_evidence(document_ir, content,
+        formula_report=metadata.get("formula_report"), image_layout_report=metadata.get("image_layout_report"),
+        expected_template_version_id=metadata.get("template_version_id"),
+        render_plan=metadata.get("render_plan"), block_render_evidence=metadata.get("block_render_evidence"),
+        block_anchor_evidence=metadata.get("block_anchor_evidence"))
+    ensure_renderer_integrity(evidence)
+    if evidence["render_trace_status"] != "complete":
+        return None, None, None
+    plan = RenderPlan.model_validate(evidence["render_plan"])
+    trace = BlockRenderEvidence.model_validate(evidence["block_render_evidence"])
+    anchors = validate_block_anchor_evidence(evidence.get("block_anchor_evidence"), plan=plan,
+        block_evidence=trace, word_content=content)
+    return plan, trace, anchors
+
+
+def _mapping_binding(source, state, run, *, pdf=None, page_count=None, plan=None):
+    """文件及 run 身份都来自同次选定 receipt/已验证预览，不接受外部请求覆盖。"""
+    source_id, ir_id = source.metadata.get("source_file_id"), source.metadata.get("document_ir_file_id")
+    return MappingBinding(source_pdf_file_id=source_id if isinstance(source_id, str) else None,
+        document_ir_file_id=ir_id if isinstance(ir_id, str) else None,
+        input_ir_sha256=plan.input_ir_sha256 if plan is not None else None,
+        plan_sha256=plan.plan_sha256 if plan is not None else None,
+        source_generation=state.source_generation, result_file_id=source.id,
+        docx_sha256=source.checksum_sha256, run_id=run.run_id, attempt=run.attempt_count,
+        profile_sha256=state.profile_sha256, preview_pdf_file_id=pdf.id if pdf is not None else None,
+        preview_pdf_sha256=pdf.checksum_sha256 if pdf is not None else None, page_count=page_count)
+
+
+def current_page_mapping(job, file_repository, file_service):
+    """内部只读视图；沿原完整预览认证后，独立解析可选 mapping，不修改 manifest。"""
+    state = job.word_preview_state
+    run = state.current_run
+    records, body = _artifact_evidence(job, run, file_repository, file_service)
+    source = records[0]
+    with _preview_storage_io():
+        content = file_service.read_file_content(source)
+    selected_source = job.prepared_result.file
+    plan, _, _ = _mapping_source(selected_source, content, file_repository, file_service) if body["status"] == "succeeded" else (None, None, None)
+    pdf = next((record for record in records if record.file_type == "word_preview_pdf"), None)
+    binding = _mapping_binding(selected_source, state, run, pdf=pdf, page_count=body.get("page_count"), plan=plan)
+    return read_page_mapping(body.get("page_mapping"), binding=binding)
 
 
 class _PreviewUnavailable(Exception):

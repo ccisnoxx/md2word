@@ -20,6 +20,12 @@ class Rnd503DependencyIntegrationTests(TestCase):
                     job, ir = helper._install_formula_ir(runtime, execution, job, source="$x^2+3$")
                     payload = json.loads(ir.model_dump_json())
                     if shape in {"absent", "none"}:
+                        # IR-205 账本依赖 IR-201 checksum；真实旧 IR 同时没有这组新字段。
+                        for key in ("logical_table_groups_version", "logical_table_groups", "logical_table_group_counts"):
+                            payload["metadata"].pop(key, None)
+                        for block in payload["blocks"]:
+                            for key in ("logical_group_id", "table_fragment_id", "source_spans"):
+                                block["metadata"].pop(key, None)
                         for key in ("mineru_validation", "mineru_validation_input"):
                             if shape == "absent":
                                 payload["metadata"].pop(key, None)

@@ -1,0 +1,70 @@
+{
+  "t0-preview": {
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_renderer_render_plan",
+      "tests.test_renderer_block_evidence",
+      "tests.test_word_preview_provider",
+      "tests.test_document_job_word_preview",
+      "tests.test_document_job_preview_persistence"
+    ],
+    "exit_code": 0,
+    "seconds": 80.29,
+    "log": "g0-final-t0-preview.log"
+  },
+  "t0-renderer-execution": {
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_formula_rendering",
+      "tests.test_image_group_rendering",
+      "tests.test_document_ir_word_renderer_layout",
+      "tests.test_document_job_result_persistence",
+      "tests.test_document_job_execution_stages",
+      "tests.test_document_job_delivery_state"
+    ],
+    "exit_code": 1,
+    "seconds": 64.58,
+    "log": "g0-final-t0-renderer-execution.log"
+  },
+  "ir-dependencies": {
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_canonical_table_grid",
+      "tests.test_canonical_table_grid_compatibility",
+      "tests.test_document_ir_logical_table_group",
+      "tests.test_document_ir_mineru_converter_layout",
+      "tests.test_document_ir_translation",
+      "tests.test_rnd503_dependency_integration"
+    ],
+    "exit_code": 0,
+    "seconds": 6.15,
+    "log": "g0-final-ir-dependencies.log"
+  },
+  "tr-con": {
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_document_job_modes",
+      "tests.test_document_job_download_availability",
+      "tests.test_document_job_download_availability_api",
+      "tests.test_document_job_delivery_state_api",
+      "tests.test_generated_artifact_identity",
+      "tests.test_artifact_retention",
+      "tests.test_translation_integrity_execution"
+    ],
+    "exit_code": 1,
+    "seconds": 19.39,
+    "log": "g0-final-tr-con.log"
+  }
+}

@@ -316,7 +316,8 @@ def _verify_image_report(document_ir: DocumentIR, content: bytes, report: dict, 
                 inlines = paragraph.findall(".//wp:inline", _NS)
                 _check(not paragraph.findall(".//wp:anchor", _NS), "浮动图片")
                 _check(len(inlines) == 1, "图片缺失或重复")
-                image_nodes = [node for node in paragraph if node.tag != qn("w:pPr")]
+                from app.services.renderer.block_anchors import _paragraph_projection
+                image_nodes = _paragraph_projection(root, paragraph)
                 _check(len(image_nodes) == 3 and image_nodes[1].tag == qn("w:r")
                        and len(image_nodes[1]) == 1 and image_nodes[1][0].tag == qn("w:drawing")
                        and len(image_nodes[1][0]) == 1, "图片段含未登记内容")
@@ -400,7 +401,8 @@ def _verify_anchor(root: Any, paragraph: Any, start: Any) -> None:
     bookmark_id = start.get(qn("w:id"))
     starts = [node for node in root.findall(".//w:bookmarkStart", _NS) if node.get(qn("w:id")) == bookmark_id]
     ends = [node for node in root.findall(".//w:bookmarkEnd", _NS) if node.get(qn("w:id")) == bookmark_id]
-    content = [node for node in paragraph if node.tag != qn("w:pPr")]
+    from app.services.renderer.block_anchors import _paragraph_projection
+    content = _paragraph_projection(root, paragraph)
     _check(len(starts) == len(ends) == 1 and content[0] is start and content[-1] is ends[0], "图片或注释锚点范围")
 
 

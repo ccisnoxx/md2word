@@ -1,0 +1,21 @@
+.......FF.........
+======================================================================
+FAIL: test_cell_caption_tabs_empty_sides_and_runtime_ownership_are_preserved (tests.test_renderer_block_evidence.BlockEvidenceTests.test_cell_caption_tabs_empty_sides_and_runtime_ownership_are_preserved) (left='A<span><pre>&amp;#9;</pre></span>', right='B')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_renderer_block_evidence.py", line 173, in test_cell_caption_tabs_empty_sides_and_runtime_ownership_are_preserved
+    self.assertEqual(len(list(node.iter(qn("w:tab")))), int("<pre>" in caption))
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_cell_caption_tabs_empty_sides_and_runtime_ownership_are_preserved (tests.test_renderer_block_evidence.BlockEvidenceTests.test_cell_caption_tabs_empty_sides_and_runtime_ownership_are_preserved) (left='A', right='<span><pre>&amp;#9;</pre></span>B')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/test_renderer_block_evidence.py", line 173, in test_cell_caption_tabs_empty_sides_and_runtime_ownership_are_preserved
+    self.assertEqual(len(list(node.iter(qn("w:tab")))), int("<pre>" in caption))
+AssertionError: 0 != 1
+
+----------------------------------------------------------------------
+Ran 17 tests in 2.438s
+
+FAILED (failures=2)

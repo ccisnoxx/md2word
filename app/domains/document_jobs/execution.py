@@ -53,8 +53,14 @@ from app.domains.document_jobs.workflow import (
 )
 from app.services.document_ir import MinerUToDocumentIRService
 from app.services.renderer import DocumentIRRenderOptions, DocumentIRWordRenderer
-from app.services.renderer.evidence import build_renderer_evidence, ensure_renderer_integrity
+from app.services.document_ir.artifact_validator import MinerUArtifactValidationError
+from app.services.document_ir.integrity import DocumentIntegrityError
+from app.services.renderer.evidence import (
+    LEGACY_RENDERER_EVIDENCE_KEYS, build_renderer_aggregate_evidence, build_renderer_evidence,
+    build_renderer_event_summary, ensure_renderer_integrity, validate_persisted_render_evidence,
+)
 from app.services.renderer import image_evidence
+from app.services.renderer.block_anchors import validate_block_anchor_evidence
 from app.services.renderer.layout_plan import build_layout_plan
 from app.domains.translation.audit import (
     TranslationAuditService,
@@ -847,12 +853,22 @@ class DocumentJobExecutionService:
         with tempfile.TemporaryDirectory(prefix="document_job_ir_") as temp_dir:
             raw_zip_path = Path(temp_dir) / raw_file.original_filename
             raw_zip_path.write_bytes(self.file_service.read_file_content(raw_file))
-            result = self.document_ir_service.convert_zip(
-                raw_zip_path,
-                job_id=job.id,
-                source_file_id=job.source_file_id,
-                document_language=job.document_language,
-            )
+            validation_input = {
+                "mineru_raw_result_file_id": raw_file.id,
+                "mineru_raw_result_sha256": raw_file.checksum_sha256,
+                "retry_count": job.retry_count,
+            }
+            try:
+                result = self.document_ir_service.convert_zip(
+                    raw_zip_path,
+                    job_id=job.id,
+                    source_file_id=job.source_file_id,
+                    document_language=job.document_language,
+                )
+            except (MinerUArtifactValidationError, DocumentIntegrityError) as error:
+                error.mineru_validation_input = validation_input
+                return self._fail_stage_attempt(job, error, trace_id=trace_id)
+            result.document.metadata.mineru_validation_input = validation_input
 
         image_file_ids: list[str] = []
         for image_asset in result.image_assets:
@@ -3180,7 +3196,7 @@ class DocumentJobExecutionService:
             quality_started_at = time.perf_counter()
             try:
                 renderer_metadata = build_renderer_evidence(
-                    document_ir, word_content, layout_plan, formula_report=render_result.formula_report,
+                    document_ir, word_content, layout_plan, render_result=render_result, formula_report=render_result.formula_report,
                     image_layout_report=render_result.image_layout_report,
                     expected_template_version_id=template_selection.template_version_id,
                     expected_generation_policy=image_evidence.IMAGE_GENERATION_POLICY,
@@ -3189,7 +3205,8 @@ class DocumentJobExecutionService:
             except Exception as exc:
                 failed = self._mark_failed(
                     checking, failed_stage="quality_checking", error_code="render_failed",
-                    error_message=str(exc), trace_id=trace_id,
+                    error_message=self._worker_failure_message(exc), trace_id=trace_id,
+                    failure_evidence=self._worker_failure_evidence(exc),
                     duration_ms=int((time.perf_counter() - quality_started_at) * 1000),
                 )
                 if failed.status == "running" and failed.retry_count == checking.retry_count and failed.prepared_result is not None:
@@ -3207,7 +3224,7 @@ class DocumentJobExecutionService:
             self._record_event(
                 uploading, event_type="stage_succeeded", stage="quality_checking",
                 message="Word 文档质量检查已通过。",
-                payload={"document_ir_file_id": ir_file.id, **self._safe_renderer_event_metadata(renderer_metadata)},
+                payload={"document_ir_file_id": ir_file.id, **build_renderer_event_summary(renderer_metadata)},
                 trace_id=trace_id, duration_ms=int((time.perf_counter() - quality_started_at) * 1000),
             )
             self._record_event(
@@ -3252,7 +3269,8 @@ class DocumentJobExecutionService:
             if validating_legacy:
                 failed_stage, error_code = "uploading", "oss_failed"
             failed = self._mark_failed(attempt, failed_stage=failed_stage, error_code=error_code,
-                                       error_message=str(exc), trace_id=trace_id)
+                                       error_message=self._worker_failure_message(exc), trace_id=trace_id,
+                                       failure_evidence=self._worker_failure_evidence(exc))
             if failed.status == "running" and failed.retry_count == attempt.retry_count and failed.prepared_result is not None:
                 return self._finish_prepared_result(failed, trace_id=trace_id)
             return failed
@@ -3300,24 +3318,11 @@ class DocumentJobExecutionService:
             return self._mark_timed_out_if_needed(current, trace_id=trace_id) or current
         self._record_event(completed, event_type="file_registered", stage="uploading", message="生成 Word 已保存。",
                            payload={"file_id": word_file.id, "file_type": word_file.file_type,
-                                    "object_key": word_file.object_key,
-                                    **self._safe_renderer_event_metadata(word_file.metadata)}, trace_id=trace_id)
+                                    **build_renderer_event_summary(word_file.metadata)}, trace_id=trace_id)
         self._record_event(completed, event_type="stage_succeeded", stage="completed", message="文档任务已完成。",
                            payload={"result_file_id": word_file.id, "template_version_id": completed.template_version_id},
                            trace_id=trace_id)
         return completed
-
-    @staticmethod
-    def _safe_renderer_event_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
-        """逐项证据与格式快照仅随内部文件保存，普通事件保留安全汇总。"""
-
-        safe = {key: value for key, value in metadata.items() if key not in {"formula_report", "image_layout_report"}}
-        quality = safe.get("docx_quality")
-        if isinstance(quality, dict):
-            safe["docx_quality"] = {
-                key: value for key, value in quality.items() if key != "latex_residue_examples"
-            }
-        return safe
 
     def _validate_render_result_file(self, record: DocumentFileRecord) -> None:
         """新报告绑定文件原始 IR，不能用当前代 IR 重新解释历史主件。"""
@@ -3349,16 +3354,31 @@ class DocumentJobExecutionService:
         if record.size_bytes != len(content) or record.checksum_sha256 != f"sha256:{hashlib.sha256(content).hexdigest()}":
             raise ValueError("主 DOCX 字节与 SHA-256 描述不一致。")
         ir = DocumentIR.model_validate_json(self.file_service.read_file_content(ir_file))
-        evidence = build_renderer_evidence(ir, content, formula_report=report, image_layout_report=image_report,
+        evidence = build_renderer_aggregate_evidence(ir, content, formula_report=report, image_layout_report=image_report,
             expected_template_version_id=record.metadata.get("template_version_id") if has_image else None)
         ensure_renderer_integrity(evidence)
         if any(record.metadata.get(key) != value for key, value in evidence.items()
                if key not in {"mineru_validation", "mineru_validation_input", "caption_reconciliation"}
                or key in record.metadata):
             raise ValueError("主 DOCX 的公式报告或质量证据与实际字节不一致。")
+        self._validate_optional_block_anchors(ir, content, record.metadata)
+
+    def _validate_optional_block_anchors(self, document_ir: DocumentIR, content: bytes, metadata: dict[str, Any]) -> None:
+        """历史恢复只局部认证可选锚点；保留原 metadata，不重建或升级创建事实。"""
+        if "block_anchor_evidence" not in metadata:
+            return
+        verified = validate_persisted_render_evidence(document_ir, content,
+            render_plan=metadata.get("render_plan"), block_render_evidence=metadata.get("block_render_evidence"))
+        anchors = None
+        if verified is not None:
+            plan, trace = verified
+            anchors = validate_block_anchor_evidence(metadata["block_anchor_evidence"], plan=plan,
+                block_evidence=trace, word_content=content)
+        if anchors is None:
+            self.logger.warning("[reason_code=anchor_missing] 历史主件的可选锚点证据不可用。")
 
     def _document_ir_layout_metadata(self, document_ir: DocumentIR) -> dict[str, Any]:
-        """生成 DocumentIR artifact 与事件共用的布局诊断摘要。"""
+        """保存私有 IR 诊断；事件出口另行投影。"""
 
         return {
             "schema_version": document_ir.schema_version,
@@ -3367,6 +3387,9 @@ class DocumentJobExecutionService:
             "block_count": len(document_ir.blocks),
             "layout_block_count": sum(1 for block in document_ir.blocks if block.layout is not None),
             "quality_flags": document_ir.quality_flags,
+            "mineru_validation": (document_ir.metadata.mineru_validation.model_dump(mode="json")
+                                  if document_ir.metadata.mineru_validation is not None else None),
+            "mineru_validation_input": document_ir.metadata.mineru_validation_input,
         }
 
     def _record_event(
@@ -3381,6 +3404,18 @@ class DocumentJobExecutionService:
         level: str = "info",
         duration_ms: int | None = None,
     ) -> None:
+        # 新完整派生证据只属于受权 Artifact，普通事件不复制私有对象。
+        payload = {key: value for key, value in payload.items() if key not in {"block_anchor_evidence", "page_mapping"}}
+        if payload.get("schema_version") in {"document-ir/v1", "document-ir/v2"}:
+            outer_keys = {
+                "file_id", "file_type", "document_ir_file_id", "source_document_ir_file_id",
+                "image_asset_file_ids", "image_assets_archive_file_id", "image_asset_count",
+                "translation", "translation_batch_count", "translation_item_count",
+            }
+            payload = {
+                **{key: value for key, value in payload.items() if key in outer_keys},
+                **build_renderer_event_summary(payload),
+            }
         event = DocumentJobEventRecord(
             id=f"event_{uuid4().hex[:12]}",
             tenant_id=job.tenant_id,
@@ -3473,12 +3508,13 @@ class DocumentJobExecutionService:
         if record.size_bytes != len(content) or record.checksum_sha256 != f"sha256:{hashlib.sha256(content).hexdigest()}":
             raise ValueError("历史主件字节与 SHA-256 描述不一致。")
         ir = DocumentIR.model_validate_json(self.file_service.read_file_content(self._get_document_ir_file(job)))
-        evidence = build_renderer_evidence(ir, content)
+        evidence = build_renderer_aggregate_evidence(ir, content)
         ensure_renderer_integrity(evidence)
         if any(record.metadata.get(key) != value for key, value in evidence.items()
                if key not in {"mineru_validation", "mineru_validation_input", "caption_reconciliation"}
                or key in record.metadata):
             raise ValueError("历史主件缺少与实际字节一致的质量证据。")
+        self._validate_optional_block_anchors(ir, content, record.metadata)
         return record
 
     def _build_image_loader(self, job: DocumentJobRecord) -> Callable[[DocumentIRAsset], bytes | None]:
@@ -3592,13 +3628,34 @@ class DocumentJobExecutionService:
             return failed_stage, "oss_failed"
         return failed_stage, "document_job_worker_failed"
 
+    @staticmethod
+    def _worker_failure_message(error: Exception) -> str:
+        """完整性异常的自由证据也不能借异常消息进入事件或日志。"""
+        if isinstance(error, DocumentIntegrityError):
+            return str(DocumentIntegrityError(error.boundary, build_renderer_event_summary(dict(error.evidence))))
+        return str(error)
+
+    @staticmethod
+    def _worker_failure_evidence(error: Exception) -> dict[str, Any]:
+        """提取原异常拥有的结构化报告，不读取可能已换代的任务状态。"""
+
+        evidence: dict[str, Any] = {}
+        if isinstance(error, MinerUArtifactValidationError):
+            evidence["mineru_validation"] = error.report.model_dump(mode="json")
+        elif isinstance(error, DocumentIntegrityError):
+            evidence = dict(error.evidence)
+        validation_input = getattr(error, "mineru_validation_input", None)
+        if validation_input is not None:
+            evidence["mineru_validation_input"] = validation_input
+        return build_renderer_event_summary(evidence)
+
     def _fail_stage_attempt(
         self, job: DocumentJobRecord, error: Exception, *, trace_id: str | None,
     ) -> DocumentJobRecord:
         """只使用本调用已接收的阶段快照归类失败，持久化仍核对代数、IR 和结果空槽。"""
 
         failed_stage, error_code = self._classify_worker_failure(error, job)
-        error_message = str(error)
+        error_message = self._worker_failure_message(error)
         if not isinstance(error, (ApiError, FileNotFoundError, OSError, ValueError, RuntimeError, MinerUError, zipfile.BadZipFile)):
             error_code = "document_job_unexpected_error"
             error_message = f"Worker 未预期异常: {type(error).__name__}: {error}"
@@ -3609,6 +3666,7 @@ class DocumentJobExecutionService:
             job, failed_stage=failed_stage, error_code=error_code,
             error_message=error_message, trace_id=trace_id,
             formula_protection=error.formula_protection if isinstance(error, DocumentIRTranslationError) else None,
+            failure_evidence=self._worker_failure_evidence(error),
         )
 
     def _mark_failed(
@@ -3624,6 +3682,7 @@ class DocumentJobExecutionService:
         duration_ms: int | None = None,
         expected_prepared_result_file_id: str | None = None,
         allow_prepared_result: bool = False,
+        failure_evidence: dict[str, Any] | None = None,
     ) -> DocumentJobRecord:
         now = utc_now()
         failed = self.job_repository.update_document_job_if_current(
@@ -3649,6 +3708,7 @@ class DocumentJobExecutionService:
         payload = {
             "error_code": error_code,
             "error_message": error_message,
+            **build_renderer_event_summary(failure_evidence or {}),
             **({"prepared_result_file_id": failed.prepared_result.file.id} if failed.prepared_result else {}),
         }
         if integrity is not None:

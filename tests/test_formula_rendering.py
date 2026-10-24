@@ -499,11 +499,13 @@ class FormulaRenderEvidenceTests(unittest.TestCase):
     def test_missing_duplicate_or_forged_anchor_is_rejected(self):
         ir = document(DocumentIRBlock(id="f", type="formula", order=0, latex="x^2"))
         result = render(ir)
+        def formula_start(root):
+            return next(node for node in root.findall(".//w:bookmarkStart", NS)
+                        if node.get(f"{{{NS['w']}}}name") == result.formula_report["entries"][0]["anchor"])
         def missing(root):
-            root.find(".//w:bookmarkStart", NS).set(f"{{{NS['w']}}}name", "missing")
+            formula_start(root).set(f"{{{NS['w']}}}name", "missing")
         def duplicate(root):
-            parent = root.find(".//w:p", NS)
-            parent.append(copy.deepcopy(parent.find("w:bookmarkStart", NS)))
+            root.find(".//w:p", NS).append(copy.deepcopy(formula_start(root)))
         def unregistered(root):
             root.find(".//w:p", NS).append(copy.deepcopy(root.find(".//m:oMath", NS)))
         for change in (missing, duplicate, unregistered):

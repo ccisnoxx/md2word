@@ -30,6 +30,7 @@ from app.domains.document_jobs.models import (
 )
 from app.core.errors import ApiError
 from app.domains.files.models import DocumentFileRecord
+from app.services.renderer.evidence import build_renderer_event_summary, controlled_quality_flags
 from app.domains.files.schemas import DocumentFileSummaryResponse
 from app.domains.resources.models import utc_now
 from app.domains.translation.modes import translation_mode_for_document_job_mode
@@ -832,18 +833,18 @@ def _build_document_file_quality_evidence(file: DocumentFileRecord) -> dict[str,
         value = metadata.get(key)
         if isinstance(value, str | int | float | bool):
             evidence[key] = value
-    quality_flags = _read_string_list(metadata.get("quality_flags"))
+    quality_flags = controlled_quality_flags(metadata.get("quality_flags"))
     if quality_flags:
         evidence["quality_flags"] = quality_flags
-    layout_quality_flags = _read_string_list(metadata.get("layout_quality_flags"))
+    layout_quality_flags = controlled_quality_flags(metadata.get("layout_quality_flags"))
     if layout_quality_flags:
         evidence["layout_quality_flags"] = layout_quality_flags
-    docx_quality = metadata.get("docx_quality")
+    docx_quality = build_renderer_event_summary(metadata).get("docx_quality")
     if isinstance(docx_quality, dict):
         safe_docx_quality = {
             key: value
             for key in DOCUMENT_JOB_DOCX_QUALITY_KEYS
-            if isinstance((value := docx_quality.get(key)), str | int | float | bool)
+            if type(value := docx_quality.get(key)) in {int, bool}
         }
         if safe_docx_quality:
             evidence["docx_quality"] = safe_docx_quality

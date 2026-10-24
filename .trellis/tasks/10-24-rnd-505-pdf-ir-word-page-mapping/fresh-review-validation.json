@@ -1,0 +1,55 @@
+{
+  "protected_paths": 1116,
+  "changed_existing": [
+    ".trellis/tasks/10-24-rnd-505-pdf-ir-word-page-mapping/design.md",
+    ".trellis/tasks/10-24-rnd-505-pdf-ir-word-page-mapping/implement.md",
+    ".trellis/tasks/10-24-rnd-505-pdf-ir-word-page-mapping/planning-validation.md",
+    ".trellis/tasks/10-24-rnd-505-pdf-ir-word-page-mapping/prd.md",
+    ".trellis/tasks/10-24-rnd-505-pdf-ir-word-page-mapping/research/preview-baseline.md",
+    ".trellis/tasks/10-24-rnd-505-pdf-ir-word-page-mapping/research/renderer-baseline.md",
+    ".trellis/tasks/10-24-rnd-505-pdf-ir-word-page-mapping/task.json",
+    "docs/implementation/codex-task-manifest.yaml"
+  ],
+  "new_paths_before_this_report": [
+    ".trellis/tasks/10-24-rnd-505-pdf-ir-word-page-mapping/planning-review-round2.md"
+  ],
+  "index_unchanged": true,
+  "unrelated_files_unchanged": true,
+  "manifest_changed_entries": [
+    "RND-505"
+  ],
+  "other_manifest_entries_unchanged": 44,
+  "task_current_output": "Current task: (none)\nSource: none",
+  "head": "01e6c1add86f1ba7f24abc120629fa2fe6bd5ed9",
+  "branch": "codex/preserve-rnd503-dirty-20261023",
+  "triad": {
+    "prd.md": {
+      "v1_sha256": "8917f1d6739efb766a1220d074d8554c1259fd86e1ab61a74846ce5bc855c879",
+      "v2_sha256": "86af71bf412d9e9f57d277a2279c275eba70443c4d00a631a42f0a67c879e2e1"
+    },
+    "design.md": {
+      "v1_sha256": "9a5a0c3cc9dbbc3c00e14e388043a09a4beac55034571c2c02fe063fd739fed1",
+      "v2_sha256": "4a2edca7a32b1d8f597802906b2b6210a2d5a6f2361ff2cbe58d3c9d98718474"
+    },
+    "implement.md": {
+      "v1_sha256": "d9f7198a6d6a5d1f1f0e7b38b61577fd042180319192bbf0c34bf44001e2048b",
+      "v2_sha256": "66c9381894a680d12a1bb66ff7c93febca0f80d1ed40fcf27b41c20c12d9d535"
+    }
+  },
+  "context_validation": {
+    "passed": true,
+    "implement": 8,
+    "check": 9,
+    "warnings": 0
+  },
+  "fresh_reviewer": "rnd505_fresh_architect_review",
+  "findings": {
+    "P1": "closed_in_plan",
+    "P2": "closed_in_plan"
+  },
+  "integration_gate": "not_satisfied",
+  "implementation_authorized": false,
+  "business_tests_run": false,
+  "task_start_executed": false,
+  "commit_or_push": false
+}

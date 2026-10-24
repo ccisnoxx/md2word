@@ -1,0 +1,33 @@
+{
+  "preview": {
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_word_preview_provider",
+      "tests.test_document_job_word_preview",
+      "tests.test_document_job_preview_persistence"
+    ],
+    "exit_code": 0,
+    "seconds": 56.21,
+    "log": "g0-baseline-preview.log"
+  },
+  "renderer_execution": {
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_formula_rendering",
+      "tests.test_image_group_rendering",
+      "tests.test_document_ir_word_renderer_layout",
+      "tests.test_document_job_result_persistence",
+      "tests.test_document_job_execution_stages",
+      "tests.test_document_job_delivery_state"
+    ],
+    "exit_code": 1,
+    "seconds": 52.25,
+    "log": "g0-baseline-renderer_execution.log"
+  }
+}

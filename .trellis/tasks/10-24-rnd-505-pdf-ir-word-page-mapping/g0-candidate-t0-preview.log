@@ -1,0 +1,188 @@
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+test_bytes_compatibility_and_same_instance_interleaving (tests.test_renderer_render_plan.RenderPlanTests.test_bytes_compatibility_and_same_instance_interleaving) ... ok
+test_duplicate_source_identity_fails_without_creating_word (tests.test_renderer_render_plan.RenderPlanTests.test_duplicate_source_identity_fails_without_creating_word) ... ok
+test_language_and_loaded_symbol_rules_are_path_independent (tests.test_renderer_render_plan.RenderPlanTests.test_language_and_loaded_symbol_rules_are_path_independent) ... ok
+test_plan_precedes_document_and_template_snapshot_is_consumed_once (tests.test_renderer_render_plan.RenderPlanTests.test_plan_precedes_document_and_template_snapshot_is_consumed_once) ... ok
+test_repeat_json_roundtrip_and_effective_config_change (tests.test_renderer_render_plan.RenderPlanTests.test_repeat_json_roundtrip_and_effective_config_change) ... ok
+test_standalone_plan_and_writer_share_table_strategy (tests.test_renderer_render_plan.RenderPlanTests.test_standalone_plan_and_writer_share_table_strategy) ... ok
+test_all_body_objects_annotations_and_empty_objects_keep_exact_owners (tests.test_renderer_block_evidence.BlockEvidenceTests.test_all_body_objects_annotations_and_empty_objects_keep_exact_owners) ... ok
+test_cell_caption_tabs_empty_sides_and_runtime_ownership_are_preserved (tests.test_renderer_block_evidence.BlockEvidenceTests.test_cell_caption_tabs_empty_sides_and_runtime_ownership_are_preserved) ... ok
+test_cell_math_captions_reject_missing_swapped_or_foreign_owners (tests.test_renderer_block_evidence.BlockEvidenceTests.test_cell_math_captions_reject_missing_swapped_or_foreign_owners) ... ok
+test_disabled_and_custom_footer_are_suppressed_without_targets (tests.test_renderer_block_evidence.BlockEvidenceTests.test_disabled_and_custom_footer_are_suppressed_without_targets) ... ok
+test_grouped_three_cells_and_all_annotations_have_individual_owners (tests.test_renderer_block_evidence.BlockEvidenceTests.test_grouped_three_cells_and_all_annotations_have_individual_owners) ... ok
+test_invalid_binding_missing_owner_and_forged_or_swapped_targets_fail_closed (tests.test_renderer_block_evidence.BlockEvidenceTests.test_invalid_binding_missing_owner_and_forged_or_swapped_targets_fail_closed) ... ok
+test_linked_physical_decoration_replacement_survives_orientation_and_columns (tests.test_renderer_block_evidence.BlockEvidenceTests.test_linked_physical_decoration_replacement_survives_orientation_and_columns) ... ok
+test_private_trace_preserves_original_block_ids_and_toc_references (tests.test_renderer_block_evidence.BlockEvidenceTests.test_private_trace_preserves_original_block_ids_and_toc_references) ... ok
+test_safe_projection_retains_report_and_counts_without_free_values (tests.test_renderer_block_evidence.BlockEvidenceTests.test_safe_projection_retains_report_and_counts_without_free_values) ... ok
+test_toc_coalesces_only_entries_and_keeps_mixed_list_items (tests.test_renderer_block_evidence.BlockEvidenceTests.test_toc_coalesces_only_entries_and_keeps_mixed_list_items) ... ok
+test_verified_empty_fragments_project_to_original_owner_only (tests.test_renderer_block_evidence.BlockEvidenceTests.test_verified_empty_fragments_project_to_original_owner_only) ... ok
+test_defaults_are_disabled_and_snapshot_has_no_paths (tests.test_word_preview_provider.WordPreviewProviderTests.test_defaults_are_disabled_and_snapshot_has_no_paths) ... ok
+test_formal_subprocess_exit_error_mapping (tests.test_word_preview_provider.WordPreviewProviderTests.test_formal_subprocess_exit_error_mapping) ... ok
+test_formal_subprocess_rejects_schema_identity_path_fifo_and_invalid_pages (tests.test_word_preview_provider.WordPreviewProviderTests.test_formal_subprocess_rejects_schema_identity_path_fifo_and_invalid_pages) ... ok
+test_formal_subprocess_requires_approval_decoder_profile_and_temp_budget (tests.test_word_preview_provider.WordPreviewProviderTests.test_formal_subprocess_requires_approval_decoder_profile_and_temp_budget) ... ok
+test_formal_subprocess_success_with_and_without_pages (tests.test_word_preview_provider.WordPreviewProviderTests.test_formal_subprocess_success_with_and_without_pages) ... ok
+test_formal_subprocess_timeout_terminates_group_and_cleans (tests.test_word_preview_provider.WordPreviewProviderTests.test_formal_subprocess_timeout_terminates_group_and_cleans) ... ok
+test_input_rejects_utf16_macro_content_types_and_renamed_active_parts (tests.test_word_preview_provider.WordPreviewProviderTests.test_input_rejects_utf16_macro_content_types_and_renamed_active_parts) ... ok
+test_input_xml_semantics_rejects_each_active_declaration_and_keeps_hyperlinks (tests.test_word_preview_provider.WordPreviewProviderTests.test_input_xml_semantics_rejects_each_active_declaration_and_keeps_hyperlinks) ... ok
+test_input_zip_crc_expansion_ratio_and_missing_required_part (tests.test_word_preview_provider.WordPreviewProviderTests.test_input_zip_crc_expansion_ratio_and_missing_required_part) ... ok
+test_input_zip_crc_xml_active_content_and_budgets (tests.test_word_preview_provider.WordPreviewProviderTests.test_input_zip_crc_xml_active_content_and_budgets) ... ok
+test_result_pages_and_resource_contract (tests.test_word_preview_provider.WordPreviewProviderTests.test_result_pages_and_resource_contract) ... ok
+test_claim_before_event_crash_resumes_same_run_with_consumed_budget (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_claim_before_event_crash_resumes_same_run_with_consumed_budget) ... ok
+test_concurrent_explicit_block_survives_success_and_approval_never_revives (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_concurrent_explicit_block_survives_success_and_approval_never_revives) ... ok
+test_disabled_required_and_optional_are_distinct_and_legacy_is_not_backfilled (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_disabled_required_and_optional_are_distinct_and_legacy_is_not_backfilled) ... ok
+test_download_rejects_partial_old_manifest_token_tampering_and_scope (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_download_rejects_partial_old_manifest_token_tampering_and_scope) ... ok
+test_failure_then_success_preserves_main_and_restores_only_known_quality (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_failure_then_success_preserves_main_and_restores_only_known_quality) ... ok
+test_file_list_compares_full_verified_record_with_list_snapshot (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_file_list_compares_full_verified_record_with_list_snapshot) ... ok
+test_final_attempt_registration_crash_is_storage_failure_after_restart (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_final_attempt_registration_crash_is_storage_failure_after_restart) ... [trace_id=None job_id=docjob_57ad29c8302c stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_309db83920c3 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_6ac745214f08 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_02f8375d128e stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_46033872d90b stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_9343d6766e71 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_c42011ba4add stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_8cd45127e7be stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_0c00e0ce914a stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_e0ddfb6bc07e stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_20c998bd0098 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_393f3672cc36 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_7bc008bc16cb stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_a3306aad92fd stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_b6f080b34cd0 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_bfc5b870fbef stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_1002956b91db stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_b6b317b984f0 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_d82fb788abbf stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_12d29ce91d04 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_7ddf4f61d181 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_635058bcabb3 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_1a5f8830e1cb stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_c836518ebd09 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_93f22bc1722e stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_a9fe5d08a372 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_fcb07c3ac57a stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_67d2c83033d9 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_8b636aa13c07 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_d6ac2333994a stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+ok
+test_formal_docx_success_registers_pdf_manifest_pages_and_downloads (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_formal_docx_success_registers_pdf_manifest_pages_and_downloads) ... ok
+test_formula_fallback_warning_survives_preview_failure_and_success (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_formula_fallback_warning_survives_preview_failure_and_success) ... ok
+test_historical_application_request_returns_a_while_current_remains_b (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_historical_application_request_returns_a_while_current_remains_b) ... ok
+test_independent_preview_storage_errors_are_safe_and_leave_execution_unchanged (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_independent_preview_storage_errors_are_safe_and_leave_execution_unchanged) ... ok
+test_independent_retry_registration_failure_cannot_commit_success (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_independent_retry_registration_failure_cannot_commit_success) ... ok
+test_independent_unknown_registration_replay_fails_without_changing_execution (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_independent_unknown_registration_replay_fails_without_changing_execution) ... ok
+test_legacy_explicit_main_without_receipt_required_blocks_but_download_stays_available (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_legacy_explicit_main_without_receipt_required_blocks_but_download_stays_available) ... ok
+test_legacy_running_without_stage_still_fails_closed_for_new_uuid (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_legacy_running_without_stage_still_fails_closed_for_new_uuid) ... ok
+test_legacy_terminal_initial_is_confirmed_before_new_uuid_alias_or_run (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_legacy_terminal_initial_is_confirmed_before_new_uuid_alias_or_run) ... ok
+test_lifecycle_change_after_observation_cannot_report_available_alias (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_lifecycle_change_after_observation_cannot_report_available_alias) ... ok
+test_manifest_type_retention_expiry_restores_without_touching_primary (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_manifest_type_retention_expiry_restores_without_touching_primary) ... ok
+test_multi_page_file_list_hides_whole_preview_on_expiry_corruption_or_unknown_storage (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_multi_page_file_list_hides_whole_preview_on_expiry_corruption_or_unknown_storage) ... ok
+test_multi_page_file_list_observes_once_with_linear_reads_and_decodes (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_multi_page_file_list_observes_once_with_linear_reads_and_decodes) ... ok
+test_new_disabled_snapshot_keeps_unchecked_quality_and_con104_download_policy (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_new_disabled_snapshot_keeps_unchecked_quality_and_con104_download_policy) ... ok
+test_partial_output_registration_failure_keeps_main_and_hides_uncommitted_files (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_partial_output_registration_failure_keeps_main_and_hides_uncommitted_files) ... [trace_id=None job_id=docjob_fb69a56b130d stage=uploading status=failed] 页面存储不可用
+ok
+test_preview_lifecycle_loss_gets_new_bounded_run_and_keeps_old_key_historical (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_preview_lifecycle_loss_gets_new_bounded_run_and_keeps_old_key_historical) ... ok
+test_preview_metadata_and_object_failures_never_complete_and_are_traceable (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_preview_metadata_and_object_failures_never_complete_and_are_traceable) ... [trace_id=None job_id=docjob_c337db5ab1a3 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_8a5f921abb37 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_9649c4d77449 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_d4a4dd9ff913 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_fa48783db9ba stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_988807834b3b stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_1d8a0c169dbb stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_4daffaeb9862 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_8876412b4196 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_adaa70811c72 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_7f0ed6960685 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_217a84ace300 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_6dc9b702006d stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_e777a86b7617 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_edf6cdc203ae stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_16635cb40b97 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_4aee48e4b4fa stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_0bef07f7427c stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+ok
+test_preview_storage_errors_are_safe_in_public_job_and_evidence_projections (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_preview_storage_errors_are_safe_in_public_job_and_evidence_projections) ... [trace_id=None job_id=docjob_fcc27e290d6f stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_2820936915b9 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_fd4932d3cebe stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_e9f90cd8a68f stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_b6816ba56db8 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_f8fac5ff0a3b stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_c9763d974026 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_71a26faace8a stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_f1423d898665 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_b26a82738715 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_37cdc8083320 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_6e7623c00c16 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_fb1e91e5c67f stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_0479057e54ff stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_771f50d74873 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_7b65d455e35c stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+[trace_id=None job_id=docjob_3270e86e97c3 stage=uploading status=failed] Word 预览存储失败，请稍后重试。
+ok
+test_previous_failure_manifest_does_not_confirm_next_interrupted_attempt (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_previous_failure_manifest_does_not_confirm_next_interrupted_attempt) ... [trace_id=None job_id=docjob_2f0478b4b860 stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_af253ab8026d stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+ok
+test_s3_pdf_url_ttl_is_bounded_by_manifest_and_required_page (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_s3_pdf_url_ttl_is_bounded_by_manifest_and_required_page) ... ok
+test_s3_signing_has_finite_ttl_and_rejects_old_reference (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_s3_signing_has_finite_ttl_and_rejects_old_reference) ... ok
+test_snapshot_clone_strategy_and_retry_do_not_take_current_profile (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_snapshot_clone_strategy_and_retry_do_not_take_current_profile) ... ok
+test_storage_and_source_failures_keep_original_execution_failure_contract (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_storage_and_source_failures_keep_original_execution_failure_contract) ... [trace_id=None job_id=docjob_971131afcb94 stage=uploading status=failed] 主件读取失败
+[trace_id=None job_id=docjob_105c63dbeb3a stage=uploading status=failed] 主 DOCX 字节与 SHA-256 描述不一致。
+[trace_id=None job_id=docjob_faaf3bc88b58 stage=uploading status=failed] metadata 失败
+ok
+test_success_reuse_key_is_durable_and_conflicting_reason_is_rejected_without_provider (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_success_reuse_key_is_durable_and_conflicting_reason_is_rejected_without_provider) ... ok
+test_successful_preview_keeps_publish_eligible_separate_from_enabled (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_successful_preview_keeps_publish_eligible_separate_from_enabled) ... ok
+test_timeout_auto_retry_permanent_failure_and_worker_replay_budget (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_timeout_auto_retry_permanent_failure_and_worker_replay_budget) ... ok
+test_unknown_storage_and_integrity_failure_do_not_consume_recovery_key (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_unknown_storage_and_integrity_failure_do_not_consume_recovery_key) ... ok
+test_unstarted_exhaustion_registers_failure_without_provider_or_deadline_extension (tests.test_document_job_word_preview.DocumentJobWordPreviewTests.test_unstarted_exhaustion_registers_failure_without_provider_or_deadline_extension) ... [trace_id=None job_id=docjob_74011b9dbb7d stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+[trace_id=None job_id=docjob_c3f2af4671ee stage=uploading status=failed] Word 预览失败（preview_storage_failed）。
+ok
+test_crash_after_claim_and_exhaustion_never_resets_attempts (tests.test_document_job_preview_persistence.DocumentJobPreviewPersistenceTests.test_crash_after_claim_and_exhaustion_never_resets_attempts) ... ok
+test_expired_lease_takeover_budget_old_token_and_fixed_independent_deadline (tests.test_document_job_preview_persistence.DocumentJobPreviewPersistenceTests.test_expired_lease_takeover_budget_old_token_and_fixed_independent_deadline) ... ok
+test_history_limit_rejects_new_keys_without_evicting_consumed_ids (tests.test_document_job_preview_persistence.DocumentJobPreviewPersistenceTests.test_history_limit_rejects_new_keys_without_evicting_consumed_ids) ... ok
+test_invalid_lifecycle_observation_creates_blocked_new_run_without_resetting_cap (tests.test_document_job_preview_persistence.DocumentJobPreviewPersistenceTests.test_invalid_lifecycle_observation_creates_blocked_new_run_without_resetting_cap) ... ok
+test_missing_inflight_stage_is_unknown_and_not_a_provider_retry (tests.test_document_job_preview_persistence.DocumentJobPreviewPersistenceTests.test_missing_inflight_stage_is_unknown_and_not_a_provider_retry) ... ok
+test_other_quality_contributions_and_unknown_structures_are_preserved (tests.test_document_job_preview_persistence.DocumentJobPreviewPersistenceTests.test_other_quality_contributions_and_unknown_structures_are_preserved) ... ok
+test_quality_only_removes_owned_blocker_and_progress_does_not_capture_it (tests.test_document_job_preview_persistence.DocumentJobPreviewPersistenceTests.test_quality_only_removes_owned_blocker_and_progress_does_not_capture_it) ... ok
+test_real_file_and_sqlite_processes_have_one_claim_winner (tests.test_document_job_preview_persistence.DocumentJobPreviewPersistenceTests.test_real_file_and_sqlite_processes_have_one_claim_winner) ... /Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  from app.api.errors import register_api_error_handlers
+/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/app/main.py:16: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  from app.api.errors import register_api_error_handlers
+ok
+test_registration_marker_and_confirmation_are_attempt_scoped_in_all_adapters (tests.test_document_job_preview_persistence.DocumentJobPreviewPersistenceTests.test_registration_marker_and_confirmation_are_attempt_scoped_in_all_adapters) ... ok
+test_retry_resets_current_identity_and_quality_without_altering_old_record (tests.test_document_job_preview_persistence.DocumentJobPreviewPersistenceTests.test_retry_resets_current_identity_and_quality_without_altering_old_record) ... ok
+test_reuse_observation_cas_rejects_changed_revision_current_manifest_and_expiry (tests.test_document_job_preview_persistence.DocumentJobPreviewPersistenceTests.test_reuse_observation_cas_rejects_changed_revision_current_manifest_and_expiry) ... ok
+test_running_preview_rejects_cancel_and_total_timeout (tests.test_document_job_preview_persistence.DocumentJobPreviewPersistenceTests.test_running_preview_rejects_cancel_and_total_timeout) ... ok
+test_success_reuse_consumes_fingerprint_key_without_moving_current_or_attempts (tests.test_document_job_preview_persistence.DocumentJobPreviewPersistenceTests.test_success_reuse_consumes_fingerprint_key_without_moving_current_or_attempts) ... ok
+test_three_adapters_failed_preview_pending_is_retained_expired_and_cleaned (tests.test_document_job_preview_persistence.DocumentJobPreviewPersistenceTests.test_three_adapters_failed_preview_pending_is_retained_expired_and_cleaned) ... ok
+test_three_adapters_history_replay_survives_restart_without_moving_current (tests.test_document_job_preview_persistence.DocumentJobPreviewPersistenceTests.test_three_adapters_history_replay_survives_restart_without_moving_current) ... ok
+test_three_adapters_preview_upload_confirmation_loses_to_lifecycle (tests.test_document_job_preview_persistence.DocumentJobPreviewPersistenceTests.test_three_adapters_preview_upload_confirmation_loses_to_lifecycle) ... ok
+test_three_adapters_stale_lifecycle_source_and_profile_cannot_finish (tests.test_document_job_preview_persistence.DocumentJobPreviewPersistenceTests.test_three_adapters_stale_lifecycle_source_and_profile_cannot_finish) ... ok
+
+----------------------------------------------------------------------
+Ran 80 tests in 63.510s
+
+OK

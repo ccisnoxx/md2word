@@ -1,0 +1,6 @@
+Local MinerU phase-2 quality matrix
+run_dir: /Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/tmp/rnd505-fresh-review-direct
+sample_set: phase2-core, modes: direct
+entries: 5, succeeded: 5, failed: 0, blocked: 0
+p0_issues: 0, automated_matrix_ok: True
+phase3_entry_ready: False (p1_p2_backlog_required)

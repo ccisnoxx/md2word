@@ -1,0 +1,35 @@
+{
+  "source_root": "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/tmp/rnd505-b1-reader",
+  "modules": {
+    "app.domains.document_jobs.execution": {
+      "path": "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/tmp/rnd505-b1-reader/app/domains/document_jobs/execution.py",
+      "sha256": "8a9632b9dcd5beb0b5697711b1473efca8724c79dda3547c46f1e2e7813142ed"
+    },
+    "app.domains.document_jobs.preview": {
+      "path": "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/tmp/rnd505-b1-reader/app/domains/document_jobs/preview.py",
+      "sha256": "5a39d9997bead60f1f14072db8dda4ec8ab3bbfdd5a86084ed7471c3b0503652"
+    },
+    "app.services.renderer.block_anchors": {
+      "path": "/Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/tests/tmp/rnd505-b1-reader/app/services/renderer/block_anchors.py",
+      "sha256": "af62361450db4af0bc4e0bc2101837be41ce0dd38d529130e869ad9a16b34b5f"
+    }
+  },
+  "results": [
+    {
+      "backend": "file",
+      "main": "succeeded",
+      "preview": "succeeded",
+      "new_marker_proof": false,
+      "new_mapping": false,
+      "legacy_manifest_reader": "passed"
+    },
+    {
+      "backend": "sqlite",
+      "main": "succeeded",
+      "preview": "succeeded",
+      "new_marker_proof": false,
+      "new_mapping": false,
+      "legacy_manifest_reader": "passed"
+    }
+  ]
+}

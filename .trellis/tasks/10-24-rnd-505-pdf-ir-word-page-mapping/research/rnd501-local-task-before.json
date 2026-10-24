@@ -1,0 +1,163 @@
+{
+  "id": "rnd-501-render-plan-block-evidence",
+  "name": "rnd-501-render-plan-block-evidence",
+  "title": "RND-501：RenderPlan 与 block evidence",
+  "description": "2026-10-23修订3：用户接受修订2，指定当前分支为集成目标；规划最小复用IR-201/205、TAB-301和RND-501，保留TR/CON合同、排除RND-504；仅规划待评审。",
+  "status": "planning",
+  "dev_type": "backend",
+  "scope": "renderer-plan-evidence",
+  "package": null,
+  "priority": "P2",
+  "creator": "777",
+  "assignee": "777",
+  "createdAt": "2026-10-17",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": null,
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-12-datasheet-docx-delivery-quality",
+  "relatedFiles": [
+    "app/services/renderer/render_plan.py",
+    "app/services/renderer/block_evidence.py",
+    "app/services/renderer/word_renderer.py",
+    "app/services/renderer/evidence.py",
+    "app/domains/document_jobs/execution.py",
+    "app/domains/document_jobs/router.py",
+    "scripts/dev/formal_mineru_conversion.py",
+    "tests/test_document_job_result_persistence.py",
+    ".trellis/spec/backend/render-plan-evidence-contract.md"
+  ],
+  "notes": "用户已接受修订2并选择当前c56e128为集成目标。修订3已由同一只读architect审查、澄清后复审及最终文本确认，未发现新增可行动缺陷；19路径/合同范围不变。私有trace保留ID及引用，公开摘要沿既有白名单。当前仍待人工规划评审，未授权实施，不能skipped_existing；历史验收和输入hash保留。",
+  "meta": {
+    "planning_only": true,
+    "implementation_approved": false,
+    "task_creation_approved": true,
+    "phase": "R5",
+    "depends_on": [
+      "IR-205",
+      "TAB-301"
+    ],
+    "dependency_gate": "passed",
+    "planning_review_status": "pending_human_review",
+    "prd_convergence_pass": false,
+    "planning_artifacts_ready": true,
+    "recommended_resolution": "integration_required",
+    "existing_implementation_commit": "da3ca610d0149d6e0b2d0ca664b090b0f4feb9da",
+    "verified_snapshot_commit": "6aae7d9f6639ac10bb68bc3596beb69791e570dc",
+    "current_workspace_commit": "c56e12832ff30212cc067d0909430cf5f091f79b",
+    "current_workspace_integrated": false,
+    "historical_record": "research/accepted-2026-10-17/task-record.json",
+    "replanning_date": "2026-10-23",
+    "context_validated": true,
+    "context_counts": {
+      "implement": 10,
+      "check": 10
+    },
+    "planning_validation": "integration-planning-validation-2026-10-23.md",
+    "acceptance_baseline_commit": null,
+    "acceptance_scope": null,
+    "acceptance_baseline_selected": false,
+    "integration_gate": "not_satisfied_for_current_workspace",
+    "existing_implementation_branch": "codex/rnd501-integration",
+    "existing_integration_base_commit": "1e924c69987bb927cd0cce9a7665a4fba3c818f4",
+    "planning_review_revision": 3,
+    "planning_design_review": {
+      "reviewer_agent_type": "architect",
+      "agent_task": "/root/rnd501_planning_architect_review",
+      "fresh_isolated_readonly": true,
+      "confirmed_findings": {
+        "P2": 2
+      },
+      "main_session_verified": true,
+      "main_session_corrected": 2,
+      "independent_rereview_performed": true,
+      "record": ".trellis/tasks/10-17-rnd-501-render-plan-block-evidence/planning-review-2026-10-23.md",
+      "rereview": {
+        "date": "2026-10-23",
+        "agent_task": "/root/rnd501_planning_architect_review",
+        "same_reviewer": true,
+        "readonly": true,
+        "reviewed_revision": 2,
+        "closed_findings": [
+          "F1/P2",
+          "F2/P2"
+        ],
+        "new_actionable_findings": 0,
+        "main_session_verified": true,
+        "input_sha256": {
+          "prd.md": "590e920b376cb8a799cf7137775ab26170b9b90bf001a695573ae5611261df06",
+          "design.md": "7a7aaed8167a7d6c7337aa51fddb30592dff73b7bfef068e3f261919fbd698a7",
+          "implement.md": "312ba758a8405eeaea4f54eb696ab3e5f4f681c3623bb35b819b48e032fcab22"
+        },
+        "result": "passed_pending_human_review"
+      },
+      "applies_to_revision": 2
+    },
+    "target_branch": "codex/tr-406-partial-batch-failure-semantics",
+    "target_baseline_commit": "c56e12832ff30212cc067d0909430cf5f091f79b",
+    "integration_target_selected": true,
+    "accepted_planning_revision": 2,
+    "accepted_planning_date": "2026-10-23",
+    "integration_plan_reviewed": true,
+    "transitive_dependencies": [
+      "IR-201"
+    ],
+    "excluded_tasks": [
+      "RND-504"
+    ],
+    "integration_research": "research/integration-plan-2026-10-23.md",
+    "accepted_planning_snapshot": "research/accepted-planning-revision-2-2026-10-23",
+    "integration_planning_review": {
+      "reviewed_revision": 3,
+      "date": "2026-10-23",
+      "agent_task": "/root/rnd501_planning_architect_review",
+      "same_reviewer": true,
+      "readonly": true,
+      "confirmed_findings": 0,
+      "new_actionable_findings": 0,
+      "main_session_verified": true,
+      "editorial_clarification": "私有trace保留原ID/引用，来源账本和私有质量判定不裁剪；公开自由ID转计数、flags留受控码，其余合法字段沿既有白名单",
+      "independent_rereview_after_clarification": true,
+      "input_sha256": {
+        "prd.md": "c9e59392b1fac897b7a2ec1b0591bd5ce55e995663e2390322b4fe80b3f92e88",
+        "design.md": "db456e91c70dde164a774c8664b2ce3abbdd412dd63b45309f629e6c29a3e17f",
+        "implement.md": "3caebf1b0d4b46dee8337756d018b39ca8bc2345939cacbae29f33902bcc8f47",
+        "task.json": "dfefc20ca1b11bf4b896749a6c9be76c70e54f00dfb070ec9849e5c23ea05af6",
+        "research/integration-plan-2026-10-23.md": "9cf352daf7b0cdb3bf185f0ab1f69e29ce98cdcc926846330fb8de8e28cfc8ac",
+        "research/integration-inventory-2026-10-23.json": "715b147a6c7f88fc5ae0ecdee02786fd2e202678737869ec7135b097417aba20"
+      },
+      "record": "integration-planning-review-2026-10-23.md",
+      "result": "no_actionable_findings_pending_human_review",
+      "clarification_rereview": {
+        "date": "2026-10-23",
+        "agent_task": "/root/rnd501_planning_architect_review",
+        "same_reviewer": true,
+        "readonly": true,
+        "confirmed_findings": 0,
+        "new_actionable_findings": 0,
+        "main_session_verified": true,
+        "nonblocking_editorial_suggestion_applied": true,
+        "final_text_independently_confirmed": true,
+        "final_confirmation_scope": "PRD:45与design:36/62、implement:46联合一致性及PRD hash",
+        "input_sha256": {
+          "prd.md": "7294c550def286e6ad2682d942d879fa5f983e56be4c1f1f40889a3a60721438",
+          "design.md": "6d9ab556a4876141bb9d95c58c1f232190217ecc1120d10c60e52873c60790b3",
+          "implement.md": "1e561d848657d10ffecb2007c53a1f5ce09ce1024223eb7c2ba3f90bfb895181",
+          "research/integration-plan-2026-10-23.md": "ceb40b8622f6fbb1ae5bb724a8fa0a9b5f9a2513fe674919b0c937f16d367f81",
+          "task.json": "4afb68a4be9d3fac1712df87d51f666fee8f34065e82d0c00cbcf2c87a83bf8e"
+        },
+        "final_text_sha256": {
+          "prd.md": "8ce673a99031d5a2148b79614a9a74c1102dce0a0b14aa78d102e5d024d5d4d5",
+          "design.md": "6d9ab556a4876141bb9d95c58c1f232190217ecc1120d10c60e52873c60790b3",
+          "implement.md": "1e561d848657d10ffecb2007c53a1f5ce09ce1024223eb7c2ba3f90bfb895181",
+          "research/integration-plan-2026-10-23.md": "ceb40b8622f6fbb1ae5bb724a8fa0a9b5f9a2513fe674919b0c937f16d367f81"
+        },
+        "result": "consistent_no_new_findings_pending_human_review"
+      }
+    }
+  }
+}

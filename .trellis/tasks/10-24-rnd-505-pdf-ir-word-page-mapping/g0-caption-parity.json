@@ -1,0 +1,298 @@
+{
+  "baseline_commit": "8fa11d9779ce05e9cba1cfb7afee34ecbd58a4cf",
+  "cases": [
+    {
+      "captions": [
+        "A<span><pre>&amp;#9;</pre></span>",
+        "B"
+      ],
+      "same_word_xml": true,
+      "baseline": {
+        "word_xml_parts": {
+          "word/document.xml": "e392b004b582f9f82ed390525a40515bc514ae74bc4e32e9661cca8840b18987",
+          "word/styles.xml": "afc9d2f9618d91699d5402eb962ab23ae91bedb90317393becc27967a65d3ae8",
+          "word/stylesWithEffects.xml": "3994e251cc031b5e83769658f4af62834429eb239f41d5c9d2fd563e8fda9724",
+          "word/settings.xml": "23757f2250c41af129f9b2f7e998c8acadb49d02690790c0c94c89504f248aa9",
+          "word/webSettings.xml": "25f133eff1e20d6e024db7bcd6ed68718140bca8f60f0d28c9a3e602905f1a85",
+          "word/fontTable.xml": "ada4b4c453c903f5e93436aad8a5b6ac41c1f495386650164ad7af0a63c5f581",
+          "word/theme/theme1.xml": "0addd180f61ee032bc9dcea1cbeabc10a8a3abaa9fe63f3284fe8b588cf19c4b",
+          "word/numbering.xml": "32000b3f86ee8be54e8519f55001ac77a2bd8334be8ff76673e980cbdaaab8e5"
+        },
+        "paragraph_text_and_tabs": [
+          [],
+          [],
+          [
+            "A",
+            "&#9;"
+          ],
+          [],
+          [],
+          [
+            "B"
+          ],
+          []
+        ]
+      },
+      "candidate": {
+        "word_xml_parts": {
+          "word/document.xml": "e392b004b582f9f82ed390525a40515bc514ae74bc4e32e9661cca8840b18987",
+          "word/styles.xml": "afc9d2f9618d91699d5402eb962ab23ae91bedb90317393becc27967a65d3ae8",
+          "word/stylesWithEffects.xml": "3994e251cc031b5e83769658f4af62834429eb239f41d5c9d2fd563e8fda9724",
+          "word/settings.xml": "23757f2250c41af129f9b2f7e998c8acadb49d02690790c0c94c89504f248aa9",
+          "word/webSettings.xml": "25f133eff1e20d6e024db7bcd6ed68718140bca8f60f0d28c9a3e602905f1a85",
+          "word/fontTable.xml": "ada4b4c453c903f5e93436aad8a5b6ac41c1f495386650164ad7af0a63c5f581",
+          "word/theme/theme1.xml": "0addd180f61ee032bc9dcea1cbeabc10a8a3abaa9fe63f3284fe8b588cf19c4b",
+          "word/numbering.xml": "32000b3f86ee8be54e8519f55001ac77a2bd8334be8ff76673e980cbdaaab8e5"
+        },
+        "paragraph_text_and_tabs": [
+          [],
+          [],
+          [
+            "A",
+            "&#9;"
+          ],
+          [],
+          [],
+          [
+            "B"
+          ],
+          []
+        ]
+      }
+    },
+    {
+      "captions": [
+        "A",
+        "<span><pre>&amp;#9;</pre></span>B"
+      ],
+      "same_word_xml": true,
+      "baseline": {
+        "word_xml_parts": {
+          "word/document.xml": "b2bfccf8f6063e601df27b8b0e18f469e68854affffb65ae60e90b8c731e0b3d",
+          "word/styles.xml": "afc9d2f9618d91699d5402eb962ab23ae91bedb90317393becc27967a65d3ae8",
+          "word/stylesWithEffects.xml": "3994e251cc031b5e83769658f4af62834429eb239f41d5c9d2fd563e8fda9724",
+          "word/settings.xml": "23757f2250c41af129f9b2f7e998c8acadb49d02690790c0c94c89504f248aa9",
+          "word/webSettings.xml": "25f133eff1e20d6e024db7bcd6ed68718140bca8f60f0d28c9a3e602905f1a85",
+          "word/fontTable.xml": "ada4b4c453c903f5e93436aad8a5b6ac41c1f495386650164ad7af0a63c5f581",
+          "word/theme/theme1.xml": "0addd180f61ee032bc9dcea1cbeabc10a8a3abaa9fe63f3284fe8b588cf19c4b",
+          "word/numbering.xml": "32000b3f86ee8be54e8519f55001ac77a2bd8334be8ff76673e980cbdaaab8e5"
+        },
+        "paragraph_text_and_tabs": [
+          [],
+          [],
+          [
+            "A"
+          ],
+          [],
+          [],
+          [
+            "&#9;",
+            "B"
+          ],
+          []
+        ]
+      },
+      "candidate": {
+        "word_xml_parts": {
+          "word/document.xml": "b2bfccf8f6063e601df27b8b0e18f469e68854affffb65ae60e90b8c731e0b3d",
+          "word/styles.xml": "afc9d2f9618d91699d5402eb962ab23ae91bedb90317393becc27967a65d3ae8",
+          "word/stylesWithEffects.xml": "3994e251cc031b5e83769658f4af62834429eb239f41d5c9d2fd563e8fda9724",
+          "word/settings.xml": "23757f2250c41af129f9b2f7e998c8acadb49d02690790c0c94c89504f248aa9",
+          "word/webSettings.xml": "25f133eff1e20d6e024db7bcd6ed68718140bca8f60f0d28c9a3e602905f1a85",
+          "word/fontTable.xml": "ada4b4c453c903f5e93436aad8a5b6ac41c1f495386650164ad7af0a63c5f581",
+          "word/theme/theme1.xml": "0addd180f61ee032bc9dcea1cbeabc10a8a3abaa9fe63f3284fe8b588cf19c4b",
+          "word/numbering.xml": "32000b3f86ee8be54e8519f55001ac77a2bd8334be8ff76673e980cbdaaab8e5"
+        },
+        "paragraph_text_and_tabs": [
+          [],
+          [],
+          [
+            "A"
+          ],
+          [],
+          [],
+          [
+            "&#9;",
+            "B"
+          ],
+          []
+        ]
+      }
+    },
+    {
+      "captions": [
+        "A\tX",
+        "B"
+      ],
+      "same_word_xml": true,
+      "baseline": {
+        "word_xml_parts": {
+          "word/document.xml": "ce2589c27ef7613d9e69a09959260349594ad2c3ff27dbbc6eb30024d8bffa13",
+          "word/styles.xml": "afc9d2f9618d91699d5402eb962ab23ae91bedb90317393becc27967a65d3ae8",
+          "word/stylesWithEffects.xml": "3994e251cc031b5e83769658f4af62834429eb239f41d5c9d2fd563e8fda9724",
+          "word/settings.xml": "23757f2250c41af129f9b2f7e998c8acadb49d02690790c0c94c89504f248aa9",
+          "word/webSettings.xml": "25f133eff1e20d6e024db7bcd6ed68718140bca8f60f0d28c9a3e602905f1a85",
+          "word/fontTable.xml": "ada4b4c453c903f5e93436aad8a5b6ac41c1f495386650164ad7af0a63c5f581",
+          "word/theme/theme1.xml": "0addd180f61ee032bc9dcea1cbeabc10a8a3abaa9fe63f3284fe8b588cf19c4b",
+          "word/numbering.xml": "32000b3f86ee8be54e8519f55001ac77a2bd8334be8ff76673e980cbdaaab8e5"
+        },
+        "paragraph_text_and_tabs": [
+          [],
+          [],
+          [
+            "A",
+            "tab",
+            "X"
+          ],
+          [],
+          [],
+          [
+            "B"
+          ],
+          []
+        ]
+      },
+      "candidate": {
+        "word_xml_parts": {
+          "word/document.xml": "ce2589c27ef7613d9e69a09959260349594ad2c3ff27dbbc6eb30024d8bffa13",
+          "word/styles.xml": "afc9d2f9618d91699d5402eb962ab23ae91bedb90317393becc27967a65d3ae8",
+          "word/stylesWithEffects.xml": "3994e251cc031b5e83769658f4af62834429eb239f41d5c9d2fd563e8fda9724",
+          "word/settings.xml": "23757f2250c41af129f9b2f7e998c8acadb49d02690790c0c94c89504f248aa9",
+          "word/webSettings.xml": "25f133eff1e20d6e024db7bcd6ed68718140bca8f60f0d28c9a3e602905f1a85",
+          "word/fontTable.xml": "ada4b4c453c903f5e93436aad8a5b6ac41c1f495386650164ad7af0a63c5f581",
+          "word/theme/theme1.xml": "0addd180f61ee032bc9dcea1cbeabc10a8a3abaa9fe63f3284fe8b588cf19c4b",
+          "word/numbering.xml": "32000b3f86ee8be54e8519f55001ac77a2bd8334be8ff76673e980cbdaaab8e5"
+        },
+        "paragraph_text_and_tabs": [
+          [],
+          [],
+          [
+            "A",
+            "tab",
+            "X"
+          ],
+          [],
+          [],
+          [
+            "B"
+          ],
+          []
+        ]
+      }
+    },
+    {
+      "captions": [
+        "A",
+        "Y\tB"
+      ],
+      "same_word_xml": true,
+      "baseline": {
+        "word_xml_parts": {
+          "word/document.xml": "61b6a667dce271f077d0382d310dee87ee0ad105a95a9faa8cb1e640e75fd98d",
+          "word/styles.xml": "afc9d2f9618d91699d5402eb962ab23ae91bedb90317393becc27967a65d3ae8",
+          "word/stylesWithEffects.xml": "3994e251cc031b5e83769658f4af62834429eb239f41d5c9d2fd563e8fda9724",
+          "word/settings.xml": "23757f2250c41af129f9b2f7e998c8acadb49d02690790c0c94c89504f248aa9",
+          "word/webSettings.xml": "25f133eff1e20d6e024db7bcd6ed68718140bca8f60f0d28c9a3e602905f1a85",
+          "word/fontTable.xml": "ada4b4c453c903f5e93436aad8a5b6ac41c1f495386650164ad7af0a63c5f581",
+          "word/theme/theme1.xml": "0addd180f61ee032bc9dcea1cbeabc10a8a3abaa9fe63f3284fe8b588cf19c4b",
+          "word/numbering.xml": "32000b3f86ee8be54e8519f55001ac77a2bd8334be8ff76673e980cbdaaab8e5"
+        },
+        "paragraph_text_and_tabs": [
+          [],
+          [],
+          [
+            "A"
+          ],
+          [],
+          [],
+          [
+            "Y",
+            "tab",
+            "B"
+          ],
+          []
+        ]
+      },
+      "candidate": {
+        "word_xml_parts": {
+          "word/document.xml": "61b6a667dce271f077d0382d310dee87ee0ad105a95a9faa8cb1e640e75fd98d",
+          "word/styles.xml": "afc9d2f9618d91699d5402eb962ab23ae91bedb90317393becc27967a65d3ae8",
+          "word/stylesWithEffects.xml": "3994e251cc031b5e83769658f4af62834429eb239f41d5c9d2fd563e8fda9724",
+          "word/settings.xml": "23757f2250c41af129f9b2f7e998c8acadb49d02690790c0c94c89504f248aa9",
+          "word/webSettings.xml": "25f133eff1e20d6e024db7bcd6ed68718140bca8f60f0d28c9a3e602905f1a85",
+          "word/fontTable.xml": "ada4b4c453c903f5e93436aad8a5b6ac41c1f495386650164ad7af0a63c5f581",
+          "word/theme/theme1.xml": "0addd180f61ee032bc9dcea1cbeabc10a8a3abaa9fe63f3284fe8b588cf19c4b",
+          "word/numbering.xml": "32000b3f86ee8be54e8519f55001ac77a2bd8334be8ff76673e980cbdaaab8e5"
+        },
+        "paragraph_text_and_tabs": [
+          [],
+          [],
+          [
+            "A"
+          ],
+          [],
+          [],
+          [
+            "Y",
+            "tab",
+            "B"
+          ],
+          []
+        ]
+      }
+    },
+    {
+      "captions": [
+        "Gain $x+y$",
+        "\\frac{a}{b}"
+      ],
+      "same_word_xml": true,
+      "baseline": {
+        "word_xml_parts": {
+          "word/document.xml": "f27d403af7d60e539a74617378cbc39a32110fd4fed087ab934cadec8275e68e",
+          "word/styles.xml": "afc9d2f9618d91699d5402eb962ab23ae91bedb90317393becc27967a65d3ae8",
+          "word/stylesWithEffects.xml": "3994e251cc031b5e83769658f4af62834429eb239f41d5c9d2fd563e8fda9724",
+          "word/settings.xml": "23757f2250c41af129f9b2f7e998c8acadb49d02690790c0c94c89504f248aa9",
+          "word/webSettings.xml": "25f133eff1e20d6e024db7bcd6ed68718140bca8f60f0d28c9a3e602905f1a85",
+          "word/fontTable.xml": "ada4b4c453c903f5e93436aad8a5b6ac41c1f495386650164ad7af0a63c5f581",
+          "word/theme/theme1.xml": "0addd180f61ee032bc9dcea1cbeabc10a8a3abaa9fe63f3284fe8b588cf19c4b",
+          "word/numbering.xml": "32000b3f86ee8be54e8519f55001ac77a2bd8334be8ff76673e980cbdaaab8e5"
+        },
+        "paragraph_text_and_tabs": [
+          [],
+          [],
+          [
+            "Gain "
+          ],
+          [],
+          [],
+          [],
+          []
+        ]
+      },
+      "candidate": {
+        "word_xml_parts": {
+          "word/document.xml": "f27d403af7d60e539a74617378cbc39a32110fd4fed087ab934cadec8275e68e",
+          "word/styles.xml": "afc9d2f9618d91699d5402eb962ab23ae91bedb90317393becc27967a65d3ae8",
+          "word/stylesWithEffects.xml": "3994e251cc031b5e83769658f4af62834429eb239f41d5c9d2fd563e8fda9724",
+          "word/settings.xml": "23757f2250c41af129f9b2f7e998c8acadb49d02690790c0c94c89504f248aa9",
+          "word/webSettings.xml": "25f133eff1e20d6e024db7bcd6ed68718140bca8f60f0d28c9a3e602905f1a85",
+          "word/fontTable.xml": "ada4b4c453c903f5e93436aad8a5b6ac41c1f495386650164ad7af0a63c5f581",
+          "word/theme/theme1.xml": "0addd180f61ee032bc9dcea1cbeabc10a8a3abaa9fe63f3284fe8b588cf19c4b",
+          "word/numbering.xml": "32000b3f86ee8be54e8519f55001ac77a2bd8334be8ff76673e980cbdaaab8e5"
+        },
+        "paragraph_text_and_tabs": [
+          [],
+          [],
+          [
+            "Gain "
+          ],
+          [],
+          [],
+          [],
+          []
+        ]
+      }
+    }
+  ]
+}

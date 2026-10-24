@@ -1,0 +1,7 @@
+[0;34m=== Validating Context Files ===[0m
+Target dir: /Users/sc/.codex/worktrees/rnd505-page-mapping/md2word/.trellis/tasks/10-24-rnd-505-pdf-ir-word-page-mapping
+
+  [0;32mimplement.jsonl: ✓ (9 entries)[0m
+  [0;32mcheck.jsonl: ✓ (10 entries)[0m
+
+[0;32m✓ All validations passed[0m

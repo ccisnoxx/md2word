@@ -10828,7 +10828,7 @@ class FastAPIJobsBackendTests(TestCase):
         self.assertEqual(mineru_failed_job["error_code"], "mineru_failed")
 
         class BrokenRenderer:
-            def render_to_bytes(self, *args, **kwargs):
+            def render_to_result(self, *args, **kwargs):
                 raise RuntimeError("render boom")
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -10865,7 +10865,7 @@ class FastAPIJobsBackendTests(TestCase):
             pass
 
         class UnexpectedRenderer:
-            def render_to_bytes(self, *args, **kwargs):
+            def render_to_result(self, *args, **kwargs):
                 raise UnexpectedRendererError("unexpected render boom")
 
         with tempfile.TemporaryDirectory() as temp_dir:

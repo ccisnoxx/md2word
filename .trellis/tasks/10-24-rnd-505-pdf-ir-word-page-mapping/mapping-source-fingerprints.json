@@ -1,0 +1,8 @@
+{
+  "app/services/preview/page_mapping.py": "eb4764c95b65298eb8ebfa0dbf7862be442dfe8588ec314036634dd8506a827f",
+  "app/domains/document_jobs/preview.py": "b98cf76054fd708f454aaff847faad9c7489afa748ed364af304dfb85ffb78a6",
+  "app/domains/document_jobs/execution.py": "8a9632b9dcd5beb0b5697711b1473efca8724c79dda3547c46f1e2e7813142ed",
+  "tests/test_preview_page_mapping.py": "3eb68a5a8c06288eaf0ff6140054f90d26a7c6e1806d30f73dbb955d4fc6b5c9",
+  "tests/test_document_job_word_preview.py": "38eb0c899230b20e30dfe8d30ce8ec22dcaa7216fe9e1f8ee65647cc871f298d",
+  "tests/test_document_job_result_persistence.py": "57d42ffe202068ecc48d8213ef9b9a54f3608c46f5529a41f0ffcaabc2577cf0"
+}

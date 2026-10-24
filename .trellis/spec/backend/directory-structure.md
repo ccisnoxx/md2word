@@ -118,7 +118,7 @@ Operational and release scripts live under:
 ### 3. Contracts
 
 - Local scripts pass MinerU zip/directory inputs to `formal_mineru_conversion`, not to `app.conversion.runtime_runner`.
-- The adapter must call `MinerUToDocumentIRService.convert_zip()` and `DocumentIRWordRenderer.render_to_bytes()`.
+- The adapter must call `MinerUToDocumentIRService.convert_zip()` and `DocumentIRWordRenderer.render_to_result()`取得同次bytes/plan/evidence；旧`render_to_bytes()`保留兼容.
 - Layout fixes belong in `app/services/document_ir/*`, `app/services/renderer/*`, or shared DOCX rules under `app/conversion/docx_rules/*`.
 - `runtime_runner` remains a legacy `/api/v1/jobs` backing path and historical comparison point; it is not the default local debugging core.
 - Translation modes must not silently fall back to direct. Missing key/response should fail or be reported as blocked after writing any requested local translation request evidence.

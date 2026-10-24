@@ -30,6 +30,7 @@ from app.services.document_ir.layout_signals import (
 )
 from app.services.document_ir.integrity import DocumentIntegrityError, build_source_integrity, ensure_integrity
 from app.services.document_ir.caption_reconciler import reconcile_captions
+from app.services.document_ir.logical_table_group import TableSourceLedger, attach_logical_table_groups, capture_table_sources
 from app.services.document_ir.artifact_validator import (
     MinerUArtifactValidator, MinerUArtifactValidationError, MinerUValidationReport, ValidatedImage,
 )
@@ -93,6 +94,7 @@ class MinerUToDocumentIRService:
                 validator.check_report_limits()
                 payload, _checksum = read_json_payload(content_list_path, policy=self.policy)
                 validated = validator.validate(payload, package_root=package_root, content_list_path=content_list_path)
+                table_sources = capture_table_sources(payload, validated.blocks, checksum=report.content_list_sha256)
                 return self._convert_blocks(
                     validated.blocks,
                     package_root=package_root,
@@ -101,6 +103,7 @@ class MinerUToDocumentIRService:
                     source_file_id=source_file_id,
                     document_language=document_language,
                     validator=validator,
+                    table_sources=table_sources,
                 )
             except MinerUPackageError as error:
                 validator.add_package_error(error)
@@ -116,6 +119,7 @@ class MinerUToDocumentIRService:
         source_file_id: str,
         document_language: str,
         validator: MinerUArtifactValidator,
+        table_sources: TableSourceLedger,
     ) -> MinerUToDocumentIRResult:
         """执行既有归一化与映射，归一化证据仍由当前 validator 统一限额。"""
         validation_report = validator.report
@@ -277,6 +281,7 @@ class MinerUToDocumentIRService:
         if validation_report is not None:
             evidence["mineru_validation"] = validation_report.model_dump(mode="json")
         ensure_integrity("MinerU→DocumentIR", evidence)
+        attach_logical_table_groups(document, table_sources)
         return MinerUToDocumentIRResult(document=document, image_assets=image_assets, validation_report=validation_report)
 
     def _metadata_from_raw(self, raw_block: dict[str, Any]) -> dict[str, Any]:

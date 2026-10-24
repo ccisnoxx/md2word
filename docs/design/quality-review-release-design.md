@@ -268,3 +268,8 @@ API 字段必须进入 OpenAPI 快照。
 5. 三栏点击 block 可同步定位；
 6. 审核页不可编辑正文；
 7. 直接任务和翻译任务使用同一 review 状态模型。
+
+
+## RND-505：映射诊断与发布资格
+
+导航mapping与独立anchor证明是可降级证据；缺失、估计、超限或可选证明坏不增加质量贡献，不修改既有质量/审核/交付或available_actions。原内容/hash/报告、权限、不可变发布与存储失败规则仍保持。完整映射/证明仅在原授权文件边界内消费，普通API/事件/错误输出固定安全摘要。详细字段、错误、生命周期和B1兼容门见[PDF/IR/Word页映射合同](../contracts/pdf-ir-word-page-mapping-contract.md)。

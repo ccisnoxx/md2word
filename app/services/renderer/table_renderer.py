@@ -16,6 +16,7 @@ from app.conversion.docx_rules.table_expansion import expanded_table_rows, requi
 from app.conversion.runtime.table_html_parser import HtmlCell, HtmlTable, parse_html_table
 from app.services.document_ir.models import DocumentIRBlock
 from app.services.document_ir.table_annotations import is_table_context_annotation
+from app.services.renderer.block_evidence import LocalTarget, paragraph_target
 from app.services.renderer.template_config import TemplateConfigPackage, TemplateParagraphStyleConfig
 
 
@@ -25,6 +26,42 @@ COMPACT_TABLE_FONT_SIZE = 8.0
 EXTRA_COMPACT_TABLE_FONT_SIZE = 7.0
 LONG_TABLE_CAPTION_RE = re.compile(r"^(?:续表|continued\s+table|[A-Z]\.\d+(?:\.\d+)?)\b", re.IGNORECASE)
 TH_TAG_RE = re.compile(r"</?th\b[^>]*>", re.IGNORECASE)
+
+
+def prepare_table_input(block: DocumentIRBlock, config: TemplateConfigPackage):
+    """计划与 writer 共用实际 HTML 解析和既有大表阈值，输出模型仅驻内存。"""
+    model = parse_html_table(block.html)
+    strategy = "fallback" if model is None or not model.rows or model.max_columns <= 0 else (
+        "expanded" if requires_table_expansion(model, block.html) else "standard")
+    return model, strategy
+
+
+def table_annotation_style(text: str) -> str:
+    if is_table_context_annotation(text):
+        return "normal"
+    return "long_table_caption" if LONG_TABLE_CAPTION_RE.match((text or "").strip()) else "caption"
+
+
+def table_config_for_columns(
+    template_config: TemplateConfigPackage,
+    max_cols: int,
+) -> TemplateConfigPackage:
+    if max_cols < WIDE_TABLE_COLUMN_COUNT:
+        return template_config
+    current_size = template_config.table_content.font_size or COMPACT_TABLE_FONT_SIZE
+    target_size = COMPACT_TABLE_FONT_SIZE if max_cols <= 8 else EXTRA_COMPACT_TABLE_FONT_SIZE
+    table_content = template_config.table_content.model_copy(
+        update={
+            "font_size": min(current_size, target_size),
+            "line_spacing": 1.0,
+            "space_before": 0,
+            "space_after": 0,
+            "first_line_indent_pt": 0,
+            "left_indent_pt": 0,
+            "right_indent_pt": 0,
+        }
+    )
+    return template_config.model_copy(update={"table_content": table_content})
 
 
 class WordTableRendererMixin:
@@ -39,16 +76,19 @@ class WordTableRendererMixin:
         caption_bookmarks: Any | None = None,
         reference_bookmarks: Any | None = None,
         page_break_before: bool = False,
-    ) -> None:
-        table_model = parse_html_table(block.html)
-        self._render_table_captions(
+        table_model: HtmlTable | None,
+        table_strategy: str,
+        annotation_styles: list[str],
+    ) -> list[LocalTarget]:
+        targets = self._render_table_captions(
             document,
             block,
             template_config,
             caption_bookmarks=caption_bookmarks,
             page_break_before=page_break_before,
+            style_groups=annotation_styles,
         )
-        if table_model is None or not table_model.rows or table_model.max_columns <= 0:
+        if table_strategy == "fallback":
             self._set_formula_source(document, block.id, "text")
             paragraph = document.add_paragraph()
             self._fill_paragraph(
@@ -58,14 +98,15 @@ class WordTableRendererMixin:
                 terminology=template_config.terminology,
                 reference_bookmarks=reference_bookmarks,
             )
-            self._render_table_notes(document, block, template_config)
-            return
+            targets.append(paragraph_target(paragraph, "body"))
+            targets.extend(self._render_table_notes(document, block, template_config))
+            return targets
 
         max_cols = table_model.max_columns
         usable_width = self._available_table_width(document)
-        table_template_config = self._template_config_for_table_columns(template_config, max_cols)
-        if requires_table_expansion(table_model, block.html):
-            self._render_expanded_table(
+        table_template_config = table_config_for_columns(template_config, max_cols)
+        if table_strategy == "expanded":
+            table = self._render_expanded_table(
                 document,
                 table_model,
                 max_cols,
@@ -75,7 +116,7 @@ class WordTableRendererMixin:
                 reference_bookmarks=reference_bookmarks,
             )
         else:
-            self._render_standard_html_table(
+            table = self._render_standard_html_table(
                 document,
                 table_model,
                 max_cols,
@@ -84,7 +125,9 @@ class WordTableRendererMixin:
                 block_id=block.id,
                 reference_bookmarks=reference_bookmarks,
             )
-        self._render_table_notes(document, block, template_config)
+        targets.append(LocalTarget(table._tbl, table.part, "table"))
+        targets.extend(self._render_table_notes(document, block, template_config))
+        return targets
 
     def _render_standard_html_table(
         self,
@@ -96,7 +139,7 @@ class WordTableRendererMixin:
         *,
         block_id: str,
         reference_bookmarks: Any | None = None,
-    ) -> None:
+    ) -> Any:
         """渲染常规 HTML table，保留 rowspan/colspan 合并结构。"""
 
         table = self._add_configured_table(document, len(table_model.rows), max_cols, usable_width, template_config)
@@ -131,6 +174,8 @@ class WordTableRendererMixin:
                         occupied[(occupied_row, occupied_col)] = True
                 col_index = end_col + 1
 
+        return table
+
     def _render_expanded_table(
         self,
         document: Any,
@@ -141,7 +186,7 @@ class WordTableRendererMixin:
         *,
         block_id: str,
         reference_bookmarks: Any | None = None,
-    ) -> None:
+    ) -> Any:
         """大表回退策略：展开跨行跨列，避免巨大复杂表合并导致渲染失败。"""
 
         rows = expanded_table_rows(table_model)
@@ -160,6 +205,8 @@ class WordTableRendererMixin:
                     template_config,
                     reference_bookmarks=reference_bookmarks,
                 )
+
+        return table
 
     def _add_configured_table(
         self,
@@ -238,17 +285,6 @@ class WordTableRendererMixin:
             self._set_cell_fill(cell, template_config.table_style.header_fill)
         cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
 
-    def _render_block_annotations(
-        self,
-        document: Any,
-        block: DocumentIRBlock,
-        template_config: TemplateConfigPackage,
-        *,
-        caption_bookmarks: Any | None = None,
-    ) -> None:
-        self._render_table_captions(document, block, template_config, caption_bookmarks=caption_bookmarks)
-        self._render_table_notes(document, block, template_config)
-
     def _render_table_captions(
         self,
         document: Any,
@@ -257,7 +293,9 @@ class WordTableRendererMixin:
         *,
         caption_bookmarks: Any | None = None,
         page_break_before: bool = False,
-    ) -> None:
+        style_groups: list[str],
+    ) -> list[LocalTarget]:
+        targets = []
         for index, text in enumerate(self._unique_annotation_texts(block.captions)):
             source_index = next(index for index, value in enumerate(block.captions) if value.strip() == text)
             self._set_formula_source(document, block.id, f"captions/{source_index}")
@@ -265,10 +303,13 @@ class WordTableRendererMixin:
             paragraph.paragraph_format.keep_with_next = True
             if page_break_before and index == 0:
                 paragraph.paragraph_format.page_break_before = True
-            if is_table_context_annotation(text):
+            group = style_groups[index]
+            if group == "normal":
                 self._fill_table_context_paragraph(paragraph, text, template_config)
+                targets.append(paragraph_target(paragraph, "context", index))
                 continue
-            style = self._caption_style_for_text(text, template_config)
+            targets.append(paragraph_target(paragraph, "caption", index))
+            style = getattr(template_config, group)
             if not self._fill_caption_paragraph(
                 paragraph,
                 text,
@@ -283,22 +324,28 @@ class WordTableRendererMixin:
                     terminology=template_config.terminology,
                 )
 
+        return targets
+
     def _render_table_notes(
         self,
         document: Any,
         block: DocumentIRBlock,
         template_config: TemplateConfigPackage,
-    ) -> None:
-        for text in self._unique_annotation_texts(block.footnotes):
-            source_index = next(index for index, value in enumerate(block.footnotes) if value.strip() == text)
+    ) -> list[LocalTarget]:
+        targets = []
+        for index, text in enumerate(self._unique_annotation_texts(block.footnotes)):
+            source_index = next(i for i, value in enumerate(block.footnotes) if value.strip() == text)
             self._set_formula_source(document, block.id, f"footnotes/{source_index}")
             paragraph = document.add_paragraph()
+            targets.append(paragraph_target(paragraph, "note", index))
             self._fill_paragraph(
                 paragraph,
                 text,
                 template_config.table_note,
                 terminology=template_config.terminology,
             )
+
+        return targets
 
     def _unique_annotation_texts(self, values: list[str]) -> list[str]:
         seen: set[str] = set()
@@ -340,28 +387,6 @@ class WordTableRendererMixin:
 
     def _available_table_width(self, document: Any) -> int:
         return self._content_width_and_columns(document)[0]
-
-    def _template_config_for_table_columns(
-        self,
-        template_config: TemplateConfigPackage,
-        max_cols: int,
-    ) -> TemplateConfigPackage:
-        if max_cols < WIDE_TABLE_COLUMN_COUNT:
-            return template_config
-        current_size = template_config.table_content.font_size or COMPACT_TABLE_FONT_SIZE
-        target_size = COMPACT_TABLE_FONT_SIZE if max_cols <= 8 else EXTRA_COMPACT_TABLE_FONT_SIZE
-        table_content = template_config.table_content.model_copy(
-            update={
-                "font_size": min(current_size, target_size),
-                "line_spacing": 1.0,
-                "space_before": 0,
-                "space_after": 0,
-                "first_line_indent_pt": 0,
-                "left_indent_pt": 0,
-                "right_indent_pt": 0,
-            }
-        )
-        return template_config.model_copy(update={"table_content": table_content})
 
     def _fill_table_context_paragraph(
         self,
@@ -405,11 +430,6 @@ class WordTableRendererMixin:
             shading = OxmlElement("w:shd")
             tc_pr.append(shading)
         shading.set(qn("w:fill"), fill.strip().lstrip("#").upper())
-
-    def _caption_style_for_text(self, text: str, template_config: TemplateConfigPackage) -> Any:
-        if LONG_TABLE_CAPTION_RE.match((text or "").strip()):
-            return template_config.long_table_caption
-        return template_config.caption
 
     def _set_table_borders(self, table: Any, color: str) -> None:
         table_properties = table._tbl.tblPr
