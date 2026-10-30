@@ -207,18 +207,22 @@ direct：uploaded → parsing → parsed → ir_converting
 | `page_size` | `20` | 当前限制 `1-100`。 |
 | `status` | 无 | 按任务状态过滤。 |
 | `status_group` | 无 | 状态组过滤；OpenAPI 枚举当前仅允许 `active`，等价于 `pending` / `queued` / `running`。不能与 `status` 同时使用。 |
-| `translation_qa_status` | 无 | 按翻译 QA 状态过滤；OpenAPI 枚举允许 `unreviewed` / `approved` / `needs_fix` / `blocked` / `all`，传 `all` 时返回全部翻译模式 QA 任务。 |
-| `q` | 无 | 按任务 ID、源文件 ID、源文件名、错误码或错误信息搜索。 |
+| `translation_qa_status` | 无 | 按当前文件、绑定、质量和单次观察时刻计算的有效复核状态过滤；OpenAPI 枚举允许 `unreviewed` / `approved` / `needs_fix` / `blocked` / `all`，传 `all` 时返回全部翻译模式 QA 任务。 |
+| `q` | 无 | 对任务 ID、源文件 ID、任务快照中的源文件名、错误码和错误信息逐字段进行 Unicode casefold 字面子串搜索；去除首尾空白，`%`、`_`、反斜线不作为通配符。 |
 | `sort` | `created_at_desc` | `created_at_desc` / `created_at_asc` / `updated_at_desc` / `updated_at_asc`。 |
 | `include_archived` | `false` | 是否包含已归档任务；已删除任务始终不进入列表。 |
-| `created_from` | 无 | 按创建时间下界过滤，ISO datetime。 |
-| `created_to` | 无 | 按创建时间上界过滤，ISO datetime。 |
+| `created_from` | 无 | 按创建时间下界过滤，ISO datetime，包含边界。 |
+| `created_to` | 无 | 按创建时间上界过滤，ISO datetime，包含边界。 |
 
 - 响应：`items`、分页信息、`summary`、`filtered_summary` 和 `translation_qa_summary`。
     - `summary`：当前用户可见任务在归档过滤后的全局状态计数，保留旧语义。
     - `filtered_summary`：应用 `status`/`status_group`、`translation_qa_status`、搜索、日期等筛选后的状态计数，不受分页影响。
-    - `translation_qa_summary`：应用非 QA 状态筛选、搜索、日期和归档过滤后的 QA 状态计数，键为 `unreviewed`、`approved`、`needs_fix`、`blocked`。
+    - `translation_qa_summary`：应用非 QA 状态筛选、搜索、日期和归档过滤后的有效复核状态计数，不受所选 QA 选项影响；只统计翻译模式，键为 `unreviewed`、`approved`、`needs_fix`、`blocked`。
     - 前端应兼容旧响应或局部 mock 未返回新增 summary 字段的情况，缺省按空对象处理。
+
+- 可见性同时限定租户和公司；Admin 可查看该范围全部任务，其他角色只查看本人创建的任务。全部计数与列表使用相同的权限边界。
+- 时间相同时按任务 ID 排序，方向与主排序一致；`total` 和汇总均不受分页影响。QA 汇总只统计翻译模式，固定四键补零，状态汇总仅返回实际出现的状态键。
+- SQLite/MySQL 使用同一读快照完成筛选、汇总与分页。数据库查询投影尚未回填或版本不兼容时返回 `503 service_unavailable`，不会以缺失任务的成功结果代替；GET 不执行回填。启用步骤见后端运维手册。
 
 ### `GET /api/v1/document-jobs/{job_id}`
 

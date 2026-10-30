@@ -260,7 +260,28 @@ curl http://127.0.0.1:8000/api/v1/health/ready
 
 ### CON-103 Migration A
 
-`scripts/ops/migrate_document_job_state.py` 只处理 DocumentJob 四个状态字段及 SQL 投影：JSON payload 是权威，缺键采用 `pending/unreviewed/internal_draft/{}`，旧 QA 原文保留，不自动映射历史批准。执行前须暂停相关 API/Worker 写者；默认 dry-run/verify 不触发 bootstrap/DDL。按 `schema`、`backfill`、`all` 分阶段 apply，并使用报告中的 `last_successful_job_id` 续跑；MySQL DDL 部分成功时保留已加列、修复后前滚，不执行 DROP。真实 MySQL/InnoDB 和部署文件系统启用门保持 pending，本轮未连接生产。
+`scripts/ops/migrate_document_job_state.py` 补 DocumentJob 四个状态字段及对应 SQL 投影；SQL schema 阶段也补查询投影列，以便状态回填同步维护。它不能替代列表投影的完整一致性校验。JSON payload 是权威，缺键采用 `pending/unreviewed/internal_draft/{}`，旧 QA 原文保留，不自动映射历史批准。执行前须暂停相关 API/Worker 写者；默认 dry-run/verify 不触发 bootstrap/DDL。按 `schema`、`backfill`、`all` 分阶段 apply，并使用报告中的 `last_successful_job_id` 续跑；MySQL DDL 部分成功时保留已加列、修复后前滚，不执行 DROP。真实 MySQL/InnoDB 与部署文件系统验证按具体版本、环境及对应执行证据判断；状态回填不能替代v2双表全量校验。
+
+### DocumentJob 列表查询投影
+
+现行v2列表依赖任务 `list_query_json`（版本2）和文件 `review_query_json`（版本1）。两者保存静态事实，有效复核按单次查询时刻计算。新writer同行维护事实，但schema bootstrap不重写历史数据；缺失或不兼容投影会明确失败，GET不回填或全量降级；陈旧事实由全量verify和查询差分阻断切换。详细合同见[任务列表有效复核v2](../../.trellis/spec/backend/document-job-list-query-v2.md)。
+
+显式工具为 `scripts/ops/migrate_document_job_list_query.py`，仅处理SQLite/MySQL。以下是另行授权维护窗口内的操作程序，不表示本文触发任何数据库操作，也不允许复用未核对的连接配置。
+
+```bash
+# 默认只读预检；目标和授权确认前禁止改为apply。
+.venv/bin/python scripts/ops/migrate_document_job_list_query.py --backend mysql --dry-run --batch-size 100
+```
+
+SQLite可指定 `--backend database --database-path <metadata.sqlite3>`。dry-run/apply报告按 `tables.document_files` 和 `tables.document_jobs` 分开记录计数及游标；SQLite未完成日志的恢复或checkpoint属于另行授权的维护步骤，预检不会代做。
+
+1. 停止全部job/file写者，包括API、Worker、回调、清理和相关旁路；核对目标后完成整个库及对象/配置卷备份，并在独立隔离目标恢复核验。业务数据覆盖恢复与代码回滚分别授权。
+2. 在同一目标完成两表全量dry-run，处理报告中的缺时间键、非法payload及投影构造错误；不得用动态默认now修补。部分质量、绑定和descriptor条件错误保存为投影标志，并非dry-run报告错误；后续按实际可达性执行旧/新查询差分，任一侧报错都阻断切换。apply先补所需列、回填文件事实，再回填任务事实；只改派生列，保留raw、未知字段、原时间及其他业务列。
+3. apply只在整批提交后推进各表 `last_successful_file_id` / `last_successful_job_id`。需要续跑时使用对应 `--after-file-id` / `--after-job-id`；失败保留上个成功游标，不能跳过失败记录。MySQL新增列可能已隐式提交，不能声称DDL与批次共同回滚。
+4. 停写持续到验收完成。`--verify`禁止任何非空游标，须从头在同一只读快照全量校验两表；不能按 `last_scanned_*` 分页续跑verify。两表错误/差异均为0且原列保真后，还须完成固定旧/新实现查询差分：两侧均无错误且结果相等，双方相同报错也不能通过。全部通过后再启动新API/Worker并完成正常用户验收。
+5. 不支持旧writer与新查询滚动混写。代码回滚保留原锁序、账本和结果凭据兼容下限；恢复旧writer写入后，再升级须重新停写并从空游标完整重建两表，不能只补NULL或沿用上次断点。遇阻塞或未知写结果立即停止，不自动覆盖恢复业务数据。
+
+本地SQLite、fake MySQL及静态检查不替代真实MySQL 8.4语义与部署环境验证。只有对应版本的明确执行证据才能证明真实引擎、正式迁移或线上验收已完成；本地源码接回不触发新的线上发布。
 
 ## 2.2 artifact storage 与对象 adapter
 

@@ -165,3 +165,16 @@ When changing stage messages, update all supported stores and tests. `tests/test
 ## CON-103 状态投影与回填
 
 `DocumentJob` 的 `quality_status`、`review_status`、`delivery_status`、`quality_summary` 由 payload 权威保存；SQLite/MySQL 的同名投影列必须与同一连接写入同步，file backend 复用既有 job lock。复核只允许通过 `update_document_job_review_if_current` 比较当前 generation 和 result ID；`backfill_document_job_state_if_missing` 只补缺键，保留旧 QA、时间戳和未知 raw 键。SQLite/MySQL schema maintenance 或显式迁移失败时不降级写入，fake MySQL 仅证明 SQL/回滚调用形状，真实 InnoDB 与部署文件系统仍是线上启用门。
+
+## DocumentJob 列表查询下推
+
+有效复核与双表合同见[任务列表有效复核 v2](./document-job-list-query-v2.md)；下列搜索、时间和排序约束由v1继承，仍适用于当前实现。旧单表回填和raw review分类不再适用。
+
+- `document_jobs.list_query_json` 版本2与 `document_files.review_query_json` 版本1保存各自静态事实，payload保持权威；有效复核按单次 `as_of` 关联当前文件计算。
+- SQLite/MySQL在同一只读快照完成权限、全部筛选、三类汇总、排序和分页；包含动作构建的完整任务payload解码量不超过页条数，实时表格guard读取窄事实。
+- 权限同时精确比较tenant/company，Admin可查看范围内全部任务，其他角色限定created_by；MySQL不得依赖不区分大小写或重音的默认collation。
+- q先strip，再对id、source_file_id、任务快照original_filename、error_code、error_message五字段分别Python casefold并做字面子串匹配；快照文件名仅dict中的str参与。不串接、不做Unicode normalization，`%`、`_`、反斜线不是通配符；使用INSTR/binary LOCATE，不用LOWER/LIKE替代。
+- 时间键使用精确signed整数微秒，区分naive/aware，不用浮点或本机时区转换。日期下界先比较，再比较通过者的上界，之后应用翻译模式；单行也须满足边界类型兼容。只对完整筛选域检查实际排序列，ID与主排序同向。
+- job/file共享writer及直接SQL迁移旁路均须同行维护投影；缺失或不兼容事实必须明确失败，不允许GET修复或全量Python回退；事实与payload一致性由全量verify检查，不能仅以非NULL证明未陈旧。
+- `scripts/ops/migrate_document_job_list_query.py` 回填两表，apply先文件后任务，分别使用 `--after-file-id` / `--after-job-id` 续跑；verify须从空游标在同一只读快照全量核对两表，不能分页续跑verify。
+- 旧writer恢复后两表必须从头重建；停写、备份恢复及切换程序见[后端运维手册](../../../docs/runbooks/backend.md#documentjob-列表查询投影)。真实引擎验证使用 `tests.test_document_job_list_query_v2_mysql` 的明确隔离环境，不读.env、不复用业务库；fake与skip不算真实MySQL证据。
