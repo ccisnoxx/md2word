@@ -897,7 +897,9 @@ const configSummary = ref<DocumentJobConfigSummaryResponse | null>(null);
 const lastDownloadLink = ref<DownloadLinkNotice | null>(null);
 let pollTimer: number | undefined;
 let pollRefreshCount = 0;
-let translationBatchRequestRound = 0;
+let disposed = false;
+let routeEpoch = 0;
+const requestRounds = { all: 0, job: 0, events: 0, files: 0, callbackSummary: 0, translationBatches: 0 };
 
 type RetryStrategy = "keep_original" | "use_latest_term_assets" | "select_term_assets";
 type CloneConfigStrategy = NonNullable<DocumentJobCloneRequest["config_strategy"]>;
@@ -1474,110 +1476,126 @@ function callbackStatusCount(status: string): number {
 }
 
 async function loadJob(targetJobId = jobId.value): Promise<void> {
+  if (disposed || targetJobId !== jobId.value) {
+    return;
+  }
+  const requestRound = ++requestRounds.job;
   loading.value = true;
   error.value = null;
   try {
     const response = await documentJobsApi.get(targetJobId);
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("job", requestRound, targetJobId)) {
       job.value = response;
     }
   } catch (caught) {
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("job", requestRound, targetJobId)) {
       error.value = normalizeApiError(caught);
     }
   } finally {
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("job", requestRound, targetJobId)) {
       loading.value = false;
     }
   }
 }
 
 async function loadEvents(targetJobId = jobId.value): Promise<void> {
+  if (disposed || targetJobId !== jobId.value) {
+    return;
+  }
+  const requestRound = ++requestRounds.events;
   eventsLoading.value = true;
   eventsError.value = null;
   try {
     const response = await documentJobsApi.listEvents(targetJobId);
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("events", requestRound, targetJobId)) {
       events.value = response.items;
     }
   } catch (caught) {
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("events", requestRound, targetJobId)) {
       eventsError.value = normalizeApiError(caught);
     }
   } finally {
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("events", requestRound, targetJobId)) {
       eventsLoading.value = false;
     }
   }
 }
 
 async function loadFiles(targetJobId = jobId.value): Promise<void> {
+  if (disposed || targetJobId !== jobId.value) {
+    return;
+  }
+  const requestRound = ++requestRounds.files;
   filesLoading.value = true;
   filesError.value = null;
   try {
     const response = await documentJobsApi.listFiles(targetJobId);
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("files", requestRound, targetJobId)) {
       files.value = response.files;
     }
   } catch (caught) {
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("files", requestRound, targetJobId)) {
       filesError.value = normalizeApiError(caught);
     }
   } finally {
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("files", requestRound, targetJobId)) {
       filesLoading.value = false;
     }
   }
 }
 
 async function loadCallbackSummary(targetJobId = jobId.value): Promise<void> {
+  if (disposed || targetJobId !== jobId.value) {
+    return;
+  }
+  const requestRound = ++requestRounds.callbackSummary;
   callbackSummaryLoading.value = true;
   callbackSummaryError.value = null;
   try {
     const response = await documentJobsApi.getCallbackMessageSummary(targetJobId);
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("callbackSummary", requestRound, targetJobId)) {
       callbackSummary.value = response;
     }
   } catch (caught) {
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("callbackSummary", requestRound, targetJobId)) {
       callbackSummaryError.value = normalizeApiError(caught);
     }
   } finally {
-    if (targetJobId === jobId.value) {
+    if (isCurrentRequest("callbackSummary", requestRound, targetJobId)) {
       callbackSummaryLoading.value = false;
     }
   }
 }
 
 async function loadTranslationBatches(targetJobId = jobId.value): Promise<void> {
-  const requestRound = ++translationBatchRequestRound;
+  if (disposed || targetJobId !== jobId.value) {
+    return;
+  }
+  const requestRound = ++requestRounds.translationBatches;
   if (!supportsJobTranslationQa(job.value)) {
-    if (targetJobId === jobId.value && requestRound === translationBatchRequestRound) {
-      translationBatches.value = [];
-      translationBatchGeneration.value = null;
-      translationBatchExecution.value = undefined;
-      translationBatchesError.value = null;
-      translationBatchesLoading.value = false;
-    }
+    translationBatches.value = [];
+    translationBatchGeneration.value = null;
+    translationBatchExecution.value = undefined;
+    translationBatchesError.value = null;
+    translationBatchesLoading.value = false;
     return;
   }
   translationBatchesLoading.value = true;
   translationBatchesError.value = null;
   try {
     const response = await documentJobsApi.listTranslationBatches(targetJobId);
-    const isCurrentRequest = targetJobId === jobId.value && requestRound === translationBatchRequestRound;
     const isCurrentGeneration = job.value?.retry_count === undefined || response.generation === job.value.retry_count;
-    if (isCurrentRequest && isCurrentGeneration) {
+    if (isCurrentRequest("translationBatches", requestRound, targetJobId) && isCurrentGeneration) {
       translationBatches.value = response.items;
       translationBatchGeneration.value = response.generation;
       translationBatchExecution.value = response.execution;
     }
   } catch (caught) {
-    if (targetJobId === jobId.value && requestRound === translationBatchRequestRound) {
+    if (isCurrentRequest("translationBatches", requestRound, targetJobId)) {
       translationBatchesError.value = normalizeApiError(caught);
     }
   } finally {
-    if (targetJobId === jobId.value && requestRound === translationBatchRequestRound) {
+    if (isCurrentRequest("translationBatches", requestRound, targetJobId)) {
       translationBatchesLoading.value = false;
     }
   }
@@ -1587,14 +1605,32 @@ type LoadAllOptions = {
   secondary?: "all" | "smart";
 };
 
+function isCurrentRequest(kind: keyof typeof requestRounds, requestRound: number, targetJobId: string): boolean {
+  return !disposed && targetJobId === jobId.value && requestRound === requestRounds[kind];
+}
+
+function invalidateRequests(): void {
+  for (const kind of Object.keys(requestRounds) as Array<keyof typeof requestRounds>) {
+    requestRounds[kind] += 1;
+  }
+}
+
 async function loadAll(options: LoadAllOptions = {}): Promise<void> {
+  if (disposed) {
+    return;
+  }
+  const requestRound = ++requestRounds.all;
   const targetJobId = jobId.value;
   await loadJob(targetJobId);
-  if (targetJobId !== jobId.value) {
+  if (!isCurrentRequest("all", requestRound, targetJobId)) {
     return;
   }
   if (job.value) {
     await loadEvents(targetJobId);
+    // 同一任务的新刷新也会使旧链失效，避免旧链随后启动新的子请求。
+    if (!isCurrentRequest("all", requestRound, targetJobId)) {
+      return;
+    }
     if (options.secondary === "smart" && !shouldRefreshSecondaryDuringPoll()) {
       if (activeTab.value === "files") {
         await loadFiles(targetJobId);
@@ -1668,10 +1704,13 @@ function stopPolling(): void {
 
 function syncPolling(): void {
   stopPolling();
-  if (!job.value || !isActiveJobStatus(job.value.status) || document.hidden) {
+  if (disposed || !job.value || !isActiveJobStatus(job.value.status) || document.hidden) {
     return;
   }
   pollTimer = window.setInterval(() => {
+    if (loading.value || eventsLoading.value || filesLoading.value || callbackSummaryLoading.value || translationBatchesLoading.value) {
+      return;
+    }
     void loadAll({ secondary: "smart" });
   }, 4000);
 }
@@ -2036,12 +2075,20 @@ function handleVisibilityChange(): void {
 
 function resetPageStateForRouteChange(): void {
   stopPolling();
+  routeEpoch += 1;
+  invalidateRequests();
+  loading.value = false;
+  eventsLoading.value = false;
+  filesLoading.value = false;
+  callbackSummaryLoading.value = false;
+  translationBatchesLoading.value = false;
   job.value = null;
   events.value = [];
   files.value = [];
   callbackSummary.value = null;
   translationBatches.value = [];
   translationBatchGeneration.value = null;
+  translationBatchExecution.value = undefined;
   error.value = null;
   eventsError.value = null;
   filesError.value = null;
@@ -2134,7 +2181,11 @@ watch(jobId, async (nextJobId, previousJobId) => {
     return;
   }
   resetPageStateForRouteChange();
+  const currentRouteEpoch = routeEpoch;
   await loadAll();
+  if (disposed || currentRouteEpoch !== routeEpoch || nextJobId !== jobId.value) {
+    return;
+  }
   syncPolling();
   if (route.query.retry === "1" && job.value?.status === "failed") {
     openRetryDialog(job.value);
@@ -2143,7 +2194,13 @@ watch(jobId, async (nextJobId, previousJobId) => {
 
 onMounted(async () => {
   document.addEventListener("visibilitychange", handleVisibilityChange);
+  const targetJobId = jobId.value;
+  const currentRouteEpoch = routeEpoch;
   await loadAll();
+  // 同路由刷新只替代请求，不能取消从列表进入时携带的重试意图。
+  if (disposed || currentRouteEpoch !== routeEpoch || targetJobId !== jobId.value) {
+    return;
+  }
   syncPolling();
   if (route.query.retry === "1" && job.value?.status === "failed") {
     openRetryDialog(job.value);
@@ -2151,6 +2208,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  disposed = true;
   stopPolling();
   document.removeEventListener("visibilitychange", handleVisibilityChange);
 });

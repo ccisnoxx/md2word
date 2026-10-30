@@ -404,6 +404,8 @@ const backgroundRefreshing = ref(false);
 const nowMs = ref(Date.now());
 let refreshTimer: number | undefined;
 let routeSyncInProgress = false;
+let jobsRequestRound = 0;
+let disposed = false;
 
 const jobsErrorDiagnosticContext = computed(() => ({
   route: route.fullPath,
@@ -567,14 +569,13 @@ const currentSavedViewState = computed<SavedViewState>(() => {
 const activeSavedView = computed(() => activeSavedViewId(currentSavedViewState.value, allSavedViewItems.value));
 
 async function loadJobs(options: LoadJobsOptions = {}): Promise<void> {
-  if (loading.value || backgroundRefreshing.value) {
+  if (disposed || (options.background && (loading.value || backgroundRefreshing.value))) {
     return;
   }
-  if (options.background) {
-    backgroundRefreshing.value = true;
-  } else {
-    loading.value = true;
-  }
+  const requestRound = ++jobsRequestRound;
+  // 前台筛选接管当前状态，旧请求的响应和清理均不得再写回。
+  backgroundRefreshing.value = Boolean(options.background);
+  loading.value = !options.background;
   if (!options.preserveError) {
     error.value = null;
   }
@@ -591,6 +592,9 @@ async function loadJobs(options: LoadJobsOptions = {}): Promise<void> {
       created_from: createdRange.value?.[0],
       created_to: createdRange.value?.[1],
     });
+    if (disposed || requestRound !== jobsRequestRound) {
+      return;
+    }
     jobs.value = response.items;
     selectedJobs.value = [];
     total.value = response.total;
@@ -603,11 +607,12 @@ async function loadJobs(options: LoadJobsOptions = {}): Promise<void> {
     };
     lastRefreshedAt.value = new Date().toISOString();
   } catch (caught) {
-    error.value = normalizeApiError(caught);
+    if (!disposed && requestRound === jobsRequestRound) {
+      error.value = normalizeApiError(caught);
+    }
   } finally {
-    if (options.background) {
+    if (!disposed && requestRound === jobsRequestRound) {
       backgroundRefreshing.value = false;
-    } else {
       loading.value = false;
     }
   }
@@ -1409,6 +1414,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  disposed = true;
   if (refreshTimer !== undefined) {
     window.clearInterval(refreshTimer);
   }
